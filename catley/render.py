@@ -23,7 +23,7 @@ class Renderer:
         self.fov = fov
 
         tileset = tcod.tileset.load_tilesheet(
-            "Haberdash_curses_12x12.png", 16, 16, tcod.tileset.CHARMAP_CP437
+            "Taffer_20x20.png", 16, 16, tcod.tileset.CHARMAP_CP437
         )
 
         self.root_console = Console(screen_width, screen_height, order="F")
