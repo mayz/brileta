@@ -1,5 +1,6 @@
 import abc
 import random
+import time
 
 import colors
 import tcod
@@ -37,6 +38,14 @@ class Controller:
         first_room = rooms[0]
         self.model.player.x, self.model.player.y = first_room.center()
 
+        # Initialize FOV after map is created but before renderer
+        self.fov = FieldOfView(self.model)
+
+        # Create renderer after FOV is initialized
+        self.renderer = Renderer(
+            self.screen_width, self.screen_height, self.model, self.fov
+        )
+
         # Place NPC in a random room that's not the first room
         if len(rooms) > 1:
             npc_room = random.choice(rooms[1:])  # Skip the first room where player is
@@ -51,23 +60,32 @@ class Controller:
             )
             self.model.entities.append(npc)
 
-        self.fov = FieldOfView(self.model)
+        # Ensure initial FOV computation
+        self.fov.fov_needs_recomputing = True
 
         # For handling input events in run_game_loop().
         self.event_handler = EventHandler(self)
 
-        self.renderer = Renderer(
-            self.screen_width, self.screen_height, self.model, self.fov
-        )
+        # Add timing variables for animation
+        self.last_frame_time = time.time()
+        self.frame_time = 1.0 / 60  # Target 60 FPS
 
     def run_game_loop(self):
         while True:
-            new_fov = self.fov.recompute_if_needed()
-            if new_fov:
+            current_time = time.time()
+            delta_time = current_time - self.last_frame_time
+
+            # Handle real-time updates
+            if delta_time >= self.frame_time:
+                self.last_frame_time = current_time
+                # Update animations and real-time effects
+                self.model.lighting.update(delta_time)
+                # Always render after real-time updates
                 self.renderer.render_all()
 
-            for ev in tcod.event.wait():
-                self.event_handler.dispatch(ev)
+            # Handle input events (turn-based)
+            for event in tcod.event.get():
+                self.event_handler.dispatch(event)
 
 
 class Action(abc.ABC):

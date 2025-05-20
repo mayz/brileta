@@ -72,6 +72,9 @@ class Renderer:
     def render_all(self):
         self.con.clear()
 
+        # Make sure FOV is up to date before rendering
+        self.fov.recompute_if_needed()
+
         self._render_map()
         self._render_entities()
 
@@ -89,29 +92,35 @@ class Renderer:
 
         # Apply lighting to visible areas
         light_mask = self.fov.fov_map.fov
-        visible_cells = np.where(light_mask)
+        visible_y, visible_x = np.where(light_mask)  # Get coordinates of visible cells
 
-        # Extract and reshape light intensity for visible cells - add channel dimension
-        cell_light = self.current_light_intensity[visible_cells]
-        cell_light = cell_light[:, np.newaxis]
+        if len(visible_y) > 0:  # Only process if we have visible cells
+            # Get RGB light intensities for visible cells
+            cell_light = self.current_light_intensity[visible_y, visible_x]
 
-        # For visible cells, blend between light and dark colors based on intensity
-        self.bg[visible_cells] = self.light_map_bg[
-            visible_cells
-        ] * cell_light + self.dark_map_bg[visible_cells] * (1.0 - cell_light)
+            # Blend colors based on light intensity for each RGB channel
+            for i in range(3):  # For each RGB channel
+                light_intensity = cell_light[..., i]
+                self.bg[visible_y, visible_x, i] = (
+                    self.light_map_bg[visible_y, visible_x, i] * light_intensity +
+                    self.dark_map_bg[visible_y, visible_x, i] * (1.0 - light_intensity)
+                )
 
-        self.map_tiles_explored[visible_cells] = True
+            self.map_tiles_explored[visible_y, visible_x] = True
 
     def _render_entities(self):
         for e in self.model.entities:
             if self.fov.contains(e.x, e.y):
                 self.ch[e.x, e.y] = e.ch
 
-                # Use the already computed light intensity
-                light_level = self.current_light_intensity[e.x, e.y]
+                # Use the already computed RGB light intensity
+                light_rgb = self.current_light_intensity[e.x, e.y]
 
-                # Modulate entity color by light level
-                lit_color = tuple(int(c * light_level) for c in e.color)
+                # Apply RGB lighting to each color channel
+                lit_color = tuple(
+                    int(min(255, color * light))  # Clamp to valid color range
+                    for color, light in zip(e.color, light_rgb, strict=True)
+                )
                 self.fg[e.x, e.y] = lit_color
 
     def _render_bar(self, x, y, total_width, name, value, maximum, color, bg_color):

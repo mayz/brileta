@@ -11,21 +11,19 @@ from lighting import LightingSystem, LightSource
 class Model:
     def __init__(self, map_width: int, map_height: int):
         self.lighting = LightingSystem()
-        # Create player with a light source
-        player_light = LightSource(
-            radius=10,  # Reduced radius
-            color=(0.7, 0.5, 0.3),  # Warmer, dimmer torch color
-            light_type="dynamic",
-            flicker_enabled=True,
-            min_brightness=0.5,  # Lower minimum brightness
-            max_brightness=0.9,  # Lower maximum brightness
-        )
+        # Create player with a torch light source
+        player_light = LightSource.create_torch()
         self.player = Entity(
             0, 0, ord("@"), PLAYER_COLOR, model=self, light_source=player_light
         )
 
         self.entities = [self.player]
         self.game_map = GameMap(map_width, map_height)
+
+    def update_player_light(self):
+        """Update player light source position"""
+        if self.player.light_source:
+            self.player.light_source.position = (self.player.x, self.player.y)
 
 
 @dataclasses.dataclass
@@ -55,6 +53,7 @@ class Entity:
     def move(self, dx: int, dy: int):
         self.x += dx
         self.y += dy
+        # Update the light source position when entity moves
         if self.light_source:
             self.light_source.position = (self.x, self.y)
 
