@@ -1,10 +1,10 @@
 import abc
 import random
-import time
 
 import colors
 import tcod
 import tcod.event
+from clock import Clock
 from fov import FieldOfView
 from model import Entity, Model
 from render import Renderer
@@ -41,9 +41,13 @@ class Controller:
         # Initialize FOV after map is created but before renderer
         self.fov = FieldOfView(self.model)
 
+        # Initialize clock for frame timing
+        self.clock = Clock()
+        self.target_fps = 60
+
         # Create renderer after FOV is initialized
         self.renderer = Renderer(
-            self.screen_width, self.screen_height, self.model, self.fov
+            self.screen_width, self.screen_height, self.model, self.fov, self.clock
         )
 
         # Place NPC in a random room that's not the first room
@@ -66,26 +70,18 @@ class Controller:
         # For handling input events in run_game_loop().
         self.event_handler = EventHandler(self)
 
-        # Add timing variables for animation
-        self.last_frame_time = time.time()
-        self.frame_time = 1.0 / 60  # Target 60 FPS
-
     def run_game_loop(self):
         while True:
-            current_time = time.time()
-            delta_time = current_time - self.last_frame_time
-
-            # Handle real-time updates
-            if delta_time >= self.frame_time:
-                self.last_frame_time = current_time
-                # Update animations and real-time effects
-                self.model.lighting.update(delta_time)
-                # Always render after real-time updates
-                self.renderer.render_all()
-
-            # Handle input events (turn-based)
+            # Process any pending events
             for event in tcod.event.get():
                 self.event_handler.dispatch(event)
+
+            # Update using clock's delta time
+            delta_time = self.clock.sync(fps=self.target_fps)
+
+            # Update animations and render
+            self.model.lighting.update(delta_time)
+            self.renderer.render_all()
 
 
 class Action(abc.ABC):
