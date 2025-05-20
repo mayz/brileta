@@ -2,6 +2,7 @@ import numpy as np
 import tcod
 from colors import DARK_GROUND, DARK_WALL, LIGHT_GROUND, LIGHT_WALL
 from fov import FieldOfView
+from lighting import LightingSystem
 from model import Model
 from tcod.console import Console
 
@@ -17,6 +18,7 @@ class Renderer:
             "light_ground": LIGHT_GROUND,
         }
 
+        self.lighting = LightingSystem()
         self.screen_width = screen_width
         self.screen_height = screen_height
         self.model = model
@@ -82,23 +84,27 @@ class Renderer:
         explored_idx = np.where(self.map_tiles_explored)
         self.bg[explored_idx] = self.dark_map_bg[explored_idx]
 
-        visible_idx = np.where(self.fov.fov_map.fov)
-        self.bg[visible_idx] = self.light_map_bg[visible_idx]
-        self.map_tiles_explored[visible_idx] = True
+        p = self.model.player
+        light_intensity = self.lighting.compute_lighting(
+            (p.x, p.y),
+            self.model.game_map.width,
+            self.model.game_map.height
+        )
 
-        # FIXME(mark): Handle torch lighting.
-        # See FOVSample in https://github.com/libtcod/python-tcod/blob/master/examples/samples_tcod.py
-        # lit_color = 'light_wall' if wall else 'light_ground'
-        # unlit_color = 'dark_wall' if wall else 'dark_ground'
+        # Apply lighting to visible areas
+        light_mask = self.fov.fov_map.fov
+        visible_cells = np.where(light_mask)
 
-        # dx = x - p.x
-        # dy = y - p.y
-        # distance = sqrt((dx * dx) + (dy * dy))
+        # Extract and reshape light intensity for visible cells
+        cell_light = light_intensity[visible_cells][:, np.newaxis]  # Add channel dim
 
-        # fov_radius = self.fov.fov_radius
-        # lit_pct = 1.0 - (min(fov_radius, distance) / fov_radius)
-        # self.bg[x, y] = (self.colors.get(lit_color) * lit_pct) + (
-        # self.colors.get(unlit_color) * (1.0 - lit_pct))
+        # For visible cells, blend between light and dark colors based on intensity
+        self.bg[visible_cells] = (
+            self.light_map_bg[visible_cells] * cell_light +
+            self.dark_map_bg[visible_cells] * (1.0 - cell_light)
+        )
+
+        self.map_tiles_explored[visible_cells] = True
 
     def _render_entities(self):
         for e in self.model.entities:
