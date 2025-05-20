@@ -25,14 +25,14 @@ class Controller:
 
         self.model = Model(self.map_width, self.map_height)
 
-        first_room = self.model.game_map.make_map(
+        rooms = self.model.game_map.make_map(
             self.max_num_rooms,
             self.min_room_size,
             self.max_room_size,
             self.map_width,
             self.map_height,
         )
-
+        first_room = rooms[0]
         self.model.player.x, self.model.player.y = first_room.center()
 
         self.fov = FieldOfView(self.model)

@@ -5,33 +5,60 @@ import random
 
 import tcod
 from colors import PLAYER_COLOR
+from lighting import LightingSystem, LightSource
 
 
 class Model:
     def __init__(self, map_width: int, map_height: int):
-        self.player = Entity(0, 0, ord("@"), PLAYER_COLOR)
-        # npc = Entity(1, 1, ord('♥'), tcod.yellow)
+        self.lighting = LightingSystem()
+        # Create player with a light source
+        player_light = LightSource(
+            radius=10,  # Reduced radius
+            color=(0.7, 0.5, 0.3),  # Warmer, dimmer torch color
+            light_type="dynamic",
+            flicker_enabled=True,
+            min_brightness=0.5,  # Lower minimum brightness
+            max_brightness=0.9   # Lower maximum brightness
+        )
+        self.player = Entity(
+            0, 0,
+            ord("@"),
+            PLAYER_COLOR,
+            model=self,
+            light_source=player_light
+        )
 
-        self.entities = [
-            self.player,
-            # npc
-        ]
-
+        self.entities = [self.player]
         self.game_map = GameMap(map_width, map_height)
 
 
 @dataclasses.dataclass
 class Entity:
-    """DOCME"""
+    """An entity that can exist in the game world."""
 
-    x: int
-    y: int
-    ch: int  # Ordinal value of the character that represents the entity.
-    color: tcod.Color
+    def __init__(
+        self,
+        x: int,
+        y: int,
+        ch: int,
+        color: tcod.Color,
+        model=None,
+        light_source: LightSource | None = None
+    ):
+        self.x = x
+        self.y = y
+        self.ch = ch  # Ordinal value of the character that represents the entity.
+        self.color = color
+        self.model = model
+        self.light_source = light_source
+        if self.light_source and self.model:
+            self.light_source.attach(self, self.model.lighting)
 
     def move(self, dx: int, dy: int):
         self.x += dx
         self.y += dy
+        if self.light_source:
+            self.light_source.position = (self.x, self.y)
 
 
 class Tile:
@@ -87,7 +114,7 @@ class GameMap:
         max_room_size: int,
         map_width: int,
         map_height: int,
-    ) -> Rect:
+    ) -> list[Rect]:
         rooms = []
         first_room = None
 
@@ -134,7 +161,7 @@ class GameMap:
         if first_room is None:
             raise ValueError("Need to make at least one room.")
 
-        return first_room
+        return rooms
 
     def _carve_room(self, room: Rect):
         for x in range(room.x1 + 1, room.x2):
