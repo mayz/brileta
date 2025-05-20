@@ -83,8 +83,7 @@ class Renderer:
         self.bg[explored_idx] = self.dark_map_bg[explored_idx]
 
         light_intensity = self.model.lighting.compute_lighting(
-            self.model.game_map.width,
-            self.model.game_map.height
+            self.model.game_map.width, self.model.game_map.height
         )
 
         # Apply lighting to visible areas
@@ -95,10 +94,9 @@ class Renderer:
         cell_light = light_intensity[visible_cells][:, np.newaxis]  # Add channel dim
 
         # For visible cells, blend between light and dark colors based on intensity
-        self.bg[visible_cells] = (
-            self.light_map_bg[visible_cells] * cell_light +
-            self.dark_map_bg[visible_cells] * (1.0 - cell_light)
-        )
+        self.bg[visible_cells] = self.light_map_bg[
+            visible_cells
+        ] * cell_light + self.dark_map_bg[visible_cells] * (1.0 - cell_light)
 
         self.map_tiles_explored[visible_cells] = True
 

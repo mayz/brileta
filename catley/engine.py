@@ -1,5 +1,7 @@
 import abc
+import random
 
+import colors
 import tcod
 import tcod.event
 from fov import FieldOfView
@@ -34,6 +36,20 @@ class Controller:
         )
         first_room = rooms[0]
         self.model.player.x, self.model.player.y = first_room.center()
+
+        # Place NPC in a random room that's not the first room
+        if len(rooms) > 1:
+            npc_room = random.choice(rooms[1:])  # Skip the first room where player is
+            npc_x, npc_y = npc_room.center()
+            npc = Entity(
+                npc_x,
+                npc_y,
+                ord("T"),
+                colors.RED,
+                model=self.model,
+                blocks_movement=True,
+            )
+            self.model.entities.append(npc)
 
         self.fov = FieldOfView(self.model)
 
@@ -72,9 +88,20 @@ class MoveAction(Action):
         self.newy = self.entity.y + self.dy
 
     def execute(self) -> None:
-        if not self.game_map.tiles[self.newx][self.newy].blocked:
-            self.entity.move(self.dx, self.dy)
-            self.controller.fov.fov_needs_recomputing = True
+        if self.game_map.tiles[self.newx][self.newy].blocked:
+            return
+
+        # Check for blocking entities
+        for entity in self.controller.model.entities:
+            if (
+                entity.blocks_movement
+                and entity.x == self.newx
+                and entity.y == self.newy
+            ):
+                return  # Cannot move into blocking entity
+
+        self.entity.move(self.dx, self.dy)
+        self.controller.fov.fov_needs_recomputing = True
 
 
 class ToggleFullscreenAction(Action):

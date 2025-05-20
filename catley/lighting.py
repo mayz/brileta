@@ -8,6 +8,7 @@ import tcod
 @dataclass
 class LightSource:
     """Represents a light source in the game world"""
+
     radius: int  # Required parameter must come first
     _pos: tuple[int, int] | None = None  # Internal position storage
     color: tuple[float, float, float] = (1.0, 1.0, 1.0)  # RGB
@@ -48,11 +49,14 @@ class LightSource:
         self._owner = None
         self._lighting_system = None
 
+
 @dataclass
 class LightingConfig:
     """Configuration for the lighting system"""
+
     fov_radius: int = 15
     ambient_light: float = 0.1  # Base light level
+
 
 class LightingSystem:
     def __init__(self, config: LightingConfig | None = None):
