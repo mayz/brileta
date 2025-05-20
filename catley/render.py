@@ -82,7 +82,8 @@ class Renderer:
         explored_idx = np.where(self.map_tiles_explored)
         self.bg[explored_idx] = self.dark_map_bg[explored_idx]
 
-        light_intensity = self.model.lighting.compute_lighting(
+        # Compute lighting once and store it
+        self.current_light_intensity = self.model.lighting.compute_lighting(
             self.model.game_map.width, self.model.game_map.height
         )
 
@@ -90,8 +91,9 @@ class Renderer:
         light_mask = self.fov.fov_map.fov
         visible_cells = np.where(light_mask)
 
-        # Extract and reshape light intensity for visible cells
-        cell_light = light_intensity[visible_cells][:, np.newaxis]  # Add channel dim
+        # Extract and reshape light intensity for visible cells - add channel dimension
+        cell_light = self.current_light_intensity[visible_cells]
+        cell_light = cell_light[:, np.newaxis]
 
         # For visible cells, blend between light and dark colors based on intensity
         self.bg[visible_cells] = self.light_map_bg[
@@ -104,7 +106,13 @@ class Renderer:
         for e in self.model.entities:
             if self.fov.contains(e.x, e.y):
                 self.ch[e.x, e.y] = e.ch
-                self.fg[e.x, e.y] = e.color
+
+                # Use the already computed light intensity
+                light_level = self.current_light_intensity[e.x, e.y]
+
+                # Modulate entity color by light level
+                lit_color = tuple(int(c * light_level) for c in e.color)
+                self.fg[e.x, e.y] = lit_color
 
     def _render_bar(self, x, y, total_width, name, value, maximum, color, bg_color):
         pass
