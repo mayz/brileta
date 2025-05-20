@@ -1,6 +1,7 @@
 import numpy as np
 import tcod
-from colors import DARK_GROUND, DARK_WALL, LIGHT_GROUND, LIGHT_WALL
+from clock import Clock
+from colors import DARK_GROUND, DARK_WALL, LIGHT_GROUND, LIGHT_WALL, WHITE
 from fov import FieldOfView
 from model import Model
 from tcod.console import Console
@@ -8,7 +9,8 @@ from tcod.console import Console
 
 class Renderer:
     def __init__(
-        self, screen_width: int, screen_height: int, model: Model, fov: FieldOfView
+        self, screen_width: int, screen_height: int, model: Model,
+        fov: FieldOfView, clock: Clock
     ):
         self.colors: dict[str, tcod.Color] = {
             "dark_wall": DARK_WALL,
@@ -37,6 +39,9 @@ class Renderer:
 
         # In the future, re-run whenever the map composition changes.
         self._optimize_map_info()
+
+        # Store clock for FPS display
+        self.clock = clock
 
     def _optimize_map_info(self):
         """In the future, re-run whenever the map composition changes."""
@@ -75,11 +80,32 @@ class Renderer:
         # Make sure FOV is up to date before rendering
         self.fov.recompute_if_needed()
 
+        # Clear the root console first
+        self.root_console.clear()
+
+        # Render map and entities to game console
         self._render_map()
         self._render_entities()
 
-        self.con.blit(self.root_console)
-        self.context.present(self.root_console)  # Show the console.
+        # Blit game console to root console
+        self.con.blit(
+            dest=self.root_console,
+            dest_x=0,
+            dest_y=0,
+            width=self.con.width,
+            height=self.con.height
+        )
+
+        # Display FPS from clock
+        self._render_text(
+            self.screen_width - 12,
+            0,
+            f"FPS: {self.clock.last_fps:.1f}",
+            fg=(255, 255, 0)
+        )
+
+        # Present the final console and handle vsync timing
+        self.context.present(self.root_console, keep_aspect=True, integer_scaling=True)
 
     def _render_map(self):
         explored_idx = np.where(self.map_tiles_explored)
@@ -122,6 +148,13 @@ class Renderer:
                     for color, light in zip(e.color, light_rgb, strict=True)
                 )
                 self.fg[e.x, e.y] = lit_color
+
+    def _render_text(self, x: int, y: int, text: str, fg: tuple[int, int, int] = WHITE):
+        """Render text at a specific position with a given color"""
+        self.root_console.print(x=x, y=y, string=text, fg=fg)
+
+    def _render_bar(self, x, y, total_width, name, value, maximum, color, bg_color):
+        pass
 
     def _render_bar(self, x, y, total_width, name, value, maximum, color, bg_color):
         pass
