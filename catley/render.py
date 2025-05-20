@@ -2,7 +2,6 @@ import numpy as np
 import tcod
 from colors import DARK_GROUND, DARK_WALL, LIGHT_GROUND, LIGHT_WALL
 from fov import FieldOfView
-from lighting import LightingSystem
 from model import Model
 from tcod.console import Console
 
@@ -18,7 +17,6 @@ class Renderer:
             "light_ground": LIGHT_GROUND,
         }
 
-        self.lighting = LightingSystem()
         self.screen_width = screen_width
         self.screen_height = screen_height
         self.model = model
@@ -84,9 +82,7 @@ class Renderer:
         explored_idx = np.where(self.map_tiles_explored)
         self.bg[explored_idx] = self.dark_map_bg[explored_idx]
 
-        p = self.model.player
-        light_intensity = self.lighting.compute_lighting(
-            (p.x, p.y),
+        light_intensity = self.model.lighting.compute_lighting(
             self.model.game_map.width,
             self.model.game_map.height
         )

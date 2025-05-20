@@ -6,7 +6,7 @@ class FieldOfView:
     def __init__(self, model: Model):
         self.fov_algorithm: int = tcod.constants.FOV_SYMMETRIC_SHADOWCAST
         self.fov_light_walls = True
-        self.fov_radius = 10
+        self.fov_radius = 15
 
         self.model = model
         self.fov_needs_recomputing = True
