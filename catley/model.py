@@ -18,14 +18,10 @@ class Model:
             light_type="dynamic",
             flicker_enabled=True,
             min_brightness=0.5,  # Lower minimum brightness
-            max_brightness=0.9   # Lower maximum brightness
+            max_brightness=0.9,  # Lower maximum brightness
         )
         self.player = Entity(
-            0, 0,
-            ord("@"),
-            PLAYER_COLOR,
-            model=self,
-            light_source=player_light
+            0, 0, ord("@"), PLAYER_COLOR, model=self, light_source=player_light
         )
 
         self.entities = [self.player]
@@ -43,7 +39,8 @@ class Entity:
         ch: int,
         color: tcod.Color,
         model=None,
-        light_source: LightSource | None = None
+        light_source: LightSource | None = None,
+        blocks_movement: bool = True,
     ):
         self.x = x
         self.y = y
@@ -51,6 +48,7 @@ class Entity:
         self.color = color
         self.model = model
         self.light_source = light_source
+        self.blocks_movement = blocks_movement
         if self.light_source and self.model:
             self.light_source.attach(self, self.model.lighting)
 
