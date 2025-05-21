@@ -7,6 +7,26 @@ from model import Model
 from tcod.console import Console
 
 
+class FPSDisplay:
+    SHOW_FPS = False
+
+    def __init__(self, clock: Clock, update_interval: float = 0.5) -> None:
+        self.clock = clock
+        self.update_interval = update_interval
+        self.last_update = clock.last_time
+        self.display_string = "FPS: 0.0"
+
+    def update(self) -> None:
+        current_time = self.clock.last_time
+        if current_time - self.last_update >= self.update_interval:
+            self.display_string = f"FPS: {self.clock.last_fps:.1f}"
+            self.last_update = current_time
+
+    def render(self, renderer: 'Renderer', x: int, y: int) -> None:
+        self.update()
+        renderer._render_text(x, y, self.display_string, fg=(255, 255, 0))
+
+
 class Renderer:
     def __init__(
         self,
@@ -44,8 +64,7 @@ class Renderer:
         # In the future, re-run whenever the map composition changes.
         self._optimize_map_info()
 
-        # Store clock for FPS display
-        self.clock = clock
+        self.fps_display = FPSDisplay(clock)
 
     def _optimize_map_info(self) -> None:
         """In the future, re-run whenever the map composition changes."""
@@ -100,13 +119,8 @@ class Renderer:
             height=self.con.height,
         )
 
-        # Display FPS from clock
-        self._render_text(
-            self.screen_width - 12,
-            0,
-            f"FPS: {self.clock.last_fps:.1f}",
-            fg=(255, 255, 0),
-        )
+        if self.fps_display.SHOW_FPS:
+          self.fps_display.render(self, self.screen_width - 12, 0)
 
         # Present the final console and handle vsync timing
         self.context.present(self.root_console, keep_aspect=True, integer_scaling=True)
