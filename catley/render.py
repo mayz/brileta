@@ -1,7 +1,7 @@
+import colors
 import numpy as np
 import tcod
 from clock import Clock
-from colors import DARK_GROUND, DARK_WALL, LIGHT_GROUND, LIGHT_WALL, WHITE
 from fov import FieldOfView
 from model import Model
 from tcod.console import Console
@@ -22,9 +22,9 @@ class FPSDisplay:
             self.display_string = f"FPS: {self.clock.last_fps:.1f}"
             self.last_update = current_time
 
-    def render(self, renderer: 'Renderer', x: int, y: int) -> None:
+    def render(self, renderer: "Renderer", x: int, y: int) -> None:
         self.update()
-        renderer._render_text(x, y, self.display_string, fg=(255, 255, 0))
+        renderer._render_text(x, y, self.display_string, fg=colors.YELLOW)
 
 
 class Renderer:
@@ -36,11 +36,11 @@ class Renderer:
         fov: FieldOfView,
         clock: Clock,
     ) -> None:
-        self.colors: dict[str, tcod.Color] = {
-            "dark_wall": DARK_WALL,
-            "dark_ground": DARK_GROUND,
-            "light_wall": LIGHT_WALL,
-            "light_ground": LIGHT_GROUND,
+        self.colors: dict[str, colors.Color] = {
+            "dark_wall": colors.DARK_WALL,
+            "dark_ground": colors.DARK_GROUND,
+            "light_wall": colors.LIGHT_WALL,
+            "light_ground": colors.LIGHT_GROUND,
         }
 
         self.screen_width = screen_width
@@ -120,7 +120,7 @@ class Renderer:
         )
 
         if self.fps_display.SHOW_FPS:
-          self.fps_display.render(self, self.screen_width - 12, 0)
+            self.fps_display.render(self, self.screen_width - 12, 0)
 
         # Present the final console and handle vsync timing
         self.context.present(self.root_console, keep_aspect=True, integer_scaling=True)
@@ -169,7 +169,7 @@ class Renderer:
                 self.fg[e.x, e.y] = lit_color
 
     def _render_text(
-        self, x: int, y: int, text: str, fg: tuple[int, int, int] = WHITE
+        self, x: int, y: int, text: str, fg: colors.Color = colors.WHITE
     ) -> None:
         """Render text at a specific position with a given color"""
         self.root_console.print(x=x, y=y, string=text, fg=fg)
