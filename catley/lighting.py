@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
+import colors
 import numpy as np
 import tcod
 
@@ -34,7 +35,7 @@ class LightSource:
 
     radius: int  # Required parameter must come first
     _pos: tuple[int, int] | None = None  # Internal position storage
-    color: tuple[float, float, float] = (1.0, 1.0, 1.0)  # RGB
+    color: colors.Color = (1.0, 1.0, 1.0)  # RGB
     light_type: Literal["static", "dynamic"] = "static"
     flicker_enabled: bool = False
     flicker_speed: float = 3.0  # Moderate flicker speed
