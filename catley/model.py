@@ -9,7 +9,7 @@ from lighting import LightingSystem, LightSource
 
 
 class Model:
-    def __init__(self, map_width: int, map_height: int):
+    def __init__(self, map_width: int, map_height: int) -> None:
         self.lighting = LightingSystem()
         # Create player with a torch light source
         player_light = LightSource.create_torch()
@@ -20,7 +20,7 @@ class Model:
         self.entities = [self.player]
         self.game_map = GameMap(map_width, map_height)
 
-    def update_player_light(self):
+    def update_player_light(self) -> None:
         """Update player light source position"""
         if self.player.light_source:
             self.player.light_source.position = (self.player.x, self.player.y)
@@ -36,10 +36,10 @@ class Entity:
         y: int,
         ch: int,
         color: tcod.Color,
-        model=None,
+        model: Model = None,
         light_source: LightSource | None = None,
         blocks_movement: bool = True,
-    ):
+    ) -> None:
         self.x = x
         self.y = y
         self.ch = ch  # Ordinal value of the character that represents the entity.
@@ -50,7 +50,7 @@ class Entity:
         if self.light_source and self.model:
             self.light_source.attach(self, self.model.lighting)
 
-    def move(self, dx: int, dy: int):
+    def move(self, dx: int, dy: int) -> None:
         self.x += dx
         self.y += dy
         # Update the light source position when entity moves
@@ -61,7 +61,7 @@ class Entity:
 class Tile:
     """DOCME"""
 
-    def __init__(self, blocked: bool, blocks_sight: bool | None = None):
+    def __init__(self, blocked: bool, blocks_sight: bool | None = None) -> None:
         self.blocked = blocked
 
         if blocks_sight is None:
@@ -71,7 +71,7 @@ class Tile:
 
 
 class Rect:
-    def __init__(self, x: int, y: int, w: int, h: int):
+    def __init__(self, x: int, y: int, w: int, h: int) -> None:
         self.x1 = x
         self.y1 = y
         self.x2 = x + w
@@ -92,7 +92,7 @@ class Rect:
 class GameMap:
     """DOCME"""
 
-    def __init__(self, width: int, height: int):
+    def __init__(self, width: int, height: int) -> None:
         self.width = width
         self.height = height
 
@@ -160,18 +160,18 @@ class GameMap:
 
         return rooms
 
-    def _carve_room(self, room: Rect):
+    def _carve_room(self, room: Rect) -> None:
         for x in range(room.x1 + 1, room.x2):
             for y in range(room.y1 + 1, room.y2):
                 self.tiles[x][y].blocked = False
                 self.tiles[x][y].blocks_sight = False
 
-    def _carve_h_tunnel(self, x1: int, x2: int, y: int):
+    def _carve_h_tunnel(self, x1: int, x2: int, y: int) -> None:
         for x in range(min(x1, x2), max(x1, x2) + 1):
             self.tiles[x][y].blocked = False
             self.tiles[x][y].blocks_sight = False
 
-    def _carve_v_tunnel(self, y1: int, y2: int, x: int):
+    def _carve_v_tunnel(self, y1: int, y2: int, x: int) -> None:
         for y in range(min(y1, y2), max(y1, y2) + 1):
             self.tiles[x][y].blocked = False
             self.tiles[x][y].blocks_sight = False

@@ -1,8 +1,11 @@
 from dataclasses import dataclass
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 import tcod
+
+if TYPE_CHECKING:
+    from .model import Entity
 
 # Preset configurations for different light types
 TORCH_PRESET = {
@@ -16,15 +19,19 @@ TORCH_PRESET = {
     "max_brightness": 1.35,
 }
 
+
 @dataclass
 class LightingConfig:
     """Configuration for the lighting system"""
+
     fov_radius: int = 15
     ambient_light: float = 0.1  # Base light level
+
 
 @dataclass
 class LightSource:
     """Represents a light source in the game world"""
+
     radius: int  # Required parameter must come first
     _pos: tuple[int, int] | None = None  # Internal position storage
     color: tuple[float, float, float] = (1.0, 1.0, 1.0)  # RGB
@@ -38,12 +45,9 @@ class LightSource:
     @classmethod
     def create_torch(cls, position: tuple[int, int] | None = None) -> "LightSource":
         """Create a torch light source with preset values"""
-        return cls(
-            _pos=position,
-            **TORCH_PRESET
-        )
+        return cls(_pos=position, **TORCH_PRESET)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self._owner = None
         self._lighting_system = None
 
@@ -57,10 +61,10 @@ class LightSource:
         return self._pos
 
     @position.setter
-    def position(self, value: tuple[int, int]):
+    def position(self, value: tuple[int, int]) -> None:
         self._pos = value
 
-    def attach(self, owner, lighting_system) -> None:
+    def attach(self, owner: "Entity", lighting_system: "LightingSystem") -> None:
         """Attach this light source to an entity and lighting system"""
         self._owner = owner
         self._lighting_system = lighting_system
@@ -75,7 +79,7 @@ class LightSource:
 
 
 class LightingSystem:
-    def __init__(self, config: LightingConfig | None = None):
+    def __init__(self, config: LightingConfig | None = None) -> None:
         self.config = config if config is not None else LightingConfig()
         self.noise = tcod.noise.Noise(
             dimensions=2,  # 2D noise for position and time
@@ -115,13 +119,14 @@ class LightingSystem:
                     shape=(1, 1),
                     scale=0.5,  # Lower scale = smoother transitions
                     origin=(self.time * light.flicker_speed, 0.0),
-                    indexing="ij"
+                    indexing="ij",
                 )
                 flicker_noise = self.noise[flicker_grid][0, 0]
                 # Convert from [-1, 1] to [min_brightness, max_brightness]
                 flicker = light.min_brightness + (
-                    (flicker_noise + 1.0) * 0.5 *
-                    (light.max_brightness - light.min_brightness)
+                    (flicker_noise + 1.0)
+                    * 0.5
+                    * (light.max_brightness - light.min_brightness)
                 )
 
             # Calculate distances using numpy broadcasting
