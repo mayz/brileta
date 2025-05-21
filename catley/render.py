@@ -9,9 +9,13 @@ from tcod.console import Console
 
 class Renderer:
     def __init__(
-        self, screen_width: int, screen_height: int, model: Model,
-        fov: FieldOfView, clock: Clock
-    ):
+        self,
+        screen_width: int,
+        screen_height: int,
+        model: Model,
+        fov: FieldOfView,
+        clock: Clock,
+    ) -> None:
         self.colors: dict[str, tcod.Color] = {
             "dark_wall": DARK_WALL,
             "dark_ground": DARK_GROUND,
@@ -43,7 +47,7 @@ class Renderer:
         # Store clock for FPS display
         self.clock = clock
 
-    def _optimize_map_info(self):
+    def _optimize_map_info(self) -> None:
         """In the future, re-run whenever the map composition changes."""
         m = self.model.game_map
 
@@ -74,7 +78,7 @@ class Renderer:
             (m.width, m.height), False, dtype=np.bool_, order="F"
         )
 
-    def render_all(self):
+    def render_all(self) -> None:
         self.con.clear()
 
         # Make sure FOV is up to date before rendering
@@ -93,7 +97,7 @@ class Renderer:
             dest_x=0,
             dest_y=0,
             width=self.con.width,
-            height=self.con.height
+            height=self.con.height,
         )
 
         # Display FPS from clock
@@ -101,13 +105,13 @@ class Renderer:
             self.screen_width - 12,
             0,
             f"FPS: {self.clock.last_fps:.1f}",
-            fg=(255, 255, 0)
+            fg=(255, 255, 0),
         )
 
         # Present the final console and handle vsync timing
         self.context.present(self.root_console, keep_aspect=True, integer_scaling=True)
 
-    def _render_map(self):
+    def _render_map(self) -> None:
         explored_idx = np.where(self.map_tiles_explored)
         self.bg[explored_idx] = self.dark_map_bg[explored_idx]
 
@@ -127,14 +131,15 @@ class Renderer:
             # Blend colors based on light intensity for each RGB channel
             for i in range(3):  # For each RGB channel
                 light_intensity = cell_light[..., i]
-                self.bg[visible_y, visible_x, i] = (
-                    self.light_map_bg[visible_y, visible_x, i] * light_intensity +
-                    self.dark_map_bg[visible_y, visible_x, i] * (1.0 - light_intensity)
+                self.bg[visible_y, visible_x, i] = self.light_map_bg[
+                    visible_y, visible_x, i
+                ] * light_intensity + self.dark_map_bg[visible_y, visible_x, i] * (
+                    1.0 - light_intensity
                 )
 
             self.map_tiles_explored[visible_y, visible_x] = True
 
-    def _render_entities(self):
+    def _render_entities(self) -> None:
         for e in self.model.entities:
             if self.fov.contains(e.x, e.y):
                 self.ch[e.x, e.y] = e.ch
@@ -149,12 +154,8 @@ class Renderer:
                 )
                 self.fg[e.x, e.y] = lit_color
 
-    def _render_text(self, x: int, y: int, text: str, fg: tuple[int, int, int] = WHITE):
+    def _render_text(
+        self, x: int, y: int, text: str, fg: tuple[int, int, int] = WHITE
+    ) -> None:
         """Render text at a specific position with a given color"""
         self.root_console.print(x=x, y=y, string=text, fg=fg)
-
-    def _render_bar(self, x, y, total_width, name, value, maximum, color, bg_color):
-        pass
-
-    def _render_bar(self, x, y, total_width, name, value, maximum, color, bg_color):
-        pass

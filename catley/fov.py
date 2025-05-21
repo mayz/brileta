@@ -3,7 +3,7 @@ from model import Model
 
 
 class FieldOfView:
-    def __init__(self, model: Model):
+    def __init__(self, model: Model) -> None:
         self.fov_algorithm: int = tcod.constants.FOV_SYMMETRIC_SHADOWCAST
         self.fov_light_walls = True
         self.fov_radius = 15

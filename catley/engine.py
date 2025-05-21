@@ -11,7 +11,7 @@ from render import Renderer
 
 
 class Controller:
-    def __init__(self):
+    def __init__(self) -> None:
         self.screen_width = 80
         self.screen_height = 50
 
@@ -70,7 +70,7 @@ class Controller:
         # For handling input events in run_game_loop().
         self.event_handler = EventHandler(self)
 
-    def run_game_loop(self):
+    def run_game_loop(self) -> None:
         while True:
             # Process any pending events
             for event in tcod.event.get():
@@ -91,7 +91,9 @@ class Action(abc.ABC):
 
 
 class MoveAction(Action):
-    def __init__(self, controller: Controller, entity: Entity, dx: int, dy: int):
+    def __init__(
+        self, controller: Controller, entity: Entity, dx: int, dy: int
+    ) -> None:
         self.controller = controller
         self.game_map = controller.model.game_map
         self.entity = entity
@@ -119,7 +121,7 @@ class MoveAction(Action):
 
 
 class ToggleFullscreenAction(Action):
-    def __init__(self, context: tcod.context.Context):
+    def __init__(self, context: tcod.context.Context) -> None:
         self.context = context
 
     def execute(self) -> None:
@@ -132,7 +134,7 @@ class QuitAction(Action):
 
 
 class EventHandler:
-    def __init__(self, controller: Controller):
+    def __init__(self, controller: Controller) -> None:
         self.controller = controller
         self.game_map = controller.model.game_map
         self.p = controller.model.player
