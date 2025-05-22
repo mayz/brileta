@@ -2,10 +2,23 @@ from __future__ import annotations
 
 import dataclasses
 import random
+from abc import abstractmethod
+from typing import TYPE_CHECKING
 
+import items
 import tcod
 from colors import PLAYER_COLOR
 from lighting import LightingSystem, LightSource
+
+if TYPE_CHECKING:
+    from catley.actions import Action
+    from catley.controller import Controller
+
+    # (for later, but good to think about)
+    from catley.items import Item, Weapon
+
+    # (for later, e.g., "poisoned", "stunned")
+    from catley.status_effects import StatusEffect
 
 
 class Model:
@@ -13,9 +26,15 @@ class Model:
         self.lighting = LightingSystem()
         # Create player with a torch light source
         player_light = LightSource.create_torch()
-        self.player = Entity(
-            0, 0, ord("@"), PLAYER_COLOR, model=self, light_source=player_light
+        self.player = WastoidActor(
+            x=0,
+            y=0,
+            ch=ord("@"),
+            color=PLAYER_COLOR,
+            model=self,
+            light_source=player_light,
         )
+        self.player.equipped_weapon = items.FISTS
 
         self.entities = [self.player]
         self.game_map = GameMap(map_width, map_height)
@@ -56,6 +75,136 @@ class Entity:
         # Update the light source position when entity moves
         if self.light_source:
             self.light_source.position = (self.x, self.y)
+
+
+class Actor(Entity):
+    """An entity that can take actions, have health, and participate in combat."""
+
+    def __init__(
+        self,
+        x: int,
+        y: int,
+        ch: int,
+        color: tcod.Color,
+        max_hp: int | 0,
+        max_ap: int | 0,
+        model: Model | None,
+        light_source: LightSource | None = None,
+        blocks_movement: bool = True,
+    ) -> None:
+        super().__init__(x, y, ch, color, model, light_source, blocks_movement)
+        self.max_hp = max_hp
+        self.hp = max_hp
+        self.max_ap = max_ap
+        self.ap = max_ap
+        self.inventory: list[Item] = []
+        self.effects: list[StatusEffect] = []
+        self.equipped_weapon: Weapon | None = None
+
+    @property
+    def is_incapacitated_flag(self) -> bool:
+        """Return True if the actor is incapacitated (HP <= 0)."""
+        return self.hp <= 0
+
+    def take_damage(self, amount: int, damage_type: str = "physical") -> None:
+        """Handle damage to the actor, reducing AP first, then HP.
+
+        Args:
+            amount: Amount of damage to take
+            damage_type: Type of damage (e.g., "physical", "fire", etc.)
+        """
+        # First reduce AP if any
+        if self.ap > 0:
+            ap_damage = min(amount, self.ap)
+            self.ap -= ap_damage
+            amount -= ap_damage
+
+        # Apply remaining damage to HP
+        if amount > 0:
+            self.hp = max(0, self.hp - amount)
+
+    def heal(self, amount: int) -> None:
+        """Heal the actor by the specified amount, up to max_hp.
+
+        Args:
+            amount: Amount to heal
+        """
+        self.hp = min(self.max_hp, self.hp + amount)
+
+    def is_alive(self) -> bool:
+        """Return True if the actor is alive (HP > 0)."""
+        return not self.is_incapacitated_flag
+
+    @abstractmethod
+    def get_action(self, controller: Controller) -> Action | None:
+        """Get the next action for this actor.
+
+        Args:
+            controller: The controller that manages input/decisions
+
+        Returns:
+            An Action to perform, or None for no action
+        """
+        pass
+
+
+class WastoidActor(Actor):
+    """An Actor that follows the Wastoid ruleset with seven core abilities."""
+
+    def __init__(
+        self,
+        x: int,
+        y: int,
+        ch: int,
+        color: tcod.Color,
+        # Wastoid abilities
+        weirdness: int = 0,
+        agility: int = 0,
+        strength: int = 0,
+        toughness: int = 0,
+        observation: int = 0,
+        intelligence: int = 0,
+        demeanor: int = 0,
+        model: Model | None = None,
+        light_source: LightSource | None = None,
+        blocks_movement: bool = True,
+    ) -> None:
+        # Initialize base Actor with calculated max_hp
+        super().__init__(
+            x=x,
+            y=y,
+            ch=ch,
+            color=color,
+            max_hp=toughness + 5,  # Wastoid HP calculation
+            max_ap=3,  # Default AP, can be adjusted as needed
+            model=model,
+            light_source=light_source,
+            blocks_movement=blocks_movement,
+        )
+
+        # Core Wastoid abilities
+        self.weirdness = weirdness
+        self.agility = agility
+        self.strength = strength
+        self.toughness = toughness
+        self.observation = observation
+        self.intelligence = intelligence
+        self.demeanor = demeanor
+
+        # Wastoid-specific attributes
+        self.inventory_slots = strength + 5
+        self.tricks: list = []  # Will hold Trick instances later
+
+    @property
+    def max_hp(self) -> int:
+        """Calculate max HP based on Wastoid rules (toughness + 5)."""
+        return self.toughness + 5
+
+    @max_hp.setter
+    def max_hp(self, value: int) -> None:
+        """Override max_hp setter to prevent direct modification."""
+        # Do nothing as max_hp is derived from toughness
+        pass
 
 
 class Tile:
