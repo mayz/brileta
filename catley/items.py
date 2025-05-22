@@ -5,6 +5,8 @@ from __future__ import annotations
 import copy
 from enum import Enum, auto
 
+import dice
+
 
 class ItemSize(Enum):
     """Size categories for items, used for inventory management."""
@@ -75,7 +77,7 @@ class Weapon(Item):
             size=size,
             equippable=True,  # Weapons are always equippable
         )
-        self.damage_die = damage_die
+        self.damage_dice = dice.Dice(damage_die)
         self.melee = melee
         self.properties = properties or {}
 

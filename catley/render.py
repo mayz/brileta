@@ -3,7 +3,7 @@ import numpy as np
 import tcod
 from clock import Clock
 from fov import FieldOfView
-from model import Model
+from model import Entity, Model
 from tcod.console import Console
 
 
@@ -155,18 +155,27 @@ class Renderer:
 
     def _render_entities(self) -> None:
         for e in self.model.entities:
+            if e == self.model.player:
+                continue
+
             if self.fov.contains(e.x, e.y):
-                self.ch[e.x, e.y] = e.ch
+                self._render_entity(e)
 
-                # Use the already computed RGB light intensity
-                light_rgb = self.current_light_intensity[e.x, e.y]
+        # Always draw the player last.
+        self._render_entity(self.model.player)
 
-                # Apply RGB lighting to each color channel
-                lit_color = tuple(
-                    int(min(255, color * light))  # Clamp to valid color range
-                    for color, light in zip(e.color, light_rgb, strict=True)
-                )
-                self.fg[e.x, e.y] = lit_color
+    def _render_entity(self, e: Entity) -> None:
+        self.ch[e.x, e.y] = ord(e.ch)
+
+        # Use the already computed RGB light intensity
+        light_rgb = self.current_light_intensity[e.x, e.y]
+
+        # Apply RGB lighting to each color channel
+        lit_color = tuple(
+            int(min(255, color * light))  # Clamp to valid color range
+            for color, light in zip(e.color, light_rgb, strict=True)
+        )
+        self.fg[e.x, e.y] = lit_color
 
     def _render_text(
         self, x: int, y: int, text: str, fg: colors.Color = colors.WHITE

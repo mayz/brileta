@@ -18,3 +18,4 @@ LIGHT_GROUND: Color = (200, 180, 50)
 # Entity colors
 PLAYER_COLOR: Color = WHITE
 NPC_COLOR: Color = YELLOW  # Using yellow to make the NPC stand out
+DEAD: Color = (128, 128, 128)
