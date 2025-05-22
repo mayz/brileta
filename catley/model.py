@@ -5,9 +5,9 @@ import random
 from abc import abstractmethod
 from typing import TYPE_CHECKING
 
+import colors
 import items
 import tcod
-from colors import PLAYER_COLOR
 from lighting import LightingSystem, LightSource
 
 if TYPE_CHECKING:
@@ -29,8 +29,8 @@ class Model:
         self.player = WastoidActor(
             x=0,
             y=0,
-            ch=ord("@"),
-            color=PLAYER_COLOR,
+            ch="@",
+            color=colors.PLAYER_COLOR,
             model=self,
             light_source=player_light,
         )
@@ -53,7 +53,7 @@ class Entity:
         self,
         x: int,
         y: int,
-        ch: int,
+        ch: str,
         color: tcod.Color,
         model: Model = None,
         light_source: LightSource | None = None,
@@ -61,7 +61,7 @@ class Entity:
     ) -> None:
         self.x = x
         self.y = y
-        self.ch = ch  # Ordinal value of the character that represents the entity.
+        self.ch = ch  # Character that represents the entity.
         self.color = color
         self.model = model
         self.light_source = light_source
@@ -84,7 +84,7 @@ class Actor(Entity):
         self,
         x: int,
         y: int,
-        ch: int,
+        ch: str,
         color: tcod.Color,
         max_hp: int | 0,
         max_ap: int | 0,
@@ -101,17 +101,11 @@ class Actor(Entity):
         self.effects: list[StatusEffect] = []
         self.equipped_weapon: Weapon | None = None
 
-    @property
-    def is_incapacitated_flag(self) -> bool:
-        """Return True if the actor is incapacitated (HP <= 0)."""
-        return self.hp <= 0
-
-    def take_damage(self, amount: int, damage_type: str = "physical") -> None:
+    def take_damage(self, amount: int) -> None:
         """Handle damage to the actor, reducing AP first, then HP.
 
         Args:
             amount: Amount of damage to take
-            damage_type: Type of damage (e.g., "physical", "fire", etc.)
         """
         # First reduce AP if any
         if self.ap > 0:
@@ -123,6 +117,11 @@ class Actor(Entity):
         if amount > 0:
             self.hp = max(0, self.hp - amount)
 
+        if not self.is_alive():
+            self.ch = "x"
+            self.color = colors.DEAD
+            self.blocks_movement = False
+
     def heal(self, amount: int) -> None:
         """Heal the actor by the specified amount, up to max_hp.
 
@@ -133,7 +132,7 @@ class Actor(Entity):
 
     def is_alive(self) -> bool:
         """Return True if the actor is alive (HP > 0)."""
-        return not self.is_incapacitated_flag
+        return self.hp > 0
 
     @abstractmethod
     def get_action(self, controller: Controller) -> Action | None:
@@ -155,7 +154,7 @@ class WastoidActor(Actor):
         self,
         x: int,
         y: int,
-        ch: int,
+        ch: str,
         color: tcod.Color,
         # Wastoid abilities
         weirdness: int = 0,

@@ -58,7 +58,7 @@ class Controller:
             npc = Actor(
                 x=npc_x,
                 y=npc_y,
-                ch=ord("T"),
+                ch="T",
                 color=colors.RED,
                 max_hp=10,
                 max_ap=3,
