@@ -119,7 +119,7 @@ _LARGE_MELEE_WEAPON = Weapon(
     name="Large Melee Weapon",
     damage_die="d8",
     melee=True,
-    size=ItemSize.LARGE,
+    size=ItemSize.BIG,
 )
 
 LEAD_PIPE = _JUNK_WEAPON.clone()
