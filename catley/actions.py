@@ -94,22 +94,24 @@ class AttackAction(Action):
 
     def execute(self) -> None:
         # Determine attacker's ability score
-        attacker_ability = 0
         weapon = self.attacker.equipped_weapon or items.FISTS
         if weapon.melee:
-            attacker_ability = self.attacker.strength
+            attacker_ability_score = self.attacker.strength
         else:
-            attacker_ability = self.attacker.observation
+            attacker_ability_score = self.attacker.observation
 
         if isinstance(self.defender, WastoidActor):
-            defender_ability = self.defender.agility
+            defender_ability_score = self.defender.agility
         else:
-            defender_ability = 0
-        defender_target = defender_ability + 10
+            defender_ability_score = 0
 
         # Perform attack roll
-        attack_roll = dice.roll_d(20)
-        attack_result = attack_roll + attacker_ability
+        attack_result = dice.perform_opposed_check_roll(
+            attacker_ability_score,
+            defender_ability_score,
+            has_advantage=False,
+            has_disadvantage=False,
+        )
 
         # FIXME: Rather than handling combat here in AttackAction, have some
         # kind of separate combat module that handles, e.g., initiative, turns,
@@ -136,17 +138,24 @@ class AttackAction(Action):
         ##########
 
         # Does the attack hit?
-        if attack_result > defender_target:
+        if attack_result.success:
             # Hit - roll damage
             damage_dice = weapon.damage_dice
             damage = damage_dice.roll()
 
-            # Apply damage
+            if attack_result.is_critical_hit:
+                # Roll an extra die of damage.
+                damage += damage_dice.roll()
+
+            # Apply damage.
             self.defender.take_damage(damage)
 
             # Log the hit
+            critical_hit_text = (
+                "Critical hit! " if attack_result.is_critical_hit else ""
+            )
             print(
-                f"{self.attacker.ch} hits {self.defender.ch} "
+                f"{critical_hit_text}{self.attacker.ch} hits {self.defender.ch} "
                 f"with {weapon.name} for {damage} damage. "
                 f"({self.defender.ch} has {self.defender.hp} HP left.)"
             )
@@ -156,7 +165,11 @@ class AttackAction(Action):
                 print(f"{self.defender.ch} has been killed!")
         else:
             # Miss
-            print(f"{self.attacker.ch} misses {self.defender.ch}.")
+            print(
+                "Critical miss! "
+                if attack_result.is_critical_miss
+                else f"{self.attacker.ch} misses {self.defender.ch}."
+            )
 
             # Handle 'awkward' weapon property
             if (

@@ -25,7 +25,7 @@ class Controller:
 
         self.max_room_size = 20
         self.min_room_size = 6
-        self.max_num_rooms = 30
+        self.max_num_rooms = 3
 
         self.model = Model(self.map_width, self.map_height)
 
