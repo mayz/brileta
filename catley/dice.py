@@ -3,6 +3,7 @@ Module for simulating dice rolls used in the Deadball game.
 """
 
 import random
+from dataclasses import dataclass, field
 
 
 class Dice:
@@ -114,6 +115,95 @@ def roll_d(sides: int) -> int:
     # Use direct random.randint for efficiency - creating a Dice object for
     # every roll would be unnecessarily expensive
     return random.randint(1, sides)
+
+
+@dataclass
+class CheckResult:
+    success: bool
+    is_critical_hit: bool = False  # Natural 20
+    is_critical_miss: bool = False  # Natural 1
+    rolls_made: list[int] = field(default_factory=list)  # Actual d20 values rolled
+    final_roll_used: int = 0  # The d20 roll chosen after advantage/disadvantage
+    total_value: int = 0  # Final roll + modifier
+    target_value: int = 0
+    has_advantage: bool = False
+    has_disadvantage: bool = False
+
+
+# The Wastoid rules call this a "test" roll, but "test" is such an overloaded
+# word, that we're going with "check", which is what most other RPGs call it.
+def perform_check_roll(
+    # The ability score value to use.
+    ability_score: int,
+    # The number to beat (e.g., 15 for unopposed, or opponent's ability + 10).
+    target_dc: int,
+    has_advantage: bool = False,
+    has_disadvantage: bool = False,
+) -> CheckResult:
+    # If a roll has both an advantage and a disadvantage, they all cancel out.
+    if has_advantage and has_disadvantage:
+        has_advantage = False
+        has_disadvantage = False
+
+    rolls_made: list[int] = []
+
+    # Determine number of dice and which to keep
+    num_dice_to_roll = 1 if not (has_advantage or has_disadvantage) else 2
+
+    for _ in range(num_dice_to_roll):
+        rolls_made.append(roll_d(20))
+
+    if has_advantage:
+        final_roll_used = max(rolls_made)
+    elif has_disadvantage:
+        final_roll_used = min(rolls_made)
+    else:
+        final_roll_used = rolls_made[0]
+
+    is_critical_hit = final_roll_used == 20
+    is_critical_miss = final_roll_used == 1
+
+    total_value = final_roll_used + ability_score
+
+    success: bool
+    if is_critical_hit:
+        success = True
+    elif is_critical_miss:
+        success = False
+    else:
+        success = total_value > target_dc
+
+    return CheckResult(
+        success=success,
+        is_critical_hit=is_critical_hit,
+        is_critical_miss=is_critical_miss,
+        final_roll_used=final_roll_used,
+        total_value=total_value,
+        target_value=target_dc,
+        has_advantage=has_advantage,
+        has_disadvantage=has_disadvantage
+    )
+
+
+def perform_unopposed_check_roll(
+    ability_score: int,
+    has_advantage: bool = False,
+    has_disadvantage: bool = False,
+) -> CheckResult:
+    target_dc = 15
+    return perform_check_roll(ability_score, target_dc, has_advantage, has_disadvantage)
+
+
+def perform_opposed_check_roll(
+    actor_ability_score: int,
+    opponent_ability_score: int,
+    has_advantage: bool = False,
+    has_disadvantage: bool = False,
+) -> CheckResult:
+    target_dc = opponent_ability_score + 10
+    return perform_check_roll(
+        actor_ability_score, target_dc, has_advantage, has_disadvantage
+    )
 
 
 if __name__ == "__main__":
