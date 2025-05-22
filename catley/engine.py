@@ -2,11 +2,12 @@ import abc
 import random
 
 import colors
+import items
 import tcod
 import tcod.event
 from clock import Clock
 from fov import FieldOfView
-from model import Entity, Model
+from model import Actor, Entity, Model
 from render import Renderer
 
 
@@ -54,14 +55,17 @@ class Controller:
         if len(rooms) > 1:
             npc_room = random.choice(rooms[1:])  # Skip the first room where player is
             npc_x, npc_y = npc_room.center()
-            npc = Entity(
-                npc_x,
-                npc_y,
-                ord("T"),
-                colors.RED,
+            npc = Actor(
+                x=npc_x,
+                y=npc_y,
+                ch=ord("T"),
+                color=colors.RED,
+                max_hp=10,
+                max_ap=3,
                 model=self.model,
                 blocks_movement=True,
             )
+            npc.equipped_weapon = items.LEAD_PIPE
             self.model.entities.append(npc)
 
         # Ensure initial FOV computation
