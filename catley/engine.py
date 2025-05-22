@@ -1,13 +1,13 @@
-import abc
 import random
 
+import actions
 import colors
 import items
 import tcod
 import tcod.event
 from clock import Clock
 from fov import FieldOfView
-from model import Actor, Entity, Model
+from model import Actor, Model
 from render import Renderer
 
 
@@ -88,55 +88,6 @@ class Controller:
             self.renderer.render_all()
 
 
-class Action(abc.ABC):
-    @abc.abstractmethod
-    def execute(self) -> None:
-        raise NotImplementedError()
-
-
-class MoveAction(Action):
-    def __init__(
-        self, controller: Controller, entity: Entity, dx: int, dy: int
-    ) -> None:
-        self.controller = controller
-        self.game_map = controller.model.game_map
-        self.entity = entity
-
-        self.dx = dx
-        self.dy = dy
-        self.newx = self.entity.x + self.dx
-        self.newy = self.entity.y + self.dy
-
-    def execute(self) -> None:
-        if self.game_map.tiles[self.newx][self.newy].blocked:
-            return
-
-        # Check for blocking entities
-        for entity in self.controller.model.entities:
-            if (
-                entity.blocks_movement
-                and entity.x == self.newx
-                and entity.y == self.newy
-            ):
-                return  # Cannot move into blocking entity
-
-        self.entity.move(self.dx, self.dy)
-        self.controller.fov.fov_needs_recomputing = True
-
-
-class ToggleFullscreenAction(Action):
-    def __init__(self, context: tcod.context.Context) -> None:
-        self.context = context
-
-    def execute(self) -> None:
-        self.context.present(self.context.console, keep_aspect=True)
-
-
-class QuitAction(Action):
-    def execute(self) -> None:
-        raise SystemExit()
-
-
 class EventHandler:
     def __init__(self, controller: Controller) -> None:
         self.controller = controller
@@ -148,30 +99,30 @@ class EventHandler:
         if action:
             action.execute()
 
-    def handle_event(self, event: tcod.event.Event) -> Action | None:
+    def handle_event(self, event: tcod.event.Event) -> actions.Action | None:
         match event:
             case tcod.event.Quit():
-                return QuitAction()
+                return actions.QuitAction()
 
             case (
                 tcod.event.KeyDown(sym=tcod.event.KeySym.ESCAPE)
                 | tcod.event.KeyDown(sym=tcod.event.KeySym.q)
             ):
-                return QuitAction()
+                return actions.QuitAction()
 
             case tcod.event.KeyDown(sym=tcod.event.KeySym.UP):
-                return MoveAction(self.controller, self.p, 0, -1)
+                return actions.MoveAction(self.controller, self.p, 0, -1)
             case tcod.event.KeyDown(sym=tcod.event.KeySym.DOWN):
-                return MoveAction(self.controller, self.p, 0, 1)
+                return actions.MoveAction(self.controller, self.p, 0, 1)
             case tcod.event.KeyDown(sym=tcod.event.KeySym.LEFT):
-                return MoveAction(self.controller, self.p, -1, 0)
+                return actions.MoveAction(self.controller, self.p, -1, 0)
             case tcod.event.KeyDown(sym=tcod.event.KeySym.RIGHT):
-                return MoveAction(self.controller, self.p, 1, 0)
+                return actions.MoveAction(self.controller, self.p, 1, 0)
 
             case tcod.event.KeyDown(sym=tcod.event.KeySym.RETURN, mod=mod) if (
                 mod & tcod.event.Modifier.ALT
             ):
-                return ToggleFullscreenAction(self.controller.renderer.context)
+                return actions.ToggleFullscreenAction(self.controller.renderer.context)
 
             case _:
                 return None
