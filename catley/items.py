@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from enum import Enum, auto
 
 
@@ -52,8 +53,8 @@ class Weapon(Item):
         self,
         name: str,
         damage_die: str,
-        skill_used: str,
-        properties: list[Property] | None = None,
+        melee: bool,
+        properties: set[Property] | None = None,
         description: str = "",
         size: ItemSize = ItemSize.NORMAL,
     ) -> None:
@@ -75,33 +76,75 @@ class Weapon(Item):
             equippable=True,  # Weapons are always equippable
         )
         self.damage_die = damage_die
-        self.skill_used = skill_used
-        self.properties = properties or []
+        self.melee = melee
+        self.properties = properties or {}
+
+    def clone(self) -> Weapon:
+        # Shallow copy is good enough for now.
+        return copy.copy(self)
 
     def __str__(self) -> str:
         properties = ", ".join(self.properties) if self.properties else "none"
         return (
             f"{self.name} ({self.damage_die}, "
-            f"uses {self.skill_used}, "
+            f"melee: {self.melee}, "
             f"properties: {properties})"
         )
 
 
 # Common weapon instances
+# FIXME: Need to make sure this doesn't take inventory space.
 FISTS = Weapon(
     name="Fists",
     damage_die="d4",
-    properties=["unarmed"],
-    skill_used="strength",
+    properties={"unarmed"},
+    melee=True,
     description=("Your bare hands. Better than nothing, but not by much."),
 )
 
-LEAD_PIPE = Weapon(
-    name="Lead Pipe",
+# Weapon categories.
+# Don't use directly - use one of the specific weapons instead.
+_JUNK_WEAPON = Weapon(
+    name="Junk Weapon",
     damage_die="d6",
-    properties=["awkward"],
-    skill_used="strength",
-    description=(
-        "A heavy, unwieldy pipe. It's seen better days but still gets the job done."
-    ),
+    properties={"awkward"},
+    melee=True,
 )
+_SMALL_MELEE_WEAPON = Weapon(
+    name="Small Melee Weapon",
+    damage_die="d6",
+    melee=True,
+)
+_LARGE_MELEE_WEAPON = Weapon(
+    name="Large Melee Weapon",
+    damage_die="d8",
+    melee=True,
+    size=ItemSize.LARGE,
+)
+
+LEAD_PIPE = _JUNK_WEAPON.clone()
+LEAD_PIPE.name = "Lead Pipe"
+LEAD_PIPE.description = (
+    "A heavy, unwieldy pipe. It's seen better days but still gets the job done."
+)
+
+BRASS_KNUCKLES = _SMALL_MELEE_WEAPON.clone()
+BRASS_KNUCKLES.name = "Brass Knuckles"
+BRASS_KNUCKLES.description = (
+    "A pair of brass knuckles. They're not very effective, but they're better "
+    "than nothing."
+)
+
+DAGGER = _SMALL_MELEE_WEAPON.clone()
+DAGGER.name = "Dagger"
+DAGGER.description = "A dagger. It's not very effective, but it's better than nothing."
+
+SLEDGEHAMMER = _LARGE_MELEE_WEAPON.clone()
+SLEDGEHAMMER.name = "Sledgehammer"
+SLEDGEHAMMER.description = (
+    "A sledgehammer. It's not very effective, but it's better than nothing."
+)
+
+SWORD = _LARGE_MELEE_WEAPON.clone()
+SWORD.name = "Sword"
+SWORD.description = "A sword. It's not very effective, but it's better than nothing."
