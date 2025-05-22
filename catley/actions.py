@@ -111,6 +111,30 @@ class AttackAction(Action):
         attack_roll = dice.roll_d(20)
         attack_result = attack_roll + attacker_ability
 
+        # FIXME: Rather than handling combat here in AttackAction, have some
+        # kind of separate combat module that handles, e.g., initiative, turns,
+        # movement, stunts, etc. Rather than automatically making an attack roll
+        # on every turn like in Brogue.
+        #
+        # Stunts can be fun - e.g., "attempt to trip", "attempt to disarm", etc.
+        # Then if character is knocked down, future attack rolls made on them are
+        # with advantage.
+        #
+        # "Stunts are combat maneuvers performed with an action and an opposed
+        # test, like disarming, tripping, grappling, or otherwise vying for an
+        # advantage. A character can combine a stunt with an attack into a
+        # single action and roll (like: hit ’em so hard they fall down) by
+        # foregoing a bonus from advantage, or by accepting a disadvantage."
+
+        ##########
+        # FIXME: Handle critical hits (20) and misses (1).
+        #
+        # "Crits favoring an attack deal an extra die of damage and
+        # break the target’s armor (lowering to 0 AP) before applying damage—or
+        # cause an injury to an unarmored target! Crits favoring defense cause the
+        # attacker’s weapon to break, and leave them confused or off-balance.
+        ##########
+
         # Does the attack hit?
         if attack_result > defender_target:
             # Hit - roll damage
