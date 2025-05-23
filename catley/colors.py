@@ -10,7 +10,7 @@ BLUE: Color = (0, 0, 255)
 YELLOW: Color = (255, 255, 0)
 CYAN: Color = (0, 255, 255)
 ORANGE: Color = (255, 165, 0)
-GREY: Color = (128, 128, 128) # Same as DEAD, but good to have a generic grey
+GREY: Color = (128, 128, 128)
 LIGHT_BLUE: Color = (173, 216, 230)
 
 # Map colors
@@ -21,5 +21,5 @@ LIGHT_GROUND: Color = (200, 180, 50)
 
 # Entity colors
 PLAYER_COLOR: Color = WHITE
-NPC_COLOR: Color = YELLOW  # Using yellow to make the NPC stand out
+NPC_COLOR: Color = YELLOW
 DEAD: Color = (128, 128, 128)

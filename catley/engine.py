@@ -7,6 +7,7 @@ import tcod
 import tcod.event
 from clock import Clock
 from fov import FieldOfView
+from menu_system import CommandMenu, MenuSystem  # Import the new menu system
 from message_log import MessageLog
 from model import Actor, Model
 from render import Renderer
@@ -20,6 +21,8 @@ class Controller:
         self.bar_width = 20
         self.panel_height = 7
         self.panel_y = self.screen_height - self.panel_height
+
+        self.help_height = 1  # One line for help text
 
         self.map_width = 80
         self.map_height = 43
@@ -45,7 +48,7 @@ class Controller:
         self.message_log_x = 0
         self.message_log_y = self.panel_y
         self.message_log_width = self.screen_width
-        self.message_log_height = self.panel_height
+        self.message_log_height = self.panel_height - self.help_height
 
         # Initialize FOV after map is created but before renderer
         self.fov = FieldOfView(self.model)
@@ -53,6 +56,9 @@ class Controller:
         # Initialize clock for frame timing
         self.clock = Clock()
         self.target_fps = 60
+
+        # Initialize menu system
+        self.menu_system = MenuSystem(self)
 
         # Create renderer after FOV is initialized
         self.renderer = Renderer(
@@ -62,6 +68,7 @@ class Controller:
             fov=self.fov,
             clock=self.clock,
             message_log=self.message_log,
+            menu_system=self.menu_system,  # Pass menu system to renderer
         )
 
         # Place NPC in a random room that's not the first room
@@ -109,6 +116,11 @@ class EventHandler:
         self.p = controller.model.player
 
     def dispatch(self, event: tcod.event.Event) -> None:
+        # First, try to handle the event with the menu system
+        if self.controller.menu_system.handle_input(event):
+            return  # Event was consumed by menu system
+
+        # If no menu handled it, process normal game actions
         action = self.handle_event(event)
         if action:
             try:
@@ -121,6 +133,10 @@ class EventHandler:
                 print(f"Unhandled exception during action execution: {e}")
 
     def handle_event(self, event: tcod.event.Event) -> actions.Action | None:
+        # Don't process game actions if menus are active
+        if self.controller.menu_system.has_active_menus():
+            return None
+
         match event:
             case tcod.event.Quit():
                 return actions.QuitAction()
@@ -131,6 +147,7 @@ class EventHandler:
             ):
                 return actions.QuitAction()
 
+            # Movement keys
             case tcod.event.KeyDown(sym=tcod.event.KeySym.UP):
                 return actions.MoveAction(self.controller, self.p, 0, -1)
             case tcod.event.KeyDown(sym=tcod.event.KeySym.DOWN):
@@ -139,6 +156,48 @@ class EventHandler:
                 return actions.MoveAction(self.controller, self.p, -1, 0)
             case tcod.event.KeyDown(sym=tcod.event.KeySym.RIGHT):
                 return actions.MoveAction(self.controller, self.p, 1, 0)
+
+            # Diagonal movement (numpad or vi-keys)
+            case tcod.event.KeyDown(sym=tcod.event.KeySym.KP_7):  # Up-left
+                return actions.MoveAction(self.controller, self.p, -1, -1)
+            case tcod.event.KeyDown(sym=tcod.event.KeySym.KP_9):  # Up-right
+                return actions.MoveAction(self.controller, self.p, 1, -1)
+            case tcod.event.KeyDown(sym=tcod.event.KeySym.KP_1):  # Down-left
+                return actions.MoveAction(self.controller, self.p, -1, 1)
+            case tcod.event.KeyDown(sym=tcod.event.KeySym.KP_3):  # Down-right
+                return actions.MoveAction(self.controller, self.p, 1, 1)
+
+            # Menu keys
+            case tcod.event.KeyDown(sym=tcod.event.KeySym.TAB):
+                # Show main command menu
+                command_menu = CommandMenu(self.controller)
+                self.controller.menu_system.show_menu(command_menu)
+                return None
+
+            case tcod.event.KeyDown(sym=tcod.event.KeySym.i):
+                # Quick access to inventory
+                from menu_system import InventoryMenu
+
+                inventory_menu = InventoryMenu(self.controller)
+                self.controller.menu_system.show_menu(inventory_menu)
+                return None
+
+            case tcod.event.KeyDown(sym=tcod.event.KeySym.SLASH, mod=mod) if (
+                mod & tcod.event.Modifier.SHIFT  # Question mark (Shift + /)
+            ):
+                from menu_system import HelpMenu
+
+                help_menu = HelpMenu(self.controller)
+                self.controller.menu_system.show_menu(help_menu)
+                return None
+
+            case tcod.event.KeyDown(sym=tcod.event.KeySym.g):
+                # Quick access to pickup menu
+                from menu_system import PickupMenu
+
+                pickup_menu = PickupMenu(self.controller, (self.p.x, self.p.y))
+                self.controller.menu_system.show_menu(pickup_menu)
+                return None
 
             case tcod.event.KeyDown(sym=tcod.event.KeySym.RETURN, mod=mod) if (
                 mod & tcod.event.Modifier.ALT

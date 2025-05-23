@@ -1,11 +1,16 @@
+from typing import TYPE_CHECKING
+
 import colors
 import numpy as np
 import tcod
 from clock import Clock
 from fov import FieldOfView
-from message_log import MessageLog  # Import MessageLog
+from message_log import MessageLog
 from model import Entity, Model
 from tcod.console import Console
+
+if TYPE_CHECKING:
+    from menu_system import MenuSystem
 
 
 class FPSDisplay:
@@ -36,7 +41,8 @@ class Renderer:
         model: Model,
         fov: FieldOfView,
         clock: Clock,
-        message_log: MessageLog,  # Add message_log parameter
+        message_log: MessageLog,
+        menu_system: "MenuSystem",
     ) -> None:
         self.colors: dict[str, colors.Color] = {
             "dark_wall": colors.DARK_WALL,
@@ -51,11 +57,12 @@ class Renderer:
         self.fov = fov
         self.message_log = message_log
 
-        # Define message log geometry with sensible defaults
-        self.message_log_height = 7  # Default height for the message log panel
+        # Define message log geometry - help at top, then message log
+        self.help_height = 1  # One line for help text
+        self.message_log_height = 6  # Message log height
         self.message_log_x = 0
-        self.message_log_y = self.screen_height - self.message_log_height
-        self.message_log_width = self.screen_width
+        self.message_log_y = self.help_height  # Start after help text (line 1)
+        self.message_log_width = screen_width
 
         tileset = tcod.tileset.load_tilesheet(
             "Taffer_20x20.png",
@@ -77,6 +84,7 @@ class Renderer:
         self._optimize_map_info()
 
         self.fps_display = FPSDisplay(clock)
+        self.menu_system = menu_system
 
     def _optimize_map_info(self) -> None:
         """In the future, re-run whenever the map composition changes."""
@@ -122,20 +130,24 @@ class Renderer:
         self._render_map()
         self._render_entities()
 
-        # Blit game console to root console
+        # Blit game console to root console (below help and message log)
         self.con.blit(
             dest=self.root_console,
             dest_x=0,
-            dest_y=0,
+            dest_y=self.help_height
+            + self.message_log_height,  # Start after help + message log (line 7)
             width=self.con.width,
             height=self.con.height,
         )
+        # Render help text above message log
+        if not self.menu_system.has_active_menus():
+            self._render_help_text()
 
-        # Render the message log onto the root console
+        # Render the message log at the bottom (using original positioning)
         self.message_log.render(
             console=self.root_console,
             x=self.message_log_x,
-            y=self.message_log_y,
+            y=self.message_log_y,  # Back to original bottom position
             width=self.message_log_width,
             height=self.message_log_height,
         )
@@ -143,8 +155,20 @@ class Renderer:
         if self.fps_display.SHOW_FPS:
             self.fps_display.render(self, self.screen_width - 12, 0)
 
+        # Render menus last (on top of everything else)
+        self.menu_system.render(self.root_console)
+
         # Present the final console and handle vsync timing
         self.context.present(self.root_console, keep_aspect=True, integer_scaling=True)
+
+    def _render_help_text(self) -> None:
+        """Render helpful key bindings at the very top."""
+        help_text = (
+            "?: Help | Tab: Commands | I: Inventory | G: Get items | Arrow keys: Move"
+        )
+        help_x = 1
+        help_y = 0
+        self.root_console.print(help_x, help_y, help_text, fg=colors.GREY)
 
     def _render_map(self) -> None:
         explored_idx = np.where(self.map_tiles_explored)
