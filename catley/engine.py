@@ -7,6 +7,7 @@ import tcod
 import tcod.event
 from clock import Clock
 from fov import FieldOfView
+from message_log import MessageLog
 from model import Actor, Model
 from render import Renderer
 
@@ -39,6 +40,13 @@ class Controller:
         first_room = rooms[0]
         self.model.player.x, self.model.player.y = first_room.center()
 
+        # Initialize Message Log
+        self.message_log = MessageLog()
+        self.message_log_x = 0
+        self.message_log_y = self.panel_y
+        self.message_log_width = self.screen_width
+        self.message_log_height = self.panel_height
+
         # Initialize FOV after map is created but before renderer
         self.fov = FieldOfView(self.model)
 
@@ -48,7 +56,12 @@ class Controller:
 
         # Create renderer after FOV is initialized
         self.renderer = Renderer(
-            self.screen_width, self.screen_height, self.model, self.fov, self.clock
+            screen_width=self.screen_width,
+            screen_height=self.screen_height,
+            model=self.model,
+            fov=self.fov,
+            clock=self.clock,
+            message_log=self.message_log,
         )
 
         # Place NPC in a random room that's not the first room
@@ -98,7 +111,14 @@ class EventHandler:
     def dispatch(self, event: tcod.event.Event) -> None:
         action = self.handle_event(event)
         if action:
-            action.execute()
+            try:
+                action.execute()
+            except SystemExit:  # Allow SystemExit to propagate for quitting
+                raise
+            except Exception as e:
+                error_message = f"Error: {str(e)}"
+                self.controller.message_log.add_message(error_message, colors.RED)
+                print(f"Unhandled exception during action execution: {e}")
 
     def handle_event(self, event: tcod.event.Event) -> actions.Action | None:
         match event:

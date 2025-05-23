@@ -3,6 +3,7 @@ import numpy as np
 import tcod
 from clock import Clock
 from fov import FieldOfView
+from message_log import MessageLog  # Import MessageLog
 from model import Entity, Model
 from tcod.console import Console
 
@@ -35,6 +36,7 @@ class Renderer:
         model: Model,
         fov: FieldOfView,
         clock: Clock,
+        message_log: MessageLog,  # Add message_log parameter
     ) -> None:
         self.colors: dict[str, colors.Color] = {
             "dark_wall": colors.DARK_WALL,
@@ -47,9 +49,19 @@ class Renderer:
         self.screen_height = screen_height
         self.model = model
         self.fov = fov
+        self.message_log = message_log
+
+        # Define message log geometry with sensible defaults
+        self.message_log_height = 7  # Default height for the message log panel
+        self.message_log_x = 0
+        self.message_log_y = self.screen_height - self.message_log_height
+        self.message_log_width = self.screen_width
 
         tileset = tcod.tileset.load_tilesheet(
-            "Taffer_20x20.png", 16, 16, tcod.tileset.CHARMAP_CP437
+            "Taffer_20x20.png",
+            columns=16,
+            rows=16,
+            charmap=tcod.tileset.CHARMAP_CP437,
         )
 
         self.root_console = Console(screen_width, screen_height, order="F")
@@ -57,7 +69,7 @@ class Renderer:
             columns=screen_width,
             rows=screen_height,
             tileset=tileset,
-            title="Catley McCat",
+            title="Catley McCat",  # type: ignore
             vsync=True,
         )
 
@@ -117,6 +129,15 @@ class Renderer:
             dest_y=0,
             width=self.con.width,
             height=self.con.height,
+        )
+
+        # Render the message log onto the root console
+        self.message_log.render(
+            console=self.root_console,
+            x=self.message_log_x,
+            y=self.message_log_y,
+            width=self.message_log_width,
+            height=self.message_log_height,
         )
 
         if self.fps_display.SHOW_FPS:
