@@ -59,6 +59,7 @@ class Controller:
                 x=npc_x,
                 y=npc_y,
                 ch="T",
+                name="Trog",
                 color=colors.RED,
                 max_hp=10,
                 max_ap=3,

@@ -30,6 +30,7 @@ class Model:
             x=0,
             y=0,
             ch="@",
+            name="Player",
             color=colors.PLAYER_COLOR,
             model=self,
             light_source=player_light,
@@ -91,6 +92,7 @@ class Actor(Entity):
         model: Model | None,
         light_source: LightSource | None = None,
         blocks_movement: bool = True,
+        name: str = "",
     ) -> None:
         super().__init__(x, y, ch, color, model, light_source, blocks_movement)
         self.max_hp = max_hp
@@ -100,6 +102,7 @@ class Actor(Entity):
         self.inventory: list[Item] = []
         self.effects: list[StatusEffect] = []
         self.equipped_weapon: Weapon | None = None
+        self.name = name
 
     def take_damage(self, amount: int) -> None:
         """Handle damage to the actor, reducing AP first, then HP.
@@ -155,6 +158,7 @@ class WastoidActor(Actor):
         x: int,
         y: int,
         ch: str,
+        name: str,
         color: tcod.Color,
         # Wastoid abilities
         weirdness: int = 0,
@@ -179,6 +183,7 @@ class WastoidActor(Actor):
             model=model,
             light_source=light_source,
             blocks_movement=blocks_movement,
+            name=name,
         )
 
         # Core Wastoid abilities

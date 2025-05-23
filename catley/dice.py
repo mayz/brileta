@@ -181,7 +181,7 @@ def perform_check_roll(
         total_value=total_value,
         target_value=target_dc,
         has_advantage=has_advantage,
-        has_disadvantage=has_disadvantage
+        has_disadvantage=has_disadvantage,
     )
 
 
