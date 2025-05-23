@@ -155,21 +155,25 @@ class AttackAction(Action):
                 "Critical hit! " if attack_result.is_critical_hit else ""
             )
             print(
-                f"{critical_hit_text}{self.attacker.ch} hits {self.defender.ch} "
+                f"{critical_hit_text}{self.attacker.name} hits {self.defender.name} "
                 f"with {weapon.name} for {damage} damage. "
-                f"({self.defender.ch} has {self.defender.hp} HP left.)"
+                f"({self.defender.name} has {self.defender.hp} HP left.)"
             )
+            # FIXME: Display on a message log instead of print.
+            # See: https://rogueliketutorials.com/tutorials/tcod/v2/part-7/
 
             # Check if defender is defeated
             if not self.defender.is_alive():
-                print(f"{self.defender.ch} has been killed!")
+                print(f"{self.defender.name} has been killed!")
         else:
             # Miss
             print(
                 "Critical miss! "
                 if attack_result.is_critical_miss
-                else f"{self.attacker.ch} misses {self.defender.ch}."
+                else f"{self.attacker.name} misses {self.defender.name}."
             )
+            # FIXME: Display on a message log instead of print.
+            # See: https://rogueliketutorials.com/tutorials/tcod/v2/part-7/
 
             # Handle 'awkward' weapon property
             if (
@@ -177,7 +181,7 @@ class AttackAction(Action):
                 and hasattr(weapon, "properties")
                 and "awkward" in weapon.properties
             ):
-                print(f"{self.attacker.ch} is off balance from the awkward swing!")
+                print(f"{self.attacker.name} is off balance from the awkward swing!")
                 # TODO: Implement off-balance effect (maybe skip next turn?)
 
         # Signal that the attacker's turn is over
