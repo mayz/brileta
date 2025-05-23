@@ -7,6 +7,7 @@ from __future__ import annotations
 import abc
 from typing import TYPE_CHECKING
 
+import colors
 import dice
 import items
 import tcod
@@ -150,38 +151,53 @@ class AttackAction(Action):
             # Apply damage.
             self.defender.take_damage(damage)
 
-            # Log the hit
-            critical_hit_text = (
-                "Critical hit! " if attack_result.is_critical_hit else ""
+            # Log hit message
+            if attack_result.is_critical_hit:
+                hit_message = (
+                    f"Critical hit! {self.attacker.name} strikes {self.defender.name} "
+                    f"with {weapon.name} for {damage} damage."
+                )
+                hit_color = colors.YELLOW
+            else:
+                hit_message = (
+                    f"{self.attacker.name} hits {self.defender.name} "
+                    f"with {weapon.name} for {damage} damage."
+                )
+                hit_color = colors.WHITE  # Default color for a standard hit
+            hp_message_part = f" ({self.defender.name} has {self.defender.hp} HP left.)"
+            self.controller.message_log.add_message(
+                hit_message + hp_message_part, hit_color
             )
-            print(
-                f"{critical_hit_text}{self.attacker.name} hits {self.defender.name} "
-                f"with {weapon.name} for {damage} damage. "
-                f"({self.defender.name} has {self.defender.hp} HP left.)"
-            )
-            # FIXME: Display on a message log instead of print.
-            # See: https://rogueliketutorials.com/tutorials/tcod/v2/part-7/
 
             # Check if defender is defeated
             if not self.defender.is_alive():
-                print(f"{self.defender.name} has been killed!")
+                self.controller.message_log.add_message(
+                    f"{self.defender.name} has been killed!", colors.RED
+                )
         else:
             # Miss
-            print(
-                "Critical miss! "
-                if attack_result.is_critical_miss
-                else f"{self.attacker.name} misses {self.defender.name}."
-            )
-            # FIXME: Display on a message log instead of print.
-            # See: https://rogueliketutorials.com/tutorials/tcod/v2/part-7/
+            if attack_result.is_critical_miss:
+                miss_message = (
+                    f"Critical miss! {self.attacker.name}'s attack on "
+                    f"{self.defender.name} fails."
+                )
+                miss_color = colors.ORANGE  # A warning color for critical miss
+            else:
+                miss_message = f"{self.attacker.name} misses {self.defender.name}."
+                miss_color = colors.GREY  # Standard miss color
+            self.controller.message_log.add_message(miss_message, miss_color)
 
             # Handle 'awkward' weapon property
             if (
                 weapon
                 and hasattr(weapon, "properties")
                 and "awkward" in weapon.properties
-            ):
-                print(f"{self.attacker.name} is off balance from the awkward swing!")
+            ):  # This message applies on any miss if the weapon is awkward.
+                self.controller.message_log.add_message(
+                    f"{self.attacker.name} is off balance from the awkward swing "
+                    f"with {weapon.name}!",
+                    colors.LIGHT_BLUE,  # Informational color for status effects
+                )
                 # TODO: Implement off-balance effect (maybe skip next turn?)
 
         # Signal that the attacker's turn is over
