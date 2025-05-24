@@ -114,8 +114,8 @@ class Actor(Entity):
         y: int,
         ch: str,
         color: tcod.Color,
-        max_hp: int | 0,
-        max_ap: int | 0,
+        max_hp: int,
+        max_ap: int,
         model: Model | None,
         light_source: LightSource | None = None,
         blocks_movement: bool = True,
@@ -234,12 +234,11 @@ class WastoidActor(Actor):
     @max_hp.setter
     def max_hp(self, value: int) -> None:
         """Override max_hp setter to prevent direct modification."""
-        # Do nothing as max_hp is derived from toughness
+        # Do nothing as max_hp is derived from toughness for WastoidActor
         pass
 
-
 class Tile:
-    """DOCME"""
+    """A tile in the game map."""
 
     def __init__(self, blocked: bool, blocks_sight: bool | None = None) -> None:
         self.blocked = blocked
@@ -270,7 +269,7 @@ class Rect:
 
 
 class GameMap:
-    """DOCME"""
+    """The game map."""
 
     def __init__(self, width: int, height: int) -> None:
         self.width = width

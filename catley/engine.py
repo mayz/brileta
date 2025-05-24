@@ -18,10 +18,6 @@ class Controller:
         self.screen_width = 80
         self.screen_height = 50
 
-        self.bar_width = 20
-        self.panel_height = 7
-        self.panel_y = self.screen_height - self.panel_height
-
         self.help_height = 1  # One line for help text
 
         self.map_width = 80
@@ -45,10 +41,6 @@ class Controller:
 
         # Initialize Message Log
         self.message_log = MessageLog()
-        self.message_log_x = 0
-        self.message_log_y = self.panel_y
-        self.message_log_width = self.screen_width
-        self.message_log_height = self.panel_height - self.help_height
 
         # Initialize FOV after map is created but before renderer
         self.fov = FieldOfView(self.model)
@@ -188,13 +180,12 @@ class EventHandler:
                 self.controller.menu_system.show_menu(inventory_menu)
                 return None
 
-            # Help Menu: 'h' or '?'
+            # Help Menu: '?'
             # tcod.event.KeySym.QUESTION is typically generated for '?'
-            # This pattern handles 'h', '?' (if sym is KeySym.QUESTION),
+            # This pattern handles '?' (if sym is KeySym.QUESTION),
             # or '?' (if sym is KeySym.SLASH and SHIFT modifier is present).
             case tcod.event.KeyDown(sym=key_sym, mod=key_mod) if (
-                key_sym == tcod.event.KeySym.h
-                or key_sym == tcod.event.KeySym.QUESTION
+                key_sym == tcod.event.KeySym.QUESTION
                 or (
                     key_sym == tcod.event.KeySym.SLASH
                     and (key_mod & tcod.event.Modifier.SHIFT)
