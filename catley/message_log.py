@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import textwrap
+from typing import TYPE_CHECKING
 
 import colors
-import tcod.console
+
+if TYPE_CHECKING:
+    import tcod.console
 
 
 class Message:

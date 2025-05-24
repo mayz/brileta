@@ -7,15 +7,16 @@ from typing import TYPE_CHECKING
 
 import colors
 import items
-import tcod
 from lighting import LightingSystem, LightSource
 
 if TYPE_CHECKING:
+    import tcod
+
     from catley.actions import Action
     from catley.controller import Controller
 
     # (for later, but good to think about)
-    from catley.items import Item, Weapon
+    from catley.items import Item, Weapon  # Item is used here
 
     # (for later, e.g., "poisoned", "stunned")
     from catley.status_effects import StatusEffect
@@ -44,6 +45,32 @@ class Model:
         """Update player light source position"""
         if self.player.light_source:
             self.player.light_source.position = (self.player.x, self.player.y)
+
+    def get_pickable_items_at_location(self, x: int, y: int) -> list[Item]:
+        """Get all pickable items at the specified location.
+
+        Currently, this includes items from dead actors' inventories and their
+        equipped weapons.
+        """
+        items_found: list[Item] = []
+        # Check items from dead actors at this location
+        for entity in self.entities:
+            if (
+                entity.x == x
+                and entity.y == y
+                and isinstance(entity, Actor)
+                and not entity.is_alive()  # Only from dead actors
+            ):
+                items_found.extend(entity.inventory)  # Add items from inventory
+                if entity.equipped_weapon:
+                    items_found.append(entity.equipped_weapon)  # Add equipped weapon
+        # Future: Add items directly on the ground if we implement that
+        # e.g., items_found.extend(self.game_map.get_items_on_ground(x,y))
+        return items_found
+
+    def has_pickable_items_at_location(self, x: int, y: int) -> bool:
+        """Check if there are any pickable items at the specified location."""
+        return bool(self.get_pickable_items_at_location(x, y))
 
 
 @dataclasses.dataclass
