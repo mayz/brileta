@@ -184,13 +184,6 @@ class Menu(abc.ABC):
             menu_console.print(2, y_offset, option_text, fg=option.color)
             y_offset += 1
 
-        # Add instructions at bottom if there's space
-        if menu_height > 5:
-            instruction = "Press ESC to close"
-            instr_x = max(2, (actual_width - len(instruction)) // 2)
-            instr_x = min(instr_x, actual_width - len(instruction) - 2)
-            menu_console.print(instr_x, menu_height - 2, instruction, fg=colors.GREY)
-
         # Blit to main console
         menu_console.blit(console, menu_x, menu_y)
 
@@ -207,7 +200,7 @@ class HelpMenu(Menu):
             ("Movement", "Arrow keys or numpad"),
             ("Inventory", "I - Open inventory menu"),
             ("Get Items", "G - Pick up items from ground/corpses"),
-            ("Quit", "Q or Escape - Quit game"),  # type: ignore
+            ("Quit", "Q or Escape - Quit game"),
             ("Help", "? or H - Show this help menu"),
         ]
 

@@ -187,12 +187,8 @@ class AttackAction(Action):
                 miss_color = colors.GREY  # Standard miss color
             self.controller.message_log.add_message(miss_message, miss_color)
 
-            # Handle 'awkward' weapon property
-            if (
-                weapon
-                and hasattr(weapon, "properties")
-                and "awkward" in weapon.properties
-            ):  # This message applies on any miss if the weapon is awkward.
+            # Handle 'awkward' weapon property on miss
+            if weapon and "awkward" in weapon.properties:
                 self.controller.message_log.add_message(
                     f"{self.attacker.name} is off balance from the awkward swing "
                     f"with {weapon.name}!",

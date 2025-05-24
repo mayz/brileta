@@ -20,7 +20,6 @@ class FieldOfView:
                 self.fov_map.walkable[x, y] = not m.tiles[x][y].blocked
 
     def contains(self, x: int, y: int) -> bool:
-        """DOCME"""
         return self.fov_map.fov[x, y]
 
     def recompute_if_needed(self) -> bool:

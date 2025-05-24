@@ -82,13 +82,17 @@ class Weapon(Item):
         self.properties = properties or {}
 
     def clone(self) -> Weapon:
-        # Shallow copy is good enough for now.
-        return copy.copy(self)
+        # Shallow copy for most attributes.
+        cloned = copy.copy(self)
+        # Ensure 'properties' is a new set to avoid shared mutable state.
+        if self.properties is not None:
+            cloned.properties = set(self.properties)
+        return cloned
 
     def __str__(self) -> str:
         properties = ", ".join(self.properties) if self.properties else "none"
         return (
-            f"{self.name} ({self.damage_die}, "
+            f"{self.name} ({self.damage_dice.dice_str}, "
             f"melee: {self.melee}, "
             f"properties: {properties})"
         )

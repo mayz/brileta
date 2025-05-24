@@ -44,13 +44,6 @@ class Renderer:
         message_log: MessageLog,
         menu_system: "MenuSystem",
     ) -> None:
-        self.colors: dict[str, colors.Color] = {
-            "dark_wall": colors.DARK_WALL,
-            "dark_ground": colors.DARK_GROUND,
-            "light_wall": colors.LIGHT_WALL,
-            "light_ground": colors.LIGHT_GROUND,
-        }
-
         self.screen_width = screen_width
         self.screen_height = screen_height
         self.model = model
@@ -106,11 +99,11 @@ class Renderer:
                     is_wall[(x, y)] = True
         wall_idx = np.where(is_wall)
 
-        self.dark_map_bg = np.full_like(self.bg, self.colors.get("dark_ground"))
-        self.dark_map_bg[wall_idx] = self.colors.get("dark_wall")
+        self.dark_map_bg = np.full_like(self.bg, colors.DARK_GROUND)
+        self.dark_map_bg[wall_idx] = colors.DARK_WALL
 
-        self.light_map_bg = np.full_like(self.bg, self.colors.get("light_ground"))
-        self.light_map_bg[wall_idx] = self.colors.get("light_wall")
+        self.light_map_bg = np.full_like(self.bg, colors.LIGHT_GROUND)
+        self.light_map_bg[wall_idx] = colors.LIGHT_WALL
 
         # Right now, which tiles we've explored only concerns the renderer.
         self.map_tiles_explored = np.full(
@@ -143,11 +136,11 @@ class Renderer:
         if not self.menu_system.has_active_menus():
             self._render_help_text()
 
-        # Render the message log at the bottom (using original positioning)
+        # Render the message log below the help text
         self.message_log.render(
             console=self.root_console,
             x=self.message_log_x,
-            y=self.message_log_y,  # Back to original bottom position
+            y=self.message_log_y,
             width=self.message_log_width,
             height=self.message_log_height,
         )
