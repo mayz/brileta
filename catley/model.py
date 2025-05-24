@@ -7,15 +7,15 @@ from typing import TYPE_CHECKING
 
 import colors
 import items
+from conditions import Condition
+from items import Item, ItemSize, Weapon
 from lighting import LightingSystem, LightSource
 
 if TYPE_CHECKING:
     import tcod
 
     from catley.actions import Action
-    from catley.conditions import Condition
     from catley.controller import Controller
-    from catley.items import Item, Weapon
 
 
 class Model:
@@ -231,6 +231,95 @@ class WastoidActor(Actor):
         """Override max_hp setter to prevent direct modification."""
         # Do nothing as max_hp is derived from toughness for WastoidActor
         pass
+
+    def get_used_inventory_space(self) -> int:
+        """Calculates the total number of inventory slots currently used,
+        considering item sizes and conditions.
+        """
+        used_space = 0
+        has_tiny_items = False
+        # Ensure inventory is not None, though it's initialized as an empty list
+        inventory_list = self.inventory or []
+
+        for entity_in_slot in inventory_list:
+            if isinstance(entity_in_slot, Item):
+                item = entity_in_slot
+                if item.size == ItemSize.TINY:
+                    has_tiny_items = True
+                elif item.size == ItemSize.NORMAL:
+                    used_space += 1
+                elif item.size == ItemSize.BIG:
+                    used_space += 2
+                elif item.size == ItemSize.HUGE:
+                    used_space += 4
+            elif isinstance(entity_in_slot, Condition):
+                # Conditions take up one slot each
+                used_space += 1
+
+        if has_tiny_items:
+            used_space += 1  # All tiny items collectively share one slot
+
+        return used_space
+
+    def can_add_to_inventory(self, item_to_add: Item | Condition) -> bool:
+        """Checks if an item or condition can be added to the inventory
+        based on available space and item sizes.
+        """
+        current_used_space = self.get_used_inventory_space()
+        additional_space_needed = 0
+
+        inventory_list = self.inventory or []  # For checking existing tiny items
+
+        if isinstance(item_to_add, Item):
+            item = item_to_add
+            if item.size == ItemSize.TINY:
+                # If no tiny items exist yet, adding this one will
+                # 'create' the tiny slot.
+                if not any(
+                    isinstance(i, Item) and i.size == ItemSize.TINY
+                    for i in inventory_list
+                ):
+                    additional_space_needed = 1
+            elif item.size == ItemSize.NORMAL:
+                additional_space_needed = 1
+            elif item.size == ItemSize.BIG:
+                additional_space_needed = 2
+            elif item.size == ItemSize.HUGE:
+                additional_space_needed = 4
+        elif isinstance(item_to_add, Condition):
+            additional_space_needed = 1  # Conditions always take 1 slot
+
+        return (current_used_space + additional_space_needed) <= self.inventory_slots
+
+    def get_inventory_slot_colors(self) -> list[colors.Color]:
+        """
+        Returns a list of colors representing the filled logical inventory slots.
+        Each color corresponds to the item/condition occupying that slot.
+        """
+        slot_colors: list[colors.Color] = []
+        has_processed_tiny_slot = False
+
+        inventory_list = self.inventory or []
+
+        for entity_in_slot in inventory_list:
+            if isinstance(entity_in_slot, Item):
+                item = entity_in_slot
+                # Default color for items in the bar is WHITE
+                item_bar_color = colors.WHITE
+
+                if item.size == ItemSize.TINY:
+                    if not has_processed_tiny_slot:
+                        slot_colors.append(item_bar_color)
+                        has_processed_tiny_slot = True
+                elif item.size == ItemSize.NORMAL:
+                    slot_colors.append(item_bar_color)
+                elif item.size == ItemSize.BIG:
+                    slot_colors.extend([item_bar_color] * 2)
+                elif item.size == ItemSize.HUGE:
+                    slot_colors.extend([item_bar_color] * 4)
+            elif isinstance(entity_in_slot, Condition):
+                slot_colors.append(entity_in_slot.display_color)
+        return slot_colors
 
 
 class Tile:

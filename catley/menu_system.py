@@ -13,7 +13,7 @@ import colors
 import tcod
 import tcod.event
 from conditions import Condition
-from items import Item
+from items import Item, ItemSize
 from model import Actor
 from tcod.console import Console
 
@@ -175,16 +175,81 @@ class Menu(abc.ABC):
 
         # Draw title
         if menu_height > 3:
-            title_x = max(2, (actual_width - len(self.title)) // 2)
-            title_x = min(title_x, actual_width - len(self.title) - 2)
-            menu_console.print(title_x, 1, self.title, fg=colors.YELLOW)
+            title_y = 1  # Title is on the second line of the menu_console (index 1)
+
+            if isinstance(self, InventoryMenu):
+                player = (
+                    self.controller.model.player
+                )  # Known to be WastoidActor for player
+                used_space = player.get_used_inventory_space()
+                total_slots = player.inventory_slots
+
+                current_x = 1  # Start drawing at column 1 (content area start)
+                # Max content column index is actual_width - 2
+                max_content_x = actual_width - 2
+
+                # 1. Print "Inventory: " (self.title for InventoryMenu is "Inventory")
+                prefix_text = f"{self.title}: "
+                if current_x <= max_content_x:
+                    chars_to_print = min(
+                        len(prefix_text), (max_content_x - current_x + 1)
+                    )
+                    menu_console.print(
+                        current_x,
+                        title_y,
+                        prefix_text[:chars_to_print],
+                        fg=colors.YELLOW,
+                    )
+                    current_x += chars_to_print
+
+                # 2. Draw the color bar using individual slot colors
+                slot_colors_list = player.get_inventory_slot_colors()
+                num_colored_slots = len(slot_colors_list)
+
+                if total_slots > 0 and current_x <= max_content_x:
+                    for i in range(total_slots):
+                        if (
+                            current_x <= max_content_x
+                        ):  # Check if current cell is within content area
+                            cell_x = current_x
+                            if i < num_colored_slots:
+                                menu_console.bg[cell_x, title_y] = slot_colors_list[i]
+                            else:
+                                menu_console.bg[cell_x, title_y] = colors.GREY
+                            menu_console.ch[cell_x, title_y] = ord(" ")
+                            current_x += 1
+                        else:
+                            break  # No more space for bar cells
+                # 3. Print " X/Y used"
+                suffix_text = f" {used_space}/{total_slots} used"
+                if current_x <= max_content_x:
+                    chars_to_print = min(
+                        len(suffix_text), (max_content_x - current_x + 1)
+                    )
+                    menu_console.print(
+                        current_x,
+                        title_y,
+                        suffix_text[:chars_to_print],
+                        fg=colors.YELLOW,
+                    )
+            else:
+                # For other menus, use print_box for centered title within content area
+                # Content area for title: x from 1 to actual_width-2
+                menu_console.print_box(
+                    1,
+                    title_y,
+                    actual_width - 2,
+                    1,
+                    self.title,
+                    fg=colors.YELLOW,
+                    alignment=tcod.CENTER,
+                )
 
         # Draw separator line
         if actual_width > 2 and menu_height > 3:
             for x in range(1, actual_width - 1):
                 menu_console.ch[x, 2] = ord("─")
                 menu_console.fg[x, 2] = colors.WHITE
-
         # Draw options
         y_offset = 3
         for option in self.options:
@@ -245,60 +310,86 @@ class InventoryMenu(Menu):
     def populate_options(self) -> None:
         """Populate inventory options."""
         player = self.controller.model.player
-        # Update title to show current slot usage.
-        # The player object (WastoidActor) has 'inventory_slots'.
-        self.title = (
-            f"Inventory ({len(player.inventory)}/{player.inventory_slots} slots)"
-        )
-
-        if not player.inventory:
-            self.add_option(
-                MenuOption(
-                    key=None,
-                    text="(inventory empty)",  # Updated message
-                    enabled=False,
-                    color=colors.GREY,
-                )
-            )
-            return
+        self.options.clear()  # Ensure options are cleared at the start
+        # The title "Inventory" is set in __init__.
+        # The dynamic part (bar, X/Y used) is now handled in Menu.render.
 
         # Use letters a-z for inventory items
         letters = string.ascii_lowercase
-        letters_used = 0
+        letter_idx = 0
+
+        # This list will hold MenuOption objects for each display line
+        # up to player.inventory_slots.
+        display_lines: list[MenuOption] = []
+
+        if not player.inventory:
+            display_lines.append(
+                MenuOption(
+                    key=None, text="(inventory empty)", enabled=False, color=colors.GREY
+                )
+            )
+            self.options = display_lines
+            return
+
+        # Iterate through the actual items/conditions in inventory
         for entity_in_slot in player.inventory:
             text_to_display: str
             action_to_take: Callable[[], None] | None = None
             option_color: colors.Color
             is_enabled: bool
             force_color: bool = False
+            current_key: str | None = None
 
             if isinstance(entity_in_slot, Item):
                 item: Item = entity_in_slot
                 equipped_marker = ""
                 if item.equippable and player.equipped_weapon == item:
                     equipped_marker = " (equipped)"
-                text_to_display = f"{item.name}{equipped_marker}"
-                option_color = colors.WHITE
-                is_enabled = True
-                key = letters[letters_used]
-                letters_used += 1
+
+                size_display = (
+                    ""  # This will hold the graphical slot indicators or (Tiny)
+                )
+                item_display_color = colors.WHITE  # Default for items
+
+                if item.size == ItemSize.TINY:
+                    size_display = " (Tiny)"
+                elif item.size == ItemSize.NORMAL:
+                    size_display = " █"
+                elif item.size == ItemSize.BIG:
+                    size_display = " █ █"
+                elif item.size == ItemSize.HUGE:
+                    size_display = " █ █ █ █"
+
+                text_to_display = f"{item.name}{size_display}{equipped_marker}"
+                option_color = item_display_color
+                is_enabled = True  # Assume items are generally usable/selectable
+
+                # Only assign keys to actual items that can be interacted with
+                # Conditions are listed but not keyed for action from this menu.
+
+                if letter_idx < len(letters):
+                    current_key = letters[letter_idx]
+                    letter_idx += 1
                 action_to_take = functools.partial(self._use_item, item)
+
             elif isinstance(entity_in_slot, Condition):
                 condition: Condition = entity_in_slot
-                text_to_display = condition.name
+                text_to_display = (
+                    f"{condition.name} █"  # Add slot indicator for conditions
+                )
                 option_color = condition.display_color
                 force_color = True
-                is_enabled = False
+                is_enabled = False  # Conditions are not directly "used"
                 action_to_take = None
-                key = None
             else:
-                raise ValueError(
-                    f"Unknown entity type in inventory: {type(entity_in_slot)}"
-                )
+                # Should not happen with current game structure
+                text_to_display = f"Unknown: {entity_in_slot}"
+                option_color = colors.RED
+                is_enabled = False
 
-            self.add_option(
+            display_lines.append(
                 MenuOption(
-                    key=key,  # Use the current letter
+                    key=current_key,
                     text=text_to_display,
                     action=action_to_take,
                     enabled=is_enabled,
@@ -306,6 +397,8 @@ class InventoryMenu(Menu):
                     force_color=force_color,
                 )
             )
+
+        self.options = display_lines
 
     def _use_item(self, item: Item) -> None:
         """Use or equip an item."""
@@ -381,9 +474,8 @@ class PickupMenu(Menu):
     def _pickup_item(self, item: Item) -> None:
         """Pickup an item and add it to player inventory."""
         player = self.controller.model.player
-
-        # Check if player has inventory space (simplified check)
-        if len(player.inventory) >= player.inventory_slots:
+        # Check if player has inventory space using the new size-aware method
+        if not player.can_add_to_inventory(item):
             self.controller.message_log.add_message(
                 "Your inventory is full!", colors.RED
             )

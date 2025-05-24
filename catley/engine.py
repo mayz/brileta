@@ -67,7 +67,7 @@ class Controller:
         self.model.player.inventory.append(
             conditions.Injury(injury_type="Sprained Ankle")
         )
-        self.model.player.inventory.append(items.DAGGER)
+        self.model.player.inventory.append(items.SLEDGEHAMMER)
 
         self._add_npc()
 
