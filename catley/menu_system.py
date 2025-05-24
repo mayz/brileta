@@ -5,12 +5,15 @@ Menu system for the Catley game using TCOD overlays similar to Brogue.
 from __future__ import annotations
 
 import abc
+import functools
 import string
 from typing import TYPE_CHECKING
 
 import colors
 import tcod
 import tcod.event
+from conditions import Condition
+from items import Item
 from model import Actor
 from tcod.console import Console
 
@@ -18,7 +21,6 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from engine import Controller
-    from items import Item
 
 
 class MenuOption:
@@ -26,17 +28,19 @@ class MenuOption:
 
     def __init__(
         self,
-        key: str,
+        key: str | None,
         text: str,
         action: Callable[[], None] | None = None,
         enabled: bool = True,
         color: colors.Color = colors.WHITE,
+        force_color: bool = False,
     ) -> None:
         self.key = key
         self.text = text
         self.action = action
         self.enabled = enabled
-        self.color = color if enabled else colors.GREY
+        self.force_color = force_color
+        self.color = color if enabled or force_color else colors.GREY
 
 
 class Menu(abc.ABC):
@@ -99,7 +103,8 @@ class Menu(abc.ABC):
                 # Find matching option
                 for option in self.options:
                     if (
-                        option.key.lower() == key_char
+                        option.key is not None
+                        and option.key.lower() == key_char
                         and option.enabled
                         and option.action
                     ):
@@ -115,10 +120,21 @@ class Menu(abc.ABC):
         if not self.is_active:
             return
 
-        # Calculate menu dimensions - ensure minimum size
-        content_height = len(self.options) + 3  # +3 for title, separator, and padding
-        menu_height = min(content_height, self.max_height)
-        menu_height = max(menu_height, 5)  # Minimum height
+        # Calculate menu dimensions
+        # Number of lines needed for content pane (inside borders):
+        # 1 for title, 1 for separator, len(self.options) for options,
+        # 1 for bottom padding inside content area.
+        required_content_pane_height = 1 + 1 + len(self.options) + 1
+        # This is equivalent to: len(self.options) + 3
+
+        # Total console height needs to accommodate the content pane
+        # plus top/bottom borders.
+        calculated_total_height = required_content_pane_height + 2  # +2 for borders
+
+        # Apply max_height constraint (to total height) and
+        # ensure a minimum total height.
+        menu_height = min(calculated_total_height, self.max_height)
+        menu_height = max(menu_height, 5)  # Minimum total height for the console
 
         # Ensure minimum width based on title and content
         min_width = max(len(self.title) + 4, 20)  # Title + padding, or minimum 20
@@ -175,7 +191,11 @@ class Menu(abc.ABC):
             if y_offset >= menu_height - 1:
                 break  # Don't draw beyond menu bounds
 
-            option_text = f"({option.key}) {option.text}"
+            if option.key is not None:
+                option_text = f"({option.key}) {option.text}"
+            else:
+                option_text = option.text
+
             # Truncate text if it's too long
             max_text_width = actual_width - 4  # Leave room for borders and padding
             if len(option_text) > max_text_width:
@@ -207,23 +227,13 @@ class HelpMenu(Menu):
         # Add sections without keys (just for display)
         for command, description in help_items:
             self.add_option(
-                MenuOption(  # type: ignore
-                    key="",
+                MenuOption(
+                    key=None,
                     text=f"{command:<12} {description}",
                     enabled=False,
                     color=colors.WHITE,
                 )
             )
-
-        # # Add a close option (handled by ESC now)
-        # self.add_option(
-        #     MenuOption(
-        #         key="c",
-        #         text="Close help",
-        #         action=lambda: None,  # Just closes the menu
-        #         color=colors.YELLOW,
-        #     )
-        # )
 
 
 class InventoryMenu(Menu):
@@ -235,36 +245,65 @@ class InventoryMenu(Menu):
     def populate_options(self) -> None:
         """Populate inventory options."""
         player = self.controller.model.player
+        # Update title to show current slot usage.
+        # The player object (WastoidActor) has 'inventory_slots'.
+        self.title = (
+            f"Inventory ({len(player.inventory)}/{player.inventory_slots} slots)"
+        )
 
         if not player.inventory:
             self.add_option(
-                MenuOption(key="", text="(empty)", enabled=False, color=colors.GREY)
+                MenuOption(
+                    key=None,
+                    text="(inventory empty)",  # Updated message
+                    enabled=False,
+                    color=colors.GREY,
+                )
             )
             return
 
         # Use letters a-z for inventory items
         letters = string.ascii_lowercase
-        for i, item in enumerate(player.inventory):
-            if i >= len(letters):
-                break  # Don't exceed available letters
+        letters_used = 0
+        for entity_in_slot in player.inventory:
+            text_to_display: str
+            action_to_take: Callable[[], None] | None = None
+            option_color: colors.Color
+            is_enabled: bool
+            force_color: bool = False
 
-            key = letters[i]
-
-            # Check if item is equipped
-            equipped_marker = ""
-            if (
-                hasattr(item, "equippable")
-                and item.equippable
-                and player.equipped_weapon == item
-            ):
-                equipped_marker = " (equipped)"
+            if isinstance(entity_in_slot, Item):
+                item: Item = entity_in_slot
+                equipped_marker = ""
+                if item.equippable and player.equipped_weapon == item:
+                    equipped_marker = " (equipped)"
+                text_to_display = f"{item.name}{equipped_marker}"
+                option_color = colors.WHITE
+                is_enabled = True
+                key = letters[letters_used]
+                letters_used += 1
+                action_to_take = functools.partial(self._use_item, item)
+            elif isinstance(entity_in_slot, Condition):
+                condition: Condition = entity_in_slot
+                text_to_display = condition.name
+                option_color = condition.display_color
+                force_color = True
+                is_enabled = False
+                action_to_take = None
+                key = None
+            else:
+                raise ValueError(
+                    f"Unknown entity type in inventory: {type(entity_in_slot)}"
+                )
 
             self.add_option(
                 MenuOption(
-                    key=key,
-                    text=f"{item.name}{equipped_marker}",
-                    action=lambda item=item: self._use_item(item),
-                    color=colors.WHITE,
+                    key=key,  # Use the current letter
+                    text=text_to_display,
+                    action=action_to_take,
+                    enabled=is_enabled,
+                    color=option_color,
+                    force_color=force_color,
                 )
             )
 
@@ -312,7 +351,7 @@ class PickupMenu(Menu):
         if not items_here:
             self.add_option(
                 MenuOption(
-                    key="", text="(no items here)", enabled=False, color=colors.GREY
+                    key=None, text="(no items here)", enabled=False, color=colors.GREY
                 )
             )
             return
@@ -328,7 +367,7 @@ class PickupMenu(Menu):
                 MenuOption(
                     key=key,
                     text=item.name,
-                    action=lambda item=item: self._pickup_item(item),
+                    action=functools.partial(self._pickup_item, item),
                     color=colors.WHITE,
                 )
             )

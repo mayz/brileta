@@ -13,13 +13,9 @@ if TYPE_CHECKING:
     import tcod
 
     from catley.actions import Action
+    from catley.conditions import Condition
     from catley.controller import Controller
-
-    # (for later, but good to think about)
-    from catley.items import Item, Weapon  # Item is used here
-
-    # (for later, e.g., "poisoned", "stunned")
-    from catley.status_effects import StatusEffect
+    from catley.items import Item, Weapon
 
 
 class Model:
@@ -126,8 +122,7 @@ class Actor(Entity):
         self.hp = max_hp
         self.max_ap = max_ap
         self.ap = max_ap
-        self.inventory: list[Item] = []
-        self.effects: list[StatusEffect] = []
+        self.inventory: list[Item | Condition] = []
         self.equipped_weapon: Weapon | None = None
         self.name = name
 
@@ -236,6 +231,7 @@ class WastoidActor(Actor):
         """Override max_hp setter to prevent direct modification."""
         # Do nothing as max_hp is derived from toughness for WastoidActor
         pass
+
 
 class Tile:
     """A tile in the game map."""

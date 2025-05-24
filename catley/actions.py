@@ -114,6 +114,13 @@ class AttackAction(Action):
             has_disadvantage=False,
         )
 
+        # TODO: Ask LLM whether/how to implement combat as a separate "mode",
+        #       like entering combat in Fallout 1 or 2. Rather than the current
+        #       "bash into opponent" a la Brogue. Would be fun to show the player
+        #       a menu of options, including regular attacks, stunts, etc., with
+        #       a probability of success shown for each.
+        #       The character of the entity being targeted could pulsate in color.
+
         # FIXME: Rather than handling combat here in AttackAction, have some
         # kind of separate combat module that handles, e.g., initiative, turns,
         # movement, stunts, etc. Rather than automatically making an attack roll
