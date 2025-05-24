@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import abc
 import string
-from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import colors
@@ -16,6 +15,8 @@ from model import Actor
 from tcod.console import Console
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from engine import Controller
     from items import Item
 
@@ -81,6 +82,12 @@ class Menu(abc.ABC):
 
         match event:
             case tcod.event.KeyDown(sym=tcod.event.KeySym.ESCAPE):
+                self.hide()
+                return True
+            case tcod.event.KeyDown(sym=tcod.event.KeySym.SPACE):
+                self.hide()
+                return True
+            case tcod.event.KeyDown(sym=tcod.event.KeySym.RETURN):  # Enter key
                 self.hide()
                 return True
             case tcod.event.KeyDown() as key_event:
@@ -200,16 +207,14 @@ class HelpMenu(Menu):
             ("Movement", "Arrow keys or numpad"),
             ("Inventory", "I - Open inventory menu"),
             ("Get Items", "G - Pick up items from ground/corpses"),
-            ("Commands", "Tab - Open command menu"),
-            ("Look", "L - Look around (not yet implemented)"),
-            ("Quit", "Q or Escape - Quit game"),
-            ("Help", "? - Show this help menu"),
+            ("Quit", "Q or Escape - Quit game"),  # type: ignore
+            ("Help", "? or H - Show this help menu"),
         ]
 
         # Add sections without keys (just for display)
         for command, description in help_items:
             self.add_option(
-                MenuOption(
+                MenuOption(  # type: ignore
                     key="",
                     text=f"{command:<12} {description}",
                     enabled=False,
@@ -217,15 +222,15 @@ class HelpMenu(Menu):
                 )
             )
 
-        # Add a close option
-        self.add_option(
-            MenuOption(
-                key="c",
-                text="Close help",
-                action=lambda: None,  # Just closes the menu
-                color=colors.YELLOW,
-            )
-        )
+        # # Add a close option (handled by ESC now)
+        # self.add_option(
+        #     MenuOption(
+        #         key="c",
+        #         text="Close help",
+        #         action=lambda: None,  # Just closes the menu
+        #         color=colors.YELLOW,
+        #     )
+        # )
 
 
 class InventoryMenu(Menu):
@@ -337,23 +342,9 @@ class PickupMenu(Menu):
 
     def _get_items_at_location(self) -> list[Item]:
         """Get all items at the specified location."""
-        # For now, return items from dead actors at this location
-        # In a full implementation, you'd also check for items on the ground
-        items = []
-        x, y = self.location
-
-        for entity in self.controller.model.entities:
-            if (
-                entity.x == x
-                and entity.y == y
-                and isinstance(entity, Actor)
-                and not entity.is_alive()
-            ):
-                items.extend(entity.inventory)
-                if entity.equipped_weapon:
-                    items.append(entity.equipped_weapon)
-
-        return items
+        return self.controller.model.get_pickable_items_at_location(
+            self.location[0], self.location[1]
+        )
 
     def _pickup_item(self, item: Item) -> None:
         """Pickup an item and add it to player inventory."""
@@ -372,7 +363,8 @@ class PickupMenu(Menu):
                 if item in entity.inventory:
                     entity.inventory.remove(item)
                     break
-                elif entity.equipped_weapon == item:
+
+                if entity.equipped_weapon == item:
                     entity.equipped_weapon = None
                     break
 
@@ -381,58 +373,6 @@ class PickupMenu(Menu):
         self.controller.message_log.add_message(
             f"You pick up {item.name}.", colors.WHITE
         )
-
-
-class CommandMenu(Menu):
-    """Main command menu for various game actions."""
-
-    def __init__(self, controller: Controller) -> None:
-        super().__init__("Commands", controller)
-
-    def populate_options(self) -> None:
-        """Populate command options."""
-        self.add_option(
-            MenuOption(
-                key="i",
-                text="Inventory (equip/unequip items)",
-                action=self._show_inventory,
-                color=colors.WHITE,
-            )
-        )
-
-        self.add_option(
-            MenuOption(
-                key="g",
-                text="Get/Pick up items",
-                action=self._show_pickup_menu,
-                color=colors.WHITE,
-            )
-        )
-
-        self.add_option(
-            MenuOption(
-                key="h",
-                text="Help (show all commands)",
-                action=self._show_help,
-                color=colors.WHITE,
-            )
-        )
-
-    def _show_help(self) -> None:
-        """Show the help menu."""
-        help_menu = HelpMenu(self.controller)
-        self.controller.menu_system.show_menu(help_menu)
-
-    def _show_inventory(self) -> None:
-        """Show the inventory menu."""
-        inventory_menu = InventoryMenu(self.controller)
-        self.controller.menu_system.show_menu(inventory_menu)
-
-    def _show_pickup_menu(self) -> None:
-        """Show the pickup menu for current location."""
-        player = self.controller.model.player
-        pickup_menu = PickupMenu(self.controller, (player.x, player.y))
-        self.controller.menu_system.show_menu(pickup_menu)
 
 
 class MenuSystem:

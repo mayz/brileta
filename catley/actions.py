@@ -10,12 +10,12 @@ from typing import TYPE_CHECKING
 import colors
 import dice
 import items
-import tcod
 from model import Actor, WastoidActor
 
 if TYPE_CHECKING:
+    import tcod
     from engine import Controller
-    from model import Actor, Entity
+    from model import Entity
 
 
 class Action(abc.ABC):

@@ -7,7 +7,7 @@ import tcod
 import tcod.event
 from clock import Clock
 from fov import FieldOfView
-from menu_system import CommandMenu, MenuSystem  # Import the new menu system
+from menu_system import MenuSystem
 from message_log import MessageLog
 from model import Actor, Model
 from render import Renderer
@@ -147,14 +147,26 @@ class EventHandler:
             ):
                 return actions.QuitAction()
 
-            # Movement keys
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.UP):
+            # Movement keys (Arrows and VIM)
+            case (
+                tcod.event.KeyDown(sym=tcod.event.KeySym.UP)
+                | tcod.event.KeyDown(sym=tcod.event.KeySym.k)
+            ):
                 return actions.MoveAction(self.controller, self.p, 0, -1)
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.DOWN):
+            case (
+                tcod.event.KeyDown(sym=tcod.event.KeySym.DOWN)
+                | tcod.event.KeyDown(sym=tcod.event.KeySym.j)
+            ):
                 return actions.MoveAction(self.controller, self.p, 0, 1)
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.LEFT):
+            case (
+                tcod.event.KeyDown(sym=tcod.event.KeySym.LEFT)
+                | tcod.event.KeyDown(sym=tcod.event.KeySym.h)
+            ):
                 return actions.MoveAction(self.controller, self.p, -1, 0)
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.RIGHT):
+            case (
+                tcod.event.KeyDown(sym=tcod.event.KeySym.RIGHT)
+                | tcod.event.KeyDown(sym=tcod.event.KeySym.l)
+            ):
                 return actions.MoveAction(self.controller, self.p, 1, 0)
 
             # Diagonal movement (numpad or vi-keys)
@@ -168,12 +180,6 @@ class EventHandler:
                 return actions.MoveAction(self.controller, self.p, 1, 1)
 
             # Menu keys
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.TAB):
-                # Show main command menu
-                command_menu = CommandMenu(self.controller)
-                self.controller.menu_system.show_menu(command_menu)
-                return None
-
             case tcod.event.KeyDown(sym=tcod.event.KeySym.i):
                 # Quick access to inventory
                 from menu_system import InventoryMenu
@@ -182,8 +188,17 @@ class EventHandler:
                 self.controller.menu_system.show_menu(inventory_menu)
                 return None
 
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.SLASH, mod=mod) if (
-                mod & tcod.event.Modifier.SHIFT  # Question mark (Shift + /)
+            # Help Menu: 'h' or '?'
+            # tcod.event.KeySym.QUESTION is typically generated for '?'
+            # This pattern handles 'h', '?' (if sym is KeySym.QUESTION),
+            # or '?' (if sym is KeySym.SLASH and SHIFT modifier is present).
+            case tcod.event.KeyDown(sym=key_sym, mod=key_mod) if (
+                key_sym == tcod.event.KeySym.h
+                or key_sym == tcod.event.KeySym.QUESTION
+                or (
+                    key_sym == tcod.event.KeySym.SLASH
+                    and (key_mod & tcod.event.Modifier.SHIFT)
+                )
             ):
                 from menu_system import HelpMenu
 
@@ -192,11 +207,15 @@ class EventHandler:
                 return None
 
             case tcod.event.KeyDown(sym=tcod.event.KeySym.g):
-                # Quick access to pickup menu
-                from menu_system import PickupMenu
+                player_x, player_y = self.p.x, self.p.y
+                if self.controller.model.has_pickable_items_at_location(
+                    player_x, player_y
+                ):
+                    from menu_system import PickupMenu
 
-                pickup_menu = PickupMenu(self.controller, (self.p.x, self.p.y))
-                self.controller.menu_system.show_menu(pickup_menu)
+                    pickup_menu = PickupMenu(self.controller, (player_x, player_y))
+                    self.controller.menu_system.show_menu(pickup_menu)
+                # If no items, pressing 'g' does nothing.
                 return None
 
             case tcod.event.KeyDown(sym=tcod.event.KeySym.RETURN, mod=mod) if (

@@ -163,9 +163,14 @@ class Renderer:
 
     def _render_help_text(self) -> None:
         """Render helpful key bindings at the very top."""
-        help_text = (
-            "?: Help | Tab: Commands | I: Inventory | G: Get items | Arrow keys: Move"
-        )
+        help_items = ["?: Help", "I: Inventory"]  # Start with always-available items
+
+        # Conditionally add "Get items" prompt
+        player_x, player_y = self.model.player.x, self.model.player.y
+        if self.model.has_pickable_items_at_location(player_x, player_y):
+            help_items.append("G: Get items")
+
+        help_text = " | ".join(help_items)
         help_x = 1
         help_y = 0
         self.root_console.print(help_x, help_y, help_text, fg=colors.GREY)
