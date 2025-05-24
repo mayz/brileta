@@ -2,6 +2,7 @@ import random
 
 import actions
 import colors
+import conditions
 import items
 import tcod
 import tcod.event
@@ -63,29 +64,47 @@ class Controller:
             menu_system=self.menu_system,  # Pass menu system to renderer
         )
 
-        # Place NPC in a random room that's not the first room
-        if len(rooms) > 1:
-            npc_room = random.choice(rooms[1:])  # Skip the first room where player is
-            npc_x, npc_y = npc_room.center()
-            npc = Actor(
-                x=npc_x,
-                y=npc_y,
-                ch="T",
-                name="Trog",
-                color=colors.RED,
-                max_hp=10,
-                max_ap=3,
-                model=self.model,
-                blocks_movement=True,
-            )
-            npc.equipped_weapon = items.LEAD_PIPE
-            self.model.entities.append(npc)
+        self.model.player.inventory.append(
+            conditions.Injury(injury_type="Sprained Ankle")
+        )
+        self.model.player.inventory.append(items.DAGGER)
+
+        self._add_npc()
 
         # Ensure initial FOV computation
         self.fov.fov_needs_recomputing = True
 
         # For handling input events in run_game_loop().
         self.event_handler = EventHandler(self)
+
+    def _add_npc(self) -> None:
+        """Add an NPC to the map."""
+        # Place NPC right next to the player.
+        npc_x = self.model.player.x
+        npc_y = self.model.player.y
+        choice = random.randint(1, 4)
+        match choice:
+            case 1:
+                npc_x += 2
+            case 2:
+                npc_x -= 2
+            case 3:
+                npc_y += 2
+            case 4:
+                npc_y -= 2
+        npc = Actor(
+            x=npc_x,
+            y=npc_y,
+            ch="T",
+            name="Trog",
+            color=colors.RED,
+            max_hp=10,
+            max_ap=0,  # Hulkification = too big for armor
+            model=self.model,
+            blocks_movement=True,
+        )
+        npc.equipped_weapon = items.LEAD_PIPE
+        self.model.entities.append(npc)
 
     def run_game_loop(self) -> None:
         while True:
