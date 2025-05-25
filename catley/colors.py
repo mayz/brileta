@@ -11,6 +11,8 @@ YELLOW: Color = (255, 255, 0)
 CYAN: Color = (0, 255, 255)
 ORANGE: Color = (255, 165, 0)
 GREY: Color = (128, 128, 128)
+LIGHT_GREY: Color = (200, 200, 200)
+DARK_GREY: Color = (50, 50, 50)
 LIGHT_BLUE: Color = (173, 216, 230)
 
 # Map colors
@@ -22,4 +24,6 @@ LIGHT_GROUND: Color = (200, 180, 50)
 # Entity colors
 PLAYER_COLOR: Color = WHITE
 NPC_COLOR: Color = YELLOW
+SELECTED_HIGHLIGHT: Color = WHITE
+
 DEAD: Color = (128, 128, 128)

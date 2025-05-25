@@ -22,6 +22,7 @@ class Model:
     def __init__(self, map_width: int, map_height: int) -> None:
         self.mouse_tile_location_on_map: tuple[int, int] | None = None
         self.lighting = LightingSystem()
+        self.selected_entity: Entity | None = None
         # Create player with a torch light source
         player_light = LightSource.create_torch()
         self.player = WastoidActor(
@@ -65,6 +66,13 @@ class Model:
         # e.g., items_found.extend(self.game_map.get_items_on_ground(x,y))
         return items_found
 
+    def get_entity_at_location(self, x: int, y: int) -> Actor | None:
+        """Return the first entity found at the given location, or None."""
+        for entity in self.entities:
+            if entity.x == x and entity.y == y:
+                return entity
+        return None
+
     def has_pickable_items_at_location(self, x: int, y: int) -> bool:
         """Check if there are any pickable items at the specified location."""
         return bool(self.get_pickable_items_at_location(x, y))
@@ -93,6 +101,7 @@ class Entity:
         self.blocks_movement = blocks_movement
         if self.light_source and self.model:
             self.light_source.attach(self, self.model.lighting)
+        self.name = "<Unnamed Entity>"
 
     def move(self, dx: int, dy: int) -> None:
         self.x += dx
@@ -116,7 +125,7 @@ class Actor(Entity):
         model: Model | None,
         light_source: LightSource | None = None,
         blocks_movement: bool = True,
-        name: str = "",
+        name: str = "<Unnamed Actor>",
     ) -> None:
         super().__init__(x, y, ch, color, model, light_source, blocks_movement)
         self.max_hp = max_hp
@@ -147,6 +156,9 @@ class Actor(Entity):
             self.ch = "x"
             self.color = colors.DEAD
             self.blocks_movement = False
+            # If this actor was selected, deselect it.
+            if self.model and self.model.selected_entity == self:
+                self.model.selected_entity = None
 
     def heal(self, amount: int) -> None:
         """Heal the actor by the specified amount, up to max_hp.

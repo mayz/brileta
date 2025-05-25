@@ -1,3 +1,4 @@
+import math
 from typing import TYPE_CHECKING
 
 import colors
@@ -31,6 +32,12 @@ class FPSDisplay:
     def render(self, renderer: "Renderer", x: int, y: int) -> None:
         self.update()
         renderer._render_text(x, y, self.display_string, fg=colors.YELLOW)
+
+
+# Pulsation effect parameters
+PULSATION_PERIOD = 2.0  # Seconds for a full sine wave cycle for selected entity
+PULSATION_MAX_BLEND_ALPHA: float = 0.5  # Max alpha for blending pulsation
+LUMINANCE_THRESHOLD = 127.5  # For determining if a color is light or dark
 
 
 class Renderer:
@@ -110,8 +117,9 @@ class Renderer:
 
         # Render map and entities to game console
         self._render_map()
-        self._render_mouse_cursor_highlight()
         self._render_entities()
+        self._render_selected_entity_highlight()
+        self._render_mouse_cursor_highlight()
 
         # Blit game console to root console (below help and message log)
         self.game_map_console.blit(
@@ -144,6 +152,21 @@ class Renderer:
         # Present the final console and handle vsync timing
         self.context.present(self.root_console, keep_aspect=True, integer_scaling=True)
 
+    def _render_selected_entity_highlight(self) -> None:
+        """Renders a highlight on the selected actor's tile by blending colors."""
+        if self.model.selected_entity:
+            entity = self.model.selected_entity
+            # Only highlight if the actor is visible in FOV
+            if self.fov.contains(entity.x, entity.y) and (
+                # Ensure coordinates are within the game_map_console bounds
+                0 <= entity.x < self.game_map_console.width
+                and 0 <= entity.y < self.game_map_console.height
+            ):
+                # Define highlight properties
+                target_color = colors.SELECTED_HIGHLIGHT
+                alpha = 0.6
+                self._apply_blended_highlight(entity.x, entity.y, target_color, alpha)
+
     def _render_mouse_cursor_highlight(self) -> None:
         if not self.model.mouse_tile_location_on_map:
             return
@@ -157,10 +180,6 @@ class Renderer:
         ):
             return
 
-        current_bg_color = self.game_map_console.bg[
-            mx, my
-        ].tolist()  # Get existing bg as a list [r,g,b]
-
         target_highlight_color: colors.Color
         if self.fov.contains(mx, my):  # Or self.fov.fov_map.fov[mx, my]
             # Tile is IN FOV - target a bright highlight
@@ -168,9 +187,27 @@ class Renderer:
         else:
             # Tile is OUTSIDE FOV - target a muted highlight
             target_highlight_color = colors.GREY
-
         # Alpha blending factor (0.0 = fully transparent, 1.0 = fully opaque)
         alpha = 0.6
+        self._apply_blended_highlight(mx, my, target_highlight_color, alpha)
+
+    def _apply_blended_highlight(
+        self, x: int, y: int, target_highlight_color: colors.Color, alpha: float
+    ) -> None:
+        """
+        Blends a target highlight color with the existing background color at (x, y)
+        on the game_map_console and applies it.
+        """
+        # Ensure coordinates are within the game_map_console bounds
+        if not (
+            0 <= x < self.game_map_console.width
+            and 0 <= y < self.game_map_console.height
+        ):
+            return
+
+        current_bg_color = self.game_map_console.bg[
+            x, y
+        ].tolist()  # Get existing bg as a list [r,g,b]
 
         # Perform alpha blending:
         # NewColor = TargetColor * alpha + CurrentColor * (1 - alpha)
@@ -191,7 +228,7 @@ class Renderer:
             max(0, min(255, blended_b)),
         )
 
-        self.game_map_console.bg[mx, my] = final_blended_color
+        self.game_map_console.bg[x, y] = final_blended_color
 
     def _render_help_text(self) -> None:
         """Render helpful key bindings at the very top."""
@@ -249,15 +286,72 @@ class Renderer:
     def _render_entity(self, e: Entity) -> None:
         self.map_ch[e.x, e.y] = ord(e.ch)
 
-        # Use the already computed RGB light intensity
+        # Calculate the base lit color of the entity
+        base_entity_color = e.color
         light_rgb = self.current_light_intensity[e.x, e.y]
 
-        # Apply RGB lighting to each color channel
-        lit_color = tuple(
-            int(min(255, color * light))  # Clamp to valid color range
-            for color, light in zip(e.color, light_rgb, strict=True)
+        # Apply RGB lighting to each color channel of the base_entity_color
+        # Ensure components are clamped to valid color range [0, 255]
+        normally_lit_fg_components = [
+            max(0, min(255, int(color_channel * light_component)))
+            for color_channel, light_component in zip(
+                base_entity_color, light_rgb, strict=True
+            )
+        ]
+
+        final_fg_color = tuple(normally_lit_fg_components)
+
+        # If selected and in FOV, apply pulsation blending on top of the lit color
+        if self.model.selected_entity == e and self.fov.contains(e.x, e.y):
+            final_fg_color = self._apply_pulsating_effect(
+                normally_lit_fg_components, base_entity_color
+            )
+
+        self.map_fg[e.x, e.y] = final_fg_color
+
+    def _apply_pulsating_effect(
+        self, input_color: colors.Color, base_entity_color: colors.Color
+    ) -> colors.Color:
+        game_time = self.fps_display.clock.last_time
+        # alpha_oscillation will go from 0.0 to 1.0 and back over PULSATION_PERIOD
+        alpha_oscillation = (
+            math.sin((game_time % PULSATION_PERIOD) / PULSATION_PERIOD * 2 * math.pi)
+            + 1
+        ) / 2.0
+
+        # current_blend_alpha will oscillate from 0 to PULSATION_MAX_BLEND_ALPHA
+        current_blend_alpha = alpha_oscillation * PULSATION_MAX_BLEND_ALPHA
+
+        # Determine dynamic pulsation target color based on entity's base color
+        r, g, b = base_entity_color
+
+        # Calculate luminance using the Rec. 709 formula.
+        # See: https://en.wikipedia.org/wiki/Luma_(video)
+        luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+        dynamic_pulsation_target_color: colors.Color = (
+            colors.DARK_GREY if luminance > LUMINANCE_THRESHOLD else colors.LIGHT_GREY
         )
-        self.map_fg[e.x, e.y] = lit_color
+
+        # Blend input_color with dynamic_pulsation_target_color
+        blended_r = int(
+            dynamic_pulsation_target_color[0] * current_blend_alpha
+            + input_color[0] * (1.0 - current_blend_alpha)
+        )
+        blended_g = int(
+            dynamic_pulsation_target_color[1] * current_blend_alpha
+            + input_color[1] * (1.0 - current_blend_alpha)
+        )
+        blended_b = int(
+            dynamic_pulsation_target_color[2] * current_blend_alpha
+            + input_color[2] * (1.0 - current_blend_alpha)
+        )
+
+        return (
+            max(0, min(255, blended_r)),
+            max(0, min(255, blended_g)),
+            max(0, min(255, blended_b)),
+        )
 
     def _render_text(
         self, x: int, y: int, text: str, fg: colors.Color = colors.WHITE

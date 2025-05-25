@@ -235,14 +235,14 @@ class Menu(abc.ABC):
             else:
                 # For other menus, use print_box for centered title within content area
                 # Content area for title: x from 1 to actual_width-2
-                menu_console.print_box(
-                    1,
-                    title_y,
-                    actual_width - 2,
-                    1,
-                    self.title,
+                menu_console.print(
+                    x=1,
+                    y=title_y,
+                    text=self.title,
+                    width=actual_width - 2,
+                    height=1,
                     fg=colors.YELLOW,
-                    alignment=2,
+                    alignment=tcod.constants.CENTER,
                 )
 
         # Draw separator line

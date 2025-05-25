@@ -136,15 +136,6 @@ class AttackAction(Action):
         # single action and roll (like: hit ’em so hard they fall down) by
         # foregoing a bonus from advantage, or by accepting a disadvantage."
 
-        ##########
-        # FIXME: Handle critical hits (20) and misses (1).
-        #
-        # "Crits favoring an attack deal an extra die of damage and
-        # break the target’s armor (lowering to 0 AP) before applying damage—or
-        # cause an injury to an unarmored target! Crits favoring defense cause the
-        # attacker’s weapon to break, and leave them confused or off-balance.
-        ##########
-
         # Does the attack hit?
         if attack_result.success:
             # Hit - roll damage
@@ -152,8 +143,17 @@ class AttackAction(Action):
             damage = damage_dice.roll()
 
             if attack_result.is_critical_hit:
-                # Roll an extra die of damage.
+                # "Crits favoring an attack deal an extra die of damage and break
+                # the target’s armor (lowering to 0 AP) before applying damage - or
+                # cause an injury to an unarmored target."
                 damage += damage_dice.roll()
+
+                if self.defender.ap > 0:
+                    self.defender.ap = 0
+                    # FIXME: Break the defender's armor.
+                else:
+                    # FIXME: Give the defender an injury.
+                    pass
 
             # Apply damage.
             self.defender.take_damage(damage)
@@ -184,6 +184,14 @@ class AttackAction(Action):
         else:
             # Miss
             if attack_result.is_critical_miss:
+                # "Crits favoring defense cause the attacker’s weapon to break,
+                # and leave them confused or off-balance."
+                # FIXME: Break the attacker's weapon.
+                # FIXME: If the attacker is unarmed and attacking with fists or
+                # kicking, etc., they pull a muscle and have disadvantage on their
+                # next attack. (house rule)
+                # FIXME: Give the attacker the condition "confused" or "off-balance".
+
                 miss_message = (
                     f"Critical miss! {self.attacker.name}'s attack on "
                     f"{self.defender.name} fails."
