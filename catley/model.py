@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     import tcod
 
     from catley.actions import Action
-    from catley.controller import Controller
+    from catley.engine import Controller
 
 
 class Model:

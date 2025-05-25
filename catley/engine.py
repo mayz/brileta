@@ -12,12 +12,34 @@ from menu_system import MenuSystem
 from message_log import MessageLog
 from model import Actor, Model
 from render import Renderer
+from tcod.console import Console
+from tcod.context import Context
+
+
+def setup_tcod_context(screen_width: int, screen_height: int, title: str) -> Context:
+    """Setup the TCOD context."""
+    tileset = tcod.tileset.load_tilesheet(
+        "Taffer_20x20.png",
+        columns=16,
+        rows=16,
+        charmap=tcod.tileset.CHARMAP_CP437,
+    )
+
+    return tcod.context.new(
+        columns=screen_width,
+        rows=screen_height,
+        tileset=tileset,
+        title=title,
+        vsync=True,
+    )
 
 
 class Controller:
-    def __init__(self) -> None:
-        self.screen_width = 80
-        self.screen_height = 50
+    def __init__(self, context: Context, root_console: Console) -> None:
+        self.context = context
+        self.root_console = root_console
+        #self.screen_width = 80
+        #self.screen_height = 50
 
         self.help_height = 1  # One line for help text
 
@@ -55,13 +77,15 @@ class Controller:
 
         # Create renderer after FOV is initialized
         self.renderer = Renderer(
-            screen_width=self.screen_width,
-            screen_height=self.screen_height,
+            screen_width=self.root_console.width,
+            screen_height=self.root_console.height,
             model=self.model,
             fov=self.fov,
             clock=self.clock,
             message_log=self.message_log,
-            menu_system=self.menu_system,  # Pass menu system to renderer
+            menu_system=self.menu_system,
+            context=self.context,
+            root_console=self.root_console,
         )
 
         self.model.player.inventory.append(
@@ -238,9 +262,19 @@ class EventHandler:
 
 
 def main() -> None:
-    controller = Controller()
-    controller.run_game_loop()
+    screen_width = 80
+    screen_height = 50
+    game_title = "Catley Prototype"
 
+    with setup_tcod_context(screen_width, screen_height, game_title) as context:
+        root_console = Console(screen_width, screen_height, order="F")
+
+        controller = Controller(context, root_console)
+        try:
+            controller.run_game_loop()
+        except Exception as e:
+            print(f"An unexpected error occurred: {e}")
+            raise
 
 if __name__ == "__main__":
     main()

@@ -2,12 +2,12 @@ from typing import TYPE_CHECKING
 
 import colors
 import numpy as np
-import tcod
 from clock import Clock
 from fov import FieldOfView
 from message_log import MessageLog
 from model import Entity, Model
 from tcod.console import Console
+from tcod.context import Context
 
 if TYPE_CHECKING:
     from menu_system import MenuSystem
@@ -43,7 +43,12 @@ class Renderer:
         clock: Clock,
         message_log: MessageLog,
         menu_system: "MenuSystem",
+        context: Context,
+        root_console: Console,
     ) -> None:
+        self.context = context
+        self.root_console = root_console
+
         self.screen_width = screen_width
         self.screen_height = screen_height
         self.model = model
@@ -57,22 +62,6 @@ class Renderer:
         self.message_log_y = self.help_height  # Start after help text (line 1)
         self.message_log_width = screen_width
 
-        tileset = tcod.tileset.load_tilesheet(
-            "Taffer_20x20.png",
-            columns=16,
-            rows=16,
-            charmap=tcod.tileset.CHARMAP_CP437,
-        )
-
-        self.root_console = Console(screen_width, screen_height, order="F")
-        self.context = tcod.context.new(
-            columns=screen_width,
-            rows=screen_height,
-            tileset=tileset,
-            title="Catley McCat",  # type: ignore
-            vsync=True,
-        )
-
         # In the future, re-run whenever the map composition changes.
         self._optimize_map_info()
 
@@ -83,14 +72,14 @@ class Renderer:
         """In the future, re-run whenever the map composition changes."""
         m = self.model.game_map
 
-        self.con: Console = Console(m.width, m.height, order="F")
+        self.game_map_console: Console = Console(m.width, m.height, order="F")
 
         # The getter properties in the Python tcod library call transpose()
         # on the underlying numpy arrays, so it's important to get a reference to
         # the arrays once, outside of a loop.
-        self.bg = self.con.bg
-        self.fg = self.con.fg
-        self.ch = self.con.ch
+        self.map_bg = self.game_map_console.bg
+        self.map_fg = self.game_map_console.fg
+        self.map_ch = self.game_map_console.ch
 
         is_wall = np.full((m.width, m.height), False, dtype=np.bool_, order="F")
         for x in range(m.width):
@@ -99,10 +88,10 @@ class Renderer:
                     is_wall[(x, y)] = True
         wall_idx = np.where(is_wall)
 
-        self.dark_map_bg = np.full_like(self.bg, colors.DARK_GROUND)
+        self.dark_map_bg = np.full_like(self.map_bg, colors.DARK_GROUND)
         self.dark_map_bg[wall_idx] = colors.DARK_WALL
 
-        self.light_map_bg = np.full_like(self.bg, colors.LIGHT_GROUND)
+        self.light_map_bg = np.full_like(self.map_bg, colors.LIGHT_GROUND)
         self.light_map_bg[wall_idx] = colors.LIGHT_WALL
 
         # Right now, which tiles we've explored only concerns the renderer.
@@ -111,7 +100,7 @@ class Renderer:
         )
 
     def render_all(self) -> None:
-        self.con.clear()
+        self.game_map_console.clear()
 
         # Make sure FOV is up to date before rendering
         self.fov.recompute_if_needed()
@@ -124,13 +113,13 @@ class Renderer:
         self._render_entities()
 
         # Blit game console to root console (below help and message log)
-        self.con.blit(
+        self.game_map_console.blit(
             dest=self.root_console,
             dest_x=0,
             dest_y=self.help_height
             + self.message_log_height,  # Start after help + message log (line 7)
-            width=self.con.width,
-            height=self.con.height,
+            width=self.game_map_console.width,
+            height=self.game_map_console.height,
         )
         # Render help text above message log
         if not self.menu_system.has_active_menus():
@@ -170,7 +159,7 @@ class Renderer:
 
     def _render_map(self) -> None:
         explored_idx = np.where(self.map_tiles_explored)
-        self.bg[explored_idx] = self.dark_map_bg[explored_idx]
+        self.map_bg[explored_idx] = self.dark_map_bg[explored_idx]
 
         # Compute lighting once and store it
         self.current_light_intensity = self.model.lighting.compute_lighting(
@@ -188,7 +177,7 @@ class Renderer:
             # Blend colors based on light intensity for each RGB channel
             for i in range(3):  # For each RGB channel
                 light_intensity = cell_light[..., i]
-                self.bg[visible_y, visible_x, i] = self.light_map_bg[
+                self.map_bg[visible_y, visible_x, i] = self.light_map_bg[
                     visible_y, visible_x, i
                 ] * light_intensity + self.dark_map_bg[visible_y, visible_x, i] * (
                     1.0 - light_intensity
@@ -208,7 +197,7 @@ class Renderer:
         self._render_entity(self.model.player)
 
     def _render_entity(self, e: Entity) -> None:
-        self.ch[e.x, e.y] = ord(e.ch)
+        self.map_ch[e.x, e.y] = ord(e.ch)
 
         # Use the already computed RGB light intensity
         light_rgb = self.current_light_intensity[e.x, e.y]
@@ -218,7 +207,7 @@ class Renderer:
             int(min(255, color * light))  # Clamp to valid color range
             for color, light in zip(e.color, light_rgb, strict=True)
         )
-        self.fg[e.x, e.y] = lit_color
+        self.map_fg[e.x, e.y] = lit_color
 
     def _render_text(
         self, x: int, y: int, text: str, fg: colors.Color = colors.WHITE
