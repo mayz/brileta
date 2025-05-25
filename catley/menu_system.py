@@ -242,7 +242,7 @@ class Menu(abc.ABC):
                     1,
                     self.title,
                     fg=colors.YELLOW,
-                    alignment=tcod.CENTER,
+                    alignment=2,
                 )
 
         # Draw separator line
