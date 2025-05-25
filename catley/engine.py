@@ -128,8 +128,9 @@ class Controller:
 class EventHandler:
     def __init__(self, controller: Controller) -> None:
         self.controller = controller
-        self.game_map = controller.model.game_map
-        self.p = controller.model.player
+        self.m = controller.model
+        self.game_map = self.m.game_map
+        self.p = self.m.player
 
     def dispatch(self, event: tcod.event.Event) -> None:
         # First, try to handle the event with the menu system
@@ -223,9 +224,7 @@ class EventHandler:
 
             case tcod.event.KeyDown(sym=tcod.event.KeySym.g):
                 player_x, player_y = self.p.x, self.p.y
-                if self.controller.model.has_pickable_items_at_location(
-                    player_x, player_y
-                ):
+                if self.m.has_pickable_items_at_location(player_x, player_y):
                     from menu_system import PickupMenu
 
                     pickup_menu = PickupMenu(self.controller, (player_x, player_y))
@@ -243,26 +242,51 @@ class EventHandler:
                 map_coords = self._get_tile_map_coords_from_root_coords(root_tile_pos)
 
                 if map_coords is not None:
-                    self.controller.model.mouse_tile_location_on_map = map_coords
+                    self.m.mouse_tile_location_on_map = map_coords
                 else:
                     # Mouse is outside the game map area (e.g., on UI panels).
-                    self.controller.model.mouse_tile_location_on_map = None
+                    self.m.mouse_tile_location_on_map = None
 
                 return None
 
             case tcod.event.MouseButtonDown(button=button):
-                root_tile_pos = event.position
-                map_coords = self._get_tile_map_coords_from_root_coords(root_tile_pos)
-
-                if button == tcod.event.MouseButton.LEFT:
-                    if map_coords is not None:
-                        # Do stuff with map_coords.
-                        pass
-                    return None
-                return None
+                return self._handle_mouse_button_down_event(event, button)
 
             case _:
                 return None
+
+    def _handle_mouse_button_down_event(
+        self, event: tcod.event.Event, button: tcod.event.MouseButton
+    ) -> actions.Action | None:
+        """
+        Handle mouse button down events.
+        Returns an action if the event is handled, otherwise None.
+        """
+        root_tile_pos = event.position
+        map_coords = self._get_tile_map_coords_from_root_coords(root_tile_pos)
+
+        if button != tcod.event.MouseButton.LEFT:
+            return None
+
+        if not map_coords:
+            # Clicked outside the map area (e.g., on UI panels).
+            self.m.selected_entity = None
+            return None
+
+        mx, my = map_coords
+        entity_at_click = self.m.get_entity_at_location(mx, my)
+
+        if entity_at_click:
+            if self.m.selected_entity == entity_at_click:
+                # Clicked on already selected entity. Deselect it.
+                self.m.selected_entity = None
+            else:
+                self.m.selected_entity = entity_at_click
+            return None  # UI action, not a game turn action
+
+        # Clicked on an empty tile
+        self.m.selected_entity = None
+        return None  # UI action, not a game turn action
 
     def _get_tile_map_coords_from_root_coords(
         self, root_tile_coords: tuple[int, int]
