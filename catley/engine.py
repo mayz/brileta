@@ -20,8 +20,6 @@ class Controller:
     def __init__(self, context: Context, root_console: Console) -> None:
         self.context = context
         self.root_console = root_console
-        # self.screen_width = 80
-        # self.screen_height = 50
 
         self.help_height = 1  # One line for help text
 
