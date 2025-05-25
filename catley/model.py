@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import dataclasses
 import random
 from abc import abstractmethod
 from typing import TYPE_CHECKING
@@ -78,7 +77,6 @@ class Model:
         return bool(self.get_pickable_items_at_location(x, y))
 
 
-@dataclasses.dataclass
 class Entity:
     """An entity that can exist in the game world."""
 

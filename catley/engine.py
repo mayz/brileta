@@ -10,7 +10,7 @@ from clock import Clock
 from fov import FieldOfView
 from menu_system import MenuSystem
 from message_log import MessageLog
-from model import Actor, Model
+from model import Model, WastoidActor
 from render import Renderer
 from tcod.console import Console
 from tcod.context import Context
@@ -96,18 +96,20 @@ class Controller:
                 npc_y += 2
             case 4:
                 npc_y -= 2
-        npc = Actor(
+        npc = WastoidActor(
             x=npc_x,
             y=npc_y,
             ch="T",
             name="Trog",
-            color=colors.RED,
-            max_hp=10,
-            max_ap=0,  # Hulkification = too big for armor
+            color=colors.DARK_GREY,
             model=self.model,
             blocks_movement=True,
+            weirdness=3,
+            strength=3,
+            toughness=3,
+            intelligence=-3
         )
-        npc.equipped_weapon = items.LEAD_PIPE
+        npc.equipped_weapon = items.SLEDGEHAMMER
         self.model.entities.append(npc)
 
     def run_game_loop(self) -> None:
