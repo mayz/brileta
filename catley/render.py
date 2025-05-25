@@ -110,6 +110,7 @@ class Renderer:
 
         # Render map and entities to game console
         self._render_map()
+        self._render_mouse_cursor_highlight()
         self._render_entities()
 
         # Blit game console to root console (below help and message log)
@@ -142,6 +143,55 @@ class Renderer:
 
         # Present the final console and handle vsync timing
         self.context.present(self.root_console, keep_aspect=True, integer_scaling=True)
+
+    def _render_mouse_cursor_highlight(self) -> None:
+        if not self.model.mouse_tile_location_on_map:
+            return
+
+        mx, my = self.model.mouse_tile_location_on_map
+
+        # Bounds check for the game_map_console
+        if not (
+            0 <= mx < self.game_map_console.width
+            and 0 <= my < self.game_map_console.height
+        ):
+            return
+
+        current_bg_color = self.game_map_console.bg[
+            mx, my
+        ].tolist()  # Get existing bg as a list [r,g,b]
+
+        target_highlight_color: colors.Color
+        if self.fov.contains(mx, my):  # Or self.fov.fov_map.fov[mx, my]
+            # Tile is IN FOV - target a bright highlight
+            target_highlight_color = colors.WHITE
+        else:
+            # Tile is OUTSIDE FOV - target a muted highlight
+            target_highlight_color = colors.GREY
+
+        # Alpha blending factor (0.0 = fully transparent, 1.0 = fully opaque)
+        alpha = 0.6
+
+        # Perform alpha blending:
+        # NewColor = TargetColor * alpha + CurrentColor * (1 - alpha)
+        blended_r = int(
+            target_highlight_color[0] * alpha + current_bg_color[0] * (1.0 - alpha)
+        )
+        blended_g = int(
+            target_highlight_color[1] * alpha + current_bg_color[1] * (1.0 - alpha)
+        )
+        blended_b = int(
+            target_highlight_color[2] * alpha + current_bg_color[2] * (1.0 - alpha)
+        )
+
+        # Ensure colors stay within 0-255 range
+        final_blended_color = (
+            max(0, min(255, blended_r)),
+            max(0, min(255, blended_g)),
+            max(0, min(255, blended_b)),
+        )
+
+        self.game_map_console.bg[mx, my] = final_blended_color
 
     def _render_help_text(self) -> None:
         """Render helpful key bindings at the very top."""

@@ -16,30 +16,12 @@ from tcod.console import Console
 from tcod.context import Context
 
 
-def setup_tcod_context(screen_width: int, screen_height: int, title: str) -> Context:
-    """Setup the TCOD context."""
-    tileset = tcod.tileset.load_tilesheet(
-        "Taffer_20x20.png",
-        columns=16,
-        rows=16,
-        charmap=tcod.tileset.CHARMAP_CP437,
-    )
-
-    return tcod.context.new(
-        columns=screen_width,
-        rows=screen_height,
-        tileset=tileset,
-        title=title,
-        vsync=True,
-    )
-
-
 class Controller:
     def __init__(self, context: Context, root_console: Console) -> None:
         self.context = context
         self.root_console = root_console
-        #self.screen_width = 80
-        #self.screen_height = 50
+        # self.screen_width = 80
+        # self.screen_height = 50
 
         self.help_height = 1  # One line for help text
 
@@ -134,7 +116,8 @@ class Controller:
         while True:
             # Process any pending events
             for event in tcod.event.get():
-                self.event_handler.dispatch(event)
+                event_with_tile_coords = self.context.convert_event(event)
+                self.event_handler.dispatch(event_with_tile_coords)
 
             # Update using clock's delta time
             delta_time = self.clock.sync(fps=self.target_fps)
@@ -257,24 +240,85 @@ class EventHandler:
             ):
                 return actions.ToggleFullscreenAction(self.controller.renderer.context)
 
+            case tcod.event.MouseMotion():
+                root_tile_pos = event.position
+                map_coords = self._get_tile_map_coords_from_root_coords(root_tile_pos)
+
+                if map_coords is not None:
+                    self.controller.model.mouse_tile_location_on_map = map_coords
+                else:
+                    # Mouse is outside the game map area (e.g., on UI panels).
+                    self.controller.model.mouse_tile_location_on_map = None
+
+                return None
+
+            case tcod.event.MouseButtonDown(button=button):
+                root_tile_pos = event.position
+                map_coords = self._get_tile_map_coords_from_root_coords(root_tile_pos)
+
+                if button == tcod.event.MouseButton.LEFT:
+                    if map_coords is not None:
+                        # Do stuff with map_coords.
+                        pass
+                    return None
+                return None
+
             case _:
                 return None
+
+    def _get_tile_map_coords_from_root_coords(
+        self, root_tile_coords: tuple[int, int]
+    ) -> tuple[int, int] | None:
+        """
+        Translates mouse coordinates from root_console space to game_map_console space.
+        Returns (map_x, map_y) if the click is within the map area, otherwise None.
+        """
+        renderer = self.controller.renderer  # Get access to the renderer
+
+        map_render_offset_x = 0
+        map_render_offset_y = renderer.help_height + renderer.message_log_height
+
+        # Translate to coordinates relative to game_map_console
+        map_x = root_tile_coords[0] - map_render_offset_x
+        map_y = root_tile_coords[1] - map_render_offset_y
+
+        # Check if the translated coordinates are within the bounds of game_map_console
+        if (
+            0 <= map_x < renderer.game_map_console.width
+            and 0 <= map_y < renderer.game_map_console.height
+        ):
+            return map_x, map_y
+
+        return None  # Click was outside the map area
 
 
 def main() -> None:
     screen_width = 80
     screen_height = 50
-    game_title = "Catley Prototype"
+    title = "Catley Prototype"
 
-    with setup_tcod_context(screen_width, screen_height, game_title) as context:
-        root_console = Console(screen_width, screen_height, order="F")
+    tileset = tcod.tileset.load_tilesheet(
+        "Taffer_20x20.png",
+        columns=16,
+        rows=16,
+        charmap=tcod.tileset.CHARMAP_CP437,
+    )
 
+    root_console = Console(screen_width, screen_height, order="F")
+
+    with tcod.context.new(
+        console=root_console,
+        tileset=tileset,
+        title=title,
+        vsync=True,
+    ) as context:
         controller = Controller(context, root_console)
         try:
             controller.run_game_loop()
         except Exception as e:
             print(f"An unexpected error occurred: {e}")
             raise
+
 
 if __name__ == "__main__":
     main()
