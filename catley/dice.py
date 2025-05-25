@@ -1,5 +1,23 @@
 """
-Module for simulating dice rolls used in the Deadball game.
+Simulates complex dice rolls and d20 check/test roll mechanics.
+
+This module provides two main areas of functionality:
+1.  General Dice Rolling:
+    The `Dice` class allows for creating dice objects from string notations
+    (e.g., "2d10+5", "-d6", "15") and rolling them to get a numerical result.
+    It handles multiple dice, modifiers, and negative dice outcomes.
+    For convenience, a `roll_d()` function is provided for rolling a single die.
+
+2.  d20 Check Roll System:
+    A system for simulating d20-based checks. This includes:
+    - `perform_check_roll()`: The core function that handles d20 rolls,
+      addition of an ability score, comparison against a target value
+      (which must be strictly exceeded), critical hits (natural 20),
+      critical misses (natural 1), advantage, and disadvantage.
+    - Convenience wrappers: `perform_unopposed_check_roll()` and
+      `perform_opposed_check_roll()` for common scenarios.
+    - `calculate_check_roll_success_probability()`: To compute the
+      probability of success for any given check roll setup.
 """
 
 import random
@@ -35,11 +53,13 @@ class Dice:
             dice_str: String representation of the dice
 
         Returns:
-            Tuple of (number of dice, sides, multiplier)
+            Tuple of (number of dice, sides, multiplier, modifier)
 
         Raises:
             ValueError: If the dice string format is invalid
         """
+        dice_str = dice_str.replace(" ", "")  # Remove all spaces
+
         # Initialize modifier
         modifier = 0
         dice_part = dice_str
@@ -130,17 +150,41 @@ class CheckResult:
     has_disadvantage: bool = False
 
 
-# The Wastoid rules call this a "test" roll, but "test" is such an overloaded
-# word, that we're going with "check", which is what most other RPGs call it.
 def perform_check_roll(
-    # The ability score value to use.
     ability_score: int,
-    # The number to beat (e.g., 15 for unopposed, or opponent's ability + 10).
-    target_dc: int,
+    roll_to_exceed: int,
     has_advantage: bool = False,
     has_disadvantage: bool = False,
 ) -> CheckResult:
-    # If a roll has both an advantage and a disadvantage, they all cancel out.
+    """Performs a d20 check roll against a target value.
+
+    The Wastoid rules call this a "test" roll, but "test" is such an overloaded
+    term, that we're going with "check", which is what most other RPGs call it.
+
+    A check roll involves rolling a d20, adding an ability score, and comparing
+    the total against a `roll_to_exceed` value. The roll succeeds if the
+    total is strictly greater than `roll_to_exceed`.
+
+    Natural 20s on the d20 are always successes (critical hits).
+    Natural 1s on the d20 are always failures (critical misses).
+    Advantage (roll two d20s, take higher) and disadvantage (roll two d20s,
+    take lower) can be applied. If both are present, they cancel out.
+
+    See also the `perform_unopposed_check_roll()` and `perform_opposed_check_roll()`
+    convenience functions.
+
+    Args:
+        ability_score: The ability score value to add to the d20 roll.
+        roll_to_exceed: The number to beat. The value that (d20 roll + ability_score)
+                        must strictly exceed for a success (unless it's a critical
+                        hit or miss).
+        has_advantage: If True, two d20s are rolled and the higher result is used.
+        has_disadvantage: If True, two d20s are rolled and the lower result is used.
+
+    Returns:
+        A CheckResult object detailing the outcome of the roll.
+    """
+    # If both an advantage and a disadvantage, they cancel out.
     if has_advantage and has_disadvantage:
         has_advantage = False
         has_disadvantage = False
@@ -171,7 +215,7 @@ def perform_check_roll(
     elif is_critical_miss:
         success = False
     else:
-        success = total_value > target_dc
+        success = total_value > roll_to_exceed
 
     return CheckResult(
         success=success,
@@ -179,7 +223,7 @@ def perform_check_roll(
         is_critical_miss=is_critical_miss,
         final_roll_used=final_roll_used,
         total_value=total_value,
-        target_value=target_dc,
+        target_value=roll_to_exceed,
         has_advantage=has_advantage,
         has_disadvantage=has_disadvantage,
     )
@@ -190,6 +234,19 @@ def perform_unopposed_check_roll(
     has_advantage: bool = False,
     has_disadvantage: bool = False,
 ) -> CheckResult:
+    """Performs an unopposed check roll against a standard target value of 15.
+
+    This is a convenience wrapper around `perform_check_roll()` where the
+    `roll_to_exceed` value is fixed at 15.
+
+    Args:
+        ability_score: The modifier to add to the d20 roll.
+        has_advantage: If True, two d20s are rolled and the higher result is used.
+        has_disadvantage: If True, two d20s are rolled and the lower result is used.
+
+    Returns:
+        A CheckResult object detailing the outcome of the roll.
+    """
     target_dc = 15
     return perform_check_roll(ability_score, target_dc, has_advantage, has_disadvantage)
 
@@ -200,10 +257,83 @@ def perform_opposed_check_roll(
     has_advantage: bool = False,
     has_disadvantage: bool = False,
 ) -> CheckResult:
+    """Performs an opposed check roll.
+
+    The `roll_to_exceed` value is calculated as the opponent's ability score + 10.
+    This is a convenience wrapper around `perform_check_roll()`.
+
+    Args:
+        actor_ability_score: The ability score of the character making the roll.
+        opponent_ability_score: The ability score of the character opposing the roll,
+                                used to calculate the target value.
+        has_advantage: If True, the actor's roll has advantage.
+        has_disadvantage: If True, the actor's roll has disadvantage.
+
+    Returns:
+        A CheckResult object detailing the outcome of the actor's roll.
+    """
     target_dc = opponent_ability_score + 10
     return perform_check_roll(
         actor_ability_score, target_dc, has_advantage, has_disadvantage
     )
+
+
+def calculate_check_roll_success_probability(
+    ability_score: int,
+    roll_to_exceed: int,
+    has_advantage: bool = False,
+    has_disadvantage: bool = False,
+) -> float:
+    """Calculate the probability of success for a check roll."""
+    if has_advantage and has_disadvantage:
+        has_advantage = False
+        has_disadvantage = False
+
+    prob_single_success = _calculate_single_d20_success_probability(
+        ability_score, roll_to_exceed
+    )
+    prob_single_failure = 1.0 - prob_single_success
+
+    if not has_advantage and not has_disadvantage:
+        return prob_single_success
+
+    if has_advantage:
+        # Succeed if not both dice fail
+        return 1.0 - (prob_single_failure**2)
+
+    # has_disadvantage
+    # Succeed if both dice would individually succeed (as the lower roll is taken)
+    return prob_single_success**2
+
+
+def _calculate_single_d20_success_probability(
+    ability_score: int, roll_to_exceed: int
+) -> float:
+    """
+    Calculates the probability of success for a single d20 roll (loop-less).
+
+    Because natural 20 is always a success and natural 1 is always a failure,
+    the output range is [0.05, 0.95].
+    """
+    natural_roll_to_exceed = roll_to_exceed - ability_score
+
+    # 1. Count natural 20 (always a success)
+    # A natural 20 is one specific outcome.
+    num_successful_outcomes = 1  # The outcome '20'
+
+    # 2. Count non-critical, non-miss successes (rolls 2-19)
+    # These rolls succeed if d20_roll > roll_to_exceed.
+    # Smallest possible successful roll in this range is
+    # roll_to_exceed + 1, but not less than 2.
+    min_successful_non_crit_roll = max(2, natural_roll_to_exceed + 1)
+
+    # Largest possible successful roll in this range is 19.
+    # If min_successful_non_crit_roll > 19, there are no such successes.
+    if min_successful_non_crit_roll <= 19:
+        # Number of successful outcomes in the range [min_successful_non_crit_roll, 19]
+        num_successful_outcomes += 19 - min_successful_non_crit_roll + 1
+
+    return num_successful_outcomes / 20.0
 
 
 if __name__ == "__main__":
