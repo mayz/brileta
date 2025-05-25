@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 
 class Model:
     def __init__(self, map_width: int, map_height: int) -> None:
+        self.mouse_tile_location_on_map: tuple[int, int] | None = None
         self.lighting = LightingSystem()
         # Create player with a torch light source
         player_light = LightSource.create_torch()
