@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import random
-from abc import abstractmethod
 from typing import TYPE_CHECKING
 
 import colors
@@ -12,8 +11,6 @@ from lighting import LightingSystem, LightSource
 
 if TYPE_CHECKING:
     import tcod
-    from actions import Action
-    from controller import Controller
 
 
 class Model:
@@ -177,18 +174,6 @@ class Actor(Entity):
     def is_alive(self) -> bool:
         """Return True if the actor is alive (HP > 0)."""
         return self.hp > 0
-
-    @abstractmethod
-    def get_action(self, controller: Controller) -> Action | None:
-        """Get the next action for this actor.
-
-        Args:
-            controller: The controller that manages input/decisions
-
-        Returns:
-            An Action to perform, or None for no action
-        """
-        pass
 
 
 class WastoidActor(Actor):

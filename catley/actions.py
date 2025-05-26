@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 import colors
 import dice
 import items
+from menu_system import Menu, PickupMenu
 from model import Actor, WastoidActor
 
 if TYPE_CHECKING:
@@ -93,6 +94,34 @@ class SelectOrDeselectEntityAction(UIAction):
 
     def execute(self) -> None:
         self.controller.model.selected_entity = self.selection
+
+
+class OpenMenuAction(UIAction):
+    """Action to open a menu, like the inventory or help menu."""
+
+    def __init__(self, controller: Controller, menu_class: type[Menu]):
+        self.controller = controller
+        self.menu_class = menu_class
+
+    def execute(self) -> None:
+        menu = self.menu_class(self.controller)
+        self.controller.menu_system.show_menu(menu)
+
+
+class OpenPickupMenuAction(OpenMenuAction):
+    """Action to open the pickup menu for items at the player's location."""
+
+    def __init__(self, controller: Controller):
+        self.controller = controller
+        self.player = controller.model.player
+
+    def execute(self) -> None:
+        # Check if there are items to pick up, otherwise do nothing.
+        if self.controller.model.has_pickable_items_at_location(
+            self.player.x, self.player.y
+        ):
+            menu = PickupMenu(self.controller, (self.player.x, self.player.y))
+            self.controller.menu_system.show_menu(menu)
 
 
 ################################################################################
