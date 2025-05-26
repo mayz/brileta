@@ -14,28 +14,98 @@ from model import Actor, WastoidActor
 
 if TYPE_CHECKING:
     import tcod
-    from engine import Controller
+    from controller import Controller
     from model import Entity
 
 
 class Action(abc.ABC):
-    """Base class for all game actions."""
+    """Abstract base class for any command or operation that can be performed within
+    the game, whether by an entity in the game world or by the player interacting
+    with the UI.
+
+    The two main subclasses of Action are `UIAction` and `GameTurnAction`.
+    """
 
     @abc.abstractmethod
     def execute(self) -> None:
-        """Execute the action."""
+        """Perform the action."""
         raise NotImplementedError()
 
 
-class MoveAction(Action):
+class UIAction(Action):
+    """An action for UI-related operations, such as opening menus,
+    toggling fullscreen, or quitting the game.
+    """
+
+    pass
+
+
+class GameTurnAction(Action):
+    """An action that represents a game turn, such as moving an entity or
+    performing an attack. This is distinct from UI actions and is meant to
+    be executed within the game loop.
+
+
+    An action performed by an entity (player or NPC) that directly affects the
+    game world's state and typically consumes that entity's turn. Examples include
+    moving, attacking, performing stunts or tricks, etc.
+    """
+
+    def __init__(self, controller: Controller, entity: Entity) -> None:
+        self.controller = controller
+        self.entity = entity
+
+
+################################################################################
+
+
+class ToggleFullscreenAction(UIAction):
+    """Action for toggling fullscreen mode."""
+
+    def __init__(self, context: tcod.context.Context) -> None:
+        self.context = context
+
+    def execute(self) -> None:
+        self.context.present(self.context.console, keep_aspect=True)
+
+
+class QuitAction(UIAction):
+    """Action for quitting the game."""
+
+    def execute(self) -> None:
+        raise SystemExit()
+
+
+class SelectOrDeselectEntityAction(UIAction):
+    """
+    Action to select a new entity or deselect (clear) the current selection.
+    """
+
+    def __init__(self, controller: Controller, selection: Entity | None):
+        """
+        Args:
+            controller: The game controller.
+            selection: The entity to select (or None to deselect).
+        """
+        super().__init__()
+        self.controller = controller
+        self.selection = selection
+
+    def execute(self) -> None:
+        self.controller.model.selected_entity = self.selection
+
+
+################################################################################
+
+
+class MoveAction(GameTurnAction):
     """Action for moving an entity on the game map."""
 
     def __init__(
         self, controller: Controller, entity: Entity, dx: int, dy: int
     ) -> None:
-        self.controller = controller
+        super().__init__(controller, entity)
         self.game_map = controller.model.game_map
-        self.entity = entity
 
         self.dx = dx
         self.dy = dy
@@ -66,30 +136,13 @@ class MoveAction(Action):
         self.controller.fov.fov_needs_recomputing = True
 
 
-class ToggleFullscreenAction(Action):
-    """Action for toggling fullscreen mode."""
-
-    def __init__(self, context: tcod.context.Context) -> None:
-        self.context = context
-
-    def execute(self) -> None:
-        self.context.present(self.context.console, keep_aspect=True)
-
-
-class QuitAction(Action):
-    """Action for quitting the game."""
-
-    def execute(self) -> None:
-        raise SystemExit()
-
-
-class AttackAction(Action):
-    """Action for attacking another actor in combat."""
+class AttackAction(GameTurnAction):
+    """Action for one `Actor` attacking another in combat."""
 
     def __init__(
         self, controller: Controller, attacker: Actor, defender: Actor
     ) -> None:
-        self.controller = controller
+        super().__init__(controller, attacker)
         self.attacker = attacker
         self.defender = defender
 
@@ -113,28 +166,6 @@ class AttackAction(Action):
             has_advantage=False,
             has_disadvantage=False,
         )
-
-        # TODO: Ask LLM whether/how to implement combat as a separate "mode",
-        #       like entering combat in Fallout 1 or 2. Rather than the current
-        #       "bash into opponent" a la Brogue. Would be fun to show the player
-        #       a menu of options, including regular attacks, stunts, etc., with
-        #       a probability of success shown for each.
-        #       The character of the entity being targeted could pulsate in color.
-
-        # FIXME: Rather than handling combat here in AttackAction, have some
-        # kind of separate combat module that handles, e.g., initiative, turns,
-        # movement, stunts, etc. Rather than automatically making an attack roll
-        # on every turn like in Brogue.
-        #
-        # Stunts can be fun - e.g., "attempt to trip", "attempt to disarm", etc.
-        # Then if character is knocked down, future attack rolls made on them are
-        # with advantage.
-        #
-        # "Stunts are combat maneuvers performed with an action and an opposed
-        # test, like disarming, tripping, grappling, or otherwise vying for an
-        # advantage. A character can combine a stunt with an attack into a
-        # single action and roll (like: hit ’em so hard they fall down) by
-        # foregoing a bonus from advantage, or by accepting a disadvantage."
 
         # Does the attack hit?
         if attack_result.success:
@@ -210,6 +241,3 @@ class AttackAction(Action):
                     colors.LIGHT_BLUE,  # Informational color for status effects
                 )
                 # TODO: Implement off-balance effect (maybe skip next turn?)
-
-        # Signal that the attacker's turn is over
-        # TODO: Implement turn system to handle this
