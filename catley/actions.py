@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 import colors
 import dice
 import items
+from combat import CombatManager
 from model import Actor, WastoidActor
 from play_mode import PlayMode
 
@@ -231,6 +232,9 @@ class ToggleCombatModeAction(Action):
         if self.model.play_mode == PlayMode.COMBAT:
             # Exit combat mode
             self.model.play_mode = PlayMode.ROAMING
+            self.model.combat_manager = None
         else:
             # Enter combat mode
+            self.model.combat_manager = CombatManager(self.controller)
+            self.model.combat_manager.start_planning_phase()
             self.model.play_mode = PlayMode.COMBAT
