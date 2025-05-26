@@ -11,6 +11,7 @@ import colors
 import dice
 import items
 from model import Actor, WastoidActor
+from play_mode import PlayMode
 
 if TYPE_CHECKING:
     import tcod
@@ -53,13 +54,16 @@ class MoveAction(Action):
                 and entity.x == self.newx
                 and entity.y == self.newy
             ):
-                if isinstance(entity, Actor) and entity.is_alive():
-                    attack_action = AttackAction(
-                        controller=self.controller,
-                        attacker=self.entity,
-                        defender=entity,
-                    )
-                    attack_action.execute()
+                # Bumping an actor no longer initiates combat.
+                # Instead, the player can choose to attack.
+                # TODO: Implement.
+                # if isinstance(entity, Actor) and entity.is_alive():
+                # attack_action = AttackAction(
+                # controller=self.controller,
+                # attacker=self.entity,
+                # defender=entity,
+                # )
+                # attack_action.execute()
                 return  # Cannot move into blocking entity
 
         self.entity.move(self.dx, self.dy)
@@ -213,3 +217,20 @@ class AttackAction(Action):
 
         # Signal that the attacker's turn is over
         # TODO: Implement turn system to handle this
+
+
+class ToggleCombatModeAction(Action):
+    """Action for entering or exiting combat mode."""
+
+    def __init__(self, controller: Controller) -> None:
+        self.controller = controller
+        self.model = controller.model
+        self.player = controller.model.player
+
+    def execute(self) -> None:
+        if self.model.play_mode == PlayMode.COMBAT:
+            # Exit combat mode
+            self.model.play_mode = PlayMode.ROAMING
+        else:
+            # Enter combat mode
+            self.model.play_mode = PlayMode.COMBAT
