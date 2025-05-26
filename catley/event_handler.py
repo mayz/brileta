@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 import actions
 import colors
+import menu_system
 import tcod.event
 
 if TYPE_CHECKING:
@@ -83,12 +84,9 @@ class EventHandler:
 
             # Menu keys
             case tcod.event.KeyDown(sym=tcod.event.KeySym.i):
-                # Quick access to inventory
-                from menu_system import InventoryMenu
-
-                inventory_menu = InventoryMenu(self.controller)
-                self.controller.menu_system.show_menu(inventory_menu)
-                return None
+                return actions.OpenMenuAction(
+                    self.controller, menu_system.InventoryMenu
+                )
 
             # Help Menu: '?'
             # tcod.event.KeySym.QUESTION is typically generated for '?'
@@ -101,21 +99,10 @@ class EventHandler:
                     and (key_mod & tcod.event.Modifier.SHIFT)
                 )
             ):
-                from menu_system import HelpMenu
-
-                help_menu = HelpMenu(self.controller)
-                self.controller.menu_system.show_menu(help_menu)
-                return None
+                return actions.OpenMenuAction(self.controller, menu_system.HelpMenu)
 
             case tcod.event.KeyDown(sym=tcod.event.KeySym.g):
-                player_x, player_y = self.p.x, self.p.y
-                if self.m.has_pickable_items_at_location(player_x, player_y):
-                    from menu_system import PickupMenu
-
-                    pickup_menu = PickupMenu(self.controller, (player_x, player_y))
-                    self.controller.menu_system.show_menu(pickup_menu)
-                # If no items, pressing 'g' does nothing.
-                return None
+                return actions.OpenPickupMenuAction(self.controller)
 
             case tcod.event.KeyDown(sym=tcod.event.KeySym.RETURN, mod=mod) if (
                 mod & tcod.event.Modifier.ALT
