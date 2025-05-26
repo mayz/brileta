@@ -13,9 +13,9 @@ from play_mode import PlayMode
 
 if TYPE_CHECKING:
     import tcod
-    from actions import Action
-    from combat import CombatManager
-    from engine import Controller
+
+    from catley.actions import Action
+    from catley.engine import Controller
 
 
 class Model:
@@ -24,7 +24,6 @@ class Model:
         self.lighting = LightingSystem()
         self.selected_entity: Entity | None = None
         self.play_mode: PlayMode = PlayMode.ROAMING
-        self.combat_manager: CombatManager | None = None
         self.player = WastoidActor(
             x=0,
             y=0,
