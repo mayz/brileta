@@ -10,7 +10,8 @@ from clock import Clock
 from fov import FieldOfView
 from menu_system import HelpMenu, InventoryMenu, MenuSystem, PickupMenu
 from message_log import MessageLog
-from model import Model, WastoidActor
+from model import Actor, Model, WastoidActor
+from play_mode import PlayMode
 from render import Renderer
 from tcod.console import Console
 from tcod.context import Context
@@ -171,32 +172,22 @@ class EventHandler:
                 tcod.event.KeyDown(sym=tcod.event.KeySym.UP)
                 | tcod.event.KeyDown(sym=tcod.event.KeySym.k)
             ):
-                return actions.MoveAction(self.controller, self.p, 0, -1)
+                return self._handle_movement_input(0, -1)
             case (
                 tcod.event.KeyDown(sym=tcod.event.KeySym.DOWN)
                 | tcod.event.KeyDown(sym=tcod.event.KeySym.j)
             ):
-                return actions.MoveAction(self.controller, self.p, 0, 1)
+                return self._handle_movement_input(0, 1)
             case (
                 tcod.event.KeyDown(sym=tcod.event.KeySym.LEFT)
                 | tcod.event.KeyDown(sym=tcod.event.KeySym.h)
             ):
-                return actions.MoveAction(self.controller, self.p, -1, 0)
+                return self._handle_movement_input(-1, 0)
             case (
                 tcod.event.KeyDown(sym=tcod.event.KeySym.RIGHT)
                 | tcod.event.KeyDown(sym=tcod.event.KeySym.l)
             ):
-                return actions.MoveAction(self.controller, self.p, 1, 0)
-
-            # Diagonal movement (numpad or vi-keys)
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.KP_7):  # Up-left
-                return actions.MoveAction(self.controller, self.p, -1, -1)
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.KP_9):  # Up-right
-                return actions.MoveAction(self.controller, self.p, 1, -1)
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.KP_1):  # Down-left
-                return actions.MoveAction(self.controller, self.p, -1, 1)
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.KP_3):  # Down-right
-                return actions.MoveAction(self.controller, self.p, 1, 1)
+                return self._handle_movement_input(1, 0)
 
             # Menu keys
             case tcod.event.KeyDown(sym=tcod.event.KeySym.i):
@@ -255,6 +246,32 @@ class EventHandler:
             case _:
                 return None
 
+    def _handle_movement_input(self, dx: int, dy: int) -> actions.Action | None:
+        """Handle directional movement input based on current game mode."""
+        if self.m.play_mode == PlayMode.COMBAT and self.m.combat_manager:
+            if self.m.combat_manager.is_turn_based_active():
+                # During turn-based combat, only move if it's player's turn
+                if self.m.combat_manager.is_player_turn():
+                    if self.m.combat_manager.can_move():
+                        # Use combat movement (deducts movement points)
+                        self.m.combat_manager.move_current_combatant(dx, dy)
+                        self.controller.fov.fov_needs_recomputing = True
+                        return None
+
+                    self.controller.message_log.add_message(
+                        "No movement points left!", colors.YELLOW
+                    )
+                    return None
+
+                # Not player's turn
+                return None
+
+            # Planning phase - normal movement works
+            return actions.MoveAction(self.controller, self.p, dx, dy)
+
+        # Normal exploration movement
+        return actions.MoveAction(self.controller, self.p, dx, dy)
+
     def _handle_mouse_button_down_event(
         self, event: tcod.event.Event, button: tcod.event.MouseButton
     ) -> actions.Action | None:
@@ -264,18 +281,55 @@ class EventHandler:
         """
         root_tile_pos = event.position
         map_coords = self._get_tile_map_coords_from_root_coords(root_tile_pos)
-
         if button != tcod.event.MouseButton.LEFT:
             return None
-
         if not map_coords:
             # Clicked outside the map area (e.g., on UI panels).
             self.m.selected_entity = None
             return None
-
         mx, my = map_coords
         entity_at_click = self.m.get_entity_at_location(mx, my)
 
+        if self.m.play_mode == PlayMode.COMBAT:
+            if self.m.combat_manager.is_planning_phase():
+                if (
+                    entity_at_click
+                    and isinstance(entity_at_click, Actor)
+                    and entity_at_click != self.m.player
+                    and entity_at_click.is_alive()
+                    and self.controller.fov.contains(mx, my)
+                ):
+                    # Start turn-based combat with this target
+                    self.m.combat_manager.begin_turn_based_combat(entity_at_click)
+                    return None  # This is handled by combat manager
+            elif (
+                self.m.combat_manager.is_turn_based_active()
+                and self.m.combat_manager.is_player_turn()
+            ) and (
+                entity_at_click
+                and isinstance(entity_at_click, Actor)
+                and entity_at_click != self.m.player
+                and entity_at_click.is_alive()
+                and self.controller.fov.contains(mx, my)
+            ):
+                # Player's turn in active combat - clicking to attack
+
+                # Player wants to attack this target
+                self.m.combat_manager._perform_player_attack_action(entity_at_click)
+                self.m.combat_manager.end_current_turn()
+                return None
+
+            # During any combat mode, clicking still selects entities for UI
+            if entity_at_click:
+                if self.m.selected_entity == entity_at_click:
+                    self.m.selected_entity = None
+                else:
+                    self.m.selected_entity = entity_at_click
+            else:
+                self.m.selected_entity = None
+            return None
+
+        # Normal (non-combat) mode handling
         if entity_at_click:
             if self.m.selected_entity == entity_at_click:
                 # Clicked on already selected entity. Deselect it.
@@ -283,7 +337,6 @@ class EventHandler:
             else:
                 self.m.selected_entity = entity_at_click
             return None  # UI action, not a game turn action
-
         # Clicked on an empty tile
         self.m.selected_entity = None
         return None  # UI action, not a game turn action
