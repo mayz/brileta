@@ -20,7 +20,7 @@ from tcod.console import Console
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from engine import Controller
+    from controller import Controller
 
 
 class MenuOption:

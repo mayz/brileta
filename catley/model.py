@@ -12,12 +12,20 @@ from lighting import LightingSystem, LightSource
 
 if TYPE_CHECKING:
     import tcod
-
-    from catley.actions import Action
-    from catley.engine import Controller
+    from actions import Action
+    from controller import Controller
 
 
 class Model:
+    """
+    Represents the complete state of the game world.
+
+    Includes the game map, all entities (player, NPCs, items), their properties, and the
+    core game rules that govern how these elements interact. Does not handle input,
+    rendering, or high-level application flow. Its primary responsibility is to be
+    the single source of truth for the game's state.
+    """
+
     def __init__(self, map_width: int, map_height: int) -> None:
         self.mouse_tile_location_on_map: tuple[int, int] | None = None
         self.lighting = LightingSystem()
