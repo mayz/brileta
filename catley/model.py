@@ -9,7 +9,6 @@ import items
 from conditions import Condition
 from items import Item, ItemSize, Weapon
 from lighting import LightingSystem, LightSource
-from play_mode import PlayMode
 
 if TYPE_CHECKING:
     import tcod
@@ -23,7 +22,8 @@ class Model:
         self.mouse_tile_location_on_map: tuple[int, int] | None = None
         self.lighting = LightingSystem()
         self.selected_entity: Entity | None = None
-        self.play_mode: PlayMode = PlayMode.ROAMING
+        # Create player with a torch light source
+        player_light = LightSource.create_torch()
         self.player = WastoidActor(
             x=0,
             y=0,
@@ -31,7 +31,7 @@ class Model:
             name="Player",
             color=colors.PLAYER_COLOR,
             model=self,
-            light_source=LightSource.create_torch(),
+            light_source=player_light,
         )
         self.player.equipped_weapon = items.FISTS
 

@@ -6,8 +6,7 @@ import numpy as np
 from clock import Clock
 from fov import FieldOfView
 from message_log import MessageLog
-from model import Actor, Entity, Model
-from play_mode import PlayMode
+from model import Entity, Model
 from tcod.console import Console
 from tcod.context import Context
 
@@ -117,20 +116,17 @@ class Renderer:
         self.root_console.clear()
 
         # Render map and entities to game console
-        # This needs to happen before combat status text if
-        # combat status text overlays part of map
         self._render_map()
         self._render_entities()
         self._render_selected_entity_highlight()
         self._render_mouse_cursor_highlight()
 
-        # Calculate where the top of the game map should be blitted on the root console
-        map_blit_dest_y = self.help_height + self.message_log_height
-
+        # Blit game console to root console (below help and message log)
         self.game_map_console.blit(
             dest=self.root_console,
             dest_x=0,
-            dest_y=map_blit_dest_y,
+            dest_y=self.help_height
+            + self.message_log_height,  # Start after help + message log (line 7)
             width=self.game_map_console.width,
             height=self.game_map_console.height,
         )
@@ -174,7 +170,9 @@ class Renderer:
     def _render_mouse_cursor_highlight(self) -> None:
         if not self.model.mouse_tile_location_on_map:
             return
+
         mx, my = self.model.mouse_tile_location_on_map
+
         # Bounds check for the game_map_console
         if not (
             0 <= mx < self.game_map_console.width
@@ -182,66 +180,16 @@ class Renderer:
         ):
             return
 
-        # Determine if there's a targetable entity under the mouse
-        entity_at_mouse = self.model.get_entity_at_location(mx, my)
-        is_targetable_entity_under_mouse = (
-            isinstance(entity_at_mouse, Actor)
-            and entity_at_mouse.is_alive()
-            and entity_at_mouse != self.model.player
-            and self.fov.contains(
-                mx, my
-            )  # Entity's tile must be in FOV to be targetable
-        )
-
-        if self.model.play_mode == PlayMode.COMBAT:
-            if is_targetable_entity_under_mouse:
-                # Combat mode, hovering over a targetable entity: light red BG
-                self.game_map_console.bg[mx, my] = colors.LIGHT_RED
-                # No '+' character is drawn here
-            elif entity_at_mouse == self.model.player and self.fov.contains(mx, my):
-                # Combat mode, hovering over the player (who is in FOV):
-                # regular white highlight
-                target_general_highlight_color = colors.WHITE
-                alpha_for_highlight = 0.6  # Standard alpha for general highlight
-                self._apply_blended_highlight(
-                    mx, my, target_general_highlight_color, alpha_for_highlight
-                )
-                # No '+' character is drawn here
-            else:
-                # Combat mode, NOT hovering over a targetable entity
-                # AND NOT player in FOV.
-                # Apply general blended highlight first
-                target_general_highlight_color: colors.Color
-                alpha_for_highlight: float
-
-                if self.fov.contains(mx, my):  # Tile is in FOV, might draw '+'
-                    target_general_highlight_color = colors.WHITE
-                    # For the '+' cursor's background, make the
-                    # white blend less dominant
-                    alpha_for_highlight = 0.3  # Reduced alpha for WHITE blend
-                else:
-                    target_general_highlight_color = (
-                        colors.GREY
-                    )  # Tile not in FOV (won't draw '+')
-                    alpha_for_highlight = 0.6  # Default alpha for GREY blend
-
-                self._apply_blended_highlight(
-                    mx, my, target_general_highlight_color, alpha_for_highlight
-                )
-
-                # Then, if the tile is in FOV, draw the red '+'
-                if self.fov.contains(mx, my):
-                    self.game_map_console.ch[mx, my] = ord("+")
-                    self.game_map_console.fg[mx, my] = colors.RED
+        target_highlight_color: colors.Color
+        if self.fov.contains(mx, my):  # Or self.fov.fov_map.fov[mx, my]
+            # Tile is IN FOV - target a bright highlight
+            target_highlight_color = colors.WHITE
         else:
-            # Not in combat mode: Apply general blended highlight
-            target_general_highlight_color: colors.Color
-            if self.fov.contains(mx, my):
-                target_general_highlight_color = colors.WHITE
-            else:
-                target_general_highlight_color = colors.GREY
-            alpha = 0.6
-            self._apply_blended_highlight(mx, my, target_general_highlight_color, alpha)
+            # Tile is OUTSIDE FOV - target a muted highlight
+            target_highlight_color = colors.GREY
+        # Alpha blending factor (0.0 = fully transparent, 1.0 = fully opaque)
+        alpha = 0.6
+        self._apply_blended_highlight(mx, my, target_highlight_color, alpha)
 
     def _apply_blended_highlight(
         self, x: int, y: int, target_highlight_color: colors.Color, alpha: float
@@ -284,27 +232,17 @@ class Renderer:
 
     def _render_help_text(self) -> None:
         """Render helpful key bindings at the very top."""
-        help_y = 0  # All help text is on the first line
+        help_items = ["?: Help", "I: Inventory"]  # Start with always-available items
 
-        if self.model.play_mode == PlayMode.COMBAT:
-            help_items = ["?: Help", "I: Inventory", "C: Exit Combat"]
-            help_text = " | ".join(help_items)
-            self.root_console.print(x=1, y=help_y, string=help_text, fg=colors.GREY)
+        # Conditionally add "Get items" prompt
+        player_x, player_y = self.model.player.x, self.model.player.y
+        if self.model.has_pickable_items_at_location(player_x, player_y):
+            help_items.append("G: Get items")
 
-            combat_mode_text = "COMBAT MODE"
-            combat_mode_x = self.screen_width - len(combat_mode_text) - 1
-            self.root_console.print(
-                x=combat_mode_x, y=help_y, string=combat_mode_text, fg=colors.LIGHT_RED
-            )
-        else:
-            help_items = ["?: Help", "I: Inventory", "C: Combat"]
-            # Conditionally add "Get items" prompt
-            player_x, player_y = self.model.player.x, self.model.player.y
-            if self.model.has_pickable_items_at_location(player_x, player_y):
-                help_items.append("G: Get items")
-
-            help_text = " | ".join(help_items)
-            self.root_console.print(x=1, y=help_y, string=help_text, fg=colors.GREY)
+        help_text = " | ".join(help_items)
+        help_x = 1
+        help_y = 0
+        self.root_console.print(help_x, help_y, help_text, fg=colors.GREY)
 
     def _render_map(self) -> None:
         explored_idx = np.where(self.map_tiles_explored)
@@ -363,57 +301,49 @@ class Renderer:
 
         final_fg_color = tuple(normally_lit_fg_components)
 
-        # Apply pulsing effects. Combat pulse takes precedence over selection pulse.
-        is_attackable_target_in_combat = (
-            self.model.play_mode == PlayMode.COMBAT
-            and isinstance(e, Actor)
-            and e.is_alive()
-            and e != self.model.player  # Don't pulse self
-            and self.fov.contains(e.x, e.y)
-        )
-
-        if is_attackable_target_in_combat:
-            final_fg_color = self._get_pulsed_color(final_fg_color, colors.RED)
-        elif self.model.selected_entity == e and self.fov.contains(e.x, e.y):
-            # Determine dynamic pulsation target color based on entity's base color
-            r, g, b = base_entity_color  # base_entity_color is e.color
-            luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b
-            dynamic_pulsation_target_color = (
-                colors.DARK_GREY
-                if luminance > LUMINANCE_THRESHOLD
-                else colors.LIGHT_GREY
-            )
-            final_fg_color = self._get_pulsed_color(
-                final_fg_color, dynamic_pulsation_target_color
+        # If selected and in FOV, apply pulsation blending on top of the lit color
+        if self.model.selected_entity == e and self.fov.contains(e.x, e.y):
+            final_fg_color = self._apply_pulsating_effect(
+                normally_lit_fg_components, base_entity_color
             )
 
         self.map_fg[e.x, e.y] = final_fg_color
 
-    def _get_pulsed_color(
-        self, input_color: colors.Color, pulse_target_color: colors.Color
+    def _apply_pulsating_effect(
+        self, input_color: colors.Color, base_entity_color: colors.Color
     ) -> colors.Color:
-        """
-        Calculates a new color by blending input_color towards pulse_target_color
-        based on a sinusoidal oscillation.
-        """
         game_time = self.fps_display.clock.last_time
         # alpha_oscillation will go from 0.0 to 1.0 and back over PULSATION_PERIOD
         alpha_oscillation = (
             math.sin((game_time % PULSATION_PERIOD) / PULSATION_PERIOD * 2 * math.pi)
             + 1
         ) / 2.0
+
+        # current_blend_alpha will oscillate from 0 to PULSATION_MAX_BLEND_ALPHA
         current_blend_alpha = alpha_oscillation * PULSATION_MAX_BLEND_ALPHA
 
+        # Determine dynamic pulsation target color based on entity's base color
+        r, g, b = base_entity_color
+
+        # Calculate luminance using the Rec. 709 formula.
+        # See: https://en.wikipedia.org/wiki/Luma_(video)
+        luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+        dynamic_pulsation_target_color: colors.Color = (
+            colors.DARK_GREY if luminance > LUMINANCE_THRESHOLD else colors.LIGHT_GREY
+        )
+
+        # Blend input_color with dynamic_pulsation_target_color
         blended_r = int(
-            pulse_target_color[0] * current_blend_alpha
+            dynamic_pulsation_target_color[0] * current_blend_alpha
             + input_color[0] * (1.0 - current_blend_alpha)
         )
         blended_g = int(
-            pulse_target_color[1] * current_blend_alpha
+            dynamic_pulsation_target_color[1] * current_blend_alpha
             + input_color[1] * (1.0 - current_blend_alpha)
         )
         blended_b = int(
-            pulse_target_color[2] * current_blend_alpha
+            dynamic_pulsation_target_color[2] * current_blend_alpha
             + input_color[2] * (1.0 - current_blend_alpha)
         )
 

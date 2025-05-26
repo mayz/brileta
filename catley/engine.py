@@ -8,7 +8,7 @@ import tcod
 import tcod.event
 from clock import Clock
 from fov import FieldOfView
-from menu_system import HelpMenu, InventoryMenu, MenuSystem, PickupMenu
+from menu_system import MenuSystem
 from message_log import MessageLog
 from model import Model, WastoidActor
 from render import Renderer
@@ -107,7 +107,7 @@ class Controller:
             weirdness=3,
             strength=3,
             toughness=3,
-            intelligence=-3,
+            intelligence=-3
         )
         npc.equipped_weapon = items.SLEDGEHAMMER
         self.model.entities.append(npc)
@@ -201,6 +201,8 @@ class EventHandler:
             # Menu keys
             case tcod.event.KeyDown(sym=tcod.event.KeySym.i):
                 # Quick access to inventory
+                from menu_system import InventoryMenu
+
                 inventory_menu = InventoryMenu(self.controller)
                 self.controller.menu_system.show_menu(inventory_menu)
                 return None
@@ -216,17 +218,17 @@ class EventHandler:
                     and (key_mod & tcod.event.Modifier.SHIFT)
                 )
             ):
+                from menu_system import HelpMenu
+
                 help_menu = HelpMenu(self.controller)
                 self.controller.menu_system.show_menu(help_menu)
                 return None
 
-            # Toggle Combat Mode
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.c):
-                return actions.ToggleCombatModeAction(self.controller)
-
             case tcod.event.KeyDown(sym=tcod.event.KeySym.g):
                 player_x, player_y = self.p.x, self.p.y
                 if self.m.has_pickable_items_at_location(player_x, player_y):
+                    from menu_system import PickupMenu
+
                     pickup_menu = PickupMenu(self.controller, (player_x, player_y))
                     self.controller.menu_system.show_menu(pickup_menu)
                 # If no items, pressing 'g' does nothing.

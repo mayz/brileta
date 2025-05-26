@@ -14,7 +14,6 @@ GREY: Color = (128, 128, 128)
 LIGHT_GREY: Color = (200, 200, 200)
 DARK_GREY: Color = (50, 50, 50)
 LIGHT_BLUE: Color = (173, 216, 230)
-LIGHT_RED: Color = (255, 100, 100)
 
 # Map colors
 DARK_WALL: Color = BLACK
