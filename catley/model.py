@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+from enum import Enum, auto
 from typing import TYPE_CHECKING
 
 import colors
@@ -11,6 +12,8 @@ from lighting import LightingSystem, LightSource
 
 if TYPE_CHECKING:
     import tcod
+    from actions import Action
+    from controller import Controller
 
 
 class Model:
@@ -29,7 +32,7 @@ class Model:
         self.selected_entity: Entity | None = None
         # Create player with a torch light source
         player_light = LightSource.create_torch()
-        self.player = WastoidActor(
+        self.player = CatleyActor(
             x=0,
             y=0,
             ch="@",
@@ -37,6 +40,7 @@ class Model:
             color=colors.PLAYER_COLOR,
             model=self,
             light_source=player_light,
+            toughness=30,
         )
         self.player.equipped_weapon = items.FISTS
 
@@ -113,6 +117,21 @@ class Entity:
         if self.light_source:
             self.light_source.position = (self.x, self.y)
 
+    def update_turn(self, controller: Controller) -> None:
+        """Called once per game turn for this entity to perform its turn-based logic.
+        Base implementation does nothing. Subclasses should override this.
+        """
+        pass
+
+
+class Disposition(Enum):
+    HOSTILE = auto()  # Will attack/flee.
+    UNFRIENDLY = auto()
+    WARY = auto()
+    APPROACHABLE = auto()
+    FRIENDLY = auto()
+    ALLY = auto()
+
 
 class Actor(Entity):
     """An entity that can take actions, have health, and participate in combat."""
@@ -129,6 +148,7 @@ class Actor(Entity):
         light_source: LightSource | None = None,
         blocks_movement: bool = True,
         name: str = "<Unnamed Actor>",
+        disposition: Disposition = Disposition.WARY,
     ) -> None:
         super().__init__(x, y, ch, color, model, light_source, blocks_movement)
         self.max_hp = max_hp
@@ -138,6 +158,7 @@ class Actor(Entity):
         self.inventory: list[Item | Condition] = []
         self.equipped_weapon: Weapon | None = None
         self.name = name
+        self.disposition = disposition
 
     def take_damage(self, amount: int) -> None:
         """Handle damage to the actor, reducing AP first, then HP.
@@ -175,8 +196,155 @@ class Actor(Entity):
         """Return True if the actor is alive (HP > 0)."""
         return self.hp > 0
 
+    def update_turn(self, controller: Controller) -> None:
+        """
+        Handles turn-based logic for actors. For NPCs, this includes AI.
+        For the player, this could handle passive effects like poison/regeneration.
+        """
+        super().update_turn(controller)
 
-class WastoidActor(Actor):
+        player = controller.model.player
+        if self == player:
+            # TODO: Implement passive player effects here if any
+            # (e.g., poison, regeneration)
+
+            # For example:
+            # if self.has_condition("Poisoned"):
+            #     self.take_damage(1)
+            #     controller.message_log.add_message(
+            #         f"{self.name} takes 1 poison damage.", colors.GREEN)
+            #
+            # The player's active actions are driven by input via EventHandler.
+            return
+
+        # NPC AI logic.
+        # TODO: Move this to a separate module for better organization later on.
+
+        if not self.is_alive() or not player.is_alive():
+            return
+
+        from actions import AttackAction, MoveAction
+
+        # Determine action based on proximity to player
+        dx = player.x - self.x
+        dy = player.y - self.y
+        distance = abs(dx) + abs(dy)  # Manhattan distance
+
+        action_to_perform: Action | None = None
+
+        # Default aggro/awareness radii - can be overridden by specific NPC types
+        # if needed. These could also be properties of the NPC instance itself.
+        aggro_radius = getattr(self, "aggro_radius", 8)
+        # awareness_radius = getattr(self, "awareness_radius", 5)
+        # personal_space_radius = getattr(self, "personal_space_radius", 3)
+        # greeting_radius = getattr(self, "greeting_radius", 4)
+
+        # --- AI Logic based on Disposition ---
+        if self.disposition == Disposition.HOSTILE:
+            if distance == 1:  # Adjacent
+                controller.message_log.add_message(
+                    f"{self.name} lunges at {player.name}!", colors.RED
+                )
+                action_to_perform = AttackAction(controller, self, player)
+            elif distance <= aggro_radius:
+                move_dx = 0
+                move_dy = 0
+                if dx != 0:
+                    move_dx = 1 if dx > 0 else -1
+                if dy != 0:
+                    move_dy = 1 if dy > 0 else -1
+
+                potential_moves = []
+                if move_dx != 0 and move_dy != 0:
+                    potential_moves.append((move_dx, move_dy))
+                if move_dx != 0:
+                    potential_moves.append((move_dx, 0))
+                if move_dy != 0:
+                    potential_moves.append((0, move_dy))
+
+                moved_this_turn = False
+                for test_dx, test_dy in potential_moves:
+                    target_x, target_y = self.x + test_dx, self.y + test_dy
+                    if not (
+                        0 <= target_x < controller.model.game_map.width
+                        and 0 <= target_y < controller.model.game_map.height
+                    ):
+                        continue
+                    if controller.model.game_map.tiles[target_x][target_y].blocked:
+                        continue
+                    blocking_entity = controller.model.get_entity_at_location(
+                        target_x, target_y
+                    )
+                    if (
+                        blocking_entity
+                        and blocking_entity != player
+                        and blocking_entity.blocks_movement
+                    ):
+                        continue
+
+                    controller.message_log.add_message(
+                        f"{self.name} charges towards {player.name}.", colors.ORANGE
+                    )
+                    action_to_perform = MoveAction(controller, self, test_dx, test_dy)
+                    moved_this_turn = True
+                    break
+                if not moved_this_turn:
+                    controller.message_log.add_message(
+                        f"{self.name} snarls, unable to reach {player.name}.",
+                        colors.ORANGE,
+                    )
+            else:  # Hostile but player too far
+                controller.message_log.add_message(
+                    f"{self.name} prowls menacingly.", colors.ORANGE
+                )
+
+        elif self.disposition == Disposition.UNFRIENDLY:
+            # if distance == 1:
+            # controller.message_log.add_message(
+            # f"'{player.name}? Keep your distance!' {self.name} growls.",
+            # colors.ORANGE)
+            # TODO: Consider a "shove" or "move away" action if possible,
+            # or prepare to defend.
+            # elif distance <= awareness_radius:
+            # controller.message_log.add_message(
+            # f"{self.name} eyes {player.name} with distaste.", colors.YELLOW)
+            pass
+
+        elif self.disposition == Disposition.WARY:
+            pass
+
+        elif self.disposition == Disposition.APPROACHABLE:
+            # if distance <= greeting_radius and distance > 1: # Not directly adjacent
+            # controller.message_log.add_message(
+            #     f"{self.name} notices {player.name}.", colors.LIGHT_BLUE)
+            # Might initiate dialogue or offer a quest if player gets closer (future).
+            pass
+
+        elif self.disposition == Disposition.FRIENDLY:
+            # if distance <= greeting_radius:
+            # controller.message_log.add_message(
+            #     f"{self.name} smiles at {player.name}.", colors.GREEN)
+            # Might follow player or offer assistance (future).
+            pass
+
+        elif self.disposition == Disposition.ALLY:
+            # if distance <= greeting_radius:
+            # controller.message_log.add_message(
+            # f"{self.name} greets {player.name} warmly.", colors.CYAN)
+            # Actively helps in combat, follows, etc. (future).
+            pass
+
+        # Default "wait" action if no other action was determined by disposition logic
+        # Hostiles might patrol or search instead of just waiting
+        if not action_to_perform and self.disposition not in [Disposition.HOSTILE]:
+            # controller.message_log.add_message(f"{self.name} waits.", colors.GREY)
+            pass
+
+        if action_to_perform:
+            controller.execute_action(action_to_perform)
+
+
+class CatleyActor(Actor):
     """An Actor that follows the Wastoid ruleset with seven core abilities."""
 
     def __init__(
@@ -185,7 +353,7 @@ class WastoidActor(Actor):
         y: int,
         ch: str,
         name: str,
-        color: tcod.Color,
+        color: colors.Color,
         # Wastoid abilities
         weirdness: int = 0,
         agility: int = 0,
@@ -197,6 +365,7 @@ class WastoidActor(Actor):
         model: Model | None = None,
         light_source: LightSource | None = None,
         blocks_movement: bool = True,
+        disposition: Disposition = Disposition.WARY,
     ) -> None:
         # Initialize base Actor with calculated max_hp
         super().__init__(
@@ -210,6 +379,7 @@ class WastoidActor(Actor):
             light_source=light_source,
             blocks_movement=blocks_movement,
             name=name,
+            disposition=disposition,
         )
 
         # Core Wastoid abilities

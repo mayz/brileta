@@ -4,12 +4,13 @@ import colors
 import conditions
 import items
 import tcod.event
+from actions import Action, GameTurnAction
 from clock import Clock
 from event_handler import EventHandler
 from fov import FieldOfView
 from menu_system import MenuSystem
 from message_log import MessageLog
-from model import Model, WastoidActor
+from model import CatleyActor, Disposition, Entity, Model
 from render import Renderer
 from tcod.console import Console
 from tcod.context import Context
@@ -89,6 +90,12 @@ class Controller:
         # For handling input events in run_game_loop().
         self.event_handler = EventHandler(self)
 
+        # The game alternates between two states: waiting for the player to take an
+        # action and resolving the consequences of their last action (i.e., letting
+        # all NPCs and other entities take their turns). When False, the game is busy
+        # updating the game state, and player input is ignored.
+        self.waiting_for_player_action: bool = True
+
     def _add_npc(self) -> None:
         """Add an NPC to the map."""
         # Place NPC right next to the player.
@@ -104,7 +111,7 @@ class Controller:
                 npc_y += 2
             case 4:
                 npc_y -= 2
-        npc = WastoidActor(
+        npc = CatleyActor(
             x=npc_x,
             y=npc_y,
             ch="T",
@@ -112,6 +119,7 @@ class Controller:
             color=colors.DARK_GREY,
             model=self.model,
             blocks_movement=True,
+            disposition=Disposition.WARY,
             weirdness=3,
             strength=3,
             toughness=3,
@@ -133,3 +141,85 @@ class Controller:
             # Update animations and render
             self.model.lighting.update(delta_time)
             self.renderer.render_all()
+
+    def execute_action(self, action: Action | None) -> None:
+        """
+        Executes the given Action instance and manages the game's turn flow.
+
+        This method is the central point for processing any action within the game,
+        whether initiated by the player or an NPC.
+
+        The game alternates between two states: waiting for the player to take an
+        action and resolving the consequences of their last action (i.e., letting
+        all NPCs and other entities take their turns). When False, the game is busy
+        updating the game state, and player input is ignored.
+
+        Args:
+            action_instance: The Action to be performed. Can be None, in which
+                             case the method does nothing.
+        """
+        if not action:
+            return
+
+        is_player_game_turn_action = False
+        if isinstance(action, GameTurnAction) and action.entity == self.model.player:
+            # Check if the entity performing the action is the player
+            is_player_game_turn_action = True
+
+        if is_player_game_turn_action and not self.waiting_for_player_action:
+            # Player trying to take an action while the game is busy processing.
+            # Ignore it.
+            return
+
+        try:
+            action.execute()
+        except SystemExit:
+            raise
+        except Exception as e:
+            error_message = (
+                f"Error executing action '{type(action).__name__}': {str(e)}"
+            )
+            self.message_log.add_message(error_message, colors.RED)
+            print(f"Unhandled exception during action execution: {e}")
+            return
+
+        if not is_player_game_turn_action:
+            return
+
+        # Now that the player's action has consumed their turn,
+        # process the world turn.
+        self.waiting_for_player_action = False
+        self.process_world_turn()
+
+        if self.model.player.is_alive():
+            self.waiting_for_player_action = True
+        else:
+            # Handle game over: player is dead
+            self.message_log.add_message(
+                f"{self.model.player.name} has been defeated! Game Over.", colors.RED
+            )
+            # Further game over logic would go here (e.g., prevent further input,
+            # show game over screen). For now, just *not* setting
+            # `waiting_for_player_action`` to True effectively stops player turns.
+
+    def process_world_turn(self) -> None:
+        """
+        Processes a single turn for all non-player entities in the game world.
+        This is typically called after the player has performed a GameTurnAction.
+        """
+        # Just in case entities get added or removed during iteration,
+        # iterate over a copy of the entities list.
+        for entity in self.model.entities.copy():
+            if entity == self.model.player:
+                # Player's active turn is handled by input.
+                # Passive effects for player (e.g., poison damage, regeneration)
+                # could be processed by `entity.update_turn`.
+                entity.update_turn(self)
+            elif isinstance(entity, Entity):
+                entity.update_turn(self)
+
+            if not self.model.player.is_alive():
+                # If player died, no need to continue processing other entities' turns
+                # The game over state will be handled when execute_action resets
+                # awaiting_player_game_action after this process_world_turn completes.
+                break
