@@ -1,5 +1,7 @@
 import tcod
-from model import Model
+import tcod.constants
+
+from .model import Model
 
 
 class FieldOfView:

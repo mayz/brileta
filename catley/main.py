@@ -1,8 +1,9 @@
 """Main entry point for the game."""
 
 import tcod
-from controller import Controller
 from tcod.console import Console
+
+from .controller import Controller
 
 
 def main() -> None:

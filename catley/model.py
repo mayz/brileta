@@ -4,16 +4,14 @@ import random
 from enum import Enum, auto
 from typing import TYPE_CHECKING
 
-import colors
-import items
-from conditions import Condition
-from items import Item, ItemSize, Weapon
-from lighting import LightingSystem, LightSource
+from . import colors, items
+from .conditions import Condition
+from .items import Item, ItemSize, Weapon
+from .lighting import LightingSystem, LightSource
 
 if TYPE_CHECKING:
-    import tcod
-    from actions import Action
-    from controller import Controller
+    from .actions import Action
+    from .controller import Controller
 
 
 class Model:
@@ -94,8 +92,8 @@ class Entity:
         x: int,
         y: int,
         ch: str,
-        color: tcod.Color,
-        model: Model = None,
+        color: colors.Color,
+        model: Model,
         light_source: LightSource | None = None,
         blocks_movement: bool = True,
     ) -> None:
@@ -141,7 +139,7 @@ class Actor(Entity):
         x: int,
         y: int,
         ch: str,
-        color: tcod.Color,
+        color: colors.Color,
         max_hp: int,
         max_ap: int,
         model: Model | None,
@@ -223,7 +221,7 @@ class Actor(Entity):
         if not self.is_alive() or not player.is_alive():
             return
 
-        from actions import AttackAction, MoveAction
+        from .actions import AttackAction, MoveAction
 
         # Determine action based on proximity to player
         dx = player.x - self.x

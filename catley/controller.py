@@ -1,19 +1,18 @@
 import random
 
-import colors
-import conditions
-import items
 import tcod.event
-from actions import Action, GameTurnAction
-from clock import Clock
-from event_handler import EventHandler
-from fov import FieldOfView
-from menu_system import MenuSystem
-from message_log import MessageLog
-from model import CatleyActor, Disposition, Entity, Model
-from render import Renderer
 from tcod.console import Console
 from tcod.context import Context
+
+from . import colors, conditions, items
+from .actions import Action, GameTurnAction
+from .clock import Clock
+from .event_handler import EventHandler
+from .fov import FieldOfView
+from .menu_system import MenuSystem
+from .message_log import MessageLog
+from .model import CatleyActor, Disposition, Entity, Model
+from .render import Renderer
 
 
 class Controller:
