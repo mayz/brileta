@@ -7,7 +7,7 @@ from __future__ import annotations
 import abc
 import functools
 import string
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import tcod
 import tcod.constants
@@ -150,7 +150,10 @@ class Menu(abc.ABC):
         menu_console = Console(actual_width, menu_height, order="F")
 
         # Fill background first
-        menu_console.clear(fg=colors.WHITE, bg=colors.BLACK)
+        menu_console.clear(
+            fg=cast("tuple[int, int, int]", colors.WHITE),
+            bg=cast("tuple[int, int, int]", colors.BLACK),
+        )
 
         # Draw border manually to avoid order issues
         # Top and bottom borders
@@ -197,11 +200,11 @@ class Menu(abc.ABC):
                         len(prefix_text), (max_content_x - current_x + 1)
                     )
                     menu_console.print(
-                        current_x,
-                        title_y,
-                        prefix_text[:chars_to_print],
+                        x=current_x,
+                        y=title_y,
+                        text=prefix_text[:chars_to_print],
                         fg=colors.YELLOW,
-                    )
+                    ) # type: ignore[no-matching-overload]
                     current_x += chars_to_print
 
                 # 2. Draw the color bar using individual slot colors
@@ -229,11 +232,11 @@ class Menu(abc.ABC):
                         len(suffix_text), (max_content_x - current_x + 1)
                     )
                     menu_console.print(
-                        current_x,
-                        title_y,
-                        suffix_text[:chars_to_print],
+                        x=current_x,
+                        y=title_y,
+                        text=suffix_text[:chars_to_print],
                         fg=colors.YELLOW,
-                    )
+                    )  # type: ignore[no-matching-overload]
             else:
                 # For other menus, use print_box for centered title within content area
                 # Content area for title: x from 1 to actual_width-2
@@ -245,7 +248,7 @@ class Menu(abc.ABC):
                     height=1,
                     fg=colors.YELLOW,
                     alignment=tcod.constants.CENTER,
-                )
+                )  # type: ignore[no-matching-overload]
 
         # Draw separator line
         if actual_width > 2 and menu_height > 3:
