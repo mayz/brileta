@@ -16,10 +16,9 @@ class FieldOfView:
         m = model.game_map
         self.fov_map: tcod.map.Map = tcod.map.Map(m.width, m.height, order="F")
 
-        for x in range(m.width):
-            for y in range(m.height):
-                self.fov_map.transparent[x, y] = not m.tiles[x][y].blocks_sight
-                self.fov_map.walkable[x, y] = not m.tiles[x][y].blocked
+        # Using ~ for logical NOT
+        self.fov_map.walkable[...] = ~m.tile_blocked
+        self.fov_map.transparent[...] = ~m.tile_blocks_sight
 
     def contains(self, x: int, y: int) -> bool:
         return self.fov_map.fov[x, y]

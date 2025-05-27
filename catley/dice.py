@@ -292,13 +292,13 @@ def calculate_check_roll_success_probability(
     prob_single_success = _calculate_single_d20_success_probability(
         ability_score, roll_to_exceed
     )
-    prob_single_failure = 1.0 - prob_single_success
 
     if not has_advantage and not has_disadvantage:
         return prob_single_success
 
     if has_advantage:
         # Succeed if not both dice fail
+        prob_single_failure = 1.0 - prob_single_success
         return 1.0 - (prob_single_failure**2)
 
     # has_disadvantage
