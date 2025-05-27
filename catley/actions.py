@@ -7,16 +7,15 @@ from __future__ import annotations
 import abc
 from typing import TYPE_CHECKING
 
-import colors
-import dice
-import items
-from menu_system import Menu, PickupMenu
-from model import Actor, CatleyActor, Disposition
+from . import colors, dice, items
+from .menu_system import Menu, PickupMenu
+from .model import Actor, CatleyActor, Disposition
 
 if TYPE_CHECKING:
     import tcod
-    from controller import Controller
-    from model import Entity
+
+    from .controller import Controller
+    from .model import Entity
 
 
 class Action(abc.ABC):
@@ -283,4 +282,3 @@ class AttackAction(GameTurnAction):
                 "due to the attack!",
                 colors.ORANGE,
             )
-

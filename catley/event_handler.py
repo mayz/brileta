@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import actions
-import menu_system
 import tcod.event
 
+from . import actions, menu_system
+
 if TYPE_CHECKING:
-    from controller import Controller
+    from .controller import Controller
 
 
 class EventHandler:
@@ -120,7 +120,7 @@ class EventHandler:
                 return None
 
     def _handle_mouse_button_down_event(
-        self, event: tcod.event.Event, button: tcod.event.MouseButton
+        self, event: tcod.event.MouseButtonDown, button: tcod.event.MouseButton
     ) -> actions.Action | None:
         """
         Handle mouse button down events.

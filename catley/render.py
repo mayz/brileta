@@ -1,17 +1,18 @@
 import math
 from typing import TYPE_CHECKING
 
-import colors
 import numpy as np
-from clock import Clock
-from fov import FieldOfView
-from message_log import MessageLog
-from model import Entity, Model
 from tcod.console import Console
 from tcod.context import Context
 
+from . import colors
+from .clock import Clock
+from .fov import FieldOfView
+from .message_log import MessageLog
+from .model import Entity, Model
+
 if TYPE_CHECKING:
-    from menu_system import MenuSystem
+    from .menu_system import MenuSystem
 
 
 class FPSDisplay:
@@ -357,4 +358,4 @@ class Renderer:
         self, x: int, y: int, text: str, fg: colors.Color = colors.WHITE
     ) -> None:
         """Render text at a specific position with a given color"""
-        self.root_console.print(x=x, y=y, string=text, fg=fg)
+        self.root_console.print(x=x, y=y, text=text, fg=fg)

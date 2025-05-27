@@ -9,18 +9,20 @@ import functools
 import string
 from typing import TYPE_CHECKING
 
-import colors
 import tcod
+import tcod.constants
 import tcod.event
-from conditions import Condition
-from items import Item, ItemSize
-from model import Actor
 from tcod.console import Console
+
+from . import colors
+from .conditions import Condition
+from .items import Item, ItemSize
+from .model import Actor
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from controller import Controller
+    from .controller import Controller
 
 
 class MenuOption:

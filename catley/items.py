@@ -5,7 +5,7 @@ from __future__ import annotations
 import copy
 from enum import Enum, auto
 
-import dice
+from . import dice
 
 
 class ItemSize(Enum):

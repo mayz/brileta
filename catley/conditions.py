@@ -1,6 +1,6 @@
 import abc
 
-import colors
+from . import colors
 
 
 class Condition(abc.ABC):

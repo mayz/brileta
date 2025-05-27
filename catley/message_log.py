@@ -3,7 +3,7 @@ from __future__ import annotations
 import textwrap
 from typing import TYPE_CHECKING
 
-import colors
+from . import colors
 
 if TYPE_CHECKING:
     import tcod.console
@@ -14,7 +14,7 @@ class Message:
     A single message in the message log.
     """
 
-    def __init__(self, text: str, fg: tuple[int, int, int], count: int = 1) -> None:
+    def __init__(self, text: str, fg: colors.Color, count: int = 1) -> None:
         self.plain_text = text
         self.fg = fg
         self.count = count
@@ -38,7 +38,7 @@ class MessageLog:
     def add_message(
         self,
         text: str,
-        fg: tuple[int, int, int] = colors.WHITE,
+        fg: colors.Color = colors.WHITE,
         *,
         stack: bool = True,
     ) -> None:
@@ -81,7 +81,7 @@ class MessageLog:
             for line in reversed(wrapped_lines):
                 if y_offset < 0:
                     return  # No more space in the message log area
-                console.print(x=x, y=y + y_offset, string=line, fg=message.fg)
+                console.print(x=x, y=y + y_offset, text=line, fg=message.fg)
                 y_offset -= 1
             if (
                 y_offset < 0

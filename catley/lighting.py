@@ -1,9 +1,10 @@
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
-import colors
 import numpy as np
 import tcod
+
+from . import colors
 
 if TYPE_CHECKING:
     from .model import Entity
@@ -119,7 +120,7 @@ class LightingSystem:
                 flicker_grid = tcod.noise.grid(
                     shape=(1, 1),
                     scale=0.5,  # Lower scale = smoother transitions
-                    origin=(self.time * light.flicker_speed, 0.0),
+                    origin=(int(self.time * light.flicker_speed), 0),
                     indexing="ij",
                 )
                 flicker_noise = self.noise[flicker_grid][0, 0]
