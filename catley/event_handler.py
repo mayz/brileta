@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import actions
-import colors
 import menu_system
 import tcod.event
 
@@ -26,14 +25,7 @@ class EventHandler:
         # If no menu handled it, process normal game actions
         action = self.handle_event(event)
         if action:
-            try:
-                action.execute()
-            except SystemExit:  # Allow SystemExit to propagate for quitting
-                raise
-            except Exception as e:
-                error_message = f"Error: {str(e)}"
-                self.controller.message_log.add_message(error_message, colors.RED)
-                print(f"Unhandled exception during action execution: {e}")
+            self.controller.execute_action(action)
 
     def handle_event(self, event: tcod.event.Event) -> actions.Action | None:
         # Don't process game actions if menus are active

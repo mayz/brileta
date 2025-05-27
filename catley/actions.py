@@ -11,7 +11,7 @@ import colors
 import dice
 import items
 from menu_system import Menu, PickupMenu
-from model import Actor, WastoidActor
+from model import Actor, CatleyActor, Disposition
 
 if TYPE_CHECKING:
     import tcod
@@ -183,7 +183,7 @@ class AttackAction(GameTurnAction):
         else:
             attacker_ability_score = self.attacker.observation
 
-        if isinstance(self.defender, WastoidActor):
+        if isinstance(self.defender, CatleyActor):
             defender_ability_score = self.defender.agility
         else:
             defender_ability_score = 0
@@ -270,3 +270,17 @@ class AttackAction(GameTurnAction):
                     colors.LIGHT_BLUE,  # Informational color for status effects
                 )
                 # TODO: Implement off-balance effect (maybe skip next turn?)
+
+        # If the player attacked an `Actor`, they become hostile towards the player.
+        if (
+            self.attacker == self.controller.model.player
+            and self.defender != self.controller.model.player
+            and self.defender.disposition != Disposition.HOSTILE
+        ):
+            self.defender.disposition = Disposition.HOSTILE
+            self.controller.message_log.add_message(
+                f"{self.defender.name} becomes hostile towards {self.attacker.name} "
+                "due to the attack!",
+                colors.ORANGE,
+            )
+

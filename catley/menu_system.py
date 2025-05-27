@@ -1,5 +1,5 @@
 """
-Menu system for the Catley game using TCOD overlays similar to Brogue.
+Menu system for the Catley game using overlays.
 """
 
 from __future__ import annotations
@@ -286,7 +286,7 @@ class HelpMenu(Menu):
             ("Inventory", "I - Open inventory menu"),
             ("Get Items", "G - Pick up items from ground/corpses"),
             ("Quit", "Q or Escape - Quit game"),
-            ("Help", "? or H - Show this help menu"),
+            ("Help", "? - Show this help menu"),
         ]
 
         # Add sections without keys (just for display)
