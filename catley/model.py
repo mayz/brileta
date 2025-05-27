@@ -4,6 +4,8 @@ import random
 from enum import Enum, auto
 from typing import TYPE_CHECKING
 
+import numpy as np
+
 from . import colors, items
 from .conditions import Condition
 from .items import Item, ItemSize, Weapon
@@ -268,7 +270,7 @@ class Actor(Entity):
                         and 0 <= target_y < controller.model.game_map.height
                     ):
                         continue
-                    if controller.model.game_map.tiles[target_x][target_y].blocked:
+                    if controller.model.game_map.tile_blocked[target_x, target_y]:
                         continue
                     blocking_entity = controller.model.get_entity_at_location(
                         target_x, target_y
@@ -494,18 +496,6 @@ class CatleyActor(Actor):
         return slot_colors
 
 
-class Tile:
-    """A tile in the game map."""
-
-    def __init__(self, blocked: bool, blocks_sight: bool | None = None) -> None:
-        self.blocked = blocked
-
-        if blocks_sight is None:
-            blocks_sight = blocked
-
-        self.blocks_sight = blocks_sight
-
-
 class Rect:
     def __init__(self, x: int, y: int, w: int, h: int) -> None:
         self.x1 = x
@@ -532,13 +522,12 @@ class GameMap:
         self.width = width
         self.height = height
 
-        tiles = []
-        for _ in range(width):
-            tiles_line = []
-            for _ in range(height):
-                tiles_line.append(Tile(blocked=True))
-            tiles.append(tiles_line)
-        self.tiles = tiles
+        # Instead of storing a list of full-fledged "Tile" objects, we store their
+        # properties directly as numpy arrays for performance.
+        self.tile_blocked = np.full((width, height), True, dtype=np.bool_, order="F")
+        self.tile_blocks_sight = np.full(
+            (width, height), True, dtype=np.bool_, order="F"
+        )
 
     def make_map(
         self,
@@ -597,17 +586,15 @@ class GameMap:
         return rooms
 
     def _carve_room(self, room: Rect) -> None:
-        for x in range(room.x1 + 1, room.x2):
-            for y in range(room.y1 + 1, room.y2):
-                self.tiles[x][y].blocked = False
-                self.tiles[x][y].blocks_sight = False
+        self.tile_blocked[room.x1 + 1 : room.x2, room.y1 + 1 : room.y2] = False
+        self.tile_blocks_sight[room.x1 + 1 : room.x2, room.y1 + 1 : room.y2] = False
 
     def _carve_h_tunnel(self, x1: int, x2: int, y: int) -> None:
-        for x in range(min(x1, x2), max(x1, x2) + 1):
-            self.tiles[x][y].blocked = False
-            self.tiles[x][y].blocks_sight = False
+        h_slice = slice(min(x1, x2), max(x1, x2) + 1)
+        self.tile_blocked[h_slice, y] = False
+        self.tile_blocks_sight[h_slice, y] = False
 
     def _carve_v_tunnel(self, y1: int, y2: int, x: int) -> None:
-        for y in range(min(y1, y2), max(y1, y2) + 1):
-            self.tiles[x][y].blocked = False
-            self.tiles[x][y].blocks_sight = False
+        v_slice = slice(min(y1, y2), max(y1, y2) + 1)
+        self.tile_blocked[x, v_slice] = False
+        self.tile_blocks_sight[x, v_slice] = False

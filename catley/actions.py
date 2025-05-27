@@ -141,7 +141,7 @@ class MoveAction(GameTurnAction):
         self.newy = self.entity.y + self.dy
 
     def execute(self) -> None:
-        if self.game_map.tiles[self.newx][self.newy].blocked:
+        if self.game_map.tile_blocked[self.newx, self.newy]:
             return
 
         # Check for blocking entities

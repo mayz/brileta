@@ -89,18 +89,11 @@ class Renderer:
         self.map_fg = self.game_map_console.fg
         self.map_ch = self.game_map_console.ch
 
-        is_wall = np.full((m.width, m.height), False, dtype=np.bool_, order="F")
-        for x in range(m.width):
-            for y in range(m.height):
-                if m.tiles[x][y].blocks_sight:
-                    is_wall[(x, y)] = True
-        wall_idx = np.where(is_wall)
-
         self.dark_map_bg = np.full_like(self.map_bg, colors.DARK_GROUND)
-        self.dark_map_bg[wall_idx] = colors.DARK_WALL
+        self.dark_map_bg[m.tile_blocks_sight] = colors.DARK_WALL
 
         self.light_map_bg = np.full_like(self.map_bg, colors.LIGHT_GROUND)
-        self.light_map_bg[wall_idx] = colors.LIGHT_WALL
+        self.light_map_bg[m.tile_blocks_sight] = colors.LIGHT_WALL
 
         # Right now, which tiles we've explored only concerns the renderer.
         self.map_tiles_explored = np.full(
