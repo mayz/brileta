@@ -79,7 +79,7 @@ class Controller:
         self.model.player.inventory.append(
             conditions.Injury(injury_type="Sprained Ankle")
         )
-        self.model.player.inventory.append(items.SLEDGEHAMMER)
+        self.model.player.inventory.append(items.SLEDGEHAMMER.clone())
 
         self._add_npc()
 
@@ -124,7 +124,7 @@ class Controller:
             toughness=3,
             intelligence=-3,
         )
-        npc.equipped_weapon = items.SLEDGEHAMMER
+        npc.equipped_weapon = items.SLEDGEHAMMER.clone()
         self.model.entities.append(npc)
 
     def run_game_loop(self) -> None:

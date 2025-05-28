@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from . import colors, items
+from . import colors, items, tile_types
 from .conditions import Condition
 from .items import Item, ItemSize, Weapon
 from .lighting import LightingSystem, LightSource
@@ -529,12 +529,30 @@ class GameMap:
         self.width = width
         self.height = height
 
-        # Instead of storing a list of full-fledged "Tile" objects, we store their
-        # properties directly as numpy arrays for performance.
-        self.tile_blocked = np.full((width, height), True, dtype=np.bool_, order="F")
-        self.tile_blocks_sight = np.full(
-            (width, height), True, dtype=np.bool_, order="F"
-        )
+        # Initialize the map with walls. We'll carve out rooms later.
+        # Store tiles using the types defined in `tile_types` for performance.
+        self.tiles = np.full((width, height), fill_value=tile_types.WALL, order="F")
+
+    @property
+    def tile_blocked(self) -> np.ndarray:
+        """Derive blocked tiles from the `walkable` property (see `tile_types`).
+
+        Returns:
+            Boolean array of shape (width, height) where True means the tile
+            blocks movement (NOT walkable).
+        """
+        return ~self.tiles["walkable"]
+
+    @property
+    def tile_blocks_sight(self) -> np.ndarray:
+        """
+        Derive sight-blocking tiles from the `transparent` property (see `tile_types`).
+
+        Returns:
+            Boolean array of shape (width, height) where True means the tile
+            blocks line of sight (NOT transparent).
+        """
+        return ~self.tiles["transparent"]
 
     def make_map(
         self,
@@ -593,15 +611,12 @@ class GameMap:
         return rooms
 
     def _carve_room(self, room: Rect) -> None:
-        self.tile_blocked[room.x1 + 1 : room.x2, room.y1 + 1 : room.y2] = False
-        self.tile_blocks_sight[room.x1 + 1 : room.x2, room.y1 + 1 : room.y2] = False
+        self.tiles[room.x1 + 1 : room.x2, room.y1 + 1 : room.y2] = tile_types.FLOOR
 
     def _carve_h_tunnel(self, x1: int, x2: int, y: int) -> None:
         h_slice = slice(min(x1, x2), max(x1, x2) + 1)
-        self.tile_blocked[h_slice, y] = False
-        self.tile_blocks_sight[h_slice, y] = False
+        self.tiles[h_slice, y] = tile_types.FLOOR
 
     def _carve_v_tunnel(self, y1: int, y2: int, x: int) -> None:
         v_slice = slice(min(y1, y2), max(y1, y2) + 1)
-        self.tile_blocked[x, v_slice] = False
-        self.tile_blocks_sight[x, v_slice] = False
+        self.tiles[x, v_slice] = tile_types.FLOOR
