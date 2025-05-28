@@ -204,7 +204,7 @@ class Menu(abc.ABC):
                         y=title_y,
                         text=prefix_text[:chars_to_print],
                         fg=colors.YELLOW,
-                    ) # type: ignore[no-matching-overload]
+                    )  # type: ignore[no-matching-overload]
                     current_x += chars_to_print
 
                 # 2. Draw the color bar using individual slot colors
