@@ -1,3 +1,25 @@
+"""
+User interface commands that control application behavior.
+
+Defines commands that handle user interface interactions and application-level
+functionality, distinct from in-world game actions.
+
+UICommand:
+    Base class for all interface commands. These handle user input that
+    affects the application state, display, or user experience rather than
+    the game world itself.
+
+Examples:
+    - QuitUICommand: Exit the application
+    - ToggleFullscreenUICommand: Change display mode
+    - OpenMenuUICommand: Show/hide interface panels
+    - SelectOrDeselectEntityUICommand: Change UI selection state
+
+UI commands are immediate and don't consume game turns. They handle the
+"meta" layer of interaction - how the player interacts with the game
+interface rather than how their character acts within the game world.
+"""
+
 from __future__ import annotations
 
 import abc
@@ -21,7 +43,7 @@ class UICommand(abc.ABC):
 
 
 class ToggleFullscreenUICommand(UICommand):
-    """Action for toggling fullscreen mode."""
+    """Command for toggling fullscreen mode."""
 
     def __init__(self, context: tcod.context.Context) -> None:
         self.context = context
@@ -31,7 +53,7 @@ class ToggleFullscreenUICommand(UICommand):
 
 
 class QuitUICommand(UICommand):
-    """Action for quitting the game."""
+    """Command for quitting the game."""
 
     def execute(self) -> None:
         raise SystemExit()
@@ -39,7 +61,7 @@ class QuitUICommand(UICommand):
 
 class SelectOrDeselectEntityUICommand(UICommand):
     """
-    Action to select a new entity or deselect (clear) the current selection.
+    Command to select a new entity or deselect (clear) the current selection.
     """
 
     def __init__(self, controller: Controller, selection: Entity | None):
@@ -57,7 +79,7 @@ class SelectOrDeselectEntityUICommand(UICommand):
 
 
 class OpenMenuUICommand(UICommand):
-    """Action to open a menu, like the inventory or help menu."""
+    """Command to open a menu, like the inventory or help menu."""
 
     def __init__(self, controller: Controller, menu_class: type[Menu]):
         self.controller = controller
@@ -69,7 +91,7 @@ class OpenMenuUICommand(UICommand):
 
 
 class OpenPickupMenuUICommand(OpenMenuUICommand):
-    """Action to open the pickup menu for items at the player's location."""
+    """Command to open the pickup menu for items at the player's location."""
 
     def __init__(self, controller: Controller):
         self.controller = controller

@@ -1,5 +1,23 @@
 """
-This module contains the Action class and its subclasses that represent game actions.
+Game world actions that affect gameplay state.
+
+Defines actions that entities can perform within the game world that directly affect
+game state and typically consume turns in the action economy.
+
+GameAction:
+    Base class for all in-world actions. These represent meaningful decisions
+    made by actors (player or NPCs) that change the game world state.
+
+Examples:
+    - MoveAction: Moving an entity to a new position
+    - AttackAction: One actor attacking another in combat
+
+These actions are distinct from UI commands - they represent actual gameplay
+decisions rather than interface interactions. Game actions typically:
+- Are performed by actors with agency
+- Consume the actor's turn
+- Can trigger consequences and reactions from other actors
+- Advance the game's narrative/mechanical state
 """
 
 from __future__ import annotations
@@ -10,7 +28,7 @@ from catley import colors
 from catley.util import dice
 
 from . import items
-from .entities import Actor, CatleyActor, Disposition
+from .entities import Actor, Disposition
 
 if TYPE_CHECKING:
     from catley.controller import Controller
@@ -89,10 +107,7 @@ class AttackAction(GameAction):
         else:
             attacker_ability_score = self.attacker.observation
 
-        if isinstance(self.defender, CatleyActor):
-            defender_ability_score = self.defender.agility
-        else:
-            defender_ability_score = 0
+        defender_ability_score = self.defender.agility
 
         # Perform attack roll
         attack_result = dice.perform_opposed_check_roll(

@@ -183,9 +183,7 @@ class Menu(abc.ABC):
             title_y = 1  # Title is on the second line of the menu_console (index 1)
 
             if isinstance(self, InventoryMenu):
-                player = (
-                    self.controller.gw.player
-                )  # Known to be WastoidActor for player
+                player = self.controller.gw.player  # Player is an Actor
                 used_space = player.get_used_inventory_space()
                 total_slots = player.inventory_slots
 

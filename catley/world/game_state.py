@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 from catley import colors
 from catley.game import items
-from catley.game.entities import Actor, CatleyActor
+from catley.game.entities import Actor
 from catley.render.lighting import LightingSystem, LightSource
 
 from .map import GameMap
@@ -28,17 +28,19 @@ class GameWorld:
         self.mouse_tile_location_on_map: tuple[int, int] | None = None
         self.lighting = LightingSystem()
         self.selected_entity: Entity | None = None
+
         # Create player with a torch light source
         player_light = LightSource.create_torch()
-        self.player = CatleyActor(
+        self.player = Actor(
             x=0,
             y=0,
             ch="@",
             name="Player",
             color=colors.PLAYER_COLOR,
-            model=self,
+            game_world=self,
             light_source=player_light,
             toughness=30,
+            # Other abilities will default to 0
         )
         self.player.equipped_weapon = items.FISTS
 
