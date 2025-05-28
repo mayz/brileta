@@ -1,3 +1,24 @@
+"""
+Entities in the game world.
+
+This module defines the fundamental classes for objects that exist in the game world:
+
+Entity:
+    Base class for any object with a position that can be rendered and interacted with.
+    Examples: treasure chests, doors, traps, projectiles, mechanisms.
+
+Actor:
+    An entity with agency. It has wants, motivations, and makes autonomous decisions.
+    Participates in combat, social dynamics, and the turn-based simulation.
+    Examples: player character, NPCs, monsters, robots, sentient creatures.
+
+The key distinction is agency: Actors have internal desires and make decisions based on
+those motivations, while Entities are reactive objects that follow programmed behaviors.
+
+Most game objects will be Actors, but this architecture provides flexibility for
+implementing complex interactive objects that don't need full autonomy.
+"""
+
 from __future__ import annotations
 
 from enum import Enum, auto
@@ -17,7 +38,13 @@ if TYPE_CHECKING:
 
 
 class Entity:
-    """An entity that can exist in the game world."""
+    """Any object that exists in the game world with a position.
+
+    Entities are reactive and interactive, but they follow programmed behavior.
+    They don't have their own motivations or wants.
+
+    Examples: treasure chests, certain doors, traps, mechanisms, etc.
+    """
 
     def __init__(
         self,
@@ -25,7 +52,7 @@ class Entity:
         y: int,
         ch: str,
         color: colors.Color,
-        model: GameWorld,
+        game_world: GameWorld | None,
         light_source: LightSource | None = None,
         blocks_movement: bool = True,
     ) -> None:
@@ -33,11 +60,11 @@ class Entity:
         self.y = y
         self.ch = ch  # Character that represents the entity.
         self.color = color
-        self.model = model
+        self.gw = game_world
         self.light_source = light_source
         self.blocks_movement = blocks_movement
-        if self.light_source and self.model:
-            self.light_source.attach(self, self.model.lighting)
+        if self.light_source and self.gw:
+            self.light_source.attach(self, self.gw.lighting)
         self.name = "<Unnamed Entity>"
 
     def move(self, dx: int, dy: int) -> None:
@@ -64,7 +91,13 @@ class Disposition(Enum):
 
 
 class Actor(Entity):
-    """An entity that can take actions, have health, and participate in combat."""
+    """An entity with agency.
+
+    It has wants, motivations, and makes autonomous decisions. It participates in the
+    social/economic/narrative simulation of the game.
+
+    Examples: player, NPCs, monsters, sentient robots, animals.
+    """
 
     def __init__(
         self,
@@ -72,27 +105,64 @@ class Actor(Entity):
         y: int,
         ch: str,
         color: colors.Color,
-        max_hp: int,
-        max_ap: int,
-        model: GameWorld | None,
+        name: str = "<Unnamed Actor>",
+        # Ability scores.
+        strength: int = 0,
+        toughness: int = 0,
+        agility: int = 0,
+        observation: int = 0,
+        intelligence: int = 0,
+        demeanor: int = 0,
+        weirdness: int = 0,
+        # Other combat/gameplay stats
+        max_ap: int = 3,  # Default AP
+        # World and appearance
+        game_world: GameWorld | None = None,
         light_source: LightSource | None = None,
         blocks_movement: bool = True,
-        name: str = "<Unnamed Actor>",
         disposition: Disposition = Disposition.WARY,
     ) -> None:
-        super().__init__(x, y, ch, color, model, light_source, blocks_movement)
-        self.max_hp = max_hp
-        self.hp = max_hp
+        super().__init__(x, y, ch, color, game_world, light_source, blocks_movement)
+        self.name = name
+
+        # Core abilities
+        self.strength = strength
+        self.toughness = toughness  # Used by max_hp property
+        self.agility = agility
+        self.observation = observation
+        self.intelligence = intelligence
+        self.demeanor = demeanor
+        self.weirdness = weirdness
+
+        # HP and AP
+        # self.max_hp is a property derived from self.toughness.
+        # self.hp is initialized after toughness is set.
+        self.hp = self.max_hp
         self.max_ap = max_ap
         self.ap = max_ap
+
         self.inventory: list[Item | Condition] = []
         self.equipped_weapon: Weapon | None = None
-        self.name = name
         self.disposition = disposition
 
         # To show a visual "flash" when taking damage.
         self._flash_color: colors.Color | None = None
         self._flash_duration_frames: int = 0
+
+        # Inventory slots based on strength
+        self.inventory_slots = self.strength + 5
+        self.tricks: list = []  # Will hold Trick instances later
+
+    @property
+    def max_hp(self) -> int:
+        """Derive max HP from toughness."""
+        return self.toughness + 5
+
+    @max_hp.setter
+    def max_hp(self, value: int) -> None:
+        """Override max_hp setter to prevent direct modification."""
+        # Do nothing as max_hp is derived from toughness for Actor
+        pass
 
     def take_damage(self, amount: int) -> None:
         """Handle damage to the actor, reducing AP first, then HP.
@@ -118,8 +188,8 @@ class Actor(Entity):
             self.color = colors.DEAD
             self.blocks_movement = False
             # If this actor was selected, deselect it.
-            if self.model and self.model.selected_entity == self:
-                self.model.selected_entity = None
+            if self.gw and self.gw.selected_entity == self:
+                self.gw.selected_entity = None
 
     def heal(self, amount: int) -> None:
         """Heal the actor by the specified amount, up to max_hp.
@@ -279,69 +349,6 @@ class Actor(Entity):
 
         if action_to_perform:
             controller.execute_action(action_to_perform)
-
-
-class CatleyActor(Actor):
-    """An Actor that follows the Wastoid ruleset with seven core abilities."""
-
-    def __init__(
-        self,
-        x: int,
-        y: int,
-        ch: str,
-        name: str,
-        color: colors.Color,
-        # Wastoid abilities
-        weirdness: int = 0,
-        agility: int = 0,
-        strength: int = 0,
-        toughness: int = 0,
-        observation: int = 0,
-        intelligence: int = 0,
-        demeanor: int = 0,
-        model: GameWorld | None = None,
-        light_source: LightSource | None = None,
-        blocks_movement: bool = True,
-        disposition: Disposition = Disposition.WARY,
-    ) -> None:
-        # Initialize base Actor with calculated max_hp
-        super().__init__(
-            x=x,
-            y=y,
-            ch=ch,
-            color=color,
-            max_hp=toughness + 5,  # Wastoid HP calculation
-            max_ap=3,  # Default AP, can be adjusted as needed
-            model=model,
-            light_source=light_source,
-            blocks_movement=blocks_movement,
-            name=name,
-            disposition=disposition,
-        )
-
-        # Core Wastoid abilities
-        self.weirdness = weirdness
-        self.agility = agility
-        self.strength = strength
-        self.toughness = toughness
-        self.observation = observation
-        self.intelligence = intelligence
-        self.demeanor = demeanor
-
-        # Wastoid-specific attributes
-        self.inventory_slots = strength + 5
-        self.tricks: list = []  # Will hold Trick instances later
-
-    @property
-    def max_hp(self) -> int:
-        """Calculate max HP based on Wastoid rules (toughness + 5)."""
-        return self.toughness + 5
-
-    @max_hp.setter
-    def max_hp(self, value: int) -> None:
-        """Override max_hp setter to prevent direct modification."""
-        # Do nothing as max_hp is derived from toughness for WastoidActor
-        pass
 
     def get_used_inventory_space(self) -> int:
         """Calculates the total number of inventory slots currently used,

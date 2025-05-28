@@ -10,7 +10,7 @@ from . import colors
 from .event_handler import EventHandler
 from .game import conditions, items
 from .game.actions import GameAction
-from .game.entities import CatleyActor, Disposition, Entity
+from .game.entities import Actor, Disposition, Entity
 from .render.render import Renderer
 from .ui.menu_system import MenuSystem
 from .ui.message_log import MessageLog
@@ -115,6 +115,7 @@ class Controller:
         # Place NPC right next to the player.
         npc_x = self.gw.player.x
         npc_y = self.gw.player.y
+
         choice = random.randint(1, 4)
         match choice:
             case 1:
@@ -125,19 +126,21 @@ class Controller:
                 npc_y += 2
             case 4:
                 npc_y -= 2
-        npc = CatleyActor(
+
+        npc = Actor(
             x=npc_x,
             y=npc_y,
             ch="T",
             name="Trog",
             color=colors.DARK_GREY,
-            model=self.gw,
+            game_world=self.gw,
             blocks_movement=True,
             disposition=Disposition.WARY,
             weirdness=3,
             strength=3,
             toughness=3,
             intelligence=-3,
+            # Other abilities (agility, observation, demeanor) will default to 0
         )
         npc.equipped_weapon = items.SLEDGEHAMMER.clone()
         self.gw.entities.append(npc)
