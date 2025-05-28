@@ -160,12 +160,19 @@ class Actor(Entity):
         self.name = name
         self.disposition = disposition
 
+        # To show a visual "flash" when taking damage.
+        self._flash_color: colors.Color | None = None
+        self._flash_duration_frames: int = 0
+
     def take_damage(self, amount: int) -> None:
         """Handle damage to the actor, reducing AP first, then HP.
 
         Args:
             amount: Amount of damage to take
         """
+        self._flash_color = colors.RED
+        self._flash_duration_frames = 5
+
         # First reduce AP if any
         if self.ap > 0:
             ap_damage = min(amount, self.ap)

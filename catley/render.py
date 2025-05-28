@@ -9,7 +9,7 @@ from . import colors
 from .clock import Clock
 from .fov import FieldOfView
 from .message_log import MessageLog
-from .model import Entity, Model
+from .model import Actor, Entity, Model
 
 if TYPE_CHECKING:
     from .menu_system import MenuSystem
@@ -282,6 +282,15 @@ class Renderer:
 
         # Calculate the base lit color of the entity
         base_entity_color = e.color
+
+        # Apply a flash effect if appropriate.
+        if isinstance(e, Actor) and e._flash_duration_frames > 0:
+            if e._flash_color:
+                base_entity_color = e._flash_color
+            e._flash_duration_frames -= 1
+            if e._flash_duration_frames == 0:
+                e._flash_color = None
+
         light_rgb = self.current_light_intensity[e.x, e.y]
 
         # Apply RGB lighting to each color channel of the base_entity_color
