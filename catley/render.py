@@ -1,5 +1,5 @@
 import math
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 from tcod.console import Console
@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
 
 class FPSDisplay:
-    SHOW_FPS = False
+    SHOW_FPS = True
 
     def __init__(self, clock: Clock, update_interval: float = 0.5) -> None:
         self.clock = clock
@@ -82,20 +82,8 @@ class Renderer:
 
         self.game_map_console: Console = Console(m.width, m.height, order="F")
 
-        # The getter properties in the Python tcod library call transpose()
-        # on the underlying numpy arrays, so it's important to get a reference to
-        # the arrays once, outside of a loop.
-        self.map_bg = self.game_map_console.bg
-        self.map_fg = self.game_map_console.fg
-        self.map_ch = self.game_map_console.ch
-
-        self.dark_map_bg = np.full_like(self.map_bg, colors.DARK_GROUND)
-        self.dark_map_bg[m.tile_blocks_sight] = colors.DARK_WALL
-
-        self.light_map_bg = np.full_like(self.map_bg, colors.LIGHT_GROUND)
-        self.light_map_bg[m.tile_blocks_sight] = colors.LIGHT_WALL
-
         # Right now, which tiles we've explored only concerns the renderer.
+        # FIXME: Move to tile_types.Tile structure?
         self.map_tiles_explored = np.full(
             (m.width, m.height), False, dtype=np.bool_, order="F"
         )
@@ -199,30 +187,19 @@ class Renderer:
         ):
             return
 
-        current_bg_color = self.game_map_console.bg[
-            x, y
-        ].tolist()  # Get existing bg as a list [r,g,b]
+        current_bg_color = self.game_map_console.rgb["bg"][x, y]
 
         # Perform alpha blending:
         # NewColor = TargetColor * alpha + CurrentColor * (1 - alpha)
-        blended_r = int(
-            target_highlight_color[0] * alpha + current_bg_color[0] * (1.0 - alpha)
-        )
-        blended_g = int(
-            target_highlight_color[1] * alpha + current_bg_color[1] * (1.0 - alpha)
-        )
-        blended_b = int(
-            target_highlight_color[2] * alpha + current_bg_color[2] * (1.0 - alpha)
-        )
+        blended_color = [
+            int(target_highlight_color[i] * alpha + current_bg_color[i] * (1.0 - alpha))
+            for i in range(3)
+        ]
 
         # Ensure colors stay within 0-255 range
-        final_blended_color = (
-            max(0, min(255, blended_r)),
-            max(0, min(255, blended_g)),
-            max(0, min(255, blended_b)),
-        )
-
-        self.game_map_console.bg[x, y] = final_blended_color
+        self.game_map_console.rgb["bg"][x, y] = [
+            max(0, min(255, c)) for c in blended_color
+        ]
 
     def _render_help_text(self) -> None:
         """Render helpful key bindings at the very top."""
@@ -239,31 +216,47 @@ class Renderer:
         self.root_console.print(help_x, help_y, help_text, fg=colors.GREY)
 
     def _render_map(self) -> None:
-        explored_idx = np.where(self.map_tiles_explored)
-        self.map_bg[explored_idx] = self.dark_map_bg[explored_idx]
+        # Start with unexplored (shroud)
+        shroud = (ord(" "), (0, 0, 0), (0, 0, 0))
+        self.game_map_console.rgb[:] = shroud
 
-        # Compute lighting once and store it
+        # Show explored areas with dark graphics
+        explored_mask = self.map_tiles_explored
+        self.game_map_console.rgb[explored_mask] = self.model.game_map.tiles["dark"][
+            explored_mask
+        ]
+
+        # Compute lighting.
         self.current_light_intensity = self.model.lighting.compute_lighting(
             self.model.game_map.width, self.model.game_map.height
         )
 
-        # Apply lighting to visible areas
-        light_mask = self.fov.fov_map.fov
-        visible_y, visible_x = np.where(light_mask)  # Get coordinates of visible cells
+        # Apply dynamic lighting to visible areas
+        visible_mask = self.fov.fov_map.fov
+        visible_y, visible_x = np.where(visible_mask)
 
-        if len(visible_y) > 0:  # Only process if we have visible cells
-            # Get RGB light intensities for visible cells
+        if len(visible_y) > 0:
+            # Get the tile graphics for visible areas
+            dark_tiles = self.model.game_map.tiles["dark"][visible_y, visible_x]
+            light_tiles = self.model.game_map.tiles["light"][visible_y, visible_x]
+
+            # Get light intensity for blending
             cell_light = self.current_light_intensity[visible_y, visible_x]
 
-            # Blend colors based on light intensity for each RGB channel
-            for i in range(3):  # For each RGB channel
-                light_intensity = cell_light[..., i]
-                self.map_bg[visible_y, visible_x, i] = self.light_map_bg[
-                    visible_y, visible_x, i
-                ] * light_intensity + self.dark_map_bg[visible_y, visible_x, i] * (
-                    1.0 - light_intensity
-                )
+            # Create blended tiles
+            blended_tiles = np.empty_like(dark_tiles)
+            blended_tiles["ch"] = light_tiles["ch"]  # Use light character
+            blended_tiles["fg"] = light_tiles["fg"]  # Use light foreground
 
+            # Blend background colors based on light intensity
+            for i in range(3):  # RGB channels
+                light_intensity = cell_light[..., i]
+                blended_tiles["bg"][..., i] = light_tiles["bg"][
+                    ..., i
+                ] * light_intensity + dark_tiles["bg"][..., i] * (1.0 - light_intensity)
+
+            # Apply the dynamically lit tiles
+            self.game_map_console.rgb[visible_y, visible_x] = blended_tiles
             self.map_tiles_explored[visible_y, visible_x] = True
 
     def _render_entities(self) -> None:
@@ -278,15 +271,15 @@ class Renderer:
         self._render_entity(self.model.player)
 
     def _render_entity(self, e: Entity) -> None:
-        self.map_ch[e.x, e.y] = ord(e.ch)
+        self.game_map_console.rgb["ch"][e.x, e.y] = ord(e.ch)
 
         # Calculate the base lit color of the entity
-        base_entity_color = e.color
+        base_entity_color: colors.Color = e.color
 
         # Apply a flash effect if appropriate.
         if isinstance(e, Actor) and e._flash_duration_frames > 0:
             if e._flash_color:
-                base_entity_color = e._flash_color
+                base_entity_color = cast("colors.Color", e._flash_color)
             e._flash_duration_frames -= 1
             if e._flash_duration_frames == 0:
                 e._flash_color = None
@@ -296,13 +289,10 @@ class Renderer:
         # Apply RGB lighting to each color channel of the base_entity_color
         # Ensure components are clamped to valid color range [0, 255]
         normally_lit_fg_components = [
-            max(0, min(255, int(color_channel * light_component)))
-            for color_channel, light_component in zip(
-                base_entity_color, light_rgb, strict=True
-            )
+            max(0, min(255, int(base_entity_color[i] * light_rgb[i]))) for i in range(3)
         ]
 
-        final_fg_color = tuple(normally_lit_fg_components)
+        final_fg_color = normally_lit_fg_components
 
         # If selected and in FOV, apply pulsation blending on top of the lit color
         if self.model.selected_entity == e and self.fov.contains(e.x, e.y):
@@ -310,7 +300,7 @@ class Renderer:
                 normally_lit_fg_components, base_entity_color
             )
 
-        self.map_fg[e.x, e.y] = final_fg_color
+        self.game_map_console.rgb["fg"][e.x, e.y] = final_fg_color
 
     def _apply_pulsating_effect(
         self, input_color: colors.Color, base_entity_color: colors.Color
