@@ -4,18 +4,27 @@ from typing import TYPE_CHECKING
 
 import tcod.event
 
-from . import actions, menu_system
+from .game.actions import GameAction, MoveAction
+from .ui import menu_system
+from .ui.ui_commands import (
+    OpenMenuUICommand,
+    OpenPickupMenuUICommand,
+    QuitUICommand,
+    SelectOrDeselectEntityUICommand,
+    ToggleFullscreenUICommand,
+)
 
 if TYPE_CHECKING:
     from .controller import Controller
+    from .ui.ui_commands import UICommand
 
 
 class EventHandler:
     def __init__(self, controller: Controller) -> None:
         self.controller = controller
-        self.m = controller.model
-        self.game_map = self.m.game_map
-        self.p = self.m.player
+        self.gw = controller.gw
+        self.game_map = self.gw.game_map
+        self.p = self.gw.player
 
     def dispatch(self, event: tcod.event.Event) -> None:
         # First, try to handle the event with the menu system
@@ -27,63 +36,45 @@ class EventHandler:
         if action:
             self.controller.execute_action(action)
 
-    def handle_event(self, event: tcod.event.Event) -> actions.Action | None:
+    def handle_event(self, event: tcod.event.Event) -> GameAction | None:
         # Don't process game actions if menus are active
         if self.controller.menu_system.has_active_menus():
             return None
 
         match event:
-            case tcod.event.Quit():
-                return actions.QuitAction()
+            case tcod.event.MouseMotion():
+                root_tile_pos = event.position
+                map_coords = self._get_tile_map_coords_from_root_coords(root_tile_pos)
 
+                if map_coords is not None:
+                    self.gw.mouse_tile_location_on_map = map_coords
+                else:
+                    # Mouse is outside the game map area (e.g., on UI panels).
+                    self.gw.mouse_tile_location_on_map = None
+
+                return None
+
+        # Handle UI commands.
+        ui_command = self._check_for_ui_command(event)
+        if ui_command:
+            ui_command.execute()
+            return None
+
+        return self._check_for_game_action(event)
+
+    def _check_for_ui_command(self, event: tcod.event.Event) -> UICommand | None:
+        match event:
+            case tcod.event.Quit():
+                return QuitUICommand()
             case (
                 tcod.event.KeyDown(sym=tcod.event.KeySym.ESCAPE)
                 | tcod.event.KeyDown(sym=tcod.event.KeySym.q)
             ):
-                return actions.QuitAction()
+                return QuitUICommand()
 
-            # Movement keys (Arrows and VIM)
-            case (
-                tcod.event.KeyDown(sym=tcod.event.KeySym.UP)
-                | tcod.event.KeyDown(sym=tcod.event.KeySym.k)
-            ):
-                return actions.MoveAction(self.controller, self.p, 0, -1)
-            case (
-                tcod.event.KeyDown(sym=tcod.event.KeySym.DOWN)
-                | tcod.event.KeyDown(sym=tcod.event.KeySym.j)
-            ):
-                return actions.MoveAction(self.controller, self.p, 0, 1)
-            case (
-                tcod.event.KeyDown(sym=tcod.event.KeySym.LEFT)
-                | tcod.event.KeyDown(sym=tcod.event.KeySym.h)
-            ):
-                return actions.MoveAction(self.controller, self.p, -1, 0)
-            case (
-                tcod.event.KeyDown(sym=tcod.event.KeySym.RIGHT)
-                | tcod.event.KeyDown(sym=tcod.event.KeySym.l)
-            ):
-                return actions.MoveAction(self.controller, self.p, 1, 0)
-
-            # Diagonal movement (numpad or vi-keys)
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.KP_7):  # Up-left
-                return actions.MoveAction(self.controller, self.p, -1, -1)
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.KP_9):  # Up-right
-                return actions.MoveAction(self.controller, self.p, 1, -1)
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.KP_1):  # Down-left
-                return actions.MoveAction(self.controller, self.p, -1, 1)
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.KP_3):  # Down-right
-                return actions.MoveAction(self.controller, self.p, 1, 1)
-
-            # Menu keys
             case tcod.event.KeyDown(sym=tcod.event.KeySym.i):
-                return actions.OpenMenuAction(
-                    self.controller, menu_system.InventoryMenu
-                )
+                return OpenMenuUICommand(self.controller, menu_system.InventoryMenu)
 
-            # Help Menu: '?'
-            # tcod.event.KeySym.QUESTION is typically generated for '?'
-            # This pattern handles '?' (if sym is KeySym.QUESTION),
-            # or '?' (if sym is KeySym.SLASH and SHIFT modifier is present).
             case tcod.event.KeyDown(sym=key_sym, mod=key_mod) if (
                 key_sym == tcod.event.KeySym.QUESTION
                 or (
@@ -91,27 +82,15 @@ class EventHandler:
                     and (key_mod & tcod.event.Modifier.SHIFT)
                 )
             ):
-                return actions.OpenMenuAction(self.controller, menu_system.HelpMenu)
+                return OpenMenuUICommand(self.controller, menu_system.HelpMenu)
 
             case tcod.event.KeyDown(sym=tcod.event.KeySym.g):
-                return actions.OpenPickupMenuAction(self.controller)
+                return OpenPickupMenuUICommand(self.controller)
 
             case tcod.event.KeyDown(sym=tcod.event.KeySym.RETURN, mod=mod) if (
                 mod & tcod.event.Modifier.ALT
             ):
-                return actions.ToggleFullscreenAction(self.controller.renderer.context)
-
-            case tcod.event.MouseMotion():
-                root_tile_pos = event.position
-                map_coords = self._get_tile_map_coords_from_root_coords(root_tile_pos)
-
-                if map_coords is not None:
-                    self.m.mouse_tile_location_on_map = map_coords
-                else:
-                    # Mouse is outside the game map area (e.g., on UI panels).
-                    self.m.mouse_tile_location_on_map = None
-
-                return None
+                return ToggleFullscreenUICommand(self.controller.renderer.context)
 
             case tcod.event.MouseButtonDown(button=button):
                 return self._handle_mouse_button_down_event(event, button)
@@ -119,9 +98,46 @@ class EventHandler:
             case _:
                 return None
 
+    def _check_for_game_action(self, event: tcod.event.Event) -> GameAction | None:
+        match event:
+            # Movement keys (Arrows and VIM)
+            case (
+                tcod.event.KeyDown(sym=tcod.event.KeySym.UP)
+                | tcod.event.KeyDown(sym=tcod.event.KeySym.k)
+            ):
+                return MoveAction(self.controller, self.p, 0, -1)
+            case (
+                tcod.event.KeyDown(sym=tcod.event.KeySym.DOWN)
+                | tcod.event.KeyDown(sym=tcod.event.KeySym.j)
+            ):
+                return MoveAction(self.controller, self.p, 0, 1)
+            case (
+                tcod.event.KeyDown(sym=tcod.event.KeySym.LEFT)
+                | tcod.event.KeyDown(sym=tcod.event.KeySym.h)
+            ):
+                return MoveAction(self.controller, self.p, -1, 0)
+            case (
+                tcod.event.KeyDown(sym=tcod.event.KeySym.RIGHT)
+                | tcod.event.KeyDown(sym=tcod.event.KeySym.l)
+            ):
+                return MoveAction(self.controller, self.p, 1, 0)
+
+            # Diagonal movement (numpad or vi-keys)
+            case tcod.event.KeyDown(sym=tcod.event.KeySym.KP_7):  # Up-left
+                return MoveAction(self.controller, self.p, -1, -1)
+            case tcod.event.KeyDown(sym=tcod.event.KeySym.KP_9):  # Up-right
+                return MoveAction(self.controller, self.p, 1, -1)
+            case tcod.event.KeyDown(sym=tcod.event.KeySym.KP_1):  # Down-left
+                return MoveAction(self.controller, self.p, -1, 1)
+            case tcod.event.KeyDown(sym=tcod.event.KeySym.KP_3):  # Down-right
+                return MoveAction(self.controller, self.p, 1, 1)
+
+            case _:
+                return None
+
     def _handle_mouse_button_down_event(
         self, event: tcod.event.MouseButtonDown, button: tcod.event.MouseButton
-    ) -> actions.Action | None:
+    ) -> UICommand | None:
         """
         Handle mouse button down events.
         Returns an action if the event is handled, otherwise None.
@@ -134,16 +150,16 @@ class EventHandler:
 
         if not map_coords:
             # Clicked outside the map area (e.g., on UI panels).
-            return actions.SelectOrDeselectEntityAction(self.controller, None)
+            return SelectOrDeselectEntityUICommand(self.controller, None)
 
         mx, my = map_coords
-        entity_at_click = self.m.get_entity_at_location(mx, my)
+        entity_at_click = self.gw.get_entity_at_location(mx, my)
 
-        if self.m.selected_entity == entity_at_click:
+        if self.gw.selected_entity == entity_at_click:
             # If the clicked entity is already selected, deselect it.
-            return actions.SelectOrDeselectEntityAction(self.controller, None)
+            return SelectOrDeselectEntityUICommand(self.controller, None)
 
-        return actions.SelectOrDeselectEntityAction(self.controller, entity_at_click)
+        return SelectOrDeselectEntityUICommand(self.controller, entity_at_click)
 
     def _get_tile_map_coords_from_root_coords(
         self, root_tile_coords: tuple[int, int]

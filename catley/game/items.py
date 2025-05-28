@@ -5,7 +5,7 @@ from __future__ import annotations
 import copy
 from enum import Enum, auto
 
-from . import dice
+from catley.util import dice
 
 
 class ItemSize(Enum):

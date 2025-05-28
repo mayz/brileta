@@ -4,43 +4,21 @@ This module contains the Action class and its subclasses that represent game act
 
 from __future__ import annotations
 
-import abc
 from typing import TYPE_CHECKING
 
-from . import colors, dice, items
-from .menu_system import Menu, PickupMenu
-from .model import Actor, CatleyActor, Disposition
+from catley import colors
+from catley.util import dice
+
+from . import items
+from .entities import Actor, CatleyActor, Disposition
 
 if TYPE_CHECKING:
-    import tcod
+    from catley.controller import Controller
 
-    from .controller import Controller
-    from .model import Entity
-
-
-class Action(abc.ABC):
-    """Abstract base class for any command or operation that can be performed within
-    the game, whether by an entity in the game world or by the player interacting
-    with the UI.
-
-    The two main subclasses of Action are `UIAction` and `GameTurnAction`.
-    """
-
-    @abc.abstractmethod
-    def execute(self) -> None:
-        """Perform the action."""
-        raise NotImplementedError()
+    from .entities import Entity
 
 
-class UIAction(Action):
-    """An action for UI-related operations, such as opening menus,
-    toggling fullscreen, or quitting the game.
-    """
-
-    pass
-
-
-class GameTurnAction(Action):
+class GameAction:
     """An action that represents a game turn, such as moving an entity or
     performing an attack. This is distinct from UI actions and is meant to
     be executed within the game loop.
@@ -56,84 +34,14 @@ class GameTurnAction(Action):
         self.entity = entity
 
 
-################################################################################
-
-
-class ToggleFullscreenAction(UIAction):
-    """Action for toggling fullscreen mode."""
-
-    def __init__(self, context: tcod.context.Context) -> None:
-        self.context = context
-
-    def execute(self) -> None:
-        self.context.present(self.context.console, keep_aspect=True)
-
-
-class QuitAction(UIAction):
-    """Action for quitting the game."""
-
-    def execute(self) -> None:
-        raise SystemExit()
-
-
-class SelectOrDeselectEntityAction(UIAction):
-    """
-    Action to select a new entity or deselect (clear) the current selection.
-    """
-
-    def __init__(self, controller: Controller, selection: Entity | None):
-        """
-        Args:
-            controller: The game controller.
-            selection: The entity to select (or None to deselect).
-        """
-        super().__init__()
-        self.controller = controller
-        self.selection = selection
-
-    def execute(self) -> None:
-        self.controller.model.selected_entity = self.selection
-
-
-class OpenMenuAction(UIAction):
-    """Action to open a menu, like the inventory or help menu."""
-
-    def __init__(self, controller: Controller, menu_class: type[Menu]):
-        self.controller = controller
-        self.menu_class = menu_class
-
-    def execute(self) -> None:
-        menu = self.menu_class(self.controller)
-        self.controller.menu_system.show_menu(menu)
-
-
-class OpenPickupMenuAction(OpenMenuAction):
-    """Action to open the pickup menu for items at the player's location."""
-
-    def __init__(self, controller: Controller):
-        self.controller = controller
-        self.player = controller.model.player
-
-    def execute(self) -> None:
-        # Check if there are items to pick up, otherwise do nothing.
-        if self.controller.model.has_pickable_items_at_location(
-            self.player.x, self.player.y
-        ):
-            menu = PickupMenu(self.controller, (self.player.x, self.player.y))
-            self.controller.menu_system.show_menu(menu)
-
-
-################################################################################
-
-
-class MoveAction(GameTurnAction):
+class MoveAction(GameAction):
     """Action for moving an entity on the game map."""
 
     def __init__(
         self, controller: Controller, entity: Entity, dx: int, dy: int
     ) -> None:
         super().__init__(controller, entity)
-        self.game_map = controller.model.game_map
+        self.game_map = controller.gw.game_map
 
         self.dx = dx
         self.dy = dy
@@ -145,7 +53,7 @@ class MoveAction(GameTurnAction):
             return
 
         # Check for blocking entities
-        for entity in self.controller.model.entities:
+        for entity in self.controller.gw.entities:
             if (
                 entity.blocks_movement
                 and entity.x == self.newx
@@ -163,7 +71,7 @@ class MoveAction(GameTurnAction):
         self.entity.move(self.dx, self.dy)
 
 
-class AttackAction(GameTurnAction):
+class AttackAction(GameAction):
     """Action for one `Actor` attacking another in combat."""
 
     def __init__(
@@ -271,8 +179,8 @@ class AttackAction(GameTurnAction):
 
         # If the player attacked an `Actor`, they become hostile towards the player.
         if (
-            self.attacker == self.controller.model.player
-            and self.defender != self.controller.model.player
+            self.attacker == self.controller.gw.player
+            and self.defender != self.controller.gw.player
             and self.defender.disposition != Disposition.HOSTILE
         ):
             self.defender.disposition = Disposition.HOSTILE

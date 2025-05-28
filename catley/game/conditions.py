@@ -1,6 +1,6 @@
 import abc
 
-from . import colors
+from catley import colors
 
 
 class Condition(abc.ABC):

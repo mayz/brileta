@@ -1,0 +1,84 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from catley import colors
+from catley.game import items
+from catley.game.entities import Actor, CatleyActor
+from catley.render.lighting import LightingSystem, LightSource
+
+from .map import GameMap
+
+if TYPE_CHECKING:
+    from catley.game.entities import Entity
+    from catley.game.items import Item
+
+
+class GameWorld:
+    """
+    Represents the complete state of the game world.
+
+    Includes the game map, all entities (player, NPCs, items), their properties, and the
+    core game rules that govern how these elements interact. Does not handle input,
+    rendering, or high-level application flow. Its primary responsibility is to be
+    the single source of truth for the game's state.
+    """
+
+    def __init__(self, map_width: int, map_height: int) -> None:
+        self.mouse_tile_location_on_map: tuple[int, int] | None = None
+        self.lighting = LightingSystem()
+        self.selected_entity: Entity | None = None
+        # Create player with a torch light source
+        player_light = LightSource.create_torch()
+        self.player = CatleyActor(
+            x=0,
+            y=0,
+            ch="@",
+            name="Player",
+            color=colors.PLAYER_COLOR,
+            model=self,
+            light_source=player_light,
+            toughness=30,
+        )
+        self.player.equipped_weapon = items.FISTS
+
+        self.entities = [self.player]
+        self.game_map = GameMap(map_width, map_height)
+
+    def update_player_light(self) -> None:
+        """Update player light source position"""
+        if self.player.light_source:
+            self.player.light_source.position = (self.player.x, self.player.y)
+
+    def get_pickable_items_at_location(self, x: int, y: int) -> list[Item]:
+        """Get all pickable items at the specified location.
+
+        Currently, this includes items from dead actors' inventories and their
+        equipped weapons.
+        """
+        items_found: list[Item] = []
+        # Check items from dead actors at this location
+        for entity in self.entities:
+            if (
+                entity.x == x
+                and entity.y == y
+                and isinstance(entity, Actor)
+                and not entity.is_alive()  # Only from dead actors
+            ):
+                items_found.extend(entity.inventory)  # Add items from inventory
+                if entity.equipped_weapon:
+                    items_found.append(entity.equipped_weapon)  # Add equipped weapon
+        # Future: Add items directly on the ground if we implement that
+        # e.g., items_found.extend(self.game_map.get_items_on_ground(x,y))
+        return items_found
+
+    def get_entity_at_location(self, x: int, y: int) -> Actor | None:
+        """Return the first entity found at the given location, or None."""
+        for entity in self.entities:
+            if entity.x == x and entity.y == y:
+                return entity
+        return None
+
+    def has_pickable_items_at_location(self, x: int, y: int) -> bool:
+        """Check if there are any pickable items at the specified location."""
+        return bool(self.get_pickable_items_at_location(x, y))

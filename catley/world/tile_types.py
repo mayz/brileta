@@ -15,7 +15,7 @@ Benefits:
 
 import numpy as np
 
-from . import colors
+from catley import colors
 
 # Defines the structure that TCOD's Console.tiles_rgb expects.
 # It *must* match this exact format, or rendering will break.
