@@ -161,7 +161,6 @@ class MoveAction(GameTurnAction):
                 return  # Cannot move into blocking entity
 
         self.entity.move(self.dx, self.dy)
-        self.controller.fov.fov_needs_recomputing = True
 
 
 class AttackAction(GameTurnAction):

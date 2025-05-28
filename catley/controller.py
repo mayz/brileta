@@ -1,6 +1,8 @@
 import random
 
+import tcod.constants
 import tcod.event
+import tcod.map
 from tcod.console import Console
 from tcod.context import Context
 
@@ -8,7 +10,6 @@ from . import colors, conditions, items
 from .actions import Action, GameTurnAction
 from .clock import Clock
 from .event_handler import EventHandler
-from .fov import FieldOfView
 from .menu_system import MenuSystem
 from .message_log import MessageLog
 from .model import CatleyActor, Disposition, Entity, Model
@@ -38,6 +39,11 @@ class Controller:
         self.min_room_size = 6
         self.max_num_rooms = 3
 
+        # Field of view (FOV) configuration.
+        self.fov_algorithm = tcod.constants.FOV_SYMMETRIC_SHADOWCAST
+        self.fov_light_walls = True
+        self.fov_radius = 15
+
         self.model = Model(self.map_width, self.map_height)
 
         rooms = self.model.game_map.make_map(
@@ -53,9 +59,6 @@ class Controller:
         # Initialize Message Log
         self.message_log = MessageLog()
 
-        # Initialize FOV after map is created but before renderer
-        self.fov = FieldOfView(self.model)
-
         # Initialize clock for frame timing
         self.clock = Clock()
         self.target_fps = 60
@@ -68,7 +71,6 @@ class Controller:
             screen_width=self.root_console.width,
             screen_height=self.root_console.height,
             model=self.model,
-            fov=self.fov,
             clock=self.clock,
             message_log=self.message_log,
             menu_system=self.menu_system,
@@ -83,8 +85,8 @@ class Controller:
 
         self._add_npc()
 
-        # Ensure initial FOV computation
-        self.fov.fov_needs_recomputing = True
+        # Initial FOV computation.
+        self.update_fov()
 
         # For handling input events in run_game_loop().
         self.event_handler = EventHandler(self)
@@ -94,6 +96,19 @@ class Controller:
         # all NPCs and other entities take their turns). When False, the game is busy
         # updating the game state, and player input is ignored.
         self.waiting_for_player_action: bool = True
+
+    def update_fov(self) -> None:
+        """Recompute the visible area based on the player's point of view."""
+        self.model.game_map.visible[:] = tcod.map.compute_fov(
+            self.model.game_map.tiles["transparent"],
+            (self.model.player.x, self.model.player.y),
+            radius=self.fov_radius,
+            light_walls=self.fov_light_walls,
+            algorithm=self.fov_algorithm,
+        )
+
+        # If a tile is "visible" it should be added to "explored"
+        self.model.game_map.explored |= self.model.game_map.visible
 
     def _add_npc(self) -> None:
         """Add an NPC to the map."""
@@ -181,6 +196,10 @@ class Controller:
             self.message_log.add_message(error_message, colors.RED)
             print(f"Unhandled exception during action execution: {e}")
             return
+
+        if is_player_game_turn_action:
+            # Update FOV after player actions.
+            self.update_fov()
 
         if not is_player_game_turn_action:
             return

@@ -533,6 +533,16 @@ class GameMap:
         # Store tiles using the types defined in `tile_types` for performance.
         self.tiles = np.full((width, height), fill_value=tile_types.WALL, order="F")
 
+        # Field of view (FOV) state tracking.
+        # Which tiles are currently visible.
+        self.visible = np.full((width, height), fill_value=False, dtype=bool, order="F")
+
+        # Which tiles have been previously explored
+        # (whether they're currently visible or not).
+        self.explored = np.full(
+            (width, height), fill_value=False, dtype=bool, order="F"
+        )
+
     @property
     def tile_blocked(self) -> np.ndarray:
         """Derive blocked tiles from the `walkable` property (see `tile_types`).

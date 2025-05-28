@@ -7,7 +7,6 @@ from tcod.context import Context
 
 from . import colors
 from .clock import Clock
-from .fov import FieldOfView
 from .message_log import MessageLog
 from .model import Actor, Entity, Model
 
@@ -16,7 +15,7 @@ if TYPE_CHECKING:
 
 
 class FPSDisplay:
-    SHOW_FPS = True
+    SHOW_FPS = False
 
     def __init__(self, clock: Clock, update_interval: float = 0.5) -> None:
         self.clock = clock
@@ -47,7 +46,6 @@ class Renderer:
         screen_width: int,
         screen_height: int,
         model: Model,
-        fov: FieldOfView,
         clock: Clock,
         message_log: MessageLog,
         menu_system: "MenuSystem",
@@ -60,7 +58,6 @@ class Renderer:
         self.screen_width = screen_width
         self.screen_height = screen_height
         self.model = model
-        self.fov = fov
         self.message_log = message_log
 
         # Define message log geometry - help at top, then message log
@@ -70,29 +67,16 @@ class Renderer:
         self.message_log_y = self.help_height  # Start after help text (line 1)
         self.message_log_width = screen_width
 
-        # In the future, re-run whenever the map composition changes.
-        self._optimize_map_info()
+        # Create game map console
+        self.game_map_console: Console = Console(
+            model.game_map.width, model.game_map.height, order="F"
+        )
 
         self.fps_display = FPSDisplay(clock)
         self.menu_system = menu_system
 
-    def _optimize_map_info(self) -> None:
-        """In the future, re-run whenever the map composition changes."""
-        m = self.model.game_map
-
-        self.game_map_console: Console = Console(m.width, m.height, order="F")
-
-        # Right now, which tiles we've explored only concerns the renderer.
-        # FIXME: Move to tile_types.Tile structure?
-        self.map_tiles_explored = np.full(
-            (m.width, m.height), False, dtype=np.bool_, order="F"
-        )
-
     def render_all(self) -> None:
         self.game_map_console.clear()
-
-        # Make sure FOV is up to date before rendering
-        self.fov.recompute_if_needed()
 
         # Clear the root console first
         self.root_console.clear()
@@ -139,7 +123,9 @@ class Renderer:
         if self.model.selected_entity:
             entity = self.model.selected_entity
             # Only highlight if the actor is visible in FOV
-            if self.fov.contains(entity.x, entity.y) and (
+            if (
+                self.model.game_map.visible[entity.x, entity.y]
+                and
                 # Ensure coordinates are within the game_map_console bounds
                 0 <= entity.x < self.game_map_console.width
                 and 0 <= entity.y < self.game_map_console.height
@@ -163,7 +149,7 @@ class Renderer:
             return
 
         target_highlight_color: colors.Color
-        if self.fov.contains(mx, my):  # Or self.fov.fov_map.fov[mx, my]
+        if self.model.game_map.visible[mx, my]:
             # Tile is IN FOV - target a bright highlight
             target_highlight_color = colors.WHITE
         else:
@@ -221,21 +207,21 @@ class Renderer:
         self.game_map_console.rgb[:] = shroud
 
         # Show explored areas with dark graphics
-        explored_mask = self.map_tiles_explored
+        explored_mask = self.model.game_map.explored
         self.game_map_console.rgb[explored_mask] = self.model.game_map.tiles["dark"][
             explored_mask
         ]
 
-        # Compute lighting.
-        self.current_light_intensity = self.model.lighting.compute_lighting(
-            self.model.game_map.width, self.model.game_map.height
-        )
-
-        # Apply dynamic lighting to visible areas
-        visible_mask = self.fov.fov_map.fov
+        # Apply dynamic lighting to visible areas only
+        visible_mask = self.model.game_map.visible
         visible_y, visible_x = np.where(visible_mask)
 
         if len(visible_y) > 0:
+            # Compute lighting for visible areas
+            self.current_light_intensity = self.model.lighting.compute_lighting(
+                self.model.game_map.width, self.model.game_map.height
+            )
+
             # Get the tile graphics for visible areas
             dark_tiles = self.model.game_map.tiles["dark"][visible_y, visible_x]
             light_tiles = self.model.game_map.tiles["light"][visible_y, visible_x]
@@ -245,8 +231,8 @@ class Renderer:
 
             # Create blended tiles
             blended_tiles = np.empty_like(dark_tiles)
-            blended_tiles["ch"] = light_tiles["ch"]  # Use light character
-            blended_tiles["fg"] = light_tiles["fg"]  # Use light foreground
+            blended_tiles["ch"] = light_tiles["ch"]
+            blended_tiles["fg"] = light_tiles["fg"]
 
             # Blend background colors based on light intensity
             for i in range(3):  # RGB channels
@@ -257,14 +243,14 @@ class Renderer:
 
             # Apply the dynamically lit tiles
             self.game_map_console.rgb[visible_y, visible_x] = blended_tiles
-            self.map_tiles_explored[visible_y, visible_x] = True
 
     def _render_entities(self) -> None:
         for e in self.model.entities:
             if e == self.model.player:
                 continue
 
-            if self.fov.contains(e.x, e.y):
+            # Only render entities that are visible
+            if self.model.game_map.visible[e.x, e.y]:
                 self._render_entity(e)
 
         # Always draw the player last.
@@ -295,7 +281,7 @@ class Renderer:
         final_fg_color = normally_lit_fg_components
 
         # If selected and in FOV, apply pulsation blending on top of the lit color
-        if self.model.selected_entity == e and self.fov.contains(e.x, e.y):
+        if self.model.selected_entity == e and self.model.game_map.visible[e.x, e.y]:
             final_fg_color = self._apply_pulsating_effect(
                 normally_lit_fg_components, base_entity_color
             )
