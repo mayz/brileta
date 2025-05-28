@@ -6,20 +6,22 @@ import tcod.map
 from tcod.console import Console
 from tcod.context import Context
 
-from . import colors, conditions, items
-from .actions import Action, GameTurnAction
-from .clock import Clock
+from . import colors
 from .event_handler import EventHandler
-from .menu_system import MenuSystem
-from .message_log import MessageLog
-from .model import CatleyActor, Disposition, Entity, Model
-from .render import Renderer
+from .game import conditions, items
+from .game.actions import GameAction
+from .game.entities import CatleyActor, Disposition, Entity
+from .render.render import Renderer
+from .ui.menu_system import MenuSystem
+from .ui.message_log import MessageLog
+from .util.clock import Clock
+from .world.game_state import GameWorld
 
 
 class Controller:
     """
     Orchestrates the main game loop and connects all other systems
-    (Model, Renderer, EventHandler, MenuSystem, MessageLog).
+    (GameWorld, Renderer, EventHandler, MenuSystem, MessageLog).
 
     Holds instances of the major game components and provides a central point
     of access for them. Responsible for high-level game flow, such as processing
@@ -44,9 +46,9 @@ class Controller:
         self.fov_light_walls = True
         self.fov_radius = 15
 
-        self.model = Model(self.map_width, self.map_height)
+        self.gw = GameWorld(self.map_width, self.map_height)
 
-        rooms = self.model.game_map.make_map(
+        rooms = self.gw.game_map.make_map(
             self.max_num_rooms,
             self.min_room_size,
             self.max_room_size,
@@ -54,7 +56,7 @@ class Controller:
             self.map_height,
         )
         first_room = rooms[0]
-        self.model.player.x, self.model.player.y = first_room.center()
+        self.gw.player.x, self.gw.player.y = first_room.center()
 
         # Initialize Message Log
         self.message_log = MessageLog()
@@ -70,7 +72,7 @@ class Controller:
         self.renderer = Renderer(
             screen_width=self.root_console.width,
             screen_height=self.root_console.height,
-            model=self.model,
+            game_world=self.gw,
             clock=self.clock,
             message_log=self.message_log,
             menu_system=self.menu_system,
@@ -78,10 +80,8 @@ class Controller:
             root_console=self.root_console,
         )
 
-        self.model.player.inventory.append(
-            conditions.Injury(injury_type="Sprained Ankle")
-        )
-        self.model.player.inventory.append(items.SLEDGEHAMMER.clone())
+        self.gw.player.inventory.append(conditions.Injury(injury_type="Sprained Ankle"))
+        self.gw.player.inventory.append(items.SLEDGEHAMMER.clone())
 
         self._add_npc()
 
@@ -99,22 +99,22 @@ class Controller:
 
     def update_fov(self) -> None:
         """Recompute the visible area based on the player's point of view."""
-        self.model.game_map.visible[:] = tcod.map.compute_fov(
-            self.model.game_map.tiles["transparent"],
-            (self.model.player.x, self.model.player.y),
+        self.gw.game_map.visible[:] = tcod.map.compute_fov(
+            self.gw.game_map.tiles["transparent"],
+            (self.gw.player.x, self.gw.player.y),
             radius=self.fov_radius,
             light_walls=self.fov_light_walls,
             algorithm=self.fov_algorithm,
         )
 
         # If a tile is "visible" it should be added to "explored"
-        self.model.game_map.explored |= self.model.game_map.visible
+        self.gw.game_map.explored |= self.gw.game_map.visible
 
     def _add_npc(self) -> None:
         """Add an NPC to the map."""
         # Place NPC right next to the player.
-        npc_x = self.model.player.x
-        npc_y = self.model.player.y
+        npc_x = self.gw.player.x
+        npc_y = self.gw.player.y
         choice = random.randint(1, 4)
         match choice:
             case 1:
@@ -131,7 +131,7 @@ class Controller:
             ch="T",
             name="Trog",
             color=colors.DARK_GREY,
-            model=self.model,
+            model=self.gw,
             blocks_movement=True,
             disposition=Disposition.WARY,
             weirdness=3,
@@ -140,7 +140,7 @@ class Controller:
             intelligence=-3,
         )
         npc.equipped_weapon = items.SLEDGEHAMMER.clone()
-        self.model.entities.append(npc)
+        self.gw.entities.append(npc)
 
     def run_game_loop(self) -> None:
         while True:
@@ -153,10 +153,10 @@ class Controller:
             delta_time = self.clock.sync(fps=self.target_fps)
 
             # Update animations and render
-            self.model.lighting.update(delta_time)
+            self.gw.lighting.update(delta_time)
             self.renderer.render_all()
 
-    def execute_action(self, action: Action | None) -> None:
+    def execute_action(self, action: GameAction | None) -> None:
         """
         Executes the given Action instance and manages the game's turn flow.
 
@@ -176,7 +176,7 @@ class Controller:
             return
 
         is_player_game_turn_action = False
-        if isinstance(action, GameTurnAction) and action.entity == self.model.player:
+        if action.entity == self.gw.player:
             # Check if the entity performing the action is the player
             is_player_game_turn_action = True
 
@@ -209,12 +209,13 @@ class Controller:
         self.waiting_for_player_action = False
         self.process_world_turn()
 
-        if self.model.player.is_alive():
+        if self.gw.player.is_alive():
             self.waiting_for_player_action = True
         else:
             # Handle game over: player is dead
             self.message_log.add_message(
-                f"{self.model.player.name} has been defeated! Game Over.", colors.RED
+                f"{self.gw.player.name} has been defeated! Game Over.",
+                colors.RED,
             )
             # Further game over logic would go here (e.g., prevent further input,
             # show game over screen). For now, just *not* setting
@@ -227,8 +228,8 @@ class Controller:
         """
         # Just in case entities get added or removed during iteration,
         # iterate over a copy of the entities list.
-        for entity in self.model.entities.copy():
-            if entity == self.model.player:
+        for entity in self.gw.entities.copy():
+            if entity == self.gw.player:
                 # Player's active turn is handled by input.
                 # Passive effects for player (e.g., poison damage, regeneration)
                 # could be processed by `entity.update_turn`.
@@ -236,7 +237,7 @@ class Controller:
             elif isinstance(entity, Entity):
                 entity.update_turn(self)
 
-            if not self.model.player.is_alive():
+            if not self.gw.player.is_alive():
                 # If player died, no need to continue processing other entities' turns
                 # The game over state will be handled when execute_action resets
                 # awaiting_player_game_action after this process_world_turn completes.

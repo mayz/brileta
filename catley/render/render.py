@@ -5,13 +5,14 @@ import numpy as np
 from tcod.console import Console
 from tcod.context import Context
 
-from . import colors
-from .clock import Clock
-from .message_log import MessageLog
-from .model import Actor, Entity, Model
+from catley import colors
+from catley.game.entities import Actor, Entity
+from catley.ui.message_log import MessageLog
+from catley.util.clock import Clock
+from catley.world.game_state import GameWorld
 
 if TYPE_CHECKING:
-    from .menu_system import MenuSystem
+    from catley.ui.menu_system import MenuSystem
 
 
 class FPSDisplay:
@@ -45,7 +46,7 @@ class Renderer:
         self,
         screen_width: int,
         screen_height: int,
-        model: Model,
+        game_world: GameWorld,
         clock: Clock,
         message_log: MessageLog,
         menu_system: "MenuSystem",
@@ -57,7 +58,7 @@ class Renderer:
 
         self.screen_width = screen_width
         self.screen_height = screen_height
-        self.model = model
+        self.gw = game_world
         self.message_log = message_log
 
         # Define message log geometry - help at top, then message log
@@ -69,7 +70,7 @@ class Renderer:
 
         # Create game map console
         self.game_map_console: Console = Console(
-            model.game_map.width, model.game_map.height, order="F"
+            game_world.game_map.width, game_world.game_map.height, order="F"
         )
 
         self.fps_display = FPSDisplay(clock)
@@ -120,11 +121,11 @@ class Renderer:
 
     def _render_selected_entity_highlight(self) -> None:
         """Renders a highlight on the selected actor's tile by blending colors."""
-        if self.model.selected_entity:
-            entity = self.model.selected_entity
+        if self.gw.selected_entity:
+            entity = self.gw.selected_entity
             # Only highlight if the actor is visible in FOV
             if (
-                self.model.game_map.visible[entity.x, entity.y]
+                self.gw.game_map.visible[entity.x, entity.y]
                 and
                 # Ensure coordinates are within the game_map_console bounds
                 0 <= entity.x < self.game_map_console.width
@@ -136,10 +137,10 @@ class Renderer:
                 self._apply_blended_highlight(entity.x, entity.y, target_color, alpha)
 
     def _render_mouse_cursor_highlight(self) -> None:
-        if not self.model.mouse_tile_location_on_map:
+        if not self.gw.mouse_tile_location_on_map:
             return
 
-        mx, my = self.model.mouse_tile_location_on_map
+        mx, my = self.gw.mouse_tile_location_on_map
 
         # Bounds check for the game_map_console
         if not (
@@ -149,7 +150,7 @@ class Renderer:
             return
 
         target_highlight_color: colors.Color
-        if self.model.game_map.visible[mx, my]:
+        if self.gw.game_map.visible[mx, my]:
             # Tile is IN FOV - target a bright highlight
             target_highlight_color = colors.WHITE
         else:
@@ -192,8 +193,8 @@ class Renderer:
         help_items = ["?: Help", "I: Inventory"]  # Start with always-available items
 
         # Conditionally add "Get items" prompt
-        player_x, player_y = self.model.player.x, self.model.player.y
-        if self.model.has_pickable_items_at_location(player_x, player_y):
+        player_x, player_y = self.gw.player.x, self.gw.player.y
+        if self.gw.has_pickable_items_at_location(player_x, player_y):
             help_items.append("G: Get items")
 
         help_text = " | ".join(help_items)
@@ -207,24 +208,24 @@ class Renderer:
         self.game_map_console.rgb[:] = shroud
 
         # Show explored areas with dark graphics
-        explored_mask = self.model.game_map.explored
-        self.game_map_console.rgb[explored_mask] = self.model.game_map.tiles["dark"][
+        explored_mask = self.gw.game_map.explored
+        self.game_map_console.rgb[explored_mask] = self.gw.game_map.tiles["dark"][
             explored_mask
         ]
 
         # Apply dynamic lighting to visible areas only
-        visible_mask = self.model.game_map.visible
+        visible_mask = self.gw.game_map.visible
         visible_y, visible_x = np.where(visible_mask)
 
         if len(visible_y) > 0:
             # Compute lighting for visible areas
-            self.current_light_intensity = self.model.lighting.compute_lighting(
-                self.model.game_map.width, self.model.game_map.height
+            self.current_light_intensity = self.gw.lighting.compute_lighting(
+                self.gw.game_map.width, self.gw.game_map.height
             )
 
             # Get the tile graphics for visible areas
-            dark_tiles = self.model.game_map.tiles["dark"][visible_y, visible_x]
-            light_tiles = self.model.game_map.tiles["light"][visible_y, visible_x]
+            dark_tiles = self.gw.game_map.tiles["dark"][visible_y, visible_x]
+            light_tiles = self.gw.game_map.tiles["light"][visible_y, visible_x]
 
             # Get light intensity for blending
             cell_light = self.current_light_intensity[visible_y, visible_x]
@@ -245,16 +246,16 @@ class Renderer:
             self.game_map_console.rgb[visible_y, visible_x] = blended_tiles
 
     def _render_entities(self) -> None:
-        for e in self.model.entities:
-            if e == self.model.player:
+        for e in self.gw.entities:
+            if e == self.gw.player:
                 continue
 
             # Only render entities that are visible
-            if self.model.game_map.visible[e.x, e.y]:
+            if self.gw.game_map.visible[e.x, e.y]:
                 self._render_entity(e)
 
         # Always draw the player last.
-        self._render_entity(self.model.player)
+        self._render_entity(self.gw.player)
 
     def _render_entity(self, e: Entity) -> None:
         self.game_map_console.rgb["ch"][e.x, e.y] = ord(e.ch)
@@ -281,7 +282,7 @@ class Renderer:
         final_fg_color = normally_lit_fg_components
 
         # If selected and in FOV, apply pulsation blending on top of the lit color
-        if self.model.selected_entity == e and self.model.game_map.visible[e.x, e.y]:
+        if self.gw.selected_entity == e and self.gw.game_map.visible[e.x, e.y]:
             final_fg_color = self._apply_pulsating_effect(
                 normally_lit_fg_components, base_entity_color
             )

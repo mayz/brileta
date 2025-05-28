@@ -3,7 +3,7 @@ from __future__ import annotations
 import textwrap
 from typing import TYPE_CHECKING
 
-from . import colors
+from catley import colors
 
 if TYPE_CHECKING:
     import tcod.console

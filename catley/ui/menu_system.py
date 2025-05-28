@@ -14,15 +14,15 @@ import tcod.constants
 import tcod.event
 from tcod.console import Console
 
-from . import colors
-from .conditions import Condition
-from .items import Item, ItemSize
-from .model import Actor
+from catley import colors
+from catley.game.conditions import Condition
+from catley.game.entities import Actor
+from catley.game.items import Item, ItemSize
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from .controller import Controller
+    from catley.controller import Controller
 
 
 class MenuOption:
@@ -184,7 +184,7 @@ class Menu(abc.ABC):
 
             if isinstance(self, InventoryMenu):
                 player = (
-                    self.controller.model.player
+                    self.controller.gw.player
                 )  # Known to be WastoidActor for player
                 used_space = player.get_used_inventory_space()
                 total_slots = player.inventory_slots
@@ -314,7 +314,7 @@ class InventoryMenu(Menu):
 
     def populate_options(self) -> None:
         """Populate inventory options."""
-        player = self.controller.model.player
+        player = self.controller.gw.player
         self.options.clear()  # Ensure options are cleared at the start
         # The title "Inventory" is set in __init__.
         # The dynamic part (bar, X/Y used) is now handled in Menu.render.
@@ -407,7 +407,7 @@ class InventoryMenu(Menu):
 
     def _use_item(self, item: Item) -> None:
         """Use or equip an item."""
-        player = self.controller.model.player
+        player = self.controller.gw.player
 
         if hasattr(item, "equippable") and item.equippable:
             # Equip/unequip weapon
@@ -472,13 +472,13 @@ class PickupMenu(Menu):
 
     def _get_items_at_location(self) -> list[Item]:
         """Get all items at the specified location."""
-        return self.controller.model.get_pickable_items_at_location(
+        return self.controller.gw.get_pickable_items_at_location(
             self.location[0], self.location[1]
         )
 
     def _pickup_item(self, item: Item) -> None:
         """Pickup an item and add it to player inventory."""
-        player = self.controller.model.player
+        player = self.controller.gw.player
         # Check if player has inventory space using the new size-aware method
         if not player.can_add_to_inventory(item):
             self.controller.message_log.add_message(
@@ -487,7 +487,7 @@ class PickupMenu(Menu):
             return
 
         # Remove item from dead entity
-        for entity in self.controller.model.entities:
+        for entity in self.controller.gw.entities:
             if isinstance(entity, Actor) and not entity.is_alive():
                 if item in entity.inventory:
                     entity.inventory.remove(item)

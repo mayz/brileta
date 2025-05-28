@@ -4,10 +4,10 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 import tcod
 
-from . import colors
+from catley import colors
 
 if TYPE_CHECKING:
-    from .model import Entity
+    from catley.game.entities import Entity
 
 # Preset configurations for different light types
 TORCH_PRESET = {
