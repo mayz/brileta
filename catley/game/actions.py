@@ -1,7 +1,7 @@
 """
 Game world actions that affect gameplay state.
 
-Defines actions that entities can perform within the game world that directly affect
+Defines actions that actors can perform within the game world that directly affect
 game state and typically consume turns in the action economy.
 
 GameAction:
@@ -9,7 +9,7 @@ GameAction:
     made by actors (player or NPCs) that change the game world state.
 
 Examples:
-    - MoveAction: Moving an entity to a new position
+    - MoveAction: Moving an actor to a new position
     - AttackAction: One actor attacking another in combat
 
 These actions are distinct from UI commands - they represent actual gameplay
@@ -22,71 +22,70 @@ decisions rather than interface interactions. Game actions typically:
 
 from __future__ import annotations
 
+import abc
 from typing import TYPE_CHECKING
 
 from catley import colors
 from catley.util import dice
 
 from . import items
-from .entities import Actor, Disposition
+from .actors import Actor, Disposition
+from .ai import DispositionBasedAI
 
 if TYPE_CHECKING:
     from catley.controller import Controller
 
-    from .entities import Entity
 
-
-class GameAction:
-    """An action that represents a game turn, such as moving an entity or
+class GameAction(abc.ABC):
+    """An action that represents a game turn, such as moving an actor or
     performing an attack. This is distinct from UI actions and is meant to
     be executed within the game loop.
 
 
-    An action performed by an entity (player or NPC) that directly affects the
-    game world's state and typically consumes that entity's turn. Examples include
+    An action performed by an actor (player or NPC) that directly affects the
+    game world's state and typically consumes that actor's turn. Examples include
     moving, attacking, performing stunts or tricks, etc.
     """
 
-    def __init__(self, controller: Controller, entity: Entity) -> None:
+    def __init__(self, controller: Controller, actor: Actor) -> None:
         self.controller = controller
-        self.entity = entity
+        self.actor = actor
+
+    @abc.abstractmethod
+    def execute(self) -> None:
+        """Execute this action."""
+        pass
 
 
 class MoveAction(GameAction):
-    """Action for moving an entity on the game map."""
+    """Action for moving an actor on the game map."""
 
-    def __init__(
-        self, controller: Controller, entity: Entity, dx: int, dy: int
-    ) -> None:
-        super().__init__(controller, entity)
+    def __init__(self, controller: Controller, actor: Actor, dx: int, dy: int) -> None:
+        super().__init__(controller, actor)
         self.game_map = controller.gw.game_map
 
         self.dx = dx
         self.dy = dy
-        self.newx = self.entity.x + self.dx
-        self.newy = self.entity.y + self.dy
+        self.newx = self.actor.x + self.dx
+        self.newy = self.actor.y + self.dy
 
     def execute(self) -> None:
         if self.game_map.tile_blocked[self.newx, self.newy]:
             return
 
-        # Check for blocking entities
-        for entity in self.controller.gw.entities:
-            if (
-                entity.blocks_movement
-                and entity.x == self.newx
-                and entity.y == self.newy
-            ):
-                if isinstance(entity, Actor) and entity.health.is_alive():
+        # Check for blocking actors.
+        for actor in self.controller.gw.actors:
+            if actor.blocks_movement and actor.x == self.newx and actor.y == self.newy:
+                if actor.health and actor.health.is_alive():
                     attack_action = AttackAction(
                         controller=self.controller,
-                        attacker=self.entity,
-                        defender=entity,
+                        attacker=self.actor,
+                        defender=actor,
                     )
                     attack_action.execute()
-                return  # Cannot move into blocking entity
+                return  # Cannot move into blocking actor
 
-        self.entity.move(self.dx, self.dy)
+        self.actor.move(self.dx, self.dy)
 
 
 class AttackAction(GameAction):
@@ -198,9 +197,10 @@ class AttackAction(GameAction):
         if (
             self.attacker == self.controller.gw.player
             and self.defender != self.controller.gw.player
-            and self.defender.disposition != Disposition.HOSTILE
+            and isinstance(self.defender.ai, DispositionBasedAI)
+            and self.defender.ai.disposition != Disposition.HOSTILE
         ):
-            self.defender.disposition = Disposition.HOSTILE
+            self.defender.ai.disposition = Disposition.HOSTILE
             self.controller.message_log.add_message(
                 f"{self.defender.name} becomes hostile towards {self.attacker.name} "
                 "due to the attack!",

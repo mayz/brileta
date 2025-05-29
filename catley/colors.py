@@ -21,7 +21,7 @@ DARK_GROUND: Color = (0, 0, 100)
 LIGHT_WALL: Color = (130, 110, 50)
 LIGHT_GROUND: Color = (200, 180, 50)
 
-# Entity colors
+# Actor colors
 PLAYER_COLOR: Color = WHITE
 NPC_COLOR: Color = YELLOW
 SELECTED_HIGHLIGHT: Color = WHITE

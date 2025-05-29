@@ -47,9 +47,9 @@ TileAppearance = np.dtype(
 Tile = np.dtype(
     [
         # Game logic properties.
-        # "walkable" - Can entities move through this tile?
+        # "walkable" - Can actors move through this tile?
         ("walkable", bool),
-        # "transparent" - Can entities see through this tile?
+        # "transparent" - Can actors see through this tile?
         ("transparent", bool),
         # Rendering properties.
         # "dark" - What player sees for explored but not currently visible tiles.
@@ -80,8 +80,8 @@ def make_tile_type(
     - Makes code more readable: make_tile_type(walkable=True, ...) vs np.array(...)
 
     Args:
-        walkable: Can entities walk through this type of tile?
-        transparent: Can entities see through this type of tile?
+        walkable: Can actors walk through this type of tile?
+        transparent: Can actors see through this type of tile?
         dark: (character, fg_color, bg_color) when tile not in FOV
         light: (character, fg_color, bg_color) when tile in FOV
                If None, uses same as dark

@@ -21,7 +21,7 @@ Behavior Components:
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from catley import colors
 
@@ -31,7 +31,8 @@ if TYPE_CHECKING:
     from catley.controller import Controller
 
     from .actions import GameAction
-    from .entities import Actor
+    from .actors import Actor
+    from .components import HealthComponent
 
 
 class AIComponent(ABC):
@@ -79,10 +80,14 @@ class DispositionBasedAI(AIComponent):
     supporting dynamic disposition changes.
     """
 
-    def __init__(self, aggro_radius: int = 8) -> None:
+    def __init__(
+        self, disposition: Disposition = Disposition.WARY, aggro_radius: int = 8
+    ) -> None:
         super().__init__()
 
-        # Create behavior delegates for each disposition
+        self.disposition = disposition
+
+        # Create behavior delegates for each possible disposition
         self._behaviors: dict[Disposition, AIComponent] = {
             Disposition.HOSTILE: HostileAI(aggro_radius),
             Disposition.WARY: WaryAI(),
@@ -93,9 +98,9 @@ class DispositionBasedAI(AIComponent):
         }
 
     def get_action(self, controller: Controller, actor: Actor) -> GameAction | None:
-        """Delegate to the appropriate behavior based on actor's disposition."""
+        """Delegate to the appropriate behavior based on the current disposition."""
         # Get the behavior for current disposition
-        behavior = self._behaviors.get(actor.disposition)
+        behavior = self._behaviors.get(self.disposition)
         if behavior:
             return behavior.get_action(controller, actor)
 
@@ -122,7 +127,7 @@ class HostileAI(AIComponent):
         player = controller.gw.player
 
         # Don't act if actor or player is dead
-        if not actor.health.is_alive() or not player.health.is_alive():
+        if not self._is_alive(actor) or not self._is_alive(player):
             return None
 
         # Calculate distance to player
@@ -149,6 +154,13 @@ class HostileAI(AIComponent):
             f"{actor.name} prowls menacingly.", colors.ORANGE
         )
         return None
+
+    def _is_alive(self, actor: Actor) -> bool:
+        """Check if an actor is alive (has health and HP > 0)."""
+        if actor.health is None:
+            return False
+        health = cast("HealthComponent", actor.health)
+        return health.is_alive()
 
     def _get_move_toward_player(
         self, controller: Controller, actor: Actor, player: Actor, dx: int, dy: int
@@ -206,12 +218,12 @@ class HostileAI(AIComponent):
         if controller.gw.game_map.tile_blocked[target_x, target_y]:
             return False
 
-        # Check for blocking entities (except player, which we want to attack)
-        blocking_entity = controller.gw.get_entity_at_location(target_x, target_y)
+        # Check for blocking actors (except player, which we want to attack)
+        blocking_actor = controller.gw.get_actor_at_location(target_x, target_y)
         return not (
-            blocking_entity
-            and blocking_entity != player
-            and blocking_entity.blocks_movement
+            blocking_actor
+            and blocking_actor != player
+            and blocking_actor.blocks_movement
         )
 
 

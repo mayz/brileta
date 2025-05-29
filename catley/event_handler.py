@@ -10,7 +10,7 @@ from .ui.ui_commands import (
     OpenMenuUICommand,
     OpenPickupMenuUICommand,
     QuitUICommand,
-    SelectOrDeselectEntityUICommand,
+    SelectOrDeselectActorUICommand,
     ToggleFullscreenUICommand,
 )
 
@@ -152,16 +152,16 @@ class EventHandler:
 
         if not map_coords:
             # Clicked outside the map area (e.g., on UI panels).
-            return SelectOrDeselectEntityUICommand(self.controller, None)
+            return SelectOrDeselectActorUICommand(self.controller, None)
 
         mx, my = map_coords
-        entity_at_click = self.gw.get_entity_at_location(mx, my)
+        actor_at_click = self.gw.get_actor_at_location(mx, my)
 
-        if self.gw.selected_entity == entity_at_click:
-            # If the clicked entity is already selected, deselect it.
-            return SelectOrDeselectEntityUICommand(self.controller, None)
+        if self.gw.selected_actor == actor_at_click:
+            # If the clicked actor is already selected, deselect it.
+            return SelectOrDeselectActorUICommand(self.controller, None)
 
-        return SelectOrDeselectEntityUICommand(self.controller, entity_at_click)
+        return SelectOrDeselectActorUICommand(self.controller, actor_at_click)
 
     def _get_tile_map_coords_from_root_coords(
         self, root_tile_coords: tuple[int, int]
