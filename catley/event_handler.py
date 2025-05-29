@@ -62,6 +62,10 @@ class EventHandler:
             ui_command.execute()
             return None
 
+        # Don't process game actions if player is dead
+        if self.p.health and not self.p.health.is_alive():
+            return None
+
         return self._check_for_game_action(event)
 
     def _check_for_ui_command(self, event: tcod.event.Event) -> UICommand | None:

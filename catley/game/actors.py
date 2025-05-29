@@ -25,6 +25,10 @@ The component system allows actors to be as simple or complex as needed:
 
 This unified approach eliminates the need for separate actor hierarchies while
 maintaining flexibility through optional components.
+
+Use one of the factory functions below to create actors:
+    - make_pc()
+    - make_npc()
 """
 
 from __future__ import annotations
@@ -80,8 +84,9 @@ class Actor:
     for the capabilities they actually use, while maintaining a unified interface
     for game systems to interact with all objects in the world.
 
-    Use one of the factory functions below (e.g., make_pc(), make_npc())
-    to create actors.
+    Use one of the factory functions below to create actors:
+        - make_pc()
+        - make_npc()
     """
 
     def __init__(
