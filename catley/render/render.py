@@ -264,12 +264,12 @@ class Renderer:
         base_entity_color: colors.Color = e.color
 
         # Apply a flash effect if appropriate.
-        if isinstance(e, Actor) and e._flash_duration_frames > 0:
-            if e._flash_color:
-                base_entity_color = cast("colors.Color", e._flash_color)
-            e._flash_duration_frames -= 1
-            if e._flash_duration_frames == 0:
-                e._flash_color = None
+        if hasattr(e, "visual_effects"):
+            visual_effects = cast("Actor", e).visual_effects
+            visual_effects.update()  # Update counter, clear if done
+            flash_color = visual_effects.get_flash_color()
+            if flash_color:
+                base_entity_color = flash_color
 
         light_rgb = self.current_light_intensity[e.x, e.y]
 

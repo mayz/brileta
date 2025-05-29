@@ -184,8 +184,8 @@ class Menu(abc.ABC):
 
             if isinstance(self, InventoryMenu):
                 player = self.controller.gw.player  # Player is an Actor
-                used_space = player.get_used_inventory_space()
-                total_slots = player.inventory_slots
+                used_space = player.inventory.get_used_inventory_slots()
+                total_slots = player.inventory.total_inventory_slots
 
                 current_x = 1  # Start drawing at column 1 (content area start)
                 # Max content column index is actual_width - 2
@@ -206,7 +206,7 @@ class Menu(abc.ABC):
                     current_x += chars_to_print
 
                 # 2. Draw the color bar using individual slot colors
-                slot_colors_list = player.get_inventory_slot_colors()
+                slot_colors_list = player.inventory.get_inventory_slot_colors()
                 num_colored_slots = len(slot_colors_list)
 
                 if total_slots > 0 and current_x <= max_content_x:
@@ -309,10 +309,10 @@ class InventoryMenu(Menu):
 
     def __init__(self, controller: Controller) -> None:
         super().__init__("Inventory", controller)
+        self.inventory = controller.gw.player.inventory
 
     def populate_options(self) -> None:
         """Populate inventory options."""
-        player = self.controller.gw.player
         self.options.clear()  # Ensure options are cleared at the start
         # The title "Inventory" is set in __init__.
         # The dynamic part (bar, X/Y used) is now handled in Menu.render.
@@ -325,7 +325,7 @@ class InventoryMenu(Menu):
         # up to player.inventory_slots.
         display_lines: list[MenuOption] = []
 
-        if not player.inventory:
+        if self.inventory.is_empty():
             display_lines.append(
                 MenuOption(
                     key=None, text="(inventory empty)", enabled=False, color=colors.GREY
@@ -335,7 +335,7 @@ class InventoryMenu(Menu):
             return
 
         # Iterate through the actual items/conditions in inventory
-        for entity_in_slot in player.inventory:
+        for entity_in_slot in self.inventory:
             text_to_display: str
             action_to_take: Callable[[], None] | None = None
             option_color: colors.Color
@@ -346,7 +346,7 @@ class InventoryMenu(Menu):
             if isinstance(entity_in_slot, Item):
                 item: Item = entity_in_slot
                 equipped_marker = ""
-                if item.equippable and player.equipped_weapon == item:
+                if item.equippable and self.inventory.equipped_weapon == item:
                     equipped_marker = " (equipped)"
 
                 size_display = (
@@ -409,20 +409,20 @@ class InventoryMenu(Menu):
 
         if hasattr(item, "equippable") and item.equippable:
             # Equip/unequip weapon
-            if player.equipped_weapon == item:
-                player.equipped_weapon = None
+            if player.inventory.equipped_weapon == item:
+                player.inventory.unequip_weapon()
                 self.controller.message_log.add_message(
                     f"You unequip {item.name}.", colors.WHITE
                 )
             else:
                 # Unequip current weapon first if any
-                if player.equipped_weapon:
-                    old_weapon = player.equipped_weapon.name
+                if player.inventory.equipped_weapon:
+                    old_weapon = player.inventory.equipped_weapon.name
                     self.controller.message_log.add_message(
                         f"You unequip {old_weapon}.", colors.GREY
                     )
 
-                player.equipped_weapon = item
+                player.inventory.equip_weapon(item)
                 self.controller.message_log.add_message(
                     f"You equip {item.name}.", colors.GREEN
                 )
@@ -478,7 +478,7 @@ class PickupMenu(Menu):
         """Pickup an item and add it to player inventory."""
         player = self.controller.gw.player
         # Check if player has inventory space using the new size-aware method
-        if not player.can_add_to_inventory(item):
+        if not player.inventory.can_add_to_inventory(item):
             self.controller.message_log.add_message(
                 "Your inventory is full!", colors.RED
             )
@@ -486,17 +486,17 @@ class PickupMenu(Menu):
 
         # Remove item from dead entity
         for entity in self.controller.gw.entities:
-            if isinstance(entity, Actor) and not entity.is_alive():
+            if isinstance(entity, Actor) and not entity.health.is_alive():
                 if item in entity.inventory:
-                    entity.inventory.remove(item)
+                    entity.inventory.remove_from_inventory(item)
                     break
 
-                if entity.equipped_weapon == item:
-                    entity.equipped_weapon = None
+                if entity.inventory.equipped_weapon == item:
+                    entity.inventory.equipped_weapon = None
                     break
 
         # Add to player inventory
-        player.inventory.append(item)
+        player.inventory.add_to_inventory(item)
         self.controller.message_log.add_message(
             f"You pick up {item.name}.", colors.WHITE
         )

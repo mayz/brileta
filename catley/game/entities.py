@@ -26,8 +26,12 @@ from typing import TYPE_CHECKING
 
 from catley import colors
 
-from .conditions import Condition
-from .items import Item, ItemSize, Weapon
+from .components import (
+    HealthComponent,
+    InventoryComponent,
+    StatsComponent,
+    VisualEffectsComponent,
+)
 
 if TYPE_CHECKING:
     from catley.controller import Controller
@@ -106,16 +110,10 @@ class Actor(Entity):
         ch: str,
         color: colors.Color,
         name: str = "<Unnamed Actor>",
-        # Ability scores.
-        strength: int = 0,
-        toughness: int = 0,
-        agility: int = 0,
-        observation: int = 0,
-        intelligence: int = 0,
-        demeanor: int = 0,
-        weirdness: int = 0,
-        # Other combat/gameplay stats
-        max_ap: int = 3,  # Default AP
+        stats: StatsComponent | None = None,
+        health: HealthComponent | None = None,
+        inventory: InventoryComponent | None = None,
+        visual_effects: VisualEffectsComponent | None = None,
         # World and appearance
         game_world: GameWorld | None = None,
         light_source: LightSource | None = None,
@@ -125,83 +123,40 @@ class Actor(Entity):
         super().__init__(x, y, ch, color, game_world, light_source, blocks_movement)
         self.name = name
 
-        # Core abilities
-        self.strength = strength
-        self.toughness = toughness  # Used by max_hp property
-        self.agility = agility
-        self.observation = observation
-        self.intelligence = intelligence
-        self.demeanor = demeanor
-        self.weirdness = weirdness
+        self.stats = stats or StatsComponent()
+        self.health = health or HealthComponent(self.stats)
+        self.inventory = inventory or InventoryComponent(self.stats)
+        self.visual_effects = visual_effects or VisualEffectsComponent()
 
-        # HP and AP
-        # self.max_hp is a property derived from self.toughness.
-        # self.hp is initialized after toughness is set.
-        self.hp = self.max_hp
-        self.max_ap = max_ap
-        self.ap = max_ap
-
-        self.inventory: list[Item | Condition] = []
-        self.equipped_weapon: Weapon | None = None
         self.disposition = disposition
 
-        # To show a visual "flash" when taking damage.
-        self._flash_color: colors.Color | None = None
-        self._flash_duration_frames: int = 0
-
-        # Inventory slots based on strength
-        self.inventory_slots = self.strength + 5
         self.tricks: list = []  # Will hold Trick instances later
 
-    @property
-    def max_hp(self) -> int:
-        """Derive max HP from toughness."""
-        return self.toughness + 5
-
-    @max_hp.setter
-    def max_hp(self, value: int) -> None:
-        """Override max_hp setter to prevent direct modification."""
-        # Do nothing as max_hp is derived from toughness for Actor
-        pass
-
     def take_damage(self, amount: int) -> None:
-        """Handle damage to the actor, reducing AP first, then HP.
+        """Handle damage to the actor.
+
+        That includes:
+        - Update health math.
+        - Visual feedback.
+        - Handle death consequences, if any.
 
         Args:
             amount: Amount of damage to take
         """
-        self._flash_color = colors.RED
-        self._flash_duration_frames = 5
+        # Delegate health math to the health component.
+        self.health.take_damage(amount)
 
-        # First reduce AP if any
-        if self.ap > 0:
-            ap_damage = min(amount, self.ap)
-            self.ap -= ap_damage
-            amount -= ap_damage
+        # Visual feedback.
+        self.visual_effects.flash(colors.RED)
 
-        # Apply remaining damage to HP
-        if amount > 0:
-            self.hp = max(0, self.hp - amount)
-
-        if not self.is_alive():
+        if not self.health.is_alive():
+            # Handle death consequences.
             self.ch = "x"
             self.color = colors.DEAD
             self.blocks_movement = False
             # If this actor was selected, deselect it.
             if self.gw and self.gw.selected_entity == self:
                 self.gw.selected_entity = None
-
-    def heal(self, amount: int) -> None:
-        """Heal the actor by the specified amount, up to max_hp.
-
-        Args:
-            amount: Amount to heal
-        """
-        self.hp = min(self.max_hp, self.hp + amount)
-
-    def is_alive(self) -> bool:
-        """Return True if the actor is alive (HP > 0)."""
-        return self.hp > 0
 
     def update_turn(self, controller: Controller) -> None:
         """
@@ -227,7 +182,7 @@ class Actor(Entity):
         # NPC AI logic.
         # TODO: Move this to a separate module for better organization later on.
 
-        if not self.is_alive() or not player.is_alive():
+        if not self.health.is_alive() or not player.health.is_alive():
             return
 
         from catley.game.actions import AttackAction, MoveAction
@@ -349,92 +304,3 @@ class Actor(Entity):
 
         if action_to_perform:
             controller.execute_action(action_to_perform)
-
-    def get_used_inventory_space(self) -> int:
-        """Calculates the total number of inventory slots currently used,
-        considering item sizes and conditions.
-        """
-        used_space = 0
-        has_tiny_items = False
-        # Ensure inventory is not None, though it's initialized as an empty list
-        inventory_list = self.inventory or []
-
-        for entity_in_slot in inventory_list:
-            if isinstance(entity_in_slot, Item):
-                item = entity_in_slot
-                if item.size == ItemSize.TINY:
-                    has_tiny_items = True
-                elif item.size == ItemSize.NORMAL:
-                    used_space += 1
-                elif item.size == ItemSize.BIG:
-                    used_space += 2
-                elif item.size == ItemSize.HUGE:
-                    used_space += 4
-            elif isinstance(entity_in_slot, Condition):
-                # Conditions take up one slot each
-                used_space += 1
-
-        if has_tiny_items:
-            used_space += 1  # All tiny items collectively share one slot
-
-        return used_space
-
-    def can_add_to_inventory(self, item_to_add: Item | Condition) -> bool:
-        """Checks if an item or condition can be added to the inventory
-        based on available space and item sizes.
-        """
-        current_used_space = self.get_used_inventory_space()
-        additional_space_needed = 0
-
-        inventory_list = self.inventory or []  # For checking existing tiny items
-
-        if isinstance(item_to_add, Item):
-            item = item_to_add
-            if item.size == ItemSize.TINY:
-                # If no tiny items exist yet, adding this one will
-                # 'create' the tiny slot.
-                if not any(
-                    isinstance(i, Item) and i.size == ItemSize.TINY
-                    for i in inventory_list
-                ):
-                    additional_space_needed = 1
-            elif item.size == ItemSize.NORMAL:
-                additional_space_needed = 1
-            elif item.size == ItemSize.BIG:
-                additional_space_needed = 2
-            elif item.size == ItemSize.HUGE:
-                additional_space_needed = 4
-        elif isinstance(item_to_add, Condition):
-            additional_space_needed = 1  # Conditions always take 1 slot
-
-        return (current_used_space + additional_space_needed) <= self.inventory_slots
-
-    def get_inventory_slot_colors(self) -> list[colors.Color]:
-        """
-        Returns a list of colors representing the filled logical inventory slots.
-        Each color corresponds to the item/condition occupying that slot.
-        """
-        slot_colors: list[colors.Color] = []
-        has_processed_tiny_slot = False
-
-        inventory_list = self.inventory or []
-
-        for entity_in_slot in inventory_list:
-            if isinstance(entity_in_slot, Item):
-                item = entity_in_slot
-                # Default color for items in the bar is WHITE
-                item_bar_color = colors.WHITE
-
-                if item.size == ItemSize.TINY:
-                    if not has_processed_tiny_slot:
-                        slot_colors.append(item_bar_color)
-                        has_processed_tiny_slot = True
-                elif item.size == ItemSize.NORMAL:
-                    slot_colors.append(item_bar_color)
-                elif item.size == ItemSize.BIG:
-                    slot_colors.extend([item_bar_color] * 2)
-                elif item.size == ItemSize.HUGE:
-                    slot_colors.extend([item_bar_color] * 4)
-            elif isinstance(entity_in_slot, Condition):
-                slot_colors.append(entity_in_slot.display_color)
-        return slot_colors
