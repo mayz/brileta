@@ -5,20 +5,32 @@ import numpy as np
 import tcod
 
 from catley import colors
+from catley.config import (
+    AMBIENT_LIGHT_LEVEL,
+    DEFAULT_FLICKER_SPEED,
+    DEFAULT_LIGHT_COLOR,
+    DEFAULT_MAX_BRIGHTNESS,
+    DEFAULT_MIN_BRIGHTNESS,
+    TORCH_COLOR,
+    TORCH_FLICKER_SPEED,
+    TORCH_MAX_BRIGHTNESS,
+    TORCH_MIN_BRIGHTNESS,
+    TORCH_RADIUS,
+)
 
 if TYPE_CHECKING:
     from catley.game.actors import Actor
 
 # Preset configurations for different light types
 TORCH_PRESET = {
-    "radius": 10,
-    "color": (0.7, 0.5, 0.3),  # Warm orange/yellow
+    "radius": TORCH_RADIUS,
+    "color": TORCH_COLOR,
     "light_type": "dynamic",
     "flicker_enabled": True,
-    "flicker_speed": 3.0,
+    "flicker_speed": TORCH_FLICKER_SPEED,
     "movement_scale": 0.0,
-    "min_brightness": 1.15,
-    "max_brightness": 1.35,
+    "min_brightness": TORCH_MIN_BRIGHTNESS,
+    "max_brightness": TORCH_MAX_BRIGHTNESS,
 }
 
 
@@ -27,7 +39,7 @@ class LightingConfig:
     """Configuration for the lighting system"""
 
     fov_radius: int = 15
-    ambient_light: float = 0.1  # Base light level
+    ambient_light: float = AMBIENT_LIGHT_LEVEL
 
 
 @dataclass
@@ -36,13 +48,13 @@ class LightSource:
 
     radius: int  # Required parameter must come first
     _pos: tuple[int, int] | None = None  # Internal position storage
-    color: colors.Color = (1.0, 1.0, 1.0)  # RGB
+    color: colors.Color = DEFAULT_LIGHT_COLOR
     light_type: Literal["static", "dynamic"] = "static"
     flicker_enabled: bool = False
-    flicker_speed: float = 3.0  # Moderate flicker speed
+    flicker_speed: float = DEFAULT_FLICKER_SPEED
     movement_scale: float = 0.0  # No movement
-    min_brightness: float = 1.15  # Higher base brightness
-    max_brightness: float = 1.35  # Still ~17% variation but at a higher level
+    min_brightness: float = DEFAULT_MIN_BRIGHTNESS
+    max_brightness: float = DEFAULT_MAX_BRIGHTNESS
 
     @classmethod
     def create_torch(cls, position: tuple[int, int] | None = None) -> "LightSource":

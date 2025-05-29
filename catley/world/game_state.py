@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from catley import colors
+from catley.config import PLAYER_BASE_TOUGHNESS
 from catley.game import items
 from catley.game.actors import Actor, make_pc
 from catley.render.lighting import LightingSystem, LightSource
@@ -38,7 +39,7 @@ class GameWorld:
             color=colors.PLAYER_COLOR,
             game_world=self,
             light_source=player_light,
-            toughness=30,
+            toughness=PLAYER_BASE_TOUGHNESS,
             starting_weapon=items.FISTS,
             # Other abilities will default to 0
         )

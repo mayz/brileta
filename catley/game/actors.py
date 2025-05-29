@@ -32,6 +32,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, cast
 
 from catley import colors
+from catley.config import DEFAULT_ACTOR_SPEED
 
 from .ai import DispositionBasedAI
 from .components import (
@@ -99,7 +100,7 @@ class Actor:
         game_world: GameWorld | None = None,
         light_source: LightSource | None = None,
         blocks_movement: bool = True,
-        speed: int = 100,
+        speed: int = DEFAULT_ACTOR_SPEED,
     ) -> None:
         self.x = x
         self.y = y
@@ -225,7 +226,7 @@ def make_pc(
     weirdness: int = 0,
     light_source: LightSource | None = None,
     starting_weapon: Weapon | None = None,
-    speed: int = 100,
+    speed: int = DEFAULT_ACTOR_SPEED,
 ) -> Actor:
     """Create a player character.
 
@@ -277,7 +278,7 @@ def make_npc(
     light_source: LightSource | None = None,
     starting_weapon: Weapon | None = None,
     disposition: Disposition = Disposition.WARY,
-    speed: int = 100,
+    speed: int = DEFAULT_ACTOR_SPEED,
     **kwargs,
 ) -> Actor:
     """Create an NPC or monster with full capabilities.
@@ -337,7 +338,7 @@ def _make_character(
     ai: AIComponent | None = None,
     light_source: LightSource | None = None,
     starting_weapon: Weapon | None = None,
-    speed: int = 100,
+    speed: int = DEFAULT_ACTOR_SPEED,
     **kwargs,
 ) -> Actor:
     """Create a character (player, NPC, monster) with full capabilities.

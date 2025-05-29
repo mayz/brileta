@@ -6,6 +6,15 @@ from tcod.console import Console
 from tcod.context import Context
 
 from catley import colors
+from catley.config import (
+    HELP_HEIGHT,
+    LUMINANCE_THRESHOLD,
+    MESSAGE_LOG_HEIGHT,
+    MOUSE_HIGHLIGHT_ALPHA,
+    PULSATION_MAX_BLEND_ALPHA,
+    PULSATION_PERIOD,
+    SELECTION_HIGHLIGHT_ALPHA,
+)
 from catley.game.actors import Actor
 from catley.ui.message_log import MessageLog
 from catley.util.clock import Clock
@@ -35,12 +44,6 @@ class FPSDisplay:
         renderer._render_text(x, y, self.display_string, fg=colors.YELLOW)
 
 
-# Pulsation effect parameters
-PULSATION_PERIOD = 2.0  # Seconds for a full sine wave cycle for selected actor
-PULSATION_MAX_BLEND_ALPHA: float = 0.5  # Max alpha for blending pulsation
-LUMINANCE_THRESHOLD = 127.5  # For determining if a color is light or dark
-
-
 class Renderer:
     def __init__(
         self,
@@ -62,10 +65,10 @@ class Renderer:
         self.message_log = message_log
 
         # Define message log geometry - help at top, then message log
-        self.help_height = 1  # One line for help text
-        self.message_log_height = 6  # Message log height
+        self.help_height = HELP_HEIGHT
+        self.message_log_height = MESSAGE_LOG_HEIGHT
         self.message_log_x = 0
-        self.message_log_y = self.help_height  # Start after help text (line 1)
+        self.message_log_y = self.help_height  # Start after help text
         self.message_log_width = screen_width
 
         # Create game map console
@@ -133,7 +136,7 @@ class Renderer:
             ):
                 # Define highlight properties
                 target_color = colors.SELECTED_HIGHLIGHT
-                alpha = 0.6
+                alpha = SELECTION_HIGHLIGHT_ALPHA
                 self._apply_blended_highlight(actor.x, actor.y, target_color, alpha)
 
     def _render_mouse_cursor_highlight(self) -> None:
@@ -157,7 +160,7 @@ class Renderer:
             # Tile is OUTSIDE FOV - target a muted highlight
             target_highlight_color = colors.GREY
         # Alpha blending factor (0.0 = fully transparent, 1.0 = fully opaque)
-        alpha = 0.6
+        alpha = MOUSE_HIGHLIGHT_ALPHA
         self._apply_blended_highlight(mx, my, target_highlight_color, alpha)
 
     def _apply_blended_highlight(
