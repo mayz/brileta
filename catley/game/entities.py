@@ -111,6 +111,7 @@ class Actor(Entity):
         light_source: LightSource | None = None,
         blocks_movement: bool = True,
         disposition: Disposition = Disposition.WARY,
+        speed: int = 100,
     ) -> None:
         super().__init__(x, y, ch, color, game_world, light_source, blocks_movement)
         self.name = name
@@ -122,6 +123,8 @@ class Actor(Entity):
         self.ai = ai
 
         self.disposition = disposition
+        self.speed = speed
+        self.accumulated_energy: int = self.speed
 
         self.tricks: list = []  # Will hold Trick instances later
 
