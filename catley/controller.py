@@ -10,6 +10,7 @@ from . import colors
 from .event_handler import EventHandler
 from .game import conditions, items
 from .game.actions import GameAction
+from .game.components import StatsComponent
 from .game.entities import Actor, Disposition, Entity
 from .render.render import Renderer
 from .ui.menu_system import MenuSystem
@@ -80,8 +81,10 @@ class Controller:
             root_console=self.root_console,
         )
 
-        self.gw.player.inventory.append(conditions.Injury(injury_type="Sprained Ankle"))
-        self.gw.player.inventory.append(items.SLEDGEHAMMER.clone())
+        self.gw.player.inventory.add_to_inventory(
+            conditions.Injury(injury_type="Sprained Ankle")
+        )
+        self.gw.player.inventory.add_to_inventory(items.SLEDGEHAMMER.clone())
 
         self._add_npc()
 
@@ -127,6 +130,13 @@ class Controller:
             case 4:
                 npc_y -= 2
 
+        npc_stats = StatsComponent(
+            weirdness=3,
+            strength=3,
+            toughness=3,
+            intelligence=-3,
+            # Other abilities (agility, observation, demeanor) will default to 0
+        )
         npc = Actor(
             x=npc_x,
             y=npc_y,
@@ -136,13 +146,9 @@ class Controller:
             game_world=self.gw,
             blocks_movement=True,
             disposition=Disposition.WARY,
-            weirdness=3,
-            strength=3,
-            toughness=3,
-            intelligence=-3,
-            # Other abilities (agility, observation, demeanor) will default to 0
+            stats=npc_stats,
         )
-        npc.equipped_weapon = items.SLEDGEHAMMER.clone()
+        npc.inventory.equipped_weapon = items.SLEDGEHAMMER.clone()
         self.gw.entities.append(npc)
 
     def run_game_loop(self) -> None:
@@ -212,7 +218,7 @@ class Controller:
         self.waiting_for_player_action = False
         self.process_world_turn()
 
-        if self.gw.player.is_alive():
+        if self.gw.player.health.is_alive():
             self.waiting_for_player_action = True
         else:
             # Handle game over: player is dead
@@ -240,7 +246,7 @@ class Controller:
             elif isinstance(entity, Entity):
                 entity.update_turn(self)
 
-            if not self.gw.player.is_alive():
+            if not self.gw.player.health.is_alive():
                 # If player died, no need to continue processing other entities' turns
                 # The game over state will be handled when execute_action resets
                 # awaiting_player_game_action after this process_world_turn completes.

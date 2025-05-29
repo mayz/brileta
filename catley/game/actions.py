@@ -77,7 +77,7 @@ class MoveAction(GameAction):
                 and entity.x == self.newx
                 and entity.y == self.newy
             ):
-                if isinstance(entity, Actor) and entity.is_alive():
+                if isinstance(entity, Actor) and entity.health.is_alive():
                     attack_action = AttackAction(
                         controller=self.controller,
                         attacker=self.entity,
@@ -101,13 +101,13 @@ class AttackAction(GameAction):
 
     def execute(self) -> None:
         # Determine attacker's ability score
-        weapon = self.attacker.equipped_weapon or items.FISTS
+        weapon = self.attacker.inventory.equipped_weapon or items.FISTS
         if weapon.melee:
-            attacker_ability_score = self.attacker.strength
+            attacker_ability_score = self.attacker.stats.strength
         else:
-            attacker_ability_score = self.attacker.observation
+            attacker_ability_score = self.attacker.stats.observation
 
-        defender_ability_score = self.defender.agility
+        defender_ability_score = self.defender.stats.agility
 
         # Perform attack roll
         attack_result = dice.perform_opposed_check_roll(
@@ -129,8 +129,8 @@ class AttackAction(GameAction):
                 # cause an injury to an unarmored target."
                 damage += damage_dice.roll()
 
-                if self.defender.ap > 0:
-                    self.defender.ap = 0
+                if self.defender.health.ap > 0:
+                    self.defender.health.ap = 0
                     # FIXME: Break the defender's armor.
                 else:
                     # FIXME: Give the defender an injury.
@@ -152,13 +152,15 @@ class AttackAction(GameAction):
                     f"with {weapon.name} for {damage} damage."
                 )
                 hit_color = colors.WHITE  # Default color for a standard hit
-            hp_message_part = f" ({self.defender.name} has {self.defender.hp} HP left.)"
+            hp_message_part = (
+                f" ({self.defender.name} has {self.defender.health.hp} HP left.)"
+            )
             self.controller.message_log.add_message(
                 hit_message + hp_message_part, hit_color
             )
 
             # Check if defender is defeated
-            if not self.defender.is_alive():
+            if not self.defender.health.is_alive():
                 self.controller.message_log.add_message(
                     f"{self.defender.name} has been killed!", colors.RED
                 )

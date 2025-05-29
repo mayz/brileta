@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 from catley import colors
 from catley.game import items
+from catley.game.components import StatsComponent
 from catley.game.entities import Actor
 from catley.render.lighting import LightingSystem, LightSource
 
@@ -31,6 +32,10 @@ class GameWorld:
 
         # Create player with a torch light source
         player_light = LightSource.create_torch()
+        player_stats = StatsComponent(
+            toughness=30,
+            # Other abilities will default to 0
+        )
         self.player = Actor(
             x=0,
             y=0,
@@ -39,10 +44,9 @@ class GameWorld:
             color=colors.PLAYER_COLOR,
             game_world=self,
             light_source=player_light,
-            toughness=30,
-            # Other abilities will default to 0
+            stats=player_stats,
         )
-        self.player.equipped_weapon = items.FISTS
+        self.player.inventory.equipped_weapon = items.FISTS
 
         self.entities = [self.player]
         self.game_map = GameMap(map_width, map_height)
@@ -65,11 +69,13 @@ class GameWorld:
                 entity.x == x
                 and entity.y == y
                 and isinstance(entity, Actor)
-                and not entity.is_alive()  # Only from dead actors
+                and not entity.health.is_alive()  # Only from dead actors
             ):
-                items_found.extend(entity.inventory)  # Add items from inventory
-                if entity.equipped_weapon:
-                    items_found.append(entity.equipped_weapon)  # Add equipped weapon
+                items_found.extend(entity.inventory)
+                if entity.inventory.equipped_weapon:
+                    items_found.append(
+                        entity.inventory.equipped_weapon
+                    )  # Add equipped weapon
         # Future: Add items directly on the ground if we implement that
         # e.g., items_found.extend(self.game_map.get_items_on_ground(x,y))
         return items_found
