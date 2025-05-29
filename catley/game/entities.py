@@ -38,6 +38,7 @@ if TYPE_CHECKING:
     from catley.render.lighting import LightSource
     from catley.world.game_state import GameWorld
 
+    from .actions import GameAction
     from .ai import AIComponent
 
 
@@ -161,23 +162,43 @@ class Actor(Entity):
         """
         super().update_turn(controller)
 
-        player = controller.gw.player
-        if self == player:
-            # TODO: Implement passive player effects here if any
-            # (e.g., poison, regeneration)
+        # TODO: Implement passive effects here if any (e.g., poison, regeneration)
 
-            # For example:
-            # if self.has_condition("Poisoned"):
-            #     self.take_damage(1)
-            #     controller.message_log.add_message(
-            #         f"{self.name} takes 1 poison damage.", colors.GREEN)
-            #
-            # The player's active actions are driven by input via EventHandler.
-            return
+        # For example:
+        # if self.has_condition("Poisoned"):
+        #     self.take_damage(1)
+        #     controller.message_log.add_message(
+        #         f"{self.name} takes 1 poison damage.", colors.GREEN)
+        #
+        # Active actions (including AI for NPCs and player input) are now
+        # handled via get_next_action() in the main game loop.
+        pass
 
-        # Delegate AI decisions to AI component.
-        if self.ai:
-            action = self.ai.get_action(controller, self)
-            if action:
-                controller.execute_action(action)
-            self.ai.update(controller)
+    def get_next_action(self, controller: Controller) -> GameAction | None:
+        """
+        Determines the next action for this actor.
+        For the player, it retrieves the pending action from the event handler.
+        For NPCs, it queries their AI component.
+        """
+        if self == controller.gw.player:
+            action = controller.event_handler.pending_action
+            controller.event_handler.pending_action = None  # Clear after retrieving
+            return action
+        if self.ai and self.health.is_alive():
+            # Allow AI to update its internal state before deciding on an action.
+            self.ai.update(
+                controller
+            )  # Pass only controller as per AIComponent.update signature
+            return self.ai.get_action(controller, self)
+        return None
+
+    def regenerate_energy(self) -> None:
+        """Regenerates energy for the actor based on their speed."""
+        self.accumulated_energy += self.speed
+
+    def can_afford_action(self, cost: int) -> bool:
+        """Checks if the actor has enough energy to perform an action."""
+        return self.accumulated_energy >= cost
+
+    def spend_energy(self, cost: int) -> None:
+        self.accumulated_energy -= cost
