@@ -16,7 +16,7 @@ Components:
 
 Benefits:
     - Each component has a single, clear responsibility
-    - Components can be mixed and matched (not all entities need all components)
+    - Components can be mixed and matched (not all actors need all components)
     - Easier to test, debug, and extend individual behaviors
     - Avoids the "everything in one class" problem that leads to unmaintainable code
     - Components can be data-driven and configured independently
@@ -89,7 +89,7 @@ class HealthComponent:
         return self.stats.max_hp
 
     def take_damage(self, amount: int) -> None:
-        """Handle damage to the entity, reducing AP first, then HP.
+        """Handle damage to the actor, reducing AP first, then HP.
 
         Args:
             amount: Amount of damage to take
@@ -113,7 +113,7 @@ class HealthComponent:
         self.hp = min(self.max_hp, self.hp + amount)
 
     def is_alive(self) -> bool:
-        """Return True if the entity is alive (HP > 0)."""
+        """Return True if the actor is alive (HP > 0)."""
         return self.hp > 0
 
 

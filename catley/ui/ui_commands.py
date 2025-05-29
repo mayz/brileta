@@ -13,7 +13,7 @@ Examples:
     - QuitUICommand: Exit the application
     - ToggleFullscreenUICommand: Change display mode
     - OpenMenuUICommand: Show/hide interface panels
-    - SelectOrDeselectEntityUICommand: Change UI selection state
+    - SelectOrDeselectActorUICommand: Change UI selection state
 
 UI commands are immediate and don't consume game turns. They handle the
 "meta" layer of interaction - how the player interacts with the game
@@ -31,7 +31,7 @@ if TYPE_CHECKING:
     import tcod.context
 
     from catley.controller import Controller
-    from catley.game.entities import Entity
+    from catley.game.actors import Actor
 
 
 class UICommand(abc.ABC):
@@ -59,23 +59,23 @@ class QuitUICommand(UICommand):
         raise SystemExit()
 
 
-class SelectOrDeselectEntityUICommand(UICommand):
+class SelectOrDeselectActorUICommand(UICommand):
     """
-    Command to select a new entity or deselect (clear) the current selection.
+    Command to select a new actor or deselect (clear) the current selection.
     """
 
-    def __init__(self, controller: Controller, selection: Entity | None):
+    def __init__(self, controller: Controller, selection: Actor | None):
         """
         Args:
             controller: The game controller.
-            selection: The entity to select (or None to deselect).
+            selection: The actor to select (or None to deselect).
         """
         super().__init__()
         self.controller = controller
         self.selection = selection
 
     def execute(self) -> None:
-        self.controller.gw.selected_entity = self.selection
+        self.controller.gw.selected_actor = self.selection
 
 
 class OpenMenuUICommand(UICommand):

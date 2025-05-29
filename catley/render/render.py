@@ -1,12 +1,12 @@
 import math
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import numpy as np
 from tcod.console import Console
 from tcod.context import Context
 
 from catley import colors
-from catley.game.entities import Actor, Entity
+from catley.game.actors import Actor
 from catley.ui.message_log import MessageLog
 from catley.util.clock import Clock
 from catley.world.game_state import GameWorld
@@ -36,7 +36,7 @@ class FPSDisplay:
 
 
 # Pulsation effect parameters
-PULSATION_PERIOD = 2.0  # Seconds for a full sine wave cycle for selected entity
+PULSATION_PERIOD = 2.0  # Seconds for a full sine wave cycle for selected actor
 PULSATION_MAX_BLEND_ALPHA: float = 0.5  # Max alpha for blending pulsation
 LUMINANCE_THRESHOLD = 127.5  # For determining if a color is light or dark
 
@@ -82,10 +82,10 @@ class Renderer:
         # Clear the root console first
         self.root_console.clear()
 
-        # Render map and entities to game console
+        # Render map and actors to game console
         self._render_map()
-        self._render_entities()
-        self._render_selected_entity_highlight()
+        self._render_actors()
+        self._render_selected_actor_highlight()
         self._render_mouse_cursor_highlight()
 
         # Blit game console to root console (below help and message log)
@@ -119,22 +119,22 @@ class Renderer:
         # Present the final console and handle vsync timing
         self.context.present(self.root_console, keep_aspect=True, integer_scaling=True)
 
-    def _render_selected_entity_highlight(self) -> None:
+    def _render_selected_actor_highlight(self) -> None:
         """Renders a highlight on the selected actor's tile by blending colors."""
-        if self.gw.selected_entity:
-            entity = self.gw.selected_entity
+        if self.gw.selected_actor:
+            actor = self.gw.selected_actor
             # Only highlight if the actor is visible in FOV
             if (
-                self.gw.game_map.visible[entity.x, entity.y]
+                self.gw.game_map.visible[actor.x, actor.y]
                 and
                 # Ensure coordinates are within the game_map_console bounds
-                0 <= entity.x < self.game_map_console.width
-                and 0 <= entity.y < self.game_map_console.height
+                0 <= actor.x < self.game_map_console.width
+                and 0 <= actor.y < self.game_map_console.height
             ):
                 # Define highlight properties
                 target_color = colors.SELECTED_HIGHLIGHT
                 alpha = 0.6
-                self._apply_blended_highlight(entity.x, entity.y, target_color, alpha)
+                self._apply_blended_highlight(actor.x, actor.y, target_color, alpha)
 
     def _render_mouse_cursor_highlight(self) -> None:
         if not self.gw.mouse_tile_location_on_map:
@@ -245,52 +245,52 @@ class Renderer:
             # Apply the dynamically lit tiles
             self.game_map_console.rgb[visible_y, visible_x] = blended_tiles
 
-    def _render_entities(self) -> None:
-        for e in self.gw.entities:
-            if e == self.gw.player:
+    def _render_actors(self) -> None:
+        for a in self.gw.actors:
+            if a == self.gw.player:
                 continue
 
-            # Only render entities that are visible
-            if self.gw.game_map.visible[e.x, e.y]:
-                self._render_entity(e)
+            # Only render actors that are visible
+            if self.gw.game_map.visible[a.x, a.y]:
+                self._render_actor(a)
 
         # Always draw the player last.
-        self._render_entity(self.gw.player)
+        self._render_actor(self.gw.player)
 
-    def _render_entity(self, e: Entity) -> None:
-        self.game_map_console.rgb["ch"][e.x, e.y] = ord(e.ch)
+    def _render_actor(self, a: Actor) -> None:
+        self.game_map_console.rgb["ch"][a.x, a.y] = ord(a.ch)
 
-        # Calculate the base lit color of the entity
-        base_entity_color: colors.Color = e.color
+        # Calculate the base lit color of the actor
+        base_actor_color: colors.Color = a.color
 
         # Apply a flash effect if appropriate.
-        if hasattr(e, "visual_effects"):
-            visual_effects = cast("Actor", e).visual_effects
+        visual_effects = a.visual_effects
+        if visual_effects:
             visual_effects.update()  # Update counter, clear if done
             flash_color = visual_effects.get_flash_color()
             if flash_color:
-                base_entity_color = flash_color
+                base_actor_color = flash_color
 
-        light_rgb = self.current_light_intensity[e.x, e.y]
+        light_rgb = self.current_light_intensity[a.x, a.y]
 
-        # Apply RGB lighting to each color channel of the base_entity_color
+        # Apply RGB lighting to each color channel of the base_actor_color
         # Ensure components are clamped to valid color range [0, 255]
         normally_lit_fg_components = [
-            max(0, min(255, int(base_entity_color[i] * light_rgb[i]))) for i in range(3)
+            max(0, min(255, int(base_actor_color[i] * light_rgb[i]))) for i in range(3)
         ]
 
         final_fg_color = normally_lit_fg_components
 
         # If selected and in FOV, apply pulsation blending on top of the lit color
-        if self.gw.selected_entity == e and self.gw.game_map.visible[e.x, e.y]:
+        if self.gw.selected_actor == a and self.gw.game_map.visible[a.x, a.y]:
             final_fg_color = self._apply_pulsating_effect(
-                normally_lit_fg_components, base_entity_color
+                normally_lit_fg_components, base_actor_color
             )
 
-        self.game_map_console.rgb["fg"][e.x, e.y] = final_fg_color
+        self.game_map_console.rgb["fg"][a.x, a.y] = final_fg_color
 
     def _apply_pulsating_effect(
-        self, input_color: colors.Color, base_entity_color: colors.Color
+        self, input_color: colors.Color, base_actor_color: colors.Color
     ) -> colors.Color:
         game_time = self.fps_display.clock.last_time
         # alpha_oscillation will go from 0.0 to 1.0 and back over PULSATION_PERIOD
@@ -302,8 +302,8 @@ class Renderer:
         # current_blend_alpha will oscillate from 0 to PULSATION_MAX_BLEND_ALPHA
         current_blend_alpha = alpha_oscillation * PULSATION_MAX_BLEND_ALPHA
 
-        # Determine dynamic pulsation target color based on entity's base color
-        r, g, b = base_entity_color
+        # Determine dynamic pulsation target color based on actor's base color
+        r, g, b = base_actor_color
 
         # Calculate luminance using the Rec. 709 formula.
         # See: https://en.wikipedia.org/wiki/Luma_(video)

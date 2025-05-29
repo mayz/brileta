@@ -7,7 +7,7 @@ import tcod
 from catley import colors
 
 if TYPE_CHECKING:
-    from catley.game.entities import Entity
+    from catley.game.actors import Actor
 
 # Preset configurations for different light types
 TORCH_PRESET = {
@@ -66,8 +66,8 @@ class LightSource:
     def position(self, value: tuple[int, int]) -> None:
         self._pos = value
 
-    def attach(self, owner: "Entity", lighting_system: "LightingSystem") -> None:
-        """Attach this light source to an entity and lighting system"""
+    def attach(self, owner: "Actor", lighting_system: "LightingSystem") -> None:
+        """Attach this light source to an actor and lighting system"""
         self._owner = owner
         self._lighting_system = lighting_system
         lighting_system.add_light(self)

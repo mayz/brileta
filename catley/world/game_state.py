@@ -4,14 +4,12 @@ from typing import TYPE_CHECKING
 
 from catley import colors
 from catley.game import items
-from catley.game.components import StatsComponent
-from catley.game.entities import Actor
+from catley.game.actors import Actor, make_pc
 from catley.render.lighting import LightingSystem, LightSource
 
 from .map import GameMap
 
 if TYPE_CHECKING:
-    from catley.game.entities import Entity
     from catley.game.items import Item
 
 
@@ -19,7 +17,7 @@ class GameWorld:
     """
     Represents the complete state of the game world.
 
-    Includes the game map, all entities (player, NPCs, items), their properties, and the
+    Includes the game map, all actors (player, NPCs, items), their properties, and the
     core game rules that govern how these elements interact. Does not handle input,
     rendering, or high-level application flow. Its primary responsibility is to be
     the single source of truth for the game's state.
@@ -28,15 +26,11 @@ class GameWorld:
     def __init__(self, map_width: int, map_height: int) -> None:
         self.mouse_tile_location_on_map: tuple[int, int] | None = None
         self.lighting = LightingSystem()
-        self.selected_entity: Entity | None = None
+        self.selected_actor: Actor | None = None
 
         # Create player with a torch light source
         player_light = LightSource.create_torch()
-        player_stats = StatsComponent(
-            toughness=30,
-            # Other abilities will default to 0
-        )
-        self.player = Actor(
+        self.player = make_pc(
             x=0,
             y=0,
             ch="@",
@@ -44,11 +38,12 @@ class GameWorld:
             color=colors.PLAYER_COLOR,
             game_world=self,
             light_source=player_light,
-            stats=player_stats,
+            toughness=30,
+            starting_weapon=items.FISTS,
+            # Other abilities will default to 0
         )
-        self.player.inventory.equipped_weapon = items.FISTS
 
-        self.entities = [self.player]
+        self.actors = [self.player]
         self.game_map = GameMap(map_width, map_height)
 
     def update_player_light(self) -> None:
@@ -64,27 +59,27 @@ class GameWorld:
         """
         items_found: list[Item] = []
         # Check items from dead actors at this location
-        for entity in self.entities:
+        for actor in self.actors:
             if (
-                entity.x == x
-                and entity.y == y
-                and isinstance(entity, Actor)
-                and not entity.health.is_alive()  # Only from dead actors
+                actor.x == x
+                and actor.y == y
+                and actor.health
+                and not actor.health.is_alive()  # Only from dead actors
             ):
-                items_found.extend(entity.inventory)
-                if entity.inventory.equipped_weapon:
+                items_found.extend(actor.inventory)
+                if actor.inventory.equipped_weapon:
                     items_found.append(
-                        entity.inventory.equipped_weapon
+                        actor.inventory.equipped_weapon
                     )  # Add equipped weapon
         # Future: Add items directly on the ground if we implement that
         # e.g., items_found.extend(self.game_map.get_items_on_ground(x,y))
         return items_found
 
-    def get_entity_at_location(self, x: int, y: int) -> Actor | None:
-        """Return the first entity found at the given location, or None."""
-        for entity in self.entities:
-            if entity.x == x and entity.y == y:
-                return entity
+    def get_actor_at_location(self, x: int, y: int) -> Actor | None:
+        """Return the first actor found at the given location, or None."""
+        for actor in self.actors:
+            if actor.x == x and actor.y == y:
+                return actor
         return None
 
     def has_pickable_items_at_location(self, x: int, y: int) -> bool:

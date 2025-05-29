@@ -16,7 +16,6 @@ from tcod.console import Console
 
 from catley import colors
 from catley.game.conditions import Condition
-from catley.game.entities import Actor
 from catley.game.items import Item, ItemSize
 
 if TYPE_CHECKING:
@@ -484,15 +483,15 @@ class PickupMenu(Menu):
             )
             return
 
-        # Remove item from dead entity
-        for entity in self.controller.gw.entities:
-            if isinstance(entity, Actor) and not entity.health.is_alive():
-                if item in entity.inventory:
-                    entity.inventory.remove_from_inventory(item)
+        # Remove item from dead actor
+        for actor in self.controller.gw.actors:
+            if actor.health and not actor.health.is_alive():
+                if item in actor.inventory:
+                    actor.inventory.remove_from_inventory(item)
                     break
 
-                if entity.inventory.equipped_weapon == item:
-                    entity.inventory.equipped_weapon = None
+                if actor.inventory.equipped_weapon == item:
+                    actor.inventory.equipped_weapon = None
                     break
 
         # Add to player inventory

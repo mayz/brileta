@@ -10,9 +10,7 @@ from . import colors
 from .event_handler import EventHandler
 from .game import conditions, items
 from .game.actions import GameAction, MoveAction
-from .game.ai import DispositionBasedAI
-from .game.components import StatsComponent
-from .game.entities import Actor, Disposition
+from .game.actors import make_npc
 from .render.render import Renderer
 from .ui.menu_system import MenuSystem
 from .ui.message_log import MessageLog
@@ -27,7 +25,7 @@ class Controller:
 
     Holds instances of the major game components and provides a central point
     of access for them. Responsible for high-level game flow, such as processing
-    player actions and then triggering updates for all other game entities.
+    player actions and then triggering updates for all other game actors.
     """
 
     def __init__(self, context: Context, root_console: Console) -> None:
@@ -127,14 +125,7 @@ class Controller:
             case 4:
                 npc_y -= 2
 
-        npc_stats = StatsComponent(
-            weirdness=3,
-            strength=3,
-            toughness=3,
-            intelligence=-3,
-            # Other abilities (agility, observation, demeanor) will default to 0
-        )
-        npc = Actor(
+        npc = make_npc(
             x=npc_x,
             y=npc_y,
             ch="T",
@@ -142,13 +133,15 @@ class Controller:
             color=colors.DARK_GREY,
             game_world=self.gw,
             blocks_movement=True,
-            disposition=Disposition.WARY,
-            stats=npc_stats,
-            ai=DispositionBasedAI(),
+            weirdness=3,
+            strength=3,
+            toughness=3,
+            intelligence=-3,
+            # Other abilities (agility, observation, demeanor) will default to 0
             speed=80,
+            starting_weapon=items.SLEDGEHAMMER.clone(),
         )
-        npc.inventory.equipped_weapon = items.SLEDGEHAMMER.clone()
-        self.gw.entities.append(npc)
+        self.gw.actors.append(npc)
 
     def run_game_loop(self) -> None:
         while True:
@@ -188,36 +181,33 @@ class Controller:
             return
 
         # Update FOV only if the player moved
-        if action.entity == self.gw.player and isinstance(action, MoveAction):
+        if action.actor == self.gw.player and isinstance(action, MoveAction):
             self.update_fov()
 
     def process_unified_round(self) -> None:
         """
         Processes a single round where all actors can act.
-        Uses a frequency-based system where faster entities act more often.
+        Uses a frequency-based system where faster actors act more often.
         """
         # Let actors spend their accumulated points to take actions
         max_iterations = 50  # Prevent infinite loops
         iteration = 0
 
         # 1. Give all actors energy once per round
-        for entity in self.gw.entities:
-            if isinstance(entity, Actor):
-                entity.regenerate_energy()
+        for actor in self.gw.actors:
+            actor.regenerate_energy()
 
         while iteration < max_iterations:
             someone_acted = False
             iteration += 1
 
-            # Check each entity to see if they can act
-            for entity in self.gw.entities.copy():
-                if isinstance(entity, Actor) and entity.can_afford_action(
-                    self.action_cost
-                ):
-                    action = entity.get_next_action(self)
+            # Check each actor to see if they can act
+            for actor in self.gw.actors.copy():
+                if actor.can_afford_action(self.action_cost):
+                    action = actor.get_next_action(self)
                     # Always spend energy if you can afford to act. No hoarding!
                     # This ensures speed relationships remain consistent.
-                    entity.spend_energy(self.action_cost)
+                    actor.spend_energy(self.action_cost)
 
                     if action:
                         self.execute_action(action)
@@ -240,6 +230,5 @@ class Controller:
 
         # After the round, call update_turn for any passive effects
         # (like poison, regeneration) for all actors.
-        for entity in self.gw.entities:
-            if isinstance(entity, Actor):
-                entity.update_turn(self)
+        for actor in self.gw.actors:
+            actor.update_turn(self)
