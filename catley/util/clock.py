@@ -4,13 +4,15 @@ import statistics
 import time
 from collections import deque
 
+from catley.config import FPS_SAMPLE_SIZE
+
 
 class Clock:
     """Measure framerate performance and sync to a given framerate."""
 
     def __init__(self) -> None:
         self.last_time = time.perf_counter()
-        self.time_samples: deque[float] = deque(maxlen=64)
+        self.time_samples: deque[float] = deque(maxlen=FPS_SAMPLE_SIZE)
         self.drift_time = 0.0
 
     def sync(self, fps: float | None = None) -> float:

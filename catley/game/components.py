@@ -35,6 +35,7 @@ Note:
 """
 
 from catley import colors
+from catley.config import DEFAULT_MAX_ARMOR
 
 from .conditions import Condition
 from .enums import ItemSize
@@ -77,7 +78,9 @@ class StatsComponent:
 class HealthComponent:
     """Handles physical integrity - HP, armor, damage from any source, healing."""
 
-    def __init__(self, stats_component: StatsComponent, max_ap: int = 3) -> None:
+    def __init__(
+        self, stats_component: StatsComponent, max_ap: int = DEFAULT_MAX_ARMOR
+    ) -> None:
         self.stats = stats_component
         self.hp = self.stats.max_hp
         self.max_ap = max_ap

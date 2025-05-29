@@ -6,7 +6,7 @@ import tcod.map
 from tcod.console import Console
 from tcod.context import Context
 
-from . import colors
+from . import colors, config
 from .event_handler import EventHandler
 from .game import conditions, items
 from .game.actions import GameAction, MoveAction
@@ -32,21 +32,21 @@ class Controller:
         self.context = context
         self.root_console = root_console
 
-        self.help_height = 1  # One line for help text
+        self.help_height = config.HELP_HEIGHT
 
-        self.map_width = 80
-        self.map_height = 43
+        self.map_width = config.MAP_WIDTH
+        self.map_height = config.MAP_HEIGHT
 
-        self.max_room_size = 20
-        self.min_room_size = 6
-        self.max_num_rooms = 3
+        self.max_room_size = config.MAX_ROOM_SIZE
+        self.min_room_size = config.MIN_ROOM_SIZE
+        self.max_num_rooms = config.MAX_NUM_ROOMS
 
         # Field of view (FOV) configuration.
-        self.fov_algorithm = tcod.constants.FOV_SYMMETRIC_SHADOWCAST
-        self.fov_light_walls = True
-        self.fov_radius = 15
+        self.fov_algorithm = config.FOV_ALGORITHM
+        self.fov_light_walls = config.FOV_LIGHT_WALLS
+        self.fov_radius = config.FOV_RADIUS
 
-        self.action_cost = 100
+        self.action_cost = config.ACTION_COST
 
         self.gw = GameWorld(self.map_width, self.map_height)
 
@@ -65,7 +65,7 @@ class Controller:
 
         # Initialize clock for frame timing
         self.clock = Clock()
-        self.target_fps = 60
+        self.target_fps = config.TARGET_FPS
 
         # Initialize menu system
         self.menu_system = MenuSystem(self)

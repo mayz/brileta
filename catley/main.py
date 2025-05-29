@@ -3,18 +3,19 @@
 import tcod
 from tcod.console import Console
 
+from . import config
 from .controller import Controller
 
 
 def main() -> None:
-    screen_width = 80
-    screen_height = 50
-    title = "Catley Prototype"
+    screen_width = config.SCREEN_WIDTH
+    screen_height = config.SCREEN_HEIGHT
+    title = config.WINDOW_TITLE
 
     tileset = tcod.tileset.load_tilesheet(
-        "Taffer_20x20.png",
-        columns=16,
-        rows=16,
+        config.TILESET_PATH,
+        columns=config.TILESET_COLUMNS,
+        rows=config.TILESET_ROWS,
         charmap=tcod.tileset.CHARMAP_CP437,
     )
 
