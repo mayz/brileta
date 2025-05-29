@@ -9,7 +9,7 @@ from tcod.context import Context
 from . import colors
 from .event_handler import EventHandler
 from .game import conditions, items
-from .game.actions import GameAction
+from .game.actions import GameAction, MoveAction
 from .game.ai import DispositionBasedAI
 from .game.components import StatsComponent
 from .game.entities import Actor, Disposition
@@ -97,12 +97,6 @@ class Controller:
         # For handling input events in run_game_loop().
         self.event_handler = EventHandler(self)
 
-        # The game alternates between two states: waiting for the player to take an
-        # action and resolving the consequences of their last action (i.e., letting
-        # all NPCs and other entities take their turns). When False, the game is busy
-        # updating the game state, and player input is ignored.
-        self.waiting_for_player_action: bool = True
-
     def update_fov(self) -> None:
         """Recompute the visible area based on the player's point of view."""
         self.gw.game_map.visible[:] = tcod.map.compute_fov(
@@ -172,52 +166,14 @@ class Controller:
 
     def execute_action(self, action: GameAction | None) -> None:
         """
-        Executes the given Action instance and manages the game's turn flow.
-
-        This method is the central point for processing any action within the game,
-        whether initiated by the player or an NPC.
-
-        The game alternates between two states: waiting for the player to take an
-        action and resolving the consequences of their last action (i.e., letting
-        all NPCs and other entities take their turns). When False, the game is busy
-        updating the game state, and player input is ignored.
+        Executes the given Action instance.
 
         Args:
             action_instance: The Action to be performed. Can be None, in which
                              case the method does nothing.
         """
         if not action:
-            return
-
-        is_player_game_turn_action = False
-        if action.entity == self.gw.player:
-            # Check if the entity performing the action is the player
-            is_player_game_turn_action = True
-
-        if is_player_game_turn_action and not self.waiting_for_player_action:
-            # Player trying to take an action while the game is busy processing.
-            # Ignore it.
-            return
-
-        # Only give energy to the player in execute_action.
-        # NPCs get energy in process_world_turn.
-        if isinstance(action.entity, Actor) and action.entity == self.gw.player:
-            action.entity.accumulated_energy += action.entity.speed
-
-        if isinstance(action.entity, Actor):
-            if action.entity.accumulated_energy < self.action_cost:
-                if (
-                    is_player_game_turn_action
-                    and action.entity.speed < self.action_cost
-                ):
-                    # Only show message for player, and only if
-                    # they're slower than baseline
-                    self.message_log.add_message("You feel sluggish.", colors.YELLOW)
-
-                return  # Not enough energy - deny action for any actor
-
-            # Spend energy for any actor
-            action.entity.accumulated_energy -= self.action_cost
+            return  # Do nothing if no action is provided
 
         try:
             action.execute()
@@ -231,43 +187,23 @@ class Controller:
             print(f"Unhandled exception during action execution: {e}")
             return
 
-        if is_player_game_turn_action:
-            # Update FOV after player actions.
+        # Update FOV only if the player moved
+        if action.entity == self.gw.player and isinstance(action, MoveAction):
             self.update_fov()
 
-        if not is_player_game_turn_action:
-            return
-
-        # Now that the player's action has consumed their turn,
-        # process the world turn.
-        self.waiting_for_player_action = False
-        self.process_world_turn()
-
-        if self.gw.player.health.is_alive():
-            self.waiting_for_player_action = True
-        else:
-            # Handle game over: player is dead
-            self.message_log.add_message(
-                f"{self.gw.player.name} has been defeated! Game Over.",
-                colors.RED,
-            )
-            # Further game over logic would go here (e.g., prevent further input,
-            # show game over screen). For now, just *not* setting
-            # `waiting_for_player_action`` to True effectively stops player turns.
-
-    def process_world_turn(self) -> None:
+    def process_unified_round(self) -> None:
         """
-        Processes a single turn for all non-player entities in the game world.
+        Processes a single round where all actors can act.
         Uses a frequency-based system where faster entities act more often.
         """
         # Let actors spend their accumulated points to take actions
         max_iterations = 50  # Prevent infinite loops
         iteration = 0
 
-        # Give NPCs energy once per world turn
+        # 1. Give all actors energy once per round
         for entity in self.gw.entities:
-            if isinstance(entity, Actor) and entity != self.gw.player:
-                entity.accumulated_energy += entity.speed
+            if isinstance(entity, Actor):
+                entity.regenerate_energy()
 
         while iteration < max_iterations:
             someone_acted = False
@@ -275,21 +211,35 @@ class Controller:
 
             # Check each entity to see if they can act
             for entity in self.gw.entities.copy():
-                if entity == self.gw.player:
-                    continue  # Player's turn already handled
+                if isinstance(entity, Actor) and entity.can_afford_action(
+                    self.action_cost
+                ):
+                    action = entity.get_next_action(self)
+                    # Always spend energy if you can afford to act. No hoarding!
+                    # This ensures speed relationships remain consistent.
+                    entity.spend_energy(self.action_cost)
 
-                if isinstance(entity, Actor):
-                    energy_before = entity.accumulated_energy
-                    entity.update_turn(self)
-
-                    # Only count as "acted" if energy was spent
-                    if entity.accumulated_energy < energy_before:
+                    if action:
+                        self.execute_action(action)
                         someone_acted = True
 
                     if not self.gw.player.health.is_alive():
-                        # Player died, stop processing
+                        # Player died, handle game over and stop processing
+                        self.message_log.add_message(
+                            f"{self.gw.player.name} has been defeated! Game Over.",
+                            colors.RED,
+                        )
+                        # Further game over logic (e.g., prevent input)
+                        # could be handled by setting a game over flag here
+                        # or in the main loop. For now, returning stops this round.
                         return
 
             # If nobody acted this round, we're done
             if not someone_acted:
                 break
+
+        # After the round, call update_turn for any passive effects
+        # (like poison, regeneration) for all actors.
+        for entity in self.gw.entities:
+            if isinstance(entity, Actor):
+                entity.update_turn(self)
