@@ -37,7 +37,8 @@ Note:
 from catley import colors
 
 from .conditions import Condition
-from .items import Item, ItemSize, Weapon
+from .enums import ItemSize
+from .items import Item, Weapon
 
 
 class StatsComponent:

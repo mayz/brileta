@@ -10,6 +10,7 @@ from . import colors
 from .event_handler import EventHandler
 from .game import conditions, items
 from .game.actions import GameAction
+from .game.ai import DispositionBasedAI
 from .game.components import StatsComponent
 from .game.entities import Actor, Disposition, Entity
 from .render.render import Renderer
@@ -147,6 +148,7 @@ class Controller:
             blocks_movement=True,
             disposition=Disposition.WARY,
             stats=npc_stats,
+            ai=DispositionBasedAI(),
         )
         npc.inventory.equipped_weapon = items.SLEDGEHAMMER.clone()
         self.gw.entities.append(npc)

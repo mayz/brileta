@@ -3,19 +3,10 @@
 from __future__ import annotations
 
 import copy
-from enum import Enum, auto
 
 from catley.util import dice
 
-
-class ItemSize(Enum):
-    """Size categories for items, used for inventory management."""
-
-    TINY = auto()
-    NORMAL = auto()
-    BIG = auto()
-    HUGE = auto()
-
+from .enums import ItemSize
 
 # Type alias for weapon properties
 type Property = str
