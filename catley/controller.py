@@ -12,7 +12,7 @@ from .game import conditions, items
 from .game.actions import GameAction
 from .game.ai import DispositionBasedAI
 from .game.components import StatsComponent
-from .game.entities import Actor, Disposition, Entity
+from .game.entities import Actor, Disposition
 from .render.render import Renderer
 from .ui.menu_system import MenuSystem
 from .ui.message_log import MessageLog
@@ -47,6 +47,8 @@ class Controller:
         self.fov_algorithm = tcod.constants.FOV_SYMMETRIC_SHADOWCAST
         self.fov_light_walls = True
         self.fov_radius = 15
+
+        self.action_cost = 100
 
         self.gw = GameWorld(self.map_width, self.map_height)
 
@@ -149,6 +151,7 @@ class Controller:
             disposition=Disposition.WARY,
             stats=npc_stats,
             ai=DispositionBasedAI(),
+            speed=80,
         )
         npc.inventory.equipped_weapon = items.SLEDGEHAMMER.clone()
         self.gw.entities.append(npc)
@@ -196,6 +199,26 @@ class Controller:
             # Ignore it.
             return
 
+        # Only give energy to the player in execute_action.
+        # NPCs get energy in process_world_turn.
+        if isinstance(action.entity, Actor) and action.entity == self.gw.player:
+            action.entity.accumulated_energy += action.entity.speed
+
+        if isinstance(action.entity, Actor):
+            if action.entity.accumulated_energy < self.action_cost:
+                if (
+                    is_player_game_turn_action
+                    and action.entity.speed < self.action_cost
+                ):
+                    # Only show message for player, and only if
+                    # they're slower than baseline
+                    self.message_log.add_message("You feel sluggish.", colors.YELLOW)
+
+                return  # Not enough energy - deny action for any actor
+
+            # Spend energy for any actor
+            action.entity.accumulated_energy -= self.action_cost
+
         try:
             action.execute()
         except SystemExit:
@@ -235,21 +258,38 @@ class Controller:
     def process_world_turn(self) -> None:
         """
         Processes a single turn for all non-player entities in the game world.
-        This is typically called after the player has performed a GameTurnAction.
+        Uses a frequency-based system where faster entities act more often.
         """
-        # Just in case entities get added or removed during iteration,
-        # iterate over a copy of the entities list.
-        for entity in self.gw.entities.copy():
-            if entity == self.gw.player:
-                # Player's active turn is handled by input.
-                # Passive effects for player (e.g., poison damage, regeneration)
-                # could be processed by `entity.update_turn`.
-                entity.update_turn(self)
-            elif isinstance(entity, Entity):
-                entity.update_turn(self)
+        # Let actors spend their accumulated points to take actions
+        max_iterations = 50  # Prevent infinite loops
+        iteration = 0
 
-            if not self.gw.player.health.is_alive():
-                # If player died, no need to continue processing other entities' turns
-                # The game over state will be handled when execute_action resets
-                # awaiting_player_game_action after this process_world_turn completes.
+        # Give NPCs energy once per world turn
+        for entity in self.gw.entities:
+            if isinstance(entity, Actor) and entity != self.gw.player:
+                entity.accumulated_energy += entity.speed
+
+        while iteration < max_iterations:
+            someone_acted = False
+            iteration += 1
+
+            # Check each entity to see if they can act
+            for entity in self.gw.entities.copy():
+                if entity == self.gw.player:
+                    continue  # Player's turn already handled
+
+                if isinstance(entity, Actor):
+                    energy_before = entity.accumulated_energy
+                    entity.update_turn(self)
+
+                    # Only count as "acted" if energy was spent
+                    if entity.accumulated_energy < energy_before:
+                        someone_acted = True
+
+                    if not self.gw.player.health.is_alive():
+                        # Player died, stop processing
+                        return
+
+            # If nobody acted this round, we're done
+            if not someone_acted:
                 break
