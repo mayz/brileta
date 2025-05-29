@@ -21,7 +21,6 @@ implementing complex interactive objects that don't need full autonomy.
 
 from __future__ import annotations
 
-from enum import Enum, auto
 from typing import TYPE_CHECKING
 
 from catley import colors
@@ -32,13 +31,14 @@ from .components import (
     StatsComponent,
     VisualEffectsComponent,
 )
+from .enums import Disposition
 
 if TYPE_CHECKING:
     from catley.controller import Controller
     from catley.render.lighting import LightSource
     from catley.world.game_state import GameWorld
 
-    from .actions import GameAction
+    from .ai import AIComponent
 
 
 class Entity:
@@ -85,15 +85,6 @@ class Entity:
         pass
 
 
-class Disposition(Enum):
-    HOSTILE = auto()  # Will attack/flee.
-    UNFRIENDLY = auto()
-    WARY = auto()
-    APPROACHABLE = auto()
-    FRIENDLY = auto()
-    ALLY = auto()
-
-
 class Actor(Entity):
     """An entity with agency.
 
@@ -114,6 +105,7 @@ class Actor(Entity):
         health: HealthComponent | None = None,
         inventory: InventoryComponent | None = None,
         visual_effects: VisualEffectsComponent | None = None,
+        ai: AIComponent | None = None,
         # World and appearance
         game_world: GameWorld | None = None,
         light_source: LightSource | None = None,
@@ -127,6 +119,7 @@ class Actor(Entity):
         self.health = health or HealthComponent(self.stats)
         self.inventory = inventory or InventoryComponent(self.stats)
         self.visual_effects = visual_effects or VisualEffectsComponent()
+        self.ai = ai
 
         self.disposition = disposition
 
@@ -179,128 +172,9 @@ class Actor(Entity):
             # The player's active actions are driven by input via EventHandler.
             return
 
-        # NPC AI logic.
-        # TODO: Move this to a separate module for better organization later on.
-
-        if not self.health.is_alive() or not player.health.is_alive():
-            return
-
-        from catley.game.actions import AttackAction, MoveAction
-
-        # Determine action based on proximity to player
-        dx = player.x - self.x
-        dy = player.y - self.y
-        distance = abs(dx) + abs(dy)  # Manhattan distance
-
-        action_to_perform: GameAction | None = None
-
-        # Default aggro/awareness radii - can be overridden by specific NPC types
-        # if needed. These could also be properties of the NPC instance itself.
-        aggro_radius = getattr(self, "aggro_radius", 8)
-        # awareness_radius = getattr(self, "awareness_radius", 5)
-        # personal_space_radius = getattr(self, "personal_space_radius", 3)
-        # greeting_radius = getattr(self, "greeting_radius", 4)
-
-        # --- AI Logic based on Disposition ---
-        if self.disposition == Disposition.HOSTILE:
-            if distance == 1:  # Adjacent
-                controller.message_log.add_message(
-                    f"{self.name} lunges at {player.name}!", colors.RED
-                )
-                action_to_perform = AttackAction(controller, self, player)
-            elif distance <= aggro_radius:
-                move_dx = 0
-                move_dy = 0
-                if dx != 0:
-                    move_dx = 1 if dx > 0 else -1
-                if dy != 0:
-                    move_dy = 1 if dy > 0 else -1
-
-                potential_moves = []
-                if move_dx != 0 and move_dy != 0:
-                    potential_moves.append((move_dx, move_dy))
-                if move_dx != 0:
-                    potential_moves.append((move_dx, 0))
-                if move_dy != 0:
-                    potential_moves.append((0, move_dy))
-
-                moved_this_turn = False
-                for test_dx, test_dy in potential_moves:
-                    target_x, target_y = self.x + test_dx, self.y + test_dy
-                    if not (
-                        0 <= target_x < controller.gw.game_map.width
-                        and 0 <= target_y < controller.gw.game_map.height
-                    ):
-                        continue
-                    if controller.gw.game_map.tile_blocked[target_x, target_y]:
-                        continue
-                    blocking_entity = controller.gw.get_entity_at_location(
-                        target_x, target_y
-                    )
-                    if (
-                        blocking_entity
-                        and blocking_entity != player
-                        and blocking_entity.blocks_movement
-                    ):
-                        continue
-
-                    controller.message_log.add_message(
-                        f"{self.name} charges towards {player.name}.", colors.ORANGE
-                    )
-                    action_to_perform = MoveAction(controller, self, test_dx, test_dy)
-                    moved_this_turn = True
-                    break
-                if not moved_this_turn:
-                    controller.message_log.add_message(
-                        f"{self.name} snarls, unable to reach {player.name}.",
-                        colors.ORANGE,
-                    )
-            else:  # Hostile but player too far
-                controller.message_log.add_message(
-                    f"{self.name} prowls menacingly.", colors.ORANGE
-                )
-
-        elif self.disposition == Disposition.UNFRIENDLY:
-            # if distance == 1:
-            # controller.message_log.add_message(
-            # f"'{player.name}? Keep your distance!' {self.name} growls.",
-            # colors.ORANGE)
-            # TODO: Consider a "shove" or "move away" action if possible,
-            # or prepare to defend.
-            # elif distance <= awareness_radius:
-            # controller.message_log.add_message(
-            # f"{self.name} eyes {player.name} with distaste.", colors.YELLOW)
-            pass
-
-        elif self.disposition == Disposition.WARY:
-            pass
-
-        elif self.disposition == Disposition.APPROACHABLE:
-            # if distance <= greeting_radius and distance > 1: # Not directly adjacent
-            # controller.message_log.add_message(
-            #     f"{self.name} notices {player.name}.", colors.LIGHT_BLUE)
-            # Might initiate dialogue or offer a quest if player gets closer (future).
-            pass
-
-        elif self.disposition == Disposition.FRIENDLY:
-            # if distance <= greeting_radius:
-            # controller.message_log.add_message(
-            #     f"{self.name} smiles at {player.name}.", colors.GREEN)
-            # Might follow player or offer assistance (future).
-            pass
-
-        elif self.disposition == Disposition.ALLY:
-            # if distance <= greeting_radius:
-            # controller.message_log.add_message(
-            # f"{self.name} greets {player.name} warmly.", colors.CYAN)
-            # Actively helps in combat, follows, etc. (future).
-            pass
-
-        # Default "wait" action if no other action was determined by disposition logic
-        # Hostiles might patrol or search instead of just waiting
-        if not action_to_perform and self.disposition not in [Disposition.HOSTILE]:
-            # controller.message_log.add_message(f"{self.name} waits.", colors.GREY)
-            pass
-
-        if action_to_perform:
-            controller.execute_action(action_to_perform)
+        # Delegate AI decisions to AI component.
+        if self.ai:
+            action = self.ai.get_action(controller, self)
+            if action:
+                controller.execute_action(action)
+            self.ai.update(controller)
