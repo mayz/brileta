@@ -4,7 +4,7 @@ import random
 
 import numpy as np
 
-from catley.world import tile_types
+from catley.world import tiles
 
 
 class Rect:
@@ -35,7 +35,7 @@ class GameMap:
 
         # Initialize the map with walls. We'll carve out rooms later.
         # Store tiles using the types defined in `tile_types` for performance.
-        self.tiles = np.full((width, height), fill_value=tile_types.WALL, order="F")
+        self.tiles = np.full((width, height), fill_value=tiles.WALL, order="F")
 
         # Field of view (FOV) state tracking.
         # Which tiles are currently visible.
@@ -125,12 +125,12 @@ class GameMap:
         return rooms
 
     def _carve_room(self, room: Rect) -> None:
-        self.tiles[room.x1 + 1 : room.x2, room.y1 + 1 : room.y2] = tile_types.FLOOR
+        self.tiles[room.x1 + 1 : room.x2, room.y1 + 1 : room.y2] = tiles.FLOOR
 
     def _carve_h_tunnel(self, x1: int, x2: int, y: int) -> None:
         h_slice = slice(min(x1, x2), max(x1, x2) + 1)
-        self.tiles[h_slice, y] = tile_types.FLOOR
+        self.tiles[h_slice, y] = tiles.FLOOR
 
     def _carve_v_tunnel(self, y1: int, y2: int, x: int) -> None:
         v_slice = slice(min(y1, y2), max(y1, y2) + 1)
-        self.tiles[x, v_slice] = tile_types.FLOOR
+        self.tiles[x, v_slice] = tiles.FLOOR
