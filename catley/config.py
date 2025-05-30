@@ -28,6 +28,7 @@ PULSATION_MAX_BLEND_ALPHA = 0.5  # Maximum alpha for pulsation blending
 LUMINANCE_THRESHOLD = 127.5  # For determining light vs dark colors
 
 # Performance
+SHOW_FPS = False
 TARGET_FPS = 60
 FPS_SAMPLE_SIZE = 64  # Number of frame time samples to track
 

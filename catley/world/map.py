@@ -4,7 +4,7 @@ import random
 
 import numpy as np
 
-from catley.world import tiles
+from catley.world import tile_types
 
 
 class Rect:
@@ -34,8 +34,15 @@ class GameMap:
         self.height = height
 
         # Initialize the map with walls. We'll carve out rooms later.
-        # Store tiles using the types defined in `tile_types` for performance.
-        self.tiles = np.full((width, height), fill_value=tiles.WALL, order="F")
+        #
+        # The map is represented as a NumPy array of tile type IDs.
+        # np.uint8 allows for 256 tile types.
+        self.tiles = np.full(
+            (width, height),
+            fill_value=tile_types.TILE_TYPE_ID_WALL,  # type: ignore[unresolved-attribute]
+            dtype=np.uint8,
+            order="F",
+        )
 
         # Field of view (FOV) state tracking.
         # Which tiles are currently visible.
@@ -47,34 +54,58 @@ class GameMap:
             (width, height), fill_value=False, dtype=bool, order="F"
         )
 
+        # Cached property arrays for performance.
+        # These are populated on-demand by the respective properties.
+        self._walkable_map_cache: np.ndarray | None = None
+        self._transparent_map_cache: np.ndarray | None = None
+        self._dark_appearance_map_cache: np.ndarray | None = None
+        self._light_appearance_map_cache: np.ndarray | None = None
+
+    def _invalidate_property_caches(self) -> None:
+        """Call this whenever `self.tiles` changes to clear cached property maps."""
+        self._walkable_map_cache = None
+        self._transparent_map_cache = None
+        self._dark_appearance_map_cache = None
+        self._light_appearance_map_cache = None
+
     @property
-    def tile_blocked(self) -> np.ndarray:
-        """Derive blocked tiles from the `walkable` property (see `tile_types`).
-
-        Returns:
-            Boolean array of shape (width, height) where True means the tile
-            blocks movement (NOT walkable).
-        """
-        return ~self.tiles["walkable"]
+    def walkable(self) -> np.ndarray:
+        """Boolean array of shape (width, height) where True means tile is walkable."""
+        if self._walkable_map_cache is None:
+            self._walkable_map_cache = tile_types.get_walkable_map(self.tiles)
+        return self._walkable_map_cache
 
     @property
-    def tile_blocks_sight(self) -> np.ndarray:
-        """
-        Derive sight-blocking tiles from the `transparent` property (see `tile_types`).
+    def transparent(self) -> np.ndarray:
+        """Boolean array of shape (width, height) where True means tile is transparent
+        (for FOV)."""
+        if self._transparent_map_cache is None:
+            self._transparent_map_cache = tile_types.get_transparent_map(self.tiles)
+        return self._transparent_map_cache
 
-        Returns:
-            Boolean array of shape (width, height) where True means the tile
-            blocks line of sight (NOT transparent).
-        """
-        return ~self.tiles["transparent"]
+    @property
+    def dark_appearance_map(self) -> np.ndarray:
+        """A map of 'dark' TileTypeAppearance structs derived from self.tiles."""
+        if self._dark_appearance_map_cache is None:
+            self._dark_appearance_map_cache = tile_types.get_dark_appearance_map(
+                self.tiles
+            )
+        return self._dark_appearance_map_cache
+
+    @property
+    def light_appearance_map(self) -> np.ndarray:
+        """A map of 'light' TileTypeAppearance structs derived from self.tiles."""
+        if self._light_appearance_map_cache is None:
+            self._light_appearance_map_cache = tile_types.get_light_appearance_map(
+                self.tiles
+            )
+        return self._light_appearance_map_cache
 
     def make_map(
         self,
         max_num_rooms: int,
         min_room_size: int,
         max_room_size: int,
-        map_width: int,
-        map_height: int,
     ) -> list[Rect]:
         rooms = []
         first_room = None
@@ -83,8 +114,8 @@ class GameMap:
             w = random.randint(min_room_size, max_room_size)
             h = random.randint(min_room_size, max_room_size)
 
-            x = random.randint(0, map_width - w - 1)
-            y = random.randint(0, map_height - h - 1)
+            x = random.randint(0, self.width - w - 1)
+            y = random.randint(0, self.height - h - 1)
 
             new_room = Rect(x, y, w, h)
 
@@ -122,15 +153,21 @@ class GameMap:
         if first_room is None:
             raise ValueError("Need to make at least one room.")
 
+        # Invalidate caches once after all carving is complete for initial generation.
+        self._invalidate_property_caches()
+
         return rooms
 
     def _carve_room(self, room: Rect) -> None:
-        self.tiles[room.x1 + 1 : room.x2, room.y1 + 1 : room.y2] = tiles.FLOOR
+        # Assigns TILE_TYPE_ID_FLOOR to the inner area of the room.
+        self.tiles[room.x1 + 1 : room.x2, room.y1 + 1 : room.y2] = (
+            tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[unresolved-attribute]
+        )
 
     def _carve_h_tunnel(self, x1: int, x2: int, y: int) -> None:
         h_slice = slice(min(x1, x2), max(x1, x2) + 1)
-        self.tiles[h_slice, y] = tiles.FLOOR
+        self.tiles[h_slice, y] = tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[unresolved-attribute]
 
     def _carve_v_tunnel(self, y1: int, y2: int, x: int) -> None:
         v_slice = slice(min(y1, y2), max(y1, y2) + 1)
-        self.tiles[x, v_slice] = tiles.FLOOR
+        self.tiles[x, v_slice] = tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[unresolved-attribute]
