@@ -102,13 +102,27 @@ def make_tile_type(
 FLOOR = make_tile_type(
     walkable=True,
     transparent=True,
-    dark=(ord(" "), colors.WHITE, colors.DARK_GROUND),
-    light=(ord(" "), colors.WHITE, colors.LIGHT_GROUND),
+    dark=(ord(" "), colors.DARK_GREY, colors.DARK_GROUND),
+    light=(ord(" "), colors.LIGHT_GREY, colors.LIGHT_GROUND),
 )
 
 WALL = make_tile_type(
     walkable=False,
     transparent=False,
-    dark=(ord(" "), colors.WHITE, colors.DARK_WALL),
-    light=(ord(" "), colors.WHITE, colors.LIGHT_WALL),
+    dark=(ord(" "), colors.DARK_GREY, colors.DARK_WALL),
+    light=(ord(" "), colors.LIGHT_GREY, colors.LIGHT_WALL),
+)
+
+DOOR_CLOSED = make_tile_type(
+    walkable=False,
+    transparent=False,
+    dark=(ord("+"), colors.ORANGE, colors.DARK_WALL),
+    light=(ord("+"), colors.LIGHT_ORANGE, colors.LIGHT_WALL),
+)
+
+DOOR_OPEN = make_tile_type(
+    walkable=True,
+    transparent=True,
+    dark=(ord("'"), colors.ORANGE, colors.DARK_GROUND),
+    light=(ord("'"), colors.LIGHT_ORANGE, colors.LIGHT_GROUND),
 )
