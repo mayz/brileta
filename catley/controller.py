@@ -1,6 +1,5 @@
 import random
 
-import tcod.constants
 import tcod.event
 import tcod.map
 from tcod.console import Console
@@ -54,8 +53,6 @@ class Controller:
             self.max_num_rooms,
             self.min_room_size,
             self.max_room_size,
-            self.map_width,
-            self.map_height,
         )
         first_room = rooms[0]
         self.gw.player.x, self.gw.player.y = first_room.center()
@@ -98,7 +95,7 @@ class Controller:
     def update_fov(self) -> None:
         """Recompute the visible area based on the player's point of view."""
         self.gw.game_map.visible[:] = tcod.map.compute_fov(
-            self.gw.game_map.tiles["transparent"],
+            self.gw.game_map.transparent,
             (self.gw.player.x, self.gw.player.y),
             radius=self.fov_radius,
             light_walls=self.fov_light_walls,

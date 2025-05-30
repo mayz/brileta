@@ -215,7 +215,7 @@ class HostileAI(AIComponent):
             return False
 
         # Check if tile is blocked
-        if controller.gw.game_map.tile_blocked[target_x, target_y]:
+        if not controller.gw.game_map.walkable[target_x, target_y]:
             return False
 
         # Check for blocking actors (except player, which we want to attack)

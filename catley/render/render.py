@@ -14,6 +14,7 @@ from catley.config import (
     PULSATION_MAX_BLEND_ALPHA,
     PULSATION_PERIOD,
     SELECTION_HIGHLIGHT_ALPHA,
+    SHOW_FPS,
 )
 from catley.game.actors import Actor
 from catley.ui.message_log import MessageLog
@@ -25,8 +26,6 @@ if TYPE_CHECKING:
 
 
 class FPSDisplay:
-    SHOW_FPS = False
-
     def __init__(self, clock: Clock, update_interval: float = 0.5) -> None:
         self.clock = clock
         self.update_interval = update_interval
@@ -113,7 +112,7 @@ class Renderer:
             height=self.message_log_height,
         )
 
-        if self.fps_display.SHOW_FPS:
+        if SHOW_FPS:
             self.fps_display.render(self, self.screen_width - 12, 0)
 
         # Render menus last (on top of everything else)
@@ -210,11 +209,13 @@ class Renderer:
         shroud = (ord(" "), (0, 0, 0), (0, 0, 0))
         self.game_map_console.rgb[:] = shroud
 
+        # Get the cached appearance maps.
+        dark_app_map = self.gw.game_map.dark_appearance_map
+        light_app_map = self.gw.game_map.light_appearance_map
+
         # Show explored areas with dark graphics
         explored_mask = self.gw.game_map.explored
-        self.game_map_console.rgb[explored_mask] = self.gw.game_map.tiles["dark"][
-            explored_mask
-        ]
+        self.game_map_console.rgb[explored_mask] = dark_app_map[explored_mask]
 
         # Apply dynamic lighting to visible areas only
         visible_mask = self.gw.game_map.visible
@@ -227,23 +228,25 @@ class Renderer:
             )
 
             # Get the tile graphics for visible areas
-            dark_tiles = self.gw.game_map.tiles["dark"][visible_y, visible_x]
-            light_tiles = self.gw.game_map.tiles["light"][visible_y, visible_x]
+            dark_tiles_visible = dark_app_map[visible_y, visible_x]
+            light_tiles_visible = light_app_map[visible_y, visible_x]
 
             # Get light intensity for blending
             cell_light = self.current_light_intensity[visible_y, visible_x]
 
             # Create blended tiles
-            blended_tiles = np.empty_like(dark_tiles)
-            blended_tiles["ch"] = light_tiles["ch"]
-            blended_tiles["fg"] = light_tiles["fg"]
+            blended_tiles = np.empty_like(dark_tiles_visible)
+            blended_tiles["ch"] = light_tiles_visible["ch"]
+            blended_tiles["fg"] = light_tiles_visible["fg"]
 
             # Blend background colors based on light intensity
             for i in range(3):  # RGB channels
-                light_intensity = cell_light[..., i]
-                blended_tiles["bg"][..., i] = light_tiles["bg"][
+                light_intensity_channel = cell_light[..., i]
+                blended_tiles["bg"][..., i] = light_tiles_visible["bg"][
                     ..., i
-                ] * light_intensity + dark_tiles["bg"][..., i] * (1.0 - light_intensity)
+                ] * light_intensity_channel + dark_tiles_visible["bg"][..., i] * (
+                    1.0 - light_intensity_channel
+                )
 
             # Apply the dynamically lit tiles
             self.game_map_console.rgb[visible_y, visible_x] = blended_tiles

@@ -70,7 +70,7 @@ class MoveAction(GameAction):
         self.newy = self.actor.y + self.dy
 
     def execute(self) -> None:
-        if self.game_map.tile_blocked[self.newx, self.newy]:
+        if not self.game_map.walkable[self.newx, self.newy]:
             return
 
         # Check for blocking actors.
