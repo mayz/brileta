@@ -1,15 +1,13 @@
 # catley/game/item_types.py
 from catley.game.enums import ItemSize
 from catley.game.items.capabilities import (
+    AmmoSpec,
     AreaEffectSpec,
     MeleeAttackSpec,
     RangedAttackSpec,
 )
 
 from .item_core import ItemType
-
-# === Weapon components ===
-
 
 # === ItemType Definitions ===
 
@@ -153,4 +151,11 @@ FLAMETHROWER_TYPE = ItemType(
         penetrates_walls=False,
         friendly_fire=True,
     ),
+)
+
+PISTOL_MAGAZINE_TYPE = ItemType(
+    name="Pistol Ammo",
+    description="Pistol ammo magazine",
+    size=ItemSize.TINY,
+    ammo=AmmoSpec("pistol", 6),
 )

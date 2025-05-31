@@ -26,6 +26,7 @@ import abc
 from typing import TYPE_CHECKING
 
 from catley import colors
+from catley.game import range_system
 from catley.util import dice
 
 from .actors import Actor, Disposition
@@ -104,8 +105,13 @@ class AttackAction(GameAction):
         weapon = self.attacker.inventory.equipped_weapon or FISTS_TYPE.create()
         attack: Attack | None = None
 
+        # Calculate distance between attacker and defender
+        distance = range_system.calculate_distance(
+            self.attacker.x, self.attacker.y, self.defender.x, self.defender.y
+        )
+
         #######################################################################
-        # FIXME: In Phase 5, REPLACE THIS DISTANCE-BASED HEURISTIC WITH
+        # FIXME: In Phase 6, REPLACE THIS DISTANCE-BASED HEURISTIC WITH
         #        PROPER ATTACK MODE SELECTION!
         #
         # Current limitation: This automatically chooses attack mode based on distance,
@@ -114,15 +120,10 @@ class AttackAction(GameAction):
         # - Throwing a knife instead of stabbing (ranged vs melee for same weapon)
         # - Choosing between single-target ranged vs area effect for dual-mode weapons
         #
-        # Phase 5 solution:
+        # Phase 6 solution:
         # - Pass attack_type parameter to AttackAction constructor ("melee", "ranged")
         # - UI provides attack mode selection when multiple modes available
         # - Move this logic to UI layer, not combat execution layer
-
-        # Calculate distance between attacker and defender
-        distance = abs(self.defender.x - self.attacker.x) + abs(
-            self.defender.y - self.attacker.y
-        )
 
         # Determine which attack to use based on distance and weapon capabilities
         if distance == 1 and weapon.melee_attack:
@@ -146,6 +147,30 @@ class AttackAction(GameAction):
 
         assert attack is not None
 
+        # For ranged attacks, check line of sight and apply range modifiers
+        range_modifiers = {}
+        if attack == weapon.ranged_attack and distance > 1:
+            # Check line of sight
+            if not range_system.has_line_of_sight(
+                self.controller.gw.game_map,
+                self.attacker.x, self.attacker.y,
+                self.defender.x, self.defender.y
+            ):
+                self.controller.message_log.add_message(
+                    f"No clear shot to {self.defender.name}!", colors.RED
+                )
+                return
+
+            # Get range modifiers
+            range_category = range_system.get_range_category(distance, weapon)
+            range_modifiers = range_system.get_range_modifier(weapon, range_category)
+
+            if range_modifiers is None:
+                self.controller.message_log.add_message(
+                    f"{self.defender.name} is out of range!", colors.RED
+                )
+                return
+
         # Let the attack object determine which ability score to use
         stat_name = attack.stat_name
         attacker_ability_score = getattr(self.attacker.stats, stat_name)
@@ -156,8 +181,8 @@ class AttackAction(GameAction):
         attack_result = dice.perform_opposed_check_roll(
             attacker_ability_score,
             defender_ability_score,
-            has_advantage=False,
-            has_disadvantage=False,
+            has_advantage=range_modifiers.get("has_advantage", False),
+            has_disadvantage=range_modifiers.get("has_disadvantage", False),
         )
 
         # Does the attack hit?
