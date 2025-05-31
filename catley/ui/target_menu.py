@@ -1,17 +1,20 @@
 from __future__ import annotations
 
 import functools
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from catley import colors
 from catley.game import range_system
 from catley.game.actions import AttackAction
 from catley.game.items.item_core import Item
+from catley.game.items.item_types import FISTS_TYPE
 from catley.ui.menu_core import Menu, MenuOption
+from catley.util import dice
 
 if TYPE_CHECKING:
     from catley.controller import Controller
     from catley.game.actors import Actor
+    from catley.game.components import StatsComponent
 
 
 class QuickActionBar(Menu):
@@ -57,12 +60,23 @@ class QuickActionBar(Menu):
                 weapon_name = primary_weapon.name
             else:
                 weapon_name = "fists"
+                primary_weapon = None
+
+            # Calculate success probability
+            prob = _calculate_attack_success_probability(
+                primary_weapon,
+                player,
+                self.target_actor,
+                self.distance,
+                self.controller,
+            )
+            prob_text = f" ({prob * 100:.0f}%)" if prob is not None else ""
 
             action_func = functools.partial(self._perform_quick_attack)
             self.add_option(
                 MenuOption(
                     key="1",
-                    text=f"Attack with {weapon_name}",
+                    text=f"Attack with {weapon_name}{prob_text}",
                     action=action_func,
                     color=colors.WHITE,
                 )
@@ -95,11 +109,24 @@ class QuickActionBar(Menu):
                         f"[{primary_weapon.ranged_attack.current_ammo}/"
                         f"{primary_weapon.ranged_attack.max_ammo}]"
                     )
+
+                    # Calculate success probability
+                    prob = _calculate_attack_success_probability(
+                        primary_weapon,
+                        player,
+                        self.target_actor,
+                        self.distance,
+                        self.controller,
+                    )
+                    prob_text = f" ({prob * 100:.0f}%)" if prob is not None else ""
+
                     action_func = functools.partial(self._perform_quick_attack)
                     self.add_option(
                         MenuOption(
                             key="1",
-                            text=f"Shoot {primary_weapon.name} {ammo_display}",
+                            text=(
+                                f"Shoot {primary_weapon.name} {ammo_display}{prob_text}"
+                            ),
                             action=action_func,
                             color=colors.WHITE,
                         )
@@ -250,13 +277,20 @@ class TargetMenu(Menu):
                 if item.melee_attack:
                     slot_name = player.inventory.get_slot_display_name(slot_index)
                     key = chr(ord("a") + len(self.options))  # Sequential letters
+
+                    # Calculate success probability
+                    prob = _calculate_attack_success_probability(
+                        item, player, self.target_actor, self.distance, self.controller
+                    )
+                    prob_text = f" ({prob * 100:.0f}%)" if prob is not None else ""
+
                     action_func = functools.partial(
                         self._perform_melee_attack, item, self.target_actor
                     )
                     self.add_option(
                         MenuOption(
                             key=key,
-                            text=f"Attack with {item.name} ({slot_name})",
+                            text=f"Attack with {item.name} ({slot_name}){prob_text}",
                             action=action_func,
                             color=colors.WHITE,
                         )
@@ -265,16 +299,21 @@ class TargetMenu(Menu):
 
             # Always allow unarmed attack if no melee weapons equipped
             if not melee_added:
-                from catley.game.items.item_types import FISTS_TYPE
-
                 fists = FISTS_TYPE.create()
+
+                # Calculate success probability for unarmed
+                prob = _calculate_attack_success_probability(
+                    fists, player, self.target_actor, self.distance, self.controller
+                )
+                prob_text = f" ({prob * 100:.0f}%)" if prob is not None else ""
+
                 action_func = functools.partial(
                     self._perform_melee_attack, fists, self.target_actor
                 )
                 self.add_option(
                     MenuOption(
                         key="1",
-                        text="Attack (unarmed)",
+                        text=f"Attack (unarmed){prob_text}",
                         action=action_func,
                         color=colors.WHITE,
                     )
@@ -301,13 +340,27 @@ class TargetMenu(Menu):
                             f"[{item.ranged_attack.current_ammo}/"
                             f"{item.ranged_attack.max_ammo}]"
                         )
+
+                        # Calculate success probability
+                        prob = _calculate_attack_success_probability(
+                            item,
+                            player,
+                            self.target_actor,
+                            self.distance,
+                            self.controller,
+                        )
+                        prob_text = f" ({prob * 100:.0f}%)" if prob is not None else ""
+
                         action_func = functools.partial(
                             self._perform_ranged_attack, item, self.target_actor
                         )
                         self.add_option(
                             MenuOption(
                                 key=key,
-                                text=f"Shoot {item.name} ({slot_name}) {ammo_display}",
+                                text=(
+                                    f"Shoot {item.name} ({slot_name}) "
+                                    f"{ammo_display}{prob_text}"
+                                ),
                                 action=action_func,
                                 color=colors.WHITE,
                             )
@@ -415,3 +468,64 @@ class TargetMenu(Menu):
             self.controller.message_log.add_message(
                 f"No {ranged_attack.ammo_type} ammo available!", colors.RED
             )
+
+
+def _calculate_attack_success_probability(
+    weapon: Item | None,
+    attacker: Actor,
+    defender: Actor,
+    distance: int,
+    controller: Controller,
+) -> float | None:
+    """Calculate the probability of a successful attack."""
+    # Use fists if no weapon
+    if weapon is None:
+        weapon = FISTS_TYPE.create()
+
+    # Check if actors have required stats
+    if not attacker.stats or not defender.stats:
+        return None
+
+    attacker_stats = cast("StatsComponent", attacker.stats)
+    defender_stats = cast("StatsComponent", defender.stats)
+
+    # Determine which attack to use (same logic as AttackAction)
+    attack = None
+    range_modifiers = {}
+
+    if distance == 1 and weapon.melee_attack:
+        attack = weapon.melee_attack
+    elif weapon.ranged_attack:
+        attack = weapon.ranged_attack
+        # Get range modifiers for ranged attacks
+        if distance > 1:
+            if not range_system.has_line_of_sight(
+                controller.gw.game_map, attacker.x, attacker.y, defender.x, defender.y
+            ):
+                return None  # No line of sight
+
+            range_category = range_system.get_range_category(distance, weapon)
+            range_mods = range_system.get_range_modifier(weapon, range_category)
+            if range_mods is None:
+                return None  # Out of range
+            range_modifiers = range_mods
+    elif weapon.melee_attack:
+        attack = weapon.melee_attack
+    else:
+        return None  # No attack possible
+
+    if not attack:
+        return None
+
+    # Get ability scores
+    attacker_ability_score = getattr(attacker_stats, attack.stat_name)
+    defender_ability_score = defender_stats.agility
+
+    # Calculate opposed check probability
+    roll_to_exceed = defender_ability_score + 10
+    return dice.calculate_check_roll_success_probability(
+        attacker_ability_score,
+        roll_to_exceed,
+        has_advantage=range_modifiers.get("has_advantage", False),
+        has_disadvantage=range_modifiers.get("has_disadvantage", False),
+    )
