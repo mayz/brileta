@@ -130,13 +130,13 @@ class InventoryComponent:
     confer some mechanical advantage (like armor points).
     """
 
-    def __init__(self, stats_component: StatsComponent) -> None:
+    def __init__(
+        self, stats_component: StatsComponent, num_attack_slots: int = 2
+    ) -> None:
         self.stats = stats_component
         self._stored_items: list[Item | Condition] = []
-        self.equipped_weapon: Item | None = None
-        # Future equipment slots:
-        # self.equipped_armor: Armor | None = None
-        # TODO: Handle more than one equipped weapon - two hands (unless injured!).
+
+        self.attack_slots: list[Item | None] = [None] * num_attack_slots
 
     def __iter__(self):
         """Allow iteration over stored items."""
@@ -257,17 +257,72 @@ class InventoryComponent:
 
     # === Equipment Management ===
 
+    @property
+    def num_attack_slots(self) -> int:
+        """Get number of attack slots this character has"""
+        return len(self.attack_slots)
+
+    def equip_to_slot(self, item: Item, slot_index: int = 0) -> Item | None:
+        """Equip item to specified slot, return what was there before"""
+        if not (0 <= slot_index < len(self.attack_slots)):
+            raise ValueError(f"Invalid slot index: {slot_index}")
+
+        old_item = self.attack_slots[slot_index]
+        self.attack_slots[slot_index] = item
+        return old_item
+
+    def unequip_slot(self, slot_index: int) -> Item | None:
+        """Unequip specified slot, return what was equipped"""
+        if not (0 <= slot_index < len(self.attack_slots)):
+            raise ValueError(f"Invalid slot index: {slot_index}")
+
+        item = self.attack_slots[slot_index]
+        self.attack_slots[slot_index] = None
+        return item
+
+    def get_equipped_items(self) -> list[tuple[Item, int]]:
+        """Get all equipped items with their slot index"""
+        items = []
+        for i, item in enumerate(self.attack_slots):
+            if item is not None:
+                items.append((item, i))
+        return items
+
+    def get_slot_display_name(self, slot_index: int) -> str:
+        """Get display name for a slot (Primary, Secondary, etc.)"""
+        names = ["Primary", "Secondary", "Tertiary", "Quaternary"]
+        if slot_index < len(names):
+            return names[slot_index]
+        return f"Attack {slot_index + 1}"
+
+    def get_available_attacks(self) -> list[tuple[Item | None, int, str]]:
+        """Get all possible attacks including unarmed slots"""
+        attacks = []
+        for i, item in enumerate(self.attack_slots):
+            display_name = self.get_slot_display_name(i)
+            attacks.append((item, i, display_name))
+        return attacks
+
+    # FIXME: For backwards compatibility
+    @property
+    def equipped_weapon(self) -> Item | None:
+        """For backwards compatibility - returns primary attack slot (slot 0)"""
+        return self.attack_slots[0] if self.attack_slots else None
+
+    # FIXME: For backwards compatibility
+    @equipped_weapon.setter
+    def equipped_weapon(self, value: Item) -> None:
+        self.equip_to_slot(value, 0)
+
+    # FIXME: For backwards compatibility
     def equip_weapon(self, weapon: Item) -> Item | None:
         """Equip a weapon, returning the previously equipped weapon."""
-        old_weapon = self.equipped_weapon
-        self.equipped_weapon = weapon
-        return old_weapon
+        return self.equip_to_slot(weapon, 0)
 
+    # FIXME: For backwards compatibility
     def unequip_weapon(self) -> Item | None:
         """Unequip current weapon, returning it."""
-        weapon = self.equipped_weapon
-        self.equipped_weapon = None
-        return weapon
+        return self.unequip_slot(0)
 
     def equip_weapon_from_storage(self, weapon: Item) -> bool:
         """Move weapon from storage to equipped."""
