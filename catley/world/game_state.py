@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING
 from catley import colors
 from catley.config import PLAYER_BASE_TOUGHNESS
 from catley.game.actors import Actor, make_pc
-from catley.game.items.item_types import FISTS_TYPE
 from catley.render.lighting import LightingSystem, LightSource
 
 from .map import GameMap
@@ -29,6 +28,8 @@ class GameWorld:
         self.lighting = LightingSystem()
         self.selected_actor: Actor | None = None
 
+        from catley.game.items.item_types import PISTOL_MAGAZINE_TYPE, PISTOL_TYPE
+
         # Create player with a torch light source
         player_light = LightSource.create_torch()
         self.player = make_pc(
@@ -40,9 +41,12 @@ class GameWorld:
             game_world=self,
             light_source=player_light,
             toughness=PLAYER_BASE_TOUGHNESS,
-            starting_weapon=FISTS_TYPE.create(),
+            starting_weapon=PISTOL_TYPE.create(),
             # Other abilities will default to 0
         )
+
+        # Give the player some ammo
+        self.player.inventory.add_to_inventory(PISTOL_MAGAZINE_TYPE.create())
 
         self.actors = [self.player]
         self.game_map = GameMap(map_width, map_height)

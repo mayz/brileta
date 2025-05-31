@@ -231,6 +231,7 @@ def make_pc(
     weirdness: int = 0,
     light_source: LightSource | None = None,
     starting_weapon: Item | None = None,
+    num_attack_slots: int = 2,
     speed: int = DEFAULT_ACTOR_SPEED,
 ) -> Actor:
     """Create a player character.
@@ -244,6 +245,7 @@ def make_pc(
         strength, toughness, etc.: Ability scores
         light_source: Optional light source
         starting_weapon: Initial equipped weapon
+        num_attack_slots: The number of attack slots this character should have
         speed: Action speed (higher = more frequent actions)
     """
     return _make_character(
@@ -262,6 +264,7 @@ def make_pc(
         weirdness=weirdness,
         light_source=light_source,
         starting_weapon=starting_weapon,
+        num_attack_slots=num_attack_slots,
         speed=speed,
     )
 
@@ -282,6 +285,7 @@ def make_npc(
     weirdness: int = 0,
     light_source: LightSource | None = None,
     starting_weapon: Item | None = None,
+    num_attack_slots: int = 2,
     disposition: Disposition = Disposition.WARY,
     speed: int = DEFAULT_ACTOR_SPEED,
     **kwargs,
@@ -300,6 +304,7 @@ def make_npc(
         strength, toughness, etc.: Ability scores
         light_source: Optional light source
         starting_weapon: Initial equipped weapon
+        num_attack_slots: The number of attack slots this character should have
         disposition: Starting disposition toward player
         speed: Action speed (higher = more frequent actions)
         **kwargs: Additional Actor parameters
@@ -321,6 +326,7 @@ def make_npc(
         ai=DispositionBasedAI(disposition=disposition),
         light_source=light_source,
         starting_weapon=starting_weapon,
+        num_attack_slots=num_attack_slots,
         speed=speed,
         **kwargs,
     )
@@ -343,6 +349,7 @@ def _make_character(
     ai: AIComponent | None = None,
     light_source: LightSource | None = None,
     starting_weapon: Item | None = None,
+    num_attack_slots: int = 2,
     speed: int = DEFAULT_ACTOR_SPEED,
     **kwargs,
 ) -> Actor:
@@ -361,6 +368,7 @@ def _make_character(
         ai: AI component for autonomous behavior (None for player)
         light_source: Optional light source
         starting_weapon: Initial equipped weapon
+        num_attack_slots: The number of attack slots this character should have
         speed: Action speed (higher = more frequent actions)
         **kwargs: Additional Actor parameters
     """
@@ -383,7 +391,7 @@ def _make_character(
         game_world=game_world,
         stats=stats,
         health=HealthComponent(stats),
-        inventory=InventoryComponent(stats),
+        inventory=InventoryComponent(stats, num_attack_slots),
         visual_effects=VisualEffectsComponent(),
         ai=ai,
         light_source=light_source,
@@ -392,6 +400,7 @@ def _make_character(
     )
 
     if starting_weapon:
-        cast("InventoryComponent", actor.inventory).equipped_weapon = starting_weapon
+        inventory = cast("InventoryComponent", actor.inventory)
+        inventory.equip_to_slot(starting_weapon, 0)
 
     return actor

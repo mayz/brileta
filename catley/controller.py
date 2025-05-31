@@ -10,7 +10,6 @@ from .event_handler import EventHandler
 from .game import conditions
 from .game.actions import GameAction, MoveAction
 from .game.actors import make_npc
-from .game.items.item_types import SLEDGEHAMMER_TYPE
 from .render.render import Renderer
 from .ui.menu_system import MenuSystem
 from .ui.message_log import MessageLog
@@ -83,7 +82,6 @@ class Controller:
         self.gw.player.inventory.add_to_inventory(
             conditions.Injury(injury_type="Sprained Ankle")
         )
-        self.gw.player.inventory.add_to_inventory(SLEDGEHAMMER_TYPE.create())
 
         self._add_npc()
 
@@ -122,6 +120,8 @@ class Controller:
                 npc_y += 2
             case 4:
                 npc_y -= 2
+
+        from .game.items.item_types import SLEDGEHAMMER_TYPE
 
         npc = make_npc(
             x=npc_x,
