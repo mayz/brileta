@@ -25,13 +25,15 @@ from __future__ import annotations
 import abc
 from typing import TYPE_CHECKING
 
-from .menu_system import Menu, PickupMenu, TargetMenu
+from catley.ui.pickup_menu import PickupMenu
+from catley.ui.target_menu import QuickActionBar, TargetMenu
 
 if TYPE_CHECKING:
     import tcod.context
 
     from catley.controller import Controller
     from catley.game.actors import Actor
+    from catley.ui.menu_core import Menu
 
 
 class UICommand(abc.ABC):
@@ -96,8 +98,6 @@ class SelectOrDeselectActorUICommand(UICommand):
             and self.selection.health
             and self.selection.health.is_alive()
         ):
-            from .menu_system import QuickActionBar
-
             quick_bar = QuickActionBar(self.controller, self.selection)
             self.controller.menu_system.show_menu(quick_bar)
 

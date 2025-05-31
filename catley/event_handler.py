@@ -5,9 +5,10 @@ from typing import TYPE_CHECKING
 import tcod.event
 
 from catley import colors
+from catley.ui.help_menu import HelpMenu
+from catley.ui.inventory_menu import InventoryMenu
 
 from .game.actions import GameAction, MoveAction
-from .ui import menu_system
 from .ui.ui_commands import (
     OpenMenuUICommand,
     OpenPickupMenuUICommand,
@@ -85,7 +86,7 @@ class EventHandler:
                 return QuitUICommand()
 
             case tcod.event.KeyDown(sym=tcod.event.KeySym.i):
-                return OpenMenuUICommand(self.controller, menu_system.InventoryMenu)
+                return OpenMenuUICommand(self.controller, InventoryMenu)
 
             case tcod.event.KeyDown(sym=key_sym, mod=key_mod) if (
                 key_sym == tcod.event.KeySym.QUESTION
@@ -94,7 +95,7 @@ class EventHandler:
                     and (key_mod & tcod.event.Modifier.SHIFT)
                 )
             ):
-                return OpenMenuUICommand(self.controller, menu_system.HelpMenu)
+                return OpenMenuUICommand(self.controller, HelpMenu)
 
             case tcod.event.KeyDown(sym=tcod.event.KeySym.g):
                 return OpenPickupMenuUICommand(self.controller)

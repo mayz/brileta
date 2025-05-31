@@ -5,13 +5,14 @@ import tcod.map
 from tcod.console import Console
 from tcod.context import Context
 
+from catley.ui.menu_core import MenuSystem
+
 from . import colors, config
 from .event_handler import EventHandler
 from .game import conditions
 from .game.actions import GameAction, MoveAction
 from .game.actors import make_npc
 from .render.render import Renderer
-from .ui.menu_system import MenuSystem
 from .ui.message_log import MessageLog
 from .util.clock import Clock
 from .world.game_state import GameWorld

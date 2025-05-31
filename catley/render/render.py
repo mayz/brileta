@@ -23,7 +23,7 @@ from catley.util.clock import Clock
 from catley.world.game_state import GameWorld
 
 if TYPE_CHECKING:
-    from catley.ui.menu_system import MenuSystem
+    from catley.ui.menu_core import MenuSystem
 
 
 class FPSDisplay:
