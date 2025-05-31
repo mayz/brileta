@@ -155,13 +155,28 @@ class Controller:
             self.gw.lighting.update(delta_time)
             self.renderer.render_all()
 
-    def execute_action(self, action: GameAction | None) -> None:
+    def queue_action(self, action: GameAction) -> None:
         """
-        Executes the given Action instance.
+        Queue a game action to be processed on the next turn.
+
+        Use this when you want an action to consume a turn and trigger
+        the unified round system (giving all actors a chance to act).
 
         Args:
-            action_instance: The Action to be performed. Can be None, in which
-                             case the method does nothing.
+            action: The GameAction to queue for execution
+        """
+        self.event_handler.pending_action = action
+
+    def _execute_action(self, action: GameAction | None) -> None:
+        """
+        Internal method: Execute an action immediately without turn processing.
+
+        This is called by the unified round system and should not be called
+        directly by external code. Use queue_action() instead.
+
+        Args:
+            action: The Action to be performed. Can be None, in which
+                    case the method does nothing.
         """
         if not action:
             return  # Do nothing if no action is provided
@@ -208,7 +223,7 @@ class Controller:
                     actor.spend_energy(self.action_cost)
 
                     if action:
-                        self.execute_action(action)
+                        self._execute_action(action)
                         someone_acted = True
 
                     if not self.gw.player.health.is_alive():

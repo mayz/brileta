@@ -110,6 +110,8 @@ class AttackAction(GameAction):
             self.attacker.x, self.attacker.y, self.defender.x, self.defender.y
         )
 
+        ranged_attack = weapon.ranged_attack
+
         #######################################################################
         # FIXME: In Phase 6, REPLACE THIS DISTANCE-BASED HEURISTIC WITH
         #        PROPER ATTACK MODE SELECTION!
@@ -129,9 +131,9 @@ class AttackAction(GameAction):
         if distance == 1 and weapon.melee_attack:
             # Adjacent and has melee capability - use melee
             attack = weapon.melee_attack
-        elif weapon.ranged_attack:
+        elif ranged_attack:
             # Not adjacent or no melee - use ranged if available
-            attack = weapon.ranged_attack
+            attack = ranged_attack
         elif weapon.melee_attack:
             # Fallback to melee if no ranged (shouldn't happen with proper
             # distance checking)
@@ -149,12 +151,14 @@ class AttackAction(GameAction):
 
         # For ranged attacks, check line of sight and apply range modifiers
         range_modifiers = {}
-        if attack == weapon.ranged_attack and distance > 1:
+        if attack == ranged_attack and distance > 1:
             # Check line of sight
             if not range_system.has_line_of_sight(
                 self.controller.gw.game_map,
-                self.attacker.x, self.attacker.y,
-                self.defender.x, self.defender.y
+                self.attacker.x,
+                self.attacker.y,
+                self.defender.x,
+                self.defender.y,
             ):
                 self.controller.message_log.add_message(
                     f"No clear shot to {self.defender.name}!", colors.RED
@@ -184,6 +188,10 @@ class AttackAction(GameAction):
             has_advantage=range_modifiers.get("has_advantage", False),
             has_disadvantage=range_modifiers.get("has_disadvantage", False),
         )
+
+        # Consume ammo for ranged attacks
+        if attack == ranged_attack and ranged_attack is not None:
+            ranged_attack.current_ammo -= 1
 
         # Does the attack hit?
         if attack_result.success:

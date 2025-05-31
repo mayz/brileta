@@ -4,11 +4,14 @@ from typing import TYPE_CHECKING
 
 import tcod.event
 
+from catley import colors
+
 from .game.actions import GameAction, MoveAction
 from .ui import menu_system
 from .ui.ui_commands import (
     OpenMenuUICommand,
     OpenPickupMenuUICommand,
+    OpenTargetMenuUICommand,
     QuitUICommand,
     SelectOrDeselectActorUICommand,
     ToggleFullscreenUICommand,
@@ -29,13 +32,16 @@ class EventHandler:
 
     def dispatch(self, event: tcod.event.Event) -> None:
         # First, try to handle the event with the menu system
-        if self.controller.menu_system.handle_input(event):
-            return  # Event was consumed by menu system
+        menu_consumed = self.controller.menu_system.handle_input(event)
 
-        # If no menu handled it, process normal game actions
-        action = self.handle_event(event)
-        if action:
-            self.pending_action = action
+        # If no menu handled it, check for normal game actions
+        if not menu_consumed:
+            action = self.handle_event(event)
+            if action:
+                self.pending_action = action
+
+        # If we have any pending action (from menu or handle_event), process it
+        if self.pending_action:
             self.controller.process_unified_round()
 
     def handle_event(self, event: tcod.event.Event) -> GameAction | None:
@@ -92,6 +98,24 @@ class EventHandler:
 
             case tcod.event.KeyDown(sym=tcod.event.KeySym.g):
                 return OpenPickupMenuUICommand(self.controller)
+
+            case tcod.event.KeyDown(sym=tcod.event.KeySym.t):
+                if (
+                    self.gw.selected_actor
+                    and self.gw.selected_actor != self.gw.player
+                    and self.gw.selected_actor.health
+                    and self.gw.selected_actor.health.is_alive()
+                ):
+                    return OpenTargetMenuUICommand(
+                        self.controller, target_actor=self.gw.selected_actor
+                    )
+
+                # Show message if no valid target selected
+                self.controller.message_log.add_message(
+                    "No valid target selected. Left-click an actor first.",
+                    colors.GREY,
+                )
+                return None
 
             case tcod.event.KeyDown(sym=tcod.event.KeySym.RETURN, mod=mod) if (
                 mod & tcod.event.Modifier.ALT
