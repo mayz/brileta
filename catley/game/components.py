@@ -39,7 +39,7 @@ from catley.config import DEFAULT_MAX_ARMOR
 
 from .conditions import Condition
 from .enums import ItemSize
-from .items import Item, Weapon
+from .items.item_core import Item
 
 
 class StatsComponent:
@@ -133,7 +133,7 @@ class InventoryComponent:
     def __init__(self, stats_component: StatsComponent) -> None:
         self.stats = stats_component
         self._stored_items: list[Item | Condition] = []
-        self.equipped_weapon: Weapon | None = None
+        self.equipped_weapon: Item | None = None
         # Future equipment slots:
         # self.equipped_armor: Armor | None = None
         # TODO: Handle more than one equipped weapon - two hands (unless injured!).
@@ -257,19 +257,19 @@ class InventoryComponent:
 
     # === Equipment Management ===
 
-    def equip_weapon(self, weapon: Weapon) -> Weapon | None:
+    def equip_weapon(self, weapon: Item) -> Item | None:
         """Equip a weapon, returning the previously equipped weapon."""
         old_weapon = self.equipped_weapon
         self.equipped_weapon = weapon
         return old_weapon
 
-    def unequip_weapon(self) -> Weapon | None:
+    def unequip_weapon(self) -> Item | None:
         """Unequip current weapon, returning it."""
         weapon = self.equipped_weapon
         self.equipped_weapon = None
         return weapon
 
-    def equip_weapon_from_storage(self, weapon: Weapon) -> bool:
+    def equip_weapon_from_storage(self, weapon: Item) -> bool:
         """Move weapon from storage to equipped."""
         if weapon in self._stored_items:
             self.remove_from_inventory(weapon)

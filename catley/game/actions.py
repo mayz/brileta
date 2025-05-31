@@ -28,12 +28,13 @@ from typing import TYPE_CHECKING
 from catley import colors
 from catley.util import dice
 
-from . import items
 from .actors import Actor, Disposition
 from .ai import DispositionBasedAI
+from .items.item_types import FISTS_TYPE
 
 if TYPE_CHECKING:
     from catley.controller import Controller
+    from catley.game.items.capabilities import Attack
 
 
 class GameAction(abc.ABC):
@@ -99,12 +100,55 @@ class AttackAction(GameAction):
         self.defender = defender
 
     def execute(self) -> None:
-        # Determine attacker's ability score
-        weapon = self.attacker.inventory.equipped_weapon or items.FISTS
-        if weapon.melee:
-            attacker_ability_score = self.attacker.stats.strength
+        # Determine attacker's ability score and attack component
+        weapon = self.attacker.inventory.equipped_weapon or FISTS_TYPE.create()
+        attack: Attack | None = None
+
+        #######################################################################
+        # FIXME: In Phase 5, REPLACE THIS DISTANCE-BASED HEURISTIC WITH
+        #        PROPER ATTACK MODE SELECTION!
+        #
+        # Current limitation: This automatically chooses attack mode based on distance,
+        # which works for most cases but prevents intentional choices like:
+        # - Pistol-whipping when you could shoot (stealth, ammo conservation)
+        # - Throwing a knife instead of stabbing (ranged vs melee for same weapon)
+        # - Choosing between single-target ranged vs area effect for dual-mode weapons
+        #
+        # Phase 5 solution:
+        # - Pass attack_type parameter to AttackAction constructor ("melee", "ranged")
+        # - UI provides attack mode selection when multiple modes available
+        # - Move this logic to UI layer, not combat execution layer
+
+        # Calculate distance between attacker and defender
+        distance = abs(self.defender.x - self.attacker.x) + abs(
+            self.defender.y - self.attacker.y
+        )
+
+        # Determine which attack to use based on distance and weapon capabilities
+        if distance == 1 and weapon.melee_attack:
+            # Adjacent and has melee capability - use melee
+            attack = weapon.melee_attack
+        elif weapon.ranged_attack:
+            # Not adjacent or no melee - use ranged if available
+            attack = weapon.ranged_attack
+        elif weapon.melee_attack:
+            # Fallback to melee if no ranged (shouldn't happen with proper
+            # distance checking)
+            attack = weapon.melee_attack
         else:
-            attacker_ability_score = self.attacker.stats.observation
+            # No attack capabilities
+            self.controller.message_log.add_message(
+                f"{self.attacker.name} has no way to attack!", colors.RED
+            )
+            return
+
+        #######################################################################
+
+        assert attack is not None
+
+        # Let the attack object determine which ability score to use
+        stat_name = attack.stat_name
+        attacker_ability_score = getattr(self.attacker.stats, stat_name)
 
         defender_ability_score = self.defender.stats.agility
 
@@ -119,7 +163,7 @@ class AttackAction(GameAction):
         # Does the attack hit?
         if attack_result.success:
             # Hit - roll damage
-            damage_dice = weapon.damage_dice
+            damage_dice = attack.damage_dice
             damage = damage_dice.roll()
 
             if attack_result.is_critical_hit:
@@ -185,7 +229,7 @@ class AttackAction(GameAction):
             self.controller.message_log.add_message(miss_message, miss_color)
 
             # Handle 'awkward' weapon property on miss
-            if weapon and "awkward" in weapon.properties:
+            if weapon and "awkward" in weapon.melee_attack.properties:
                 self.controller.message_log.add_message(
                     f"{self.attacker.name} is off balance from the awkward swing "
                     f"with {weapon.name}!",
