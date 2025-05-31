@@ -36,6 +36,7 @@ from .items.item_types import FISTS_TYPE
 if TYPE_CHECKING:
     from catley.controller import Controller
     from catley.game.items.capabilities import Attack
+    from catley.game.items.item_core import Item
 
 
 class GameAction(abc.ABC):
@@ -282,4 +283,40 @@ class AttackAction(GameAction):
                 f"{self.defender.name} becomes hostile towards {self.attacker.name} "
                 "due to the attack!",
                 colors.ORANGE,
+            )
+
+
+class ReloadAction(GameAction):
+    """Action for reloading a ranged weapon."""
+
+    def __init__(self, controller: Controller, actor: Actor, weapon: Item) -> None:
+        super().__init__(controller, actor)
+        self.weapon = weapon
+
+    def execute(self) -> None:
+        ranged_attack = self.weapon.ranged_attack
+        if not ranged_attack:
+            return
+
+        # Find compatible ammo in inventory
+        ammo_item = None
+        for item in self.actor.inventory:
+            if (
+                hasattr(item, "ammo")
+                and item.ammo
+                and item.ammo.ammo_type == ranged_attack.ammo_type
+            ):
+                ammo_item = item
+                break
+
+        if ammo_item:
+            # Remove ammo from inventory and reload weapon
+            self.actor.inventory.remove_from_inventory(ammo_item)
+            ranged_attack.current_ammo = ranged_attack.max_ammo
+            self.controller.message_log.add_message(
+                f"{self.actor.name} reloaded {self.weapon.name}.", colors.GREEN
+            )
+        else:
+            self.controller.message_log.add_message(
+                f"No {ranged_attack.ammo_type} ammo available!", colors.RED
             )

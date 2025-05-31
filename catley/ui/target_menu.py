@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, cast
 
 from catley import colors
 from catley.game import range_system
-from catley.game.actions import AttackAction
+from catley.game.actions import AttackAction, ReloadAction
 from catley.game.items.item_core import Item
 from catley.game.items.item_types import FISTS_TYPE
 from catley.ui.menu_core import Menu, MenuOption
@@ -192,26 +192,8 @@ class QuickActionBar(Menu):
         primary_weapon = player.inventory.equipped_weapon
 
         if primary_weapon and primary_weapon.ranged_attack:
-            # Find compatible ammo
-            ammo_item = None
-            for item in player.inventory:
-                if (
-                    item.ammo
-                    and item.ammo.ammo_type == primary_weapon.ranged_attack.ammo_type
-                ):
-                    ammo_item = item
-                    break
-
-            if ammo_item:
-                player.inventory.remove_from_inventory(ammo_item)
-                primary_weapon.ranged_attack.current_ammo = (
-                    primary_weapon.ranged_attack.max_ammo
-                )
-                self.controller.message_log.add_message(
-                    f"Reloaded {primary_weapon.name}", colors.GREEN
-                )
-                # Refresh the quick bar to show updated ammo
-                self.populate_options()
+            reload_action = ReloadAction(self.controller, player, primary_weapon)
+            self.controller.queue_action(reload_action)
 
     def _open_full_menu(self) -> None:
         """Open the full target menu."""
@@ -447,27 +429,8 @@ class TargetMenu(Menu):
     def _perform_reload(self, weapon_item, slot_index) -> None:
         """Reload the specified weapon."""
         player = self.controller.gw.player
-        ranged_attack = weapon_item.ranged_attack
-
-        # Find compatible ammo in inventory
-        ammo_item = None
-        for item in player.inventory:
-            if item.ammo and item.ammo.ammo_type == ranged_attack.ammo_type:
-                ammo_item = item
-                break
-
-        if ammo_item:
-            # Remove ammo from inventory and reload weapon
-            player.inventory.remove_from_inventory(ammo_item)
-            ranged_attack.current_ammo = ranged_attack.max_ammo
-            slot_name = player.inventory.get_slot_display_name(slot_index)
-            self.controller.message_log.add_message(
-                f"Reloaded {weapon_item.name} ({slot_name})", colors.GREEN
-            )
-        else:
-            self.controller.message_log.add_message(
-                f"No {ranged_attack.ammo_type} ammo available!", colors.RED
-            )
+        reload_action = ReloadAction(self.controller, player, weapon_item)
+        self.controller.queue_action(reload_action)
 
 
 def _calculate_attack_success_probability(

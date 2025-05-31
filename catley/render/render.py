@@ -123,6 +123,10 @@ class Renderer:
             height=self.message_log_height,
         )
 
+        # Add equipment status display
+        if not self.menu_system.has_active_menus():
+            self.render_equipment_status()
+
         if SHOW_FPS:
             self.fps_display.render(self)
 
@@ -305,6 +309,32 @@ class Renderer:
             )
 
         self.game_map_console.rgb["fg"][a.x, a.y] = final_fg_color
+
+    def render_equipment_status(self):
+        """Render equipment status showing all attack slots"""
+        y_start = self.screen_height - 4  # Make room for more slots
+
+        player = self.gw.player
+        for i, item in enumerate(player.inventory.attack_slots):
+            if i >= 3:  # Only show first 3 slots to avoid screen overflow
+                break
+
+            slot_name = player.inventory.get_slot_display_name(i)
+
+            if item:
+                item_text = f"{slot_name}: {item.name}"
+                if item.ranged_attack:
+                    item_text += (
+                        f" [{item.ranged_attack.current_ammo}/"
+                        f"{item.ranged_attack.max_ammo}]"
+                    )
+
+                color = colors.WHITE
+            else:
+                item_text = f"{slot_name}: Empty"
+                color = colors.GREY
+
+            self.root_console.print(1, y_start + i, item_text, fg=color)
 
     def _apply_pulsating_effect(
         self, input_color: colors.Color, base_actor_color: colors.Color
