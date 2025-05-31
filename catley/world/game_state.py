@@ -4,14 +4,14 @@ from typing import TYPE_CHECKING
 
 from catley import colors
 from catley.config import PLAYER_BASE_TOUGHNESS
-from catley.game import items
 from catley.game.actors import Actor, make_pc
+from catley.game.items.item_types import FISTS_TYPE
 from catley.render.lighting import LightingSystem, LightSource
 
 from .map import GameMap
 
 if TYPE_CHECKING:
-    from catley.game.items import Item
+    from catley.game.items.item_core import Item
 
 
 class GameWorld:
@@ -40,7 +40,7 @@ class GameWorld:
             game_world=self,
             light_source=player_light,
             toughness=PLAYER_BASE_TOUGHNESS,
-            starting_weapon=items.FISTS,
+            starting_weapon=FISTS_TYPE.create(),
             # Other abilities will default to 0
         )
 

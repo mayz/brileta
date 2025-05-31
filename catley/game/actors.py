@@ -49,12 +49,12 @@ from .enums import Disposition
 
 if TYPE_CHECKING:
     from catley.controller import Controller
+    from catley.game.items.item_core import Item
     from catley.render.lighting import LightSource
     from catley.world.game_state import GameWorld
 
     from .actions import GameAction
     from .ai import AIComponent
-    from .items import Weapon
 
 
 class Actor:
@@ -230,7 +230,7 @@ def make_pc(
     demeanor: int = 0,
     weirdness: int = 0,
     light_source: LightSource | None = None,
-    starting_weapon: Weapon | None = None,
+    starting_weapon: Item | None = None,
     speed: int = DEFAULT_ACTOR_SPEED,
 ) -> Actor:
     """Create a player character.
@@ -281,7 +281,7 @@ def make_npc(
     demeanor: int = 0,
     weirdness: int = 0,
     light_source: LightSource | None = None,
-    starting_weapon: Weapon | None = None,
+    starting_weapon: Item | None = None,
     disposition: Disposition = Disposition.WARY,
     speed: int = DEFAULT_ACTOR_SPEED,
     **kwargs,
@@ -342,7 +342,7 @@ def _make_character(
     weirdness: int = 0,
     ai: AIComponent | None = None,
     light_source: LightSource | None = None,
-    starting_weapon: Weapon | None = None,
+    starting_weapon: Item | None = None,
     speed: int = DEFAULT_ACTOR_SPEED,
     **kwargs,
 ) -> Actor:

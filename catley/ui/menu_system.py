@@ -16,7 +16,8 @@ from tcod.console import Console
 
 from catley import colors
 from catley.game.conditions import Condition
-from catley.game.items import Item, ItemSize
+from catley.game.enums import ItemSize
+from catley.game.items.item_core import Item
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -406,7 +407,7 @@ class InventoryMenu(Menu):
         """Use or equip an item."""
         player = self.controller.gw.player
 
-        if hasattr(item, "equippable") and item.equippable:
+        if item.equippable:
             # Equip/unequip weapon
             if player.inventory.equipped_weapon == item:
                 player.inventory.unequip_weapon()

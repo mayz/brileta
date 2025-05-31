@@ -7,9 +7,10 @@ from tcod.context import Context
 
 from . import colors, config
 from .event_handler import EventHandler
-from .game import conditions, items
+from .game import conditions
 from .game.actions import GameAction, MoveAction
 from .game.actors import make_npc
+from .game.items.item_types import SLEDGEHAMMER_TYPE
 from .render.render import Renderer
 from .ui.menu_system import MenuSystem
 from .ui.message_log import MessageLog
@@ -82,7 +83,7 @@ class Controller:
         self.gw.player.inventory.add_to_inventory(
             conditions.Injury(injury_type="Sprained Ankle")
         )
-        self.gw.player.inventory.add_to_inventory(items.SLEDGEHAMMER.clone())
+        self.gw.player.inventory.add_to_inventory(SLEDGEHAMMER_TYPE.create())
 
         self._add_npc()
 
@@ -136,7 +137,7 @@ class Controller:
             intelligence=-3,
             # Other abilities (agility, observation, demeanor) will default to 0
             speed=80,
-            starting_weapon=items.SLEDGEHAMMER.clone(),
+            starting_weapon=SLEDGEHAMMER_TYPE.create(),
         )
         self.gw.actors.append(npc)
 
