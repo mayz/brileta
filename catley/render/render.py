@@ -11,6 +11,7 @@ from catley.config import (
     LUMINANCE_THRESHOLD,
     MESSAGE_LOG_HEIGHT,
     MOUSE_HIGHLIGHT_ALPHA,
+    PERFORMANCE_TESTING,
     PULSATION_MAX_BLEND_ALPHA,
     PULSATION_PERIOD,
     SELECTION_HIGHLIGHT_ALPHA,
@@ -35,12 +36,22 @@ class FPSDisplay:
     def update(self) -> None:
         current_time = self.clock.last_time
         if current_time - self.last_update >= self.update_interval:
-            self.display_string = f"FPS: {self.clock.last_fps:.1f}"
+            if PERFORMANCE_TESTING:
+                self.display_string = (
+                    f"FPS: mean {self.clock.mean_fps:.0f}, "
+                    f"last {self.clock.last_fps:.0f}"
+                )
+            else:
+                self.display_string = f"FPS: {self.clock.mean_fps:.1f}"
+
             self.last_update = current_time
 
-    def render(self, renderer: "Renderer", x: int, y: int) -> None:
+    def render(self, renderer: "Renderer") -> None:
         self.update()
-        renderer._render_text(x, y, self.display_string, fg=colors.YELLOW)
+
+        fps_width = len(self.display_string)
+        x_position = max(0, renderer.screen_width - fps_width - 1)
+        renderer._render_text(x_position, 0, self.display_string, fg=colors.YELLOW)
 
 
 class Renderer:
@@ -113,7 +124,7 @@ class Renderer:
         )
 
         if SHOW_FPS:
-            self.fps_display.render(self, self.screen_width - 12, 0)
+            self.fps_display.render(self)
 
         # Render menus last (on top of everything else)
         self.menu_system.render(self.root_console)

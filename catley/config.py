@@ -27,12 +27,23 @@ PULSATION_PERIOD = 2.0  # Seconds for full pulsation cycle (selected actor)
 PULSATION_MAX_BLEND_ALPHA = 0.5  # Maximum alpha for pulsation blending
 LUMINANCE_THRESHOLD = 127.5  # For determining light vs dark colors
 
-# Performance
-SHOW_FPS = True
-UNCAPPED_FPS = False
-TARGET_FPS = 60  # If UNCAPPED_FPS is True, TARGET_FPS is ignored
-FPS_SAMPLE_SIZE = 64  # Number of frame time samples to track
+# =============================================================================
+# PERFORMANCE CONFIGURATION
+# =============================================================================
 
+FPS_SAMPLE_SIZE = 256  # Number of frame time samples to track
+
+PERFORMANCE_TESTING = False
+if PERFORMANCE_TESTING:
+    # Shows true uncapped performance for bottleneck identification
+    TARGET_FPS = None
+    VSYNC = False
+    SHOW_FPS = True
+else:
+    # Release Build & Daily Development (battery-friendly)
+    TARGET_FPS = 60
+    VSYNC = True
+    SHOW_FPS = False
 
 # =============================================================================
 # GAMEPLAY MECHANICS

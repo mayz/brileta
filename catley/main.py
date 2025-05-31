@@ -25,7 +25,7 @@ def main() -> None:
         console=root_console,
         tileset=tileset,
         title=title,
-        vsync=True,
+        vsync=config.VSYNC,
     ) as context:
         controller = Controller(context, root_console)
         try:

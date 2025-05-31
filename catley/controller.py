@@ -142,8 +142,6 @@ class Controller:
         self.gw.actors.append(npc)
 
     def run_game_loop(self) -> None:
-        target_fps = None if config.UNCAPPED_FPS else self.target_fps
-
         while True:
             # Process any pending events
             for event in tcod.event.get():
@@ -151,7 +149,7 @@ class Controller:
                 self.event_handler.dispatch(event_with_tile_coords)
 
             # Update using clock's delta time
-            delta_time = self.clock.sync(fps=target_fps)
+            delta_time = self.clock.sync(fps=self.target_fps)
 
             # Update animations and render
             self.gw.lighting.update(delta_time)
