@@ -25,7 +25,7 @@ from __future__ import annotations
 import abc
 from typing import TYPE_CHECKING
 
-from .menu_system import Menu, PickupMenu
+from .menu_system import Menu, PickupMenu, TargetMenu
 
 if TYPE_CHECKING:
     import tcod.context
@@ -77,6 +77,30 @@ class SelectOrDeselectActorUICommand(UICommand):
     def execute(self) -> None:
         self.controller.gw.selected_actor = self.selection
 
+        # Hide any existing quick action bars first
+        # Only hide menus that are QuickActionBar instances
+        menus_to_remove = []
+        for menu in self.controller.menu_system.active_menus:
+            if menu.__class__.__name__ == "QuickActionBar":
+                menus_to_remove.append(menu)
+
+        for menu in menus_to_remove:
+            menu.hide()
+            if menu in self.controller.menu_system.active_menus:
+                self.controller.menu_system.active_menus.remove(menu)
+
+        # If selecting a non-player actor, show quick action bar
+        if (
+            self.selection
+            and self.selection != self.controller.gw.player
+            and self.selection.health
+            and self.selection.health.is_alive()
+        ):
+            from .menu_system import QuickActionBar
+
+            quick_bar = QuickActionBar(self.controller, self.selection)
+            self.controller.menu_system.show_menu(quick_bar)
+
 
 class OpenMenuUICommand(UICommand):
     """Command to open a menu, like the inventory or help menu."""
@@ -104,3 +128,21 @@ class OpenPickupMenuUICommand(OpenMenuUICommand):
         ):
             menu = PickupMenu(self.controller, (self.player.x, self.player.y))
             self.controller.menu_system.show_menu(menu)
+
+
+class OpenTargetMenuUICommand(UICommand):
+    """Command to open the target menu for a specific actor or location."""
+
+    def __init__(
+        self,
+        controller: Controller,
+        target_actor: Actor | None = None,
+        target_location: tuple[int, int] | None = None,
+    ):
+        self.controller = controller
+        self.target_actor = target_actor
+        self.target_location = target_location
+
+    def execute(self) -> None:
+        menu = TargetMenu(self.controller, self.target_actor, self.target_location)
+        self.controller.menu_system.show_menu(menu)
