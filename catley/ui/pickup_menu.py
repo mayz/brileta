@@ -70,9 +70,10 @@ class PickupMenu(Menu):
                     actor.inventory.remove_from_inventory(item)
                     break
 
-                if actor.inventory.equipped_weapon == item:
-                    actor.inventory.equipped_weapon = None
-                    break
+                for i, equipped_item in enumerate(actor.inventory.attack_slots):
+                    if equipped_item == item:
+                        actor.inventory.unequip_slot(i)
+                        break
 
         # Add to player inventory
         player.inventory.add_to_inventory(item)

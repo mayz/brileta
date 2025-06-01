@@ -130,21 +130,26 @@ class InventoryMenu(Menu):
         player = self.controller.gw.player
 
         if item.equippable:
-            # Equip/unequip weapon
-            if player.inventory.equipped_weapon == item:
-                player.inventory.unequip_weapon()
+            # Check if item is already equipped in any slot
+            currently_equipped_slot = None
+            for i, equipped_item in enumerate(player.inventory.attack_slots):
+                if equipped_item == item:
+                    currently_equipped_slot = i
+                    break
+
+            if currently_equipped_slot is not None:
+                # Unequip from current slot
+                player.inventory.unequip_slot(currently_equipped_slot)
                 self.controller.message_log.add_message(
                     f"You unequip {item.name}.", colors.WHITE
                 )
             else:
-                # Unequip current weapon first if any
-                if player.inventory.equipped_weapon:
-                    old_weapon = player.inventory.equipped_weapon.name
+                # Equip to primary slot (0)
+                old_weapon = player.inventory.equip_to_slot(item, 0)
+                if old_weapon:
                     self.controller.message_log.add_message(
-                        f"You unequip {old_weapon}.", colors.GREY
+                        f"You unequip {old_weapon.name}.", colors.GREY
                     )
-
-                player.inventory.equip_weapon(item)
                 self.controller.message_log.add_message(
                     f"You equip {item.name}.", colors.GREEN
                 )

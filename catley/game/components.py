@@ -333,51 +333,6 @@ class InventoryComponent:
             attacks.append((item, i, display_name))
         return attacks
 
-    # FIXME: For backwards compatibility
-    @property
-    def equipped_weapon(self) -> Item | None:
-        """For backwards compatibility - returns primary attack slot (slot 0)"""
-        return self.attack_slots[0] if self.attack_slots else None
-
-    # FIXME: For backwards compatibility
-    @equipped_weapon.setter
-    def equipped_weapon(self, value: Item) -> None:
-        self.equip_to_slot(value, 0)
-
-    # FIXME: For backwards compatibility
-    def equip_weapon(self, weapon: Item) -> Item | None:
-        """Equip a weapon, returning the previously equipped weapon."""
-        return self.equip_to_slot(weapon, 0)
-
-    # FIXME: For backwards compatibility
-    def unequip_weapon(self) -> Item | None:
-        """Unequip current weapon, returning it."""
-        return self.unequip_slot(0)
-
-    def equip_weapon_from_storage(self, weapon: Item) -> bool:
-        """Move weapon from storage to equipped."""
-        if weapon in self._stored_items:
-            self.remove_from_inventory(weapon)
-            old_weapon = self.equip_weapon(weapon)
-            if old_weapon:
-                # Put old weapon back in storage if there's space
-                is_there_space = self.add_to_inventory(old_weapon)
-                if not is_there_space:
-                    # If no space, drop old weapon back to equipped and restore storage
-                    self.equip_weapon(old_weapon)
-                    self.add_to_inventory(weapon)
-                    return False
-            return True
-        return False
-
-    def unequip_weapon_to_storage(self) -> bool:
-        """Move equipped weapon to storage if space available."""
-        if self.equipped_weapon and self.can_add_to_inventory(self.equipped_weapon):
-            weapon = self.unequip_weapon()
-            self.add_to_inventory(weapon)
-            return True
-        return False
-
 
 class VisualEffectsComponent:
     """Handles visual feedback effects like flashing, pulsing, etc."""

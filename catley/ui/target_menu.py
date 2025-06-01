@@ -58,7 +58,7 @@ class QuickActionBar(Menu):
             prob_text = f" ({prob * 100:.0f}%)" if prob is not None else ""
 
             # Determine weapon name for display
-            primary_weapon = player.inventory.equipped_weapon
+            primary_weapon = player.inventory.attack_slots[0]
             if self.distance == 1:
                 weapon_name = (
                     primary_weapon.name
@@ -90,7 +90,7 @@ class QuickActionBar(Menu):
             )
 
         # Quick reload if needed and possible
-        primary_weapon = player.inventory.equipped_weapon
+        primary_weapon = player.inventory.attack_slots[0]
         if (
             primary_weapon
             and primary_weapon.ranged_attack
@@ -135,7 +135,7 @@ class QuickActionBar(Menu):
     def _perform_quick_reload(self) -> None:
         """Reload primary weapon."""
         player = self.controller.gw.player
-        primary_weapon = player.inventory.equipped_weapon
+        primary_weapon = player.inventory.attack_slots[0]
 
         if primary_weapon and primary_weapon.ranged_attack:
             reload_action = ReloadAction(self.controller, player, primary_weapon)
@@ -199,7 +199,7 @@ class TargetMenu(Menu):
             for item, slot_index in player.inventory.get_equipped_items():
                 if item.melee_attack or item.ranged_attack:
                     # Temporarily equip this weapon to test it
-                    old_weapon = player.inventory.equipped_weapon
+                    old_weapon = player.inventory.attack_slots[0]
                     player.inventory.equip_to_slot(item, 0)  # Test in primary slot
 
                     attack_action = AttackAction(
