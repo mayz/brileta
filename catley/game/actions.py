@@ -115,15 +115,34 @@ class AttackAction(GameAction):
         self.weapon = weapon
 
     def execute(self) -> None:
-        # Determine attacker's ability score and attack component
+        # 1. Determine what attack method to use
+        attack, weapon = self._determine_attack_method()
+        if not attack:
+            return
+
+        # 2. Validate the attack can be performed
+        range_modifiers = self._validate_attack(attack, weapon)
+        if range_modifiers is None:
+            return  # Validation failed, error messages already logged
+
+        # 3. Perform the attack roll and immediate effects
+        attack_result = self._execute_attack_roll(attack, weapon, range_modifiers)
+
+        # 4. Resolve the outcome based on hit/miss
+        self._resolve_attack_outcome(attack_result, attack, weapon)
+
+        # 5. Handle post-attack effects (screen shake, messages, AI)
+        self._handle_post_attack_effects(attack_result, attack, weapon)
+
+    def _determine_attack_method(self) -> tuple[Attack | None, Item]:
+        """Determine which attack method and weapon to use
+        based on distance and capabilities."""
         weapon = (
             self.weapon
             or self.attacker.inventory.equipped_weapon
             or FISTS_TYPE.create()
         )
-        attack: Attack | None = None
 
-        # Calculate distance between attacker and defender
         distance = range_system.calculate_distance(
             self.attacker.x, self.attacker.y, self.defender.x, self.defender.y
         )
@@ -144,31 +163,38 @@ class AttackAction(GameAction):
         # - Pass attack_type parameter to AttackAction constructor ("melee", "ranged")
         # - UI provides attack mode selection when multiple modes available
         # - Move this logic to UI layer, not combat execution layer
+        #######################################################################
 
         # Determine which attack to use based on distance and weapon capabilities
         if distance == 1 and weapon.melee_attack:
             # Adjacent and has melee capability - use melee
-            attack = weapon.melee_attack
-        elif ranged_attack:
+            return weapon.melee_attack, weapon
+
+        if ranged_attack:
             # Not adjacent or no melee - use ranged if available
-            attack = ranged_attack
-        elif weapon.melee_attack:
+            return ranged_attack, weapon
+
+        if weapon.melee_attack:
             # Fallback to melee if no ranged (shouldn't happen with proper
             # distance checking)
-            attack = weapon.melee_attack
-        else:
-            # No attack capabilities
-            self.controller.message_log.add_message(
-                f"{self.attacker.name} has no way to attack!", colors.RED
-            )
-            return
+            return weapon.melee_attack, weapon
 
-        #######################################################################
+        # No attack capabilities
+        self.controller.message_log.add_message(
+            f"{self.attacker.name} has no way to attack!", colors.RED
+        )
+        return None, weapon
 
-        assert attack is not None
+    def _validate_attack(self, attack: Attack, weapon: Item) -> dict | None:
+        """Validate the attack can be performed and return range modifiers."""
+        distance = range_system.calculate_distance(
+            self.attacker.x, self.attacker.y, self.defender.x, self.defender.y
+        )
+
+        range_modifiers = {}
+        ranged_attack = weapon.ranged_attack
 
         # For ranged attacks, check line of sight and apply range modifiers
-        range_modifiers = {}
         if attack == ranged_attack and distance > 1:
             # Check line of sight
             if not range_system.has_line_of_sight(
@@ -181,7 +207,7 @@ class AttackAction(GameAction):
                 self.controller.message_log.add_message(
                     f"No clear shot to {self.defender.name}!", colors.RED
                 )
-                return
+                return None
 
             # Get range modifiers
             range_category = range_system.get_range_category(distance, weapon)
@@ -191,12 +217,18 @@ class AttackAction(GameAction):
                 self.controller.message_log.add_message(
                     f"{self.defender.name} is out of range!", colors.RED
                 )
-                return
+                return None
 
-        # Let the attack object determine which ability score to use
+        return range_modifiers
+
+    def _execute_attack_roll(
+        self, attack: Attack, weapon: Item, range_modifiers: dict
+    ) -> dice.CheckResult:
+        """Perform the attack roll and handle immediate effects
+        like ammo consumption."""
+        # Get ability scores for the roll
         stat_name = attack.stat_name
         attacker_ability_score = getattr(self.attacker.stats, stat_name)
-
         defender_ability_score = self.defender.stats.agility
 
         # Perform attack roll
@@ -208,128 +240,175 @@ class AttackAction(GameAction):
         )
 
         # Consume ammo for ranged attacks
+        ranged_attack = weapon.ranged_attack
         if attack == ranged_attack and ranged_attack is not None:
             ranged_attack.current_ammo -= 1
 
-        particle_system = self.controller.renderer.particle_system
+        # Emit muzzle flash for ranged attacks
         if attack == weapon.ranged_attack:
-            direction_x = self.defender.x - self.attacker.x
-            direction_y = self.defender.y - self.attacker.y
-            particle_system.emit_muzzle_flash(
-                self.attacker.x, self.attacker.y, direction_x, direction_y
-            )
+            self._emit_muzzle_flash()
 
-        # Does the attack hit?
+        return attack_result
+
+    def _emit_muzzle_flash(self) -> None:
+        """Emit muzzle flash particle effect."""
+        direction_x = self.defender.x - self.attacker.x
+        direction_y = self.defender.y - self.attacker.y
+        particle_system = self.controller.renderer.particle_system
+        particle_system.emit_muzzle_flash(
+            self.attacker.x, self.attacker.y, direction_x, direction_y
+        )
+
+    def _resolve_attack_outcome(
+        self, attack_result: dice.CheckResult, attack: Attack, weapon: Item
+    ) -> None:
+        """Resolve the attack outcome - apply damage, handle crits, emit particles."""
         if attack_result.success:
-            # Hit - roll damage
-            damage_dice = attack.damage_dice
-            damage = damage_dice.roll()
-
-            if attack_result.is_critical_hit:
-                # "Crits favoring an attack deal an extra die of damage and break
-                # the target’s armor (lowering to 0 AP) before applying damage - or
-                # cause an injury to an unarmored target."
-                damage += damage_dice.roll()
-
-                if self.defender.health.ap > 0:
-                    self.defender.health.ap = 0
-                    # FIXME: Break the defender's armor.
-                else:
-                    # FIXME: Give the defender an injury.
-                    pass
-
-            # Apply damage.
-            self.defender.take_damage(damage)
-
-            # Blood splatter only on successful hits
-            if attack_result.success:
-                particle_system.emit_blood_splatter(
-                    self.defender.x,
-                    self.defender.y,
-                    damage // 2,  # More damage = more particles
-                )
-
-            # Screen shake only when PLAYER gets hit
-            # (player's perspective getting jarred)
-            if self.defender == self.controller.gw.player:
-                # Different shake for different attack types
-                if attack == weapon.melee_attack:
-                    # Melee attacks - use probability instead of pixel distance
-                    shake_intensity = min(damage * 0.15, 0.8)  # 0.15-0.8 probability
-                    shake_duration = 0.2 + (damage * 0.03)
-                else:
-                    # Ranged attacks - lower probability
-                    shake_intensity = min(damage * 0.08, 0.5)  # 0.08-0.5 probability
-                    shake_duration = 0.1 + (damage * 0.02)
-                # Extra shake for critical hits against player
-                if attack_result.is_critical_hit:
-                    shake_intensity *= 1.5  # Higher probability for crits
-                    shake_duration *= 1.3
-
-                self.controller.renderer.trigger_screen_shake(
-                    shake_intensity, shake_duration
-                )
-
-            # Log hit message
-            if attack_result.is_critical_hit:
-                hit_message = (
-                    f"Critical hit! {self.attacker.name} strikes {self.defender.name} "
-                    f"with {weapon.name} for {damage} damage."
-                )
-                hit_color = colors.YELLOW
-            else:
-                hit_message = (
-                    f"{self.attacker.name} hits {self.defender.name} "
-                    f"with {weapon.name} for {damage} damage."
-                )
-                hit_color = colors.WHITE  # Default color for a standard hit
-            hp_message_part = (
-                f" ({self.defender.name} has {self.defender.health.hp} HP left.)"
-            )
-            self.controller.message_log.add_message(
-                hit_message + hp_message_part, hit_color
-            )
-
-            # Check if defender is defeated
-            if not self.defender.health.is_alive():
-                self.controller.message_log.add_message(
-                    f"{self.defender.name} has been killed!", colors.RED
-                )
+            self._handle_successful_hit(attack_result, attack, weapon)
         else:
-            # Miss
-            if attack_result.is_critical_miss:
-                # "Crits favoring defense cause the attacker’s weapon to break,
-                # and leave them confused or off-balance."
-                # FIXME: Break the attacker's weapon.
-                # FIXME: If the attacker is unarmed and attacking with fists or
-                # kicking, etc., they pull a muscle and have disadvantage on their
-                # next attack. (house rule)
-                # FIXME: Give the attacker the condition "confused" or "off-balance".
+            self._handle_attack_miss(attack_result, attack, weapon)
 
-                miss_message = (
-                    f"Critical miss! {self.attacker.name}'s attack on "
-                    f"{self.defender.name} fails."
-                )
-                miss_color = colors.ORANGE  # A warning color for critical miss
+    def _handle_successful_hit(
+        self, attack_result: dice.CheckResult, attack: Attack, weapon: Item
+    ) -> None:
+        """Handle a successful attack hit - damage, crits, particles, messages."""
+        # Hit - roll damage
+        damage_dice = attack.damage_dice
+        damage = damage_dice.roll()
+
+        if attack_result.is_critical_hit:
+            # "Crits favoring an attack deal an extra die of damage and break
+            # the target's armor (lowering to 0 AP) before applying damage - or
+            # cause an injury to an unarmored target."
+            damage += damage_dice.roll()
+
+            if self.defender.health.ap > 0:
+                self.defender.health.ap = 0
+                # FIXME: Break the defender's armor.
             else:
-                miss_message = f"{self.attacker.name} misses {self.defender.name}."
-                miss_color = colors.GREY  # Standard miss color
-            self.controller.message_log.add_message(miss_message, miss_color)
+                # FIXME: Give the defender an injury.
+                pass
 
-            # Handle 'awkward' weapon property on miss
-            if (
-                weapon
-                and weapon.melee_attack
-                and "awkward" in weapon.melee_attack.properties
-            ):
-                self.controller.message_log.add_message(
-                    f"{self.attacker.name} is off balance from the awkward swing "
-                    f"with {weapon.name}!",
-                    colors.LIGHT_BLUE,  # Informational color for status effects
-                )
-                # TODO: Implement off-balance effect (maybe skip next turn?)
+        # Apply damage.
+        self.defender.take_damage(damage)
 
-        # If the player attacked an `Actor`, they become hostile towards the player.
+        # Blood splatter only on successful hits
+        if attack_result.success:
+            particle_system = self.controller.renderer.particle_system
+            particle_system.emit_blood_splatter(
+                self.defender.x,
+                self.defender.y,
+                damage // 2,  # More damage = more particles
+            )
+
+        # Log hit messages
+        self._log_hit_message(attack_result, weapon, damage)
+
+        # Check if defender is defeated
+        if not self.defender.health.is_alive():
+            self.controller.message_log.add_message(
+                f"{self.defender.name} has been killed!", colors.RED
+            )
+
+    def _handle_attack_miss(
+        self, attack_result: dice.CheckResult, attack: Attack, weapon: Item
+    ) -> None:
+        """Handle an attack miss - messages and weapon property effects."""
+        # Miss
+        if attack_result.is_critical_miss:
+            # "Crits favoring defense cause the attacker's weapon to break,
+            # and leave them confused or off-balance."
+            # FIXME: Break the attacker's weapon.
+            # FIXME: If the attacker is unarmed and attacking with fists or
+            # kicking, etc., they pull a muscle and have disadvantage on their
+            # next attack. (house rule)
+            # FIXME: Give the attacker the condition "confused" or "off-balance".
+
+            miss_message = (
+                f"Critical miss! {self.attacker.name}'s attack on "
+                f"{self.defender.name} fails."
+            )
+            miss_color = colors.ORANGE  # A warning color for critical miss
+        else:
+            miss_message = f"{self.attacker.name} misses {self.defender.name}."
+            miss_color = colors.GREY  # Standard miss color
+        self.controller.message_log.add_message(miss_message, miss_color)
+
+        # Handle 'awkward' weapon property on miss
+        if (
+            weapon
+            and weapon.melee_attack
+            and "awkward" in weapon.melee_attack.properties
+        ):
+            self.controller.message_log.add_message(
+                f"{self.attacker.name} is off balance from the awkward swing "
+                f"with {weapon.name}!",
+                colors.LIGHT_BLUE,  # Informational color for status effects
+            )
+            # TODO: Implement off-balance effect (maybe skip next turn?)
+
+    def _log_hit_message(
+        self, attack_result: dice.CheckResult, weapon: Item, damage: int
+    ) -> None:
+        """Log appropriate hit message based on critical status."""
+        if attack_result.is_critical_hit:
+            hit_message = (
+                f"Critical hit! {self.attacker.name} strikes {self.defender.name} "
+                f"with {weapon.name} for {damage} damage."
+            )
+            hit_color = colors.YELLOW
+        else:
+            hit_message = (
+                f"{self.attacker.name} hits {self.defender.name} "
+                f"with {weapon.name} for {damage} damage."
+            )
+            hit_color = colors.WHITE  # Default color for a standard hit
+        hp_message_part = (
+            f" ({self.defender.name} has {self.defender.health.hp} HP left.)"
+        )
+        self.controller.message_log.add_message(
+            hit_message + hp_message_part, hit_color
+        )
+
+    def _handle_post_attack_effects(
+        self, attack_result: dice.CheckResult, attack: Attack, weapon: Item
+    ) -> None:
+        """Handle post-attack effects like screen shake and AI disposition changes."""
+        # Screen shake only when PLAYER gets hit
+        if attack_result.success and self.defender == self.controller.gw.player:
+            self._apply_screen_shake(attack_result, attack, weapon)
+
+        # Update AI disposition if player attacked an NPC
+        self._update_ai_disposition()
+
+    def _apply_screen_shake(
+        self, attack_result: dice.CheckResult, attack: Attack, weapon: Item
+    ) -> None:
+        """Apply screen shake when player is hit."""
+        # Screen shake only when PLAYER gets hit
+        # (player's perspective getting jarred)
+        damage_dice = attack.damage_dice
+        base_damage = damage_dice.roll()  # Approximate damage for shake calculation
+
+        # Different shake for different attack types
+        if weapon.melee_attack:
+            # Melee attacks - use probability instead of pixel distance
+            shake_intensity = min(base_damage * 0.15, 0.8)  # 0.15-0.8 probability
+            shake_duration = 0.2 + (base_damage * 0.03)
+        else:
+            # Ranged attacks - lower probability
+            shake_intensity = min(base_damage * 0.08, 0.5)  # 0.08-0.5 probability
+            shake_duration = 0.1 + (base_damage * 0.02)
+
+        # Extra shake for critical hits against player
+        if attack_result.is_critical_hit:
+            shake_intensity *= 1.5  # Higher probability for crits
+            shake_duration *= 1.3
+
+        self.controller.renderer.trigger_screen_shake(shake_intensity, shake_duration)
+
+    def _update_ai_disposition(self) -> None:
+        """Update AI disposition if player attacked an NPC."""
         if (
             self.attacker == self.controller.gw.player
             and self.defender != self.controller.gw.player
@@ -342,100 +421,6 @@ class AttackAction(GameAction):
                 "due to the attack!",
                 colors.ORANGE,
             )
-
-    def can_execute(self) -> tuple[bool, str | None]:
-        """Check if this attack can be executed."""
-        # Calculate distance
-        distance = range_system.calculate_distance(
-            self.attacker.x, self.attacker.y, self.defender.x, self.defender.y
-        )
-
-        # Determine which attack to use
-        weapon = (
-            self.weapon
-            or self.attacker.inventory.equipped_weapon
-            or FISTS_TYPE.create()
-        )
-        ranged_attack = weapon.ranged_attack
-
-        if distance == 1 and weapon.melee_attack:
-            return True, None
-
-        if ranged_attack and distance > 1:
-            # Check line of sight
-            if not range_system.has_line_of_sight(
-                self.controller.gw.game_map,
-                self.attacker.x,
-                self.attacker.y,
-                self.defender.x,
-                self.defender.y,
-            ):
-                return False, "no line of sight"
-
-            # Check range
-            range_category = range_system.get_range_category(distance, weapon)
-            range_modifiers = range_system.get_range_modifier(weapon, range_category)
-            if range_modifiers is None:
-                return False, "out of range"
-
-            # Check ammo
-            if ranged_attack.current_ammo <= 0:
-                return False, "out of ammo"
-
-            return True, None
-
-        if weapon.melee_attack:
-            return True, None
-
-        return False, "no attack available"
-
-    def get_success_probability(self) -> float | None:
-        """Calculate probability of successful attack."""
-        if not self.attacker.stats or not self.defender.stats:
-            return None
-
-        # Calculate distance and get weapon/attack info (similar to can_execute)
-        distance = range_system.calculate_distance(
-            self.attacker.x, self.attacker.y, self.defender.x, self.defender.y
-        )
-
-        weapon = (
-            self.weapon
-            or self.attacker.inventory.equipped_weapon
-            or FISTS_TYPE.create()
-        )
-        attack = None
-        range_modifiers = {}
-
-        # Determine attack type (same logic as in execute())
-        if distance == 1 and weapon.melee_attack:
-            attack = weapon.melee_attack
-        elif weapon.ranged_attack and distance > 1:
-            attack = weapon.ranged_attack
-            range_category = range_system.get_range_category(distance, weapon)
-            range_mods = range_system.get_range_modifier(weapon, range_category)
-            if range_mods is None:
-                return None
-            range_modifiers = range_mods
-        elif weapon.melee_attack:
-            attack = weapon.melee_attack
-        else:
-            return None
-
-        if not attack:
-            return None
-
-        # Calculate probability using existing dice utilities
-        attacker_ability_score = getattr(self.attacker.stats, attack.stat_name)
-        defender_ability_score = self.defender.stats.agility
-        roll_to_exceed = defender_ability_score + 10
-
-        return dice.calculate_check_roll_success_probability(
-            attacker_ability_score,
-            roll_to_exceed,
-            has_advantage=range_modifiers.get("has_advantage", False),
-            has_disadvantage=range_modifiers.get("has_disadvantage", False),
-        )
 
 
 class ReloadAction(GameAction):
