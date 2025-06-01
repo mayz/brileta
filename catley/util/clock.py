@@ -12,6 +12,7 @@ class Clock:
 
     def __init__(self) -> None:
         self.last_time = time.perf_counter()
+        self.last_delta_time = 0.0
         self.time_samples: deque[float] = deque(maxlen=FPS_SAMPLE_SIZE)
         self.drift_time = 0.0
 
@@ -30,6 +31,7 @@ class Clock:
         current_time = time.perf_counter()
         delta_time = max(0, current_time - self.last_time)
         self.last_time = current_time
+        self.last_delta_time = delta_time
         self.time_samples.append(delta_time)
         return delta_time
 

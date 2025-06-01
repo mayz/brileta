@@ -14,10 +14,13 @@ from catley.config import (
     PERFORMANCE_TESTING,
     PULSATION_MAX_BLEND_ALPHA,
     PULSATION_PERIOD,
+    SCREEN_SHAKE_ENABLED,
+    SCREEN_SHAKE_INTENSITY_MULTIPLIER,
     SELECTION_HIGHLIGHT_ALPHA,
     SHOW_FPS,
 )
 from catley.game.actors import Actor
+from catley.render.screen_shake import ScreenShake
 from catley.ui.message_log import MessageLog
 from catley.util.clock import Clock
 from catley.world.game_state import GameWorld
@@ -88,6 +91,7 @@ class Renderer:
 
         self.fps_display = FPSDisplay(clock)
         self.menu_system = menu_system
+        self.screen_shake = ScreenShake()
 
     def render_all(self) -> None:
         self.game_map_console.clear()
@@ -101,15 +105,23 @@ class Renderer:
         self._render_selected_actor_highlight()
         self._render_mouse_cursor_highlight()
 
-        # Blit game console to root console (below help and message log)
+        # Update and apply screen shake
+        delta_time = (
+            self.fps_display.clock.last_delta_time
+            if hasattr(self.fps_display.clock, "last_delta_time")
+            else 1 / 60
+        )
+        shake_x, shake_y = self.screen_shake.update(delta_time)
+
+        # Blit game console to root console with shake offset
         self.game_map_console.blit(
             dest=self.root_console,
-            dest_x=0,
-            dest_y=self.help_height
-            + self.message_log_height,  # Start after help + message log (line 7)
+            dest_x=shake_x,
+            dest_y=self.help_height + self.message_log_height + shake_y,
             width=self.game_map_console.width,
             height=self.game_map_console.height,
         )
+
         # Render help text above message log
         if not self.menu_system.has_active_menus():
             self._render_help_text()
@@ -135,6 +147,14 @@ class Renderer:
 
         # Present the final console and handle vsync timing
         self.context.present(self.root_console, keep_aspect=True, integer_scaling=True)
+
+    def trigger_screen_shake(self, intensity: float, duration: float = 0.3):
+        """Trigger screen shake effect. Call this from combat actions."""
+        if not SCREEN_SHAKE_ENABLED:
+            return
+
+        scaled_intensity = intensity * SCREEN_SHAKE_INTENSITY_MULTIPLIER
+        self.screen_shake.trigger(scaled_intensity, duration)
 
     def _render_selected_actor_highlight(self) -> None:
         """Renders a highlight on the selected actor's tile by blending colors."""
