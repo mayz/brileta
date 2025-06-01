@@ -139,7 +139,7 @@ class AttackAction(GameAction):
         based on distance and capabilities."""
         weapon = (
             self.weapon
-            or self.attacker.inventory.equipped_weapon
+            or self.attacker.inventory.attack_slots[0]
             or FISTS_TYPE.create()
         )
 
