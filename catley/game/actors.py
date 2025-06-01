@@ -189,9 +189,8 @@ class Actor:
         For NPCs, it queries their AI component.
         """
         if self == controller.gw.player:
-            action = controller.event_handler.pending_action
-            controller.event_handler.pending_action = None  # Clear after retrieving
-            return action
+            return controller.turn_manager.dequeue_player_action()
+
         if self.ai and self.health and self.health.is_alive():
             # Allow AI to update its internal state before deciding on an action.
             self.ai.update(
