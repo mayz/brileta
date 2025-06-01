@@ -99,31 +99,65 @@ class Renderer:
         )
 
     def render_all(self) -> None:
-        self.game_map_console.clear()
+        """
+        Main rendering pipeline that composites the final frame.
 
-        # Clear the root console first
+        Pipeline stages:
+        1. Preparation - Clear buffers, calculate timing
+        2. Game World - Render static and dynamic game elements
+        3. Effects & Compositing - Apply screen effects and combine layers
+        4. UI Overlays - Render interface elements on top
+        5. Presentation - Display the final result
+        """
+        # 1. PREPARATION PHASE
+        delta_time = self._prepare_frame()
+
+        # 2. GAME WORLD RENDERING (to game_map_console)
+        self._render_game_world(delta_time)
+
+        # 3. DYNAMIC EFFECTS & COMPOSITING
+        self._apply_effects_and_composite(delta_time)
+
+        # 4. UI OVERLAY RENDERING (to root_console)
+        self._render_ui_overlays()
+
+        # 5. PRESENTATION
+        self._present_frame()
+
+    def _prepare_frame(self) -> float:
+        """Clear rendering buffers and calculate frame timing."""
+        # Clear both rendering targets
+        self.game_map_console.clear()
         self.root_console.clear()
 
-        # Render map and actors to game console
+        # Calculate delta time for this frame (used by multiple systems)
+        return getattr(self.fps_display.clock, "last_delta_time", 1 / 60)
+
+    def _render_game_world(self, delta_time: float) -> None:
+        """Render all game world elements to the game_map_console."""
+        # Render the static world (map, actors, selection indicators)
         self._render_map()
         self._render_actors()
         self._render_selected_actor_highlight()
         self._render_mouse_cursor_highlight()
 
-        # Update and render particles (before presenting)
-        delta_time = getattr(self.fps_display.clock, "last_delta_time", 1 / 60)
+        # Render dynamic effects (particles) on top of the world
         self.particle_system.update(delta_time)
         self.particle_system.render_to_console(self.game_map_console)
 
-        # Update and apply screen shake
-        delta_time = (
-            self.fps_display.clock.last_delta_time
-            if hasattr(self.fps_display.clock, "last_delta_time")
-            else 1 / 60
-        )
+    def _apply_effects_and_composite(self, delta_time: float) -> None:
+        """Apply screen effects and composite game world onto root console.
+
+        Compositing means combining multiple visual layers into a single image.
+        Here we take the game_map_console (containing the game world) and
+        combine it with the root_console, applying screen shake offset during
+        the combination process.
+        """
+        # Calculate screen shake effect
         shake_x, shake_y = self.screen_shake.update(delta_time)
 
-        # Blit game console to root console with shake offset
+        # Composite: Blit game world onto root console with shake offset
+        # This is where we combine the game world layer with the UI layer
         self.game_map_console.blit(
             dest=self.root_console,
             dest_x=shake_x,
@@ -132,11 +166,14 @@ class Renderer:
             height=self.game_map_console.height,
         )
 
-        # Render help text above message log
+    def _render_ui_overlays(self) -> None:
+        """Render all user interface elements on top of the game world."""
+        # Only show game UI when menus aren't active
         if not self.menu_system.has_active_menus():
             self._render_help_text()
+            self.render_equipment_status()
 
-        # Render the message log below the help text
+        # Always show message log (it can show combat results even with menus)
         self.message_log.render(
             console=self.root_console,
             x=self.message_log_x,
@@ -145,17 +182,15 @@ class Renderer:
             height=self.message_log_height,
         )
 
-        # Add equipment status display
-        if not self.menu_system.has_active_menus():
-            self.render_equipment_status()
-
+        # Debug/development overlays
         if SHOW_FPS:
             self.fps_display.render(self)
 
-        # Render menus last (on top of everything else)
+        # Menus render last so they appear on top of everything
         self.menu_system.render(self.root_console)
 
-        # Present the final console and handle vsync timing
+    def _present_frame(self) -> None:
+        """Present the final composited frame to the display."""
         self.context.present(self.root_console, keep_aspect=True, integer_scaling=True)
 
     def trigger_screen_shake(self, intensity: float, duration: float = 0.3):
