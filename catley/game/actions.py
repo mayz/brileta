@@ -211,6 +211,14 @@ class AttackAction(GameAction):
         if attack == ranged_attack and ranged_attack is not None:
             ranged_attack.current_ammo -= 1
 
+        particle_system = self.controller.renderer.particle_system
+        if attack == weapon.ranged_attack:
+            direction_x = self.defender.x - self.attacker.x
+            direction_y = self.defender.y - self.attacker.y
+            particle_system.emit_muzzle_flash(
+                self.attacker.x, self.attacker.y, direction_x, direction_y
+            )
+
         # Does the attack hit?
         if attack_result.success:
             # Hit - roll damage
@@ -232,6 +240,14 @@ class AttackAction(GameAction):
 
             # Apply damage.
             self.defender.take_damage(damage)
+
+            # Blood splatter only on successful hits
+            if attack_result.success:
+                particle_system.emit_blood_splatter(
+                    self.defender.x,
+                    self.defender.y,
+                    damage // 2,  # More damage = more particles
+                )
 
             # Screen shake only when PLAYER gets hit
             # (player's perspective getting jarred)

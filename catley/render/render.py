@@ -20,6 +20,7 @@ from catley.config import (
     SHOW_FPS,
 )
 from catley.game.actors import Actor
+from catley.render.particles import SubTileParticleSystem
 from catley.render.screen_shake import ScreenShake
 from catley.ui.message_log import MessageLog
 from catley.util.clock import Clock
@@ -93,6 +94,10 @@ class Renderer:
         self.menu_system = menu_system
         self.screen_shake = ScreenShake()
 
+        self.particle_system = SubTileParticleSystem(
+            self.gw.game_map.width, self.gw.game_map.height
+        )
+
     def render_all(self) -> None:
         self.game_map_console.clear()
 
@@ -104,6 +109,11 @@ class Renderer:
         self._render_actors()
         self._render_selected_actor_highlight()
         self._render_mouse_cursor_highlight()
+
+        # Update and render particles (before presenting)
+        delta_time = getattr(self.fps_display.clock, "last_delta_time", 1 / 60)
+        self.particle_system.update(delta_time)
+        self.particle_system.render_to_console(self.game_map_console)
 
         # Update and apply screen shake
         delta_time = (
