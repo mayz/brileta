@@ -3,8 +3,15 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from catley import colors
-from catley.config import PLAYER_BASE_TOUGHNESS
+from catley.config import PLAYER_BASE_STRENGTH, PLAYER_BASE_TOUGHNESS
 from catley.game.actors import Actor, make_pc
+from catley.game.items.item_types import (
+    COMBAT_KNIFE_TYPE,
+    PISTOL_MAGAZINE_TYPE,
+    PISTOL_TYPE,
+    RIFLE_MAGAZINE_TYPE,
+    SNIPER_RIFLE_TYPE,
+)
 from catley.render.lighting import LightingSystem, LightSource
 
 from .map import GameMap
@@ -28,8 +35,6 @@ class GameWorld:
         self.lighting = LightingSystem()
         self.selected_actor: Actor | None = None
 
-        from catley.game.items.item_types import PISTOL_MAGAZINE_TYPE, PISTOL_TYPE
-
         # Create player with a torch light source
         player_light = LightSource.create_torch()
         self.player = make_pc(
@@ -40,13 +45,20 @@ class GameWorld:
             color=colors.PLAYER_COLOR,
             game_world=self,
             light_source=player_light,
+            strength=PLAYER_BASE_STRENGTH,
             toughness=PLAYER_BASE_TOUGHNESS,
             starting_weapon=PISTOL_TYPE.create(),
             # Other abilities will default to 0
         )
 
+        self.player.inventory.equip_to_slot(SNIPER_RIFLE_TYPE.create(), 1)
+        self.player.inventory.add_to_inventory(COMBAT_KNIFE_TYPE.create())
+
         # Give the player some ammo
         self.player.inventory.add_to_inventory(PISTOL_MAGAZINE_TYPE.create())
+        self.player.inventory.add_to_inventory(PISTOL_MAGAZINE_TYPE.create())
+        self.player.inventory.add_to_inventory(RIFLE_MAGAZINE_TYPE.create())
+        self.player.inventory.add_to_inventory(RIFLE_MAGAZINE_TYPE.create())
 
         self.actors = [self.player]
         self.game_map = GameMap(map_width, map_height)

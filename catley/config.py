@@ -60,6 +60,7 @@ FOV_LIGHT_WALLS = True
 
 # Combat & health
 DEFAULT_MAX_ARMOR = 3  # Default maximum armor points
+PLAYER_BASE_STRENGTH = 10
 PLAYER_BASE_TOUGHNESS = 30  # Player's starting toughness score
 
 
