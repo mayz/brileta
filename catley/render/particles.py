@@ -137,7 +137,7 @@ class SubTileParticleSystem:
         self, tile_x: float, tile_y: float, direction_x: float, direction_y: float
     ):
         """Create muzzle flash particles (no background effects)"""
-        for _ in range(12):  # More particles for visibility
+        for _ in range(8):  # More particles for visibility
             # Particles in a cone in the direction of fire
             base_angle = math.atan2(direction_y, direction_x)
             spread = random.uniform(-0.3, 0.3)  # Tighter cone
@@ -147,7 +147,7 @@ class SubTileParticleSystem:
             vel_x = math.cos(angle) * speed
             vel_y = math.sin(angle) * speed
 
-            lifetime = random.uniform(0.15, 0.3)  # Longer for visibility
+            lifetime = random.uniform(0.05, 0.15)
             color: colors.Color = (
                 255,
                 random.randint(200, 255),
