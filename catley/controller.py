@@ -84,7 +84,7 @@ class Controller:
             conditions.Injury(injury_type="Sprained Ankle")
         )
 
-        self._add_npc()
+        self._add_npcs(rooms)
 
         # Initial FOV computation.
         self.update_fov()
@@ -105,42 +105,52 @@ class Controller:
         # If a tile is "visible" it should be added to "explored"
         self.gw.game_map.explored |= self.gw.game_map.visible
 
-    def _add_npc(self) -> None:
-        """Add an NPC to the map."""
-        # Place NPC right next to the player.
-        npc_x = self.gw.player.x
-        npc_y = self.gw.player.y
+    def _add_npcs(self, rooms) -> None:
+        """Add NPCs to random locations in rooms."""
 
-        choice = random.randint(1, 4)
-        match choice:
-            case 1:
-                npc_x += 2
-            case 2:
-                npc_x -= 2
-            case 3:
-                npc_y += 2
-            case 4:
-                npc_y -= 2
+        num_npcs = 10
+        max_attempts_per_npc = 10
 
-        from .game.items.item_types import SLEDGEHAMMER_TYPE
+        for npc_index in range(num_npcs):
+            placed = False
 
-        npc = make_npc(
-            x=npc_x,
-            y=npc_y,
-            ch="T",
-            name="Trog",
-            color=colors.DARK_GREY,
-            game_world=self.gw,
-            blocks_movement=True,
-            weirdness=3,
-            strength=3,
-            toughness=3,
-            intelligence=-3,
-            # Other abilities (agility, observation, demeanor) will default to 0
-            speed=80,
-            starting_weapon=SLEDGEHAMMER_TYPE.create(),
-        )
-        self.gw.actors.append(npc)
+            for _ in range(max_attempts_per_npc):
+                # Pick a random room
+                room = random.choice(rooms)
+
+                # Pick a random tile within the room (avoiding walls)
+                npc_x = random.randint(room.x1 + 1, room.x2 - 2)
+                npc_y = random.randint(room.y1 + 1, room.y2 - 2)
+
+                # Check if tile is walkable and free
+                if (
+                    self.gw.game_map.walkable[npc_x, npc_y]
+                    and self.gw.get_actor_at_location(npc_x, npc_y) is None
+                ):
+                    # Place the NPC
+                    from .game.items.item_types import SLEDGEHAMMER_TYPE
+
+                    npc = make_npc(
+                        x=npc_x,
+                        y=npc_y,
+                        ch="T",
+                        name=f"Trog {npc_index + 1}" if npc_index > 0 else "Trog",
+                        color=colors.DARK_GREY,
+                        game_world=self.gw,
+                        blocks_movement=True,
+                        weirdness=3,
+                        strength=3,
+                        toughness=3,
+                        intelligence=-3,
+                        speed=80,
+                        starting_weapon=SLEDGEHAMMER_TYPE.create(),
+                    )
+                    self.gw.actors.append(npc)
+                    placed = True
+                    break
+
+            if not placed:
+                print(f"Could not place Trog {npc_index + 1} after 10 attempts")
 
     def run_game_loop(self) -> None:
         while True:
