@@ -59,6 +59,14 @@ class GameAction(abc.ABC):
         """Execute this action."""
         pass
 
+    def can_execute(self) -> tuple[bool, str | None]:
+        """Check if this action can be executed. Returns (can_execute, reason_if_not)"""
+        return True, None
+
+    def get_success_probability(self) -> float | None:
+        """Get probability of success for this action, if applicable"""
+        return None
+
 
 class MoveAction(GameAction):
     """Action for moving an actor on the game map."""
@@ -284,6 +292,92 @@ class AttackAction(GameAction):
                 "due to the attack!",
                 colors.ORANGE,
             )
+
+    def can_execute(self) -> tuple[bool, str | None]:
+        """Check if this attack can be executed."""
+        # Calculate distance
+        distance = range_system.calculate_distance(
+            self.attacker.x, self.attacker.y, self.defender.x, self.defender.y
+        )
+
+        # Determine which attack to use
+        weapon = self.attacker.inventory.equipped_weapon or FISTS_TYPE.create()
+        ranged_attack = weapon.ranged_attack
+
+        if distance == 1 and weapon.melee_attack:
+            return True, None
+
+        if ranged_attack and distance > 1:
+            # Check line of sight
+            if not range_system.has_line_of_sight(
+                self.controller.gw.game_map,
+                self.attacker.x,
+                self.attacker.y,
+                self.defender.x,
+                self.defender.y,
+            ):
+                return False, "no line of sight"
+
+            # Check range
+            range_category = range_system.get_range_category(distance, weapon)
+            range_modifiers = range_system.get_range_modifier(weapon, range_category)
+            if range_modifiers is None:
+                return False, "out of range"
+
+            # Check ammo
+            if ranged_attack.current_ammo <= 0:
+                return False, "out of ammo"
+
+            return True, None
+
+        if weapon.melee_attack:
+            return True, None
+
+        return False, "no attack available"
+
+    def get_success_probability(self) -> float | None:
+        """Calculate probability of successful attack."""
+        if not self.attacker.stats or not self.defender.stats:
+            return None
+
+        # Calculate distance and get weapon/attack info (similar to can_execute)
+        distance = range_system.calculate_distance(
+            self.attacker.x, self.attacker.y, self.defender.x, self.defender.y
+        )
+
+        weapon = self.attacker.inventory.equipped_weapon or FISTS_TYPE.create()
+        attack = None
+        range_modifiers = {}
+
+        # Determine attack type (same logic as in execute())
+        if distance == 1 and weapon.melee_attack:
+            attack = weapon.melee_attack
+        elif weapon.ranged_attack and distance > 1:
+            attack = weapon.ranged_attack
+            range_category = range_system.get_range_category(distance, weapon)
+            range_mods = range_system.get_range_modifier(weapon, range_category)
+            if range_mods is None:
+                return None
+            range_modifiers = range_mods
+        elif weapon.melee_attack:
+            attack = weapon.melee_attack
+        else:
+            return None
+
+        if not attack:
+            return None
+
+        # Calculate probability using existing dice utilities
+        attacker_ability_score = getattr(self.attacker.stats, attack.stat_name)
+        defender_ability_score = self.defender.stats.agility
+        roll_to_exceed = defender_ability_score + 10
+
+        return dice.calculate_check_roll_success_probability(
+            attacker_ability_score,
+            roll_to_exceed,
+            has_advantage=range_modifiers.get("has_advantage", False),
+            has_disadvantage=range_modifiers.get("has_disadvantage", False),
+        )
 
 
 class ReloadAction(GameAction):
