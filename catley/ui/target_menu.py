@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import functools
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from catley import colors
 from catley.game import range_system
@@ -9,12 +9,10 @@ from catley.game.actions import AttackAction, ReloadAction
 from catley.game.items.item_core import Item
 from catley.game.items.item_types import FISTS_TYPE
 from catley.ui.menu_core import Menu, MenuOption
-from catley.util import dice
 
 if TYPE_CHECKING:
     from catley.controller import Controller
     from catley.game.actors import Actor
-    from catley.game.components import StatsComponent
 
 
 class QuickActionBar(Menu):
@@ -52,96 +50,44 @@ class QuickActionBar(Menu):
             MenuOption(key=None, text="─" * 25, enabled=False, color=colors.GREY)
         )
 
-        # Quick attack action
-        if self.distance == 1:
-            # Melee range - show primary melee attack
-            primary_weapon = player.inventory.equipped_weapon
-            if primary_weapon and primary_weapon.melee_attack:
-                weapon_name = primary_weapon.name
-            else:
-                weapon_name = "fists"
-                primary_weapon = None
+        attack_action = AttackAction(self.controller, player, self.target_actor)
+        can_attack, reason = attack_action.can_execute()
 
-            # Calculate success probability
-            prob = _calculate_attack_success_probability(
-                primary_weapon,
-                player,
-                self.target_actor,
-                self.distance,
-                self.controller,
-            )
+        if can_attack:
+            prob = attack_action.get_success_probability()
             prob_text = f" ({prob * 100:.0f}%)" if prob is not None else ""
+
+            # Determine weapon name for display
+            primary_weapon = player.inventory.equipped_weapon
+            if self.distance == 1:
+                weapon_name = (
+                    primary_weapon.name
+                    if primary_weapon and primary_weapon.melee_attack
+                    else "fists"
+                )
+                action_text = f"Attack with {weapon_name}{prob_text}"
+            else:
+                ammo_display = (
+                    f"[{primary_weapon.ranged_attack.current_ammo}/"
+                    f"{primary_weapon.ranged_attack.max_ammo}]"
+                )
+                action_text = f"Shoot {primary_weapon.name} {ammo_display}{prob_text}"
 
             action_func = functools.partial(self._perform_quick_attack)
             self.add_option(
                 MenuOption(
-                    key="1",
-                    text=f"Attack with {weapon_name}{prob_text}",
-                    action=action_func,
-                    color=colors.WHITE,
+                    key="1", text=action_text, action=action_func, color=colors.WHITE
                 )
             )
         else:
-            # Ranged - show primary ranged attack if possible
-            primary_weapon = player.inventory.equipped_weapon
-            if (
-                primary_weapon
-                and primary_weapon.ranged_attack
-                and primary_weapon.ranged_attack.current_ammo > 0
-            ):
-                # Check if we can actually shoot
-                range_category = range_system.get_range_category(
-                    self.distance, primary_weapon
+            self.add_option(
+                MenuOption(
+                    key=None,
+                    text=f"Can't attack: {reason}",
+                    enabled=False,
+                    color=colors.RED,
                 )
-                range_mods = range_system.get_range_modifier(
-                    primary_weapon, range_category
-                )
-                has_los = range_system.has_line_of_sight(
-                    self.controller.gw.game_map,
-                    player.x,
-                    player.y,
-                    self.target_actor.x,
-                    self.target_actor.y,
-                )
-
-                if range_mods is not None and has_los:
-                    ammo_display = (
-                        f"[{primary_weapon.ranged_attack.current_ammo}/"
-                        f"{primary_weapon.ranged_attack.max_ammo}]"
-                    )
-
-                    # Calculate success probability
-                    prob = _calculate_attack_success_probability(
-                        primary_weapon,
-                        player,
-                        self.target_actor,
-                        self.distance,
-                        self.controller,
-                    )
-                    prob_text = f" ({prob * 100:.0f}%)" if prob is not None else ""
-
-                    action_func = functools.partial(self._perform_quick_attack)
-                    self.add_option(
-                        MenuOption(
-                            key="1",
-                            text=(
-                                f"Shoot {primary_weapon.name} {ammo_display}{prob_text}"
-                            ),
-                            action=action_func,
-                            color=colors.WHITE,
-                        )
-                    )
-                else:
-                    # Can't shoot - show why
-                    reason = "no line of sight" if not has_los else "out of range"
-                    self.add_option(
-                        MenuOption(
-                            key=None,
-                            text=f"Can't shoot: {reason}",
-                            enabled=False,
-                            color=colors.RED,
-                        )
-                    )
+            )
 
         # Quick reload if needed and possible
         primary_weapon = player.inventory.equipped_weapon
@@ -245,118 +191,106 @@ class TargetMenu(Menu):
     def populate_options(self) -> None:
         """Populate targeting options based on the target and player capabilities."""
         player = self.controller.gw.player
-        target_x, target_y = self.target_location
 
-        # Check line of sight first for ranged options
-        has_los = range_system.has_line_of_sight(
-            self.controller.gw.game_map, player.x, player.y, target_x, target_y
-        )
+        # Attack actions - test each equipped weapon
+        if self.target_actor:
+            options_added = False
 
-        # Melee actions (adjacent only)
-        if self.distance == 1 and self.target_actor:  # Can only melee attack actors
-            melee_added = False
             for item, slot_index in player.inventory.get_equipped_items():
-                if item.melee_attack:
-                    slot_name = player.inventory.get_slot_display_name(slot_index)
-                    key = chr(ord("a") + len(self.options))  # Sequential letters
+                if item.melee_attack or item.ranged_attack:
+                    # Temporarily equip this weapon to test it
+                    old_weapon = player.inventory.equipped_weapon
+                    player.inventory.equip_to_slot(item, 0)  # Test in primary slot
 
-                    # Calculate success probability
-                    prob = _calculate_attack_success_probability(
-                        item, player, self.target_actor, self.distance, self.controller
+                    attack_action = AttackAction(
+                        self.controller, player, self.target_actor
                     )
-                    prob_text = f" ({prob * 100:.0f}%)" if prob is not None else ""
+                    can_attack, reason = attack_action.can_execute()
+                    reason = reason.upper() if reason else None
 
-                    action_func = functools.partial(
-                        self._perform_melee_attack, item, self.target_actor
-                    )
-                    self.add_option(
-                        MenuOption(
-                            key=key,
-                            text=f"Attack with {item.name} ({slot_name}){prob_text}",
-                            action=action_func,
-                            color=colors.WHITE,
-                        )
-                    )
-                    melee_added = True
-
-            # Always allow unarmed attack if no melee weapons equipped
-            if not melee_added:
-                fists = FISTS_TYPE.create()
-
-                # Calculate success probability for unarmed
-                prob = _calculate_attack_success_probability(
-                    fists, player, self.target_actor, self.distance, self.controller
-                )
-                prob_text = f" ({prob * 100:.0f}%)" if prob is not None else ""
-
-                action_func = functools.partial(
-                    self._perform_melee_attack, fists, self.target_actor
-                )
-                self.add_option(
-                    MenuOption(
-                        key="1",
-                        text=f"Attack (unarmed){prob_text}",
-                        action=action_func,
-                        color=colors.WHITE,
-                    )
-                )
-
-        # Ranged actions (if line of sight)
-        if has_los and self.target_actor:  # Can only shoot at actors for now
-            for item, slot_index in player.inventory.get_equipped_items():
-                if item.ranged_attack:
-                    range_category = range_system.get_range_category(
-                        self.distance, item
-                    )
-                    range_mods = range_system.get_range_modifier(item, range_category)
-
-                    if range_mods is None:  # Out of range
-                        continue
+                    # Restore original weapon
+                    if old_weapon:
+                        player.inventory.equip_to_slot(old_weapon, 0)
+                    else:
+                        player.inventory.unequip_slot(0)
 
                     slot_name = player.inventory.get_slot_display_name(slot_index)
-                    key = chr(
-                        ord("a") + len(self.options)
-                    )  # Sequential letters: a, b, c, d...
-                    if item.ranged_attack.current_ammo > 0:
-                        ammo_display = (
-                            f"[{item.ranged_attack.current_ammo}/"
-                            f"{item.ranged_attack.max_ammo}]"
-                        )
+                    key = chr(ord("a") + len(self.options))
 
-                        # Calculate success probability
-                        prob = _calculate_attack_success_probability(
-                            item,
-                            player,
-                            self.target_actor,
-                            self.distance,
-                            self.controller,
-                        )
+                    if can_attack:
+                        prob = attack_action.get_success_probability()
                         prob_text = f" ({prob * 100:.0f}%)" if prob is not None else ""
 
-                        action_func = functools.partial(
-                            self._perform_ranged_attack, item, self.target_actor
-                        )
+                        # Format text based on attack type
+                        if self.distance == 1 and item.melee_attack:
+                            action_text = (
+                                f"Attack with {item.name} ({slot_name}){prob_text}"
+                            )
+                            action_func = functools.partial(
+                                self._perform_melee_attack, item, self.target_actor
+                            )
+                        else:
+                            ammo_display = (
+                                f"[{item.ranged_attack.current_ammo}/"
+                                f"{item.ranged_attack.max_ammo}]"
+                            )
+                            action_text = (
+                                f"Shoot {item.name} ({slot_name}) "
+                                f"{ammo_display}{prob_text}"
+                            )
+                            action_func = functools.partial(
+                                self._perform_ranged_attack, item, self.target_actor
+                            )
+
                         self.add_option(
                             MenuOption(
                                 key=key,
-                                text=(
-                                    f"Shoot {item.name} ({slot_name}) "
-                                    f"{ammo_display}{prob_text}"
-                                ),
+                                text=action_text,
                                 action=action_func,
                                 color=colors.WHITE,
                             )
                         )
+                        options_added = True
                     else:
-                        # Show out of ammo option but disabled
+                        # Show disabled option with reason
+                        if item.ranged_attack:
+                            disabled_text = (
+                                f"Shoot {item.name} ({slot_name}) [{reason}]"
+                            )
+                        else:
+                            disabled_text = (
+                                f"Attack with {item.name} ({slot_name}) [{reason}]"
+                            )
                         self.add_option(
                             MenuOption(
                                 key=None,
-                                text=f"Shoot {item.name} ({slot_name}) [OUT OF AMMO]",
+                                text=disabled_text,
                                 enabled=False,
                                 color=colors.RED,
                             )
                         )
+
+            # Add unarmed option if no valid weapons
+            if not options_added and self.distance == 1:
+                attack_action = AttackAction(self.controller, player, self.target_actor)
+                can_attack, reason = attack_action.can_execute()
+
+                if can_attack:
+                    prob = attack_action.get_success_probability()
+                    prob_text = f" ({prob * 100:.0f}%)" if prob is not None else ""
+                    action_func = functools.partial(
+                        self._perform_melee_attack,
+                        FISTS_TYPE.create(),
+                        self.target_actor,
+                    )
+                    self.add_option(
+                        MenuOption(
+                            key="1",
+                            text=f"Attack (unarmed){prob_text}",
+                            action=action_func,
+                            color=colors.WHITE,
+                        )
+                    )
 
         # Reload actions
         self._add_reload_options()
@@ -431,64 +365,3 @@ class TargetMenu(Menu):
         player = self.controller.gw.player
         reload_action = ReloadAction(self.controller, player, weapon_item)
         self.controller.queue_action(reload_action)
-
-
-def _calculate_attack_success_probability(
-    weapon: Item | None,
-    attacker: Actor,
-    defender: Actor,
-    distance: int,
-    controller: Controller,
-) -> float | None:
-    """Calculate the probability of a successful attack."""
-    # Use fists if no weapon
-    if weapon is None:
-        weapon = FISTS_TYPE.create()
-
-    # Check if actors have required stats
-    if not attacker.stats or not defender.stats:
-        return None
-
-    attacker_stats = cast("StatsComponent", attacker.stats)
-    defender_stats = cast("StatsComponent", defender.stats)
-
-    # Determine which attack to use (same logic as AttackAction)
-    attack = None
-    range_modifiers = {}
-
-    if distance == 1 and weapon.melee_attack:
-        attack = weapon.melee_attack
-    elif weapon.ranged_attack:
-        attack = weapon.ranged_attack
-        # Get range modifiers for ranged attacks
-        if distance > 1:
-            if not range_system.has_line_of_sight(
-                controller.gw.game_map, attacker.x, attacker.y, defender.x, defender.y
-            ):
-                return None  # No line of sight
-
-            range_category = range_system.get_range_category(distance, weapon)
-            range_mods = range_system.get_range_modifier(weapon, range_category)
-            if range_mods is None:
-                return None  # Out of range
-            range_modifiers = range_mods
-    elif weapon.melee_attack:
-        attack = weapon.melee_attack
-    else:
-        return None  # No attack possible
-
-    if not attack:
-        return None
-
-    # Get ability scores
-    attacker_ability_score = getattr(attacker_stats, attack.stat_name)
-    defender_ability_score = defender_stats.agility
-
-    # Calculate opposed check probability
-    roll_to_exceed = defender_ability_score + 10
-    return dice.calculate_check_roll_success_probability(
-        attacker_ability_score,
-        roll_to_exceed,
-        has_advantage=range_modifiers.get("has_advantage", False),
-        has_disadvantage=range_modifiers.get("has_disadvantage", False),
-    )
