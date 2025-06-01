@@ -233,6 +233,27 @@ class AttackAction(GameAction):
             # Apply damage.
             self.defender.take_damage(damage)
 
+            # Screen shake only when PLAYER gets hit
+            # (player's perspective getting jarred)
+            if self.defender == self.controller.gw.player:
+                # Different shake for different attack types
+                if attack == weapon.melee_attack:
+                    # Melee attacks - use probability instead of pixel distance
+                    shake_intensity = min(damage * 0.15, 0.8)  # 0.15-0.8 probability
+                    shake_duration = 0.2 + (damage * 0.03)
+                else:
+                    # Ranged attacks - lower probability
+                    shake_intensity = min(damage * 0.08, 0.5)  # 0.08-0.5 probability
+                    shake_duration = 0.1 + (damage * 0.02)
+                # Extra shake for critical hits against player
+                if attack_result.is_critical_hit:
+                    shake_intensity *= 1.5  # Higher probability for crits
+                    shake_duration *= 1.3
+
+                self.controller.renderer.trigger_screen_shake(
+                    shake_intensity, shake_duration
+                )
+
             # Log hit message
             if attack_result.is_critical_hit:
                 hit_message = (
