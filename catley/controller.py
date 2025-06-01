@@ -1,18 +1,15 @@
-import random
-
 import tcod.event
 import tcod.map
 from tcod.console import Console
 from tcod.context import Context
 
-from catley.ui.menu_core import MenuSystem
-
-from . import colors, config
+from . import config
 from .event_handler import EventHandler
 from .game import conditions
-from .game.actions import GameAction, MoveAction
-from .game.actors import make_npc
+from .game.actions import GameAction
 from .render.render import Renderer
+from .turn_manager import TurnManager
+from .ui.menu_core import MenuSystem
 from .ui.message_log import MessageLog
 from .util.clock import Clock
 from .world.game_state import GameWorld
@@ -58,6 +55,8 @@ class Controller:
         first_room = rooms[0]
         self.gw.player.x, self.gw.player.y = first_room.center()
 
+        self.turn_manager = TurnManager(self)
+
         # Initialize Message Log
         self.message_log = MessageLog()
 
@@ -84,7 +83,7 @@ class Controller:
             conditions.Injury(injury_type="Sprained Ankle")
         )
 
-        self._add_npcs(rooms)
+        self.gw.populate_npcs(rooms)
 
         # Initial FOV computation.
         self.update_fov()
@@ -104,53 +103,6 @@ class Controller:
 
         # If a tile is "visible" it should be added to "explored"
         self.gw.game_map.explored |= self.gw.game_map.visible
-
-    def _add_npcs(self, rooms) -> None:
-        """Add NPCs to random locations in rooms."""
-
-        num_npcs = 10
-        max_attempts_per_npc = 10
-
-        for npc_index in range(num_npcs):
-            placed = False
-
-            for _ in range(max_attempts_per_npc):
-                # Pick a random room
-                room = random.choice(rooms)
-
-                # Pick a random tile within the room (avoiding walls)
-                npc_x = random.randint(room.x1 + 1, room.x2 - 2)
-                npc_y = random.randint(room.y1 + 1, room.y2 - 2)
-
-                # Check if tile is walkable and free
-                if (
-                    self.gw.game_map.walkable[npc_x, npc_y]
-                    and self.gw.get_actor_at_location(npc_x, npc_y) is None
-                ):
-                    # Place the NPC
-                    from .game.items.item_types import SLEDGEHAMMER_TYPE
-
-                    npc = make_npc(
-                        x=npc_x,
-                        y=npc_y,
-                        ch="T",
-                        name=f"Trog {npc_index + 1}" if npc_index > 0 else "Trog",
-                        color=colors.DARK_GREY,
-                        game_world=self.gw,
-                        blocks_movement=True,
-                        weirdness=3,
-                        strength=3,
-                        toughness=3,
-                        intelligence=-3,
-                        speed=80,
-                        starting_weapon=SLEDGEHAMMER_TYPE.create(),
-                    )
-                    self.gw.actors.append(npc)
-                    placed = True
-                    break
-
-            if not placed:
-                print(f"Could not place Trog {npc_index + 1} after 10 attempts")
 
     def run_game_loop(self) -> None:
         while True:
@@ -176,83 +128,11 @@ class Controller:
         Args:
             action: The GameAction to queue for execution
         """
-        self.event_handler.pending_action = action
-
-    def _execute_action(self, action: GameAction | None) -> None:
-        """
-        Internal method: Execute an action immediately without turn processing.
-
-        This is called by the unified round system and should not be called
-        directly by external code. Use queue_action() instead.
-
-        Args:
-            action: The Action to be performed. Can be None, in which
-                    case the method does nothing.
-        """
-        if not action:
-            return  # Do nothing if no action is provided
-
-        try:
-            action.execute()
-        except SystemExit:
-            raise
-        except Exception as e:
-            error_message = (
-                f"Error executing action '{type(action).__name__}': {str(e)}"
-            )
-            self.message_log.add_message(error_message, colors.RED)
-            print(f"Unhandled exception during action execution: {e}")
-            return
-
-        # Update FOV only if the player moved
-        if action.actor == self.gw.player and isinstance(action, MoveAction):
-            self.update_fov()
+        self.turn_manager.queue_action(action)
 
     def process_unified_round(self) -> None:
         """
         Processes a single round where all actors can act.
         Uses a frequency-based system where faster actors act more often.
         """
-        # Let actors spend their accumulated points to take actions
-        max_iterations = 50  # Prevent infinite loops
-        iteration = 0
-
-        # 1. Give all actors energy once per round
-        for actor in self.gw.actors:
-            actor.regenerate_energy()
-
-        while iteration < max_iterations:
-            someone_acted = False
-            iteration += 1
-
-            # Check each actor to see if they can act
-            for actor in self.gw.actors.copy():
-                if actor.can_afford_action(self.action_cost):
-                    action = actor.get_next_action(self)
-                    # Always spend energy if you can afford to act. No hoarding!
-                    # This ensures speed relationships remain consistent.
-                    actor.spend_energy(self.action_cost)
-
-                    if action:
-                        self._execute_action(action)
-                        someone_acted = True
-
-                    if not self.gw.player.health.is_alive():
-                        # Player died, handle game over and stop processing
-                        self.message_log.add_message(
-                            f"{self.gw.player.name} has been defeated! Game Over.",
-                            colors.RED,
-                        )
-                        # Further game over logic (e.g., prevent input)
-                        # could be handled by setting a game over flag here
-                        # or in the main loop. For now, returning stops this round.
-                        return
-
-            # If nobody acted this round, we're done
-            if not someone_acted:
-                break
-
-        # After the round, call update_turn for any passive effects
-        # (like poison, regeneration) for all actors.
-        for actor in self.gw.actors:
-            actor.update_turn(self)
+        self.turn_manager.process_unified_round()

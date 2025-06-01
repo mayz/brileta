@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import random
 from typing import TYPE_CHECKING
 
 from catley import colors
@@ -83,11 +84,10 @@ class GameWorld:
                 and actor.health
                 and not actor.health.is_alive()  # Only from dead actors
             ):
-                items_found.extend(actor.inventory)
-                if actor.inventory.equipped_weapon:
-                    items_found.append(
-                        actor.inventory.equipped_weapon
-                    )  # Add equipped weapon
+                # Add all equipped items from all slots
+                for equipped_item in actor.inventory.attack_slots:
+                    if equipped_item:
+                        items_found.append(equipped_item)
         # Future: Add items directly on the ground if we implement that
         # e.g., items_found.extend(self.game_map.get_items_on_ground(x,y))
         return items_found
@@ -102,3 +102,52 @@ class GameWorld:
     def has_pickable_items_at_location(self, x: int, y: int) -> bool:
         """Check if there are any pickable items at the specified location."""
         return bool(self.get_pickable_items_at_location(x, y))
+
+    def populate_npcs(
+        self, rooms: list, num_npcs: int = 10, max_attempts_per_npc: int = 10
+    ) -> None:
+        """Add NPCs to random locations in rooms."""
+        from catley.game.actors import make_npc
+        from catley.game.items.item_types import SLEDGEHAMMER_TYPE
+
+        for npc_index in range(num_npcs):
+            placed = False
+
+            for _ in range(max_attempts_per_npc):
+                # Pick a random room
+                room = random.choice(rooms)
+
+                # Pick a random tile within the room (avoiding walls)
+                npc_x = random.randint(room.x1 + 1, room.x2 - 2)
+                npc_y = random.randint(room.y1 + 1, room.y2 - 2)
+
+                # Check if tile is walkable and free
+                if (
+                    self.game_map.walkable[npc_x, npc_y]
+                    and self.get_actor_at_location(npc_x, npc_y) is None
+                ):
+                    # Place the NPC
+                    npc = make_npc(
+                        x=npc_x,
+                        y=npc_y,
+                        ch="T",
+                        name=f"Trog {npc_index + 1}" if npc_index > 0 else "Trog",
+                        color=colors.DARK_GREY,
+                        game_world=self,
+                        blocks_movement=True,
+                        weirdness=3,
+                        strength=3,
+                        toughness=3,
+                        intelligence=-3,
+                        speed=80,
+                        starting_weapon=SLEDGEHAMMER_TYPE.create(),
+                    )
+                    self.actors.append(npc)
+                    placed = True
+                    break
+
+            if not placed:
+                print(
+                    f"Could not place Trog {npc_index + 1} after "
+                    f"{max_attempts_per_npc} attempts"
+                )

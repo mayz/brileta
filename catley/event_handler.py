@@ -29,7 +29,6 @@ class EventHandler:
         self.gw = controller.gw
         self.game_map = self.gw.game_map
         self.p = self.gw.player
-        self.pending_action: GameAction | None = None
 
     def dispatch(self, event: tcod.event.Event) -> None:
         # First, try to handle the event with the menu system
@@ -39,11 +38,10 @@ class EventHandler:
         if not menu_consumed:
             action = self.handle_event(event)
             if action:
-                self.pending_action = action
+                self.controller.queue_action(action)
 
-        # If we have any pending action (from menu or handle_event), process it
-        if self.pending_action:
-            self.controller.process_unified_round()
+        # Process a round (the controller will decide if anything needs to happen)
+        self.controller.process_unified_round()
 
     def handle_event(self, event: tcod.event.Event) -> GameAction | None:
         # Don't process game actions if menus are active
