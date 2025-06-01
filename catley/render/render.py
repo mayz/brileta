@@ -3,7 +3,6 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 from tcod.console import Console
-from tcod.context import Context
 
 from catley import colors
 from catley.config import (
@@ -67,10 +66,12 @@ class Renderer:
         clock: Clock,
         message_log: MessageLog,
         menu_system: "MenuSystem",
-        context: Context,
+        sdl_renderer,
+        console_render,
         root_console: Console,
     ) -> None:
-        self.context = context
+        self.sdl_renderer = sdl_renderer
+        self.console_render = console_render
         self.root_console = root_console
 
         self.screen_width = screen_width
@@ -190,8 +191,14 @@ class Renderer:
         self.menu_system.render(self.root_console)
 
     def _present_frame(self) -> None:
-        """Present the final composited frame to the display."""
-        self.context.present(self.root_console, keep_aspect=True, integer_scaling=True)
+        """Present the final composited frame via SDL."""
+        # Convert TCOD console to SDL texture
+        console_texture = self.console_render.render(self.root_console)
+
+        # Copy texture to screen and present
+        self.sdl_renderer.clear()
+        self.sdl_renderer.copy(console_texture)
+        self.sdl_renderer.present()
 
     def trigger_screen_shake(self, intensity: float, duration: float = 0.3):
         """Trigger screen shake effect. Call this from combat actions."""
