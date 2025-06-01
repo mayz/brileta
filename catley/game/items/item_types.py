@@ -159,3 +159,10 @@ PISTOL_MAGAZINE_TYPE = ItemType(
     size=ItemSize.TINY,
     ammo=AmmoSpec("pistol", 6),
 )
+
+RIFLE_MAGAZINE_TYPE = ItemType(
+    name="Rifle Ammo",
+    description="Rifle ammo magazine",
+    size=ItemSize.TINY,
+    ammo=AmmoSpec("rifle", 5),
+)

@@ -26,18 +26,28 @@ class InventoryMenu(Menu):
     def populate_options(self) -> None:
         """Populate inventory options."""
         self.options.clear()  # Ensure options are cleared at the start
-        # The title "Inventory" is set in __init__.
-        # The dynamic part (bar, X/Y used) is now handled in Menu.render.
 
         # Use letters a-z for inventory items
         letters = string.ascii_lowercase
         letter_idx = 0
 
         # This list will hold MenuOption objects for each display line
-        # up to player.inventory_slots.
         display_lines: list[MenuOption] = []
 
-        if self.inventory.is_empty():
+        # Collect all items to display (stored + equipped)
+        all_items_to_display = []
+
+        # Add all stored items
+        for entity_in_slot in self.inventory._stored_items:
+            all_items_to_display.append((entity_in_slot, "stored"))
+
+        # Add all equipped items
+        for slot_index, equipped_item in enumerate(self.inventory.attack_slots):
+            if equipped_item:
+                slot_name = self.inventory.get_slot_display_name(slot_index)
+                all_items_to_display.append((equipped_item, f"equipped in {slot_name}"))
+
+        if not all_items_to_display:
             display_lines.append(
                 MenuOption(
                     key=None, text="(inventory empty)", enabled=False, color=colors.GREY
@@ -46,8 +56,14 @@ class InventoryMenu(Menu):
             self.options = display_lines
             return
 
-        # Iterate through the actual items/conditions in inventory
-        for entity_in_slot in self.inventory:
+        # Iterate through all items (stored and equipped)
+        for entity_info in all_items_to_display:
+            if isinstance(entity_info, tuple):
+                entity_in_slot, item_status = entity_info
+            else:
+                entity_in_slot = entity_info
+                item_status = "stored"
+
             text_to_display: str
             action_to_take: Callable[[], None] | None = None
             option_color: colors.Color
@@ -57,14 +73,14 @@ class InventoryMenu(Menu):
 
             if isinstance(entity_in_slot, Item):
                 item: Item = entity_in_slot
-                equipped_marker = ""
-                if item.equippable and self.inventory.equipped_weapon == item:
-                    equipped_marker = " (equipped)"
 
-                size_display = (
-                    ""  # This will hold the graphical slot indicators or (Tiny)
-                )
-                item_display_color = colors.WHITE  # Default for items
+                if item_status.startswith("equipped"):
+                    equipped_marker = f" ({item_status})"
+                else:
+                    equipped_marker = ""
+
+                size_display = ""
+                item_display_color = colors.WHITE
 
                 if item.size == ItemSize.TINY:
                     size_display = " (Tiny)"
@@ -77,10 +93,7 @@ class InventoryMenu(Menu):
 
                 text_to_display = f"{item.name}{size_display}{equipped_marker}"
                 option_color = item_display_color
-                is_enabled = True  # Assume items are generally usable/selectable
-
-                # Only assign keys to actual items that can be interacted with
-                # Conditions are listed but not keyed for action from this menu.
+                is_enabled = True
 
                 if letter_idx < len(letters):
                     current_key = letters[letter_idx]
@@ -89,15 +102,12 @@ class InventoryMenu(Menu):
 
             elif isinstance(entity_in_slot, Condition):
                 condition: Condition = entity_in_slot
-                text_to_display = (
-                    f"{condition.name} █"  # Add slot indicator for conditions
-                )
+                text_to_display = f"{condition.name} █"
                 option_color = condition.display_color
                 force_color = True
-                is_enabled = False  # Conditions are not directly "used"
+                is_enabled = False
                 action_to_take = None
             else:
-                # Should not happen with current game structure
                 text_to_display = f"Unknown: {entity_in_slot}"
                 option_color = colors.RED
                 is_enabled = False

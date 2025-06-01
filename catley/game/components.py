@@ -166,10 +166,11 @@ class InventoryComponent:
     # === Storage Management ===
 
     def get_used_inventory_slots(self) -> int:
-        """Calculate inventory slots currently used (excludes equipped items)."""
+        """Calculate inventory slots currently used (includes equipped items)."""
         used_space = 0
         has_tiny_items = False
 
+        # Count stored items
         for entity_in_slot in self._stored_items:
             if isinstance(entity_in_slot, Item):
                 item = entity_in_slot
@@ -184,8 +185,20 @@ class InventoryComponent:
             elif isinstance(entity_in_slot, Condition):
                 used_space += 1
 
+        # Count equipped items
+        for equipped_item in self.attack_slots:
+            if equipped_item:
+                if equipped_item.size == ItemSize.TINY:
+                    has_tiny_items = True
+                elif equipped_item.size == ItemSize.NORMAL:
+                    used_space += 1
+                elif equipped_item.size == ItemSize.BIG:
+                    used_space += 2
+                elif equipped_item.size == ItemSize.HUGE:
+                    used_space += 4
+
         if has_tiny_items:
-            used_space += 1  # All tiny items collectively share one slot
+            used_space += 1
 
         return used_space
 
@@ -235,6 +248,7 @@ class InventoryComponent:
         slot_colors: list[colors.Color] = []
         has_processed_tiny_slot = False
 
+        # Process stored items
         for entity_in_slot in self._stored_items:
             if isinstance(entity_in_slot, Item):
                 item = entity_in_slot
@@ -252,6 +266,22 @@ class InventoryComponent:
                     slot_colors.extend([item_bar_color] * 4)
             elif isinstance(entity_in_slot, Condition):
                 slot_colors.append(entity_in_slot.display_color)
+
+        # Process equipped items
+        for equipped_item in self.attack_slots:
+            if equipped_item:
+                item_bar_color = colors.WHITE
+
+                if equipped_item.size == ItemSize.TINY:
+                    if not has_processed_tiny_slot:
+                        slot_colors.append(item_bar_color)
+                        has_processed_tiny_slot = True
+                elif equipped_item.size == ItemSize.NORMAL:
+                    slot_colors.append(item_bar_color)
+                elif equipped_item.size == ItemSize.BIG:
+                    slot_colors.extend([item_bar_color] * 2)
+                elif equipped_item.size == ItemSize.HUGE:
+                    slot_colors.extend([item_bar_color] * 4)
 
         return slot_colors
 

@@ -325,9 +325,7 @@ class TargetMenu(Menu):
                     reload_key = chr(
                         ord("a") + len(self.options)
                     )  # Continue sequential letters
-                    action_func = functools.partial(
-                        self._perform_reload, item, slot_index
-                    )
+                    action_func = functools.partial(self._perform_reload, item)
                     self.add_option(
                         MenuOption(
                             key=reload_key,
@@ -357,10 +355,10 @@ class TargetMenu(Menu):
         # For now, use the existing AttackAction which will automatically
         # choose ranged attack based on distance
         player = self.controller.gw.player
-        attack_action = AttackAction(self.controller, player, target_actor)
+        attack_action = AttackAction(self.controller, player, target_actor, weapon_item)
         self.controller.queue_action(attack_action)
 
-    def _perform_reload(self, weapon_item, slot_index) -> None:
+    def _perform_reload(self, weapon_item) -> None:
         """Reload the specified weapon."""
         player = self.controller.gw.player
         reload_action = ReloadAction(self.controller, player, weapon_item)

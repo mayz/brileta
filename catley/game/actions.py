@@ -103,15 +103,24 @@ class AttackAction(GameAction):
     """Action for one `Actor` attacking another in combat."""
 
     def __init__(
-        self, controller: Controller, attacker: Actor, defender: Actor
+        self,
+        controller: Controller,
+        attacker: Actor,
+        defender: Actor,
+        weapon: Item | None = None,
     ) -> None:
         super().__init__(controller, attacker)
         self.attacker = attacker
         self.defender = defender
+        self.weapon = weapon
 
     def execute(self) -> None:
         # Determine attacker's ability score and attack component
-        weapon = self.attacker.inventory.equipped_weapon or FISTS_TYPE.create()
+        weapon = (
+            self.weapon
+            or self.attacker.inventory.equipped_weapon
+            or FISTS_TYPE.create()
+        )
         attack: Attack | None = None
 
         # Calculate distance between attacker and defender
@@ -271,7 +280,11 @@ class AttackAction(GameAction):
             self.controller.message_log.add_message(miss_message, miss_color)
 
             # Handle 'awkward' weapon property on miss
-            if weapon and "awkward" in weapon.melee_attack.properties:
+            if (
+                weapon
+                and weapon.melee_attack
+                and "awkward" in weapon.melee_attack.properties
+            ):
                 self.controller.message_log.add_message(
                     f"{self.attacker.name} is off balance from the awkward swing "
                     f"with {weapon.name}!",
@@ -301,7 +314,11 @@ class AttackAction(GameAction):
         )
 
         # Determine which attack to use
-        weapon = self.attacker.inventory.equipped_weapon or FISTS_TYPE.create()
+        weapon = (
+            self.weapon
+            or self.attacker.inventory.equipped_weapon
+            or FISTS_TYPE.create()
+        )
         ranged_attack = weapon.ranged_attack
 
         if distance == 1 and weapon.melee_attack:
@@ -345,7 +362,11 @@ class AttackAction(GameAction):
             self.attacker.x, self.attacker.y, self.defender.x, self.defender.y
         )
 
-        weapon = self.attacker.inventory.equipped_weapon or FISTS_TYPE.create()
+        weapon = (
+            self.weapon
+            or self.attacker.inventory.equipped_weapon
+            or FISTS_TYPE.create()
+        )
         attack = None
         range_modifiers = {}
 
