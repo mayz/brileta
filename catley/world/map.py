@@ -25,6 +25,9 @@ class Rect:
             and self.y2 >= other.y1
         )
 
+    def __repr__(self) -> str:
+        return f"Rect(x1={self.x1}, y1={self.y1}, x2={self.x2}, y2={self.y2})"
+
 
 class GameMap:
     """The game map."""
