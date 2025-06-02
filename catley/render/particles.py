@@ -230,7 +230,11 @@ class SubTileParticleSystem:
             # Fire colors for both foreground and background
             fire_colors = [(255, 100, 0), (255, 150, 0), (200, 50, 0)]
             fg_color = random.choice(fire_colors)
-            bg_color = tuple(int(c * 0.6) for c in fg_color)  # Dimmer background
+            bg_color: colors.Color = (
+                int(fg_color[0] * 0.6),
+                int(fg_color[1] * 0.6),
+                int(fg_color[2] * 0.6),
+            )  # Dimmer background
 
             particle = SubParticle(
                 tile_x * self.subdivision,

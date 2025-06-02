@@ -29,16 +29,7 @@ def main() -> None:
         title=title,
         vsync=config.VSYNC,
     ) as context:
-        # Extract SDL components from the context
-        sdl_renderer = context.sdl_renderer
-        sdl_atlas = context.sdl_atlas
-
-        # Create console renderer from the atlas
-        console_render = tcod.render.SDLConsoleRender(sdl_atlas)
-
-        controller = Controller(
-            context, sdl_renderer, console_render, root_console, tileset
-        )
+        controller = Controller(context, root_console, tileset.tile_shape)
         try:
             controller.run_game_loop()
         except Exception as e:

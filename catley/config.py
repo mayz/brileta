@@ -90,14 +90,14 @@ MAX_NUM_ROOMS = 3
 # =============================================================================
 
 # Generic light source defaults
-DEFAULT_LIGHT_COLOR = (1.0, 1.0, 1.0)  # Pure white
+DEFAULT_LIGHT_COLOR = (255, 255, 255)  # Pure white
 DEFAULT_FLICKER_SPEED = 3.0
 DEFAULT_MIN_BRIGHTNESS = 1.15
 DEFAULT_MAX_BRIGHTNESS = 1.35
 
 # Torch preset values (used in LightSource.create_torch())
 TORCH_RADIUS = 10
-TORCH_COLOR = (0.7, 0.5, 0.3)  # Warm orange/yellow
+TORCH_COLOR = (179, 128, 77)  # Warm orange/yellow
 TORCH_FLICKER_SPEED = 3.0
 TORCH_MIN_BRIGHTNESS = 1.15
 TORCH_MAX_BRIGHTNESS = 1.35

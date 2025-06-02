@@ -33,7 +33,7 @@ Use one of the factory functions below to create actors:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from catley import colors
 from catley.config import DEFAULT_ACTOR_SPEED
@@ -130,6 +130,10 @@ class Actor:
 
         self.tricks: list = []
 
+    def __repr__(self):
+        fields = ", ".join(f"{k}={v!r}" for k, v in vars(self).items())
+        return f"{self.__class__.__name__}({fields})"
+
     def move(self, dx: int, dy: int) -> None:
         self.x += dx
         self.y += dy
@@ -185,18 +189,7 @@ class Actor:
     def get_next_action(self, controller: Controller) -> GameAction | None:
         """
         Determines the next action for this actor.
-        For the player, it retrieves the pending action from the event handler.
-        For NPCs, it queries their AI component.
         """
-        if self == controller.gw.player:
-            return controller.turn_manager.dequeue_player_action()
-
-        if self.ai and self.health and self.health.is_alive():
-            # Allow AI to update its internal state before deciding on an action.
-            self.ai.update(
-                controller
-            )  # Pass only controller as per AIComponent.update signature
-            return self.ai.get_action(controller, self)
         return None
 
     def regenerate_energy(self) -> None:
@@ -211,195 +204,242 @@ class Actor:
         self.accumulated_energy -= cost
 
 
-# Factory functions.
-
-
-def make_pc(
-    x: int,
-    y: int,
-    ch: str,
-    color: colors.Color,
-    name: str,
-    game_world: GameWorld | None = None,
-    strength: int = 0,
-    toughness: int = 0,
-    agility: int = 0,
-    observation: int = 0,
-    intelligence: int = 0,
-    demeanor: int = 0,
-    weirdness: int = 0,
-    light_source: LightSource | None = None,
-    starting_weapon: Item | None = None,
-    num_attack_slots: int = 2,
-    speed: int = DEFAULT_ACTOR_SPEED,
-) -> Actor:
-    """Create a player character.
-
-    Args:
-        x, y: Starting position
-        ch: Character to display
-        color: Display color
-        name: Character name
-        game_world: World to exist in
-        strength, toughness, etc.: Ability scores
-        light_source: Optional light source
-        starting_weapon: Initial equipped weapon
-        num_attack_slots: The number of attack slots this character should have
-        speed: Action speed (higher = more frequent actions)
-    """
-    return _make_character(
-        x=x,
-        y=y,
-        ch=ch,
-        color=color,
-        name=name,
-        game_world=game_world,
-        strength=strength,
-        toughness=toughness,
-        agility=agility,
-        observation=observation,
-        intelligence=intelligence,
-        demeanor=demeanor,
-        weirdness=weirdness,
-        light_source=light_source,
-        starting_weapon=starting_weapon,
-        num_attack_slots=num_attack_slots,
-        speed=speed,
-    )
-
-
-def make_npc(
-    x: int,
-    y: int,
-    ch: str,
-    color: colors.Color,
-    name: str,
-    game_world: GameWorld | None = None,
-    strength: int = 0,
-    toughness: int = 0,
-    agility: int = 0,
-    observation: int = 0,
-    intelligence: int = 0,
-    demeanor: int = 0,
-    weirdness: int = 0,
-    light_source: LightSource | None = None,
-    starting_weapon: Item | None = None,
-    num_attack_slots: int = 2,
-    disposition: Disposition = Disposition.WARY,
-    speed: int = DEFAULT_ACTOR_SPEED,
-    **kwargs,
-) -> Actor:
-    """Create an NPC or monster with full capabilities.
-
-    NPCs have stats, health, inventory, and visual effects. They have AI, can
-    fight, carry items, and participate fully in the simulation.
-
-    Args:
-        x, y: Starting position
-        ch: Character to display
-        color: Display color
-        name: Character name
-        game_world: World to exist in
-        strength, toughness, etc.: Ability scores
-        light_source: Optional light source
-        starting_weapon: Initial equipped weapon
-        num_attack_slots: The number of attack slots this character should have
-        disposition: Starting disposition toward player
-        speed: Action speed (higher = more frequent actions)
-        **kwargs: Additional Actor parameters
-    """
-    return _make_character(
-        x=x,
-        y=y,
-        ch=ch,
-        color=color,
-        name=name,
-        game_world=game_world,
-        strength=strength,
-        toughness=toughness,
-        agility=agility,
-        observation=observation,
-        intelligence=intelligence,
-        demeanor=demeanor,
-        weirdness=weirdness,
-        ai=DispositionBasedAI(disposition=disposition),
-        light_source=light_source,
-        starting_weapon=starting_weapon,
-        num_attack_slots=num_attack_slots,
-        speed=speed,
-        **kwargs,
-    )
-
-
-def _make_character(
-    x: int,
-    y: int,
-    ch: str,
-    color: colors.Color,
-    name: str,
-    game_world: GameWorld | None = None,
-    strength: int = 0,
-    toughness: int = 0,
-    agility: int = 0,
-    observation: int = 0,
-    intelligence: int = 0,
-    demeanor: int = 0,
-    weirdness: int = 0,
-    ai: AIComponent | None = None,
-    light_source: LightSource | None = None,
-    starting_weapon: Item | None = None,
-    num_attack_slots: int = 2,
-    speed: int = DEFAULT_ACTOR_SPEED,
-    **kwargs,
-) -> Actor:
-    """Create a character (player, NPC, monster) with full capabilities.
+class Character(Actor):
+    """A character (player, NPC, monster) with full capabilities.
 
     Characters have stats, health, inventory, and visual effects. They can think,
     fight, carry items, and participate fully in the simulation.
 
-    Args:
-        x, y: Starting position
-        ch: Character to display
-        color: Display color
-        name: Character name
-        game_world: World to exist in
-        strength, toughness, etc.: Ability scores
-        ai: AI component for autonomous behavior (None for player)
-        light_source: Optional light source
-        starting_weapon: Initial equipped weapon
-        num_attack_slots: The number of attack slots this character should have
-        speed: Action speed (higher = more frequent actions)
-        **kwargs: Additional Actor parameters
+    Type-safe wrapper - guarantees certain components exist. All the actual
+    functionality still comes from the components.
     """
-    stats = StatsComponent(
-        strength=strength,
-        toughness=toughness,
-        agility=agility,
-        observation=observation,
-        intelligence=intelligence,
-        demeanor=demeanor,
-        weirdness=weirdness,
-    )
 
-    actor = Actor(
-        x=x,
-        y=y,
-        ch=ch,
-        color=color,
-        name=name,
-        game_world=game_world,
-        stats=stats,
-        health=HealthComponent(stats),
-        inventory=InventoryComponent(stats, num_attack_slots),
-        visual_effects=VisualEffectsComponent(),
-        ai=ai,
-        light_source=light_source,
-        speed=speed,
+    def __init__(
+        self,
+        x: int,
+        y: int,
+        ch: str,
+        color: colors.Color,
+        name: str,
+        game_world: GameWorld | None = None,
+        strength: int = 0,
+        toughness: int = 0,
+        agility: int = 0,
+        observation: int = 0,
+        intelligence: int = 0,
+        demeanor: int = 0,
+        weirdness: int = 0,
+        ai: AIComponent | None = None,
+        light_source: LightSource | None = None,
+        starting_weapon: Item | None = None,
+        num_attack_slots: int = 2,
+        speed: int = DEFAULT_ACTOR_SPEED,
         **kwargs,
-    )
+    ) -> None:
+        """
+        Instantiate Character.
 
-    if starting_weapon:
-        inventory = cast("InventoryComponent", actor.inventory)
-        inventory.equip_to_slot(starting_weapon, 0)
+        Args:
+            x, y: Starting position
+            ch: Character to display
+            color: Display color
+            name: Character name
+            game_world: World to exist in
+            strength, toughness, etc.: Ability scores
+            ai: AI component for autonomous behavior (None for player)
+            light_source: Optional light source
+            starting_weapon: Initial equipped weapon
+            num_attack_slots: The number of attack slots this character should have
+            speed: Action speed (higher = more frequent actions)
+            **kwargs: Additional Actor parameters
+        """
+        stats = StatsComponent(
+            strength=strength,
+            toughness=toughness,
+            agility=agility,
+            observation=observation,
+            intelligence=intelligence,
+            demeanor=demeanor,
+            weirdness=weirdness,
+        )
 
-    return actor
+        super().__init__(
+            x=x,
+            y=y,
+            ch=ch,
+            color=color,
+            name=name,
+            game_world=game_world,
+            stats=stats,
+            health=HealthComponent(stats),
+            inventory=InventoryComponent(stats, num_attack_slots),
+            visual_effects=VisualEffectsComponent(),
+            ai=ai,
+            light_source=light_source,
+            speed=speed,
+            **kwargs,
+        )
+
+        # Type narrowing - these are guaranteed to exist.
+        self.stats: StatsComponent
+        self.health: HealthComponent
+        self.inventory: InventoryComponent
+        self.visual_effects: VisualEffectsComponent
+
+        if starting_weapon:
+            self.inventory.equip_to_slot(starting_weapon, 0)
+
+
+class PC(Character):
+    """A player character.
+
+    Type-safe wrapper - guarantees certain components exist. All the actual
+    functionality still comes from the components.
+    """
+
+    def __init__(
+        self,
+        x: int,
+        y: int,
+        ch: str,
+        color: colors.Color,
+        name: str,
+        game_world: GameWorld | None = None,
+        strength: int = 0,
+        toughness: int = 0,
+        agility: int = 0,
+        observation: int = 0,
+        intelligence: int = 0,
+        demeanor: int = 0,
+        weirdness: int = 0,
+        light_source: LightSource | None = None,
+        starting_weapon: Item | None = None,
+        num_attack_slots: int = 2,
+        speed: int = DEFAULT_ACTOR_SPEED,
+    ) -> None:
+        """Instantiate PC.
+
+        Args:
+            x, y: Starting position
+            ch: Character to display
+            color: Display color
+            name: Character name
+            game_world: World to exist in
+            strength, toughness, etc.: Ability scores
+            light_source: Optional light source
+            starting_weapon: Initial equipped weapon
+            num_attack_slots: The number of attack slots this character should have
+            speed: Action speed (higher = more frequent actions)
+        """
+        super().__init__(
+            x=x,
+            y=y,
+            ch=ch,
+            color=color,
+            name=name,
+            game_world=game_world,
+            strength=strength,
+            toughness=toughness,
+            agility=agility,
+            observation=observation,
+            intelligence=intelligence,
+            demeanor=demeanor,
+            weirdness=weirdness,
+            light_source=light_source,
+            starting_weapon=starting_weapon,
+            num_attack_slots=num_attack_slots,
+            speed=speed,
+        )
+
+    def get_next_action(self, controller: Controller) -> GameAction | None:
+        """
+        Determines the next action for this actor.
+        """
+        return controller.turn_manager.dequeue_player_action()
+
+
+class NPC(Character):
+    """An NPC or monster with full capabilities.
+
+    NPCs have stats, health, inventory, and visual effects. They have AI, can
+    fight, carry items, and participate fully in the simulation.
+
+    Type-safe wrapper - guarantees certain components exist. All the actual
+    functionality still comes from the components.
+    """
+
+    def __init__(
+        self,
+        x: int,
+        y: int,
+        ch: str,
+        color: colors.Color,
+        name: str,
+        game_world: GameWorld | None = None,
+        strength: int = 0,
+        toughness: int = 0,
+        agility: int = 0,
+        observation: int = 0,
+        intelligence: int = 0,
+        demeanor: int = 0,
+        weirdness: int = 0,
+        light_source: LightSource | None = None,
+        starting_weapon: Item | None = None,
+        num_attack_slots: int = 2,
+        disposition: Disposition = Disposition.WARY,
+        speed: int = DEFAULT_ACTOR_SPEED,
+        **kwargs,
+    ) -> None:
+        """Instantiate NPC.
+
+        Args:
+            x, y: Starting position
+            ch: Character to display
+            color: Display color
+            name: Character name
+            game_world: World to exist in
+            strength, toughness, etc.: Ability scores
+            light_source: Optional light source
+            starting_weapon: Initial equipped weapon
+            num_attack_slots: The number of attack slots this character should have
+            disposition: Starting disposition toward player
+            speed: Action speed (higher = more frequent actions)
+            **kwargs: Additional Actor parameters
+        """
+        super().__init__(
+            x=x,
+            y=y,
+            ch=ch,
+            color=color,
+            name=name,
+            game_world=game_world,
+            strength=strength,
+            toughness=toughness,
+            agility=agility,
+            observation=observation,
+            intelligence=intelligence,
+            demeanor=demeanor,
+            weirdness=weirdness,
+            ai=DispositionBasedAI(disposition=disposition),
+            light_source=light_source,
+            starting_weapon=starting_weapon,
+            num_attack_slots=num_attack_slots,
+            speed=speed,
+            **kwargs,
+        )
+
+        # Type narrowing - these are guaranteed to exist.
+        self.ai: AIComponent
+
+    def get_next_action(self, controller: Controller) -> GameAction | None:
+        """
+        Determines the next action for this actor.
+        """
+        if self.health.is_alive():
+            # Allow AI to update its internal state before deciding on an action.
+            self.ai.update(
+                controller
+            )  # Pass only controller as per AIComponent.update signature
+            return self.ai.get_action(controller, self)
+
+        return None

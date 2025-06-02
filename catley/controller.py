@@ -1,9 +1,5 @@
-import copy
-
 import tcod.event
 import tcod.map
-import tcod.render
-import tcod.sdl.render
 from tcod.console import Console
 
 from . import config
@@ -31,25 +27,11 @@ class Controller:
     def __init__(
         self,
         context: tcod.context.Context,
-        sdl_renderer: tcod.sdl.render.Renderer,
-        console_render: tcod.render.SDLConsoleRender,
         root_console: Console,
-        tileset: tcod.tileset.Tileset,
+        tile_dimensions: tuple[int, int],
     ) -> None:
         self.context = context
-        self.sdl_renderer = sdl_renderer
-        self.console_render = console_render
         self.root_console = root_console
-
-        self.tile_width = tileset.tile_width
-        self.tile_height = tileset.tile_height
-
-        renderer_width, renderer_height = sdl_renderer.output_size
-        expected_width = root_console.width * self.tile_width
-        expected_height = root_console.height * self.tile_height
-
-        self.scale_x = expected_width / renderer_width
-        self.scale_y = expected_height / renderer_height
 
         self.help_height = config.HELP_HEIGHT
 
@@ -97,9 +79,9 @@ class Controller:
             clock=self.clock,
             message_log=self.message_log,
             menu_system=self.menu_system,
-            sdl_renderer=self.sdl_renderer,
-            console_render=self.console_render,
+            context=self.context,
             root_console=self.root_console,
+            tile_dimensions=tile_dimensions,
         )
 
         self.gw.player.inventory.add_to_inventory(
@@ -130,8 +112,7 @@ class Controller:
     def run_game_loop(self) -> None:
         while True:
             for event in tcod.event.get():
-                event_with_tile_coords = self._convert_pixel_to_tile_coords(event)
-                self.event_handler.dispatch(event_with_tile_coords)
+                self.event_handler.dispatch(event)
 
             # Update using clock's delta time
             delta_time = self.clock.sync(fps=self.target_fps)
@@ -158,28 +139,3 @@ class Controller:
         Uses a frequency-based system where faster actors act more often.
         """
         self.turn_manager.process_unified_round()
-
-    def _convert_pixel_to_tile_coords(self, event):
-        """Convert mouse pixel coordinates to tile coordinates
-        with scaling correction."""
-        if hasattr(event, "position"):
-            pixel_x, pixel_y = event.position
-
-            # Apply scaling correction using the calculated factors
-            scaled_x = pixel_x * self.scale_x  # Uses real scaling from tileset
-            scaled_y = pixel_y * self.scale_y
-
-            # Convert to tile coordinates using actual tile size
-            tile_x = int(scaled_x // self.tile_width)
-            tile_y = int(scaled_y // self.tile_height)
-
-            # Clamp to valid range
-            tile_x = max(0, min(tile_x, self.root_console.width - 1))
-            tile_y = max(0, min(tile_y, self.root_console.height - 1))
-
-            # Create new event with converted coordinates
-            event_copy = copy.copy(event)
-            event_copy.position = (tile_x, tile_y)
-            return event_copy
-
-        return event

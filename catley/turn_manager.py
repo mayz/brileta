@@ -15,6 +15,7 @@ class TurnManager:
 
     def __init__(self, controller: Controller):
         self.controller = controller
+        self.player = self.controller.gw.player
         self._pending_action: GameAction | None = None
 
     def queue_action(self, action: GameAction) -> None:
@@ -50,7 +51,7 @@ class TurnManager:
                         self._execute_action(action)
                         someone_acted = True
 
-                    if not self.controller.gw.player.health.is_alive():
+                    if not self.player.health.is_alive():
                         # Player died, handle game over and stop processing
                         self.controller.message_log.add_message(
                             f"{self.controller.gw.player.name}"

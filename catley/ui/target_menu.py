@@ -12,7 +12,7 @@ from catley.ui.menu_core import Menu, MenuOption
 
 if TYPE_CHECKING:
     from catley.controller import Controller
-    from catley.game.actors import Actor
+    from catley.game.actors import Character
 
 
 class QuickActionBar(Menu):
@@ -20,7 +20,7 @@ class QuickActionBar(Menu):
     Small action bar that appears when selecting an actor,
     showing most common actions."""
 
-    def __init__(self, controller: Controller, target_actor: Actor) -> None:
+    def __init__(self, controller: Controller, target_actor: Character) -> None:
         super().__init__(f"{target_actor.name}", controller, width=35, max_height=10)
         self.target_actor = target_actor
         self.distance = range_system.calculate_distance(
@@ -59,19 +59,24 @@ class QuickActionBar(Menu):
 
             # Determine weapon name for display
             primary_weapon = player.inventory.attack_slots[0]
-            if self.distance == 1:
-                weapon_name = (
-                    primary_weapon.name
-                    if primary_weapon and primary_weapon.melee_attack
-                    else "fists"
-                )
-                action_text = f"Attack with {weapon_name}{prob_text}"
+            if primary_weapon:
+                if self.distance == 1 or not primary_weapon.ranged_attack:
+                    weapon_name = (
+                        primary_weapon.name
+                        if primary_weapon and primary_weapon.melee_attack
+                        else "fists"
+                    )
+                    action_text = f"Attack with {weapon_name}{prob_text}"
+                else:
+                    ammo_display = (
+                        f"[{primary_weapon.ranged_attack.current_ammo}/"
+                        f"{primary_weapon.ranged_attack.max_ammo}]"
+                    )
+                    action_text = (
+                        f"Shoot {primary_weapon.name} {ammo_display}{prob_text}"
+                    )
             else:
-                ammo_display = (
-                    f"[{primary_weapon.ranged_attack.current_ammo}/"
-                    f"{primary_weapon.ranged_attack.max_ammo}]"
-                )
-                action_text = f"Shoot {primary_weapon.name} {ammo_display}{prob_text}"
+                action_text = f"Attack (unarmed){prob_text}"
 
             action_func = functools.partial(self._perform_quick_attack)
             self.add_option(
@@ -99,7 +104,8 @@ class QuickActionBar(Menu):
         ):
             # Check if player has compatible ammo
             has_ammo = any(
-                ammo_item.ammo
+                isinstance(ammo_item, Item)
+                and ammo_item.ammo
                 and ammo_item.ammo.ammo_type == primary_weapon.ranged_attack.ammo_type
                 for ammo_item in player.inventory
             )
@@ -160,7 +166,7 @@ class TargetMenu(Menu):
     def __init__(
         self,
         controller: Controller,
-        target_actor: Actor | None = None,
+        target_actor: Character | None = None,
         target_location: tuple[int, int] | None = None,
     ) -> None:
         if target_actor:
@@ -229,7 +235,7 @@ class TargetMenu(Menu):
                             action_func = functools.partial(
                                 self._perform_melee_attack, item, self.target_actor
                             )
-                        else:
+                        elif item.ranged_attack:
                             ammo_display = (
                                 f"[{item.ranged_attack.current_ammo}/"
                                 f"{item.ranged_attack.max_ammo}]"

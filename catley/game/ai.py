@@ -21,7 +21,7 @@ Behavior Components:
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from catley import colors
 
@@ -31,8 +31,7 @@ if TYPE_CHECKING:
     from catley.controller import Controller
 
     from .actions import GameAction
-    from .actors import Actor
-    from .components import HealthComponent
+    from .actors import NPC, Actor, Character
 
 
 class AIComponent(ABC):
@@ -47,7 +46,7 @@ class AIComponent(ABC):
         self.actor: Actor | None = None
 
     @abstractmethod
-    def get_action(self, controller: Controller, actor: Actor) -> GameAction | None:
+    def get_action(self, controller: Controller, actor: NPC) -> GameAction | None:
         """Determine what action this AI wants to perform this turn.
 
         Args:
@@ -97,7 +96,7 @@ class DispositionBasedAI(AIComponent):
             Disposition.ALLY: AllyAI(),
         }
 
-    def get_action(self, controller: Controller, actor: Actor) -> GameAction | None:
+    def get_action(self, controller: Controller, actor: NPC) -> GameAction | None:
         """Delegate to the appropriate behavior based on the current disposition."""
         # Get the behavior for current disposition
         behavior = self._behaviors.get(self.disposition)
@@ -123,11 +122,11 @@ class HostileAI(AIComponent):
         super().__init__()
         self.aggro_radius = aggro_radius
 
-    def get_action(self, controller: Controller, actor: Actor) -> GameAction | None:
+    def get_action(self, controller: Controller, actor: NPC) -> GameAction | None:
         player = controller.gw.player
 
         # Don't act if actor or player is dead
-        if not self._is_alive(actor) or not self._is_alive(player):
+        if not actor.health.is_alive() or not player.health.is_alive():
             return None
 
         # Calculate distance to player
@@ -155,15 +154,8 @@ class HostileAI(AIComponent):
         )
         return None
 
-    def _is_alive(self, actor: Actor) -> bool:
-        """Check if an actor is alive (has health and HP > 0)."""
-        if actor.health is None:
-            return False
-        health = cast("HealthComponent", actor.health)
-        return health.is_alive()
-
     def _get_move_toward_player(
-        self, controller: Controller, actor: Actor, player: Actor, dx: int, dy: int
+        self, controller: Controller, actor: NPC, player: Character, dx: int, dy: int
     ) -> GameAction | None:
         """Calculate movement toward the player with basic pathfinding."""
         from .actions import MoveAction
@@ -230,7 +222,7 @@ class HostileAI(AIComponent):
 class WaryAI(AIComponent):
     """Wary behavior: wait and watch, but ready to become hostile."""
 
-    def get_action(self, controller: Controller, actor: Actor) -> GameAction | None:
+    def get_action(self, controller: Controller, actor: NPC) -> GameAction | None:
         # For now, just wait (do nothing)
         # Future: might back away if player gets too close
         return None
@@ -239,7 +231,7 @@ class WaryAI(AIComponent):
 class UnfriendlyAI(AIComponent):
     """Unfriendly behavior: suspicious but not immediately hostile."""
 
-    def get_action(self, controller: Controller, actor: Actor) -> GameAction | None:
+    def get_action(self, controller: Controller, actor: NPC) -> GameAction | None:
         # For now, just wait (do nothing)
         # Future: might warn player to keep distance, prepare to defend
         return None
@@ -248,7 +240,7 @@ class UnfriendlyAI(AIComponent):
 class ApproachableAI(AIComponent):
     """Approachable behavior: neutral, might initiate interaction."""
 
-    def get_action(self, controller: Controller, actor: Actor) -> GameAction | None:
+    def get_action(self, controller: Controller, actor: NPC) -> GameAction | None:
         # For now, just wait (do nothing)
         # Future: might greet player when they approach, offer quests
         return None
@@ -257,7 +249,7 @@ class ApproachableAI(AIComponent):
 class FriendlyAI(AIComponent):
     """Friendly behavior: helpful and welcoming."""
 
-    def get_action(self, controller: Controller, actor: Actor) -> GameAction | None:
+    def get_action(self, controller: Controller, actor: NPC) -> GameAction | None:
         # For now, just wait (do nothing)
         # Future: might follow player, offer help, trade
         return None
@@ -266,7 +258,7 @@ class FriendlyAI(AIComponent):
 class AllyAI(AIComponent):
     """Ally behavior: actively helpful in combat and exploration."""
 
-    def get_action(self, controller: Controller, actor: Actor) -> GameAction | None:
+    def get_action(self, controller: Controller, actor: NPC) -> GameAction | None:
         # For now, just wait (do nothing)
         # Future: actively help in combat, follow player, coordinate attacks
         return None
