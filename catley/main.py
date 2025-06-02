@@ -1,7 +1,8 @@
 """Main entry point for the game."""
 
+import random
+
 import tcod
-import tcod.render
 from tcod.console import Console
 
 from . import config
@@ -9,6 +10,8 @@ from .controller import Controller
 
 
 def main() -> None:
+    random.seed(config.RANDOM_SEED)
+
     screen_width = config.SCREEN_WIDTH
     screen_height = config.SCREEN_HEIGHT
     title = config.WINDOW_TITLE
