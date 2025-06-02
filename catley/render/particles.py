@@ -233,14 +233,16 @@ class SubTileParticleSystem:
             angle = random.uniform(0, 2 * math.pi)
 
             # Random speed within specified range
-            speed = random.uniform(*speed_range)
+            min_speed, max_speed = speed_range
+            speed = random.uniform(min_speed, max_speed)
 
             # Convert polar coordinates to cartesian velocity
             vel_x = math.cos(angle) * speed
             vel_y = math.sin(angle) * speed
 
             # Random lifetime within specified range
-            lifetime = random.uniform(*lifetime_range)
+            min_lifetime, max_lifetime = lifetime_range
+            lifetime = random.uniform(min_lifetime, max_lifetime)
 
             # Random color and character from the provided list
             color, char = random.choice(colors_and_chars)
@@ -307,14 +309,16 @@ class SubTileParticleSystem:
             angle = base_angle + spread
 
             # Random speed within specified range
-            speed = random.uniform(*speed_range)
+            min_speed, max_speed = speed_range
+            speed = random.uniform(min_speed, max_speed)
 
             # Convert to velocity components
             vel_x = math.cos(angle) * speed
             vel_y = math.sin(angle) * speed
 
             # Random lifetime
-            lifetime = random.uniform(*lifetime_range)
+            min_lifetime, max_lifetime = lifetime_range
+            lifetime = random.uniform(min_lifetime, max_lifetime)
 
             # Random color and character
             color, char = random.choice(colors_and_chars)
@@ -369,7 +373,8 @@ class SubTileParticleSystem:
                         flash_intensity = 1.0
 
                     # Random lifetime within range
-                    lifetime = random.uniform(*lifetime_range)
+                    min_lifetime, max_lifetime = lifetime_range
+                    lifetime = random.uniform(min_lifetime, max_lifetime)
 
                     # Create a background-only particle (no character)
                     flash_particle = SubParticle(
@@ -424,14 +429,16 @@ class SubTileParticleSystem:
         for _ in range(count):
             # Random drift direction and speed
             angle = random.uniform(0, 2 * math.pi)
-            speed = random.uniform(*drift_speed)
+            min_speed, max_speed = drift_speed
+            speed = random.uniform(min_speed, max_speed)
             vel_x = math.cos(angle) * speed
 
             # Vertical velocity includes both random drift and upward component
             vel_y = math.sin(angle) * speed + upward_drift
 
             # Random lifetime
-            lifetime = random.uniform(*lifetime_range)
+            min_lifetime, max_lifetime = lifetime_range
+            lifetime = random.uniform(min_lifetime, max_lifetime)
 
             # Random character from the list
             char = random.choice(chars)
