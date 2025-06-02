@@ -53,6 +53,7 @@ class GameAction(abc.ABC):
     def __init__(self, controller: Controller, actor: Actor) -> None:
         self.controller = controller
         self.actor = actor
+        self.renderer = self.controller.renderer
 
     @abc.abstractmethod
     def execute(self) -> None:
@@ -260,9 +261,13 @@ class AttackAction(GameAction):
         """Emit muzzle flash particle effect."""
         direction_x = self.defender.x - self.attacker.x
         direction_y = self.defender.y - self.attacker.y
-        particle_system = self.controller.renderer.particle_system
-        particle_system.emit_muzzle_flash(
-            self.attacker.x, self.attacker.y, direction_x, direction_y
+
+        self.renderer.create_effect(
+            "muzzle_flash",
+            x=self.attacker.x,
+            y=self.attacker.y,
+            direction_x=direction_x,
+            direction_y=direction_y,
         )
 
     def _resolve_attack_outcome(
@@ -300,11 +305,11 @@ class AttackAction(GameAction):
 
         # Blood splatter only on successful hits
         if attack_result.success:
-            particle_system = self.controller.renderer.particle_system
-            particle_system.emit_blood_splatter(
-                self.defender.x,
-                self.defender.y,
-                damage // 2,  # More damage = more particles
+            self.renderer.create_effect(
+                "blood_splatter",
+                x=self.defender.x,
+                y=self.defender.y,
+                intensity=damage / 20.0,  # Scale intensity with damage
             )
 
         # Log hit messages

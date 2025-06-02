@@ -21,6 +21,7 @@ from catley.config import (
     SHOW_FPS,
 )
 from catley.game.actors import Actor
+from catley.render.effects import EffectContext, EffectLibrary
 from catley.render.particles import SubTileParticleSystem
 from catley.render.screen_shake import ScreenShake
 from catley.ui.message_log import MessageLog
@@ -123,6 +124,8 @@ class Renderer:
             self.gw.game_map.width, self.gw.game_map.height
         )
 
+        self.effect_library = EffectLibrary()
+
     def render_all(self) -> None:
         """
         Main rendering pipeline that composites the final frame.
@@ -148,6 +151,26 @@ class Renderer:
 
         # 5. PRESENTATION
         self._present_frame()
+
+    def create_effect(
+        self,
+        effect_name: str,
+        x: int,
+        y: int,
+        intensity: float = 1.0,
+        direction_x: float = 0.0,
+        direction_y: float = 0.0,
+    ) -> None:
+        """Unified interface for creating effects"""
+        context = EffectContext(
+            particle_system=self.particle_system,
+            x=x,
+            y=y,
+            intensity=intensity,
+            direction_x=direction_x,
+            direction_y=direction_y,
+        )
+        self.effect_library.trigger(effect_name, context)
 
     def _prepare_frame(self) -> float:
         """Clear rendering buffers and calculate frame timing."""
