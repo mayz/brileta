@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 from catley import colors
 from catley.config import PLAYER_BASE_STRENGTH, PLAYER_BASE_TOUGHNESS
-from catley.game.actors import Actor, make_pc
+from catley.game.actors import Character
 from catley.game.items.item_types import (
     COMBAT_KNIFE_TYPE,
     PISTOL_MAGAZINE_TYPE,
@@ -18,6 +18,7 @@ from catley.render.lighting import LightingSystem, LightSource
 from .map import GameMap
 
 if TYPE_CHECKING:
+    from catley.game.actors import Actor
     from catley.game.items.item_core import Item
 
 
@@ -37,8 +38,10 @@ class GameWorld:
         self.selected_actor: Actor | None = None
 
         # Create player with a torch light source
+        from catley.game.actors import PC
+
         player_light = LightSource.create_torch()
-        self.player = make_pc(
+        self.player = PC(
             x=0,
             y=0,
             ch="@",
@@ -61,7 +64,7 @@ class GameWorld:
         self.player.inventory.add_to_inventory(RIFLE_MAGAZINE_TYPE.create())
         self.player.inventory.add_to_inventory(RIFLE_MAGAZINE_TYPE.create())
 
-        self.actors = [self.player]
+        self.actors: list[Actor] = [self.player]
         self.game_map = GameMap(map_width, map_height)
 
     def update_player_light(self) -> None:
@@ -81,7 +84,7 @@ class GameWorld:
             if (
                 actor.x == x
                 and actor.y == y
-                and actor.health
+                and isinstance(actor, Character)
                 and not actor.health.is_alive()  # Only from dead actors
             ):
                 # Add all equipped items from all slots
@@ -107,7 +110,7 @@ class GameWorld:
         self, rooms: list, num_npcs: int = 10, max_attempts_per_npc: int = 10
     ) -> None:
         """Add NPCs to random locations in rooms."""
-        from catley.game.actors import make_npc
+        from catley.game.actors import NPC
         from catley.game.items.item_types import SLEDGEHAMMER_TYPE
 
         for npc_index in range(num_npcs):
@@ -127,7 +130,7 @@ class GameWorld:
                     and self.get_actor_at_location(npc_x, npc_y) is None
                 ):
                     # Place the NPC
-                    npc = make_npc(
+                    npc = NPC(
                         x=npc_x,
                         y=npc_y,
                         ch="T",

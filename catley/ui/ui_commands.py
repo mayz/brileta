@@ -25,15 +25,18 @@ from __future__ import annotations
 import abc
 from typing import TYPE_CHECKING
 
+from catley.game.actors import Character
 from catley.ui.pickup_menu import PickupMenu
 from catley.ui.target_menu import QuickActionBar, TargetMenu
 
 if TYPE_CHECKING:
+    import tcod.console
     import tcod.context
 
     from catley.controller import Controller
     from catley.game.actors import Actor
-    from catley.ui.menu_core import Menu
+    from catley.ui.help_menu import HelpMenu
+    from catley.ui.inventory_menu import InventoryMenu
 
 
 class UICommand(abc.ABC):
@@ -47,11 +50,14 @@ class UICommand(abc.ABC):
 class ToggleFullscreenUICommand(UICommand):
     """Command for toggling fullscreen mode."""
 
-    def __init__(self, context: tcod.context.Context) -> None:
+    def __init__(
+        self, context: tcod.context.Context, console: tcod.console.Console
+    ) -> None:
         self.context = context
+        self.console = console
 
     def execute(self) -> None:
-        self.context.present(self.context.console, keep_aspect=True)
+        self.context.present(self.console, keep_aspect=True)
 
 
 class QuitUICommand(UICommand):
@@ -95,7 +101,7 @@ class SelectOrDeselectActorUICommand(UICommand):
         if (
             self.selection
             and self.selection != self.controller.gw.player
-            and self.selection.health
+            and isinstance(self.selection, Character)
             and self.selection.health.is_alive()
         ):
             quick_bar = QuickActionBar(self.controller, self.selection)
@@ -105,7 +111,9 @@ class SelectOrDeselectActorUICommand(UICommand):
 class OpenMenuUICommand(UICommand):
     """Command to open a menu, like the inventory or help menu."""
 
-    def __init__(self, controller: Controller, menu_class: type[Menu]):
+    def __init__(
+        self, controller: Controller, menu_class: type[InventoryMenu] | type[HelpMenu]
+    ) -> None:
         self.controller = controller
         self.menu_class = menu_class
 
@@ -136,7 +144,7 @@ class OpenTargetMenuUICommand(UICommand):
     def __init__(
         self,
         controller: Controller,
-        target_actor: Actor | None = None,
+        target_actor: Character | None = None,
         target_location: tuple[int, int] | None = None,
     ):
         self.controller = controller

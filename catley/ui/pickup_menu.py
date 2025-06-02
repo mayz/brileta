@@ -5,6 +5,7 @@ import string
 from typing import TYPE_CHECKING
 
 from catley import colors
+from catley.game.actors import Character
 from catley.ui.menu_core import Menu, MenuOption
 
 if TYPE_CHECKING:
@@ -64,16 +65,20 @@ class PickupMenu(Menu):
             return
 
         # Remove item from dead actor
-        for actor in self.controller.gw.actors:
-            if actor.health and not actor.health.is_alive():
-                if item in actor.inventory:
-                    actor.inventory.remove_from_inventory(item)
-                    break
+        actor = self.controller.gw.get_actor_at_location(
+            self.location[0], self.location[1]
+        )
+        if (
+            isinstance(actor, Character)
+            and not actor.health.is_alive()
+            and item in actor.inventory
+        ):
+            actor.inventory.remove_from_inventory(item)
 
-                for i, equipped_item in enumerate(actor.inventory.attack_slots):
-                    if equipped_item == item:
-                        actor.inventory.unequip_slot(i)
-                        break
+            for i, equipped_item in enumerate(actor.inventory.attack_slots):
+                if equipped_item == item:
+                    actor.inventory.unequip_slot(i)
+                    break
 
         # Add to player inventory
         player.inventory.add_to_inventory(item)

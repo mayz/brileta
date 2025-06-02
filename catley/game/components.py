@@ -34,6 +34,8 @@ Note:
     for max_hp calculation), but dependencies are kept minimal and explicit.
 """
 
+from dataclasses import dataclass
+
 from catley import colors
 from catley.config import DEFAULT_MAX_ARMOR
 
@@ -42,27 +44,17 @@ from .enums import ItemSize
 from .items.item_core import Item
 
 
+@dataclass
 class StatsComponent:
     """Manages an Actor's core ability scores and derived stats."""
 
-    def __init__(
-        self,
-        strength: int = 0,
-        toughness: int = 0,
-        agility: int = 0,
-        observation: int = 0,
-        intelligence: int = 0,
-        demeanor: int = 0,
-        weirdness: int = 0,
-    ) -> None:
-        # Core ability scores
-        self.strength = strength
-        self.toughness = toughness
-        self.agility = agility
-        self.observation = observation
-        self.intelligence = intelligence
-        self.demeanor = demeanor
-        self.weirdness = weirdness
+    strength: int = 0
+    toughness: int = 0
+    agility: int = 0
+    observation: int = 0
+    intelligence: int = 0
+    demeanor: int = 0
+    weirdness: int = 0
 
     @property
     def max_hp(self) -> int:

@@ -2,6 +2,8 @@ import math
 from typing import TYPE_CHECKING
 
 import numpy as np
+import tcod.render
+import tcod.sdl.render
 from tcod.console import Console
 
 from catley import colors
@@ -23,6 +25,7 @@ from catley.render.particles import SubTileParticleSystem
 from catley.render.screen_shake import ScreenShake
 from catley.ui.message_log import MessageLog
 from catley.util.clock import Clock
+from catley.util.coordinates import CoordinateConverter
 from catley.world.game_state import GameWorld
 
 if TYPE_CHECKING:
@@ -66,13 +69,34 @@ class Renderer:
         clock: Clock,
         message_log: MessageLog,
         menu_system: "MenuSystem",
-        sdl_renderer,
-        console_render,
+        context: tcod.context.Context,
         root_console: Console,
+        tile_dimensions: tuple[int, int],
     ) -> None:
-        self.sdl_renderer = sdl_renderer
-        self.console_render = console_render
+        # Extract SDL components from context
+        sdl_renderer = context.sdl_renderer
+        assert sdl_renderer is not None
+
+        sdl_atlas = context.sdl_atlas
+        assert sdl_atlas is not None
+
+        self.context = context
+        self.sdl_renderer: tcod.sdl.render.Renderer = sdl_renderer
+        self.console_render = tcod.render.SDLConsoleRender(sdl_atlas)
         self.root_console = root_console
+
+        self.tile_dimensions = tile_dimensions
+
+        # Set up coordinate conversion
+        renderer_width, renderer_height = self.sdl_renderer.output_size
+        self.coordinate_converter = CoordinateConverter(
+            console_width=root_console.width,
+            console_height=root_console.height,
+            tile_width=self.tile_dimensions[0],
+            tile_height=self.tile_dimensions[1],
+            renderer_width=renderer_width,
+            renderer_height=renderer_height,
+        )
 
         self.screen_width = screen_width
         self.screen_height = screen_height
@@ -368,9 +392,11 @@ class Renderer:
 
         # Apply RGB lighting to each color channel of the base_actor_color
         # Ensure components are clamped to valid color range [0, 255]
-        normally_lit_fg_components = [
-            max(0, min(255, int(base_actor_color[i] * light_rgb[i]))) for i in range(3)
-        ]
+        normally_lit_fg_components: colors.Color = (
+            max(0, min(255, int(base_actor_color[0] * light_rgb[0]))),
+            max(0, min(255, int(base_actor_color[1] * light_rgb[1]))),
+            max(0, min(255, int(base_actor_color[2] * light_rgb[2]))),
+        )
 
         final_fg_color = normally_lit_fg_components
 
@@ -457,3 +483,6 @@ class Renderer:
     ) -> None:
         """Render text at a specific position with a given color"""
         self.root_console.print(x=x, y=y, text=text, fg=fg)
+
+    def convert_mouse_coordinates(self, pixel_x: int, pixel_y: int) -> tuple[int, int]:
+        return self.coordinate_converter.pixel_to_tile(pixel_x, pixel_y)

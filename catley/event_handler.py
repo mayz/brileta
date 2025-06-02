@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import copy
 from typing import TYPE_CHECKING
 
 import tcod.event
 
 from catley import colors
+from catley.game.actors import Character
 from catley.ui.help_menu import HelpMenu
 from catley.ui.inventory_menu import InventoryMenu
 
@@ -26,6 +28,7 @@ if TYPE_CHECKING:
 class EventHandler:
     def __init__(self, controller: Controller) -> None:
         self.controller = controller
+        self.renderer = self.controller.renderer
         self.gw = controller.gw
         self.game_map = self.gw.game_map
         self.p = self.gw.player
@@ -50,6 +53,8 @@ class EventHandler:
 
         match event:
             case tcod.event.MouseMotion():
+                event = self._convert_mouse_coordinates(event)
+
                 root_tile_pos = event.position
                 map_coords = self._get_tile_map_coords_from_root_coords(root_tile_pos)
 
@@ -102,7 +107,7 @@ class EventHandler:
                 if (
                     self.gw.selected_actor
                     and self.gw.selected_actor != self.gw.player
-                    and self.gw.selected_actor.health
+                    and isinstance(self.gw.selected_actor, Character)
                     and self.gw.selected_actor.health.is_alive()
                 ):
                     return OpenTargetMenuUICommand(
@@ -119,10 +124,12 @@ class EventHandler:
             case tcod.event.KeyDown(sym=tcod.event.KeySym.RETURN, mod=mod) if (
                 mod & tcod.event.Modifier.ALT
             ):
-                return ToggleFullscreenUICommand(self.controller.renderer.context)
+                return ToggleFullscreenUICommand(
+                    self.renderer.context, self.controller.root_console
+                )
 
-            case tcod.event.MouseButtonDown(button=button):
-                return self._handle_mouse_button_down_event(event, button)
+            case tcod.event.MouseButtonDown():
+                return self._handle_mouse_button_down_event(event)
 
             case _:
                 return None
@@ -165,16 +172,17 @@ class EventHandler:
                 return None
 
     def _handle_mouse_button_down_event(
-        self, event: tcod.event.MouseButtonDown, button: tcod.event.MouseButton
+        self, event: tcod.event.MouseButtonDown
     ) -> UICommand | None:
         """
         Handle mouse button down events.
         Returns an action if the event is handled, otherwise None.
         """
-        root_tile_pos = event.position
+        event_with_tile_coords = self._convert_mouse_coordinates(event)
+        root_tile_pos = event_with_tile_coords.position
         map_coords = self._get_tile_map_coords_from_root_coords(root_tile_pos)
 
-        if button != tcod.event.MouseButton.LEFT:
+        if event.button != tcod.event.MouseButton.LEFT:
             return None
 
         if not map_coords:
@@ -193,24 +201,30 @@ class EventHandler:
     def _get_tile_map_coords_from_root_coords(
         self, root_tile_coords: tuple[int, int]
     ) -> tuple[int, int] | None:
-        """
-        Translates mouse coordinates from root_console space to game_map_console space.
-        Returns (map_x, map_y) if the click is within the map area, otherwise None.
-        """
-        renderer = self.controller.renderer  # Get access to the renderer
-
         map_render_offset_x = 0
-        map_render_offset_y = renderer.help_height + renderer.message_log_height
+        map_render_offset_y = (
+            self.renderer.help_height + self.renderer.message_log_height
+        )
 
-        # Translate to coordinates relative to game_map_console
         map_x = root_tile_coords[0] - map_render_offset_x
         map_y = root_tile_coords[1] - map_render_offset_y
 
         # Check if the translated coordinates are within the bounds of game_map_console
         if (
-            0 <= map_x < renderer.game_map_console.width
-            and 0 <= map_y < renderer.game_map_console.height
+            0 <= map_x < self.renderer.game_map_console.width
+            and 0 <= map_y < self.renderer.game_map_console.height
         ):
             return map_x, map_y
 
         return None  # Click was outside the map area
+
+    def _convert_mouse_coordinates(
+        self, event: tcod.event.MouseState
+    ) -> tcod.event.MouseState:
+        """Convert event coordinates."""
+        pixel_x, pixel_y = event.position
+        tile_x, tile_y = self.renderer.convert_mouse_coordinates(pixel_x, pixel_y)
+
+        event_copy = copy.copy(event)
+        event_copy.position = tcod.event.Point(tile_x, tile_y)
+        return event_copy

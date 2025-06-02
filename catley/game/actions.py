@@ -27,16 +27,16 @@ from typing import TYPE_CHECKING
 
 from catley import colors
 from catley.game import range_system
+from catley.game.items.item_core import Item
 from catley.util import dice
 
-from .actors import Actor, Disposition
+from .actors import Actor, Character, Disposition
 from .ai import DispositionBasedAI
 from .items.item_types import FISTS_TYPE
 
 if TYPE_CHECKING:
     from catley.controller import Controller
     from catley.game.items.capabilities import Attack
-    from catley.game.items.item_core import Item
 
 
 class GameAction(abc.ABC):
@@ -71,8 +71,14 @@ class GameAction(abc.ABC):
 class MoveAction(GameAction):
     """Action for moving an actor on the game map."""
 
-    def __init__(self, controller: Controller, actor: Actor, dx: int, dy: int) -> None:
+    def __init__(
+        self, controller: Controller, actor: Character, dx: int, dy: int
+    ) -> None:
         super().__init__(controller, actor)
+
+        # Type narrowing.
+        self.actor: Character
+
         self.game_map = controller.gw.game_map
 
         self.dx = dx
@@ -87,7 +93,7 @@ class MoveAction(GameAction):
         # Check for blocking actors.
         for actor in self.controller.gw.actors:
             if actor.blocks_movement and actor.x == self.newx and actor.y == self.newy:
-                if actor.health and actor.health.is_alive():
+                if isinstance(actor, Character) and actor.health.is_alive():
                     attack_action = AttackAction(
                         controller=self.controller,
                         attacker=self.actor,
@@ -105,8 +111,8 @@ class AttackAction(GameAction):
     def __init__(
         self,
         controller: Controller,
-        attacker: Actor,
-        defender: Actor,
+        attacker: Character,
+        defender: Character,
         weapon: Item | None = None,
     ) -> None:
         super().__init__(controller, attacker)
@@ -426,9 +432,12 @@ class AttackAction(GameAction):
 class ReloadAction(GameAction):
     """Action for reloading a ranged weapon."""
 
-    def __init__(self, controller: Controller, actor: Actor, weapon: Item) -> None:
+    def __init__(self, controller: Controller, actor: Character, weapon: Item) -> None:
         super().__init__(controller, actor)
         self.weapon = weapon
+
+        # Type narrowing.
+        self.actor: Character
 
     def execute(self) -> None:
         ranged_attack = self.weapon.ranged_attack
@@ -439,7 +448,7 @@ class ReloadAction(GameAction):
         ammo_item = None
         for item in self.actor.inventory:
             if (
-                hasattr(item, "ammo")
+                isinstance(item, Item)
                 and item.ammo
                 and item.ammo.ammo_type == ranged_attack.ammo_type
             ):

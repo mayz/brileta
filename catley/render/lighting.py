@@ -59,7 +59,10 @@ class LightSource:
     @classmethod
     def create_torch(cls, position: tuple[int, int] | None = None) -> "LightSource":
         """Create a torch light source with preset values"""
-        return cls(_pos=position, **TORCH_PRESET)
+        # Create the instance with TORCH_PRESET, then set position
+        instance = cls(**TORCH_PRESET)
+        instance._pos = position
+        return instance
 
     def __post_init__(self) -> None:
         self._owner = None
@@ -290,16 +293,8 @@ class LightingSystem:
         # of the slice.
         light_map_slice = light_map[min_bx : max_bx + 1, min_by : max_by + 1, :]
 
-        # Reshape scalar_intensity_values to be compatible with broadcasting over
-        # the color channels for the masked elements.
-        # The shape of light_map_slice[in_circle_mask] is (N, 3) where N is num True
-        # in in_circle_mask.
-        # scalar_intensity_values is (N,). We need (N, 1) to broadcast with (3,).
-        light_color_array = (
-            np.array(light.color, dtype=np.float32) / 255.0
-            if np.max(light.color) > 1.0
-            else np.array(light.color, dtype=np.float32)
-        )
+        # Convert integer color to normalized (0.0-1.0) range for lighting calculations
+        light_color_array = np.array(light.color, dtype=np.float32) / 255.0
 
         colored_intensity_contribution = (
             scalar_intensity_values[:, np.newaxis] * light_color_array
