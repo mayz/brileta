@@ -8,6 +8,13 @@ Organized by functional area for easy maintenance.
 import tcod.constants
 
 # =============================================================================
+# GENERAL
+# =============================================================================
+
+RANDOM_SEED = None
+# RANDOM_SEED = "burrito burrito"
+
+# =============================================================================
 # DISPLAY & RENDERING
 # =============================================================================
 
@@ -105,6 +112,11 @@ TORCH_MAX_BRIGHTNESS = 1.35
 # Lighting system defaults
 AMBIENT_LIGHT_LEVEL = 0.1  # Base light level for all areas
 
+# Shadow system
+SHADOWS_ENABLED = True  # Set to False to disable shadows
+SHADOW_INTENSITY = 0.17  # How dark shadows are (0.0 = no shadow, 1.0 = completely dark)
+SHADOW_MAX_LENGTH = 3  # Maximum shadow length in tiles
+SHADOW_FALLOFF = True  # Shadows get lighter with distance
 
 # =============================================================================
 # INPUT & CONTROLS

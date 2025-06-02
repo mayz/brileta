@@ -333,9 +333,11 @@ class Renderer:
         visible_y, visible_x = np.where(visible_mask)
 
         if len(visible_y) > 0:
-            # Compute lighting for visible areas
-            self.current_light_intensity = self.gw.lighting.compute_lighting(
-                self.gw.game_map.width, self.gw.game_map.height
+            # Compute lighting with shadows for visible areas
+            self.current_light_intensity = (
+                self.gw.lighting.compute_lighting_with_shadows(
+                    self.gw.game_map.width, self.gw.game_map.height, self.gw.actors
+                )
             )
 
             # Get the tile graphics for visible areas

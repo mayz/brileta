@@ -11,6 +11,9 @@ from catley.config import (
     DEFAULT_LIGHT_COLOR,
     DEFAULT_MAX_BRIGHTNESS,
     DEFAULT_MIN_BRIGHTNESS,
+    SHADOW_FALLOFF,
+    SHADOW_INTENSITY,
+    SHADOW_MAX_LENGTH,
     TORCH_COLOR,
     TORCH_FLICKER_SPEED,
     TORCH_MAX_BRIGHTNESS,
@@ -131,6 +134,108 @@ class LightingSystem:
             self._apply_light_to_map(light, light_map, map_width, map_height)
 
         return np.clip(light_map, 0.0, 1.0)  # Final clip to [0,1] range
+
+    def compute_lighting_with_shadows(
+        self, map_width: int, map_height: int, actors
+    ) -> np.ndarray:
+        """Compute lighting with actor shadows applied."""
+        from catley.config import SHADOWS_ENABLED
+
+        # Get base lighting
+        base_lighting = self.compute_lighting(map_width, map_height)
+
+        if not SHADOWS_ENABLED:
+            return base_lighting
+
+        # Apply shadows
+        return self._apply_actor_shadows(base_lighting, actors)
+
+    def _apply_actor_shadows(self, light_map: np.ndarray, actors) -> np.ndarray:
+        """Apply actor shadows to the light map with gradual falloff."""
+
+        shadow_map = light_map.copy()
+
+        for light_source in self.light_sources:
+            lx, ly = light_source.position
+            light_radius = light_source.radius
+
+            nearby_actors = [
+                actor
+                for actor in actors
+                if (
+                    abs(actor.x - lx) <= light_radius
+                    and abs(actor.y - ly) <= light_radius
+                    and actor.blocks_movement
+                )
+            ]
+
+            for actor in nearby_actors:
+                shadow_data = self._cast_gradual_shadow(
+                    (lx, ly), (actor.x, actor.y), light_radius
+                )
+
+                for sx, sy, intensity in shadow_data:
+                    if 0 <= sx < light_map.shape[0] and 0 <= sy < light_map.shape[1]:
+                        # Apply varying shadow intensity
+                        shadow_map[sx, sy] *= 1.0 - intensity
+
+        return shadow_map
+
+    def _cast_gradual_shadow(
+        self, light_pos: tuple[int, int], actor_pos: tuple[int, int], max_distance: int
+    ) -> list[tuple[int, int, float]]:
+        """Cast a shadow with gradual falloff and softer edges."""
+        lx, ly = light_pos
+        ax, ay = actor_pos
+
+        dx, dy = ax - lx, ay - ly
+        distance = max(abs(dx), abs(dy))
+
+        if distance == 0:
+            return []
+
+        # Calculate shadow direction (more nuanced)
+        shadow_dx = 1 if dx > 0 else (-1 if dx < 0 else 0)
+        shadow_dy = 1 if dy > 0 else (-1 if dy < 0 else 0)
+
+        shadow_data = []
+        shadow_length = min(SHADOW_MAX_LENGTH, max_distance - distance + 2)
+
+        for i in range(1, shadow_length + 1):
+            # Falloff: shadows get lighter with distance
+            distance_falloff = 1.0 - (i - 1) / shadow_length if SHADOW_FALLOFF else 1.0
+
+            center_x = ax + shadow_dx * i
+            center_y = ay + shadow_dy * i
+
+            # Core shadow (strongest)
+            core_intensity = SHADOW_INTENSITY * distance_falloff
+            shadow_data.append((center_x, center_y, core_intensity))
+
+            # Soft edges (weaker shadow around core)
+            edge_intensity = core_intensity * 0.4  # Much lighter edges
+
+            # Add softer edge tiles
+            if i <= 2:  # Only close shadows have soft edges
+                edge_offsets = [
+                    (0, 1),
+                    (0, -1),
+                    (1, 0),
+                    (-1, 0),  # Adjacent
+                    (1, 1),
+                    (1, -1),
+                    (-1, 1),
+                    (-1, -1),  # Diagonal
+                ]
+
+                for ox, oy in edge_offsets:
+                    edge_x = center_x + ox
+                    edge_y = center_y + oy
+                    # Only add edge if it's not the core shadow direction
+                    if not (ox == shadow_dx and oy == shadow_dy):
+                        shadow_data.append((edge_x, edge_y, edge_intensity))
+
+        return shadow_data
 
     def _apply_light_to_map(
         self, light: LightSource, light_map: np.ndarray, map_width: int, map_height: int
