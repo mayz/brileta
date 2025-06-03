@@ -25,16 +25,15 @@ from __future__ import annotations
 import abc
 from typing import TYPE_CHECKING
 
-from catley.game.actors import Character
 from catley.ui.pickup_menu import PickupMenu
-from catley.ui.target_menu import QuickActionBar, TargetMenu
+from catley.ui.target_menu import TargetMenu
 
 if TYPE_CHECKING:
     import tcod.console
     import tcod.context
 
     from catley.controller import Controller
-    from catley.game.actors import Actor
+    from catley.game.actors import Actor, Character
     from catley.ui.help_menu import HelpMenu
     from catley.ui.inventory_menu import InventoryMenu
 
@@ -84,28 +83,6 @@ class SelectOrDeselectActorUICommand(UICommand):
 
     def execute(self) -> None:
         self.controller.gw.selected_actor = self.selection
-
-        # Hide any existing quick action bars first
-        # Only hide menus that are QuickActionBar instances
-        menus_to_remove = []
-        for menu in self.controller.menu_system.active_menus:
-            if menu.__class__.__name__ == "QuickActionBar":
-                menus_to_remove.append(menu)
-
-        for menu in menus_to_remove:
-            menu.hide()
-            if menu in self.controller.menu_system.active_menus:
-                self.controller.menu_system.active_menus.remove(menu)
-
-        # If selecting a non-player actor, show quick action bar
-        if (
-            self.selection
-            and self.selection != self.controller.gw.player
-            and isinstance(self.selection, Character)
-            and self.selection.health.is_alive()
-        ):
-            quick_bar = QuickActionBar(self.controller, self.selection)
-            self.controller.menu_system.show_menu(quick_bar)
 
 
 class OpenMenuUICommand(UICommand):

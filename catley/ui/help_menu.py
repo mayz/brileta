@@ -19,7 +19,7 @@ class HelpMenu(Menu):
         """Populate help options."""
         help_items = [
             ("Movement", "Arrow keys or numpad"),
-            ("Select Actor", "Left-click to select (shows quick actions)"),
+            ("Select Actor", "Left-click to select"),
             ("Target Menu", "T - Full targeting options for selected actor"),
             ("Inventory", "I - Open inventory menu"),
             ("Get Items", "G - Pick up items from ground/corpses"),
