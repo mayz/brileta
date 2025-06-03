@@ -91,12 +91,12 @@ class TargetingMode(Mode):
             case tcod.event.KeyDown(sym=tcod.event.KeySym.TAB):
                 if self.candidates:
                     direction = -1 if (event.mod & tcod.event.Modifier.SHIFT) else 1
-                    self.cycle_target(direction)
+                    self._cycle_target(direction)
                 return True
 
             case tcod.event.KeyDown(sym=tcod.event.KeySym.RETURN):
-                if self.get_current_target():
-                    target = self.get_current_target()
+                if self._get_current_target():
+                    target = self._get_current_target()
                     if isinstance(target, Character):
                         attack_action = AttackAction(
                             self.controller, self.controller.gw.player, target
@@ -121,7 +121,7 @@ class TargetingMode(Mode):
         if not self.active:
             return
 
-        current_target = self.get_current_target()
+        current_target = self._get_current_target()
         renderer = self.controller.renderer
 
         for actor in self.candidates:
@@ -142,7 +142,7 @@ class TargetingMode(Mode):
         ]
 
         # If current target is dead or no candidates left, exit targeting
-        current_target = self.get_current_target()
+        current_target = self._get_current_target()
         if not self.candidates or (
             current_target and not current_target.health.is_alive()
         ):
@@ -157,7 +157,7 @@ class TargetingMode(Mode):
         if self.candidates:
             self.controller.gw.selected_actor = self.candidates[self.current_index]
 
-    def get_current_target(self) -> Character | None:
+    def _get_current_target(self) -> Character | None:
         """Get currently targeted actor"""
         if (
             self.active
@@ -167,7 +167,7 @@ class TargetingMode(Mode):
             return self.candidates[self.current_index]
         return None
 
-    def cycle_target(self, direction: int = 1) -> None:
+    def _cycle_target(self, direction: int = 1) -> None:
         """Cycle to next/previous target. direction: 1 for next, -1 for previous"""
         if not self.candidates:
             return

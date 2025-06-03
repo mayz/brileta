@@ -122,7 +122,7 @@ class GameMap:
 
             new_room = Rect(x, y, w, h)
 
-            # See if it intesects with any of the rooms we've already made.
+            # See if it intersects with any of the rooms we've already made.
             # If it does, toss it out.
             intersects = False
             for other in rooms:

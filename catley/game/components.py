@@ -196,18 +196,28 @@ class InventoryComponent:
         return used_space
 
     def can_add_to_inventory(self, item_to_add: Item | Condition) -> bool:
-        """Check if an item can be added to inventory."""
+        """Check if an item can be added to inventory.
+
+        Tiny items share a single inventory slot.  When deciding if adding a
+        tiny item requires an additional slot, both stored items and equipped
+        ``attack_slots`` are considered.
+        """
         current_used_space = self.get_used_inventory_slots()
         additional_space_needed = 0
 
         if isinstance(item_to_add, Item):
             item = item_to_add
             if item.size == ItemSize.TINY:
-                # If no tiny items exist yet, adding this one will create the tiny slot
-                if not any(
+                # If no tiny items exist yet (stored or equipped), adding this one
+                # will create the tiny slot
+                tiny_exists = any(
                     isinstance(i, Item) and i.size == ItemSize.TINY
                     for i in self._stored_items
-                ):
+                ) or any(
+                    eq_item is not None and eq_item.size == ItemSize.TINY
+                    for eq_item in self.attack_slots
+                )
+                if not tiny_exists:
                     additional_space_needed = 1
             elif item.size == ItemSize.NORMAL:
                 additional_space_needed = 1
