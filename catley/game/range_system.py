@@ -57,5 +57,10 @@ def has_line_of_sight(
 
 
 def calculate_distance(x1: int, y1: int, x2: int, y2: int) -> int:
-    """Calculate Manhattan distance between two points"""
-    return abs(x2 - x1) + abs(y2 - y1)
+    """Calculate Chebyshev distance between two points."""
+
+    # Chebyshev distance properly handles diagonal adjacency by returning 1
+    # when moving one step diagonally.  Manhattan distance would return 2 in
+    # that case which caused melee attacks to be skipped when standing
+    # diagonally adjacent to a target.
+    return max(abs(x2 - x1), abs(y2 - y1))
