@@ -5,6 +5,7 @@
         ".ruff_cache": true,
         ".pytest_cache" : true,
         ".ropeproject" : true,
+        "**/*.egg-info": true,
     },
     "files.watcherExclude": {
         "**/node_modules": true,
