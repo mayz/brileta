@@ -30,6 +30,7 @@ from catley.util.coordinates import CoordinateConverter
 from catley.world.game_state import GameWorld
 
 if TYPE_CHECKING:
+    from catley.controller import Controller
     from catley.ui.menu_core import MenuSystem
 
 
@@ -64,7 +65,7 @@ class FPSDisplay:
 class Renderer:
     def __init__(
         self,
-        controller,
+        controller: "Controller",
         screen_width: int,
         screen_height: int,
         game_world: GameWorld,
@@ -175,6 +176,22 @@ class Renderer:
         )
         self.effect_library.trigger(effect_name, context)
 
+    def highlight_tile(
+        self, x: int, y: int, color: colors.Color, effect: str = "solid"
+    ) -> None:
+        """Public API for highlighting tiles with optional effects"""
+        if effect == "pulse":
+            color = self._apply_pulsating_effect(color, color)
+
+        self._apply_replacement_highlight(x, y, color)
+
+    def highlight_actor(
+        self, actor: Actor, color: colors.Color, effect: str = "solid"
+    ) -> None:
+        """Public API for highlighting actors if they're visible"""
+        if self.gw.game_map.visible[actor.x, actor.y]:
+            self.highlight_tile(actor.x, actor.y, color, effect)
+
     def _prepare_frame(self) -> float:
         """Clear rendering buffers and calculate frame timing."""
         # Clear both rendering targets
@@ -190,9 +207,11 @@ class Renderer:
         self._render_map()
         self._render_actors()
 
-        if self.gw.targeting_mode:
-            self._render_targeting_highlights()
+        if self.controller.active_mode:
+            # Let active mode handle world rendering
+            self.controller.active_mode.render_world()
         else:
+            # Default world highlighting when no mode is active
             self._render_selected_actor_highlight()
             self._render_mouse_cursor_highlight()
 
@@ -226,8 +245,11 @@ class Renderer:
         # Only show game UI when menus aren't active
         if not self.menu_system.has_active_menus():
             self._render_help_text()
-            self._render_mode_status()
             self.render_equipment_status()
+
+            # Let active mode render its UI
+            if self.controller.active_mode:
+                self.controller.active_mode.render_ui(self.root_console)
 
         # Always show message log (it can show combat results even with menus)
         self.message_log.render(
@@ -266,7 +288,7 @@ class Renderer:
     def _render_selected_actor_highlight(self) -> None:
         """Renders a highlight on the selected actor's tile by blending colors."""
         # Skip selection highlight when in targeting mode
-        if self.gw.targeting_mode:
+        if self.controller.is_targeting_mode():
             return
 
         if self.gw.selected_actor:
@@ -286,7 +308,7 @@ class Renderer:
 
     def _render_mouse_cursor_highlight(self) -> None:
         # Skip mouse highlight when in targeting mode
-        if self.gw.targeting_mode:
+        if self.controller.is_targeting_mode():
             return
 
         if not self.gw.mouse_tile_location_on_map:
@@ -459,44 +481,13 @@ class Renderer:
         if (
             self.gw.selected_actor == a
             and self.gw.game_map.visible[a.x, a.y]
-            and not self.gw.targeting_mode
+            and not self.controller.is_targeting_mode()
         ):
             final_fg_color = self._apply_pulsating_effect(
                 normally_lit_fg_components, base_actor_color
             )
 
         self.game_map_console.rgb["fg"][a.x, a.y] = final_fg_color
-
-    def _render_targeting_highlights(self) -> None:
-        """Render red highlights for all targetable actors in targeting mode."""
-        if not self.gw.targeting_mode:
-            return
-
-        current_target = self.controller.get_current_target()
-
-        for actor in self.gw.targeting_candidates:
-            if self.gw.game_map.visible[actor.x, actor.y]:
-                if actor == current_target:
-                    base_color = (255, 0, 0)  # Bright red
-                    # Use existing pulsating effect
-                    pulsed_color = self._apply_pulsating_effect(base_color, base_color)
-                    target_color = pulsed_color
-                else:
-                    target_color = (
-                        100,
-                        0,
-                        0,
-                    )  # Dark red, no pulse for non-current targets
-
-                self._apply_replacement_highlight(actor.x, actor.y, target_color)
-
-    def _render_mode_status(self) -> None:
-        """Render current mode status (targeting, etc.)"""
-        if self.gw.targeting_mode:
-            status_text = "TARGETING"
-            # Position it above the weapon info
-            status_y = self.screen_height - 6
-            self.root_console.print(1, status_y, status_text, fg=colors.RED)
 
     def render_equipment_status(self) -> None:
         """Render equipment status showing all attack slots with active indicator"""
@@ -589,6 +580,3 @@ class Renderer:
     ) -> None:
         """Render text at a specific position with a given color"""
         self.root_console.print(x=x, y=y, text=text, fg=fg)
-
-    def convert_mouse_coordinates(self, pixel_x: int, pixel_y: int) -> tuple[int, int]:
-        return self.coordinate_converter.pixel_to_tile(pixel_x, pixel_y)

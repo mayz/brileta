@@ -51,7 +51,7 @@ class EventHandler:
 
         match event:
             case tcod.event.MouseMotion():
-                event = self._convert_mouse_coordinates(event)
+                event = self.convert_mouse_coordinates(event)
 
                 root_tile_pos = event.position
                 map_coords = self._get_tile_map_coords_from_root_coords(root_tile_pos)
@@ -77,18 +77,18 @@ class EventHandler:
         return self._check_for_game_action(event)
 
     def _check_for_ui_command(self, event: tcod.event.Event) -> UICommand | None:
+        # Check if a mode wants to handle this first
+        if self.controller.active_mode and self.controller.active_mode.handle_input(
+            event
+        ):
+            return None
+
         match event:
             case tcod.event.Quit():
                 return QuitUICommand()
             case tcod.event.KeyDown(sym=tcod.event.KeySym.q):
                 return QuitUICommand()
-
             case tcod.event.KeyDown(sym=tcod.event.KeySym.ESCAPE):
-                # Exit targeting mode or quit
-                if self.gw.targeting_mode:
-                    self.controller.exit_targeting_mode()
-                    return None
-
                 return QuitUICommand()
 
             case tcod.event.KeyDown(sym=tcod.event.KeySym.i):
@@ -108,32 +108,10 @@ class EventHandler:
 
             case tcod.event.KeyDown(sym=tcod.event.KeySym.t):
                 # Toggle targeting mode
-                if self.gw.targeting_mode:
+                if self.controller.is_targeting_mode():
                     self.controller.exit_targeting_mode()
                 else:
                     self.controller.enter_targeting_mode()
-                return None
-
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.TAB):
-                # Cycle through targets in targeting mode
-                if self.gw.targeting_mode and self.gw.targeting_candidates:
-                    direction = -1 if (event.mod & tcod.event.Modifier.SHIFT) else 1
-                    self.controller.cycle_target(direction)
-                    return None
-                return None
-
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.RETURN):
-                # Attack current target in targeting mode
-                if self.gw.targeting_mode and self.controller.get_current_target():
-                    from .game.actions import AttackAction
-                    from .game.actors import Character
-
-                    target = self.controller.get_current_target()
-                    # Type check to ensure it's a Character
-                    if isinstance(target, Character):
-                        attack_action = AttackAction(self.controller, self.p, target)
-                        # Queue the action instead of returning it
-                        self.controller.queue_action(attack_action)
                 return None
 
             case tcod.event.KeyDown(sym=tcod.event.KeySym.r):
@@ -232,7 +210,7 @@ class EventHandler:
         Handle mouse button down events.
         Returns an action if the event is handled, otherwise None.
         """
-        event_with_tile_coords = self._convert_mouse_coordinates(event)
+        event_with_tile_coords = self.convert_mouse_coordinates(event)
         root_tile_pos = event_with_tile_coords.position
         map_coords = self._get_tile_map_coords_from_root_coords(root_tile_pos)
 
@@ -272,12 +250,14 @@ class EventHandler:
 
         return None  # Click was outside the map area
 
-    def _convert_mouse_coordinates(
+    def convert_mouse_coordinates(
         self, event: tcod.event.MouseState
     ) -> tcod.event.MouseState:
         """Convert event coordinates."""
         pixel_x, pixel_y = event.position
-        tile_x, tile_y = self.renderer.convert_mouse_coordinates(pixel_x, pixel_y)
+        tile_x, tile_y = self.controller.coordinate_converter.pixel_to_tile(
+            pixel_x, pixel_y
+        )
 
         event_copy = copy.copy(event)
         event_copy.position = tcod.event.Point(tile_x, tile_y)
