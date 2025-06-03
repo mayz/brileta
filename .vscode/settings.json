@@ -2,7 +2,9 @@
     "files.exclude": {
         "**/__pycache__": true,
         "**/*.pyc": true,
-        ".ruff_cache": true
+        ".ruff_cache": true,
+        ".pytest_cache" : true,
+        ".ropeproject" : true,
     },
     "files.watcherExclude": {
         "**/node_modules": true,

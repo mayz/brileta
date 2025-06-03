@@ -25,3 +25,8 @@ select = [
     "TC",       # Enforce importing certain types in a TYPE_CHECKING block
     "PTH",      # Use pathlib instead of os.path
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4.0",
+]

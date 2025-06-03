@@ -12,6 +12,11 @@ To create a virtual environment and install all dependencies, run `uv sync`. Eve
 
 I've been using `ruff check` as a linter, and Pylance/Pyright as a language server in VSCode and type checker. I've also been experimenting with the new `ty` type checker from Astral.
 
+To run unit tests:
+`uv pip install -e .`        # Install catley as an editable package
+`pytest`                  # Run the tests
+
+
 ## Style
 
 I've been using `ruff format` to format code. Wherever possible, I try to annotate params and variable with their types, as you can see throughout the code.
