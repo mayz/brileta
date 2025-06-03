@@ -2,6 +2,8 @@ import tcod.event
 import tcod.map
 from tcod.console import Console
 
+from catley.game.actors import Character
+
 from . import config
 from .event_handler import EventHandler
 from .game import conditions
@@ -73,6 +75,7 @@ class Controller:
 
         # Create renderer after FOV is initialized
         self.renderer = Renderer(
+            self,
             screen_width=self.root_console.width,
             screen_height=self.root_console.height,
             game_world=self.gw,
@@ -139,3 +142,132 @@ class Controller:
         Uses a frequency-based system where faster actors act more often.
         """
         self.turn_manager.process_unified_round()
+
+    ######
+    # FIXME: Move the methods below into a dedicated TargetingMode class.
+    #        And eventually a base Mode class for ConversationMode, PickpocketMode, etc.
+    #        Right now, this logic is scattered across GameState, Controller,
+    #        EventHandler, and Renderer.
+    # # catley/modes/targeting.py
+    # class TargetingMode:
+    # def __init__(self, controller):
+    #     self.controller = controller
+    #     self.active = False
+    #     self.candidates = []
+    #     self.current_index = 0
+    #     self.last_targeted = None
+
+    # def enter(self): ...
+    # def exit(self): ...
+    # def cycle_target(self, direction): ...
+    # def get_current_target(self): ...
+    # def update_for_dead_actors(self): ...
+    # def handle_attack(self): ...
+    #####
+
+    def enter_targeting_mode(self) -> None:
+        """Enter targeting mode and find all valid targets."""
+        self.gw.targeting_mode = True
+        self.gw.targeting_candidates = []
+
+        # Find all valid targets within reasonable range
+        for actor in self.gw.actors:
+            if (
+                actor != self.gw.player
+                and isinstance(actor, Character)
+                and actor.health.is_alive()
+            ):
+                from catley.game import range_system
+
+                distance = range_system.calculate_distance(
+                    self.gw.player.x, self.gw.player.y, actor.x, actor.y
+                )
+                if distance <= 15:
+                    self.gw.targeting_candidates.append(actor)
+
+        # Sort by distance (closest first)
+        self.gw.targeting_candidates.sort(
+            key=lambda a: self._calculate_distance_to_player(a)
+        )
+
+        # Use last targeted actor if available, otherwise use current selection
+        preferred_target = self.gw.last_targeted_actor or self.gw.selected_actor
+
+        if preferred_target and preferred_target in self.gw.targeting_candidates:
+            assert isinstance(preferred_target, Character)
+            self.gw.targeting_index = self.gw.targeting_candidates.index(
+                preferred_target
+            )
+            self.gw.selected_actor = preferred_target
+        else:
+            self.gw.targeting_index = 0
+            if self.gw.targeting_candidates:
+                self.gw.selected_actor = self.gw.targeting_candidates[0]
+
+    def exit_targeting_mode(self) -> None:
+        """Exit targeting mode."""
+        # Remember who we were targeting
+        if self.gw.selected_actor:
+            selected = self.gw.selected_actor
+            assert isinstance(selected, Character)
+            self.gw.last_targeted_actor = selected
+
+        self.gw.targeting_mode = False
+        self.gw.targeting_candidates = []
+        self.gw.targeting_index = 0
+        self.gw.selected_actor = None
+
+    def update_targeting_for_dead_actors(self) -> None:
+        """Remove dead actors from targeting and update current target."""
+        if not self.gw.targeting_mode:
+            return
+
+        # Remove dead actors from candidates
+        self.gw.targeting_candidates = [
+            actor for actor in self.gw.targeting_candidates if actor.health.is_alive()
+        ]
+
+        # If current target is dead or no candidates left, exit targeting
+        current_target = self.get_current_target()
+        if not self.gw.targeting_candidates or (
+            current_target and not current_target.health.is_alive()
+        ):
+            self.exit_targeting_mode()
+            return
+
+        # Adjust index if needed
+        if self.gw.targeting_index >= len(self.gw.targeting_candidates):
+            self.gw.targeting_index = 0
+
+        # Update selected actor
+        if self.gw.targeting_candidates:
+            self.gw.selected_actor = self.gw.targeting_candidates[
+                self.gw.targeting_index
+            ]
+
+    def get_current_target(self) -> Character | None:
+        """Get currently targeted actor."""
+        if (
+            self.gw.targeting_mode
+            and self.gw.targeting_candidates
+            and 0 <= self.gw.targeting_index < len(self.gw.targeting_candidates)
+        ):
+            return self.gw.targeting_candidates[self.gw.targeting_index]
+        return None
+
+    def cycle_target(self, direction: int = 1) -> None:
+        """Cycle to next/previous target. direction: 1 for next, -1 for previous."""
+        if not self.gw.targeting_candidates:
+            return
+
+        self.gw.targeting_index = (self.gw.targeting_index + direction) % len(
+            self.gw.targeting_candidates
+        )
+        self.gw.selected_actor = self.gw.targeting_candidates[self.gw.targeting_index]
+
+    def _calculate_distance_to_player(self, actor) -> int:
+        from catley.game import range_system
+
+        return range_system.calculate_distance(
+            self.gw.player.x, self.gw.player.y, actor.x, actor.y
+        )

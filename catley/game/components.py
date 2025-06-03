@@ -129,6 +129,7 @@ class InventoryComponent:
         self._stored_items: list[Item | Condition] = []
 
         self.attack_slots: list[Item | None] = [None] * num_attack_slots
+        self.active_weapon_slot: int = 0
 
     def __iter__(self):
         """Allow iteration over stored items."""
@@ -278,6 +279,17 @@ class InventoryComponent:
         return slot_colors
 
     # === Equipment Management ===
+
+    def switch_to_weapon_slot(self, slot_index: int) -> bool:
+        """Switch to a specific weapon slot. Returns True if successful."""
+        if 0 <= slot_index < len(self.attack_slots):
+            self.active_weapon_slot = slot_index
+            return True
+        return False
+
+    def get_active_weapon(self) -> Item | None:
+        """Get the currently active weapon."""
+        return self.attack_slots[self.active_weapon_slot]
 
     @property
     def num_attack_slots(self) -> int:

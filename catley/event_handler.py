@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING
 import tcod.event
 
 from catley import colors
-from catley.game.actors import Character
 from catley.ui.help_menu import HelpMenu
 from catley.ui.inventory_menu import InventoryMenu
 
@@ -14,7 +13,6 @@ from .game.actions import GameAction, MoveAction
 from .ui.ui_commands import (
     OpenMenuUICommand,
     OpenPickupMenuUICommand,
-    OpenTargetMenuUICommand,
     QuitUICommand,
     SelectOrDeselectActorUICommand,
     ToggleFullscreenUICommand,
@@ -82,10 +80,15 @@ class EventHandler:
         match event:
             case tcod.event.Quit():
                 return QuitUICommand()
-            case (
-                tcod.event.KeyDown(sym=tcod.event.KeySym.ESCAPE)
-                | tcod.event.KeyDown(sym=tcod.event.KeySym.q)
-            ):
+            case tcod.event.KeyDown(sym=tcod.event.KeySym.q):
+                return QuitUICommand()
+
+            case tcod.event.KeyDown(sym=tcod.event.KeySym.ESCAPE):
+                # Exit targeting mode or quit
+                if self.gw.targeting_mode:
+                    self.controller.exit_targeting_mode()
+                    return None
+
                 return QuitUICommand()
 
             case tcod.event.KeyDown(sym=tcod.event.KeySym.i):
@@ -104,21 +107,72 @@ class EventHandler:
                 return OpenPickupMenuUICommand(self.controller)
 
             case tcod.event.KeyDown(sym=tcod.event.KeySym.t):
-                if (
-                    self.gw.selected_actor
-                    and self.gw.selected_actor != self.gw.player
-                    and isinstance(self.gw.selected_actor, Character)
-                    and self.gw.selected_actor.health.is_alive()
-                ):
-                    return OpenTargetMenuUICommand(
-                        self.controller, target_actor=self.gw.selected_actor
-                    )
+                # Toggle targeting mode
+                if self.gw.targeting_mode:
+                    self.controller.exit_targeting_mode()
+                else:
+                    self.controller.enter_targeting_mode()
+                return None
 
-                # Show message if no valid target selected
-                self.controller.message_log.add_message(
-                    "No valid target selected. Left-click an actor first.",
-                    colors.GREY,
-                )
+            case tcod.event.KeyDown(sym=tcod.event.KeySym.TAB):
+                # Cycle through targets in targeting mode
+                if self.gw.targeting_mode and self.gw.targeting_candidates:
+                    direction = -1 if (event.mod & tcod.event.Modifier.SHIFT) else 1
+                    self.controller.cycle_target(direction)
+                    return None
+                return None
+
+            case tcod.event.KeyDown(sym=tcod.event.KeySym.RETURN):
+                # Attack current target in targeting mode
+                if self.gw.targeting_mode and self.controller.get_current_target():
+                    from .game.actions import AttackAction
+                    from .game.actors import Character
+
+                    target = self.controller.get_current_target()
+                    # Type check to ensure it's a Character
+                    if isinstance(target, Character):
+                        attack_action = AttackAction(self.controller, self.p, target)
+                        # Queue the action instead of returning it
+                        self.controller.queue_action(attack_action)
+                return None
+
+            case tcod.event.KeyDown(sym=tcod.event.KeySym.r):
+                # Reload active weapon
+                active_weapon = self.p.inventory.get_active_weapon()
+                if (
+                    active_weapon
+                    and active_weapon.ranged_attack
+                    and active_weapon.ranged_attack.current_ammo
+                    < active_weapon.ranged_attack.max_ammo
+                ):
+                    from .game.actions import ReloadAction
+
+                    reload_action = ReloadAction(self.controller, self.p, active_weapon)
+                    self.controller.queue_action(reload_action)
+                else:
+                    self.controller.message_log.add_message(
+                        "Nothing to reload!", colors.GREY
+                    )
+                return None
+
+            case tcod.event.KeyDown(sym=tcod.event.KeySym.N1):
+                # Switch to weapon slot 1
+                if self.p.inventory.switch_to_weapon_slot(0):
+                    weapon = self.p.inventory.get_active_weapon()
+                    weapon_name = weapon.name if weapon else "Empty"
+                    self.controller.message_log.add_message(
+                        f"Switched to primary weapon: {weapon_name}", colors.GREEN
+                    )
+                return None
+
+            case tcod.event.KeyDown(sym=tcod.event.KeySym.N2):
+                # Switch to weapon slot 2
+                if self.p.inventory.switch_to_weapon_slot(1):
+                    weapon = self.p.inventory.get_active_weapon()
+                    weapon_name = weapon.name if weapon else "Empty"
+                    self.controller.message_log.add_message(
+                        f"Switched to secondary weapon: {weapon_name}", colors.GREEN
+                    )
                 return None
 
             case tcod.event.KeyDown(sym=tcod.event.KeySym.RETURN, mod=mod) if (

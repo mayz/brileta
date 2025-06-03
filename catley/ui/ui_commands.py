@@ -26,7 +26,7 @@ import abc
 from typing import TYPE_CHECKING
 
 from catley.ui.pickup_menu import PickupMenu
-from catley.ui.target_menu import TargetMenu
+from catley.ui.target_menu import TargetMenu, TargetSelectionMenu
 
 if TYPE_CHECKING:
     import tcod.console
@@ -130,4 +130,15 @@ class OpenTargetMenuUICommand(UICommand):
 
     def execute(self) -> None:
         menu = TargetMenu(self.controller, self.target_actor, self.target_location)
+        self.controller.menu_system.show_menu(menu)
+
+
+class OpenTargetSelectionMenuUICommand(UICommand):
+    """Command to open a menu showing all available targets to choose from."""
+
+    def __init__(self, controller: Controller) -> None:
+        self.controller = controller
+
+    def execute(self) -> None:
+        menu = TargetSelectionMenu(self.controller)
         self.controller.menu_system.show_menu(menu)

@@ -64,6 +64,7 @@ class FPSDisplay:
 class Renderer:
     def __init__(
         self,
+        controller,
         screen_width: int,
         screen_height: int,
         game_world: GameWorld,
@@ -74,6 +75,8 @@ class Renderer:
         root_console: Console,
         tile_dimensions: tuple[int, int],
     ) -> None:
+        self.controller = controller
+
         # Extract SDL components from context
         sdl_renderer = context.sdl_renderer
         assert sdl_renderer is not None
@@ -186,8 +189,12 @@ class Renderer:
         # Render the static world (map, actors, selection indicators)
         self._render_map()
         self._render_actors()
-        self._render_selected_actor_highlight()
-        self._render_mouse_cursor_highlight()
+
+        if self.gw.targeting_mode:
+            self._render_targeting_highlights()
+        else:
+            self._render_selected_actor_highlight()
+            self._render_mouse_cursor_highlight()
 
         # Render dynamic effects (particles) on top of the world
         self.particle_system.update(delta_time)
@@ -219,6 +226,7 @@ class Renderer:
         # Only show game UI when menus aren't active
         if not self.menu_system.has_active_menus():
             self._render_help_text()
+            self._render_mode_status()
             self.render_equipment_status()
 
         # Always show message log (it can show combat results even with menus)
@@ -257,6 +265,10 @@ class Renderer:
 
     def _render_selected_actor_highlight(self) -> None:
         """Renders a highlight on the selected actor's tile by blending colors."""
+        # Skip selection highlight when in targeting mode
+        if self.gw.targeting_mode:
+            return
+
         if self.gw.selected_actor:
             actor = self.gw.selected_actor
             # Only highlight if the actor is visible in FOV
@@ -273,6 +285,10 @@ class Renderer:
                 self._apply_blended_highlight(actor.x, actor.y, target_color, alpha)
 
     def _render_mouse_cursor_highlight(self) -> None:
+        # Skip mouse highlight when in targeting mode
+        if self.gw.targeting_mode:
+            return
+
         if not self.gw.mouse_tile_location_on_map:
             return
 
@@ -323,6 +339,20 @@ class Renderer:
         self.game_map_console.rgb["bg"][x, y] = [
             max(0, min(255, c)) for c in blended_color
         ]
+
+    def _apply_replacement_highlight(
+        self, x: int, y: int, replacement_color: colors.Color
+    ) -> None:
+        """Replace the background color entirely (no blending)."""
+        # Ensure coordinates are within bounds
+        if not (
+            0 <= x < self.game_map_console.width
+            and 0 <= y < self.game_map_console.height
+        ):
+            return
+
+        # Directly replace the background color
+        self.game_map_console.rgb["bg"][x, y] = replacement_color
 
     def _render_help_text(self) -> None:
         """Render helpful key bindings at the very top."""
@@ -425,25 +455,74 @@ class Renderer:
 
         final_fg_color = normally_lit_fg_components
 
-        # If selected and in FOV, apply pulsation blending on top of the lit color
-        if self.gw.selected_actor == a and self.gw.game_map.visible[a.x, a.y]:
+        # If selected and in FOV (but not in targeting mode), apply pulsation blending
+        if (
+            self.gw.selected_actor == a
+            and self.gw.game_map.visible[a.x, a.y]
+            and not self.gw.targeting_mode
+        ):
             final_fg_color = self._apply_pulsating_effect(
                 normally_lit_fg_components, base_actor_color
             )
 
         self.game_map_console.rgb["fg"][a.x, a.y] = final_fg_color
 
-    def render_equipment_status(self):
-        """Render equipment status showing all attack slots"""
-        y_start = self.screen_height - 4  # Make room for more slots
+    def _render_targeting_highlights(self) -> None:
+        """Render red highlights for all targetable actors in targeting mode."""
+        if not self.gw.targeting_mode:
+            return
 
+        current_target = self.controller.get_current_target()
+
+        for actor in self.gw.targeting_candidates:
+            if self.gw.game_map.visible[actor.x, actor.y]:
+                if actor == current_target:
+                    base_color = (255, 0, 0)  # Bright red
+                    # Use existing pulsating effect
+                    pulsed_color = self._apply_pulsating_effect(base_color, base_color)
+                    target_color = pulsed_color
+                else:
+                    target_color = (
+                        100,
+                        0,
+                        0,
+                    )  # Dark red, no pulse for non-current targets
+
+                self._apply_replacement_highlight(actor.x, actor.y, target_color)
+
+    def _render_mode_status(self) -> None:
+        """Render current mode status (targeting, etc.)"""
+        if self.gw.targeting_mode:
+            status_text = "TARGETING"
+            # Position it above the weapon info
+            status_y = self.screen_height - 6
+            self.root_console.print(1, status_y, status_text, fg=colors.RED)
+
+    def render_equipment_status(self) -> None:
+        """Render equipment status showing all attack slots with active indicator"""
+        y_start = self.screen_height - 4
         player = self.gw.player
+
+        # Add weapon switching and reload hints
+        hint_text = "Weapons: [1][2] to switch"
+        active_weapon = player.inventory.get_active_weapon()
+        if (
+            active_weapon
+            and active_weapon.ranged_attack
+            and active_weapon.ranged_attack.current_ammo
+            < active_weapon.ranged_attack.max_ammo
+        ):
+            hint_text += " | [R] to reload"
+
+        self.root_console.print(1, y_start - 1, hint_text, fg=colors.GREY)
+
+        # Keep all the existing weapon display code
         for i, item in enumerate(player.inventory.attack_slots):
-            if i >= 3:  # Only show first 3 slots to avoid screen overflow
+            if i >= 2:  # Only show first 2 slots
                 break
-
-            slot_name = player.inventory.get_slot_display_name(i)
-
+            # Show which slot is "active"
+            active_marker = ">" if i == player.inventory.active_weapon_slot else " "
+            slot_name = f"{active_marker}{i + 1}"
             if item:
                 item_text = f"{slot_name}: {item.name}"
                 if item.ranged_attack:
@@ -451,12 +530,14 @@ class Renderer:
                         f" [{item.ranged_attack.current_ammo}/"
                         f"{item.ranged_attack.max_ammo}]"
                     )
-
-                color = colors.WHITE
+                color = (
+                    colors.WHITE
+                    if i == player.inventory.active_weapon_slot
+                    else colors.LIGHT_GREY
+                )
             else:
                 item_text = f"{slot_name}: Empty"
                 color = colors.GREY
-
             self.root_console.print(1, y_start + i, item_text, fg=color)
 
     def _apply_pulsating_effect(
