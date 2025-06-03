@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 
 from catley import colors
 from catley.config import PLAYER_BASE_STRENGTH, PLAYER_BASE_TOUGHNESS
+from catley.game import conditions
 from catley.game.actors import Character
 from catley.game.items.item_types import (
     COMBAT_KNIFE_TYPE,
@@ -37,11 +38,6 @@ class GameWorld:
         self.lighting = LightingSystem()
         self.selected_actor: Actor | None = None
 
-        self.targeting_mode: bool = False
-        self.targeting_candidates: list[Character] = []
-        self.targeting_index: int = 0
-        self.last_targeted_actor: Character | None = None
-
         # Create player with a torch light source
         from catley.game.actors import PC
 
@@ -68,6 +64,10 @@ class GameWorld:
         self.player.inventory.add_to_inventory(PISTOL_MAGAZINE_TYPE.create())
         self.player.inventory.add_to_inventory(RIFLE_MAGAZINE_TYPE.create())
         self.player.inventory.add_to_inventory(RIFLE_MAGAZINE_TYPE.create())
+
+        self.player.inventory.add_to_inventory(
+            conditions.Injury(injury_type="Sprained Ankle")
+        )
 
         self.actors: list[Actor] = [self.player]
         self.game_map = GameMap(map_width, map_height)

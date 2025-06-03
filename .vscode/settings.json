@@ -3,5 +3,15 @@
         "**/__pycache__": true,
         "**/*.pyc": true,
         ".ruff_cache": true
-    }
+    },
+    "files.watcherExclude": {
+        "**/node_modules": true,
+        "**/.venv": true,
+        "**/__pycache__": true
+    },
+    "python.analysis.exclude": [
+      "**/node_modules",
+      "**/.venv",
+      "**/__pycache__"
+    ]
 }

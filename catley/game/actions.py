@@ -334,7 +334,7 @@ class AttackAction(GameAction):
             )
 
             # Update targeting if needed
-            self.controller.update_targeting_for_dead_actors()
+            self.controller.notify_actor_death(self.defender)
 
     def _handle_attack_miss(
         self, attack_result: dice.CheckResult, attack: Attack, weapon: Item
