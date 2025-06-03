@@ -167,18 +167,28 @@ class SubTileParticleSystem:
             bg_color: Background color RGB tuple (None for no background)
             bg_blend_mode: How to blend background ("tint", "overlay", "replace")
         """
-        # Convert tile coordinates to sub-tile coordinates with slight randomization
-        # for more natural spread
-        sub_x = tile_x * self.subdivision + random.uniform(-0.5, 0.5)
-        sub_y = tile_y * self.subdivision + random.uniform(-0.5, 0.5)
+        # Calculate the center of the specified tile_x, tile_y in sub-pixel coordinates
+        center_sub_x_of_tile = (tile_x + 0.5) * self.subdivision
+        center_sub_y_of_tile = (tile_y + 0.5) * self.subdivision
+
+        # Spread particles slightly around this center point.
+        # A small fixed sub-pixel spread (e.g., +/- 0.5 sub-pixels) is often good
+        # to give a bit of volume to the emission point without precise alignment.
+        spread_sub_pixels = 0.5
+        final_particle_sub_x = center_sub_x_of_tile + random.uniform(
+            -spread_sub_pixels, spread_sub_pixels
+        )
+        final_particle_sub_y = center_sub_y_of_tile + random.uniform(
+            -spread_sub_pixels, spread_sub_pixels
+        )
 
         # Convert velocity from tiles/sec to sub-tiles/sec
         sub_vel_x = vel_x * self.subdivision
         sub_vel_y = vel_y * self.subdivision
 
         particle = SubParticle(
-            sub_x,
-            sub_y,
+            final_particle_sub_x,
+            final_particle_sub_y,
             sub_vel_x,
             sub_vel_y,
             lifetime,
@@ -248,9 +258,11 @@ class SubTileParticleSystem:
             color, char = random.choice(colors_and_chars)
 
             # Create the particle using our core add_particle method
+            center_sub_x = tile_x * self.subdivision + self.subdivision / 2.0
+            center_sub_y = tile_y * self.subdivision + self.subdivision / 2.0
             particle = SubParticle(
-                tile_x * self.subdivision,
-                tile_y * self.subdivision,
+                center_sub_x,
+                center_sub_y,
                 vel_x * self.subdivision,
                 vel_y * self.subdivision,
                 lifetime,
@@ -277,6 +289,7 @@ class SubTileParticleSystem:
         lifetime_range: tuple[float, float] = (0.05, 0.15),
         colors_and_chars: list[tuple[colors.Color, str]] | None = None,
         gravity: float = 0.0,
+        origin_offset_tiles: float = 0.0,
     ) -> None:
         """
         Emit particles in a cone shape in a specific direction.
@@ -295,6 +308,9 @@ class SubTileParticleSystem:
             lifetime_range: (min_lifetime, max_lifetime) in seconds
             colors_and_chars: List of (color, char) tuples to randomly choose from
             gravity: Gravity acceleration in tiles/sec^2
+            origin_offset_tiles: How far (in tiles) to offset the particle origin
+                        from (tile_x, tile_y) in the direction of the cone.
+                        Default is 0.0 (no offset, origin at tile center)
         """
         # Default to bright yellow plus signs if no colors specified
         if colors_and_chars is None:
@@ -303,18 +319,34 @@ class SubTileParticleSystem:
         # Calculate the base angle from the direction vector
         base_angle = math.atan2(direction_y, direction_x)
 
+        # Calculate the actual origin point for particles, including any offset
+        center_sub_x = tile_x * self.subdivision + self.subdivision / 2.0
+        center_sub_y = tile_y * self.subdivision + self.subdivision / 2.0
+
+        if origin_offset_tiles > 0.0:
+            offset_distance_sub_pixels = origin_offset_tiles * self.subdivision
+            initial_particle_sub_x = (
+                center_sub_x + math.cos(base_angle) * offset_distance_sub_pixels
+            )
+            initial_particle_sub_y = (
+                center_sub_y + math.sin(base_angle) * offset_distance_sub_pixels
+            )
+        else:
+            initial_particle_sub_x = center_sub_x
+            initial_particle_sub_y = center_sub_y
+
         for _ in range(count):
-            # Add random spread to the base angle
+            # Add random spread to the base angle for velocity
             spread = random.uniform(-cone_spread, cone_spread)
-            angle = base_angle + spread
+            angle_for_velocity = base_angle + spread  # This angle is for velocity
 
             # Random speed within specified range
             min_speed, max_speed = speed_range
             speed = random.uniform(min_speed, max_speed)
 
             # Convert to velocity components
-            vel_x = math.cos(angle) * speed
-            vel_y = math.sin(angle) * speed
+            vel_x = math.cos(angle_for_velocity) * speed
+            vel_y = math.sin(angle_for_velocity) * speed
 
             # Random lifetime
             min_lifetime, max_lifetime = lifetime_range
@@ -323,10 +355,10 @@ class SubTileParticleSystem:
             # Random color and character
             color, char = random.choice(colors_and_chars)
 
-            # Create and add the particle
+            # Create and add the particle using the calculated initial_particle_sub_x/y
             particle = SubParticle(
-                tile_x * self.subdivision,
-                tile_y * self.subdivision,
+                initial_particle_sub_x,
+                initial_particle_sub_y,
                 vel_x * self.subdivision,
                 vel_y * self.subdivision,
                 lifetime,

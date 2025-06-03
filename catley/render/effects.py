@@ -197,6 +197,7 @@ class MuzzleFlashEffect(Effect):
             speed_range=(3.0, 6.0),  # Fast-moving flash particles
             lifetime_range=(0.05, 0.15),  # Very brief flash effect
             colors_and_chars=flash_colors_chars,
+            origin_offset_tiles=0.4,  # Muzzle flash originates slightly forward
         )
 
 
