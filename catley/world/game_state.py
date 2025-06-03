@@ -37,6 +37,11 @@ class GameWorld:
         self.lighting = LightingSystem()
         self.selected_actor: Actor | None = None
 
+        self.targeting_mode: bool = False
+        self.targeting_candidates: list[Character] = []
+        self.targeting_index: int = 0
+        self.last_targeted_actor: Character | None = None
+
         # Create player with a torch light source
         from catley.game.actors import PC
 

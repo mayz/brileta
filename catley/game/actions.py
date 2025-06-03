@@ -146,7 +146,7 @@ class AttackAction(GameAction):
         based on distance and capabilities."""
         weapon = (
             self.weapon
-            or self.attacker.inventory.attack_slots[0]
+            or self.attacker.inventory.get_active_weapon()
             or FISTS_TYPE.create()
         )
 
@@ -201,8 +201,14 @@ class AttackAction(GameAction):
         range_modifiers = {}
         ranged_attack = weapon.ranged_attack
 
-        # For ranged attacks, check line of sight and apply range modifiers
-        if attack == ranged_attack and distance > 1:
+        # For ranged attacks, check ammo, check line of sight and apply range modifiers
+        if ranged_attack is not None and attack == ranged_attack and distance > 1:
+            if ranged_attack.current_ammo <= 0:
+                self.controller.message_log.add_message(
+                    f"{weapon.name} is out of ammo!", colors.RED
+                )
+                return None
+
             # Check line of sight
             if not range_system.has_line_of_sight(
                 self.controller.gw.game_map,
@@ -249,7 +255,13 @@ class AttackAction(GameAction):
         # Consume ammo for ranged attacks
         ranged_attack = weapon.ranged_attack
         if attack == ranged_attack and ranged_attack is not None:
-            ranged_attack.current_ammo -= 1
+            if ranged_attack.current_ammo > 0:
+                ranged_attack.current_ammo -= 1
+            else:
+                # This shouldn't happen if validation worked, but safety check
+                self.controller.message_log.add_message(
+                    f"No ammo left in {weapon.name}!", colors.RED
+                )
 
         # Emit muzzle flash for ranged attacks
         if attack == weapon.ranged_attack:
@@ -320,6 +332,9 @@ class AttackAction(GameAction):
             self.controller.message_log.add_message(
                 f"{self.defender.name} has been killed!", colors.RED
             )
+
+            # Update targeting if needed
+            self.controller.update_targeting_for_dead_actors()
 
     def _handle_attack_miss(
         self, attack_result: dice.CheckResult, attack: Attack, weapon: Item

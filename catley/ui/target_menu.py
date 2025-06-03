@@ -1,18 +1,103 @@
 from __future__ import annotations
 
 import functools
+import string
 from typing import TYPE_CHECKING
 
 from catley import colors
 from catley.game import range_system
 from catley.game.actions import AttackAction, ReloadAction
+from catley.game.actors import Character
 from catley.game.items.item_core import Item
 from catley.game.items.item_types import FISTS_TYPE
 from catley.ui.menu_core import Menu, MenuOption
 
 if TYPE_CHECKING:
     from catley.controller import Controller
-    from catley.game.actors import Character
+
+
+class TargetSelectionMenu(Menu):
+    """Menu for selecting which target to attack when no target is pre-selected."""
+
+    def __init__(self, controller: Controller) -> None:
+        super().__init__("Select Target", controller, width=40)
+        self.player = controller.gw.player
+
+    def populate_options(self) -> None:
+        """Populate with all valid targets in range."""
+        valid_targets = self._get_valid_targets()
+
+        if not valid_targets:
+            self.add_option(
+                MenuOption(
+                    key=None,
+                    text="No targets in range",
+                    enabled=False,
+                    color=colors.GREY,
+                )
+            )
+            return
+
+        # Add each valid target with a letter key
+        letters = string.ascii_lowercase
+        for i, (target, distance, can_attack_reason) in enumerate(valid_targets):
+            if i >= len(letters):
+                break
+
+            key = letters[i]
+
+            # Show target info and distance
+            target_text = f"{target.name} (distance {distance})"
+            if target.health:
+                target_text += f" - HP: {target.health.hp}/{target.health.max_hp}"
+
+            action_func = functools.partial(self._select_target, target)
+            self.add_option(
+                MenuOption(
+                    key=key, text=target_text, action=action_func, color=colors.WHITE
+                )
+            )
+
+    def _get_valid_targets(self) -> list[tuple[Character, int, str]]:
+        """Get all valid targets with their distance and attack feasibility."""
+        valid_targets = []
+
+        for actor in self.controller.gw.actors:
+            if (
+                actor != self.player
+                and isinstance(actor, Character)
+                and actor.health.is_alive()
+            ):
+                distance = range_system.calculate_distance(
+                    self.player.x, self.player.y, actor.x, actor.y
+                )
+
+                # Check if we can attack with any weapon
+                attack_action = AttackAction(self.controller, self.player, actor)
+                can_attack, reason = attack_action.can_execute()
+
+                # Include targets we can potentially attack (even if not right now)
+                # We'll be more permissive here than strict range checking
+                if distance <= 15:  # Reasonable "visible" range
+                    valid_targets.append((actor, distance, reason or "Can attack"))
+
+        # Sort by distance (closest first)
+        valid_targets.sort(key=lambda x: x[1])
+        return valid_targets
+
+    def _select_target(self, target: Character) -> None:
+        """Select a target and open their target menu."""
+        # Set the target as selected
+        self.controller.gw.selected_actor = target
+
+        # Hide this menu
+        self.hide()
+
+        # Open the target menu for this specific target
+        from catley.ui.ui_commands import OpenTargetMenuUICommand
+
+        command = OpenTargetMenuUICommand(self.controller, target_actor=target)
+        command.execute()
 
 
 class TargetMenu(Menu):
