@@ -280,7 +280,34 @@ class AreaEffect:
     ) -> bool:
         """Check if we can target the specified location based on
         weapon capabilities."""
-        # FIXME: Implement.
+        from catley.game import range_system
+
+        game_map = controller.gw.game_map
+
+        # Ensure the target tile is within the bounds of the map.
+        if not (0 <= target_x < game_map.width and 0 <= target_y < game_map.height):
+            return False
+
+        # Determine distance from attacker to target.
+        distance = range_system.calculate_distance(
+            attacker.x, attacker.y, target_x, target_y
+        )
+
+        # Use a default range if we don't have additional info.
+        max_range = 10
+        if distance > max_range:
+            return False
+
+        # If the effect requires line of sight, verify it via the range system.
+        if self._spec.requires_line_of_sight:
+            return range_system.has_line_of_sight(
+                game_map,
+                attacker.x,
+                attacker.y,
+                target_x,
+                target_y,
+            )
+
         return True
 
     def can_create_effect(self, attacker, controller) -> bool:
