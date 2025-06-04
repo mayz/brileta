@@ -55,3 +55,12 @@ def test_has_line_of_sight():
 def test_calculate_distance():
     assert range_system.calculate_distance(0, 0, 3, 4) == 4
     assert range_system.calculate_distance(2, 2, 3, 3) == 1
+
+
+def test_get_line():
+    assert range_system.get_line(0, 0, 3, 3) == [
+        (0, 0),
+        (1, 1),
+        (2, 2),
+        (3, 3),
+    ]

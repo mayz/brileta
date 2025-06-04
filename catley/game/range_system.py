@@ -44,11 +44,19 @@ def has_line_of_sight(
     game_map: GameMap, start_x: int, start_y: int, end_x: int, end_y: int
 ) -> bool:
     """Check if there's clear line of sight using TCOD"""
-    # Get line points using TCOD's optimized Bresenham
-    line_points = tcod.los.bresenham((start_x, start_y), (end_x, end_y))
+    # Get line points using optimized Bresenham
+    line_points = get_line(start_x, start_y, end_x, end_y)
 
     # Check all points except start and end for transparency
     return all(game_map.transparent[x, y] for x, y in line_points[1:-1])
+
+
+def get_line(
+    start_x: int, start_y: int, end_x: int, end_y: int
+) -> list[tuple[int, int]]:
+    """Return Bresenham line points from (start_x, start_y) to (end_x, end_y)."""
+
+    return [tuple(pt) for pt in tcod.los.bresenham((start_x, start_y), (end_x, end_y))]
 
 
 def calculate_distance(x1: int, y1: int, x2: int, y2: int) -> int:
