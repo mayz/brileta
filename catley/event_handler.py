@@ -27,12 +27,18 @@ class EventHandler:
     def __init__(self, controller: Controller) -> None:
         self.controller = controller
         self.renderer = self.controller.renderer
+        self.cursor_manager = controller.renderer.cursor_manager
         self.gw = controller.gw
         self.game_map = self.gw.game_map
         self.p = self.gw.player
 
     def dispatch(self, event: tcod.event.Event) -> None:
-        # First, try to handle the event with the menu system
+        if isinstance(event, tcod.event.MouseState):
+            # Update mouse cursor position.
+            position = event.position
+            self.cursor_manager.update_mouse_position(position[0], position[1])
+
+        # Try to handle the event with the menu system
         menu_consumed = self.controller.menu_system.handle_input(event)
 
         # If no menu handled it, check for normal game actions
