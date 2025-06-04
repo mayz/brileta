@@ -1,6 +1,12 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from catley import colors
-from catley.controller import Controller
 from catley.game.actions import GameAction, MoveAction
+
+if TYPE_CHECKING:
+    from catley.controller import Controller
 
 
 class TurnManager:

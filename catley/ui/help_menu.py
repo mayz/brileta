@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
 from catley import colors
@@ -10,7 +12,7 @@ if TYPE_CHECKING:
 class HelpMenu(Menu):
     """Menu showing all available commands."""
 
-    def __init__(self, controller: "Controller") -> None:
+    def __init__(self, controller: Controller) -> None:
         super().__init__("Help - Available Commands", controller, width=60)
 
     def populate_options(self) -> None:

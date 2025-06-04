@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import abc
 from typing import TYPE_CHECKING, Generic, TypeVar
 
@@ -71,17 +73,15 @@ class Attack(abc.ABC, Generic[SpecType]):
     @abc.abstractmethod
     def can_attack(
         self,
-        attacker: "Actor",
-        target: "Actor",
+        attacker: Actor,
+        target: Actor,
         distance: int,
-        controller: "Controller",
+        controller: Controller,
     ) -> bool:
         pass
 
     @abc.abstractmethod
-    def perform_attack(
-        self, attacker: "Actor", target: "Actor", controller: "Controller"
-    ):
+    def perform_attack(self, attacker: Actor, target: Actor, controller: Controller):
         pass
 
     @property
@@ -110,17 +110,15 @@ class MeleeAttack(Attack[MeleeAttackSpec]):
 
     def can_attack(
         self,
-        attacker: "Actor",
-        target: "Actor",
+        attacker: Actor,
+        target: Actor,
         distance: int,
-        controller: "Controller",
+        controller: Controller,
     ) -> bool:
         # Must be adjacent.
         return distance == 1
 
-    def perform_attack(
-        self, attacker: "Actor", target: "Actor", controller: "Controller"
-    ):
+    def perform_attack(self, attacker: Actor, target: Actor, controller: Controller):
         # Access definitions via self._spec.damage_dice, etc.
         # Actual melee attack logic (Phase 4)
         print(f"Performing melee: {self._spec.damage_dice.dice_str}")
@@ -137,10 +135,10 @@ class RangedAttack(Attack[RangedAttackSpec]):
 
     def can_attack(
         self,
-        attacker: "Actor",
-        target: "Actor",
+        attacker: Actor,
+        target: Actor,
         distance: int,
-        controller: "Controller",
+        controller: Controller,
     ) -> bool:
         return (
             self.current_ammo > 0
@@ -152,9 +150,7 @@ class RangedAttack(Attack[RangedAttackSpec]):
         # Will implement in Phase 3
         return True
 
-    def perform_attack(
-        self, attacker: "Actor", target: "Actor", controller: "Controller"
-    ):
+    def perform_attack(self, attacker: Actor, target: Actor, controller: Controller):
         # Actual ranged attack logic (Phase 4)
         if self.current_ammo > 0:
             print(
@@ -280,7 +276,7 @@ class AreaEffect:
         self._spec = spec
 
     def can_target_location(
-        self, attacker: "Actor", target_x: int, target_y: int, controller: "Controller"
+        self, attacker: Actor, target_x: int, target_y: int, controller: Controller
     ) -> bool:
         """Check if we can target the specified location based on
         weapon capabilities."""
@@ -345,7 +341,7 @@ class ConsumableEffect:  # Handler Class
         self._spec = spec
         self.uses_remaining = spec.max_uses
 
-    def consume(self, target_actor: "Actor", controller: "Controller") -> bool:
+    def consume(self, target_actor: Actor, controller: Controller) -> bool:
         if self.uses_remaining > 0:
             # Apply effect logic using:
             # self._spec.effect_type, self._spec.effect_value

@@ -1,10 +1,15 @@
+from __future__ import annotations
+
 import abc
+from typing import TYPE_CHECKING
 
 import tcod.event
 from tcod.console import Console
 
-from catley.controller import Controller
 from catley.game.actors import Character
+
+if TYPE_CHECKING:
+    from catley.controller import Controller
 
 
 class Mode(abc.ABC):

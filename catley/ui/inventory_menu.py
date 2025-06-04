@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import functools
 import string
 from collections.abc import Callable
@@ -16,7 +18,7 @@ if TYPE_CHECKING:
 class InventoryMenu(Menu):
     """Menu for managing the player's inventory."""
 
-    def __init__(self, controller: "Controller") -> None:
+    def __init__(self, controller: Controller) -> None:
         super().__init__("Inventory", controller)
         self.inventory = controller.gw.player.inventory
 

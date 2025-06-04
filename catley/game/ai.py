@@ -18,14 +18,20 @@ Behavior Components:
     HostileAI, WaryAI, etc. - Focused implementations for specific dispositions.
 """
 
+from __future__ import annotations
+
 import abc
+from typing import TYPE_CHECKING
 
 from catley import colors
-from catley.controller import Controller
 
-from .actions import GameAction
-from .actors import NPC, Actor, Character
 from .enums import Disposition
+
+if TYPE_CHECKING:
+    from catley.controller import Controller
+
+    from .actions import GameAction
+    from .actors import NPC, Actor, Character
 
 
 class AIComponent(abc.ABC):
@@ -149,7 +155,12 @@ class HostileAI(AIComponent):
         return None
 
     def _get_move_toward_player(
-        self, controller: Controller, actor: NPC, player: Character, dx: int, dy: int
+        self,
+        controller: Controller,
+        actor: NPC,
+        player: Character,
+        dx: int,
+        dy: int,
     ) -> GameAction | None:
         """Calculate movement toward the player with basic pathfinding."""
         from .actions import MoveAction
@@ -187,7 +198,12 @@ class HostileAI(AIComponent):
         return None
 
     def _can_move_to(
-        self, controller: Controller, dx: int, dy: int, actor: Actor, player: Actor
+        self,
+        controller: Controller,
+        dx: int,
+        dy: int,
+        actor: Actor,
+        player: Actor,
     ) -> bool:
         """Check if the actor can move in the given direction."""
         target_x = actor.x + dx

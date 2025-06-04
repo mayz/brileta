@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import math
+from typing import TYPE_CHECKING
 
 import numpy as np
 import tcod.render
@@ -19,7 +22,6 @@ from catley.config import (
     SELECTION_HIGHLIGHT_ALPHA,
     SHOW_FPS,
 )
-from catley.controller import Controller
 from catley.game.actors import Actor
 from catley.render.effects import EffectContext, EffectLibrary
 from catley.render.particles import SubTileParticleSystem
@@ -30,6 +32,9 @@ from catley.ui.message_log import MessageLog
 from catley.util.clock import Clock
 from catley.util.coordinates import CoordinateConverter
 from catley.world.game_state import GameWorld
+
+if TYPE_CHECKING:
+    from catley.controller import Controller
 
 
 class FPSDisplay:
@@ -52,7 +57,7 @@ class FPSDisplay:
 
             self.last_update = current_time
 
-    def render(self, renderer: "Renderer") -> None:
+    def render(self, renderer: Renderer) -> None:
         self.update()
 
         fps_width = len(self.display_string)
@@ -63,13 +68,13 @@ class FPSDisplay:
 class Renderer:
     def __init__(
         self,
-        controller: "Controller",
+        controller: Controller,
         screen_width: int,
         screen_height: int,
         game_world: GameWorld,
         clock: Clock,
         message_log: MessageLog,
-        menu_system: "MenuSystem",
+        menu_system: MenuSystem,
         context: tcod.context.Context,
         root_console: Console,
         tile_dimensions: tuple[int, int],
