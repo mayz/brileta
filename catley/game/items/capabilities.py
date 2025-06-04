@@ -319,6 +319,10 @@ class AreaEffect:
     def friendly_fire(self) -> bool:
         return self._spec.friendly_fire
 
+    @property
+    def requires_line_of_sight(self) -> bool:
+        return self._spec.requires_line_of_sight
+
 
 # === Consumable Capability ===
 class ConsumableEffectSpec:  # Definition Class
