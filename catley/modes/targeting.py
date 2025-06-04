@@ -1,19 +1,12 @@
-from __future__ import annotations
-
-from typing import TYPE_CHECKING
-
 import tcod.event
+from tcod.console import Console
 
 from catley import colors
+from catley.controller import Controller
 from catley.game import range_system
 from catley.game.actions import AttackAction
 from catley.game.actors import Character
 from catley.modes.base import Mode
-
-if TYPE_CHECKING:
-    from tcod.console import Console
-
-    from catley.controller import Controller
 
 
 class TargetingMode(Mode):

@@ -1,7 +1,6 @@
-from __future__ import annotations
-
 import functools
 import string
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from catley import colors
@@ -11,15 +10,13 @@ from catley.game.items.item_core import Item
 from catley.ui.menu_core import Menu, MenuOption
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from catley.controller import Controller
 
 
 class InventoryMenu(Menu):
     """Menu for managing the player's inventory."""
 
-    def __init__(self, controller: Controller) -> None:
+    def __init__(self, controller: "Controller") -> None:
         super().__init__("Inventory", controller)
         self.inventory = controller.gw.player.inventory
 
@@ -35,11 +32,9 @@ class InventoryMenu(Menu):
         display_lines: list[MenuOption] = []
 
         # Collect all items to display (stored + equipped)
-        all_items_to_display = []
-
-        # Add all stored items
-        for entity_in_slot in self.inventory._stored_items:
-            all_items_to_display.append((entity_in_slot, "stored"))
+        # Start with all stored items
+        stored_items = self.inventory._stored_items
+        all_items_to_display = [(item, "stored") for item in stored_items]
 
         # Add all equipped items
         for slot_index, equipped_item in enumerate(self.inventory.attack_slots):

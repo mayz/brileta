@@ -189,13 +189,10 @@ def perform_check_roll(
         has_advantage = False
         has_disadvantage = False
 
-    rolls_made: list[int] = []
-
     # Determine number of dice and which to keep
     num_dice_to_roll = 1 if not (has_advantage or has_disadvantage) else 2
 
-    for _ in range(num_dice_to_roll):
-        rolls_made.append(roll_d(20))
+    rolls_made: list[int] = [roll_d(20) for _ in range(num_dice_to_roll)]
 
     if has_advantage:
         final_roll_used = max(rolls_made)

@@ -1,16 +1,11 @@
-from __future__ import annotations
-
 import functools
 import string
-from typing import TYPE_CHECKING
 
 from catley import colors
+from catley.controller import Controller
 from catley.game.actors import Character
+from catley.game.items.item_core import Item
 from catley.ui.menu_core import Menu, MenuOption
-
-if TYPE_CHECKING:
-    from catley.controller import Controller
-    from catley.game.items.item_core import Item
 
 
 class PickupMenu(Menu):

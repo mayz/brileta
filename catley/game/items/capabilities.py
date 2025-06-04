@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import abc
 from typing import TYPE_CHECKING, Generic, TypeVar
 
@@ -10,12 +8,12 @@ if TYPE_CHECKING:
     from catley.game.actors import Actor
 
 
-class AttackSpec(abc.ABC):
+class AttackSpec(abc.ABC):  # noqa: B024
     """Defines the properties of a melee attack."""
 
     def __init__(
         self, damage_die: str, stat_name: str, properties: set[str] | None = None
-    ):
+    ) -> None:
         self.damage_dice = dice.Dice(damage_die)
         self.properties = properties or set()
         self.stat_name = stat_name
@@ -24,7 +22,7 @@ class AttackSpec(abc.ABC):
 class MeleeAttackSpec(AttackSpec):
     """Defines the properties of a melee attack."""
 
-    def __init__(self, damage_die: str, properties: set[str] | None = None):
+    def __init__(self, damage_die: str, properties: set[str] | None = None) -> None:
         super().__init__(damage_die, "strength", properties)
 
 
@@ -50,7 +48,7 @@ class RangedAttackSpec(AttackSpec):
 class ImprovisedRangedAttackSpec(RangedAttackSpec):
     """For throwing non-weapon items (inherits RangedAttack for its structure)."""
 
-    def __init__(self, damage_die: str = "d3", max_range: int = 4):
+    def __init__(self, damage_die: str = "d3", max_range: int = 4) -> None:
         super().__init__(
             damage_die=damage_die,
             ammo_type="thrown",
@@ -67,17 +65,23 @@ SpecType = TypeVar("SpecType", bound=AttackSpec)
 class Attack(abc.ABC, Generic[SpecType]):
     """Interface for item components that can perform attacks."""
 
-    def __init__(self, spec: SpecType):
+    def __init__(self, spec: SpecType) -> None:
         self._spec = spec
 
     @abc.abstractmethod
     def can_attack(
-        self, attacker: Actor, target: Actor, distance: int, controller: Controller
+        self,
+        attacker: "Actor",
+        target: "Actor",
+        distance: int,
+        controller: "Controller",
     ) -> bool:
         pass
 
     @abc.abstractmethod
-    def perform_attack(self, attacker: Actor, target: Actor, controller: Controller):
+    def perform_attack(
+        self, attacker: "Actor", target: "Actor", controller: "Controller"
+    ):
         pass
 
     @property
@@ -99,18 +103,24 @@ class Attack(abc.ABC, Generic[SpecType]):
 class MeleeAttack(Attack[MeleeAttackSpec]):
     """Handles melee attacks for a specific item instance."""
 
-    def __init__(self, spec: MeleeAttackSpec):
+    def __init__(self, spec: MeleeAttackSpec) -> None:
         super().__init__(spec)
         # Melee attacks are often stateless for the item itself,
         # but this structure allows adding state later (e.g., durability).
 
     def can_attack(
-        self, attacker: Actor, target: Actor, distance: int, controller: Controller
+        self,
+        attacker: "Actor",
+        target: "Actor",
+        distance: int,
+        controller: "Controller",
     ) -> bool:
         # Must be adjacent.
         return distance == 1
 
-    def perform_attack(self, attacker: Actor, target: Actor, controller: Controller):
+    def perform_attack(
+        self, attacker: "Actor", target: "Actor", controller: "Controller"
+    ):
         # Access definitions via self._spec.damage_dice, etc.
         # Actual melee attack logic (Phase 4)
         print(f"Performing melee: {self._spec.damage_dice.dice_str}")
@@ -120,13 +130,17 @@ class MeleeAttack(Attack[MeleeAttackSpec]):
 class RangedAttack(Attack[RangedAttackSpec]):
     """Handles ranged attacks for a specific item instance."""
 
-    def __init__(self, spec: RangedAttackSpec):
+    def __init__(self, spec: RangedAttackSpec) -> None:
         super().__init__(spec)
         # Start with full ammo.
         self.current_ammo: int = spec.max_ammo
 
     def can_attack(
-        self, attacker: Actor, target: Actor, distance: int, controller: Controller
+        self,
+        attacker: "Actor",
+        target: "Actor",
+        distance: int,
+        controller: "Controller",
     ) -> bool:
         return (
             self.current_ammo > 0
@@ -138,7 +152,9 @@ class RangedAttack(Attack[RangedAttackSpec]):
         # Will implement in Phase 3
         return True
 
-    def perform_attack(self, attacker: Actor, target: Actor, controller: Controller):
+    def perform_attack(
+        self, attacker: "Actor", target: "Actor", controller: "Controller"
+    ):
         # Actual ranged attack logic (Phase 4)
         if self.current_ammo > 0:
             print(
@@ -150,7 +166,7 @@ class RangedAttack(Attack[RangedAttackSpec]):
             print("Out of ammo!")
         pass
 
-    def reload(self, rounds_to_add: int):
+    def reload(self, rounds_to_add: int) -> int:
         needed = self._spec.max_ammo - self.current_ammo
         can_add = min(rounds_to_add, needed)
         self.current_ammo += can_add
@@ -236,7 +252,7 @@ class AreaEffectSpec:
         requires_line_of_sight: bool = False,
         penetrates_walls: bool = False,
         friendly_fire: bool = True,
-    ):
+    ) -> None:
         self.damage_dice = dice.Dice(damage_die)
         self.area_type = area_type  # "circle", "line", "cone", "cross"
         self.size = size  # radius for circle, length for line, etc.
@@ -260,11 +276,11 @@ class AreaEffect:
     Those belong in AreaEffectAction.
     """
 
-    def __init__(self, spec: AreaEffectSpec):
+    def __init__(self, spec: AreaEffectSpec) -> None:
         self._spec = spec
 
     def can_target_location(
-        self, attacker: Actor, target_x: int, target_y: int, controller: Controller
+        self, attacker: "Actor", target_x: int, target_y: int, controller: "Controller"
     ) -> bool:
         """Check if we can target the specified location based on
         weapon capabilities."""
@@ -316,7 +332,7 @@ class ConsumableEffectSpec:  # Definition Class
     effect_value: int
     max_uses: int = 1
 
-    def __init__(self, effect_type: str, effect_value: int, max_uses: int = 1):
+    def __init__(self, effect_type: str, effect_value: int, max_uses: int = 1) -> None:
         self.effect_type = effect_type
         self.effect_value = effect_value
         self.max_uses = max_uses
@@ -325,11 +341,11 @@ class ConsumableEffectSpec:  # Definition Class
 class ConsumableEffect:  # Handler Class
     """Handles the state and use of a consumable item instance."""
 
-    def __init__(self, spec: ConsumableEffectSpec):
+    def __init__(self, spec: ConsumableEffectSpec) -> None:
         self._spec = spec
         self.uses_remaining = spec.max_uses
 
-    def consume(self, target_actor: Actor, controller: Controller) -> bool:
+    def consume(self, target_actor: "Actor", controller: "Controller") -> bool:
         if self.uses_remaining > 0:
             # Apply effect logic using:
             # self._spec.effect_type, self._spec.effect_value
@@ -351,7 +367,7 @@ class AmmoSpec:
     ammo_type: str
     capacity: int  # How many rounds this type of pack holds when full
 
-    def __init__(self, ammo_type: str, capacity: int):
+    def __init__(self, ammo_type: str, capacity: int) -> None:
         self.ammo_type = ammo_type
         self.capacity = capacity
 
@@ -359,7 +375,7 @@ class AmmoSpec:
 class Ammo:
     """Handles the state of a specific ammunition pack instance."""
 
-    def __init__(self, spec: AmmoSpec):
+    def __init__(self, spec: AmmoSpec) -> None:
         self._spec = spec
         self.rounds_left = spec.capacity  # This pack starts full
 

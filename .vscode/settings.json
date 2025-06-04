@@ -1,20 +1,30 @@
 {
-    "files.exclude": {
-        "**/__pycache__": true,
-        "**/*.pyc": true,
-        ".ruff_cache": true,
-        ".pytest_cache" : true,
-        ".ropeproject" : true,
-        "**/*.egg-info": true,
-    },
-    "files.watcherExclude": {
-        "**/node_modules": true,
-        "**/.venv": true,
-        "**/__pycache__": true
-    },
-    "python.analysis.exclude": [
-      "**/node_modules",
-      "**/.venv",
-      "**/__pycache__"
-    ]
+  // Keep clutter out of the explorer
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/*.pyc": true,
+    ".ruff_cache": true,
+    ".pytest_cache": true,
+    ".ropeproject": true,
+    "**/*.egg-info": true
+  },
+
+  // Avoid unnecessary file system events
+  "files.watcherExclude": {
+    "**/node_modules": true,
+    "**/.venv": true,
+    "**/__pycache__": true
+  },
+
+  // Prevent static analysis inside garbage dirs
+  "python.analysis.exclude": [
+    "**/node_modules",
+    "**/.venv",
+    "**/__pycache__"
+  ],
+
+  "python.testing.pytestEnabled": true,
+  "python.testing.pytestArgs": ["tests"],
+  "python.defaultInterpreterPath": ".venv/bin/python",
+  "python.analysis.typeCheckingMode": "basic"
 }

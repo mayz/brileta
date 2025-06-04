@@ -1,14 +1,10 @@
-from __future__ import annotations
-
 import abc
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    import tcod.event
-    from tcod.console import Console
+import tcod.event
+from tcod.console import Console
 
-    from catley.controller import Controller
-    from catley.game.actors import Character
+from catley.controller import Controller
+from catley.game.actors import Character
 
 
 class Mode(abc.ABC):
@@ -38,7 +34,7 @@ class Mode(abc.ABC):
         """Render mode-specific UI overlays (text, menus, etc.)"""
         pass
 
-    def render_world(self) -> None:
+    def render_world(self) -> None:  # noqa: B027
         """Render mode-specific effects in world space (tile highlights, effects, etc.).
 
         Default implementation does nothing - modes only override if they need
@@ -46,10 +42,10 @@ class Mode(abc.ABC):
         """
         pass
 
-    def update(self) -> None:
+    def update(self) -> None:  # noqa: B027
         """Called each frame for mode-specific updates"""
         pass
 
-    def on_actor_death(self, actor: Character) -> None:
+    def on_actor_death(self, actor: Character) -> None:  # noqa: B027
         """Called when an actor dies. Override in subclasses that care."""
         pass

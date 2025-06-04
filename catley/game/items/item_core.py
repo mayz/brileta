@@ -1,8 +1,7 @@
-from __future__ import annotations
-
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, cast
+from typing import cast
 
+from catley.game.enums import ItemSize
 from catley.game.items.capabilities import (
     Ammo,
     AmmoSpec,
@@ -15,9 +14,6 @@ from catley.game.items.capabilities import (
     RangedAttack,
     RangedAttackSpec,
 )
-
-if TYPE_CHECKING:
-    from catley.game.enums import ItemSize
 
 
 @dataclass
@@ -35,7 +31,7 @@ class ItemType:
     consumable_effect: ConsumableEffectSpec | None = None
     ammo: AmmoSpec | None = None
 
-    def create(self) -> Item:
+    def create(self) -> "Item":
         """Create a new Item instance of this type."""
         return Item(self)
 

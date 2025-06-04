@@ -3,7 +3,7 @@ import abc
 from catley import colors
 
 
-class Condition(abc.ABC):
+class Condition(abc.ABC):  # noqa: B024
     """Base class for all conditions that can affect an actor and take up
     inventory space."""
 
@@ -12,7 +12,7 @@ class Condition(abc.ABC):
         name: str,
         description: str = "",
         display_color: colors.Color = colors.ORANGE,
-    ):
+    ) -> None:
         self.name = name
         self.description = description
         self.display_color = display_color  # Color used in menus

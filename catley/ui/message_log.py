@@ -1,12 +1,8 @@
-from __future__ import annotations
-
 import textwrap
-from typing import TYPE_CHECKING
+
+import tcod.console
 
 from catley import colors
-
-if TYPE_CHECKING:
-    import tcod.console
 
 
 class Message:

@@ -1,13 +1,13 @@
-from __future__ import annotations
-
-from typing import TYPE_CHECKING
-
 import tcod.event
 import tcod.map
 import tcod.sdl.mouse
+from tcod.console import Console
 
 from . import config
 from .event_handler import EventHandler
+from .game.actions import GameAction
+from .game.actors import Character
+from .modes.base import Mode
 from .modes.targeting import TargetingMode
 from .render.render import Renderer
 from .turn_manager import TurnManager
@@ -15,13 +15,6 @@ from .ui.menu_core import MenuSystem
 from .ui.message_log import MessageLog
 from .util.clock import Clock
 from .world.game_state import GameWorld
-
-if TYPE_CHECKING:
-    from tcod.console import Console
-
-    from .game.actions import GameAction
-    from .game.actors import Character
-    from .modes.base import Mode
 
 
 class Controller:

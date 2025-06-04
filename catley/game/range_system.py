@@ -1,12 +1,7 @@
-from __future__ import annotations
-
-from typing import TYPE_CHECKING
-
 import tcod
 
-if TYPE_CHECKING:
-    from catley.game.items.item_core import Item
-    from catley.world.map import GameMap
+from catley.game.items.item_core import Item
+from catley.world.map import GameMap
 
 
 def get_range_category(distance: int, weapon: Item) -> str:

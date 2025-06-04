@@ -1,12 +1,10 @@
-from __future__ import annotations
-
 import random
-from typing import TYPE_CHECKING
 
 from catley import colors
 from catley.config import PLAYER_BASE_STRENGTH, PLAYER_BASE_TOUGHNESS
 from catley.game import conditions
-from catley.game.actors import Character
+from catley.game.actors import Actor, Character
+from catley.game.items.item_core import Item
 from catley.game.items.item_types import (
     COMBAT_KNIFE_TYPE,
     PISTOL_MAGAZINE_TYPE,
@@ -17,10 +15,6 @@ from catley.game.items.item_types import (
 from catley.render.lighting import LightingSystem, LightSource
 
 from .map import GameMap
-
-if TYPE_CHECKING:
-    from catley.game.actors import Actor
-    from catley.game.items.item_core import Item
 
 
 class GameWorld:
@@ -93,9 +87,9 @@ class GameWorld:
                 and not actor.health.is_alive()  # Only from dead actors
             ):
                 # Add all equipped items from all slots
-                for equipped_item in actor.inventory.attack_slots:
-                    if equipped_item:
-                        items_found.append(equipped_item)
+                attack_slots = actor.inventory.attack_slots
+                items_found.extend(item for item in attack_slots if item)
+
         # Future: Add items directly on the ground if we implement that
         # e.g., items_found.extend(self.game_map.get_items_on_ground(x,y))
         return items_found
