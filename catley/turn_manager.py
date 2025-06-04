@@ -1,19 +1,12 @@
-from __future__ import annotations
-
-from typing import TYPE_CHECKING
-
 from catley import colors
-from catley.game.actions import MoveAction
-
-if TYPE_CHECKING:
-    from catley.controller import Controller
-    from catley.game.actions import GameAction
+from catley.controller import Controller
+from catley.game.actions import GameAction, MoveAction
 
 
 class TurnManager:
     """Manages turn-based gameplay, actor energy, and action execution."""
 
-    def __init__(self, controller: Controller):
+    def __init__(self, controller: Controller) -> None:
         self.controller = controller
         self.player = self.controller.gw.player
         self._pending_action: GameAction | None = None
@@ -84,9 +77,7 @@ class TurnManager:
         except SystemExit:
             raise
         except Exception as e:
-            error_message = (
-                f"Error executing action '{type(action).__name__}': {str(e)}"
-            )
+            error_message = f"Error executing action '{type(action).__name__}': {e!s}"
             self.controller.message_log.add_message(error_message, colors.RED)
             print(f"Unhandled exception during action execution: {e}")
             return

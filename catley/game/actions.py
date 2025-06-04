@@ -20,23 +20,18 @@ decisions rather than interface interactions. Game actions typically:
 - Advance the game's narrative/mechanical state
 """
 
-from __future__ import annotations
-
 import abc
-from typing import TYPE_CHECKING
 
 from catley import colors
+from catley.controller import Controller
 from catley.game import range_system
 from catley.game.items.item_core import Item
 from catley.util import dice
 
 from .actors import Actor, Character, Disposition
 from .ai import DispositionBasedAI
+from .items.capabilities import Attack
 from .items.item_types import FISTS_TYPE
-
-if TYPE_CHECKING:
-    from catley.controller import Controller
-    from catley.game.items.capabilities import Attack
 
 
 class GameAction(abc.ABC):

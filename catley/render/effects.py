@@ -47,13 +47,10 @@ import abc
 import math
 import random
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
-# Import for type hints only to avoid circular imports
-if TYPE_CHECKING:
-    from catley import colors
+from catley import colors
 
-    from .particles import SubTileParticleSystem
+from .particles import SubTileParticleSystem
 
 
 @dataclass

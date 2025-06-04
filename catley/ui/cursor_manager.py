@@ -116,7 +116,7 @@ class CursorManager:
         except Exception as e:
             print(
                 f"ERROR: Failed to load/upload cursor '{cursor_name}' "
-                f"from '{str(full_path)}'. Exception: {e}"
+                f"from '{full_path}'. Exception: {e!s}"
             )
             import traceback
 

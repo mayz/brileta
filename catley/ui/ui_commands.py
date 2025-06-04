@@ -20,21 +20,16 @@ UI commands are immediate and don't consume game turns. They handle the
 interface rather than how their character acts within the game world.
 """
 
-from __future__ import annotations
-
 import abc
-from typing import TYPE_CHECKING
 
+import tcod.console
+import tcod.context
+
+from catley.controller import Controller
+from catley.game.actors import Actor
+from catley.ui.help_menu import HelpMenu
+from catley.ui.inventory_menu import InventoryMenu
 from catley.ui.pickup_menu import PickupMenu
-
-if TYPE_CHECKING:
-    import tcod.console
-    import tcod.context
-
-    from catley.controller import Controller
-    from catley.game.actors import Actor
-    from catley.ui.help_menu import HelpMenu
-    from catley.ui.inventory_menu import InventoryMenu
 
 
 class UICommand(abc.ABC):

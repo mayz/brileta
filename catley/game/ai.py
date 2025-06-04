@@ -18,23 +18,17 @@ Behavior Components:
     HostileAI, WaryAI, etc. - Focused implementations for specific dispositions.
 """
 
-from __future__ import annotations
-
-from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
+import abc
 
 from catley import colors
+from catley.controller import Controller
 
+from .actions import GameAction
+from .actors import NPC, Actor, Character
 from .enums import Disposition
 
-if TYPE_CHECKING:
-    from catley.controller import Controller
 
-    from .actions import GameAction
-    from .actors import NPC, Actor, Character
-
-
-class AIComponent(ABC):
+class AIComponent(abc.ABC):
     """Base class for AI decision-making components.
 
     Each AI component is responsible for determining what action
@@ -45,7 +39,7 @@ class AIComponent(ABC):
     def __init__(self) -> None:
         self.actor: Actor | None = None
 
-    @abstractmethod
+    @abc.abstractmethod
     def get_action(self, controller: Controller, actor: NPC) -> GameAction | None:
         """Determine what action this AI wants to perform this turn.
 
@@ -58,7 +52,7 @@ class AIComponent(ABC):
         """
         pass
 
-    def update(self, controller: Controller) -> None:
+    def update(self, controller: Controller) -> None:  # noqa: B027
         """Called each turn to update AI internal state.
 
         Base implementation does nothing. Override for AI that needs

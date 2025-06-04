@@ -1,5 +1,4 @@
 import math
-from typing import TYPE_CHECKING
 
 import numpy as np
 import tcod.render
@@ -20,19 +19,17 @@ from catley.config import (
     SELECTION_HIGHLIGHT_ALPHA,
     SHOW_FPS,
 )
+from catley.controller import Controller
 from catley.game.actors import Actor
 from catley.render.effects import EffectContext, EffectLibrary
 from catley.render.particles import SubTileParticleSystem
 from catley.render.screen_shake import ScreenShake
 from catley.ui.cursor_manager import CursorManager
+from catley.ui.menu_core import MenuSystem
 from catley.ui.message_log import MessageLog
 from catley.util.clock import Clock
 from catley.util.coordinates import CoordinateConverter
 from catley.world.game_state import GameWorld
-
-if TYPE_CHECKING:
-    from catley.controller import Controller
-    from catley.ui.menu_core import MenuSystem
 
 
 class FPSDisplay:
