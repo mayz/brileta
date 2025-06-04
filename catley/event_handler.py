@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 import copy
+from typing import TYPE_CHECKING
 
 import tcod.event
 
@@ -6,8 +9,11 @@ from catley import colors
 from catley.ui.help_menu import HelpMenu
 from catley.ui.inventory_menu import InventoryMenu
 
-from .controller import Controller
 from .game.actions import GameAction, MoveAction
+
+if TYPE_CHECKING:
+    from .controller import Controller
+
 from .ui.ui_commands import (
     OpenMenuUICommand,
     OpenPickupMenuUICommand,

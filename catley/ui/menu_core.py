@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import abc
 from collections.abc import Callable
 from typing import TYPE_CHECKING, cast
@@ -15,11 +17,11 @@ if TYPE_CHECKING:
 class MenuSystem:
     """Manages the menu system for the game."""
 
-    def __init__(self, controller: "Controller") -> None:
+    def __init__(self, controller: Controller) -> None:
         self.controller = controller
         self.active_menus: list[Menu] = []
 
-    def show_menu(self, menu: "Menu") -> None:
+    def show_menu(self, menu: Menu) -> None:
         """Show a menu, adding it to the active menu stack."""
         menu.show()
         self.active_menus.append(menu)
@@ -85,7 +87,7 @@ class Menu(abc.ABC):
     def __init__(
         self,
         title: str,
-        controller: "Controller",
+        controller: Controller,
         width: int = 50,
         max_height: int = 30,
     ) -> None:

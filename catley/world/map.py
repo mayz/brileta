@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import random
 
 import numpy as np
@@ -17,7 +15,7 @@ class Rect:
     def center(self) -> tuple[int, int]:
         return (int((self.x1 + self.x2) / 2), int((self.y1 + self.y2) / 2))
 
-    def intersects(self, other: Rect) -> bool:
+    def intersects(self, other: "Rect") -> bool:
         return (
             self.x1 <= other.x2
             and self.x2 >= other.x1

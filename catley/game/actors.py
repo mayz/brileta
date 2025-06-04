@@ -31,14 +31,14 @@ Use one of the factory functions below to create actors:
     - make_npc()
 """
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
 from catley import colors
 from catley.config import DEFAULT_ACTOR_SPEED
 from catley.render.lighting import LightSource
-from catley.world.game_state import GameWorld
 
-from .actions import GameAction
 from .ai import AIComponent, DispositionBasedAI
 from .components import (
     HealthComponent,
@@ -51,6 +51,9 @@ from .items.item_core import Item
 
 if TYPE_CHECKING:
     from catley.controller import Controller
+    from catley.world.game_state import GameWorld
+
+    from .actions import GameAction
 
 
 class Actor:
@@ -165,7 +168,7 @@ class Actor:
                 if self.gw and self.gw.selected_actor == self:
                     self.gw.selected_actor = None
 
-    def update_turn(self, controller: "Controller") -> None:
+    def update_turn(self, controller: Controller) -> None:
         """
         Handles turn-based logic for actors. For NPCs, this includes AI.
         For the player, this could handle passive effects like poison/regeneration.
@@ -182,7 +185,7 @@ class Actor:
         # handled via get_next_action() in the main game loop.
         pass
 
-    def get_next_action(self, controller: "Controller") -> GameAction | None:
+    def get_next_action(self, controller: Controller) -> GameAction | None:
         """
         Determines the next action for this actor.
         """
@@ -347,7 +350,7 @@ class PC(Character):
             speed=speed,
         )
 
-    def get_next_action(self, controller: "Controller") -> GameAction | None:
+    def get_next_action(self, controller: Controller) -> GameAction | None:
         """
         Determines the next action for this actor.
         """
@@ -427,7 +430,7 @@ class NPC(Character):
         # Type narrowing - these are guaranteed to exist.
         self.ai: AIComponent
 
-    def get_next_action(self, controller: "Controller") -> GameAction | None:
+    def get_next_action(self, controller: Controller) -> GameAction | None:
         """
         Determines the next action for this actor.
         """
