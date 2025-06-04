@@ -5,11 +5,15 @@ Centralizes all magic numbers and configuration values used throughout the codeb
 Organized by functional area for easy maintenance.
 """
 
+from pathlib import Path
+
 import tcod.constants
 
 # =============================================================================
 # GENERAL
 # =============================================================================
+
+PROJECT_ROOT_PATH = Path(__file__).resolve().parent.parent
 
 RANDOM_SEED = None
 # RANDOM_SEED = "burrito burrito"
@@ -131,7 +135,9 @@ SELECTION_HIGHLIGHT_ALPHA = 0.6  # Alpha blending for selected actor highlight
 # ASSET PATHS
 # =============================================================================
 
+BASE_MOUSE_CURSOR_PATH = PROJECT_ROOT_PATH / "assets" / "cursors"
+
 # Tileset
-TILESET_PATH = "Taffer_20x20.png"
+TILESET_PATH = PROJECT_ROOT_PATH / "assets" / "tilesets" / "Taffer_20x20.png"
 TILESET_COLUMNS = 16
 TILESET_ROWS = 16

@@ -24,6 +24,7 @@ from catley.game.actors import Actor
 from catley.render.effects import EffectContext, EffectLibrary
 from catley.render.particles import SubTileParticleSystem
 from catley.render.screen_shake import ScreenShake
+from catley.ui.cursor_manager import CursorManager
 from catley.ui.message_log import MessageLog
 from catley.util.clock import Clock
 from catley.util.coordinates import CoordinateConverter
@@ -129,6 +130,8 @@ class Renderer:
         )
 
         self.effect_library = EffectLibrary()
+
+        self.cursor_manager = CursorManager(self.sdl_renderer)
 
     def render_all(self) -> None:
         """
@@ -275,6 +278,9 @@ class Renderer:
         # Copy texture to screen and present
         self.sdl_renderer.clear()
         self.sdl_renderer.copy(console_texture)
+
+        self.cursor_manager.draw_cursor()
+
         self.sdl_renderer.present()
 
     def trigger_screen_shake(self, intensity: float, duration: float = 0.3):

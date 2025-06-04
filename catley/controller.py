@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 import tcod.event
 import tcod.map
+import tcod.sdl.mouse
 
 from . import config
 from .event_handler import EventHandler
@@ -121,16 +122,23 @@ class Controller:
         self.gw.game_map.explored |= self.gw.game_map.visible
 
     def run_game_loop(self) -> None:
-        while True:
-            for event in tcod.event.get():
-                self.event_handler.dispatch(event)
+        try:
+            # Hide the system mouse cursor. We'll draw our own.
+            tcod.sdl.mouse.show(False)
 
-            # Update using clock's delta time
-            delta_time = self.clock.sync(fps=self.target_fps)
+            while True:
+                for event in tcod.event.get():
+                    self.event_handler.dispatch(event)
 
-            # Update animations and render
-            self.gw.lighting.update(delta_time)
-            self.renderer.render_all()
+                # Update using clock's delta time
+                delta_time = self.clock.sync(fps=self.target_fps)
+
+                # Update animations and render
+                self.gw.lighting.update(delta_time)
+                self.renderer.render_all()
+        finally:
+            # Show the system mouse cursor again.
+            tcod.sdl.mouse.show(True)
 
     def queue_action(self, action: GameAction) -> None:
         """

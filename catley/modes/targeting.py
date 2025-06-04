@@ -19,8 +19,9 @@ if TYPE_CHECKING:
 class TargetingMode(Mode):
     """Mode for targeting enemies and performing attacks"""
 
-    def __init__(self, controller: Controller):
+    def __init__(self, controller: Controller) -> None:
         super().__init__(controller)
+        self.cursor_manager = controller.renderer.cursor_manager
         self.candidates: list[Character] = []
         self.current_index: int = 0
         self.last_targeted: Character | None = None
@@ -29,6 +30,8 @@ class TargetingMode(Mode):
         """Enter targeting mode and find all valid targets"""
         super().enter()
         self.candidates = []
+
+        self.cursor_manager.set_active_cursor_type("crosshair")
 
         # Find all valid targets within reasonable range
         for actor in self.controller.gw.actors:
@@ -72,6 +75,9 @@ class TargetingMode(Mode):
         self.candidates = []
         self.current_index = 0
         self.controller.gw.selected_actor = None
+
+        self.cursor_manager.set_active_cursor_type("arrow")
+
         super().exit()
 
     def handle_input(self, event: tcod.event.Event) -> bool:
