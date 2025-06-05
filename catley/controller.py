@@ -87,7 +87,9 @@ class Controller:
             root_console=self.root_console,
             tile_dimensions=tile_dimensions,
         )
-        self.coordinate_converter = self.renderer.coordinate_converter
+        self.coordinate_converter = (
+            self.renderer.low_level_renderer.coordinate_converter
+        )
 
         self.gw.populate_npcs(rooms)
 

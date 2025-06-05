@@ -22,16 +22,17 @@ from catley.config import (
     SHOW_FPS,
 )
 from catley.game.actors import Actor
-from catley.render.effects import EffectContext, EffectLibrary
-from catley.render.particles import SubTileParticleSystem
 from catley.render.screen_shake import ScreenShake
 from catley.ui.cursor_manager import CursorManager
 from catley.ui.menu_core import MenuSystem
 from catley.ui.message_log_panel import MessageLogPanel
 from catley.util.clock import Clock
-from catley.util.coordinates import CoordinateConverter
 from catley.util.message_log import MessageLog
 from catley.world.game_state import GameWorld
+
+from .effects import EffectContext, EffectLibrary
+from .particles import SubTileParticleSystem
+from .renderer import Renderer as LowLevelRenderer
 
 if TYPE_CHECKING:
     from catley.controller import Controller
@@ -79,32 +80,11 @@ class Renderer:
         root_console: Console,
         tile_dimensions: tuple[int, int],
     ) -> None:
-        self.controller = controller
-
-        # Extract SDL components from context
-        sdl_renderer = context.sdl_renderer
-        assert sdl_renderer is not None
-
-        sdl_atlas = context.sdl_atlas
-        assert sdl_atlas is not None
-
-        self.context = context
-        self.sdl_renderer: tcod.sdl.render.Renderer = sdl_renderer
-        self.console_render = tcod.render.SDLConsoleRender(sdl_atlas)
-        self.root_console = root_console
-
-        self.tile_dimensions = tile_dimensions
-
-        # Set up coordinate conversion
-        renderer_width, renderer_height = self.sdl_renderer.output_size
-        self.coordinate_converter = CoordinateConverter(
-            console_width=root_console.width,
-            console_height=root_console.height,
-            tile_width=self.tile_dimensions[0],
-            tile_height=self.tile_dimensions[1],
-            renderer_width=renderer_width,
-            renderer_height=renderer_height,
+        self.low_level_renderer = LowLevelRenderer(
+            context, root_console, tile_dimensions
         )
+
+        self.controller = controller
 
         self.screen_width = screen_width
         self.screen_height = screen_height
@@ -140,7 +120,7 @@ class Renderer:
 
         self.effect_library = EffectLibrary()
 
-        self.cursor_manager = CursorManager(self.sdl_renderer)
+        self.cursor_manager = CursorManager(self.low_level_renderer)
 
     def render_all(self) -> None:
         """
@@ -207,8 +187,8 @@ class Renderer:
     def _prepare_frame(self) -> float:
         """Clear rendering buffers and calculate frame timing."""
         # Clear both rendering targets
-        self.game_map_console.clear()
-        self.root_console.clear()
+        self.low_level_renderer.clear_console(self.game_map_console)
+        self.low_level_renderer.clear_console(self.low_level_renderer.root_console)
 
         # Calculate delta time for this frame (used by multiple systems)
         return getattr(self.fps_display.clock, "last_delta_time", 1 / 60)
@@ -243,13 +223,11 @@ class Renderer:
         shake_x, shake_y = self.screen_shake.update(delta_time)
 
         # Composite: Blit game world onto root console with shake offset
-        # This is where we combine the game world layer with the UI layer
-        self.game_map_console.blit(
-            dest=self.root_console,
+        self.low_level_renderer.blit_console(
+            source=self.game_map_console,
+            dest=self.low_level_renderer.root_console,
             dest_x=shake_x,
             dest_y=self.help_height + shake_y,
-            width=self.game_map_console.width,
-            height=self.game_map_console.height,
         )
 
     def _render_ui_overlays(self) -> None:
@@ -261,7 +239,9 @@ class Renderer:
 
             # Let active mode render its UI
             if self.controller.active_mode:
-                self.controller.active_mode.render_ui(self.root_console)
+                self.controller.active_mode.render_ui(
+                    self.low_level_renderer.root_console
+                )
 
         # Draw message log panel
         self.message_log_panel.draw()
@@ -271,20 +251,12 @@ class Renderer:
             self.fps_display.render(self)
 
         # Menus render last so they appear on top of everything
-        self.menu_system.render(self.root_console)
+        self.menu_system.render(self.low_level_renderer.root_console)
 
     def _present_frame(self) -> None:
         """Present the final composited frame via SDL."""
-        # Convert TCOD console to SDL texture
-        console_texture = self.console_render.render(self.root_console)
-
-        # Copy texture to screen and present
-        self.sdl_renderer.clear()
-        self.sdl_renderer.copy(console_texture)
-
         self.cursor_manager.draw_cursor()
-
-        self.sdl_renderer.present()
+        self.low_level_renderer.present_frame()
 
     def trigger_screen_shake(self, intensity: float, duration: float = 0.3):
         """Trigger screen shake effect. Call this from combat actions."""
@@ -397,7 +369,7 @@ class Renderer:
         help_text = " | ".join(help_items)
         help_x = 1
         help_y = 0
-        self.root_console.print(help_x, help_y, help_text, fg=colors.GREY)
+        self.low_level_renderer.draw_text(help_x, help_y, help_text, fg=colors.GREY)
 
     def _render_map(self) -> None:
         # Start with unexplored (shroud)
@@ -514,7 +486,7 @@ class Renderer:
         ):
             hint_text += " | [R] to reload"
 
-        self.root_console.print(1, y_start - 1, hint_text, fg=colors.GREY)
+        self.low_level_renderer.draw_text(1, y_start - 1, hint_text, fg=colors.GREY)
 
         # Keep all the existing weapon display code
         for i, item in enumerate(player.inventory.attack_slots):
@@ -538,7 +510,7 @@ class Renderer:
             else:
                 item_text = f"{slot_name}: Empty"
                 color = colors.GREY
-            self.root_console.print(1, y_start + i, item_text, fg=color)
+            self.low_level_renderer.draw_text(1, y_start + i, item_text, fg=color)
 
     def _apply_pulsating_effect(
         self, input_color: colors.Color, base_actor_color: colors.Color
@@ -588,4 +560,4 @@ class Renderer:
         self, x: int, y: int, text: str, fg: colors.Color = colors.WHITE
     ) -> None:
         """Render text at a specific position with a given color"""
-        self.root_console.print(x=x, y=y, text=text, fg=fg)
+        self.low_level_renderer.draw_text(x, y, text, fg)
