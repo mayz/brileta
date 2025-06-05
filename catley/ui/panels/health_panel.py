@@ -4,7 +4,8 @@ from typing import TYPE_CHECKING
 
 from catley import colors
 from catley.render.renderer import Renderer
-from catley.ui.panel import Panel
+
+from .panel import Panel
 
 if TYPE_CHECKING:
     from catley.controller import Controller

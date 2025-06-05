@@ -10,9 +10,13 @@ from catley.render.effects import EffectContext
 from catley.render.old_render import FPSDisplay
 from catley.render.screen_shake import ScreenShake
 from catley.ui.cursor_manager import CursorManager
-from catley.ui.message_log_panel import MessageLogPanel
-from catley.ui.panel import Panel
-from catley.ui.panels import EquipmentPanel, GameWorldPanel, HealthPanel
+from catley.ui.panels import (
+    EquipmentPanel,
+    GameWorldPanel,
+    HealthPanel,
+    MessageLogPanel,
+    Panel,
+)
 
 if TYPE_CHECKING:
     from catley.controller import Controller
@@ -38,21 +42,27 @@ class FrameManager:
         self.game_world_panel = GameWorldPanel(controller, self.screen_shake)
 
         # Message log occupies the bottom-left corner.
-        message_log_height = 5
+        screen_height_tiles = self.renderer.root_console.height
+        message_log_height = 7
+        message_log_y = screen_height_tiles - message_log_height - 5  # y=39
+
         self.message_log_panel = MessageLogPanel(
             message_log=self.controller.message_log,
             x=1,
-            y=self.renderer.root_console.height - message_log_height - 1,
+            y=message_log_y,
             width=30,
             height=message_log_height,
+            tile_dimensions=self.renderer.tile_dimensions,
         )
 
         # Equipment panel sits directly above the message log.
         equipment_height = 3
+        equipment_y = message_log_y - equipment_height - 1
+
         self.equipment_panel = EquipmentPanel(
             controller,
             x=1,
-            y=self.message_log_panel.y - equipment_height,
+            y=equipment_y,
         )
 
         # Health panel is drawn at the top-right corner.
@@ -106,7 +116,7 @@ class FrameManager:
         self.cursor_manager.draw_cursor()
         for panel in self.panels:
             if panel.visible:
-                panel.present(self.renderer.sdl_renderer)
+                panel.present(self.renderer)
 
         # Flip the backbuffer to the screen
         self.renderer.finalize_present()

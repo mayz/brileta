@@ -18,7 +18,8 @@ from catley.config import (
 from catley.render.effects import EffectLibrary
 from catley.render.particles import SubTileParticleSystem
 from catley.render.screen_shake import ScreenShake
-from catley.ui.panel import Panel
+
+from .panel import Panel
 
 if TYPE_CHECKING:
     from catley.controller import Controller

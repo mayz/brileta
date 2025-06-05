@@ -22,6 +22,10 @@ class MessageLog:
 
     def __init__(self) -> None:
         self.messages: list[Message] = []
+        # revision increments whenever a message is added or stacked.
+        # Render layers use this to efficiently update cached textures
+        # only when the log actually changes.
+        self.revision = 0
 
     def add_message(
         self,
@@ -40,3 +44,5 @@ class MessageLog:
             self.messages[-1].count += 1
         else:
             self.messages.append(Message(text, fg))
+        # increment revision so observers know the log changed
+        self.revision += 1
