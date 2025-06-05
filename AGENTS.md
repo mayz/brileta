@@ -19,4 +19,10 @@ To run unit tests:
 
 ## Style
 
-I've been using `ruff format` to format code. Wherever possible, I try to annotate params and variable with their types, as you can see throughout the code.
+- I've been using `ruff format` to format code. Wherever possible, I try to annotate params and variable with their types, as you can see throughout the code.
+- All new code must be fully type-hinted and pass static analysis.
+- Good Documentation: Comments should describe what code is doing and (if particularly complex) why it is doing it.
+
+##  Dev Notes
+
+- Identical Outcome: Ideally, there should be no performance regressions and no visual regressions (unless deliberately making visual changes).
