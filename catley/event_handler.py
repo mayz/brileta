@@ -164,7 +164,8 @@ class EventHandler:
                 mod & tcod.event.Modifier.ALT
             ):
                 return ToggleFullscreenUICommand(
-                    self.renderer.context, self.controller.root_console
+                    self.renderer.low_level_renderer.context,
+                    self.renderer.low_level_renderer.root_console,
                 )
 
             case tcod.event.MouseButtonDown():

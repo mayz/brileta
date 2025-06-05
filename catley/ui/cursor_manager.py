@@ -5,6 +5,7 @@ import tcod.sdl.render
 from PIL import Image as PILImage
 
 from catley.config import BASE_MOUSE_CURSOR_PATH
+from catley.render.renderer import Renderer
 
 
 @dataclass
@@ -23,10 +24,10 @@ class CursorManager:
 
     def __init__(
         self,
-        sdl_renderer: tcod.sdl.render.Renderer,
+        renderer: Renderer,
         base_asset_path: str = "assets/cursors/",
     ) -> None:
-        self.sdl_renderer = sdl_renderer
+        self.sdl_renderer = renderer.sdl_renderer
         self.base_asset_path = base_asset_path
         self.cursors: dict[str, CursorData] = {}
 
