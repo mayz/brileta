@@ -520,16 +520,18 @@ class SubTileParticleSystem:
         Args:
             delta_time: Time elapsed since last update in seconds
         """
-        # Update particles and remove dead ones
-        # List comprehension filters out particles where update() returns False
-        self.particles = [p for p in self.particles if p.update(delta_time)]
-
-        # Remove particles that are out of bounds
-        # This prevents particles from affecting rendering outside the map
+        # Update physics and filter out particles in a single pass.
+        # Combining the lifetime and bounds checks here avoids creating
+        # intermediate lists and reduces iteration overhead when many particles
+        # are active.  Each particle's ``update`` method returns ``True`` if it
+        # is still alive, so we only keep particles that both survive the update
+        # *and* remain within map bounds.
         self.particles = [
             p
             for p in self.particles
-            if 0 <= p.sub_x < self.sub_width and 0 <= p.sub_y < self.sub_height
+            if p.update(delta_time)
+            and 0 <= p.sub_x < self.sub_width
+            and 0 <= p.sub_y < self.sub_height
         ]
 
     def render_to_console(self, console: tcod.console.Console) -> None:
