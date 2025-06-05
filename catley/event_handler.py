@@ -28,7 +28,7 @@ class EventHandler:
     def __init__(self, controller: Controller) -> None:
         self.controller = controller
         self.renderer = self.controller.renderer
-        self.cursor_manager = controller.renderer.cursor_manager
+        self.cursor_manager = controller.frame_manager.cursor_manager
         self.gw = controller.gw
         self.game_map = self.gw.game_map
         self.p = self.gw.player
@@ -61,7 +61,11 @@ class EventHandler:
                 event = self.convert_mouse_coordinates(event)
 
                 root_tile_pos = event.position
-                map_coords = self._get_tile_map_coords_from_root_coords(root_tile_pos)
+                map_coords = (
+                    self.controller.frame_manager.get_tile_map_coords_from_root_coords(
+                        root_tile_pos
+                    )
+                )
 
                 if map_coords is not None:
                     self.gw.mouse_tile_location_on_map = map_coords
@@ -164,8 +168,8 @@ class EventHandler:
                 mod & tcod.event.Modifier.ALT
             ):
                 return ToggleFullscreenUICommand(
-                    self.renderer.low_level_renderer.context,
-                    self.renderer.low_level_renderer.root_console,
+                    self.renderer.context,
+                    self.renderer.root_console,
                 )
 
             case tcod.event.MouseButtonDown():
@@ -220,7 +224,9 @@ class EventHandler:
         """
         event_with_tile_coords = self.convert_mouse_coordinates(event)
         root_tile_pos = event_with_tile_coords.position
-        map_coords = self._get_tile_map_coords_from_root_coords(root_tile_pos)
+        map_coords = self.controller.frame_manager.get_tile_map_coords_from_root_coords(
+            root_tile_pos
+        )
 
         if event.button != tcod.event.MouseButton.LEFT:
             return None
@@ -237,24 +243,6 @@ class EventHandler:
             return SelectOrDeselectActorUICommand(self.controller, None)
 
         return SelectOrDeselectActorUICommand(self.controller, actor_at_click)
-
-    def _get_tile_map_coords_from_root_coords(
-        self, root_tile_coords: tuple[int, int]
-    ) -> tuple[int, int] | None:
-        map_render_offset_x = 0
-        map_render_offset_y = self.renderer.help_height
-
-        map_x = root_tile_coords[0] - map_render_offset_x
-        map_y = root_tile_coords[1] - map_render_offset_y
-
-        # Check if the translated coordinates are within the bounds of game_map_console
-        if (
-            0 <= map_x < self.renderer.game_map_console.width
-            and 0 <= map_y < self.renderer.game_map_console.height
-        ):
-            return map_x, map_y
-
-        return None  # Click was outside the map area
 
     def convert_mouse_coordinates(
         self, event: tcod.event.MouseState

@@ -69,12 +69,19 @@ class Renderer:
             height=height or source.height,
         )
 
-    def present_frame(self) -> None:
-        """Present the final composited frame via SDL."""
+    def prepare_to_present(self) -> None:
+        """Converts the root console to a texture and copies it to the backbuffer."""
         # Convert TCOD console to SDL texture
         console_texture = self.console_render.render(self.root_console)
-
-        # Copy texture to screen and present
+        # Copy texture to screen
         self.sdl_renderer.clear()
         self.sdl_renderer.copy(console_texture)
+
+    def finalize_present(self) -> None:
+        """Presents the backbuffer to the screen."""
         self.sdl_renderer.present()
+
+    def present_frame(self) -> None:
+        """Presents the final composited frame via SDL. (Now a convenience method)"""
+        self.prepare_to_present()
+        self.finalize_present()

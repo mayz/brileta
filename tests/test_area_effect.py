@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 
@@ -7,6 +7,8 @@ from catley.controller import Controller
 from catley.game.actions import AreaEffectAction
 from catley.game.actors import Actor, Character
 from catley.game.items.item_types import GRENADE_TYPE
+from catley.render.frame_manager import FrameManager
+from catley.render.renderer import Renderer
 from catley.world.game_state import GameWorld
 from catley.world.map import GameMap
 
@@ -34,8 +36,14 @@ class DummyMessageLog:
         self.messages.append(text)
 
 
-class DummyRenderer:
-    def __init__(self) -> None:
+class DummyFrameManager(FrameManager):
+    def __init__(self, controller: "DummyController") -> None:
+        # We don't need the full FrameManager setup.
+        # We will mock the parts we don't want to initialize.
+        self.controller = controller
+        # Create a mock Renderer that satisfies the type hint.
+        # We don't need a real TCOD context for this test.
+        self.renderer = MagicMock(spec=Renderer)
         self.effects: list[str] = []
 
     def create_effect(
@@ -55,7 +63,7 @@ class DummyController(Controller):
         # Skip Controller.__init__ to avoid creating a full game.
         self.gw = gw
         self.message_log = DummyMessageLog()
-        self.renderer = DummyRenderer()
+        self.frame_manager = DummyFrameManager(self)
 
 
 def make_world() -> tuple[
@@ -108,4 +116,4 @@ def test_grenade_action_execution() -> None:
         action.execute()
     assert target.health.hp == target.health.max_hp - 4
     assert controller.message_log.messages[-1] == "Target takes 4 damage."
-    assert controller.renderer.effects == ["explosion"]
+    assert controller.frame_manager.effects == ["explosion"]

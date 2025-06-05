@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import textwrap
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from tcod.console import Console
 
+from catley import colors
+from catley.render.renderer import Renderer
 from catley.ui.panel import Panel
 
 if TYPE_CHECKING:
@@ -21,29 +23,28 @@ class MessageLogPanel(Panel):
         y: int,
         width: int,
         height: int,
-        root_console: Console,
     ) -> None:
         super().__init__(x, y, width, height)
         self.message_log = message_log
-        self.root_console = root_console
 
         # Create console for text rendering
         self.text_console = Console(width, height, order="F")
 
-    def draw(self) -> None:
+    def draw(self, renderer: Renderer) -> None:
         """Draw the message log panel."""
         if not self.visible:
             return
 
-        # Clear the text console
-        self.text_console.clear()
+        # Clear the text console with default white text on black bg
+        self.text_console.clear(fg=cast("tuple[int, int, int]", colors.WHITE))
 
-        # Render messages to the text console
+        # Render messages to the internal text console
         self._render_messages_to_console()
 
-        # Blit to root console
-        self.text_console.blit(
-            dest=self.root_console,
+        # Blit to the root console provided by the renderer
+        renderer.blit_console(
+            source=self.text_console,
+            dest=renderer.root_console,
             dest_x=self.x,
             dest_y=self.y,
         )
