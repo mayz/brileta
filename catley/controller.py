@@ -9,7 +9,7 @@ from .game.actions import GameAction
 from .game.actors import Character
 from .modes.base import Mode
 from .modes.targeting import TargetingMode
-from .render.render import Renderer
+from .render.old_render import Renderer
 from .turn_manager import TurnManager
 from .ui.menu_core import MenuSystem
 from .util.clock import Clock
