@@ -241,9 +241,7 @@ class EventHandler:
         self, root_tile_coords: tuple[int, int]
     ) -> tuple[int, int] | None:
         map_render_offset_x = 0
-        map_render_offset_y = (
-            self.renderer.help_height + self.renderer.message_log_height
-        )
+        map_render_offset_y = self.renderer.help_height
 
         map_x = root_tile_coords[0] - map_render_offset_x
         map_y = root_tile_coords[1] - map_render_offset_y

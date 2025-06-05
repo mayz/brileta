@@ -12,8 +12,8 @@ from .modes.targeting import TargetingMode
 from .render.render import Renderer
 from .turn_manager import TurnManager
 from .ui.menu_core import MenuSystem
-from .ui.message_log import MessageLog
 from .util.clock import Clock
+from .util.message_log import MessageLog
 from .world.game_state import GameWorld
 
 

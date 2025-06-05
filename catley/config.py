@@ -31,7 +31,6 @@ SCREEN_HEIGHT = 50
 
 # UI Layout
 HELP_HEIGHT = 1  # Lines reserved for help text at top
-MESSAGE_LOG_HEIGHT = 6  # Lines reserved for message log
 
 # Rendering effects
 PULSATION_PERIOD = 2.0  # Seconds for full pulsation cycle (selected actor)
@@ -135,9 +134,13 @@ SELECTION_HIGHLIGHT_ALPHA = 0.6  # Alpha blending for selected actor highlight
 # ASSET PATHS
 # =============================================================================
 
-BASE_MOUSE_CURSOR_PATH = PROJECT_ROOT_PATH / "assets" / "cursors"
+ASSETS_BASE_DIR = PROJECT_ROOT_PATH / "assets"
+
+BASE_MOUSE_CURSOR_PATH = ASSETS_BASE_DIR / "cursors"
+
+MESSAGE_LOG_FONT_PATH = ASSETS_BASE_DIR / "fonts" / "SourceSans3-Regular.ttf"
 
 # Tileset
-TILESET_PATH = PROJECT_ROOT_PATH / "assets" / "tilesets" / "Taffer_20x20.png"
+TILESET_PATH = ASSETS_BASE_DIR / "tilesets" / "Taffer_20x20.png"
 TILESET_COLUMNS = 16
 TILESET_ROWS = 16
