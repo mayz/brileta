@@ -10,13 +10,11 @@ from catley.render.effects import EffectContext
 from catley.render.old_render import FPSDisplay
 from catley.render.screen_shake import ScreenShake
 from catley.ui.cursor_manager import CursorManager
-from catley.ui.panels import (
-    EquipmentPanel,
-    GameWorldPanel,
-    HealthPanel,
-    MessageLogPanel,
-    Panel,
-)
+from catley.ui.panels.equipment_panel import EquipmentPanel
+from catley.ui.panels.game_world_panel import GameWorldPanel
+from catley.ui.panels.health_panel import HealthPanel
+from catley.ui.panels.message_log_panel import MessageLogPanel
+from catley.ui.panels.panel import Panel
 
 if TYPE_CHECKING:
     from catley.controller import Controller
@@ -38,14 +36,21 @@ class FrameManager:
         # Layout constants
         self.help_height = HELP_HEIGHT
 
-        # Create and register panels
-        self.game_world_panel = GameWorldPanel(controller, self.screen_shake)
+        self._setup_game_ui()
 
-        # Message log occupies the bottom-left corner.
+    def _setup_game_ui(self) -> None:
+        """Configure and position panels for the main game interface."""
+        # Layout calculations.
+
         screen_height_tiles = self.renderer.root_console.height
         message_log_height = 7
         message_log_y = screen_height_tiles - message_log_height - 5  # y=39
 
+        equipment_height = 3
+        equipment_y = message_log_y - equipment_height - 1
+
+        # Create and register panels.
+        self.game_world_panel = GameWorldPanel(self.controller, self.screen_shake)
         self.message_log_panel = MessageLogPanel(
             message_log=self.controller.message_log,
             x=1,
@@ -54,19 +59,12 @@ class FrameManager:
             height=message_log_height,
             tile_dimensions=self.renderer.tile_dimensions,
         )
-
-        # Equipment panel sits directly above the message log.
-        equipment_height = 3
-        equipment_y = message_log_y - equipment_height - 1
-
         self.equipment_panel = EquipmentPanel(
-            controller,
+            self.controller,
             x=1,
             y=equipment_y,
         )
-
-        # Health panel is drawn at the top-right corner.
-        self.health_panel = HealthPanel(controller, y=0)
+        self.health_panel = HealthPanel(self.controller, y=0)
 
         self.panels: list[Panel] = [
             self.game_world_panel,
