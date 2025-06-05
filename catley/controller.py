@@ -9,7 +9,8 @@ from .game.actions import GameAction
 from .game.actors import Character
 from .modes.base import Mode
 from .modes.targeting import TargetingMode
-from .render.old_render import Renderer
+from .render.frame_manager import FrameManager
+from .render.renderer import Renderer
 from .turn_manager import TurnManager
 from .ui.menu_core import MenuSystem
 from .util.clock import Clock
@@ -74,22 +75,12 @@ class Controller:
         # Initialize menu system
         self.menu_system = MenuSystem(self)
 
-        # Create renderer after FOV is initialized
-        self.renderer = Renderer(
-            self,
-            screen_width=self.root_console.width,
-            screen_height=self.root_console.height,
-            game_world=self.gw,
-            clock=self.clock,
-            message_log=self.message_log,
-            menu_system=self.menu_system,
-            context=self.context,
-            root_console=self.root_console,
-            tile_dimensions=tile_dimensions,
-        )
-        self.coordinate_converter = (
-            self.renderer.low_level_renderer.coordinate_converter
-        )
+        # Create new low-level renderer
+        self.renderer = Renderer(context, root_console, tile_dimensions)
+        self.coordinate_converter = self.renderer.coordinate_converter
+
+        # Create FrameManager to coordinate rendering
+        self.frame_manager = FrameManager(self)
 
         self.gw.populate_npcs(rooms)
 
@@ -128,9 +119,9 @@ class Controller:
                 # Update using clock's delta time
                 delta_time = self.clock.sync(fps=self.target_fps)
 
-                # Update animations and render
+                # Update lighting and render using FrameManager
                 self.gw.lighting.update(delta_time)
-                self.renderer.render_all()
+                self.frame_manager.render_frame(delta_time)
         finally:
             # Show the system mouse cursor again.
             tcod.sdl.mouse.show(True)

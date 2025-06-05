@@ -59,7 +59,7 @@ class GameAction(abc.ABC):
     def __init__(self, controller: Controller, actor: Actor) -> None:
         self.controller = controller
         self.actor = actor
-        self.renderer = self.controller.renderer
+        self.frame_manager = self.controller.frame_manager
 
     @abc.abstractmethod
     def execute(self) -> None:
@@ -280,7 +280,7 @@ class AttackAction(GameAction):
         direction_x = self.defender.x - self.attacker.x
         direction_y = self.defender.y - self.attacker.y
 
-        self.renderer.create_effect(
+        self.frame_manager.create_effect(
             "muzzle_flash",
             x=self.attacker.x,
             y=self.attacker.y,
@@ -323,7 +323,7 @@ class AttackAction(GameAction):
 
         # Blood splatter only on successful hits
         if attack_result.success:
-            self.renderer.create_effect(
+            self.frame_manager.create_effect(
                 "blood_splatter",
                 x=self.defender.x,
                 y=self.defender.y,
@@ -437,7 +437,7 @@ class AttackAction(GameAction):
             shake_intensity *= 1.5  # Higher probability for crits
             shake_duration *= 1.3
 
-        self.controller.renderer.trigger_screen_shake(shake_intensity, shake_duration)
+        self.frame_manager.trigger_screen_shake(shake_intensity, shake_duration)
 
     def _update_ai_disposition(self) -> None:
         """Update AI disposition if player attacked an NPC."""
@@ -698,6 +698,10 @@ class AreaEffectAction(GameAction):
     def _trigger_visual_effect(self, effect: AreaEffect) -> None:
         """Emit particle effects based on the effect properties."""
         if "explosive" in effect.properties:
-            self.renderer.create_effect("explosion", x=self.target_x, y=self.target_y)
+            self.frame_manager.create_effect(
+                "explosion", x=self.target_x, y=self.target_y
+            )
         elif "smoke" in effect.properties:
-            self.renderer.create_effect("smoke_cloud", x=self.target_x, y=self.target_y)
+            self.frame_manager.create_effect(
+                "smoke_cloud", x=self.target_x, y=self.target_y
+            )

@@ -20,7 +20,7 @@ class TargetingMode(Mode):
 
     def __init__(self, controller: Controller) -> None:
         super().__init__(controller)
-        self.cursor_manager = controller.renderer.cursor_manager
+        self.cursor_manager = controller.frame_manager.cursor_manager
         self.candidates: list[Character] = []
         self.current_index: int = 0
         self.last_targeted: Character | None = None
@@ -127,13 +127,13 @@ class TargetingMode(Mode):
             return
 
         current_target = self._get_current_target()
-        renderer = self.controller.renderer
+        frame_manager = self.controller.frame_manager
 
         for actor in self.candidates:
             if actor == current_target:
-                renderer.highlight_actor(actor, (255, 0, 0), effect="pulse")
+                frame_manager.highlight_actor(actor, (255, 0, 0), effect="pulse")
             else:
-                renderer.highlight_actor(actor, (100, 0, 0), effect="solid")
+                frame_manager.highlight_actor(actor, (100, 0, 0), effect="solid")
 
     def on_actor_death(self, actor: Character) -> None:
         """Handle actor death in targeting mode"""
