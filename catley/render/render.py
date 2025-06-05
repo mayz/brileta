@@ -12,7 +12,6 @@ from catley import colors
 from catley.config import (
     HELP_HEIGHT,
     LUMINANCE_THRESHOLD,
-    MESSAGE_LOG_HEIGHT,
     MOUSE_HIGHLIGHT_ALPHA,
     PERFORMANCE_TESTING,
     PULSATION_MAX_BLEND_ALPHA,
@@ -28,9 +27,10 @@ from catley.render.particles import SubTileParticleSystem
 from catley.render.screen_shake import ScreenShake
 from catley.ui.cursor_manager import CursorManager
 from catley.ui.menu_core import MenuSystem
-from catley.ui.message_log import MessageLog
+from catley.ui.message_log_panel import MessageLogPanel
 from catley.util.clock import Clock
 from catley.util.coordinates import CoordinateConverter
+from catley.util.message_log import MessageLog
 from catley.world.game_state import GameWorld
 
 if TYPE_CHECKING:
@@ -111,12 +111,19 @@ class Renderer:
         self.gw = game_world
         self.message_log = message_log
 
-        # Define message log geometry - help at top, then message log
+        # Define UI layout
         self.help_height = HELP_HEIGHT
-        self.message_log_height = MESSAGE_LOG_HEIGHT
-        self.message_log_x = 0
-        self.message_log_y = self.help_height  # Start after help text
-        self.message_log_width = screen_width
+
+        # Create message log panel
+        self.message_log_panel = MessageLogPanel(
+            message_log=message_log,
+            x=1,  # Bottom-left position
+            y=screen_height - 5 - 1,  # 5 lines tall, 1 margin from bottom
+            width=30,
+            height=5,
+            root_console=root_console,
+            # Remove SDL renderer and tile dimensions - not needed anymore!
+        )
 
         # Create game map console
         self.game_map_console: Console = Console(
@@ -240,7 +247,7 @@ class Renderer:
         self.game_map_console.blit(
             dest=self.root_console,
             dest_x=shake_x,
-            dest_y=self.help_height + self.message_log_height + shake_y,
+            dest_y=self.help_height + shake_y,
             width=self.game_map_console.width,
             height=self.game_map_console.height,
         )
@@ -256,14 +263,8 @@ class Renderer:
             if self.controller.active_mode:
                 self.controller.active_mode.render_ui(self.root_console)
 
-        # Always show message log (it can show combat results even with menus)
-        self.message_log.render(
-            console=self.root_console,
-            x=self.message_log_x,
-            y=self.message_log_y,
-            width=self.message_log_width,
-            height=self.message_log_height,
-        )
+        # Draw message log panel
+        self.message_log_panel.draw()
 
         # Debug/development overlays
         if SHOW_FPS:
