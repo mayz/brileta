@@ -29,11 +29,13 @@ class DummyGameWorld(GameWorld):
 class DummyMessageLog:
     def __init__(self) -> None:
         self.messages: list[str] = []
+        self.revision = 0
 
     def add_message(
         self, text: str, _fg: colors.Color = colors.WHITE, *, stack: bool = True
     ) -> None:
         self.messages.append(text)
+        self.revision += 1
 
 
 class DummyFrameManager(FrameManager):
