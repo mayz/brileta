@@ -127,13 +127,13 @@ class TargetingMode(Mode):
             return
 
         current_target = self._get_current_target()
-        frame_manager = self.controller.frame_manager
+        gw_panel = self.controller.frame_manager.game_world_panel
 
         for actor in self.candidates:
             if actor == current_target:
-                frame_manager.highlight_actor(actor, (255, 0, 0), effect="pulse")
+                gw_panel.highlight_actor(actor, (255, 0, 0), effect="pulse")
             else:
-                frame_manager.highlight_actor(actor, (100, 0, 0), effect="solid")
+                gw_panel.highlight_actor(actor, (100, 0, 0), effect="solid")
 
     def on_actor_death(self, actor: Character) -> None:
         """Handle actor death in targeting mode"""
