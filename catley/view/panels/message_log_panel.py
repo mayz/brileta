@@ -9,7 +9,7 @@ from PIL import ImageDraw, ImageFont
 from tcod.sdl.render import BlendMode, Texture
 
 from catley import config
-from catley.view.render.renderer import Renderer
+from catley.view.renderer import Renderer
 
 from .panel import Panel
 

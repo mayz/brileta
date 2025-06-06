@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 import pytest
 
-from catley.view.render.particles import SubParticle, SubTileParticleSystem
+from catley.view.effects.particles import SubParticle, SubTileParticleSystem
 
 
 class FixedUniform:
