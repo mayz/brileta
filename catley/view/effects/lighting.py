@@ -155,57 +155,132 @@ class LightingSystem:
         map_width: int,
         map_height: int,
         actors,
-        viewport_offset: tuple[int, int] = (0, 0),
+        viewport_offset: tuple[int, int] | None = None,
     ) -> np.ndarray:
-        """Compute lighting with actor shadows applied.
-
-        The optional ``viewport_offset`` parameter allows this computation to be
-        performed on a subset of the world (e.g. the visible viewport). Light
-        sources and actors are mapped into this smaller grid by subtracting the
-        offset.
-        """
+        """Compute lighting with optional viewport culling and actor shadows."""
         from catley.config import SHADOWS_ENABLED
 
-        # Get base lighting
-        base_lighting = self.compute_lighting(map_width, map_height, viewport_offset)
-
+        if viewport_offset:
+            base_lighting = self.compute_lighting_for_viewport(
+                viewport_offset[0], viewport_offset[1], map_width, map_height, actors
+            )
+        else:
+            base_lighting = self.compute_lighting(map_width, map_height)
         if not SHADOWS_ENABLED:
             return base_lighting
+        offset_x = viewport_offset[0] if viewport_offset else 0
+        offset_y = viewport_offset[1] if viewport_offset else 0
+        return self._apply_actor_shadows(base_lighting, actors, offset_x, offset_y)
 
-        # Apply shadows
-        return self._apply_actor_shadows(base_lighting, actors, viewport_offset)
+    def compute_lighting_for_viewport(
+        self,
+        viewport_left: int,
+        viewport_top: int,
+        viewport_width: int,
+        viewport_height: int,
+        actors,
+    ) -> np.ndarray:
+        """Compute lighting only for the viewport currently in view."""
+        light_map = np.full(
+            (viewport_width, viewport_height, 3),
+            self.config.ambient_light,
+            dtype=np.float32,
+        )
+        for light in self.light_sources:
+            lx, ly = light.position
+            if (
+                viewport_left - light.radius
+                <= lx
+                < viewport_left + viewport_width + light.radius
+                and viewport_top - light.radius
+                <= ly
+                < viewport_top + viewport_height + light.radius
+            ):
+                self._apply_light_to_viewport(
+                    light, light_map, viewport_left, viewport_top
+                )
+        return np.clip(light_map, 0.0, 1.0)
+
+    def _apply_light_to_viewport(
+        self,
+        light: LightSource,
+        light_map: np.ndarray,
+        viewport_left: int,
+        viewport_top: int,
+    ) -> None:
+        """Apply a light source to a viewport-sized light map."""
+        world_pos_x, world_pos_y = light.position
+        radius = light.radius
+        if radius <= 0:
+            return
+        flicker_multiplier = self._calculate_light_flicker(light)
+        vp_pos_x = world_pos_x - viewport_left
+        vp_pos_y = world_pos_y - viewport_top
+        bounds = self._compute_light_bounds(
+            vp_pos_x, vp_pos_y, radius, light_map.shape[0], light_map.shape[1]
+        )
+        if not bounds:
+            return
+        min_bx, max_bx, min_by, max_by = bounds
+        intensity_data = self._calculate_light_intensity(
+            light,
+            vp_pos_x,
+            vp_pos_y,
+            radius,
+            min_bx,
+            max_bx,
+            min_by,
+            max_by,
+            flicker_multiplier,
+        )
+        if not intensity_data:
+            return
+        in_circle_mask, scalar_intensity_values = intensity_data
+        self._blend_light_contribution(
+            light,
+            light_map,
+            min_bx,
+            max_bx,
+            min_by,
+            max_by,
+            in_circle_mask,
+            scalar_intensity_values,
+        )
 
     def _apply_actor_shadows(
-        self,
-        light_map: np.ndarray,
-        actors,
-        viewport_offset: tuple[int, int],
+        self, light_map: np.ndarray, actors, offset_x: int, offset_y: int
     ) -> np.ndarray:
-        """Apply actor shadows to the light map with gradual falloff."""
+        """Apply actor shadows to ``light_map`` using viewport-relative offsets."""
 
         shadow_map = light_map.copy()
 
-        offset_x, offset_y = viewport_offset
-
         for light_source in self.light_sources:
             lx, ly = light_source.position
-            lx -= offset_x
-            ly -= offset_y
             light_radius = light_source.radius
 
             nearby_actors = [
                 actor
                 for actor in actors
                 if (
-                    abs((actor.x - offset_x) - lx) <= light_radius
-                    and abs((actor.y - offset_y) - ly) <= light_radius
+                    abs(actor.x - lx) <= light_radius
+                    and abs(actor.y - ly) <= light_radius
                     and actor.blocks_movement
                 )
             ]
 
             for actor in nearby_actors:
+                # Convert actor and light world coords to viewport-relative coords
+                ax_vp, ay_vp = actor.x - offset_x, actor.y - offset_y
+                lx_vp, ly_vp = lx - offset_x, ly - offset_y
+
+                # Simple culling
+                if not (
+                    0 <= ax_vp < light_map.shape[0] and 0 <= ay_vp < light_map.shape[1]
+                ):
+                    continue
+
                 shadow_data = self._cast_gradual_shadow(
-                    (lx, ly), (actor.x - offset_x, actor.y - offset_y), light_radius
+                    (lx_vp, ly_vp), (ax_vp, ay_vp), light_radius
                 )
 
                 for sx, sy, intensity in shadow_data:
