@@ -106,7 +106,12 @@ class GameWorldPanel(Panel):
         # correctly-tracked player position.
         vs = self.viewport_system
         gw = self.controller.gw
+        old_cam_x = vs.camera.world_x
+        old_cam_y = vs.camera.world_y
         vs.update_camera(gw.player, gw.game_map.width, gw.game_map.height)
+
+        if vs.camera.world_x != old_cam_x or vs.camera.world_y != old_cam_y:
+            self._update_mouse_tile_location()
 
         # Apply screen shake by temporarily offsetting the camera position.
         shake_x, shake_y = self.screen_shake.update(delta_time)
@@ -317,6 +322,19 @@ class GameWorldPanel(Panel):
 
     def _apply_replacement_highlight(self, x: int, y: int, color: colors.Color) -> None:
         self.game_map_console.rgb["bg"][x, y] = color
+
+    def _update_mouse_tile_location(self) -> None:
+        """Update the stored world-space mouse tile based on the current camera."""
+        fm = getattr(self.controller, "frame_manager", None)
+        if fm is None:
+            return
+        pixel_x = fm.cursor_manager.mouse_pixel_x
+        pixel_y = fm.cursor_manager.mouse_pixel_y
+        root_coords = self.controller.coordinate_converter.pixel_to_tile(
+            pixel_x, pixel_y
+        )
+        map_coords = fm.get_tile_map_coords_from_root_coords(root_coords)
+        self.controller.gw.mouse_tile_location_on_map = map_coords
 
     def _apply_pulsating_effect(
         self, input_color: colors.Color, base_actor_color: colors.Color
