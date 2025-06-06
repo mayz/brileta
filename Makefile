@@ -17,12 +17,12 @@ ruff-check:
 
 # Run type checking
 typecheck:
-	ty check
+	uv run ty check --error-on-warning
 
 # Run tests
 test:
-	python -m pytest tests/
-
+	uv pip install -e .
+	uv run python -m pytest tests/
 # Alias for 'all'
 check: all
 
