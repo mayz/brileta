@@ -85,3 +85,15 @@ class Renderer:
         """Presents the final composited frame via SDL. (Now a convenience method)"""
         self.prepare_to_present()
         self.finalize_present()
+
+    def update_dimensions(self) -> None:
+        """Update coordinate converter when window dimensions change."""
+        renderer_width, renderer_height = self.sdl_renderer.output_size
+        self.coordinate_converter = CoordinateConverter(
+            console_width=self.root_console.width,
+            console_height=self.root_console.height,
+            tile_width=self.tile_dimensions[0],
+            tile_height=self.tile_dimensions[1],
+            renderer_width=renderer_width,
+            renderer_height=renderer_height,
+        )

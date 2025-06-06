@@ -15,8 +15,8 @@ class EquipmentPanel(Panel):
     """Displays the player's equipped weapons and ammo counts."""
 
     def __init__(self, controller: Controller, x: int, y: int) -> None:
-        # Height is two lines for weapons plus one for hint text.
-        super().__init__(x=x, y=y, width=0, height=3)
+        # Height is two lines for weapons plus two for hint text (including reload).
+        super().__init__(x=x, y=y, width=0, height=4)
         self.controller = controller
 
     def draw(self, renderer: Renderer) -> None:
@@ -26,8 +26,11 @@ class EquipmentPanel(Panel):
         y_start = self.y + 1
         player = self.controller.gw.player
 
-        # Add weapon switching and reload hints
+        # Add weapon switching hint
         hint_text = "Weapons: [1][2] to switch"
+        renderer.draw_text(self.x, self.y, hint_text, fg=colors.GREY)
+
+        # Check for reload hint and display on separate line
         active_weapon = player.inventory.get_active_weapon()
         if (
             active_weapon
@@ -35,9 +38,8 @@ class EquipmentPanel(Panel):
             and active_weapon.ranged_attack.current_ammo
             < active_weapon.ranged_attack.max_ammo
         ):
-            hint_text += " | [R] to reload"
-
-        renderer.draw_text(self.x, self.y, hint_text, fg=colors.GREY)
+            reload_text = "[R] to reload"
+            renderer.draw_text(self.x, self.y + 3, reload_text, fg=colors.YELLOW)
 
         for i, item in enumerate(player.inventory.attack_slots):
             if i >= 2:
