@@ -1,24 +1,31 @@
+"""Panel System - Persistent UI elements.
+
+Panels are always-visible UI that show game state:
+- Health, ammo, FPS displays
+- Message log, game world view
+- Fixed-position interface components
+
+Use panels for persistent UI. Use overlays for temporary UI.
+
+Two-phase rendering: draw() for console ops, present() for SDL ops.
+"""
+
 import abc
 
 from catley.view.render.renderer import Renderer
 
 
 class Panel(abc.ABC):
-    """Abstract base class for UI panels.
+    """Base class for persistent UI panels.
 
-    ``draw`` prepares this panel's contents using the provided console-based
-    resources.  ``present`` runs after the root console has been converted to a
-    texture and allows the panel to perform additional low-level rendering using
-    the :class:`Renderer` interface.  This separation lets panels cache textures
-    or issue custom draw calls while keeping ``draw`` agnostic of the underlying
-    rendering backend.
+    Panels are always visible and show continuously updated game info.
+    Positioned by FrameManager, rendered every frame.
+
+    Two phases: draw() for console rendering, present() for SDL effects.
     """
 
     def __init__(self) -> None:
-        """Initialize panel with default dimensions.
-
-        Panel dimensions must be set via resize() before drawing.
-        """
+        """Initialize panel. Call resize() before drawing."""
         self.x = 0
         self.y = 0
         self.width = 0
@@ -27,39 +34,24 @@ class Panel(abc.ABC):
 
     @abc.abstractmethod
     def draw(self, renderer: Renderer) -> None:
-        """Draw this panel using the provided renderer.
-
-        Note: resize() must be called before draw() to set panel boundaries.
-        """
+        """Draw panel content using console operations. Called every frame."""
         pass
 
     def present(self, renderer: Renderer) -> None:
-        """Finalize rendering using the provided renderer.
-
-        Called once per frame after the root console has been drawn.  Override
-        this method to copy cached textures or perform other low-level
-        operations that can't be expressed through the console API alone.
-        """
+        """Optional SDL post-processing after console rendering."""
         _ = renderer
 
     def resize(self, x1: int, y1: int, x2: int, y2: int) -> None:
-        """Set panel boundaries. Panel must enforce these constraints during rendering.
-
-        This should be called by FrameManager before the panel is drawn.
-
-        Args:
-            x1, y1: Top-left corner (inclusive)
-            x2, y2: Bottom-right corner (exclusive)
-        """
+        """Set panel screen boundaries. Called by FrameManager."""
         self.x = x1
         self.y = y1
         self.width = x2 - x1
         self.height = y2 - y1
 
     def show(self) -> None:
-        """Make panel visible."""
+        """Make panel visible in rendering pipeline."""
         self.visible = True
 
     def hide(self) -> None:
-        """Make panel invisible."""
+        """Skip panel during rendering."""
         self.visible = False

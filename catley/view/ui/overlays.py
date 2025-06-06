@@ -1,3 +1,18 @@
+"""UI Overlay System - Temporary modal UI elements.
+
+Overlays are temporary UI that appear over the game world:
+- Menus (inventory, help, pickup)
+- Tooltips and status displays
+- Confirmation dialogs
+
+Use overlays for temporary UI. Use panels for persistent UI. Use modes for behavioral changes.
+
+Quick decisions:
+- "Show tooltip" -> Create Tooltip(Overlay)
+- "Ask confirmation" -> Create Dialog(Overlay)
+- "Show inventory" -> Use InventoryMenu(Menu)
+"""
+
 from __future__ import annotations
 
 import abc
@@ -15,11 +30,12 @@ if TYPE_CHECKING:
 
 
 class Overlay(abc.ABC):
-    """Base class for all overlays in the game.
+    """Base class for temporary UI overlays.
 
-    Overlays are temporary UI elements that appear over the main game view.
-    They handle their own input and rendering, and can be stacked on top of each other.
-    Examples include menus, tooltips, dialogs, and status displays.
+    Overlays appear over the game view and can stack. They consume input
+    events while active and remove themselves when hidden.
+
+    Lifecycle: show() -> handle input/render -> hide()
     """
 
     def __init__(self, controller: Controller) -> None:
@@ -28,37 +44,32 @@ class Overlay(abc.ABC):
 
     @abc.abstractmethod
     def handle_input(self, event: tcod.event.Event) -> bool:
-        """Handle input events. Returns True if event was consumed."""
+        """Handle input. Return True if consumed (stops further processing)."""
         pass
 
     @abc.abstractmethod
     def render(self, console: Console) -> None:
-        """Render the overlay to the console."""
+        """Render overlay content. Called every frame."""
         pass
 
     def show(self) -> None:
-        """Show the overlay."""
+        """Activate overlay. Called by OverlaySystem.show_overlay()."""
         self.is_active = True
 
     def hide(self) -> None:
-        """Hide the overlay."""
+        """Deactivate overlay. Triggers automatic removal from stack."""
         self.is_active = False
 
     def can_stack_with(self, other: Overlay) -> bool:
-        """Return True if this overlay can stack with another overlay.
-
-        Override this method for overlays that are mutually exclusive.
-        Default implementation allows stacking with any overlay.
-        """
+        """Return True if can coexist with another overlay. Override for exclusivity."""
         return True
 
 
 class OverlaySystem:
-    """Manages the overlay system for the game.
+    """Manages overlay stacking and input priority.
 
-    Handles stacking, input priority, and rendering order for all overlays.
-    Overlays are rendered in the order they were added, with the most recent on top.
-    Input is handled in reverse order (topmost overlay gets first chance).
+    Topmost overlay gets first input chance. Renders bottom to top.
+    Auto-removes overlays when they hide themselves.
     """
 
     def __init__(self, controller: Controller) -> None:
@@ -123,7 +134,7 @@ class OverlaySystem:
 
 
 class MenuOption:
-    """Represents a single option in a menu."""
+    """Single menu choice with keyboard shortcut and action."""
 
     def __init__(
         self,
@@ -143,10 +154,12 @@ class MenuOption:
 
 
 class Menu(Overlay):
-    """Base class for all menus in the game.
+    """Structured choice interface with keyboard shortcuts.
 
-    Menus are a specific type of overlay that handle structured user choices.
-    They display a list of options that users can select from using keyboard input.
+    Provides bordered rendering and keyboard selection (a, b, c).
+    Auto-handles ESC/Enter/Space to close.
+
+    Override populate_options() to add MenuOption instances.
     """
 
     def __init__(
