@@ -200,11 +200,17 @@ class FrameManager:
         direction_x: float = 0.0,
         direction_y: float = 0.0,
     ) -> None:
-        """Unified interface for creating effects."""
+        """Create a visual effect if the world position is visible."""
+        vs = self.game_world_panel.viewport_system
+        if not vs.is_visible(
+            x, y, self.controller.gw.game_map.width, self.controller.gw.game_map.height
+        ):
+            return
+        vp_x, vp_y = vs.world_to_screen(x, y)
         context = EffectContext(
             particle_system=self.game_world_panel.particle_system,
-            x=x,
-            y=y,
+            x=vp_x,
+            y=vp_y,
             intensity=intensity,
             direction_x=direction_x,
             direction_y=direction_y,
