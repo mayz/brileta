@@ -1,4 +1,3 @@
-# catley/render/effects.py
 """
 Unified Effect System for Game Visual Effects
 

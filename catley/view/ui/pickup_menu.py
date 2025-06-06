@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from catley import colors
 from catley.game.actors import Character
 from catley.game.items.item_core import Item
-from catley.ui.menu_core import Menu, MenuOption
+from catley.view.ui.menu_core import Menu, MenuOption
 
 if TYPE_CHECKING:
     from catley.controller import Controller

@@ -1,6 +1,6 @@
 from unittest.mock import patch
 
-from catley.render.screen_shake import ScreenShake
+from catley.view.render.screen_shake import ScreenShake
 
 
 def test_screen_shake_update_and_completion() -> None:

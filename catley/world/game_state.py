@@ -12,7 +12,7 @@ from catley.game.items.item_types import (
     RIFLE_MAGAZINE_TYPE,
     SNIPER_RIFLE_TYPE,
 )
-from catley.render.lighting import LightingSystem, LightSource
+from catley.view.render.lighting import LightingSystem, LightSource
 
 from .map import GameMap
 
