@@ -4,7 +4,7 @@ import numpy as np
 
 from catley import colors
 from catley.controller import Controller
-from catley.game.actions import AreaEffectAction
+from catley.game.actions.actions import AreaEffectAction
 from catley.game.actors import Actor, Character
 from catley.game.items.item_types import GRENADE_TYPE
 from catley.view.frame_manager import FrameManager

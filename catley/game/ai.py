@@ -30,7 +30,7 @@ from .enums import Disposition
 if TYPE_CHECKING:
     from catley.controller import Controller
 
-    from .actions import GameAction
+    from .actions.actions import GameAction
     from .actors import NPC, Actor, Character
 
 
@@ -135,7 +135,7 @@ class HostileAI(AIComponent):
         distance = abs(dx) + abs(dy)  # Manhattan distance
 
         # Import here to avoid circular imports
-        from .actions import AttackAction
+        from .actions.actions import AttackAction
 
         # Adjacent to player - attack!
         if distance == 1:
@@ -163,7 +163,7 @@ class HostileAI(AIComponent):
         dy: int,
     ) -> GameAction | None:
         """Calculate movement toward the player with basic pathfinding."""
-        from .actions import MoveAction
+        from .actions.actions import MoveAction
 
         # Determine preferred movement direction
         move_dx = 0

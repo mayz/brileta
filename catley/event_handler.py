@@ -9,7 +9,7 @@ from catley import colors
 from catley.view.ui.help_menu import HelpMenu
 from catley.view.ui.inventory_menu import InventoryMenu
 
-from .game.actions import GameAction, MoveAction
+from .game.actions.actions import GameAction, MoveAction
 
 if TYPE_CHECKING:
     from .controller import Controller
@@ -144,7 +144,7 @@ class EventHandler:
                     and active_weapon.ranged_attack.current_ammo
                     < active_weapon.ranged_attack.max_ammo
                 ):
-                    from .game.actions import ReloadAction
+                    from .game.actions.actions import ReloadAction
 
                     reload_action = ReloadAction(self.controller, self.p, active_weapon)
                     self.controller.queue_action(reload_action)
