@@ -14,7 +14,7 @@ from .game.actions import GameAction, MoveAction
 if TYPE_CHECKING:
     from .controller import Controller
 
-from .view.ui.ui_commands import (
+from .view.ui.commands import (
     OpenMenuUICommand,
     OpenPickupMenuUICommand,
     QuitUICommand,
