@@ -14,14 +14,14 @@ from .util.clock import Clock
 from .util.message_log import MessageLog
 from .view.frame_manager import FrameManager
 from .view.render.renderer import Renderer
-from .view.ui.menu_system import MenuSystem
+from .view.ui.overlays import OverlaySystem
 from .world.game_state import GameWorld
 
 
 class Controller:
     """
     Orchestrates the main game loop and connects all other systems
-    (GameWorld, Renderer, EventHandler, MenuSystem, MessageLog).
+    (GameWorld, Renderer, EventHandler, OverlaySystem, MessageLog).
 
     Holds instances of the major game components and provides a central point
     of access for them. Responsible for high-level game flow, such as processing
@@ -72,8 +72,8 @@ class Controller:
         self.clock = Clock()
         self.target_fps = config.TARGET_FPS
 
-        # Initialize menu system
-        self.menu_system = MenuSystem(self)
+        # Initialize overlay system
+        self.overlay_system = OverlaySystem(self)
 
         # Create new low-level renderer
         self.renderer = Renderer(context, root_console, tile_dimensions)

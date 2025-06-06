@@ -11,7 +11,7 @@ from catley import colors
 from catley.game.conditions import Condition
 from catley.game.enums import ItemSize
 from catley.game.items.item_core import Item
-from catley.view.ui.menu_system import Menu, MenuOption
+from catley.view.ui.overlays import Menu, MenuOption
 
 if TYPE_CHECKING:
     from catley.controller import Controller

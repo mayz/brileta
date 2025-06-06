@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from catley import colors
-from catley.view.ui.menu_system import Menu, MenuOption
+from catley.view.ui.overlays import Menu, MenuOption
 
 if TYPE_CHECKING:
     from catley.controller import Controller
