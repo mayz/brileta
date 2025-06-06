@@ -9,7 +9,7 @@ from .panel import Panel
 
 if TYPE_CHECKING:
     from catley.util.clock import Clock
-    from catley.view.render.renderer import Renderer
+    from catley.view.renderer import Renderer
 
 
 class FPSPanel(Panel):

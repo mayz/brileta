@@ -7,7 +7,7 @@ from catley.view.panels.panel import Panel
 
 if TYPE_CHECKING:
     from catley.controller import Controller
-    from catley.view.render.renderer import Renderer
+    from catley.view.renderer import Renderer
 
 
 class HelpTextPanel(Panel):

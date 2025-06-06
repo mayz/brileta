@@ -1,3 +1,9 @@
+"""Low-level renderer bridging tcod and SDL.
+
+Instantiate with a tcod Context and root Console.
+Use clear_console(), draw_text(), blit_console(),
+and present_frame() to control the frame pipeline."""
+
 from __future__ import annotations
 
 import tcod.render

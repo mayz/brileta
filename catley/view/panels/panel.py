@@ -1,8 +1,10 @@
-"""Panel System - Persistent UI elements.
+"""Panel System - Persistent sub-regions of the game window that
+know how to draw themselves.
 
 Panels are always-visible UI that show game state:
+- The main, central game world view
+- The message log
 - Health, ammo, FPS displays
-- Message log, game world view
 - Fixed-position interface components
 
 Use panels for persistent UI. Use overlays for temporary UI.
@@ -12,7 +14,7 @@ Two-phase rendering: draw() for console ops, present() for SDL ops.
 
 import abc
 
-from catley.view.render.renderer import Renderer
+from catley.view.renderer import Renderer
 
 
 class Panel(abc.ABC):

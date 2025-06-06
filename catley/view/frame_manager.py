@@ -1,3 +1,8 @@
+"""Manages the main frame lifecycle.
+
+FrameManager holds the Renderer, positions UI panels, and triggers global effects.
+Each frame it draws panels, processes overlays, and presents the final image."""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -7,6 +12,8 @@ from catley.config import (
     SHOW_FPS,
 )
 
+from .effects.effects import EffectContext
+from .effects.screen_shake import ScreenShake
 from .panels.equipment_panel import EquipmentPanel
 from .panels.fps_panel import FPSPanel
 from .panels.game_world_panel import GameWorldPanel
@@ -14,9 +21,7 @@ from .panels.health_panel import HealthPanel
 from .panels.help_text_panel import HelpTextPanel
 from .panels.message_log_panel import MessageLogPanel
 from .panels.panel import Panel
-from .render.effects import EffectContext
-from .render.renderer import Renderer
-from .render.screen_shake import ScreenShake
+from .renderer import Renderer
 from .ui.cursor_manager import CursorManager
 
 if TYPE_CHECKING:

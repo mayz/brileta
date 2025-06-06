@@ -5,7 +5,7 @@ import tcod.sdl.render
 from PIL import Image as PILImage
 
 from catley.config import BASE_MOUSE_CURSOR_PATH
-from catley.view.render.renderer import Renderer
+from catley.view.renderer import Renderer
 
 
 @dataclass

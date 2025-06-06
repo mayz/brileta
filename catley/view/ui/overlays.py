@@ -5,7 +5,8 @@ Overlays are temporary UI that appear over the game world:
 - Tooltips and status displays
 - Confirmation dialogs
 
-Use overlays for temporary UI. Use panels for persistent UI. Use modes for behavioral changes.
+Use overlays for temporary UI. Use panels for persistent UI.
+Use modes for behavioral changes.
 
 Quick decisions:
 - "Show tooltip" -> Create Tooltip(Overlay)
