@@ -68,6 +68,8 @@ class TestGameWorldPanelBoundaryEnforcement:
         self.mock_controller.clock.last_delta_time = 0.016
         self.mock_controller.gw.game_map.width = 100
         self.mock_controller.gw.game_map.height = 100
+        self.mock_controller.gw.player.x = 0
+        self.mock_controller.gw.player.y = 0
 
         self.mock_screen_shake = Mock()
         self.mock_screen_shake.update.return_value = (0, 0)  # No shake

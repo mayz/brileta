@@ -1,5 +1,9 @@
-from unittest.mock import patch
+from typing import Any, cast
+from unittest.mock import MagicMock, patch
 
+import numpy as np
+
+from catley.controller import Controller
 from catley.view.effects.screen_shake import ScreenShake
 
 
@@ -27,3 +31,146 @@ def test_screen_shake_trigger_overwrite() -> None:
     assert shake.intensity == 0.8
     assert shake.duration == 1.0
     assert shake.time_remaining == 1.0
+
+
+class DummyActor:
+    def __init__(self, x: int, y: int) -> None:
+        self.x = x
+        self.y = y
+        self.ch = "@"
+        self.color = (255, 255, 255)
+
+
+class DummyGameMap:
+    def __init__(self, width: int, height: int) -> None:
+        from catley.world import tile_types
+
+        self.width = width
+        self.height = height
+        self.dark_appearance_map = np.zeros(
+            (width, height), dtype=tile_types.TileTypeAppearance
+        )
+        self.light_appearance_map = np.zeros(
+            (width, height), dtype=tile_types.TileTypeAppearance
+        )
+        self.explored = np.zeros((width, height), dtype=bool)
+        self.visible = np.zeros((width, height), dtype=bool)
+
+
+class DummyGW:
+    def __init__(self) -> None:
+        self.player = DummyActor(0, 0)
+        self.actors = [self.player]
+        self.game_map = DummyGameMap(10, 10)
+        self.game_map.visible[0, 0] = True
+        self.selected_actor = None
+        self.mouse_tile_location_on_map = None
+        self.lighting = MagicMock()
+        self.lighting.compute_lighting_with_shadows.side_effect = (
+            lambda w, h, *_args, **_kwargs: 1.0 * np.ones((w, h, 3))
+        )
+
+
+class DummyController:
+    def __init__(self) -> None:
+        from types import SimpleNamespace
+
+        self.gw = DummyGW()
+        self.renderer = SimpleNamespace(
+            clear_console=lambda *args, **kwargs: None,
+            root_console=None,
+            blit_console=lambda *args, **kwargs: None,
+        )
+        self.clock = SimpleNamespace(last_delta_time=0.016)
+        self.active_mode = None
+        self.is_targeting_mode = lambda: False
+
+
+def test_game_world_panel_applies_screen_shake_before_render(monkeypatch) -> None:
+    from catley.view.panels.game_world_panel import GameWorldPanel
+
+    controller = DummyController()
+    shake = ScreenShake()
+    shake.update = lambda dt: (1, 0)  # type: ignore[assignment]
+    panel = GameWorldPanel(cast("Controller", controller), shake)
+    panel.resize(0, 0, 10, 10)
+
+    captured = {}
+    original_render_map = panel._render_map
+
+    def wrapped_render_map() -> None:
+        captured["cam_pos"] = (
+            panel.viewport_system.camera.world_x,
+            panel.viewport_system.camera.world_y,
+        )
+        original_render_map()
+
+    panel._render_map = wrapped_render_map  # type: ignore[assignment]
+
+    from catley.view.renderer import Renderer
+
+    panel.draw(cast(Renderer, controller.renderer))
+
+    assert captured["cam_pos"] == (5.5, 4.5)
+
+
+def test_game_world_panel_screen_shake_does_not_overflow(monkeypatch) -> None:
+    """Ensure screen shake offsets keep rendering within console bounds."""
+    from catley.view.panels.game_world_panel import GameWorldPanel
+
+    controller = DummyController()
+    shake = ScreenShake()
+    shake.update = lambda dt: (1, 0)  # type: ignore[assignment]
+    panel = GameWorldPanel(cast("Controller", controller), shake)
+    panel.resize(0, 0, 10, 10)
+
+    captured: dict[str, Any] = {}
+
+    original_render_map = panel._render_map
+
+    def wrapped_render_map() -> None:
+        gw = controller.gw
+        vs = panel.viewport_system
+        world_left, world_right, world_top, world_bottom = vs.get_visible_bounds()
+        world_left = max(0, world_left)
+        world_top = max(0, world_top)
+        world_right = min(gw.game_map.width - 1, world_right)
+        world_bottom = min(gw.game_map.height - 1, world_bottom)
+        captured["dest_width"] = world_right - world_left + 1
+        captured["dest_height"] = world_bottom - world_top + 1
+        original_render_map()
+
+    panel._render_map = wrapped_render_map  # type: ignore[assignment]
+
+    from catley.view.renderer import Renderer
+
+    panel.draw(cast(Renderer, controller.renderer))
+
+    assert captured["dest_width"] <= panel.width
+    assert captured["dest_height"] <= panel.height
+
+
+def test_small_map_actor_alignment(monkeypatch) -> None:
+    """Actors should align with the map when it is smaller than the viewport."""
+    from catley.view.panels.game_world_panel import GameWorldPanel
+
+    controller = DummyController()
+    controller.gw.game_map = DummyGameMap(5, 5)
+    controller.gw.game_map.visible[:] = True
+
+    shake = ScreenShake()
+    shake.update = lambda dt: (0, 0)  # type: ignore[assignment]
+    panel = GameWorldPanel(cast("Controller", controller), shake)
+    panel.resize(0, 0, 10, 8)
+
+    from catley.view.renderer import Renderer
+
+    panel.draw(cast(Renderer, controller.renderer))
+
+    vs = panel.viewport_system
+    px, py = vs.world_to_screen(controller.gw.player.x, controller.gw.player.y)
+    assert panel.game_map_console.rgb["ch"][px, py] == ord("@")
+    assert (px, py) == (
+        vs.offset_x + controller.gw.player.x,
+        vs.offset_y + controller.gw.player.y,
+    )

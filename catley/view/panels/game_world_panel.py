@@ -77,10 +77,21 @@ class GameWorldPanel(Panel):
     def highlight_tile(
         self, x: int, y: int, color: colors.Color, effect: str = "solid"
     ) -> None:
-        """Highlight a tile with an optional effect."""
+        """Highlight a tile with an optional effect using world coordinates."""
+        vs = self.viewport_system
+        if not vs.is_visible(
+            x, y, self.controller.gw.game_map.width, self.controller.gw.game_map.height
+        ):
+            return
+        vp_x, vp_y = vs.world_to_screen(x, y)
+        if not (
+            0 <= vp_x < self.game_map_console.width
+            and 0 <= vp_y < self.game_map_console.height
+        ):
+            return
         if effect == "pulse":
             color = self._apply_pulsating_effect(color, color)
-        self._apply_replacement_highlight(x, y, color)
+        self._apply_replacement_highlight(vp_x, vp_y, color)
 
     # ------------------------------------------------------------------
     # Drawing
@@ -91,12 +102,18 @@ class GameWorldPanel(Panel):
 
         delta_time = self.controller.clock.last_delta_time
 
+        # Update the camera first so the shake is applied on top of the
+        # correctly-tracked player position.
+        vs = self.viewport_system
+        gw = self.controller.gw
+        vs.update_camera(gw.player, gw.game_map.width, gw.game_map.height)
+
         # Apply screen shake by temporarily offsetting the camera position.
         shake_x, shake_y = self.screen_shake.update(delta_time)
-        original_cam_x = self.viewport_system.camera.world_x
-        original_cam_y = self.viewport_system.camera.world_y
-        self.viewport_system.camera.world_x += shake_x * 0.25
-        self.viewport_system.camera.world_y += shake_y * 0.25
+        original_cam_x = vs.camera.world_x
+        original_cam_y = vs.camera.world_y
+        vs.camera.world_x += shake_x
+        vs.camera.world_y += shake_y
 
         # Render everything to the off-screen console.
         self._render_game_world(delta_time)
@@ -136,7 +153,6 @@ class GameWorldPanel(Panel):
     def _render_map(self) -> None:
         gw = self.controller.gw
         vs = self.viewport_system
-        vs.update_camera(gw.player, gw.game_map.width, gw.game_map.height)
         world_left, world_right, world_top, world_bottom = vs.get_visible_bounds()
         # Clamp the visible bounds to the actual map size so slicing is safe.
         world_left = max(0, world_left)
@@ -149,20 +165,20 @@ class GameWorldPanel(Panel):
         )
         dest_width = world_right - world_left + 1
         dest_height = world_bottom - world_top + 1
-        # Center the slice within the viewport-sized console.
-        dest_x_start = (self.game_map_console.width - dest_width) // 2
-        dest_y_start = (self.game_map_console.height - dest_height) // 2
-        dest_slice = (
-            slice(dest_x_start, dest_x_start + dest_width),
-            slice(dest_y_start, dest_y_start + dest_height),
-        )
+        # Offset to center smaller maps within the viewport
+        dest_x_start = vs.offset_x
+        dest_y_start = vs.offset_y
+        # Determine the offset within the viewport-sized console where the world
+        # slice will be drawn. This keeps the map centered even when smaller
+        # than the viewport.
         dark_app_slice = gw.game_map.dark_appearance_map[world_slice]
         explored_mask_slice = gw.game_map.explored[world_slice]
         # Clear the viewport with an empty shroud before drawing.
         self.game_map_console.rgb[:] = (ord(" "), (0, 0, 0), (0, 0, 0))
-        self.game_map_console.rgb[dest_slice][explored_mask_slice] = dark_app_slice[
-            explored_mask_slice
-        ]
+        ex_x, ex_y = np.nonzero(explored_mask_slice)
+        self.game_map_console.rgb[dest_x_start + ex_x, dest_y_start + ex_y] = (
+            dark_app_slice[ex_x, ex_y]
+        )
         visible_mask_slice = gw.game_map.visible[world_slice]
         if not np.any(visible_mask_slice):
             return
@@ -193,7 +209,10 @@ class GameWorldPanel(Panel):
             ] * light_intensity_channel + dark_tiles_to_light["bg"][..., i] * (
                 1.0 - light_intensity_channel
             )
-        self.game_map_console.rgb[dest_slice][visible_mask_slice] = blended_tiles
+        vis_x, vis_y = np.nonzero(visible_mask_slice)
+        self.game_map_console.rgb[dest_x_start + vis_x, dest_y_start + vis_y] = (
+            blended_tiles
+        )
 
     def _render_actors(self) -> None:
         gw = self.controller.gw

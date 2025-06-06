@@ -37,3 +37,26 @@ def test_is_visible() -> None:
 
     assert vs.is_visible(5, 5, 10, 10)
     assert not vs.is_visible(0, 0, 10, 10)
+
+
+def test_screen_offset_for_small_map() -> None:
+    vs = ViewportSystem(10, 8)
+    actor = cast(Actor, DummyActor(0, 0))
+
+    vs.update_camera(actor, 5, 5)
+    assert vs.offset_x == 2
+    assert vs.offset_y == 1
+    assert vs.world_to_screen(0, 0) == (2, 1)
+    assert vs.screen_to_world(2, 1) == (0, 0)
+
+
+def test_world_to_screen_clamps_when_shaken() -> None:
+    """Screen coordinates should remain aligned when the camera is offset."""
+    vs = ViewportSystem(10, 8)
+    actor = cast(Actor, DummyActor(0, 0))
+    vs.update_camera(actor, 50, 50)
+
+    vs.camera.world_x -= 1.0
+    vs.camera.world_y -= 1.0
+
+    assert vs.world_to_screen(0, 0) == (0, 0)
