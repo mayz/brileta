@@ -14,7 +14,7 @@ from .util.clock import Clock
 from .util.message_log import MessageLog
 from .view.frame_manager import FrameManager
 from .view.render.renderer import Renderer
-from .view.ui.menu_core import MenuSystem
+from .view.ui.menu_system import MenuSystem
 from .world.game_state import GameWorld
 
 
