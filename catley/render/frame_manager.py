@@ -7,12 +7,13 @@ from catley.config import (
     SHOW_FPS,
 )
 from catley.render.effects import EffectContext
-from catley.render.old_render import FPSDisplay
 from catley.render.screen_shake import ScreenShake
 from catley.ui.cursor_manager import CursorManager
 from catley.ui.panels.equipment_panel import EquipmentPanel
+from catley.ui.panels.fps_panel import FPSPanel
 from catley.ui.panels.game_world_panel import GameWorldPanel
 from catley.ui.panels.health_panel import HealthPanel
+from catley.ui.panels.help_text_panel import HelpTextPanel
 from catley.ui.panels.message_log_panel import MessageLogPanel
 from catley.ui.panels.panel import Panel
 
@@ -28,8 +29,6 @@ class FrameManager:
         self.controller = controller
         self.renderer: Renderer = controller.renderer
         self.cursor_manager = CursorManager(self.renderer)
-
-        self.fps_display = FPSDisplay(controller.clock)
 
         # Global effect systems
         self.screen_shake = ScreenShake()
@@ -50,6 +49,11 @@ class FrameManager:
         equipment_y = message_log_y - equipment_height - 1
 
         # Create and register panels.
+        self.fps_panel = FPSPanel(self.controller.clock)
+        self.fps_panel.visible = SHOW_FPS
+
+        self.help_text_panel = HelpTextPanel(self.controller, y=0)
+
         self.game_world_panel = GameWorldPanel(self.controller, self.screen_shake)
         self.message_log_panel = MessageLogPanel(
             message_log=self.controller.message_log,
@@ -67,10 +71,12 @@ class FrameManager:
         self.health_panel = HealthPanel(self.controller, y=0)
 
         self.panels: list[Panel] = [
+            self.help_text_panel,
             self.game_world_panel,
             self.health_panel,
             self.equipment_panel,
             self.message_log_panel,
+            self.fps_panel,
         ]
 
     def add_panel(self, panel: Panel) -> None:
@@ -99,9 +105,7 @@ class FrameManager:
         if self.controller.active_mode:
             self.controller.active_mode.render_ui(self.renderer.root_console)
 
-        # Debug/development overlays
-        if SHOW_FPS:
-            self.fps_display.render(self)
+        # Panels may render overlays like FPS after game UI.
 
         # 3. MENU RENDERING
         self.controller.menu_system.render(self.renderer.root_console)
