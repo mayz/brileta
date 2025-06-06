@@ -13,8 +13,8 @@ if TYPE_CHECKING:
 class HelpTextPanel(Panel):
     """Panel that displays basic control hints at the top of the screen."""
 
-    def __init__(self, controller: Controller, y: int = 0) -> None:
-        super().__init__(x=1, y=y, width=0, height=1)
+    def __init__(self, controller: Controller) -> None:
+        super().__init__()
         self.controller = controller
 
     def draw(self, renderer: Renderer) -> None:

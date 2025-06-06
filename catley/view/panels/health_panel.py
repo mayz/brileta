@@ -14,15 +14,13 @@ if TYPE_CHECKING:
 class HealthPanel(Panel):
     """Panel that displays the player's HP and AP status."""
 
-    def __init__(self, controller: Controller, y: int = 0) -> None:
+    def __init__(self, controller: Controller) -> None:
         """Initialize the panel.
 
-        ``x`` is ignored during drawing since the text is right-aligned
-        dynamically each frame. ``y`` defaults to the top row just below any
-        help text.
+        Position and size will be set by FrameManager.resize().
         """
 
-        super().__init__(x=0, y=y, width=0, height=1)
+        super().__init__()
         self.controller = controller
 
     def draw(self, renderer: Renderer) -> None:

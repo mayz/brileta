@@ -8,7 +8,6 @@ from tcod.console import Console
 
 from catley import colors
 from catley.config import (
-    HELP_HEIGHT,
     LUMINANCE_THRESHOLD,
     MOUSE_HIGHLIGHT_ALPHA,
     PULSATION_MAX_BLEND_ALPHA,
@@ -34,21 +33,8 @@ class GameWorldPanel(Panel):
         self,
         controller: Controller,
         screen_shake: ScreenShake,
-        game_world_height: int | None = None,
     ) -> None:
-        # Use provided height or default to map height
-        panel_height = (
-            game_world_height
-            if game_world_height is not None
-            else controller.gw.game_map.height
-        )
-
-        super().__init__(
-            x=0,
-            y=HELP_HEIGHT,
-            width=controller.gw.game_map.width,
-            height=panel_height,
-        )
+        super().__init__()
         self.controller = controller
         self.screen_shake = screen_shake
 
@@ -91,14 +77,20 @@ class GameWorldPanel(Panel):
         self._render_game_world(delta_time)
         shake_x, shake_y = self.screen_shake.update(delta_time)
 
-        # Only blit the portion of the game map that fits in our panel's height
+        # Calculate viewport - blit only the portion that fits in panel boundaries
+        blit_width = min(self.game_map_console.width, self.width)
         blit_height = min(self.game_map_console.height, self.height)
+
+        # Ensure we don't exceed panel boundaries
+        dest_x = max(self.x, min(self.x + shake_x, self.x + self.width - blit_width))
+        dest_y = max(self.y, min(self.y + shake_y, self.y + self.height - blit_height))
+
         renderer.blit_console(
             source=self.game_map_console,
             dest=renderer.root_console,
-            dest_x=self.x + shake_x,
-            dest_y=self.y + shake_y,
-            width=self.game_map_console.width,
+            dest_x=dest_x,
+            dest_y=dest_y,
+            width=blit_width,
             height=blit_height,
         )
 

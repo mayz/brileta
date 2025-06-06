@@ -25,12 +25,9 @@ def test_message_log_panel_ttf_rendering_visible() -> None:
 
     panel = MessageLogPanel(
         log,
-        x=0,
-        y=0,
-        width=20,
-        height=5,
         tile_dimensions=(8, 16),
     )
+    panel.resize(0, 0, 20, 5)
 
     panel.draw(renderer_stub)
     renderer.clear()
@@ -57,12 +54,9 @@ def test_message_log_panel_font_scales_on_resize() -> None:
 
     panel = MessageLogPanel(
         log,
-        x=0,
-        y=0,
-        width=20,
-        height=5,
         tile_dimensions=(8, 16),
     )
+    panel.resize(0, 0, 20, 5)
 
     panel.draw(renderer_stub)
     initial_line_height = panel.line_height_px

@@ -16,6 +16,16 @@ To run unit tests:
 `uv pip install -e .`        # Install catley as an editable package
 `pytest`                  # Run the tests
 
+## Quality Checks
+
+**IMPORTANT: After finishing any code changes, always run:**
+```bash
+make
+```
+
+This runs the full quality pipeline: `ruff format`, `ruff check`, `ty check`, and `pytest`. All checks must pass before considering work complete.
+
+Individual commands are available as `make lint`, `make format`, `make typecheck`, or `make test`.
 
 ## Style
 

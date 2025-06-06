@@ -14,16 +14,23 @@ class Panel(abc.ABC):
     rendering backend.
     """
 
-    def __init__(self, x: int, y: int, width: int, height: int) -> None:
-        self.x = x
-        self.y = y
-        self.width = width
-        self.height = height
+    def __init__(self) -> None:
+        """Initialize panel with default dimensions.
+
+        Panel dimensions must be set via resize() before drawing.
+        """
+        self.x = 0
+        self.y = 0
+        self.width = 0
+        self.height = 0
         self.visible = True
 
     @abc.abstractmethod
     def draw(self, renderer: Renderer) -> None:
-        """Draw this panel using the provided renderer."""
+        """Draw this panel using the provided renderer.
+
+        Note: resize() must be called before draw() to set panel boundaries.
+        """
         pass
 
     def present(self, renderer: Renderer) -> None:
@@ -35,15 +42,19 @@ class Panel(abc.ABC):
         """
         _ = renderer
 
-    def set_position(self, x: int, y: int) -> None:
-        """Update panel position."""
-        self.x = x
-        self.y = y
+    def resize(self, x1: int, y1: int, x2: int, y2: int) -> None:
+        """Set panel boundaries. Panel must enforce these constraints during rendering.
 
-    def set_size(self, width: int, height: int) -> None:
-        """Update panel size."""
-        self.width = width
-        self.height = height
+        This should be called by FrameManager before the panel is drawn.
+
+        Args:
+            x1, y1: Top-left corner (inclusive)
+            x2, y2: Bottom-right corner (exclusive)
+        """
+        self.x = x1
+        self.y = y1
+        self.width = x2 - x1
+        self.height = y2 - y1
 
     def show(self) -> None:
         """Make panel visible."""
