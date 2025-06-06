@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 
 from catley import colors
 from catley.controller import Controller
-from catley.game.actions import AttackAction
+from catley.game.actions.actions import AttackAction
 from catley.game.actors import Character
 from catley.game.items.item_types import FISTS_TYPE
 from catley.util import dice

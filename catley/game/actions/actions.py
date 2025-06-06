@@ -27,13 +27,12 @@ from typing import TYPE_CHECKING
 
 from catley import colors
 from catley.game import range_system
+from catley.game.actors import Actor, Character, Disposition
+from catley.game.ai import DispositionBasedAI
+from catley.game.items.capabilities import AreaEffect, Attack, RangedAttack
 from catley.game.items.item_core import Item
+from catley.game.items.item_types import FISTS_TYPE
 from catley.util import dice
-
-from .actors import Actor, Character, Disposition
-from .ai import DispositionBasedAI
-from .items.capabilities import AreaEffect, Attack, RangedAttack
-from .items.item_types import FISTS_TYPE
 
 if TYPE_CHECKING:
     from catley.controller import Controller

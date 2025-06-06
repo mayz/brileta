@@ -3,7 +3,7 @@ from typing import cast
 
 from catley import colors
 from catley.controller import Controller
-from catley.game.actions import MoveAction
+from catley.game.actions.actions import MoveAction
 from catley.game.actors import Character
 from catley.world import tile_types
 from catley.world.game_state import GameWorld
