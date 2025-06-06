@@ -122,8 +122,21 @@ class LightingSystem:
         """Update lighting effects based on elapsed time"""
         self.time += delta_time  # Just track raw time, light sources will scale it
 
-    def compute_lighting(self, map_width: int, map_height: int) -> np.ndarray:
-        """Compute lighting values for the entire map using bounded calculations."""
+    def compute_lighting(
+        self, map_width: int, map_height: int, viewport_offset: tuple[int, int] = (0, 0)
+    ) -> np.ndarray:
+        """Compute lighting values for the given map size.
+
+        Parameters
+        ----------
+        map_width, map_height:
+            Size of the area to compute lighting for. This may be the full map
+            or a viewport-sized slice.
+        viewport_offset:
+            Offset of the slice relative to the world origin. This allows light
+            sources positioned in world coordinates to be mapped correctly into
+            the smaller computation array.
+        """
         # Start with ambient light - shape (width, height, 3) for RGB.
         # Use float32 for precision.
         light_map = np.full(
@@ -131,47 +144,68 @@ class LightingSystem:
         )
 
         for light in self.light_sources:
-            self._apply_light_to_map(light, light_map, map_width, map_height)
+            self._apply_light_to_map(
+                light, light_map, map_width, map_height, viewport_offset
+            )
 
         return np.clip(light_map, 0.0, 1.0)  # Final clip to [0,1] range
 
     def compute_lighting_with_shadows(
-        self, map_width: int, map_height: int, actors
+        self,
+        map_width: int,
+        map_height: int,
+        actors,
+        viewport_offset: tuple[int, int] = (0, 0),
     ) -> np.ndarray:
-        """Compute lighting with actor shadows applied."""
+        """Compute lighting with actor shadows applied.
+
+        The optional ``viewport_offset`` parameter allows this computation to be
+        performed on a subset of the world (e.g. the visible viewport). Light
+        sources and actors are mapped into this smaller grid by subtracting the
+        offset.
+        """
         from catley.config import SHADOWS_ENABLED
 
         # Get base lighting
-        base_lighting = self.compute_lighting(map_width, map_height)
+        base_lighting = self.compute_lighting(map_width, map_height, viewport_offset)
 
         if not SHADOWS_ENABLED:
             return base_lighting
 
         # Apply shadows
-        return self._apply_actor_shadows(base_lighting, actors)
+        return self._apply_actor_shadows(base_lighting, actors, viewport_offset)
 
-    def _apply_actor_shadows(self, light_map: np.ndarray, actors) -> np.ndarray:
+    def _apply_actor_shadows(
+        self,
+        light_map: np.ndarray,
+        actors,
+        viewport_offset: tuple[int, int],
+    ) -> np.ndarray:
         """Apply actor shadows to the light map with gradual falloff."""
 
         shadow_map = light_map.copy()
 
+        offset_x, offset_y = viewport_offset
+
         for light_source in self.light_sources:
             lx, ly = light_source.position
+            lx -= offset_x
+            ly -= offset_y
             light_radius = light_source.radius
 
             nearby_actors = [
                 actor
                 for actor in actors
                 if (
-                    abs(actor.x - lx) <= light_radius
-                    and abs(actor.y - ly) <= light_radius
+                    abs((actor.x - offset_x) - lx) <= light_radius
+                    and abs((actor.y - offset_y) - ly) <= light_radius
                     and actor.blocks_movement
                 )
             ]
 
             for actor in nearby_actors:
                 shadow_data = self._cast_gradual_shadow(
-                    (lx, ly), (actor.x, actor.y), light_radius
+                    (lx, ly), (actor.x - offset_x, actor.y - offset_y), light_radius
                 )
 
                 for sx, sy, intensity in shadow_data:
@@ -238,10 +272,17 @@ class LightingSystem:
         return shadow_data
 
     def _apply_light_to_map(
-        self, light: LightSource, light_map: np.ndarray, map_width: int, map_height: int
+        self,
+        light: LightSource,
+        light_map: np.ndarray,
+        map_width: int,
+        map_height: int,
+        viewport_offset: tuple[int, int] = (0, 0),
     ) -> None:
         """Apply a single light source's contribution to the light map."""
         pos_x, pos_y = light.position
+        pos_x -= viewport_offset[0]
+        pos_y -= viewport_offset[1]
         radius = light.radius
 
         # Skip lights with zero or negative radius, as they illuminate nothing.
