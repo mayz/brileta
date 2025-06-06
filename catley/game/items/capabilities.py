@@ -81,7 +81,10 @@ class Attack(abc.ABC, Generic[SpecType]):
         pass
 
     @abc.abstractmethod
-    def perform_attack(self, attacker: Actor, target: Actor, controller: Controller):
+    def perform_attack(
+        self, attacker: Actor, target: Actor, controller: Controller
+    ) -> None:
+        """Execute the attack action."""
         pass
 
     @property
@@ -118,7 +121,10 @@ class MeleeAttack(Attack[MeleeAttackSpec]):
         # Must be adjacent.
         return distance == 1
 
-    def perform_attack(self, attacker: Actor, target: Actor, controller: Controller):
+    def perform_attack(
+        self, attacker: Actor, target: Actor, controller: Controller
+    ) -> None:
+        """Carry out the melee attack."""
         # Access definitions via self._spec.damage_dice, etc.
         # Actual melee attack logic (Phase 4)
         print(f"Performing melee: {self._spec.damage_dice.dice_str}")
@@ -150,7 +156,10 @@ class RangedAttack(Attack[RangedAttackSpec]):
         # Will implement in Phase 3
         return True
 
-    def perform_attack(self, attacker: Actor, target: Actor, controller: Controller):
+    def perform_attack(
+        self, attacker: Actor, target: Actor, controller: Controller
+    ) -> None:
+        """Carry out the ranged attack and reduce ammo."""
         # Actual ranged attack logic (Phase 4)
         if self.current_ammo > 0:
             print(

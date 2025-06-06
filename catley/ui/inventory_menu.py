@@ -5,6 +5,8 @@ import string
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
+from tcod.console import Console
+
 from catley import colors
 from catley.game.conditions import Condition
 from catley.game.enums import ItemSize
@@ -156,8 +158,13 @@ class InventoryMenu(Menu):
                 f"You use {item.name}.", colors.WHITE
             )
 
-    def render_title(self, menu_console, title_y, actual_width):
-        """Custom title rendering with inventory bar."""
+    def render_title(
+        self,
+        menu_console: Console,
+        title_y: int,
+        actual_width: int,
+    ) -> None:
+        """Render the menu title with an inventory usage bar."""
         player = self.controller.gw.player  # Player is an Actor
         used_space = player.inventory.get_used_inventory_slots()
         total_slots = player.inventory.total_inventory_slots

@@ -129,7 +129,8 @@ class Actor:
 
         self.tricks: list = []
 
-    def __repr__(self):
+    def __repr__(self) -> str:
+        """Return a debug representation of this actor."""
         fields = ", ".join(f"{k}={v!r}" for k, v in vars(self).items())
         return f"{self.__class__.__name__}({fields})"
 

@@ -39,7 +39,8 @@ class Injury(Condition):
 class Rads(Condition):
     """Represents one slot filled by radiation sickness."""
 
-    def __init__(self):
+    def __init__(self) -> None:
+        """Create a radiation sickness condition."""
         super().__init__(
             name="Rads",
             description="Suffering from radiation exposure.",
@@ -54,7 +55,8 @@ class Sickness(Condition):
         self,
         sickness_type: str = "General Sickness",
         description: str = "Afflicted by an illness.",
-    ):
+    ) -> None:
+        """Create a sickness condition with a specific type."""
         # sickness_type could be "Poisoned", "Diseased", "Venom"
         super().__init__(
             name=f"Sickness: {sickness_type}",
@@ -66,7 +68,8 @@ class Sickness(Condition):
 class Exhaustion(Condition):
     """Represents one slot filled by exhaustion."""
 
-    def __init__(self):
+    def __init__(self) -> None:
+        """Create an exhaustion condition."""
         super().__init__(
             name="Exhaustion",
             description="Physically and mentally drained.",

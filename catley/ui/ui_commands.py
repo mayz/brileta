@@ -70,7 +70,7 @@ class SelectOrDeselectActorUICommand(UICommand):
     Command to select a new actor or deselect (clear) the current selection.
     """
 
-    def __init__(self, controller: Controller, selection: Actor | None):
+    def __init__(self, controller: Controller, selection: Actor | None) -> None:
         """
         Args:
             controller: The game controller.
@@ -101,7 +101,7 @@ class OpenMenuUICommand(UICommand):
 class OpenPickupMenuUICommand(OpenMenuUICommand):
     """Command to open the pickup menu for items at the player's location."""
 
-    def __init__(self, controller: Controller):
+    def __init__(self, controller: Controller) -> None:
         self.controller = controller
         self.player = controller.gw.player
 
