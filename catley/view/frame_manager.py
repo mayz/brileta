@@ -158,17 +158,25 @@ class FrameManager:
         self, root_tile_coords: tuple[int, int]
     ) -> tuple[int, int] | None:
         """Converts root console tile coordinates to game map tile coordinates."""
-        map_render_offset_x = 0
-        map_render_offset_y = self.help_height
+        # Translate from root-console coordinates to viewport coordinates by
+        # subtracting the panel's screen position.
+        vp_x = root_tile_coords[0] - self.game_world_panel.x
+        vp_y = root_tile_coords[1] - self.game_world_panel.y
 
-        map_x = root_tile_coords[0] - map_render_offset_x
-        map_y = root_tile_coords[1] - map_render_offset_y
-
-        if (
-            0 <= map_x < self.game_world_panel.game_map_console.width
-            and 0 <= map_y < self.game_world_panel.game_map_console.height
+        # Ignore coordinates that fall outside the visible game world panel.
+        if not (
+            0 <= vp_x < self.game_world_panel.width
+            and 0 <= vp_y < self.game_world_panel.height
         ):
-            return map_x, map_y
+            return None
+
+        # Use the viewport system to convert viewport coords to world map coords.
+        world_x, world_y = self.game_world_panel.viewport_system.screen_to_world(
+            vp_x, vp_y
+        )
+        gw = self.controller.gw
+        if 0 <= world_x < gw.game_map.width and 0 <= world_y < gw.game_map.height:
+            return world_x, world_y
         return None
 
     def trigger_screen_shake(self, intensity: float, duration: float) -> None:

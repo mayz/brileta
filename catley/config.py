@@ -29,6 +29,10 @@ WINDOW_TITLE = "Catley Prototype"
 SCREEN_WIDTH = 80
 SCREEN_HEIGHT = 50
 
+# Viewport defaults used when initializing panels before they are resized.
+DEFAULT_VIEWPORT_WIDTH = SCREEN_WIDTH
+DEFAULT_VIEWPORT_HEIGHT = 40  # Initial height before layout adjustments
+
 # UI Layout
 HELP_HEIGHT = 1  # Lines reserved for help text at top
 

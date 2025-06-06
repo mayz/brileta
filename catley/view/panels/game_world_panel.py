@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 from tcod.console import Console
 
-from catley import colors
+from catley import colors, config
 from catley.config import (
     LUMINANCE_THRESHOLD,
     MOUSE_HIGHLIGHT_ALPHA,
@@ -17,6 +17,7 @@ from catley.config import (
 from catley.view.effects.effects import EffectLibrary
 from catley.view.effects.particles import SubTileParticleSystem
 from catley.view.effects.screen_shake import ScreenShake
+from catley.view.viewport import ViewportSystem
 
 from .panel import Panel
 
@@ -37,16 +38,31 @@ class GameWorldPanel(Panel):
         super().__init__()
         self.controller = controller
         self.screen_shake = screen_shake
-
-        # Game map console should match the full map size for rendering
-        self.game_map_console = Console(
-            controller.gw.game_map.width, controller.gw.game_map.height, order="F"
+        # Initialize a viewport system sized using configuration defaults.
+        # These defaults are replaced once resize() sets the real panel bounds.
+        self.viewport_system = ViewportSystem(
+            config.DEFAULT_VIEWPORT_WIDTH, config.DEFAULT_VIEWPORT_HEIGHT
         )
+        # Game map console matches the viewport dimensions rather than the
+        # entire map. This keeps rendering fast and memory usage reasonable.
+        self.game_map_console = Console(
+            config.DEFAULT_VIEWPORT_WIDTH, config.DEFAULT_VIEWPORT_HEIGHT, order="F"
+        )
+        # Particle system also operates only on the visible viewport area.
         self.particle_system = SubTileParticleSystem(
-            controller.gw.game_map.width, controller.gw.game_map.height
+            config.DEFAULT_VIEWPORT_WIDTH, config.DEFAULT_VIEWPORT_HEIGHT
         )
         self.effect_library = EffectLibrary()
         self.current_light_intensity: np.ndarray | None = None
+
+    def resize(self, x1: int, y1: int, x2: int, y2: int) -> None:
+        """Override resize to update viewport and console dimensions."""
+        super().resize(x1, y1, x2, y2)
+        # When the window size changes we recreate the viewport and consoles
+        # so that rendering operates on the new visible dimensions.
+        self.viewport_system = ViewportSystem(self.width, self.height)
+        self.game_map_console = Console(self.width, self.height, order="F")
+        self.particle_system = SubTileParticleSystem(self.width, self.height)
 
     # ------------------------------------------------------------------
     # Public API
@@ -74,24 +90,29 @@ class GameWorldPanel(Panel):
             return
 
         delta_time = self.controller.clock.last_delta_time
-        self._render_game_world(delta_time)
+
+        # Apply screen shake by temporarily offsetting the camera position.
         shake_x, shake_y = self.screen_shake.update(delta_time)
+        original_cam_x = self.viewport_system.camera.world_x
+        original_cam_y = self.viewport_system.camera.world_y
+        self.viewport_system.camera.world_x += shake_x * 0.25
+        self.viewport_system.camera.world_y += shake_y * 0.25
 
-        # Calculate viewport - blit only the portion that fits in panel boundaries
-        blit_width = min(self.game_map_console.width, self.width)
-        blit_height = min(self.game_map_console.height, self.height)
+        # Render everything to the off-screen console.
+        self._render_game_world(delta_time)
 
-        # Ensure we don't exceed panel boundaries
-        dest_x = max(self.x, min(self.x + shake_x, self.x + self.width - blit_width))
-        dest_y = max(self.y, min(self.y + shake_y, self.y + self.height - blit_height))
+        # Restore the original camera position so subsequent frames start clean.
+        self.viewport_system.camera.set_position(original_cam_x, original_cam_y)
 
+        # Blit the viewport-sized console to the root console at our panel's
+        # location.
         renderer.blit_console(
             source=self.game_map_console,
             dest=renderer.root_console,
-            dest_x=dest_x,
-            dest_y=dest_y,
-            width=blit_width,
-            height=blit_height,
+            dest_x=self.x,
+            dest_y=self.y,
+            width=self.width,
+            height=self.height,
         )
 
     # ------------------------------------------------------------------
@@ -114,102 +135,154 @@ class GameWorldPanel(Panel):
 
     def _render_map(self) -> None:
         gw = self.controller.gw
-        shroud = (ord(" "), (0, 0, 0), (0, 0, 0))
-        self.game_map_console.rgb[:] = shroud
-        dark_app_map = gw.game_map.dark_appearance_map
-        light_app_map = gw.game_map.light_appearance_map
-        explored_mask = gw.game_map.explored
-        self.game_map_console.rgb[explored_mask] = dark_app_map[explored_mask]
-        visible_mask = gw.game_map.visible
-        visible_y, visible_x = np.where(visible_mask)
-        if len(visible_y) > 0:
-            self.current_light_intensity = gw.lighting.compute_lighting_with_shadows(
-                gw.game_map.width, gw.game_map.height, gw.actors
+        vs = self.viewport_system
+        vs.update_camera(gw.player, gw.game_map.width, gw.game_map.height)
+        world_left, world_right, world_top, world_bottom = vs.get_visible_bounds()
+        # Clamp the visible bounds to the actual map size so slicing is safe.
+        world_left = max(0, world_left)
+        world_top = max(0, world_top)
+        world_right = min(gw.game_map.width - 1, world_right)
+        world_bottom = min(gw.game_map.height - 1, world_bottom)
+        world_slice = (
+            slice(world_left, world_right + 1),
+            slice(world_top, world_bottom + 1),
+        )
+        dest_width = world_right - world_left + 1
+        dest_height = world_bottom - world_top + 1
+        # Center the slice within the viewport-sized console.
+        dest_x_start = (self.game_map_console.width - dest_width) // 2
+        dest_y_start = (self.game_map_console.height - dest_height) // 2
+        dest_slice = (
+            slice(dest_x_start, dest_x_start + dest_width),
+            slice(dest_y_start, dest_y_start + dest_height),
+        )
+        dark_app_slice = gw.game_map.dark_appearance_map[world_slice]
+        explored_mask_slice = gw.game_map.explored[world_slice]
+        # Clear the viewport with an empty shroud before drawing.
+        self.game_map_console.rgb[:] = (ord(" "), (0, 0, 0), (0, 0, 0))
+        self.game_map_console.rgb[dest_slice][explored_mask_slice] = dark_app_slice[
+            explored_mask_slice
+        ]
+        visible_mask_slice = gw.game_map.visible[world_slice]
+        if not np.any(visible_mask_slice):
+            return
+        # Only consider actors currently inside the viewport when calculating lighting.
+        relevant_actors = [
+            actor
+            for actor in gw.actors
+            if vs.is_visible(actor.x, actor.y, gw.game_map.width, gw.game_map.height)
+        ]
+        self.current_light_intensity = gw.lighting.compute_lighting_with_shadows(
+            dest_width,
+            dest_height,
+            relevant_actors,
+            viewport_offset=(world_left, world_top),
+        )
+        light_app_slice = gw.game_map.light_appearance_map[world_slice]
+        dark_tiles_to_light = dark_app_slice[visible_mask_slice]
+        light_tiles_to_light = light_app_slice[visible_mask_slice]
+        light_intensities_to_apply = self.current_light_intensity[visible_mask_slice]
+        blended_tiles = np.empty_like(dark_tiles_to_light)
+        blended_tiles["ch"] = light_tiles_to_light["ch"]
+        blended_tiles["fg"] = light_tiles_to_light["fg"]
+        # Blend each RGB channel separately based on computed lighting intensity.
+        for i in range(3):
+            light_intensity_channel = light_intensities_to_apply[..., i]
+            blended_tiles["bg"][..., i] = light_tiles_to_light["bg"][
+                ..., i
+            ] * light_intensity_channel + dark_tiles_to_light["bg"][..., i] * (
+                1.0 - light_intensity_channel
             )
-            dark_tiles_visible = dark_app_map[visible_y, visible_x]
-            light_tiles_visible = light_app_map[visible_y, visible_x]
-            cell_light = self.current_light_intensity[visible_y, visible_x]
-            blended_tiles = np.empty_like(dark_tiles_visible)
-            blended_tiles["ch"] = light_tiles_visible["ch"]
-            blended_tiles["fg"] = light_tiles_visible["fg"]
-            for i in range(3):
-                light_intensity_channel = cell_light[..., i]
-                blended_tiles["bg"][..., i] = light_tiles_visible["bg"][
-                    ..., i
-                ] * light_intensity_channel + dark_tiles_visible["bg"][..., i] * (
-                    1.0 - light_intensity_channel
-                )
-            self.game_map_console.rgb[visible_y, visible_x] = blended_tiles
+        self.game_map_console.rgb[dest_slice][visible_mask_slice] = blended_tiles
 
     def _render_actors(self) -> None:
         gw = self.controller.gw
-        for a in gw.actors:
-            if a == gw.player:
+        vs = self.viewport_system
+        world_left, world_right, world_top, world_bottom = vs.get_visible_bounds()
+        # Draw non-player actors first so the player is rendered on top.
+        sorted_actors = sorted(gw.actors, key=lambda a: a == gw.player)
+        for actor in sorted_actors:
+            if not (
+                world_left <= actor.x <= world_right
+                and world_top <= actor.y <= world_bottom
+            ):
                 continue
-            if gw.game_map.visible[a.x, a.y]:
-                self._render_actor(a)
-        self._render_actor(gw.player)
+            if gw.game_map.visible[actor.x, actor.y]:
+                self._render_actor(actor)
 
     def _render_actor(self, a: Actor) -> None:
         if self.current_light_intensity is None:
             return
-
-        self.game_map_console.rgb["ch"][a.x, a.y] = ord(a.ch)
+        vp_x, vp_y = self.viewport_system.world_to_screen(a.x, a.y)
+        if not (
+            0 <= vp_x < self.game_map_console.width
+            and 0 <= vp_y < self.game_map_console.height
+        ):
+            return
+        self.game_map_console.rgb["ch"][vp_x, vp_y] = ord(a.ch)
         base_actor_color: colors.Color = a.color
-
-        visual_effects = a.visual_effects
+        # Some simple actors in tests may not define visual_effects.
+        visual_effects = getattr(a, "visual_effects", None)
         if visual_effects is not None:
             visual_effects.update()
             flash_color = visual_effects.get_flash_color()
             if flash_color:
                 base_actor_color = flash_color
-
-        light_rgb = self.current_light_intensity[a.x, a.y]
+        # Map the actor's position into the lighting array so we can look up
+        # the intensity for this tile.
+        world_left, _, world_top, _ = self.viewport_system.get_visible_bounds()
+        light_x, light_y = a.x - world_left, a.y - world_top
+        if not (
+            0 <= light_x < self.current_light_intensity.shape[0]
+            and 0 <= light_y < self.current_light_intensity.shape[1]
+        ):
+            return
+        light_rgb = self.current_light_intensity[light_x, light_y]
         normally_lit_fg_components: colors.Color = (
             max(0, min(255, int(base_actor_color[0] * light_rgb[0]))),
             max(0, min(255, int(base_actor_color[1] * light_rgb[1]))),
             max(0, min(255, int(base_actor_color[2] * light_rgb[2]))),
         )
-
         final_fg_color = normally_lit_fg_components
         if (
             self.controller.gw.selected_actor == a
             and self.controller.gw.game_map.visible[a.x, a.y]
             and not self.controller.is_targeting_mode()
         ):
+            # Give the selected actor a subtle pulse so it's easy to spot.
             final_fg_color = self._apply_pulsating_effect(
                 normally_lit_fg_components, base_actor_color
             )
-
-        self.game_map_console.rgb["fg"][a.x, a.y] = final_fg_color
+        self.game_map_console.rgb["fg"][vp_x, vp_y] = final_fg_color
 
     def _render_selected_actor_highlight(self) -> None:
         if self.controller.is_targeting_mode():
             return
         actor = self.controller.gw.selected_actor
         if actor and self.controller.gw.game_map.visible[actor.x, actor.y]:
-            self._apply_blended_highlight(
-                actor.x,
-                actor.y,
-                colors.SELECTED_HIGHLIGHT,
-                SELECTION_HIGHLIGHT_ALPHA,
-            )
+            vp_x, vp_y = self.viewport_system.world_to_screen(actor.x, actor.y)
+            if 0 <= vp_x < self.width and 0 <= vp_y < self.height:
+                self._apply_blended_highlight(
+                    vp_x, vp_y, colors.SELECTED_HIGHLIGHT, SELECTION_HIGHLIGHT_ALPHA
+                )
 
     def _render_mouse_cursor_highlight(self) -> None:
         if self.controller.is_targeting_mode():
             return
-        if not self.controller.gw.mouse_tile_location_on_map:
+        mouse_world_pos = self.controller.gw.mouse_tile_location_on_map
+        if not mouse_world_pos:
             return
-        mx, my = self.controller.gw.mouse_tile_location_on_map
-        if not (
-            0 <= mx < self.game_map_console.width
-            and 0 <= my < self.game_map_console.height
-        ):
-            return
-        target_color = (
-            colors.WHITE if self.controller.gw.game_map.visible[mx, my] else colors.GREY
-        )
-        self._apply_blended_highlight(mx, my, target_color, MOUSE_HIGHLIGHT_ALPHA)
+        world_x, world_y = mouse_world_pos
+        vp_x, vp_y = self.viewport_system.world_to_screen(world_x, world_y)
+        if 0 <= vp_x < self.width and 0 <= vp_y < self.height:
+            target_color = (
+                colors.WHITE
+                if self.controller.gw.game_map.visible[world_x, world_y]
+                else colors.GREY
+            )
+            self._apply_blended_highlight(
+                vp_x, vp_y, target_color, MOUSE_HIGHLIGHT_ALPHA
+            )
 
     def _apply_blended_highlight(
         self, x: int, y: int, target_color: colors.Color, alpha: float
