@@ -73,9 +73,15 @@ class Renderer:
         """Converts the root console to a texture and copies it to the backbuffer."""
         # Convert TCOD console to SDL texture
         console_texture = self.console_render.render(self.root_console)
-        # Copy texture to screen
+
+        renderer_width, renderer_height = self.sdl_renderer.output_size
+
+        # Copy texture to screen, scaling to match the window size
         self.sdl_renderer.clear()
-        self.sdl_renderer.copy(console_texture)
+        self.sdl_renderer.copy(
+            console_texture,
+            dest=(0, 0, renderer_width, renderer_height),
+        )
 
     def finalize_present(self) -> None:
         """Presents the backbuffer to the screen."""
@@ -89,11 +95,17 @@ class Renderer:
     def update_dimensions(self) -> None:
         """Update coordinate converter when window dimensions change."""
         renderer_width, renderer_height = self.sdl_renderer.output_size
+
+        # Determine tile scaling based on current window size
+        tile_width = max(1, renderer_width // self.root_console.width)
+        tile_height = max(1, renderer_height // self.root_console.height)
+        self.tile_dimensions = (tile_width, tile_height)
+
         self.coordinate_converter = CoordinateConverter(
             console_width=self.root_console.width,
             console_height=self.root_console.height,
-            tile_width=self.tile_dimensions[0],
-            tile_height=self.tile_dimensions[1],
+            tile_width=tile_width,
+            tile_height=tile_height,
             renderer_width=renderer_width,
             renderer_height=renderer_height,
         )

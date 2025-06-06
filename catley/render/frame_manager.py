@@ -46,7 +46,7 @@ class FrameManager:
         screen_height_tiles = self.renderer.root_console.height
 
         # Calculate UI panel space requirements
-        message_log_height = 7
+        message_log_height = 10
         equipment_height = 4
         # Reserve space for bottom panels plus margins
         bottom_ui_height = message_log_height + 1
@@ -55,9 +55,9 @@ class FrameManager:
         game_world_y = self.help_height
         game_world_height = screen_height_tiles - game_world_y - bottom_ui_height
 
-        # Position bottom panels conservatively to ensure they fit
-        # Use much larger margins to account for screen size differences
-        message_log_y = screen_height_tiles - message_log_height - 5
+        # Reserve space for the message log at the bottom of the screen
+        # leaving a small one-tile margin so the game world never overlaps.
+        message_log_y = screen_height_tiles - message_log_height - 1
         equipment_y = screen_height_tiles - equipment_height - 2
 
         equipment_width = 25  # Approximate width needed for equipment display
