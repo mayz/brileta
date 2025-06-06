@@ -94,6 +94,13 @@ class MoveAction(GameAction):
         self.newy = self.actor.y + self.dy
 
     def execute(self) -> None:
+        # Prevent indexing errors by bounding to the map dimensions first.
+        if not (
+            0 <= self.newx < self.game_map.width
+            and 0 <= self.newy < self.game_map.height
+        ):
+            return
+
         if not self.game_map.walkable[self.newx, self.newy]:
             return
 
@@ -142,10 +149,10 @@ class AttackAction(GameAction):
         attack_result = self._execute_attack_roll(attack, weapon, range_modifiers)
 
         # 4. Resolve the outcome based on hit/miss
-        self._resolve_attack_outcome(attack_result, attack, weapon)
+        damage = self._resolve_attack_outcome(attack_result, attack, weapon)
 
         # 5. Handle post-attack effects (screen shake, messages, AI)
-        self._handle_post_attack_effects(attack_result, attack, weapon)
+        self._handle_post_attack_effects(attack_result, attack, weapon, damage)
 
     def _determine_attack_method(self) -> tuple[Attack | None, Item]:
         """Determine which attack method and weapon to use
@@ -290,16 +297,16 @@ class AttackAction(GameAction):
 
     def _resolve_attack_outcome(
         self, attack_result: dice.CheckResult, attack: Attack, weapon: Item
-    ) -> None:
-        """Resolve the attack outcome - apply damage, handle crits, emit particles."""
+    ) -> int:
+        """Resolve the attack outcome and return the damage dealt."""
         if attack_result.success:
-            self._handle_successful_hit(attack_result, attack, weapon)
-        else:
-            self._handle_attack_miss(attack_result, attack, weapon)
+            return self._handle_successful_hit(attack_result, attack, weapon)
+        self._handle_attack_miss(attack_result, attack, weapon)
+        return 0
 
     def _handle_successful_hit(
         self, attack_result: dice.CheckResult, attack: Attack, weapon: Item
-    ) -> None:
+    ) -> int:
         """Handle a successful attack hit - damage, crits, particles, messages."""
         # Hit - roll damage
         damage_dice = attack.damage_dice
@@ -341,6 +348,8 @@ class AttackAction(GameAction):
 
             # Update targeting if needed
             self.controller.notify_actor_death(self.defender)
+
+        return damage
 
     def _handle_attack_miss(
         self, attack_result: dice.CheckResult, attack: Attack, weapon: Item
@@ -403,24 +412,31 @@ class AttackAction(GameAction):
         )
 
     def _handle_post_attack_effects(
-        self, attack_result: dice.CheckResult, attack: Attack, weapon: Item
+        self,
+        attack_result: dice.CheckResult,
+        attack: Attack,
+        weapon: Item,
+        damage: int,
     ) -> None:
         """Handle post-attack effects like screen shake and AI disposition changes."""
         # Screen shake only when PLAYER gets hit
         if attack_result.success and self.defender == self.controller.gw.player:
-            self._apply_screen_shake(attack_result, attack, weapon)
+            self._apply_screen_shake(attack_result, attack, weapon, damage)
 
         # Update AI disposition if player attacked an NPC
         self._update_ai_disposition()
 
     def _apply_screen_shake(
-        self, attack_result: dice.CheckResult, attack: Attack, weapon: Item
+        self,
+        attack_result: dice.CheckResult,
+        _attack: Attack,
+        weapon: Item,
+        damage: int,
     ) -> None:
         """Apply screen shake when player is hit."""
         # Screen shake only when PLAYER gets hit
         # (player's perspective getting jarred)
-        damage_dice = attack.damage_dice
-        base_damage = damage_dice.roll()  # Approximate damage for shake calculation
+        base_damage = damage
 
         # Different shake for different attack types
         if weapon.melee_attack:
