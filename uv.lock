@@ -7,6 +7,7 @@ name = "catley"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "numpy" },
     { name = "pillow" },
     { name = "tcod" },
 ]
@@ -20,6 +21,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "numpy", specifier = ">=2.2.6" },
     { name = "pillow", specifier = ">=11.2.1" },
     { name = "tcod", specifier = ">=18.1.0" },
 ]
