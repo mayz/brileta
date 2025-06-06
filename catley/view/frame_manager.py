@@ -134,7 +134,7 @@ class FrameManager:
         # Panels may render overlays like FPS after game UI.
 
         # 3. MENU RENDERING
-        self.controller.menu_system.render(self.renderer.root_console)
+        self.controller.overlay_system.render(self.renderer.root_console)
 
         # 4. PRESENTATION
         # Copy the final console state to the backbuffer

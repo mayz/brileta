@@ -14,51 +14,112 @@ if TYPE_CHECKING:
     from catley.controller import Controller
 
 
-class MenuSystem:
-    """Manages the menu system for the game."""
+class Overlay(abc.ABC):
+    """Base class for all overlays in the game.
+
+    Overlays are temporary UI elements that appear over the main game view.
+    They handle their own input and rendering, and can be stacked on top of each other.
+    Examples include menus, tooltips, dialogs, and status displays.
+    """
 
     def __init__(self, controller: Controller) -> None:
         self.controller = controller
-        self.active_menus: list[Menu] = []
+        self.is_active = False
 
-    def show_menu(self, menu: Menu) -> None:
-        """Show a menu, adding it to the active menu stack."""
-        menu.show()
-        self.active_menus.append(menu)
+    @abc.abstractmethod
+    def handle_input(self, event: tcod.event.Event) -> bool:
+        """Handle input events. Returns True if event was consumed."""
+        pass
 
-    def hide_current_menu(self) -> None:
-        """Hide the currently active menu."""
-        if self.active_menus:
-            menu = self.active_menus.pop()
-            menu.hide()
+    @abc.abstractmethod
+    def render(self, console: Console) -> None:
+        """Render the overlay to the console."""
+        pass
 
-    def hide_all_menus(self) -> None:
-        """Hide all active menus."""
-        while self.active_menus:
-            self.hide_current_menu()
+    def show(self) -> None:
+        """Show the overlay."""
+        self.is_active = True
+
+    def hide(self) -> None:
+        """Hide the overlay."""
+        self.is_active = False
+
+    def can_stack_with(self, other: Overlay) -> bool:
+        """Return True if this overlay can stack with another overlay.
+
+        Override this method for overlays that are mutually exclusive.
+        Default implementation allows stacking with any overlay.
+        """
+        return True
+
+
+class OverlaySystem:
+    """Manages the overlay system for the game.
+
+    Handles stacking, input priority, and rendering order for all overlays.
+    Overlays are rendered in the order they were added, with the most recent on top.
+    Input is handled in reverse order (topmost overlay gets first chance).
+    """
+
+    def __init__(self, controller: Controller) -> None:
+        self.controller = controller
+        self.active_overlays: list[Overlay] = []
+
+    def show_overlay(self, overlay: Overlay) -> None:
+        """Show an overlay, adding it to the active overlay stack."""
+        overlay.show()
+        self.active_overlays.append(overlay)
+
+    def hide_current_overlay(self) -> None:
+        """Hide the currently active overlay."""
+        if self.active_overlays:
+            overlay = self.active_overlays.pop()
+            overlay.hide()
+
+    def hide_all_overlays(self) -> None:
+        """Hide all active overlays."""
+        while self.active_overlays:
+            self.hide_current_overlay()
 
     def handle_input(self, event: tcod.event.Event) -> bool:
-        """Handle input for the active menu. Returns True if event was consumed."""
-        if self.active_menus:
-            # Handle input for the topmost menu
-            menu = self.active_menus[-1]
-            consumed = menu.handle_input(event)
+        """Handle input for the active overlays. Returns True if event was consumed."""
+        if self.active_overlays:
+            # Handle input for the topmost overlay
+            overlay = self.active_overlays[-1]
+            consumed = overlay.handle_input(event)
 
-            # Remove menu from stack if it was hidden
-            if not menu.is_active and menu in self.active_menus:
-                self.active_menus.remove(menu)
+            # Remove overlay from stack if it was hidden
+            if not overlay.is_active and overlay in self.active_overlays:
+                self.active_overlays.remove(overlay)
 
             return consumed
         return False
 
     def render(self, console: Console) -> None:
-        """Render all active menus."""
-        for menu in self.active_menus:
-            menu.render(console)
+        """Render all active overlays."""
+        for overlay in self.active_overlays:
+            overlay.render(console)
+
+    def has_active_overlays(self) -> bool:
+        """Check if there are any active overlays."""
+        return len(self.active_overlays) > 0
+
+    # Legacy methods for backward compatibility
+    def show_menu(self, menu: Menu) -> None:
+        """Legacy method: Show a menu overlay."""
+        self.show_overlay(menu)
+
+    def hide_current_menu(self) -> None:
+        """Legacy method: Hide the currently active overlay."""
+        self.hide_current_overlay()
+
+    def hide_all_menus(self) -> None:
+        """Legacy method: Hide all active overlays."""
+        self.hide_all_overlays()
 
     def has_active_menus(self) -> bool:
-        """Check if there are any active menus."""
-        return len(self.active_menus) > 0
+        """Legacy method: Check if there are any active overlays."""
+        return self.has_active_overlays()
 
 
 class MenuOption:
@@ -81,8 +142,12 @@ class MenuOption:
         self.color = color if enabled or force_color else colors.GREY
 
 
-class Menu(abc.ABC):
-    """Base class for all menus in the game."""
+class Menu(Overlay):
+    """Base class for all menus in the game.
+
+    Menus are a specific type of overlay that handle structured user choices.
+    They display a list of options that users can select from using keyboard input.
+    """
 
     def __init__(
         self,
@@ -91,12 +156,11 @@ class Menu(abc.ABC):
         width: int = 50,
         max_height: int = 30,
     ) -> None:
+        super().__init__(controller)
         self.title = title
-        self.controller = controller
         self.width = width
         self.max_height = max_height
         self.options: list[MenuOption] = []
-        self.is_active = False
 
     @abc.abstractmethod
     def populate_options(self) -> None:
@@ -109,12 +173,12 @@ class Menu(abc.ABC):
 
     def show(self) -> None:
         """Show the menu."""
-        self.is_active = True
+        super().show()
         self.populate_options()
 
     def hide(self) -> None:
         """Hide the menu."""
-        self.is_active = False
+        super().hide()
         self.options.clear()
 
     def handle_input(self, event: tcod.event.Event) -> bool:

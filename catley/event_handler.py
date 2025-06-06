@@ -50,7 +50,7 @@ class EventHandler:
             self.controller.frame_manager.on_window_resized()
 
         # Try to handle the event with the menu system
-        menu_consumed = self.controller.menu_system.handle_input(event)
+        menu_consumed = self.controller.overlay_system.handle_input(event)
 
         # If no menu handled it, check for normal game actions
         if not menu_consumed:
@@ -63,7 +63,7 @@ class EventHandler:
 
     def handle_event(self, event: tcod.event.Event) -> GameAction | None:
         # Don't process game actions if menus are active
-        if self.controller.menu_system.has_active_menus():
+        if self.controller.overlay_system.has_active_menus():
             return None
 
         match event:

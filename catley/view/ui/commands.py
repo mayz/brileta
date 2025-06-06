@@ -95,7 +95,7 @@ class OpenMenuUICommand(UICommand):
 
     def execute(self) -> None:
         menu = self.menu_class(self.controller)
-        self.controller.menu_system.show_menu(menu)
+        self.controller.overlay_system.show_menu(menu)
 
 
 class OpenPickupMenuUICommand(OpenMenuUICommand):
@@ -111,4 +111,4 @@ class OpenPickupMenuUICommand(OpenMenuUICommand):
             self.player.x, self.player.y
         ):
             menu = PickupMenu(self.controller, (self.player.x, self.player.y))
-            self.controller.menu_system.show_menu(menu)
+            self.controller.overlay_system.show_menu(menu)
