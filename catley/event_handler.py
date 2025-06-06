@@ -46,6 +46,8 @@ class EventHandler:
             self.controller.coordinate_converter = (
                 self.controller.renderer.coordinate_converter
             )
+            # Update panel layouts for new window size
+            self.controller.frame_manager.on_window_resized()
 
         # Try to handle the event with the menu system
         menu_consumed = self.controller.menu_system.handle_input(event)

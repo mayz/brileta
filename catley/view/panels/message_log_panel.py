@@ -23,14 +23,10 @@ class MessageLogPanel(Panel):
     def __init__(
         self,
         message_log: MessageLog,
-        x: int,
-        y: int,
-        width: int,
-        height: int,
         *,
         tile_dimensions: tuple[int, int],
     ) -> None:
-        super().__init__(x, y, width, height)
+        super().__init__()
         self.message_log = message_log
         self.tile_dimensions = tile_dimensions
 
@@ -38,8 +34,9 @@ class MessageLogPanel(Panel):
         self._current_font_size = 0
         self._update_font_for_tile_height(tile_dimensions[1])
 
-        self.panel_width_px = width * self.tile_dimensions[0]
-        self.panel_height_px = height * self.tile_dimensions[1]
+        # Panel pixel dimensions will be calculated when resize() is called
+        self.panel_width_px = 0
+        self.panel_height_px = 0
 
         self._cached_texture: Texture | None = None
         # store the MessageLog.revision used to build _cached_texture so we
@@ -60,6 +57,13 @@ class MessageLogPanel(Panel):
         ascent, descent = self.font.getmetrics()
         self.line_height_px = ascent + descent
         self._current_font_size = font_size
+
+    def resize(self, x1: int, y1: int, x2: int, y2: int) -> None:
+        """Override resize to update pixel dimensions when panel is resized."""
+        super().resize(x1, y1, x2, y2)
+        # Update pixel dimensions based on new size
+        self.panel_width_px = self.width * self.tile_dimensions[0]
+        self.panel_height_px = self.height * self.tile_dimensions[1]
 
     def draw(self, renderer: Renderer) -> None:
         if not self.visible:

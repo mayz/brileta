@@ -15,8 +15,8 @@ if TYPE_CHECKING:
 class FPSPanel(Panel):
     """Simple panel that displays the current frames per second."""
 
-    def __init__(self, clock: Clock, update_interval: float = 0.5, y: int = 0) -> None:
-        super().__init__(x=0, y=y, width=0, height=1)
+    def __init__(self, clock: Clock, update_interval: float = 0.5) -> None:
+        super().__init__()
         self.clock = clock
         self.update_interval = update_interval
         self.last_update = clock.last_time

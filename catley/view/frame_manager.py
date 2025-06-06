@@ -41,52 +41,20 @@ class FrameManager:
 
     def _setup_game_ui(self) -> None:
         """Configure and position panels for the main game interface."""
-        # Layout calculations.
-
-        screen_width_tiles = self.renderer.root_console.width
-        screen_height_tiles = self.renderer.root_console.height
-
-        # Calculate UI panel space requirements
-        message_log_height = 10
-        equipment_height = 4
-        # Reserve space for bottom panels plus margins
-        bottom_ui_height = message_log_height + 1
-
-        # Game world gets dedicated space - not overlapped by bottom UI
-        game_world_y = self.help_height
-        game_world_height = screen_height_tiles - game_world_y - bottom_ui_height
-
-        # Reserve space for the message log at the bottom of the screen
-        # leaving a small one-tile margin so the game world never overlaps.
-        message_log_y = screen_height_tiles - message_log_height - 1
-        equipment_y = screen_height_tiles - equipment_height - 2
-
-        equipment_width = 25  # Approximate width needed for equipment display
-        equipment_x = screen_width_tiles - equipment_width - 2
-
-        # Create and register panels.
+        # Create panels (dimensions will be set via resize() calls below)
         self.fps_panel = FPSPanel(self.controller.clock)
         self.fps_panel.visible = SHOW_FPS
 
-        self.help_text_panel = HelpTextPanel(self.controller, y=0)
+        self.help_text_panel = HelpTextPanel(self.controller)
 
-        self.game_world_panel = GameWorldPanel(
-            self.controller, self.screen_shake, game_world_height=game_world_height
-        )
+        self.game_world_panel = GameWorldPanel(self.controller, self.screen_shake)
         self.message_log_panel = MessageLogPanel(
             message_log=self.controller.message_log,
-            x=1,
-            y=message_log_y,
-            width=30,
-            height=message_log_height,
             tile_dimensions=self.renderer.tile_dimensions,
         )
-        self.equipment_panel = EquipmentPanel(
-            self.controller,
-            x=equipment_x,
-            y=equipment_y,
-        )
-        self.health_panel = HealthPanel(self.controller, y=0)
+        self.equipment_panel = EquipmentPanel(self.controller)
+
+        self.health_panel = HealthPanel(self.controller)
 
         self.panels: list[Panel] = [
             self.help_text_panel,
@@ -96,6 +64,46 @@ class FrameManager:
             self.message_log_panel,
             self.fps_panel,
         ]
+
+        # Set panel boundaries using resize()
+        self._resize_panels()
+
+    def _resize_panels(self) -> None:
+        """Calculate and set panel boundaries based on current screen size."""
+        screen_width_tiles = self.renderer.root_console.width
+        screen_height_tiles = self.renderer.root_console.height
+
+        # Recalculate layout
+        message_log_height = 10
+        equipment_height = 4  # Equipment panel needs 4 lines (2 weapons + 2 hints)
+        bottom_ui_height = message_log_height + 1
+
+        game_world_y = self.help_height
+        game_world_height = screen_height_tiles - game_world_y - bottom_ui_height
+
+        message_log_y = screen_height_tiles - message_log_height - 1
+        equipment_y = screen_height_tiles - equipment_height - 2
+
+        equipment_width = 25
+        equipment_x = screen_width_tiles - equipment_width - 2
+
+        # Resize all panels
+        self.help_text_panel.resize(0, 0, screen_width_tiles, self.help_height)
+        self.game_world_panel.resize(
+            0, game_world_y, screen_width_tiles, game_world_y + game_world_height
+        )
+        self.health_panel.resize(
+            screen_width_tiles - 20, 0, screen_width_tiles, self.help_height
+        )
+        self.equipment_panel.resize(
+            equipment_x, equipment_y, screen_width_tiles, screen_height_tiles
+        )
+        self.message_log_panel.resize(1, message_log_y, 31, screen_height_tiles - 1)
+        self.fps_panel.resize(0, 0, 15, 3)
+
+    def on_window_resized(self) -> None:
+        """Called when the game window is resized to update panel layouts."""
+        self._resize_panels()
 
     def add_panel(self, panel: Panel) -> None:
         """Add a UI panel to be rendered each frame."""

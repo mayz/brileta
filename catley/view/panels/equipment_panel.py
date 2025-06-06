@@ -14,9 +14,8 @@ if TYPE_CHECKING:
 class EquipmentPanel(Panel):
     """Displays the player's equipped weapons and ammo counts."""
 
-    def __init__(self, controller: Controller, x: int, y: int) -> None:
-        # Height is two lines for weapons plus two for hint text (including reload).
-        super().__init__(x=x, y=y, width=0, height=4)
+    def __init__(self, controller: Controller) -> None:
+        super().__init__()
         self.controller = controller
 
     def draw(self, renderer: Renderer) -> None:
