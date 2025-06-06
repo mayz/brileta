@@ -41,9 +41,8 @@ class EventHandler:
 
         # Handle window resize events
         if isinstance(event, tcod.event.WindowResized):
-            # Update coordinate converter when window is resized
+            # Update coordinate conversion when the window size changes
             self.controller.renderer.update_dimensions()
-            # Update coordinate converter reference
             self.controller.coordinate_converter = (
                 self.controller.renderer.coordinate_converter
             )

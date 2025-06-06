@@ -34,11 +34,9 @@ class MessageLogPanel(Panel):
         self.message_log = message_log
         self.tile_dimensions = tile_dimensions
 
-        self.font = ImageFont.truetype(
-            str(config.MESSAGE_LOG_FONT_PATH), config.MESSAGE_LOG_FONT_SIZE
-        )
-        ascent, descent = self.font.getmetrics()
-        self.line_height_px = ascent + descent
+        self.base_tile_height = tile_dimensions[1]
+        self._current_font_size = 0
+        self._update_font_for_tile_height(tile_dimensions[1])
 
         self.panel_width_px = width * self.tile_dimensions[0]
         self.panel_height_px = height * self.tile_dimensions[1]
@@ -50,6 +48,18 @@ class MessageLogPanel(Panel):
         # Track the texture dimensions to detect when we need to regenerate
         self._cached_texture_width = 0
         self._cached_texture_height = 0
+
+    def _update_font_for_tile_height(self, tile_height: int) -> None:
+        """Set font and line metrics for the given tile height."""
+        scale = tile_height / self.base_tile_height
+        font_size = max(8, round(config.MESSAGE_LOG_FONT_SIZE * scale))
+        if font_size == self._current_font_size:
+            return
+
+        self.font = ImageFont.truetype(str(config.MESSAGE_LOG_FONT_PATH), font_size)
+        ascent, descent = self.font.getmetrics()
+        self.line_height_px = ascent + descent
+        self._current_font_size = font_size
 
     def draw(self, renderer: Renderer) -> None:
         if not self.visible:
@@ -73,6 +83,7 @@ class MessageLogPanel(Panel):
 
         # Update cached tile dimensions and recalculate pixel dimensions
         self.tile_dimensions = current_tile_dimensions
+        self._update_font_for_tile_height(self.tile_dimensions[1])
         self.panel_width_px = new_panel_width_px
         self.panel_height_px = new_panel_height_px
         self._cached_texture_width = new_panel_width_px
