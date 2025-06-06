@@ -3,11 +3,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from catley import colors
-from catley.ui.panels.panel import Panel
+from catley.view.panels.panel import Panel
 
 if TYPE_CHECKING:
     from catley.controller import Controller
-    from catley.render.renderer import Renderer
+    from catley.view.render.renderer import Renderer
 
 
 class HelpTextPanel(Panel):

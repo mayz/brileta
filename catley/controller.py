@@ -9,12 +9,12 @@ from .game.actions import GameAction
 from .game.actors import Character
 from .modes.base import Mode
 from .modes.targeting import TargetingMode
-from .render.frame_manager import FrameManager
-from .render.renderer import Renderer
 from .turn_manager import TurnManager
-from .ui.menu_core import MenuSystem
 from .util.clock import Clock
 from .util.message_log import MessageLog
+from .view.frame_manager import FrameManager
+from .view.render.renderer import Renderer
+from .view.ui.menu_core import MenuSystem
 from .world.game_state import GameWorld
 
 

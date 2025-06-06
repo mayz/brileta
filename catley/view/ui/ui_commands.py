@@ -29,9 +29,9 @@ import tcod.console
 import tcod.context
 
 from catley.game.actors import Actor
-from catley.ui.help_menu import HelpMenu
-from catley.ui.inventory_menu import InventoryMenu
-from catley.ui.pickup_menu import PickupMenu
+from catley.view.ui.help_menu import HelpMenu
+from catley.view.ui.inventory_menu import InventoryMenu
+from catley.view.ui.pickup_menu import PickupMenu
 
 if TYPE_CHECKING:
     from catley.controller import Controller

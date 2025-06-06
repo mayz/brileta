@@ -1,6 +1,6 @@
 import abc
 
-from catley.render.renderer import Renderer
+from catley.view.render.renderer import Renderer
 
 
 class Panel(abc.ABC):

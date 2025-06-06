@@ -6,20 +6,21 @@ from catley.config import (
     HELP_HEIGHT,
     SHOW_FPS,
 )
-from catley.render.effects import EffectContext
-from catley.render.screen_shake import ScreenShake
-from catley.ui.cursor_manager import CursorManager
-from catley.ui.panels.equipment_panel import EquipmentPanel
-from catley.ui.panels.fps_panel import FPSPanel
-from catley.ui.panels.game_world_panel import GameWorldPanel
-from catley.ui.panels.health_panel import HealthPanel
-from catley.ui.panels.help_text_panel import HelpTextPanel
-from catley.ui.panels.message_log_panel import MessageLogPanel
-from catley.ui.panels.panel import Panel
+
+from .panels.equipment_panel import EquipmentPanel
+from .panels.fps_panel import FPSPanel
+from .panels.game_world_panel import GameWorldPanel
+from .panels.health_panel import HealthPanel
+from .panels.help_text_panel import HelpTextPanel
+from .panels.message_log_panel import MessageLogPanel
+from .panels.panel import Panel
+from .render.effects import EffectContext
+from .render.renderer import Renderer
+from .render.screen_shake import ScreenShake
+from .ui.cursor_manager import CursorManager
 
 if TYPE_CHECKING:
     from catley.controller import Controller
-    from catley.render.renderer import Renderer
 
 
 class FrameManager:

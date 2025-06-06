@@ -7,8 +7,8 @@ from catley.controller import Controller
 from catley.game.actions import AreaEffectAction
 from catley.game.actors import Actor, Character
 from catley.game.items.item_types import GRENADE_TYPE
-from catley.render.frame_manager import FrameManager
-from catley.render.renderer import Renderer
+from catley.view.frame_manager import FrameManager
+from catley.view.render.renderer import Renderer
 from catley.world.game_state import GameWorld
 from catley.world.map import GameMap
 

@@ -5,8 +5,8 @@ import tcod.sdl.render
 import tcod.sdl.video
 
 from catley import colors
-from catley.ui.panels.message_log_panel import MessageLogPanel
 from catley.util.message_log import MessageLog
+from catley.view.panels.message_log_panel import MessageLogPanel
 
 
 def test_message_log_panel_ttf_rendering_visible() -> None:
