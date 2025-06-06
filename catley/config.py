@@ -138,7 +138,7 @@ ASSETS_BASE_DIR = PROJECT_ROOT_PATH / "assets"
 
 BASE_MOUSE_CURSOR_PATH = ASSETS_BASE_DIR / "cursors"
 
-MESSAGE_LOG_FONT_PATH = ASSETS_BASE_DIR / "fonts" / "SourceSans3-Regular.ttf"
+MESSAGE_LOG_FONT_PATH = ASSETS_BASE_DIR / "fonts" / "SourceSans3-Medium.ttf"
 MESSAGE_LOG_FONT_SIZE = 20
 
 # Tileset
