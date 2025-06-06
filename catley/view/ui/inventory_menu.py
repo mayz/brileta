@@ -143,8 +143,9 @@ class InventoryMenu(Menu):
                     f"You unequip {item.name}.", colors.WHITE
                 )
             else:
-                # Equip to primary slot (0)
-                old_weapon = player.inventory.equip_to_slot(item, 0)
+                # Equip to currently active slot
+                active_slot = player.inventory.active_weapon_slot
+                old_weapon = player.inventory.equip_to_slot(item, active_slot)
                 if old_weapon:
                     self.controller.message_log.add_message(
                         f"You unequip {old_weapon.name}.", colors.GREY
