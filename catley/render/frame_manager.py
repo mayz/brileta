@@ -42,12 +42,26 @@ class FrameManager:
         """Configure and position panels for the main game interface."""
         # Layout calculations.
 
+        screen_width_tiles = self.renderer.root_console.width
         screen_height_tiles = self.renderer.root_console.height
-        message_log_height = 7
-        message_log_y = screen_height_tiles - message_log_height - 5  # y=39
 
+        # Calculate UI panel space requirements
+        message_log_height = 7
         equipment_height = 3
-        equipment_y = message_log_y - equipment_height - 1
+        # Reserve space for bottom panels plus margins
+        bottom_ui_height = message_log_height + 1
+
+        # Game world gets dedicated space - not overlapped by bottom UI
+        game_world_y = self.help_height
+        game_world_height = screen_height_tiles - game_world_y - bottom_ui_height
+
+        # Position bottom panels conservatively to ensure they fit
+        # Use much larger margins to account for screen size differences
+        message_log_y = screen_height_tiles - message_log_height - 5
+        equipment_y = screen_height_tiles - equipment_height - 2
+
+        equipment_width = 25  # Approximate width needed for equipment display
+        equipment_x = screen_width_tiles - equipment_width - 2
 
         # Create and register panels.
         self.fps_panel = FPSPanel(self.controller.clock)
@@ -55,7 +69,9 @@ class FrameManager:
 
         self.help_text_panel = HelpTextPanel(self.controller, y=0)
 
-        self.game_world_panel = GameWorldPanel(self.controller, self.screen_shake)
+        self.game_world_panel = GameWorldPanel(
+            self.controller, self.screen_shake, game_world_height=game_world_height
+        )
         self.message_log_panel = MessageLogPanel(
             message_log=self.controller.message_log,
             x=1,
@@ -66,7 +82,7 @@ class FrameManager:
         )
         self.equipment_panel = EquipmentPanel(
             self.controller,
-            x=1,
+            x=equipment_x,
             y=equipment_y,
         )
         self.health_panel = HealthPanel(self.controller, y=0)

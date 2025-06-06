@@ -30,16 +30,29 @@ if TYPE_CHECKING:
 class GameWorldPanel(Panel):
     """Panel responsible for rendering the game world (map, actors, effects)."""
 
-    def __init__(self, controller: Controller, screen_shake: ScreenShake) -> None:
+    def __init__(
+        self,
+        controller: Controller,
+        screen_shake: ScreenShake,
+        game_world_height: int | None = None,
+    ) -> None:
+        # Use provided height or default to map height
+        panel_height = (
+            game_world_height
+            if game_world_height is not None
+            else controller.gw.game_map.height
+        )
+
         super().__init__(
             x=0,
             y=HELP_HEIGHT,
             width=controller.gw.game_map.width,
-            height=controller.gw.game_map.height,
+            height=panel_height,
         )
         self.controller = controller
         self.screen_shake = screen_shake
 
+        # Game map console should match the full map size for rendering
         self.game_map_console = Console(
             controller.gw.game_map.width, controller.gw.game_map.height, order="F"
         )
@@ -77,11 +90,16 @@ class GameWorldPanel(Panel):
         delta_time = self.controller.clock.last_delta_time
         self._render_game_world(delta_time)
         shake_x, shake_y = self.screen_shake.update(delta_time)
+
+        # Only blit the portion of the game map that fits in our panel's height
+        blit_height = min(self.game_map_console.height, self.height)
         renderer.blit_console(
             source=self.game_map_console,
             dest=renderer.root_console,
             dest_x=self.x + shake_x,
             dest_y=self.y + shake_y,
+            width=self.game_map_console.width,
+            height=blit_height,
         )
 
     # ------------------------------------------------------------------
