@@ -1,3 +1,15 @@
+"""Game Mode System - Behavioral overlays that change how the game works.
+
+Modes temporarily alter game behavior while keeping the core game running:
+- Targeting (select enemies/locations)
+- Pickpocketing
+- Inventory management
+
+Use modes for behavioral changes. Use overlays for temporary UI.
+
+Modes get first input priority and can render world effects.
+"""
+
 from __future__ import annotations
 
 import abc
@@ -13,7 +25,14 @@ if TYPE_CHECKING:
 
 
 class Mode(abc.ABC):
-    """Abstract base for all game modes (e.g., targeting, inventory, etc.)."""
+    """Base class for game behavioral modes.
+
+    Modes change how the game interprets input and add specialized
+    visual effects while keeping the core game running.
+
+    Input priority: Mode -> UI Commands -> Game Actions
+    Lifecycle: enter() -> handle input/render -> exit()
+    """
 
     def __init__(self, controller: Controller) -> None:
         self.controller: Controller = controller
@@ -21,36 +40,32 @@ class Mode(abc.ABC):
 
     @abc.abstractmethod
     def enter(self) -> None:
-        """Called when mode is activated."""
+        """Initialize mode. Always call super().enter()."""
         self.active = True
 
     @abc.abstractmethod
     def exit(self) -> None:
-        """Called when mode is deactivated."""
+        """Clean up mode. Always call super().exit()."""
         self.active = False
 
     @abc.abstractmethod
     def handle_input(self, event: tcod.event.Event) -> bool:
-        """Handle input for this mode. Return True if event was consumed."""
+        """Handle input with priority over game. Return True if consumed."""
         pass
 
     @abc.abstractmethod
     def render_ui(self, console: Console) -> None:
-        """Render mode-specific UI overlays (text, menus, etc.)"""
+        """Render mode instructions and status over the game world."""
         pass
 
     def render_world(self) -> None:  # noqa: B027
-        """Render mode-specific effects in world space (tile highlights, effects, etc.).
-
-        Default implementation does nothing - modes only override if they need
-        world rendering.
-        """
+        """Render world effects like highlights and targeting indicators."""
         pass
 
     def update(self) -> None:  # noqa: B027
-        """Called each frame for mode-specific updates"""
+        """Per-frame updates for animations and state validation."""
         pass
 
     def on_actor_death(self, actor: Character) -> None:  # noqa: B027
-        """Called when an actor dies. Override in subclasses that care."""
+        """Handle actor death events. Override if mode tracks actors."""
         pass
