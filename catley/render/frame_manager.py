@@ -47,7 +47,7 @@ class FrameManager:
 
         # Calculate UI panel space requirements
         message_log_height = 7
-        equipment_height = 3
+        equipment_height = 4
         # Reserve space for bottom panels plus margins
         bottom_ui_height = message_log_height + 1
 

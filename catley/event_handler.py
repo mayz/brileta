@@ -39,6 +39,15 @@ class EventHandler:
             position = event.position
             self.cursor_manager.update_mouse_position(position[0], position[1])
 
+        # Handle window resize events
+        if isinstance(event, tcod.event.WindowResized):
+            # Update coordinate converter when window is resized
+            self.controller.renderer.update_dimensions()
+            # Update coordinate converter reference
+            self.controller.coordinate_converter = (
+                self.controller.renderer.coordinate_converter
+            )
+
         # Try to handle the event with the menu system
         menu_consumed = self.controller.menu_system.handle_input(event)
 

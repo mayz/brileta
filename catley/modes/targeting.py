@@ -116,10 +116,13 @@ class TargetingMode(Mode):
         if not self.active:
             return
 
-        # Render "TARGETING" status text
+        # Render "TARGETING" status text in bottom margin area
+        # Position it in an area that doesn't block game map or other panels
         status_text = "TARGETING"
-        status_y = console.height - 6
-        console.print(1, status_y, status_text, fg=colors.RED)  # type: ignore[no-matching-overload]
+        # Place it in the bottom area, but above equipment/message panels
+        status_y = console.height - 10  # Above the UI panels
+        status_x = console.width // 2 - len(status_text) // 2  # Centered horizontally
+        console.print(status_x, status_y, status_text, fg=colors.RED)  # type: ignore[no-matching-overload]
 
     def render_world(self) -> None:
         """Render targeting highlights in world space"""
