@@ -2,14 +2,19 @@ import random
 
 
 class ScreenShake:
-    def __init__(self):
+    def __init__(self) -> None:
+        """Initialize screen shake state."""
         self.intensity = 0.0
         self.duration = 0.0
         self.time_remaining = 0.0
 
-    def trigger(self, intensity: float, duration: float):
-        """Trigger screen shake effect. Intensity is probability (0.0-1.0),
-        duration in seconds."""
+    def trigger(self, intensity: float, duration: float) -> None:
+        """Trigger a screen shake.
+
+        Args:
+            intensity: Probability of a shake offset occurring (0.0-1.0).
+            duration: Length of the shake in seconds.
+        """
         # Use the strongest current shake if multiple shakes overlap
         self.intensity = max(self.intensity, intensity)
         self.duration = max(self.duration, duration)

@@ -246,8 +246,13 @@ class Menu(abc.ABC):
         # Blit to main console
         menu_console.blit(console, menu_x, menu_y)
 
-    def render_title(self, menu_console, title_y, actual_width):
-        """Render the menu title. Override in subclasses for custom behavior."""
+    def render_title(
+        self,
+        menu_console: Console,
+        title_y: int,
+        actual_width: int,
+    ) -> None:
+        """Render the menu title."""
         # Default implementation - simple centered title
         menu_console.print(
             x=1,
@@ -255,6 +260,6 @@ class Menu(abc.ABC):
             text=self.title,
             width=actual_width - 2,
             height=1,
-            fg=colors.YELLOW,
+            fg=cast("tuple[int, int, int]", colors.YELLOW),
             alignment=tcod.constants.CENTER,
         )

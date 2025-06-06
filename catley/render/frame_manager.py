@@ -25,7 +25,8 @@ if TYPE_CHECKING:
 class FrameManager:
     """Coordinates panels and manages the frame lifecycle, including global effects."""
 
-    def __init__(self, controller: Controller):
+    def __init__(self, controller: Controller) -> None:
+        """Initialize the frame manager and supporting systems."""
         self.controller = controller
         self.renderer: Renderer = controller.renderer
         self.cursor_manager = CursorManager(self.renderer)

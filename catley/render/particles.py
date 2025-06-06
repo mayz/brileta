@@ -45,7 +45,7 @@ class SubParticle:
         color: colors.Color = (255, 0, 0),
         bg_color: colors.Color | None = None,
         bg_blend_mode: str = "tint",  # "tint", "overlay", "replace"
-    ):
+    ) -> None:
         # Position and movement (in sub-tile coordinates)
         self.sub_x = sub_x  # Position in sub-tile coordinates
         self.sub_y = sub_y
@@ -122,7 +122,7 @@ class SubTileParticleSystem:
     means each tile is divided into a 3x3 grid for particle positioning.
     """
 
-    def __init__(self, map_width: int, map_height: int, subdivision: int = 3):
+    def __init__(self, map_width: int, map_height: int, subdivision: int = 3) -> None:
         """
         Initialize the particle system.
 
@@ -508,7 +508,7 @@ class SubTileParticleSystem:
     # These methods handle the fundamental particle system operations and
     # should not be changed.
 
-    def update(self, delta_time: float):
+    def update(self, delta_time: float) -> None:
         """
         Update all particles and remove dead/out-of-bounds ones.
 

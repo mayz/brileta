@@ -39,7 +39,8 @@ class ItemType:
 class Item:
     """An actual item instance in the world/inventory, holding component objects."""
 
-    def __init__(self, item_type: ItemType):
+    def __init__(self, item_type: ItemType) -> None:
+        """Create a new item instance from a type definition."""
         self.item_type = item_type
 
         self.melee_attack: MeleeAttack | None = None

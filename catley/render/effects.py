@@ -381,7 +381,7 @@ class EffectLibrary:
         effect_library.trigger("blood_splatter", context)
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize the effect library with standard game effects."""
         # Dictionary mapping effect names to effect instances
         # Using instances rather than classes allows for effect configuration
