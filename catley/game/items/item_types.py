@@ -1,10 +1,14 @@
-# catley/game/item_types.py
 from catley.game.enums import ItemSize
 from catley.game.items.capabilities import (
     AmmoSpec,
     AreaEffectSpec,
     MeleeAttackSpec,
     RangedAttackSpec,
+)
+from catley.game.items.properties import (
+    StatusProperty,
+    TacticalProperty,
+    WeaponProperty,
 )
 
 from .item_core import ItemType
@@ -16,28 +20,28 @@ FISTS_TYPE = ItemType(
     name="Fists",
     description="Your bare hands. Better than nothing, but not by much.",
     size=ItemSize.TINY,
-    melee_attack=MeleeAttackSpec("d4", {"unarmed"}),
+    melee_attack=MeleeAttackSpec("d4", {WeaponProperty.UNARMED}),
 )
 
 SLEDGEHAMMER_TYPE = ItemType(
     name="Sledgehammer",
     description="Heavy two-handed weapon",
     size=ItemSize.BIG,
-    melee_attack=MeleeAttackSpec("d8", {"two_handed"}),
+    melee_attack=MeleeAttackSpec("d8", {WeaponProperty.TWO_HANDED}),
 )
 
 COMBAT_KNIFE_TYPE = ItemType(
     name="Combat Knife",
     description="Sharp and deadly, can be thrown",
     size=ItemSize.NORMAL,
-    melee_attack=MeleeAttackSpec("d6"),
+    melee_attack=MeleeAttackSpec("d6", properties={WeaponProperty.PREFERRED}),
     ranged_attack=RangedAttackSpec(
         damage_die="d4",
         ammo_type="thrown",
         max_ammo=1,
         optimal_range=4,
         max_range=8,
-        properties={"thrown"},
+        properties={WeaponProperty.THROWN},
     ),
 )
 
@@ -51,8 +55,10 @@ PISTOL_TYPE = ItemType(
         max_ammo=6,
         optimal_range=6,
         max_range=12,
+        properties={WeaponProperty.PREFERRED},
     ),
-    melee_attack=MeleeAttackSpec("d4", {"improvised"}),  # Pistol-whipping
+    # Pistol-whipping.
+    melee_attack=MeleeAttackSpec("d4", properties={WeaponProperty.IMPROVISED}),
 )
 
 HUNTING_RIFLE_TYPE = ItemType(
@@ -65,8 +71,11 @@ HUNTING_RIFLE_TYPE = ItemType(
         max_ammo=5,
         optimal_range=12,
         max_range=15,
+        properties={WeaponProperty.PREFERRED},
     ),
-    melee_attack=MeleeAttackSpec("d6", {"two_handed", "awkward"}),
+    melee_attack=MeleeAttackSpec(
+        "d6", {WeaponProperty.TWO_HANDED, WeaponProperty.AWKWARD}
+    ),
 )
 
 SNIPER_RIFLE_TYPE = ItemType(
@@ -79,7 +88,14 @@ SNIPER_RIFLE_TYPE = ItemType(
         max_ammo=5,
         optimal_range=20,
         max_range=30,
-        properties={"scoped", "armor_piercing"},
+        properties={
+            WeaponProperty.PREFERRED,
+            WeaponProperty.SCOPED,
+            WeaponProperty.ARMOR_PIERCING,
+        },
+    ),
+    melee_attack=MeleeAttackSpec(
+        "d6", {WeaponProperty.TWO_HANDED, WeaponProperty.AWKWARD}
     ),
 )
 
@@ -93,13 +109,13 @@ SUBMACHINE_GUN_TYPE = ItemType(
         max_ammo=20,
         optimal_range=8,
         max_range=15,
-        properties={"automatic"},
+        properties={WeaponProperty.PREFERRED, WeaponProperty.AUTOMATIC},
     ),
     area_effect=AreaEffectSpec(
         damage_die="d6",
         area_type="cone",  # Spray pattern
         size=4,
-        properties={"automatic", "spray"},
+        properties={WeaponProperty.AUTOMATIC, TacticalProperty.SPRAY},
         damage_falloff=True,
         requires_line_of_sight=True,
         penetrates_walls=False,
@@ -117,7 +133,7 @@ POISON_DART_GUN_TYPE = ItemType(
         max_ammo=3,
         optimal_range=6,
         max_range=12,
-        properties={"poison", "silent"},
+        properties={StatusProperty.POISONING, WeaponProperty.SILENT},
     ),
 )
 
@@ -129,7 +145,7 @@ GRENADE_TYPE = ItemType(
         damage_die="d6",
         area_type="circle",
         size=3,
-        properties={"explosive", "fire"},  # Multiple effects as properties
+        properties={TacticalProperty.EXPLOSIVE, TacticalProperty.FIRE},
         damage_falloff=True,
         requires_line_of_sight=False,
         penetrates_walls=False,
@@ -145,7 +161,7 @@ FLAMETHROWER_TYPE = ItemType(
         damage_die="d8",
         area_type="line",
         size=5,
-        properties={"fire", "continuous"},  # Fire handled as property
+        properties={TacticalProperty.FIRE, WeaponProperty.CONTINUOUS},
         damage_falloff=True,
         requires_line_of_sight=True,
         penetrates_walls=False,

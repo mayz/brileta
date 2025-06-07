@@ -4,6 +4,7 @@ import numpy as np
 
 from catley.game import range_system
 from catley.game.items.item_core import Item
+from catley.game.items.properties import ItemProperty, WeaponProperty
 from catley.world.map import GameMap
 
 
@@ -11,7 +12,7 @@ from catley.world.map import GameMap
 class DummyRangedAttack:
     optimal_range: int
     max_range: int
-    properties: set[str] | None = None
+    properties: set[ItemProperty] | None = None
 
 
 @dataclass
@@ -37,7 +38,9 @@ def test_get_range_category():
 
 
 def test_get_range_modifier_scoped():
-    attack = DummyRangedAttack(optimal_range=3, max_range=5, properties={"scoped"})
+    attack = DummyRangedAttack(
+        optimal_range=3, max_range=5, properties={WeaponProperty.SCOPED}
+    )
     item = DummyItem(ranged_attack=attack)
     mod = range_system.get_range_modifier(item, "far")
     assert mod == {"has_advantage": True}

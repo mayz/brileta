@@ -1,6 +1,7 @@
 import tcod
 
 from catley.game.items.item_core import Item
+from catley.game.items.item_types import WeaponProperty
 from catley.world.map import GameMap
 
 
@@ -33,7 +34,7 @@ def get_range_modifier(weapon: Item, range_category: str) -> dict | None:
     }
 
     # Special weapon properties can modify this
-    if "scoped" in ranged_attack.properties:
+    if WeaponProperty.SCOPED in ranged_attack.properties:
         # Scoped weapons get advantage at far range instead of disadvantage
         modifiers["far"] = {"has_advantage": True}
 

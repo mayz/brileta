@@ -32,6 +32,7 @@ from catley.game.ai import DispositionBasedAI
 from catley.game.items.capabilities import AreaEffect, Attack, RangedAttack
 from catley.game.items.item_core import Item
 from catley.game.items.item_types import FISTS_TYPE
+from catley.game.items.properties import TacticalProperty, WeaponProperty
 from catley.util import dice
 
 if TYPE_CHECKING:
@@ -378,7 +379,7 @@ class AttackAction(GameAction):
         if (
             weapon
             and weapon.melee_attack
-            and "awkward" in weapon.melee_attack.properties
+            and WeaponProperty.AWKWARD in weapon.melee_attack.properties
         ):
             self.controller.message_log.add_message(
                 f"{self.attacker.name} is off balance from the awkward swing "
@@ -690,7 +691,7 @@ class AreaEffectAction(GameAction):
     def _consume_ammo(self, ranged_attack: RangedAttack) -> None:
         """Consume ammo for weapons with a ranged attack."""
         ammo_used = 1
-        if "automatic" in ranged_attack.properties:
+        if WeaponProperty.AUTOMATIC in ranged_attack.properties:
             ammo_used = min(3, ranged_attack.current_ammo)
         ranged_attack.current_ammo -= ammo_used
 
@@ -712,11 +713,11 @@ class AreaEffectAction(GameAction):
 
     def _trigger_visual_effect(self, effect: AreaEffect) -> None:
         """Emit particle effects based on the effect properties."""
-        if "explosive" in effect.properties:
+        if TacticalProperty.EXPLOSIVE in effect.properties:
             self.frame_manager.create_effect(
                 "explosion", x=self.target_x, y=self.target_y
             )
-        elif "smoke" in effect.properties:
+        elif TacticalProperty.SMOKE in effect.properties:
             self.frame_manager.create_effect(
                 "smoke_cloud", x=self.target_x, y=self.target_y
             )

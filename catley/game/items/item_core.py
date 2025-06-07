@@ -14,6 +14,9 @@ from catley.game.items.capabilities import (
     RangedAttack,
     RangedAttackSpec,
 )
+from catley.game.items.properties import StatusProperty, WeaponProperty
+
+AttackHandler = MeleeAttack | RangedAttack | AreaEffect
 
 
 @dataclass
@@ -67,6 +70,135 @@ class Item:
         if item_type.ammo:
             spec = cast("AmmoSpec", item_type.ammo)
             self.ammo = Ammo(spec=spec)
+
+    def get_preferred_attack_mode(self, distance: int) -> AttackHandler | None:
+        """
+        Get the attack mode this item prefers at the given distance.
+
+        Considers item design intent and situational factors to determine
+        which attack mode (melee, ranged, area) is most appropriate.
+
+        Args:
+            distance: Distance to target in tiles
+
+        Returns:
+            The preferred attack handler, or None if no attacks available
+        """
+        available_attacks = []
+
+        # Collect available attacks for this distance
+        if self.melee_attack and distance == 1:
+            available_attacks.append(self.melee_attack)
+        if self.ranged_attack and distance > 1:
+            available_attacks.append(self.ranged_attack)
+        if self.area_effect:  # Area effects work at various ranges
+            available_attacks.append(self.area_effect)
+
+        if not available_attacks:
+            return None
+
+        # First priority: attacks marked as PREFERRED
+        preferred_attacks = [
+            attack
+            for attack in available_attacks
+            if WeaponProperty.PREFERRED in attack.properties
+        ]
+        if preferred_attacks:
+            return preferred_attacks[0]
+
+        # Second priority: non-improvised attacks
+        designed_attacks = [
+            attack
+            for attack in available_attacks
+            if WeaponProperty.IMPROVISED not in attack.properties
+        ]
+        if designed_attacks:
+            return designed_attacks[0]
+
+        # Fall back to any available attack
+        return available_attacks[0]
+
+    def is_improvised_weapon(self) -> bool:
+        """
+        Check if this item is being used as an improvised weapon.
+
+        An item is considered improvised if any of its attack capabilities
+        are marked with the IMPROVISED property.
+
+        Returns:
+            True if any attack mode is improvised
+        """
+        attack_handlers = [
+            handler
+            for handler in [self.melee_attack, self.ranged_attack, self.area_effect]
+            if handler is not None
+        ]
+
+        return any(
+            WeaponProperty.IMPROVISED in handler.properties
+            for handler in attack_handlers
+        )
+
+    def is_designed_weapon(self) -> bool:
+        """
+        Check if this item is a purpose-built weapon.
+
+        An item is considered a designed weapon if it has at least one
+        attack capability that is NOT marked as improvised.
+
+        Returns:
+            True if any attack mode is purpose-built
+        """
+        attack_handlers = [
+            handler
+            for handler in [self.melee_attack, self.ranged_attack, self.area_effect]
+            if handler is not None
+        ]
+
+        return any(
+            WeaponProperty.IMPROVISED not in handler.properties
+            for handler in attack_handlers
+        )
+
+    def get_weapon_properties(self) -> set[WeaponProperty]:
+        """
+        Get all weapon properties from all attack modes.
+
+        Returns:
+            Set of all WeaponProperty enums found across all attack modes
+        """
+        all_properties = set()
+
+        for attack_handler in [self.melee_attack, self.ranged_attack, self.area_effect]:
+            if attack_handler:
+                weapon_props = {
+                    prop
+                    for prop in attack_handler.properties
+                    if isinstance(prop, WeaponProperty)
+                }
+                all_properties.update(weapon_props)
+
+        return all_properties
+
+    def get_status_effects(self) -> set[StatusProperty]:
+        """
+        Get all status effect properties from all attack modes.
+
+        Returns:
+            Set of all StatusProperty enums found across all attack modes
+        """
+        all_properties = set()
+
+        for attack_handler in [self.melee_attack, self.ranged_attack, self.area_effect]:
+            if attack_handler:
+                status_props = {
+                    prop
+                    for prop in attack_handler.properties
+                    if isinstance(prop, StatusProperty)
+                }
+                all_properties.update(status_props)
+
+        return all_properties
 
     # Convenience properties
     @property
