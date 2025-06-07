@@ -156,6 +156,8 @@ class GameMap:
 
         # After tunneling, place doors at room entrances.
         self._place_doors_at_room_entrances(rooms)
+        for room in rooms:
+            self._place_cover_in_room(room)
 
         # Invalidate caches once after all carving and door placement is complete.
         self.invalidate_property_caches()
@@ -228,3 +230,11 @@ class GameMap:
                     and self.tiles[x - 1, y] == tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[attr-defined]
                 ):
                     self._place_door(x, y)
+
+    def _place_cover_in_room(self, room: Rect) -> None:
+        """Randomly place a boulder providing cover inside the room."""
+        if random.random() < 0.4:
+            x = random.randint(room.x1 + 1, room.x2 - 2)
+            y = random.randint(room.y1 + 1, room.y2 - 2)
+            if self.tiles[x, y] == tile_types.TILE_TYPE_ID_FLOOR:  # type: ignore[attr-defined]
+                self.tiles[x, y] = tile_types.TILE_TYPE_ID_BOULDER  # type: ignore[attr-defined]
