@@ -84,13 +84,12 @@ class MoveAction(GameAction):
             # Automatically open doors when bumped into.
             from catley.game.actions.environment import OpenDoorAction
 
-            open_door_action = OpenDoorAction(
+            OpenDoorAction(
                 self.controller,
                 self.actor,
                 self.newx,
                 self.newy,
-            )
-            _ = open_door_action.execute()
+            ).execute()
 
         if not self.game_map.walkable[self.newx, self.newy]:
             return None
@@ -100,13 +99,12 @@ class MoveAction(GameAction):
             if actor.blocks_movement and actor.x == self.newx and actor.y == self.newy:
                 if isinstance(actor, Character) and actor.health.is_alive():
                     weapon = self._select_ram_weapon()
-                    attack_action = AttackAction(
+                    AttackAction(
                         controller=self.controller,
                         attacker=self.actor,
                         defender=actor,
                         weapon=weapon,
-                    )
-                    _ = attack_action.execute()
+                    ).execute()
                 return None  # Cannot move into blocking actor
 
         self.actor.move(self.dx, self.dy)
