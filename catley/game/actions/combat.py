@@ -18,8 +18,10 @@ from catley.game.items.capabilities import Attack
 from catley.game.items.item_core import Item
 from catley.game.items.item_types import FISTS_TYPE
 from catley.game.items.properties import WeaponProperty
+from catley.game.resolution import combat_arbiter
 from catley.game.resolution.base import ResolutionResult
 from catley.game.resolution.d20_system import D20Resolver
+from catley.game.resolution.outcomes import CombatOutcome
 
 if TYPE_CHECKING:
     from catley.controller import Controller
@@ -54,10 +56,13 @@ class AttackAction(GameAction):
         # 3. Perform the attack roll and immediate effects
         attack_result = self._execute_attack_roll(attack, weapon, range_modifiers)
 
-        # 4. Resolve the outcome based on hit/miss
-        damage = self._resolve_attack_outcome(attack_result, attack, weapon)
+        # 4. Determine combat consequences based on the resolution result
+        outcome = combat_arbiter.determine_outcome(
+            attack_result, self.attacker, self.defender, weapon
+        )
 
-        # 5. Handle post-attack effects (screen shake, messages, AI)
+        # 5. Apply the outcome and post-attack effects
+        damage = self._apply_combat_outcome(attack_result, outcome, attack, weapon)
         self._handle_post_attack_effects(attack_result, attack, weapon, damage)
 
     def _determine_attack_method(self) -> tuple[Attack | None, Item]:
@@ -201,61 +206,41 @@ class AttackAction(GameAction):
             direction_y=direction_y,
         )
 
-    def _resolve_attack_outcome(
-        self, attack_result: ResolutionResult, attack: Attack, weapon: Item
+    def _apply_combat_outcome(
+        self,
+        attack_result: ResolutionResult,
+        outcome: CombatOutcome,
+        attack: Attack,
+        weapon: Item,
     ) -> int:
-        """Resolve the attack outcome and return the damage dealt."""
+        """Apply the combat outcome and return the damage dealt."""
         if attack_result.success:
-            return self._handle_successful_hit(attack_result, attack, weapon)
+            damage = outcome.damage_dealt
+            if outcome.armor_damage > 0:
+                self.defender.health.ap = max(
+                    0, self.defender.health.ap - outcome.armor_damage
+                )
+            if outcome.injury_inflicted is not None:
+                self.defender.inventory.add_to_inventory(outcome.injury_inflicted)
+            if damage > 0:
+                self.defender.take_damage(damage)
+                self.frame_manager.create_effect(
+                    "blood_splatter",
+                    x=self.defender.x,
+                    y=self.defender.y,
+                    intensity=damage / 20.0,
+                )
+                self._log_hit_message(attack_result, weapon, damage)
+
+                if not self.defender.health.is_alive():
+                    self.controller.message_log.add_message(
+                        f"{self.defender.name} has been killed!", colors.RED
+                    )
+                    self.controller.notify_actor_death(self.defender)
+            return damage
+
         self._handle_attack_miss(attack_result, attack, weapon)
         return 0
-
-    def _handle_successful_hit(
-        self, attack_result: ResolutionResult, attack: Attack, weapon: Item
-    ) -> int:
-        """Handle a successful attack hit - damage, crits, particles, messages."""
-        # Hit - roll damage
-        damage_dice = attack.damage_dice
-        damage = damage_dice.roll()
-
-        if attack_result.is_critical_success:
-            # "Crits favoring an attack deal an extra die of damage and break
-            # the target's armor (lowering to 0 AP) before applying damage - or
-            # cause an injury to an unarmored target."
-            damage += damage_dice.roll()
-
-            if self.defender.health.ap > 0:
-                self.defender.health.ap = 0
-                # FIXME: Break the defender's armor.
-            else:
-                # FIXME: Give the defender an injury.
-                pass
-
-        # Apply damage.
-        self.defender.take_damage(damage)
-
-        # Blood splatter only on successful hits
-        if attack_result.success:
-            self.frame_manager.create_effect(
-                "blood_splatter",
-                x=self.defender.x,
-                y=self.defender.y,
-                intensity=damage / 20.0,  # Scale intensity with damage
-            )
-
-        # Log hit messages
-        self._log_hit_message(attack_result, weapon, damage)
-
-        # Check if defender is defeated
-        if not self.defender.health.is_alive():
-            self.controller.message_log.add_message(
-                f"{self.defender.name} has been killed!", colors.RED
-            )
-
-            # Update targeting if needed
-            self.controller.notify_actor_death(self.defender)
-
-        return damage
 
     def _handle_attack_miss(
         self, attack_result: ResolutionResult, attack: Attack, weapon: Item
