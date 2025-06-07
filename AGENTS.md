@@ -36,3 +36,7 @@ Individual commands are available as `make lint`, `make format`, `make typecheck
 ##  Dev Notes
 
 - Identical Outcome: Ideally, there should be no performance regressions and no visual regressions (unless deliberately making visual changes).
+
+- When modifying existing architectures, preserve the intended separation of concerns. Look at module names and existing patterns to understand the intended responsibility boundaries.
+
+- When implementing new code or fixing bugs, if the functionality isn't already covered by unit testing, implement one or more unit tests to test it as you see fit.
