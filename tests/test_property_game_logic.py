@@ -4,7 +4,8 @@ from typing import cast
 from catley import colors
 from catley.controller import Controller
 from catley.game import range_system
-from catley.game.actions.actions import AreaEffectAction, AttackAction
+from catley.game.actions.area_effects import AreaEffectAction
+from catley.game.actions.combat import AttackAction
 from catley.game.actors import Character
 from catley.game.items.item_types import (
     GRENADE_TYPE,

@@ -3,7 +3,7 @@ from typing import cast
 
 from catley import colors
 from catley.controller import Controller
-from catley.game.actions.actions import MoveAction
+from catley.game.actions.movement import MoveAction
 from catley.game.actors import Character
 from catley.game.items.item_types import (
     COMBAT_KNIFE_TYPE,

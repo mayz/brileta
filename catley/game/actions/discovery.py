@@ -21,7 +21,8 @@ from enum import Enum, auto
 from typing import TYPE_CHECKING
 
 from catley.game import range_system
-from catley.game.actions.actions import AttackAction, GameAction, ReloadAction
+from catley.game.actions.base import GameAction
+from catley.game.actions.combat import AttackAction, ReloadAction
 from catley.game.actors import Character
 from catley.util import dice
 
