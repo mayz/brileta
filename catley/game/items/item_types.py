@@ -2,6 +2,7 @@ from catley.game.enums import ItemSize
 from catley.game.items.capabilities import (
     AmmoSpec,
     AreaEffectSpec,
+    ConsumableEffectSpec,
     MeleeAttackSpec,
     RangedAttackSpec,
 )
@@ -181,4 +182,76 @@ RIFLE_MAGAZINE_TYPE = ItemType(
     description="Rifle ammo magazine",
     size=ItemSize.TINY,
     ammo=AmmoSpec("rifle", 5),
+)
+
+# Various items to test.
+
+ROCK_TYPE = ItemType(
+    name="Rock",
+    description="A rough chunk of stone. Good for throwing or bashing.",
+    size=ItemSize.TINY,
+    ranged_attack=RangedAttackSpec(
+        damage_die="d4",
+        ammo_type="thrown",
+        max_ammo=1,
+        optimal_range=4,
+        max_range=8,
+        properties={WeaponProperty.THROWN, WeaponProperty.IMPROVISED},
+    ),
+    melee_attack=MeleeAttackSpec("d3", properties={WeaponProperty.IMPROVISED}),
+)
+
+ALARM_CLOCK_TYPE = ItemType(
+    name="Alarm Clock",
+    description=(
+        "Heavy metal timepiece. Makes a satisfying thunk when it hits something."
+    ),
+    size=ItemSize.NORMAL,
+    ranged_attack=RangedAttackSpec(
+        damage_die="d6",
+        ammo_type="thrown",
+        max_ammo=1,
+        optimal_range=3,
+        max_range=6,
+        properties={WeaponProperty.THROWN, WeaponProperty.IMPROVISED},
+    ),
+    melee_attack=MeleeAttackSpec("d6", properties={WeaponProperty.IMPROVISED}),
+)
+
+BLEACH_TYPE = ItemType(
+    name="Bleach",
+    description="Household disinfectant. Caustic and dangerous if misused.",
+    size=ItemSize.NORMAL,
+    consumable_effect=ConsumableEffectSpec(
+        effect_type="poison",
+        effect_value=-15,  # Toxic if consumed
+        max_uses=1,
+    ),
+    ranged_attack=RangedAttackSpec(
+        damage_die="d8",
+        ammo_type="splash",
+        max_ammo=1,
+        optimal_range=2,
+        max_range=4,
+        properties={
+            WeaponProperty.IMPROVISED,
+            TacticalProperty.CHEMICAL,
+            StatusProperty.BLINDING,
+        },
+    ),
+)
+
+RUBBER_CHICKEN_TYPE = ItemType(
+    name="Rubber Chicken",
+    description="A squeaky novelty toy. Utterly ridiculous but surprisingly durable.",
+    size=ItemSize.NORMAL,
+    ranged_attack=RangedAttackSpec(
+        damage_die="d2",
+        ammo_type="thrown",
+        max_ammo=1,
+        optimal_range=3,
+        max_range=6,
+        properties={WeaponProperty.THROWN, WeaponProperty.IMPROVISED},
+    ),
+    melee_attack=MeleeAttackSpec("d2", properties={WeaponProperty.IMPROVISED}),
 )
