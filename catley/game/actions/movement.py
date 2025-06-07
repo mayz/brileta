@@ -14,6 +14,7 @@ from catley.game.actors import Character
 from catley.game.items.capabilities import MeleeAttack
 from catley.game.items.item_types import FISTS_TYPE
 from catley.game.items.properties import WeaponProperty
+from catley.world import tile_types
 
 if TYPE_CHECKING:
     from catley.controller import Controller
@@ -76,6 +77,15 @@ class MoveAction(GameAction):
             and 0 <= self.newy < self.game_map.height
         ):
             return
+
+        tile_id = self.game_map.tiles[self.newx, self.newy]
+
+        if tile_id == tile_types.TILE_TYPE_ID_DOOR_CLOSED:  # type: ignore[attr-defined]
+            # Automatically open doors when bumped into.
+            self.game_map.tiles[self.newx, self.newy] = (
+                tile_types.TILE_TYPE_ID_DOOR_OPEN  # type: ignore[attr-defined]
+            )
+            self.game_map.invalidate_property_caches()
 
         if not self.game_map.walkable[self.newx, self.newy]:
             return

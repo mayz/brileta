@@ -10,12 +10,15 @@ from catley.game.actions.discovery import (
     ActionDiscovery,
     ActionOption,
 )
+from catley.game.actions.environment import OpenDoorAction
 from catley.game.actors import Character
 from catley.game.enums import Disposition
 from catley.game.items.capabilities import RangedAttack
 from catley.game.items.item_types import COMBAT_KNIFE_TYPE, PISTOL_TYPE
 from catley.util import dice
+from catley.world import tile_types
 from catley.world.game_state import GameWorld
+from catley.world.map import GameMap
 
 
 class DummyGameWorld:
@@ -24,6 +27,10 @@ class DummyGameWorld:
         self.player: Character | None = None
         self.selected_actor: Character | None = None
         self.items: dict[tuple[int, int], list] = {}
+        self.game_map = GameMap(5, 5)
+
+        # Default to all floor tiles for simplicity
+        self.game_map.tiles[:] = tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[attr-defined]
 
     def get_pickable_items_at_location(self, x: int, y: int) -> list:
         return self.items.get((x, y), [])
@@ -173,3 +180,19 @@ def test_sort_by_relevance_orders_actions() -> None:
     assert ordered[0] == opt1
     assert ordered[1] == opt3
     assert ordered[2] == opt2
+
+
+def test_environment_options_include_door_actions() -> None:
+    gw = DummyGameWorld()
+    gw.game_map.tiles[1, 0] = tile_types.TILE_TYPE_ID_DOOR_CLOSED  # type: ignore[attr-defined]
+    player = Character(0, 0, "@", colors.WHITE, "P", game_world=cast(GameWorld, gw))
+    gw.player = player
+    gw.actors.append(player)
+    controller = DummyController(gw=gw)
+    disc = ActionDiscovery()
+    ctx = disc._build_context(cast(Controller, controller), player)
+    opts = disc._get_environment_options(cast(Controller, controller), player, ctx)
+    names = {o.name for o in opts}
+    assert "Open Door" in names
+    action = next(o for o in opts if o.name == "Open Door").execute()
+    assert isinstance(action, OpenDoorAction)

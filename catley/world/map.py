@@ -62,7 +62,7 @@ class GameMap:
         self._dark_appearance_map_cache: np.ndarray | None = None
         self._light_appearance_map_cache: np.ndarray | None = None
 
-    def _invalidate_property_caches(self) -> None:
+    def invalidate_property_caches(self) -> None:
         """Call this whenever `self.tiles` changes to clear cached property maps."""
         self._walkable_map_cache = None
         self._transparent_map_cache = None
@@ -154,8 +154,11 @@ class GameMap:
         if first_room is None:
             raise ValueError("Need to make at least one room.")
 
-        # Invalidate caches once after all carving is complete for initial generation.
-        self._invalidate_property_caches()
+        # After tunneling, place doors at room entrances.
+        self._place_doors_at_room_entrances(rooms)
+
+        # Invalidate caches once after all carving and door placement is complete.
+        self.invalidate_property_caches()
 
         return rooms
 
@@ -172,3 +175,56 @@ class GameMap:
     def _carve_v_tunnel(self, y1: int, y2: int, x: int) -> None:
         v_slice = slice(min(y1, y2), max(y1, y2) + 1)
         self.tiles[x, v_slice] = tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[unresolved-attribute]
+
+    def _place_door(self, x: int, y: int) -> None:
+        if (
+            0 <= x < self.width
+            and 0 <= y < self.height
+            and self.tiles[x, y] == tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[attr-defined]
+        ):
+            self.tiles[x, y] = tile_types.TILE_TYPE_ID_DOOR_CLOSED  # type: ignore[attr-defined]
+
+    def _place_doors_at_room_entrances(self, rooms: list[Rect]) -> None:
+        """Place doors at the points where tunnels connect to rooms."""
+        for room in rooms:
+            # Top and bottom edges
+            for x in range(room.x1 + 1, room.x2):
+                # Top
+                y = room.y1
+                if (
+                    y - 1 >= 0
+                    and self.tiles[x, y] == tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[attr-defined]
+                    and self.tiles[x, y - 1] == tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[attr-defined]
+                    and self.tiles[x, y + 1] == tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[attr-defined]
+                ):
+                    self._place_door(x, y)
+                # Bottom
+                y = room.y2
+                if (
+                    y + 1 < self.height
+                    and self.tiles[x, y] == tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[attr-defined]
+                    and self.tiles[x, y + 1] == tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[attr-defined]
+                    and self.tiles[x, y - 1] == tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[attr-defined]
+                ):
+                    self._place_door(x, y)
+
+            # Left and right edges
+            for y in range(room.y1 + 1, room.y2):
+                # Left
+                x = room.x1
+                if (
+                    x - 1 >= 0
+                    and self.tiles[x, y] == tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[attr-defined]
+                    and self.tiles[x - 1, y] == tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[attr-defined]
+                    and self.tiles[x + 1, y] == tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[attr-defined]
+                ):
+                    self._place_door(x, y)
+                # Right
+                x = room.x2
+                if (
+                    x + 1 < self.width
+                    and self.tiles[x, y] == tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[attr-defined]
+                    and self.tiles[x + 1, y] == tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[attr-defined]
+                    and self.tiles[x - 1, y] == tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[attr-defined]
+                ):
+                    self._place_door(x, y)

@@ -129,3 +129,17 @@ def test_ram_weapon_prefers_active_weapon() -> None:
 
     # Should prefer the active sledgehammer over the knife
     assert weapon is sledgehammer
+
+
+def test_move_action_opens_closed_door_when_bumped() -> None:
+    controller, player = make_world()
+    gw = controller.gw
+    # Place a closed door to the right of the player
+    gw.game_map.tiles[1, 0] = tile_types.TILE_TYPE_ID_DOOR_CLOSED  # type: ignore[attr-defined]
+
+    action = MoveAction(cast(Controller, controller), player, dx=1, dy=0)
+    action.execute()
+
+    # Player should have moved into the door tile and the door should now be open
+    assert (player.x, player.y) == (1, 0)
+    assert gw.game_map.tiles[1, 0] == tile_types.TILE_TYPE_ID_DOOR_OPEN  # type: ignore[attr-defined]

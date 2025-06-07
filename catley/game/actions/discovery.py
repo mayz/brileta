@@ -388,13 +388,44 @@ class ActionDiscovery:
         self, controller: Controller, actor: Character, context: ActionContext
     ) -> list[ActionOption]:
         """Get all environment interaction action options."""
-        # TODO: Add environment options like:
-        # - Open/close doors
-        # - Search containers
-        # - Use furniture/objects
-        # - Throw grenades at locations
 
-        return []
+        from catley.game.actions.environment import CloseDoorAction, OpenDoorAction
+        from catley.world import tile_types
+
+        options: list[ActionOption] = []
+
+        gm = controller.gw.game_map
+
+        for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            tx = actor.x + dx
+            ty = actor.y + dy
+            if not (0 <= tx < gm.width and 0 <= ty < gm.height):
+                continue
+            tile_id = gm.tiles[tx, ty]
+            if tile_id == tile_types.TILE_TYPE_ID_DOOR_CLOSED:  # type: ignore[attr-defined]
+                options.append(
+                    ActionOption(
+                        name="Open Door",
+                        description="Open the door",
+                        category=ActionCategory.ENVIRONMENT,
+                        execute=functools.partial(
+                            OpenDoorAction, controller, actor, tx, ty
+                        ),
+                    )
+                )
+            elif tile_id == tile_types.TILE_TYPE_ID_DOOR_OPEN:  # type: ignore[attr-defined]
+                options.append(
+                    ActionOption(
+                        name="Close Door",
+                        description="Close the door",
+                        category=ActionCategory.ENVIRONMENT,
+                        execute=functools.partial(
+                            CloseDoorAction, controller, actor, tx, ty
+                        ),
+                    )
+                )
+
+        return options
 
     def _get_social_options(
         self, controller: Controller, actor: Character, context: ActionContext
