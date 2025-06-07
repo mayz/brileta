@@ -3,6 +3,7 @@ from __future__ import annotations
 import abc
 from typing import TYPE_CHECKING, Generic, TypeVar
 
+from catley.game.items.properties import ItemProperty
 from catley.util import dice
 
 if TYPE_CHECKING:
@@ -14,17 +15,36 @@ class AttackSpec(abc.ABC):  # noqa: B024
     """Defines the properties of a melee attack."""
 
     def __init__(
-        self, damage_die: str, stat_name: str, properties: set[str] | None = None
+        self,
+        damage_die: str,
+        stat_name: str,
+        properties: set[ItemProperty] | None = None,
     ) -> None:
         self.damage_dice = dice.Dice(damage_die)
-        self.properties = properties or set()
+        self.properties: set[ItemProperty] = (
+            properties if properties is not None else set()
+        )
         self.stat_name = stat_name
+
+    def has_property(self, property_enum: ItemProperty) -> bool:
+        """Check if this attack has the given property."""
+        return property_enum in self.properties
+
+    def has_any_property(self, *properties: ItemProperty) -> bool:
+        """Check if this attack has any of the given properties."""
+        return bool(self.properties & set(properties))
+
+    def has_all_properties(self, *properties: ItemProperty) -> bool:
+        """Check if this attack has all of the given properties."""
+        return set(properties).issubset(self.properties)
 
 
 class MeleeAttackSpec(AttackSpec):
     """Defines the properties of a melee attack."""
 
-    def __init__(self, damage_die: str, properties: set[str] | None = None) -> None:
+    def __init__(
+        self, damage_die: str, properties: set[ItemProperty] | None = None
+    ) -> None:
         super().__init__(damage_die, "strength", properties)
 
 
@@ -38,27 +58,13 @@ class RangedAttackSpec(AttackSpec):
         max_ammo: int,
         optimal_range: int,
         max_range: int,
-        properties: set[str] | None = None,
+        properties: set[ItemProperty] | None = None,
     ):
         super().__init__(damage_die, "observation", properties)
         self.ammo_type = ammo_type
         self.max_ammo = max_ammo
         self.optimal_range = optimal_range
         self.max_range = max_range
-
-
-class ImprovisedRangedAttackSpec(RangedAttackSpec):
-    """For throwing non-weapon items (inherits RangedAttack for its structure)."""
-
-    def __init__(self, damage_die: str = "d3", max_range: int = 4) -> None:
-        super().__init__(
-            damage_die=damage_die,
-            ammo_type="thrown",
-            max_ammo=1,
-            optimal_range=max_range // 2,
-            max_range=max_range,
-            properties={"improvised", "thrown"},
-        )
 
 
 SpecType = TypeVar("SpecType", bound=AttackSpec)
@@ -88,7 +94,7 @@ class Attack(abc.ABC, Generic[SpecType]):
         pass
 
     @property
-    def properties(self) -> set[str]:
+    def properties(self) -> set[ItemProperty]:
         """Get the properties of this attack."""
         return self._spec.properties
 
@@ -195,7 +201,7 @@ class RangedAttack(Attack[RangedAttackSpec]):
         return self._spec.max_range
 
     @property
-    def properties(self) -> set[str]:
+    def properties(self) -> set[ItemProperty]:
         return self._spec.properties
 
     @property
@@ -252,7 +258,7 @@ class AreaEffectSpec:
         damage_die: str,
         area_type: str,
         size: int,
-        properties: set[str] | None = None,
+        properties: set[ItemProperty] | None = None,
         damage_falloff: bool = True,
         requires_line_of_sight: bool = False,
         penetrates_walls: bool = False,
@@ -261,7 +267,9 @@ class AreaEffectSpec:
         self.damage_dice = dice.Dice(damage_die)
         self.area_type = area_type  # "circle", "line", "cone", "cross"
         self.size = size  # radius for circle, length for line, etc.
-        self.properties = properties or set()
+        self.properties: set[ItemProperty] = (
+            properties if properties is not None else set()
+        )
         self.damage_falloff = damage_falloff
         self.requires_line_of_sight = requires_line_of_sight
         self.penetrates_walls = penetrates_walls
@@ -340,7 +348,7 @@ class AreaEffect:
         return self._spec.size
 
     @property
-    def properties(self) -> set[str]:
+    def properties(self) -> set[ItemProperty]:
         return self._spec.properties
 
     @property
