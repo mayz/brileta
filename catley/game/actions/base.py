@@ -8,11 +8,24 @@ These represent meaningful decisions made by actors that change the game world s
 from __future__ import annotations
 
 import abc
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from catley.controller import Controller
     from catley.game.actors import Actor
+
+
+@dataclass
+class GameActionResult:
+    """Result returned by :meth:`GameAction.execute`.
+
+    When ``should_update_fov`` is ``True`` the player's field of view will be
+    recomputed after the action is processed by
+    :class:`~catley.turn_manager.TurnManager`.
+    """
+
+    should_update_fov: bool = False
 
 
 class GameAction(abc.ABC):
@@ -31,14 +44,11 @@ class GameAction(abc.ABC):
         self.frame_manager = self.controller.frame_manager
 
     @abc.abstractmethod
-    def execute(self) -> None:
-        """Execute this action."""
+    def execute(self) -> GameActionResult | None:
+        """Execute this action.
+
+        Returning ``None`` means no special post-processing is required by the
+        caller. A :class:`GameActionResult` can be returned to request additional
+        handling such as a field-of-view update.
+        """
         pass
-
-    def can_execute(self) -> tuple[bool, str | None]:
-        """Check if this action can be executed. Returns (can_execute, reason_if_not)"""
-        return True, None
-
-    def get_success_probability(self) -> float | None:
-        """Get probability of success for this action, if applicable"""
-        return None

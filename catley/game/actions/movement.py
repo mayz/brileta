@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from catley.game.actions.base import GameAction
+from catley.game.actions.base import GameAction, GameActionResult
 from catley.game.actors import Character
 from catley.game.items.capabilities import MeleeAttack
 from catley.game.items.item_types import FISTS_TYPE
@@ -67,7 +67,7 @@ class MoveAction(GameAction):
             and not has_preferred_ranged
         )
 
-    def execute(self) -> None:
+    def execute(self) -> GameActionResult | None:
         # Import here to avoid circular import
         from catley.game.actions.combat import AttackAction
 
@@ -76,19 +76,24 @@ class MoveAction(GameAction):
             0 <= self.newx < self.game_map.width
             and 0 <= self.newy < self.game_map.height
         ):
-            return
+            return None
 
         tile_id = self.game_map.tiles[self.newx, self.newy]
 
         if tile_id == tile_types.TILE_TYPE_ID_DOOR_CLOSED:  # type: ignore[attr-defined]
             # Automatically open doors when bumped into.
-            self.game_map.tiles[self.newx, self.newy] = (
-                tile_types.TILE_TYPE_ID_DOOR_OPEN  # type: ignore[attr-defined]
+            from catley.game.actions.environment import OpenDoorAction
+
+            open_door_action = OpenDoorAction(
+                self.controller,
+                self.actor,
+                self.newx,
+                self.newy,
             )
-            self.game_map.invalidate_property_caches()
+            _ = open_door_action.execute()
 
         if not self.game_map.walkable[self.newx, self.newy]:
-            return
+            return None
 
         # Check for blocking actors.
         for actor in self.controller.gw.actors:
@@ -101,7 +106,8 @@ class MoveAction(GameAction):
                         defender=actor,
                         weapon=weapon,
                     )
-                    attack_action.execute()
-                return  # Cannot move into blocking actor
+                    _ = attack_action.execute()
+                return None  # Cannot move into blocking actor
 
         self.actor.move(self.dx, self.dy)
+        return GameActionResult(should_update_fov=True)

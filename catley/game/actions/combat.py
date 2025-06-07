@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 from catley import colors
 from catley.game import range_system
-from catley.game.actions.base import GameAction
+from catley.game.actions.base import GameAction, GameActionResult
 from catley.game.actors import Character, Disposition
 from catley.game.ai import DispositionBasedAI
 from catley.game.items.capabilities import Attack
@@ -43,16 +43,16 @@ class AttackAction(GameAction):
         self.defender = defender
         self.weapon = weapon
 
-    def execute(self) -> None:
+    def execute(self) -> GameActionResult | None:
         # 1. Determine what attack method to use
         attack, weapon = self._determine_attack_method()
         if not attack:
-            return
+            return None
 
         # 2. Validate the attack can be performed
         range_modifiers = self._validate_attack(attack, weapon)
         if range_modifiers is None:
-            return  # Validation failed, error messages already logged
+            return None  # Validation failed, error messages already logged
 
         # 3. Perform the attack roll and immediate effects
         attack_result = self._execute_attack_roll(attack, weapon, range_modifiers)
@@ -65,6 +65,7 @@ class AttackAction(GameAction):
         # 5. Apply the outcome and post-attack effects
         damage = self._apply_combat_outcome(attack_result, outcome, attack, weapon)
         self._handle_post_attack_effects(attack_result, attack, weapon, damage)
+        return None
 
     def _determine_attack_method(self) -> tuple[Attack | None, Item]:
         """Determine which attack method and weapon to use
@@ -394,10 +395,10 @@ class ReloadAction(GameAction):
         # Type narrowing.
         self.actor: Character
 
-    def execute(self) -> None:
+    def execute(self) -> GameActionResult | None:
         ranged_attack = self.weapon.ranged_attack
         if not ranged_attack:
-            return
+            return None
 
         # Find compatible ammo in inventory
         ammo_item = None
@@ -421,3 +422,4 @@ class ReloadAction(GameAction):
             self.controller.message_log.add_message(
                 f"No {ranged_attack.ammo_type} ammo available!", colors.RED
             )
+        return None

@@ -3,8 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from catley import colors
-from catley.game.actions.base import GameAction
-from catley.game.actions.movement import MoveAction
+from catley.game.actions.base import GameAction, GameActionResult
 
 if TYPE_CHECKING:
     from catley.controller import Controller
@@ -80,7 +79,7 @@ class TurnManager:
             return
 
         try:
-            action.execute()
+            result = action.execute()
         except SystemExit:
             raise
         except Exception as e:
@@ -89,6 +88,9 @@ class TurnManager:
             print(f"Unhandled exception during action execution: {e}")
             return
 
-        # Update FOV only if the player moved
-        if action.actor == self.controller.gw.player and isinstance(action, MoveAction):
+        if result is None:
+            result = GameActionResult()
+
+        # Update FOV if the player's action indicated a change in visibility
+        if action.actor == self.controller.gw.player and result.should_update_fov:
             self.controller.update_fov()
