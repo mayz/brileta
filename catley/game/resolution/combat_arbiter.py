@@ -3,6 +3,7 @@ from __future__ import annotations
 from catley.game import range_system
 from catley.game.actors import Actor, Character
 from catley.game.components import HealthComponent
+from catley.game.conditions import Injury
 from catley.game.items.capabilities import Attack
 from catley.game.items.item_core import Item
 
@@ -10,7 +11,7 @@ from .base import ResolutionResult
 from .outcomes import CombatOutcome
 
 
-def determine_consequences(
+def determine_outcome(
     resolution_result: ResolutionResult,
     attacker: Character,
     defender: Actor,
@@ -32,6 +33,8 @@ def determine_consequences(
         health = defender.health
         if isinstance(health, HealthComponent) and health.ap > 0:
             outcome.armor_damage = health.ap
+        else:
+            outcome.injury_inflicted = Injury()
 
     outcome.damage_dealt = damage
     return outcome
