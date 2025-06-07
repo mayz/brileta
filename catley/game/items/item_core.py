@@ -89,6 +89,8 @@ class Item:
         # Collect available attacks for this distance
         if self.melee_attack and distance == 1:
             available_attacks.append(self.melee_attack)
+        # Ranged attacks are ignored at point blank range to avoid
+        # unintentionally pistol-whipping instead of shooting.
         if self.ranged_attack and distance > 1:
             available_attacks.append(self.ranged_attack)
         if self.area_effect:  # Area effects work at various ranges
