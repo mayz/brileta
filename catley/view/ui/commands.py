@@ -23,14 +23,14 @@ interface rather than how their character acts within the game world.
 from __future__ import annotations
 
 import abc
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import tcod.console
 import tcod.context
 
 from catley.game.actors import Actor
-from catley.view.ui.help_menu import HelpMenu
-from catley.view.ui.inventory_menu import InventoryMenu
+from catley.view.ui.overlays import Menu
 from catley.view.ui.pickup_menu import PickupMenu
 
 if TYPE_CHECKING:
@@ -88,7 +88,7 @@ class OpenMenuUICommand(UICommand):
     """Command to open a menu, like the inventory or help menu."""
 
     def __init__(
-        self, controller: Controller, menu_class: type[InventoryMenu] | type[HelpMenu]
+        self, controller: Controller, menu_class: Callable[[Controller], Menu]
     ) -> None:
         self.controller = controller
         self.menu_class = menu_class

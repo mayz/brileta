@@ -22,7 +22,7 @@ class HelpTextPanel(Panel):
         if not self.visible:
             return
 
-        help_items = ["?: Help", "I: Inventory"]
+        help_items = ["?: Help", "I: Inventory", "Space: Actions"]
 
         player = self.controller.gw.player
         if self.controller.gw.has_pickable_items_at_location(player.x, player.y):

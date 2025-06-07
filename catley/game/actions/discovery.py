@@ -8,7 +8,7 @@ being able to discover them.
 
 There are three interaction paradigms for action discovery:
 - Quick targeting (hotkeys)
-- Context-aware action browser
+- Context-aware action browser (see catley.modes.action_browser)
 - Actor-specific menus
 """
 
@@ -222,7 +222,10 @@ class ActionDiscovery:
                         has_disadvantage=range_mods.get("has_disadvantage", False),
                     )
 
-                    ammo_cost = f"Uses 1 {weapon.ranged_attack.ammo_type} ammo"
+                    # FIXME: Unclear that we need to show this most of the time.
+                    #        Leaving it commented out for now.
+                    #ammo_cost = f"Uses 1 {weapon.ranged_attack.ammo_type} ammo"
+                    ammo_cost = ""
                     options.append(
                         ActionOption(
                             name=f"Shoot {target.name} with {weapon.name}",

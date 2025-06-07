@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 import tcod.event
 
 from catley import colors
+from catley.view.ui.action_browser_menu import ActionBrowserMenu
 from catley.view.ui.help_menu import HelpMenu
 from catley.view.ui.inventory_menu import InventoryMenu
 
@@ -123,6 +124,9 @@ class EventHandler:
                 )
             ):
                 return OpenMenuUICommand(self.controller, HelpMenu)
+
+            case tcod.event.KeyDown(sym=tcod.event.KeySym.SPACE):
+                return OpenMenuUICommand(self.controller, ActionBrowserMenu)
 
             case tcod.event.KeyDown(sym=tcod.event.KeySym.g):
                 return OpenPickupMenuUICommand(self.controller)
