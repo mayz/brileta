@@ -18,7 +18,8 @@ from catley.game.items.capabilities import Attack
 from catley.game.items.item_core import Item
 from catley.game.items.item_types import FISTS_TYPE
 from catley.game.items.properties import WeaponProperty
-from catley.util import dice
+from catley.game.resolution.base import ResolutionResult
+from catley.game.resolution.d20_system import D20Resolver
 
 if TYPE_CHECKING:
     from catley.controller import Controller
@@ -154,7 +155,7 @@ class AttackAction(GameAction):
 
     def _execute_attack_roll(
         self, attack: Attack, weapon: Item, range_modifiers: dict
-    ) -> dice.CheckResult:
+    ) -> ResolutionResult:
         """Perform the attack roll and handle immediate effects
         like ammo consumption."""
         # Get ability scores for the roll
@@ -162,13 +163,13 @@ class AttackAction(GameAction):
         attacker_ability_score = getattr(self.attacker.stats, stat_name)
         defender_ability_score = self.defender.stats.agility
 
-        # Perform attack roll
-        attack_result = dice.perform_opposed_check_roll(
+        resolver = D20Resolver(
             attacker_ability_score,
-            defender_ability_score,
+            defender_ability_score + 10,
             has_advantage=range_modifiers.get("has_advantage", False),
             has_disadvantage=range_modifiers.get("has_disadvantage", False),
         )
+        attack_result = resolver.resolve(self.attacker, self.defender, weapon)
 
         # Consume ammo for ranged attacks
         ranged_attack = weapon.ranged_attack
@@ -201,7 +202,7 @@ class AttackAction(GameAction):
         )
 
     def _resolve_attack_outcome(
-        self, attack_result: dice.CheckResult, attack: Attack, weapon: Item
+        self, attack_result: ResolutionResult, attack: Attack, weapon: Item
     ) -> int:
         """Resolve the attack outcome and return the damage dealt."""
         if attack_result.success:
@@ -210,14 +211,14 @@ class AttackAction(GameAction):
         return 0
 
     def _handle_successful_hit(
-        self, attack_result: dice.CheckResult, attack: Attack, weapon: Item
+        self, attack_result: ResolutionResult, attack: Attack, weapon: Item
     ) -> int:
         """Handle a successful attack hit - damage, crits, particles, messages."""
         # Hit - roll damage
         damage_dice = attack.damage_dice
         damage = damage_dice.roll()
 
-        if attack_result.is_critical_hit:
+        if attack_result.is_critical_success:
             # "Crits favoring an attack deal an extra die of damage and break
             # the target's armor (lowering to 0 AP) before applying damage - or
             # cause an injury to an unarmored target."
@@ -257,11 +258,11 @@ class AttackAction(GameAction):
         return damage
 
     def _handle_attack_miss(
-        self, attack_result: dice.CheckResult, attack: Attack, weapon: Item
+        self, attack_result: ResolutionResult, attack: Attack, weapon: Item
     ) -> None:
         """Handle an attack miss - messages and weapon property effects."""
         # Miss
-        if attack_result.is_critical_miss:
+        if attack_result.is_critical_failure:
             # "Crits favoring defense cause the attacker's weapon to break,
             # and leave them confused or off-balance."
             # FIXME: Break the attacker's weapon.
@@ -294,10 +295,10 @@ class AttackAction(GameAction):
             # TODO: Implement off-balance effect (maybe skip next turn?)
 
     def _log_hit_message(
-        self, attack_result: dice.CheckResult, weapon: Item, damage: int
+        self, attack_result: ResolutionResult, weapon: Item, damage: int
     ) -> None:
         """Log appropriate hit message based on critical status."""
-        if attack_result.is_critical_hit:
+        if attack_result.is_critical_success:
             hit_message = (
                 f"Critical hit! {self.attacker.name} strikes {self.defender.name} "
                 f"with {weapon.name} for {damage} damage."
@@ -318,7 +319,7 @@ class AttackAction(GameAction):
 
     def _handle_post_attack_effects(
         self,
-        attack_result: dice.CheckResult,
+        attack_result: ResolutionResult,
         attack: Attack,
         weapon: Item,
         damage: int,
@@ -333,7 +334,7 @@ class AttackAction(GameAction):
 
     def _apply_screen_shake(
         self,
-        attack_result: dice.CheckResult,
+        attack_result: ResolutionResult,
         _attack: Attack,
         weapon: Item,
         damage: int,
@@ -354,7 +355,7 @@ class AttackAction(GameAction):
             shake_duration = 0.1 + (base_damage * 0.02)
 
         # Extra shake for critical hits against player
-        if attack_result.is_critical_hit:
+        if attack_result.is_critical_success:
             shake_intensity *= 1.5  # Higher probability for crits
             shake_duration *= 1.3
 

@@ -7,7 +7,7 @@ from catley.controller import Controller
 from catley.game.actions.combat import AttackAction
 from catley.game.actors import Character
 from catley.game.items.item_types import FISTS_TYPE
-from catley.util import dice
+from catley.game.resolution.d20_system import D20ResolutionResult
 from catley.world import tile_types
 from catley.world.game_state import GameWorld
 from catley.world.map import GameMap
@@ -88,7 +88,7 @@ def test_screen_shake_uses_damage_once() -> None:
     assert weapon and weapon.melee_attack
     attack = weapon.melee_attack
     attack.damage_dice.roll = MagicMock(return_value=4)
-    check = dice.CheckResult(success=True)
+    check = D20ResolutionResult(success=True)
     damage = action._handle_successful_hit(check, attack, weapon)
     action._handle_post_attack_effects(check, attack, weapon, damage)
 
