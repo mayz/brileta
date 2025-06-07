@@ -39,8 +39,9 @@ TileTypeAppearance = np.dtype(
 TileTypeData = np.dtype(
     [
         ("walkable", bool),
-        ("transparent", bool),
-        ("cover_bonus", np.int8),
+        ("transparent", bool),  # FOV/line-of-sight (exploration & targeting)
+        ("cover_bonus", np.int8),  # Defensive bonus from using this tile as cover
+        ("casts_shadows", bool),  # Light occlusion (visual shadows)
         # Appearance when explored but not in FOV
         ("dark", TileTypeAppearance),
         # Appearance when in FOV (before dynamic lighting)
@@ -104,6 +105,7 @@ def make_tile_type_data(
     walkable: bool,
     transparent: bool,
     cover_bonus: int = 0,
+    casts_shadows: bool = False,
     dark: tuple[int, colors.Color, colors.Color],  # (char_code, fg_color, bg_color)
     light: tuple[int, colors.Color, colors.Color] | None = None,
 ) -> np.ndarray:  # Returns an instance of TileTypeData
@@ -112,7 +114,9 @@ def make_tile_type_data(
 
     Args:
         walkable: Can actors walk through this type of tile?
-        transparent: Can actors see through this type of tile?
+        transparent: Is this tile see-through for FOV/targeting?
+        cover_bonus: Defensive bonus granted when using this tile as cover.
+        casts_shadows: Does this tile block light for shadow casting?
         dark:  A (char_code, fg_color, bg_color) tuple defining
                the 'dark' TileTypeAppearance.
         light: A (char_code, fg_color, bg_color) tuple defining
@@ -131,7 +135,14 @@ def make_tile_type_data(
     )
 
     return np.array(
-        (walkable, transparent, cover_bonus, dark_appearance, light_appearance),
+        (
+            walkable,
+            transparent,
+            cover_bonus,
+            casts_shadows,
+            dark_appearance,
+            light_appearance,
+        ),
         dtype=TileTypeData,
     )
 
@@ -178,10 +189,11 @@ register_tile_type("DOOR_OPEN", _door_open_data)  # TILE_TYPE_ID_DOOR_OPEN will 
 
 _boulder_data = make_tile_type_data(
     walkable=False,
-    transparent=False,
+    transparent=True,
     cover_bonus=2,
+    casts_shadows=True,
     dark=(ord("#"), colors.DARK_GREY, colors.DARK_GROUND),
-    light=(ord("#"), colors.LIGHT_GREY, colors.LIGHT_GROUND),
+    light=(ord("#"), colors.MEDIUM_GREY, colors.LIGHT_GROUND),
 )
 register_tile_type("BOULDER", _boulder_data)  # TILE_TYPE_ID_BOULDER will be 4
 

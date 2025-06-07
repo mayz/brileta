@@ -65,6 +65,7 @@ class GameWorld:
 
         self.actors: list[Actor] = [self.player]
         self.game_map = GameMap(map_width, map_height)
+        self.lighting.set_game_map(self.game_map)
 
     def update_player_light(self) -> None:
         """Update player light source position"""

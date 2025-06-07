@@ -23,6 +23,7 @@ from catley.config import (
 
 if TYPE_CHECKING:
     from catley.game.actors import Actor
+    from catley.world.map import GameMap
 
 # Preset configurations for different light types
 TORCH_PRESET = {
@@ -99,7 +100,9 @@ class LightSource:
 
 
 class LightingSystem:
-    def __init__(self, config: LightingConfig | None = None) -> None:
+    def __init__(
+        self, config: LightingConfig | None = None, game_map: object | None = None
+    ) -> None:
         self.config = config if config is not None else LightingConfig()
         self.noise = tcod.noise.Noise(
             dimensions=2,  # 2D noise for position and time
@@ -108,6 +111,11 @@ class LightingSystem:
         )
         self.time = 0.0
         self.light_sources: list[LightSource] = []
+        self._game_map = game_map
+
+    def set_game_map(self, game_map: "GameMap") -> None:
+        """Assign the current game map for shadow calculations."""
+        self._game_map = game_map
 
     def add_light(self, light: LightSource) -> None:
         """Add a light source to the system"""
@@ -250,7 +258,7 @@ class LightingSystem:
     def _apply_actor_shadows(
         self, light_map: np.ndarray, actors, offset_x: int, offset_y: int
     ) -> np.ndarray:
-        """Apply actor shadows to ``light_map`` using viewport-relative offsets."""
+        """Apply shadows from actors and shadow-casting tiles."""
 
         shadow_map = light_map.copy()
 
@@ -269,11 +277,9 @@ class LightingSystem:
             ]
 
             for actor in nearby_actors:
-                # Convert actor and light world coords to viewport-relative coords
                 ax_vp, ay_vp = actor.x - offset_x, actor.y - offset_y
                 lx_vp, ly_vp = lx - offset_x, ly - offset_y
 
-                # Simple culling
                 if not (
                     0 <= ax_vp < light_map.shape[0] and 0 <= ay_vp < light_map.shape[1]
                 ):
@@ -285,7 +291,22 @@ class LightingSystem:
 
                 for sx, sy, intensity in shadow_data:
                     if 0 <= sx < light_map.shape[0] and 0 <= sy < light_map.shape[1]:
-                        # Apply varying shadow intensity
+                        shadow_map[sx, sy] *= 1.0 - intensity
+
+            shadow_casting_positions = self._get_shadow_casting_tiles(
+                lx, ly, light_radius, offset_x, offset_y
+            )
+
+            for tile_x, tile_y in shadow_casting_positions:
+                ax_vp, ay_vp = tile_x - offset_x, tile_y - offset_y
+                lx_vp, ly_vp = lx - offset_x, ly - offset_y
+
+                shadow_data = self._cast_gradual_shadow(
+                    (lx_vp, ly_vp), (ax_vp, ay_vp), light_radius
+                )
+
+                for sx, sy, intensity in shadow_data:
+                    if 0 <= sx < light_map.shape[0] and 0 <= sy < light_map.shape[1]:
                         shadow_map[sx, sy] *= 1.0 - intensity
 
         return shadow_map
@@ -345,6 +366,36 @@ class LightingSystem:
                         shadow_data.append((edge_x, edge_y, edge_intensity))
 
         return shadow_data
+
+    def _get_shadow_casting_tiles(
+        self,
+        light_x: int,
+        light_y: int,
+        light_radius: int,
+        offset_x: int,
+        offset_y: int,
+    ) -> list[tuple[int, int]]:
+        """Find tiles that cast shadows within light radius."""
+        from catley.world import tile_types
+
+        if self._game_map is None:
+            return []
+
+        shadow_casters: list[tuple[int, int]] = []
+        for dx in range(-light_radius, light_radius + 1):
+            for dy in range(-light_radius, light_radius + 1):
+                world_x = light_x + dx
+                world_y = light_y + dy
+                if (
+                    0 <= world_x < self._game_map.width
+                    and 0 <= world_y < self._game_map.height
+                ):
+                    tile_id = self._game_map.tiles[world_x, world_y]
+                    tile_data = tile_types.get_tile_type_data_by_id(int(tile_id))
+                    if tile_data["casts_shadows"]:
+                        shadow_casters.append((world_x, world_y))
+
+        return shadow_casters
 
     def _apply_light_to_map(
         self,
