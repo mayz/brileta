@@ -22,6 +22,7 @@ from catley.game.resolution import combat_arbiter
 from catley.game.resolution.base import ResolutionResult
 from catley.game.resolution.d20_system import D20Resolver
 from catley.game.resolution.outcomes import CombatOutcome
+from catley.world import tile_types
 
 if TYPE_CHECKING:
     from catley.controller import Controller
@@ -158,19 +159,40 @@ class AttackAction(GameAction):
 
         return range_modifiers
 
+    def _adjacent_cover_bonus(self) -> int:
+        """Return the highest cover bonus adjacent to the defender."""
+        game_map = self.controller.gw.game_map
+        max_bonus = 0
+        x, y = self.defender.x, self.defender.y
+
+        # Cover checks are infrequent, so we prioritize memory usage over
+        # lookup speed by querying tile types directly rather than caching a
+        # full map of bonuses.
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                if dx == 0 and dy == 0:
+                    continue
+                nx, ny = x + dx, y + dy
+                if 0 <= nx < game_map.width and 0 <= ny < game_map.height:
+                    tile_id = game_map.tiles[nx, ny]
+                    tile_data = tile_types.get_tile_type_data_by_id(int(tile_id))
+                    bonus = int(tile_data["cover_bonus"])
+                    max_bonus = max(max_bonus, bonus)
+
+        return max_bonus
+
     def _execute_attack_roll(
         self, attack: Attack, weapon: Item, range_modifiers: dict
     ) -> ResolutionResult:
         """Perform the attack roll and handle immediate effects
         like ammo consumption."""
-        # Get ability scores for the roll
         stat_name = attack.stat_name
-        attacker_ability_score = getattr(self.attacker.stats, stat_name)
-        defender_ability_score = self.defender.stats.agility
+        attacker_score = getattr(self.attacker.stats, stat_name)
+        defender_score = self.defender.stats.agility + self._adjacent_cover_bonus()
 
         resolver = D20Resolver(
-            attacker_ability_score,
-            defender_ability_score + 10,
+            attacker_score,
+            defender_score + 10,
             has_advantage=range_modifiers.get("has_advantage", False),
             has_disadvantage=range_modifiers.get("has_disadvantage", False),
         )

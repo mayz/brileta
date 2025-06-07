@@ -40,6 +40,7 @@ TileTypeData = np.dtype(
     [
         ("walkable", bool),
         ("transparent", bool),
+        ("cover_bonus", np.int8),
         # Appearance when explored but not in FOV
         ("dark", TileTypeAppearance),
         # Appearance when in FOV (before dynamic lighting)
@@ -102,6 +103,7 @@ def make_tile_type_data(
     *,  # Forces keyword arguments - prevents bugs from wrong parameter order
     walkable: bool,
     transparent: bool,
+    cover_bonus: int = 0,
     dark: tuple[int, colors.Color, colors.Color],  # (char_code, fg_color, bg_color)
     light: tuple[int, colors.Color, colors.Color] | None = None,
 ) -> np.ndarray:  # Returns an instance of TileTypeData
@@ -129,7 +131,8 @@ def make_tile_type_data(
     )
 
     return np.array(
-        (walkable, transparent, dark_appearance, light_appearance), dtype=TileTypeData
+        (walkable, transparent, cover_bonus, dark_appearance, light_appearance),
+        dtype=TileTypeData,
     )
 
 
@@ -172,6 +175,15 @@ _door_open_data = make_tile_type_data(
     light=(ord("'"), colors.LIGHT_ORANGE, colors.LIGHT_GROUND),
 )
 register_tile_type("DOOR_OPEN", _door_open_data)  # TILE_TYPE_ID_DOOR_OPEN will be 3
+
+_boulder_data = make_tile_type_data(
+    walkable=False,
+    transparent=False,
+    cover_bonus=2,
+    dark=(ord("#"), colors.DARK_GREY, colors.DARK_GROUND),
+    light=(ord("#"), colors.LIGHT_GREY, colors.LIGHT_GROUND),
+)
+register_tile_type("BOULDER", _boulder_data)  # TILE_TYPE_ID_BOULDER will be 4
 
 
 # --- Pre-calculated Property Arrays for Efficient Lookups ---
