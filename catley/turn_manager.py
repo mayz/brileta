@@ -3,7 +3,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from catley import colors
-from catley.game.actions.actions import GameAction, MoveAction
+from catley.game.actions.base import GameAction
+from catley.game.actions.movement import MoveAction
 
 if TYPE_CHECKING:
     from catley.controller import Controller

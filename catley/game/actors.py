@@ -53,7 +53,7 @@ if TYPE_CHECKING:
     from catley.controller import Controller
     from catley.world.game_state import GameWorld
 
-    from .actions.actions import GameAction
+    from .actions.base import GameAction
 
 
 class Actor:
