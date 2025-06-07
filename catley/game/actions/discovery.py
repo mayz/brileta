@@ -224,7 +224,7 @@ class ActionDiscovery:
 
                     # FIXME: Unclear that we need to show this most of the time.
                     #        Leaving it commented out for now.
-                    #ammo_cost = f"Uses 1 {weapon.ranged_attack.ammo_type} ammo"
+                    # ammo_cost = f"Uses 1 {weapon.ranged_attack.ammo_type} ammo"
                     ammo_cost = ""
                     options.append(
                         ActionOption(
