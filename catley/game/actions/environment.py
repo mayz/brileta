@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from catley.game.actions.base import GameAction
+from catley.game.actions.base import GameAction, GameActionResult
 from catley.world import tile_types
 
 if TYPE_CHECKING:
@@ -21,12 +21,16 @@ class OpenDoorAction(GameAction):
         self.x = x
         self.y = y
 
-    def execute(self) -> None:  # pragma: no cover - simple state change
+    def execute(
+        self,
+    ) -> GameActionResult | None:  # pragma: no cover - simple state change
         if (
             self.game_map.tiles[self.x, self.y] == tile_types.TILE_TYPE_ID_DOOR_CLOSED  # type: ignore[attr-defined]
         ):
             self.game_map.tiles[self.x, self.y] = tile_types.TILE_TYPE_ID_DOOR_OPEN  # type: ignore[attr-defined]
             self.game_map.invalidate_property_caches()
+            return GameActionResult(should_update_fov=True)
+        return None
 
 
 class CloseDoorAction(GameAction):
@@ -40,9 +44,13 @@ class CloseDoorAction(GameAction):
         self.x = x
         self.y = y
 
-    def execute(self) -> None:  # pragma: no cover - simple state change
+    def execute(
+        self,
+    ) -> GameActionResult | None:  # pragma: no cover - simple state change
         if (
             self.game_map.tiles[self.x, self.y] == tile_types.TILE_TYPE_ID_DOOR_OPEN  # type: ignore[attr-defined]
         ):
             self.game_map.tiles[self.x, self.y] = tile_types.TILE_TYPE_ID_DOOR_CLOSED  # type: ignore[attr-defined]
             self.game_map.invalidate_property_caches()
+            return GameActionResult(should_update_fov=True)
+        return None

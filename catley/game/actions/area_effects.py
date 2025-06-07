@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 
 from catley import colors
 from catley.game import range_system
-from catley.game.actions.base import GameAction
+from catley.game.actions.base import GameAction, GameActionResult
 from catley.game.actors import Character
 from catley.game.items.capabilities import AreaEffect, RangedAttack
 from catley.game.items.item_core import Item
@@ -44,10 +44,10 @@ class AreaEffectAction(GameAction):
         self.target_y = target_y
         self.weapon = weapon
 
-    def execute(self) -> None:
+    def execute(self) -> GameActionResult | None:
         effect = self.weapon.area_effect
         if effect is None:
-            return
+            return None
 
         # 1. Check ammo requirements if weapon uses ammo
         ranged = self.weapon.ranged_attack
@@ -56,13 +56,13 @@ class AreaEffectAction(GameAction):
                 f"{self.weapon.name} is out of ammo!",
                 colors.RED,
             )
-            return
+            return None
 
         # 2. Determine which tiles are affected by the effect
         tiles = self._calculate_tiles(effect)
         if not tiles:
             self.controller.message_log.add_message("Nothing is affected.", colors.GREY)
-            return
+            return None
 
         # 3. Apply damage or healing to actors in the affected tiles
         hits = self._apply_damage(tiles, effect)
@@ -76,6 +76,7 @@ class AreaEffectAction(GameAction):
 
         # 6. Trigger the appropriate visual effect
         self._trigger_visual_effect(effect)
+        return None
 
     def _calculate_tiles(self, effect: AreaEffect) -> DistanceByTile:
         match effect.area_type:
