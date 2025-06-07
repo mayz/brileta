@@ -5,6 +5,13 @@ from catley import colors
 from catley.controller import Controller
 from catley.game.actions.actions import MoveAction
 from catley.game.actors import Character
+from catley.game.items.item_types import (
+    COMBAT_KNIFE_TYPE,
+    FISTS_TYPE,
+    PISTOL_TYPE,
+    SLEDGEHAMMER_TYPE,
+    SNIPER_RIFLE_TYPE,
+)
 from catley.world import tile_types
 from catley.world.game_state import GameWorld
 from catley.world.map import GameMap
@@ -68,3 +75,57 @@ def test_move_action_checks_walkable_tiles() -> None:
     action = MoveAction(cast(Controller, controller), player, dx=-1, dy=0)
     action.execute()
     assert (player.x, player.y) == (1, 2)
+
+
+def test_ram_weapon_prefers_melee_over_ranged() -> None:
+    controller, player = make_world()
+    pistol = PISTOL_TYPE.create()
+    knife = COMBAT_KNIFE_TYPE.create()
+    player.inventory.equip_to_slot(pistol, 0)
+    player.inventory.equip_to_slot(knife, 1)
+
+    action = MoveAction(cast(Controller, controller), player, dx=1, dy=0)
+    weapon = action._select_ram_weapon()
+
+    assert weapon is knife
+
+
+def test_ram_weapon_defaults_to_fists_when_only_ranged() -> None:
+    controller, player = make_world()
+    pistol = PISTOL_TYPE.create()
+    player.inventory.equip_to_slot(pistol, 0)
+
+    action = MoveAction(cast(Controller, controller), player, dx=1, dy=0)
+    weapon = action._select_ram_weapon()
+
+    assert weapon.item_type is FISTS_TYPE
+
+
+def test_ram_weapon_ignores_ranged_preferred_weapons() -> None:
+    controller, player = make_world()
+    pistol = PISTOL_TYPE.create()
+    sniper = SNIPER_RIFLE_TYPE.create()
+    player.inventory.equip_to_slot(pistol, 0)
+    player.inventory.equip_to_slot(sniper, 1)
+
+    action = MoveAction(cast(Controller, controller), player, dx=1, dy=0)
+    weapon = action._select_ram_weapon()
+
+    assert weapon.item_type is FISTS_TYPE
+
+
+def test_ram_weapon_prefers_active_weapon() -> None:
+    controller, player = make_world()
+    knife = COMBAT_KNIFE_TYPE.create()
+    sledgehammer = SLEDGEHAMMER_TYPE.create()
+    player.inventory.equip_to_slot(knife, 0)
+    player.inventory.equip_to_slot(sledgehammer, 1)
+
+    # Set sledgehammer as active weapon
+    player.inventory.switch_to_weapon_slot(1)
+
+    action = MoveAction(cast(Controller, controller), player, dx=1, dy=0)
+    weapon = action._select_ram_weapon()
+
+    # Should prefer the active sledgehammer over the knife
+    assert weapon is sledgehammer
