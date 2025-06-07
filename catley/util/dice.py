@@ -1,5 +1,5 @@
 """
-Simulates complex dice rolls and d20 check/test roll mechanics.
+Simulates complex dice rolls and provides odds calculations for d20 checks.
 
 This module provides two main areas of functionality:
 1.  General Dice Rolling:
@@ -8,20 +8,12 @@ This module provides two main areas of functionality:
     It handles multiple dice, modifiers, and negative dice outcomes.
     For convenience, a `roll_d()` function is provided for rolling a single die.
 
-2.  d20 Check Roll System:
-    A system for simulating d20-based checks. This includes:
-    - `perform_check_roll()`: The core function that handles d20 rolls,
-      addition of an ability score, comparison against a target value
-      (which must be strictly exceeded), critical hits (natural 20),
-      critical misses (natural 1), advantage, and disadvantage.
-    - Convenience wrappers: `perform_unopposed_check_roll()` and
-      `perform_opposed_check_roll()` for common scenarios.
-    - `calculate_check_roll_success_probability()`: To compute the
-      probability of success for any given check roll setup.
+2.  d20 Probability Helpers:
+    - `calculate_check_roll_success_probability()`: Compute the probability of
+      success for a d20-style check with optional advantage/disadvantage.
 """
 
 import random
-from dataclasses import dataclass, field
 
 
 class Dice:
@@ -135,144 +127,6 @@ def roll_d(sides: int) -> int:
     # Use direct random.randint for efficiency - creating a Dice object for
     # every roll would be unnecessarily expensive
     return random.randint(1, sides)
-
-
-@dataclass
-class CheckResult:
-    success: bool
-    is_critical_hit: bool = False  # Natural 20
-    is_critical_miss: bool = False  # Natural 1
-    rolls_made: list[int] = field(default_factory=list)  # Actual d20 values rolled
-    final_roll_used: int = 0  # The d20 roll chosen after advantage/disadvantage
-    total_value: int = 0  # Final roll + modifier
-    target_value: int = 0
-    has_advantage: bool = False
-    has_disadvantage: bool = False
-
-
-def perform_check_roll(
-    ability_score: int,
-    roll_to_exceed: int,
-    has_advantage: bool = False,
-    has_disadvantage: bool = False,
-) -> CheckResult:
-    """Performs a d20 check roll against a target value.
-
-    The Wastoid rules call this a "test" roll, but "test" is such an overloaded
-    term, that we're going with "check", which is what most other RPGs call it.
-
-    A check roll involves rolling a d20, adding an ability score, and comparing
-    the total against a `roll_to_exceed` value. The roll succeeds if the
-    total is strictly greater than `roll_to_exceed`.
-
-    Natural 20s on the d20 are always successes (critical hits).
-    Natural 1s on the d20 are always failures (critical misses).
-    Advantage (roll two d20s, take higher) and disadvantage (roll two d20s,
-    take lower) can be applied. If both are present, they cancel out.
-
-    See also the `perform_unopposed_check_roll()` and `perform_opposed_check_roll()`
-    convenience functions.
-
-    Args:
-        ability_score: The ability score value to add to the d20 roll.
-        roll_to_exceed: The number to beat. The value that (d20 roll + ability_score)
-                        must strictly exceed for a success (unless it's a critical
-                        hit or miss).
-        has_advantage: If True, two d20s are rolled and the higher result is used.
-        has_disadvantage: If True, two d20s are rolled and the lower result is used.
-
-    Returns:
-        A CheckResult object detailing the outcome of the roll.
-    """
-    # If both an advantage and a disadvantage, they cancel out.
-    if has_advantage and has_disadvantage:
-        has_advantage = False
-        has_disadvantage = False
-
-    # Determine number of dice and which to keep
-    num_dice_to_roll = 1 if not (has_advantage or has_disadvantage) else 2
-
-    rolls_made: list[int] = [roll_d(20) for _ in range(num_dice_to_roll)]
-
-    if has_advantage:
-        final_roll_used = max(rolls_made)
-    elif has_disadvantage:
-        final_roll_used = min(rolls_made)
-    else:
-        final_roll_used = rolls_made[0]
-
-    is_critical_hit = final_roll_used == 20
-    is_critical_miss = final_roll_used == 1
-
-    total_value = final_roll_used + ability_score
-
-    success: bool
-    if is_critical_hit:
-        success = True
-    elif is_critical_miss:
-        success = False
-    else:
-        success = total_value > roll_to_exceed
-
-    return CheckResult(
-        success=success,
-        is_critical_hit=is_critical_hit,
-        is_critical_miss=is_critical_miss,
-        final_roll_used=final_roll_used,
-        total_value=total_value,
-        target_value=roll_to_exceed,
-        has_advantage=has_advantage,
-        has_disadvantage=has_disadvantage,
-    )
-
-
-def perform_unopposed_check_roll(
-    ability_score: int,
-    has_advantage: bool = False,
-    has_disadvantage: bool = False,
-) -> CheckResult:
-    """Performs an unopposed check roll against a standard target value of 15.
-
-    This is a convenience wrapper around `perform_check_roll()` where the
-    `roll_to_exceed` value is fixed at 15.
-
-    Args:
-        ability_score: The modifier to add to the d20 roll.
-        has_advantage: If True, two d20s are rolled and the higher result is used.
-        has_disadvantage: If True, two d20s are rolled and the lower result is used.
-
-    Returns:
-        A CheckResult object detailing the outcome of the roll.
-    """
-    target_dc = 15
-    return perform_check_roll(ability_score, target_dc, has_advantage, has_disadvantage)
-
-
-def perform_opposed_check_roll(
-    actor_ability_score: int,
-    opponent_ability_score: int,
-    has_advantage: bool = False,
-    has_disadvantage: bool = False,
-) -> CheckResult:
-    """Performs an opposed check roll.
-
-    The `roll_to_exceed` value is calculated as the opponent's ability score + 10.
-    This is a convenience wrapper around `perform_check_roll()`.
-
-    Args:
-        actor_ability_score: The ability score of the character making the roll.
-        opponent_ability_score: The ability score of the character opposing the roll,
-                                used to calculate the target value.
-        has_advantage: If True, the actor's roll has advantage.
-        has_disadvantage: If True, the actor's roll has disadvantage.
-
-    Returns:
-        A CheckResult object detailing the outcome of the actor's roll.
-    """
-    target_dc = opponent_ability_score + 10
-    return perform_check_roll(
-        actor_ability_score, target_dc, has_advantage, has_disadvantage
-    )
 
 
 def calculate_check_roll_success_probability(

@@ -14,7 +14,7 @@ from catley.game.items.item_types import (
     SUBMACHINE_GUN_TYPE,
 )
 from catley.game.items.properties import TacticalProperty
-from catley.util import dice
+from catley.game.resolution.d20_system import D20ResolutionResult
 from catley.world.game_state import GameWorld
 from catley.world.map import GameMap
 
@@ -80,7 +80,7 @@ def test_awkward_weapon_miss_effect() -> None:
     action = AttackAction(cast(Controller, controller), attacker, defender, weapon)
     attack = weapon.melee_attack
     assert attack is not None
-    result = dice.CheckResult(success=False)
+    result = D20ResolutionResult(success=False)
     action._handle_attack_miss(result, attack, weapon)
     assert any("off balance" in msg for msg in controller.message_log.messages)
 

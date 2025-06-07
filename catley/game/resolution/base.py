@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import abc
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -8,23 +9,19 @@ if TYPE_CHECKING:
     from catley.game.items.item_core import Item
 
 
-class ResolutionResult(abc.ABC):  # noqa: B024
-    """
-    Abstract base class for the result of any mechanical resolution.
+@dataclass
+class ResolutionResult(abc.ABC):
+    """Base result data returned by a resolver implementation."""
 
-    This class serves as a "marker interface." It has no methods or data
-    of its own. Its purpose is to provide a common parent type for all
-    specific result objects (e.g., D20ResolutionResult, TwoD6ResolutionResult).
-
-    This allows systems like the CombatResolver to accept any kind of
-    ResolutionResult and then use type checking (isinstance) to determine
-    how to interpret its specific contents.
-    """
-
-    pass
+    success: bool
+    is_critical_success: bool = False
+    is_critical_failure: bool = False
+    # Many systems have multiple degrees of success. "normal" covers the
+    # typical binary d20 case.
+    success_degree: str = "normal"
 
 
-class ResolutionSystem(abc.ABC):
+class Resolver(abc.ABC):
     """
     Abstract base class for a system that resolves an action.
 
