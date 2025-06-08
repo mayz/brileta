@@ -4,21 +4,18 @@ import abc
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from catley.game.enums import OutcomeTier
+
 if TYPE_CHECKING:
     from catley.game.actors import Actor, Character
     from catley.game.items.item_core import Item
 
 
 @dataclass
-class ResolutionResult(abc.ABC):
+class ResolutionResult(abc.ABC):  # noqa: B024 - no abstract methods defined
     """Base result data returned by a resolver implementation."""
 
-    success: bool
-    is_critical_success: bool = False
-    is_critical_failure: bool = False
-    # Many systems have multiple degrees of success. "normal" covers the
-    # typical binary d20 case.
-    success_degree: str = "normal"
+    outcome_tier: OutcomeTier = OutcomeTier.FAILURE
 
 
 class Resolver(abc.ABC):

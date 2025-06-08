@@ -3,6 +3,8 @@ import tcod.map
 import tcod.sdl.mouse
 from tcod.console import Console
 
+from catley.game.resolution.base import Resolver
+
 from . import config
 from .event_handler import EventHandler
 from .game.actions.base import GameAction
@@ -159,6 +161,16 @@ class Controller:
     def is_targeting_mode(self) -> bool:
         """Check if currently in targeting mode"""
         return self.active_mode == self.targeting_mode
+
+    def create_resolver(self, **kwargs: object) -> "Resolver":
+        """Factory method for resolution systems.
+
+        Currently returns a :class:`D20Resolver` but allows future
+        customization without changing action code.
+        """
+        from catley.game.resolution.d20_system import D20Resolver
+
+        return D20Resolver(**kwargs)  # type: ignore[call-arg]
 
     def notify_actor_death(self, actor: Character) -> None:
         """Notify active mode about actor death"""

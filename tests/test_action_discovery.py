@@ -42,6 +42,11 @@ class DummyController:
     frame_manager: object | None = None
     message_log: object | None = None
 
+    def create_resolver(self, **kwargs: object) -> object:
+        from catley.game.resolution.d20_system import D20Resolver
+
+        return D20Resolver(**kwargs)  # type: ignore[call-arg]
+
 
 def _make_context_world():
     gw = DummyGameWorld()

@@ -1,16 +1,10 @@
 """
-Simulates complex dice rolls and provides odds calculations for d20 checks.
+Simulates dice rolls.
 
-This module provides two main areas of functionality:
-1.  General Dice Rolling:
-    The `Dice` class allows for creating dice objects from string notations
-    (e.g., "2d10+5", "-d6", "15") and rolling them to get a numerical result.
-    It handles multiple dice, modifiers, and negative dice outcomes.
-    For convenience, a `roll_d()` function is provided for rolling a single die.
-
-2.  d20 Probability Helpers:
-    (probability calculations moved to the D20Resolver class in
-    ``catley.game.resolution.d20_system``)
+This module lets you do general dice rolling: the `Dice` class allows for creating
+dice objects from string notations (e.g., "2d10+5", "-d6", "15") and rolling them
+to get a numerical result. It handles multiple dice, modifiers, and negative dice
+outcomes. For convenience, a `roll_d()` function is provided for rolling a single die.
 """
 
 import random
