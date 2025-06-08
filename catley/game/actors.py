@@ -46,8 +46,10 @@ from .components import (
     StatsComponent,
     VisualEffectsComponent,
 )
+from .conditions import Condition
 from .enums import Disposition
 from .items.item_core import Item
+from .status_effects import StatusEffect
 
 if TYPE_CHECKING:
     from catley.controller import Controller
@@ -128,6 +130,7 @@ class Actor:
         self.accumulated_energy: int = self.speed
 
         self.tricks: list = []
+        self.status_effects: list[StatusEffect] = []
 
     def __repr__(self) -> str:
         """Return a debug representation of this actor."""
@@ -174,17 +177,13 @@ class Actor:
         Handles turn-based logic for actors. For NPCs, this includes AI.
         For the player, this could handle passive effects like poison/regeneration.
         """
-        # TODO: Implement passive effects here if any (e.g., poison, regeneration)
-
-        # For example:
-        # if self.has_condition("Poisoned"):
-        #     self.take_damage(1)
-        #     controller.message_log.add_message(
-        #         f"{self.name} takes 1 poison damage.", colors.GREEN)
-        #
-        # Active actions (including AI for NPCs and player input) are now
-        # handled via get_next_action() in the main game loop.
-        pass
+        for effect in self.status_effects[:]:
+            effect.apply_turn_effect(self)
+            if effect.duration > 0:
+                effect.duration -= 1
+            if effect.should_remove(self):
+                effect.remove_effect(self)
+                self.status_effects.remove(effect)
 
     def get_next_action(self, controller: Controller) -> GameAction | None:
         """
@@ -202,6 +201,61 @@ class Actor:
 
     def spend_energy(self, cost: int) -> None:
         self.accumulated_energy -= cost
+
+    # === Status Effect Management ===
+
+    def apply_status_effect(self, effect: StatusEffect) -> None:
+        """Apply a status effect to this actor."""
+        if not effect.can_stack and self.has_status_effect(type(effect)):
+            return
+        self.status_effects.append(effect)
+        effect.apply_on_start(self)
+
+    def remove_status_effect(self, effect_type: type[StatusEffect]) -> None:
+        """Remove all status effects of the given type."""
+        for effect in self.status_effects[:]:
+            if isinstance(effect, effect_type):
+                effect.remove_effect(self)
+                self.status_effects.remove(effect)
+
+    def has_status_effect(self, effect_type: type[StatusEffect]) -> bool:
+        """Check if actor has any status effect of the given type."""
+        return any(isinstance(effect, effect_type) for effect in self.status_effects)
+
+    def get_status_effects_by_type(
+        self, effect_type: type[StatusEffect]
+    ) -> list[StatusEffect]:
+        """Get all status effects of the given type."""
+        return [e for e in self.status_effects if isinstance(e, effect_type)]
+
+    # === Condition Management ===
+
+    def has_condition(self, condition_type: type[Condition]) -> bool:
+        if self.inventory is None:
+            return False
+        return any(isinstance(item, condition_type) for item in self.inventory)
+
+    def get_conditions(self) -> list[Condition]:
+        if self.inventory is None:
+            return []
+        return [c for c in self.inventory if isinstance(c, Condition)]
+
+    def get_conditions_by_type(
+        self, condition_type: type[Condition]
+    ) -> list[Condition]:
+        if self.inventory is None:
+            return []
+        return [c for c in self.inventory if isinstance(c, condition_type)]
+
+    def add_condition(self, condition: Condition) -> bool:
+        if self.inventory is None:
+            return False
+        return self.inventory.add_to_inventory(condition)
+
+    def remove_condition(self, condition: Condition) -> bool:
+        if self.inventory is None:
+            return False
+        return self.inventory.remove_from_inventory(condition)
 
 
 class Character(Actor):
