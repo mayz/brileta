@@ -54,8 +54,10 @@ class ActionOption:
         """Formatted text for menus."""
         text = self.name
         if self.success_probability is not None:
-            percentage = int(self.success_probability * 100)
-            text += f" ({percentage}%)"
+            descriptor, _color = ActionDiscovery.get_probability_descriptor(
+                self.success_probability
+            )
+            text += f" ({descriptor})"
         if self.cost_description:
             text += f" - {self.cost_description}"
         return text
@@ -83,6 +85,17 @@ class ActionContext:
 
 class ActionDiscovery:
     """Main system for discovering available actions."""
+
+    @staticmethod
+    def get_probability_descriptor(probability: float) -> tuple[str, str]:
+        """Convert probability to qualitative descriptor and color."""
+        from catley import config
+
+        for max_prob, descriptor, color in config.PROBABILITY_DESCRIPTORS:
+            if probability <= max_prob:
+                return (descriptor, color)
+
+        return ("Unknown", "white")
 
     def get_available_options(
         self, controller: Controller, actor: Character, sort_by_relevance: bool = True

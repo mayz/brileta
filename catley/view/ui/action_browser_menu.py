@@ -50,8 +50,21 @@ class ActionBrowserMenu(Menu):
                 key = letters[letter_idx]
                 letter_idx += 1
 
-            # Get category color
-            color = self._get_category_color(action_option.category)
+            # Get probability color if available, otherwise use category color
+            if action_option.success_probability is not None:
+                _, prob_color_name = ActionDiscovery.get_probability_descriptor(
+                    action_option.success_probability
+                )
+                color_map = {
+                    "red": colors.RED,
+                    "orange": colors.ORANGE,
+                    "yellow": colors.YELLOW,
+                    "light_green": colors.LIGHT_GREEN,
+                    "green": colors.GREEN,
+                }
+                prob_color = color_map.get(prob_color_name, colors.WHITE)
+            else:
+                prob_color = self._get_category_color(action_option.category)
 
             self.add_option(
                 MenuOption(
@@ -61,7 +74,7 @@ class ActionBrowserMenu(Menu):
                         self._execute_action_option, action_option
                     ),
                     enabled=True,
-                    color=color,
+                    color=prob_color,
                     force_color=True,
                 )
             )
