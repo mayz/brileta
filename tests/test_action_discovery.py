@@ -15,7 +15,7 @@ from catley.game.actors import Character
 from catley.game.enums import Disposition
 from catley.game.items.capabilities import RangedAttack
 from catley.game.items.item_types import COMBAT_KNIFE_TYPE, PISTOL_TYPE
-from catley.util import dice
+from catley.game.resolution.d20_system import D20Resolver
 from catley.world import tile_types
 from catley.world.game_state import GameWorld
 from catley.world.map import GameMap
@@ -51,7 +51,7 @@ def _make_context_world():
     hostile = Character(
         5, 5, "H", colors.RED, "Hostile", game_world=cast(GameWorld, gw)
     )
-    hostile.ai = types.SimpleNamespace(disposition=Disposition.HOSTILE)
+    hostile.ai = types.SimpleNamespace(disposition=Disposition.HOSTILE)  # type: ignore[attr-defined]
     friend = Character(
         20, 20, "F", colors.WHITE, "Friend", game_world=cast(GameWorld, gw)
     )
@@ -135,16 +135,16 @@ def test_get_combat_options_melee_ranged_and_reload() -> None:
     assert f"Reload {pistol.name}" in names
 
     melee_opt = next(o for o in opts if o.name.startswith("Melee"))
-    expected_melee_prob = dice.calculate_check_roll_success_probability(
+    expected_melee_prob = D20Resolver(
         player.stats.strength,
         melee_target.stats.agility + 10,
-    )
+    ).calculate_success_probability()
     assert melee_opt.success_probability == expected_melee_prob
     ranged_opt = next(o for o in opts if o.name.startswith("Shoot"))
-    expected_ranged_prob = dice.calculate_check_roll_success_probability(
+    expected_ranged_prob = D20Resolver(
         player.stats.observation,
         ranged_target.stats.agility + 10,
-    )
+    ).calculate_success_probability()
     assert ranged_opt.success_probability == expected_ranged_prob
 
 

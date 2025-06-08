@@ -24,7 +24,7 @@ from catley.game import range_system
 from catley.game.actions.base import GameAction
 from catley.game.actions.combat import AttackAction, ReloadAction
 from catley.game.actors import Character
-from catley.util import dice
+from catley.game.resolution.d20_system import D20Resolver
 
 if TYPE_CHECKING:
     from catley.controller import Controller
@@ -191,10 +191,11 @@ class ActionDiscovery:
             # Melee attacks
             if weapon.melee_attack and distance == 1:
                 # Calculate success probability
-                prob = dice.calculate_check_roll_success_probability(
+                resolver = D20Resolver(
                     actor.stats.strength,
                     target.stats.agility + 10,  # Opposed roll target
                 )
+                prob = resolver.calculate_success_probability()
 
                 options.append(
                     ActionOption(
@@ -216,12 +217,13 @@ class ActionDiscovery:
 
                 if range_mods is not None:  # In range
                     # Calculate probability with range modifiers
-                    prob = dice.calculate_check_roll_success_probability(
+                    resolver = D20Resolver(
                         actor.stats.observation,
                         target.stats.agility + 10,
                         has_advantage=range_mods.get("has_advantage", False),
                         has_disadvantage=range_mods.get("has_disadvantage", False),
                     )
+                    prob = resolver.calculate_success_probability()
 
                     # FIXME: Unclear that we need to show this most of the time.
                     #        Leaving it commented out for now.
@@ -287,9 +289,8 @@ class ActionDiscovery:
 
         # Melee attacks
         if weapon.melee_attack and distance == 1:
-            prob = dice.calculate_check_roll_success_probability(
-                actor.stats.strength, target.stats.agility + 10
-            )
+            resolver = D20Resolver(actor.stats.strength, target.stats.agility + 10)
+            prob = resolver.calculate_success_probability()
 
             options.append(
                 ActionOption(
@@ -309,12 +310,13 @@ class ActionDiscovery:
             range_mods = range_system.get_range_modifier(weapon, range_cat)
 
             if range_mods is not None:
-                prob = dice.calculate_check_roll_success_probability(
+                resolver = D20Resolver(
                     actor.stats.observation,
                     target.stats.agility + 10,
                     has_advantage=range_mods.get("has_advantage", False),
                     has_disadvantage=range_mods.get("has_disadvantage", False),
                 )
+                prob = resolver.calculate_success_probability()
 
                 options.append(
                     ActionOption(
