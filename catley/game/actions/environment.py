@@ -13,6 +13,9 @@ if TYPE_CHECKING:
 class OpenDoorAction(GameAction):
     """Action for opening a closed door tile."""
 
+    name: str = "Open Door"
+    description: str = "Open the door"
+
     def __init__(
         self, controller: Controller, actor: Character, x: int, y: int
     ) -> None:
@@ -35,6 +38,9 @@ class OpenDoorAction(GameAction):
 
 class CloseDoorAction(GameAction):
     """Action for closing an open door tile."""
+
+    name: str = "Close Door"
+    description: str = "Close the door"
 
     def __init__(
         self, controller: Controller, actor: Character, x: int, y: int

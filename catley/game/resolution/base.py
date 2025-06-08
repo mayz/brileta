@@ -55,3 +55,12 @@ class Resolver(abc.ABC):
             containing the specific outcome of the roll.
         """
         raise NotImplementedError
+
+    @abc.abstractmethod
+    def calculate_success_probability(self) -> float:
+        """Calculate the probability of success for this resolver's configuration.
+
+        Returns:
+            Probability of success as a float in the range [0.0, 1.0].
+        """
+        raise NotImplementedError
