@@ -14,6 +14,10 @@ from catley.game import range_system
 from catley.game.actions.base import GameAction, GameActionResult
 from catley.game.actors import Character, Disposition
 from catley.game.ai import DispositionBasedAI
+from catley.game.consequences import (
+    AttackConsequenceGenerator,
+    ConsequenceHandler,
+)
 from catley.game.enums import OutcomeTier
 from catley.game.items.capabilities import Attack
 from catley.game.items.item_core import Item
@@ -65,7 +69,19 @@ class AttackAction(GameAction):
         # 5. Apply the outcome and post-attack effects
         damage = self._apply_combat_outcome(attack_result, outcome, attack, weapon)
         self._handle_post_attack_effects(attack_result, attack, weapon, damage)
-        return None
+
+        # 6. Generate and apply additional consequences
+        generator = AttackConsequenceGenerator(self.controller)
+        consequences = generator.generate(
+            attacker=self.attacker,
+            weapon=weapon,
+            outcome_tier=attack_result.outcome_tier,
+        )
+        handler = ConsequenceHandler(self.controller)
+        for consequence in consequences:
+            handler.apply_consequence(consequence)
+
+        return GameActionResult(consequences=consequences)
 
     def _determine_attack_method(self) -> tuple[Attack | None, Item]:
         """Determine which attack method and weapon to use

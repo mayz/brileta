@@ -64,21 +64,26 @@ class PickupMenu(Menu):
             )
             return
 
-        # Remove item from dead actor
+        # Remove item from actor at location (dead body or ground container)
         actor = self.controller.gw.get_actor_at_location(
             self.location[0], self.location[1]
         )
-        if (
-            isinstance(actor, Character)
-            and not actor.health.is_alive()
-            and item in actor.inventory
-        ):
-            actor.inventory.remove_from_inventory(item)
+        if actor and hasattr(actor, "inventory") and actor.inventory:
+            if item in actor.inventory:
+                actor.inventory.remove_from_inventory(item)
 
             for i, equipped_item in enumerate(actor.inventory.attack_slots):
                 if equipped_item == item:
                     actor.inventory.unequip_slot(i)
                     break
+
+            if (
+                not isinstance(actor, Character)
+                and len(actor.inventory) == 0
+                and all(s is None for s in actor.inventory.attack_slots)
+            ):
+                # Remove empty ground container
+                self.controller.gw.actors.remove(actor)
 
         # Add to player inventory
         player.inventory.add_to_inventory(item)
