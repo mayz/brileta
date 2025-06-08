@@ -76,7 +76,12 @@ class ConsequenceHandler:
             )
 
     def _apply_weapon_drop(self, actor: Actor | None, weapon: Item | None) -> None:
-        if not actor or not isinstance(actor, Character) or not weapon:
+        if (
+            not actor
+            or not isinstance(actor, Character)
+            or not weapon
+            or not weapon.can_materialize
+        ):
             return
         inv = actor.inventory
         if inv is None:

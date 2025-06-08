@@ -64,26 +64,37 @@ class PickupMenu(Menu):
             )
             return
 
-        # Remove item from actor at location (dead body or ground container)
-        actor = self.controller.gw.get_actor_at_location(
-            self.location[0], self.location[1]
-        )
-        if actor and hasattr(actor, "inventory") and actor.inventory:
-            if item in actor.inventory:
-                actor.inventory.remove_from_inventory(item)
+        # Remove item from whichever actor at the location actually holds it
+        actors_here = [
+            a
+            for a in self.controller.gw.actors
+            if a.x == self.location[0] and a.y == self.location[1]
+        ]
+        for actor in actors_here:
+            inv = getattr(actor, "inventory", None)
+            if inv is None:
+                continue
 
-            for i, equipped_item in enumerate(actor.inventory.attack_slots):
+            removed = False
+            if item in inv:
+                inv.remove_from_inventory(item)
+                removed = True
+
+            for i, equipped_item in enumerate(inv.attack_slots):
                 if equipped_item == item:
-                    actor.inventory.unequip_slot(i)
+                    inv.unequip_slot(i)
+                    removed = True
                     break
 
-            if (
-                not isinstance(actor, Character)
-                and len(actor.inventory) == 0
-                and all(s is None for s in actor.inventory.attack_slots)
-            ):
-                # Remove empty ground container
-                self.controller.gw.actors.remove(actor)
+            if removed:
+                if (
+                    not isinstance(actor, Character)
+                    and len(inv) == 0
+                    and all(s is None for s in inv.attack_slots)
+                ):
+                    # Remove empty ground container
+                    self.controller.gw.actors.remove(actor)
+                break
 
         # Add to player inventory
         player.inventory.add_to_inventory(item)
