@@ -34,6 +34,11 @@ class ItemType:
     consumable_effect: ConsumableEffectSpec | None = None
     ammo: AmmoSpec | None = None
 
+    # Whether this item can exist as a physical object in the world.
+    # Unarmed attack placeholders like Fists should not be materialized
+    # into an Actor that can be picked up.
+    can_materialize: bool = True
+
     def create(self) -> "Item":
         """Create a new Item instance of this type."""
         return Item(self)
@@ -45,6 +50,9 @@ class Item:
     def __init__(self, item_type: ItemType) -> None:
         """Create a new item instance from a type definition."""
         self.item_type = item_type
+
+        # Convenience flag for quick checks without reaching into the type
+        self.can_materialize: bool = item_type.can_materialize
 
         self.melee_attack: MeleeAttack | None = None
         if item_type.melee_attack:

@@ -9,6 +9,7 @@ from catley.game.items.item_types import (
     COMBAT_KNIFE_TYPE,
     PISTOL_MAGAZINE_TYPE,
     PISTOL_TYPE,
+    REVOLVER_TYPE,
     RIFLE_MAGAZINE_TYPE,
     SNIPER_RIFLE_TYPE,
 )
@@ -144,20 +145,36 @@ class GameWorld:
                     and self.get_actor_at_location(npc_x, npc_y) is None
                 ):
                     # Place the NPC
+                    if False:
+                        npc = NPC(
+                            x=npc_x,
+                            y=npc_y,
+                            ch="T",
+                            name=f"Trog {npc_index + 1}" if npc_index > 0 else "Trog",
+                            color=colors.DARK_GREY,
+                            game_world=self,
+                            blocks_movement=True,
+                            weirdness=3,
+                            strength=3,
+                            toughness=3,
+                            intelligence=-3,
+                            speed=80,
+                            starting_weapon=SLEDGEHAMMER_TYPE.create(),
+                        )
+                        self.actors.append(npc)
                     npc = NPC(
                         x=npc_x,
                         y=npc_y,
-                        ch="T",
-                        name=f"Trog {npc_index + 1}" if npc_index > 0 else "Trog",
+                        ch="H",
+                        name=f"Hackadoo {npc_index + 1}"
+                        if npc_index > 0
+                        else "Hackadoo",
                         color=colors.DARK_GREY,
                         game_world=self,
                         blocks_movement=True,
-                        weirdness=3,
-                        strength=3,
-                        toughness=3,
-                        intelligence=-3,
-                        speed=80,
-                        starting_weapon=SLEDGEHAMMER_TYPE.create(),
+                        weirdness=1,
+                        intelligence=2,
+                        starting_weapon=REVOLVER_TYPE.create(),
                     )
                     self.actors.append(npc)
                     placed = True

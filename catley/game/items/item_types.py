@@ -1,3 +1,5 @@
+import copy
+
 from catley.game.enums import ItemSize
 from catley.game.items.capabilities import (
     AmmoSpec,
@@ -22,6 +24,7 @@ FISTS_TYPE = ItemType(
     description="Your bare hands. Better than nothing, but not by much.",
     size=ItemSize.TINY,
     melee_attack=MeleeAttackSpec("d4", {WeaponProperty.UNARMED}),
+    can_materialize=False,
 )
 
 SLEDGEHAMMER_TYPE = ItemType(
@@ -61,6 +64,9 @@ PISTOL_TYPE = ItemType(
     # Pistol-whipping.
     melee_attack=MeleeAttackSpec("d4", properties={WeaponProperty.IMPROVISED}),
 )
+
+REVOLVER_TYPE = copy.copy(PISTOL_TYPE)
+REVOLVER_TYPE.name = "Revolver"
 
 HUNTING_RIFLE_TYPE = ItemType(
     name="Hunting Rifle",

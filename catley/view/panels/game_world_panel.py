@@ -223,8 +223,15 @@ class GameWorldPanel(Panel):
         gw = self.controller.gw
         vs = self.viewport_system
         world_left, world_right, world_top, world_bottom = vs.get_visible_bounds()
-        # Draw non-player actors first so the player is rendered on top.
-        sorted_actors = sorted(gw.actors, key=lambda a: a == gw.player)
+        # Draw non-blocking actors first, then blocking ones, with the player
+        # always rendered on top for visibility.
+        sorted_actors = sorted(
+            gw.actors,
+            key=lambda a: (
+                getattr(a, "blocks_movement", False),
+                a == gw.player,
+            ),
+        )
         for actor in sorted_actors:
             if not (
                 world_left <= actor.x <= world_right
