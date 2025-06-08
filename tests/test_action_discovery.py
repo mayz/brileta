@@ -201,3 +201,9 @@ def test_environment_options_include_door_actions() -> None:
     assert "Open Door" in names
     action = next(o for o in opts if o.name == "Open Door").execute()
     assert isinstance(action, OpenDoorAction)
+
+
+def test_probability_descriptor_mapping() -> None:
+    desc, color = ActionDiscovery.get_probability_descriptor(0.35)
+    assert desc == "Unlikely"
+    assert color == "orange"

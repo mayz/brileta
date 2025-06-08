@@ -149,3 +149,34 @@ MESSAGE_LOG_FONT_SIZE = 20
 TILESET_PATH = ASSETS_BASE_DIR / "tilesets" / "Taffer_20x20.png"
 TILESET_COLUMNS = 16
 TILESET_ROWS = 16
+
+# =============================================================================
+# PROBABILITY DESCRIPTORS
+# =============================================================================
+
+# Probability ranges and their descriptors
+# Format: (max_probability, descriptor, color_name)
+PROBABILITY_DESCRIPTORS = [
+    (0.20, "Long Shot", "red"),
+    (0.40, "Unlikely", "orange"),
+    (0.60, "Even Odds", "yellow"),
+    (0.80, "Very Likely", "light_green"),
+    (1.00, "Almost Certain", "green"),
+]
+
+# Alternative flavor sets (easily swappable)
+PROBABILITY_DESCRIPTORS_POST_APOCALYPTIC = [
+    (0.20, "Desperate Gamble", "red"),
+    (0.40, "Risky", "orange"),
+    (0.60, "Fighting Chance", "yellow"),
+    (0.80, "Good Shot", "light_green"),
+    (1.00, "Sure Thing", "green"),
+]
+
+PROBABILITY_DESCRIPTORS_MILITARY = [
+    (0.20, "Low Confidence", "red"),
+    (0.40, "Poor Odds", "orange"),
+    (0.60, "Fifty-Fifty", "yellow"),
+    (0.80, "High Confidence", "light_green"),
+    (1.00, "Mission Critical", "green"),
+]
