@@ -8,8 +8,10 @@ These represent meaningful decisions made by actors that change the game world s
 from __future__ import annotations
 
 import abc
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
+
+from catley.game.consequences import Consequence
 
 if TYPE_CHECKING:
     from catley.controller import Controller
@@ -25,6 +27,7 @@ class GameActionResult:
     :class:`~catley.turn_manager.TurnManager`.
     """
 
+    consequences: list[Consequence] = field(default_factory=list)
     should_update_fov: bool = False
 
 

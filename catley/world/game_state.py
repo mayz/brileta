@@ -91,6 +91,20 @@ class GameWorld:
                 attack_slots = actor.inventory.attack_slots
                 items_found.extend(item for item in attack_slots if item)
 
+            elif (
+                actor.x == x
+                and actor.y == y
+                and hasattr(actor, "inventory")
+                and actor.inventory is not None
+                and not isinstance(actor, Character)
+            ):
+                items_found.extend(
+                    item for item in list(actor.inventory) if isinstance(item, Item)
+                )
+                items_found.extend(
+                    item for item in actor.inventory.attack_slots if item is not None
+                )
+
         # Future: Add items directly on the ground if we implement that
         # e.g., items_found.extend(self.game_map.get_items_on_ground(x,y))
         return items_found
