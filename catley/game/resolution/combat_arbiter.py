@@ -4,6 +4,7 @@ from catley.game import range_system
 from catley.game.actors import Actor, Character
 from catley.game.components import HealthComponent
 from catley.game.conditions import Injury
+from catley.game.enums import OutcomeTier
 from catley.game.items.capabilities import Attack
 from catley.game.items.item_core import Item
 
@@ -24,11 +25,14 @@ def determine_outcome(
     if attack_handler is None:
         return outcome
 
-    if not resolution_result.success:
+    if resolution_result.outcome_tier in (
+        OutcomeTier.FAILURE,
+        OutcomeTier.CRITICAL_FAILURE,
+    ):
         return outcome
 
     damage = attack_handler.damage_dice.roll()
-    if resolution_result.is_critical_success:
+    if resolution_result.outcome_tier == OutcomeTier.CRITICAL_SUCCESS:
         damage += attack_handler.damage_dice.roll()
         health = defender.health
         if isinstance(health, HealthComponent) and health.ap > 0:

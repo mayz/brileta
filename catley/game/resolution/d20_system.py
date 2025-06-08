@@ -4,6 +4,8 @@ import random
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from catley.game.enums import OutcomeTier
+
 from .base import ResolutionResult, Resolver
 
 if TYPE_CHECKING:
@@ -14,9 +16,6 @@ if TYPE_CHECKING:
 @dataclass
 class D20ResolutionResult(ResolutionResult):
     """Result data for a d20 roll resolution."""
-
-    # Base fields (`success`, `is_critical_success`, `is_critical_failure`,
-    # `success_degree`) are inherited from ``ResolutionResult``.
 
     rolls_made: list[int] = field(default_factory=list)
     final_roll_used: int = 0
@@ -72,17 +71,19 @@ class D20Resolver(Resolver):
         total_value = final_roll_used + self.ability_score
 
         if is_critical_success:
-            success = True
+            outcome_tier = OutcomeTier.CRITICAL_SUCCESS
         elif is_critical_failure:
-            success = False
+            outcome_tier = OutcomeTier.CRITICAL_FAILURE
         else:
-            success = total_value > self.roll_to_exceed
+            if total_value > self.roll_to_exceed:
+                outcome_tier = OutcomeTier.SUCCESS
+            elif total_value == self.roll_to_exceed:
+                outcome_tier = OutcomeTier.PARTIAL_SUCCESS
+            else:
+                outcome_tier = OutcomeTier.FAILURE
 
         return D20ResolutionResult(
-            success=success,
-            is_critical_success=is_critical_success,
-            is_critical_failure=is_critical_failure,
-            success_degree="critical" if is_critical_success else "normal",
+            outcome_tier=outcome_tier,
             rolls_made=rolls_made,
             final_roll_used=final_roll_used,
             total_value=total_value,

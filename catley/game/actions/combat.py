@@ -14,13 +14,13 @@ from catley.game import range_system
 from catley.game.actions.base import GameAction, GameActionResult
 from catley.game.actors import Character, Disposition
 from catley.game.ai import DispositionBasedAI
+from catley.game.enums import OutcomeTier
 from catley.game.items.capabilities import Attack
 from catley.game.items.item_core import Item
 from catley.game.items.item_types import FISTS_TYPE
 from catley.game.items.properties import WeaponProperty
 from catley.game.resolution import combat_arbiter
 from catley.game.resolution.base import ResolutionResult
-from catley.game.resolution.d20_system import D20Resolver
 from catley.game.resolution.outcomes import CombatOutcome
 from catley.world import tile_types
 
@@ -191,9 +191,9 @@ class AttackAction(GameAction):
         attacker_score = getattr(self.attacker.stats, stat_name)
         defender_score = self.defender.stats.agility + self._adjacent_cover_bonus()
 
-        resolver = D20Resolver(
-            attacker_score,
-            defender_score + 10,
+        resolver = self.controller.create_resolver(
+            ability_score=attacker_score,
+            roll_to_exceed=defender_score + 10,
             has_advantage=range_modifiers.get("has_advantage", False),
             has_disadvantage=range_modifiers.get("has_disadvantage", False),
         )
@@ -237,7 +237,11 @@ class AttackAction(GameAction):
         weapon: Item,
     ) -> int:
         """Apply the combat outcome and return the damage dealt."""
-        if attack_result.success:
+        if attack_result.outcome_tier in (
+            OutcomeTier.SUCCESS,
+            OutcomeTier.CRITICAL_SUCCESS,
+            OutcomeTier.PARTIAL_SUCCESS,
+        ):
             damage = outcome.damage_dealt
             if outcome.armor_damage > 0:
                 self.defender.health.ap = max(
@@ -270,7 +274,7 @@ class AttackAction(GameAction):
     ) -> None:
         """Handle an attack miss - messages and weapon property effects."""
         # Miss
-        if attack_result.is_critical_failure:
+        if attack_result.outcome_tier == OutcomeTier.CRITICAL_FAILURE:
             # "Crits favoring defense cause the attacker's weapon to break,
             # and leave them confused or off-balance."
             # FIXME: Break the attacker's weapon.
@@ -306,7 +310,7 @@ class AttackAction(GameAction):
         self, attack_result: ResolutionResult, weapon: Item, damage: int
     ) -> None:
         """Log appropriate hit message based on critical status."""
-        if attack_result.is_critical_success:
+        if attack_result.outcome_tier == OutcomeTier.CRITICAL_SUCCESS:
             hit_message = (
                 f"Critical hit! {self.attacker.name} strikes {self.defender.name} "
                 f"with {weapon.name} for {damage} damage."
@@ -334,7 +338,15 @@ class AttackAction(GameAction):
     ) -> None:
         """Handle post-attack effects like screen shake and AI disposition changes."""
         # Screen shake only when PLAYER gets hit
-        if attack_result.success and self.defender == self.controller.gw.player:
+        if (
+            attack_result.outcome_tier
+            in (
+                OutcomeTier.SUCCESS,
+                OutcomeTier.CRITICAL_SUCCESS,
+                OutcomeTier.PARTIAL_SUCCESS,
+            )
+            and self.defender == self.controller.gw.player
+        ):
             self._apply_screen_shake(attack_result, attack, weapon, damage)
 
         # Update AI disposition if player attacked an NPC
@@ -363,7 +375,7 @@ class AttackAction(GameAction):
             shake_duration = 0.1 + (base_damage * 0.02)
 
         # Extra shake for critical hits against player
-        if attack_result.is_critical_success:
+        if attack_result.outcome_tier == OutcomeTier.CRITICAL_SUCCESS:
             shake_intensity *= 1.5  # Higher probability for crits
             shake_duration *= 1.3
 

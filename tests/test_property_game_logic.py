@@ -7,6 +7,7 @@ from catley.game import range_system
 from catley.game.actions.area_effects import AreaEffectAction
 from catley.game.actions.combat import AttackAction
 from catley.game.actors import Character
+from catley.game.enums import OutcomeTier
 from catley.game.items.item_types import (
     GRENADE_TYPE,
     HUNTING_RIFLE_TYPE,
@@ -80,7 +81,7 @@ def test_awkward_weapon_miss_effect() -> None:
     action = AttackAction(cast(Controller, controller), attacker, defender, weapon)
     attack = weapon.melee_attack
     assert attack is not None
-    result = D20ResolutionResult(success=False)
+    result = D20ResolutionResult(outcome_tier=OutcomeTier.FAILURE)
     action._handle_attack_miss(result, attack, weapon)
     assert any("off balance" in msg for msg in controller.message_log.messages)
 

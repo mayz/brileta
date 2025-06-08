@@ -2,6 +2,7 @@ from typing import cast
 from unittest.mock import patch
 
 from catley.game.actors import Actor, Character
+from catley.game.enums import OutcomeTier
 from catley.game.resolution.d20_system import D20ResolutionResult, D20Resolver
 
 
@@ -22,9 +23,7 @@ def test_d20_resolver_basic_success() -> None:
     with patch("random.randint", fr):
         result = resolver.resolve(cast(Character, None), cast(Actor, None))
     assert isinstance(result, D20ResolutionResult)
-    assert result.success
-    assert not result.is_critical_success
-    assert not result.is_critical_failure
+    assert result.outcome_tier == OutcomeTier.SUCCESS
     assert result.final_roll_used == 10
     assert result.total_value == 15
 
@@ -36,8 +35,8 @@ def test_d20_resolver_critical_outcomes() -> None:
     with patch("random.randint", fr):
         hit = hit_resolver.resolve(cast(Character, None), cast(Actor, None))
         miss = miss_resolver.resolve(cast(Character, None), cast(Actor, None))
-    assert hit.is_critical_success and hit.success
-    assert miss.is_critical_failure and not miss.success
+    assert hit.outcome_tier == OutcomeTier.CRITICAL_SUCCESS
+    assert miss.outcome_tier == OutcomeTier.CRITICAL_FAILURE
 
 
 def test_d20_resolver_advantage_disadvantage() -> None:
@@ -48,6 +47,6 @@ def test_d20_resolver_advantage_disadvantage() -> None:
         adv = adv_resolver.resolve(cast(Character, None), cast(Actor, None))
         dis = dis_resolver.resolve(cast(Character, None), cast(Actor, None))
     assert adv.final_roll_used == 17
-    assert adv.success
+    assert adv.outcome_tier == OutcomeTier.SUCCESS
     assert dis.final_roll_used == 5
-    assert not dis.success
+    assert dis.outcome_tier == OutcomeTier.FAILURE

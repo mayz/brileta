@@ -3,6 +3,7 @@ from typing import cast
 from unittest.mock import patch
 
 from catley.game.actors import Character
+from catley.game.enums import OutcomeTier
 from catley.game.items.item_types import FISTS_TYPE
 from catley.game.resolution.combat_arbiter import determine_outcome
 from catley.game.resolution.d20_system import D20ResolutionResult
@@ -32,7 +33,7 @@ def test_determine_consequences_basic_hit() -> None:
     attack = weapon.melee_attack
     assert attack is not None
     with patch.object(attack.damage_dice, "roll", return_value=3):
-        result = D20ResolutionResult(success=True)
+        result = D20ResolutionResult(outcome_tier=OutcomeTier.SUCCESS)
         outcome = determine_outcome(result, attacker, defender, weapon)
     assert outcome.damage_dealt == 3
     assert outcome.armor_damage == 0
@@ -45,7 +46,7 @@ def test_determine_consequences_critical_hit_breaks_armor() -> None:
     assert attack is not None
     defender.health.ap = 2
     with patch.object(attack.damage_dice, "roll", side_effect=[2, 2]):
-        result = D20ResolutionResult(success=True, is_critical_success=True)
+        result = D20ResolutionResult(outcome_tier=OutcomeTier.CRITICAL_SUCCESS)
         outcome = determine_outcome(result, attacker, defender, weapon)
 
     assert outcome.damage_dealt == 4
@@ -60,7 +61,7 @@ def test_determine_consequences_critical_hit_injures_unarmored() -> None:
     assert attack is not None
     defender.health.ap = 0
     with patch.object(attack.damage_dice, "roll", side_effect=[2, 2]):
-        result = D20ResolutionResult(success=True, is_critical_success=True)
+        result = D20ResolutionResult(outcome_tier=OutcomeTier.CRITICAL_SUCCESS)
         outcome = determine_outcome(result, attacker, defender, weapon)
 
     assert outcome.damage_dealt == 4
@@ -74,7 +75,7 @@ def test_determine_consequences_miss_deals_no_damage() -> None:
     attack = weapon.melee_attack
     assert attack is not None
     with patch.object(attack.damage_dice, "roll", return_value=5):
-        result = D20ResolutionResult(success=False)
+        result = D20ResolutionResult(outcome_tier=OutcomeTier.FAILURE)
         outcome = determine_outcome(result, attacker, defender, weapon)
 
     assert outcome.damage_dealt == 0

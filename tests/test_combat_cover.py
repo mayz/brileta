@@ -5,6 +5,7 @@ from unittest.mock import patch
 from catley.controller import Controller
 from catley.game.actions.combat import AttackAction
 from catley.game.actors import Character
+from catley.game.enums import OutcomeTier
 from catley.game.items.item_types import FISTS_TYPE
 from catley.world import tile_types
 from catley.world.game_state import GameWorld
@@ -24,6 +25,11 @@ class DummyController:
     gw: DummyGameWorld
     frame_manager: object | None = None
     message_log: object | None = None
+
+    def create_resolver(self, **kwargs: object) -> object:
+        from catley.game.resolution.d20_system import D20Resolver
+
+        return D20Resolver(**kwargs)  # type: ignore[call-arg]
 
 
 def test_cover_bonus_reduces_hit_chance() -> None:
@@ -46,4 +52,4 @@ def test_cover_bonus_reduces_hit_chance() -> None:
 
     with patch("random.randint", return_value=7):
         result = action._execute_attack_roll(attack, weapon, {})
-    assert not result.success
+    assert result.outcome_tier in (OutcomeTier.FAILURE, OutcomeTier.PARTIAL_SUCCESS)
