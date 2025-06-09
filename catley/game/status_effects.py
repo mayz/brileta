@@ -108,6 +108,11 @@ class TrippedEffect(StatusEffect):
     def remove_effect(self, actor: Actor) -> None:
         pass
 
+    def apply_to_resolution(self, resolution_args: dict[str, bool]) -> dict[str, bool]:
+        """Prevent action entirely by marking it as blocked."""
+        resolution_args["action_prevented"] = True
+        return resolution_args
+
 
 class StrengthBoostEffect(StatusEffect):
     """Temporarily increase actor strength by 2 for a number of turns."""

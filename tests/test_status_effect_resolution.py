@@ -42,6 +42,7 @@ class DummyController(Controller):
         if self.message_log is None:
             self.message_log = type("Log", (), {"add_message": lambda *a, **kw: None})()
         self.action_cost = 100
+        self.turn_manager = TurnManager(cast(Controller, self))
 
     def update_fov(self) -> None:  # pragma: no cover - simple flag
         self.update_fov_called = True
