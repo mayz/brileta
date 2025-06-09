@@ -14,6 +14,7 @@ from catley.constants.combat import CombatConstants as Combat
 from catley.game import range_system
 from catley.game.actions.base import GameAction, GameActionResult
 from catley.game.actors import Character
+from catley.game.enums import AreaType, BlendMode, ConsumableEffectType  # noqa: F401
 from catley.game.items.capabilities import AreaEffect, RangedAttack
 from catley.game.items.item_core import Item
 from catley.game.items.properties import TacticalProperty, WeaponProperty
@@ -81,11 +82,11 @@ class AreaEffectAction(GameAction):
 
     def _calculate_tiles(self, effect: AreaEffect) -> DistanceByTile:
         match effect.area_type:
-            case "circle":
+            case AreaType.CIRCLE:
                 return self._circle_tiles(effect)
-            case "line":
+            case AreaType.LINE:
                 return self._line_tiles(effect)
-            case "cone":
+            case AreaType.CONE:
                 return self._cone_tiles(effect)
             case _:
                 return {}

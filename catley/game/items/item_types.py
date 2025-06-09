@@ -1,6 +1,6 @@
 import copy
 
-from catley.game.enums import ItemSize
+from catley.game.enums import AreaType, ConsumableEffectType, ItemSize
 from catley.game.items.capabilities import (
     AmmoSpec,
     AreaEffectSpec,
@@ -120,7 +120,7 @@ SUBMACHINE_GUN_TYPE = ItemType(
     ),
     area_effect=AreaEffectSpec(
         damage_die="d6",
-        area_type="cone",  # Spray pattern
+        area_type=AreaType.CONE,  # Spray pattern
         size=4,
         properties={WeaponProperty.AUTOMATIC, TacticalProperty.SPRAY},
         damage_falloff=True,
@@ -150,7 +150,7 @@ GRENADE_TYPE = ItemType(
     size=ItemSize.TINY,
     area_effect=AreaEffectSpec(
         damage_die="d6",
-        area_type="circle",
+        area_type=AreaType.CIRCLE,
         size=3,
         properties={TacticalProperty.EXPLOSIVE, TacticalProperty.FIRE},
         damage_falloff=True,
@@ -166,7 +166,7 @@ FLAMETHROWER_TYPE = ItemType(
     size=ItemSize.BIG,
     area_effect=AreaEffectSpec(
         damage_die="d8",
-        area_type="line",
+        area_type=AreaType.LINE,
         size=5,
         properties={TacticalProperty.FIRE, WeaponProperty.CONTINUOUS},
         damage_falloff=True,
@@ -229,7 +229,7 @@ BLEACH_TYPE = ItemType(
     description="Household disinfectant. Caustic and dangerous if misused.",
     size=ItemSize.NORMAL,
     consumable_effect=ConsumableEffectSpec(
-        effect_type="poison",
+        effect_type=ConsumableEffectType.POISON,
         effect_value=-15,  # Toxic if consumed
         max_uses=1,
     ),
