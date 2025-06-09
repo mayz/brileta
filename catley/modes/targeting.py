@@ -6,6 +6,7 @@ import tcod.event
 from tcod.console import Console
 
 from catley import colors
+from catley.events import ActorDeathEvent, subscribe_to_event, unsubscribe_from_event
 from catley.game import range_system
 from catley.game.actions.combat import AttackAction
 from catley.game.actors import Character
@@ -24,6 +25,9 @@ class TargetingMode(Mode):
         self.candidates: list[Character] = []
         self.current_index: int = 0
         self.last_targeted: Character | None = None
+
+        # Subscribe to actor death events
+        subscribe_to_event(ActorDeathEvent, self._handle_actor_death_event)
 
     def enter(self) -> None:
         """Enter targeting mode and find all valid targets"""
@@ -77,7 +81,15 @@ class TargetingMode(Mode):
 
         self.cursor_manager.set_active_cursor_type("arrow")
 
+        # Clean up event subscriptions
+        unsubscribe_from_event(ActorDeathEvent, self._handle_actor_death_event)
+
         super().exit()
+
+    def _handle_actor_death_event(self, event: ActorDeathEvent) -> None:
+        """Handle actor death events from the global event bus."""
+        if self.active:
+            self.on_actor_death(event.actor)
 
     def handle_input(self, event: tcod.event.Event) -> bool:
         """Handle targeting mode input"""

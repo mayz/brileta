@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING
 
 from catley import colors
 from catley.constants.combat import CombatConstants as Combat
+from catley.events import MessageEvent, publish_event
 
 from .enums import Disposition
 
@@ -142,8 +143,8 @@ class HostileAI(AIComponent):
 
         # Adjacent to player - attack!
         if distance == 1:
-            controller.message_log.add_message(
-                f"{actor.name} lunges at {player.name}!", colors.RED
+            publish_event(
+                MessageEvent(f"{actor.name} lunges at {player.name}!", colors.RED)
             )
             return AttackAction(controller, actor, player)
 
@@ -152,9 +153,7 @@ class HostileAI(AIComponent):
             return self._get_move_toward_player(controller, actor, player, dx, dy)
 
         # Too far away - just prowl menacingly
-        controller.message_log.add_message(
-            f"{actor.name} prowls menacingly.", colors.ORANGE
-        )
+        publish_event(MessageEvent(f"{actor.name} prowls menacingly.", colors.ORANGE))
         return None
 
     def _get_move_toward_player(
@@ -188,15 +187,18 @@ class HostileAI(AIComponent):
         # Try each potential move until we find one that works
         for test_dx, test_dy in potential_moves:
             if self._can_move_to(controller, test_dx, test_dy, actor, player):
-                controller.message_log.add_message(
-                    f"{actor.name} charges towards {player.name}.", colors.ORANGE
+                publish_event(
+                    MessageEvent(
+                        f"{actor.name} charges towards {player.name}.", colors.ORANGE
+                    )
                 )
                 return MoveAction(controller, actor, test_dx, test_dy)
 
         # No valid move found
-        controller.message_log.add_message(
-            f"{actor.name} snarls, unable to reach {player.name}.",
-            colors.ORANGE,
+        publish_event(
+            MessageEvent(
+                f"{actor.name} snarls, unable to reach {player.name}.", colors.ORANGE
+            )
         )
         return None
 

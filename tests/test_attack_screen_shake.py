@@ -4,6 +4,12 @@ from unittest.mock import MagicMock
 
 from catley import colors
 from catley.controller import Controller
+from catley.events import (
+    MessageEvent,
+    ScreenShakeEvent,
+    reset_event_bus_for_testing,
+    subscribe_to_event,
+)
 from catley.game.actions.combat import AttackAction
 from catley.game.actors import Character
 from catley.game.enums import OutcomeTier
@@ -25,7 +31,10 @@ class DummyGameWorld:
 
 @dataclass
 class DummyMessageLog:
-    def add_message(self, *_args, **_kwargs) -> None:
+    def __init__(self) -> None:
+        subscribe_to_event(MessageEvent, self.add_message)
+
+    def add_message(self, *_args, **_kwargs) -> None:  # pragma: no cover - simple stub
         pass
 
 
@@ -124,6 +133,9 @@ def make_world_ranged() -> tuple[DummyController, Character, Character, AttackAc
 
 
 def test_screen_shake_uses_damage_once() -> None:
+    reset_event_bus_for_testing()
+    intensities: list[float] = []
+    subscribe_to_event(ScreenShakeEvent, lambda e: intensities.append(e.intensity))
     controller, attacker, defender, action = make_world()
     weapon = action.weapon
     assert weapon and weapon.melee_attack
@@ -136,11 +148,13 @@ def test_screen_shake_uses_damage_once() -> None:
 
     # Damage dice should have been rolled only once
     assert attack.damage_dice.roll.call_count == 1
-    intensity = controller.frame_manager.trigger_screen_shake.call_args[0][0]
-    assert intensity == 0.6
+    assert intensities and intensities[0] == 0.6
 
 
 def test_screen_shake_ranged_attack_intensity() -> None:
+    reset_event_bus_for_testing()
+    intensities: list[float] = []
+    subscribe_to_event(ScreenShakeEvent, lambda e: intensities.append(e.intensity))
     controller, attacker, defender, action = make_world_ranged()
     weapon = action.weapon
     assert weapon and weapon.ranged_attack
@@ -151,5 +165,4 @@ def test_screen_shake_ranged_attack_intensity() -> None:
     damage = action._apply_combat_outcome(check, outcome, attack, weapon)
     action._handle_post_attack_effects(check, attack, weapon, damage)
 
-    intensity = controller.frame_manager.trigger_screen_shake.call_args[0][0]
-    assert intensity == 0.32
+    assert intensities and intensities[0] == 0.32

@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from catley import colors
 from catley.controller import Controller
+from catley.events import MessageEvent, reset_event_bus_for_testing, subscribe_to_event
 from catley.game.actions.combat import AttackAction
 from catley.game.actors import Character
 from catley.game.ai import DispositionBasedAI
@@ -32,6 +33,7 @@ class DummyMessageLog:
 
     def __init__(self) -> None:
         self.messages = []
+        subscribe_to_event(MessageEvent, lambda e: self.add_message(e.text))
 
     def add_message(self, text: str, *_args, **_kwargs) -> None:
         self.messages.append(text)
@@ -56,6 +58,7 @@ class DummyController(Controller):
 def make_world() -> tuple[
     DummyController, Character, Character, Character, AttackAction
 ]:
+    reset_event_bus_for_testing()
     gw = DummyGameWorld()
     attacker = Character(1, 1, "A", colors.WHITE, "Att", game_world=cast(GameWorld, gw))
     defender = Character(2, 1, "D", colors.WHITE, "Def", game_world=cast(GameWorld, gw))

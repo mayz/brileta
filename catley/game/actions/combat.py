@@ -11,6 +11,13 @@ from typing import TYPE_CHECKING
 
 from catley import colors
 from catley.constants.combat import CombatConstants as Combat
+from catley.events import (
+    ActorDeathEvent,
+    EffectEvent,
+    MessageEvent,
+    ScreenShakeEvent,
+    publish_event,
+)
 from catley.game import range_system
 from catley.game.actions.base import GameAction, GameActionResult
 from catley.game.actors import Character, Disposition
@@ -74,13 +81,13 @@ class AttackAction(GameAction):
         self._handle_post_attack_effects(attack_result, attack, weapon, damage)
 
         # 6. Generate and apply additional consequences
-        generator = AttackConsequenceGenerator(self.controller)
+        generator = AttackConsequenceGenerator()
         consequences = generator.generate(
             attacker=self.attacker,
             weapon=weapon,
             outcome_tier=attack_result.outcome_tier,
         )
-        handler = ConsequenceHandler(self.controller)
+        handler = ConsequenceHandler()
         for consequence in consequences:
             handler.apply_consequence(consequence)
 
@@ -132,8 +139,8 @@ class AttackAction(GameAction):
             return weapon.melee_attack, weapon
 
         # No attack capabilities
-        self.controller.message_log.add_message(
-            f"{self.attacker.name} has no way to attack!", colors.RED
+        publish_event(
+            MessageEvent(f"{self.attacker.name} has no way to attack!", colors.RED)
         )
         return None, weapon
 
@@ -149,8 +156,8 @@ class AttackAction(GameAction):
         # For ranged attacks, check ammo, check line of sight and apply range modifiers
         if ranged_attack is not None and attack == ranged_attack and distance > 1:
             if ranged_attack.current_ammo <= 0:
-                self.controller.message_log.add_message(
-                    f"{weapon.name} is out of ammo!", colors.RED
+                publish_event(
+                    MessageEvent(f"{weapon.name} is out of ammo!", colors.RED)
                 )
                 return None
 
@@ -162,8 +169,8 @@ class AttackAction(GameAction):
                 self.defender.x,
                 self.defender.y,
             ):
-                self.controller.message_log.add_message(
-                    f"No clear shot to {self.defender.name}!", colors.RED
+                publish_event(
+                    MessageEvent(f"No clear shot to {self.defender.name}!", colors.RED)
                 )
                 return None
 
@@ -172,8 +179,8 @@ class AttackAction(GameAction):
             range_modifiers = range_system.get_range_modifier(weapon, range_category)
 
             if range_modifiers is None:
-                self.controller.message_log.add_message(
-                    f"{self.defender.name} is out of range!", colors.RED
+                publish_event(
+                    MessageEvent(f"{self.defender.name} is out of range!", colors.RED)
                 )
                 return None
 
@@ -239,8 +246,8 @@ class AttackAction(GameAction):
                 ranged_attack.current_ammo -= 1
             else:
                 # This shouldn't happen if validation worked, but safety check
-                self.controller.message_log.add_message(
-                    f"No ammo left in {weapon.name}!", colors.RED
+                publish_event(
+                    MessageEvent(f"No ammo left in {weapon.name}!", colors.RED)
                 )
 
         # Emit muzzle flash for ranged attacks
@@ -254,12 +261,14 @@ class AttackAction(GameAction):
         direction_x = self.defender.x - self.attacker.x
         direction_y = self.defender.y - self.attacker.y
 
-        self.frame_manager.create_effect(
-            "muzzle_flash",
-            x=self.attacker.x,
-            y=self.attacker.y,
-            direction_x=direction_x,
-            direction_y=direction_y,
+        publish_event(
+            EffectEvent(
+                "muzzle_flash",
+                self.attacker.x,
+                self.attacker.y,
+                direction_x=direction_x,
+                direction_y=direction_y,
+            )
         )
 
     def _apply_combat_outcome(
@@ -284,19 +293,23 @@ class AttackAction(GameAction):
                 self.defender.inventory.add_to_inventory(outcome.injury_inflicted)
             if damage > 0:
                 self.defender.take_damage(damage)
-                self.frame_manager.create_effect(
-                    "blood_splatter",
-                    x=self.defender.x,
-                    y=self.defender.y,
-                    intensity=damage / 20.0,
+                publish_event(
+                    EffectEvent(
+                        "blood_splatter",
+                        self.defender.x,
+                        self.defender.y,
+                        intensity=damage / 20.0,
+                    )
                 )
                 self._log_hit_message(attack_result, weapon, damage)
 
                 if not self.defender.health.is_alive():
-                    self.controller.message_log.add_message(
-                        f"{self.defender.name} has been killed!", colors.RED
+                    publish_event(
+                        MessageEvent(
+                            f"{self.defender.name} has been killed!", colors.RED
+                        )
                     )
-                    self.controller.notify_actor_death(self.defender)
+                    publish_event(ActorDeathEvent(self.defender))
             return damage
 
         self._handle_attack_miss(attack_result, attack, weapon)
@@ -316,15 +329,24 @@ class AttackAction(GameAction):
             # next attack. (house rule)
             # FIXME: Give the attacker the condition "confused" or "off-balance".
 
-            miss_message = (
-                f"Critical miss! {self.attacker.name}'s attack on "
-                f"{self.defender.name} fails."
-            )
             miss_color = colors.ORANGE  # A warning color for critical miss
+            publish_event(
+                MessageEvent(
+                    (
+                        f"Critical miss! {self.attacker.name}'s attack on "
+                        f"{self.defender.name} fails."
+                    ),
+                    miss_color,
+                )
+            )
         else:
-            miss_message = f"{self.attacker.name} misses {self.defender.name}."
             miss_color = colors.GREY  # Standard miss color
-        self.controller.message_log.add_message(miss_message, miss_color)
+            publish_event(
+                MessageEvent(
+                    f"{self.attacker.name} misses {self.defender.name}.",
+                    miss_color,
+                )
+            )
 
         # Handle 'awkward' weapon property on miss
         if (
@@ -333,10 +355,12 @@ class AttackAction(GameAction):
             and attack is weapon.melee_attack
             and WeaponProperty.AWKWARD in weapon.melee_attack.properties
         ):
-            self.controller.message_log.add_message(
-                f"{self.attacker.name} is off balance from the awkward swing "
-                f"with {weapon.name}!",
-                colors.LIGHT_BLUE,  # Informational color for status effects
+            publish_event(
+                MessageEvent(
+                    f"{self.attacker.name} is off balance from the awkward swing "
+                    f"with {weapon.name}!",
+                    colors.LIGHT_BLUE,
+                )
             )
             # TODO: Implement off-balance effect (maybe skip next turn?)
 
@@ -345,23 +369,21 @@ class AttackAction(GameAction):
     ) -> None:
         """Log appropriate hit message based on critical status."""
         if attack_result.outcome_tier == OutcomeTier.CRITICAL_SUCCESS:
-            hit_message = (
+            hit_color = colors.YELLOW
+            message = (
                 f"Critical hit! {self.attacker.name} strikes {self.defender.name} "
                 f"with {weapon.name} for {damage} damage."
             )
-            hit_color = colors.YELLOW
         else:
-            hit_message = (
+            hit_color = colors.WHITE  # Default color for a standard hit
+            message = (
                 f"{self.attacker.name} hits {self.defender.name} "
                 f"with {weapon.name} for {damage} damage."
             )
-            hit_color = colors.WHITE  # Default color for a standard hit
         hp_message_part = (
             f" ({self.defender.name} has {self.defender.health.hp} HP left.)"
         )
-        self.controller.message_log.add_message(
-            hit_message + hp_message_part, hit_color
-        )
+        publish_event(MessageEvent(message + hp_message_part, hit_color))
 
     def _handle_post_attack_effects(
         self,
@@ -425,7 +447,7 @@ class AttackAction(GameAction):
             shake_intensity *= Combat.CRIT_SHAKE_INTENSITY_MULT
             shake_duration *= Combat.CRIT_SHAKE_DURATION_MULT
 
-        self.frame_manager.trigger_screen_shake(shake_intensity, shake_duration)
+        publish_event(ScreenShakeEvent(shake_intensity, shake_duration))
 
     def _update_ai_disposition(self) -> None:
         """Update AI disposition if player attacked an NPC."""
@@ -436,10 +458,14 @@ class AttackAction(GameAction):
             and self.defender.ai.disposition != Disposition.HOSTILE
         ):
             self.defender.ai.disposition = Disposition.HOSTILE
-            self.controller.message_log.add_message(
-                f"{self.defender.name} becomes hostile towards {self.attacker.name} "
-                "due to the attack!",
-                colors.ORANGE,
+            publish_event(
+                MessageEvent(
+                    (
+                        f"{self.defender.name} becomes hostile towards "
+                        f"{self.attacker.name} due to the attack!"
+                    ),
+                    colors.ORANGE,
+                )
             )
 
 
@@ -473,11 +499,15 @@ class ReloadAction(GameAction):
             # Remove ammo from inventory and reload weapon
             self.actor.inventory.remove_from_inventory(ammo_item)
             ranged_attack.current_ammo = ranged_attack.max_ammo
-            self.controller.message_log.add_message(
-                f"{self.actor.name} reloaded {self.weapon.name}.", colors.GREEN
+            publish_event(
+                MessageEvent(
+                    f"{self.actor.name} reloaded {self.weapon.name}.", colors.GREEN
+                )
             )
         else:
-            self.controller.message_log.add_message(
-                f"No {ranged_attack.ammo_type} ammo available!", colors.RED
+            publish_event(
+                MessageEvent(
+                    f"No {ranged_attack.ammo_type} ammo available!", colors.RED
+                )
             )
         return None

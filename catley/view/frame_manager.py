@@ -11,6 +11,11 @@ from catley.config import (
     HELP_HEIGHT,
     SHOW_FPS,
 )
+from catley.events import (
+    EffectEvent,
+    ScreenShakeEvent,
+    subscribe_to_event,
+)
 
 from .effects.effects import EffectContext
 from .effects.screen_shake import ScreenShake
@@ -41,6 +46,10 @@ class FrameManager:
         self.screen_shake = ScreenShake()
         # Layout constants
         self.help_height = HELP_HEIGHT
+
+        # Subscribe to visual effect events
+        subscribe_to_event(EffectEvent, self._handle_effect_event)
+        subscribe_to_event(ScreenShakeEvent, self._handle_screen_shake_event)
 
         self._setup_game_ui()
 
@@ -216,3 +225,18 @@ class FrameManager:
             direction_y=direction_y,
         )
         self.game_world_panel.effect_library.trigger(effect_name, context)
+
+    def _handle_effect_event(self, event: EffectEvent) -> None:
+        """Handle effect events from the global event bus."""
+        self.create_effect(
+            event.effect_name,
+            event.x,
+            event.y,
+            event.intensity,
+            event.direction_x,
+            event.direction_y,
+        )
+
+    def _handle_screen_shake_event(self, event: ScreenShakeEvent) -> None:
+        """Handle screen shake events from the global event bus."""
+        self.trigger_screen_shake(event.intensity, event.duration)
