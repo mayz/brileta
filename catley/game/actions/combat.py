@@ -313,6 +313,7 @@ class AttackAction(GameAction):
         if (
             weapon
             and weapon.melee_attack
+            and attack is weapon.melee_attack
             and WeaponProperty.AWKWARD in weapon.melee_attack.properties
         ):
             self.controller.message_log.add_message(
@@ -371,7 +372,7 @@ class AttackAction(GameAction):
     def _apply_screen_shake(
         self,
         attack_result: ResolutionResult,
-        _attack: Attack,
+        attack: Attack,
         weapon: Item,
         damage: int,
     ) -> None:
@@ -381,7 +382,7 @@ class AttackAction(GameAction):
         base_damage = damage
 
         # Different shake for different attack types
-        if weapon.melee_attack:
+        if weapon.melee_attack and attack is weapon.melee_attack:
             # Melee attacks - use probability instead of pixel distance
             shake_intensity = min(base_damage * 0.15, 0.8)  # 0.15-0.8 probability
             shake_duration = 0.2 + (base_damage * 0.03)

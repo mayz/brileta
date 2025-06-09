@@ -86,6 +86,16 @@ def test_awkward_weapon_miss_effect() -> None:
     assert any("off balance" in msg for msg in controller.message_log.messages)
 
 
+def test_awkward_weapon_ranged_miss_no_effect() -> None:
+    controller, attacker, defender, weapon = _make_world("sniper")
+    action = AttackAction(cast(Controller, controller), attacker, defender, weapon)
+    attack = weapon.ranged_attack
+    assert attack is not None
+    result = D20ResolutionResult(outcome_tier=OutcomeTier.FAILURE)
+    action._handle_attack_miss(result, attack, weapon)
+    assert not any("off balance" in msg for msg in controller.message_log.messages)
+
+
 def test_automatic_weapon_ammo_consumption() -> None:
     controller, attacker, defender, weapon = _make_world("smg")
     ranged = weapon.ranged_attack

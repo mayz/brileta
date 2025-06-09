@@ -7,7 +7,7 @@ from catley.controller import Controller
 from catley.game.actions.combat import AttackAction
 from catley.game.actors import Character
 from catley.game.enums import OutcomeTier
-from catley.game.items.item_types import FISTS_TYPE
+from catley.game.items.item_types import FISTS_TYPE, PISTOL_TYPE
 from catley.game.resolution.combat_arbiter import determine_outcome
 from catley.game.resolution.d20_system import D20ResolutionResult
 from catley.world import tile_types
@@ -84,6 +84,45 @@ def make_world() -> tuple[DummyController, Character, Character, AttackAction]:
     )
 
 
+def make_world_ranged() -> tuple[DummyController, Character, Character, AttackAction]:
+    gw = DummyGameWorld()
+    attacker = Character(
+        1,
+        1,
+        "A",
+        colors.WHITE,
+        "Attacker",
+        game_world=cast(GameWorld, gw),
+    )
+    defender = Character(
+        3,
+        1,
+        "D",
+        colors.WHITE,
+        "Defender",
+        game_world=cast(GameWorld, gw),
+    )
+    gw.actors.extend([attacker, defender])
+    gw.player = defender
+    controller = DummyController(
+        gw=gw, message_log=DummyMessageLog(), frame_manager=DummyFrameManager()
+    )
+    weapon = PISTOL_TYPE.create()
+    attack = weapon.ranged_attack
+    assert attack is not None
+    return (
+        controller,
+        attacker,
+        defender,
+        AttackAction(
+            cast(Controller, controller),
+            attacker,
+            defender,
+            weapon,
+        ),
+    )
+
+
 def test_screen_shake_uses_damage_once() -> None:
     controller, attacker, defender, action = make_world()
     weapon = action.weapon
@@ -99,3 +138,18 @@ def test_screen_shake_uses_damage_once() -> None:
     assert attack.damage_dice.roll.call_count == 1
     intensity = controller.frame_manager.trigger_screen_shake.call_args[0][0]
     assert intensity == 0.6
+
+
+def test_screen_shake_ranged_attack_intensity() -> None:
+    controller, attacker, defender, action = make_world_ranged()
+    weapon = action.weapon
+    assert weapon and weapon.ranged_attack
+    attack = weapon.ranged_attack
+    attack.damage_dice.roll = MagicMock(return_value=4)
+    check = D20ResolutionResult(outcome_tier=OutcomeTier.SUCCESS)
+    outcome = determine_outcome(check, attacker, defender, weapon)
+    damage = action._apply_combat_outcome(check, outcome, attack, weapon)
+    action._handle_post_attack_effects(check, attack, weapon, damage)
+
+    intensity = controller.frame_manager.trigger_screen_shake.call_args[0][0]
+    assert intensity == 0.32
