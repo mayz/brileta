@@ -24,6 +24,7 @@ from catley.game import range_system
 from catley.game.actions.base import GameAction
 from catley.game.actions.combat import AttackAction, ReloadAction
 from catley.game.actors import Character
+from catley.game.enums import Disposition
 
 if TYPE_CHECKING:
     from catley.controller import Controller
@@ -147,14 +148,27 @@ class ActionDiscovery:
         """Build action context from current game state."""
 
         # Find nearby actors (within reasonable interaction range)
-        nearby_actors = []
+        nearby_actors: list[Character] = []
+        gm = controller.gw.game_map
         for other_actor in controller.gw.actors:
             if other_actor == actor:
+                continue
+            if not isinstance(other_actor, Character):
+                continue
+            if not other_actor.health.is_alive():
                 continue
             distance = range_system.calculate_distance(
                 actor.x, actor.y, other_actor.x, other_actor.y
             )
-            if distance <= 15:  # Reasonable interaction range
+            if (
+                distance <= 15
+                and 0 <= other_actor.x < gm.width
+                and 0 <= other_actor.y < gm.height
+                and gm.visible[other_actor.x, other_actor.y]
+                and range_system.has_line_of_sight(
+                    gm, actor.x, actor.y, other_actor.x, other_actor.y
+                )
+            ):
                 nearby_actors.append(other_actor)
 
         # Get items on ground
@@ -162,9 +176,8 @@ class ActionDiscovery:
 
         # Determine if in combat (any hostile nearby)
         in_combat = any(
-            hasattr(other, "ai")
-            and hasattr(other.ai, "disposition")
-            and other.ai.disposition.name == "HOSTILE"
+            getattr(getattr(other, "ai", None), "disposition", None)
+            == Disposition.HOSTILE
             for other in nearby_actors
         )
 
@@ -194,6 +207,17 @@ class ActionDiscovery:
         # Get all nearby targetable actors
         for target in context.nearby_actors:
             if target == actor:
+                continue
+            if not isinstance(target, Character):
+                continue
+            if not target.stats or not target.health or not target.health.is_alive():
+                continue
+            gm = controller.gw.game_map
+            if not gm.visible[target.x, target.y]:
+                continue
+            if not range_system.has_line_of_sight(
+                gm, actor.x, actor.y, target.x, target.y
+            ):
                 continue
 
             distance = range_system.calculate_distance(
@@ -295,6 +319,19 @@ class ActionDiscovery:
         weapon = actor.inventory.get_active_weapon()
 
         if not weapon:
+            return options
+
+        gm = controller.gw.game_map
+        if (
+            not isinstance(target, Character)
+            or not target.stats
+            or not target.health
+            or not target.health.is_alive()
+            or not gm.visible[target.x, target.y]
+            or not range_system.has_line_of_sight(
+                gm, actor.x, actor.y, target.x, target.y
+            )
+        ):
             return options
 
         distance = range_system.calculate_distance(actor.x, actor.y, target.x, target.y)

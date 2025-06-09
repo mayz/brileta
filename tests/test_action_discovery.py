@@ -27,10 +27,11 @@ class DummyGameWorld:
         self.player: Character | None = None
         self.selected_actor: Character | None = None
         self.items: dict[tuple[int, int], list] = {}
-        self.game_map = GameMap(5, 5)
+        self.game_map = GameMap(30, 30)
 
         # Default to all floor tiles for simplicity
         self.game_map.tiles[:] = tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[attr-defined]
+        self.game_map.visible[:] = True
 
     def get_pickable_items_at_location(self, x: int, y: int) -> list:
         return self.items.get((x, y), [])
@@ -169,6 +170,20 @@ def test_get_combat_options_for_target_filters() -> None:
     assert melee_only[0].name.startswith("Melee")
     assert len(ranged_only) == 1
     assert ranged_only[0].name.startswith("Ranged")
+
+
+def test_combat_options_ignore_dead_and_unseen() -> None:
+    controller, player, melee_target, ranged_target, pistol = _make_combat_world()
+    melee_target.health.hp = 0
+    controller.gw.game_map.visible[ranged_target.x, ranged_target.y] = False
+    controller.gw.game_map.tiles[2, 0] = tile_types.TILE_TYPE_ID_WALL  # type: ignore[attr-defined]
+
+    disc = ActionDiscovery()
+    ctx = disc._build_context(cast(Controller, controller), player)
+    opts = disc._get_combat_options(cast(Controller, controller), player, ctx)
+    names = {o.name for o in opts}
+    assert all(melee_target.name not in n for n in names)
+    assert all(ranged_target.name not in n for n in names)
 
 
 def test_sort_by_relevance_orders_actions() -> None:
