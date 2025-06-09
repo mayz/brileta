@@ -341,7 +341,7 @@ class AreaEffect:
         return self._spec.damage_dice
 
     @property
-    def area_type(self) -> str:
+    def area_type(self) -> AreaType:
         return self._spec.area_type
 
     @property
