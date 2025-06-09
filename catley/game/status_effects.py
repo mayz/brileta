@@ -42,6 +42,10 @@ class StatusEffect(abc.ABC):
         """Return ``True`` if the effect should be removed this turn."""
         return self.duration == 0
 
+    def apply_to_resolution(self, resolution_args: dict[str, bool]) -> dict[str, bool]:
+        """Modify resolution arguments to apply this effect's influence."""
+        return resolution_args
+
 
 class OffBalanceEffect(StatusEffect):
     """Actor has disadvantage on their next action, then removes itself."""
@@ -60,6 +64,11 @@ class OffBalanceEffect(StatusEffect):
     def remove_effect(self, actor: Actor) -> None:
         pass
 
+    def apply_to_resolution(self, resolution_args: dict[str, bool]) -> dict[str, bool]:
+        """Apply disadvantage to resolution."""
+        resolution_args["has_disadvantage"] = True
+        return resolution_args
+
 
 class FocusedEffect(StatusEffect):
     """Actor has advantage on their next action, then removes itself."""
@@ -77,6 +86,11 @@ class FocusedEffect(StatusEffect):
 
     def remove_effect(self, actor: Actor) -> None:
         pass
+
+    def apply_to_resolution(self, resolution_args: dict[str, bool]) -> dict[str, bool]:
+        """Apply advantage to resolution."""
+        resolution_args["has_advantage"] = True
+        return resolution_args
 
 
 class TrippedEffect(StatusEffect):

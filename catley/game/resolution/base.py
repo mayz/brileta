@@ -34,6 +34,7 @@ class Resolver(abc.ABC):
         actor: Character,
         target: Actor,
         weapon: Item | None = None,
+        status_modifiers: dict[str, bool] | None = None,
         # Future-proofing: add a generic 'context' or 'modifiers' dict
         # situational_bonus: int = 0
     ) -> ResolutionResult:
@@ -46,6 +47,9 @@ class Resolver(abc.ABC):
             weapon: The item being used for the action, if any. This can
                     provide properties that modify the resolution (e.g., a
                     'Scoped' property granting advantage).
+            status_modifiers: Additional advantage/disadvantage flags derived
+                from status effects. Keys are ``has_advantage`` and
+                ``has_disadvantage``.
 
         Returns:
             A ResolutionResult subclass instance (e.g., D20ResolutionResult)
