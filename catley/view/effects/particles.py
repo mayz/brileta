@@ -6,6 +6,7 @@ import tcod.console
 
 from catley import colors
 from catley.constants.view import ViewConstants as View
+from catley.game.enums import AreaType, BlendMode, ConsumableEffectType  # noqa: F401
 
 # Usage example:
 # particle_system = SubTileParticleSystem(map_width, map_height)
@@ -45,7 +46,7 @@ class SubParticle:
         char: str = "*",
         color: colors.Color = (255, 0, 0),
         bg_color: colors.Color | None = None,
-        bg_blend_mode: str = "tint",  # "tint", "overlay", "replace"
+        bg_blend_mode: BlendMode = BlendMode.TINT,
     ) -> None:
         # Position and movement (in sub-tile coordinates)
         self.sub_x = sub_x  # Position in sub-tile coordinates
@@ -154,7 +155,7 @@ class SubTileParticleSystem:
         char: str = "*",
         color: colors.Color = (255, 0, 0),
         bg_color: colors.Color | None = None,
-        bg_blend_mode: str = "tint",
+        bg_blend_mode: BlendMode = BlendMode.TINT,
     ) -> None:
         """
         Add a single particle to the system.
@@ -227,7 +228,7 @@ class SubTileParticleSystem:
         colors_and_chars: list[tuple[colors.Color, str]] | None = None,
         gravity: float = 0.0,
         bg_color: colors.Color | None = None,
-        bg_blend_mode: str = "tint",
+        bg_blend_mode: BlendMode = BlendMode.TINT,
     ) -> None:
         """
         Emit particles in all directions from a central point.
@@ -430,7 +431,8 @@ class SubTileParticleSystem:
                         char="",  # No character, just background effect
                         color=(0, 0, 0),  # No foreground color
                         bg_color=flash_color,
-                        bg_blend_mode="replace",  # Replace background completely
+                        # Replace background completely
+                        bg_blend_mode=BlendMode.REPLACE,
                     )
 
                     # Store the intensity for special flash rendering
@@ -451,7 +453,7 @@ class SubTileParticleSystem:
             View.SMOKE_LIFE_MAX,
         ),
         tint_color: colors.Color = (100, 100, 100),
-        blend_mode: str = "tint",
+        blend_mode: BlendMode = BlendMode.TINT,
         chars: list[str] | None = None,
         upward_drift: float = View.SMOKE_UPWARD_DRIFT,
     ) -> None:
@@ -684,7 +686,7 @@ class SubTileParticleSystem:
 
         # Apply each background effect in sequence
         for bg_color, intensity, blend_mode in bg_effects:
-            if blend_mode == "tint":
+            if blend_mode == BlendMode.TINT:
                 # Subtle blend with existing background
                 # Adds some of the effect color to the existing color
                 blended_bg = tuple(
@@ -693,7 +695,7 @@ class SubTileParticleSystem:
                 )
                 console.rgb["bg"][x, y] = blended_bg
 
-            elif blend_mode == "overlay":
+            elif blend_mode == BlendMode.OVERLAY:
                 # Stronger overlay effect
                 # Blends between original and effect color based on intensity
                 blend_factor = intensity * 0.6
@@ -703,7 +705,7 @@ class SubTileParticleSystem:
                 )
                 console.rgb["bg"][x, y] = blended_bg
 
-            elif blend_mode == "replace":
+            elif blend_mode == BlendMode.REPLACE:
                 # Full replacement (for bright flashes)
                 # Completely replaces background with effect color
                 console.rgb["bg"][x, y] = tuple(int(c * intensity) for c in bg_color)

@@ -1,4 +1,4 @@
-from catley.game.enums import ItemSize
+from catley.game.enums import AreaType, ItemSize
 from catley.game.items.capabilities import (
     AreaEffectSpec,
     MeleeAttackSpec,
@@ -53,7 +53,7 @@ def test_get_preferred_attack_mode_designed_over_improvised() -> None:
             description="",
             size=ItemSize.NORMAL,
             melee_attack=MeleeAttackSpec("d4", {WeaponProperty.IMPROVISED}),
-            area_effect=AreaEffectSpec("d4", "circle", 1),
+            area_effect=AreaEffectSpec("d4", AreaType.CIRCLE, 1),
         )
     )
     assert item.get_preferred_attack_mode(1) == item.area_effect
@@ -136,7 +136,7 @@ def test_get_weapon_properties() -> None:
             ),
             area_effect=AreaEffectSpec(
                 "d4",
-                "circle",
+                AreaType.CIRCLE,
                 1,
                 properties={WeaponProperty.CONTINUOUS, TacticalProperty.SPRAY},
             ),

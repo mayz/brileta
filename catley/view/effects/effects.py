@@ -49,6 +49,7 @@ from dataclasses import dataclass
 
 from catley import colors
 from catley.constants.view import ViewConstants as View
+from catley.game.enums import BlendMode
 
 from .particles import SubTileParticleSystem
 
@@ -331,7 +332,7 @@ class SmokeCloudEffect(Effect):
                 View.SMOKE_LIFE_MAX,
             ),
             tint_color=tint_color,
-            blend_mode="tint",  # Subtle blending with background
+            blend_mode=BlendMode.TINT,  # Subtle blending with background
             chars=[".", ",", " "],  # Small characters and spaces
             upward_drift=View.SMOKE_UPWARD_DRIFT,
         )
@@ -379,7 +380,7 @@ class PoisonGasEffect(Effect):
                 View.POISON_LIFE_MAX,
             ),
             tint_color=tint_color,
-            blend_mode="tint",  # Tints areas with poison color
+            blend_mode=BlendMode.TINT,  # Tints areas with poison color
             chars=[".", ",", "~"],  # Includes wavy character for gas movement
             upward_drift=View.POISON_UPWARD_DRIFT,
         )

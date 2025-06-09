@@ -125,7 +125,7 @@ def test_explosive_visual_effect() -> None:
 
 def test_smoke_visual_effect() -> None:
     # Create custom smoke grenade
-    from catley.game.enums import ItemSize
+    from catley.game.enums import AreaType, ItemSize
     from catley.game.items.capabilities import AreaEffectSpec
     from catley.game.items.item_core import ItemType
 
@@ -134,7 +134,7 @@ def test_smoke_visual_effect() -> None:
         description="",
         size=ItemSize.TINY,
         area_effect=AreaEffectSpec(
-            "d4", "circle", 1, properties={TacticalProperty.SMOKE}
+            "d4", AreaType.CIRCLE, 1, properties={TacticalProperty.SMOKE}
         ),
     )
     weapon = smoke_type.create()

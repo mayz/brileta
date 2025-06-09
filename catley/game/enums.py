@@ -41,3 +41,22 @@ class OutcomeTier(Enum):
     PARTIAL_SUCCESS = auto()
     SUCCESS = auto()
     CRITICAL_SUCCESS = auto()
+
+
+class AreaType(Enum):
+    CIRCLE = "circle"
+    LINE = "line"
+    CONE = "cone"
+    CROSS = "cross"
+
+
+class BlendMode(Enum):
+    TINT = "tint"
+    OVERLAY = "overlay"
+    REPLACE = "replace"
+
+
+class ConsumableEffectType(Enum):
+    HEAL = "heal"
+    BOOST_STRENGTH = "boost_strength"
+    POISON = "poison"

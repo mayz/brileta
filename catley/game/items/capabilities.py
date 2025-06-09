@@ -3,6 +3,7 @@ from __future__ import annotations
 import abc
 from typing import TYPE_CHECKING, Generic, TypeVar
 
+from catley.game.enums import AreaType, BlendMode, ConsumableEffectType  # noqa: F401
 from catley.game.items.properties import ItemProperty
 from catley.util import dice
 
@@ -256,7 +257,7 @@ class AreaEffectSpec:
     def __init__(
         self,
         damage_die: str,
-        area_type: str,
+        area_type: AreaType,
         size: int,
         properties: set[ItemProperty] | None = None,
         damage_falloff: bool = True,
@@ -372,11 +373,13 @@ class AreaEffect:
 class ConsumableEffectSpec:  # Definition Class
     """Defines the effect of a consumable item."""
 
-    effect_type: str  # "heal", "boost_strength", etc.
+    effect_type: ConsumableEffectType
     effect_value: int
     max_uses: int = 1
 
-    def __init__(self, effect_type: str, effect_value: int, max_uses: int = 1) -> None:
+    def __init__(
+        self, effect_type: ConsumableEffectType, effect_value: int, max_uses: int = 1
+    ) -> None:
         self.effect_type = effect_type
         self.effect_value = effect_value
         self.max_uses = max_uses
