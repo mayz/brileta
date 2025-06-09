@@ -9,6 +9,7 @@ from PIL import ImageDraw, ImageFont
 from tcod.sdl.render import BlendMode, Texture
 
 from catley import config
+from catley.constants.view import ViewConstants as View
 from catley.view.renderer import Renderer
 
 from .panel import Panel
@@ -49,7 +50,10 @@ class MessageLogPanel(Panel):
     def _update_font_for_tile_height(self, tile_height: int) -> None:
         """Set font and line metrics for the given tile height."""
         scale = tile_height / self.base_tile_height
-        font_size = max(8, round(config.MESSAGE_LOG_FONT_SIZE * scale))
+        font_size = max(
+            View.MESSAGE_LOG_MIN_FONT_SIZE,
+            round(config.MESSAGE_LOG_FONT_SIZE * scale),
+        )
         if font_size == self._current_font_size:
             return
 

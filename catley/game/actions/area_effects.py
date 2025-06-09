@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from catley import colors
+from catley.constants.combat import CombatConstants as Combat
 from catley.game import range_system
 from catley.game.actions.base import GameAction, GameActionResult
 from catley.game.actors import Character
@@ -148,7 +149,7 @@ class AreaEffectAction(GameAction):
         length = (dir_x**2 + dir_y**2) ** 0.5 or 1.0
         dir_x /= length
         dir_y /= length
-        cos_limit = 0.707  # ~45 degrees spread
+        cos_limit = Combat.CONE_SPREAD_COSINE
 
         for dx in range(-effect.size, effect.size + 1):
             for dy in range(-effect.size, effect.size + 1):

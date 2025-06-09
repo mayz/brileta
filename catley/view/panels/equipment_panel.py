@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from catley import colors
+from catley.constants.view import ViewConstants as View
 from catley.view.renderer import Renderer
 
 from .panel import Panel
@@ -38,10 +39,15 @@ class EquipmentPanel(Panel):
             < active_weapon.ranged_attack.max_ammo
         ):
             reload_text = "[R] to reload"
-            renderer.draw_text(self.x, self.y + 3, reload_text, fg=colors.YELLOW)
+            renderer.draw_text(
+                self.x,
+                self.y + View.EQUIPMENT_RELOAD_HINT_OFFSET,
+                reload_text,
+                fg=colors.YELLOW,
+            )
 
         for i, item in enumerate(player.inventory.attack_slots):
-            if i >= 2:
+            if i >= View.EQUIPMENT_MAX_SLOTS:
                 break
             active_marker = ">" if i == player.inventory.active_weapon_slot else " "
             slot_name = f"{active_marker}{i + 1}"
