@@ -207,11 +207,22 @@ class AttackAction(GameAction):
         attacker_score = getattr(self.attacker.stats, stat_name)
         defender_score = self.defender.stats.agility + self._adjacent_cover_bonus()
 
+        resolution_args = {"has_advantage": False, "has_disadvantage": False}
+        for effect in self.attacker.status_effects:
+            resolution_args = effect.apply_to_resolution(resolution_args)
+
+        final_advantage = range_modifiers.get(
+            "has_advantage", False
+        ) or resolution_args.get("has_advantage", False)
+        final_disadvantage = range_modifiers.get(
+            "has_disadvantage", False
+        ) or resolution_args.get("has_disadvantage", False)
+
         resolver = self.controller.create_resolver(
             ability_score=attacker_score,
             roll_to_exceed=defender_score + 10,
-            has_advantage=range_modifiers.get("has_advantage", False),
-            has_disadvantage=range_modifiers.get("has_disadvantage", False),
+            has_advantage=final_advantage,
+            has_disadvantage=final_disadvantage,
         )
         attack_result = resolver.resolve(self.attacker, self.defender, weapon)
 

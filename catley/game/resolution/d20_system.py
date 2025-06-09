@@ -35,22 +35,30 @@ class D20Resolver(Resolver):
         *,
         has_advantage: bool = False,
         has_disadvantage: bool = False,
+        status_modifiers: dict[str, bool] | None = None,
     ) -> None:
         self.ability_score = ability_score
         self.roll_to_exceed = roll_to_exceed
         self.has_advantage = has_advantage
         self.has_disadvantage = has_disadvantage
+        self.status_modifiers = status_modifiers or {}
 
     def resolve(
         self,
         actor: Character,
         target: Actor,
         weapon: Item | None = None,
+        status_modifiers: dict[str, bool] | None = None,
     ) -> D20ResolutionResult:
         """Perform the d20 roll and return the result."""
+        # Combine base modifiers with any provided status modifiers
+        combined = {**self.status_modifiers, **(status_modifiers or {})}
+        has_advantage = self.has_advantage or combined.get("has_advantage", False)
+        has_disadvantage = self.has_disadvantage or combined.get(
+            "has_disadvantage", False
+        )
+
         # Advantage and disadvantage cancel out
-        has_advantage = self.has_advantage
-        has_disadvantage = self.has_disadvantage
         if has_advantage and has_disadvantage:
             has_advantage = False
             has_disadvantage = False
@@ -92,15 +100,20 @@ class D20Resolver(Resolver):
             has_disadvantage=has_disadvantage,
         )
 
-    def calculate_success_probability(self) -> float:
+    def calculate_success_probability(
+        self, status_modifiers: dict[str, bool] | None = None
+    ) -> float:
         """
         Calculate the probability of success for this resolver's configuration.
 
         Returns:
             Probability of success as a float in the range [0.0, 1.0].
         """
-        has_advantage = self.has_advantage
-        has_disadvantage = self.has_disadvantage
+        combined = {**self.status_modifiers, **(status_modifiers or {})}
+        has_advantage = self.has_advantage or combined.get("has_advantage", False)
+        has_disadvantage = self.has_disadvantage or combined.get(
+            "has_disadvantage", False
+        )
         if has_advantage and has_disadvantage:
             has_advantage = False
             has_disadvantage = False

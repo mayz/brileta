@@ -49,7 +49,7 @@ from .components import (
 from .conditions import Condition
 from .enums import Disposition
 from .items.item_core import Item
-from .status_effects import StatusEffect
+from .status_effects import StatusEffect, TrippedEffect
 
 if TYPE_CHECKING:
     from catley.controller import Controller
@@ -409,6 +409,8 @@ class PC(Character):
         """
         Determines the next action for this actor.
         """
+        if self.has_status_effect(TrippedEffect):
+            return None
         return controller.turn_manager.dequeue_player_action()
 
 
@@ -489,6 +491,9 @@ class NPC(Character):
         """
         Determines the next action for this actor.
         """
+        if self.has_status_effect(TrippedEffect):
+            return None
+
         if self.health.is_alive():
             # Allow AI to update its internal state before deciding on an action.
             self.ai.update(
