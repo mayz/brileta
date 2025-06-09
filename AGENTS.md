@@ -40,3 +40,5 @@ Individual commands are available as `make lint`, `make format`, `make typecheck
 - When modifying existing architectures, preserve the intended separation of concerns. Look at module names and existing patterns to understand the intended responsibility boundaries.
 
 - When implementing new code or fixing bugs, if the functionality isn't already covered by unit testing, implement one or more unit tests to test it as you see fit.
+
+- As you make changes, add docstrings and line comments to clarify to a human reader *what* the code is doing and, if needed, *why* it's doing it that way.
