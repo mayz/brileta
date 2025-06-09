@@ -60,6 +60,8 @@ class AttackAction(GameAction):
 
         # 3. Perform the attack roll and immediate effects
         attack_result = self._execute_attack_roll(attack, weapon, range_modifiers)
+        if attack_result is None:
+            return None
 
         # 4. Determine combat consequences based on the resolution result
         outcome = combat_arbiter.determine_outcome(
@@ -200,7 +202,7 @@ class AttackAction(GameAction):
 
     def _execute_attack_roll(
         self, attack: Attack, weapon: Item, range_modifiers: dict
-    ) -> ResolutionResult:
+    ) -> ResolutionResult | None:
         """Perform the attack roll and handle immediate effects
         like ammo consumption."""
         stat_name = attack.stat_name
@@ -210,6 +212,9 @@ class AttackAction(GameAction):
         resolution_args = {"has_advantage": False, "has_disadvantage": False}
         for effect in self.attacker.status_effects:
             resolution_args = effect.apply_to_resolution(resolution_args)
+
+        if resolution_args.get("action_prevented", False):
+            return None
 
         final_advantage = range_modifiers.get(
             "has_advantage", False

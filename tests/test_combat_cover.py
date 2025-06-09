@@ -7,6 +7,7 @@ from catley.game.actions.combat import AttackAction
 from catley.game.actors import Character
 from catley.game.enums import OutcomeTier
 from catley.game.items.item_types import FISTS_TYPE
+from catley.game.resolution.d20_system import D20ResolutionResult
 from catley.world import tile_types
 from catley.world.game_state import GameWorld
 from catley.world.map import GameMap
@@ -51,5 +52,11 @@ def test_cover_bonus_reduces_hit_chance() -> None:
     action = AttackAction(cast(Controller, controller), attacker, defender, weapon)
 
     with patch("random.randint", return_value=7):
-        result = action._execute_attack_roll(attack, weapon, {})
-    assert result.outcome_tier in (OutcomeTier.FAILURE, OutcomeTier.PARTIAL_SUCCESS)
+        result = cast(
+            D20ResolutionResult,
+            action._execute_attack_roll(attack, weapon, {}),
+        )
+    assert result.outcome_tier in (
+        OutcomeTier.FAILURE,
+        OutcomeTier.PARTIAL_SUCCESS,
+    )
