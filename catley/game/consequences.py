@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, cast
 
 from catley import colors
+from catley.events import MessageEvent, publish_event
 from catley.game.actors import Actor, Character
 from catley.game.ai import DispositionBasedAI
 from catley.game.components import InventoryComponent, StatsComponent
@@ -11,7 +12,6 @@ from catley.game.enums import Disposition, OutcomeTier
 from catley.world.game_state import GameWorld
 
 if TYPE_CHECKING:
-    from catley.controller import Controller
     from catley.game.items.item_core import Item
 
 
@@ -29,9 +29,6 @@ class AttackConsequenceGenerator:
 
     Starting with combat validates the approach before expanding to other systems.
     """
-
-    def __init__(self, controller: Controller) -> None:
-        self.controller = controller
 
     def generate(
         self,
@@ -63,8 +60,8 @@ class AttackConsequenceGenerator:
 class ConsequenceHandler:
     """Apply consequences to the game world."""
 
-    def __init__(self, controller: Controller) -> None:
-        self.controller = controller
+    def __init__(self) -> None:
+        pass
 
     def apply_consequence(self, consequence: Consequence) -> None:
         if consequence.type == "weapon_drop":
@@ -98,9 +95,7 @@ class ConsequenceHandler:
         assert ground_actor.inventory is not None
         inv_comp = cast(InventoryComponent, ground_actor.inventory)
         inv_comp.add_to_inventory(weapon)
-        self.controller.message_log.add_message(
-            f"{actor.name} drops {weapon.name}!", colors.ORANGE
-        )
+        publish_event(MessageEvent(f"{actor.name} drops {weapon.name}!", colors.ORANGE))
 
     def _spawn_dropped_weapon(self, actor: Character, weapon: Item) -> Actor:
         gw = cast(GameWorld, actor.gw)
@@ -134,6 +129,8 @@ class ConsequenceHandler:
             distance = max(abs(actor.x - source.x), abs(actor.y - source.y))
             if distance <= radius and actor.ai.disposition != Disposition.HOSTILE:
                 actor.ai.disposition = Disposition.HOSTILE
-                self.controller.message_log.add_message(
-                    f"{actor.name} is alerted by the noise!", colors.ORANGE
+                publish_event(
+                    MessageEvent(
+                        f"{actor.name} is alerted by the noise!", colors.ORANGE
+                    )
                 )

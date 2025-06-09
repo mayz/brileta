@@ -3,6 +3,7 @@ from typing import cast
 
 from catley import colors
 from catley.controller import Controller
+from catley.events import MessageEvent, reset_event_bus_for_testing, subscribe_to_event
 from catley.game.actors import Character
 from catley.game.consequences import ConsequenceHandler
 from catley.game.items.item_types import FISTS_TYPE, PISTOL_TYPE
@@ -26,6 +27,7 @@ class DummyMessageLog:
 
     def __init__(self) -> None:
         self.messages = []
+        subscribe_to_event(MessageEvent, lambda e: self.add_message(e.text))
 
     def add_message(self, text: str, *_args, **_kwargs) -> None:
         self.messages.append(text)
@@ -48,6 +50,7 @@ class DummyController(Controller):
 
 
 def make_world() -> tuple[DummyController, Character]:
+    reset_event_bus_for_testing()
     gw = DummyGameWorld()
     actor = Character(1, 1, "A", colors.WHITE, "Att", game_world=cast(GameWorld, gw))
     gw.actors.append(actor)
@@ -60,7 +63,7 @@ def make_world() -> tuple[DummyController, Character]:
 
 def test_unarmed_weapon_drop_creates_no_actor() -> None:
     controller, actor = make_world()
-    handler = ConsequenceHandler(cast(Controller, controller))
+    handler = ConsequenceHandler()
     handler._apply_weapon_drop(actor, FISTS_TYPE.create())
     # Only the actor should exist; no dropped item actors added
     assert gw_actor_count(controller.gw) == 1
@@ -71,7 +74,7 @@ def test_pickup_menu_removes_empty_container() -> None:
     # Equip and drop a pistol
     pistol = PISTOL_TYPE.create()
     actor.inventory.equip_to_slot(pistol, 0)
-    handler = ConsequenceHandler(cast(Controller, controller))
+    handler = ConsequenceHandler()
     handler._apply_weapon_drop(actor, pistol)
 
     # There should now be a dropped item actor on the same tile

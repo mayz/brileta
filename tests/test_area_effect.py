@@ -4,6 +4,12 @@ import numpy as np
 
 from catley import colors
 from catley.controller import Controller
+from catley.events import (
+    EffectEvent,
+    MessageEvent,
+    reset_event_bus_for_testing,
+    subscribe_to_event,
+)
 from catley.game.actions.area_effects import AreaEffectAction
 from catley.game.actors import Actor, Character
 from catley.game.items.item_types import GRENADE_TYPE
@@ -30,6 +36,10 @@ class DummyMessageLog:
     def __init__(self) -> None:
         self.messages: list[str] = []
         self.revision = 0
+        subscribe_to_event(MessageEvent, self._on_message_event)
+
+    def _on_message_event(self, event: MessageEvent) -> None:
+        self.add_message(event.text, event.color, stack=event.stack)
 
     def add_message(
         self, text: str, _fg: colors.Color = colors.WHITE, *, stack: bool = True
@@ -46,7 +56,6 @@ class DummyFrameManager(FrameManager):
         # Create a mock Renderer that satisfies the type hint.
         # We don't need a real TCOD context for this test.
         self.renderer = MagicMock(spec=Renderer)
-        self.effects: list[str] = []
 
     def create_effect(
         self,
@@ -57,7 +66,7 @@ class DummyFrameManager(FrameManager):
         direction_x: float = 0.0,
         direction_y: float = 0.0,
     ) -> None:
-        self.effects.append(effect_name)
+        pass
 
 
 class DummyController(Controller):
@@ -79,7 +88,7 @@ def make_world() -> tuple[
     gw.actors.extend([attacker, target])
     controller = DummyController(gw)
     grenade = GRENADE_TYPE.create()
-    action = AreaEffectAction(controller, attacker, 5, 5, grenade)
+    action = AreaEffectAction(game_map, gw.actors, attacker, 5, 5, grenade)
     return controller, attacker, target, action, game_map
 
 
@@ -109,6 +118,9 @@ def test_grenade_damage_calculation() -> None:
 
 
 def test_grenade_action_execution() -> None:
+    reset_event_bus_for_testing()
+    effects: list[str] = []
+    subscribe_to_event(EffectEvent, lambda e: effects.append(e.effect_name))
     controller, attacker, target, action, _ = make_world()
 
     def fixed_randint(_a: int, _b: int) -> int:
@@ -118,4 +130,4 @@ def test_grenade_action_execution() -> None:
         action.execute()
     assert target.health.hp == target.health.max_hp - 4
     assert controller.message_log.messages[-1] == "Target takes 4 damage."
-    assert controller.frame_manager.effects == ["explosion"]
+    assert effects == ["explosion"]

@@ -5,6 +5,7 @@ import string
 from typing import TYPE_CHECKING
 
 from catley import colors
+from catley.events import MessageEvent, publish_event
 from catley.game.actors import Character
 from catley.game.items.item_core import Item
 from catley.view.ui.overlays import Menu, MenuOption
@@ -59,9 +60,7 @@ class PickupMenu(Menu):
         player = self.controller.gw.player
         # Check if player has inventory space using the new size-aware method
         if not player.inventory.can_add_to_inventory(item):
-            self.controller.message_log.add_message(
-                "Your inventory is full!", colors.RED
-            )
+            publish_event(MessageEvent("Your inventory is full!", colors.RED))
             return
 
         # Remove item from whichever actor at the location actually holds it
@@ -98,6 +97,4 @@ class PickupMenu(Menu):
 
         # Add to player inventory
         player.inventory.add_to_inventory(item)
-        self.controller.message_log.add_message(
-            f"You pick up {item.name}.", colors.WHITE
-        )
+        publish_event(MessageEvent(f"You pick up {item.name}.", colors.WHITE))

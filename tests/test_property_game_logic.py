@@ -3,6 +3,12 @@ from typing import cast
 
 from catley import colors
 from catley.controller import Controller
+from catley.events import (
+    EffectEvent,
+    MessageEvent,
+    reset_event_bus_for_testing,
+    subscribe_to_event,
+)
 from catley.game import range_system
 from catley.game.actions.area_effects import AreaEffectAction
 from catley.game.actions.combat import AttackAction
@@ -34,6 +40,7 @@ class DummyMessageLog:
 
     def __init__(self) -> None:
         self.messages = []
+        subscribe_to_event(MessageEvent, lambda e: self.add_message(e.text))
 
     def add_message(self, text: str, *_args, **_kwargs) -> None:
         self.messages.append(text)
@@ -100,7 +107,9 @@ def test_automatic_weapon_ammo_consumption() -> None:
     controller, attacker, defender, weapon = _make_world("smg")
     ranged = weapon.ranged_attack
     assert ranged is not None
-    action = AreaEffectAction(cast(Controller, controller), attacker, 3, 3, weapon)
+    action = AreaEffectAction(
+        controller.gw.game_map, controller.gw.actors, attacker, 3, 3, weapon
+    )
     ranged.current_ammo = 5
     action._consume_ammo(ranged)
     assert ranged.current_ammo == 2
@@ -115,12 +124,17 @@ def test_scoped_weapon_range_modifier() -> None:
 
 
 def test_explosive_visual_effect() -> None:
+    reset_event_bus_for_testing()
+    effects: list[str] = []
+    subscribe_to_event(EffectEvent, lambda e: effects.append(e.effect_name))
     controller, attacker, defender, weapon = _make_world("grenade")
     effect = weapon.area_effect
     assert effect is not None
-    action = AreaEffectAction(cast(Controller, controller), attacker, 5, 5, weapon)
+    action = AreaEffectAction(
+        controller.gw.game_map, controller.gw.actors, attacker, 5, 5, weapon
+    )
     action._trigger_visual_effect(effect)
-    assert controller.frame_manager.effects == ["explosion"]
+    assert effects == ["explosion"]
 
 
 def test_smoke_visual_effect() -> None:
@@ -138,9 +152,14 @@ def test_smoke_visual_effect() -> None:
         ),
     )
     weapon = smoke_type.create()
+    reset_event_bus_for_testing()
+    effects: list[str] = []
+    subscribe_to_event(EffectEvent, lambda e: effects.append(e.effect_name))
     controller, attacker, defender, _ = _make_world("grenade")
-    action = AreaEffectAction(cast(Controller, controller), attacker, 2, 2, weapon)
+    action = AreaEffectAction(
+        controller.gw.game_map, controller.gw.actors, attacker, 2, 2, weapon
+    )
     effect = weapon.area_effect
     assert effect is not None
     action._trigger_visual_effect(effect)
-    assert controller.frame_manager.effects == ["smoke_cloud"]
+    assert effects == ["smoke_cloud"]

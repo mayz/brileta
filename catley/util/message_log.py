@@ -1,4 +1,5 @@
 from catley import colors
+from catley.events import MessageEvent, subscribe_to_event
 
 
 class Message:
@@ -26,6 +27,13 @@ class MessageLog:
         # Render layers use this to efficiently update cached textures
         # only when the log actually changes.
         self.revision = 0
+
+        # Subscribe to global message events
+        subscribe_to_event(MessageEvent, self._handle_message_event)
+
+    def _handle_message_event(self, event: MessageEvent) -> None:
+        """Handle message events from the global event bus."""
+        self.add_message(event.text, event.color, stack=event.stack)
 
     def add_message(
         self,

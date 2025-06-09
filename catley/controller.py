@@ -6,9 +6,8 @@ from tcod.console import Console
 from catley.game.resolution.base import Resolver
 
 from . import config
-from .event_handler import EventHandler
 from .game.actions.base import GameAction
-from .game.actors import Character
+from .input_handler import InputHandler
 from .modes.base import Mode
 from .modes.targeting import TargetingMode
 from .turn_manager import TurnManager
@@ -23,7 +22,7 @@ from .world.game_state import GameWorld
 class Controller:
     """
     Orchestrates the main game loop and connects all other systems
-    (GameWorld, Renderer, EventHandler, OverlaySystem, MessageLog).
+    (GameWorld, Renderer, InputHandler, OverlaySystem, MessageLog).
 
     Holds instances of the major game components and provides a central point
     of access for them. Responsible for high-level game flow, such as processing
@@ -90,7 +89,7 @@ class Controller:
         self.update_fov()
 
         # For handling input events in run_game_loop().
-        self.event_handler = EventHandler(self)
+        self.input_handler = InputHandler(self)
 
         # Initialize mode system
         self.targeting_mode = TargetingMode(self)
@@ -116,7 +115,7 @@ class Controller:
 
             while True:
                 for event in tcod.event.get():
-                    self.event_handler.dispatch(event)
+                    self.input_handler.dispatch(event)
 
                 # Update using clock's delta time
                 delta_time = self.clock.sync(fps=self.target_fps)
@@ -171,8 +170,3 @@ class Controller:
         from catley.game.resolution.d20_system import D20Resolver
 
         return D20Resolver(**kwargs)  # type: ignore[call-arg]
-
-    def notify_actor_death(self, actor: Character) -> None:
-        """Notify active mode about actor death"""
-        if self.active_mode:
-            self.active_mode.on_actor_death(actor)

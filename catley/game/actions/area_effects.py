@@ -7,21 +7,17 @@ multiple targets or tiles simultaneously.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from catley import colors
 from catley.constants.combat import CombatConstants as Combat
+from catley.events import EffectEvent, MessageEvent, publish_event
 from catley.game import range_system
 from catley.game.actions.base import GameAction, GameActionResult
-from catley.game.actors import Character
-from catley.game.enums import AreaType, BlendMode, ConsumableEffectType  # noqa: F401
+from catley.game.actors import Actor, Character
+from catley.game.enums import AreaType
 from catley.game.items.capabilities import AreaEffect, RangedAttack
 from catley.game.items.item_core import Item
 from catley.game.items.properties import TacticalProperty, WeaponProperty
-
-if TYPE_CHECKING:
-    from catley.controller import Controller
-
+from catley.world.map import GameMap
 
 # Convenience type aliases for area-effect calculations
 Coord = tuple[int, int]
@@ -34,13 +30,15 @@ class AreaEffectAction(GameAction):
 
     def __init__(
         self,
-        controller: Controller,
+        game_map: GameMap,
+        actors: list[Actor],
         attacker: Character,
         target_x: int,
         target_y: int,
         weapon: Item,
     ) -> None:
-        super().__init__(controller, attacker)
+        self.game_map = game_map
+        self.actors = actors
         self.attacker = attacker
         self.target_x = target_x
         self.target_y = target_y
@@ -54,16 +52,15 @@ class AreaEffectAction(GameAction):
         # 1. Check ammo requirements if weapon uses ammo
         ranged = self.weapon.ranged_attack
         if ranged and ranged.current_ammo <= 0:
-            self.controller.message_log.add_message(
-                f"{self.weapon.name} is out of ammo!",
-                colors.RED,
+            publish_event(
+                MessageEvent(f"{self.weapon.name} is out of ammo!", colors.RED)
             )
             return None
 
         # 2. Determine which tiles are affected by the effect
         tiles = self._calculate_tiles(effect)
         if not tiles:
-            self.controller.message_log.add_message("Nothing is affected.", colors.GREY)
+            publish_event(MessageEvent("Nothing is affected.", colors.GREY))
             return None
 
         # 3. Apply damage or healing to actors in the affected tiles
@@ -92,7 +89,7 @@ class AreaEffectAction(GameAction):
                 return {}
 
     def _circle_tiles(self, effect: AreaEffect) -> DistanceByTile:
-        game_map = self.controller.gw.game_map
+        game_map = self.game_map
         tiles: dict[tuple[int, int], int] = {}
         for dx in range(-effect.size, effect.size + 1):
             for dy in range(-effect.size, effect.size + 1):
@@ -117,7 +114,7 @@ class AreaEffectAction(GameAction):
         return tiles
 
     def _line_tiles(self, effect: AreaEffect) -> DistanceByTile:
-        game_map = self.controller.gw.game_map
+        game_map = self.game_map
         tiles: dict[tuple[int, int], int] = {}
         line = range_system.get_line(
             self.attacker.x,
@@ -142,7 +139,7 @@ class AreaEffectAction(GameAction):
         return tiles
 
     def _cone_tiles(self, effect: AreaEffect) -> DistanceByTile:
-        game_map = self.controller.gw.game_map
+        game_map = self.game_map
         tiles: dict[tuple[int, int], int] = {}
 
         dir_x = self.target_x - self.attacker.x
@@ -189,7 +186,7 @@ class AreaEffectAction(GameAction):
         """Apply damage or healing to actors within the affected tiles."""
         base_damage = effect.damage_dice.roll()
         hits: list[tuple[Character, int]] = []
-        for actor in self.controller.gw.actors:
+        for actor in self.actors:
             if not isinstance(actor, Character) or not actor.health.is_alive():
                 continue
             if (actor.x, actor.y) not in tiles:
@@ -219,25 +216,19 @@ class AreaEffectAction(GameAction):
         """Log messages summarizing the effect results."""
         for actor, dmg in hits:
             if dmg > 0:
-                self.controller.message_log.add_message(
-                    f"{actor.name} takes {dmg} damage.", colors.ORANGE
+                publish_event(
+                    MessageEvent(f"{actor.name} takes {dmg} damage.", colors.ORANGE)
                 )
             else:
-                self.controller.message_log.add_message(
-                    f"{actor.name} recovers {-dmg} HP.", colors.GREEN
+                publish_event(
+                    MessageEvent(f"{actor.name} recovers {-dmg} HP.", colors.GREEN)
                 )
         if not hits:
-            self.controller.message_log.add_message(
-                "The effect hits nothing.", colors.GREY
-            )
+            publish_event(MessageEvent("The effect hits nothing.", colors.GREY))
 
     def _trigger_visual_effect(self, effect: AreaEffect) -> None:
         """Emit particle effects based on the effect properties."""
         if TacticalProperty.EXPLOSIVE in effect.properties:
-            self.frame_manager.create_effect(
-                "explosion", x=self.target_x, y=self.target_y
-            )
+            publish_event(EffectEvent("explosion", self.target_x, self.target_y))
         elif TacticalProperty.SMOKE in effect.properties:
-            self.frame_manager.create_effect(
-                "smoke_cloud", x=self.target_x, y=self.target_y
-            )
+            publish_event(EffectEvent("smoke_cloud", self.target_x, self.target_y))

@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from catley import colors
+from catley.events import MessageEvent, publish_event
 from catley.game.actions.base import GameAction, GameActionResult
 
 if TYPE_CHECKING:
@@ -52,11 +53,11 @@ class TurnManager:
 
                     if not self.player.health.is_alive():
                         # Player died, handle game over and stop processing
-                        self.controller.message_log.add_message(
-                            f"{self.controller.gw.player.name}"
-                            " has been defeated! Game Over.",
-                            colors.RED,
+                        message = (
+                            f"{self.controller.gw.player.name} has been defeated!"
+                            " Game Over."
                         )
+                        publish_event(MessageEvent(message, colors.RED))
                         return
 
             # If nobody acted this round, we're done
@@ -84,7 +85,7 @@ class TurnManager:
             raise
         except Exception as e:
             error_message = f"Error executing action '{type(action).__name__}': {e!s}"
-            self.controller.message_log.add_message(error_message, colors.RED)
+            publish_event(MessageEvent(error_message, colors.RED))
             print(f"Unhandled exception during action execution: {e}")
             return
 

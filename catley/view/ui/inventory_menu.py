@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 from tcod.console import Console
 
 from catley import colors
+from catley.events import MessageEvent, publish_event
 from catley.game.conditions import Condition
 from catley.game.enums import ItemSize
 from catley.game.items.item_core import Item
@@ -139,25 +140,19 @@ class InventoryMenu(Menu):
             if currently_equipped_slot is not None:
                 # Unequip from current slot
                 player.inventory.unequip_slot(currently_equipped_slot)
-                self.controller.message_log.add_message(
-                    f"You unequip {item.name}.", colors.WHITE
-                )
+                publish_event(MessageEvent(f"You unequip {item.name}.", colors.WHITE))
             else:
                 # Equip to currently active slot
                 active_slot = player.inventory.active_weapon_slot
                 old_weapon = player.inventory.equip_to_slot(item, active_slot)
                 if old_weapon:
-                    self.controller.message_log.add_message(
-                        f"You unequip {old_weapon.name}.", colors.GREY
+                    publish_event(
+                        MessageEvent(f"You unequip {old_weapon.name}.", colors.GREY)
                     )
-                self.controller.message_log.add_message(
-                    f"You equip {item.name}.", colors.GREEN
-                )
+                publish_event(MessageEvent(f"You equip {item.name}.", colors.GREEN))
         else:
             # Use consumable item (placeholder for now)
-            self.controller.message_log.add_message(
-                f"You use {item.name}.", colors.WHITE
-            )
+            publish_event(MessageEvent(f"You use {item.name}.", colors.WHITE))
 
     def render_title(
         self,

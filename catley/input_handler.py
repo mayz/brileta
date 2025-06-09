@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 import tcod.event
 
 from catley import colors
+from catley.events import MessageEvent, publish_event
 from catley.view.ui.action_browser_menu import ActionBrowserMenu
 from catley.view.ui.help_menu import HelpMenu
 from catley.view.ui.inventory_menu import InventoryMenu
@@ -26,7 +27,7 @@ from .view.ui.commands import (
 )
 
 
-class EventHandler:
+class InputHandler:
     def __init__(self, controller: Controller) -> None:
         self.controller = controller
         self.renderer = self.controller.renderer
@@ -154,9 +155,7 @@ class EventHandler:
                     reload_action = ReloadAction(self.controller, self.p, active_weapon)
                     self.controller.queue_action(reload_action)
                 else:
-                    self.controller.message_log.add_message(
-                        "Nothing to reload!", colors.GREY
-                    )
+                    publish_event(MessageEvent("Nothing to reload!", colors.GREY))
                 return None
 
             case tcod.event.KeyDown(sym=tcod.event.KeySym.N1):
@@ -164,8 +163,10 @@ class EventHandler:
                 if self.p.inventory.switch_to_weapon_slot(0):
                     weapon = self.p.inventory.get_active_weapon()
                     weapon_name = weapon.name if weapon else "Empty"
-                    self.controller.message_log.add_message(
-                        f"Switched to primary weapon: {weapon_name}", colors.GREEN
+                    publish_event(
+                        MessageEvent(
+                            f"Switched to primary weapon: {weapon_name}", colors.GREEN
+                        )
                     )
                 return None
 
@@ -174,8 +175,10 @@ class EventHandler:
                 if self.p.inventory.switch_to_weapon_slot(1):
                     weapon = self.p.inventory.get_active_weapon()
                     weapon_name = weapon.name if weapon else "Empty"
-                    self.controller.message_log.add_message(
-                        f"Switched to secondary weapon: {weapon_name}", colors.GREEN
+                    publish_event(
+                        MessageEvent(
+                            f"Switched to secondary weapon: {weapon_name}", colors.GREEN
+                        )
                     )
                 return None
 

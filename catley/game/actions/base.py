@@ -44,7 +44,6 @@ class GameAction(abc.ABC):
     def __init__(self, controller: Controller, actor: Actor) -> None:
         self.controller = controller
         self.actor = actor
-        self.frame_manager = self.controller.frame_manager
 
     @abc.abstractmethod
     def execute(self) -> GameActionResult | None:

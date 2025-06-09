@@ -398,7 +398,6 @@ class ConsumableEffect:  # Handler Class
             # self._spec.effect_type, self._spec.effect_value
             print(f"Consuming {self._spec.effect_type}, val {self._spec.effect_value}")
             self.uses_remaining -= 1
-            # controller.message_log.add_message(...)
             return True
         return False
 
