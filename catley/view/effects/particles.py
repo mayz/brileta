@@ -5,6 +5,7 @@ import numpy as np
 import tcod.console
 
 from catley import colors
+from catley.constants.rendering import RenderingConstants
 
 # Usage example:
 # particle_system = SubTileParticleSystem(map_width, map_height)
@@ -122,7 +123,12 @@ class SubTileParticleSystem:
     means each tile is divided into a 3x3 grid for particle positioning.
     """
 
-    def __init__(self, map_width: int, map_height: int, subdivision: int = 3) -> None:
+    def __init__(
+        self,
+        map_width: int,
+        map_height: int,
+        subdivision: int = RenderingConstants.SUB_TILE_SUBDIVISION_DEFAULT,
+    ) -> None:
         """
         Initialize the particle system.
 
@@ -174,7 +180,7 @@ class SubTileParticleSystem:
         # Spread particles slightly around this center point.
         # A small fixed sub-pixel spread (e.g., +/- 0.5 sub-pixels) is often good
         # to give a bit of volume to the emission point without precise alignment.
-        spread_sub_pixels = 0.5
+        spread_sub_pixels = RenderingConstants.PARTICLE_SPREAD_SUBPIXELS
         final_particle_sub_x = center_sub_x_of_tile + random.uniform(
             -spread_sub_pixels, spread_sub_pixels
         )
@@ -210,8 +216,14 @@ class SubTileParticleSystem:
         tile_x: float,
         tile_y: float,
         count: int,
-        speed_range: tuple[float, float] = (0.5, 2.0),
-        lifetime_range: tuple[float, float] = (0.3, 0.8),
+        speed_range: tuple[float, float] = (
+            RenderingConstants.RADIAL_SPEED_MIN,
+            RenderingConstants.RADIAL_SPEED_MAX,
+        ),
+        lifetime_range: tuple[float, float] = (
+            RenderingConstants.RADIAL_LIFETIME_MIN,
+            RenderingConstants.RADIAL_LIFETIME_MAX,
+        ),
         colors_and_chars: list[tuple[colors.Color, str]] | None = None,
         gravity: float = 0.0,
         bg_color: colors.Color | None = None,
@@ -430,12 +442,18 @@ class SubTileParticleSystem:
         tile_x: float,
         tile_y: float,
         count: int,
-        drift_speed: tuple[float, float] = (0.2, 1.0),
-        lifetime_range: tuple[float, float] = (1.0, 2.0),
+        drift_speed: tuple[float, float] = (
+            RenderingConstants.SMOKE_DRIFT_SPEED_MIN,
+            RenderingConstants.SMOKE_DRIFT_SPEED_MAX,
+        ),
+        lifetime_range: tuple[float, float] = (
+            RenderingConstants.SMOKE_LIFETIME_MIN,
+            RenderingConstants.SMOKE_LIFETIME_MAX,
+        ),
         tint_color: colors.Color = (100, 100, 100),
         blend_mode: str = "tint",
         chars: list[str] | None = None,
-        upward_drift: float = -0.3,
+        upward_drift: float = RenderingConstants.SMOKE_UPWARD_DRIFT,
     ) -> None:
         """
         Create particles that primarily affect background color (smoke, gas, etc.).

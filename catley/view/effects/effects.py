@@ -48,6 +48,7 @@ import random
 from dataclasses import dataclass
 
 from catley import colors
+from catley.constants.rendering import RenderingConstants
 
 from .particles import SubTileParticleSystem
 
@@ -151,8 +152,14 @@ class BloodSplatterEffect(Effect):
             context.x,
             context.y,
             count=count,
-            speed_range=(0.5, 2.0),  # Medium speed - not too fast or slow
-            lifetime_range=(0.3, 0.8),  # Quick but visible duration
+            speed_range=(
+                RenderingConstants.RADIAL_SPEED_MIN,
+                RenderingConstants.RADIAL_SPEED_MAX,
+            ),
+            lifetime_range=(
+                RenderingConstants.RADIAL_LIFETIME_MIN,
+                RenderingConstants.RADIAL_LIFETIME_MAX,
+            ),
             colors_and_chars=blood_colors_chars,
         )
 
@@ -189,11 +196,17 @@ class MuzzleFlashEffect(Effect):
             context.direction_x,
             context.direction_y,  # Direction weapon is pointing
             count=8,  # Fixed count for consistent flash appearance
-            cone_spread=0.3,  # Fairly tight cone (about 17 degrees)
-            speed_range=(3.0, 6.0),  # Fast-moving flash particles
-            lifetime_range=(0.05, 0.15),  # Very brief flash effect
+            cone_spread=RenderingConstants.MUZZLE_CONE_SPREAD,
+            speed_range=(
+                RenderingConstants.MUZZLE_SPEED_MIN,
+                RenderingConstants.MUZZLE_SPEED_MAX,
+            ),
+            lifetime_range=(
+                RenderingConstants.MUZZLE_LIFETIME_MIN,
+                RenderingConstants.MUZZLE_LIFETIME_MAX,
+            ),
             colors_and_chars=flash_colors_chars,
-            origin_offset_tiles=0.4,  # Muzzle flash originates slightly forward
+            origin_offset_tiles=RenderingConstants.MUZZLE_ORIGIN_OFFSET_TILES,
         )
 
 
@@ -235,7 +248,10 @@ class ExplosionEffect(Effect):
             context.y,
             radius=radius,
             flash_color=(255, 255, 200),  # Bright yellow-white
-            lifetime_range=(0.1, 0.2),  # Very brief flash
+            lifetime_range=(
+                RenderingConstants.EXPLOSION_FLASH_LIFETIME_MIN,
+                RenderingConstants.EXPLOSION_FLASH_LIFETIME_MAX,
+            ),
         )
 
         # 2. Create flying debris particles
@@ -254,10 +270,16 @@ class ExplosionEffect(Effect):
             context.x,
             context.y,
             count=particle_count,
-            speed_range=(1.0, 3.0),  # Medium to fast speeds
-            lifetime_range=(0.4, 1.0),  # Longer-lasting than flash
+            speed_range=(
+                RenderingConstants.EXPLOSION_DEBRIS_SPEED_MIN,
+                RenderingConstants.EXPLOSION_DEBRIS_SPEED_MAX,
+            ),
+            lifetime_range=(
+                RenderingConstants.EXPLOSION_DEBRIS_LIFETIME_MIN,
+                RenderingConstants.EXPLOSION_DEBRIS_LIFETIME_MAX,
+            ),
             colors_and_chars=debris_colors_chars,
-            gravity=2.0,  # Debris falls due to gravity
+            gravity=RenderingConstants.EXPLOSION_DEBRIS_GRAVITY,
         )
 
 
@@ -300,12 +322,18 @@ class SmokeCloudEffect(Effect):
             context.x,
             context.y,
             count=count,
-            drift_speed=(0.2, 1.0),  # Slow to medium drift
-            lifetime_range=(1.0, 2.0),  # Long-lasting smoke
+            drift_speed=(
+                RenderingConstants.SMOKE_DRIFT_SPEED_MIN,
+                RenderingConstants.SMOKE_DRIFT_SPEED_MAX,
+            ),
+            lifetime_range=(
+                RenderingConstants.SMOKE_LIFETIME_MIN,
+                RenderingConstants.SMOKE_LIFETIME_MAX,
+            ),
             tint_color=tint_color,
             blend_mode="tint",  # Subtle blending with background
             chars=[".", ",", " "],  # Small characters and spaces
-            upward_drift=-0.3,  # Negative = upward (smoke rises)
+            upward_drift=RenderingConstants.SMOKE_UPWARD_DRIFT,
         )
 
 
@@ -342,12 +370,18 @@ class PoisonGasEffect(Effect):
             context.x,
             context.y,
             count=count,
-            drift_speed=(0.1, 0.8),  # Slower spread than smoke
-            lifetime_range=(2.0, 4.0),  # Very long-lasting gas
+            drift_speed=(
+                RenderingConstants.POISON_DRIFT_SPEED_MIN,
+                RenderingConstants.POISON_DRIFT_SPEED_MAX,
+            ),
+            lifetime_range=(
+                RenderingConstants.POISON_LIFETIME_MIN,
+                RenderingConstants.POISON_LIFETIME_MAX,
+            ),
             tint_color=tint_color,
             blend_mode="tint",  # Tints areas with poison color
             chars=[".", ",", "~"],  # Includes wavy character for gas movement
-            upward_drift=0.0,  # Heavy gas doesn't rise like smoke
+            upward_drift=RenderingConstants.POISON_UPWARD_DRIFT,
         )
 
 

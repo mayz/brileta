@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from catley import colors
+from catley.constants.combat import CombatConstants
 from catley.game import range_system
 from catley.game.actions.base import GameAction, GameActionResult
 from catley.game.actors import Character, Disposition
@@ -400,17 +401,29 @@ class AttackAction(GameAction):
         # Different shake for different attack types
         if weapon.melee_attack and attack is weapon.melee_attack:
             # Melee attacks - use probability instead of pixel distance
-            shake_intensity = min(base_damage * 0.15, 0.8)  # 0.15-0.8 probability
-            shake_duration = 0.2 + (base_damage * 0.03)
+            shake_intensity = min(
+                base_damage * CombatConstants.SCREEN_SHAKE_MELEE_INTENSITY_MULTIPLIER,
+                CombatConstants.SCREEN_SHAKE_MELEE_INTENSITY_CAP,
+            )
+            shake_duration = (
+                CombatConstants.SCREEN_SHAKE_MELEE_DURATION_BASE
+                + base_damage * CombatConstants.SCREEN_SHAKE_MELEE_DURATION_MULTIPLIER
+            )
         else:
             # Ranged attacks - lower probability
-            shake_intensity = min(base_damage * 0.08, 0.5)  # 0.08-0.5 probability
-            shake_duration = 0.1 + (base_damage * 0.02)
+            shake_intensity = min(
+                base_damage * CombatConstants.SCREEN_SHAKE_RANGED_INTENSITY_MULTIPLIER,
+                CombatConstants.SCREEN_SHAKE_RANGED_INTENSITY_CAP,
+            )
+            shake_duration = (
+                CombatConstants.SCREEN_SHAKE_RANGED_DURATION_BASE
+                + base_damage * CombatConstants.SCREEN_SHAKE_RANGED_DURATION_MULTIPLIER
+            )
 
         # Extra shake for critical hits against player
         if attack_result.outcome_tier == OutcomeTier.CRITICAL_SUCCESS:
-            shake_intensity *= 1.5  # Higher probability for crits
-            shake_duration *= 1.3
+            shake_intensity *= CombatConstants.SCREEN_SHAKE_CRIT_INTENSITY_MULTIPLIER
+            shake_duration *= CombatConstants.SCREEN_SHAKE_CRIT_DURATION_MULTIPLIER
 
         self.frame_manager.trigger_screen_shake(shake_intensity, shake_duration)
 

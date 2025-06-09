@@ -1,0 +1,25 @@
+"""Constants for combat calculations and mechanics."""
+
+
+class CombatConstants:
+    """Constants for combat calculations and mechanics."""
+
+    # Area effects
+    CONE_SPREAD_COSINE = 0.707  # ~45 degrees spread
+
+    # AI behavior
+    DEFAULT_AGGRO_RADIUS = 8
+
+    # Screen shake tuning
+    SCREEN_SHAKE_MELEE_INTENSITY_MULTIPLIER = 0.15
+    SCREEN_SHAKE_MELEE_INTENSITY_CAP = 0.8
+    SCREEN_SHAKE_MELEE_DURATION_BASE = 0.2
+    SCREEN_SHAKE_MELEE_DURATION_MULTIPLIER = 0.03
+
+    SCREEN_SHAKE_RANGED_INTENSITY_MULTIPLIER = 0.08
+    SCREEN_SHAKE_RANGED_INTENSITY_CAP = 0.5
+    SCREEN_SHAKE_RANGED_DURATION_BASE = 0.1
+    SCREEN_SHAKE_RANGED_DURATION_MULTIPLIER = 0.02
+
+    SCREEN_SHAKE_CRIT_INTENSITY_MULTIPLIER = 1.5
+    SCREEN_SHAKE_CRIT_DURATION_MULTIPLIER = 1.3

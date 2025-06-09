@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 from catley import colors
 from catley.config import PERFORMANCE_TESTING
+from catley.constants.ui import UIConstants
 
 from .panel import Panel
 
@@ -15,7 +16,11 @@ if TYPE_CHECKING:
 class FPSPanel(Panel):
     """Simple panel that displays the current frames per second."""
 
-    def __init__(self, clock: Clock, update_interval: float = 0.5) -> None:
+    def __init__(
+        self,
+        clock: Clock,
+        update_interval: float = UIConstants.FPS_UPDATE_INTERVAL,
+    ) -> None:
         super().__init__()
         self.clock = clock
         self.update_interval = update_interval

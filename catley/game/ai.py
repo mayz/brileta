@@ -24,6 +24,7 @@ import abc
 from typing import TYPE_CHECKING
 
 from catley import colors
+from catley.constants.combat import CombatConstants
 
 from .enums import Disposition
 
@@ -80,7 +81,9 @@ class DispositionBasedAI(AIComponent):
     """
 
     def __init__(
-        self, disposition: Disposition = Disposition.WARY, aggro_radius: int = 8
+        self,
+        disposition: Disposition = Disposition.WARY,
+        aggro_radius: int = CombatConstants.DEFAULT_AGGRO_RADIUS,
     ) -> None:
         super().__init__()
 
@@ -118,7 +121,9 @@ class DispositionBasedAI(AIComponent):
 class HostileAI(AIComponent):
     """Aggressive behavior: attack and chase the player."""
 
-    def __init__(self, aggro_radius: int = 8) -> None:
+    def __init__(
+        self, aggro_radius: int = CombatConstants.DEFAULT_AGGRO_RADIUS
+    ) -> None:
         super().__init__()
         self.aggro_radius = aggro_radius
 
