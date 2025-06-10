@@ -34,7 +34,7 @@ Note:
     for max_hp calculation), but dependencies are kept minimal and explicit.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from catley import colors
 from catley.config import DEFAULT_MAX_ARMOR
@@ -44,7 +44,7 @@ from .enums import ItemSize
 from .items.item_core import Item
 
 
-@dataclass
+@dataclass(slots=True)
 class StatsComponent:
     """Manages an Actor's core ability scores and derived stats."""
 
@@ -67,16 +67,18 @@ class StatsComponent:
         return self.strength + 5
 
 
+@dataclass(slots=True)
 class HealthComponent:
     """Handles physical integrity - HP, armor, damage from any source, healing."""
 
-    def __init__(
-        self, stats_component: StatsComponent, max_ap: int = DEFAULT_MAX_ARMOR
-    ) -> None:
-        self.stats = stats_component
+    stats: StatsComponent
+    max_ap: int = DEFAULT_MAX_ARMOR
+    hp: int = field(init=False)
+    ap: int = field(init=False)
+
+    def __post_init__(self) -> None:
         self.hp = self.stats.max_hp
-        self.max_ap = max_ap
-        self.ap = max_ap
+        self.ap = self.max_ap
 
     @property
     def max_hp(self) -> int:

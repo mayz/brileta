@@ -1,14 +1,16 @@
+from dataclasses import dataclass
+
 from catley import colors
 from catley.events import MessageEvent, subscribe_to_event
 
 
+@dataclass(slots=True)
 class Message:
     """A single message in the message log."""
 
-    def __init__(self, text: str, fg: colors.Color, count: int = 1) -> None:
-        self.plain_text = text
-        self.fg = fg
-        self.count = count
+    plain_text: str
+    fg: colors.Color
+    count: int = 1
 
     @property
     def full_text(self) -> str:
