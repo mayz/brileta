@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
@@ -61,7 +63,7 @@ class LightSource:
     max_brightness: float = DEFAULT_MAX_BRIGHTNESS
 
     @classmethod
-    def create_torch(cls, position: tuple[int, int] | None = None) -> "LightSource":
+    def create_torch(cls, position: tuple[int, int] | None = None) -> LightSource:
         """Create a torch light source with preset values"""
         # Create the instance with TORCH_PRESET, then set position
         instance = cls(**TORCH_PRESET)
@@ -85,7 +87,7 @@ class LightSource:
     def position(self, value: tuple[int, int]) -> None:
         self._pos = value
 
-    def attach(self, owner: "Actor", lighting_system: "LightingSystem") -> None:
+    def attach(self, owner: Actor, lighting_system: LightingSystem) -> None:
         """Attach this light source to an actor and lighting system"""
         self._owner = owner
         self._lighting_system = lighting_system
@@ -101,7 +103,7 @@ class LightSource:
 
 class LightingSystem:
     def __init__(
-        self, config: LightingConfig | None = None, game_map: object | None = None
+        self, config: LightingConfig | None = None, game_map: GameMap | None = None
     ) -> None:
         self.config = config if config is not None else LightingConfig()
         self.noise = tcod.noise.Noise(
@@ -111,9 +113,9 @@ class LightingSystem:
         )
         self.time = 0.0
         self.light_sources: list[LightSource] = []
-        self._game_map = game_map
+        self._game_map: GameMap | None = game_map
 
-    def set_game_map(self, game_map: "GameMap") -> None:
+    def set_game_map(self, game_map: GameMap) -> None:
         """Assign the current game map for shadow calculations."""
         self._game_map = game_map
 
