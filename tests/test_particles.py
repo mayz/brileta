@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 import pytest
 
-from catley.view.effects.particles import SubParticle, SubTileParticleSystem
+from catley.view.effects.particles import SubTileParticleSystem
 
 
 class FixedUniform:
@@ -42,13 +42,12 @@ def test_emit_directional_cone_velocity(dir_x: int, dir_y: int, angle: float) ->
             lifetime_range=(0.2, 0.2),
             colors_and_chars=[((1, 2, 3), "*")],
         )
-    assert len(ps.particles) == 1
-    p = ps.particles[0]
+    assert ps.active_count == 1
     expected_vx = math.cos(angle) * 5.0 * ps.subdivision
     expected_vy = math.sin(angle) * 5.0 * ps.subdivision
-    assert pytest.approx(expected_vx) == p.vel_x
-    assert pytest.approx(expected_vy) == p.vel_y
-    assert p.lifetime == 0.2
+    assert pytest.approx(expected_vx) == ps.velocities[0, 0]
+    assert pytest.approx(expected_vy) == ps.velocities[0, 1]
+    assert ps.lifetimes[0] == 0.2
 
 
 def test_emit_directional_cone_spread() -> None:
@@ -66,10 +65,9 @@ def test_emit_directional_cone_spread() -> None:
             lifetime_range=(0.1, 0.1),
             colors_and_chars=[((0, 0, 0), "+")],
         )
-    particle = ps.particles[0]
     expected_angle = 0.0 + 0.1
-    assert pytest.approx(math.cos(expected_angle) * 2.0) == particle.vel_x
-    assert pytest.approx(math.sin(expected_angle) * 2.0) == particle.vel_y
+    assert pytest.approx(math.cos(expected_angle) * 2.0) == ps.velocities[0, 0]
+    assert pytest.approx(math.sin(expected_angle) * 2.0) == ps.velocities[0, 1]
 
 
 def test_emit_directional_cone_origin_offset_zero(
@@ -103,10 +101,9 @@ def test_emit_directional_cone_origin_offset_zero(
             colors_and_chars=[((1, 2, 3), "*")],
             origin_offset_tiles=0.0,  # Explicitly zero offset
         )
-    assert len(ps.particles) == 1
-    p = ps.particles[0]
-    assert p.sub_x == pytest.approx(expected_sub_x)
-    assert p.sub_y == pytest.approx(expected_sub_y)
+    assert ps.active_count == 1
+    assert ps.positions[0, 0] == pytest.approx(expected_sub_x)
+    assert ps.positions[0, 1] == pytest.approx(expected_sub_y)
 
 
 @pytest.mark.parametrize(
@@ -152,10 +149,9 @@ def test_emit_directional_cone_origin_offset_varied(
             origin_offset_tiles=offset_tiles,
         )
 
-    assert len(ps.particles) == 1
-    p = ps.particles[0]
-    assert p.sub_x == pytest.approx(expected_origin_sub_x)
-    assert p.sub_y == pytest.approx(expected_origin_sub_y)
+    assert ps.active_count == 1
+    assert ps.positions[0, 0] == pytest.approx(expected_origin_sub_x)
+    assert ps.positions[0, 1] == pytest.approx(expected_origin_sub_y)
 
 
 @pytest.fixture
@@ -171,67 +167,44 @@ def ps_default():
     return SubTileParticleSystem(map_width=10, map_height=10, subdivision=3)
 
 
-def test_sub_particle_update_movement_and_lifetime() -> None:
-    particle = SubParticle(1.0, 1.0, 20.0, -10.0, 1.0)  # vel in sub-pixels/sec
-    particle.max_lifetime = 1.0  # Manually set for intensity testing if needed
+def test_particle_update_movement_and_lifetime() -> None:
+    ps = SubTileParticleSystem(3, 3, subdivision=1)
+    with patch("random.uniform", FixedUniform([0.0, 0.0])):
+        ps.add_particle(0, 0, vel_x=20.0, vel_y=-10.0, lifetime=1.0)
+
+    delta_time = 0.1
+    ps.update(delta_time)
+    assert ps.positions[0, 0] == pytest.approx(0.5 + 20.0 * delta_time)
+    assert ps.positions[0, 1] == pytest.approx(0.5 - 10.0 * delta_time)
+    assert ps.lifetimes[0] == pytest.approx(1.0 - delta_time)
+    assert ps.lifetimes[0] / ps.max_lifetimes[0] == pytest.approx(1.0 - delta_time)
+
+    ps.lifetimes[0] = 0.05
+    ps.update(delta_time)
+    assert ps.active_count == 0
+
+
+def test_particle_update_gravity_effect() -> None:
+    ps = SubTileParticleSystem(3, 3, subdivision=1)
+    with patch("random.uniform", FixedUniform([0.0, 0.0])):
+        ps.add_particle(0, 0, vel_x=0.0, vel_y=0.0, lifetime=1.0)
+
+    ps.gravity[0] = 100.0
     delta_time = 0.1
 
-    is_alive = particle.update(delta_time)
-    assert is_alive
-    assert particle.sub_x == pytest.approx(1.0 + 20.0 * 0.1)
-    assert particle.sub_y == pytest.approx(1.0 - 10.0 * 0.1)
-    assert particle.lifetime == pytest.approx(1.0 - 0.1)
-    assert particle.intensity == pytest.approx((1.0 - 0.1) / 1.0)
+    ps.update(delta_time)
+    assert ps.velocities[0, 1] == pytest.approx(10.0)
+    assert ps.positions[0, 1] == pytest.approx(0.5)
 
-    particle.lifetime = 0.05  # Almost dead
-    is_alive = particle.update(delta_time)  # This should kill it based on lifetime
-    assert not is_alive
-    assert particle.lifetime <= 0
+    ps.update(delta_time)
+    assert ps.velocities[0, 1] == pytest.approx(20.0)
+    assert ps.positions[0, 1] == pytest.approx(0.5 + 10.0 * delta_time)
 
-
-def test_sub_particle_update_gravity_effect():
-    # Using vel in sub-pixels/sec for SubParticle constructor
-    particle = SubParticle(sub_x=0, sub_y=0, vel_x=0, vel_y=0, lifetime=1)
-    particle.gravity = 100.0  # Gravity in sub-pixels/sec^2
-    delta_time = 0.1
-
-    # First update
-    # Initial state: sub_y = 0, vel_y = 0
-    particle.update(delta_time)
-    # Step 1: sub_y = sub_y + vel_y * delta_time = 0 + 0 * 0.1 = 0
-    # Step 2: vel_y = vel_y + gravity * delta_time = 0 + 100.0 * 0.1 = 10.0
-
-    expected_vel_y_after_first_update = 10.0
-    expected_sub_y_after_first_update = (
-        0.0  # Because vel_y was 0 when sub_y was updated
+    ps.update(delta_time)
+    assert ps.velocities[0, 1] == pytest.approx(30.0)
+    assert ps.positions[0, 1] == pytest.approx(
+        0.5 + 10.0 * delta_time + 20.0 * delta_time
     )
-
-    assert particle.vel_y == pytest.approx(expected_vel_y_after_first_update)
-    assert particle.sub_y == pytest.approx(expected_sub_y_after_first_update)
-
-    # Second update
-    # Initial state for this update: sub_y = 0.0, vel_y = 10.0
-    particle.update(delta_time)
-    # Step 1: sub_y = sub_y + vel_y * delta_time = 0.0 + 10.0 * 0.1 = 1.0
-    # Step 2: vel_y = vel_y + gravity * delta_time = 10.0 + 100.0 * 0.1 = 20.0
-
-    expected_vel_y_after_second_update = 20.0
-    expected_sub_y_after_second_update = 1.0
-
-    assert particle.vel_y == pytest.approx(expected_vel_y_after_second_update)
-    assert particle.sub_y == pytest.approx(expected_sub_y_after_second_update)
-
-    # Third update (to further confirm the pattern)
-    # Initial state for this update: sub_y = 1.0, vel_y = 20.0
-    particle.update(delta_time)
-    # Step 1: sub_y = sub_y + vel_y * delta_time = 1.0 + 20.0 * 0.1 = 3.0
-    # Step 2: vel_y = vel_y + gravity * delta_time = 20.0 + 100.0 * 0.1 = 30.0
-
-    expected_vel_y_after_third_update = 30.0
-    expected_sub_y_after_third_update = 3.0
-
-    assert particle.vel_y == pytest.approx(expected_vel_y_after_third_update)
-    assert particle.sub_y == pytest.approx(expected_sub_y_after_third_update)
 
 
 def test_add_particle_origin_is_centered_with_spread(
@@ -254,11 +227,9 @@ def test_add_particle_origin_is_centered_with_spread(
     with patch("random.uniform", FixedUniform([mocked_spread_x, mocked_spread_y])):
         ps.add_particle(tile_x, tile_y, vel_x=0, vel_y=0, lifetime=1)
 
-    assert len(ps.particles) == 1
-    p = ps.particles[0]
-    # Spread is relative to the sub-pixel grid, not tile grid
-    assert p.sub_x == pytest.approx(expected_center_sub_x + mocked_spread_x)
-    assert p.sub_y == pytest.approx(expected_center_sub_y + mocked_spread_y)
+    assert ps.active_count == 1
+    assert ps.positions[0, 0] == pytest.approx(expected_center_sub_x + mocked_spread_x)
+    assert ps.positions[0, 1] == pytest.approx(expected_center_sub_y + mocked_spread_y)
 
 
 def test_system_update_removes_dead_particles_from_list(
@@ -271,16 +242,11 @@ def test_system_update_removes_dead_particles_from_list(
     )  # Will die soon
     ps.add_particle(tile_x=2, tile_y=2, vel_x=0, vel_y=0, lifetime=1.0)  # Will live
 
-    assert len(ps.particles) == 2
+    assert ps.active_count == 2
     ps.update(delta_time=0.1)  # First particle should have its lifetime <= 0
 
-    assert len(ps.particles) == 1
-    # Check the remaining particle is the one that should be alive
-    # (based on initial higher lifetime)
-    remaining_particle = ps.particles[0]
-    assert (
-        remaining_particle.max_lifetime == 1.0
-    )  # Assuming max_lifetime is set in SubParticle or add_particle sets it
+    assert ps.active_count == 1
+    assert ps.max_lifetimes[0] == 1.0
 
 
 def test_emit_radial_burst_origin_is_centered(
@@ -302,7 +268,6 @@ def test_emit_radial_burst_origin_is_centered(
             lifetime_range=(0.2, 0.2),
             colors_and_chars=[((1, 2, 3), "*")],
         )
-    assert len(ps.particles) == 1
-    p = ps.particles[0]
-    assert p.sub_x == pytest.approx(expected_sub_x)
-    assert p.sub_y == pytest.approx(expected_sub_y)
+    assert ps.active_count == 1
+    assert ps.positions[0, 0] == pytest.approx(expected_sub_x)
+    assert ps.positions[0, 1] == pytest.approx(expected_sub_y)

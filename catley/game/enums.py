@@ -51,9 +51,12 @@ class AreaType(Enum):
 
 
 class BlendMode(Enum):
-    TINT = "tint"
-    OVERLAY = "overlay"
-    REPLACE = "replace"
+    """Background blending behavior for particles."""
+
+    # Integer values are stored directly in NumPy arrays for efficiency.
+    TINT = 0
+    OVERLAY = 1
+    REPLACE = 2
 
 
 class ConsumableEffectType(Enum):
