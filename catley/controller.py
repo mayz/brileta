@@ -154,7 +154,7 @@ class Controller:
     def exit_targeting_mode(self) -> None:
         """Exit targeting mode"""
         if self.active_mode == self.targeting_mode:
-            self.targeting_mode.exit()
+            self.targeting_mode._exit()
             self.active_mode = None
 
     def is_targeting_mode(self) -> bool:

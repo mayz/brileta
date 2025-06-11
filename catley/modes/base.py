@@ -31,7 +31,7 @@ class Mode(abc.ABC):
     visual effects while keeping the core game running.
 
     Input priority: Mode -> UI Commands -> Game Actions
-    Lifecycle: enter() -> handle input/render -> exit()
+    Lifecycle: enter() -> handle input/render -> controller.exit_*_mode()
     """
 
     def __init__(self, controller: Controller) -> None:
@@ -44,8 +44,8 @@ class Mode(abc.ABC):
         self.active = True
 
     @abc.abstractmethod
-    def exit(self) -> None:
-        """Clean up mode. Always call super().exit()."""
+    def _exit(self) -> None:
+        """Internal cleanup only. Use controller.exit_*_mode() instead."""
         self.active = False
 
     @abc.abstractmethod

@@ -49,8 +49,11 @@ class TargetingMode(Mode):
             self.current_index = 0
             self.controller.gw.selected_actor = self.candidates[0]
 
-    def exit(self) -> None:
-        """Exit targeting mode"""
+    def _exit(self) -> None:
+        """Exit targeting mode.
+
+        Called via :func:`Controller.exit_targeting_mode`.
+        """
         # Remember who we were targeting
         if self.controller.gw.selected_actor:
             selected = self.controller.gw.selected_actor
@@ -66,7 +69,7 @@ class TargetingMode(Mode):
         # Clean up event subscriptions
         unsubscribe_from_event(ActorDeathEvent, self._handle_actor_death_event)
 
-        super().exit()
+        super()._exit()
 
     def _handle_actor_death_event(self, event: ActorDeathEvent) -> None:
         """Handle actor death events from the global event bus."""
