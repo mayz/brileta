@@ -7,16 +7,16 @@ from catley.game.resolution.base import Resolver
 
 from . import config
 from .game.actions.base import GameAction
+from .game.game_world import GameWorld
+from .game.turn_manager import TurnManager
 from .input_handler import InputHandler
 from .modes.base import Mode
 from .modes.targeting import TargetingMode
-from .turn_manager import TurnManager
 from .util.clock import Clock
 from .util.message_log import MessageLog
 from .view.frame_manager import FrameManager
 from .view.renderer import Renderer
 from .view.ui.overlays import OverlaySystem
-from .world.game_state import GameWorld
 
 
 class Controller:

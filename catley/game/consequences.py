@@ -3,13 +3,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, cast
 
+from game.game_world import GameWorld
+
 from catley import colors
 from catley.events import MessageEvent, publish_event
 from catley.game.actors import Actor, Character
 from catley.game.ai import DispositionBasedAI
 from catley.game.components import InventoryComponent, StatsComponent
 from catley.game.enums import Disposition, OutcomeTier
-from catley.world.game_state import GameWorld
 
 if TYPE_CHECKING:
     from catley.game.items.item_core import Item

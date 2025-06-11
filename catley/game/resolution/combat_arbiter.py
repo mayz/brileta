@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from catley.game import range_system
+from game import ranges
+
 from catley.game.actors import Actor, Character
 from catley.game.components import HealthComponent
 from catley.game.conditions import Injury
@@ -46,9 +47,7 @@ def determine_outcome(
 
 def _select_attack(attacker: Character, defender: Actor, weapon: Item) -> Attack | None:
     """Choose which attack mode the weapon should use."""
-    distance = range_system.calculate_distance(
-        attacker.x, attacker.y, defender.x, defender.y
-    )
+    distance = ranges.calculate_distance(attacker.x, attacker.y, defender.x, defender.y)
 
     if distance == 1 and weapon.melee_attack:
         return weapon.melee_attack

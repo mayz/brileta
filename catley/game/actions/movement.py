@@ -9,12 +9,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from catley.environment import tile_types
 from catley.game.actions.base import GameAction, GameActionResult
 from catley.game.actors import Character
 from catley.game.items.capabilities import MeleeAttack
 from catley.game.items.item_types import FISTS_TYPE
 from catley.game.items.properties import WeaponProperty
-from catley.world import tile_types
 
 if TYPE_CHECKING:
     from catley.controller import Controller

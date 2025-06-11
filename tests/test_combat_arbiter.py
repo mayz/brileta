@@ -2,13 +2,14 @@ from dataclasses import dataclass
 from typing import cast
 from unittest.mock import patch
 
+from game.game_world import GameWorld
+
+from catley.environment.map import GameMap
 from catley.game.actors import Character
 from catley.game.enums import OutcomeTier
 from catley.game.items.item_types import FISTS_TYPE
 from catley.game.resolution.combat_arbiter import determine_outcome
 from catley.game.resolution.d20_system import D20ResolutionResult
-from catley.world.game_state import GameWorld
-from catley.world.map import GameMap
 
 
 @dataclass

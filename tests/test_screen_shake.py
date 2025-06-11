@@ -43,7 +43,7 @@ class DummyActor:
 
 class DummyGameMap:
     def __init__(self, width: int, height: int) -> None:
-        from catley.world import tile_types
+        from catley.environment import tile_types
 
         self.width = width
         self.height = height
@@ -86,13 +86,13 @@ class DummyController:
         self.is_targeting_mode = lambda: False
 
 
-def test_game_world_panel_applies_screen_shake_before_render(monkeypatch) -> None:
-    from catley.view.panels.game_world_panel import GameWorldPanel
+def test_world_panel_applies_screen_shake_before_render(monkeypatch) -> None:
+    from view.panels.world_panel import WorldPanel
 
     controller = DummyController()
     shake = ScreenShake()
     shake.update = lambda dt: (1, 0)  # type: ignore[assignment]
-    panel = GameWorldPanel(cast("Controller", controller), shake)
+    panel = WorldPanel(cast("Controller", controller), shake)
     panel.resize(0, 0, 10, 10)
 
     captured = {}
@@ -114,14 +114,14 @@ def test_game_world_panel_applies_screen_shake_before_render(monkeypatch) -> Non
     assert captured["cam_pos"] == (5.5, 4.5)
 
 
-def test_game_world_panel_screen_shake_does_not_overflow(monkeypatch) -> None:
+def test_world_panel_screen_shake_does_not_overflow(monkeypatch) -> None:
     """Ensure screen shake offsets keep rendering within console bounds."""
-    from catley.view.panels.game_world_panel import GameWorldPanel
+    from view.panels.world_panel import WorldPanel
 
     controller = DummyController()
     shake = ScreenShake()
     shake.update = lambda dt: (1, 0)  # type: ignore[assignment]
-    panel = GameWorldPanel(cast("Controller", controller), shake)
+    panel = WorldPanel(cast("Controller", controller), shake)
     panel.resize(0, 0, 10, 10)
 
     captured: dict[str, Any] = {}
@@ -152,7 +152,7 @@ def test_game_world_panel_screen_shake_does_not_overflow(monkeypatch) -> None:
 
 def test_small_map_actor_alignment(monkeypatch) -> None:
     """Actors should align with the map when it is smaller than the viewport."""
-    from catley.view.panels.game_world_panel import GameWorldPanel
+    from view.panels.world_panel import WorldPanel
 
     controller = DummyController()
     controller.gw.game_map = DummyGameMap(5, 5)
@@ -160,7 +160,7 @@ def test_small_map_actor_alignment(monkeypatch) -> None:
 
     shake = ScreenShake()
     shake.update = lambda dt: (0, 0)  # type: ignore[assignment]
-    panel = GameWorldPanel(cast("Controller", controller), shake)
+    panel = WorldPanel(cast("Controller", controller), shake)
     panel.resize(0, 0, 10, 8)
 
     from catley.view.renderer import Renderer

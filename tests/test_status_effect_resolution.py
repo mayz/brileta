@@ -4,8 +4,12 @@ from dataclasses import dataclass
 from typing import cast
 from unittest.mock import patch
 
+from game.game_world import GameWorld
+from game.turn_manager import TurnManager
+
 from catley import colors
 from catley.controller import Controller
+from catley.environment.map import GameMap
 from catley.game.actions.combat import AttackAction
 from catley.game.actors import PC, Character
 from catley.game.items.capabilities import Attack
@@ -18,9 +22,6 @@ from catley.game.status_effects import (
     StrengthBoostEffect,
     TrippedEffect,
 )
-from catley.turn_manager import TurnManager
-from catley.world.game_state import GameWorld
-from catley.world.map import GameMap
 
 
 class DummyGameWorld(GameWorld):

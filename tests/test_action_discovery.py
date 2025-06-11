@@ -2,8 +2,12 @@ import types
 from dataclasses import dataclass
 from typing import cast
 
+from game.game_world import GameWorld
+
 from catley import colors
 from catley.controller import Controller
+from catley.environment import tile_types
+from catley.environment.map import GameMap
 from catley.game.actions.discovery import (
     ActionCategory,
     ActionContext,
@@ -16,9 +20,6 @@ from catley.game.enums import Disposition
 from catley.game.items.capabilities import RangedAttack
 from catley.game.items.item_types import COMBAT_KNIFE_TYPE, PISTOL_TYPE
 from catley.game.resolution.d20_system import D20Resolver
-from catley.world import tile_types
-from catley.world.game_state import GameWorld
-from catley.world.map import GameMap
 
 
 class DummyGameWorld:
@@ -214,7 +215,9 @@ def test_environment_options_include_door_actions() -> None:
     opts = disc._get_environment_options(cast(Controller, controller), player, ctx)
     names = {o.name for o in opts}
     assert "Open Door" in names
-    action = next(o for o in opts if o.name == "Open Door").execute()
+    open_door_option = next(o for o in opts if o.name == "Open Door")
+    assert open_door_option.execute is not None
+    action = open_door_option.execute()
     assert isinstance(action, OpenDoorAction)
 
 

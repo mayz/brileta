@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from catley.environment import tile_types
 from catley.game.actions.base import GameAction, GameActionResult
-from catley.world import tile_types
 
 if TYPE_CHECKING:
     from catley.controller import Controller

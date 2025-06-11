@@ -1,15 +1,18 @@
 from dataclasses import dataclass
 from typing import cast
 
+from game import ranges
+from game.game_world import GameWorld
+
 from catley import colors
 from catley.controller import Controller
+from catley.environment.map import GameMap
 from catley.events import (
     EffectEvent,
     MessageEvent,
     reset_event_bus_for_testing,
     subscribe_to_event,
 )
-from catley.game import range_system
 from catley.game.actions.area_effects import AreaEffectAction
 from catley.game.actions.combat import AttackAction
 from catley.game.actors import Character
@@ -22,8 +25,6 @@ from catley.game.items.item_types import (
 )
 from catley.game.items.properties import TacticalProperty
 from catley.game.resolution.d20_system import D20ResolutionResult
-from catley.world.game_state import GameWorld
-from catley.world.map import GameMap
 
 
 class DummyGameWorld:
@@ -119,7 +120,7 @@ def test_scoped_weapon_range_modifier() -> None:
     controller, attacker, defender, weapon = _make_world("sniper")
     ranged = weapon.ranged_attack
     assert ranged is not None
-    mod = range_system.get_range_modifier(weapon, "far")
+    mod = ranges.get_range_modifier(weapon, "far")
     assert mod == {"has_advantage": True}
 
 

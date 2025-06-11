@@ -1,7 +1,7 @@
 import random
 
-from catley.world import tile_types
-from catley.world.map import GameMap
+from catley.environment import tile_types
+from catley.environment.map import GameMap
 
 
 def test_make_map_places_doors() -> None:

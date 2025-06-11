@@ -11,3 +11,6 @@ wheels/
 # Virtual environments
 .venv
 .aider*
+
+# Generated LLM text bundle
+llm_bundle.txt

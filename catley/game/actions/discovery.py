@@ -20,7 +20,8 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from typing import TYPE_CHECKING
 
-from catley.game import range_system
+from game import ranges
+
 from catley.game.actions.base import GameAction
 from catley.game.actions.combat import AttackAction, ReloadAction
 from catley.game.actors import Character
@@ -157,7 +158,7 @@ class ActionDiscovery:
                 continue
             if not other_actor.health.is_alive():
                 continue
-            distance = range_system.calculate_distance(
+            distance = ranges.calculate_distance(
                 actor.x, actor.y, other_actor.x, other_actor.y
             )
             if (
@@ -165,7 +166,7 @@ class ActionDiscovery:
                 and 0 <= other_actor.x < gm.width
                 and 0 <= other_actor.y < gm.height
                 and gm.visible[other_actor.x, other_actor.y]
-                and range_system.has_line_of_sight(
+                and ranges.has_line_of_sight(
                     gm, actor.x, actor.y, other_actor.x, other_actor.y
                 )
             ):
@@ -215,14 +216,10 @@ class ActionDiscovery:
             gm = controller.gw.game_map
             if not gm.visible[target.x, target.y]:
                 continue
-            if not range_system.has_line_of_sight(
-                gm, actor.x, actor.y, target.x, target.y
-            ):
+            if not ranges.has_line_of_sight(gm, actor.x, actor.y, target.x, target.y):
                 continue
 
-            distance = range_system.calculate_distance(
-                actor.x, actor.y, target.x, target.y
-            )
+            distance = ranges.calculate_distance(actor.x, actor.y, target.x, target.y)
 
             # Melee attacks
             if weapon.melee_attack and distance == 1:
@@ -248,8 +245,8 @@ class ActionDiscovery:
 
             # Ranged attacks
             if weapon.ranged_attack and distance > 1:
-                range_cat = range_system.get_range_category(distance, weapon)
-                range_mods = range_system.get_range_modifier(weapon, range_cat)
+                range_cat = ranges.get_range_category(distance, weapon)
+                range_mods = ranges.get_range_modifier(weapon, range_cat)
 
                 if range_mods is not None:  # In range
                     # Calculate probability with range modifiers
@@ -328,13 +325,11 @@ class ActionDiscovery:
             or not target.health
             or not target.health.is_alive()
             or not gm.visible[target.x, target.y]
-            or not range_system.has_line_of_sight(
-                gm, actor.x, actor.y, target.x, target.y
-            )
+            or not ranges.has_line_of_sight(gm, actor.x, actor.y, target.x, target.y)
         ):
             return options
 
-        distance = range_system.calculate_distance(actor.x, actor.y, target.x, target.y)
+        distance = ranges.calculate_distance(actor.x, actor.y, target.x, target.y)
 
         # Melee attacks
         if weapon.melee_attack and distance == 1:
@@ -358,8 +353,8 @@ class ActionDiscovery:
 
         # Ranged attacks
         if weapon.ranged_attack and distance > 1:
-            range_cat = range_system.get_range_category(distance, weapon)
-            range_mods = range_system.get_range_modifier(weapon, range_cat)
+            range_cat = ranges.get_range_category(distance, weapon)
+            range_mods = ranges.get_range_modifier(weapon, range_cat)
 
             if range_mods is not None:
                 resolver = controller.create_resolver(
@@ -443,8 +438,8 @@ class ActionDiscovery:
     ) -> list[ActionOption]:
         """Get all environment interaction action options."""
 
+        from catley.environment import tile_types
         from catley.game.actions.environment import CloseDoorAction, OpenDoorAction
-        from catley.world import tile_types
 
         options: list[ActionOption] = []
 

@@ -7,17 +7,18 @@ multiple targets or tiles simultaneously.
 
 from __future__ import annotations
 
+from game import ranges
+
 from catley import colors
 from catley.constants.combat import CombatConstants as Combat
+from catley.environment.map import GameMap
 from catley.events import EffectEvent, MessageEvent, publish_event
-from catley.game import range_system
 from catley.game.actions.base import GameAction, GameActionResult
 from catley.game.actors import Actor, Character
 from catley.game.enums import AreaType
 from catley.game.items.capabilities import AreaEffect, RangedAttack
 from catley.game.items.item_core import Item
 from catley.game.items.properties import TacticalProperty, WeaponProperty
-from catley.world.map import GameMap
 
 # Convenience type aliases for area-effect calculations
 Coord = tuple[int, int]
@@ -100,7 +101,7 @@ class AreaEffectAction(GameAction):
                 distance = max(abs(dx), abs(dy))
                 if distance > effect.size:
                     continue
-                if effect.requires_line_of_sight and not range_system.has_line_of_sight(
+                if effect.requires_line_of_sight and not ranges.has_line_of_sight(
                     game_map,
                     self.attacker.x,
                     self.attacker.y,
@@ -116,7 +117,7 @@ class AreaEffectAction(GameAction):
     def _line_tiles(self, effect: AreaEffect) -> DistanceByTile:
         game_map = self.game_map
         tiles: dict[tuple[int, int], int] = {}
-        line = range_system.get_line(
+        line = ranges.get_line(
             self.attacker.x,
             self.attacker.y,
             self.target_x,
@@ -127,7 +128,7 @@ class AreaEffectAction(GameAction):
                 break
             if not effect.penetrates_walls and not game_map.transparent[tx, ty]:
                 break
-            if effect.requires_line_of_sight and not range_system.has_line_of_sight(
+            if effect.requires_line_of_sight and not ranges.has_line_of_sight(
                 game_map,
                 self.attacker.x,
                 self.attacker.y,
@@ -164,15 +165,12 @@ class AreaEffectAction(GameAction):
                 cos_angle = dot / distance
                 if cos_angle < cos_limit:
                     continue
-                if (
-                    effect._spec.requires_line_of_sight
-                    and not range_system.has_line_of_sight(
-                        game_map,
-                        self.attacker.x,
-                        self.attacker.y,
-                        tx,
-                        ty,
-                    )
+                if effect._spec.requires_line_of_sight and not ranges.has_line_of_sight(
+                    game_map,
+                    self.attacker.x,
+                    self.attacker.y,
+                    tx,
+                    ty,
                 ):
                     continue
                 if not effect.penetrates_walls and not game_map.transparent[tx, ty]:

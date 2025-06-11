@@ -2,6 +2,7 @@ import random
 
 from catley import colors
 from catley.config import PLAYER_BASE_STRENGTH, PLAYER_BASE_TOUGHNESS
+from catley.environment.map import GameMap
 from catley.game import conditions
 from catley.game.actors import Actor, Character
 from catley.game.items.item_core import Item
@@ -14,8 +15,6 @@ from catley.game.items.item_types import (
     SNIPER_RIFLE_TYPE,
 )
 from catley.view.effects.lighting import LightingSystem, LightSource
-
-from .map import GameMap
 
 
 class GameWorld:

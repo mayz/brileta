@@ -21,11 +21,11 @@ from .effects.effects import EffectContext
 from .effects.screen_shake import ScreenShake
 from .panels.equipment_panel import EquipmentPanel
 from .panels.fps_panel import FPSPanel
-from .panels.game_world_panel import GameWorldPanel
 from .panels.health_panel import HealthPanel
 from .panels.help_text_panel import HelpTextPanel
 from .panels.message_log_panel import MessageLogPanel
 from .panels.panel import Panel
+from .panels.world_panel import WorldPanel
 from .renderer import Renderer
 from .ui.cursor_manager import CursorManager
 
@@ -61,7 +61,7 @@ class FrameManager:
 
         self.help_text_panel = HelpTextPanel(self.controller)
 
-        self.game_world_panel = GameWorldPanel(self.controller, self.screen_shake)
+        self.world_panel = WorldPanel(self.controller, self.screen_shake)
         self.message_log_panel = MessageLogPanel(
             message_log=self.controller.message_log,
             tile_dimensions=self.renderer.tile_dimensions,
@@ -72,7 +72,7 @@ class FrameManager:
 
         self.panels: list[Panel] = [
             self.help_text_panel,
-            self.game_world_panel,
+            self.world_panel,
             self.health_panel,
             self.equipment_panel,
             self.message_log_panel,
@@ -103,7 +103,7 @@ class FrameManager:
 
         # Resize all panels
         self.help_text_panel.resize(0, 0, screen_width_tiles, self.help_height)
-        self.game_world_panel.resize(
+        self.world_panel.resize(
             0, game_world_y, screen_width_tiles, game_world_y + game_world_height
         )
         self.health_panel.resize(
@@ -169,20 +169,17 @@ class FrameManager:
         """Converts root console tile coordinates to game map tile coordinates."""
         # Translate from root-console coordinates to viewport coordinates by
         # subtracting the panel's screen position.
-        vp_x = root_tile_coords[0] - self.game_world_panel.x
-        vp_y = root_tile_coords[1] - self.game_world_panel.y
+        vp_x = root_tile_coords[0] - self.world_panel.x
+        vp_y = root_tile_coords[1] - self.world_panel.y
 
         # Ignore coordinates that fall outside the visible game world panel.
         if not (
-            0 <= vp_x < self.game_world_panel.width
-            and 0 <= vp_y < self.game_world_panel.height
+            0 <= vp_x < self.world_panel.width and 0 <= vp_y < self.world_panel.height
         ):
             return None
 
         # Use the viewport system to convert viewport coords to world map coords.
-        world_x, world_y = self.game_world_panel.viewport_system.screen_to_world(
-            vp_x, vp_y
-        )
+        world_x, world_y = self.world_panel.viewport_system.screen_to_world(vp_x, vp_y)
         gw = self.controller.gw
         if 0 <= world_x < gw.game_map.width and 0 <= world_y < gw.game_map.height:
             return world_x, world_y
@@ -210,21 +207,21 @@ class FrameManager:
         direction_y: float = 0.0,
     ) -> None:
         """Create a visual effect if the world position is visible."""
-        vs = self.game_world_panel.viewport_system
+        vs = self.world_panel.viewport_system
         if not vs.is_visible(
             x, y, self.controller.gw.game_map.width, self.controller.gw.game_map.height
         ):
             return
         vp_x, vp_y = vs.world_to_screen(x, y)
         context = EffectContext(
-            particle_system=self.game_world_panel.particle_system,
+            particle_system=self.world_panel.particle_system,
             x=vp_x,
             y=vp_y,
             intensity=intensity,
             direction_x=direction_x,
             direction_y=direction_y,
         )
-        self.game_world_panel.effect_library.trigger(effect_name, context)
+        self.world_panel.effect_library.trigger(effect_name, context)
 
     def _handle_effect_event(self, event: EffectEvent) -> None:
         """Handle effect events from the global event bus."""

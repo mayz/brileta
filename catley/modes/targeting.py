@@ -3,11 +3,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import tcod.event
+from game import ranges
 from tcod.console import Console
 
 from catley import colors
 from catley.events import ActorDeathEvent, subscribe_to_event, unsubscribe_from_event
-from catley.game import range_system
 from catley.game.actions.combat import AttackAction
 from catley.game.actors import Character
 from catley.modes.base import Mode
@@ -127,7 +127,7 @@ class TargetingMode(Mode):
             return
 
         current_target = self._get_current_target()
-        gw_panel = self.controller.frame_manager.game_world_panel
+        gw_panel = self.controller.frame_manager.world_panel
 
         for actor in self.candidates:
             if not self.controller.gw.game_map.visible[actor.x, actor.y]:
@@ -225,6 +225,6 @@ class TargetingMode(Mode):
         self.controller.gw.selected_actor = self.candidates[self.current_index]
 
     def _calculate_distance_to_player(self, actor) -> int:
-        return range_system.calculate_distance(
+        return ranges.calculate_distance(
             self.controller.gw.player.x, self.controller.gw.player.y, actor.x, actor.y
         )

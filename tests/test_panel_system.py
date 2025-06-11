@@ -3,8 +3,8 @@
 from unittest.mock import Mock
 
 import pytest
+from view.panels.world_panel import WorldPanel
 
-from catley.view.panels.game_world_panel import GameWorldPanel
 from catley.view.panels.panel import Panel
 
 
@@ -77,9 +77,9 @@ class TestGameWorldPanelBoundaryEnforcement:
         self.mock_renderer = Mock()
 
         # Create panel
-        self.panel = GameWorldPanel(self.mock_controller, self.mock_screen_shake)
+        self.panel = WorldPanel(self.mock_controller, self.mock_screen_shake)
 
-    def test_game_world_panel_respects_smaller_boundaries(self):
+    def test_world_panel_respects_smaller_boundaries(self):
         """Test that GameWorldPanel clips when panel is smaller than game map."""
         # Set panel to be smaller than the game map
         self.panel.resize(0, 0, 50, 40)  # 50x40 panel for 100x100 map
@@ -97,7 +97,7 @@ class TestGameWorldPanelBoundaryEnforcement:
         assert call_kwargs["width"] == 50  # Clipped to panel width
         assert call_kwargs["height"] == 40  # Clipped to panel height
 
-    def test_game_world_panel_with_screen_shake_stays_in_bounds(self):
+    def test_world_panel_with_screen_shake_stays_in_bounds(self):
         """Test that screen shake doesn't cause rendering outside panel bounds."""
         # Set up screen shake
         self.mock_screen_shake.update.return_value = (5, 3)  # Some shake offset
@@ -120,7 +120,7 @@ class TestGameWorldPanelBoundaryEnforcement:
         assert dest_x >= self.panel.x
         assert dest_y >= self.panel.y
 
-    def test_game_world_panel_skips_draw_when_invisible(self):
+    def test_world_panel_skips_draw_when_invisible(self):
         """Test that invisible panels don't render."""
         self.panel.resize(0, 0, 50, 50)
         self.panel.hide()
@@ -181,14 +181,12 @@ class TestFrameManagerResizing:
             message_log_height = 10
             bottom_ui_height = message_log_height + 1
 
-            game_world_y = help_height
-            game_world_height = height - game_world_y - bottom_ui_height
+            world_y = help_height
+            world_height = height - world_y - bottom_ui_height
 
             # Verify game world gets reasonable space
-            assert game_world_height > 0, f"No game world space at {width}x{height}"
-            assert game_world_y >= help_height, (
-                f"Game world overlaps help at {width}x{height}"
-            )
+            assert world_height > 0, f"No game world space at {width}x{height}"
+            assert world_y >= help_height, f"World overlaps help at {width}x{height}"
 
             # Verify equipment panel fits on screen
             equipment_width = 25
