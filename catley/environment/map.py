@@ -1,8 +1,14 @@
+from __future__ import annotations
+
 import random
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from catley.environment import tile_types
+
+if TYPE_CHECKING:
+    from catley.game.game_world import GameWorld
 
 
 class Rect:
@@ -15,7 +21,7 @@ class Rect:
     def center(self) -> tuple[int, int]:
         return (int((self.x1 + self.x2) / 2), int((self.y1 + self.y2) / 2))
 
-    def intersects(self, other: "Rect") -> bool:
+    def intersects(self, other: Rect) -> bool:
         return (
             self.x1 <= other.x2
             and self.x2 >= other.x1
@@ -33,6 +39,7 @@ class GameMap:
     def __init__(self, width: int, height: int) -> None:
         self.width = width
         self.height = height
+        self.gw: GameWorld | None = None
 
         # Initialize the map with walls. We'll carve out rooms later.
         #

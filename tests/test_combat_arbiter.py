@@ -14,7 +14,8 @@ def make_characters() -> tuple[Character, Character, GameWorld]:
     gw = cast(GameWorld, DummyGameWorld())
     attacker = Character(1, 1, "A", (255, 255, 255), "Attacker", game_world=gw)
     defender = Character(2, 1, "D", (255, 255, 255), "Defender", game_world=gw)
-    gw.actors.extend([attacker, defender])
+    gw.add_actor(attacker)
+    gw.add_actor(defender)
     return attacker, defender, gw
 
 

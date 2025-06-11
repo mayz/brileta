@@ -70,6 +70,7 @@ class GameWorld:
         # The player must now be added via the new lifecycle method.
         self.add_actor(self.player)
         self.game_map = GameMap(map_width, map_height)
+        self.game_map.gw = self
         self.lighting.set_game_map(self.game_map)
 
     def add_actor(self, actor: Actor) -> None:

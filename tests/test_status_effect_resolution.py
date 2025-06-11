@@ -55,7 +55,8 @@ def make_combat_world() -> tuple[DummyController, Character, Character, AttackAc
     defender = Character(
         2, 1, "D", colors.WHITE, "Def", game_world=cast(GameWorld, gw), agility=5
     )
-    gw.actors.extend([attacker, defender])
+    gw.add_actor(attacker)
+    gw.add_actor(defender)
     gw.player = attacker
     controller = DummyController(gw=gw)
     weapon = FISTS_TYPE.create()
@@ -127,7 +128,7 @@ def test_tripped_skips_turn() -> None:
     gw = DummyGameWorld()
     player = PC(0, 0, "@", colors.WHITE, "Player", game_world=cast(GameWorld, gw))
     gw.player = player
-    gw.actors.append(player)
+    gw.add_actor(player)
     controller = DummyController(gw=gw)
     tm = TurnManager(cast(Controller, controller))
 

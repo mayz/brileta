@@ -147,22 +147,25 @@ class ActionDiscovery:
     def _build_context(self, controller: Controller, actor: Character) -> ActionContext:
         """Build action context from current game state."""
 
-        # Find nearby actors (within reasonable interaction range)
-        nearby_actors: list[Character] = []
         gm = controller.gw.game_map
-        for other_actor in controller.gw.actors:
+        # Find nearby actors using the spatial index for efficiency.
+        potential_actors = controller.gw.actor_spatial_index.get_in_radius(
+            actor.x, actor.y, radius=15
+        )
+
+        nearby_actors: list[Character] = []
+        for other_actor in potential_actors:
             if other_actor == actor:
                 continue
             if not isinstance(other_actor, Character):
                 continue
             if not other_actor.health.is_alive():
                 continue
-            distance = ranges.calculate_distance(
-                actor.x, actor.y, other_actor.x, other_actor.y
-            )
+
+            # Radius filtering is done already; still verify visibility and
+            # line of sight.
             if (
-                distance <= 15
-                and 0 <= other_actor.x < gm.width
+                0 <= other_actor.x < gm.width
                 and 0 <= other_actor.y < gm.height
                 and gm.visible[other_actor.x, other_actor.y]
                 and ranges.has_line_of_sight(

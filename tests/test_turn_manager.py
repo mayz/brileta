@@ -34,7 +34,7 @@ def _make_world() -> tuple[DummyController, Character]:
         game_world=cast(GameWorld, gw),
     )
     gw.player = player
-    gw.actors.append(player)
+    gw.add_actor(player)
     controller = DummyController(gw=gw)
     return controller, player
 

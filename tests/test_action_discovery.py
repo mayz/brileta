@@ -37,6 +37,7 @@ class DummyController:
 def _make_context_world():
     gw = DummyGameWorld()
     gw.game_map = GameMap(30, 30)
+    gw.game_map.gw = cast(GameWorld, gw)
     gw.game_map.tiles[:] = tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[attr-defined]
     gw.game_map.visible[:] = True
     gw.items = {}
@@ -51,7 +52,9 @@ def _make_context_world():
         20, 20, "F", colors.WHITE, "Friend", game_world=cast(GameWorld, gw)
     )
 
-    gw.actors.extend([player, hostile, friend])
+    gw.add_actor(player)
+    gw.add_actor(hostile)
+    gw.add_actor(friend)
     gw.player = player
     gw.selected_actor = hostile
     knife = COMBAT_KNIFE_TYPE.create()
@@ -110,7 +113,9 @@ def _make_combat_world():
         agility=3,
     )
 
-    gw.actors.extend([player, melee_target, ranged_target])
+    gw.add_actor(player)
+    gw.add_actor(melee_target)
+    gw.add_actor(ranged_target)
     gw.player = player
 
     controller = DummyController(gw=gw)
@@ -196,7 +201,7 @@ def test_environment_options_include_door_actions() -> None:
     gw.game_map.tiles[1, 0] = tile_types.TILE_TYPE_ID_DOOR_CLOSED  # type: ignore[attr-defined]
     player = Character(0, 0, "@", colors.WHITE, "P", game_world=cast(GameWorld, gw))
     gw.player = player
-    gw.actors.append(player)
+    gw.add_actor(player)
     controller = DummyController(gw=gw)
     disc = ActionDiscovery()
     ctx = disc._build_context(cast(Controller, controller), player)

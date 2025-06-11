@@ -44,7 +44,7 @@ def make_world() -> tuple[DummyController, Character]:
     reset_event_bus_for_testing()
     gw = DummyGameWorld()
     actor = Character(1, 1, "A", colors.WHITE, "Att", game_world=cast(GameWorld, gw))
-    gw.actors.append(actor)
+    gw.add_actor(actor)
     gw.player = actor
     controller = DummyController(
         gw=gw, message_log=DummyMessageLog(), frame_manager=DummyFrameManager()
@@ -69,8 +69,13 @@ def test_pickup_menu_removes_empty_container() -> None:
     handler._apply_weapon_drop(actor, pistol)
 
     # There should now be a dropped item actor on the same tile
-    ground_items = controller.gw.get_pickable_items_at_location(actor.x, actor.y)
-    assert ground_items and pistol in ground_items
+    ground_actor = next(
+        a
+        for a in controller.gw.actors
+        if a is not actor and a.x == actor.x and a.y == actor.y
+    )
+    assert ground_actor.inventory is not None
+    assert pistol in ground_actor.inventory
 
     menu = PickupMenu(cast(Controller, controller), (actor.x, actor.y))
     menu._pickup_item(pistol)
@@ -90,7 +95,7 @@ def test_pickup_from_dead_actor_clears_slot() -> None:
         game_world=cast(GameWorld, controller.gw),
         starting_weapon=PISTOL_TYPE.create(),
     )
-    controller.gw.actors.append(npc)
+    controller.gw.add_actor(npc)
     npc.health.hp = 0
 
     pistol = npc.inventory.attack_slots[0]
