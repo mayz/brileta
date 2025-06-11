@@ -26,46 +26,28 @@ class TargetingMode(Mode):
         self.current_index: int = 0
         self.last_targeted: Character | None = None
 
-        # Subscribe to actor death events
-        subscribe_to_event(ActorDeathEvent, self._handle_actor_death_event)
-
     def enter(self) -> None:
         """Enter targeting mode and find all valid targets"""
         super().enter()
         self.candidates = []
 
+        # Subscribe to actor death events only while targeting
+        subscribe_to_event(ActorDeathEvent, self._handle_actor_death_event)
+
         self.cursor_manager.set_active_cursor_type("crosshair")
 
-        # Find all valid targets within reasonable range
-        for actor in self.controller.gw.actors:
-            if (
-                actor != self.controller.gw.player
-                and isinstance(actor, Character)
-                and actor.health.is_alive()
-            ):
-                distance = range_system.calculate_distance(
-                    self.controller.gw.player.x,
-                    self.controller.gw.player.y,
-                    actor.x,
-                    actor.y,
-                )
-                if distance <= 15:
-                    self.candidates.append(actor)
+        # Build initial candidate list
+        self.update()
 
-        # Sort by distance (closest first)
-        self.candidates.sort(key=lambda a: self._calculate_distance_to_player(a))
-
-        # Use last targeted actor if available, otherwise use current selection
+        # Prefer last targeted actor or currently selected one
         preferred_target = self.last_targeted or self.controller.gw.selected_actor
-
         if preferred_target and preferred_target in self.candidates:
             assert isinstance(preferred_target, Character)
             self.current_index = self.candidates.index(preferred_target)
             self.controller.gw.selected_actor = preferred_target
-        else:
+        elif self.candidates:
             self.current_index = 0
-            if self.candidates:
-                self.controller.gw.selected_actor = self.candidates[0]
+            self.controller.gw.selected_actor = self.candidates[0]
 
     def exit(self) -> None:
         """Exit targeting mode"""
@@ -145,10 +127,54 @@ class TargetingMode(Mode):
         gw_panel = self.controller.frame_manager.game_world_panel
 
         for actor in self.candidates:
+            if not self.controller.gw.game_map.visible[actor.x, actor.y]:
+                continue
             if actor == current_target:
                 gw_panel.highlight_actor(actor, (255, 0, 0), effect="pulse")
             else:
                 gw_panel.highlight_actor(actor, (100, 0, 0), effect="solid")
+
+    def update(self) -> None:
+        """Rebuild target candidates each frame and maintain selection."""
+        if not self.active:
+            return
+
+        previous_target = self._get_current_target()
+        gw = self.controller.gw
+        player = gw.player
+        visible = gw.game_map.visible
+
+        new_candidates: list[Character] = []
+        for actor in gw.actors:
+            if actor is player:
+                continue
+
+            # Distance check first for cheap filtering
+            distance = self._calculate_distance_to_player(actor)
+            if distance > 15:
+                continue
+
+            if (
+                isinstance(actor, Character)
+                and actor.health.is_alive()
+                and visible[actor.x, actor.y]
+            ):
+                new_candidates.append(actor)
+
+        new_candidates.sort(key=self._calculate_distance_to_player)
+        self.candidates = new_candidates
+
+        if not self.candidates:
+            self.current_index = 0
+            self.controller.gw.selected_actor = None
+            return
+
+        if previous_target and previous_target in self.candidates:
+            self.current_index = self.candidates.index(previous_target)
+        else:
+            self.current_index = 0
+
+        self.controller.gw.selected_actor = self.candidates[self.current_index]
 
     def on_actor_death(self, actor: Character) -> None:
         """Handle actor death in targeting mode"""
@@ -161,12 +187,12 @@ class TargetingMode(Mode):
             actor for actor in self.candidates if actor.health.is_alive()
         ]
 
-        # If current target is dead or no candidates left, exit targeting
+        # If current target is dead or no candidates left, exit targeting mode
         current_target = self._get_current_target()
         if not self.candidates or (
             current_target and not current_target.health.is_alive()
         ):
-            self.exit()
+            self.controller.exit_targeting_mode()
             return
 
         # Adjust index if needed
