@@ -63,3 +63,14 @@ class ConsumableEffectType(Enum):
     HEAL = "heal"
     BOOST_STRENGTH = "boost_strength"
     POISON = "poison"
+
+
+class InjuryLocation(Enum):
+    """Possible body locations that can be injured."""
+
+    HEAD = auto()
+    TORSO = auto()
+    LEFT_ARM = auto()
+    RIGHT_ARM = auto()
+    LEFT_LEG = auto()
+    RIGHT_LEG = auto()

@@ -61,7 +61,7 @@ class GameWorld:
         self.player.inventory.add_to_inventory(RIFLE_MAGAZINE_TYPE.create())
 
         self.player.inventory.add_to_inventory(
-            conditions.Injury(injury_type="Sprained Ankle")
+            conditions.Injury(conditions.InjuryLocation.LEFT_LEG, "Sprained Ankle")
         )
 
         self.actors: list[Actor] = []

@@ -217,9 +217,15 @@ class AttackAction(GameAction):
         attacker_score = getattr(self.attacker.stats, stat_name)
         defender_score = self.defender.stats.agility + self._adjacent_cover_bonus()
 
-        resolution_args = {"has_advantage": False, "has_disadvantage": False}
+        resolution_args = {
+            "has_advantage": False,
+            "has_disadvantage": False,
+            "stat_name": stat_name,
+        }
         for effect in self.attacker.status_effects:
             resolution_args = effect.apply_to_resolution(resolution_args)
+        for condition in self.attacker.get_conditions():
+            resolution_args = condition.apply_to_resolution(resolution_args)
 
         if resolution_args.get("action_prevented", False):
             return None

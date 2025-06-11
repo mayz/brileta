@@ -1,6 +1,6 @@
 from catley.game.components import InventoryComponent, StatsComponent
 from catley.game.conditions import Injury
-from catley.game.enums import ItemSize
+from catley.game.enums import InjuryLocation, ItemSize
 from catley.game.items.item_core import Item, ItemType
 
 
@@ -15,7 +15,7 @@ def test_get_used_inventory_slots_and_tiny_sharing():
     tiny2 = make_item("t2", ItemSize.TINY)
     normal = make_item("n1", ItemSize.NORMAL)
     big = make_item("b1", ItemSize.BIG)
-    injury = Injury()
+    injury = Injury(InjuryLocation.LEFT_ARM, "Wound")
 
     inv.add_to_inventory(tiny1)
     assert inv.get_used_inventory_slots() == 1

@@ -6,6 +6,8 @@ if TYPE_CHECKING:
 
 from catley import colors
 
+from .enums import InjuryLocation
+
 
 class Condition(abc.ABC):  # noqa: B024
     """Base class for all conditions that can affect an actor and take up
@@ -28,9 +30,9 @@ class Condition(abc.ABC):  # noqa: B024
         """Modify resolution arguments if this condition has an effect."""
         return resolution_args
 
-    def get_movement_cost_modifier(self) -> int:
-        """Return an additive energy cost modifier for movement actions."""
-        return 0
+    def get_movement_cost_modifier(self) -> float:
+        """Return a movement speed multiplier for this condition."""
+        return 1.0
 
     def apply_turn_effect(self, actor: "Actor") -> None:
         """Apply any per-turn effects of this condition."""
@@ -38,18 +40,59 @@ class Condition(abc.ABC):  # noqa: B024
 
 
 class Injury(Condition):
-    """Represents a physical injury."""
+    """Represents a physical injury at a specific body location."""
 
     def __init__(
         self,
+        injury_location: InjuryLocation,
         injury_type: str = "Generic Injury",
         description: str = "A physical wound.",
-    ):
+    ) -> None:
+        self.injury_location = injury_location
+        location_names: dict[InjuryLocation, str] = {
+            InjuryLocation.HEAD: "Head",
+            InjuryLocation.TORSO: "Torso",
+            InjuryLocation.LEFT_ARM: "Left Arm",
+            InjuryLocation.RIGHT_ARM: "Right Arm",
+            InjuryLocation.LEFT_LEG: "Left Leg",
+            InjuryLocation.RIGHT_LEG: "Right Leg",
+        }
+        loc_name = location_names.get(
+            injury_location, injury_location.name.replace("_", " ").title()
+        )
+        name = f"{loc_name} Injury: {injury_type}"
+
         super().__init__(
-            name=f"Injury: {injury_type}",
+            name=name,
             description=description,
             display_color=colors.RED,
         )
+
+    def apply_to_resolution(self, resolution_args: dict[str, bool]) -> dict[str, bool]:
+        """Apply disadvantage based on injury location and action stat."""
+        stat_name = resolution_args.get("stat_name")
+        if stat_name is None:
+            return resolution_args
+        head_hit = self.injury_location == InjuryLocation.HEAD and stat_name in {
+            "intelligence",
+            "observation",
+        }
+        torso_hit = (
+            self.injury_location == InjuryLocation.TORSO and stat_name == "toughness"
+        )
+        arm_hit = (
+            self.injury_location in {InjuryLocation.LEFT_ARM, InjuryLocation.RIGHT_ARM}
+            and stat_name == "strength"
+        )
+        if head_hit or torso_hit or arm_hit:
+            resolution_args["has_disadvantage"] = True
+        return resolution_args
+
+    def get_movement_cost_modifier(self) -> float:
+        """Return movement speed multiplier from this injury."""
+        if self.injury_location in {InjuryLocation.LEFT_LEG, InjuryLocation.RIGHT_LEG}:
+            return 0.75
+        return 1.0
 
 
 class Rads(Condition):
