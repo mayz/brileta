@@ -116,18 +116,18 @@ class ConsequenceHandler:
         if not source or source.gw is None:
             return
         gw = source.gw
-        # TODO: Once we need/have some kind of spatial index for actors,
-        #       efficiently search for actors within `radius`, rather than
-        #       iterating over all actors in the GameWorld.
-        for actor in gw.actors:
+
+        # Use the spatial index for an efficient radius query.
+        nearby_actors = gw.actor_spatial_index.get_in_radius(source.x, source.y, radius)
+
+        for actor in nearby_actors:
             if actor is source:
                 continue
             if not isinstance(actor, Character):
                 continue
             if not isinstance(actor.ai, DispositionBasedAI):
                 continue
-            distance = max(abs(actor.x - source.x), abs(actor.y - source.y))
-            if distance <= radius and actor.ai.disposition != Disposition.HOSTILE:
+            if actor.ai.disposition != Disposition.HOSTILE:
                 actor.ai.disposition = Disposition.HOSTILE
                 publish_event(
                     MessageEvent(

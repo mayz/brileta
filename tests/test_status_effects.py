@@ -26,7 +26,7 @@ def make_world() -> tuple[DummyController, Character]:
         0, 0, "A", colors.WHITE, "Act", game_world=cast(GameWorld, gw), strength=5
     )
     gw.player = actor
-    gw.actors.append(actor)
+    gw.add_actor(actor)
     controller = DummyController(gw=gw)
     return controller, actor
 

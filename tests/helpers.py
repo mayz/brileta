@@ -1,17 +1,15 @@
 from __future__ import annotations
 
-import contextlib
 from collections.abc import Sequence
 
 from catley.environment import tile_types
 from catley.environment.map import GameMap
 from catley.game.actors import Actor, Character
-from catley.game.game_world import GameWorld
 from catley.util.spatial import SpatialHashGrid
 
 
-class DummyGameWorld(GameWorld):
-    """Lightweight GameWorld for tests."""
+class DummyGameWorld:
+    """A lightweight, standalone dummy GameWorld for testing."""
 
     def __init__(
         self,
@@ -28,17 +26,27 @@ class DummyGameWorld(GameWorld):
             game_map.transparent[:] = True
             game_map.visible[:] = True
         self.game_map = game_map
-        self.actors = list(actors) if actors is not None else []
+        self.game_map.gw = self
+
+        self.actor_spatial_index = SpatialHashGrid(cell_size=16)
+        self.actors: list[Actor] = []
+
+        # Add initial actors through the proper lifecycle method.
+        if actors:
+            for actor in actors:
+                self.add_actor(actor)
+
         self.player: Character | None = None
         self.selected_actor: Character | None = None
         self.items: dict[tuple[int, int], list] = {}
-        self.actor_spatial_index = SpatialHashGrid(cell_size=16)
 
     def add_actor(self, actor: Actor) -> None:
+        """Adds an actor to the list and the spatial index."""
         self.actors.append(actor)
         self.actor_spatial_index.add(actor)
 
     def remove_actor(self, actor: Actor) -> None:
+        """Removes an actor from the list and the spatial index."""
         try:
             self.actors.remove(actor)
             self.actor_spatial_index.remove(actor)
@@ -46,8 +54,5 @@ class DummyGameWorld(GameWorld):
             pass
 
     def get_pickable_items_at_location(self, x: int, y: int) -> list:
-        """Return items stored at ``(x, y)`` or carried by ground actors."""
-        items = list(self.items.get((x, y), []))
-        with contextlib.suppress(AttributeError):
-            items.extend(super().get_pickable_items_at_location(x, y))
-        return items
+        """Return items stored at ``(x, y)``."""
+        return self.items.get((x, y), [])

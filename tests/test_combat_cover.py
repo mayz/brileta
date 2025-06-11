@@ -34,7 +34,8 @@ def test_cover_bonus_reduces_hit_chance() -> None:
 
     attacker = Character(1, 0, "A", (255, 255, 255), "Att", game_world=gw, strength=5)
     defender = Character(1, 1, "D", (255, 255, 255), "Def", game_world=gw)
-    gw.actors.extend([attacker, defender])
+    gw.add_actor(attacker)
+    gw.add_actor(defender)
 
     weapon = FISTS_TYPE.create()
     attack = weapon.melee_attack

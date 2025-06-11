@@ -262,20 +262,23 @@ class LightingSystem:
     ) -> np.ndarray:
         """Apply shadows from actors and shadow-casting tiles."""
 
+        # Add a guard clause in case there's no game map or GameWorld attached.
+        if self._game_map is None or self._game_map.gw is None:
+            return light_map
+
         shadow_map = light_map.copy()
 
         for light_source in self.light_sources:
             lx, ly = light_source.position
             light_radius = light_source.radius
 
+            # Use the spatial index for an efficient query
             nearby_actors = [
                 actor
-                for actor in actors
-                if (
-                    abs(actor.x - lx) <= light_radius
-                    and abs(actor.y - ly) <= light_radius
-                    and actor.blocks_movement
+                for actor in self._game_map.gw.actor_spatial_index.get_in_radius(
+                    lx, ly, light_radius
                 )
+                if actor.blocks_movement
             ]
 
             for actor in nearby_actors:

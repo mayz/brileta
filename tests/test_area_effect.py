@@ -1,3 +1,4 @@
+from typing import cast
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -78,11 +79,16 @@ def make_world() -> tuple[
     gw = DummyGameWorld()
     gw.game_map = game_map
     gw.actors = []
-    attacker = Character(1, 1, "A", colors.WHITE, "Attacker", game_world=gw)
-    target = Character(5, 4, "T", colors.YELLOW, "Target", game_world=gw)
+    attacker = Character(
+        1, 1, "A", colors.WHITE, "Attacker", game_world=cast(GameWorld, gw)
+    )
+    target = Character(
+        5, 4, "T", colors.YELLOW, "Target", game_world=cast(GameWorld, gw)
+    )
     target.health.ap = 0
-    gw.actors.extend([attacker, target])
-    controller = DummyController(gw)
+    gw.add_actor(attacker)
+    gw.add_actor(target)
+    controller = DummyController(cast(GameWorld, gw))
     grenade = GRENADE_TYPE.create()
     action = AreaEffectAction(game_map, gw.actors, attacker, 5, 5, grenade)
     return controller, attacker, target, action, game_map

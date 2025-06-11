@@ -49,6 +49,9 @@ class DummyGW:
             lambda w, h, *_args, **_kwargs: 1.0 * np.ones((w, h, 3))
         )
 
+    def add_actor(self, actor: DummyActor) -> None:
+        self.actors.append(actor)
+
 
 @dataclass
 class DummyController:
@@ -92,7 +95,7 @@ def test_highlight_actor_converts_world_to_screen() -> None:
     panel.viewport_system.camera.set_position(10.0, 10.0)
 
     actor = DummyActor(12, 10)
-    controller.gw.actors.append(actor)
+    controller.gw.add_actor(actor)
 
     panel.highlight_actor(cast(Actor, actor), (1, 2, 3))
 
@@ -114,7 +117,7 @@ def test_highlight_actor_offscreen_is_ignored() -> None:
     panel.viewport_system.camera.set_position(10.0, 10.0)
 
     offscreen_actor = DummyActor(0, 0)
-    controller.gw.actors.append(offscreen_actor)
+    controller.gw.add_actor(offscreen_actor)
     before = panel.game_map_console.rgb["bg"].copy()
 
     panel.highlight_actor(cast(Actor, offscreen_actor), (4, 5, 6))

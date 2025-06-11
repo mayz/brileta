@@ -63,7 +63,8 @@ def make_world() -> tuple[DummyController, Character, Character, AttackAction]:
         "Defender",
         game_world=cast(GameWorld, gw),
     )
-    gw.actors.extend([attacker, defender])
+    gw.add_actor(attacker)
+    gw.add_actor(defender)
     gw.player = defender
     controller = DummyController(
         gw=gw, message_log=DummyMessageLog(), frame_manager=DummyFrameManager()
@@ -102,7 +103,8 @@ def make_world_ranged() -> tuple[DummyController, Character, Character, AttackAc
         "Defender",
         game_world=cast(GameWorld, gw),
     )
-    gw.actors.extend([attacker, defender])
+    gw.add_actor(attacker)
+    gw.add_actor(defender)
     gw.player = defender
     controller = DummyController(
         gw=gw, message_log=DummyMessageLog(), frame_manager=DummyFrameManager()

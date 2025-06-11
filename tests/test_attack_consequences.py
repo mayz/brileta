@@ -55,7 +55,9 @@ def make_world() -> tuple[
     defender = Character(2, 1, "D", colors.WHITE, "Def", game_world=cast(GameWorld, gw))
     bystander = Character(3, 1, "B", colors.WHITE, "By", game_world=cast(GameWorld, gw))
     bystander.ai = DispositionBasedAI(disposition=Disposition.WARY)
-    gw.actors.extend([attacker, defender, bystander])
+    gw.add_actor(attacker)
+    gw.add_actor(defender)
+    gw.add_actor(bystander)
     gw.player = attacker
 
     controller = DummyController(
@@ -92,11 +94,15 @@ def test_weapon_drop_and_noise_alert() -> None:
     assert result is not None
     assert any(c.type == "weapon_drop" for c in result.consequences)
     assert attacker.inventory.get_active_weapon() is None
-    ground_items = controller.gw.get_pickable_items_at_location(attacker.x, attacker.y)
-    assert ground_items
-    assert len(ground_items) > 0
-    first_item = cast(Item, ground_items[0])
-    assert first_item.name == cast(Item, action.weapon).name
+    ground_actor = next(
+        a
+        for a in controller.gw.actors
+        if a is not attacker and a.x == attacker.x and a.y == attacker.y
+    )
+    assert ground_actor.inventory is not None
+    assert any(
+        it.name == cast(Item, action.weapon).name for it in ground_actor.inventory
+    )
     assert isinstance(bystander.ai, DispositionBasedAI)
     b_ai = cast(DispositionBasedAI, bystander.ai)
     assert b_ai.disposition == Disposition.HOSTILE

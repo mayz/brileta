@@ -60,7 +60,8 @@ def _make_world(weapon_key: str):
     gw = DummyGameWorld()
     attacker = Character(1, 1, "A", colors.WHITE, "Att", game_world=cast(GameWorld, gw))
     defender = Character(2, 1, "D", colors.WHITE, "Def", game_world=cast(GameWorld, gw))
-    gw.actors.extend([attacker, defender])
+    gw.add_actor(attacker)
+    gw.add_actor(defender)
     controller = DummyController(
         gw=gw, message_log=DummyMessageLog(), frame_manager=DummyFrameManager()
     )
