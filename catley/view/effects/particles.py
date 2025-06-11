@@ -28,90 +28,6 @@ from catley.game.enums import AreaType, BlendMode, ConsumableEffectType  # noqa:
 # particle_system.render_to_console(self.game_map_console)
 
 
-class SubParticle:
-    """
-    Represents a single particle that exists at sub-tile resolution.
-
-    Particles have position, velocity, lifetime, and visual properties.
-    They can render as foreground characters and/or background colors.
-    """
-
-    def __init__(
-        self,
-        sub_x: float,
-        sub_y: float,
-        vel_x: float,
-        vel_y: float,
-        lifetime: float,
-        char: str = "*",
-        color: colors.Color = (255, 0, 0),
-        bg_color: colors.Color | None = None,
-        bg_blend_mode: BlendMode = BlendMode.TINT,
-    ) -> None:
-        # Position and movement (in sub-tile coordinates)
-        self.sub_x = sub_x  # Position in sub-tile coordinates
-        self.sub_y = sub_y
-        self.vel_x = vel_x  # Velocity in sub-tiles per second
-        self.vel_y = vel_y
-
-        # Lifetime tracking
-        self.lifetime = lifetime
-        self.max_lifetime = lifetime
-
-        # Visual properties
-        self.char = char
-        self.color = color
-        self.bg_color = bg_color
-        self.bg_blend_mode = bg_blend_mode
-
-        # Physics properties
-        self.gravity = 0.0  # Optional gravity in sub-tiles/sec^2
-
-        # Special properties for explosion flash effects
-        self._flash_intensity: float | None = None  # For explosion flash effects
-
-    def update(self, delta_time: float) -> bool:
-        """
-        Update particle physics and lifetime.
-
-        Args:
-            delta_time: Time elapsed since last update in seconds
-
-        Returns:
-            bool: True if particle is still alive, False if it should be removed
-        """
-        # Update position based on velocity
-        self.sub_x += self.vel_x * delta_time
-        self.sub_y += self.vel_y * delta_time
-
-        # Apply gravity to vertical velocity
-        self.vel_y += self.gravity * delta_time
-
-        # Update lifetime
-        self.lifetime -= delta_time
-        return self.lifetime > 0
-
-    @property
-    def intensity(self) -> float:
-        """
-        Get current intensity based on remaining lifetime.
-
-        Returns:
-            float: Intensity from 0.0 (about to die) to 1.0 (just created)
-        """
-        return self.lifetime / self.max_lifetime
-
-    @property
-    def tile_pos(self) -> tuple[int, int]:
-        """
-        Get the tile position this particle occupies.
-
-        Returns:
-            tuple[int, int]: (x, y) tile coordinates
-        """
-        return int(self.sub_x), int(self.sub_y)
-
-
 class SubTileParticleSystem:
     """
     Manages particles that exist at sub-tile resolution for smooth movement.
@@ -129,6 +45,7 @@ class SubTileParticleSystem:
         map_width: int,
         map_height: int,
         subdivision: int = View.SUB_TILE_SUBDIVISION,
+        max_particles: int = 1000,
     ) -> None:
         """
         Initialize the particle system.
@@ -143,7 +60,22 @@ class SubTileParticleSystem:
         self.sub_height = map_height * subdivision
         self.map_width = map_width
         self.map_height = map_height
-        self.particles: list[SubParticle] = []
+
+        self.max_particles = max_particles
+        self.active_count = 0
+
+        self.positions = np.zeros((max_particles, 2), dtype=np.float32)
+        self.velocities = np.zeros((max_particles, 2), dtype=np.float32)
+        self.lifetimes = np.zeros(max_particles, dtype=np.float32)
+        self.max_lifetimes = np.zeros(max_particles, dtype=np.float32)
+        self.colors = np.zeros((max_particles, 3), dtype=np.uint8)
+        self.chars = np.full(max_particles, "*", dtype="<U1")
+        self.bg_colors = np.zeros((max_particles, 3), dtype=np.uint8)
+        self.has_bg_color = np.zeros(max_particles, dtype=bool)
+        self.bg_blend_mode = np.full(max_particles, BlendMode.TINT.value, dtype=np.int8)
+        self.gravity = np.zeros(max_particles, dtype=np.float32)
+        # NaN sentinel means no explicit flash intensity supplied.
+        self.flash_intensity = np.full(max_particles, np.nan, dtype=np.float32)
 
     def add_particle(
         self,
@@ -189,22 +121,31 @@ class SubTileParticleSystem:
             -spread_sub_pixels, spread_sub_pixels
         )
 
+        if self.active_count >= self.max_particles:
+            return
+
+        index = self.active_count
+
         # Convert velocity from tiles/sec to sub-tiles/sec
         sub_vel_x = vel_x * self.subdivision
         sub_vel_y = vel_y * self.subdivision
 
-        particle = SubParticle(
-            final_particle_sub_x,
-            final_particle_sub_y,
-            sub_vel_x,
-            sub_vel_y,
-            lifetime,
-            char,
-            color,
-            bg_color,
-            bg_blend_mode,
-        )
-        self.particles.append(particle)
+        self.positions[index] = (final_particle_sub_x, final_particle_sub_y)
+        self.velocities[index] = (sub_vel_x, sub_vel_y)
+        self.lifetimes[index] = lifetime
+        self.max_lifetimes[index] = lifetime
+        self.colors[index] = color
+        self.chars[index] = char
+        if bg_color is not None:
+            self.bg_colors[index] = bg_color
+            self.has_bg_color[index] = True
+            self.bg_blend_mode[index] = bg_blend_mode.value
+        else:
+            self.has_bg_color[index] = False
+        self.gravity[index] = 0.0
+        self.flash_intensity[index] = np.nan
+
+        self.active_count += 1
 
     # =============================================================================
     # GENERIC PARTICLE CREATION METHODS
@@ -252,6 +193,8 @@ class SubTileParticleSystem:
             colors_and_chars = [((255, 0, 0), "*")]
 
         for _ in range(count):
+            if self.active_count >= self.max_particles:
+                break
             # Random direction (angle in radians)
             angle = random.uniform(0, 2 * math.pi)
 
@@ -270,25 +213,29 @@ class SubTileParticleSystem:
             # Random color and character from the provided list
             color, char = random.choice(colors_and_chars)
 
-            # Create the particle using our core add_particle method
             center_sub_x = tile_x * self.subdivision + self.subdivision / 2.0
             center_sub_y = tile_y * self.subdivision + self.subdivision / 2.0
-            particle = SubParticle(
-                center_sub_x,
-                center_sub_y,
+
+            idx = self.active_count
+            self.positions[idx] = (center_sub_x, center_sub_y)
+            self.velocities[idx] = (
                 vel_x * self.subdivision,
                 vel_y * self.subdivision,
-                lifetime,
-                char,
-                color,
-                bg_color,
-                bg_blend_mode,
             )
+            self.lifetimes[idx] = lifetime
+            self.max_lifetimes[idx] = lifetime
+            self.colors[idx] = color
+            self.chars[idx] = char
+            if bg_color is not None:
+                self.bg_colors[idx] = bg_color
+                self.has_bg_color[idx] = True
+                self.bg_blend_mode[idx] = bg_blend_mode.value
+            else:
+                self.has_bg_color[idx] = False
+            self.gravity[idx] = gravity * self.subdivision
+            self.flash_intensity[idx] = np.nan
 
-            # Apply gravity if specified
-            particle.gravity = gravity * self.subdivision
-
-            self.particles.append(particle)
+            self.active_count += 1
 
     def emit_directional_cone(
         self,
@@ -349,6 +296,9 @@ class SubTileParticleSystem:
             initial_particle_sub_y = center_sub_y
 
         for _ in range(count):
+            if self.active_count >= self.max_particles:
+                break
+
             # Add random spread to the base angle for velocity
             spread = random.uniform(-cone_spread, cone_spread)
             angle_for_velocity = base_angle + spread  # This angle is for velocity
@@ -368,18 +318,23 @@ class SubTileParticleSystem:
             # Random color and character
             color, char = random.choice(colors_and_chars)
 
-            # Create and add the particle using the calculated initial_particle_sub_x/y
-            particle = SubParticle(
+            idx = self.active_count
+            self.positions[idx] = (
                 initial_particle_sub_x,
                 initial_particle_sub_y,
+            )
+            self.velocities[idx] = (
                 vel_x * self.subdivision,
                 vel_y * self.subdivision,
-                lifetime,
-                char,
-                color,
             )
-            particle.gravity = gravity * self.subdivision
-            self.particles.append(particle)
+            self.lifetimes[idx] = lifetime
+            self.max_lifetimes[idx] = lifetime
+            self.colors[idx] = color
+            self.chars[idx] = char
+            self.has_bg_color[idx] = False
+            self.gravity[idx] = gravity * self.subdivision
+            self.flash_intensity[idx] = np.nan
+            self.active_count += 1
 
     def emit_area_flash(
         self,
@@ -421,23 +376,25 @@ class SubTileParticleSystem:
                     min_lifetime, max_lifetime = lifetime_range
                     lifetime = random.uniform(min_lifetime, max_lifetime)
 
-                    # Create a background-only particle (no character)
-                    flash_particle = SubParticle(
+                    if self.active_count >= self.max_particles:
+                        return
+
+                    idx = self.active_count
+                    self.positions[idx] = (
                         (tile_x + dx) * self.subdivision,
                         (tile_y + dy) * self.subdivision,
-                        0,
-                        0,  # No movement - stationary flash
-                        lifetime,
-                        char="",  # No character, just background effect
-                        color=(0, 0, 0),  # No foreground color
-                        bg_color=flash_color,
-                        # Replace background completely
-                        bg_blend_mode=BlendMode.REPLACE,
                     )
-
-                    # Store the intensity for special flash rendering
-                    flash_particle._flash_intensity = flash_intensity
-                    self.particles.append(flash_particle)
+                    self.velocities[idx] = (0.0, 0.0)
+                    self.lifetimes[idx] = lifetime
+                    self.max_lifetimes[idx] = lifetime
+                    self.colors[idx] = (0, 0, 0)
+                    self.chars[idx] = ""
+                    self.bg_colors[idx] = flash_color
+                    self.has_bg_color[idx] = True
+                    self.bg_blend_mode[idx] = BlendMode.REPLACE.value
+                    self.gravity[idx] = 0.0
+                    self.flash_intensity[idx] = flash_intensity
+                    self.active_count += 1
 
     def emit_background_tint(
         self,
@@ -479,6 +436,9 @@ class SubTileParticleSystem:
             chars = [".", ",", " "]
 
         for _ in range(count):
+            if self.active_count >= self.max_particles:
+                break
+
             # Random drift direction and speed
             angle = random.uniform(0, 2 * math.pi)
             min_speed, max_speed = drift_speed
@@ -540,19 +500,44 @@ class SubTileParticleSystem:
         Args:
             delta_time: Time elapsed since last update in seconds
         """
-        # Update physics and filter out particles in a single pass.
-        # Combining the lifetime and bounds checks here avoids creating
-        # intermediate lists and reduces iteration overhead when many particles
-        # are active.  Each particle's ``update`` method returns ``True`` if it
-        # is still alive, so we only keep particles that both survive the update
-        # *and* remain within map bounds.
-        self.particles = [
-            p
-            for p in self.particles
-            if p.update(delta_time)
-            and 0 <= p.sub_x < self.sub_width
-            and 0 <= p.sub_y < self.sub_height
-        ]
+        if self.active_count == 0:
+            return
+
+        active = slice(0, self.active_count)
+
+        # Vectorized physics update for all active particles
+        self.positions[active] += self.velocities[active] * delta_time
+        self.velocities[active, 1] += self.gravity[active] * delta_time
+        self.lifetimes[active] -= delta_time
+
+        # Determine which particles remain alive and within bounds
+        in_bounds_x = (self.positions[active, 0] >= 0) & (
+            self.positions[active, 0] < self.sub_width
+        )
+        in_bounds_y = (self.positions[active, 1] >= 0) & (
+            self.positions[active, 1] < self.sub_height
+        )
+        alive_mask = (self.lifetimes[active] > 0) & in_bounds_x & in_bounds_y
+
+        # Compact arrays in a single pass
+        write_idx = 0
+        for read_idx in range(self.active_count):
+            if alive_mask[read_idx]:
+                if write_idx != read_idx:
+                    self.positions[write_idx] = self.positions[read_idx]
+                    self.velocities[write_idx] = self.velocities[read_idx]
+                    self.lifetimes[write_idx] = self.lifetimes[read_idx]
+                    self.max_lifetimes[write_idx] = self.max_lifetimes[read_idx]
+                    self.colors[write_idx] = self.colors[read_idx]
+                    self.chars[write_idx] = self.chars[read_idx]
+                    self.bg_colors[write_idx] = self.bg_colors[read_idx]
+                    self.has_bg_color[write_idx] = self.has_bg_color[read_idx]
+                    self.bg_blend_mode[write_idx] = self.bg_blend_mode[read_idx]
+                    self.gravity[write_idx] = self.gravity[read_idx]
+                    self.flash_intensity[write_idx] = self.flash_intensity[read_idx]
+                write_idx += 1
+
+        self.active_count = write_idx
 
     def render_to_console(self, console: tcod.console.Console) -> None:
         """
@@ -576,42 +561,34 @@ class SubTileParticleSystem:
         particle_chars = {}  # tile_pos -> list[(char, intensity, color)]
         particle_bg_effects = {}  # tile_pos -> list[(bg_color, intensity, blend_mode)]
 
-        # Accumulate particle effects by converting sub-tile positions to tiles
-        for particle in self.particles:
-            # Convert sub-tile position to tile position
-            tile_x = int(particle.sub_x // self.subdivision)
-            tile_y = int(particle.sub_y // self.subdivision)
+        for i in range(self.active_count):
+            sub_x, sub_y = self.positions[i]
+            tile_x = int(sub_x // self.subdivision)
+            tile_y = int(sub_y // self.subdivision)
 
-            # Skip particles that are somehow outside the map bounds
             if 0 <= tile_x < self.map_width and 0 <= tile_y < self.map_height:
-                # Use flash intensity if available (for explosion effects),
-                # otherwise use normal lifetime-based intensity
-                intensity = (
-                    particle._flash_intensity
-                    if particle._flash_intensity is not None
-                    else particle.intensity
-                )
+                if not np.isnan(self.flash_intensity[i]):
+                    intensity = self.flash_intensity[i]
+                else:
+                    intensity = self.lifetimes[i] / self.max_lifetimes[i]
 
-                # Accumulate total intensity for this tile
                 particle_intensity[tile_x, tile_y] += intensity
 
-                # Track character and color info for foreground rendering
                 tile_pos = (tile_x, tile_y)
                 if tile_pos not in particle_chars:
                     particle_chars[tile_pos] = []
 
-                # Only track particles that have actual characters
-                if particle.char:  # Skip empty characters (background-only particles)
+                if self.chars[i]:
                     particle_chars[tile_pos].append(
-                        (particle.char, intensity, particle.color)
+                        (self.chars[i], intensity, tuple(self.colors[i]))
                     )
 
-                # Track background effects
-                if particle.bg_color:
+                if self.has_bg_color[i]:
                     if tile_pos not in particle_bg_effects:
                         particle_bg_effects[tile_pos] = []
+                    blend_mode = BlendMode(self.bg_blend_mode[i])
                     particle_bg_effects[tile_pos].append(
-                        (particle.bg_color, intensity, particle.bg_blend_mode)
+                        (tuple(self.bg_colors[i]), intensity, blend_mode)
                     )
 
         # Render accumulated effects to console
