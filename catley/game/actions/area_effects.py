@@ -7,12 +7,11 @@ multiple targets or tiles simultaneously.
 
 from __future__ import annotations
 
-from game import ranges
-
 from catley import colors
 from catley.constants.combat import CombatConstants as Combat
 from catley.environment.map import GameMap
 from catley.events import EffectEvent, MessageEvent, publish_event
+from catley.game import ranges
 from catley.game.actions.base import GameAction, GameActionResult
 from catley.game.actors import Actor, Character
 from catley.game.enums import AreaType

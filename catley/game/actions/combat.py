@@ -9,8 +9,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from game import ranges
-
 from catley import colors
 from catley.constants.combat import CombatConstants as Combat
 from catley.environment import tile_types
@@ -21,6 +19,7 @@ from catley.events import (
     ScreenShakeEvent,
     publish_event,
 )
+from catley.game import ranges
 from catley.game.actions.base import GameAction, GameActionResult
 from catley.game.actors import Character, Disposition
 from catley.game.ai import DispositionBasedAI

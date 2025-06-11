@@ -298,7 +298,7 @@ class AreaEffect:
     ) -> bool:
         """Check if we can target the specified location based on
         weapon capabilities."""
-        from game import ranges
+        from catley.game import ranges
 
         game_map = controller.gw.game_map
 

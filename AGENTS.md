@@ -13,8 +13,9 @@ To create a virtual environment and install all dependencies, run `uv sync`. Eve
 I've been using `ruff check` as a linter, and Pylance/Pyright as a language server in VSCode and type checker. I've also been experimenting with the new `ty` type checker from Astral.
 
 To run unit tests:
-`uv pip install -e .`        # Install catley as an editable package
-`pytest`                  # Run the tests
+`make test`
+
+This command, defined in the `Makefile`, will automatically sync dependencies and run the test suite within the correct environment.
 
 ## Quality Checks
 

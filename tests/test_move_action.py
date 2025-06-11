@@ -1,14 +1,12 @@
 from dataclasses import dataclass
 from typing import cast
 
-from game.game_world import GameWorld
-
 from catley import colors
 from catley.controller import Controller
 from catley.environment import tile_types
-from catley.environment.map import GameMap
 from catley.game.actions.movement import MoveAction
 from catley.game.actors import Character
+from catley.game.game_world import GameWorld
 from catley.game.items.item_types import (
     COMBAT_KNIFE_TYPE,
     FISTS_TYPE,
@@ -16,27 +14,7 @@ from catley.game.items.item_types import (
     SLEDGEHAMMER_TYPE,
     SNIPER_RIFLE_TYPE,
 )
-from catley.util.spatial import SpatialHashGrid
-
-
-class DummyGameWorld:
-    def __init__(self) -> None:
-        self.game_map = GameMap(5, 5)
-        self.game_map.tiles[:] = tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[attr-defined]  # All walkable
-        self.actors: list[Character] = []
-        self.player: Character | None = None
-        self.actor_spatial_index = SpatialHashGrid(cell_size=16)
-
-    def add_actor(self, actor: Character) -> None:
-        self.actors.append(actor)
-        self.actor_spatial_index.add(actor)
-
-    def remove_actor(self, actor: Character) -> None:
-        try:
-            self.actors.remove(actor)
-            self.actor_spatial_index.remove(actor)
-        except ValueError:
-            pass
+from tests.helpers import DummyGameWorld
 
 
 @dataclass

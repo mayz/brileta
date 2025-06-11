@@ -2,11 +2,10 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import cast
 
-from view.panels.world_panel import WorldPanel
-
 from catley.controller import Controller
 from catley.game.actors import Actor
 from catley.view.effects.screen_shake import ScreenShake
+from catley.view.panels.world_panel import WorldPanel
 
 
 class DummyActor:

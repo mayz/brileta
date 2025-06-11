@@ -1,7 +1,6 @@
 from unittest.mock import MagicMock, patch
 
 import numpy as np
-from game.game_world import GameWorld
 
 from catley import colors
 from catley.controller import Controller
@@ -13,36 +12,18 @@ from catley.events import (
     subscribe_to_event,
 )
 from catley.game.actions.area_effects import AreaEffectAction
-from catley.game.actors import Actor, Character
+from catley.game.actors import Character
+from catley.game.game_world import GameWorld
 from catley.game.items.item_types import GRENADE_TYPE
-from catley.util.spatial import SpatialHashGrid
 from catley.view.frame_manager import FrameManager
 from catley.view.renderer import Renderer
+from tests.helpers import DummyGameWorld
 
 
 class DummyMap(GameMap):
     def __init__(self, width: int, height: int) -> None:
         super().__init__(width, height)
         self._transparent_map_cache = np.ones((width, height), dtype=bool)
-
-
-class DummyGameWorld(GameWorld):
-    def __init__(self, game_map: GameMap, actors: list[Actor]):
-        # Do not call super().__init__ to avoid heavy setup.
-        self.game_map = game_map
-        self.actors = actors
-        self.actor_spatial_index = SpatialHashGrid(cell_size=16)
-
-    def add_actor(self, actor: Actor) -> None:
-        self.actors.append(actor)
-        self.actor_spatial_index.add(actor)
-
-    def remove_actor(self, actor: Actor) -> None:
-        try:
-            self.actors.remove(actor)
-            self.actor_spatial_index.remove(actor)
-        except ValueError:
-            pass
 
 
 class DummyMessageLog:
@@ -94,7 +75,9 @@ def make_world() -> tuple[
     DummyController, Character, Character, AreaEffectAction, GameMap
 ]:
     game_map = DummyMap(10, 10)
-    gw = DummyGameWorld(game_map=game_map, actors=[])
+    gw = DummyGameWorld()
+    gw.game_map = game_map
+    gw.actors = []
     attacker = Character(1, 1, "A", colors.WHITE, "Attacker", game_world=gw)
     target = Character(5, 4, "T", colors.YELLOW, "Target", game_world=gw)
     target.health.ap = 0

@@ -87,7 +87,7 @@ class DummyController:
 
 
 def test_world_panel_applies_screen_shake_before_render(monkeypatch) -> None:
-    from view.panels.world_panel import WorldPanel
+    from catley.view.panels.world_panel import WorldPanel
 
     controller = DummyController()
     shake = ScreenShake()
@@ -116,7 +116,7 @@ def test_world_panel_applies_screen_shake_before_render(monkeypatch) -> None:
 
 def test_world_panel_screen_shake_does_not_overflow(monkeypatch) -> None:
     """Ensure screen shake offsets keep rendering within console bounds."""
-    from view.panels.world_panel import WorldPanel
+    from catley.view.panels.world_panel import WorldPanel
 
     controller = DummyController()
     shake = ScreenShake()
@@ -152,7 +152,7 @@ def test_world_panel_screen_shake_does_not_overflow(monkeypatch) -> None:
 
 def test_small_map_actor_alignment(monkeypatch) -> None:
     """Actors should align with the map when it is smaller than the viewport."""
-    from view.panels.world_panel import WorldPanel
+    from catley.view.panels.world_panel import WorldPanel
 
     controller = DummyController()
     controller.gw.game_map = DummyGameMap(5, 5)

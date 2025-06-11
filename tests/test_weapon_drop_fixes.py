@@ -1,38 +1,15 @@
 from dataclasses import dataclass
 from typing import cast
 
-from game.game_world import GameWorld
-
 from catley import colors
 from catley.controller import Controller
-from catley.environment.map import GameMap
 from catley.events import MessageEvent, reset_event_bus_for_testing, subscribe_to_event
 from catley.game.actors import Character
 from catley.game.consequences import ConsequenceHandler
+from catley.game.game_world import GameWorld
 from catley.game.items.item_types import FISTS_TYPE, PISTOL_TYPE
-from catley.util.spatial import SpatialHashGrid
 from catley.view.ui.pickup_menu import PickupMenu
-
-
-class DummyGameWorld(GameWorld):
-    def __init__(self) -> None:
-        # Minimal world setup for tests
-        self.game_map = GameMap(5, 5)
-        self.game_map.transparent[:] = True
-        self.actors: list[Character] = []
-        self.player: Character | None = None
-        self.actor_spatial_index = SpatialHashGrid(cell_size=16)
-
-    def add_actor(self, actor: Character) -> None:
-        self.actors.append(actor)
-        self.actor_spatial_index.add(actor)
-
-    def remove_actor(self, actor: Character) -> None:
-        try:
-            self.actors.remove(actor)
-            self.actor_spatial_index.remove(actor)
-        except ValueError:
-            pass
+from tests.helpers import DummyGameWorld
 
 
 @dataclass
