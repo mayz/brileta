@@ -129,11 +129,23 @@ class GameWorld:
         return items_found
 
     def get_actor_at_location(self, x: int, y: int) -> Actor | None:
-        """Return the first actor found at the given location, or None."""
-        for actor in self.actors:
-            if actor.x == x and actor.y == y:
+        """Return an actor at the given location using the spatial index.
+
+        Prioritizes returning a blocking actor if multiple actors are present.
+        """
+        actors_at_point = self.actor_spatial_index.get_at_point(x, y)
+        if not actors_at_point:
+            return None
+
+        # Prefer blocking actors (e.g., NPCs) so that selecting or targeting
+        # chooses solid objects over items or corpses that may occupy the same
+        # tile.
+        for actor in actors_at_point:
+            if actor.blocks_movement:
                 return actor
-        return None
+
+        # If no blocking actor exists, return whichever actor is found first.
+        return actors_at_point[0]
 
     def has_pickable_items_at_location(self, x: int, y: int) -> bool:
         """Check if there are any pickable items at the specified location."""
