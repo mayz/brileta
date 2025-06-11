@@ -2,12 +2,8 @@ from dataclasses import dataclass
 from typing import cast
 from unittest.mock import MagicMock
 
-from game.game_world import GameWorld
-
 from catley import colors
 from catley.controller import Controller
-from catley.environment import tile_types
-from catley.environment.map import GameMap
 from catley.events import (
     MessageEvent,
     ScreenShakeEvent,
@@ -17,30 +13,11 @@ from catley.events import (
 from catley.game.actions.combat import AttackAction
 from catley.game.actors import Character
 from catley.game.enums import OutcomeTier
+from catley.game.game_world import GameWorld
 from catley.game.items.item_types import FISTS_TYPE, PISTOL_TYPE
 from catley.game.resolution.combat_arbiter import determine_outcome
 from catley.game.resolution.d20_system import D20ResolutionResult
-from catley.util.spatial import SpatialHashGrid
-
-
-class DummyGameWorld:
-    def __init__(self) -> None:
-        self.game_map = GameMap(5, 5)
-        self.game_map.tiles[:] = tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[attr-defined]
-        self.actors: list[Character] = []
-        self.player: Character | None = None
-        self.actor_spatial_index = SpatialHashGrid(cell_size=16)
-
-    def add_actor(self, actor: Character) -> None:
-        self.actors.append(actor)
-        self.actor_spatial_index.add(actor)
-
-    def remove_actor(self, actor: Character) -> None:
-        try:
-            self.actors.remove(actor)
-            self.actor_spatial_index.remove(actor)
-        except ValueError:
-            pass
+from tests.helpers import DummyGameWorld
 
 
 @dataclass

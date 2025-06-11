@@ -3,11 +3,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import tcod.event
-from game import ranges
 from tcod.console import Console
 
 from catley import colors
 from catley.events import ActorDeathEvent, subscribe_to_event, unsubscribe_from_event
+from catley.game import ranges
 from catley.game.actions.combat import AttackAction
 from catley.game.actors import Character
 from catley.modes.base import Mode

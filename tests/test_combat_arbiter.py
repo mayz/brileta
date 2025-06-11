@@ -1,36 +1,13 @@
-from dataclasses import dataclass
 from typing import cast
 from unittest.mock import patch
 
-from game.game_world import GameWorld
-
-from catley.environment.map import GameMap
 from catley.game.actors import Character
 from catley.game.enums import OutcomeTier
+from catley.game.game_world import GameWorld
 from catley.game.items.item_types import FISTS_TYPE
 from catley.game.resolution.combat_arbiter import determine_outcome
 from catley.game.resolution.d20_system import D20ResolutionResult
-from catley.util.spatial import SpatialHashGrid
-
-
-@dataclass
-class DummyGameWorld:
-    def __init__(self) -> None:
-        self.game_map = GameMap(5, 5)
-        self.actors: list[Character] = []
-        self.player: Character | None = None
-        self.actor_spatial_index = SpatialHashGrid(cell_size=16)
-
-    def add_actor(self, actor: Character) -> None:
-        self.actors.append(actor)
-        self.actor_spatial_index.add(actor)
-
-    def remove_actor(self, actor: Character) -> None:
-        try:
-            self.actors.remove(actor)
-            self.actor_spatial_index.remove(actor)
-        except ValueError:
-            pass
+from tests.helpers import DummyGameWorld
 
 
 def make_characters() -> tuple[Character, Character, GameWorld]:

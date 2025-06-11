@@ -4,14 +4,11 @@ from dataclasses import dataclass
 from typing import cast
 from unittest.mock import patch
 
-from game.game_world import GameWorld
-from game.turn_manager import TurnManager
-
 from catley import colors
 from catley.controller import Controller
-from catley.environment.map import GameMap
 from catley.game.actions.combat import AttackAction
 from catley.game.actors import PC, Character
+from catley.game.game_world import GameWorld
 from catley.game.items.capabilities import Attack
 from catley.game.items.item_core import Item
 from catley.game.items.item_types import FISTS_TYPE
@@ -22,27 +19,8 @@ from catley.game.status_effects import (
     StrengthBoostEffect,
     TrippedEffect,
 )
-from catley.util.spatial import SpatialHashGrid
-
-
-class DummyGameWorld(GameWorld):
-    def __init__(self) -> None:
-        self.game_map = GameMap(5, 5)
-        self.game_map.transparent[:] = True
-        self.actors: list[Character] = []
-        self.player: Character | None = None
-        self.actor_spatial_index = SpatialHashGrid(cell_size=16)
-
-    def add_actor(self, actor: Character) -> None:
-        self.actors.append(actor)
-        self.actor_spatial_index.add(actor)
-
-    def remove_actor(self, actor: Character) -> None:
-        try:
-            self.actors.remove(actor)
-            self.actor_spatial_index.remove(actor)
-        except ValueError:
-            pass
+from catley.game.turn_manager import TurnManager
+from tests.helpers import DummyGameWorld
 
 
 @dataclass

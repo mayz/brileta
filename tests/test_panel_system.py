@@ -3,9 +3,9 @@
 from unittest.mock import Mock
 
 import pytest
-from view.panels.world_panel import WorldPanel
 
 from catley.view.panels.panel import Panel
+from catley.view.panels.world_panel import WorldPanel
 
 
 class ConcreteTestPanel(Panel):

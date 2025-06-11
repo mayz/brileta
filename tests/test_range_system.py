@@ -1,9 +1,9 @@
 from dataclasses import dataclass
 
 import numpy as np
-from game import ranges
 
 from catley.environment.map import GameMap
+from catley.game import ranges
 from catley.game.items.item_core import Item
 from catley.game.items.properties import ItemProperty, WeaponProperty
 

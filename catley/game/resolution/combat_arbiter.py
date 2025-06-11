@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from game import ranges
-
+from catley.game import ranges
 from catley.game.actors import Actor, Character
 from catley.game.components import HealthComponent
 from catley.game.conditions import Injury

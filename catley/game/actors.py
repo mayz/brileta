@@ -52,9 +52,8 @@ from .items.item_core import Item
 from .status_effects import StatusEffect
 
 if TYPE_CHECKING:
-    from game.game_world import GameWorld
-
     from catley.controller import Controller
+    from catley.game.game_world import GameWorld
 
     from .actions.base import GameAction
 

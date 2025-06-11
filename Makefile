@@ -1,4 +1,4 @@
-.PHONY: all format ruff-check lint typecheck test check clean
+.PHONY: all format ruff-check lint typecheck test check clean run
 
 # Default target - run all quality checks
 all: lint test
@@ -9,20 +9,20 @@ lint: format ruff-check typecheck
 
 # Format code
 format:
-	ruff format .
+	uv run ruff format .
 
 # Run ruff linting
 ruff-check:
-	ruff check .
+	uv run ruff check .
 
 # Run type checking
 typecheck:
-	uv run ty check --error-on-warning
+	uv run ty check . --error-on-warning
 
-# Run tests
+# Run tests. Installs/syncs dependencies AND runs pytest in the same logical command.
 test:
-	uv pip install -e .
-	uv run python -m pytest tests/
+	uv sync && uv run pytest tests/
+
 # Alias for 'all'
 check: all
 
@@ -32,6 +32,6 @@ clean:
 	find . -type d -name ".pytest_cache" -exec rm -rf {} +
 	find . -type d -name "*.egg-info" -exec rm -rf {} +
 
-# Run the game
+# Run the game inside the virtual environment
 run:
-	python -m catley
+	uv run python -m catley

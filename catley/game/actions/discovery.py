@@ -20,8 +20,7 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from typing import TYPE_CHECKING
 
-from game import ranges
-
+from catley.game import ranges
 from catley.game.actions.base import GameAction
 from catley.game.actions.combat import AttackAction, ReloadAction
 from catley.game.actors import Character
