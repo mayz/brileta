@@ -94,18 +94,21 @@ class MoveAction(GameAction):
         if not self.game_map.walkable[self.newx, self.newy]:
             return None
 
-        # Check for blocking actors.
-        for actor in self.controller.gw.actors:
-            if actor.blocks_movement and actor.x == self.newx and actor.y == self.newy:
-                if isinstance(actor, Character) and actor.health.is_alive():
-                    weapon = self._select_ram_weapon()
-                    AttackAction(
-                        controller=self.controller,
-                        attacker=self.actor,
-                        defender=actor,
-                        weapon=weapon,
-                    ).execute()
-                return None  # Cannot move into blocking actor
+        # Check for a blocking actor using the spatial index for O(1) lookup.
+        blocking_actor = self.controller.gw.get_actor_at_location(self.newx, self.newy)
+        if blocking_actor and blocking_actor.blocks_movement:
+            if (
+                isinstance(blocking_actor, Character)
+                and blocking_actor.health.is_alive()
+            ):
+                weapon = self._select_ram_weapon()
+                AttackAction(
+                    controller=self.controller,
+                    attacker=self.actor,
+                    defender=blocking_actor,
+                    weapon=weapon,
+                ).execute()
+            return None  # Cannot move into blocking actor
 
         self.actor.move(self.dx, self.dy)
         return GameActionResult(should_update_fov=True)

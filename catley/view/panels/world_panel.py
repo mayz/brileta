@@ -187,12 +187,11 @@ class WorldPanel(Panel):
         visible_mask_slice = gw.game_map.visible[world_slice]
         if not np.any(visible_mask_slice):
             return
-        # Only consider actors currently inside the viewport when calculating lighting.
-        relevant_actors = [
-            actor
-            for actor in gw.actors
-            if vs.is_visible(actor.x, actor.y, gw.game_map.width, gw.game_map.height)
-        ]
+        # Only consider actors currently inside the viewport when calculating
+        # lighting. Use the spatial index to avoid scanning the full actor list.
+        relevant_actors = gw.actor_spatial_index.get_in_bounds(
+            world_left, world_top, world_right, world_bottom
+        )
         self.current_light_intensity = gw.lighting.compute_lighting_with_shadows(
             dest_width,
             dest_height,
@@ -223,21 +222,19 @@ class WorldPanel(Panel):
         gw = self.controller.gw
         vs = self.viewport_system
         world_left, world_right, world_top, world_bottom = vs.get_visible_bounds()
-        # Draw non-blocking actors first, then blocking ones, with the player
-        # always rendered on top for visibility.
+        # Get only actors within the viewport using the spatial index, then sort
+        # them so the player appears on top of other blocking actors.
+        actors_in_viewport = gw.actor_spatial_index.get_in_bounds(
+            world_left, world_top, world_right, world_bottom
+        )
         sorted_actors = sorted(
-            gw.actors,
+            actors_in_viewport,
             key=lambda a: (
                 getattr(a, "blocks_movement", False),
                 a == gw.player,
             ),
         )
         for actor in sorted_actors:
-            if not (
-                world_left <= actor.x <= world_right
-                and world_top <= actor.y <= world_bottom
-            ):
-                continue
             if gw.game_map.visible[actor.x, actor.y]:
                 self._render_actor(actor)
 
