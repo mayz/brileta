@@ -376,7 +376,8 @@ class Character(Actor):
         arm_injuries = [
             c
             for c in self.get_conditions_by_type(Injury)
-            if c.injury_location in {InjuryLocation.LEFT_ARM, InjuryLocation.RIGHT_ARM}
+            if isinstance(c, Injury)
+            and c.injury_location in {InjuryLocation.LEFT_ARM, InjuryLocation.RIGHT_ARM}
         ]
         return len({c.injury_location for c in arm_injuries}) < 2
 
