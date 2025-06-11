@@ -16,6 +16,7 @@ from catley.game.items.item_types import (
     SLEDGEHAMMER_TYPE,
     SNIPER_RIFLE_TYPE,
 )
+from catley.util.spatial import SpatialHashGrid
 
 
 class DummyGameWorld:
@@ -24,6 +25,18 @@ class DummyGameWorld:
         self.game_map.tiles[:] = tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[attr-defined]  # All walkable
         self.actors: list[Character] = []
         self.player: Character | None = None
+        self.actor_spatial_index = SpatialHashGrid(cell_size=16)
+
+    def add_actor(self, actor: Character) -> None:
+        self.actors.append(actor)
+        self.actor_spatial_index.add(actor)
+
+    def remove_actor(self, actor: Character) -> None:
+        try:
+            self.actors.remove(actor)
+            self.actor_spatial_index.remove(actor)
+        except ValueError:
+            pass
 
 
 @dataclass
@@ -43,7 +56,7 @@ def make_world() -> tuple[DummyController, Character]:
         game_world=cast(GameWorld, gw),
     )
     gw.player = player
-    gw.actors.append(player)
+    gw.add_actor(player)
     controller = DummyController(gw=gw, frame_manager=object())
     return controller, player
 
@@ -144,3 +157,19 @@ def test_move_action_opens_closed_door_when_bumped() -> None:
     # Player should have moved into the door tile and the door should now be open
     assert (player.x, player.y) == (1, 0)
     assert gw.game_map.tiles[1, 0] == tile_types.TILE_TYPE_ID_DOOR_OPEN  # type: ignore[attr-defined]
+
+
+def test_move_action_updates_spatial_index() -> None:
+    """Verify that moving an actor updates its entry in the spatial index."""
+    controller, player = make_world()
+    gw = controller.gw
+
+    assert gw.actor_spatial_index.get_at_point(0, 0) == [player]
+    assert not gw.actor_spatial_index.get_at_point(1, 1)
+
+    move_action = MoveAction(cast(Controller, controller), player, dx=1, dy=1)
+    move_action.execute()
+
+    assert (player.x, player.y) == (1, 1)
+    assert not gw.actor_spatial_index.get_at_point(0, 0)
+    assert gw.actor_spatial_index.get_at_point(1, 1) == [player]

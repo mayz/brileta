@@ -17,6 +17,7 @@ from catley.game.enums import Disposition, OutcomeTier
 from catley.game.items.item_core import Item
 from catley.game.items.item_types import PISTOL_TYPE
 from catley.game.resolution.d20_system import D20ResolutionResult
+from catley.util.spatial import SpatialHashGrid
 
 
 class DummyGameWorld(GameWorld):
@@ -26,6 +27,18 @@ class DummyGameWorld(GameWorld):
         self.game_map.transparent[:] = True
         self.actors: list[Character] = []
         self.player: Character | None = None
+        self.actor_spatial_index = SpatialHashGrid(cell_size=16)
+
+    def add_actor(self, actor: Character) -> None:
+        self.actors.append(actor)
+        self.actor_spatial_index.add(actor)
+
+    def remove_actor(self, actor: Character) -> None:
+        try:
+            self.actors.remove(actor)
+            self.actor_spatial_index.remove(actor)
+        except ValueError:
+            pass
 
 
 @dataclass

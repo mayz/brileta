@@ -20,6 +20,7 @@ from catley.game.enums import Disposition
 from catley.game.items.capabilities import RangedAttack
 from catley.game.items.item_types import COMBAT_KNIFE_TYPE, PISTOL_TYPE
 from catley.game.resolution.d20_system import D20Resolver
+from catley.util.spatial import SpatialHashGrid
 
 
 class DummyGameWorld:
@@ -33,6 +34,18 @@ class DummyGameWorld:
         # Default to all floor tiles for simplicity
         self.game_map.tiles[:] = tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[attr-defined]
         self.game_map.visible[:] = True
+        self.actor_spatial_index = SpatialHashGrid(cell_size=16)
+
+    def add_actor(self, actor: Character) -> None:
+        self.actors.append(actor)
+        self.actor_spatial_index.add(actor)
+
+    def remove_actor(self, actor: Character) -> None:
+        try:
+            self.actors.remove(actor)
+            self.actor_spatial_index.remove(actor)
+        except ValueError:
+            pass
 
     def get_pickable_items_at_location(self, x: int, y: int) -> list:
         return self.items.get((x, y), [])

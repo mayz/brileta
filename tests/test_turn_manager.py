@@ -10,6 +10,7 @@ from catley.environment import tile_types
 from catley.environment.map import GameMap
 from catley.game.actions.base import GameAction, GameActionResult
 from catley.game.actors import Character
+from catley.util.spatial import SpatialHashGrid
 
 
 class DummyGameWorld:
@@ -18,6 +19,18 @@ class DummyGameWorld:
         self.game_map.tiles[:] = tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[attr-defined]
         self.actors: list[Character] = []
         self.player: Character | None = None
+        self.actor_spatial_index = SpatialHashGrid(cell_size=16)
+
+    def add_actor(self, actor: Character) -> None:
+        self.actors.append(actor)
+        self.actor_spatial_index.add(actor)
+
+    def remove_actor(self, actor: Character) -> None:
+        try:
+            self.actors.remove(actor)
+            self.actor_spatial_index.remove(actor)
+        except ValueError:
+            pass
 
 
 @dataclass

@@ -110,7 +110,7 @@ class ConsequenceHandler:
             blocks_movement=False,
             inventory=InventoryComponent(StatsComponent()),
         )
-        gw.actors.append(ground_actor)
+        gw.add_actor(ground_actor)
         return ground_actor
 
     def _apply_noise_alert(self, source: Actor | None, radius: int) -> None:

@@ -14,6 +14,7 @@ from catley.game.items.item_types import (
     RIFLE_MAGAZINE_TYPE,
     SNIPER_RIFLE_TYPE,
 )
+from catley.util.spatial import SpatialHashGrid, SpatialIndex
 from catley.view.effects.lighting import LightingSystem, LightSource
 
 
@@ -63,9 +64,27 @@ class GameWorld:
             conditions.Injury(injury_type="Sprained Ankle")
         )
 
-        self.actors: list[Actor] = [self.player]
+        self.actors: list[Actor] = []
+        self.actor_spatial_index: SpatialIndex[Actor] = SpatialHashGrid(cell_size=16)
+
+        # The player must now be added via the new lifecycle method.
+        self.add_actor(self.player)
         self.game_map = GameMap(map_width, map_height)
         self.lighting.set_game_map(self.game_map)
+
+    def add_actor(self, actor: Actor) -> None:
+        """Adds an actor to the world and registers it with the spatial index."""
+        self.actors.append(actor)
+        self.actor_spatial_index.add(actor)
+
+    def remove_actor(self, actor: Actor) -> None:
+        """Removes an actor from the world and spatial index."""
+        try:
+            self.actors.remove(actor)
+            self.actor_spatial_index.remove(actor)
+        except ValueError:
+            # Actor was not in the list; ignore.
+            pass
 
     def update_player_light(self) -> None:
         """Update player light source position"""
@@ -160,7 +179,7 @@ class GameWorld:
                             speed=80,
                             starting_weapon=SLEDGEHAMMER_TYPE.create(),
                         )
-                        self.actors.append(npc)
+                        self.add_actor(npc)
                     npc = NPC(
                         x=npc_x,
                         y=npc_y,
@@ -175,7 +194,7 @@ class GameWorld:
                         intelligence=2,
                         starting_weapon=REVOLVER_TYPE.create(),
                     )
-                    self.actors.append(npc)
+                    self.add_actor(npc)
                     placed = True
                     break
 

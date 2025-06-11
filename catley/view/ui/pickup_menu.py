@@ -92,7 +92,7 @@ class PickupMenu(Menu):
                     and all(s is None for s in inv.attack_slots)
                 ):
                     # Remove empty ground container
-                    self.controller.gw.actors.remove(actor)
+                    self.controller.gw.remove_actor(actor)
                 break
 
         # Add to player inventory
