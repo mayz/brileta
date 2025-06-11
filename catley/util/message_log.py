@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from catley import colors
+from catley import colors, config
 from catley.events import MessageEvent, subscribe_to_event
 
 
@@ -11,13 +11,17 @@ class Message:
     plain_text: str
     fg: colors.Color
     count: int = 1
+    sequence_number: int = 0
 
     @property
     def full_text(self) -> str:
         """The full text of this message, including the count if > 1."""
+        text = self.plain_text
         if self.count > 1:
-            return f"{self.plain_text} (x{self.count})"
-        return self.plain_text
+            text = f"{text} (x{self.count})"
+        if config.SHOW_MESSAGE_SEQUENCE_NUMBERS:
+            return f"[{self.sequence_number}] {text}"
+        return text
 
 
 class MessageLog:
@@ -29,6 +33,7 @@ class MessageLog:
         # Render layers use this to efficiently update cached textures
         # only when the log actually changes.
         self.revision = 0
+        self.message_sequence = 0
 
         # Subscribe to global message events
         subscribe_to_event(MessageEvent, self._handle_message_event)
@@ -45,6 +50,7 @@ class MessageLog:
         stack: bool = True,
     ) -> None:
         """Add a message to this log."""
+        self.message_sequence += 1
         if (
             stack
             and self.messages
@@ -52,7 +58,11 @@ class MessageLog:
             and self.messages[-1].fg == fg
         ):
             self.messages[-1].count += 1
+            message = self.messages[-1]
         else:
-            self.messages.append(Message(text, fg))
+            message = Message(text, fg, sequence_number=self.message_sequence)
+            self.messages.append(message)
+        if config.PRINT_MESSAGES_TO_CONSOLE:
+            print(message.full_text)
         # increment revision so observers know the log changed
         self.revision += 1

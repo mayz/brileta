@@ -180,3 +180,10 @@ PROBABILITY_DESCRIPTORS_MILITARY = [
     (0.80, "High Confidence", "light_green"),
     (1.00, "Mission Critical", "green"),
 ]
+
+# =============================================================================
+# MESSAGE LOG
+# =============================================================================
+
+SHOW_MESSAGE_SEQUENCE_NUMBERS = False
+PRINT_MESSAGES_TO_CONSOLE = False
