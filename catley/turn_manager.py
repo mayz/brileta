@@ -68,6 +68,10 @@ class TurnManager:
         for actor in self.controller.gw.actors:
             actor.update_turn(self.controller)
 
+        # After the round, update any active modes
+        if hasattr(self.controller, "active_mode") and self.controller.active_mode:
+            self.controller.active_mode.update()
+
     def dequeue_player_action(self) -> GameAction | None:
         """Dequeue and return the pending player action."""
         action = self._pending_action
