@@ -1,4 +1,8 @@
 import abc
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .actors import Actor
 
 from catley import colors
 
@@ -19,6 +23,18 @@ class Condition(abc.ABC):  # noqa: B024
 
     def __str__(self) -> str:
         return self.name
+
+    def apply_to_resolution(self, resolution_args: dict[str, bool]) -> dict[str, bool]:
+        """Modify resolution arguments if this condition has an effect."""
+        return resolution_args
+
+    def get_movement_cost_modifier(self) -> int:
+        """Return an additive energy cost modifier for movement actions."""
+        return 0
+
+    def apply_turn_effect(self, actor: "Actor") -> None:
+        """Apply any per-turn effects of this condition."""
+        return
 
 
 class Injury(Condition):
