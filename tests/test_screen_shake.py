@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 
 from catley.controller import Controller
+from catley.util.spatial import SpatialHashGrid
 from catley.view.effects.screen_shake import ScreenShake
 
 
@@ -61,6 +62,8 @@ class DummyGW:
     def __init__(self) -> None:
         self.player = DummyActor(0, 0)
         self.actors = [self.player]
+        self.actor_spatial_index = SpatialHashGrid(cell_size=16)
+        self.actor_spatial_index.add(self.player)
         self.game_map = DummyGameMap(10, 10)
         self.game_map.visible[0, 0] = True
         self.selected_actor = None
@@ -69,6 +72,19 @@ class DummyGW:
         self.lighting.compute_lighting_with_shadows.side_effect = (
             lambda w, h, *_args, **_kwargs: 1.0 * np.ones((w, h, 3))
         )
+
+    def add_actor(self, actor: DummyActor) -> None:
+        self.actors.append(actor)
+        self.actor_spatial_index.add(actor)
+
+    def get_actor_at_location(self, x: int, y: int) -> DummyActor | None:
+        actors_at_point = self.actor_spatial_index.get_at_point(x, y)
+        if not actors_at_point:
+            return None
+        for actor in actors_at_point:
+            if getattr(actor, "blocks_movement", False):
+                return actor
+        return actors_at_point[0]
 
 
 class DummyController:

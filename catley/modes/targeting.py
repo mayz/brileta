@@ -148,13 +148,12 @@ class TargetingMode(Mode):
         visible = gw.game_map.visible
 
         new_candidates: list[Character] = []
-        for actor in gw.actors:
+        # Only consider actors within the targeting radius using the spatial index
+        potential_actors = gw.actor_spatial_index.get_in_radius(
+            player.x, player.y, radius=15
+        )
+        for actor in potential_actors:
             if actor is player:
-                continue
-
-            # Distance check first for cheap filtering
-            distance = self._calculate_distance_to_player(actor)
-            if distance > 15:
                 continue
 
             if (

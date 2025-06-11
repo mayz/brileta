@@ -56,3 +56,13 @@ class DummyGameWorld:
     def get_pickable_items_at_location(self, x: int, y: int) -> list:
         """Return items stored at ``(x, y)``."""
         return self.items.get((x, y), [])
+
+    def get_actor_at_location(self, x: int, y: int) -> Actor | None:
+        """Return an actor at a location, prioritizing blockers."""
+        actors_at_point = self.actor_spatial_index.get_at_point(x, y)
+        if not actors_at_point:
+            return None
+        for actor in actors_at_point:
+            if getattr(actor, "blocks_movement", False):
+                return actor
+        return actors_at_point[0]
