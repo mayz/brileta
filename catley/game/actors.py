@@ -46,8 +46,8 @@ from .components import (
     StatsComponent,
     VisualEffectsComponent,
 )
-from .conditions import Condition
-from .enums import Disposition
+from .conditions import Condition, Injury
+from .enums import Disposition, InjuryLocation
 from .items.item_core import Item
 from .status_effects import StatusEffect
 
@@ -128,6 +128,7 @@ class Actor:
 
         self.speed = speed
         self.accumulated_energy: int = self.speed
+        self._effective_speed_cache: int | None = None
 
         self.tricks: list = []
         self.status_effects: list[StatusEffect] = []
@@ -196,9 +197,25 @@ class Actor:
         """
         return None
 
+    def _invalidate_effective_speed_cache(self) -> None:
+        """Clear cached speed when conditions change."""
+        self._effective_speed_cache = None
+
+    def calculate_effective_speed(self) -> int:
+        """Calculate speed after accounting for leg injuries."""
+        if self._effective_speed_cache is not None:
+            return self._effective_speed_cache
+
+        speed = float(self.speed)
+        for condition in self.get_conditions_by_type(Injury):
+            speed *= condition.get_movement_cost_modifier()
+
+        self._effective_speed_cache = int(speed)
+        return self._effective_speed_cache
+
     def regenerate_energy(self) -> None:
         """Regenerates energy for the actor based on their speed."""
-        self.accumulated_energy += self.speed
+        self.accumulated_energy += self.calculate_effective_speed()
 
     def can_afford_action(self, cost: int) -> bool:
         """Checks if the actor has enough energy to perform an action."""
@@ -255,12 +272,18 @@ class Actor:
     def add_condition(self, condition: Condition) -> bool:
         if self.inventory is None:
             return False
-        return self.inventory.add_to_inventory(condition)
+        added = self.inventory.add_to_inventory(condition)
+        if added:
+            self._invalidate_effective_speed_cache()
+        return added
 
     def remove_condition(self, condition: Condition) -> bool:
         if self.inventory is None:
             return False
-        return self.inventory.remove_from_inventory(condition)
+        removed = self.inventory.remove_from_inventory(condition)
+        if removed:
+            self._invalidate_effective_speed_cache()
+        return removed
 
 
 class Character(Actor):
@@ -347,6 +370,15 @@ class Character(Actor):
 
         if starting_weapon:
             self.inventory.equip_to_slot(starting_weapon, 0)
+
+    def can_use_two_handed_weapons(self) -> bool:
+        """Return ``False`` if both arms are injured."""
+        arm_injuries = [
+            c
+            for c in self.get_conditions_by_type(Injury)
+            if c.injury_location in {InjuryLocation.LEFT_ARM, InjuryLocation.RIGHT_ARM}
+        ]
+        return len({c.injury_location for c in arm_injuries}) < 2
 
 
 class PC(Character):

@@ -5,6 +5,7 @@ from catley import colors
 from catley.controller import Controller
 from catley.game.actors import Character
 from catley.game.conditions import Injury
+from catley.game.enums import InjuryLocation
 from catley.game.game_world import GameWorld
 from catley.game.status_effects import (
     FocusedEffect,
@@ -79,7 +80,7 @@ def test_multiple_effects_coexist() -> None:
 
 def test_condition_management_methods() -> None:
     controller, actor = make_world()
-    injury = Injury()
+    injury = Injury(InjuryLocation.LEFT_ARM, "Test")
     assert actor.add_condition(injury)
     assert actor.has_condition(Injury)
     assert injury in actor.get_conditions()

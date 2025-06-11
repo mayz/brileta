@@ -1,15 +1,38 @@
 from __future__ import annotations
 
+import random
+
 from catley.game import ranges
 from catley.game.actors import Actor, Character
 from catley.game.components import HealthComponent
 from catley.game.conditions import Injury
-from catley.game.enums import OutcomeTier
+from catley.game.enums import InjuryLocation, OutcomeTier
 from catley.game.items.capabilities import Attack
 from catley.game.items.item_core import Item
 
 from .base import ResolutionResult
 from .outcomes import CombatOutcome
+
+INJURY_LOCATION_WEIGHTS: dict[InjuryLocation, float] = {
+    # Body location hit probabilities based on combat targeting
+    InjuryLocation.HEAD: 0.15,
+    InjuryLocation.LEFT_ARM: 0.15,
+    InjuryLocation.RIGHT_ARM: 0.15,
+    InjuryLocation.LEFT_LEG: 0.15,
+    InjuryLocation.RIGHT_LEG: 0.15,
+    InjuryLocation.TORSO: 0.25,
+}
+
+
+def _determine_injury_location() -> InjuryLocation:
+    """Randomly select an injury location using ``INJURY_LOCATION_WEIGHTS``."""
+    roll = random.random()
+    cumulative = 0.0
+    for location, weight in INJURY_LOCATION_WEIGHTS.items():
+        cumulative += weight
+        if roll < cumulative:
+            return location
+    return InjuryLocation.TORSO
 
 
 def determine_outcome(
@@ -38,7 +61,10 @@ def determine_outcome(
         if isinstance(health, HealthComponent) and health.ap > 0:
             outcome.armor_damage = health.ap
         else:
-            outcome.injury_inflicted = Injury()
+            outcome.injury_inflicted = Injury(
+                _determine_injury_location(),
+                "Combat Wound",
+            )
 
     outcome.damage_dealt = damage
     return outcome
