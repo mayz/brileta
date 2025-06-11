@@ -15,6 +15,7 @@ from catley.events import (
 from catley.game.actions.area_effects import AreaEffectAction
 from catley.game.actors import Actor, Character
 from catley.game.items.item_types import GRENADE_TYPE
+from catley.util.spatial import SpatialHashGrid
 from catley.view.frame_manager import FrameManager
 from catley.view.renderer import Renderer
 
@@ -30,6 +31,18 @@ class DummyGameWorld(GameWorld):
         # Do not call super().__init__ to avoid heavy setup.
         self.game_map = game_map
         self.actors = actors
+        self.actor_spatial_index = SpatialHashGrid(cell_size=16)
+
+    def add_actor(self, actor: Actor) -> None:
+        self.actors.append(actor)
+        self.actor_spatial_index.add(actor)
+
+    def remove_actor(self, actor: Actor) -> None:
+        try:
+            self.actors.remove(actor)
+            self.actor_spatial_index.remove(actor)
+        except ValueError:
+            pass
 
 
 class DummyMessageLog:

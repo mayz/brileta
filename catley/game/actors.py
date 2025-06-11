@@ -141,6 +141,11 @@ class Actor:
     def move(self, dx: int, dy: int) -> None:
         self.x += dx
         self.y += dy
+
+        if self.gw:
+            # Notify the spatial index of this actor's new position.
+            self.gw.actor_spatial_index.update(self)
+
         # Update the light source position when actor moves
         if self.light_source:
             self.light_source.position = (self.x, self.y)

@@ -14,6 +14,7 @@ from catley.game.status_effects import (
     StrengthBoostEffect,
     TrippedEffect,
 )
+from catley.util.spatial import SpatialHashGrid
 
 
 class DummyGameWorld:
@@ -21,6 +22,18 @@ class DummyGameWorld:
         self.game_map = GameMap(1, 1)
         self.actors: list[Character] = []
         self.player: Character | None = None
+        self.actor_spatial_index = SpatialHashGrid(cell_size=16)
+
+    def add_actor(self, actor: Character) -> None:
+        self.actors.append(actor)
+        self.actor_spatial_index.add(actor)
+
+    def remove_actor(self, actor: Character) -> None:
+        try:
+            self.actors.remove(actor)
+            self.actor_spatial_index.remove(actor)
+        except ValueError:
+            pass
 
 
 @dataclass
