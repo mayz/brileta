@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from catley.world import tile_types
+from catley.environment import tile_types
 
 
 def test_get_walkable_map():

@@ -1,9 +1,11 @@
 from unittest.mock import MagicMock, patch
 
 import numpy as np
+from game.game_world import GameWorld
 
 from catley import colors
 from catley.controller import Controller
+from catley.environment.map import GameMap
 from catley.events import (
     EffectEvent,
     MessageEvent,
@@ -15,8 +17,6 @@ from catley.game.actors import Actor, Character
 from catley.game.items.item_types import GRENADE_TYPE
 from catley.view.frame_manager import FrameManager
 from catley.view.renderer import Renderer
-from catley.world.game_state import GameWorld
-from catley.world.map import GameMap
 
 
 class DummyMap(GameMap):

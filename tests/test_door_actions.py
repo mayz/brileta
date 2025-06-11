@@ -1,13 +1,14 @@
 from dataclasses import dataclass
 from typing import cast
 
+from game.game_world import GameWorld
+
 from catley import colors
 from catley.controller import Controller
+from catley.environment import tile_types
+from catley.environment.map import GameMap
 from catley.game.actions.environment import CloseDoorAction, OpenDoorAction
 from catley.game.actors import Character
-from catley.world import tile_types
-from catley.world.game_state import GameWorld
-from catley.world.map import GameMap
 
 
 class DummyGameWorld:

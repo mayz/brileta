@@ -5,11 +5,11 @@ from typing import cast
 from unittest.mock import MagicMock
 
 import numpy as np
+from view.panels.world_panel import WorldPanel
 
 from catley.controller import Controller
 from catley.game.actors import Actor
 from catley.view.effects.screen_shake import ScreenShake
-from catley.view.panels.game_world_panel import GameWorldPanel
 
 
 class DummyActor:
@@ -22,7 +22,7 @@ class DummyActor:
 
 class DummyGameMap:
     def __init__(self, width: int, height: int) -> None:
-        from catley.world import tile_types
+        from catley.environment import tile_types
 
         self.width = width
         self.height = height
@@ -82,7 +82,7 @@ def test_highlight_actor_converts_world_to_screen() -> None:
     controller = make_controller()
     controller.gw.player.x = 10
     controller.gw.player.y = 10
-    panel = GameWorldPanel(cast(Controller, controller), ScreenShake())
+    panel = WorldPanel(cast(Controller, controller), ScreenShake())
     panel.resize(0, 0, 10, 10)
     panel.viewport_system.update_camera(
         cast(Actor, controller.gw.player),
@@ -104,7 +104,7 @@ def test_highlight_actor_offscreen_is_ignored() -> None:
     controller = make_controller()
     controller.gw.player.x = 10
     controller.gw.player.y = 10
-    panel = GameWorldPanel(cast(Controller, controller), ScreenShake())
+    panel = WorldPanel(cast(Controller, controller), ScreenShake())
     panel.resize(0, 0, 10, 10)
     panel.viewport_system.update_camera(
         cast(Actor, controller.gw.player),

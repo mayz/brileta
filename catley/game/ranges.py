@@ -1,8 +1,8 @@
 import tcod
 
+from catley.environment.map import GameMap
 from catley.game.items.item_core import Item
 from catley.game.items.item_types import WeaponProperty
-from catley.world.map import GameMap
 
 
 def get_range_category(distance: int, weapon: Item) -> str:

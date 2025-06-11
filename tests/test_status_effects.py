@@ -1,8 +1,11 @@
 from dataclasses import dataclass
 from typing import cast
 
+from game.game_world import GameWorld
+
 from catley import colors
 from catley.controller import Controller
+from catley.environment.map import GameMap
 from catley.game.actors import Character
 from catley.game.conditions import Injury
 from catley.game.status_effects import (
@@ -11,8 +14,6 @@ from catley.game.status_effects import (
     StrengthBoostEffect,
     TrippedEffect,
 )
-from catley.world.game_state import GameWorld
-from catley.world.map import GameMap
 
 
 class DummyGameWorld:

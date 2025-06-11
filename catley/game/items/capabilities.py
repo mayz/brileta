@@ -298,7 +298,7 @@ class AreaEffect:
     ) -> bool:
         """Check if we can target the specified location based on
         weapon capabilities."""
-        from catley.game import range_system
+        from game import ranges
 
         game_map = controller.gw.game_map
 
@@ -307,9 +307,7 @@ class AreaEffect:
             return False
 
         # Determine distance from attacker to target.
-        distance = range_system.calculate_distance(
-            attacker.x, attacker.y, target_x, target_y
-        )
+        distance = ranges.calculate_distance(attacker.x, attacker.y, target_x, target_y)
 
         # Use a default range if we don't have additional info.
         max_range = 10
@@ -318,7 +316,7 @@ class AreaEffect:
 
         # If the effect requires line of sight, verify it via the range system.
         if self._spec.requires_line_of_sight:
-            return range_system.has_line_of_sight(
+            return ranges.has_line_of_sight(
                 game_map,
                 attacker.x,
                 attacker.y,

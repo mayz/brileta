@@ -1,15 +1,16 @@
 from dataclasses import dataclass
 from typing import cast
 
+from game.game_world import GameWorld
+
 from catley import colors
 from catley.controller import Controller
+from catley.environment.map import GameMap
 from catley.events import MessageEvent, reset_event_bus_for_testing, subscribe_to_event
 from catley.game.actors import Character
 from catley.game.consequences import ConsequenceHandler
 from catley.game.items.item_types import FISTS_TYPE, PISTOL_TYPE
 from catley.view.ui.pickup_menu import PickupMenu
-from catley.world.game_state import GameWorld
-from catley.world.map import GameMap
 
 
 class DummyGameWorld(GameWorld):

@@ -24,8 +24,8 @@ from catley.config import (
 )
 
 if TYPE_CHECKING:
+    from catley.environment.map import GameMap
     from catley.game.actors import Actor
-    from catley.world.map import GameMap
 
 # Preset configurations for different light types
 TORCH_PRESET = {
@@ -378,7 +378,7 @@ class LightingSystem:
         offset_y: int,
     ) -> list[tuple[int, int]]:
         """Find tiles that cast shadows within light radius."""
-        from catley.world import tile_types
+        from catley.environment import tile_types
 
         if self._game_map is None:
             return []

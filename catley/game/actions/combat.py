@@ -9,8 +9,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from game import ranges
+
 from catley import colors
 from catley.constants.combat import CombatConstants as Combat
+from catley.environment import tile_types
 from catley.events import (
     ActorDeathEvent,
     EffectEvent,
@@ -18,7 +21,6 @@ from catley.events import (
     ScreenShakeEvent,
     publish_event,
 )
-from catley.game import range_system
 from catley.game.actions.base import GameAction, GameActionResult
 from catley.game.actors import Character, Disposition
 from catley.game.ai import DispositionBasedAI
@@ -34,7 +36,6 @@ from catley.game.items.properties import WeaponProperty
 from catley.game.resolution import combat_arbiter
 from catley.game.resolution.base import ResolutionResult
 from catley.game.resolution.outcomes import CombatOutcome
-from catley.world import tile_types
 
 if TYPE_CHECKING:
     from catley.controller import Controller
@@ -102,7 +103,7 @@ class AttackAction(GameAction):
             or FISTS_TYPE.create()
         )
 
-        distance = range_system.calculate_distance(
+        distance = ranges.calculate_distance(
             self.attacker.x, self.attacker.y, self.defender.x, self.defender.y
         )
 
@@ -146,7 +147,7 @@ class AttackAction(GameAction):
 
     def _validate_attack(self, attack: Attack, weapon: Item) -> dict | None:
         """Validate the attack can be performed and return range modifiers."""
-        distance = range_system.calculate_distance(
+        distance = ranges.calculate_distance(
             self.attacker.x, self.attacker.y, self.defender.x, self.defender.y
         )
 
@@ -162,7 +163,7 @@ class AttackAction(GameAction):
                 return None
 
             # Check line of sight
-            if not range_system.has_line_of_sight(
+            if not ranges.has_line_of_sight(
                 self.controller.gw.game_map,
                 self.attacker.x,
                 self.attacker.y,
@@ -175,8 +176,8 @@ class AttackAction(GameAction):
                 return None
 
             # Get range modifiers
-            range_category = range_system.get_range_category(distance, weapon)
-            range_modifiers = range_system.get_range_modifier(weapon, range_category)
+            range_category = ranges.get_range_category(distance, weapon)
+            range_modifiers = ranges.get_range_modifier(weapon, range_category)
 
             if range_modifiers is None:
                 publish_event(

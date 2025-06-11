@@ -2,10 +2,11 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import cast
 
+from view.panels.world_panel import WorldPanel
+
 from catley.controller import Controller
 from catley.game.actors import Actor
 from catley.view.effects.screen_shake import ScreenShake
-from catley.view.panels.game_world_panel import GameWorldPanel
 
 
 class DummyActor:
@@ -34,13 +35,13 @@ class DummyGW:
 class DummyFrameManager:
     def __init__(self) -> None:
         self.cursor_manager = SimpleNamespace(mouse_pixel_x=0, mouse_pixel_y=0)
-        self.game_world_panel: GameWorldPanel | None = None
+        self.world_panel: WorldPanel | None = None
 
     def get_tile_map_coords_from_root_coords(
         self, coords: tuple[int, int]
     ) -> tuple[int, int] | None:
-        assert self.game_world_panel is not None
-        panel = self.game_world_panel
+        assert self.world_panel is not None
+        panel = self.world_panel
         vp_x = coords[0] - panel.x
         vp_y = coords[1] - panel.y
         if not (0 <= vp_x < panel.width and 0 <= vp_y < panel.height):
@@ -82,8 +83,8 @@ def make_controller(root_tile: tuple[int, int] = (5, 5)) -> DummyController:
 
 def test_mouse_tile_location_updates_with_camera() -> None:
     controller = make_controller()
-    panel = GameWorldPanel(cast(Controller, controller), ScreenShake())
-    controller.frame_manager.game_world_panel = panel
+    panel = WorldPanel(cast(Controller, controller), ScreenShake())
+    controller.frame_manager.world_panel = panel
     panel.resize(0, 0, 10, 10)
 
     player = controller.gw.player

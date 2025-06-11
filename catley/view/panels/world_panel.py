@@ -27,7 +27,7 @@ if TYPE_CHECKING:
     from catley.view.renderer import Renderer
 
 
-class GameWorldPanel(Panel):
+class WorldPanel(Panel):
     """Panel responsible for rendering the game world (map, actors, effects)."""
 
     def __init__(

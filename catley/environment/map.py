@@ -2,7 +2,7 @@ import random
 
 import numpy as np
 
-from catley.world import tile_types
+from catley.environment import tile_types
 
 
 class Rect:

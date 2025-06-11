@@ -2,8 +2,12 @@ from dataclasses import dataclass
 from typing import cast
 from unittest.mock import MagicMock
 
+from game.game_world import GameWorld
+
 from catley import colors
 from catley.controller import Controller
+from catley.environment import tile_types
+from catley.environment.map import GameMap
 from catley.events import (
     MessageEvent,
     ScreenShakeEvent,
@@ -16,9 +20,6 @@ from catley.game.enums import OutcomeTier
 from catley.game.items.item_types import FISTS_TYPE, PISTOL_TYPE
 from catley.game.resolution.combat_arbiter import determine_outcome
 from catley.game.resolution.d20_system import D20ResolutionResult
-from catley.world import tile_types
-from catley.world.game_state import GameWorld
-from catley.world.map import GameMap
 
 
 class DummyGameWorld:
