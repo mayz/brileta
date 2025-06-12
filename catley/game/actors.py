@@ -37,6 +37,7 @@ from typing import TYPE_CHECKING
 
 from catley import colors
 from catley.config import DEFAULT_ACTOR_SPEED
+from catley.constants.movement import MovementConstants
 from catley.view.effects.lighting import LightSource
 
 from .ai import AIComponent, DispositionBasedAI
@@ -46,7 +47,7 @@ from .components import (
     StatsComponent,
     VisualEffectsComponent,
 )
-from .conditions import Condition, Injury
+from .conditions import Condition, Exhaustion, Injury
 from .enums import Disposition, InjuryLocation
 from .items.item_core import Item
 from .status_effects import StatusEffect
@@ -202,7 +203,7 @@ class Actor:
         self._effective_speed_cache = None
 
     def calculate_effective_speed(self) -> int:
-        """Calculate speed after accounting for leg injuries."""
+        """Calculate speed after accounting for leg injuries and exhaustion."""
         if self._effective_speed_cache is not None:
             return self._effective_speed_cache
 
@@ -210,12 +211,21 @@ class Actor:
         for condition in self.get_conditions_by_type(Injury):
             speed *= condition.get_movement_cost_modifier()
 
+        if isinstance(self, Character):
+            speed *= self.get_exhaustion_speed_multiplier()
+
         self._effective_speed_cache = int(speed)
         return self._effective_speed_cache
 
     def regenerate_energy(self) -> None:
-        """Regenerates energy for the actor based on their speed."""
-        self.accumulated_energy += self.calculate_effective_speed()
+        """Regenerates energy for the actor based on their speed and conditions."""
+        base_energy = self.calculate_effective_speed()
+
+        if isinstance(self, Character):
+            exhaustion_multiplier = self.get_exhaustion_energy_multiplier()
+            base_energy = int(base_energy * exhaustion_multiplier)
+
+        self.accumulated_energy += base_energy
 
     def can_afford_action(self, cost: int) -> bool:
         """Checks if the actor has enough energy to perform an action."""
@@ -380,6 +390,30 @@ class Character(Actor):
             and c.injury_location in {InjuryLocation.LEFT_ARM, InjuryLocation.RIGHT_ARM}
         ]
         return len({c.injury_location for c in arm_injuries}) < 2
+
+    # === Exhaustion Helpers ===
+
+    def get_exhaustion_count(self) -> int:
+        """Get the total number of exhaustion conditions affecting this character."""
+        return len(self.get_conditions_by_type(Exhaustion))
+
+    def get_exhaustion_speed_multiplier(self) -> float:
+        """Calculate the cumulative speed reduction from exhaustion."""
+        exhaustion_count = self.get_exhaustion_count()
+        if exhaustion_count == 0:
+            return 1.0
+        return MovementConstants.EXHAUSTION_SPEED_REDUCTION_PER_STACK**exhaustion_count
+
+    def get_exhaustion_energy_multiplier(self) -> float:
+        """Calculate the cumulative energy accumulation reduction from exhaustion."""
+        exhaustion_count = self.get_exhaustion_count()
+        if exhaustion_count == 0:
+            return 1.0
+        return MovementConstants.EXHAUSTION_ENERGY_REDUCTION_PER_STACK**exhaustion_count
+
+    def has_exhaustion_disadvantage(self) -> bool:
+        """Check if character has enough exhaustion for action disadvantage."""
+        return self.get_exhaustion_count() >= 2
 
 
 class PC(Character):

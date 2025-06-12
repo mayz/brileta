@@ -53,6 +53,11 @@ class D20Resolver(Resolver):
         """Perform the d20 roll and return the result."""
         # Combine base modifiers with any provided status modifiers
         combined = {**self.status_modifiers, **(status_modifiers or {})}
+
+        # Check for exhaustion disadvantage
+        if actor.has_exhaustion_disadvantage():
+            combined["has_disadvantage"] = True
+
         has_advantage = self.has_advantage or combined.get("has_advantage", False)
         has_disadvantage = self.has_disadvantage or combined.get(
             "has_disadvantage", False

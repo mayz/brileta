@@ -7,9 +7,13 @@ when attempting to move into occupied spaces.
 
 from __future__ import annotations
 
+import random
 from typing import TYPE_CHECKING
 
+from catley import colors
+from catley.constants.movement import MovementConstants
 from catley.environment import tile_types
+from catley.events import MessageEvent, publish_event
 from catley.game.actions.base import GameAction, GameActionResult
 from catley.game.actors import Character
 from catley.game.items.capabilities import MeleeAttack
@@ -109,6 +113,22 @@ class MoveAction(GameAction):
                     weapon=weapon,
                 ).execute()
             return None  # Cannot move into blocking actor
+
+        # Before moving, check if actor's speed is reduced by exhaustion
+        if isinstance(self.actor, Character):
+            speed_multiplier = self.actor.get_exhaustion_speed_multiplier()
+            if speed_multiplier < MovementConstants.EXHAUSTION_STUMBLE_THRESHOLD:
+                stumble_chance = (
+                    1.0 - speed_multiplier
+                ) * MovementConstants.EXHAUSTION_STUMBLE_MULTIPLIER
+                if random.random() < stumble_chance:
+                    publish_event(
+                        MessageEvent(
+                            f"{self.actor.name} stumbles from exhaustion!",
+                            colors.YELLOW,
+                        )
+                    )
+                    return None
 
         self.actor.move(self.dx, self.dy)
         return GameActionResult(should_update_fov=True)
