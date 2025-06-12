@@ -23,11 +23,16 @@ class StatusEffect(abc.ABC):
     name:
         Human readable name used when displaying the effect.
     duration:
-        Remaining number of **turns** this effect should stay active.  This
-        value is decremented in :meth:`Actor.update_turn` whenever it is greater
-        than zero.  A value of ``0`` means the effect will be removed on the
-        next call to ``update_turn`` (useful for "next action" effects) while
-        ``-1`` represents an indefinite duration that must be removed manually.
+        Remaining number of **rounds** this effect should stay active. This
+        value is decremented in :meth:`Actor.update_turn` at the end of each
+        round when it is greater than zero. Common values:
+
+        * ``1``: Effect lasts until the actor's next turn, then is removed
+        before they act again (useful for "next action" effects like
+        Off Balance or Focused)
+        * ``3``: Effect lasts for 3 rounds (e.g., temporary stat boosts)
+        * ``-1``: Indefinite duration that must be removed manually
+        (e.g., Encumbered status that depends on inventory weight)
     description:
         Short explanation shown in the UI.
     can_stack:
@@ -71,10 +76,11 @@ class OffBalanceEffect(StatusEffect):
     """
 
     def __init__(self) -> None:
-        # ``duration=0`` -> expire on next ``update_turn`` call.
+        # Duration=1 means the effect lasts until the actor's next turn,
+        # applies to that action, then gets removed at the end of that round.
         super().__init__(
             name="Off Balance",
-            duration=0,
+            duration=1,
             description="Disadvantage on next action",
         )
 
@@ -101,10 +107,11 @@ class FocusedEffect(StatusEffect):
     """
 
     def __init__(self) -> None:
-        # Duration of ``0`` means this effect lasts only until the next turn.
+        # Duration=1 means the effect lasts until the actor's next turn,
+        # applies to that action, then gets removed at the end of that round.
         super().__init__(
             name="Focused",
-            duration=0,
+            duration=1,
             description="Advantage on next action",
         )
 
@@ -126,14 +133,12 @@ class FocusedEffect(StatusEffect):
 class TrippedEffect(StatusEffect):
     """Forces the actor to skip their next action opportunity."""
 
-    # Like the other single-turn effects, ``duration=0`` ensures it self-removes
-    # right after blocking one action.
-
+    # Duration=1 means the effect lasts until the actor's next turn,
+    # prevents that action, then gets removed at the end of that round.
     def __init__(self) -> None:
-        # ``duration=0`` -> expire after one call to ``update_turn``.
         super().__init__(
             name="Tripped",
-            duration=0,
+            duration=1,
             description="Skip next action",
         )
 
