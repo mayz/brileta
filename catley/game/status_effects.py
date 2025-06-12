@@ -12,13 +12,28 @@ if TYPE_CHECKING:
 class StatusEffect(abc.ABC):
     """Base class for temporary tactical modifiers that affect actors.
 
-    Status effects are distinct from Condition:
-    - Status effects: Immediate tactical modifiers, auto-expire, no inventory cost
-    - Conditions: Persistent states with mechanical effects, consume inventory slots
+    Unlike :class:`~catley.game.conditions.Condition` instances, status effects
+    are short lived and do not occupy inventory slots. They model fleeting
+    battlefield states such as being momentarily off balance or benefiting from
+    a rush of adrenaline. Each effect automatically counts down and removes
+    itself when its ``duration`` expires.
 
-    Status effects represent fleeting battlefield states like being off balance
-    or temporarily boosted from adrenaline. They automatically expire without
-    manual treatment and do not burden the actor's inventory.
+    Attributes
+    ----------
+    name:
+        Human readable name used when displaying the effect.
+    duration:
+        Remaining number of **turns** this effect should stay active.  This
+        value is decremented in :meth:`Actor.update_turn` whenever it is greater
+        than zero.  A value of ``0`` means the effect will be removed on the
+        next call to ``update_turn`` (useful for "next action" effects) while
+        ``-1`` represents an indefinite duration that must be removed manually.
+    description:
+        Short explanation shown in the UI.
+    can_stack:
+        Whether multiple instances of this effect may exist on the same actor.
+        If ``False`` (the default), attempts to apply another instance will be
+        ignored.
     """
 
     name: str
@@ -48,11 +63,19 @@ class StatusEffect(abc.ABC):
 
 
 class OffBalanceEffect(StatusEffect):
-    """Actor has disadvantage on their next action, then removes itself."""
+    """Actor has disadvantage on exactly one action.
+
+    The effect is constructed with ``duration=0`` so it is removed as soon as
+    :meth:`Actor.update_turn` runs, ensuring the penalty applies only to the
+    actor's very next action.
+    """
 
     def __init__(self) -> None:
+        # ``duration=0`` -> expire on next ``update_turn`` call.
         super().__init__(
-            name="Off Balance", duration=0, description="Disadvantage on next action"
+            name="Off Balance",
+            duration=0,
+            description="Disadvantage on next action",
         )
 
     def apply_on_start(self, actor: Actor) -> None:
@@ -71,11 +94,18 @@ class OffBalanceEffect(StatusEffect):
 
 
 class FocusedEffect(StatusEffect):
-    """Actor has advantage on their next action, then removes itself."""
+    """Grants advantage on exactly one action.
+
+    As with :class:`OffBalanceEffect`, ``duration=0`` ensures the bonus is
+    consumed and the effect removed the next time the actor's turn updates.
+    """
 
     def __init__(self) -> None:
+        # Duration of ``0`` means this effect lasts only until the next turn.
         super().__init__(
-            name="Focused", duration=0, description="Advantage on next action"
+            name="Focused",
+            duration=0,
+            description="Advantage on next action",
         )
 
     def apply_on_start(self, actor: Actor) -> None:
@@ -94,10 +124,18 @@ class FocusedEffect(StatusEffect):
 
 
 class TrippedEffect(StatusEffect):
-    """Actor skips their next action opportunity, then removes itself."""
+    """Forces the actor to skip their next action opportunity."""
+
+    # Like the other single-turn effects, ``duration=0`` ensures it self-removes
+    # right after blocking one action.
 
     def __init__(self) -> None:
-        super().__init__(name="Tripped", duration=0, description="Skip next action")
+        # ``duration=0`` -> expire after one call to ``update_turn``.
+        super().__init__(
+            name="Tripped",
+            duration=0,
+            description="Skip next action",
+        )
 
     def apply_on_start(self, actor: Actor) -> None:
         pass
@@ -115,9 +153,15 @@ class TrippedEffect(StatusEffect):
 
 
 class StrengthBoostEffect(StatusEffect):
-    """Temporarily increase actor strength by 2 for a number of turns."""
+    """Temporarily raise strength by two points.
+
+    The ``duration`` argument specifies how many turns the boost should last
+    and is forwarded to the base class. When the counter reaches zero the
+    additional strength is removed in :meth:`remove_effect`.
+    """
 
     def __init__(self, duration: int = 3) -> None:
+        # ``duration`` controls how many turns the bonus is active.
         super().__init__(
             name="Strength Boost",
             duration=duration,
@@ -139,9 +183,15 @@ class StrengthBoostEffect(StatusEffect):
 
 
 class EncumberedEffect(StatusEffect):
-    """Actor has disadvantage on movement and defense due to carrying too much."""
+    """Actor has disadvantage on movement and defense due to carrying too much.
+
+    This status persists until the actor's carried weight drops below the
+    encumbrance threshold. ``duration=-1`` marks it as indefinite so the base
+    class will never remove it automatically.
+    """
 
     def __init__(self) -> None:
+        # ``duration=-1`` indicates the effect lasts until explicitly removed.
         super().__init__(
             name="Encumbered",
             duration=-1,
