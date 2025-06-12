@@ -25,6 +25,7 @@ from .panels.health_panel import HealthPanel
 from .panels.help_text_panel import HelpTextPanel
 from .panels.message_log_panel import MessageLogPanel
 from .panels.panel import Panel
+from .panels.status_panel import StatusPanel
 from .panels.world_panel import WorldPanel
 from .renderer import Renderer
 from .ui.cursor_manager import CursorManager
@@ -69,11 +70,13 @@ class FrameManager:
         self.equipment_panel = EquipmentPanel(self.controller)
 
         self.health_panel = HealthPanel(self.controller)
+        self.status_panel = StatusPanel(self.controller)
 
         self.panels: list[Panel] = [
             self.help_text_panel,
             self.world_panel,
             self.health_panel,
+            self.status_panel,
             self.equipment_panel,
             self.message_log_panel,
             self.fps_panel,
@@ -101,6 +104,12 @@ class FrameManager:
         equipment_width = 25
         equipment_x = screen_width_tiles - equipment_width - 2
 
+        # Status panel positioned to the left of health panel to avoid overlap
+        status_panel_width = 25
+        status_panel_x = screen_width_tiles - 20 - status_panel_width - 1
+        status_panel_y = self.help_height + 1
+        status_panel_height = 10
+
         # Resize all panels
         self.help_text_panel.resize(0, 0, screen_width_tiles, self.help_height)
         self.world_panel.resize(
@@ -108,6 +117,12 @@ class FrameManager:
         )
         self.health_panel.resize(
             screen_width_tiles - 20, 0, screen_width_tiles, self.help_height
+        )
+        self.status_panel.resize(
+            status_panel_x,
+            status_panel_y,
+            status_panel_x + status_panel_width,
+            status_panel_y + status_panel_height,
         )
         self.equipment_panel.resize(
             equipment_x, equipment_y, screen_width_tiles, screen_height_tiles
