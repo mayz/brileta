@@ -180,9 +180,12 @@ class Actor:
                     self.gw.selected_actor = None
 
     def update_turn(self, controller: Controller) -> None:
-        """
-        Handles turn-based logic for actors. For NPCs, this includes AI.
-        For the player, this could handle passive effects like poison/regeneration.
+        """Advance ongoing status effects for this actor.
+
+        This method should be called once at the *start* of each round. It
+        processes active status effects, decrementing their duration and removing
+        them when they expire. NPC AI or other per-turn logic could also be
+        triggered here in the future.
         """
         for effect in self.status_effects[:]:
             effect.apply_turn_effect(self)
