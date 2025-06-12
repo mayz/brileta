@@ -1,0 +1,88 @@
+"""UI panel for displaying active status effects and conditions."""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from catley import colors
+from catley.game.actors import Character
+from catley.game.conditions import Condition
+from catley.view.renderer import Renderer
+
+from .panel import Panel
+
+if TYPE_CHECKING:
+    from catley.controller import Controller
+
+
+class StatusPanel(Panel):
+    """Panel that displays active conditions and status effects."""
+
+    def __init__(self, controller: Controller) -> None:
+        super().__init__()
+        self.controller = controller
+
+    def draw(self, renderer: Renderer) -> None:
+        """Render the status panel if player has active effects."""
+        if not self.visible:
+            return
+
+        player = self.controller.gw.player
+        conditions = self._get_condition_lines(player)
+        status_effects = self._get_status_effect_lines(player)
+
+        if not conditions and not status_effects:
+            return
+
+        current_y = self.y
+
+        if conditions:
+            renderer.draw_text(self.x, current_y, "CONDITIONS:", fg=colors.YELLOW)
+            current_y += 1
+            for text, color in conditions:
+                renderer.draw_text(self.x, current_y, text, fg=color)
+                current_y += 1
+            current_y += 1
+
+        if status_effects:
+            renderer.draw_text(self.x, current_y, "STATUS EFFECTS:", fg=colors.CYAN)
+            current_y += 1
+            for text in status_effects:
+                renderer.draw_text(self.x, current_y, text, fg=colors.LIGHT_GREY)
+                current_y += 1
+
+    def _get_condition_lines(self, player: Character) -> list[tuple[str, colors.Color]]:
+        """Get formatted display lines for conditions."""
+        if not player.inventory:
+            return []
+
+        conditions = player.get_conditions()
+        if not conditions:
+            return []
+
+        condition_counts: dict[str, list[Condition]] = {}
+        for condition in conditions:
+            condition_counts.setdefault(condition.name, []).append(condition)
+
+        lines: list[tuple[str, colors.Color]] = []
+        for name, condition_list in condition_counts.items():
+            count = len(condition_list)
+            color = condition_list[0].display_color
+            text = f"{name} x{count}" if count > 1 else name
+            lines.append((text, color))
+
+        return lines
+
+    def _get_status_effect_lines(self, player: Character) -> list[str]:
+        """Get formatted display lines for status effects."""
+        if not player.status_effects:
+            return []
+
+        lines = []
+        for effect in player.status_effects:
+            if effect.duration > 0:
+                suffix = "turn" if effect.duration == 1 else "turns"
+                lines.append(f"{effect.name} ({effect.duration} {suffix})")
+            else:
+                lines.append(effect.name)
+        return lines
