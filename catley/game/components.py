@@ -34,7 +34,13 @@ Note:
     for max_hp calculation), but dependencies are kept minimal and explicit.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .actors import Actor
 
 from catley import colors
 from catley.config import DEFAULT_MAX_ARMOR
@@ -125,9 +131,13 @@ class InventoryComponent:
     """
 
     def __init__(
-        self, stats_component: StatsComponent, num_attack_slots: int = 2
+        self,
+        stats_component: StatsComponent,
+        num_attack_slots: int = 2,
+        actor: Actor | None = None,
     ) -> None:
         self.stats = stats_component
+        self.actor = actor  # Back-reference for status effects
         self._stored_items: list[Item | Condition] = []
 
         self.attack_slots: list[Item | None] = [None] * num_attack_slots
@@ -197,54 +207,130 @@ class InventoryComponent:
 
         return used_space
 
-    def can_add_to_inventory(self, item_to_add: Item | Condition) -> bool:
-        """Check if an item can be added to inventory.
+    def is_encumbered(self) -> bool:
+        """Return True if carrying more than base capacity."""
+        return self.get_used_inventory_slots() > self.stats.inventory_slots
 
-        Tiny items share a single inventory slot.  When deciding if adding a
-        tiny item requires an additional slot, both stored items and equipped
-        ``attack_slots`` are considered.
-        """
-        current_used_space = self.get_used_inventory_slots()
-        additional_space_needed = 0
+    def can_add_voluntary_item(self, item: Item) -> bool:
+        """Check if a voluntary item can be added within base capacity."""
+        current_used = self.get_used_inventory_slots()
+        additional_space = self._calculate_space_needed(item)
+        return (current_used + additional_space) <= self.stats.inventory_slots
 
-        if isinstance(item_to_add, Item):
-            item = item_to_add
+    def _calculate_space_needed(self, item: Item | Condition) -> int:
+        """Calculate how many slots an item needs."""
+        if isinstance(item, Item):
             if item.size == ItemSize.TINY:
-                # If no tiny items exist yet (stored or equipped), adding this one
-                # will create the tiny slot
-                tiny_exists = any(
+                has_tiny = any(
                     isinstance(i, Item) and i.size == ItemSize.TINY
                     for i in self._stored_items
                 ) or any(
                     eq_item is not None and eq_item.size == ItemSize.TINY
                     for eq_item in self.attack_slots
                 )
-                if not tiny_exists:
-                    additional_space_needed = 1
-            elif item.size == ItemSize.NORMAL:
-                additional_space_needed = 1
-            elif item.size == ItemSize.BIG:
-                additional_space_needed = 2
-            elif item.size == ItemSize.HUGE:
-                additional_space_needed = 4
-        elif isinstance(item_to_add, Condition):
-            additional_space_needed = 1
+                return 0 if has_tiny else 1
+            if item.size == ItemSize.NORMAL:
+                return 1
+            if item.size == ItemSize.BIG:
+                return 2
+            if item.size == ItemSize.HUGE:
+                return 4
+        if isinstance(item, Condition):
+            return 1
+        return 1
 
-        return (
-            current_used_space + additional_space_needed
-        ) <= self.total_inventory_slots
+    def _find_droppable_item(self) -> Item | None:
+        """Find the most recently added voluntary item to drop (LIFO)."""
+        for item in reversed(self._stored_items):
+            if isinstance(item, Item):
+                return item
+        return None
 
-    def add_to_inventory(self, item: Item | Condition) -> bool:
-        """Add item to inventory if space available."""
-        if self.can_add_to_inventory(item):
+    def add_voluntary_item(self, item: Item) -> tuple[bool, str]:
+        """Add a voluntary item if space allows."""
+        if self.can_add_voluntary_item(item):
             self._stored_items.append(item)
-            return True
-        return False
+            self._update_encumbrance_status()
+            return True, f"Added {item.name}."
+        return False, f"Cannot carry {item.name} - inventory full!"
+
+    def add_condition(self, condition: Condition) -> tuple[list[Item], str]:
+        dropped_items: list[Item] = []
+        base_capacity = self.stats.inventory_slots
+
+        # Keep dropping until we fit
+        while True:
+            current_used = self.get_used_inventory_slots()
+            space_needed = self._calculate_space_needed(condition)
+
+            if current_used + space_needed <= base_capacity:
+                break  # We fit!
+
+            droppable_item = self._find_droppable_item()
+            if not droppable_item:
+                break  # Nothing left to drop
+
+            self._stored_items.remove(droppable_item)
+            dropped_items.append(droppable_item)
+
+        self._stored_items.append(condition)
+        self._update_encumbrance_status()
+
+        message_parts = [f"Added {condition.name}."]
+
+        if dropped_items:
+            dropped_names = [item.name for item in dropped_items]
+            message_parts.append(f"Dropped: {', '.join(dropped_names)}.")
+
+        if self.is_encumbered():
+            message_parts.append("You are now encumbered!")
+
+        return dropped_items, " ".join(message_parts)
+
+    def _update_encumbrance_status(self) -> None:
+        """Add or remove encumbrance status effect based on current load."""
+        if not self.actor:
+            return
+
+        from catley import colors
+        from catley.events import MessageEvent, publish_event
+        from catley.game.status_effects import EncumberedEffect
+
+        currently_encumbered = self.actor.has_status_effect(EncumberedEffect)
+        should_be_encumbered = self.is_encumbered()
+
+        if should_be_encumbered and not currently_encumbered:
+            self.actor.apply_status_effect(EncumberedEffect())
+            publish_event(
+                MessageEvent(f"{self.actor.name} is encumbered!", colors.YELLOW)
+            )
+        elif not should_be_encumbered and currently_encumbered:
+            self.actor.remove_status_effect(EncumberedEffect)
+            publish_event(
+                MessageEvent(
+                    f"{self.actor.name} is no longer encumbered.", colors.GREEN
+                )
+            )
+
+    def can_add_to_inventory(self, item_to_add: Item | Condition) -> bool:
+        """DEPRECATED. Use ``can_add_voluntary_item`` or ``add_condition``."""
+        if isinstance(item_to_add, Item):
+            return self.can_add_voluntary_item(item_to_add)
+        return True
+
+    def add_to_inventory(self, item: Item | Condition) -> tuple[bool, str, list[Item]]:
+        """Add item to inventory. Returns (success, message, dropped_items)."""
+        if isinstance(item, Condition):
+            dropped_items, message = self.add_condition(item)
+            return True, message, dropped_items
+        success, message = self.add_voluntary_item(item)
+        return success, message, []
 
     def remove_from_inventory(self, item: Item | Condition) -> bool:
         """Remove item from inventory."""
         if item in self._stored_items:
             self._stored_items.remove(item)
+            self._update_encumbrance_status()
             return True
         return False
 

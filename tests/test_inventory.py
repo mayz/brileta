@@ -34,11 +34,13 @@ def test_can_add_to_inventory_capacity_and_tiny():
     inv = InventoryComponent(stats)
     normal_items = [make_item(f"n{i}", ItemSize.NORMAL) for i in range(5)]
     for item in normal_items[:4]:
-        assert inv.add_to_inventory(item)
+        success, _, _ = inv.add_to_inventory(item)
+        assert success
     assert inv.get_used_inventory_slots() == 4
 
     tiny = make_item("t", ItemSize.TINY)
-    assert inv.can_add_to_inventory(tiny)
-    assert inv.add_to_inventory(tiny)
+    assert inv.can_add_voluntary_item(tiny)
+    success, _, _ = inv.add_to_inventory(tiny)
+    assert success
     assert inv.get_used_inventory_slots() == 5
-    assert not inv.can_add_to_inventory(normal_items[4])
+    assert not inv.can_add_voluntary_item(normal_items[4])
