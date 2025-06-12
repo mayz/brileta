@@ -35,6 +35,7 @@ from catley.game.items.properties import WeaponProperty
 from catley.game.resolution import combat_arbiter
 from catley.game.resolution.base import ResolutionResult
 from catley.game.resolution.outcomes import CombatOutcome
+from catley.game.status_effects import OffBalanceEffect
 
 if TYPE_CHECKING:
     from catley.controller import Controller
@@ -368,7 +369,7 @@ class AttackAction(GameAction):
                     colors.LIGHT_BLUE,
                 )
             )
-            # TODO: Implement off-balance effect (maybe skip next turn?)
+            self.attacker.apply_status_effect(OffBalanceEffect())
 
     def _log_hit_message(
         self, attack_result: ResolutionResult, weapon: Item, damage: int
