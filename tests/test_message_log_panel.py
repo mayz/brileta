@@ -59,9 +59,11 @@ def test_message_log_panel_font_scales_on_resize() -> None:
     panel.resize(0, 0, 20, 5)
 
     panel.draw(renderer_stub)
-    initial_line_height = panel.line_height_px
+    ascent, descent = panel.text_backend.get_font_metrics()
+    initial_line_height = ascent + descent
 
     renderer_stub.tile_dimensions = (16, 32)
     panel.draw(renderer_stub)
 
-    assert panel.line_height_px > initial_line_height
+    ascent, descent = panel.text_backend.get_font_metrics()
+    assert (ascent + descent) > initial_line_height

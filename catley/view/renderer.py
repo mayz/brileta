@@ -13,6 +13,8 @@ from tcod.console import Console
 from catley import colors
 from catley.util.coordinates import CoordinateConverter
 
+from .text_backend import TCODTextBackend
+
 
 class Renderer:
     """Low-level graphics primitives and SDL/TCOD operations."""
@@ -36,6 +38,9 @@ class Renderer:
         self.root_console = root_console
         self.tile_dimensions = tile_dimensions
 
+        # Set up text backend (always TCOD)
+        self.text_backend = TCODTextBackend(root_console, tile_dimensions)
+
         # Set up coordinate conversion
         renderer_width, renderer_height = self.sdl_renderer.output_size
         self.coordinate_converter = CoordinateConverter(
@@ -55,7 +60,7 @@ class Renderer:
         self, x: int, y: int, text: str, fg: colors.Color = colors.WHITE
     ) -> None:
         """Draw text at a specific position with a given color."""
-        self.root_console.print(x=x, y=y, text=text, fg=fg)
+        self.text_backend.draw_text(x, y, text, fg)
 
     def blit_console(
         self,
@@ -92,6 +97,18 @@ class Renderer:
     def finalize_present(self) -> None:
         """Presents the backbuffer to the screen."""
         self.sdl_renderer.present()
+
+    # ------------------------------------------------------------------
+    # Text Backend Helpers
+    # ------------------------------------------------------------------
+
+    def begin_text_frame(self) -> None:
+        """Prepare the active text backend for drawing."""
+        self.text_backend.begin_frame()
+
+    def end_text_frame(self) -> None:
+        """Finalize text rendering for the frame."""
+        self.text_backend.end_frame()
 
     def present_frame(self) -> None:
         """Presents the final composited frame via SDL. (Now a convenience method)"""

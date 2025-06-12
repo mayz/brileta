@@ -1,16 +1,12 @@
 from __future__ import annotations
 
-import textwrap
 from typing import TYPE_CHECKING
 
-import numpy as np
-from PIL import Image as PILImage
-from PIL import ImageDraw, ImageFont
-from tcod.sdl.render import BlendMode, Texture
+from tcod.sdl.render import Texture
 
 from catley import config
-from catley.constants.view import ViewConstants as View
 from catley.view.renderer import Renderer
+from catley.view.text_backend import PillowTextBackend
 
 from .panel import Panel
 
@@ -31,9 +27,13 @@ class MessageLogPanel(Panel):
         self.message_log = message_log
         self.tile_dimensions = tile_dimensions
 
-        self.base_tile_height = tile_dimensions[1]
-        self._current_font_size = 0
-        self._update_font_for_tile_height(tile_dimensions[1])
+        self.text_backend = PillowTextBackend(
+            config.MESSAGE_LOG_FONT_PATH,
+            self.width * tile_dimensions[0],
+            self.height * tile_dimensions[1],
+            tile_dimensions[1],
+            None,
+        )
 
         # Panel pixel dimensions will be calculated when resize() is called
         self.panel_width_px = 0
@@ -46,21 +46,6 @@ class MessageLogPanel(Panel):
         # Track the texture dimensions to detect when we need to regenerate
         self._cached_texture_width = 0
         self._cached_texture_height = 0
-
-    def _update_font_for_tile_height(self, tile_height: int) -> None:
-        """Set font and line metrics for the given tile height."""
-        scale = tile_height / self.base_tile_height
-        font_size = max(
-            View.MESSAGE_LOG_MIN_FONT_SIZE,
-            round(config.MESSAGE_LOG_FONT_SIZE * scale),
-        )
-        if font_size == self._current_font_size:
-            return
-
-        self.font = ImageFont.truetype(str(config.MESSAGE_LOG_FONT_PATH), font_size)
-        ascent, descent = self.font.getmetrics()
-        self.line_height_px = ascent + descent
-        self._current_font_size = font_size
 
     def resize(self, x1: int, y1: int, x2: int, y2: int) -> None:
         """Override resize to update pixel dimensions when panel is resized."""
@@ -91,20 +76,44 @@ class MessageLogPanel(Panel):
 
         # Update cached tile dimensions and recalculate pixel dimensions
         self.tile_dimensions = current_tile_dimensions
-        self._update_font_for_tile_height(self.tile_dimensions[1])
+        self.text_backend.configure_scaling(self.tile_dimensions[1])
         self.panel_width_px = new_panel_width_px
         self.panel_height_px = new_panel_height_px
         self._cached_texture_width = new_panel_width_px
         self._cached_texture_height = new_panel_height_px
+        self.text_backend.configure_dimensions(
+            self.panel_width_px, self.panel_height_px
+        )
+        self.text_backend.configure_renderer(renderer.sdl_renderer)
+        self.text_backend.begin_frame()
 
-        image = self._render_messages_to_image()
-        pixels_rgba = np.array(image, dtype=np.uint8)
-        pixels_rgba = np.ascontiguousarray(pixels_rgba)
+        ascent, descent = self.text_backend.get_font_metrics()
+        line_height = ascent + descent
+        y_baseline = self.panel_height_px - descent
 
-        texture = renderer.sdl_renderer.upload_texture(pixels_rgba)
-        texture.blend_mode = BlendMode.BLEND
-        self._cached_texture = texture
-        self._render_revision = self.message_log.revision
+        for message in reversed(self.message_log.messages):
+            if y_baseline < line_height:
+                break
+
+            wrapped_lines = self.text_backend.wrap_text(
+                message.full_text, self.panel_width_px
+            )
+            for line in reversed(wrapped_lines):
+                text_top = y_baseline - ascent
+                if text_top < 0:
+                    y_baseline = -1
+                    break
+
+                self.text_backend.draw_text(0, y_baseline, line, message.fg)
+                y_baseline -= line_height
+
+            if y_baseline == -1:
+                break
+
+        texture = self.text_backend.end_frame()
+        if texture is not None:
+            self._cached_texture = texture
+            self._render_revision = self.message_log.revision
 
     def present(self, renderer: Renderer) -> None:
         if not self.visible or self._cached_texture is None:
@@ -121,62 +130,3 @@ class MessageLogPanel(Panel):
 
         dest_rect = (dest_x, dest_y, dest_width, dest_height)
         renderer.sdl_renderer.copy(self._cached_texture, dest=dest_rect)
-
-    def _render_messages_to_image(self) -> PILImage.Image:
-        img = PILImage.new(
-            "RGBA", (self.panel_width_px, self.panel_height_px), (0, 0, 0, 0)
-        )
-        draw = ImageDraw.Draw(img)
-
-        # Start with the baseline positioned correctly
-        # PIL uses top-down coordinates (Y=0 at top)
-        # We want messages to appear from bottom up, so start at bottom and work up
-        ascent, descent = self.font.getmetrics()
-        # Start at the bottom with enough room for the text
-        y_baseline = self.panel_height_px - descent
-        lines_drawn = 0
-
-        for message in reversed(self.message_log.messages):
-            # If the next message would start off the top of the panel, stop.
-            if y_baseline < self.line_height_px:
-                break
-
-            wrapped_lines = self._wrap_text(message.full_text)
-
-            for line in reversed(wrapped_lines):
-                # We need to check if drawing this line would go off-screen.
-                # Check if the top of the text would be above the panel
-                text_top = y_baseline - ascent
-                if text_top < 0:
-                    y_baseline = -1  # Signal to break outer loop
-                    break
-
-                # Draw the text using the baseline as the anchor.
-                # "ls" means the (x, y) coordinate is the Left side of the baSeline.
-                draw.text(
-                    (0, y_baseline),
-                    line,
-                    font=self.font,
-                    fill=(*message.fg, 255),
-                    anchor="ls",
-                )
-                lines_drawn += 1
-
-                # Move the baseline up for the next line of text.
-                y_baseline -= self.line_height_px
-
-            if y_baseline == -1:
-                break
-
-        return img
-
-    def _wrap_text(self, text: str) -> list[str]:
-        # A simple estimate for character width. '8' is a reasonable guess
-        # for a 16pt font. A more accurate way would be to measure an average character
-        # with the font object.
-        avg_char_width = 8
-
-        # Calculate how many characters can fit in the panel's pixel width.
-        wrap_at_character_count = self.panel_width_px // avg_char_width
-
-        return textwrap.wrap(text, wrap_at_character_count)

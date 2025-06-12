@@ -150,6 +150,7 @@ class FrameManager:
         """
         # 1. PREPARATION PHASE
         self.renderer.clear_console(self.renderer.root_console)
+        self.renderer.begin_text_frame()
 
         # 2. UI PANEL RENDERING
         for panel in self.panels:
@@ -166,6 +167,7 @@ class FrameManager:
         self.controller.overlay_system.render(self.renderer.root_console)
 
         # 4. PRESENTATION
+        self.renderer.end_text_frame()
         # Copy the final console state to the backbuffer
         self.renderer.prepare_to_present()
 
