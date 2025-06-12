@@ -32,6 +32,11 @@ class TurnManager:
         max_iterations = 50  # Prevent infinite loops
         iteration = 0
 
+        # Process ongoing status effects at the start of the round so new
+        # effects applied during a round last until the next round begins.
+        for actor in self.controller.gw.actors:
+            actor.update_turn(self.controller)
+
         # Give all actors energy once per round
         for actor in self.controller.gw.actors:
             actor.regenerate_energy()
@@ -63,10 +68,6 @@ class TurnManager:
             # If nobody acted this round, we're done
             if not someone_acted:
                 break
-
-        # After the round, call update_turn for any passive effects
-        for actor in self.controller.gw.actors:
-            actor.update_turn(self.controller)
 
         # After the round, update any active modes
         if hasattr(self.controller, "active_mode") and self.controller.active_mode:
