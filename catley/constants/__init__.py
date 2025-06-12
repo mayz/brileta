@@ -5,9 +5,11 @@ Constants here are implementation details that need descriptive names.
 """
 
 from .combat import CombatConstants
+from .movement import MovementConstants
 from .view import ViewConstants
 
 __all__ = [
     "CombatConstants",
+    "MovementConstants",
     "ViewConstants",
 ]
