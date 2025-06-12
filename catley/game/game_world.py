@@ -3,7 +3,7 @@ from typing import cast
 
 from catley import colors, config
 from catley.config import PLAYER_BASE_STRENGTH, PLAYER_BASE_TOUGHNESS
-from catley.environment.map import GameMap
+from catley.environment.map import GameMap, Rect
 from catley.game import conditions
 from catley.game.actors import Actor, Character
 from catley.game.items.item_core import Item
@@ -34,71 +34,14 @@ class GameWorld:
         self.lighting = LightingSystem()
         self.selected_actor: Actor | None = None
 
-        # Create player at temporary position (0, 0)
-        from catley.game.actors import PC
-
-        player_light = LightSource.create_torch()
-        self.player = PC(
-            x=0,
-            y=0,
-            ch="@",
-            name="Player",
-            color=colors.PLAYER_COLOR,
-            game_world=self,
-            light_source=player_light,
-            strength=PLAYER_BASE_STRENGTH,
-            toughness=PLAYER_BASE_TOUGHNESS,
-            starting_weapon=PISTOL_TYPE.create(),
-            # Other abilities will default to 0
-        )
-
-        # Add starting equipment to player (NO sprained ankle yet)
-        self.player.inventory.equip_to_slot(SNIPER_RIFLE_TYPE.create(), 1)
-        self.player.inventory.add_to_inventory(COMBAT_KNIFE_TYPE.create())
-
-        # Give the player some ammo
-        self.player.inventory.add_to_inventory(PISTOL_MAGAZINE_TYPE.create())
-        self.player.inventory.add_to_inventory(PISTOL_MAGAZINE_TYPE.create())
-        self.player.inventory.add_to_inventory(RIFLE_MAGAZINE_TYPE.create())
-        self.player.inventory.add_to_inventory(RIFLE_MAGAZINE_TYPE.create())
-
-        # Initialize actor storage systems
-        self.actors: list[Actor] = []
-        self.actor_spatial_index: SpatialIndex[Actor] = SpatialHashGrid(cell_size=16)
-
-        # Add player to world
-        self.add_actor(self.player)
-
-        # Create and generate the map
-        self.game_map = GameMap(map_width, map_height)
-        self.game_map.gw = self
-
-        # Generate map layout and get rooms
-        rooms = self.game_map.make_map(
-            config.MAX_NUM_ROOMS,
-            config.MIN_ROOM_SIZE,
-            config.MAX_ROOM_SIZE,
-        )
-
-        # Position player at first room center
-        first_room = rooms[0]
-        self.player.x, self.player.y = first_room.center()
-
-        # Setup lighting
+        self._init_actor_storage()
+        self.game_map, rooms = self._generate_map(map_width, map_height)
         self.lighting.set_game_map(self.game_map)
 
-        # NOW add sprained ankle at the correct position
-        sprained_ankle = conditions.Injury(
-            conditions.InjuryLocation.LEFT_LEG, "Sprained Ankle"
-        )
-        success, message, dropped_items = self.player.inventory.add_to_inventory(
-            sprained_ankle
-        )
-        print(f"Injury result: {message}")
-
-        # Spawn any dropped items at player's actual position
-        for item in dropped_items:
-            self._spawn_dropped_item(item, self.player.x, self.player.y)
+        self.player = self._create_player()
+        self.add_actor(self.player)
+        self._position_player(rooms[0])
+        self._add_starting_injury()
 
         self._populate_npcs(rooms)
 
@@ -115,6 +58,72 @@ class GameWorld:
         except ValueError:
             # Actor was not in the list; ignore.
             pass
+
+    # ---------------------------------------------------------------------
+    # Initialization helpers
+    # ---------------------------------------------------------------------
+
+    def _init_actor_storage(self) -> None:
+        """Initialize the collections used to track actors."""
+        self.actors: list[Actor] = []
+        self.actor_spatial_index: SpatialIndex[Actor] = SpatialHashGrid(cell_size=16)
+
+    def _create_player(self) -> Character:
+        """Instantiate the player character and starting inventory."""
+        from catley.game.actors import PC
+
+        light = LightSource.create_torch()
+        player = PC(
+            x=0,
+            y=0,
+            ch="@",
+            name="Player",
+            color=colors.PLAYER_COLOR,
+            game_world=self,
+            light_source=light,
+            strength=PLAYER_BASE_STRENGTH,
+            toughness=PLAYER_BASE_TOUGHNESS,
+            starting_weapon=PISTOL_TYPE.create(),
+        )
+        self._setup_player_inventory(player)
+        return player
+
+    def _setup_player_inventory(self, player: Character) -> None:
+        """Equip the player's initial gear and ammunition."""
+        player.inventory.equip_to_slot(SNIPER_RIFLE_TYPE.create(), 1)
+        player.inventory.add_to_inventory(COMBAT_KNIFE_TYPE.create())
+
+        player.inventory.add_to_inventory(PISTOL_MAGAZINE_TYPE.create())
+        player.inventory.add_to_inventory(PISTOL_MAGAZINE_TYPE.create())
+        player.inventory.add_to_inventory(RIFLE_MAGAZINE_TYPE.create())
+        player.inventory.add_to_inventory(RIFLE_MAGAZINE_TYPE.create())
+
+    def _generate_map(
+        self, map_width: int, map_height: int
+    ) -> tuple[GameMap, list[Rect]]:
+        """Create the game map and return it along with generated rooms."""
+        game_map = GameMap(map_width, map_height)
+        game_map.gw = self
+        rooms = game_map.make_map(
+            config.MAX_NUM_ROOMS,
+            config.MIN_ROOM_SIZE,
+            config.MAX_ROOM_SIZE,
+        )
+        return game_map, rooms
+
+    def _position_player(self, room: Rect) -> None:
+        """Place the player in the center of ``room``."""
+        self.player.x, self.player.y = room.center()
+
+    def _add_starting_injury(self) -> None:
+        """Give the player their initial injury and drop any overflow items."""
+        sprained_ankle = conditions.Injury(
+            conditions.InjuryLocation.LEFT_LEG,
+            "Sprained Ankle",
+        )
+        _, _, dropped_items = self.player.inventory.add_to_inventory(sprained_ankle)
+        for item in dropped_items:
+            self._spawn_dropped_item(item, self.player.x, self.player.y)
 
     def _spawn_dropped_item(self, item: Item, x: int, y: int) -> None:
         """Spawn a dropped item on the ground as an Actor."""
