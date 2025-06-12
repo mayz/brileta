@@ -59,7 +59,7 @@ class PickupMenu(Menu):
         """Pickup an item and add it to player inventory."""
         player = self.controller.gw.player
         # Check if player has inventory space using the new size-aware method
-        if not player.inventory.can_add_to_inventory(item):
+        if not player.inventory.can_add_voluntary_item(item):
             publish_event(MessageEvent("Your inventory is full!", colors.RED))
             return
 
@@ -96,5 +96,7 @@ class PickupMenu(Menu):
                 break
 
         # Add to player inventory
-        player.inventory.add_to_inventory(item)
+        success, message, dropped_items = player.inventory.add_to_inventory(item)
         publish_event(MessageEvent(f"You pick up {item.name}.", colors.WHITE))
+        for dropped in dropped_items:
+            self.controller.gw._spawn_dropped_item(dropped, player.x, player.y)

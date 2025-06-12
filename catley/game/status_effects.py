@@ -136,3 +136,31 @@ class StrengthBoostEffect(StatusEffect):
         stats = actor.stats
         if stats is not None:
             stats.strength -= 2
+
+
+class EncumberedEffect(StatusEffect):
+    """Actor has disadvantage on movement and defense due to carrying too much."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            name="Encumbered",
+            duration=-1,
+            description="Disadvantage on movement and defense from carrying too much",
+            can_stack=False,
+        )
+
+    def apply_on_start(self, actor: Actor) -> None:
+        pass
+
+    def apply_turn_effect(self, actor: Actor) -> None:
+        pass
+
+    def remove_effect(self, actor: Actor) -> None:
+        pass
+
+    def apply_to_resolution(self, resolution_args: dict[str, bool]) -> dict[str, bool]:
+        """Apply disadvantage to movement and defense actions."""
+        stat_name = resolution_args.get("stat_name")
+        if stat_name == "agility":
+            resolution_args["has_disadvantage"] = True
+        return resolution_args

@@ -282,7 +282,7 @@ class Actor:
     def add_condition(self, condition: Condition) -> bool:
         if self.inventory is None:
             return False
-        added = self.inventory.add_to_inventory(condition)
+        added, _msg, _dropped = self.inventory.add_to_inventory(condition)
         if added:
             self._invalidate_effective_speed_cache()
         return added
@@ -364,7 +364,7 @@ class Character(Actor):
             game_world=game_world,
             stats=stats,
             health=HealthComponent(stats),
-            inventory=InventoryComponent(stats, num_attack_slots),
+            inventory=InventoryComponent(stats, num_attack_slots, actor=self),
             visual_effects=VisualEffectsComponent(),
             ai=ai,
             light_source=light_source,

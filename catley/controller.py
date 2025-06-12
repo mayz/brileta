@@ -43,10 +43,6 @@ class Controller:
         self.map_width = config.MAP_WIDTH
         self.map_height = config.MAP_HEIGHT
 
-        self.max_room_size = config.MAX_ROOM_SIZE
-        self.min_room_size = config.MIN_ROOM_SIZE
-        self.max_num_rooms = config.MAX_NUM_ROOMS
-
         # Field of view (FOV) configuration.
         self.fov_algorithm = config.FOV_ALGORITHM
         self.fov_light_walls = config.FOV_LIGHT_WALLS
@@ -54,15 +50,8 @@ class Controller:
 
         self.action_cost = config.ACTION_COST
 
+        # GameWorld now handles all its own setup internally
         self.gw = GameWorld(self.map_width, self.map_height)
-
-        rooms = self.gw.game_map.make_map(
-            self.max_num_rooms,
-            self.min_room_size,
-            self.max_room_size,
-        )
-        first_room = rooms[0]
-        self.gw.player.x, self.gw.player.y = first_room.center()
 
         self.turn_manager = TurnManager(self)
 
@@ -82,8 +71,6 @@ class Controller:
 
         # Create FrameManager to coordinate rendering
         self.frame_manager = FrameManager(self)
-
-        self.gw.populate_npcs(rooms)
 
         # Initial FOV computation.
         self.update_fov()

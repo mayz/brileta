@@ -1,6 +1,7 @@
 import random
+from typing import cast
 
-from catley import colors
+from catley import colors, config
 from catley.config import PLAYER_BASE_STRENGTH, PLAYER_BASE_TOUGHNESS
 from catley.environment.map import GameMap
 from catley.game import conditions
@@ -33,7 +34,7 @@ class GameWorld:
         self.lighting = LightingSystem()
         self.selected_actor: Actor | None = None
 
-        # Create player with a torch light source
+        # Create player at temporary position (0, 0)
         from catley.game.actors import PC
 
         player_light = LightSource.create_torch()
@@ -51,6 +52,7 @@ class GameWorld:
             # Other abilities will default to 0
         )
 
+        # Add starting equipment to player (NO sprained ankle yet)
         self.player.inventory.equip_to_slot(SNIPER_RIFLE_TYPE.create(), 1)
         self.player.inventory.add_to_inventory(COMBAT_KNIFE_TYPE.create())
 
@@ -60,18 +62,45 @@ class GameWorld:
         self.player.inventory.add_to_inventory(RIFLE_MAGAZINE_TYPE.create())
         self.player.inventory.add_to_inventory(RIFLE_MAGAZINE_TYPE.create())
 
-        self.player.inventory.add_to_inventory(
-            conditions.Injury(conditions.InjuryLocation.LEFT_LEG, "Sprained Ankle")
-        )
-
+        # Initialize actor storage systems
         self.actors: list[Actor] = []
         self.actor_spatial_index: SpatialIndex[Actor] = SpatialHashGrid(cell_size=16)
 
-        # The player must now be added via the new lifecycle method.
+        # Add player to world
         self.add_actor(self.player)
+
+        # Create and generate the map
         self.game_map = GameMap(map_width, map_height)
         self.game_map.gw = self
+
+        # Generate map layout and get rooms
+        rooms = self.game_map.make_map(
+            config.MAX_NUM_ROOMS,
+            config.MIN_ROOM_SIZE,
+            config.MAX_ROOM_SIZE,
+        )
+
+        # Position player at first room center
+        first_room = rooms[0]
+        self.player.x, self.player.y = first_room.center()
+
+        # Setup lighting
         self.lighting.set_game_map(self.game_map)
+
+        # NOW add sprained ankle at the correct position
+        sprained_ankle = conditions.Injury(
+            conditions.InjuryLocation.LEFT_LEG, "Sprained Ankle"
+        )
+        success, message, dropped_items = self.player.inventory.add_to_inventory(
+            sprained_ankle
+        )
+        print(f"Injury result: {message}")
+
+        # Spawn any dropped items at player's actual position
+        for item in dropped_items:
+            self._spawn_dropped_item(item, self.player.x, self.player.y)
+
+        self._populate_npcs(rooms)
 
     def add_actor(self, actor: Actor) -> None:
         """Adds an actor to the world and registers it with the spatial index."""
@@ -86,6 +115,25 @@ class GameWorld:
         except ValueError:
             # Actor was not in the list; ignore.
             pass
+
+    def _spawn_dropped_item(self, item: Item, x: int, y: int) -> None:
+        """Spawn a dropped item on the ground as an Actor."""
+        from catley.game.components import InventoryComponent, StatsComponent
+
+        ground_actor = Actor(
+            x=x,
+            y=y,
+            ch="%",
+            color=colors.WHITE,
+            name=f"Dropped {item.name}",
+            game_world=self,
+            blocks_movement=False,
+            inventory=InventoryComponent(StatsComponent()),
+        )
+        assert ground_actor.inventory is not None
+        inv_comp = cast(InventoryComponent, ground_actor.inventory)
+        inv_comp.add_to_inventory(item)
+        self.add_actor(ground_actor)
 
     def update_player_light(self) -> None:
         """Update player light source position"""
@@ -152,7 +200,7 @@ class GameWorld:
         """Check if there are any pickable items at the specified location."""
         return bool(self.get_pickable_items_at_location(x, y))
 
-    def populate_npcs(
+    def _populate_npcs(
         self, rooms: list, num_npcs: int = 10, max_attempts_per_npc: int = 10
     ) -> None:
         """Add NPCs to random locations in rooms."""
