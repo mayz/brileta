@@ -1,5 +1,19 @@
 #!/usr/bin/env python3
-"""Standalone benchmark for :class:`SpatialHashGrid` performance."""
+"""Comprehensive benchmark for :class:`SpatialHashGrid` performance.
+
+Runs both realistic game simulation and stress tests automatically.
+Provides detailed per-operation timing and recommendations for optimization.
+
+Usage:
+    # Full benchmark
+    python catley/scripts/benchmark_spatial.py
+
+    # Save baseline
+    python catley/scripts/benchmark_spatial.py --save before.json
+
+    # Compare with baseline
+    python catley/scripts/benchmark_spatial.py --compare before.json
+"""
 
 # ruff: noqa: E402  # Allow path setup before importing project modules
 
@@ -23,18 +37,30 @@ if str(project_root) not in sys.path:
 from catley.util.performance import (
     disable_performance_tracking,
     enable_performance_tracking,
+    get_performance_report,
     perf_tracker,
 )
-from catley.util.spatial import SpatialHashGrid
+
+from .instrumented_spatial import InstrumentedSpatialHashGrid as SpatialHashGrid
 
 
 @dataclass
 class MockActor:
-    """Simple object with ``x``/``y`` used for benchmarking."""
+    """Mock actor for benchmarking."""
 
     x: int
     y: int
     name: str = "test_actor"
+
+    def __hash__(self) -> int:
+        # Hash based on name since it should be unique per actor
+        return hash(self.name)
+
+    def __eq__(self, other) -> bool:
+        # Two actors are equal if they have the same name
+        if not isinstance(other, MockActor):
+            return False
+        return self.name == other.name
 
 
 class SpatialBenchmark:
@@ -49,6 +75,11 @@ class SpatialBenchmark:
         """Run a benchmark simulating typical frame usage."""
 
         print(f"Running basic benchmark: {num_actors} actors, {num_frames} frames...")
+
+        # Enable performance tracking for detailed per-operation timing
+        enable_performance_tracking()
+        perf_tracker.reset()
+
         grid = SpatialHashGrid(cell_size=16)
         actors: list[MockActor] = []
 
@@ -85,29 +116,64 @@ class SpatialBenchmark:
 
         total_time = time.perf_counter() - start_time
 
+        # Get detailed spatial operation breakdown
+        spatial_stats = perf_tracker.get_measurements_by_prefix("spatial_")
+        spatial_total_time = sum(stats.total_time for stats in spatial_stats.values())
+
         results = {
             "total_time": total_time,
             "avg_frame_time": total_time / num_frames,
             "fps": num_frames / total_time,
             "operations_per_second": (num_frames * 35) / total_time,
             "time_per_operation": total_time / (num_frames * 35),
+            "spatial_total_time": spatial_total_time,
+            "spatial_percentage": (spatial_total_time / total_time) * 100
+            if total_time > 0
+            else 0,
+            "spatial_breakdown": {
+                name: {
+                    "avg_time": stats.avg_time,
+                    "total_time": stats.total_time,
+                    "call_count": stats.call_count,
+                }
+                for name, stats in spatial_stats.items()
+            },
         }
 
         print(f"  Total time: {total_time:.3f}s")
         print(f"  Avg frame time: {results['avg_frame_time'] * 1000:.3f}ms")
         print(f"  Simulated FPS: {results['fps']:.1f}")
         print(f"  Operations/sec: {results['operations_per_second']:.0f}")
+        print(
+            f"  Spatial operations: {results['spatial_percentage']:.1f}% of total time"
+        )
 
+        print("  Detailed operation breakdown:")
+        for name, stats in spatial_stats.items():
+            print(
+                f"    {name}: {stats.avg_time * 1_000_000:.1f}"
+                f"µs avg, {stats.call_count} calls"
+            )
+
+        print("\n  Full Performance Report:")
+        print(get_performance_report(filter_prefix="spatial_"))
+
+        disable_performance_tracking()
         return results
 
     def run_stress_test(
         self, *, num_actors: int = 1000, num_operations: int = 10000
-    ) -> dict[str, float]:
+    ) -> dict[str, Any]:
         """Run a stress test with many actors and operations."""
 
         print(
             f"Running stress test: {num_actors} actors, {num_operations} operations..."
         )
+
+        # Enable performance tracking for stress test too
+        enable_performance_tracking()
+        perf_tracker.reset()
+
         grid = SpatialHashGrid(cell_size=16)
         actors: list[MockActor] = []
 
@@ -120,6 +186,7 @@ class SpatialBenchmark:
             actors.append(actor)
             grid.add(actor)
 
+        # Time different operation types separately (but still use instrumented grid)
         op_times: dict[str, float] = {}
 
         start_time = time.perf_counter()
@@ -145,62 +212,51 @@ class SpatialBenchmark:
 
         total_time = sum(op_times.values())
 
+        # Get instrumented breakdown
+        spatial_stats = perf_tracker.get_measurements_by_prefix("spatial_")
+
         results = {
             "total_time": total_time,
-            "operations_per_second": num_operations / total_time,
+            "operations_per_second": num_operations / total_time
+            if total_time > 0
+            else 0,
             "radius_query_time": op_times["radius_queries"],
             "bounds_query_time": op_times["bounds_queries"],
             "update_time": op_times["updates"],
-            "avg_radius_query": op_times["radius_queries"] / (num_operations // 3),
-            "avg_bounds_query": op_times["bounds_queries"] / (num_operations // 3),
-            "avg_update": op_times["updates"] / (num_operations // 3),
+            "avg_radius_query": op_times["radius_queries"] / (num_operations // 3)
+            if num_operations > 0
+            else 0,
+            "avg_bounds_query": op_times["bounds_queries"] / (num_operations // 3)
+            if num_operations > 0
+            else 0,
+            "avg_update": op_times["updates"] / (num_operations // 3)
+            if num_operations > 0
+            else 0,
+            "instrumented_breakdown": {
+                name: {
+                    "avg_time": stats.avg_time,
+                    "total_time": stats.total_time,
+                    "call_count": stats.call_count,
+                }
+                for name, stats in spatial_stats.items()
+            },
         }
 
         print(f"  Total time: {total_time:.3f}s")
         print(f"  Operations/sec: {results['operations_per_second']:.0f}")
-        print(
-            f"  Avg radius query: {results['avg_radius_query'] * 1_000_000:.1f}\u03bcs"
-        )
-        print(
-            f"  Avg bounds query: {results['avg_bounds_query'] * 1_000_000:.1f}\u03bcs"
-        )
-        print(f"  Avg update: {results['avg_update'] * 1_000_000:.1f}\u03bcs")
+        print(f"  Avg radius query: {results['avg_radius_query'] * 1_000_000:.1f}µs")
+        print(f"  Avg bounds query: {results['avg_bounds_query'] * 1_000_000:.1f}µs")
+        print(f"  Avg update: {results['avg_update'] * 1_000_000:.1f}µs")
 
-        return results
-
-    def run_detailed_profiling(self) -> dict[str, Any]:
-        """Run a smaller benchmark with performance tracking enabled."""
-
-        print("Running detailed profiling...")
-        perf_tracker.reset()
-        enable_performance_tracking()
-
-        try:
-            results: dict[str, Any] = self.run_basic_benchmark(
-                num_actors=200, num_frames=500
+        print("  Instrumented operation breakdown:")
+        for name, data in results["instrumented_breakdown"].items():
+            print(
+                f"    {name}: {data['avg_time'] * 1_000_000:.1f}"
+                f"µs avg, {data['call_count']} calls"
             )
-            detailed_results: dict[str, Any] = {}
-            for name, stats in perf_tracker.stats.items():
-                if "spatial" in name:
-                    detailed_results[name] = {
-                        "call_count": stats.call_count,
-                        "total_time": stats.total_time,
-                        "avg_time": stats.avg_time,
-                        "min_time": stats.min_time,
-                        "max_time": stats.max_time,
-                    }
-            results["detailed_profiling"] = detailed_results
 
-            print("  Detailed profiling results:")
-            for name, data in detailed_results.items():
-                print(
-                    f"    {name}: {data['call_count']} calls, "
-                    f"{data['avg_time'] * 1_000_000:.1f}\u03bcs avg, "
-                    f"{data['total_time'] * 1000:.1f}ms total"
-                )
-            return results
-        finally:
-            disable_performance_tracking()
+        disable_performance_tracking()
+        return results
 
     def save_results(self, filename: str) -> None:
         """Save collected benchmark results to ``filename``."""
@@ -241,36 +297,112 @@ class SpatialBenchmark:
                     print(f"  Speedup: {speedup:.2f}x faster")
                 else:
                     print(f"  Slowdown: {1 / speedup:.2f}x slower")
-                print(f"  Change: {percentage:+.1f}%\n")
+                print(f"  Change: {percentage:+.1f}%")
+
+                # Compare spatial breakdown if available
+                if (
+                    "spatial_breakdown" in current
+                    and "spatial_breakdown" in baseline[test_name]
+                ):
+                    print("  Spatial operation changes:")
+                    current_spatial = current["spatial_breakdown"]
+                    baseline_spatial = baseline[test_name]["spatial_breakdown"]
+
+                    for op_name in current_spatial:
+                        if op_name in baseline_spatial:
+                            curr_time = current_spatial[op_name]["avg_time"]
+                            base_time = baseline_spatial[op_name]["avg_time"]
+                            if base_time > 0:
+                                op_speedup = base_time / curr_time
+                                print(
+                                    f"    {op_name}: {op_speedup:.2f}x "
+                                    f"{'faster' if op_speedup > 1 else 'slower'}"
+                                )
+                print()
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(description="Spatial hash grid benchmark")
-    parser.add_argument("--stress", action="store_true", help="Run stress test")
-    parser.add_argument("--profile", action="store_true", help="Run detailed profiling")
+    parser = argparse.ArgumentParser(
+        description="Comprehensive spatial hash grid benchmark"
+    )
     parser.add_argument("--save", type=str, help="Save results to file")
     parser.add_argument("--compare", type=str, help="Compare with baseline file")
-    parser.add_argument("--actors", type=int, default=100, help="Number of actors")
-    parser.add_argument("--frames", type=int, default=1000, help="Number of frames")
+    parser.add_argument(
+        "--actors", type=int, default=100, help="Number of actors for basic test"
+    )
+    parser.add_argument(
+        "--frames", type=int, default=1000, help="Number of frames for basic test"
+    )
     args = parser.parse_args(argv)
 
     benchmark = SpatialBenchmark()
 
-    print("Spatial Hash Grid Benchmark")
-    print("=" * 50)
+    print("Comprehensive Spatial Hash Grid Benchmark")
+    print("=" * 55)
+    print("Running both realistic game simulation and stress tests...")
+    print()
 
+    # Always run basic benchmark (realistic game conditions)
+    print("=== REALISTIC GAME SIMULATION ===")
     benchmark.results["basic"] = benchmark.run_basic_benchmark(
         num_actors=args.actors, num_frames=args.frames
     )
     print()
 
-    if args.stress:
-        benchmark.results["stress"] = benchmark.run_stress_test()
-        print()
+    # Always run stress test (performance limits)
+    print("=== STRESS TEST (Performance Limits) ===")
+    benchmark.results["stress"] = benchmark.run_stress_test()
+    print()
 
-    if args.profile:
-        benchmark.results["profiling"] = benchmark.run_detailed_profiling()
-        print()
+    # Always show comprehensive summary
+    print("=== SUMMARY ===")
+    basic = benchmark.results["basic"]
+    stress = benchmark.results["stress"]
+
+    print("Realistic game performance:")
+    print(f"  Frame time: {basic['avg_frame_time'] * 1000:.3f}ms")
+    print(f"  Spatial overhead: {basic['spatial_percentage']:.1f}% of frame time")
+    print(f"  Max sustainable FPS: {basic['fps']:.0f}")
+
+    print("\nStress test performance:")
+    print(f"  Operations per second: {stress['operations_per_second']:.0f}")
+
+    # Safe handling of min/max operations
+    instrumented_breakdown = stress.get("instrumented_breakdown", {})
+    if instrumented_breakdown:
+        avg_times = [op["avg_time"] for op in instrumented_breakdown.values()]
+        if avg_times:  # Check if list is not empty
+            print(f"  Fastest operation: {min(avg_times) * 1_000_000:.1f}µs")
+            print(f"  Slowest operation: {max(avg_times) * 1_000_000:.1f}µs")
+    else:
+        print("  No instrumented operation data available")
+
+    # Recommendation based on results
+    spatial_percentage = basic.get("spatial_percentage", 0)
+    if spatial_percentage < 5:
+        print(
+            f"\n💡 RECOMMENDATION: Spatial operations use only "
+            f"{spatial_percentage:.1f}% of frame time."
+        )
+        print("   Cython optimization may not provide meaningful performance benefits.")
+        print("   Consider profiling other systems (lighting, particles) first.")
+    elif spatial_percentage < 15:
+        print(
+            f"\n💡 RECOMMENDATION: Spatial operations use "
+            f"{spatial_percentage:.1f}% of frame time."
+        )
+        print(
+            "   Cython could provide moderate benefits, "
+            "but may not be the highest priority."
+        )
+    else:
+        print(
+            f"\n💡 RECOMMENDATION: Spatial operations use "
+            f"{spatial_percentage:.1f}% of frame time."
+        )
+        print(
+            "   Cython optimization recommended - significant performance gains likely!"
+        )
 
     if args.save:
         benchmark.save_results(args.save)
@@ -278,7 +410,7 @@ def main(argv: list[str] | None = None) -> None:
     if args.compare:
         benchmark.compare_with_baseline(args.compare)
 
-    print("Benchmark complete!")
+    print("\nBenchmark complete!")
 
 
 if __name__ == "__main__":
