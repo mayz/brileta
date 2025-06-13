@@ -118,7 +118,6 @@ class Actor:
         inventory: InventoryComponent | None = None,
         visual_effects: VisualEffectsComponent | None = None,
         ai: AIComponent | None = None,
-        modifiers: ModifiersComponent | None = None,
         # World and appearance
         game_world: GameWorld | None = None,
         light_source: LightSource | None = None,
