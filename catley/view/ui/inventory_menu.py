@@ -9,7 +9,7 @@ from tcod.console import Console
 
 from catley import colors
 from catley.events import MessageEvent, publish_event
-from catley.game.conditions import Condition
+from catley.game.actors import Condition
 from catley.game.enums import ItemSize
 from catley.game.items.item_core import Item
 from catley.view.ui.overlays import Menu, MenuOption

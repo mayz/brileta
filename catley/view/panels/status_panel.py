@@ -5,8 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from catley import colors
-from catley.game.actors import Character
-from catley.game.conditions import Condition
+from catley.game.actors import Character, Condition
 from catley.view.render.renderer import Renderer
 from catley.view.render.text_backend import TextBackend
 

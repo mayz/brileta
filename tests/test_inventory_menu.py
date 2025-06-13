@@ -2,15 +2,15 @@ from types import SimpleNamespace
 from typing import cast
 
 from catley.controller import Controller
-from catley.game.components import InventoryComponent, StatsComponent
+from catley.game.actors import components
 from catley.game.items.item_types import COMBAT_KNIFE_TYPE, PISTOL_TYPE
 from catley.util.message_log import MessageLog
 from catley.view.ui.inventory_menu import InventoryMenu
 
 
 def test_inventory_menu_equips_to_active_slot() -> None:
-    stats = StatsComponent(strength=0)
-    inv = InventoryComponent(stats)
+    stats = components.StatsComponent(strength=0)
+    inv = components.InventoryComponent(stats)
     pistol = PISTOL_TYPE.create()
     knife = COMBAT_KNIFE_TYPE.create()
 

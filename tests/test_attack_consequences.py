@@ -8,8 +8,7 @@ from catley import colors
 from catley.controller import Controller
 from catley.events import MessageEvent, reset_event_bus_for_testing, subscribe_to_event
 from catley.game.actions.combat import AttackAction
-from catley.game.actors import Character
-from catley.game.ai import DispositionBasedAI
+from catley.game.actors import Character, ai
 from catley.game.enums import Disposition, OutcomeTier
 from catley.game.game_world import GameWorld
 from catley.game.items.item_core import Item
@@ -54,7 +53,7 @@ def make_world() -> tuple[
     attacker = Character(1, 1, "A", colors.WHITE, "Att", game_world=cast(GameWorld, gw))
     defender = Character(2, 1, "D", colors.WHITE, "Def", game_world=cast(GameWorld, gw))
     bystander = Character(3, 1, "B", colors.WHITE, "By", game_world=cast(GameWorld, gw))
-    bystander.ai = DispositionBasedAI(disposition=Disposition.WARY)
+    bystander.ai = ai.DispositionBasedAI(disposition=Disposition.WARY)
     gw.add_actor(attacker)
     gw.add_actor(defender)
     gw.add_actor(bystander)
@@ -103,6 +102,6 @@ def test_weapon_drop_and_noise_alert() -> None:
     assert any(
         it.name == cast(Item, action.weapon).name for it in ground_actor.inventory
     )
-    assert isinstance(bystander.ai, DispositionBasedAI)
-    b_ai = cast(DispositionBasedAI, bystander.ai)
+    assert isinstance(bystander.ai, ai.DispositionBasedAI)
+    b_ai = cast(ai.DispositionBasedAI, bystander.ai)
     assert b_ai.disposition == Disposition.HOSTILE

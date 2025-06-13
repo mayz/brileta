@@ -25,10 +25,6 @@ The component system allows actors to be as simple or complex as needed:
 
 This unified approach eliminates the need for separate actor hierarchies while
 maintaining flexibility through optional components.
-
-Use one of the factory functions below to create actors:
-    - make_pc()
-    - make_npc()
 """
 
 from __future__ import annotations
@@ -38,6 +34,9 @@ from typing import TYPE_CHECKING
 from catley import colors
 from catley.config import DEFAULT_ACTOR_SPEED
 from catley.constants.movement import MovementConstants
+from catley.game.actors import conditions
+from catley.game.enums import Disposition, InjuryLocation
+from catley.game.items.item_core import Item
 from catley.view.render.effects.lighting import LightSource
 
 from .ai import AIComponent, DispositionBasedAI
@@ -48,15 +47,12 @@ from .components import (
     VisualEffectsComponent,
 )
 from .conditions import Condition, Exhaustion, Injury
-from .enums import Disposition, InjuryLocation
-from .items.item_core import Item
 from .status_effects import StatusEffect
 
 if TYPE_CHECKING:
     from catley.controller import Controller
+    from catley.game.actions.base import GameAction
     from catley.game.game_world import GameWorld
-
-    from .actions.base import GameAction
 
 
 class Actor:
@@ -85,10 +81,6 @@ class Actor:
     The component system ensures that actors only pay the cost (memory, computation)
     for the capabilities they actually use, while maintaining a unified interface
     for game systems to interact with all objects in the world.
-
-    Use one of the factory functions below to create actors:
-        - make_pc()
-        - make_npc()
     """
 
     def __init__(
@@ -174,14 +166,12 @@ class Actor:
 
                 actual_damage = initial_hp - self.health.hp
                 if self.inventory is not None and actual_damage > 0:
-                    from catley.game.conditions import Rads
-
                     for _ in range(actual_damage):
                         if (
                             self.inventory.get_used_inventory_slots()
                             < self.inventory.total_inventory_slots
                         ):
-                            self.add_condition(Rads())
+                            self.add_condition(conditions.Rads())
                         else:
                             break
             else:

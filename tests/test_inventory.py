@@ -1,5 +1,4 @@
-from catley.game.components import InventoryComponent, StatsComponent
-from catley.game.conditions import Injury
+from catley.game.actors import components, conditions
 from catley.game.enums import InjuryLocation, ItemSize
 from catley.game.items.item_core import Item, ItemType
 
@@ -9,13 +8,13 @@ def make_item(name: str, size: ItemSize) -> Item:
 
 
 def test_get_used_inventory_slots_and_tiny_sharing():
-    stats = StatsComponent(strength=0)
-    inv = InventoryComponent(stats)
+    stats = components.StatsComponent(strength=0)
+    inv = components.InventoryComponent(stats)
     tiny1 = make_item("t1", ItemSize.TINY)
     tiny2 = make_item("t2", ItemSize.TINY)
     normal = make_item("n1", ItemSize.NORMAL)
     big = make_item("b1", ItemSize.BIG)
-    injury = Injury(InjuryLocation.LEFT_ARM, "Wound")
+    injury = conditions.Injury(InjuryLocation.LEFT_ARM, "Wound")
 
     inv.add_to_inventory(tiny1)
     assert inv.get_used_inventory_slots() == 1
@@ -30,8 +29,8 @@ def test_get_used_inventory_slots_and_tiny_sharing():
 
 
 def test_can_add_to_inventory_capacity_and_tiny():
-    stats = StatsComponent(strength=0)
-    inv = InventoryComponent(stats)
+    stats = components.StatsComponent(strength=0)
+    inv = components.InventoryComponent(stats)
     normal_items = [make_item(f"n{i}", ItemSize.NORMAL) for i in range(5)]
     for item in normal_items[:4]:
         success, _, _ = inv.add_to_inventory(item)

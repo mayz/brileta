@@ -10,8 +10,7 @@ from catley.environment.map import GameMap
 from catley.events import reset_event_bus_for_testing
 from catley.game.actions.area_effects import AreaEffectAction
 from catley.game.actions.combat import AttackAction
-from catley.game.actors import Character
-from catley.game.conditions import Rads
+from catley.game.actors import Character, conditions
 from catley.game.enums import OutcomeTier
 from catley.game.game_world import GameWorld
 from catley.game.items.item_types import DIRTY_BOMB_TYPE, RADIUM_GUN_TYPE
@@ -92,7 +91,7 @@ def test_radiation_damage_direct() -> None:
     actor.take_damage(3, damage_type="radiation")
     assert actor.health.hp == actor.health.max_hp - 3
     assert actor.health.ap == 5
-    assert len(actor.get_conditions_by_type(Rads)) == 3
+    assert len(actor.get_conditions_by_type(conditions.Rads)) == 3
 
 
 def test_radiation_weapon_attack() -> None:
@@ -107,7 +106,7 @@ def test_radiation_weapon_attack() -> None:
     assert damage == 2
     assert defender.health.hp == defender.health.max_hp - 2
     assert defender.health.ap == 4
-    assert len(defender.get_conditions_by_type(Rads)) == 2
+    assert len(defender.get_conditions_by_type(conditions.Rads)) == 2
 
 
 def test_dirty_bomb_area_effect() -> None:
@@ -124,4 +123,4 @@ def test_dirty_bomb_area_effect() -> None:
         hits = action._apply_damage(tiles, effect)
     assert hits == [(target, 4)]
     assert target.health.hp == target.health.max_hp - 4
-    assert len(target.get_conditions_by_type(Rads)) == 4
+    assert len(target.get_conditions_by_type(conditions.Rads)) == 4

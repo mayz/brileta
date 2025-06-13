@@ -3,11 +3,9 @@ from typing import cast
 
 from catley import colors
 from catley.controller import Controller
-from catley.game.actors import Character
-from catley.game.conditions import Exhaustion, Injury
+from catley.game.actors import Character, conditions, status_effects
 from catley.game.enums import InjuryLocation
 from catley.game.game_world import GameWorld
-from catley.game.status_effects import OffBalanceEffect
 from catley.view.panels.status_panel import StatusPanel
 from tests.helpers import DummyGameWorld
 
@@ -35,9 +33,9 @@ def test_no_conditions_or_effects() -> None:
 
 def test_condition_grouping_and_colors() -> None:
     controller, actor, panel = make_world()
-    actor.add_condition(Exhaustion())
-    actor.add_condition(Exhaustion())
-    injury = Injury(InjuryLocation.LEFT_LEG, "Sprained Ankle")
+    actor.add_condition(conditions.Exhaustion())
+    actor.add_condition(conditions.Exhaustion())
+    injury = conditions.Injury(InjuryLocation.LEFT_LEG, "Sprained Ankle")
     actor.add_condition(injury)
 
     lines = sorted(panel._get_condition_lines(actor))
@@ -47,7 +45,7 @@ def test_condition_grouping_and_colors() -> None:
 
 def test_status_effect_duration_format() -> None:
     controller, actor, panel = make_world()
-    effect = OffBalanceEffect()
+    effect = status_effects.OffBalanceEffect()
     effect.duration = 1
     actor.apply_status_effect(effect)
 

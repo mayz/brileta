@@ -5,9 +5,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from catley import colors
 from catley.events import MessageEvent, publish_event
-from catley.game.actors import Actor, Character
-from catley.game.ai import DispositionBasedAI
-from catley.game.components import InventoryComponent, StatsComponent
+from catley.game.actors import Actor, Character, ai, components
 from catley.game.enums import Disposition, OutcomeTier
 from catley.game.game_world import GameWorld
 
@@ -93,7 +91,7 @@ class ConsequenceHandler:
 
         ground_actor = self._spawn_dropped_weapon(actor, weapon)
         assert ground_actor.inventory is not None
-        inv_comp = cast(InventoryComponent, ground_actor.inventory)
+        inv_comp = cast(components.InventoryComponent, ground_actor.inventory)
         inv_comp.add_to_inventory(weapon)
         publish_event(MessageEvent(f"{actor.name} drops {weapon.name}!", colors.ORANGE))
 
@@ -107,7 +105,7 @@ class ConsequenceHandler:
             name=f"Dropped {weapon.name}",
             game_world=gw,
             blocks_movement=False,
-            inventory=InventoryComponent(StatsComponent()),
+            inventory=components.InventoryComponent(components.StatsComponent()),
         )
         gw.add_actor(ground_actor)
         return ground_actor
@@ -125,7 +123,7 @@ class ConsequenceHandler:
                 continue
             if not isinstance(actor, Character):
                 continue
-            if not isinstance(actor.ai, DispositionBasedAI):
+            if not isinstance(actor.ai, ai.DispositionBasedAI):
                 continue
             if actor.ai.disposition != Disposition.HOSTILE:
                 actor.ai.disposition = Disposition.HOSTILE
