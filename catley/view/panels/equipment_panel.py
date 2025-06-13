@@ -22,19 +22,15 @@ class EquipmentPanel(Panel):
         super().__init__(text_backend)
         self.controller = controller
 
-    def draw(self, renderer: Renderer) -> None:
-        if not self.visible:
-            return
+    def draw_content(self, renderer: Renderer) -> None:
+        assert self.text_backend is not None
 
-        if not self.text_backend:
-            return
-
-        y_start = self.y + 1
+        y_start = 1
         player = self.controller.gw.player
 
         # Add weapon switching hint
         hint_text = "Weapons: [1][2] to switch"
-        self.text_backend.draw_text(self.x, self.y, hint_text, colors.GREY)
+        self.text_backend.draw_text(0, 0, hint_text, colors.GREY)
 
         # Check for reload hint and display on separate line
         active_weapon = player.inventory.get_active_weapon()
@@ -46,8 +42,8 @@ class EquipmentPanel(Panel):
         ):
             reload_text = "[R] to reload"
             self.text_backend.draw_text(
-                self.x,
-                self.y + View.EQUIPMENT_RELOAD_HINT_OFFSET,
+                0,
+                View.EQUIPMENT_RELOAD_HINT_OFFSET,
                 reload_text,
                 colors.YELLOW,
             )
@@ -73,4 +69,4 @@ class EquipmentPanel(Panel):
             else:
                 item_text = f"{slot_name}: Empty"
                 color = colors.GREY
-            self.text_backend.draw_text(self.x, y_start + i, item_text, color)
+            self.text_backend.draw_text(0, y_start + i, item_text, color)

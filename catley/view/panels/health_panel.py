@@ -26,15 +26,11 @@ class HealthPanel(Panel):
         super().__init__(text_backend)
         self.controller = controller
 
-    def draw(self, renderer: Renderer) -> None:
-        if not self.visible:
-            return
-
-        if not self.text_backend:
-            return
+    def draw_content(self, renderer: Renderer) -> None:
+        assert self.text_backend is not None
 
         player = self.controller.gw.player
         text = f"HP: {player.health.hp}/{player.health.max_hp} AP: {player.health.ap}"
         # Right align with a one tile margin.
-        x_pos = renderer.root_console.width - len(text) - 1
-        self.text_backend.draw_text(x_pos, self.y, text, colors.WHITE)
+        x_pos = self.width - len(text) - 1
+        self.text_backend.draw_text(x_pos, 0, text, colors.WHITE)

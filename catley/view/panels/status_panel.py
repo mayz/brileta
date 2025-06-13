@@ -25,13 +25,10 @@ class StatusPanel(Panel):
         super().__init__(text_backend)
         self.controller = controller
 
-    def draw(self, renderer: Renderer) -> None:
+    def draw_content(self, renderer: Renderer) -> None:
         """Render the status panel if player has active effects."""
-        if not self.visible:
-            return
 
-        if not self.text_backend:
-            return
+        assert self.text_backend is not None
 
         player = self.controller.gw.player
         conditions = self._get_condition_lines(player)
@@ -40,23 +37,21 @@ class StatusPanel(Panel):
         if not conditions and not status_effects:
             return
 
-        current_y = self.y
+        current_y = 0
 
         if conditions:
-            self.text_backend.draw_text(self.x, current_y, "CONDITIONS:", colors.YELLOW)
+            self.text_backend.draw_text(0, current_y, "CONDITIONS:", colors.YELLOW)
             current_y += 1
             for text, color in conditions:
-                self.text_backend.draw_text(self.x, current_y, text, color)
+                self.text_backend.draw_text(0, current_y, text, color)
                 current_y += 1
             current_y += 1
 
         if status_effects:
-            self.text_backend.draw_text(
-                self.x, current_y, "STATUS EFFECTS:", colors.CYAN
-            )
+            self.text_backend.draw_text(0, current_y, "STATUS EFFECTS:", colors.CYAN)
             current_y += 1
             for text in status_effects:
-                self.text_backend.draw_text(self.x, current_y, text, colors.LIGHT_GREY)
+                self.text_backend.draw_text(0, current_y, text, colors.LIGHT_GREY)
                 current_y += 1
 
     def _get_condition_lines(self, player: Character) -> list[tuple[str, colors.Color]]:
