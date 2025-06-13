@@ -21,9 +21,7 @@ class StatusPanel(TextPanel):
     def __init__(self, controller: Controller, renderer: Renderer) -> None:
         super().__init__()
         self.controller = controller
-        self.text_backend = TCODTextBackend(
-            renderer.root_console, renderer.tile_dimensions
-        )
+        self.text_backend = TCODTextBackend(renderer)
 
     def needs_redraw(self, renderer: Renderer) -> bool:
         _ = renderer

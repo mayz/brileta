@@ -29,9 +29,7 @@ class FPSPanel(TextPanel):
         self.update_interval = update_interval
         self.last_update = clock.last_time
         self.display_string = "FPS: 0.0"
-        self.text_backend = TCODTextBackend(
-            renderer.root_console, renderer.tile_dimensions
-        )
+        self.text_backend = TCODTextBackend(renderer)
 
     def needs_redraw(self, renderer: Renderer) -> bool:
         _ = renderer
