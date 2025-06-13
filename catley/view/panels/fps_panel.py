@@ -30,13 +30,9 @@ class FPSPanel(Panel):
         self.last_update = clock.last_time
         self.display_string = "FPS: 0.0"
 
-    def draw(self, renderer: Renderer) -> None:
+    def draw_content(self, renderer: Renderer) -> None:
         """Draw the current FPS in the top-right corner."""
-        if not self.visible:
-            return
-
-        if not self.text_backend:
-            return
+        assert self.text_backend is not None
 
         current_time = self.clock.last_time
         if current_time - self.last_update >= self.update_interval:
@@ -49,8 +45,12 @@ class FPSPanel(Panel):
                 self.display_string = f"FPS: {self.clock.mean_fps:.1f}"
             self.last_update = current_time
 
+        # Right-align within panel bounds
         fps_width = len(self.display_string)
-        x_position = max(0, renderer.root_console.width - fps_width - 1)
+        x_position = max(0, self.width - fps_width)
         self.text_backend.draw_text(
-            x_position, self.y, self.display_string, colors.YELLOW
+            x_position,
+            0,
+            self.display_string,
+            colors.YELLOW,
         )

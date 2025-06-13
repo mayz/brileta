@@ -15,7 +15,7 @@ class ConcreteTestPanel(Panel):
         super().__init__()
         self.draw_called = False
 
-    def draw(self, renderer):
+    def draw_content(self, renderer):
         self.draw_called = True
 
 

@@ -20,13 +20,9 @@ class HelpTextPanel(Panel):
         super().__init__(text_backend)
         self.controller = controller
 
-    def draw(self, renderer: Renderer) -> None:
+    def draw_content(self, renderer: Renderer) -> None:
         """Render a short string with helpful key bindings."""
-        if not self.visible:
-            return
-
-        if not self.text_backend:
-            return
+        assert self.text_backend is not None
 
         help_items = ["?: Help", "I: Inventory", "Space: Actions"]
 
@@ -35,4 +31,4 @@ class HelpTextPanel(Panel):
             help_items.append("G: Get items")
 
         text = " | ".join(help_items)
-        self.text_backend.draw_text(self.x, self.y, text, colors.GREY)
+        self.text_backend.draw_text(0, 0, text, colors.GREY)

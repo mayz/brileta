@@ -44,6 +44,10 @@ class MessageLogPanel(Panel):
         self.panel_width_px = self.width * self.tile_dimensions[0]
         self.panel_height_px = self.height * self.tile_dimensions[1]
 
+    def draw_content(self, renderer: Renderer) -> None:  # pragma: no cover - unused
+        """Compatibility stub. Actual drawing handled in ``draw``."""
+        _ = renderer
+
     def draw(self, renderer: Renderer) -> None:
         if not self.visible:
             return
@@ -104,19 +108,3 @@ class MessageLogPanel(Panel):
         if texture is not None:
             self._cached_texture = texture
             self._render_revision = self.message_log.revision
-
-    def present(self, renderer: Renderer) -> None:
-        if not self.visible or self._cached_texture is None:
-            return
-
-        # Use current tile dimensions from renderer instead of cached ones
-        current_tile_dimensions = renderer.tile_dimensions
-
-        # Calculate destination rectangle
-        dest_x = self.x * current_tile_dimensions[0]
-        dest_y = self.y * current_tile_dimensions[1]
-        dest_width = self.width * current_tile_dimensions[0]
-        dest_height = self.height * current_tile_dimensions[1]
-
-        dest_rect = (dest_x, dest_y, dest_width, dest_height)
-        renderer.sdl_renderer.copy(self._cached_texture, dest=dest_rect)

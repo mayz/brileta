@@ -19,6 +19,10 @@ from catley.constants.view import ViewConstants as View
 class TextBackend(ABC):
     """Abstract interface for text rendering backends."""
 
+    def __init__(self) -> None:
+        self.drawing_offset_x = 0
+        self.drawing_offset_y = 0
+
     @abstractmethod
     def draw_text(
         self,
@@ -67,6 +71,11 @@ class TextBackend(ABC):
         """Configure SDL renderer. Default implementation does nothing."""
         _ = sdl_renderer
 
+    def configure_drawing_offset(self, offset_x: int, offset_y: int) -> None:
+        """Configure coordinate translation for backends."""
+        self.drawing_offset_x = offset_x
+        self.drawing_offset_y = offset_y
+
     def get_font_metrics(self) -> tuple[int, int]:
         """Return ``(ascent, descent)``. Default implementation returns ``(0, 0)``."""
         return (0, 0)
@@ -76,6 +85,7 @@ class TCODTextBackend(TextBackend):
     """Text backend that draws directly to a tcod :class:`Console`."""
 
     def __init__(self, console: Console, tile_dimensions: tuple[int, int]) -> None:
+        super().__init__()
         self.console = console
         self.tile_width, self.tile_height = tile_dimensions
 
@@ -88,7 +98,9 @@ class TCODTextBackend(TextBackend):
         font_size: int | None = None,
     ) -> None:
         _ = font_size
-        self.console.print(x=x, y=y, text=text, fg=color)
+        absolute_x = x + self.drawing_offset_x
+        absolute_y = y + self.drawing_offset_y
+        self.console.print(x=absolute_x, y=absolute_y, text=text, fg=color)
 
     def get_text_metrics(
         self, text: str, font_size: int | None = None
@@ -135,6 +147,7 @@ class PillowTextBackend(TextBackend):
         tile_height: int,
         sdl_renderer,
     ) -> None:
+        super().__init__()
         self.font_path = Path(font_path)
         self.base_tile_height = View.MESSAGE_LOG_MIN_FONT_SIZE
         self.tile_height = self.base_tile_height
