@@ -14,7 +14,11 @@ from catley.game.items.capabilities import (
     RangedAttack,
     RangedAttackSpec,
 )
-from catley.game.items.properties import StatusProperty, WeaponProperty
+from catley.game.items.properties import (
+    StatusProperty,
+    TacticalProperty,
+    WeaponProperty,
+)
 
 AttackHandler = MeleeAttack | RangedAttack | AreaEffect
 
@@ -170,23 +174,18 @@ class Item:
             for handler in attack_handlers
         )
 
-    def get_weapon_properties(self) -> set[WeaponProperty]:
-        """
-        Get all weapon properties from all attack modes.
-
-        Returns:
-            Set of all WeaponProperty enums found across all attack modes
-        """
-        all_properties = set()
+    def get_weapon_properties(self) -> set[WeaponProperty | TacticalProperty]:
+        """Return weapon and tactical properties across all attack modes."""
+        all_properties: set[WeaponProperty | TacticalProperty] = set()
 
         for attack_handler in [self.melee_attack, self.ranged_attack, self.area_effect]:
             if attack_handler:
-                weapon_props = {
+                relevant_props = {
                     prop
                     for prop in attack_handler.properties
-                    if isinstance(prop, WeaponProperty)
+                    if isinstance(prop, WeaponProperty | TacticalProperty)
                 }
-                all_properties.update(weapon_props)
+                all_properties.update(relevant_props)
 
         return all_properties
 

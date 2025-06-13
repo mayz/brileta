@@ -32,7 +32,10 @@ def test_item_with_multiple_property_types() -> None:
         ),
     )
     item = Item(mixed_type)
-    assert item.get_weapon_properties() == {WeaponProperty.AWKWARD}
+    assert item.get_weapon_properties() == {
+        WeaponProperty.AWKWARD,
+        TacticalProperty.CHEMICAL,
+    }
     assert item.get_status_effects() == {StatusProperty.STUNNING}
 
 

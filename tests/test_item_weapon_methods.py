@@ -148,6 +148,7 @@ def test_get_weapon_properties() -> None:
         WeaponProperty.THROWN,
         WeaponProperty.IMPROVISED,
         WeaponProperty.CONTINUOUS,
+        TacticalProperty.SPRAY,
     } <= props
 
 

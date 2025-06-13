@@ -151,7 +151,7 @@ class Actor:
         if self.light_source:
             self.light_source.position = (self.x, self.y)
 
-    def take_damage(self, amount: int) -> None:
+    def take_damage(self, amount: int, damage_type: str = "normal") -> None:
         """Handle damage to the actor.
 
         That includes:
@@ -161,14 +161,32 @@ class Actor:
 
         Args:
             amount: Amount of damage to take
+            damage_type: "normal" or "radiation"
         """
         # Visual feedback.
         if self.visual_effects:
             self.visual_effects.flash(colors.RED)
 
         if self.health:
-            # Delegate health math to the health component.
-            self.health.take_damage(amount)
+            if damage_type == "radiation":
+                initial_hp = self.health.hp
+                self.health.take_damage(amount, damage_type="radiation")
+
+                actual_damage = initial_hp - self.health.hp
+                if self.inventory is not None and actual_damage > 0:
+                    from catley.game.conditions import Rads
+
+                    for _ in range(actual_damage):
+                        if (
+                            self.inventory.get_used_inventory_slots()
+                            < self.inventory.total_inventory_slots
+                        ):
+                            self.add_condition(Rads())
+                        else:
+                            break
+            else:
+                # Delegate health math to the health component.
+                self.health.take_damage(amount)
 
             if not self.health.is_alive():
                 # Handle death consequences.

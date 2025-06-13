@@ -176,6 +176,36 @@ FLAMETHROWER_TYPE = ItemType(
     ),
 )
 
+RADIUM_GUN_TYPE = ItemType(
+    name="Radium Gun",
+    description="Weapon that fires radioactive projectiles",
+    size=ItemSize.BIG,
+    ranged_attack=RangedAttackSpec(
+        damage_die="d8",
+        ammo_type="radium",
+        max_ammo=3,
+        optimal_range=10,
+        max_range=20,
+        properties={WeaponProperty.PREFERRED, TacticalProperty.RADIATION},
+    ),
+)
+
+DIRTY_BOMB_TYPE = ItemType(
+    name="Dirty Bomb",
+    description="Explosive device that spreads radiation",
+    size=ItemSize.TINY,
+    area_effect=AreaEffectSpec(
+        damage_die="d6",
+        area_type=AreaType.CIRCLE,
+        size=4,
+        properties={TacticalProperty.EXPLOSIVE, TacticalProperty.RADIATION},
+        damage_falloff=True,
+        requires_line_of_sight=False,
+        penetrates_walls=False,
+        friendly_fire=True,
+    ),
+)
+
 PISTOL_MAGAZINE_TYPE = ItemType(
     name="Pistol Ammo",
     description="Pistol ammo magazine",
