@@ -54,8 +54,8 @@ class D20Resolver(Resolver):
         # Combine base modifiers with any provided status modifiers
         combined = {**self.status_modifiers, **(status_modifiers or {})}
 
-        # Check for exhaustion disadvantage
-        if actor.has_exhaustion_disadvantage():
+        # Check for exhaustion disadvantage through the modifiers facade
+        if actor.modifiers.has_disadvantage_from_exhaustion():
             combined["has_disadvantage"] = True
 
         has_advantage = self.has_advantage or combined.get("has_advantage", False)
