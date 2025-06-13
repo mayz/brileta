@@ -28,7 +28,7 @@ class Panel(abc.ABC):
     Two phases: draw() for console rendering, present() for SDL effects.
     """
 
-    def __init__(self, text_backend: TextBackend | None = None) -> None:
+    def __init__(self) -> None:
         """Initialize panel. Call resize() before drawing."""
         self.x = 0
         self.y = 0
@@ -36,25 +36,13 @@ class Panel(abc.ABC):
         self.height = 0
         self.visible = True
         self.tile_dimensions: tuple[int, int] = (0, 0)
-        self.text_backend = text_backend
         # Cache the most recently rendered texture if the backend provides one.
         self._cached_texture: Any | None = None
 
     @abc.abstractmethod
-    def draw_content(self, renderer: Renderer) -> None:
-        """Draw panel content. Subclasses implement this instead of ``draw``."""
-        pass
-
     def draw(self, renderer: Renderer) -> None:
-        """Handle text backend lifecycle and call ``draw_content``."""
-        if not self.visible or not self.text_backend:
-            return
-
-        self.text_backend.begin_frame()
-        self.draw_content(renderer)
-        texture = self.text_backend.end_frame()
-        if texture is not None:
-            self._cached_texture = texture
+        """Draw panel content. Subclasses implement this."""
+        pass
 
     def present(self, renderer: Renderer) -> None:
         """Handle texture presentation for backends that produce textures."""
@@ -72,19 +60,11 @@ class Panel(abc.ABC):
             renderer.sdl_renderer.copy(self._cached_texture, dest=dest_rect)
 
     def resize(self, x1: int, y1: int, x2: int, y2: int) -> None:
-        """Set panel screen boundaries. Called by FrameManager."""
+        """Set panel screen boundaries."""
         self.x = x1
         self.y = y1
         self.width = x2 - x1
         self.height = y2 - y1
-
-        # Configure text backend with new dimensions if it exists
-        if self.text_backend and self.tile_dimensions != (0, 0):
-            tile_width, tile_height = self.tile_dimensions
-            pixel_width = self.width * tile_width
-            pixel_height = self.height * tile_height
-            self.text_backend.configure_dimensions(pixel_width, pixel_height)
-            self.text_backend.configure_drawing_offset(self.x, self.y)
 
     def show(self) -> None:
         """Make panel visible in rendering pipeline."""
@@ -93,3 +73,42 @@ class Panel(abc.ABC):
     def hide(self) -> None:
         """Skip panel during rendering."""
         self.visible = False
+
+
+class TextPanel(Panel):
+    """An abstract panel that is guaranteed to have a TextBackend."""
+
+    text_backend: TextBackend
+
+    @abc.abstractmethod
+    def needs_redraw(self, renderer: Renderer) -> bool:
+        """Return ``True`` if the panel needs to regenerate its texture."""
+        pass
+
+    @abc.abstractmethod
+    def draw_content(self, renderer: Renderer) -> None:
+        """Subclasses implement the actual drawing commands."""
+        pass
+
+    def draw(self, renderer: Renderer) -> None:
+        """Orchestrate rendering with caching support."""
+        if not self.visible:
+            return
+
+        if self.needs_redraw(renderer):
+            self.text_backend.begin_frame()
+            self.draw_content(renderer)
+            texture = self.text_backend.end_frame()
+            if texture is not None:
+                self._cached_texture = texture
+
+    def resize(self, x1: int, y1: int, x2: int, y2: int) -> None:
+        """Resize and configure the text backend."""
+        super().resize(x1, y1, x2, y2)
+
+        if self.tile_dimensions != (0, 0):
+            tile_width, tile_height = self.tile_dimensions
+            pixel_width = self.width * tile_width
+            pixel_height = self.height * tile_height
+            self.text_backend.configure_dimensions(pixel_width, pixel_height)
+            self.text_backend.configure_drawing_offset(self.x, self.y)

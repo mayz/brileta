@@ -7,7 +7,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from catley import config
 from catley.config import (
     HELP_HEIGHT,
     SHOW_FPS,
@@ -29,7 +28,6 @@ from .panels.world_panel import WorldPanel
 from .render.effects.effects import EffectContext
 from .render.effects.screen_shake import ScreenShake
 from .render.renderer import Renderer
-from .render.text_backend import PillowTextBackend, TCODTextBackend
 from .ui.cursor_manager import CursorManager
 
 if TYPE_CHECKING:
@@ -58,46 +56,27 @@ class FrameManager:
 
     def _setup_game_ui(self) -> None:
         """Configure and position panels for the main game interface."""
-        # Create text backends
-        help_backend = TCODTextBackend(
-            self.renderer.root_console, self.renderer.tile_dimensions
-        )
-        status_backend = TCODTextBackend(
-            self.renderer.root_console, self.renderer.tile_dimensions
-        )
-        health_backend = TCODTextBackend(
-            self.renderer.root_console, self.renderer.tile_dimensions
-        )
-        equipment_backend = TCODTextBackend(
-            self.renderer.root_console, self.renderer.tile_dimensions
-        )
-        fps_backend = TCODTextBackend(
-            self.renderer.root_console, self.renderer.tile_dimensions
-        )
-
-        message_log_backend = PillowTextBackend(
-            config.MESSAGE_LOG_FONT_PATH,
-            self.renderer.tile_dimensions[1],
-            self.renderer.sdl_renderer,
-        )
-
         # Create panels (dimensions will be set via resize() calls below)
-        self.fps_panel = FPSPanel(self.controller.clock, text_backend=fps_backend)
+        self.fps_panel = FPSPanel(
+            self.controller.clock,
+            renderer=self.renderer,
+        )
         self.fps_panel.visible = SHOW_FPS
 
-        self.help_text_panel = HelpTextPanel(self.controller, text_backend=help_backend)
+        self.help_text_panel = HelpTextPanel(self.controller, renderer=self.renderer)
 
         self.world_panel = WorldPanel(self.controller, self.screen_shake)
         self.message_log_panel = MessageLogPanel(
             message_log=self.controller.message_log,
-            text_backend=message_log_backend,
+            renderer=self.renderer,
         )
         self.equipment_panel = EquipmentPanel(
-            self.controller, text_backend=equipment_backend
+            self.controller,
+            renderer=self.renderer,
         )
 
-        self.health_panel = HealthPanel(self.controller, text_backend=health_backend)
-        self.status_panel = StatusPanel(self.controller, text_backend=status_backend)
+        self.health_panel = HealthPanel(self.controller, renderer=self.renderer)
+        self.status_panel = StatusPanel(self.controller, renderer=self.renderer)
 
         self.panels: list[Panel] = [
             self.help_text_panel,

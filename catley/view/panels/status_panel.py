@@ -7,27 +7,30 @@ from typing import TYPE_CHECKING
 from catley import colors
 from catley.game.actors import Character, Condition
 from catley.view.render.renderer import Renderer
-from catley.view.render.text_backend import TextBackend
+from catley.view.render.text_backend import TCODTextBackend
 
-from .panel import Panel
+from .panel import TextPanel
 
 if TYPE_CHECKING:
     from catley.controller import Controller
 
 
-class StatusPanel(Panel):
+class StatusPanel(TextPanel):
     """Panel that displays active conditions and status effects."""
 
-    def __init__(
-        self, controller: Controller, *, text_backend: TextBackend | None = None
-    ) -> None:
-        super().__init__(text_backend)
+    def __init__(self, controller: Controller, renderer: Renderer) -> None:
+        super().__init__()
         self.controller = controller
+        self.text_backend = TCODTextBackend(
+            renderer.root_console, renderer.tile_dimensions
+        )
+
+    def needs_redraw(self, renderer: Renderer) -> bool:
+        _ = renderer
+        return True
 
     def draw_content(self, renderer: Renderer) -> None:
         """Render the status panel if player has active effects."""
-
-        assert self.text_backend is not None
 
         player = self.controller.gw.player
         conditions = self._get_condition_lines(player)

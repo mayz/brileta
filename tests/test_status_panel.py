@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from typing import cast
+from unittest.mock import MagicMock
 
 from catley import colors
 from catley.controller import Controller
@@ -7,6 +8,7 @@ from catley.game.actors import Character, conditions, status_effects
 from catley.game.enums import InjuryLocation
 from catley.game.game_world import GameWorld
 from catley.view.panels.status_panel import StatusPanel
+from catley.view.render.renderer import Renderer
 from tests.helpers import DummyGameWorld
 
 
@@ -21,7 +23,10 @@ def make_world() -> tuple[DummyController, Character, StatusPanel]:
     gw.player = actor
     gw.add_actor(actor)
     controller = DummyController(gw=gw)
-    panel = StatusPanel(cast(Controller, controller))
+    renderer = MagicMock(spec=Renderer)
+    renderer.root_console = MagicMock()
+    renderer.tile_dimensions = (8, 16)
+    panel = StatusPanel(cast(Controller, controller), renderer=renderer)
     return controller, actor, panel
 
 

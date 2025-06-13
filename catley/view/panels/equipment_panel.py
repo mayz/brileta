@@ -5,26 +5,29 @@ from typing import TYPE_CHECKING
 from catley import colors
 from catley.constants.view import ViewConstants as View
 from catley.view.render.renderer import Renderer
-from catley.view.render.text_backend import TextBackend
+from catley.view.render.text_backend import TCODTextBackend
 
-from .panel import Panel
+from .panel import TextPanel
 
 if TYPE_CHECKING:
     from catley.controller import Controller
 
 
-class EquipmentPanel(Panel):
+class EquipmentPanel(TextPanel):
     """Displays the player's equipped weapons and ammo counts."""
 
-    def __init__(
-        self, controller: Controller, *, text_backend: TextBackend | None = None
-    ) -> None:
-        super().__init__(text_backend)
+    def __init__(self, controller: Controller, renderer: Renderer) -> None:
+        super().__init__()
         self.controller = controller
+        self.text_backend = TCODTextBackend(
+            renderer.root_console, renderer.tile_dimensions
+        )
+
+    def needs_redraw(self, renderer: Renderer) -> bool:
+        _ = renderer
+        return True
 
     def draw_content(self, renderer: Renderer) -> None:
-        assert self.text_backend is not None
-
         y_start = 1
         player = self.controller.gw.player
 
