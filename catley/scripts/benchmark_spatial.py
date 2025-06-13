@@ -379,30 +379,10 @@ def main(argv: list[str] | None = None) -> None:
 
     # Recommendation based on results
     spatial_percentage = basic.get("spatial_percentage", 0)
-    if spatial_percentage < 5:
-        print(
-            f"\n💡 RECOMMENDATION: Spatial operations use only "
-            f"{spatial_percentage:.1f}% of frame time."
-        )
-        print("   Cython optimization may not provide meaningful performance benefits.")
-        print("   Consider profiling other systems (lighting, particles) first.")
-    elif spatial_percentage < 15:
-        print(
-            f"\n💡 RECOMMENDATION: Spatial operations use "
-            f"{spatial_percentage:.1f}% of frame time."
-        )
-        print(
-            "   Cython could provide moderate benefits, "
-            "but may not be the highest priority."
-        )
-    else:
-        print(
-            f"\n💡 RECOMMENDATION: Spatial operations use "
-            f"{spatial_percentage:.1f}% of frame time."
-        )
-        print(
-            "   Cython optimization recommended - significant performance gains likely!"
-        )
+    print(
+        f"\n💡 RECOMMENDATION: Spatial operations use only "
+        f"{spatial_percentage:.1f}% of frame time."
+    )
 
     if args.save:
         benchmark.save_results(args.save)
