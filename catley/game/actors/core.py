@@ -49,8 +49,7 @@ from .components import (
     StatusEffectsComponent,
     VisualEffectsComponent,
 )
-from .conditions import Condition, Injury
-from .status_effects import StatusEffect
+from .conditions import Injury
 
 if TYPE_CHECKING:
     from catley.controller import Controller
@@ -140,7 +139,7 @@ class Actor:
         self.inventory = inventory
 
         # === Dependent & Facade Components ===
-        self.status_effects = StatusEffectsComponent()
+        self.status_effects = StatusEffectsComponent(self)
         self.conditions = (
             ConditionsComponent(self.inventory) if self.inventory is not None else None
         )
@@ -202,9 +201,10 @@ class Actor:
                             self.inventory.get_used_inventory_slots()
                             < self.inventory.total_inventory_slots
                         ):
-                            self.add_condition(conditions.Rads())
-                        else:
-                            break
+                            if self.conditions is not None:
+                                self.conditions.add_condition(conditions.Rads())
+                            else:
+                                break
             else:
                 # Delegate health math to the health component.
                 self.health.take_damage(amount)
@@ -227,10 +227,10 @@ class Actor:
         triggered here in the future.
         """
         # Delegate status effect updates to the component
-        self.status_effects.update_turn(self)
+        self.status_effects.update_turn()
 
         # Delegate condition turn effects to the component
-        if self.conditions:
+        if self.conditions is not None:
             self.conditions.apply_turn_effects(self)
 
     def get_next_action(self, controller: Controller) -> GameAction | None:
@@ -238,59 +238,6 @@ class Actor:
         Determines the next action for this actor.
         """
         return None
-
-    # === Status Effect Management ===
-
-    def apply_status_effect(self, effect: StatusEffect) -> None:
-        """Apply a status effect to this actor."""
-        self.status_effects.apply_status_effect(effect)
-        effect.apply_on_start(self)
-
-    def remove_status_effect(self, effect_type: type[StatusEffect]) -> None:
-        """Remove all status effects of the given type."""
-        removed = self.status_effects.remove_status_effect(effect_type)
-        for effect in removed:
-            effect.remove_effect(self)
-
-    def has_status_effect(self, effect_type: type[StatusEffect]) -> bool:
-        """Check if actor has any status effect of the given type."""
-        return self.status_effects.has_status_effect(effect_type)
-
-    def get_status_effects_by_type(
-        self, effect_type: type[StatusEffect]
-    ) -> list[StatusEffect]:
-        """Get all status effects of the given type."""
-        return self.status_effects.get_status_effects_by_type(effect_type)
-
-    # === Condition Management ===
-
-    def has_condition(self, condition_type: type[Condition]) -> bool:
-        if self.conditions is None:
-            return False
-        return self.conditions.has_condition(condition_type)
-
-    def get_conditions(self) -> list[Condition]:
-        if self.conditions is None:
-            return []
-        return self.conditions.get_all_conditions()
-
-    def get_conditions_by_type(
-        self, condition_type: type[Condition]
-    ) -> list[Condition]:
-        if self.conditions is None:
-            return []
-        return self.conditions.get_conditions_by_type(condition_type)
-
-    def add_condition(self, condition: Condition) -> bool:
-        if self.conditions is None:
-            return False
-        added, _msg, _dropped = self.conditions.add_condition(condition)
-        return added
-
-    def remove_condition(self, condition: Condition) -> bool:
-        if self.conditions is None:
-            return False
-        return self.conditions.remove_condition(condition)
 
 
 class Character(Actor):
@@ -384,9 +331,13 @@ class Character(Actor):
         """Return ``False`` if both arms are injured."""
         arm_injuries = [
             c
-            for c in self.get_conditions_by_type(Injury)
+            for c in self.conditions.get_conditions_by_type(Injury)
             if isinstance(c, Injury)
-            and c.injury_location in {InjuryLocation.LEFT_ARM, InjuryLocation.RIGHT_ARM}
+            and c.injury_location
+            in {
+                InjuryLocation.LEFT_ARM,
+                InjuryLocation.RIGHT_ARM,
+            }
         ]
         return len({c.injury_location for c in arm_injuries}) < 2
 

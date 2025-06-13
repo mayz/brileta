@@ -62,7 +62,7 @@ def test_offbalance_gives_disadvantage() -> None:
     controller, attacker, defender, action = make_combat_world()
     weapon = cast(Item, action.weapon)
     attack = cast(Attack, weapon.melee_attack)
-    attacker.apply_status_effect(status_effects.OffBalanceEffect())
+    attacker.status_effects.apply_status_effect(status_effects.OffBalanceEffect())
     with patch("random.randint", side_effect=[2, 18]):
         result = cast(
             D20ResolutionResult,
@@ -76,7 +76,7 @@ def test_focused_gives_advantage() -> None:
     controller, attacker, defender, action = make_combat_world()
     weapon = cast(Item, action.weapon)
     attack = cast(Attack, weapon.melee_attack)
-    attacker.apply_status_effect(status_effects.FocusedEffect())
+    attacker.status_effects.apply_status_effect(status_effects.FocusedEffect())
     with patch("random.randint", side_effect=[5, 17]):
         result = cast(
             D20ResolutionResult,
@@ -90,7 +90,7 @@ def test_modifier_combination_cancels() -> None:
     controller, attacker, defender, action = make_combat_world()
     weapon = cast(Item, action.weapon)
     attack = cast(Attack, weapon.melee_attack)
-    attacker.apply_status_effect(status_effects.FocusedEffect())
+    attacker.status_effects.apply_status_effect(status_effects.FocusedEffect())
     with patch("random.randint", return_value=11):
         result = cast(
             D20ResolutionResult,
@@ -109,7 +109,9 @@ def test_strength_boost_applies_to_roll() -> None:
     controller, attacker, defender, action = make_combat_world()
     weapon = cast(Item, action.weapon)
     attack = cast(Attack, weapon.melee_attack)
-    attacker.apply_status_effect(status_effects.StrengthBoostEffect(duration=1))
+    attacker.status_effects.apply_status_effect(
+        status_effects.StrengthBoostEffect(duration=1)
+    )
     with patch("random.randint", return_value=10):
         result = cast(
             D20ResolutionResult,
@@ -126,11 +128,11 @@ def test_tripped_skips_turn() -> None:
     controller = DummyController(gw=gw)
     tm = TurnManager(cast(Controller, controller))
 
-    player.apply_status_effect(status_effects.TrippedEffect())
+    player.status_effects.apply_status_effect(status_effects.TrippedEffect())
     tm.queue_action(
         AttackAction(cast(Controller, controller), player, player, FISTS_TYPE.create())
     )
     tm.process_unified_round()
     assert not controller.update_fov_called
     assert player.energy.accumulated_energy == player.energy.speed
-    assert not player.has_status_effect(status_effects.TrippedEffect)
+    assert not player.status_effects.has_status_effect(status_effects.TrippedEffect)

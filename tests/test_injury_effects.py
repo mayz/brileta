@@ -76,7 +76,10 @@ def test_arm_injury_gives_attack_disadvantage() -> None:
     weapon = cast(Item, action.weapon)
     attack = cast(Attack, weapon.melee_attack)
     assert attack is not None
-    attacker.add_condition(conditions.Injury(InjuryLocation.LEFT_ARM, "Sprain"))
+    if attacker.conditions is not None:
+        attacker.conditions.add_condition(
+            conditions.Injury(InjuryLocation.LEFT_ARM, "Sprain")
+        )
     with patch("random.randint", side_effect=[2, 18]):
         result = cast(
             D20ResolutionResult, action._execute_attack_roll(attack, weapon, {})
@@ -89,7 +92,7 @@ def test_leg_injury_reduces_speed() -> None:
     gw = DummyGameWorld()
     actor = PC(0, 0, "@", colors.WHITE, "Player", game_world=cast(GameWorld, gw))
     gw.add_actor(actor)
-    actor.add_condition(conditions.Injury(InjuryLocation.LEFT_LEG, "Bruise"))
+    actor.conditions.add_condition(conditions.Injury(InjuryLocation.LEFT_LEG, "Bruise"))
     assert int(
         actor.energy.speed * actor.modifiers.get_movement_speed_multiplier()
     ) == int(actor.energy.speed * 0.75)
@@ -99,8 +102,10 @@ def test_multiple_leg_injuries_stack() -> None:
     gw = DummyGameWorld()
     actor = PC(0, 0, "@", colors.WHITE, "Player", game_world=cast(GameWorld, gw))
     gw.add_actor(actor)
-    actor.add_condition(conditions.Injury(InjuryLocation.LEFT_LEG, "Bruise"))
-    actor.add_condition(conditions.Injury(InjuryLocation.RIGHT_LEG, "Sprain"))
+    actor.conditions.add_condition(conditions.Injury(InjuryLocation.LEFT_LEG, "Bruise"))
+    actor.conditions.add_condition(
+        conditions.Injury(InjuryLocation.RIGHT_LEG, "Sprain")
+    )
     assert int(
         actor.energy.speed * actor.modifiers.get_movement_speed_multiplier()
     ) == int(actor.energy.speed * 0.75 * 0.75)

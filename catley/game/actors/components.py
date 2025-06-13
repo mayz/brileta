@@ -304,16 +304,18 @@ class InventoryComponent:
         from catley import colors
         from catley.events import MessageEvent, publish_event
 
-        currently_encumbered = self.actor.has_status_effect(EncumberedEffect)
+        currently_encumbered = self.actor.status_effects.has_status_effect(
+            EncumberedEffect
+        )
         should_be_encumbered = self.is_encumbered()
 
         if should_be_encumbered and not currently_encumbered:
-            self.actor.apply_status_effect(EncumberedEffect())
+            self.actor.status_effects.apply_status_effect(EncumberedEffect())
             publish_event(
                 MessageEvent(f"{self.actor.name} is encumbered!", colors.YELLOW)
             )
         elif not should_be_encumbered and currently_encumbered:
-            self.actor.remove_status_effect(EncumberedEffect)
+            self.actor.status_effects.remove_status_effect(EncumberedEffect)
             publish_event(
                 MessageEvent(
                     f"{self.actor.name} is no longer encumbered.", colors.GREEN
@@ -581,13 +583,15 @@ class ModifiersComponent:
 
 
 class StatusEffectsComponent:
-    """Manages an actor's temporary status effects.
+    """Manage an actor's temporary status effects.
 
-    Encapsulates the storage and management of ``StatusEffect`` instances,
-    providing a clean API for adding, removing, and querying effects.
+    The owning :class:`Actor` is passed in at construction so lifecycle hooks on
+    :class:`StatusEffect` instances can reference the actor without every method
+    needing it as a parameter.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, actor: Actor) -> None:
+        self.actor = actor
         self._status_effects: list[StatusEffect] = []
 
     def __iter__(self):
@@ -599,20 +603,21 @@ class StatusEffectsComponent:
         return len(self._status_effects)
 
     def apply_status_effect(self, effect: StatusEffect) -> None:
-        """Add a status effect to the internal list."""
+        """Add a status effect to the list and trigger its start hook."""
         if not effect.can_stack and self.has_status_effect(type(effect)):
             return
         self._status_effects.append(effect)
-        # ``apply_on_start`` will be called by the ``Actor``.
+        effect.apply_on_start(self.actor)
 
     def remove_status_effect(
         self, effect_type: type[StatusEffect]
     ) -> list[StatusEffect]:
-        """Remove all status effects of the given type and return them."""
+        """Remove effects of the given type and call their cleanup."""
         removed_effects: list[StatusEffect] = []
         for effect in self._status_effects[:]:
             if isinstance(effect, effect_type):
                 self._status_effects.remove(effect)
+                effect.remove_effect(self.actor)
                 removed_effects.append(effect)
         return removed_effects
 
@@ -630,14 +635,14 @@ class StatusEffectsComponent:
         """Return a copy of all active status effects."""
         return self._status_effects.copy()
 
-    def update_turn(self, actor: Actor) -> None:
+    def update_turn(self) -> None:
         """Apply per-turn logic and handle expiration for all effects."""
         for effect in self._status_effects[:]:
-            effect.apply_turn_effect(actor)
+            effect.apply_turn_effect(self.actor)
             if effect.duration > 0:
                 effect.duration -= 1
-            if effect.should_remove(actor):
-                effect.remove_effect(actor)
+            if effect.should_remove(self.actor):
+                effect.remove_effect(self.actor)
                 self._status_effects.remove(effect)
 
 
