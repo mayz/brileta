@@ -43,6 +43,7 @@ from .ai import AIComponent, DispositionBasedAI
 from .components import (
     HealthComponent,
     InventoryComponent,
+    ModifiersComponent,
     StatsComponent,
     VisualEffectsComponent,
 )
@@ -95,6 +96,7 @@ class Actor:
         inventory: InventoryComponent | None = None,
         visual_effects: VisualEffectsComponent | None = None,
         ai: AIComponent | None = None,
+        modifiers: ModifiersComponent | None = None,
         # World and appearance
         game_world: GameWorld | None = None,
         light_source: LightSource | None = None,
@@ -118,6 +120,12 @@ class Actor:
         self.inventory = inventory
         self.visual_effects = visual_effects
         self.ai = ai
+
+        # Initialize modifiers component - create one if not provided
+        if modifiers is not None:
+            self.modifiers = modifiers
+        else:
+            self.modifiers = ModifiersComponent(actor=self)
 
         self.speed = speed
         self.accumulated_energy: int = self.speed
@@ -391,6 +399,7 @@ class Character(Actor):
         self.health: HealthComponent
         self.inventory: InventoryComponent
         self.visual_effects: VisualEffectsComponent
+        self.modifiers: ModifiersComponent
 
         if starting_weapon:
             self.inventory.equip_to_slot(starting_weapon, 0)
