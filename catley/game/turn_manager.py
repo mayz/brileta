@@ -39,7 +39,7 @@ class TurnManager:
 
         # Give all actors energy once per round
         for actor in self.controller.gw.actors:
-            actor.regenerate_energy()
+            actor.energy.regenerate()
 
         while iteration < max_iterations:
             someone_acted = False
@@ -47,10 +47,10 @@ class TurnManager:
 
             # Check each actor to see if they can act
             for actor in self.controller.gw.actors.copy():
-                if actor.can_afford_action(self.controller.action_cost):
+                if actor.energy.can_afford(self.controller.action_cost):
                     action = actor.get_next_action(self.controller)
                     # Always spend energy if you can afford to act. No hoarding!
-                    actor.spend_energy(self.controller.action_cost)
+                    actor.energy.spend(self.controller.action_cost)
 
                     if action:
                         self._execute_action(action)

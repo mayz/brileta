@@ -132,5 +132,5 @@ def test_tripped_skips_turn() -> None:
     )
     tm.process_unified_round()
     assert not controller.update_fov_called
-    assert player.accumulated_energy == player.speed
+    assert player.energy.accumulated_energy == player.energy.speed
     assert not player.has_status_effect(status_effects.TrippedEffect)

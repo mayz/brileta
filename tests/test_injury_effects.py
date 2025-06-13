@@ -90,7 +90,9 @@ def test_leg_injury_reduces_speed() -> None:
     actor = PC(0, 0, "@", colors.WHITE, "Player", game_world=cast(GameWorld, gw))
     gw.add_actor(actor)
     actor.add_condition(conditions.Injury(InjuryLocation.LEFT_LEG, "Bruise"))
-    assert actor.calculate_effective_speed() == int(actor.speed * 0.75)
+    assert int(
+        actor.energy.speed * actor.modifiers.get_movement_speed_multiplier()
+    ) == int(actor.energy.speed * 0.75)
 
 
 def test_multiple_leg_injuries_stack() -> None:
@@ -99,7 +101,9 @@ def test_multiple_leg_injuries_stack() -> None:
     gw.add_actor(actor)
     actor.add_condition(conditions.Injury(InjuryLocation.LEFT_LEG, "Bruise"))
     actor.add_condition(conditions.Injury(InjuryLocation.RIGHT_LEG, "Sprain"))
-    assert actor.calculate_effective_speed() == int(actor.speed * 0.75 * 0.75)
+    assert int(
+        actor.energy.speed * actor.modifiers.get_movement_speed_multiplier()
+    ) == int(actor.energy.speed * 0.75 * 0.75)
 
 
 def test_random_injury_location_assigned() -> None:

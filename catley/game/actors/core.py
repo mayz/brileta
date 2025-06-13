@@ -41,6 +41,7 @@ from catley.view.render.effects.lighting import LightSource
 from .ai import AIComponent, DispositionBasedAI
 from .components import (
     ConditionsComponent,
+    EnergyComponent,
     HealthComponent,
     InventoryComponent,
     ModifiersComponent,
@@ -78,6 +79,10 @@ class Actor:
     - Stats: Ability scores like strength, toughness, intelligence.
     - Health: Hit points, armor, damage/healing mechanics.
     - Inventory: Item storage and equipment management. Also stores Conditions.
+
+    Action & Turn-Taking Components:
+    - Energy: Manages the actor's action economy, including speed, energy
+      accumulation, and the ability to take turns.
 
     Behavioral Components:
     - AI: Autonomous decision-making and behavior for NPCs.
@@ -120,41 +125,38 @@ class Actor:
         blocks_movement: bool = True,
         speed: int = DEFAULT_ACTOR_SPEED,
     ) -> None:
+        # === Core Identity & World Presence ===
         self.x = x
         self.y = y
         self.ch = ch
         self.color = color
-        self.gw = game_world
-        self.light_source = light_source
-        self.blocks_movement = blocks_movement
-        if self.light_source and self.gw:
-            self.light_source.attach(self, self.gw.lighting)
-
         self.name = name
+        self.gw = game_world
+        self.blocks_movement = blocks_movement
+        self.light_source = light_source
 
+        # === Core Data Components ===
         self.stats = stats
         self.health = health
         self.inventory = inventory
-        self.visual_effects = visual_effects
-        self.ai = ai
 
-        # Initialize modifiers component - create one if not provided
-        if modifiers is not None:
-            self.modifiers = modifiers
-        else:
-            self.modifiers = ModifiersComponent(actor=self)
-
-        self.speed = speed
-        self.accumulated_energy: int = self.speed
-        self._effective_speed_cache: int | None = None
-
-        self.tricks: list = []
+        # === Dependent & Facade Components ===
         self.status_effects = StatusEffectsComponent()
+        self.conditions = (
+            ConditionsComponent(self.inventory) if self.inventory is not None else None
+        )
+        self.modifiers = ModifiersComponent(actor=self)
+        self.energy = EnergyComponent(self, speed)
 
-        if self.inventory is not None:
-            self.conditions = ConditionsComponent(self.inventory)
-        else:
-            self.conditions = None
+        # === Behavioral/Optional Components ===
+        self.ai = ai
+        self.visual_effects = visual_effects
+
+        # === Final Setup & Registration ===
+        # This should come last, ensuring the actor is fully constructed
+        # before being registered with external systems.
+        if self.light_source and self.gw:
+            self.light_source.attach(self, self.gw.lighting)
 
     def __repr__(self) -> str:
         """Return a debug representation of this actor."""
@@ -238,38 +240,6 @@ class Actor:
         """
         return None
 
-    def _invalidate_effective_speed_cache(self) -> None:
-        """Clear cached speed when conditions change."""
-        self._effective_speed_cache = None
-
-    def calculate_effective_speed(self) -> int:
-        """Calculate speed after accounting for leg injuries and exhaustion."""
-        if self._effective_speed_cache is not None:
-            return self._effective_speed_cache
-
-        speed = float(self.speed)
-        speed *= self.modifiers.get_movement_speed_multiplier()
-
-        self._effective_speed_cache = int(speed)
-        return self._effective_speed_cache
-
-    def regenerate_energy(self) -> None:
-        """Regenerates energy for the actor based on their speed and conditions."""
-        base_energy = self.calculate_effective_speed()
-
-        if isinstance(self, Character):
-            exhaustion_multiplier = self.modifiers.get_exhaustion_energy_multiplier()
-            base_energy = int(base_energy * exhaustion_multiplier)
-
-        self.accumulated_energy += base_energy
-
-    def can_afford_action(self, cost: int) -> bool:
-        """Checks if the actor has enough energy to perform an action."""
-        return self.accumulated_energy >= cost
-
-    def spend_energy(self, cost: int) -> None:
-        self.accumulated_energy -= cost
-
     # === Status Effect Management ===
 
     def apply_status_effect(self, effect: StatusEffect) -> None:
@@ -316,17 +286,12 @@ class Actor:
         if self.conditions is None:
             return False
         added, _msg, _dropped = self.conditions.add_condition(condition)
-        if added:
-            self._invalidate_effective_speed_cache()
         return added
 
     def remove_condition(self, condition: Condition) -> bool:
         if self.conditions is None:
             return False
-        removed = self.conditions.remove_condition(condition)
-        if removed:
-            self._invalidate_effective_speed_cache()
-        return removed
+        return self.conditions.remove_condition(condition)
 
 
 class Character(Actor):
@@ -425,16 +390,6 @@ class Character(Actor):
             and c.injury_location in {InjuryLocation.LEFT_ARM, InjuryLocation.RIGHT_ARM}
         ]
         return len({c.injury_location for c in arm_injuries}) < 2
-
-    # === Exhaustion Helpers ===
-
-    def get_exhaustion_count(self) -> int:
-        """Get the total number of exhaustion conditions affecting this character."""
-        return self.modifiers.get_exhaustion_count()
-
-    def has_exhaustion_disadvantage(self) -> bool:
-        """Check if character has enough exhaustion for action disadvantage."""
-        return self.modifiers.has_disadvantage_from_exhaustion()
 
 
 class PC(Character):
