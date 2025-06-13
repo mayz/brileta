@@ -40,7 +40,8 @@ def test_single_exhaustion_energy_reduction() -> None:
     actor.accumulated_energy = 0
     actor.add_condition(conditions.Exhaustion())
     expected = int(
-        actor.calculate_effective_speed() * actor.get_exhaustion_energy_multiplier()
+        actor.calculate_effective_speed()
+        * actor.modifiers.get_exhaustion_energy_multiplier()
     )
     actor.regenerate_energy()
     assert actor.accumulated_energy == expected
@@ -53,7 +54,8 @@ def test_double_exhaustion_disadvantage_and_energy() -> None:
     actor.add_condition(conditions.Exhaustion())
     actor.add_condition(conditions.Exhaustion())
     expected = int(
-        actor.calculate_effective_speed() * actor.get_exhaustion_energy_multiplier()
+        actor.calculate_effective_speed()
+        * actor.modifiers.get_exhaustion_energy_multiplier()
     )
     actor.regenerate_energy()
     assert actor.accumulated_energy == expected
@@ -93,7 +95,8 @@ def test_exhaustion_removal_restores_effects() -> None:
     assert not actor.has_exhaustion_disadvantage()
     actor.accumulated_energy = 0
     expected = int(
-        actor.calculate_effective_speed() * actor.get_exhaustion_energy_multiplier()
+        actor.calculate_effective_speed()
+        * actor.modifiers.get_exhaustion_energy_multiplier()
     )
     actor.regenerate_energy()
     assert actor.accumulated_energy == expected
@@ -107,7 +110,9 @@ def test_injury_and_exhaustion_stack() -> None:
         actor.speed * 0.75 * MovementConstants.EXHAUSTION_SPEED_REDUCTION_PER_STACK
     )
     assert actor.calculate_effective_speed() == expected_speed
-    expected_energy = int(expected_speed * actor.get_exhaustion_energy_multiplier())
+    expected_energy = int(
+        expected_speed * actor.modifiers.get_exhaustion_energy_multiplier()
+    )
     actor.accumulated_energy = 0
     actor.regenerate_energy()
     assert actor.accumulated_energy == expected_energy

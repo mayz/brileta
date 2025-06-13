@@ -114,9 +114,9 @@ class MoveAction(GameAction):
                 ).execute()
             return None  # Cannot move into blocking actor
 
-        # Before moving, check if actor's speed is reduced by exhaustion
+        # Check for stumbling if effective speed is reduced (mostly from exhaustion)
         if isinstance(self.actor, Character):
-            speed_multiplier = self.actor.get_exhaustion_speed_multiplier()
+            speed_multiplier = self.actor.modifiers.get_movement_speed_multiplier()
             if speed_multiplier < MovementConstants.EXHAUSTION_STUMBLE_THRESHOLD:
                 stumble_chance = (
                     1.0 - speed_multiplier

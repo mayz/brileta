@@ -44,6 +44,7 @@ if TYPE_CHECKING:
 
 from catley import colors
 from catley.config import DEFAULT_MAX_ARMOR
+from catley.constants.movement import MovementConstants
 from catley.game.enums import ItemSize
 from catley.game.items.item_core import Item
 
@@ -501,6 +502,20 @@ class ModifiersComponent:
         # live inside the inventory.
         return [item for item in self.actor.inventory if isinstance(item, Condition)]
 
+    def get_all_active_effects(self) -> list[StatusEffect | Condition]:
+        """Returns a combined list of all active status effects and conditions.
+
+        This provides a unified view of all temporary and long-term effects
+        affecting the actor for UI display purposes.
+
+        Returns:
+            List containing all StatusEffect and Condition instances
+        """
+        all_effects: list[StatusEffect | Condition] = []
+        all_effects.extend(self.get_all_status_effects())
+        all_effects.extend(self.get_all_conditions())
+        return all_effects
+
     def get_resolution_modifiers(self, stat_name: str) -> dict[str, bool]:
         """Aggregates resolution modifiers from all active effects and conditions.
 
@@ -540,6 +555,13 @@ class ModifiersComponent:
         # Iterate through all conditions that can affect movement.
         for condition in self.get_all_conditions():
             multiplier *= condition.get_movement_cost_modifier()
+
+        exhaustion_count = self.get_exhaustion_count()
+        if exhaustion_count:
+            multiplier *= (
+                MovementConstants.EXHAUSTION_SPEED_REDUCTION_PER_STACK**exhaustion_count
+            )
+
         return multiplier
 
     def get_exhaustion_count(self) -> int:
@@ -550,3 +572,10 @@ class ModifiersComponent:
         """Checks if the actor is exhausted enough to suffer disadvantage on actions."""
         # The threshold is currently 2 stacks of exhaustion.
         return self.get_exhaustion_count() >= 2
+
+    def get_exhaustion_energy_multiplier(self) -> float:
+        """Calculate the cumulative energy accumulation reduction from exhaustion."""
+        exhaustion_count = self.get_exhaustion_count()
+        if exhaustion_count == 0:
+            return 1.0
+        return MovementConstants.EXHAUSTION_ENERGY_REDUCTION_PER_STACK**exhaustion_count
