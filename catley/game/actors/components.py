@@ -40,14 +40,14 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from . import Actor
+    from . import Actor, StatusEffect
 
 from catley import colors
 from catley.config import DEFAULT_MAX_ARMOR
 from catley.game.enums import ItemSize
 from catley.game.items.item_core import Item
 
-from .conditions import Condition
+from .conditions import Condition, Exhaustion
 from .status_effects import EncumberedEffect
 
 
@@ -471,3 +471,82 @@ class VisualEffectsComponent:
     def get_flash_color(self) -> colors.Color | None:
         """Get the current flash color for rendering, or None if no flash."""
         return self._flash_color if self._flash_duration_frames > 0 else None
+
+
+@dataclass(slots=True)
+class ModifiersComponent:
+    """A facade for querying all of an actor's status effects and conditions.
+
+    This component provides a single, unified interface for accessing modifiers
+    from both temporary StatusEffects (stored on the Actor) and long-term
+    Conditions (stored in the InventoryComponent). It centralizes the logic
+    for combining these effects, simplifying systems like combat resolution,
+    movement, and UI display.
+
+    It does not have its own storage; it queries the underlying data sources
+    on the actor directly.
+    """
+
+    actor: Actor
+
+    def get_all_status_effects(self) -> list[StatusEffect]:
+        """Returns a list of all active StatusEffect instances."""
+        return self.actor.status_effects
+
+    def get_all_conditions(self) -> list[Condition]:
+        """Scans the actor's inventory and returns a list of all Condition instances."""
+        if not self.actor.inventory:
+            return []
+        # This is part of the facade's core logic: knowing that conditions
+        # live inside the inventory.
+        return [item for item in self.actor.inventory if isinstance(item, Condition)]
+
+    def get_resolution_modifiers(self, stat_name: str) -> dict[str, bool]:
+        """Aggregates resolution modifiers from all active effects and conditions.
+
+        This is the primary method for determining advantage, disadvantage, or
+        other modifications for an action roll.
+
+        Args:
+            stat_name: The primary statistic being used for the roll (e.g.,
+                       "strength", "agility"), which some effects use to
+                       determine their relevance.
+
+        Returns:
+            A dictionary of combined modifiers (e.g., {'has_disadvantage': True}).
+        """
+        # Start with a base context for the resolution.
+        resolution_args: dict[str, bool] = {"stat_name": stat_name}
+
+        # First, apply modifiers from temporary status effects.
+        for effect in self.get_all_status_effects():
+            resolution_args = effect.apply_to_resolution(resolution_args)
+
+        # Second, apply modifiers from long-term conditions.
+        for condition in self.get_all_conditions():
+            resolution_args = condition.apply_to_resolution(resolution_args)
+
+        # The calling system receives the final, combined set of modifiers.
+        return resolution_args
+
+    def get_movement_speed_multiplier(self) -> float:
+        """Calculates the cumulative speed multiplier from all conditions.
+
+        Returns:
+            A float representing the final speed multiplier (e.g., 0.75 for a
+            -25% penalty). A value of 1.0 means no modification.
+        """
+        multiplier = 1.0
+        # Iterate through all conditions that can affect movement.
+        for condition in self.get_all_conditions():
+            multiplier *= condition.get_movement_cost_modifier()
+        return multiplier
+
+    def get_exhaustion_count(self) -> int:
+        """Returns the number of Exhaustion conditions the actor has."""
+        return sum(1 for c in self.get_all_conditions() if isinstance(c, Exhaustion))
+
+    def has_disadvantage_from_exhaustion(self) -> bool:
+        """Checks if the actor is exhausted enough to suffer disadvantage on actions."""
+        # The threshold is currently 2 stacks of exhaustion.
+        return self.get_exhaustion_count() >= 2
