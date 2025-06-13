@@ -213,6 +213,9 @@ class Actor:
                 effect.remove_effect(self)
                 self.status_effects.remove(effect)
 
+        for condition in self.get_conditions():
+            condition.apply_turn_effect(self)
+
     def get_next_action(self, controller: Controller) -> GameAction | None:
         """
         Determines the next action for this actor.

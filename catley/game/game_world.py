@@ -42,6 +42,12 @@ class GameWorld:
         self.add_actor(self.player)
         self._position_player(rooms[0])
         self._add_starting_injury()
+        self.player.inventory.add_to_inventory(
+            conditions.Sickness(
+                sickness_type="Poisoned",
+                description="Poisoned by a toxic dart",
+            )
+        )
 
         self._populate_npcs(rooms)
 

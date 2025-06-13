@@ -5,6 +5,7 @@ if TYPE_CHECKING:
     from .actors import Actor
 
 from catley import colors
+from catley.events import MessageEvent, publish_event
 
 from .enums import InjuryLocation
 
@@ -122,6 +123,63 @@ class Sickness(Condition):
             description=description,
             display_color=colors.GREEN,
         )  # A sickly green
+        self.sickness_type = sickness_type
+
+    def apply_turn_effect(self, actor: "Actor") -> None:
+        """Apply ongoing sickness effects each turn."""
+        damage = 0
+        if self.sickness_type == "Poisoned":
+            damage = 1
+            actor.take_damage(damage)
+            publish_event(
+                MessageEvent(
+                    f"{actor.name} suffers from {self.sickness_type}! (-{damage} HP)",
+                    colors.GREEN,
+                )
+            )
+        elif self.sickness_type == "Venom":
+            damage = 2
+            actor.take_damage(damage)
+            publish_event(
+                MessageEvent(
+                    f"{actor.name} suffers from {self.sickness_type}! (-{damage} HP)",
+                    colors.GREEN,
+                )
+            )
+        elif self.sickness_type == "Radiation Sickness":
+            damage = 1
+            health = actor.health
+            if health is not None:
+                health.hp = max(0, health.hp - damage)
+            publish_event(
+                MessageEvent(
+                    f"{actor.name} suffers from {self.sickness_type}! (-{damage} HP)",
+                    colors.YELLOW,
+                )
+            )
+
+    def apply_to_resolution(self, resolution_args: dict[str, bool]) -> dict[str, bool]:
+        """Apply sickness penalties to action resolution."""
+        stat_name = resolution_args.get("stat_name")
+        if stat_name is None:
+            return resolution_args
+
+        disadvantaged = (
+            (self.sickness_type == "Poisoned" and stat_name == "toughness")
+            or (self.sickness_type == "Venom" and stat_name == "agility")
+            or (
+                self.sickness_type == "Disease"
+                and stat_name in {"strength", "toughness", "agility"}
+            )
+            or (
+                self.sickness_type == "Radiation Sickness"
+                and stat_name == "intelligence"
+            )
+        )
+
+        if disadvantaged:
+            resolution_args["has_disadvantage"] = True
+        return resolution_args
 
 
 class Exhaustion(Condition):
