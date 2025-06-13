@@ -33,7 +33,6 @@ from typing import TYPE_CHECKING
 
 from catley import colors
 from catley.config import DEFAULT_ACTOR_SPEED
-from catley.constants.movement import MovementConstants
 from catley.game.actors import conditions
 from catley.game.enums import Disposition, InjuryLocation
 from catley.game.items.item_core import Item
@@ -47,7 +46,7 @@ from .components import (
     StatsComponent,
     VisualEffectsComponent,
 )
-from .conditions import Condition, Exhaustion, Injury
+from .conditions import Condition, Injury
 from .status_effects import StatusEffect
 
 if TYPE_CHECKING:
@@ -230,11 +229,7 @@ class Actor:
             return self._effective_speed_cache
 
         speed = float(self.speed)
-        for condition in self.get_conditions_by_type(Injury):
-            speed *= condition.get_movement_cost_modifier()
-
-        if isinstance(self, Character):
-            speed *= self.get_exhaustion_speed_multiplier()
+        speed *= self.modifiers.get_movement_speed_multiplier()
 
         self._effective_speed_cache = int(speed)
         return self._effective_speed_cache
@@ -244,7 +239,7 @@ class Actor:
         base_energy = self.calculate_effective_speed()
 
         if isinstance(self, Character):
-            exhaustion_multiplier = self.get_exhaustion_energy_multiplier()
+            exhaustion_multiplier = self.modifiers.get_exhaustion_energy_multiplier()
             base_energy = int(base_energy * exhaustion_multiplier)
 
         self.accumulated_energy += base_energy
@@ -418,25 +413,11 @@ class Character(Actor):
 
     def get_exhaustion_count(self) -> int:
         """Get the total number of exhaustion conditions affecting this character."""
-        return len(self.get_conditions_by_type(Exhaustion))
-
-    def get_exhaustion_speed_multiplier(self) -> float:
-        """Calculate the cumulative speed reduction from exhaustion."""
-        exhaustion_count = self.get_exhaustion_count()
-        if exhaustion_count == 0:
-            return 1.0
-        return MovementConstants.EXHAUSTION_SPEED_REDUCTION_PER_STACK**exhaustion_count
-
-    def get_exhaustion_energy_multiplier(self) -> float:
-        """Calculate the cumulative energy accumulation reduction from exhaustion."""
-        exhaustion_count = self.get_exhaustion_count()
-        if exhaustion_count == 0:
-            return 1.0
-        return MovementConstants.EXHAUSTION_ENERGY_REDUCTION_PER_STACK**exhaustion_count
+        return self.modifiers.get_exhaustion_count()
 
     def has_exhaustion_disadvantage(self) -> bool:
         """Check if character has enough exhaustion for action disadvantage."""
-        return self.get_exhaustion_count() >= 2
+        return self.modifiers.has_disadvantage_from_exhaustion()
 
 
 class PC(Character):

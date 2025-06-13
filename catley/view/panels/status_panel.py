@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from catley import colors
-from catley.game.actors import Character, Condition
+from catley.game.actors import Character, Condition, StatusEffect
 from catley.view.render.renderer import Renderer
 from catley.view.render.text_backend import TCODTextBackend
 
@@ -33,11 +33,12 @@ class StatusPanel(TextPanel):
         """Render the status panel if player has active effects."""
 
         player = self.controller.gw.player
+        all_effects = player.modifiers.get_all_active_effects()
+        if not all_effects:
+            return
+
         conditions = self._get_condition_lines(player)
         status_effects = self._get_status_effect_lines(player)
-
-        if not conditions and not status_effects:
-            return
 
         current_y = 0
 
@@ -58,10 +59,11 @@ class StatusPanel(TextPanel):
 
     def _get_condition_lines(self, player: Character) -> list[tuple[str, colors.Color]]:
         """Get formatted display lines for conditions."""
-        if not player.inventory:
-            return []
-
-        conditions = player.get_conditions()
+        conditions = [
+            effect
+            for effect in player.modifiers.get_all_active_effects()
+            if isinstance(effect, Condition)
+        ]
         if not conditions:
             return []
 
@@ -80,11 +82,16 @@ class StatusPanel(TextPanel):
 
     def _get_status_effect_lines(self, player: Character) -> list[str]:
         """Get formatted display lines for status effects."""
-        if not player.status_effects:
+        effects = [
+            effect
+            for effect in player.modifiers.get_all_active_effects()
+            if isinstance(effect, StatusEffect)
+        ]
+        if not effects:
             return []
 
         lines = []
-        for effect in player.status_effects:
+        for effect in effects:
             if effect.duration > 0:
                 suffix = "turn" if effect.duration == 1 else "turns"
                 lines.append(f"{effect.name} ({effect.duration} {suffix})")
