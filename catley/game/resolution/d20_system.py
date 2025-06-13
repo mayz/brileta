@@ -106,15 +106,18 @@ class D20Resolver(Resolver):
         )
 
     def calculate_success_probability(
-        self, status_modifiers: dict[str, bool] | None = None
+        self, additional_modifiers: dict[str, bool] | None = None
     ) -> float:
-        """
-        Calculate the probability of success for this resolver's configuration.
+        """Calculate probability of success for this resolver's configuration.
+
+        Args:
+            additional_modifiers: Advantage/disadvantage flags to combine with
+                the resolver's base modifiers.
 
         Returns:
-            Probability of success as a float in the range [0.0, 1.0].
+            Probability of success as a float in the range ``[0.0, 1.0]``.
         """
-        combined = {**self.status_modifiers, **(status_modifiers or {})}
+        combined = {**self.status_modifiers, **(additional_modifiers or {})}
         has_advantage = self.has_advantage or combined.get("has_advantage", False)
         has_disadvantage = self.has_disadvantage or combined.get(
             "has_disadvantage", False

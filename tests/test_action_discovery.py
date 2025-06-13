@@ -6,6 +6,7 @@ from catley import colors
 from catley.controller import Controller
 from catley.environment import tile_types
 from catley.environment.map import GameMap
+from catley.game import ranges
 from catley.game.actions.discovery import (
     ActionCategory,
     ActionContext,
@@ -13,12 +14,11 @@ from catley.game.actions.discovery import (
     ActionOption,
 )
 from catley.game.actions.environment import OpenDoorAction
-from catley.game.actors import Character
+from catley.game.actors import Character, status_effects
 from catley.game.enums import Disposition
 from catley.game.game_world import GameWorld
 from catley.game.items.capabilities import RangedAttack
 from catley.game.items.item_types import COMBAT_KNIFE_TYPE, PISTOL_TYPE
-from catley.game.resolution.d20_system import D20Resolver
 from tests.helpers import DummyGameWorld
 
 
@@ -135,16 +135,26 @@ def test_get_combat_options_melee_ranged_and_reload() -> None:
     assert f"Reload {pistol.name}" in names
 
     melee_opt = next(o for o in opts if o.name.startswith("Melee"))
-    expected_melee_prob = D20Resolver(
-        player.stats.strength,
-        melee_target.stats.agility + 10,
-    ).calculate_success_probability()
+    expected_melee_prob = disc._calculate_combat_probability(
+        cast(Controller, controller),
+        player,
+        melee_target,
+        "strength",
+    )
     assert melee_opt.success_probability == expected_melee_prob
     ranged_opt = next(o for o in opts if o.name.startswith("Shoot"))
-    expected_ranged_prob = D20Resolver(
-        player.stats.observation,
-        ranged_target.stats.agility + 10,
-    ).calculate_success_probability()
+    distance = ranges.calculate_distance(
+        player.x, player.y, ranged_target.x, ranged_target.y
+    )
+    range_cat = ranges.get_range_category(distance, pistol)
+    range_mods = ranges.get_range_modifier(pistol, range_cat)
+    expected_ranged_prob = disc._calculate_combat_probability(
+        cast(Controller, controller),
+        player,
+        ranged_target,
+        "observation",
+        range_mods,
+    )
     assert ranged_opt.success_probability == expected_ranged_prob
 
 
@@ -180,6 +190,38 @@ def test_combat_options_ignore_dead_and_unseen() -> None:
     assert all(ranged_target.name not in n for n in names)
 
 
+def test_combat_option_probabilities_reflect_status_effects() -> None:
+    controller, player, melee_target, ranged_target, pistol = _make_combat_world()
+    player.status_effects.apply_status_effect(status_effects.OffBalanceEffect())
+    disc = ActionDiscovery()
+    ctx = disc._build_context(cast(Controller, controller), player)
+
+    opts = disc._get_combat_options(cast(Controller, controller), player, ctx)
+    melee_opt = next(o for o in opts if o.name.startswith("Melee"))
+    expected_melee_prob = disc._calculate_combat_probability(
+        cast(Controller, controller),
+        player,
+        melee_target,
+        "strength",
+    )
+    assert melee_opt.success_probability == expected_melee_prob
+
+    ranged_opt = next(o for o in opts if o.name.startswith("Shoot"))
+    distance = ranges.calculate_distance(
+        player.x, player.y, ranged_target.x, ranged_target.y
+    )
+    range_cat = ranges.get_range_category(distance, pistol)
+    range_mods = ranges.get_range_modifier(pistol, range_cat)
+    expected_ranged_prob = disc._calculate_combat_probability(
+        cast(Controller, controller),
+        player,
+        ranged_target,
+        "observation",
+        range_mods,
+    )
+    assert ranged_opt.success_probability == expected_ranged_prob
+
+
 def test_sort_by_relevance_orders_actions() -> None:
     ctx = ActionContext(0, 0, [], [], True)
     opt1 = ActionOption(
@@ -194,6 +236,44 @@ def test_sort_by_relevance_orders_actions() -> None:
     assert ordered[0] == opt1
     assert ordered[1] == opt3
     assert ordered[2] == opt2
+
+
+def test_target_specific_option_probabilities_reflect_status_effects() -> None:
+    controller, player, melee_target, ranged_target, pistol = _make_combat_world()
+    player.status_effects.apply_status_effect(status_effects.OffBalanceEffect())
+    disc = ActionDiscovery()
+    ctx = disc._build_context(cast(Controller, controller), player)
+
+    melee_only = disc._get_combat_options_for_target(
+        cast(Controller, controller), player, melee_target, ctx
+    )
+    ranged_only = disc._get_combat_options_for_target(
+        cast(Controller, controller), player, ranged_target, ctx
+    )
+
+    melee_opt = melee_only[0]
+    expected_melee_prob = disc._calculate_combat_probability(
+        cast(Controller, controller),
+        player,
+        melee_target,
+        "strength",
+    )
+    assert melee_opt.success_probability == expected_melee_prob
+
+    ranged_opt = ranged_only[0]
+    distance = ranges.calculate_distance(
+        player.x, player.y, ranged_target.x, ranged_target.y
+    )
+    range_cat = ranges.get_range_category(distance, pistol)
+    range_mods = ranges.get_range_modifier(pistol, range_cat)
+    expected_ranged_prob = disc._calculate_combat_probability(
+        cast(Controller, controller),
+        player,
+        ranged_target,
+        "observation",
+        range_mods,
+    )
+    assert ranged_opt.success_probability == expected_ranged_prob
 
 
 def test_environment_options_include_door_actions() -> None:

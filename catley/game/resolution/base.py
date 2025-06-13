@@ -58,10 +58,17 @@ class Resolver(abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
-    def calculate_success_probability(self) -> float:
+    def calculate_success_probability(
+        self, additional_modifiers: dict[str, bool] | None = None
+    ) -> float:
         """Calculate the probability of success for this resolver's configuration.
 
+        Args:
+            additional_modifiers: Advantage/disadvantage flags from status
+                effects or situational factors. Keys are ``has_advantage`` and
+                ``has_disadvantage``.
+
         Returns:
-            Probability of success as a float in the range [0.0, 1.0].
+            Probability of success as a float in the range ``[0.0, 1.0]``.
         """
         raise NotImplementedError

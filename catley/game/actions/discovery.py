@@ -197,6 +197,32 @@ class ActionDiscovery:
             selected_actor=selected_actor,
         )
 
+    def _calculate_combat_probability(
+        self,
+        controller: Controller,
+        actor: Character,
+        target: Character,
+        stat_name: str,
+        range_modifiers: dict[str, bool] | None = None,
+    ) -> float:
+        """Calculate combat success probability with all modifiers combined."""
+
+        resolution_modifiers = actor.modifiers.get_resolution_modifiers(stat_name)
+        has_advantage = (
+            range_modifiers and range_modifiers.get("has_advantage", False)
+        ) or resolution_modifiers.get("has_advantage", False)
+        has_disadvantage = (
+            range_modifiers and range_modifiers.get("has_disadvantage", False)
+        ) or resolution_modifiers.get("has_disadvantage", False)
+
+        resolver = controller.create_resolver(
+            ability_score=getattr(actor.stats, stat_name),
+            roll_to_exceed=target.stats.agility + 10,
+            has_advantage=has_advantage,
+            has_disadvantage=has_disadvantage,
+        )
+        return resolver.calculate_success_probability()
+
     def _get_combat_options(
         self, controller: Controller, actor: Character, context: ActionContext
     ) -> list[ActionOption]:
@@ -225,12 +251,9 @@ class ActionDiscovery:
 
             # Melee attacks
             if weapon.melee_attack and distance == 1:
-                # Calculate success probability
-                resolver = controller.create_resolver(
-                    ability_score=actor.stats.strength,
-                    roll_to_exceed=target.stats.agility + 10,
+                prob = self._calculate_combat_probability(
+                    controller, actor, target, "strength"
                 )
-                prob = resolver.calculate_success_probability()
 
                 options.append(
                     ActionOption(
@@ -251,14 +274,13 @@ class ActionDiscovery:
                 range_mods = ranges.get_range_modifier(weapon, range_cat)
 
                 if range_mods is not None:  # In range
-                    # Calculate probability with range modifiers
-                    resolver = controller.create_resolver(
-                        ability_score=actor.stats.observation,
-                        roll_to_exceed=target.stats.agility + 10,
-                        has_advantage=range_mods.get("has_advantage", False),
-                        has_disadvantage=range_mods.get("has_disadvantage", False),
+                    prob = self._calculate_combat_probability(
+                        controller,
+                        actor,
+                        target,
+                        "observation",
+                        range_mods,
                     )
-                    prob = resolver.calculate_success_probability()
 
                     # FIXME: Unclear that we need to show this most of the time.
                     #        Leaving it commented out for now.
@@ -335,11 +357,9 @@ class ActionDiscovery:
 
         # Melee attacks
         if weapon.melee_attack and distance == 1:
-            resolver = controller.create_resolver(
-                ability_score=actor.stats.strength,
-                roll_to_exceed=target.stats.agility + 10,
+            prob = self._calculate_combat_probability(
+                controller, actor, target, "strength"
             )
-            prob = resolver.calculate_success_probability()
 
             options.append(
                 ActionOption(
@@ -359,13 +379,13 @@ class ActionDiscovery:
             range_mods = ranges.get_range_modifier(weapon, range_cat)
 
             if range_mods is not None:
-                resolver = controller.create_resolver(
-                    ability_score=actor.stats.observation,
-                    roll_to_exceed=target.stats.agility + 10,
-                    has_advantage=range_mods.get("has_advantage", False),
-                    has_disadvantage=range_mods.get("has_disadvantage", False),
+                prob = self._calculate_combat_probability(
+                    controller,
+                    actor,
+                    target,
+                    "observation",
+                    range_mods,
                 )
-                prob = resolver.calculate_success_probability()
 
                 options.append(
                     ActionOption(
