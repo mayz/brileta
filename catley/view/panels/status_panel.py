@@ -35,24 +35,31 @@ class StatusPanel(TextPanel):
         if not all_effects:
             return
 
+        tile_width, tile_height = self.tile_dimensions
         conditions = self._get_condition_lines(player)
         status_effects = self._get_status_effect_lines(player)
 
         current_y = 0
 
         if conditions:
-            self.text_backend.draw_text(0, current_y, "CONDITIONS:", colors.YELLOW)
+            self.text_backend.draw_text(
+                0, current_y * tile_height, "CONDITIONS:", colors.YELLOW
+            )
             current_y += 1
             for text, color in conditions:
-                self.text_backend.draw_text(0, current_y, text, color)
+                self.text_backend.draw_text(0, current_y * tile_height, text, color)
                 current_y += 1
             current_y += 1
 
         if status_effects:
-            self.text_backend.draw_text(0, current_y, "STATUS EFFECTS:", colors.CYAN)
+            self.text_backend.draw_text(
+                0, current_y * tile_height, "STATUS EFFECTS:", colors.CYAN
+            )
             current_y += 1
             for text in status_effects:
-                self.text_backend.draw_text(0, current_y, text, colors.LIGHT_GREY)
+                self.text_backend.draw_text(
+                    0, current_y * tile_height, text, colors.LIGHT_GREY
+                )
                 current_y += 1
 
     def _get_condition_lines(self, player: Character) -> list[tuple[str, colors.Color]]:

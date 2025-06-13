@@ -49,11 +49,13 @@ class FPSPanel(TextPanel):
                 self.display_string = f"FPS: {self.clock.mean_fps:.1f}"
             self.last_update = current_time
 
+        tile_width, tile_height = self.tile_dimensions
+
         # Right-align within panel bounds
         fps_width = len(self.display_string)
         x_position = max(0, self.width - fps_width)
         self.text_backend.draw_text(
-            x_position,
+            x_position * tile_width,
             0,
             self.display_string,
             colors.YELLOW,

@@ -28,6 +28,7 @@ class EquipmentPanel(TextPanel):
     def draw_content(self, renderer: Renderer) -> None:
         y_start = 1
         player = self.controller.gw.player
+        _, tile_height = self.tile_dimensions
 
         # Add weapon switching hint
         hint_text = "Weapons: [1][2] to switch"
@@ -44,7 +45,7 @@ class EquipmentPanel(TextPanel):
             reload_text = "[R] to reload"
             self.text_backend.draw_text(
                 0,
-                View.EQUIPMENT_RELOAD_HINT_OFFSET,
+                View.EQUIPMENT_RELOAD_HINT_OFFSET * tile_height,
                 reload_text,
                 colors.YELLOW,
             )
@@ -70,4 +71,9 @@ class EquipmentPanel(TextPanel):
             else:
                 item_text = f"{slot_name}: Empty"
                 color = colors.GREY
-            self.text_backend.draw_text(0, y_start + i, item_text, color)
+            self.text_backend.draw_text(
+                pixel_x=0,
+                pixel_y=(y_start + i) * tile_height,
+                text=item_text,
+                color=color,
+            )
