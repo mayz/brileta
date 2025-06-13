@@ -27,13 +27,13 @@ class TextBackend(ABC):
     @abstractmethod
     def draw_text(
         self,
-        x: int,
-        y: int,
+        pixel_x: int,
+        pixel_y: int,
         text: str,
         color: colors.Color,
         font_size: int | None = None,
     ) -> None:
-        """Draw text at ``(x, y)`` using ``color``."""
+        """Draw text at ``(pixel_x, pixel_y)`` using ``color``."""
 
     @abstractmethod
     def get_text_metrics(
@@ -87,35 +87,47 @@ class TCODTextBackend(TextBackend):
 
     def __init__(self, renderer: Renderer) -> None:
         super().__init__()
-        self.console = renderer.root_console
-        self.tile_width, self.tile_height = renderer.tile_dimensions
+        self.renderer = renderer
 
     def draw_text(
         self,
-        x: int,
-        y: int,
+        pixel_x: int,
+        pixel_y: int,
         text: str,
         color: colors.Color,
         font_size: int | None = None,
     ) -> None:
         _ = font_size
-        absolute_x = x + self.drawing_offset_x
-        absolute_y = y + self.drawing_offset_y
-        self.console.print(x=absolute_x, y=absolute_y, text=text, fg=color)
+        tile_width, tile_height = self.renderer.tile_dimensions
+        if tile_width == 0 or tile_height == 0:
+            return
+
+        # Convert panel-relative pixel coords to panel-relative tile coords
+        tile_x = pixel_x // tile_width
+        tile_y = pixel_y // tile_height
+
+        # Apply panel's position offset (in tiles) to get root console tile coords
+        absolute_x = tile_x + self.drawing_offset_x
+        absolute_y = tile_y + self.drawing_offset_y
+        self.renderer.root_console.print(
+            x=absolute_x, y=absolute_y, text=text, fg=color
+        )
 
     def get_text_metrics(
         self, text: str, font_size: int | None = None
     ) -> tuple[int, int, int]:
         _ = font_size
-        width = len(text) * self.tile_width
-        height = self.tile_height
-        return width, height, self.tile_height
+        tile_width, tile_height = self.renderer.tile_dimensions
+        width = len(text) * tile_width
+        height = tile_height
+        return width, height, tile_height
 
     def wrap_text(
         self, text: str, max_width: int, font_size: int | None = None
     ) -> list[str]:
         _ = font_size
-        chars_per_line = max_width // self.tile_width
+        tile_width, _ = self.renderer.tile_dimensions
+        chars_per_line = max_width // tile_width
         if chars_per_line <= 0:
             return [text]
         return (
@@ -202,28 +214,25 @@ class PillowTextBackend(TextBackend):
 
     def draw_text(
         self,
-        x: int,
-        y: int,
+        pixel_x: int,
+        pixel_y: int,
         text: str,
         color: colors.Color,
         font_size: int | None = None,
     ) -> None:
-        """Draw text using relative coordinates with reasonable defaults for UI text."""
+        """Draw text using pixel coordinates, with pixel_y as the baseline."""
         if self._drawer is None:
             return
 
-        # If no font size specified, use a reasonable default based on tile height
+        font_to_use = self.font
         if font_size is None:
-            font_size = max(12, self.tile_height)  # Reasonable UI font size
+            pass  # Use the default font for the backend
+        else:
+            font_to_use = ImageFont.truetype(str(self.font_path), font_size)
 
-        font = ImageFont.truetype(str(self.font_path), font_size)
-
-        # Adjust Y position to account for baseline positioning
-        # Add font size to Y to prevent clipping at top
-        adjusted_y = y + font_size if y < font_size else y
-
+        # Draw text with (pixel_x, pixel_y) as the left-side baseline coordinate.
         self._drawer.text(
-            (x, adjusted_y), text, font=font, fill=(*color, 255), anchor="ls"
+            (pixel_x, pixel_y), text, font=font_to_use, fill=(*color, 255), anchor="ls"
         )
 
     def get_text_metrics(

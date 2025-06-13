@@ -31,6 +31,9 @@ class HealthPanel(TextPanel):
 
     def draw_content(self, renderer: Renderer) -> None:
         player = self.controller.gw.player
+        tile_width, tile_height = self.tile_dimensions
         text = f"HP: {player.health.hp}/{player.health.max_hp} AP: {player.health.ap}"
-        x_pos = self.width - len(text) - 1
-        self.text_backend.draw_text(x_pos, 0, text, colors.WHITE)
+
+        # Calculate x in tiles, then convert to pixels
+        x_pos_tiles = self.width - len(text) - 1
+        self.text_backend.draw_text(x_pos_tiles * tile_width, 0, text, colors.WHITE)
