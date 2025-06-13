@@ -55,10 +55,6 @@ class WorldPanel(Panel):
         self.effect_library = EffectLibrary()
         self.current_light_intensity: np.ndarray | None = None
 
-    def draw_content(self, renderer: Renderer) -> None:  # pragma: no cover - unused
-        """Compatibility stub. Rendering handled in :meth:`draw`."""
-        _ = renderer
-
     def resize(self, x1: int, y1: int, x2: int, y2: int) -> None:
         """Override resize to update viewport and console dimensions."""
         super().resize(x1, y1, x2, y2)
