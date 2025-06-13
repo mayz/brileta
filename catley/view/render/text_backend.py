@@ -9,11 +9,12 @@ import numpy as np
 import tcod.sdl.render
 from PIL import Image as PILImage
 from PIL import ImageDraw, ImageFont
-from tcod.console import Console
 from tcod.sdl.render import BlendMode, Texture
 
-from catley import colors
+from catley import colors, config
 from catley.constants.view import ViewConstants as View
+
+from .renderer import Renderer
 
 
 class TextBackend(ABC):
@@ -84,10 +85,10 @@ class TextBackend(ABC):
 class TCODTextBackend(TextBackend):
     """Text backend that draws directly to a tcod :class:`Console`."""
 
-    def __init__(self, console: Console, tile_dimensions: tuple[int, int]) -> None:
+    def __init__(self, renderer: Renderer) -> None:
         super().__init__()
-        self.console = console
-        self.tile_width, self.tile_height = tile_dimensions
+        self.console = renderer.root_console
+        self.tile_width, self.tile_height = renderer.tile_dimensions
 
     def draw_text(
         self,
@@ -143,12 +144,10 @@ class PillowTextBackend(TextBackend):
 
     def __init__(
         self,
-        font_path: Path,
-        tile_height: int,
-        sdl_renderer,
+        renderer: Renderer,
     ) -> None:
         super().__init__()
-        self.font_path = Path(font_path)
+        self.font_path = Path(config.MESSAGE_LOG_FONT_PATH)
         self.base_tile_height = View.MESSAGE_LOG_MIN_FONT_SIZE
         self.tile_height = self.base_tile_height
         self._current_font_size = 0
@@ -161,8 +160,10 @@ class PillowTextBackend(TextBackend):
         self.width = 0
         self.height = 0
 
+        tile_height = renderer.tile_dimensions[1]
+
         self.configure_scaling(tile_height)
-        self.configure_renderer(sdl_renderer)
+        self.configure_renderer(renderer.sdl_renderer)
 
     # ------------------------------------------------------------------
     # Utility helpers

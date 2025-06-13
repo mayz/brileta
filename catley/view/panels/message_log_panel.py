@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING
 
 from tcod.sdl.render import Texture
 
-from catley import config
 from catley.view.render.renderer import Renderer
 from catley.view.render.text_backend import PillowTextBackend
 
@@ -20,11 +19,7 @@ class MessageLogPanel(TextPanel):
     def __init__(self, message_log: MessageLog, renderer: Renderer) -> None:
         super().__init__()
         self.message_log = message_log
-        self.text_backend = PillowTextBackend(
-            config.MESSAGE_LOG_FONT_PATH,
-            renderer.tile_dimensions[1],
-            renderer.sdl_renderer,
-        )
+        self.text_backend = PillowTextBackend(renderer)
 
         # Panel pixel dimensions will be calculated when resize() is called
         self.panel_width_px = 0
