@@ -207,14 +207,23 @@ class PillowTextBackend(TextBackend):
         color: colors.Color,
         font_size: int | None = None,
     ) -> None:
+        """Draw text using relative coordinates with reasonable defaults for UI text."""
         if self._drawer is None:
             return
-        font = (
-            self.font
-            if font_size is None
-            else ImageFont.truetype(str(self.font_path), font_size)
+
+        # If no font size specified, use a reasonable default based on tile height
+        if font_size is None:
+            font_size = max(12, self.tile_height)  # Reasonable UI font size
+
+        font = ImageFont.truetype(str(self.font_path), font_size)
+
+        # Adjust Y position to account for baseline positioning
+        # Add font size to Y to prevent clipping at top
+        adjusted_y = y + font_size if y < font_size else y
+
+        self._drawer.text(
+            (x, adjusted_y), text, font=font, fill=(*color, 255), anchor="ls"
         )
-        self._drawer.text((x, y), text, font=font, fill=(*color, 255), anchor="ls")
 
     def get_text_metrics(
         self, text: str, font_size: int | None = None
