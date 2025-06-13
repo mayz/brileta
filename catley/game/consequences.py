@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from catley import colors
 from catley.events import MessageEvent, publish_event
-from catley.game.actors import Actor, Character, ai, components
+from catley.game.actors import Actor, Character, ai
 from catley.game.enums import Disposition, OutcomeTier
-from catley.game.game_world import GameWorld
 
 if TYPE_CHECKING:
     from catley.game.items.item_core import Item
@@ -89,26 +88,8 @@ class ConsequenceHandler:
         if gw is None:
             return
 
-        ground_actor = self._spawn_dropped_weapon(actor, weapon)
-        assert ground_actor.inventory is not None
-        inv_comp = cast(components.InventoryComponent, ground_actor.inventory)
-        inv_comp.add_to_inventory(weapon)
+        gw.spawn_ground_item(weapon, actor.x, actor.y)
         publish_event(MessageEvent(f"{actor.name} drops {weapon.name}!", colors.ORANGE))
-
-    def _spawn_dropped_weapon(self, actor: Character, weapon: Item) -> Actor:
-        gw = cast(GameWorld, actor.gw)
-        ground_actor = Actor(
-            x=actor.x,
-            y=actor.y,
-            ch="%",
-            color=colors.WHITE,
-            name=f"Dropped {weapon.name}",
-            game_world=gw,
-            blocks_movement=False,
-            inventory=components.InventoryComponent(components.StatsComponent()),
-        )
-        gw.add_actor(ground_actor)
-        return ground_actor
 
     def _apply_noise_alert(self, source: Actor | None, radius: int) -> None:
         if not source or source.gw is None:

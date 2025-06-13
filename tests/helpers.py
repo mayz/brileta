@@ -6,6 +6,8 @@ from catley.controller import GameWorld
 from catley.environment import tile_types
 from catley.environment.map import GameMap
 from catley.game.actors import Actor, Character
+from catley.game.item_spawner import ItemSpawner
+from catley.game.items.item_core import Item
 from catley.util.spatial import SpatialHashGrid
 
 
@@ -31,6 +33,8 @@ class DummyGameWorld(GameWorld):
 
         self.actor_spatial_index = SpatialHashGrid(cell_size=16)
         self.actors: list[Actor] = []
+
+        self.item_spawner = ItemSpawner(self)
 
         # Add initial actors through the proper lifecycle method.
         if actors:
@@ -67,3 +71,9 @@ class DummyGameWorld(GameWorld):
             if getattr(actor, "blocks_movement", False):
                 return actor
         return actors_at_point[0]
+
+    def spawn_ground_item(self, item: Item, x: int, y: int, **kwargs) -> Actor:
+        return self.item_spawner.spawn_item(item, x, y, **kwargs)
+
+    def spawn_ground_items(self, items: list[Item], x: int, y: int) -> Actor:
+        return self.item_spawner.spawn_multiple(items, x, y)

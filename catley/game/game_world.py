@@ -1,5 +1,4 @@
 import random
-from typing import cast
 
 from catley import colors, config
 from catley.config import PLAYER_BASE_STRENGTH, PLAYER_BASE_TOUGHNESS
@@ -7,9 +6,9 @@ from catley.environment.map import GameMap, Rect
 from catley.game.actors import (
     Actor,
     Character,
-    components,
     conditions,
 )
+from catley.game.item_spawner import ItemSpawner
 from catley.game.items.item_core import Item
 from catley.game.items.item_types import (
     COMBAT_KNIFE_TYPE,
@@ -37,6 +36,7 @@ class GameWorld:
     def __init__(self, map_width: int, map_height: int) -> None:
         self.mouse_tile_location_on_map: tuple[int, int] | None = None
         self.lighting = LightingSystem()
+        self.item_spawner = ItemSpawner(self)
         self.selected_actor: Actor | None = None
 
         self._init_actor_storage()
@@ -129,25 +129,16 @@ class GameWorld:
             "Sprained Ankle",
         )
         _, _, dropped_items = self.player.inventory.add_to_inventory(sprained_ankle)
-        for item in dropped_items:
-            self._spawn_dropped_item(item, self.player.x, self.player.y)
+        if dropped_items:
+            self.spawn_ground_items(dropped_items, self.player.x, self.player.y)
 
-    def _spawn_dropped_item(self, item: Item, x: int, y: int) -> None:
-        """Spawn a dropped item on the ground as an Actor."""
-        ground_actor = Actor(
-            x=x,
-            y=y,
-            ch="%",
-            color=colors.WHITE,
-            name=f"Dropped {item.name}",
-            game_world=self,
-            blocks_movement=False,
-            inventory=components.InventoryComponent(components.StatsComponent()),
-        )
-        assert ground_actor.inventory is not None
-        inv_comp = cast(components.InventoryComponent, ground_actor.inventory)
-        inv_comp.add_to_inventory(item)
-        self.add_actor(ground_actor)
+    def spawn_ground_item(self, item: Item, x: int, y: int, **kwargs) -> Actor:
+        """Spawn an item on the ground with smart placement and consolidation."""
+        return self.item_spawner.spawn_item(item, x, y, **kwargs)
+
+    def spawn_ground_items(self, items: list[Item], x: int, y: int) -> Actor:
+        """Spawn multiple items efficiently as a single pile."""
+        return self.item_spawner.spawn_multiple(items, x, y)
 
     def update_player_light(self) -> None:
         """Update player light source position"""
