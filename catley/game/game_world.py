@@ -13,6 +13,7 @@ from catley.game.actors import (
 from catley.game.items.item_core import Item
 from catley.game.items.item_types import (
     COMBAT_KNIFE_TYPE,
+    FOOD_TYPE,
     PISTOL_MAGAZINE_TYPE,
     PISTOL_TYPE,
     REVOLVER_TYPE,
@@ -101,6 +102,8 @@ class GameWorld:
         player.inventory.add_to_inventory(PISTOL_MAGAZINE_TYPE.create())
         player.inventory.add_to_inventory(RIFLE_MAGAZINE_TYPE.create())
         player.inventory.add_to_inventory(RIFLE_MAGAZINE_TYPE.create())
+
+        player.inventory.add_to_inventory(FOOD_TYPE.create())
 
     def _generate_map(
         self, map_width: int, map_height: int

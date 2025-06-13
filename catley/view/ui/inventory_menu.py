@@ -151,8 +151,15 @@ class InventoryMenu(Menu):
                     )
                 publish_event(MessageEvent(f"You equip {item.name}.", colors.GREEN))
         else:
-            # Use consumable item (placeholder for now)
-            publish_event(MessageEvent(f"You use {item.name}.", colors.WHITE))
+            from catley.game.actions.recovery import UseConsumableAction
+
+            if item.consumable_effect:
+                action = UseConsumableAction(self.controller, player, item)
+                action.execute()
+            else:
+                publish_event(
+                    MessageEvent(f"{item.name} cannot be used", colors.YELLOW)
+                )
 
     def render_title(
         self,

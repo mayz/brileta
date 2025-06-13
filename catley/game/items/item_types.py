@@ -1,5 +1,6 @@
 import copy
 
+from catley.game.actors import conditions
 from catley.game.enums import AreaType, ConsumableEffectType, ItemSize
 from catley.game.items.capabilities import (
     AmmoSpec,
@@ -290,4 +291,68 @@ RUBBER_CHICKEN_TYPE = ItemType(
         properties={WeaponProperty.THROWN, WeaponProperty.IMPROVISED},
     ),
     melee_attack=MeleeAttackSpec("d2", properties={WeaponProperty.IMPROVISED}),
+)
+
+# === Medical and Recovery Items ===
+CURE_ALL_TYPE = ItemType(
+    name="Cure-All",
+    description="Powerful remedy that cures sickness and radiation",
+    size=ItemSize.NORMAL,
+    consumable_effect=ConsumableEffectSpec(
+        effect_type=ConsumableEffectType.CURE_ALL_CONDITIONS,
+        effect_value=0,
+        target_condition_types={conditions.Rads, conditions.Sickness},
+    ),
+)
+
+MEGATONIC_TYPE = ItemType(
+    name="Megatonic",
+    description="Revitalizing tonic that heals fully and removes exhaustion",
+    size=ItemSize.NORMAL,
+    consumable_effect=ConsumableEffectSpec(
+        effect_type=ConsumableEffectType.HEAL_HP,
+        effect_value=0,
+        target_condition_types={conditions.Exhaustion},
+    ),
+)
+
+STIM_TYPE = ItemType(
+    name="Stimpack",
+    description="Instantly restores all health",
+    size=ItemSize.TINY,
+    consumable_effect=ConsumableEffectSpec(
+        effect_type=ConsumableEffectType.HEAL_HP,
+        effect_value=0,
+    ),
+)
+
+BANDAGES_TYPE = ItemType(
+    name="Bandages",
+    description="Clean dressings for treating wounds",
+    size=ItemSize.TINY,
+    consumable_effect=ConsumableEffectSpec(
+        effect_type=ConsumableEffectType.CURE_INJURIES,
+        effect_value=0,
+        target_condition_types={conditions.Injury},
+    ),
+)
+
+FOOD_TYPE = ItemType(
+    name="Rations",
+    description="Basic food that restores all health",
+    size=ItemSize.NORMAL,
+    consumable_effect=ConsumableEffectSpec(
+        effect_type=ConsumableEffectType.HEAL_HP,
+        effect_value=0,
+    ),
+)
+
+DRINK_TYPE = ItemType(
+    name="Water Flask",
+    description="Clean water that restores all health",
+    size=ItemSize.NORMAL,
+    consumable_effect=ConsumableEffectSpec(
+        effect_type=ConsumableEffectType.HEAL_HP,
+        effect_value=0,
+    ),
 )

@@ -63,6 +63,10 @@ class ConsumableEffectType(Enum):
     HEAL = "heal"
     BOOST_STRENGTH = "boost_strength"
     POISON = "poison"
+    HEAL_HP = "heal_hp"
+    CURE_ALL_CONDITIONS = "cure_all_conditions"
+    CURE_EXHAUSTION = "cure_exhaustion"
+    CURE_INJURIES = "cure_injuries"
 
 
 class InjuryLocation(Enum):
