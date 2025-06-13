@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from catley.controller import GameWorld
 from catley.environment import tile_types
 from catley.environment.map import GameMap
 from catley.game.actors import Actor, Character
 from catley.util.spatial import SpatialHashGrid
 
 
-class DummyGameWorld:
+class DummyGameWorld(GameWorld):
     """A lightweight, standalone dummy GameWorld for testing."""
 
     def __init__(

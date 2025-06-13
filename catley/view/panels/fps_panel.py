@@ -5,13 +5,13 @@ from typing import TYPE_CHECKING
 from catley import colors
 from catley.config import PERFORMANCE_TESTING
 from catley.constants.view import ViewConstants as View
-from catley.view.text_backend import TextBackend
+from catley.view.render.text_backend import TextBackend
 
 from .panel import Panel
 
 if TYPE_CHECKING:
     from catley.util.clock import Clock
-    from catley.view.renderer import Renderer
+    from catley.view.render.renderer import Renderer
 
 
 class FPSPanel(Panel):

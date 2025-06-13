@@ -5,7 +5,7 @@ import numpy as np
 
 from catley.controller import Controller
 from catley.util.spatial import SpatialHashGrid
-from catley.view.effects.screen_shake import ScreenShake
+from catley.view.render.effects.screen_shake import ScreenShake
 
 
 def test_screen_shake_update_and_completion() -> None:
@@ -123,7 +123,7 @@ def test_world_panel_applies_screen_shake_before_render(monkeypatch) -> None:
 
     panel._render_map = wrapped_render_map  # type: ignore[assignment]
 
-    from catley.view.renderer import Renderer
+    from catley.view.render.renderer import Renderer
 
     panel.draw(cast(Renderer, controller.renderer))
 
@@ -158,7 +158,7 @@ def test_world_panel_screen_shake_does_not_overflow(monkeypatch) -> None:
 
     panel._render_map = wrapped_render_map  # type: ignore[assignment]
 
-    from catley.view.renderer import Renderer
+    from catley.view.render.renderer import Renderer
 
     panel.draw(cast(Renderer, controller.renderer))
 
@@ -179,7 +179,7 @@ def test_small_map_actor_alignment(monkeypatch) -> None:
     panel = WorldPanel(cast("Controller", controller), shake)
     panel.resize(0, 0, 10, 8)
 
-    from catley.view.renderer import Renderer
+    from catley.view.render.renderer import Renderer
 
     panel.draw(cast(Renderer, controller.renderer))
 

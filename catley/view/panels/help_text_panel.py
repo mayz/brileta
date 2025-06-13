@@ -4,11 +4,11 @@ from typing import TYPE_CHECKING
 
 from catley import colors
 from catley.view.panels.panel import Panel
-from catley.view.text_backend import TextBackend
+from catley.view.render.text_backend import TextBackend
 
 if TYPE_CHECKING:
     from catley.controller import Controller
-    from catley.view.renderer import Renderer
+    from catley.view.render.renderer import Renderer
 
 
 class HelpTextPanel(Panel):

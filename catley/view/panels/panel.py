@@ -15,8 +15,8 @@ Two-phase rendering: draw() for console ops, present() for SDL ops.
 import abc
 from typing import Any
 
-from catley.view.renderer import Renderer
-from catley.view.text_backend import TextBackend
+from catley.view.render.renderer import Renderer
+from catley.view.render.text_backend import TextBackend
 
 
 class Panel(abc.ABC):

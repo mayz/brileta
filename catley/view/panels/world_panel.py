@@ -14,17 +14,17 @@ from catley.config import (
     PULSATION_PERIOD,
     SELECTION_HIGHLIGHT_ALPHA,
 )
-from catley.view.effects.effects import EffectLibrary
-from catley.view.effects.particles import SubTileParticleSystem
-from catley.view.effects.screen_shake import ScreenShake
-from catley.view.viewport import ViewportSystem
+from catley.view.render.effects.effects import EffectLibrary
+from catley.view.render.effects.particles import SubTileParticleSystem
+from catley.view.render.effects.screen_shake import ScreenShake
+from catley.view.render.viewport import ViewportSystem
 
 from .panel import Panel
 
 if TYPE_CHECKING:
     from catley.controller import Controller
     from catley.game.actors import Actor
-    from catley.view.renderer import Renderer
+    from catley.view.render.renderer import Renderer
 
 
 class WorldPanel(Panel):
