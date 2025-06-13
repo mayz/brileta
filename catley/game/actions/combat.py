@@ -216,21 +216,10 @@ class AttackAction(GameAction):
         attacker_score = getattr(self.attacker.stats, stat_name)
         defender_score = self.defender.stats.agility + self._adjacent_cover_bonus()
 
-        resolution_args: dict[str, Any] = {
-            "has_advantage": False,
-            "has_disadvantage": False,
-        }
-
-        # Add stat name so conditions can inspect which ability is being used
-        resolution_args["stat_name"] = stat_name
-
-        # Process status effects first
-        for effect in self.attacker.status_effects:
-            resolution_args = effect.apply_to_resolution(resolution_args)
-
-        # Then process any conditions that might influence the roll
-        for condition in self.attacker.get_conditions():
-            resolution_args = condition.apply_to_resolution(resolution_args)
+        # Get all resolution modifiers from the unified facade
+        resolution_args: dict[str, Any] = (
+            self.attacker.modifiers.get_resolution_modifiers(stat_name)
+        )
 
         if resolution_args.get("action_prevented", False):
             return None
