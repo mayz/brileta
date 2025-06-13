@@ -37,29 +37,25 @@ def make_world() -> tuple[DummyController, Character]:
 
 def test_single_exhaustion_energy_reduction() -> None:
     controller, actor = make_world()
-    actor.accumulated_energy = 0
+    actor.energy.accumulated_energy = 0
     actor.add_condition(conditions.Exhaustion())
-    expected = int(
-        actor.calculate_effective_speed()
-        * actor.modifiers.get_exhaustion_energy_multiplier()
-    )
-    actor.regenerate_energy()
-    assert actor.accumulated_energy == expected
-    assert not actor.has_exhaustion_disadvantage()
+    expected = int(actor.energy.speed * actor.modifiers.get_movement_speed_multiplier())
+    expected = int(expected * actor.modifiers.get_exhaustion_energy_multiplier())
+    actor.energy.regenerate()
+    assert actor.energy.accumulated_energy == expected
+    assert not actor.modifiers.has_disadvantage_from_exhaustion()
 
 
 def test_double_exhaustion_disadvantage_and_energy() -> None:
     controller, actor = make_world()
-    actor.accumulated_energy = 0
+    actor.energy.accumulated_energy = 0
     actor.add_condition(conditions.Exhaustion())
     actor.add_condition(conditions.Exhaustion())
-    expected = int(
-        actor.calculate_effective_speed()
-        * actor.modifiers.get_exhaustion_energy_multiplier()
-    )
-    actor.regenerate_energy()
-    assert actor.accumulated_energy == expected
-    assert actor.has_exhaustion_disadvantage()
+    expected = int(actor.energy.speed * actor.modifiers.get_movement_speed_multiplier())
+    expected = int(expected * actor.modifiers.get_exhaustion_energy_multiplier())
+    actor.energy.regenerate()
+    assert actor.energy.accumulated_energy == expected
+    assert actor.modifiers.has_disadvantage_from_exhaustion()
 
     target = Character(
         1, 0, "T", colors.WHITE, "Tar", game_world=cast(GameWorld, controller.gw)
@@ -92,14 +88,12 @@ def test_exhaustion_removal_restores_effects() -> None:
     # Remove one stack
     exhaustion = actor.get_conditions_by_type(conditions.Exhaustion)[0]
     actor.remove_condition(exhaustion)
-    assert not actor.has_exhaustion_disadvantage()
-    actor.accumulated_energy = 0
-    expected = int(
-        actor.calculate_effective_speed()
-        * actor.modifiers.get_exhaustion_energy_multiplier()
-    )
-    actor.regenerate_energy()
-    assert actor.accumulated_energy == expected
+    assert not actor.modifiers.has_disadvantage_from_exhaustion()
+    actor.energy.accumulated_energy = 0
+    expected = int(actor.energy.speed * actor.modifiers.get_movement_speed_multiplier())
+    expected = int(expected * actor.modifiers.get_exhaustion_energy_multiplier())
+    actor.energy.regenerate()
+    assert actor.energy.accumulated_energy == expected
 
 
 def test_injury_and_exhaustion_stack() -> None:
@@ -107,12 +101,19 @@ def test_injury_and_exhaustion_stack() -> None:
     actor.add_condition(conditions.Injury(InjuryLocation.LEFT_LEG, "Bruise"))
     actor.add_condition(conditions.Exhaustion())
     expected_speed = int(
-        actor.speed * 0.75 * MovementConstants.EXHAUSTION_SPEED_REDUCTION_PER_STACK
+        actor.energy.speed * actor.modifiers.get_movement_speed_multiplier()
     )
-    assert actor.calculate_effective_speed() == expected_speed
+    assert expected_speed == int(
+        actor.energy.speed
+        * MovementConstants.EXHAUSTION_SPEED_REDUCTION_PER_STACK
+        * 0.75
+    )
+    assert expected_speed == int(
+        actor.energy.speed * actor.modifiers.get_movement_speed_multiplier()
+    )
     expected_energy = int(
         expected_speed * actor.modifiers.get_exhaustion_energy_multiplier()
     )
-    actor.accumulated_energy = 0
-    actor.regenerate_energy()
-    assert actor.accumulated_energy == expected_energy
+    actor.energy.accumulated_energy = 0
+    actor.energy.regenerate()
+    assert actor.energy.accumulated_energy == expected_energy

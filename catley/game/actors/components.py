@@ -40,10 +40,11 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from . import Actor, StatusEffect
+    from .core import Actor
+    from .status_effects import StatusEffect
 
 from catley import colors
-from catley.config import DEFAULT_MAX_ARMOR
+from catley.config import DEFAULT_ACTOR_SPEED, DEFAULT_MAX_ARMOR
 from catley.constants.movement import MovementConstants
 from catley.game.enums import ItemSize
 from catley.game.items.item_core import Item
@@ -688,3 +689,33 @@ class ConditionsComponent:
         """Apply per-turn effects for all conditions."""
         for condition in self.get_all_conditions():
             condition.apply_turn_effect(actor)
+
+
+@dataclass(slots=True)
+class EnergyComponent:
+    """Handle an actor's action economy (speed and energy)."""
+
+    actor: Actor
+    speed: int = DEFAULT_ACTOR_SPEED
+    accumulated_energy: int = 0
+
+    def __post_init__(self) -> None:
+        self.accumulated_energy = self.speed
+
+    def regenerate(self) -> None:
+        """Accumulate energy based on speed and active modifiers."""
+        effective_speed = int(
+            self.speed * self.actor.modifiers.get_movement_speed_multiplier()
+        )
+        final_energy_gain = int(
+            effective_speed * self.actor.modifiers.get_exhaustion_energy_multiplier()
+        )
+        self.accumulated_energy += final_energy_gain
+
+    def can_afford(self, cost: int) -> bool:
+        """Return True if there is enough stored energy."""
+        return self.accumulated_energy >= cost
+
+    def spend(self, cost: int) -> None:
+        """Spend accumulated energy."""
+        self.accumulated_energy -= cost
