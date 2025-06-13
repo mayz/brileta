@@ -1,10 +1,10 @@
 from dataclasses import dataclass
 from unittest.mock import MagicMock
 
-from catley.view.effects.effects import EffectLibrary
 from catley.view.frame_manager import FrameManager
 from catley.view.panels.world_panel import WorldPanel
-from catley.view.viewport import ViewportSystem
+from catley.view.render.effects.effects import EffectLibrary
+from catley.view.render.viewport import ViewportSystem
 
 
 @dataclass

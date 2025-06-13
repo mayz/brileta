@@ -17,7 +17,7 @@ from catley.game.actors import Character
 from catley.game.game_world import GameWorld
 from catley.game.items.item_types import GRENADE_TYPE
 from catley.view.frame_manager import FrameManager
-from catley.view.renderer import Renderer
+from catley.view.render.renderer import Renderer
 from tests.helpers import DummyGameWorld
 
 

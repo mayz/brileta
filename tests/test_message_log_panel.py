@@ -8,7 +8,7 @@ import tcod.sdl.video
 from catley import colors, config
 from catley.util.message_log import MessageLog
 from catley.view.panels.message_log_panel import MessageLogPanel
-from catley.view.text_backend import PillowTextBackend, TextBackend
+from catley.view.render.text_backend import PillowTextBackend, TextBackend
 
 
 def test_message_log_panel_ttf_rendering_visible() -> None:

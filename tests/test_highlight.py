@@ -8,8 +8,8 @@ import numpy as np
 
 from catley.controller import Controller
 from catley.game.actors import Actor
-from catley.view.effects.screen_shake import ScreenShake
 from catley.view.panels.world_panel import WorldPanel
+from catley.view.render.effects.screen_shake import ScreenShake
 
 
 class DummyActor:

@@ -38,7 +38,7 @@ from typing import TYPE_CHECKING
 from catley import colors
 from catley.config import DEFAULT_ACTOR_SPEED
 from catley.constants.movement import MovementConstants
-from catley.view.effects.lighting import LightSource
+from catley.view.render.effects.lighting import LightSource
 
 from .ai import AIComponent, DispositionBasedAI
 from .components import (

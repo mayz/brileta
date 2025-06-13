@@ -3,7 +3,7 @@ from typing import cast
 import pytest
 
 from catley.game.actors import Actor
-from catley.view.viewport import ViewportSystem
+from catley.view.render.viewport import ViewportSystem
 
 
 class DummyActor:

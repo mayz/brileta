@@ -18,8 +18,6 @@ from catley.events import (
     subscribe_to_event,
 )
 
-from .effects.effects import EffectContext
-from .effects.screen_shake import ScreenShake
 from .panels.equipment_panel import EquipmentPanel
 from .panels.fps_panel import FPSPanel
 from .panels.health_panel import HealthPanel
@@ -28,8 +26,10 @@ from .panels.message_log_panel import MessageLogPanel
 from .panels.panel import Panel
 from .panels.status_panel import StatusPanel
 from .panels.world_panel import WorldPanel
-from .renderer import Renderer
-from .text_backend import PillowTextBackend, TCODTextBackend
+from .render.effects.effects import EffectContext
+from .render.effects.screen_shake import ScreenShake
+from .render.renderer import Renderer
+from .render.text_backend import PillowTextBackend, TCODTextBackend
 from .ui.cursor_manager import CursorManager
 
 if TYPE_CHECKING:

@@ -16,7 +16,7 @@ from catley.game.items.item_types import (
     SNIPER_RIFLE_TYPE,
 )
 from catley.util.spatial import SpatialHashGrid, SpatialIndex
-from catley.view.effects.lighting import LightingSystem, LightSource
+from catley.view.render.effects.lighting import LightingSystem, LightSource
 
 
 class GameWorld:

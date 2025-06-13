@@ -1,6 +1,6 @@
 import numpy as np
 
-from catley.view.effects.lighting import LightingSystem, LightSource
+from catley.view.render.effects.lighting import LightingSystem, LightSource
 
 
 def test_compute_lighting_with_viewport_offset() -> None:
