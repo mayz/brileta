@@ -37,7 +37,7 @@ Note:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from . import Actor, StatusEffect
@@ -48,7 +48,7 @@ from catley.game.enums import ItemSize
 from catley.game.items.item_core import Item
 
 from .conditions import Condition, Exhaustion
-from .status_effects import EncumberedEffect
+from .status_effects import EncumberedEffect, StatusEffect
 
 
 @dataclass(slots=True)
@@ -516,7 +516,7 @@ class ModifiersComponent:
             A dictionary of combined modifiers (e.g., {'has_disadvantage': True}).
         """
         # Start with a base context for the resolution.
-        resolution_args: dict[str, bool] = {"stat_name": stat_name}
+        resolution_args: dict[str, Any] = {"stat_name": stat_name}
 
         # First, apply modifiers from temporary status effects.
         for effect in self.get_all_status_effects():
