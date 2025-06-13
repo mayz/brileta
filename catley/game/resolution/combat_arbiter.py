@@ -3,9 +3,7 @@ from __future__ import annotations
 import random
 
 from catley.game import ranges
-from catley.game.actors import Actor, Character
-from catley.game.components import HealthComponent
-from catley.game.conditions import Injury
+from catley.game.actors import Actor, Character, components, conditions
 from catley.game.enums import InjuryLocation, OutcomeTier
 from catley.game.items.capabilities import Attack
 from catley.game.items.item_core import Item
@@ -58,10 +56,10 @@ def determine_outcome(
     if resolution_result.outcome_tier == OutcomeTier.CRITICAL_SUCCESS:
         damage += attack_handler.damage_dice.roll()
         health = defender.health
-        if isinstance(health, HealthComponent) and health.ap > 0:
+        if isinstance(health, components.HealthComponent) and health.ap > 0:
             outcome.armor_damage = health.ap
         else:
-            outcome.injury_inflicted = Injury(
+            outcome.injury_inflicted = conditions.Injury(
                 _determine_injury_location(),
                 "Combat Wound",
             )

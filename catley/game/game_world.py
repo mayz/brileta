@@ -4,8 +4,12 @@ from typing import cast
 from catley import colors, config
 from catley.config import PLAYER_BASE_STRENGTH, PLAYER_BASE_TOUGHNESS
 from catley.environment.map import GameMap, Rect
-from catley.game import conditions
-from catley.game.actors import Actor, Character
+from catley.game.actors import (
+    Actor,
+    Character,
+    components,
+    conditions,
+)
 from catley.game.items.item_core import Item
 from catley.game.items.item_types import (
     COMBAT_KNIFE_TYPE,
@@ -42,12 +46,6 @@ class GameWorld:
         self.add_actor(self.player)
         self._position_player(rooms[0])
         self._add_starting_injury()
-        self.player.inventory.add_to_inventory(
-            conditions.Sickness(
-                sickness_type="Poisoned",
-                description="Poisoned by a toxic dart",
-            )
-        )
 
         self._populate_npcs(rooms)
 
@@ -133,8 +131,6 @@ class GameWorld:
 
     def _spawn_dropped_item(self, item: Item, x: int, y: int) -> None:
         """Spawn a dropped item on the ground as an Actor."""
-        from catley.game.components import InventoryComponent, StatsComponent
-
         ground_actor = Actor(
             x=x,
             y=y,
@@ -143,10 +139,10 @@ class GameWorld:
             name=f"Dropped {item.name}",
             game_world=self,
             blocks_movement=False,
-            inventory=InventoryComponent(StatsComponent()),
+            inventory=components.InventoryComponent(components.StatsComponent()),
         )
         assert ground_actor.inventory is not None
-        inv_comp = cast(InventoryComponent, ground_actor.inventory)
+        inv_comp = cast(components.InventoryComponent, ground_actor.inventory)
         inv_comp.add_to_inventory(item)
         self.add_actor(ground_actor)
 

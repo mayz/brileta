@@ -2,12 +2,11 @@ import abc
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .actors import Actor
+    from . import Actor
 
 from catley import colors
 from catley.events import MessageEvent, publish_event
-
-from .enums import InjuryLocation
+from catley.game.enums import InjuryLocation
 
 
 class Condition(abc.ABC):  # noqa: B024

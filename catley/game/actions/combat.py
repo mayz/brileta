@@ -7,7 +7,7 @@ combat-related mechanics including hit/miss determination and effects.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from catley import colors
 from catley.constants.combat import CombatConstants as Combat
@@ -21,13 +21,12 @@ from catley.events import (
 )
 from catley.game import ranges
 from catley.game.actions.base import GameAction, GameActionResult
-from catley.game.actors import Character, Disposition
-from catley.game.ai import DispositionBasedAI
+from catley.game.actors import Character, ai, status_effects
 from catley.game.consequences import (
     AttackConsequenceGenerator,
     ConsequenceHandler,
 )
-from catley.game.enums import OutcomeTier
+from catley.game.enums import Disposition, OutcomeTier
 from catley.game.items.capabilities import Attack
 from catley.game.items.item_core import Item
 from catley.game.items.item_types import FISTS_TYPE
@@ -35,7 +34,6 @@ from catley.game.items.properties import TacticalProperty, WeaponProperty
 from catley.game.resolution import combat_arbiter
 from catley.game.resolution.base import ResolutionResult
 from catley.game.resolution.outcomes import CombatOutcome
-from catley.game.status_effects import OffBalanceEffect
 
 if TYPE_CHECKING:
     from catley.controller import Controller
@@ -218,7 +216,10 @@ class AttackAction(GameAction):
         attacker_score = getattr(self.attacker.stats, stat_name)
         defender_score = self.defender.stats.agility + self._adjacent_cover_bonus()
 
-        resolution_args = {"has_advantage": False, "has_disadvantage": False}
+        resolution_args: dict[str, Any] = {
+            "has_advantage": False,
+            "has_disadvantage": False,
+        }
 
         # Add stat name so conditions can inspect which ability is being used
         resolution_args["stat_name"] = stat_name
@@ -378,7 +379,7 @@ class AttackAction(GameAction):
                     colors.LIGHT_BLUE,
                 )
             )
-            self.attacker.apply_status_effect(OffBalanceEffect())
+            self.attacker.apply_status_effect(status_effects.OffBalanceEffect())
 
     def _log_hit_message(
         self, attack_result: ResolutionResult, weapon: Item, damage: int
@@ -470,7 +471,7 @@ class AttackAction(GameAction):
         if (
             self.attacker == self.controller.gw.player
             and self.defender != self.controller.gw.player
-            and isinstance(self.defender.ai, DispositionBasedAI)
+            and isinstance(self.defender.ai, ai.DispositionBasedAI)
             and self.defender.ai.disposition != Disposition.HOSTILE
         ):
             self.defender.ai.disposition = Disposition.HOSTILE

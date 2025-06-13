@@ -40,14 +40,15 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .actors import Actor
+    from . import Actor
 
 from catley import colors
 from catley.config import DEFAULT_MAX_ARMOR
+from catley.game.enums import ItemSize
+from catley.game.items.item_core import Item
 
 from .conditions import Condition
-from .enums import ItemSize
-from .items.item_core import Item
+from .status_effects import EncumberedEffect
 
 
 @dataclass(slots=True)
@@ -300,7 +301,6 @@ class InventoryComponent:
 
         from catley import colors
         from catley.events import MessageEvent, publish_event
-        from catley.game.status_effects import EncumberedEffect
 
         currently_encumbered = self.actor.has_status_effect(EncumberedEffect)
         should_be_encumbered = self.is_encumbered()

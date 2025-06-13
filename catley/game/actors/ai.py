@@ -26,14 +26,13 @@ from typing import TYPE_CHECKING
 from catley import colors
 from catley.constants.combat import CombatConstants as Combat
 from catley.events import MessageEvent, publish_event
-
-from .enums import Disposition
+from catley.game.enums import Disposition
 
 if TYPE_CHECKING:
     from catley.controller import Controller
+    from catley.game.actions.base import GameAction
 
-    from .actions.base import GameAction
-    from .actors import NPC, Actor, Character
+    from . import NPC, Actor, Character
 
 
 class AIComponent(abc.ABC):
@@ -139,7 +138,7 @@ class HostileAI(AIComponent):
         distance = abs(dx) + abs(dy)  # Manhattan distance
 
         # Import here to avoid circular imports
-        from .actions.combat import AttackAction
+        from catley.game.actions.combat import AttackAction
 
         # Adjacent to player - attack!
         if distance == 1:
@@ -165,7 +164,7 @@ class HostileAI(AIComponent):
         dy: int,
     ) -> GameAction | None:
         """Calculate movement toward the player with basic pathfinding."""
-        from .actions.movement import MoveAction
+        from catley.game.actions.movement import MoveAction
 
         # Determine preferred movement direction
         move_dx = 0

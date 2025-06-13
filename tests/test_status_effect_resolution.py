@@ -7,18 +7,12 @@ from unittest.mock import patch
 from catley import colors
 from catley.controller import Controller
 from catley.game.actions.combat import AttackAction
-from catley.game.actors import PC, Character
+from catley.game.actors import PC, Character, status_effects
 from catley.game.game_world import GameWorld
 from catley.game.items.capabilities import Attack
 from catley.game.items.item_core import Item
 from catley.game.items.item_types import FISTS_TYPE
 from catley.game.resolution.d20_system import D20ResolutionResult
-from catley.game.status_effects import (
-    FocusedEffect,
-    OffBalanceEffect,
-    StrengthBoostEffect,
-    TrippedEffect,
-)
 from catley.game.turn_manager import TurnManager
 from tests.helpers import DummyGameWorld
 
@@ -68,7 +62,7 @@ def test_offbalance_gives_disadvantage() -> None:
     controller, attacker, defender, action = make_combat_world()
     weapon = cast(Item, action.weapon)
     attack = cast(Attack, weapon.melee_attack)
-    attacker.apply_status_effect(OffBalanceEffect())
+    attacker.apply_status_effect(status_effects.OffBalanceEffect())
     with patch("random.randint", side_effect=[2, 18]):
         result = cast(
             D20ResolutionResult,
@@ -82,7 +76,7 @@ def test_focused_gives_advantage() -> None:
     controller, attacker, defender, action = make_combat_world()
     weapon = cast(Item, action.weapon)
     attack = cast(Attack, weapon.melee_attack)
-    attacker.apply_status_effect(FocusedEffect())
+    attacker.apply_status_effect(status_effects.FocusedEffect())
     with patch("random.randint", side_effect=[5, 17]):
         result = cast(
             D20ResolutionResult,
@@ -96,7 +90,7 @@ def test_modifier_combination_cancels() -> None:
     controller, attacker, defender, action = make_combat_world()
     weapon = cast(Item, action.weapon)
     attack = cast(Attack, weapon.melee_attack)
-    attacker.apply_status_effect(FocusedEffect())
+    attacker.apply_status_effect(status_effects.FocusedEffect())
     with patch("random.randint", return_value=11):
         result = cast(
             D20ResolutionResult,
@@ -115,7 +109,7 @@ def test_strength_boost_applies_to_roll() -> None:
     controller, attacker, defender, action = make_combat_world()
     weapon = cast(Item, action.weapon)
     attack = cast(Attack, weapon.melee_attack)
-    attacker.apply_status_effect(StrengthBoostEffect(duration=1))
+    attacker.apply_status_effect(status_effects.StrengthBoostEffect(duration=1))
     with patch("random.randint", return_value=10):
         result = cast(
             D20ResolutionResult,
@@ -132,11 +126,11 @@ def test_tripped_skips_turn() -> None:
     controller = DummyController(gw=gw)
     tm = TurnManager(cast(Controller, controller))
 
-    player.apply_status_effect(TrippedEffect())
+    player.apply_status_effect(status_effects.TrippedEffect())
     tm.queue_action(
         AttackAction(cast(Controller, controller), player, player, FISTS_TYPE.create())
     )
     tm.process_unified_round()
     assert not controller.update_fov_called
     assert player.accumulated_energy == player.speed
-    assert not player.has_status_effect(TrippedEffect)
+    assert not player.has_status_effect(status_effects.TrippedEffect)

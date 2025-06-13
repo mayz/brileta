@@ -1,8 +1,7 @@
 from typing import cast
 
 from catley import colors
-from catley.game.actors import Character
-from catley.game.conditions import Sickness
+from catley.game.actors import Character, conditions
 from catley.game.game_world import GameWorld
 from tests.helpers import DummyGameWorld
 
@@ -16,7 +15,7 @@ def make_actor() -> Character:
 
 def test_poisoned_turn_damage_and_disadvantage() -> None:
     actor = make_actor()
-    poison = Sickness(sickness_type="Poisoned")
+    poison = conditions.Sickness(sickness_type="Poisoned")
     actor.inventory.add_to_inventory(poison)
     actor.health.ap = 0
     starting_hp = actor.health.hp
@@ -30,7 +29,7 @@ def test_poisoned_turn_damage_and_disadvantage() -> None:
 
 def test_venom_damage_and_agility_penalty() -> None:
     actor = make_actor()
-    venom = Sickness(sickness_type="Venom")
+    venom = conditions.Sickness(sickness_type="Venom")
     actor.inventory.add_to_inventory(venom)
     actor.health.ap = 0
     starting_hp = actor.health.hp
@@ -44,7 +43,7 @@ def test_venom_damage_and_agility_penalty() -> None:
 
 def test_disease_physical_disadvantage() -> None:
     actor = make_actor()
-    disease = Sickness(sickness_type="Disease")
+    disease = conditions.Sickness(sickness_type="Disease")
     actor.inventory.add_to_inventory(disease)
     for stat in ("strength", "toughness", "agility"):
         args = {"has_advantage": False, "has_disadvantage": False, "stat_name": stat}
@@ -54,7 +53,7 @@ def test_disease_physical_disadvantage() -> None:
 
 def test_radiation_sickness_bypasses_armor() -> None:
     actor = make_actor()
-    rad = Sickness(sickness_type="Radiation Sickness")
+    rad = conditions.Sickness(sickness_type="Radiation Sickness")
     actor.inventory.add_to_inventory(rad)
     actor.health.ap = 5
     starting_hp = actor.health.hp
