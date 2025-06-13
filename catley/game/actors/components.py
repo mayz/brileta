@@ -690,6 +690,16 @@ class ConditionsComponent:
         """Remove a specific condition from the inventory."""
         return self.inventory.remove_from_inventory(condition)
 
+    def remove_conditions_by_type(
+        self, condition_types: set[type[Condition]]
+    ) -> list[Condition]:
+        """Remove all conditions of the specified types."""
+        removed: list[Condition] = []
+        for condition_type in condition_types:
+            conditions_of_type = self.get_conditions_by_type(condition_type)
+            removed.extend([c for c in conditions_of_type if self.remove_condition(c)])
+        return removed
+
     def apply_turn_effects(self, actor: Actor) -> None:
         """Apply per-turn effects for all conditions."""
         for condition in self.get_all_conditions():

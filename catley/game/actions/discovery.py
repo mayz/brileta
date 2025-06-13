@@ -23,8 +23,16 @@ from typing import TYPE_CHECKING
 from catley.game import ranges
 from catley.game.actions.base import GameAction
 from catley.game.actions.combat import AttackAction, ReloadAction
+from catley.game.actions.recovery import (
+    ComfortableSleepAction,
+    RestAction,
+    SleepAction,
+    UseConsumableAction,
+    is_safe_location,
+)
 from catley.game.actors import Character
 from catley.game.enums import Disposition
+from catley.game.items.item_core import Item
 
 if TYPE_CHECKING:
     from catley.controller import Controller
@@ -111,6 +119,7 @@ class ActionDiscovery:
         all_options.extend(self._get_combat_options(controller, actor, context))
         all_options.extend(self._get_inventory_options(controller, actor, context))
         all_options.extend(self._get_movement_options(controller, actor, context))
+        all_options.extend(self._get_recovery_options(controller, actor, context))
         all_options.extend(self._get_environment_options(controller, actor, context))
         all_options.extend(self._get_social_options(controller, actor, context))
 
@@ -440,6 +449,65 @@ class ActionDiscovery:
                         ),
                     )
                 )
+
+        # Consumable items
+        options.extend(
+            ActionOption(
+                name=f"Use {item.name}",
+                description=f"Consume {item.name}",
+                category=ActionCategory.ITEMS,
+                execute=functools.partial(UseConsumableAction, controller, actor, item),
+            )
+            for item in actor.inventory
+            if isinstance(item, Item) and item.consumable_effect
+        )
+
+        return options
+
+    def _get_recovery_options(
+        self, controller: Controller, actor: Character, context: ActionContext
+    ) -> list[ActionOption]:
+        """Get rest and sleep related options."""
+
+        options: list[ActionOption] = []
+        safe, _ = is_safe_location(actor)
+
+        if actor.health.ap < actor.health.max_ap and safe:
+            options.append(
+                ActionOption(
+                    name="Rest",
+                    description="Recover armor points",
+                    category=ActionCategory.ENVIRONMENT,
+                    execute=functools.partial(RestAction, controller, actor),
+                )
+            )
+
+        needs_sleep = (
+            actor.health.hp < actor.health.max_hp
+            or actor.modifiers.get_exhaustion_count() > 0
+        )
+
+        if needs_sleep and safe:
+            options.append(
+                ActionOption(
+                    name="Sleep",
+                    description="Sleep to restore HP and ease exhaustion",
+                    category=ActionCategory.ENVIRONMENT,
+                    execute=functools.partial(SleepAction, controller, actor),
+                )
+            )
+
+        if actor.modifiers.get_exhaustion_count() > 0 and safe:
+            options.append(
+                ActionOption(
+                    name="Comfortable Sleep",
+                    description="Remove all exhaustion and restore HP",
+                    category=ActionCategory.ENVIRONMENT,
+                    execute=functools.partial(
+                        ComfortableSleepAction, controller, actor
+                    ),
+                )
+            )
 
         return options
 

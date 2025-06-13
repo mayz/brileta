@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import abc
-from typing import TYPE_CHECKING, Generic, TypeVar
+from typing import TYPE_CHECKING, Generic, TypeVar, cast
 
+from catley.game.actors.conditions import Condition
 from catley.game.enums import AreaType, BlendMode, ConsumableEffectType  # noqa: F401
 from catley.game.items.properties import ItemProperty
 from catley.util import dice
@@ -10,6 +11,7 @@ from catley.util import dice
 if TYPE_CHECKING:
     from catley.controller import Controller
     from catley.game.actors import Actor
+    from catley.game.actors.components import ConditionsComponent
 
 
 class AttackSpec(abc.ABC):  # noqa: B024
@@ -374,13 +376,20 @@ class ConsumableEffectSpec:  # Definition Class
     effect_type: ConsumableEffectType
     effect_value: int
     max_uses: int = 1
+    target_condition_types: set[type[Condition]]
 
     def __init__(
-        self, effect_type: ConsumableEffectType, effect_value: int, max_uses: int = 1
+        self,
+        effect_type: ConsumableEffectType,
+        effect_value: int,
+        max_uses: int = 1,
+        *,
+        target_condition_types: set[type[Condition]] | None = None,
     ) -> None:
         self.effect_type = effect_type
         self.effect_value = effect_value
         self.max_uses = max_uses
+        self.target_condition_types = target_condition_types or set()
 
 
 class ConsumableEffect:  # Handler Class
@@ -391,13 +400,61 @@ class ConsumableEffect:  # Handler Class
         self.uses_remaining = spec.max_uses
 
     def consume(self, target_actor: Actor, controller: Controller) -> bool:
-        if self.uses_remaining > 0:
-            # Apply effect logic using:
-            # self._spec.effect_type, self._spec.effect_value
-            print(f"Consuming {self._spec.effect_type}, val {self._spec.effect_value}")
-            self.uses_remaining -= 1
-            return True
-        return False
+        """Apply the consumable's effect to ``target_actor``."""
+
+        from catley import colors
+        from catley.events import MessageEvent, publish_event
+        from catley.game.actors import conditions
+
+        if self.uses_remaining <= 0:
+            return False
+
+        messages: list[str] = []
+        health = target_actor.health
+
+        # Apply healing effects
+        if health and self._spec.effect_type == ConsumableEffectType.HEAL:
+            before = health.hp
+            health.heal(self._spec.effect_value)
+            healed = health.hp - before
+            if healed:
+                messages.append(f"Restored {healed} HP")
+        elif health and self._spec.effect_type == ConsumableEffectType.HEAL_HP:
+            if health.hp < health.max_hp:
+                healed = health.max_hp - health.hp
+                health.hp = health.max_hp
+                messages.append(f"Restored {healed} HP")
+            else:
+                messages.append("Already at full HP")
+        elif self._spec.effect_type == ConsumableEffectType.POISON and health:
+            damage = abs(self._spec.effect_value)
+            target_actor.take_damage(damage)
+            messages.append(f"Took {damage} poison damage")
+
+        # Remove conditions in bulk if specified
+        removed_conditions: list[conditions.Condition] = []
+        if target_actor.conditions and self._spec.target_condition_types:
+            removed_conditions = cast(
+                "ConditionsComponent", target_actor.conditions
+            ).remove_conditions_by_type(self._spec.target_condition_types)
+            if removed_conditions:
+                counts: dict[str, int] = {}
+                for cond in removed_conditions:
+                    name = type(cond).__name__
+                    counts[name] = counts.get(name, 0) + 1
+                parts = [
+                    f"{count} {name}{'s' if count > 1 else ''}"
+                    for name, count in counts.items()
+                ]
+                messages.append("Removed " + " and ".join(parts))
+
+        if messages:
+            publish_event(MessageEvent("; ".join(messages), colors.GREEN))
+        else:
+            publish_event(MessageEvent("Nothing happens", colors.YELLOW))
+
+        self.uses_remaining -= 1
+        return True
 
     @property
     def max_uses(self) -> int:

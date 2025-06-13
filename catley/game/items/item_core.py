@@ -23,7 +23,7 @@ from catley.game.items.properties import (
 AttackHandler = MeleeAttack | RangedAttack | AreaEffect
 
 
-@dataclass
+@dataclass(eq=False)
 class ItemType:
     """Defines what kind of item this is - shared template holding specs."""
 
@@ -42,6 +42,9 @@ class ItemType:
     # Unarmed attack placeholders like Fists should not be materialized
     # into an Actor that can be picked up.
     can_materialize: bool = True
+
+    def __hash__(self) -> int:  # pragma: no cover - simple identity hash
+        return id(self)
 
     def create(self) -> "Item":
         """Create a new Item instance of this type."""
