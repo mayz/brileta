@@ -79,7 +79,7 @@ class SpatialHashGrid(SpatialIndex[T]):
         if cell_size <= 0:
             raise ValueError("Cell size must be a positive integer.")
         self.cell_size = cell_size
-        self.grid: dict[Coord, list[T]] = defaultdict(list)
+        self.grid: dict[Coord, set[T]] = defaultdict(set)
         self._obj_to_cell: dict[T, Coord] = {}
 
     def _hash(self, x: int, y: int) -> Coord:
@@ -89,7 +89,7 @@ class SpatialHashGrid(SpatialIndex[T]):
     def add(self, obj: T) -> None:
         """Add an object to the grid."""
         cell_xy = self._hash(obj.x, obj.y)
-        self.grid[cell_xy].append(obj)
+        self.grid[cell_xy].add(obj)
         self._obj_to_cell[obj] = cell_xy
 
     def remove(self, obj: T) -> None:
@@ -118,7 +118,7 @@ class SpatialHashGrid(SpatialIndex[T]):
 
         if old_cell_xy is None:
             # Object wasn't tracked; treat as a fresh add
-            self.grid[new_cell_xy].append(obj)
+            self.grid[new_cell_xy].add(obj)
             self._obj_to_cell[obj] = new_cell_xy
             return
 
@@ -134,7 +134,7 @@ class SpatialHashGrid(SpatialIndex[T]):
             except ValueError:
                 pass
 
-        self.grid[new_cell_xy].append(obj)
+        self.grid[new_cell_xy].add(obj)
         self._obj_to_cell[obj] = new_cell_xy
 
     def get_at_point(self, x: int, y: int) -> list[T]:
@@ -146,36 +146,45 @@ class SpatialHashGrid(SpatialIndex[T]):
 
     def get_in_bounds(self, x1: int, y1: int, x2: int, y2: int) -> list[T]:
         """Get all objects within a rectangular bounding box."""
-        cx1, cy1 = self._hash(x1, y1)
-        cx2, cy2 = self._hash(x2, y2)
+        # Ensure the coordinates are ordered correctly. This makes the function
+        # more robust and prevents range() from returning nothing unexpectedly.
+        if x1 > x2:
+            x1, x2 = x2, x1
+        if y1 > y2:
+            y1, y2 = y2, y1
 
-        results: list[T] = []
-        seen = set()  # Use a set to prevent adding duplicates
-
-        for cx in range(cx1, cx2 + 1):
-            for cy in range(cy1, cy2 + 1):
-                for obj in self.grid.get((cx, cy), []):
-                    # Check if object is within the precise bounds and not already added
-                    if obj not in seen and x1 <= obj.x <= x2 and y1 <= obj.y <= y2:
-                        results.append(obj)
-                        seen.add(obj)
-        return results
+        # Delegate the core query logic to the internal helper method.
+        return self._query_bounds(x1, y1, x2, y2)
 
     def get_in_radius(self, x: int, y: int, radius: int) -> list[T]:
         """Get all objects within a certain Chebyshev distance (square radius)."""
-        bounds_x1, bounds_y1 = x - radius, y - radius
-        bounds_x2, bounds_y2 = x + radius, y + radius
+        # For Chebyshev distance, the query area IS a square bounding box.
+        # We calculate the bounds and delegate to the internal helper method.
+        bounds_x1 = x - radius
+        bounds_y1 = y - radius
+        bounds_x2 = x + radius
+        bounds_y2 = y + radius
 
-        # Get all potential matches within the bounding box of the radius.
-        potential_matches = self.get_in_bounds(
-            bounds_x1, bounds_y1, bounds_x2, bounds_y2
-        )
+        return self._query_bounds(bounds_x1, bounds_y1, bounds_x2, bounds_y2)
 
-        # Perform the final, more precise distance check.
+    def _query_bounds(self, x1: int, y1: int, x2: int, y2: int) -> list[T]:
+        """
+        Internal helper to get objects within a precise bounding box.
+        Assumes coordinates are already normalized (x1 <= x2, y1 <= y2).
+        """
+        # Calculate the cell coordinate range for the bounding box.
+        cx1, cy1 = self._hash(x1, y1)
+        cx2, cy2 = self._hash(x2, y2)
+
+        # Use a nested list comprehension for a concise and efficient implementation.
+        # We iterate through the relevant cells, then through the objects in each cell,
+        # and perform the final precise boundary check.
         return [
             obj
-            for obj in potential_matches
-            if max(abs(obj.x - x), abs(obj.y - y)) <= radius
+            for cx in range(cx1, cx2 + 1)
+            for cy in range(cy1, cy2 + 1)
+            for obj in self.grid.get((cx, cy), [])
+            if x1 <= obj.x <= x2 and y1 <= obj.y <= y2
         ]
 
     def clear(self) -> None:
