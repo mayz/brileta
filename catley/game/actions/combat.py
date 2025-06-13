@@ -368,7 +368,9 @@ class AttackAction(GameAction):
                     colors.LIGHT_BLUE,
                 )
             )
-            self.attacker.apply_status_effect(status_effects.OffBalanceEffect())
+            self.attacker.status_effects.apply_status_effect(
+                status_effects.OffBalanceEffect()
+            )
 
     def _log_hit_message(
         self, attack_result: ResolutionResult, weapon: Item, damage: int

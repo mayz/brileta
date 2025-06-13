@@ -38,7 +38,7 @@ def make_world() -> tuple[DummyController, Character]:
 def test_single_exhaustion_energy_reduction() -> None:
     controller, actor = make_world()
     actor.energy.accumulated_energy = 0
-    actor.add_condition(conditions.Exhaustion())
+    actor.conditions.add_condition(conditions.Exhaustion())
     expected = int(actor.energy.speed * actor.modifiers.get_movement_speed_multiplier())
     expected = int(expected * actor.modifiers.get_exhaustion_energy_multiplier())
     actor.energy.regenerate()
@@ -49,8 +49,8 @@ def test_single_exhaustion_energy_reduction() -> None:
 def test_double_exhaustion_disadvantage_and_energy() -> None:
     controller, actor = make_world()
     actor.energy.accumulated_energy = 0
-    actor.add_condition(conditions.Exhaustion())
-    actor.add_condition(conditions.Exhaustion())
+    actor.conditions.add_condition(conditions.Exhaustion())
+    actor.conditions.add_condition(conditions.Exhaustion())
     expected = int(actor.energy.speed * actor.modifiers.get_movement_speed_multiplier())
     expected = int(expected * actor.modifiers.get_exhaustion_energy_multiplier())
     actor.energy.regenerate()
@@ -69,10 +69,10 @@ def test_double_exhaustion_disadvantage_and_energy() -> None:
 
 def test_movement_stumble_with_high_exhaustion() -> None:
     controller, actor = make_world()
-    actor.add_condition(conditions.Exhaustion())
-    actor.add_condition(conditions.Exhaustion())
-    actor.add_condition(conditions.Exhaustion())
-    actor.add_condition(conditions.Exhaustion())
+    actor.conditions.add_condition(conditions.Exhaustion())
+    actor.conditions.add_condition(conditions.Exhaustion())
+    actor.conditions.add_condition(conditions.Exhaustion())
+    actor.conditions.add_condition(conditions.Exhaustion())
 
     with patch("random.random", return_value=0.05):
         action = MoveAction(controller, actor, dx=1, dy=0)
@@ -83,11 +83,11 @@ def test_movement_stumble_with_high_exhaustion() -> None:
 
 def test_exhaustion_removal_restores_effects() -> None:
     controller, actor = make_world()
-    actor.add_condition(conditions.Exhaustion())
-    actor.add_condition(conditions.Exhaustion())
+    actor.conditions.add_condition(conditions.Exhaustion())
+    actor.conditions.add_condition(conditions.Exhaustion())
     # Remove one stack
-    exhaustion = actor.get_conditions_by_type(conditions.Exhaustion)[0]
-    actor.remove_condition(exhaustion)
+    exhaustion = actor.conditions.get_conditions_by_type(conditions.Exhaustion)[0]
+    actor.conditions.remove_condition(exhaustion)
     assert not actor.modifiers.has_disadvantage_from_exhaustion()
     actor.energy.accumulated_energy = 0
     expected = int(actor.energy.speed * actor.modifiers.get_movement_speed_multiplier())
@@ -98,8 +98,8 @@ def test_exhaustion_removal_restores_effects() -> None:
 
 def test_injury_and_exhaustion_stack() -> None:
     controller, actor = make_world()
-    actor.add_condition(conditions.Injury(InjuryLocation.LEFT_LEG, "Bruise"))
-    actor.add_condition(conditions.Exhaustion())
+    actor.conditions.add_condition(conditions.Injury(InjuryLocation.LEFT_LEG, "Bruise"))
+    actor.conditions.add_condition(conditions.Exhaustion())
     expected_speed = int(
         actor.energy.speed * actor.modifiers.get_movement_speed_multiplier()
     )

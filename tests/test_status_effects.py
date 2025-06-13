@@ -33,48 +33,54 @@ def make_world() -> tuple[DummyController, PC]:
 
 def test_offbalance_effect_expires() -> None:
     controller, actor = make_world()
-    actor.apply_status_effect(status_effects.OffBalanceEffect())
-    assert actor.has_status_effect(status_effects.OffBalanceEffect)
+    actor.status_effects.apply_status_effect(status_effects.OffBalanceEffect())
+    assert actor.status_effects.has_status_effect(status_effects.OffBalanceEffect)
     actor.update_turn(cast(Controller, controller))
-    assert not actor.has_status_effect(status_effects.OffBalanceEffect)
+    assert not actor.status_effects.has_status_effect(status_effects.OffBalanceEffect)
 
 
 def test_focused_effect_expires() -> None:
     controller, actor = make_world()
-    actor.apply_status_effect(status_effects.FocusedEffect())
-    assert actor.has_status_effect(status_effects.FocusedEffect)
+    actor.status_effects.apply_status_effect(status_effects.FocusedEffect())
+    assert actor.status_effects.has_status_effect(status_effects.FocusedEffect)
     actor.update_turn(cast(Controller, controller))
-    assert not actor.has_status_effect(status_effects.FocusedEffect)
+    assert not actor.status_effects.has_status_effect(status_effects.FocusedEffect)
 
 
 def test_tripped_effect_expires() -> None:
     controller, actor = make_world()
-    actor.apply_status_effect(status_effects.TrippedEffect())
-    assert actor.has_status_effect(status_effects.TrippedEffect)
+    actor.status_effects.apply_status_effect(status_effects.TrippedEffect())
+    assert actor.status_effects.has_status_effect(status_effects.TrippedEffect)
     actor.update_turn(cast(Controller, controller))
-    assert not actor.has_status_effect(status_effects.TrippedEffect)
+    assert not actor.status_effects.has_status_effect(status_effects.TrippedEffect)
 
 
 def test_strength_boost_duration() -> None:
     controller, actor = make_world()
-    actor.apply_status_effect(status_effects.StrengthBoostEffect(duration=2))
+    actor.status_effects.apply_status_effect(
+        status_effects.StrengthBoostEffect(duration=2)
+    )
     assert actor.stats.strength == 7
     actor.update_turn(cast(Controller, controller))
     assert actor.stats.strength == 7
     actor.update_turn(cast(Controller, controller))
     assert actor.stats.strength == 5
-    assert not actor.has_status_effect(status_effects.StrengthBoostEffect)
+    assert not actor.status_effects.has_status_effect(
+        status_effects.StrengthBoostEffect
+    )
 
 
 def test_multiple_effects_coexist() -> None:
     controller, actor = make_world()
-    actor.apply_status_effect(status_effects.OffBalanceEffect())
-    actor.apply_status_effect(status_effects.StrengthBoostEffect(duration=2))
-    assert actor.has_status_effect(status_effects.OffBalanceEffect)
-    assert actor.has_status_effect(status_effects.StrengthBoostEffect)
+    actor.status_effects.apply_status_effect(status_effects.OffBalanceEffect())
+    actor.status_effects.apply_status_effect(
+        status_effects.StrengthBoostEffect(duration=2)
+    )
+    assert actor.status_effects.has_status_effect(status_effects.OffBalanceEffect)
+    assert actor.status_effects.has_status_effect(status_effects.StrengthBoostEffect)
     actor.update_turn(cast(Controller, controller))
-    assert not actor.has_status_effect(status_effects.OffBalanceEffect)
-    assert actor.has_status_effect(status_effects.StrengthBoostEffect)
+    assert not actor.status_effects.has_status_effect(status_effects.OffBalanceEffect)
+    assert actor.status_effects.has_status_effect(status_effects.StrengthBoostEffect)
 
 
 def test_offbalance_persists_until_next_round() -> None:
@@ -90,26 +96,28 @@ def test_offbalance_persists_until_next_round() -> None:
 
         def execute(self) -> GameActionResult | None:  # pragma: no cover - simple
             if self.apply:
-                actor.apply_status_effect(status_effects.OffBalanceEffect())
+                actor.status_effects.apply_status_effect(
+                    status_effects.OffBalanceEffect()
+                )
             return None
 
     # First round applies the effect
     tm.queue_action(DummyAction(cast(Controller, controller), actor, True))
     tm.process_unified_round()
-    assert actor.has_status_effect(status_effects.OffBalanceEffect)
+    assert actor.status_effects.has_status_effect(status_effects.OffBalanceEffect)
 
     # Next round should remove it before acting again
     tm.queue_action(DummyAction(cast(Controller, controller), actor, False))
     tm.process_unified_round()
-    assert not actor.has_status_effect(status_effects.OffBalanceEffect)
+    assert not actor.status_effects.has_status_effect(status_effects.OffBalanceEffect)
 
 
 def test_condition_management_methods() -> None:
     controller, actor = make_world()
     injury = conditions.Injury(InjuryLocation.LEFT_ARM, "Test")
-    assert actor.add_condition(injury)
-    assert actor.has_condition(conditions.Injury)
-    assert injury in actor.get_conditions()
-    assert actor.get_conditions_by_type(conditions.Injury) == [injury]
-    assert actor.remove_condition(injury)
-    assert not actor.has_condition(conditions.Injury)
+    assert actor.conditions.add_condition(injury)[0]
+    assert actor.conditions.has_condition(conditions.Injury)
+    assert injury in actor.conditions.get_all_conditions()
+    assert actor.conditions.get_conditions_by_type(conditions.Injury) == [injury]
+    assert actor.conditions.remove_condition(injury)
+    assert not actor.conditions.has_condition(conditions.Injury)

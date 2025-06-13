@@ -38,10 +38,10 @@ def test_no_conditions_or_effects() -> None:
 
 def test_condition_grouping_and_colors() -> None:
     controller, actor, panel = make_world()
-    actor.add_condition(conditions.Exhaustion())
-    actor.add_condition(conditions.Exhaustion())
+    actor.conditions.add_condition(conditions.Exhaustion())
+    actor.conditions.add_condition(conditions.Exhaustion())
     injury = conditions.Injury(InjuryLocation.LEFT_LEG, "Sprained Ankle")
-    actor.add_condition(injury)
+    actor.conditions.add_condition(injury)
 
     lines = sorted(panel._get_condition_lines(actor))
     assert ("Exhaustion x2", colors.LIGHT_BLUE) in lines
@@ -52,7 +52,7 @@ def test_status_effect_duration_format() -> None:
     controller, actor, panel = make_world()
     effect = status_effects.OffBalanceEffect()
     effect.duration = 1
-    actor.apply_status_effect(effect)
+    actor.status_effects.apply_status_effect(effect)
 
     lines = panel._get_status_effect_lines(actor)
     assert lines == ["Off Balance (1 turn)"]
