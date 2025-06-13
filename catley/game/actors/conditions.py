@@ -106,6 +106,13 @@ class Rads(Condition):
             display_color=colors.YELLOW,
         )
 
+    def apply_to_resolution(self, resolution_args: dict[str, bool]) -> dict[str, bool]:
+        """Radiation exposure causes general weakness affecting all physical actions."""
+        stat_name = resolution_args.get("stat_name")
+        if stat_name in {"strength", "toughness", "agility"}:
+            resolution_args["has_disadvantage"] = True
+        return resolution_args
+
 
 class Sickness(Condition):
     """Represents one slot filled by a sickness like poison, venom, or disease."""
