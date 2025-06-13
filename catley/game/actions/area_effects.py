@@ -183,6 +183,11 @@ class AreaEffectAction(GameAction):
         """Apply damage or healing to actors within the affected tiles."""
         base_damage = effect.damage_dice.roll()
         hits: list[tuple[Character, int]] = []
+
+        # Determine damage type
+        damage_type = "normal"
+        if TacticalProperty.RADIATION in effect.properties:
+            damage_type = "radiation"
         for actor in self.actors:
             if not isinstance(actor, Character) or not actor.health.is_alive():
                 continue
@@ -196,7 +201,7 @@ class AreaEffectAction(GameAction):
             if damage == 0:
                 continue
             if damage > 0:
-                actor.take_damage(damage)
+                actor.take_damage(damage, damage_type=damage_type)
             else:
                 actor.health.heal(-damage)
             hits.append((actor, damage))

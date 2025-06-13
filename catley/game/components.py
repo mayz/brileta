@@ -91,12 +91,18 @@ class HealthComponent:
         """Get max HP from stats component."""
         return self.stats.max_hp
 
-    def take_damage(self, amount: int) -> None:
-        """Handle damage to the actor, reducing AP first, then HP.
+    def take_damage(self, amount: int, damage_type: str = "normal") -> None:
+        """Handle damage to the actor, reducing AP first unless radiation.
 
         Args:
             amount: Amount of damage to take
+            damage_type: "normal" or "radiation"
         """
+        if damage_type == "radiation":
+            # Radiation bypasses armor entirely
+            self.hp = max(0, self.hp - amount)
+            return
+
         # First reduce AP if any
         if self.ap > 0:
             ap_damage = min(amount, self.ap)

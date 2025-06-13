@@ -31,7 +31,7 @@ from catley.game.enums import OutcomeTier
 from catley.game.items.capabilities import Attack
 from catley.game.items.item_core import Item
 from catley.game.items.item_types import FISTS_TYPE
-from catley.game.items.properties import WeaponProperty
+from catley.game.items.properties import TacticalProperty, WeaponProperty
 from catley.game.resolution import combat_arbiter
 from catley.game.resolution.base import ResolutionResult
 from catley.game.resolution.outcomes import CombatOutcome
@@ -298,8 +298,14 @@ class AttackAction(GameAction):
                 )
             if outcome.injury_inflicted is not None:
                 self.defender.inventory.add_to_inventory(outcome.injury_inflicted)
+
+            # Check if this is radiation damage
+            damage_type = "normal"
+            if weapon and TacticalProperty.RADIATION in weapon.get_weapon_properties():
+                damage_type = "radiation"
+
             if damage > 0:
-                self.defender.take_damage(damage)
+                self.defender.take_damage(damage, damage_type=damage_type)
                 publish_event(
                     EffectEvent(
                         "blood_splatter",

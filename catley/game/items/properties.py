@@ -42,6 +42,7 @@ class TacticalProperty(Enum):
     SMOKE = auto()  # Creates concealment cloud
     FIRE = auto()  # Spreads to flammable objects
     SPRAY = auto()  # Area effect for automatic weapons
+    RADIATION = auto()  # Causes radiation damage
 
 
 # Type alias for convenience
