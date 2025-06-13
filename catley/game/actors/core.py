@@ -40,10 +40,12 @@ from catley.view.render.effects.lighting import LightSource
 
 from .ai import AIComponent, DispositionBasedAI
 from .components import (
+    ConditionsComponent,
     HealthComponent,
     InventoryComponent,
     ModifiersComponent,
     StatsComponent,
+    StatusEffectsComponent,
     VisualEffectsComponent,
 )
 from .conditions import Condition, Injury
@@ -131,7 +133,12 @@ class Actor:
         self._effective_speed_cache: int | None = None
 
         self.tricks: list = []
-        self.status_effects: list[StatusEffect] = []
+        self.status_effects = StatusEffectsComponent()
+
+        if self.inventory is not None:
+            self.conditions = ConditionsComponent(self.inventory)
+        else:
+            self.conditions = None
 
     def __repr__(self) -> str:
         """Return a debug representation of this actor."""
@@ -202,16 +209,12 @@ class Actor:
         them when they expire. NPC AI or other per-turn logic could also be
         triggered here in the future.
         """
-        for effect in self.status_effects[:]:
-            effect.apply_turn_effect(self)
-            if effect.duration > 0:
-                effect.duration -= 1
-            if effect.should_remove(self):
-                effect.remove_effect(self)
-                self.status_effects.remove(effect)
+        # Delegate status effect updates to the component
+        self.status_effects.update_turn(self)
 
-        for condition in self.get_conditions():
-            condition.apply_turn_effect(self)
+        # Delegate condition turn effects to the component
+        if self.conditions:
+            self.conditions.apply_turn_effects(self)
 
     def get_next_action(self, controller: Controller) -> GameAction | None:
         """
@@ -255,59 +258,56 @@ class Actor:
 
     def apply_status_effect(self, effect: StatusEffect) -> None:
         """Apply a status effect to this actor."""
-        if not effect.can_stack and self.has_status_effect(type(effect)):
-            return
-        self.status_effects.append(effect)
+        self.status_effects.apply_status_effect(effect)
         effect.apply_on_start(self)
 
     def remove_status_effect(self, effect_type: type[StatusEffect]) -> None:
         """Remove all status effects of the given type."""
-        for effect in self.status_effects[:]:
-            if isinstance(effect, effect_type):
-                effect.remove_effect(self)
-                self.status_effects.remove(effect)
+        removed = self.status_effects.remove_status_effect(effect_type)
+        for effect in removed:
+            effect.remove_effect(self)
 
     def has_status_effect(self, effect_type: type[StatusEffect]) -> bool:
         """Check if actor has any status effect of the given type."""
-        return any(isinstance(effect, effect_type) for effect in self.status_effects)
+        return self.status_effects.has_status_effect(effect_type)
 
     def get_status_effects_by_type(
         self, effect_type: type[StatusEffect]
     ) -> list[StatusEffect]:
         """Get all status effects of the given type."""
-        return [e for e in self.status_effects if isinstance(e, effect_type)]
+        return self.status_effects.get_status_effects_by_type(effect_type)
 
     # === Condition Management ===
 
     def has_condition(self, condition_type: type[Condition]) -> bool:
-        if self.inventory is None:
+        if self.conditions is None:
             return False
-        return any(isinstance(item, condition_type) for item in self.inventory)
+        return self.conditions.has_condition(condition_type)
 
     def get_conditions(self) -> list[Condition]:
-        if self.inventory is None:
+        if self.conditions is None:
             return []
-        return [c for c in self.inventory if isinstance(c, Condition)]
+        return self.conditions.get_all_conditions()
 
     def get_conditions_by_type(
         self, condition_type: type[Condition]
     ) -> list[Condition]:
-        if self.inventory is None:
+        if self.conditions is None:
             return []
-        return [c for c in self.inventory if isinstance(c, condition_type)]
+        return self.conditions.get_conditions_by_type(condition_type)
 
     def add_condition(self, condition: Condition) -> bool:
-        if self.inventory is None:
+        if self.conditions is None:
             return False
-        added, _msg, _dropped = self.inventory.add_to_inventory(condition)
+        added, _msg, _dropped = self.conditions.add_condition(condition)
         if added:
             self._invalidate_effective_speed_cache()
         return added
 
     def remove_condition(self, condition: Condition) -> bool:
-        if self.inventory is None:
+        if self.conditions is None:
             return False
-        removed = self.inventory.remove_from_inventory(condition)
+        removed = self.conditions.remove_condition(condition)
         if removed:
             self._invalidate_effective_speed_cache()
         return removed
@@ -395,6 +395,7 @@ class Character(Actor):
         self.inventory: InventoryComponent
         self.visual_effects: VisualEffectsComponent
         self.modifiers: ModifiersComponent
+        self.conditions: ConditionsComponent
 
         if starting_weapon:
             self.inventory.equip_to_slot(starting_weapon, 0)

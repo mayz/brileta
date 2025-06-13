@@ -492,15 +492,13 @@ class ModifiersComponent:
 
     def get_all_status_effects(self) -> list[StatusEffect]:
         """Returns a list of all active StatusEffect instances."""
-        return self.actor.status_effects
+        return self.actor.status_effects.get_all_status_effects()
 
     def get_all_conditions(self) -> list[Condition]:
-        """Scans the actor's inventory and returns a list of all Condition instances."""
-        if not self.actor.inventory:
+        """Returns a list of all active Condition instances."""
+        if not self.actor.conditions:
             return []
-        # This is part of the facade's core logic: knowing that conditions
-        # live inside the inventory.
-        return [item for item in self.actor.inventory if isinstance(item, Condition)]
+        return self.actor.conditions.get_all_conditions()
 
     def get_all_active_effects(self) -> list[StatusEffect | Condition]:
         """Returns a combined list of all active status effects and conditions.
@@ -579,3 +577,114 @@ class ModifiersComponent:
         if exhaustion_count == 0:
             return 1.0
         return MovementConstants.EXHAUSTION_ENERGY_REDUCTION_PER_STACK**exhaustion_count
+
+
+class StatusEffectsComponent:
+    """Manages an actor's temporary status effects.
+
+    Encapsulates the storage and management of ``StatusEffect`` instances,
+    providing a clean API for adding, removing, and querying effects.
+    """
+
+    def __init__(self) -> None:
+        self._status_effects: list[StatusEffect] = []
+
+    def __iter__(self):
+        """Allow iteration over status effects."""
+        return iter(self._status_effects)
+
+    def __len__(self) -> int:
+        """Return number of active status effects."""
+        return len(self._status_effects)
+
+    def apply_status_effect(self, effect: StatusEffect) -> None:
+        """Add a status effect to the internal list."""
+        if not effect.can_stack and self.has_status_effect(type(effect)):
+            return
+        self._status_effects.append(effect)
+        # ``apply_on_start`` will be called by the ``Actor``.
+
+    def remove_status_effect(
+        self, effect_type: type[StatusEffect]
+    ) -> list[StatusEffect]:
+        """Remove all status effects of the given type and return them."""
+        removed_effects: list[StatusEffect] = []
+        for effect in self._status_effects[:]:
+            if isinstance(effect, effect_type):
+                self._status_effects.remove(effect)
+                removed_effects.append(effect)
+        return removed_effects
+
+    def has_status_effect(self, effect_type: type[StatusEffect]) -> bool:
+        """Check if any status effect of the given type exists."""
+        return any(isinstance(effect, effect_type) for effect in self._status_effects)
+
+    def get_status_effects_by_type(
+        self, effect_type: type[StatusEffect]
+    ) -> list[StatusEffect]:
+        """Return all status effects of the given type."""
+        return [e for e in self._status_effects if isinstance(e, effect_type)]
+
+    def get_all_status_effects(self) -> list[StatusEffect]:
+        """Return a copy of all active status effects."""
+        return self._status_effects.copy()
+
+    def update_turn(self, actor: Actor) -> None:
+        """Apply per-turn logic and handle expiration for all effects."""
+        for effect in self._status_effects[:]:
+            effect.apply_turn_effect(actor)
+            if effect.duration > 0:
+                effect.duration -= 1
+            if effect.should_remove(actor):
+                effect.remove_effect(actor)
+                self._status_effects.remove(effect)
+
+
+class ConditionsComponent:
+    """Manages an actor's long-term conditions.
+
+    Storage is delegated to an :class:`InventoryComponent` instance so that
+    conditions continue to consume inventory space.
+    """
+
+    def __init__(self, inventory: InventoryComponent) -> None:
+        self.inventory = inventory
+
+    def __iter__(self):
+        """Allow iteration over conditions."""
+        return iter(self.get_all_conditions())
+
+    def __len__(self) -> int:
+        """Return the number of active conditions."""
+        return len(self.get_all_conditions())
+
+    # --- Query Helpers -------------------------------------------------
+    def get_all_conditions(self) -> list[Condition]:
+        """Return a list of all conditions stored in the inventory."""
+        if not self.inventory:
+            return []
+        return [item for item in self.inventory if isinstance(item, Condition)]
+
+    def has_condition(self, condition_type: type[Condition]) -> bool:
+        """Check if any condition of the given type exists."""
+        return any(isinstance(c, condition_type) for c in self.get_all_conditions())
+
+    def get_conditions_by_type(
+        self, condition_type: type[Condition]
+    ) -> list[Condition]:
+        """Return all conditions of the given type."""
+        return [c for c in self.get_all_conditions() if isinstance(c, condition_type)]
+
+    # --- Mutation Helpers ----------------------------------------------
+    def add_condition(self, condition: Condition) -> tuple[bool, str, list[Item]]:
+        """Add a condition, delegating to the inventory component."""
+        return self.inventory.add_to_inventory(condition)
+
+    def remove_condition(self, condition: Condition) -> bool:
+        """Remove a specific condition from the inventory."""
+        return self.inventory.remove_from_inventory(condition)
+
+    def apply_turn_effects(self, actor: Actor) -> None:
+        """Apply per-turn effects for all conditions."""
+        for condition in self.get_all_conditions():
+            condition.apply_turn_effect(actor)
