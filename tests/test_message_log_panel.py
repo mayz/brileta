@@ -27,16 +27,14 @@ def test_message_log_panel_ttf_rendering_visible() -> None:
 
     backend = PillowTextBackend(
         config.MESSAGE_LOG_FONT_PATH,
-        160,
-        80,
         16,
         renderer,
     )
     panel = MessageLogPanel(
         log,
-        tile_dimensions=(8, 16),
         text_backend=backend,
     )
+    panel.tile_dimensions = (8, 16)
     panel.resize(0, 0, 20, 5)
 
     panel.draw(renderer_stub)
@@ -64,16 +62,14 @@ def test_message_log_panel_font_scales_on_resize() -> None:
 
     backend = PillowTextBackend(
         config.MESSAGE_LOG_FONT_PATH,
-        160,
-        80,
         16,
         renderer,
     )
     panel = MessageLogPanel(
         log,
-        tile_dimensions=(8, 16),
         text_backend=backend,
     )
+    panel.tile_dimensions = (8, 16)
     panel.resize(0, 0, 20, 5)
 
     panel.draw(renderer_stub)

@@ -114,6 +114,11 @@ class TCODTextBackend(TextBackend):
             ]
         )
 
+    def configure_dimensions(self, width: int, height: int) -> None:
+        """No-op for TCOD backend."""
+        _ = width
+        _ = height
+
     def begin_frame(self) -> None:  # pragma: no cover - no work needed
         pass
 
@@ -127,8 +132,6 @@ class PillowTextBackend(TextBackend):
     def __init__(
         self,
         font_path: Path,
-        width: int,
-        height: int,
         tile_height: int,
         sdl_renderer,
     ) -> None:
@@ -145,7 +148,6 @@ class PillowTextBackend(TextBackend):
         self.width = 0
         self.height = 0
 
-        self.configure_dimensions(width, height)
         self.configure_scaling(tile_height)
         self.configure_renderer(sdl_renderer)
 

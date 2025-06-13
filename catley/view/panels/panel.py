@@ -34,6 +34,7 @@ class Panel(abc.ABC):
         self.width = 0
         self.height = 0
         self.visible = True
+        self.tile_dimensions: tuple[int, int] = (0, 0)
         self.text_backend = text_backend
 
     @abc.abstractmethod
@@ -51,6 +52,13 @@ class Panel(abc.ABC):
         self.y = y1
         self.width = x2 - x1
         self.height = y2 - y1
+
+        # Configure text backend with new dimensions if it exists
+        if self.text_backend and self.tile_dimensions != (0, 0):
+            tile_width, tile_height = self.tile_dimensions
+            pixel_width = self.width * tile_width
+            pixel_height = self.height * tile_height
+            self.text_backend.configure_dimensions(pixel_width, pixel_height)
 
     def show(self) -> None:
         """Make panel visible in rendering pipeline."""
