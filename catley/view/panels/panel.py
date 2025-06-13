@@ -15,6 +15,7 @@ Two-phase rendering: draw() for console ops, present() for SDL ops.
 import abc
 
 from catley.view.renderer import Renderer
+from catley.view.text_backend import TextBackend
 
 
 class Panel(abc.ABC):
@@ -26,13 +27,14 @@ class Panel(abc.ABC):
     Two phases: draw() for console rendering, present() for SDL effects.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, text_backend: TextBackend | None = None) -> None:
         """Initialize panel. Call resize() before drawing."""
         self.x = 0
         self.y = 0
         self.width = 0
         self.height = 0
         self.visible = True
+        self.text_backend = text_backend
 
     @abc.abstractmethod
     def draw(self, renderer: Renderer) -> None:
