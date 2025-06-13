@@ -199,7 +199,7 @@ class PillowTextBackend(TextBackend):
             if font_size is None
             else ImageFont.truetype(str(self.font_path), font_size)
         )
-        self._drawer.text((x, y), text, font=font, fill=(*color, 255))
+        self._drawer.text((x, y), text, font=font, fill=(*color, 255), anchor="ls")
 
     def get_text_metrics(
         self, text: str, font_size: int | None = None

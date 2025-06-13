@@ -4,9 +4,8 @@ from typing import TYPE_CHECKING
 
 from tcod.sdl.render import Texture
 
-from catley import config
 from catley.view.renderer import Renderer
-from catley.view.text_backend import PillowTextBackend
+from catley.view.text_backend import TextBackend
 
 from .panel import Panel
 
@@ -22,18 +21,11 @@ class MessageLogPanel(Panel):
         message_log: MessageLog,
         *,
         tile_dimensions: tuple[int, int],
+        text_backend: TextBackend | None = None,
     ) -> None:
-        super().__init__()
+        super().__init__(text_backend)
         self.message_log = message_log
         self.tile_dimensions = tile_dimensions
-
-        self.text_backend = PillowTextBackend(
-            config.MESSAGE_LOG_FONT_PATH,
-            self.width * tile_dimensions[0],
-            self.height * tile_dimensions[1],
-            tile_dimensions[1],
-            None,
-        )
 
         # Panel pixel dimensions will be calculated when resize() is called
         self.panel_width_px = 0
@@ -56,6 +48,9 @@ class MessageLogPanel(Panel):
 
     def draw(self, renderer: Renderer) -> None:
         if not self.visible:
+            return
+
+        if not self.text_backend:
             return
 
         # Check if tile dimensions have changed (window resize) or content changed

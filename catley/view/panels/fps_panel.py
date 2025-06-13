@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 from catley import colors
 from catley.config import PERFORMANCE_TESTING
 from catley.constants.view import ViewConstants as View
+from catley.view.text_backend import TextBackend
 
 from .panel import Panel
 
@@ -20,8 +21,10 @@ class FPSPanel(Panel):
         self,
         clock: Clock,
         update_interval: float = View.FPS_UPDATE_INTERVAL,
+        *,
+        text_backend: TextBackend | None = None,
     ) -> None:
-        super().__init__()
+        super().__init__(text_backend)
         self.clock = clock
         self.update_interval = update_interval
         self.last_update = clock.last_time
@@ -30,6 +33,9 @@ class FPSPanel(Panel):
     def draw(self, renderer: Renderer) -> None:
         """Draw the current FPS in the top-right corner."""
         if not self.visible:
+            return
+
+        if not self.text_backend:
             return
 
         current_time = self.clock.last_time
@@ -45,4 +51,6 @@ class FPSPanel(Panel):
 
         fps_width = len(self.display_string)
         x_position = max(0, renderer.root_console.width - fps_width - 1)
-        renderer.draw_text(x_position, self.y, self.display_string, fg=colors.YELLOW)
+        self.text_backend.draw_text(
+            x_position, self.y, self.display_string, colors.YELLOW
+        )

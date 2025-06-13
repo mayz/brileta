@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 from catley import colors
 from catley.constants.view import ViewConstants as View
 from catley.view.renderer import Renderer
+from catley.view.text_backend import TextBackend
 
 from .panel import Panel
 
@@ -15,12 +16,17 @@ if TYPE_CHECKING:
 class EquipmentPanel(Panel):
     """Displays the player's equipped weapons and ammo counts."""
 
-    def __init__(self, controller: Controller) -> None:
-        super().__init__()
+    def __init__(
+        self, controller: Controller, *, text_backend: TextBackend | None = None
+    ) -> None:
+        super().__init__(text_backend)
         self.controller = controller
 
     def draw(self, renderer: Renderer) -> None:
         if not self.visible:
+            return
+
+        if not self.text_backend:
             return
 
         y_start = self.y + 1
@@ -28,7 +34,7 @@ class EquipmentPanel(Panel):
 
         # Add weapon switching hint
         hint_text = "Weapons: [1][2] to switch"
-        renderer.draw_text(self.x, self.y, hint_text, fg=colors.GREY)
+        self.text_backend.draw_text(self.x, self.y, hint_text, colors.GREY)
 
         # Check for reload hint and display on separate line
         active_weapon = player.inventory.get_active_weapon()
@@ -39,11 +45,11 @@ class EquipmentPanel(Panel):
             < active_weapon.ranged_attack.max_ammo
         ):
             reload_text = "[R] to reload"
-            renderer.draw_text(
+            self.text_backend.draw_text(
                 self.x,
                 self.y + View.EQUIPMENT_RELOAD_HINT_OFFSET,
                 reload_text,
-                fg=colors.YELLOW,
+                colors.YELLOW,
             )
 
         for i, item in enumerate(player.inventory.attack_slots):
@@ -67,4 +73,4 @@ class EquipmentPanel(Panel):
             else:
                 item_text = f"{slot_name}: Empty"
                 color = colors.GREY
-            renderer.draw_text(self.x, y_start + i, item_text, fg=color)
+            self.text_backend.draw_text(self.x, y_start + i, item_text, color)

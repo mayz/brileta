@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from catley import config
 from catley.config import (
     HELP_HEIGHT,
     SHOW_FPS,
@@ -28,6 +29,7 @@ from .panels.panel import Panel
 from .panels.status_panel import StatusPanel
 from .panels.world_panel import WorldPanel
 from .renderer import Renderer
+from .text_backend import PillowTextBackend, TCODTextBackend
 from .ui.cursor_manager import CursorManager
 
 if TYPE_CHECKING:
@@ -56,21 +58,49 @@ class FrameManager:
 
     def _setup_game_ui(self) -> None:
         """Configure and position panels for the main game interface."""
+        # Create text backends
+        help_backend = TCODTextBackend(
+            self.renderer.root_console, self.renderer.tile_dimensions
+        )
+        status_backend = TCODTextBackend(
+            self.renderer.root_console, self.renderer.tile_dimensions
+        )
+        health_backend = TCODTextBackend(
+            self.renderer.root_console, self.renderer.tile_dimensions
+        )
+        equipment_backend = TCODTextBackend(
+            self.renderer.root_console, self.renderer.tile_dimensions
+        )
+        fps_backend = TCODTextBackend(
+            self.renderer.root_console, self.renderer.tile_dimensions
+        )
+
+        message_log_backend = PillowTextBackend(
+            config.MESSAGE_LOG_FONT_PATH,
+            400,
+            200,
+            self.renderer.tile_dimensions[1],
+            self.renderer.sdl_renderer,
+        )
+
         # Create panels (dimensions will be set via resize() calls below)
-        self.fps_panel = FPSPanel(self.controller.clock)
+        self.fps_panel = FPSPanel(self.controller.clock, text_backend=fps_backend)
         self.fps_panel.visible = SHOW_FPS
 
-        self.help_text_panel = HelpTextPanel(self.controller)
+        self.help_text_panel = HelpTextPanel(self.controller, text_backend=help_backend)
 
         self.world_panel = WorldPanel(self.controller, self.screen_shake)
         self.message_log_panel = MessageLogPanel(
             message_log=self.controller.message_log,
             tile_dimensions=self.renderer.tile_dimensions,
+            text_backend=message_log_backend,
         )
-        self.equipment_panel = EquipmentPanel(self.controller)
+        self.equipment_panel = EquipmentPanel(
+            self.controller, text_backend=equipment_backend
+        )
 
-        self.health_panel = HealthPanel(self.controller)
-        self.status_panel = StatusPanel(self.controller)
+        self.health_panel = HealthPanel(self.controller, text_backend=health_backend)
+        self.status_panel = StatusPanel(self.controller, text_backend=status_backend)
 
         self.panels: list[Panel] = [
             self.help_text_panel,
@@ -127,7 +157,7 @@ class FrameManager:
         self.equipment_panel.resize(
             equipment_x, equipment_y, screen_width_tiles, screen_height_tiles
         )
-        self.message_log_panel.resize(1, message_log_y, 31, screen_height_tiles - 1)
+        self.message_log_panel.resize(1, message_log_y, 31, screen_height_tiles)
         self.fps_panel.resize(0, 0, 15, 3)
 
     def on_window_resized(self) -> None:
@@ -150,8 +180,6 @@ class FrameManager:
         """
         # 1. PREPARATION PHASE
         self.renderer.clear_console(self.renderer.root_console)
-        self.renderer.begin_text_frame()
-
         # 2. UI PANEL RENDERING
         for panel in self.panels:
             if panel.visible:
@@ -167,7 +195,6 @@ class FrameManager:
         self.controller.overlay_system.render(self.renderer.root_console)
 
         # 4. PRESENTATION
-        self.renderer.end_text_frame()
         # Copy the final console state to the backbuffer
         self.renderer.prepare_to_present()
 
