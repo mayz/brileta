@@ -65,24 +65,40 @@ class Actor:
     added or omitted based on what each specific actor needs to do.
 
     Note: Actors are distinct from Items (weapons, consumables, etc.). Items are pure
-    gameplay objects with no world position - they exist within inventory systems.
+    gameplay objects with no world position; they exist within inventory systems.
     Actors are world objects with coordinates that can contain, drop, or represent
     Items. When you see "a sword on the ground," that's an Actor containing a sword
     Item.
 
     All actors have basic properties like position, appearance, and the ability to
-    participate in the turn-based update cycle. Beyond that, actors can optionally have:
+    participate in the turn-based update cycle. Beyond that, actors can optionally
+    have a suite of components to define their capabilities:
 
-    - Stats: Ability scores like strength, toughness, intelligence
-    - Health: Hit points, armor, damage/healing mechanics
-    - Inventory: Item storage and equipment management
-    - AI: Autonomous decision-making and behavior
-    - Visual Effects: Rendering feedback like damage flashes
-    - Light Source: Dynamic lighting that affects the game world
+    Core Data Components:
+    - Stats: Ability scores like strength, toughness, intelligence.
+    - Health: Hit points, armor, damage/healing mechanics.
+    - Inventory: Item storage and equipment management. Also stores Conditions.
 
-    The component system ensures that actors only pay the cost (memory, computation)
-    for the capabilities they actually use, while maintaining a unified interface
-    for game systems to interact with all objects in the world.
+    Behavioral Components:
+    - AI: Autonomous decision-making and behavior for NPCs.
+    - VisualEffects: Manages rendering feedback like damage flashes.
+    - LightSource: A dynamic light that affects the game world.
+
+    Effect & Modifier Components:
+    - Modifiers: The primary public interface for querying an actor's current
+      state. This facade provides a unified view of all active StatusEffects
+      and Conditions, answering questions like "does this actor have advantage?"
+      or "what is their final movement speed?". **Most external systems should
+      interact with `actor.modifiers` rather than the individual effect
+      components.**
+    - StatusEffects: Manages temporary, non-inventory effects (e.g., "Focused").
+    - Conditions: Manages long-term conditions that take up inventory space
+      (e.g., "Injured", "Poisoned"). This is a convenience wrapper around
+      the inventory.
+
+    This component system ensures that actors only pay the cost (memory,
+    computation) for the capabilities they actually use, while maintaining a
+    unified and clear interface for game systems.
     """
 
     def __init__(
