@@ -20,12 +20,10 @@ class MessageLogPanel(Panel):
         self,
         message_log: MessageLog,
         *,
-        tile_dimensions: tuple[int, int],
         text_backend: TextBackend | None = None,
     ) -> None:
         super().__init__(text_backend)
         self.message_log = message_log
-        self.tile_dimensions = tile_dimensions
 
         # Panel pixel dimensions will be calculated when resize() is called
         self.panel_width_px = 0
@@ -76,9 +74,6 @@ class MessageLogPanel(Panel):
         self.panel_height_px = new_panel_height_px
         self._cached_texture_width = new_panel_width_px
         self._cached_texture_height = new_panel_height_px
-        self.text_backend.configure_dimensions(
-            self.panel_width_px, self.panel_height_px
-        )
         self.text_backend.configure_renderer(renderer.sdl_renderer)
         self.text_backend.begin_frame()
 

@@ -77,8 +77,6 @@ class FrameManager:
 
         message_log_backend = PillowTextBackend(
             config.MESSAGE_LOG_FONT_PATH,
-            400,
-            200,
             self.renderer.tile_dimensions[1],
             self.renderer.sdl_renderer,
         )
@@ -92,7 +90,6 @@ class FrameManager:
         self.world_panel = WorldPanel(self.controller, self.screen_shake)
         self.message_log_panel = MessageLogPanel(
             message_log=self.controller.message_log,
-            tile_dimensions=self.renderer.tile_dimensions,
             text_backend=message_log_backend,
         )
         self.equipment_panel = EquipmentPanel(
@@ -119,6 +116,7 @@ class FrameManager:
         """Calculate and set panel boundaries based on current screen size."""
         screen_width_tiles = self.renderer.root_console.width
         screen_height_tiles = self.renderer.root_console.height
+        tile_dimensions = self.renderer.tile_dimensions
 
         # Recalculate layout
         message_log_height = 10
@@ -141,23 +139,30 @@ class FrameManager:
         status_panel_height = 10
 
         # Resize all panels
+        self.help_text_panel.tile_dimensions = tile_dimensions
         self.help_text_panel.resize(0, 0, screen_width_tiles, self.help_height)
+        self.world_panel.tile_dimensions = tile_dimensions
         self.world_panel.resize(
             0, game_world_y, screen_width_tiles, game_world_y + game_world_height
         )
+        self.health_panel.tile_dimensions = tile_dimensions
         self.health_panel.resize(
             screen_width_tiles - 20, 0, screen_width_tiles, self.help_height
         )
+        self.status_panel.tile_dimensions = tile_dimensions
         self.status_panel.resize(
             status_panel_x,
             status_panel_y,
             status_panel_x + status_panel_width,
             status_panel_y + status_panel_height,
         )
+        self.equipment_panel.tile_dimensions = tile_dimensions
         self.equipment_panel.resize(
             equipment_x, equipment_y, screen_width_tiles, screen_height_tiles
         )
+        self.message_log_panel.tile_dimensions = tile_dimensions
         self.message_log_panel.resize(1, message_log_y, 31, screen_height_tiles)
+        self.fps_panel.tile_dimensions = tile_dimensions
         self.fps_panel.resize(0, 0, 15, 3)
 
     def on_window_resized(self) -> None:
