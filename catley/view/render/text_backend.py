@@ -33,7 +33,8 @@ class TextBackend(ABC):
         color: colors.Color,
         font_size: int | None = None,
     ) -> None:
-        """Draw text at ``(pixel_x, pixel_y)`` using ``color``."""
+        """Draw a line of text whose top-left corner is at ``(pixel_x, pixel_y)``
+        using ``color``."""
 
     @abstractmethod
     def get_text_metrics(
@@ -97,6 +98,8 @@ class TCODTextBackend(TextBackend):
         color: colors.Color,
         font_size: int | None = None,
     ) -> None:
+        """Draw a line of text whose top-left corner is at ``(pixel_x, pixel_y)``
+        using ``color``."""
         _ = font_size
         tile_width, tile_height = self.renderer.tile_dimensions
         if tile_width == 0 or tile_height == 0:
@@ -220,7 +223,8 @@ class PillowTextBackend(TextBackend):
         color: colors.Color,
         font_size: int | None = None,
     ) -> None:
-        """Draw text using pixel coordinates, with pixel_y as the baseline."""
+        """Draw a line of text whose top-left corner is at ``(pixel_x, pixel_y)``
+        using ``color``."""
         if self._drawer is None:
             return
 
@@ -230,9 +234,21 @@ class PillowTextBackend(TextBackend):
         else:
             font_to_use = ImageFont.truetype(str(self.font_path), font_size)
 
-        # Draw text with (pixel_x, pixel_y) as the left-side baseline coordinate.
+        # Get the ascent of the font. Ascent is the distance from the baseline
+        # to the top of the tallest glyph.
+        ascent, _ = font_to_use.getmetrics()
+
+        # Calculate the baseline position. The baseline needs to be shifted down
+        # from the top by the font's ascent.
+        baseline_y = pixel_y + ascent
+
+        # Draw text with (pixel_x, baseline_y) as the left-side baseline coordinate.
         self._drawer.text(
-            (pixel_x, pixel_y), text, font=font_to_use, fill=(*color, 255), anchor="ls"
+            (pixel_x, baseline_y),
+            text,
+            font=font_to_use,
+            fill=(*color, 255),
+            anchor="ls",
         )
 
     def get_text_metrics(
