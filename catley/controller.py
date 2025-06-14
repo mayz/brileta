@@ -1,9 +1,14 @@
+from typing import TYPE_CHECKING
+
 import tcod.event
 import tcod.map
 import tcod.sdl.mouse
 from tcod.console import Console
 
 from catley.game.resolution.base import Resolver
+
+if TYPE_CHECKING:
+    from catley.game.actions.discovery import ActionOption
 
 from . import config
 from .game.actions.base import GameAction
@@ -54,6 +59,7 @@ class Controller:
         self.gw = GameWorld(self.map_width, self.map_height)
 
         self.turn_manager = TurnManager(self)
+        self.last_browser_action: ActionOption | None = None
 
         # Initialize Message Log
         self.message_log = MessageLog()
