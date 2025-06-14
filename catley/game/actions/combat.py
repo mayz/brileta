@@ -48,11 +48,26 @@ class AttackAction(GameAction):
         attacker: Character,
         defender: Character,
         weapon: Item | None = None,
+        attack_mode: str | None = None,
     ) -> None:
+        """Create a combat action.
+
+        Args:
+            controller: Game controller providing context.
+            attacker: The character performing the attack.
+            defender: The target of the attack.
+            weapon: Optional weapon to use. Defaults to the attacker's active
+                weapon or bare hands.
+            attack_mode: Explicit attack mode ("melee" or "ranged"). ``None``
+                preserves the old behaviour of automatically choosing based on
+                distance.
+        """
+
         super().__init__(controller, attacker)
         self.attacker = attacker
         self.defender = defender
         self.weapon = weapon
+        self.attack_mode = attack_mode
 
     def execute(self) -> GameActionResult | None:
         # 1. Determine what attack method to use
@@ -101,43 +116,30 @@ class AttackAction(GameAction):
             or FISTS_TYPE.create()
         )
 
+        if self.attack_mode == "melee":
+            return weapon.melee_attack, weapon
+        if self.attack_mode == "ranged":
+            return weapon.ranged_attack, weapon
+
+        # Backwards-compatible heuristic based on distance
         distance = ranges.calculate_distance(
-            self.attacker.x, self.attacker.y, self.defender.x, self.defender.y
+            self.attacker.x,
+            self.attacker.y,
+            self.defender.x,
+            self.defender.y,
         )
 
         ranged_attack = weapon.ranged_attack
 
-        #######################################################################
-        # FIXME: In Phase 6, REPLACE THIS DISTANCE-BASED HEURISTIC WITH
-        #        PROPER ATTACK MODE SELECTION!
-        #
-        # Current limitation: This automatically chooses attack mode based on distance,
-        # which works for most cases but prevents intentional choices like:
-        # - Pistol-whipping when you could shoot (stealth, ammo conservation)
-        # - Throwing a knife instead of stabbing (ranged vs melee for same weapon)
-        # - Choosing between single-target ranged vs area effect for dual-mode weapons
-        #
-        # Phase 6 solution:
-        # - Pass attack_type parameter to AttackAction constructor ("melee", "ranged")
-        # - UI provides attack mode selection when multiple modes available
-        # - Move this logic to UI layer, not combat execution layer
-        #######################################################################
-
-        # Determine which attack to use based on distance and weapon capabilities
         if distance == 1 and weapon.melee_attack:
-            # Adjacent and has melee capability - use melee
             return weapon.melee_attack, weapon
 
         if ranged_attack:
-            # Not adjacent or no melee - use ranged if available
             return ranged_attack, weapon
 
         if weapon.melee_attack:
-            # Fallback to melee if no ranged (shouldn't happen with proper
-            # distance checking)
             return weapon.melee_attack, weapon
 
-        # No attack capabilities
         publish_event(
             MessageEvent(f"{self.attacker.name} has no way to attack!", colors.RED)
         )
@@ -153,7 +155,7 @@ class AttackAction(GameAction):
         ranged_attack = weapon.ranged_attack
 
         # For ranged attacks, check ammo, check line of sight and apply range modifiers
-        if ranged_attack is not None and attack == ranged_attack and distance > 1:
+        if ranged_attack is not None and attack == ranged_attack:
             if ranged_attack.current_ammo <= 0:
                 publish_event(
                     MessageEvent(f"{weapon.name} is out of ammo!", colors.RED)
