@@ -58,7 +58,7 @@ class ActionOption:
     hotkey: str | None = None  # Optional keyboard shortcut
     success_probability: float | None = None  # 0.0-1.0 if applicable
     cost_description: str | None = None  # "Uses 1 ammo", "Takes 2 turns"
-    execute: Callable[[], GameAction | None] | None = None  # How to perform the action
+    execute: Callable[[], GameAction | bool | None] | None = None
 
     @property
     def display_text(self) -> str:

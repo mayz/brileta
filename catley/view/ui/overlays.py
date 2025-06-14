@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import abc
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import tcod
 import tcod.sdl.render
@@ -126,6 +126,7 @@ class TextOverlay(Overlay):
         dest_rect = (px_x, px_y, self.pixel_width, self.pixel_height)
         self.renderer.sdl_renderer.copy(self._cached_texture, dest=dest_rect)
 
+
 class OverlaySystem:
     """Manages overlay stacking and input priority.
 
@@ -210,6 +211,7 @@ class MenuOption:
         enabled: bool = True,
         color: colors.Color = colors.WHITE,
         force_color: bool = False,
+        data: Any | None = None,
     ) -> None:
         self.key = key
         self.text = text
@@ -217,6 +219,7 @@ class MenuOption:
         self.enabled = enabled
         self.force_color = force_color
         self.color = color if enabled or force_color else colors.GREY
+        self.data = data
 
 
 class Menu(TextOverlay):
