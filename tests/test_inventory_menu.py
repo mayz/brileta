@@ -28,3 +28,4 @@ def test_inventory_menu_equips_to_active_slot() -> None:
     menu._use_item(knife)
 
     assert inv.attack_slots[1] == knife
+    assert knife not in inv

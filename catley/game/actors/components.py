@@ -422,6 +422,57 @@ class InventoryComponent:
         self.attack_slots[slot_index] = None
         return item
 
+    def equip_from_inventory(self, item: Item, slot_index: int) -> tuple[bool, str]:
+        """Equip ``item`` from stored inventory into ``slot_index``.
+
+        This handles removing the item from ``_stored_items`` and returning
+        any previously equipped item back to storage. The operation either
+        succeeds entirely or is reverted.
+
+        Returns a tuple ``(success, message)`` describing the result.
+        """
+
+        if item not in self._stored_items:
+            return False, f"{item.name} is not in inventory"
+        if not (0 <= slot_index < len(self.attack_slots)):
+            return False, f"Invalid slot index: {slot_index}"
+
+        # Remove the item from stored inventory first
+        self._stored_items.remove(item)
+
+        old_item = self.attack_slots[slot_index]
+        if old_item is not None:
+            if not self.can_add_voluntary_item(old_item):
+                # Revert and fail
+                self._stored_items.append(item)
+                return False, f"No room to unequip {old_item.name}"
+            self._stored_items.append(old_item)
+
+        self.attack_slots[slot_index] = item
+        self._update_encumbrance_status()
+
+        if old_item is not None:
+            return True, f"Equipped {item.name}; unequipped {old_item.name}."
+        return True, f"Equipped {item.name}."
+
+    def unequip_to_inventory(self, slot_index: int) -> tuple[bool, str]:
+        """Unequip the item in ``slot_index`` and store it if space allows."""
+
+        if not (0 <= slot_index < len(self.attack_slots)):
+            return False, f"Invalid slot index: {slot_index}"
+
+        item = self.attack_slots[slot_index]
+        if item is None:
+            return False, "No item to unequip"
+
+        if not self.can_add_voluntary_item(item):
+            return False, f"No room to store {item.name}"
+
+        self.attack_slots[slot_index] = None
+        self._stored_items.append(item)
+        self._update_encumbrance_status()
+        return True, f"Unequipped {item.name}."
+
     def get_equipped_items(self) -> list[tuple[Item, int]]:
         """Get all equipped items with their slot index"""
         items = []

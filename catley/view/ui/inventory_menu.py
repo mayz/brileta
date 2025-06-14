@@ -138,18 +138,18 @@ class InventoryMenu(Menu):
                     break
 
             if currently_equipped_slot is not None:
-                # Unequip from current slot
-                player.inventory.unequip_slot(currently_equipped_slot)
-                publish_event(MessageEvent(f"You unequip {item.name}.", colors.WHITE))
+                success, message = player.inventory.unequip_to_inventory(
+                    currently_equipped_slot
+                )
+                color = colors.WHITE if success else colors.YELLOW
+                publish_event(MessageEvent(message, color))
             else:
-                # Equip to currently active slot
                 active_slot = player.inventory.active_weapon_slot
-                old_weapon = player.inventory.equip_to_slot(item, active_slot)
-                if old_weapon:
-                    publish_event(
-                        MessageEvent(f"You unequip {old_weapon.name}.", colors.GREY)
-                    )
-                publish_event(MessageEvent(f"You equip {item.name}.", colors.GREEN))
+                success, message = player.inventory.equip_from_inventory(
+                    item, active_slot
+                )
+                color = colors.GREEN if success else colors.YELLOW
+                publish_event(MessageEvent(message, color))
         else:
             from catley.game.actions.recovery import UseConsumableAction
 
