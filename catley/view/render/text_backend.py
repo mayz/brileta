@@ -60,9 +60,13 @@ class TextBackend(ABC):
     # Optional configuration helpers
     # ------------------------------------------------------------------
     def configure_dimensions(self, width: int, height: int) -> None:
-        """Configure canvas dimensions. Default implementation does nothing."""
-        _ = width
-        _ = height
+        if self.width != width or self.height != height:
+            # Dimensions changed - clear cache
+            self._cached_frame_texture = None  # Let GC handle cleanup
+            self._last_frame_texts = []
+
+        self.width = width
+        self.height = height
 
     def configure_scaling(self, tile_height: int) -> None:
         """Configure scaling based on tile height."""
@@ -202,6 +206,11 @@ class PillowTextBackend(TextBackend):
         self.width = 0
         self.height = 0
 
+        self._text_cache = {}  # (text, font_size, color) -> texture
+        self._frame_texts = []  # [(x, y, text, color, font_size), ...]
+        self._cached_frame_texture = None
+        self._last_frame_texts = []
+
         tile_height = renderer.tile_dimensions[1]
 
         self.configure_scaling(tile_height)
@@ -259,8 +268,7 @@ class PillowTextBackend(TextBackend):
         self._effective_line_height = tile_height  # For layout consistency
 
     def begin_frame(self) -> None:
-        self.image = PILImage.new("RGBA", (self.width, self.height), (0, 0, 0, 0))
-        self._drawer = ImageDraw.Draw(self.image)
+        self._frame_texts = []  # Reset frame text list
 
     def draw_text(
         self,
@@ -270,29 +278,8 @@ class PillowTextBackend(TextBackend):
         color: colors.Color,
         font_size: int | None = None,
     ) -> None:
-        """Draw a line of text whose top-left corner is at ``(pixel_x, pixel_y)``
-        using ``color``."""
-        if self._drawer is None:
-            return
-
-        font_to_use = self.font
-        if font_size is None:
-            pass  # Use the default font for the backend
-        else:
-            font_to_use = ImageFont.truetype(str(self.font_path), font_size)
-
-        ascent, descent = font_to_use.getmetrics()
-        top_padding = (self._effective_line_height - (ascent + descent)) // 2
-        baseline_y = pixel_y + top_padding + ascent
-
-        # Draw text with (pixel_x, baseline_y) as the left-side baseline coordinate.
-        self._drawer.text(
-            (pixel_x, baseline_y),
-            text,
-            font=font_to_use,
-            fill=(*color, 255),
-            anchor="ls",
-        )
+        # Just record what text to draw - don't render yet
+        self._frame_texts.append((pixel_x, pixel_y, text, color, font_size))
 
     def get_text_metrics(
         self, text: str, font_size: int | None = None
@@ -331,12 +318,56 @@ class PillowTextBackend(TextBackend):
         return lines
 
     def end_frame(self) -> Texture | None:
-        if self.image is None or self.sdl_renderer is None:
+        if self.sdl_renderer is None:
             return None
+
+        # Check if frame content changed
+        if self._frame_texts == self._last_frame_texts and self._cached_frame_texture:
+            return self._cached_frame_texture
+
+        # Content changed - need to re-render
+        self._cached_frame_texture = None  # Let GC handle cleanup
+
+        # Create new image and render all text
+        self.image = PILImage.new("RGBA", (self.width, self.height), (0, 0, 0, 0))
+        self._drawer = ImageDraw.Draw(self.image)
+
+        for pixel_x, pixel_y, text, color, font_size in self._frame_texts:
+            self._render_single_text(pixel_x, pixel_y, text, color, font_size)
+
+        # Convert to texture
         pixels = np.array(self.image, dtype=np.uint8)
         pixels = np.ascontiguousarray(pixels)
         texture = self.sdl_renderer.upload_texture(pixels)
         texture.blend_mode = BlendMode.BLEND
+
+        # Cache the result
+        self._cached_frame_texture = texture
+        self._last_frame_texts = self._frame_texts.copy()
+
+        # Cleanup
         self.image = None
         self._drawer = None
+
         return texture
+
+    def _render_single_text(self, pixel_x, pixel_y, text, color, font_size):
+        """Render a single piece of text (extracted from old draw_text)."""
+        if self._drawer is None:
+            return
+
+        font_to_use = self.font
+        if font_size is not None:
+            font_to_use = ImageFont.truetype(str(self.font_path), font_size)
+
+        ascent, descent = font_to_use.getmetrics()
+        top_padding = (self._effective_line_height - (ascent + descent)) // 2
+        baseline_y = pixel_y + top_padding + ascent
+
+        self._drawer.text(
+            (pixel_x, baseline_y),
+            text,
+            font=font_to_use,
+            fill=(*color, 255),
+            anchor="ls",
+        )
