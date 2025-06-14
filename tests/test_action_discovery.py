@@ -130,11 +130,11 @@ def test_get_combat_options_melee_ranged_and_reload() -> None:
     opts = disc._get_combat_options(cast(Controller, controller), player, ctx)
     names = {o.name for o in opts}
 
-    assert f"Melee {melee_target.name} with {pistol.name}" in names
+    assert f"Pistol-Whip {melee_target.name} with {pistol.name}" in names
     assert f"Shoot {ranged_target.name} with {pistol.name}" in names
     assert f"Reload {pistol.name}" in names
 
-    melee_opt = next(o for o in opts if o.name.startswith("Melee"))
+    melee_opt = next(o for o in opts if o.name.startswith("Pistol-Whip"))
     expected_melee_prob = disc._calculate_combat_probability(
         cast(Controller, controller),
         player,
@@ -173,10 +173,10 @@ def test_get_combat_options_for_target_filters() -> None:
     )
 
     assert len(melee_opts) == 2
-    assert any(o.name.startswith("Melee") for o in melee_opts)
-    assert any(o.name.startswith("Ranged") for o in melee_opts)
+    assert any(o.name.startswith("Pistol-Whip") for o in melee_opts)
+    assert any(o.name.startswith("Shoot") for o in melee_opts)
     assert len(ranged_only) == 1
-    assert ranged_only[0].name.startswith("Ranged")
+    assert ranged_only[0].name.startswith("Shoot")
 
 
 def test_combat_options_ignore_dead_and_unseen() -> None:
@@ -200,7 +200,7 @@ def test_combat_option_probabilities_reflect_status_effects() -> None:
     ctx = disc._build_context(cast(Controller, controller), player)
 
     opts = disc._get_combat_options(cast(Controller, controller), player, ctx)
-    melee_opt = next(o for o in opts if o.name.startswith("Melee"))
+    melee_opt = next(o for o in opts if o.name.startswith("Pistol-Whip"))
     expected_melee_prob = disc._calculate_combat_probability(
         cast(Controller, controller),
         player,
@@ -277,7 +277,7 @@ def test_target_specific_option_probabilities_reflect_status_effects() -> None:
         cast(Controller, controller), player, ranged_target, ctx
     )
 
-    melee_opt = next(o for o in melee_opts if o.name.startswith("Melee"))
+    melee_opt = next(o for o in melee_opts if o.name.startswith("Pistol-Whip"))
     expected_melee_prob = disc._calculate_combat_probability(
         cast(Controller, controller),
         player,

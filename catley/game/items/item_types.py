@@ -32,20 +32,23 @@ SLEDGEHAMMER_TYPE = ItemType(
     name="Sledgehammer",
     description="Heavy two-handed weapon",
     size=ItemSize.BIG,
-    melee_attack=MeleeAttackSpec("d8", {WeaponProperty.TWO_HANDED}),
+    melee_attack=MeleeAttackSpec("d8", {WeaponProperty.TWO_HANDED}, verb="bludgeon"),
 )
 
 COMBAT_KNIFE_TYPE = ItemType(
     name="Combat Knife",
     description="Sharp and deadly, can be thrown",
     size=ItemSize.NORMAL,
-    melee_attack=MeleeAttackSpec("d6", properties={WeaponProperty.PREFERRED}),
+    melee_attack=MeleeAttackSpec(
+        "d6", properties={WeaponProperty.PREFERRED}, verb="stab"
+    ),
     ranged_attack=RangedAttackSpec(
         damage_die="d4",
         ammo_type="thrown",
         max_ammo=1,
         optimal_range=4,
         max_range=8,
+        verb="throw",
         properties={WeaponProperty.THROWN},
     ),
 )
@@ -61,9 +64,12 @@ PISTOL_TYPE = ItemType(
         optimal_range=6,
         max_range=12,
         properties={WeaponProperty.PREFERRED},
+        verb="shoot",
     ),
     # Pistol-whipping.
-    melee_attack=MeleeAttackSpec("d4", properties={WeaponProperty.IMPROVISED}),
+    melee_attack=MeleeAttackSpec(
+        "d4", verb="pistol-whip", properties={WeaponProperty.IMPROVISED}
+    ),
 )
 
 REVOLVER_TYPE = copy.copy(PISTOL_TYPE)

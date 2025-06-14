@@ -18,7 +18,7 @@ import functools
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from catley.game import ranges
 from catley.game.actions.base import GameAction
@@ -36,6 +36,7 @@ from catley.game.items.item_core import Item
 
 if TYPE_CHECKING:
     from catley.controller import Controller
+    from catley.game.items.capabilities import MeleeAttack, RangedAttack
 
 
 class ActionCategory(Enum):
@@ -232,6 +233,20 @@ class ActionDiscovery:
         )
         return resolver.calculate_success_probability()
 
+    def _get_attack_display_name(
+        self, weapon: Item, attack_mode: str, target_name: str
+    ) -> str:
+        """Generate attack display name using the weapon's verb."""
+        if attack_mode == "melee" and weapon.melee_attack:
+            melee = cast("MeleeAttack", weapon.melee_attack)
+            verb = melee._spec.verb
+            return f"{verb.title()} {target_name} with {weapon.name}"
+        if attack_mode == "ranged" and weapon.ranged_attack:
+            ranged = cast("RangedAttack", weapon.ranged_attack)
+            verb = ranged._spec.verb
+            return f"{verb.title()} {target_name} with {weapon.name}"
+        return f"Attack {target_name} with {weapon.name}"
+
     def _get_combat_options(
         self, controller: Controller, actor: Character, context: ActionContext
     ) -> list[ActionOption]:
@@ -269,7 +284,9 @@ class ActionDiscovery:
 
                     options.append(
                         ActionOption(
-                            name=f"Melee {target.name} with {weapon.name}",
+                            name=self._get_attack_display_name(
+                                weapon, "melee", target.name
+                            ),
                             description=f"Close combat attack using {weapon.name}",
                             category=ActionCategory.COMBAT,
                             hotkey="m" if len(options) == 0 else None,
@@ -288,6 +305,21 @@ class ActionDiscovery:
                 if weapon.ranged_attack and weapon.ranged_attack.current_ammo > 0:
                     range_cat = ranges.get_range_category(distance, weapon)
                     range_mods = ranges.get_range_modifier(weapon, range_cat)
+                    if range_mods is None:
+                        options.append(
+                            ActionOption(
+                                name=self._get_attack_display_name(
+                                    weapon, "ranged", target.name
+                                )
+                                + " (OUT OF RANGE)",
+                                description=(
+                                    f"Target is beyond {weapon.name}'s maximum range"
+                                ),
+                                category=ActionCategory.COMBAT,
+                                success_probability=0.0,
+                            )
+                        )
+                        continue
 
                     prob = self._calculate_combat_probability(
                         controller,
@@ -297,10 +329,20 @@ class ActionDiscovery:
                         range_mods,
                     )
 
-                    ammo_cost = ""
+                    ammo_warning = ""
+                    current_ammo = weapon.ranged_attack.current_ammo
+                    if current_ammo == 1:
+                        ammo_warning = " (LAST SHOT!)"
+                    elif current_ammo <= 3:
+                        ammo_warning = " (Low ammo)"
+                    ammo_cost = (
+                        f"Uses 1 {weapon.ranged_attack.ammo_type} ammo{ammo_warning}"
+                    )
                     options.append(
                         ActionOption(
-                            name=f"Shoot {target.name} with {weapon.name}",
+                            name=self._get_attack_display_name(
+                                weapon, "ranged", target.name
+                            ),
                             description=f"Ranged attack at {range_cat} range",
                             category=ActionCategory.COMBAT,
                             hotkey="r"
@@ -383,7 +425,9 @@ class ActionDiscovery:
 
                 options.append(
                     ActionOption(
-                        name=f"Melee attack with {weapon.name}",
+                        name=self._get_attack_display_name(
+                            weapon, "melee", target.name
+                        ),
                         description=f"Close combat attack using {weapon.name}",
                         category=ActionCategory.COMBAT,
                         success_probability=prob,
@@ -397,6 +441,21 @@ class ActionDiscovery:
             if weapon.ranged_attack and weapon.ranged_attack.current_ammo > 0:
                 range_cat = ranges.get_range_category(distance, weapon)
                 range_mods = ranges.get_range_modifier(weapon, range_cat)
+                if range_mods is None:
+                    options.append(
+                        ActionOption(
+                            name=self._get_attack_display_name(
+                                weapon, "ranged", target.name
+                            )
+                            + " (OUT OF RANGE)",
+                            description=(
+                                f"Target is beyond {weapon.name}'s maximum range"
+                            ),
+                            category=ActionCategory.COMBAT,
+                            success_probability=0.0,
+                        )
+                    )
+                    continue
 
                 prob = self._calculate_combat_probability(
                     controller,
@@ -406,15 +465,25 @@ class ActionDiscovery:
                     range_mods,
                 )
 
+                ammo_warning = ""
+                current_ammo = weapon.ranged_attack.current_ammo
+                if current_ammo == 1:
+                    ammo_warning = " (LAST SHOT!)"
+                elif current_ammo <= 3:
+                    ammo_warning = " (Low ammo)"
+                cost_desc = (
+                    f"Uses 1 {weapon.ranged_attack.ammo_type} ammo{ammo_warning}"
+                )
+
                 options.append(
                     ActionOption(
-                        name=f"Ranged attack with {weapon.name}",
+                        name=self._get_attack_display_name(
+                            weapon, "ranged", target.name
+                        ),
                         description=f"Ranged attack at {range_cat} range",
                         category=ActionCategory.COMBAT,
                         success_probability=prob,
-                        cost_description=(
-                            f"Uses 1 {weapon.ranged_attack.ammo_type} ammo"
-                        ),
+                        cost_description=cost_desc,
                         execute=functools.partial(
                             self._create_ranged_attack,
                             controller,
