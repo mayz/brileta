@@ -80,7 +80,7 @@ class MessageLogPanel(TextPanel):
                     break
 
                 self.text_backend.draw_text(
-                    pixel_x=0, pixel_y=y_baseline, text=line, color=message.fg
+                    pixel_x=0, pixel_y=text_top, text=line, color=message.fg
                 )
                 y_baseline -= line_height
 
