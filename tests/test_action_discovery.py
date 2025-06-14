@@ -238,10 +238,15 @@ def test_combat_option_probabilities_reflect_status_effects() -> None:
 def test_sort_by_relevance_orders_actions() -> None:
     ctx = ActionContext(0, 0, [], [], True)
     opt1 = ActionOption(
-        "a", "", ActionCategory.COMBAT, hotkey="a", success_probability=0.5
+        "id1",
+        "a",
+        "",
+        ActionCategory.COMBAT,
+        hotkey="a",
+        success_probability=0.5,
     )
-    opt2 = ActionOption("b", "", ActionCategory.ITEMS)
-    opt3 = ActionOption("c", "", ActionCategory.COMBAT, success_probability=0.8)
+    opt2 = ActionOption("id2", "b", "", ActionCategory.ITEMS)
+    opt3 = ActionOption("id3", "c", "", ActionCategory.COMBAT, success_probability=0.8)
 
     disc = ActionDiscovery()
     ordered = disc._sort_by_relevance([opt2, opt3, opt1], ctx)

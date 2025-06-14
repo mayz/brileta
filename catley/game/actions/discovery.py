@@ -52,18 +52,24 @@ class ActionCategory(Enum):
 class ActionOption:
     """Represents an action choice the player can select from a menu."""
 
-    name: str  # Display name like "Pistol-whip with Pistol"
+    id: str
+    name: str  # Display name for this action
     description: str  # Detailed description
     category: ActionCategory
     hotkey: str | None = None  # Optional keyboard shortcut
+    display_text: str | None = None  # Dynamic text for UI
     success_probability: float | None = None  # 0.0-1.0 if applicable
     cost_description: str | None = None  # "Uses 1 ammo", "Takes 2 turns"
     execute: Callable[[], GameAction | bool | None] | None = None
 
+    def __post_init__(self) -> None:
+        if self.display_text is None:
+            self.display_text = self.name
+
     @property
-    def display_text(self) -> str:
+    def menu_text(self) -> str:
         """Formatted text for menus."""
-        text = self.name
+        text = self.display_text or self.name
         if self.success_probability is not None:
             descriptor, _color = ActionDiscovery.get_probability_descriptor(
                 self.success_probability
@@ -237,6 +243,7 @@ class ActionDiscovery:
                     )
                 options.append(
                     ActionOption(
+                        id=label,
                         name=label,
                         description="",
                         category=cats[0],
@@ -260,6 +267,7 @@ class ActionDiscovery:
 
         return [
             ActionOption(
+                id="back",
                 name="\u2190 Back",
                 description="Return to previous screen",
                 category=target_category,
@@ -412,6 +420,7 @@ class ActionDiscovery:
 
                     options.append(
                         ActionOption(
+                            id=f"melee-{weapon.melee_attack._spec.verb.title()}-{target.name}",
                             name=self._get_attack_display_name(
                                 weapon, "melee", target.name
                             ),
@@ -434,6 +443,7 @@ class ActionDiscovery:
                     if range_mods is None:
                         options.append(
                             ActionOption(
+                                id=f"ranged-{weapon.ranged_attack._spec.verb.title()}-{target.name}",
                                 name=self._get_attack_display_name(
                                     weapon, "ranged", target.name
                                 )
@@ -469,6 +479,7 @@ class ActionDiscovery:
 
                     options.append(
                         ActionOption(
+                            id=f"ranged-{weapon.ranged_attack._spec.verb.title()}-{target.name}",
                             name=display_name,
                             description=f"Ranged attack at {range_cat} range",
                             category=ActionCategory.COMBAT,
@@ -486,6 +497,37 @@ class ActionDiscovery:
 
         return options
 
+    def _get_all_terminal_combat_actions(
+        self, controller: Controller, actor: Character
+    ) -> list[ActionOption]:
+        """Generate a flat list of every possible end combat action."""
+
+        context = self._build_context(controller, actor)
+        if not context.in_combat:
+            return []
+
+        options: list[ActionOption] = []
+        equipped_weapons = [w for w in actor.inventory.attack_slots if w is not None]
+
+        if not equipped_weapons:
+            from catley.game.items.item_types import FISTS_TYPE
+
+            equipped_weapons = [FISTS_TYPE.create()]
+
+        for target in context.nearby_actors:
+            if (
+                target == actor
+                or not isinstance(target, Character)
+                or not target.health.is_alive()
+            ):
+                continue
+
+            options.extend(
+                self._get_combat_options_for_target(controller, actor, target, context)
+            )
+
+        return options
+
     def _get_all_item_actions(
         self, controller: Controller, actor: Character, context: ActionContext
     ) -> list[ActionOption]:
@@ -495,6 +537,7 @@ class ActionDiscovery:
         equipped_weapons = [w for w in actor.inventory.attack_slots if w is not None]
         options.extend(
             ActionOption(
+                id=f"reload-{weapon.name}",
                 name=f"Reload {weapon.name}",
                 description=(
                     f"Reload {weapon.name} with {weapon.ranged_attack.ammo_type} ammo"
@@ -513,6 +556,7 @@ class ActionDiscovery:
 
         options.extend(
             ActionOption(
+                id=f"use-{item.name}",
                 name=f"Use {item.name}",
                 description=f"Consume {item.name}",
                 category=ActionCategory.ITEMS,
@@ -578,11 +622,16 @@ class ActionDiscovery:
                     controller, actor, target, "strength"
                 )
 
+                melee = cast("MeleeAttack", weapon.melee_attack)
+                verb = melee._spec.verb
+                display_text = f"{verb.title()} {target.name} with {weapon.name}"
+                action_id = f"melee-{verb.title()}-{target.name}"
+
                 options.append(
                     ActionOption(
-                        name=self._get_attack_display_name(
-                            weapon, "melee", target.name
-                        ),
+                        id=action_id,
+                        name=display_text,
+                        display_text=display_text,
                         description=f"Close combat attack using {weapon.name}",
                         category=ActionCategory.COMBAT,
                         success_probability=prob,
@@ -597,12 +646,24 @@ class ActionDiscovery:
                 range_cat = ranges.get_range_category(distance, weapon)
                 range_mods = ranges.get_range_modifier(weapon, range_cat)
                 if range_mods is None:
+                    ranged_cap = cast("RangedAttack", weapon.ranged_attack)
+                    verb = ranged_cap._spec.verb
+                    action_id = f"ranged-{verb.title()}-{target.name}"
                     options.append(
                         ActionOption(
-                            name=self._get_attack_display_name(
-                                weapon, "ranged", target.name
-                            )
-                            + " (OUT OF RANGE)",
+                            id=action_id,
+                            name=(
+                                self._get_attack_display_name(
+                                    weapon, "ranged", target.name
+                                )
+                                + " (OUT OF RANGE)"
+                            ),
+                            display_text=(
+                                self._get_attack_display_name(
+                                    weapon, "ranged", target.name
+                                )
+                                + " (OUT OF RANGE)"
+                            ),
                             description=(
                                 f"Target is beyond {weapon.name}'s maximum range"
                             ),
@@ -620,6 +681,8 @@ class ActionDiscovery:
                     range_mods,
                 )
 
+                ranged_cap = cast("RangedAttack", weapon.ranged_attack)
+                verb = ranged_cap._spec.verb
                 display_name = self._get_attack_display_name(
                     weapon, "ranged", target.name
                 )
@@ -631,10 +694,13 @@ class ActionDiscovery:
                     ammo_warning = " (Low Ammo)"
 
                 display_name += ammo_warning
+                action_id = f"ranged-{verb.title()}-{target.name}"
 
                 options.append(
                     ActionOption(
+                        id=action_id,
                         name=display_name,
+                        display_text=display_name,
                         description=f"Ranged attack at {range_cat} range",
                         category=ActionCategory.COMBAT,
                         success_probability=prob,
@@ -661,6 +727,7 @@ class ActionDiscovery:
         if context.items_on_ground:
             options.append(
                 ActionOption(
+                    id="pickup",
                     name=f"Pick up items ({len(context.items_on_ground)})",
                     description="Pickup items from the ground",
                     category=ActionCategory.ITEMS,
@@ -675,6 +742,7 @@ class ActionDiscovery:
                 if i != actor.inventory.active_weapon_slot and item:
                     options.append(
                         ActionOption(
+                            id=f"switch-{item.name}",
                             name=f"Switch to {item.name}",
                             description=f"Equip {item.name} as active weapon",
                             category=ActionCategory.ITEMS,
@@ -698,6 +766,7 @@ class ActionDiscovery:
         if actor.health.ap < actor.health.max_ap and safe:
             options.append(
                 ActionOption(
+                    id="rest",
                     name="Rest",
                     description="Recover armor points",
                     category=ActionCategory.ENVIRONMENT,
@@ -713,6 +782,7 @@ class ActionDiscovery:
         if needs_sleep and safe:
             options.append(
                 ActionOption(
+                    id="sleep",
                     name="Sleep",
                     description="Sleep to restore HP and ease exhaustion",
                     category=ActionCategory.ENVIRONMENT,
@@ -723,6 +793,7 @@ class ActionDiscovery:
         if actor.modifiers.get_exhaustion_count() > 0 and safe:
             options.append(
                 ActionOption(
+                    id="comfort_sleep",
                     name="Comfortable Sleep",
                     description="Remove all exhaustion and restore HP",
                     category=ActionCategory.ENVIRONMENT,
@@ -767,6 +838,7 @@ class ActionDiscovery:
             if tile_id == tile_types.TILE_TYPE_ID_DOOR_CLOSED:  # type: ignore[attr-defined]
                 options.append(
                     ActionOption(
+                        id="open-door",
                         name="Open Door",
                         description="Open the door",
                         category=ActionCategory.ENVIRONMENT,
@@ -778,6 +850,7 @@ class ActionDiscovery:
             elif tile_id == tile_types.TILE_TYPE_ID_DOOR_OPEN:  # type: ignore[attr-defined]
                 options.append(
                     ActionOption(
+                        id="close-door",
                         name="Close Door",
                         description="Close the door",
                         category=ActionCategory.ENVIRONMENT,
@@ -873,6 +946,7 @@ class ActionDiscovery:
         if context.nearby_actors:
             options.append(
                 ActionOption(
+                    id="approach-target",
                     name="Attack a target...",
                     description="Select target, then choose how to attack",
                     category=ActionCategory.COMBAT,
@@ -882,6 +956,7 @@ class ActionDiscovery:
             )
             options.append(
                 ActionOption(
+                    id="approach-weapon",
                     name="Attack with a weapon...",
                     description="Select weapon/attack mode, then choose target",
                     category=ActionCategory.COMBAT,
@@ -893,6 +968,7 @@ class ActionDiscovery:
         options.insert(
             0,
             ActionOption(
+                id="back",
                 name="\u2190 Back",
                 description="Return to previous screen",
                 category=ActionCategory.COMBAT,
@@ -910,6 +986,7 @@ class ActionDiscovery:
 
         options: list[ActionOption] = [
             ActionOption(
+                id="back",
                 name="\u2190 Back",
                 description="Return to previous screen",
                 category=ActionCategory.COMBAT,
@@ -939,6 +1016,7 @@ class ActionDiscovery:
 
             options.append(
                 ActionOption(
+                    id=f"target-{target.name}",
                     name=f"{target.name} ({desc})",
                     description=f"Attack {target.name}",
                     category=ActionCategory.COMBAT,
@@ -958,6 +1036,7 @@ class ActionDiscovery:
 
         options: list[ActionOption] = [
             ActionOption(
+                id="back",
                 name="\u2190 Back",
                 description="Return to previous screen",
                 category=ActionCategory.COMBAT,
@@ -980,6 +1059,7 @@ class ActionDiscovery:
                 verb = melee._spec.verb
                 options.append(
                     ActionOption(
+                        id=f"weapon-melee-{weapon.name}",
                         name=f"{verb.title()} with {weapon.name}",
                         description=f"Melee attack using {weapon.name}",
                         category=ActionCategory.COMBAT,
@@ -1001,6 +1081,7 @@ class ActionDiscovery:
                 verb = ranged._spec.verb
                 options.append(
                     ActionOption(
+                        id=f"weapon-ranged-{weapon.name}",
                         name=f"{verb.title()} with {weapon.name}",
                         description=f"Ranged attack using {weapon.name}",
                         category=ActionCategory.COMBAT,
@@ -1028,6 +1109,7 @@ class ActionDiscovery:
 
         options = [
             ActionOption(
+                id="back",
                 name="\u2190 Back",
                 description="Return to previous screen",
                 category=ActionCategory.COMBAT,
@@ -1055,6 +1137,7 @@ class ActionDiscovery:
 
         options: list[ActionOption] = [
             ActionOption(
+                id="back",
                 name="\u2190 Back",
                 description="Return to previous screen",
                 category=ActionCategory.COMBAT,
@@ -1086,6 +1169,7 @@ class ActionDiscovery:
                 )
                 options.append(
                     ActionOption(
+                        id=f"melee-{weapon.name}-{target.name}",
                         name=self._get_attack_display_name(
                             weapon, "melee", target.name
                         ),
@@ -1108,6 +1192,7 @@ class ActionDiscovery:
                 if range_mods is None:
                     options.append(
                         ActionOption(
+                            id=f"ranged-{weapon.name}-{target.name}",
                             name=self._get_attack_display_name(
                                 weapon, "ranged", target.name
                             )
@@ -1137,6 +1222,7 @@ class ActionDiscovery:
 
                 options.append(
                     ActionOption(
+                        id=f"ranged-{weapon.name}-{target.name}",
                         name=self._get_attack_display_name(
                             weapon, "ranged", target.name
                         ),

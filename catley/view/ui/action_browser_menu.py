@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import string
 from typing import TYPE_CHECKING
 
@@ -7,8 +8,12 @@ import tcod
 
 from catley import colors
 from catley.game.actions.base import GameAction
-from catley.game.actions.discovery import ActionCategory, ActionDiscovery
-from catley.view.ui.overlays import Menu, MenuOption
+from catley.game.actions.discovery import (
+    ActionCategory,
+    ActionDiscovery,
+    ActionOption,
+)
+from catley.view.ui.overlays import REPEAT_PREFIX, Menu, MenuOption
 
 if TYPE_CHECKING:
     from catley.controller import Controller
@@ -36,9 +41,41 @@ class ActionBrowserMenu(Menu):
         self.options.clear()
 
         player = self.controller.gw.player
-        action_options = self.action_discovery.get_available_options(
-            self.controller, player
+
+        action_options_for_display = self.action_discovery.get_available_options(
+            self.controller,
+            player,
         )
+
+        cached_action = self.controller.last_browser_action
+        if cached_action:
+            all_possible_actions = (
+                self.action_discovery._get_all_terminal_combat_actions(
+                    self.controller, player
+                )
+            )
+            fresh_action = next(
+                (
+                    opt
+                    for opt in all_possible_actions
+                    if opt.id == cached_action.id and opt.execute
+                ),
+                None,
+            )
+            if fresh_action:
+                self.add_option(
+                    MenuOption(
+                        key=None,
+                        text=f"{REPEAT_PREFIX} {fresh_action.menu_text}",
+                        action=functools.partial(
+                            self._execute_action_option, fresh_action
+                        ),
+                        color=colors.WHITE,
+                    )
+                )
+                self.add_option(MenuOption(key=None, text="-" * 40, enabled=False))
+
+        action_options = action_options_for_display
 
         # Use letters a-z for action options
         letters = string.ascii_lowercase
@@ -81,26 +118,30 @@ class ActionBrowserMenu(Menu):
             self.add_option(
                 MenuOption(
                     key=key,
-                    text=action_option.display_text,
-                    action=None,
+                    text=action_option.menu_text,
+                    action=functools.partial(
+                        self._execute_action_option, action_option
+                    ),
                     enabled=True,
                     color=prob_color,
                     force_color=True,
-                    data=action_option,
                 )
             )
 
-    def _execute_action_option(self, option) -> bool:
-        """Execute an action option and return True if it queues a GameAction."""
-        action_option = option
-        if isinstance(option, MenuOption):
-            action_option = option.data
-        if action_option and getattr(action_option, "execute", None):
-            result = action_option.execute()
+    def _execute_action_option(self, action_option: ActionOption) -> bool:
+        """Execute an action option. Returns True if menu should close."""
+        execute_fn = action_option.execute
+        if execute_fn is not None:
+            result = execute_fn()
             if isinstance(result, GameAction):
                 self.controller.queue_action(result)
+                # Cache the action that was just successfully executed
+                self.controller.last_browser_action = action_option
                 return True
-        return False
+            # This was a state change (e.g., entering a sub-menu), not a final action
+            return False
+        # This was likely a "Back" button or similar UI-only action
+        return True
 
     def _get_category_color(self, category: ActionCategory) -> colors.Color:
         """Get display color for action category."""
@@ -136,13 +177,14 @@ class ActionBrowserMenu(Menu):
                         option.key is not None
                         and option.key.lower() == key_char
                         and option.enabled
+                        and option.action
                     ):
-                        should_close = self._execute_action_option(option)
+                        should_close = option.action()
                         if should_close:
                             self.hide()
                         else:
                             self.populate_options()
                         return True
-                return True
+                return super().handle_input(event)
 
-        return False
+        return super().handle_input(event)

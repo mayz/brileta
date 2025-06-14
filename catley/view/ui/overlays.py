@@ -29,6 +29,8 @@ from catley.view.render.text_backend import TCODTextBackend, TextBackend
 if TYPE_CHECKING:
     from catley.controller import Controller
 
+REPEAT_PREFIX = "[Enter] Repeat:"
+
 
 class Overlay(abc.ABC):
     """Base class for temporary UI overlays.
@@ -280,6 +282,12 @@ class Menu(TextOverlay):
                 self.hide()
                 return True
             case tcod.event.KeyDown(sym=tcod.event.KeySym.RETURN):  # Enter key
+                if (
+                    self.options
+                    and self.options[0].text.startswith(REPEAT_PREFIX)
+                    and self.options[0].action
+                ):
+                    self.options[0].action()
                 self.hide()
                 return True
             case tcod.event.KeyDown() as key_event:
