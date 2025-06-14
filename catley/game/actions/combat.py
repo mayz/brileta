@@ -108,14 +108,21 @@ class AttackAction(GameAction):
         return GameActionResult(consequences=consequences)
 
     def _determine_attack_method(self) -> tuple[Attack | None, Item]:
-        """Determine which attack method and weapon to use
-        based on distance and capabilities."""
+        """Determine which attack method and weapon to use."""
         weapon = (
             self.weapon
             or self.attacker.inventory.get_active_weapon()
             or FISTS_TYPE.create()
         )
 
+        distance = ranges.calculate_distance(
+            self.attacker.x,
+            self.attacker.y,
+            self.defender.x,
+            self.defender.y,
+        )
+
+        # Highest priority: explicit attack mode selection
         if self.attack_mode == "melee":
             if weapon.melee_attack:
                 return weapon.melee_attack, weapon
@@ -133,21 +140,20 @@ class AttackAction(GameAction):
             )
             return None, weapon
 
-        # Backwards-compatible heuristic based on distance
-        distance = ranges.calculate_distance(
-            self.attacker.x,
-            self.attacker.y,
-            self.defender.x,
-            self.defender.y,
-        )
+        # Next priority: weapon's preferred attack for this distance
+        preferred = weapon.get_preferred_attack_mode(distance)
+        if (
+            isinstance(preferred, Attack)
+            and WeaponProperty.PREFERRED in preferred.properties
+        ):
+            return preferred, weapon
 
-        ranged_attack = weapon.ranged_attack
-
+        # Fallback heuristic based on distance if no preference exists
         if distance == 1 and weapon.melee_attack:
             return weapon.melee_attack, weapon
 
-        if ranged_attack:
-            return ranged_attack, weapon
+        if weapon.ranged_attack:
+            return weapon.ranged_attack, weapon
 
         if weapon.melee_attack:
             return weapon.melee_attack, weapon

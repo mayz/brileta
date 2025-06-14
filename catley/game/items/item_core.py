@@ -90,8 +90,9 @@ class Item:
         """
         Get the attack mode this item prefers at the given distance.
 
-        Considers item design intent and situational factors to determine
-        which attack mode (melee, ranged, area) is most appropriate.
+        This represents the designer's intent for deliberate combat and does
+        not apply any range restrictions. Validation of whether an attack can
+        be performed happens elsewhere.
 
         Args:
             distance: Distance to target in tiles
@@ -104,9 +105,11 @@ class Item:
         # Collect available attacks for this distance
         if self.melee_attack and distance == 1:
             available_attacks.append(self.melee_attack)
-        # Ranged attacks are ignored at point blank range to avoid
-        # unintentionally pistol-whipping instead of shooting.
-        if self.ranged_attack and distance > 1:
+
+        # Deliberate combat may prefer using a ranged attack even at
+        # point blank range. Range validation happens elsewhere, so we
+        # simply include the attack here if it exists.
+        if self.ranged_attack:
             available_attacks.append(self.ranged_attack)
         if self.area_effect:  # Area effects work at various ranges
             available_attacks.append(self.area_effect)

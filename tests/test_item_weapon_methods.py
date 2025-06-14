@@ -82,7 +82,7 @@ def test_get_preferred_attack_mode_wrong_distance() -> None:
         )
     )
     assert melee_only.get_preferred_attack_mode(3) is None
-    assert ranged_only.get_preferred_attack_mode(1) is None
+    assert ranged_only.get_preferred_attack_mode(1) == ranged_only.ranged_attack
 
 
 def test_is_improvised_weapon_true() -> None:

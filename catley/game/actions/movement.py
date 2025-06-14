@@ -16,7 +16,6 @@ from catley.environment import tile_types
 from catley.events import MessageEvent, publish_event
 from catley.game.actions.base import GameAction, GameActionResult
 from catley.game.actors import Character
-from catley.game.items.capabilities import MeleeAttack
 from catley.game.items.item_types import FISTS_TYPE
 from catley.game.items.properties import WeaponProperty
 
@@ -44,31 +43,52 @@ class MoveAction(GameAction):
         self.newy = self.actor.y + self.dy
 
     def _select_ram_weapon(self) -> Item:
-        """Choose the best weapon for ramming into another actor."""
-        # First, try the currently active weapon if it's suitable
+        """Choose the best melee weapon for accidental ramming.
+
+        Ranged weapons are ignored entirely to avoid wasting ammo or using
+        precision gear when simply bumping into an enemy.
+        """
+
         active_weapon = self.actor.inventory.get_active_weapon()
-        if active_weapon and self._is_suitable_ram_weapon(active_weapon):
-            return active_weapon
 
-        # Fall back to any other equipped weapon that's suitable
+        candidates: list[Item] = []
+        if active_weapon and self._is_suitable_melee_for_ramming(active_weapon):
+            candidates.append(active_weapon)
+
         for weapon, _ in self.actor.inventory.get_equipped_items():
-            if weapon != active_weapon and self._is_suitable_ram_weapon(weapon):
-                return weapon
+            if weapon is not active_weapon and self._is_suitable_melee_for_ramming(
+                weapon
+            ):
+                candidates.append(weapon)
 
-        return FISTS_TYPE.create()
+        if not candidates:
+            return FISTS_TYPE.create()
 
-    def _is_suitable_ram_weapon(self, weapon: Item) -> bool:
-        """Check if a weapon is suitable for ramming."""
-        attack_mode = weapon.get_preferred_attack_mode(distance=1)
-        ranged_attack = weapon.ranged_attack
-        has_preferred_ranged = (
-            ranged_attack is not None
-            and WeaponProperty.PREFERRED in ranged_attack.properties
-        )
-        return (
-            isinstance(attack_mode, MeleeAttack)
-            and WeaponProperty.IMPROVISED not in attack_mode.properties
-            and not has_preferred_ranged
+        # Prefer designed weapons over improvised ones.
+        non_improvised = [
+            w
+            for w in candidates
+            if WeaponProperty.IMPROVISED not in w.melee_attack.properties  # type: ignore[union-attr]
+        ]
+        if non_improvised:
+            if active_weapon in non_improvised:
+                return active_weapon  # type: ignore[return-value]
+            return non_improvised[0]
+
+        # All options are improvised; keep active weapon if possible
+        if active_weapon in candidates:
+            return active_weapon  # type: ignore[return-value]
+        return candidates[0]
+
+    def _is_suitable_melee_for_ramming(self, weapon: Item) -> bool:
+        """Return True if the weapon can be used to ram in melee."""
+        melee = weapon.melee_attack
+        if melee is None:
+            return False
+
+        ranged = weapon.ranged_attack
+        return not (
+            ranged is not None and WeaponProperty.PREFERRED in ranged.properties
         )
 
     def execute(self) -> GameActionResult | None:

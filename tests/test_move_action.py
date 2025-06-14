@@ -11,6 +11,7 @@ from catley.game.items.item_types import (
     COMBAT_KNIFE_TYPE,
     FISTS_TYPE,
     PISTOL_TYPE,
+    ROCK_TYPE,
     SLEDGEHAMMER_TYPE,
     SNIPER_RIFLE_TYPE,
 )
@@ -121,6 +122,19 @@ def test_ram_weapon_prefers_active_weapon() -> None:
 
     # Should prefer the active sledgehammer over the knife
     assert weapon is sledgehammer
+
+
+def test_ram_weapon_prefers_designed_over_improvised() -> None:
+    controller, player = make_world()
+    rock = ROCK_TYPE.create()
+    knife = COMBAT_KNIFE_TYPE.create()
+    player.inventory.equip_to_slot(rock, 0)
+    player.inventory.equip_to_slot(knife, 1)
+
+    action = MoveAction(cast(Controller, controller), player, dx=1, dy=0)
+    weapon = action._select_ram_weapon()
+
+    assert weapon is knife
 
 
 def test_move_action_opens_closed_door_when_bumped() -> None:
