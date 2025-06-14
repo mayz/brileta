@@ -15,11 +15,13 @@ There are three interaction paradigms for action discovery:
 from __future__ import annotations
 
 import functools
+import string
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
+from catley import colors
 from catley.game import ranges
 from catley.game.actions.base import GameAction
 from catley.game.actions.combat import AttackAction, ReloadAction
@@ -36,6 +38,7 @@ from catley.game.items.item_core import Item
 
 if TYPE_CHECKING:
     from catley.controller import Controller
+    from catley.game.items.capabilities import MeleeAttack, RangedAttack
 
 
 class ActionCategory(Enum):
@@ -57,6 +60,8 @@ class ActionOption:
     success_probability: float | None = None  # 0.0-1.0 if applicable
     cost_description: str | None = None  # "Uses 1 ammo", "Takes 2 turns"
     execute: Callable[[], GameAction | None] | None = None  # How to perform the action
+    enabled: bool = True
+    color: colors.Color | None = None
 
     @property
     def display_text(self) -> str:
@@ -94,6 +99,13 @@ class ActionContext:
 
 class ActionDiscovery:
     """Main system for discovering available actions."""
+
+    def __init__(self) -> None:
+        # Multi-screen state for the action browser workflow
+        self.ui_state: str = "main"
+        self.selected_weapon: Item | None = None
+        self.selected_attack_mode: str | None = None
+        self.selected_target: Character | None = None
 
     @staticmethod
     def get_probability_descriptor(probability: float) -> tuple[str, str]:
@@ -232,10 +244,36 @@ class ActionDiscovery:
         )
         return resolver.calculate_success_probability()
 
+    def _get_attack_display_name(
+        self, weapon: Item, attack_mode: str, target_name: str
+    ) -> str:
+        """Generate attack display name using the weapon's verb."""
+        if attack_mode == "melee" and weapon.melee_attack:
+            melee = cast("MeleeAttack", weapon.melee_attack)
+            verb = melee._spec.verb
+            return f"{verb.title()} {target_name} with {weapon.name}"
+        if attack_mode == "ranged" and weapon.ranged_attack:
+            ranged = cast("RangedAttack", weapon.ranged_attack)
+            verb = ranged._spec.verb
+            return f"{verb.title()} {target_name} with {weapon.name}"
+        return f"Attack {target_name} with {weapon.name}"
+
     def _get_combat_options(
         self, controller: Controller, actor: Character, context: ActionContext
     ) -> list[ActionOption]:
-        """Get all combat-related action options."""
+        """Get combat-related options based on the current UI state."""
+
+        if self.ui_state == "main":
+            return self.get_combat_approach_options(controller, actor, context)
+        if self.ui_state == "target_select":
+            return self.get_target_selection_options(controller, actor, context)
+        if self.ui_state == "weapon_select":
+            return self.get_weapon_selection_options(controller, actor, context)
+        if self.ui_state == "weapon_for_target":
+            return self._get_weapons_for_selected_target(controller, actor, context)
+        if self.ui_state == "target_for_weapon":
+            return self._get_targets_for_selected_weapon(controller, actor, context)
+
         options: list[ActionOption] = []
         equipped_weapons = [w for w in actor.inventory.attack_slots if w is not None]
 
@@ -269,7 +307,9 @@ class ActionDiscovery:
 
                     options.append(
                         ActionOption(
-                            name=f"Melee {target.name} with {weapon.name}",
+                            name=self._get_attack_display_name(
+                                weapon, "melee", target.name
+                            ),
                             description=f"Close combat attack using {weapon.name}",
                             category=ActionCategory.COMBAT,
                             hotkey="m" if len(options) == 0 else None,
@@ -288,6 +328,23 @@ class ActionDiscovery:
                 if weapon.ranged_attack and weapon.ranged_attack.current_ammo > 0:
                     range_cat = ranges.get_range_category(distance, weapon)
                     range_mods = ranges.get_range_modifier(weapon, range_cat)
+                    if range_mods is None:
+                        options.append(
+                            ActionOption(
+                                name=self._get_attack_display_name(
+                                    weapon, "ranged", target.name
+                                )
+                                + " (OUT OF RANGE)",
+                                description=(
+                                    f"Target is beyond {weapon.name}'s maximum range"
+                                ),
+                                category=ActionCategory.COMBAT,
+                                enabled=False,
+                                color=colors.GREY,
+                                success_probability=0.0,
+                            )
+                        )
+                        continue
 
                     prob = self._calculate_combat_probability(
                         controller,
@@ -297,10 +354,20 @@ class ActionDiscovery:
                         range_mods,
                     )
 
-                    ammo_cost = ""
+                    ammo_warning = ""
+                    current_ammo = weapon.ranged_attack.current_ammo
+                    if current_ammo == 1:
+                        ammo_warning = " (LAST SHOT!)"
+                    elif current_ammo <= 3:
+                        ammo_warning = " (Low ammo)"
+                    ammo_cost = (
+                        f"Uses 1 {weapon.ranged_attack.ammo_type} ammo{ammo_warning}"
+                    )
                     options.append(
                         ActionOption(
-                            name=f"Shoot {target.name} with {weapon.name}",
+                            name=self._get_attack_display_name(
+                                weapon, "ranged", target.name
+                            ),
                             description=f"Ranged attack at {range_cat} range",
                             category=ActionCategory.COMBAT,
                             hotkey="r"
@@ -313,6 +380,28 @@ class ActionDiscovery:
                                 controller,
                                 actor,
                                 target,
+                                weapon,
+                            ),
+                        )
+                    )
+
+                # Area effect attacks
+                if weapon.area_effect:
+                    prob = self._calculate_combat_probability(
+                        controller, actor, target, "observation"
+                    )
+                    options.append(
+                        ActionOption(
+                            name=f"Spray area around {target.name} with {weapon.name}",
+                            description="Area attack affecting multiple targets",
+                            category=ActionCategory.COMBAT,
+                            success_probability=prob,
+                            execute=functools.partial(
+                                self._create_area_attack,
+                                controller,
+                                actor,
+                                target.x,
+                                target.y,
                                 weapon,
                             ),
                         )
@@ -383,7 +472,9 @@ class ActionDiscovery:
 
                 options.append(
                     ActionOption(
-                        name=f"Melee attack with {weapon.name}",
+                        name=self._get_attack_display_name(
+                            weapon, "melee", target.name
+                        ),
                         description=f"Close combat attack using {weapon.name}",
                         category=ActionCategory.COMBAT,
                         success_probability=prob,
@@ -397,6 +488,23 @@ class ActionDiscovery:
             if weapon.ranged_attack and weapon.ranged_attack.current_ammo > 0:
                 range_cat = ranges.get_range_category(distance, weapon)
                 range_mods = ranges.get_range_modifier(weapon, range_cat)
+                if range_mods is None:
+                    options.append(
+                        ActionOption(
+                            name=self._get_attack_display_name(
+                                weapon, "ranged", target.name
+                            )
+                            + " (OUT OF RANGE)",
+                            description=(
+                                f"Target is beyond {weapon.name}'s maximum range"
+                            ),
+                            category=ActionCategory.COMBAT,
+                            enabled=False,
+                            color=colors.GREY,
+                            success_probability=0.0,
+                        )
+                    )
+                    continue
 
                 prob = self._calculate_combat_probability(
                     controller,
@@ -406,15 +514,25 @@ class ActionDiscovery:
                     range_mods,
                 )
 
+                ammo_warning = ""
+                current_ammo = weapon.ranged_attack.current_ammo
+                if current_ammo == 1:
+                    ammo_warning = " (LAST SHOT!)"
+                elif current_ammo <= 3:
+                    ammo_warning = " (Low ammo)"
+                cost_desc = (
+                    f"Uses 1 {weapon.ranged_attack.ammo_type} ammo{ammo_warning}"
+                )
+
                 options.append(
                     ActionOption(
-                        name=f"Ranged attack with {weapon.name}",
+                        name=self._get_attack_display_name(
+                            weapon, "ranged", target.name
+                        ),
                         description=f"Ranged attack at {range_cat} range",
                         category=ActionCategory.COMBAT,
                         success_probability=prob,
-                        cost_description=(
-                            f"Uses 1 {weapon.ranged_attack.ammo_type} ammo"
-                        ),
+                        cost_description=cost_desc,
                         execute=functools.partial(
                             self._create_ranged_attack,
                             controller,
@@ -636,14 +754,343 @@ class ActionDiscovery:
         """Helper to build a ranged `AttackAction`."""
         return AttackAction(controller, actor, target, weapon, attack_mode="ranged")
 
+    def _create_area_attack(self, controller, actor, target_x, target_y, weapon):
+        """Helper to build an area effect attack."""
+        from catley.game.actions.area_effects import AreaEffectAction
+
+        return AreaEffectAction(
+            controller.gw.game_map,
+            controller.gw.actors,
+            actor,
+            target_x,
+            target_y,
+            weapon,
+        )
+
     def _create_reload_action(self, controller, actor, weapon) -> ReloadAction:
         return ReloadAction(controller, actor, weapon)
 
     def _open_pickup_menu(self, controller):
         # This doesn't return a GameAction, but triggers UI
         # The ActionBrowserMode will need to handle this specially
-        return None
+        return
 
     def _switch_weapon(self, controller, actor, slot) -> None:
         # This is an immediate state change, not a GameAction
         actor.inventory.switch_to_weapon_slot(slot)
+
+    # ------------------------------------------------------------------
+    # Multi-screen navigation helpers
+
+    def get_combat_approach_options(
+        self, controller: Controller, actor: Character, context: ActionContext
+    ) -> list[ActionOption]:
+        """Return high-level combat approach choices."""
+
+        options: list[ActionOption] = []
+
+        if context.nearby_actors:
+            options.append(
+                ActionOption(
+                    name="Attack a target...",
+                    description="Select target, then choose how to attack",
+                    category=ActionCategory.COMBAT,
+                    hotkey="t",
+                    execute=functools.partial(
+                        self._enter_target_selection_mode, controller
+                    ),
+                )
+            )
+            options.append(
+                ActionOption(
+                    name="Attack with a weapon...",
+                    description="Select weapon/attack mode, then choose target",
+                    category=ActionCategory.COMBAT,
+                    hotkey="w",
+                    execute=functools.partial(
+                        self._enter_weapon_selection_mode, controller
+                    ),
+                )
+            )
+
+        return options
+
+    def get_target_selection_options(
+        self, controller: Controller, actor: Character, context: ActionContext
+    ) -> list[ActionOption]:
+        """Options for selecting a target in the target-first workflow."""
+
+        options: list[ActionOption] = [
+            ActionOption(
+                name="\u2190 Back",
+                description="Return to previous screen",
+                category=ActionCategory.COMBAT,
+                hotkey="escape",
+                execute=functools.partial(self._go_back, controller),
+            )
+        ]
+
+        letters = string.ascii_lowercase
+        sorted_targets = sorted(
+            context.nearby_actors,
+            key=lambda t: ranges.calculate_distance(actor.x, actor.y, t.x, t.y),
+        )
+        for i, target in enumerate(sorted_targets):
+            if target == actor or not isinstance(target, Character):
+                continue
+            if not target.health.is_alive():
+                continue
+
+            distance = ranges.calculate_distance(actor.x, actor.y, target.x, target.y)
+            if distance == 1:
+                desc = "adjacent"
+            elif distance <= 3:
+                desc = "close"
+            else:
+                desc = "far"
+
+            options.append(
+                ActionOption(
+                    name=f"{target.name} ({desc})",
+                    description=f"Attack {target.name}",
+                    category=ActionCategory.COMBAT,
+                    hotkey=letters[i] if i < len(letters) else None,
+                    execute=functools.partial(
+                        self._target_selected, controller, target
+                    ),
+                )
+            )
+
+        return options
+
+    def get_weapon_selection_options(
+        self, controller: Controller, actor: Character, context: ActionContext
+    ) -> list[ActionOption]:
+        """Options for selecting weapon and mode in the weapon-first workflow."""
+
+        options: list[ActionOption] = [
+            ActionOption(
+                name="\u2190 Back",
+                description="Return to previous screen",
+                category=ActionCategory.COMBAT,
+                hotkey="escape",
+                execute=functools.partial(self._go_back, controller),
+            )
+        ]
+
+        equipped_weapons = [w for w in actor.inventory.attack_slots if w is not None]
+        if not equipped_weapons:
+            from catley.game.items.item_types import FISTS_TYPE
+
+            equipped_weapons = [FISTS_TYPE.create()]
+
+        option_index = 0
+        letters = string.ascii_lowercase
+        for weapon in equipped_weapons:
+            if weapon.melee_attack:
+                melee = cast("MeleeAttack", weapon.melee_attack)
+                verb = melee._spec.verb
+                options.append(
+                    ActionOption(
+                        name=f"{verb.title()} with {weapon.name}",
+                        description=f"Melee attack using {weapon.name}",
+                        category=ActionCategory.COMBAT,
+                        hotkey=letters[option_index]
+                        if option_index < len(letters)
+                        else None,
+                        execute=functools.partial(
+                            self._weapon_mode_selected, controller, weapon, "melee"
+                        ),
+                    )
+                )
+                option_index += 1
+
+            if weapon.ranged_attack and weapon.ranged_attack.current_ammo > 0:
+                ranged = cast("RangedAttack", weapon.ranged_attack)
+                verb = ranged._spec.verb
+                options.append(
+                    ActionOption(
+                        name=f"{verb.title()} with {weapon.name}",
+                        description=f"Ranged attack using {weapon.name}",
+                        category=ActionCategory.COMBAT,
+                        hotkey=letters[option_index]
+                        if option_index < len(letters)
+                        else None,
+                        execute=functools.partial(
+                            self._weapon_mode_selected, controller, weapon, "ranged"
+                        ),
+                    )
+                )
+                option_index += 1
+
+        return options
+
+    def _enter_target_selection_mode(self, controller) -> None:
+        self.ui_state = "target_select"
+
+    def _enter_weapon_selection_mode(self, controller) -> None:
+        self.ui_state = "weapon_select"
+
+    def _target_selected(self, controller, target: Character) -> None:
+        self.selected_target = target
+        self.ui_state = "weapon_for_target"
+
+    def _weapon_mode_selected(self, controller, weapon: Item, attack_mode: str) -> None:
+        self.selected_weapon = weapon
+        self.selected_attack_mode = attack_mode
+        self.ui_state = "target_for_weapon"
+
+    def _get_weapons_for_selected_target(
+        self, controller: Controller, actor: Character, context: ActionContext
+    ) -> list[ActionOption]:
+        if not self.selected_target:
+            self.ui_state = "target_select"
+            return []
+
+        options = [
+            ActionOption(
+                name="\u2190 Back",
+                description="Return to previous screen",
+                category=ActionCategory.COMBAT,
+                hotkey="escape",
+                execute=functools.partial(self._go_back, controller),
+            )
+        ]
+
+        options.extend(
+            self._get_combat_options_for_target(
+                controller, actor, self.selected_target, context
+            )
+        )
+
+        return options
+
+    def _get_targets_for_selected_weapon(
+        self, controller: Controller, actor: Character, context: ActionContext
+    ) -> list[ActionOption]:
+        weapon = self.selected_weapon
+        mode = self.selected_attack_mode
+        if not weapon or not mode:
+            self.ui_state = "weapon_select"
+            return []
+
+        options: list[ActionOption] = [
+            ActionOption(
+                name="\u2190 Back",
+                description="Return to previous screen",
+                category=ActionCategory.COMBAT,
+                hotkey="escape",
+                execute=functools.partial(self._go_back, controller),
+            )
+        ]
+
+        sorted_targets = sorted(
+            context.nearby_actors,
+            key=lambda t: ranges.calculate_distance(actor.x, actor.y, t.x, t.y),
+        )
+        for target in sorted_targets:
+            if target == actor or not isinstance(target, Character):
+                continue
+            if not target.health.is_alive():
+                continue
+            gm = controller.gw.game_map
+            if not gm.visible[target.x, target.y]:
+                continue
+            if not ranges.has_line_of_sight(gm, actor.x, actor.y, target.x, target.y):
+                continue
+
+            distance = ranges.calculate_distance(actor.x, actor.y, target.x, target.y)
+
+            if mode == "melee" and weapon.melee_attack and distance == 1:
+                prob = self._calculate_combat_probability(
+                    controller, actor, target, "strength"
+                )
+                options.append(
+                    ActionOption(
+                        name=self._get_attack_display_name(
+                            weapon, "melee", target.name
+                        ),
+                        description=f"Close combat attack using {weapon.name}",
+                        category=ActionCategory.COMBAT,
+                        success_probability=prob,
+                        execute=functools.partial(
+                            self._create_melee_attack, controller, actor, target, weapon
+                        ),
+                    )
+                )
+
+            if (
+                mode == "ranged"
+                and weapon.ranged_attack
+                and weapon.ranged_attack.current_ammo > 0
+            ):
+                range_cat = ranges.get_range_category(distance, weapon)
+                range_mods = ranges.get_range_modifier(weapon, range_cat)
+                if range_mods is None:
+                    options.append(
+                        ActionOption(
+                            name=self._get_attack_display_name(
+                                weapon, "ranged", target.name
+                            )
+                            + " (OUT OF RANGE)",
+                            description=(
+                                f"Target is beyond {weapon.name}'s maximum range"
+                            ),
+                            category=ActionCategory.COMBAT,
+                            enabled=False,
+                            color=colors.GREY,
+                            success_probability=0.0,
+                        )
+                    )
+                    continue
+
+                prob = self._calculate_combat_probability(
+                    controller, actor, target, "observation", range_mods
+                )
+
+                ammo_warning = ""
+                current_ammo = weapon.ranged_attack.current_ammo
+                if current_ammo == 1:
+                    ammo_warning = " (LAST SHOT!)"
+                elif current_ammo <= 3:
+                    ammo_warning = " (Low ammo)"
+                cost_desc = (
+                    f"Uses 1 {weapon.ranged_attack.ammo_type} ammo{ammo_warning}"
+                )
+
+                options.append(
+                    ActionOption(
+                        name=self._get_attack_display_name(
+                            weapon, "ranged", target.name
+                        ),
+                        description=f"Ranged attack at {range_cat} range",
+                        category=ActionCategory.COMBAT,
+                        success_probability=prob,
+                        cost_description=cost_desc,
+                        execute=functools.partial(
+                            self._create_ranged_attack,
+                            controller,
+                            actor,
+                            target,
+                            weapon,
+                        ),
+                    )
+                )
+
+        return options
+
+    def _go_back(self, controller) -> None:
+        if self.ui_state in ["target_select", "weapon_select"]:
+            self.ui_state = "main"
+        elif self.ui_state == "weapon_for_target":
+            self.ui_state = "target_select"
+            self.selected_target = None
+        elif self.ui_state == "target_for_weapon":
+            self.ui_state = "weapon_select"
+            self.selected_weapon = None
+            self.selected_attack_mode = None
+        else:
+            self.ui_state = "main"
+            self.selected_target = None
+            self.selected_weapon = None
+            self.selected_attack_mode = None

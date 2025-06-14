@@ -117,9 +117,21 @@ class AttackAction(GameAction):
         )
 
         if self.attack_mode == "melee":
-            return weapon.melee_attack, weapon
+            if weapon.melee_attack:
+                return weapon.melee_attack, weapon
+            publish_event(
+                MessageEvent(
+                    f"{weapon.name} cannot be used for melee attacks!", colors.RED
+                )
+            )
+            return None, weapon
         if self.attack_mode == "ranged":
-            return weapon.ranged_attack, weapon
+            if weapon.ranged_attack:
+                return weapon.ranged_attack, weapon
+            publish_event(
+                MessageEvent(f"{weapon.name} has no ranged capability!", colors.RED)
+            )
+            return None, weapon
 
         # Backwards-compatible heuristic based on distance
         distance = ranges.calculate_distance(
@@ -147,22 +159,43 @@ class AttackAction(GameAction):
 
     def _validate_attack(self, attack: Attack, weapon: Item) -> dict | None:
         """Validate the attack can be performed and return range modifiers."""
+        if attack is None:
+            publish_event(
+                MessageEvent(f"{weapon.name} cannot perform this attack!", colors.RED)
+            )
+            return None
+
         distance = ranges.calculate_distance(
             self.attacker.x, self.attacker.y, self.defender.x, self.defender.y
         )
 
-        range_modifiers = {}
-        ranged_attack = weapon.ranged_attack
+        range_modifiers: dict[str, bool] = {}
 
-        # For ranged attacks, check ammo, check line of sight and apply range modifiers
-        if ranged_attack is not None and attack == ranged_attack:
+        if attack == weapon.melee_attack and distance > 1:
+            publish_event(
+                MessageEvent(
+                    f"Too far away for melee attack with {weapon.name}!", colors.RED
+                )
+            )
+            return None
+        ranged_attack = weapon.ranged_attack
+        if attack == ranged_attack and ranged_attack is not None:
             if ranged_attack.current_ammo <= 0:
                 publish_event(
                     MessageEvent(f"{weapon.name} is out of ammo!", colors.RED)
                 )
                 return None
 
-            # Check line of sight
+            range_category = ranges.get_range_category(distance, weapon)
+            if range_category == "out_of_range":
+                publish_event(
+                    MessageEvent(
+                        f"{self.defender.name} is too far away for {weapon.name}!",
+                        colors.RED,
+                    )
+                )
+                return None
+
             if not ranges.has_line_of_sight(
                 self.controller.gw.game_map,
                 self.attacker.x,
@@ -175,15 +208,7 @@ class AttackAction(GameAction):
                 )
                 return None
 
-            # Get range modifiers
-            range_category = ranges.get_range_category(distance, weapon)
-            range_modifiers = ranges.get_range_modifier(weapon, range_category)
-
-            if range_modifiers is None:
-                publish_event(
-                    MessageEvent(f"{self.defender.name} is out of range!", colors.RED)
-                )
-                return None
+            range_modifiers = ranges.get_range_modifier(weapon, range_category) or {}
 
         return range_modifiers
 
