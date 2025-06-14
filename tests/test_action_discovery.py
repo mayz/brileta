@@ -127,24 +127,14 @@ def test_get_combat_options_melee_ranged_and_reload() -> None:
     disc = ActionDiscovery()
     ctx = disc._build_context(cast(Controller, controller), player)
 
-    # Initial screen should show approach options
     opts = disc._get_combat_options(cast(Controller, controller), player, ctx)
     names = {o.name for o in opts}
-    assert "Attack a target..." in names
-    assert "Attack with a weapon..." in names
 
-    # Switch to weapon selection and verify attack modes
-    disc._enter_weapon_selection_mode(controller)
-    opts = disc._get_combat_options(cast(Controller, controller), player, ctx)
-    names = {o.name for o in opts}
-    assert f"Shoot with {pistol.name}" in names
-    assert f"Pistol-Whip with {pistol.name}" in names
+    assert f"Melee {melee_target.name} with {pistol.name}" in names
+    assert f"Shoot {ranged_target.name} with {pistol.name}" in names
+    assert f"Reload {pistol.name}" in names
 
-    # Probability checks remain via target-specific helper
-    melee_opts = disc._get_combat_options_for_target(
-        cast(Controller, controller), player, melee_target, ctx
-    )
-    melee_opt = next(o for o in melee_opts if o.name.startswith("Pistol-Whip"))
+    melee_opt = next(o for o in opts if o.name.startswith("Melee"))
     expected_melee_prob = disc._calculate_combat_probability(
         cast(Controller, controller),
         player,
@@ -152,11 +142,9 @@ def test_get_combat_options_melee_ranged_and_reload() -> None:
         "strength",
     )
     assert melee_opt.success_probability == expected_melee_prob
-
-    ranged_opts = disc._get_combat_options_for_target(
-        cast(Controller, controller), player, ranged_target, ctx
+    ranged_opt = next(
+        o for o in opts if o.name.startswith(f"Shoot {ranged_target.name}")
     )
-    ranged_opt = next(o for o in ranged_opts if o.name.startswith("Shoot"))
     distance = ranges.calculate_distance(
         player.x, player.y, ranged_target.x, ranged_target.y
     )
@@ -185,10 +173,10 @@ def test_get_combat_options_for_target_filters() -> None:
     )
 
     assert len(melee_opts) == 2
-    assert any(o.name.startswith("Pistol-Whip") for o in melee_opts)
-    assert any(o.name.startswith("Shoot") for o in melee_opts)
+    assert any(o.name.startswith("Melee") for o in melee_opts)
+    assert any(o.name.startswith("Ranged") for o in melee_opts)
     assert len(ranged_only) == 1
-    assert ranged_only[0].name.startswith("Shoot")
+    assert ranged_only[0].name.startswith("Ranged")
 
 
 def test_combat_options_ignore_dead_and_unseen() -> None:
@@ -199,14 +187,10 @@ def test_combat_options_ignore_dead_and_unseen() -> None:
 
     disc = ActionDiscovery()
     ctx = disc._build_context(cast(Controller, controller), player)
-    melee_opts = disc._get_combat_options_for_target(
-        cast(Controller, controller), player, melee_target, ctx
-    )
-    ranged_opts = disc._get_combat_options_for_target(
-        cast(Controller, controller), player, ranged_target, ctx
-    )
-    assert not melee_opts
-    assert not ranged_opts
+    opts = disc._get_combat_options(cast(Controller, controller), player, ctx)
+    names = {o.name for o in opts}
+    assert all(melee_target.name not in n for n in names)
+    assert all(ranged_target.name not in n for n in names)
 
 
 def test_combat_option_probabilities_reflect_status_effects() -> None:
@@ -215,10 +199,8 @@ def test_combat_option_probabilities_reflect_status_effects() -> None:
     disc = ActionDiscovery()
     ctx = disc._build_context(cast(Controller, controller), player)
 
-    melee_opts = disc._get_combat_options_for_target(
-        cast(Controller, controller), player, melee_target, ctx
-    )
-    melee_opt = next(o for o in melee_opts if o.name.startswith("Pistol-Whip"))
+    opts = disc._get_combat_options(cast(Controller, controller), player, ctx)
+    melee_opt = next(o for o in opts if o.name.startswith("Melee"))
     expected_melee_prob = disc._calculate_combat_probability(
         cast(Controller, controller),
         player,
@@ -227,10 +209,9 @@ def test_combat_option_probabilities_reflect_status_effects() -> None:
     )
     assert melee_opt.success_probability == expected_melee_prob
 
-    ranged_opts = disc._get_combat_options_for_target(
-        cast(Controller, controller), player, ranged_target, ctx
+    ranged_opt = next(
+        o for o in opts if o.name.startswith(f"Shoot {ranged_target.name}")
     )
-    ranged_opt = next(o for o in ranged_opts if o.name.startswith("Shoot"))
     distance = ranges.calculate_distance(
         player.x, player.y, ranged_target.x, ranged_target.y
     )
@@ -260,28 +241,6 @@ def test_sort_by_relevance_orders_actions() -> None:
     assert ordered[0] == opt1
     assert ordered[1] == opt3
     assert ordered[2] == opt2
-
-
-def test_target_selection_options_sorted_by_distance() -> None:
-    controller, player, melee_target, ranged_target, pistol = _make_combat_world()
-    close_target = Character(
-        2,
-        0,
-        "C",
-        colors.WHITE,
-        "Close",
-        game_world=cast(GameWorld, controller.gw),
-    )
-    controller.gw.add_actor(close_target)
-
-    disc = ActionDiscovery()
-    ctx = disc._build_context(cast(Controller, controller), player)
-    opts = disc.get_target_selection_options(cast(Controller, controller), player, ctx)
-    names = [o.name for o in opts if not o.name.startswith("\u2190")]
-
-    assert names[0].startswith(melee_target.name)
-    assert names[1].startswith(close_target.name)
-    assert names[2].startswith(ranged_target.name)
 
 
 def test_inventory_options_hide_weapon_switching_when_in_combat() -> None:
@@ -318,7 +277,7 @@ def test_target_specific_option_probabilities_reflect_status_effects() -> None:
         cast(Controller, controller), player, ranged_target, ctx
     )
 
-    melee_opt = next(o for o in melee_opts if o.name.startswith("Pistol-Whip"))
+    melee_opt = next(o for o in melee_opts if o.name.startswith("Melee"))
     expected_melee_prob = disc._calculate_combat_probability(
         cast(Controller, controller),
         player,

@@ -4,10 +4,7 @@ import functools
 import string
 from typing import TYPE_CHECKING
 
-import tcod
-
 from catley import colors
-from catley.game.actions.base import GameAction
 from catley.game.actions.discovery import ActionCategory, ActionDiscovery
 from catley.view.ui.overlays import Menu, MenuOption
 
@@ -21,14 +18,6 @@ class ActionBrowserMenu(Menu):
     def __init__(self, controller: Controller) -> None:
         super().__init__("Available Actions", controller, width=60)
         self.action_discovery = ActionDiscovery()
-
-    def show(self) -> None:
-        """Show the menu and reset discovery state."""
-        self.action_discovery.ui_state = "main"
-        self.action_discovery.selected_target = None
-        self.action_discovery.selected_weapon = None
-        self.action_discovery.selected_attack_mode = None
-        super().show()
 
     def populate_options(self) -> None:
         """Populate action options as menu choices."""
@@ -90,15 +79,12 @@ class ActionBrowserMenu(Menu):
                 )
             )
 
-    def _execute_action_option(self, action_option) -> bool:
-        """Execute an action option. Returns True if menu should close."""
+    def _execute_action_option(self, action_option) -> None:
+        """Execute an action option."""
         if action_option.execute:
-            result = action_option.execute()
-            if isinstance(result, GameAction):
-                self.controller.queue_action(result)
-                return True
-            return False
-        return True
+            game_action = action_option.execute()
+            if game_action:
+                self.controller.queue_action(game_action)
 
     def _get_category_color(self, category: ActionCategory) -> colors.Color:
         """Get display color for action category."""
@@ -110,43 +96,3 @@ class ActionBrowserMenu(Menu):
             ActionCategory.SOCIAL: colors.MAGENTA,
         }
         return color_map.get(category, colors.WHITE)
-
-    def handle_input(self, event: tcod.event.Event) -> bool:
-        """Handle input, keeping the menu open for UI state transitions."""
-        if not self.is_active:
-            return False
-
-        match event:
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.ESCAPE):
-                if self.action_discovery.ui_state != "main":
-                    self.action_discovery._go_back(self.controller)
-                    self.populate_options()
-                else:
-                    self.hide()
-                return True
-            case tcod.event.KeyDown() as key_event:
-                key_char = (
-                    chr(key_event.sym).lower() if 32 <= key_event.sym <= 126 else ""
-                )
-                for option in self.options:
-                    if (
-                        option.key is not None
-                        and option.key.lower() == key_char
-                        and option.enabled
-                        and option.action
-                    ):
-                        should_close = option.action()
-                        if should_close:
-                            self.hide()
-                        else:
-                            self.populate_options()
-                        return True
-                return True
-            case (
-                tcod.event.KeyDown(sym=tcod.event.KeySym.SPACE)
-                | tcod.event.KeyDown(sym=tcod.event.KeySym.RETURN)
-            ):
-                self.hide()
-                return True
-
-        return False
