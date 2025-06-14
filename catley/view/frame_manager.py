@@ -142,10 +142,13 @@ class FrameManager:
         self.message_log_panel.tile_dimensions = tile_dimensions
         self.message_log_panel.resize(1, message_log_y, 31, screen_height_tiles)
         self.fps_panel.tile_dimensions = tile_dimensions
-        # Position FPS panel in the top-right corner
-        fps_width = 15
-        fps_x = screen_width_tiles - fps_width
-        self.fps_panel.resize(fps_x, 0, screen_width_tiles, 3)
+
+        # Position FPS panel below health panel with proper spacing and width
+        fps_width = 25  # Increase width to fit full FPS text
+        fps_height = 3
+        fps_x = screen_width_tiles - fps_width  # Right-aligned but wider
+        fps_y = self.help_height + 2
+        self.fps_panel.resize(fps_x, fps_y, screen_width_tiles, fps_y + fps_height)
 
     def on_window_resized(self) -> None:
         """Called when the game window is resized to update panel layouts."""
