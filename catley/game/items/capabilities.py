@@ -46,9 +46,13 @@ class MeleeAttackSpec(AttackSpec):
     """Defines the properties of a melee attack."""
 
     def __init__(
-        self, damage_die: str, properties: set[ItemProperty] | None = None
+        self,
+        damage_die: str,
+        properties: set[ItemProperty] | None = None,
+        verb: str = "strike",
     ) -> None:
         super().__init__(damage_die, "strength", properties)
+        self.verb = verb
 
 
 class RangedAttackSpec(AttackSpec):
@@ -62,12 +66,14 @@ class RangedAttackSpec(AttackSpec):
         optimal_range: int,
         max_range: int,
         properties: set[ItemProperty] | None = None,
+        verb: str = "shoot",
     ):
         super().__init__(damage_die, "observation", properties)
         self.ammo_type = ammo_type
         self.max_ammo = max_ammo
         self.optimal_range = optimal_range
         self.max_range = max_range
+        self.verb = verb
 
 
 SpecType = TypeVar("SpecType", bound=AttackSpec)
