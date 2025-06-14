@@ -132,7 +132,15 @@ def test_get_combat_options_melee_ranged_and_reload() -> None:
 
     assert f"Pistol-Whip {melee_target.name} with {pistol.name}" in names
     assert f"Shoot {ranged_target.name} with {pistol.name} (LAST SHOT!)" in names
-    assert f"Reload {pistol.name}" in names
+    assert f"Reload {pistol.name}" not in names
+
+    inv_opts = disc._get_inventory_options(
+        cast(Controller, controller),
+        player,
+        ctx,
+    )
+    inv_names = {o.name for o in inv_opts}
+    assert f"Reload {pistol.name}" in inv_names
 
     melee_opt = next(o for o in opts if o.name.startswith("Pistol-Whip"))
     expected_melee_prob = disc._calculate_combat_probability(
