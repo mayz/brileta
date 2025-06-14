@@ -12,7 +12,6 @@ from PIL import ImageDraw, ImageFont
 from tcod.sdl.render import BlendMode, Texture
 
 from catley import colors, config
-from catley.constants.view import ViewConstants as View
 
 from .renderer import Renderer
 
@@ -23,6 +22,7 @@ class TextBackend(ABC):
     def __init__(self) -> None:
         self.drawing_offset_x = 0
         self.drawing_offset_y = 0
+        self._last_tile_height: int = 0
 
     @abstractmethod
     def draw_text(
@@ -66,8 +66,17 @@ class TextBackend(ABC):
 
     def configure_scaling(self, tile_height: int) -> None:
         """Configure scaling based on tile height."""
-        # Default implementation does nothing.
-        _ = tile_height
+        if self._last_tile_height != tile_height:
+            self._last_tile_height = tile_height
+            self._update_scaling_internal(tile_height)
+
+    @abstractmethod
+    def _update_scaling_internal(self, tile_height: int) -> None:
+        """Backend-specific scaling logic."""
+
+    @abstractmethod
+    def get_effective_line_height(self) -> int:
+        """Return the line height currently used for text rendering."""
 
     def configure_renderer(self, sdl_renderer) -> None:
         """Configure SDL renderer. Default implementation does nothing."""
@@ -89,6 +98,7 @@ class TCODTextBackend(TextBackend):
     def __init__(self, renderer: Renderer) -> None:
         super().__init__()
         self.renderer = renderer
+        self.configure_scaling(renderer.tile_dimensions[1])
 
     def draw_text(
         self,
@@ -120,10 +130,10 @@ class TCODTextBackend(TextBackend):
         self, text: str, font_size: int | None = None
     ) -> tuple[int, int, int]:
         _ = font_size
-        tile_width, tile_height = self.renderer.tile_dimensions
+        tile_width, _ = self.renderer.tile_dimensions
         width = len(text) * tile_width
-        height = tile_height
-        return width, height, tile_height
+        line_height = self.get_effective_line_height()
+        return width, line_height, line_height
 
     def wrap_text(
         self, text: str, max_width: int, font_size: int | None = None
@@ -141,6 +151,20 @@ class TCODTextBackend(TextBackend):
                 for i in range(0, len(text), chars_per_line)
             ]
         )
+
+    def _update_scaling_internal(
+        self, tile_height: int
+    ) -> None:  # pragma: no cover - nothing to do
+        _ = tile_height
+
+    def get_effective_line_height(self) -> int:
+        return self._last_tile_height
+
+    def get_font_metrics(self) -> tuple[int, int]:
+        line_height = self.get_effective_line_height()
+        ascent = int(line_height * 0.8)
+        descent = line_height - ascent
+        return ascent, descent
 
     def configure_dimensions(self, width: int, height: int) -> None:
         """No-op for TCOD backend."""
@@ -163,12 +187,15 @@ class PillowTextBackend(TextBackend):
     ) -> None:
         super().__init__()
         self.font_path = Path(config.MESSAGE_LOG_FONT_PATH)
-        self.base_tile_height = View.MESSAGE_LOG_MIN_FONT_SIZE
-        self.tile_height = self.base_tile_height
         self._current_font_size = 0
-        self.font = ImageFont.truetype(str(self.font_path), self.base_tile_height)
+        # Temporary default font before scaling is configured.
+        self.font = ImageFont.truetype(str(self.font_path), 12)
         ascent, descent = self.font.getmetrics()
-        self.line_height_px = ascent + descent
+        self._actual_ascent = ascent
+        self._actual_descent = descent
+        self._effective_line_height = ascent + descent
+        self._target_tile_height: int = 0
+        self._font_needs_update: bool = True
         self.image: PILImage.Image | None = None
         self._drawer: ImageDraw.ImageDraw | None = None
         self.sdl_renderer: tcod.sdl.render.Renderer | None = None
@@ -188,28 +215,48 @@ class PillowTextBackend(TextBackend):
         self.width = width
         self.height = height
 
-    def configure_scaling(self, tile_height: int) -> None:
-        self.tile_height = tile_height
-        self._update_font_for_tile_height(tile_height)
-
     def configure_renderer(self, sdl_renderer) -> None:
         self.sdl_renderer = sdl_renderer
 
     def get_font_metrics(self) -> tuple[int, int]:
-        return self.font.getmetrics()
+        ascent = self._actual_ascent
+        descent = self._actual_descent
+        total = ascent + descent
+        if total == 0:
+            return (0, 0)
+        if total == self._effective_line_height:
+            return ascent, descent
+        scale = self._effective_line_height / total
+        scaled_ascent = round(ascent * scale)
+        scaled_descent = self._effective_line_height - scaled_ascent
+        return scaled_ascent, scaled_descent
+
+    def _update_scaling_internal(self, tile_height: int) -> None:
+        self._target_tile_height = tile_height
+        self._update_font_for_tile_height(tile_height)
+        self._font_needs_update = False
+
+    def get_effective_line_height(self) -> int:
+        return self._effective_line_height
 
     def _update_font_for_tile_height(self, tile_height: int) -> None:
-        scale = tile_height / self.base_tile_height
-        font_size = max(
-            View.MESSAGE_LOG_MIN_FONT_SIZE,
-            round(View.MESSAGE_LOG_MIN_FONT_SIZE * scale),
-        )
-        if font_size == self._current_font_size:
-            return
-        self.font = ImageFont.truetype(str(self.font_path), font_size)
+        # Use simple proportional scaling - works reliably with any font
+        # Font size should be slightly larger than tile height for good
+        # visual appearance
+        target_font_size = max(8, round(tile_height * 1.1))
+
+        try:
+            self.font = ImageFont.truetype(str(self.font_path), target_font_size)
+            self._current_font_size = target_font_size
+        except OSError:
+            # Fallback to minimum size if font loading fails
+            self.font = ImageFont.truetype(str(self.font_path), 8)
+            self._current_font_size = 8
+
         ascent, descent = self.font.getmetrics()
-        self.line_height_px = ascent + descent
-        self._current_font_size = font_size
+        self._actual_ascent = ascent
+        self._actual_descent = descent
+        self._effective_line_height = tile_height  # For layout consistency
 
     def begin_frame(self) -> None:
         self.image = PILImage.new("RGBA", (self.width, self.height), (0, 0, 0, 0))
@@ -234,13 +281,9 @@ class PillowTextBackend(TextBackend):
         else:
             font_to_use = ImageFont.truetype(str(self.font_path), font_size)
 
-        # Get the ascent of the font. Ascent is the distance from the baseline
-        # to the top of the tallest glyph.
-        ascent, _ = font_to_use.getmetrics()
-
-        # Calculate the baseline position. The baseline needs to be shifted down
-        # from the top by the font's ascent.
-        baseline_y = pixel_y + ascent
+        ascent, descent = font_to_use.getmetrics()
+        top_padding = (self._effective_line_height - (ascent + descent)) // 2
+        baseline_y = pixel_y + top_padding + ascent
 
         # Draw text with (pixel_x, baseline_y) as the left-side baseline coordinate.
         self._drawer.text(
@@ -262,8 +305,7 @@ class PillowTextBackend(TextBackend):
         bbox = font.getbbox(text)
         width = bbox[2] - bbox[0]
         height = bbox[3] - bbox[1]
-        ascent, descent = font.getmetrics()
-        return int(width), int(height), ascent + descent
+        return int(width), int(height), self._effective_line_height
 
     def wrap_text(
         self, text: str, max_width: int, font_size: int | None = None
