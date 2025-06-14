@@ -18,13 +18,13 @@ from __future__ import annotations
 
 import abc
 from collections.abc import Callable
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import tcod
-import tcod.constants
-from tcod.console import Console
+import tcod.sdl.render
 
 from catley import colors
+from catley.view.render.text_backend import TCODTextBackend, TextBackend
 
 if TYPE_CHECKING:
     from catley.controller import Controller
@@ -49,9 +49,12 @@ class Overlay(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def render(self, console: Console) -> None:
-        """Render overlay content. Called every frame."""
-        pass
+    def draw(self) -> None:
+        """Orchestrate rendering. This is the main entry point."""
+
+    @abc.abstractmethod
+    def present(self) -> None:
+        """Presents the cached texture if one was created by the backend."""
 
     def show(self) -> None:
         """Activate overlay. Called by OverlaySystem.show_overlay()."""
@@ -65,6 +68,63 @@ class Overlay(abc.ABC):
         """Return True if can coexist with another overlay. Override for exclusivity."""
         return True
 
+
+class TextOverlay(Overlay):
+    """An overlay that renders via a TextBackend."""
+
+    text_backend: TextBackend | None
+
+    def __init__(self, controller: Controller) -> None:
+        super().__init__(controller)
+        self.renderer = controller.renderer
+        self.text_backend = None
+        self._cached_texture: tcod.sdl.render.Texture | None = None
+        self.x_tiles, self.y_tiles, self.width, self.height = 0, 0, 0, 0
+        self.pixel_width, self.pixel_height = 0, 0
+        self.tile_dimensions = (
+            self.renderer.tile_dimensions
+            if hasattr(self, "renderer") and hasattr(self.renderer, "tile_dimensions")
+            else (0, 0)
+        )
+
+    @abc.abstractmethod
+    def _get_backend(self) -> TextBackend:
+        """Subclasses must implement this to provide a specific backend."""
+
+    @abc.abstractmethod
+    def _calculate_dimensions(self) -> None:
+        """Subclasses must implement this to set their dimensions."""
+
+    @abc.abstractmethod
+    def draw_content(self) -> None:
+        """Subclasses implement the actual drawing commands using the text_backend."""
+
+    def draw(self) -> None:
+        """Orchestrate rendering. This is the main entry point."""
+        if not self.is_active:
+            return
+
+        self.text_backend = self._get_backend()
+        self._calculate_dimensions()
+
+        self.text_backend.configure_drawing_offset(self.x_tiles, self.y_tiles)
+        self.text_backend.configure_dimensions(self.pixel_width, self.pixel_height)
+        self.text_backend.configure_scaling(self.tile_dimensions[1])
+
+        self.text_backend.begin_frame()
+        self.draw_content()
+        self._cached_texture = self.text_backend.end_frame()
+
+    def present(self) -> None:
+        """Presents the cached texture if one was created by the backend."""
+        if not self.is_active or not self._cached_texture:
+            return
+
+        px_x = self.x_tiles * self.tile_dimensions[0]
+        px_y = self.y_tiles * self.tile_dimensions[1]
+
+        dest_rect = (px_x, px_y, self.pixel_width, self.pixel_height)
+        self.renderer.sdl_renderer.copy(self._cached_texture, dest=dest_rect)
 
 class OverlaySystem:
     """Manages overlay stacking and input priority.
@@ -107,10 +167,15 @@ class OverlaySystem:
             return consumed
         return False
 
-    def render(self, console: Console) -> None:
-        """Render all active overlays."""
+    def draw_overlays(self) -> None:
+        """Draw all active overlays to their internal textures/surfaces."""
         for overlay in self.active_overlays:
-            overlay.render(console)
+            overlay.draw()
+
+    def present_overlays(self) -> None:
+        """Present the rendered textures of all active overlays to the screen."""
+        for overlay in self.active_overlays:
+            overlay.present()
 
     def has_active_overlays(self) -> bool:
         """Check if there are any active overlays."""
@@ -154,7 +219,7 @@ class MenuOption:
         self.color = color if enabled or force_color else colors.GREY
 
 
-class Menu(Overlay):
+class Menu(TextOverlay):
     """Structured choice interface with keyboard shortcuts.
 
     Provides bordered rendering and keyboard selection (a, b, c).
@@ -172,9 +237,10 @@ class Menu(Overlay):
     ) -> None:
         super().__init__(controller)
         self.title = title
-        self.width = width
-        self.max_height = max_height
+        self.width_tiles = width
+        self.max_height_tiles = max_height
         self.options: list[MenuOption] = []
+        self._content_revision = -1
 
     @abc.abstractmethod
     def populate_options(self) -> None:
@@ -184,9 +250,12 @@ class Menu(Overlay):
     def add_option(self, option: MenuOption) -> None:
         """Add an option to the menu."""
         self.options.append(option)
+        self._content_revision += 1
 
     def show(self) -> None:
         """Show the menu."""
+        self.options.clear()
+        self._content_revision = 0
         super().show()
         self.populate_options()
 
@@ -231,113 +300,93 @@ class Menu(Overlay):
 
         return False
 
-    def render(self, console: Console) -> None:
-        """Render the menu as an overlay."""
-        if not self.is_active:
-            return
+    def _get_backend(self) -> TextBackend:
+        """Lazily initializes and returns a TCODTextBackend for Phase 1."""
+        if self.text_backend is None:
+            self.text_backend = TCODTextBackend(self.renderer)
+        return self.text_backend
 
-        # Calculate menu dimensions
-        # Number of lines needed for content pane (inside borders):
-        # 1 for title, 1 for separator, len(self.options) for options,
-        # 1 for bottom padding inside content area.
-        required_content_pane_height = 1 + 1 + len(self.options) + 1
-        # This is equivalent to: len(self.options) + 3
+    def draw(self) -> None:
+        super().draw()
 
-        # Total console height needs to accommodate the content pane
-        # plus top/bottom borders.
-        calculated_total_height = required_content_pane_height + 2  # +2 for borders
+    def present(self) -> None:
+        super().present()
 
-        # Apply max_height constraint (to total height) and
-        # ensure a minimum total height.
-        menu_height = min(calculated_total_height, self.max_height)
-        menu_height = max(menu_height, 5)  # Minimum total height for the console
+    def _calculate_dimensions(self) -> None:
+        """Calculate and set the menu's final dimensions in tiles."""
+        required_content_lines = 1 + 1 + len(self.options) + 1
+        total_height_tiles = required_content_lines + 2
+        menu_height_tiles = min(total_height_tiles, self.max_height_tiles)
+        menu_height_tiles = max(menu_height_tiles, 5)
 
-        # Ensure minimum width based on title and content
-        min_width = max(len(self.title) + 4, 20)  # Title + padding, or minimum 20
-        actual_width = max(self.width, min_width)
+        min_width_tiles = max(len(self.title) + 4, 20)
+        menu_width_tiles = max(self.width_tiles, min_width_tiles)
 
-        # Center the menu on screen
-        menu_x = (console.width - actual_width) // 2
-        menu_y = (console.height - menu_height) // 2
+        self.tile_dimensions = self.renderer.tile_dimensions
+        self.width = menu_width_tiles
+        self.height = menu_height_tiles
 
-        # Create menu console with same order as main console
-        menu_console = Console(actual_width, menu_height, order="F")
+        self.pixel_width = self.width * self.tile_dimensions[0]
+        self.pixel_height = self.height * self.tile_dimensions[1]
 
-        # Fill background first
-        menu_console.clear(
-            fg=cast("tuple[int, int, int]", colors.WHITE),
-            bg=cast("tuple[int, int, int]", colors.BLACK),
+        self.x_tiles = (self.renderer.root_console.width - self.width) // 2
+        self.y_tiles = (self.renderer.root_console.height - self.height) // 2
+
+    def draw_content(self) -> None:
+        """Render the menu content using only the TextBackend interface."""
+        assert self.text_backend is not None
+
+        # Draw the frame without a title.  The backend's draw_frame method no
+        # longer accepts a title parameter, so the render_title hook handles
+        # drawing header text explicitly.
+        self.text_backend.draw_frame(
+            tile_x=0,
+            tile_y=0,
+            width=self.width,
+            height=self.height,
+            fg=colors.WHITE,
+            bg=colors.BLACK,
         )
 
-        # Draw border manually to avoid order issues
-        # Top and bottom borders
-        for x in range(actual_width):
-            menu_console.ch[x, 0] = (
-                ord("─")
-                if 0 < x < actual_width - 1
-                else (ord("┌") if x == 0 else ord("┐"))
-            )
-            menu_console.ch[x, menu_height - 1] = (
-                ord("─")
-                if 0 < x < actual_width - 1
-                else (ord("└") if x == 0 else ord("┘"))
-            )
-            menu_console.fg[x, 0] = colors.WHITE
-            menu_console.fg[x, menu_height - 1] = colors.WHITE
+        # Clear the menu interior using local pixel coordinates.
+        self.text_backend.draw_rect(
+            pixel_x=self.tile_dimensions[0],
+            pixel_y=self.tile_dimensions[1],
+            width=(self.width - 2) * self.tile_dimensions[0],
+            height=(self.height - 2) * self.tile_dimensions[1],
+            color=colors.BLACK,
+            fill=True,
+        )
 
-        # Left and right borders
-        for y in range(1, menu_height - 1):
-            menu_console.ch[0, y] = ord("│")
-            menu_console.ch[actual_width - 1, y] = ord("│")
-            menu_console.fg[0, y] = colors.WHITE
-            menu_console.fg[actual_width - 1, y] = colors.WHITE
+        # Draw the title and any subclass-specific header contents.
+        self.render_title()
 
-        # Draw title
-        if menu_height > 3:
-            title_y = 1  # Title is on the second line of the menu_console (index 1)
-            self.render_title(menu_console, title_y, actual_width)
-
-        # Draw separator line
-        if actual_width > 2 and menu_height > 3:
-            for x in range(1, actual_width - 1):
-                menu_console.ch[x, 2] = ord("─")
-                menu_console.fg[x, 2] = colors.WHITE
         # Draw options
-        y_offset = 3
+        y_offset_tiles = 2
         for option in self.options:
-            if y_offset >= menu_height - 1:
-                break  # Don't draw beyond menu bounds
+            if y_offset_tiles >= self.height - 1:
+                break
 
-            if option.key is not None:
-                option_text = f"({option.key}) {option.text}"
-            else:
-                option_text = option.text
+            option_text = f"({option.key}) {option.text}" if option.key else option.text
 
-            # Truncate text if it's too long
-            max_text_width = actual_width - 4  # Leave room for borders and padding
-            if len(option_text) > max_text_width:
-                option_text = option_text[: max_text_width - 3] + "..."
+            self.text_backend.draw_text(
+                pixel_x=self.tile_dimensions[0] * 2,
+                pixel_y=self.tile_dimensions[1] * y_offset_tiles,
+                text=option_text,
+                color=option.color,
+            )
+            y_offset_tiles += 1
 
-            menu_console.print(2, y_offset, option_text, fg=option.color)
-            y_offset += 1
+    def render_title(self) -> None:
+        """Renders the menu's title, centered, in the header area."""
+        assert self.text_backend is not None
 
-        # Blit to main console
-        menu_console.blit(console, menu_x, menu_y)
+        title_width_tiles = len(self.title)
+        center_x_tile = (self.width - title_width_tiles) // 2
 
-    def render_title(
-        self,
-        menu_console: Console,
-        title_y: int,
-        actual_width: int,
-    ) -> None:
-        """Render the menu title."""
-        # Default implementation - simple centered title
-        menu_console.print(
-            x=1,
-            y=title_y,
+        self.text_backend.draw_text(
+            pixel_x=center_x_tile * self.tile_dimensions[0],
+            pixel_y=0,
             text=self.title,
-            width=actual_width - 2,
-            height=1,
-            fg=cast("tuple[int, int, int]", colors.YELLOW),
-            alignment=tcod.constants.CENTER,
+            color=colors.YELLOW,
         )

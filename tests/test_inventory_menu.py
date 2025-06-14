@@ -6,6 +6,7 @@ from catley.game.actors import components
 from catley.game.items.item_types import COMBAT_KNIFE_TYPE, PISTOL_TYPE
 from catley.util.message_log import MessageLog
 from catley.view.ui.inventory_menu import InventoryMenu
+from tests.test_text_backends import _make_renderer
 
 
 def test_inventory_menu_equips_to_active_slot() -> None:
@@ -21,7 +22,11 @@ def test_inventory_menu_equips_to_active_slot() -> None:
     player = SimpleNamespace(inventory=inv)
     controller = cast(
         Controller,
-        SimpleNamespace(gw=SimpleNamespace(player=player), message_log=MessageLog()),
+        SimpleNamespace(
+            gw=SimpleNamespace(player=player),
+            message_log=MessageLog(),
+            renderer=_make_renderer(),
+        ),
     )
 
     menu = InventoryMenu(controller)
