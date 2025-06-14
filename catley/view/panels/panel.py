@@ -80,6 +80,10 @@ class TextPanel(Panel):
 
     text_backend: TextBackend
 
+    def __init__(self) -> None:
+        super().__init__()
+        self._last_pixel_dims: tuple[int, int] = (0, 0)
+
     @abc.abstractmethod
     def needs_redraw(self, renderer: Renderer) -> bool:
         """Return ``True`` if the panel needs to regenerate its texture."""
@@ -110,5 +114,8 @@ class TextPanel(Panel):
             tile_width, tile_height = self.tile_dimensions
             pixel_width = self.width * tile_width
             pixel_height = self.height * tile_height
-            self.text_backend.configure_dimensions(pixel_width, pixel_height)
+            if (pixel_width, pixel_height) != self._last_pixel_dims:
+                self._last_pixel_dims = (pixel_width, pixel_height)
+                self.text_backend.configure_dimensions(pixel_width, pixel_height)
+            self.text_backend.configure_scaling(tile_height)
             self.text_backend.configure_drawing_offset(self.x, self.y)
