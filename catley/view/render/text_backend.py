@@ -56,6 +56,30 @@ class TextBackend(ABC):
     def end_frame(self) -> Texture | None:
         """Finalize the frame and return a texture if one was produced."""
 
+    @abstractmethod
+    def draw_frame(
+        self,
+        tile_x: int,
+        tile_y: int,
+        width: int,
+        height: int,
+        fg: colors.Color,
+        bg: colors.Color,
+    ) -> None:
+        """Draw a framed box, using tile coordinates."""
+
+    @abstractmethod
+    def draw_rect(
+        self,
+        pixel_x: int,
+        pixel_y: int,
+        width: int,
+        height: int,
+        color: colors.Color,
+        fill: bool,
+    ) -> None:
+        """Draw a rectangle at the given pixel coordinates."""
+
     # ------------------------------------------------------------------
     # Optional configuration helpers
     # ------------------------------------------------------------------
@@ -102,6 +126,7 @@ class TCODTextBackend(TextBackend):
     def __init__(self, renderer: Renderer) -> None:
         super().__init__()
         self.renderer = renderer
+        self.console = renderer.root_console
         self.configure_scaling(renderer.tile_dimensions[1])
 
     def draw_text(
@@ -126,9 +151,7 @@ class TCODTextBackend(TextBackend):
         # Apply panel's position offset (in tiles) to get root console tile coords
         absolute_x = tile_x + self.drawing_offset_x
         absolute_y = tile_y + self.drawing_offset_y
-        self.renderer.root_console.print(
-            x=absolute_x, y=absolute_y, text=text, fg=color
-        )
+        self.console.print(x=absolute_x, y=absolute_y, text=text, fg=color)
 
     def get_text_metrics(
         self, text: str, font_size: int | None = None
@@ -155,6 +178,55 @@ class TCODTextBackend(TextBackend):
                 for i in range(0, len(text), chars_per_line)
             ]
         )
+
+    def draw_frame(
+        self,
+        tile_x: int,
+        tile_y: int,
+        width: int,
+        height: int,
+        fg: colors.Color,
+        bg: colors.Color,
+    ) -> None:
+        """Draw a frame using the underlying console, respecting the drawing offset."""
+        absolute_x = tile_x + self.drawing_offset_x
+        absolute_y = tile_y + self.drawing_offset_y
+        self.console.draw_frame(
+            x=absolute_x,
+            y=absolute_y,
+            width=width,
+            height=height,
+            title="",
+            clear=False,
+            fg=fg,
+            bg=bg,
+        )
+
+    def draw_rect(
+        self,
+        pixel_x: int,
+        pixel_y: int,
+        width: int,
+        height: int,
+        color: colors.Color,
+        fill: bool,
+    ) -> None:
+        tile_w, tile_h = self.renderer.tile_dimensions
+        if not tile_w or not tile_h:
+            return
+
+        start_tx = pixel_x // tile_w + self.drawing_offset_x
+        start_ty = pixel_y // tile_h + self.drawing_offset_y
+        end_tx = (pixel_x + width) // tile_w + self.drawing_offset_x
+        end_ty = (pixel_y + height) // tile_h + self.drawing_offset_y
+
+        for tx in range(start_tx, end_tx):
+            for ty in range(start_ty, end_ty):
+                if fill:
+                    self.console.bg[tx, ty] = color
+                else:
+                    if tx in (start_tx, end_tx - 1) or ty in (start_ty, end_ty - 1):
+                        self.console.bg[tx, ty] = color
 
     def _update_scaling_internal(
         self, tile_height: int
@@ -316,6 +388,45 @@ class PillowTextBackend(TextBackend):
         if current_line:
             lines.append(current_line)
         return lines
+
+    def draw_rect(
+        self,
+        pixel_x: int,
+        pixel_y: int,
+        width: int,
+        height: int,
+        color: colors.Color,
+        fill: bool,
+    ) -> None:
+        if self._drawer:
+            fill_color = color if fill else None
+            self._drawer.rectangle(
+                [pixel_x, pixel_y, pixel_x + width, pixel_y + height],
+                fill=fill_color,
+                outline=color if not fill else None,
+            )
+
+    def draw_frame(
+        self,
+        tile_x: int,
+        tile_y: int,
+        width: int,
+        height: int,
+        fg: colors.Color,
+        bg: colors.Color,
+    ) -> None:
+        """Draw a frame using Pillow drawing methods. Coordinates are in tiles."""
+        px_x = tile_x * self.font.getbbox(" ")[2]
+        px_y = tile_y * self._effective_line_height
+        px_width = width * self.font.getbbox(" ")[2]
+        px_height = height * self._effective_line_height
+
+        if self._drawer:
+            self._drawer.rectangle(
+                [px_x, px_y, px_x + px_width, px_y + px_height],
+                fill=bg,
+                outline=fg,
+            )
 
     def end_frame(self) -> Texture | None:
         if self.sdl_renderer is None:

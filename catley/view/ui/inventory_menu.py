@@ -5,8 +5,6 @@ import string
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from tcod.console import Console
-
 from catley import colors
 from catley.events import MessageEvent, publish_event
 from catley.game.actors import Condition
@@ -161,58 +159,66 @@ class InventoryMenu(Menu):
                     MessageEvent(f"{item.name} cannot be used", colors.YELLOW)
                 )
 
-    def render_title(
-        self,
-        menu_console: Console,
-        title_y: int,
-        actual_width: int,
-    ) -> None:
-        """Render the menu title with an inventory usage bar."""
-        player = self.controller.gw.player  # Player is an Actor
+    def draw_content(self) -> None:
+        """Draw the base menu, then overlay the inventory usage bar."""
+        super().draw_content()
+        self.render_title()
+
+    def render_title(self) -> None:
+        """Render the inventory header with prefix, bar, and suffix."""
+        assert self.text_backend is not None
+
+        player = self.controller.gw.player
         used_space = player.inventory.get_used_inventory_slots()
         total_slots = player.inventory.total_inventory_slots
 
-        current_x = 1  # Start drawing at column 1 (content area start)
-        # Max content column index is actual_width - 2
-        max_content_x = actual_width - 2
+        tile_w, tile_h = self.tile_dimensions
 
-        # 1. Print "Inventory: " (self.title for InventoryMenu is "Inventory")
-        prefix_text = f"{self.title}: "
-        if current_x <= max_content_x:
-            chars_to_print = min(len(prefix_text), (max_content_x - current_x + 1))
-            menu_console.print(
-                x=current_x,
-                y=title_y,
-                text=prefix_text[:chars_to_print],
-                fg=colors.YELLOW,
-            )  # type: ignore[no-matching-overload]
-            current_x += chars_to_print
+        current_x_tile = 1  # Start drawing one tile in for padding
+        title_y_tile = 0
 
-        # 2. Draw the color bar using individual slot colors
+        prefix_text = f"{self.title}:"
+        self.text_backend.draw_text(
+            pixel_x=current_x_tile * tile_w,
+            pixel_y=title_y_tile * tile_h,
+            text=prefix_text,
+            color=colors.YELLOW,
+        )
+        current_x_tile += len(prefix_text) + 1  # Space after prefix
+
+        max_content_tile = self.width - 2
         slot_colors_list = player.inventory.get_inventory_slot_colors()
-        num_colored_slots = len(slot_colors_list)
+        for i in range(total_slots):
+            if current_x_tile <= max_content_tile:
+                color = (
+                    slot_colors_list[i] if i < len(slot_colors_list) else colors.GREY
+                )
+                self.text_backend.draw_rect(
+                    pixel_x=current_x_tile * tile_w,
+                    pixel_y=title_y_tile * tile_h,
+                    width=tile_w,
+                    height=tile_h,
+                    color=color,
+                    fill=True,
+                )
+                # Set a space character so the cell is fully drawn
+                self.text_backend.draw_text(
+                    pixel_x=current_x_tile * tile_w,
+                    pixel_y=title_y_tile * tile_h,
+                    text=" ",
+                    color=colors.WHITE,
+                )
+                current_x_tile += 1
+            else:
+                break
 
-        if total_slots > 0 and current_x <= max_content_x:
-            for i in range(total_slots):
-                if (
-                    current_x <= max_content_x
-                ):  # Check if current cell is within content area
-                    cell_x = current_x
-                    if i < num_colored_slots:
-                        menu_console.bg[cell_x, title_y] = slot_colors_list[i]
-                    else:
-                        menu_console.bg[cell_x, title_y] = colors.GREY
-                    menu_console.ch[cell_x, title_y] = ord(" ")
-                    current_x += 1
-                else:
-                    break  # No more space for bar cells
-        # 3. Print " X/Y used"
         suffix_text = f" {used_space}/{total_slots} used"
-        if current_x <= max_content_x:
-            chars_to_print = min(len(suffix_text), (max_content_x - current_x + 1))
-            menu_console.print(
-                x=current_x,
-                y=title_y,
-                text=suffix_text[:chars_to_print],
-                fg=colors.YELLOW,
-            )  # type: ignore[no-matching-overload]
+        if current_x_tile <= max_content_tile:
+            available_tiles = max_content_tile - current_x_tile + 1
+            text_to_draw = suffix_text[:available_tiles]
+            self.text_backend.draw_text(
+                pixel_x=current_x_tile * tile_w,
+                pixel_y=title_y_tile * tile_h,
+                text=text_to_draw,
+                color=colors.YELLOW,
+            )
