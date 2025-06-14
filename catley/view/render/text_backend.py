@@ -223,7 +223,12 @@ class TCODTextBackend(TextBackend):
         for tx in range(start_tx, end_tx):
             for ty in range(start_ty, end_ty):
                 if fill:
+                    # When filling, clear the character and set both bg and fg colors
                     self.console.bg[tx, ty] = color
+                    # Clear character with space
+                    self.console.ch[tx, ty] = ord(" ")
+                    # Set foreground to match background
+                    self.console.fg[tx, ty] = color
                 else:
                     if tx in (start_tx, end_tx - 1) or ty in (start_ty, end_ty - 1):
                         self.console.bg[tx, ty] = color
