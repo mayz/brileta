@@ -64,6 +64,8 @@ def test_message_log_panel_font_scales_on_resize() -> None:
     initial_line_height = ascent + descent
 
     renderer_stub.tile_dimensions = (16, 32)
+    panel.tile_dimensions = (16, 32)
+    panel.resize(0, 0, 20, 5)
     panel.draw(renderer_stub)
 
     assert panel.text_backend is not None

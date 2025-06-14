@@ -51,11 +51,11 @@ class MessageLogPanel(TextPanel):
         # Update pixel dimensions based on new size
         self.panel_width_px = self.width * self.tile_dimensions[0]
         self.panel_height_px = self.height * self.tile_dimensions[1]
+        self.text_backend.configure_scaling(self.tile_dimensions[1])
 
     def draw_content(self, renderer: Renderer) -> None:
         # Update cached tile dimensions and recalculate pixel dimensions
         self.tile_dimensions = renderer.tile_dimensions
-        self.text_backend.configure_scaling(self.tile_dimensions[1])
         self.panel_width_px = self.width * self.tile_dimensions[0]
         self.panel_height_px = self.height * self.tile_dimensions[1]
         self._cached_texture_width = self.panel_width_px
