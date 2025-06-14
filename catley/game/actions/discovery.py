@@ -236,11 +236,13 @@ class ActionDiscovery:
         self, controller: Controller, actor: Character, context: ActionContext
     ) -> list[ActionOption]:
         """Get all combat-related action options."""
-        options = []
-        weapon = actor.inventory.get_active_weapon()
+        options: list[ActionOption] = []
+        equipped_weapons = [w for w in actor.inventory.attack_slots if w is not None]
 
-        if not weapon:
-            return options
+        if not equipped_weapons:
+            from catley.game.items.item_types import FISTS_TYPE
+
+            equipped_weapons = [FISTS_TYPE.create()]
 
         # Get all nearby targetable actors
         for target in context.nearby_actors:
@@ -258,31 +260,35 @@ class ActionDiscovery:
 
             distance = ranges.calculate_distance(actor.x, actor.y, target.x, target.y)
 
-            # Melee attacks
-            if weapon.melee_attack and distance == 1:
-                prob = self._calculate_combat_probability(
-                    controller, actor, target, "strength"
-                )
-
-                options.append(
-                    ActionOption(
-                        name=f"Melee {target.name} with {weapon.name}",
-                        description=f"Close combat attack using {weapon.name}",
-                        category=ActionCategory.COMBAT,
-                        hotkey="m" if len(options) == 0 else None,
-                        success_probability=prob,
-                        execute=functools.partial(
-                            self._create_melee_attack, controller, actor, target, weapon
-                        ),
+            for weapon in equipped_weapons:
+                # Melee attacks
+                if weapon.melee_attack and distance == 1:
+                    prob = self._calculate_combat_probability(
+                        controller, actor, target, "strength"
                     )
-                )
 
-            # Ranged attacks
-            if weapon.ranged_attack and distance > 1:
-                range_cat = ranges.get_range_category(distance, weapon)
-                range_mods = ranges.get_range_modifier(weapon, range_cat)
+                    options.append(
+                        ActionOption(
+                            name=f"Melee {target.name} with {weapon.name}",
+                            description=f"Close combat attack using {weapon.name}",
+                            category=ActionCategory.COMBAT,
+                            hotkey="m" if len(options) == 0 else None,
+                            success_probability=prob,
+                            execute=functools.partial(
+                                self._create_melee_attack,
+                                controller,
+                                actor,
+                                target,
+                                weapon,
+                            ),
+                        )
+                    )
 
-                if range_mods is not None:  # In range
+                # Ranged attacks - show if weapon has ranged capability and ammo
+                if weapon.ranged_attack and weapon.ranged_attack.current_ammo > 0:
+                    range_cat = ranges.get_range_category(distance, weapon)
+                    range_mods = ranges.get_range_modifier(weapon, range_cat)
+
                     prob = self._calculate_combat_probability(
                         controller,
                         actor,
@@ -291,9 +297,6 @@ class ActionDiscovery:
                         range_mods,
                     )
 
-                    # FIXME: Unclear that we need to show this most of the time.
-                    #        Leaving it commented out for now.
-                    # ammo_cost = f"Uses 1 {weapon.ranged_attack.ammo_type} ammo"
                     ammo_cost = ""
                     options.append(
                         ActionOption(
@@ -316,24 +319,29 @@ class ActionDiscovery:
                     )
 
         # Weapon-specific special actions
-        if (
-            weapon.ranged_attack
-            and weapon.ranged_attack.current_ammo < weapon.ranged_attack.max_ammo
-        ):
-            options.append(
-                ActionOption(
-                    name=f"Reload {weapon.name}",
-                    description=(
-                        f"Reload {weapon.name} with "
-                        f"{weapon.ranged_attack.ammo_type} ammo"
-                    ),
-                    category=ActionCategory.COMBAT,
-                    hotkey="R",
-                    execute=functools.partial(
-                        self._create_reload_action, controller, actor, weapon
-                    ),
-                )
+        name_counts = {
+            w.name: sum(1 for x in equipped_weapons if x.name == w.name)
+            for w in equipped_weapons
+        }
+        options.extend(
+            ActionOption(
+                name=f"Reload {weapon.name}"
+                + (f" (Slot {i + 1})" if name_counts.get(weapon.name, 0) > 1 else ""),
+                description=(
+                    f"Reload {weapon.name} with {weapon.ranged_attack.ammo_type} ammo"
+                ),
+                category=ActionCategory.COMBAT,
+                hotkey="R" if not any(opt.hotkey == "R" for opt in options) else None,
+                execute=functools.partial(
+                    self._create_reload_action, controller, actor, weapon
+                ),
             )
+            for i, weapon in enumerate(equipped_weapons)
+            if (
+                weapon.ranged_attack
+                and weapon.ranged_attack.current_ammo < weapon.ranged_attack.max_ammo
+            )
+        )
 
         return options
 
@@ -345,11 +353,13 @@ class ActionDiscovery:
         context: ActionContext,
     ) -> list[ActionOption]:
         """Get combat options specifically for a given target."""
-        options = []
-        weapon = actor.inventory.get_active_weapon()
+        options: list[ActionOption] = []
+        equipped_weapons = [w for w in actor.inventory.attack_slots if w is not None]
 
-        if not weapon:
-            return options
+        if not equipped_weapons:
+            from catley.game.items.item_types import FISTS_TYPE
+
+            equipped_weapons = [FISTS_TYPE.create()]
 
         gm = controller.gw.game_map
         if (
@@ -364,30 +374,30 @@ class ActionDiscovery:
 
         distance = ranges.calculate_distance(actor.x, actor.y, target.x, target.y)
 
-        # Melee attacks
-        if weapon.melee_attack and distance == 1:
-            prob = self._calculate_combat_probability(
-                controller, actor, target, "strength"
-            )
-
-            options.append(
-                ActionOption(
-                    name=f"Melee attack with {weapon.name}",
-                    description=f"Close combat attack using {weapon.name}",
-                    category=ActionCategory.COMBAT,
-                    success_probability=prob,
-                    execute=functools.partial(
-                        self._create_melee_attack, controller, actor, target, weapon
-                    ),
+        for weapon in equipped_weapons:
+            # Melee attacks
+            if weapon.melee_attack and distance == 1:
+                prob = self._calculate_combat_probability(
+                    controller, actor, target, "strength"
                 )
-            )
 
-        # Ranged attacks
-        if weapon.ranged_attack and distance > 1:
-            range_cat = ranges.get_range_category(distance, weapon)
-            range_mods = ranges.get_range_modifier(weapon, range_cat)
+                options.append(
+                    ActionOption(
+                        name=f"Melee attack with {weapon.name}",
+                        description=f"Close combat attack using {weapon.name}",
+                        category=ActionCategory.COMBAT,
+                        success_probability=prob,
+                        execute=functools.partial(
+                            self._create_melee_attack, controller, actor, target, weapon
+                        ),
+                    )
+                )
 
-            if range_mods is not None:
+            # Ranged attacks - show if weapon has ranged capability and ammo
+            if weapon.ranged_attack and weapon.ranged_attack.current_ammo > 0:
+                range_cat = ranges.get_range_category(distance, weapon)
+                range_mods = ranges.get_range_modifier(weapon, range_cat)
+
                 prob = self._calculate_combat_probability(
                     controller,
                     actor,
@@ -435,20 +445,21 @@ class ActionDiscovery:
                 )
             )
 
-        # Equipment switching
-        for i, item in enumerate(actor.inventory.attack_slots):
-            if i != actor.inventory.active_weapon_slot and item:
-                options.append(
-                    ActionOption(
-                        name=f"Switch to {item.name}",
-                        description=f"Equip {item.name} as active weapon",
-                        category=ActionCategory.ITEMS,
-                        hotkey=str(i + 1),
-                        execute=functools.partial(
-                            self._switch_weapon, controller, actor, i
-                        ),
+        # Equipment switching - only show when NOT in combat
+        if not context.in_combat:
+            for i, item in enumerate(actor.inventory.attack_slots):
+                if i != actor.inventory.active_weapon_slot and item:
+                    options.append(
+                        ActionOption(
+                            name=f"Switch to {item.name}",
+                            description=f"Equip {item.name} as active weapon",
+                            category=ActionCategory.ITEMS,
+                            hotkey=str(i + 1),
+                            execute=functools.partial(
+                                self._switch_weapon, controller, actor, i
+                            ),
+                        )
                     )
-                )
 
         # Consumable items
         options.extend(
@@ -618,10 +629,12 @@ class ActionDiscovery:
     # Action creation helpers
 
     def _create_melee_attack(self, controller, actor, target, weapon) -> AttackAction:
-        return AttackAction(controller, actor, target, weapon)
+        """Helper to build a melee `AttackAction`."""
+        return AttackAction(controller, actor, target, weapon, attack_mode="melee")
 
     def _create_ranged_attack(self, controller, actor, target, weapon) -> AttackAction:
-        return AttackAction(controller, actor, target, weapon)
+        """Helper to build a ranged `AttackAction`."""
+        return AttackAction(controller, actor, target, weapon, attack_mode="ranged")
 
     def _create_reload_action(self, controller, actor, weapon) -> ReloadAction:
         return ReloadAction(controller, actor, weapon)

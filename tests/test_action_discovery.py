@@ -91,7 +91,7 @@ def _make_combat_world():
     )
     pistol = PISTOL_TYPE.create()
     ranged_attack = cast(RangedAttack, pistol.ranged_attack)
-    ranged_attack.current_ammo = 0
+    ranged_attack.current_ammo = 1
     player.inventory.equip_to_slot(pistol, 0)
 
     melee_target = Character(
@@ -142,7 +142,9 @@ def test_get_combat_options_melee_ranged_and_reload() -> None:
         "strength",
     )
     assert melee_opt.success_probability == expected_melee_prob
-    ranged_opt = next(o for o in opts if o.name.startswith("Shoot"))
+    ranged_opt = next(
+        o for o in opts if o.name.startswith(f"Shoot {ranged_target.name}")
+    )
     distance = ranges.calculate_distance(
         player.x, player.y, ranged_target.x, ranged_target.y
     )
@@ -163,15 +165,16 @@ def test_get_combat_options_for_target_filters() -> None:
     disc = ActionDiscovery()
     ctx = disc._build_context(cast(Controller, controller), player)
 
-    melee_only = disc._get_combat_options_for_target(
+    melee_opts = disc._get_combat_options_for_target(
         cast(Controller, controller), player, melee_target, ctx
     )
     ranged_only = disc._get_combat_options_for_target(
         cast(Controller, controller), player, ranged_target, ctx
     )
 
-    assert len(melee_only) == 1
-    assert melee_only[0].name.startswith("Melee")
+    assert len(melee_opts) == 2
+    assert any(o.name.startswith("Melee") for o in melee_opts)
+    assert any(o.name.startswith("Ranged") for o in melee_opts)
     assert len(ranged_only) == 1
     assert ranged_only[0].name.startswith("Ranged")
 
@@ -206,7 +209,9 @@ def test_combat_option_probabilities_reflect_status_effects() -> None:
     )
     assert melee_opt.success_probability == expected_melee_prob
 
-    ranged_opt = next(o for o in opts if o.name.startswith("Shoot"))
+    ranged_opt = next(
+        o for o in opts if o.name.startswith(f"Shoot {ranged_target.name}")
+    )
     distance = ranges.calculate_distance(
         player.x, player.y, ranged_target.x, ranged_target.y
     )
@@ -238,20 +243,41 @@ def test_sort_by_relevance_orders_actions() -> None:
     assert ordered[2] == opt2
 
 
+def test_inventory_options_hide_weapon_switching_when_in_combat() -> None:
+    controller, player, hostile, friend, _ = _make_context_world()
+    pistol = PISTOL_TYPE.create()
+    knife = COMBAT_KNIFE_TYPE.create()
+    player.inventory.equip_to_slot(pistol, 0)
+    player.inventory.equip_to_slot(knife, 1)
+    disc = ActionDiscovery()
+
+    ctx = disc._build_context(cast(Controller, controller), player)
+    assert ctx.in_combat
+    opts = disc._get_inventory_options(cast(Controller, controller), player, ctx)
+    assert all(not o.name.startswith("Switch to") for o in opts)
+
+    hostile.ai.disposition = Disposition.FRIENDLY  # Out of combat
+    ctx = disc._build_context(cast(Controller, controller), player)
+    assert not ctx.in_combat
+    opts = disc._get_inventory_options(cast(Controller, controller), player, ctx)
+    names = {o.name for o in opts}
+    assert f"Switch to {knife.name}" in names
+
+
 def test_target_specific_option_probabilities_reflect_status_effects() -> None:
     controller, player, melee_target, ranged_target, pistol = _make_combat_world()
     player.status_effects.apply_status_effect(status_effects.OffBalanceEffect())
     disc = ActionDiscovery()
     ctx = disc._build_context(cast(Controller, controller), player)
 
-    melee_only = disc._get_combat_options_for_target(
+    melee_opts = disc._get_combat_options_for_target(
         cast(Controller, controller), player, melee_target, ctx
     )
     ranged_only = disc._get_combat_options_for_target(
         cast(Controller, controller), player, ranged_target, ctx
     )
 
-    melee_opt = melee_only[0]
+    melee_opt = next(o for o in melee_opts if o.name.startswith("Melee"))
     expected_melee_prob = disc._calculate_combat_probability(
         cast(Controller, controller),
         player,
