@@ -53,7 +53,7 @@ from .conditions import Injury
 
 if TYPE_CHECKING:
     from catley.controller import Controller
-    from catley.game.actions.base import GameAction
+    from catley.game.actions.base import GameAction, GameIntent
     from catley.game.game_world import GameWorld
 
 
@@ -233,7 +233,7 @@ class Actor:
         if self.conditions is not None:
             self.conditions.apply_turn_effects(self)
 
-    def get_next_action(self, controller: Controller) -> GameAction | None:
+    def get_next_action(self, controller: Controller) -> GameAction | GameIntent | None:
         """
         Determines the next action for this actor.
         """
@@ -403,7 +403,7 @@ class PC(Character):
             speed=speed,
         )
 
-    def get_next_action(self, controller: Controller) -> GameAction | None:
+    def get_next_action(self, controller: Controller) -> GameAction | GameIntent | None:
         """
         Determines the next action for this actor.
         """
@@ -483,7 +483,7 @@ class NPC(Character):
         # Type narrowing - these are guaranteed to exist.
         self.ai: AIComponent
 
-    def get_next_action(self, controller: Controller) -> GameAction | None:
+    def get_next_action(self, controller: Controller) -> GameAction | GameIntent | None:
         """
         Determines the next action for this actor.
         """

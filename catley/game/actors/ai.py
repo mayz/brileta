@@ -30,7 +30,7 @@ from catley.game.enums import Disposition
 
 if TYPE_CHECKING:
     from catley.controller import Controller
-    from catley.game.actions.base import GameAction
+    from catley.game.actions.base import GameAction, GameIntent
 
     from . import NPC, Actor, Character
 
@@ -47,7 +47,9 @@ class AIComponent(abc.ABC):
         self.actor: Actor | None = None
 
     @abc.abstractmethod
-    def get_action(self, controller: Controller, actor: NPC) -> GameAction | None:
+    def get_action(
+        self, controller: Controller, actor: NPC
+    ) -> GameAction | GameIntent | None:
         """Determine what action this AI wants to perform this turn.
 
         Args:
@@ -99,7 +101,9 @@ class DispositionBasedAI(AIComponent):
             Disposition.ALLY: AllyAI(),
         }
 
-    def get_action(self, controller: Controller, actor: NPC) -> GameAction | None:
+    def get_action(
+        self, controller: Controller, actor: NPC
+    ) -> GameAction | GameIntent | None:
         """Delegate to the appropriate behavior based on the current disposition."""
         # Get the behavior for current disposition
         behavior = self._behaviors.get(self.disposition)
@@ -125,7 +129,9 @@ class HostileAI(AIComponent):
         super().__init__()
         self.aggro_radius = aggro_radius
 
-    def get_action(self, controller: Controller, actor: NPC) -> GameAction | None:
+    def get_action(
+        self, controller: Controller, actor: NPC
+    ) -> GameAction | GameIntent | None:
         player = controller.gw.player
 
         # Don't act if actor or player is dead
@@ -162,7 +168,7 @@ class HostileAI(AIComponent):
         player: Character,
         dx: int,
         dy: int,
-    ) -> GameAction | None:
+    ) -> GameAction | GameIntent | None:
         """Calculate movement toward the player with basic pathfinding."""
         from catley.game.actions.movement import MoveAction
 
@@ -236,7 +242,9 @@ class HostileAI(AIComponent):
 class WaryAI(AIComponent):
     """Wary behavior: wait and watch, but ready to become hostile."""
 
-    def get_action(self, controller: Controller, actor: NPC) -> GameAction | None:
+    def get_action(
+        self, controller: Controller, actor: NPC
+    ) -> GameAction | GameIntent | None:
         # For now, just wait (do nothing)
         # Future: might back away if player gets too close
         return None
@@ -245,7 +253,9 @@ class WaryAI(AIComponent):
 class UnfriendlyAI(AIComponent):
     """Unfriendly behavior: suspicious but not immediately hostile."""
 
-    def get_action(self, controller: Controller, actor: NPC) -> GameAction | None:
+    def get_action(
+        self, controller: Controller, actor: NPC
+    ) -> GameAction | GameIntent | None:
         # For now, just wait (do nothing)
         # Future: might warn player to keep distance, prepare to defend
         return None
@@ -254,7 +264,9 @@ class UnfriendlyAI(AIComponent):
 class ApproachableAI(AIComponent):
     """Approachable behavior: neutral, might initiate interaction."""
 
-    def get_action(self, controller: Controller, actor: NPC) -> GameAction | None:
+    def get_action(
+        self, controller: Controller, actor: NPC
+    ) -> GameAction | GameIntent | None:
         # For now, just wait (do nothing)
         # Future: might greet player when they approach, offer quests
         return None
@@ -263,7 +275,9 @@ class ApproachableAI(AIComponent):
 class FriendlyAI(AIComponent):
     """Friendly behavior: helpful and welcoming."""
 
-    def get_action(self, controller: Controller, actor: NPC) -> GameAction | None:
+    def get_action(
+        self, controller: Controller, actor: NPC
+    ) -> GameAction | GameIntent | None:
         # For now, just wait (do nothing)
         # Future: might follow player, offer help, trade
         return None
@@ -272,7 +286,9 @@ class FriendlyAI(AIComponent):
 class AllyAI(AIComponent):
     """Ally behavior: actively helpful in combat and exploration."""
 
-    def get_action(self, controller: Controller, actor: NPC) -> GameAction | None:
+    def get_action(
+        self, controller: Controller, actor: NPC
+    ) -> GameAction | GameIntent | None:
         # For now, just wait (do nothing)
         # Future: actively help in combat, follow player, coordinate attacks
         return None

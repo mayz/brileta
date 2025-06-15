@@ -94,6 +94,7 @@ class MoveAction(GameAction):
     def execute(self) -> GameActionResult | None:
         # Import here to avoid circular import
         from catley.game.actions.combat import AttackIntent
+        from catley.game.actions.executors.combat import AttackExecutor
 
         # Prevent indexing errors by bounding to the map dimensions first.
         if not (
@@ -126,12 +127,14 @@ class MoveAction(GameAction):
                 and blocking_actor.health.is_alive()
             ):
                 weapon = self._select_ram_weapon()
-                AttackIntent(
+                intent = AttackIntent(
                     controller=self.controller,
                     attacker=self.actor,
                     defender=blocking_actor,
                     weapon=weapon,
-                ).execute()
+                )
+                executor = AttackExecutor()
+                executor.execute(intent)
             return None  # Cannot move into blocking actor
 
         # Check for stumbling if effective speed is reduced (mostly from exhaustion)

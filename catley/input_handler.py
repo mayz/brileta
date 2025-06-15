@@ -150,9 +150,9 @@ class InputHandler:
                     and active_weapon.ranged_attack.current_ammo
                     < active_weapon.ranged_attack.max_ammo
                 ):
-                    from .game.actions.combat import ReloadAction
+                    from .game.actions.combat import ReloadIntent
 
-                    reload_action = ReloadAction(self.controller, self.p, active_weapon)
+                    reload_action = ReloadIntent(self.controller, self.p, active_weapon)
                     self.controller.queue_action(reload_action)
                 else:
                     publish_event(MessageEvent("Nothing to reload!", colors.GREY))

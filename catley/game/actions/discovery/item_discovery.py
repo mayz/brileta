@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from catley.game.actions.combat import ReloadAction
+from catley.game.actions.combat import ReloadIntent
 
 # Optional action classes that may not yet exist
 from catley.game.actions.misc import PickupAction, SwitchWeaponAction  # type: ignore
@@ -55,7 +55,7 @@ class ItemActionDiscovery:
                     f"Reload {weapon.name} with {weapon.ranged_attack.ammo_type} ammo"
                 ),
                 category=ActionCategory.ITEMS,
-                action_class=ReloadAction,
+                action_class=ReloadIntent,
                 requirements=[],
                 static_params={"weapon": weapon},
             )

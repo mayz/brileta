@@ -54,3 +54,16 @@ class GameAction(abc.ABC):
         handling such as a field-of-view update.
         """
         pass
+
+
+class GameIntent:
+    """Data-only object describing an intended game action.
+
+    Unlike :class:`GameAction`, intents do not implement :meth:`execute`.
+    They are routed through dedicated executors by
+    :class:`~catley.game.turn_manager.TurnManager`.
+    """
+
+    def __init__(self, controller: Controller, actor: Actor) -> None:
+        self.controller = controller
+        self.actor = actor

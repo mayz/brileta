@@ -29,7 +29,7 @@ from catley.game.resolution.base import ResolutionResult
 from catley.game.resolution.outcomes import CombatOutcome
 
 if TYPE_CHECKING:
-    from catley.game.actions.combat import AttackIntent
+    from catley.game.actions.combat import AttackIntent, ReloadIntent
 
 
 class AttackExecutor:
@@ -495,3 +495,40 @@ class AttackExecutor:
                     colors.ORANGE,
                 )
             )
+
+
+class ReloadExecutor:
+    """Executes reload intents."""
+
+    def execute(self, intent: ReloadIntent) -> GameActionResult | None:
+        ranged_attack = intent.weapon.ranged_attack
+        if not ranged_attack:
+            return None
+
+        ammo_item = None
+        for item in intent.actor.inventory:
+            if (
+                isinstance(item, Item)
+                and item.ammo
+                and item.ammo.ammo_type == ranged_attack.ammo_type
+            ):
+                ammo_item = item
+                break
+
+        if ammo_item:
+            intent.actor.inventory.remove_from_inventory(ammo_item)
+            ranged_attack.current_ammo = ranged_attack.max_ammo
+            publish_event(
+                MessageEvent(
+                    f"{intent.actor.name} reloaded {intent.weapon.name}.",
+                    colors.GREEN,
+                )
+            )
+        else:
+            publish_event(
+                MessageEvent(
+                    f"No {ranged_attack.ammo_type} ammo available!",
+                    colors.RED,
+                )
+            )
+        return None
