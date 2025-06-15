@@ -28,7 +28,11 @@ class PickupMenu(Menu):
         if not items_here:
             self.add_option(
                 MenuOption(
-                    key=None, text="(no items here)", enabled=False, color=colors.GREY
+                    key=None,
+                    text="(no items here)",
+                    enabled=False,
+                    color=colors.GREY,
+                    is_primary_action=False,
                 )
             )
             return

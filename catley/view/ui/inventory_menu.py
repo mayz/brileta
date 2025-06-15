@@ -48,7 +48,11 @@ class InventoryMenu(Menu):
         if not all_items_to_display:
             display_lines.append(
                 MenuOption(
-                    key=None, text="(inventory empty)", enabled=False, color=colors.GREY
+                    key=None,
+                    text="(inventory empty)",
+                    enabled=False,
+                    color=colors.GREY,
+                    is_primary_action=False,
                 )
             )
             self.options = display_lines

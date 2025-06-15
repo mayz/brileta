@@ -28,13 +28,13 @@ class ActionBrowserMenu(Menu):
 
     def __init__(self, controller: Controller) -> None:
         super().__init__("Available Actions", controller, width=60)
-        self.action_discovery = ActionDiscovery()
-        self.state_machine = ActionBrowserStateMachine(self.action_discovery)
+        self.discovery = ActionDiscovery()
+        self.action_discovery = ActionBrowserStateMachine(self.discovery)
 
     def show(self) -> None:
         """Display the menu and reset discovery state."""
         # Reset state machine so each use starts from the main screen
-        self.state_machine.reset_state()
+        self.action_discovery.reset_state()
 
         super().show()
 
@@ -44,8 +44,8 @@ class ActionBrowserMenu(Menu):
 
         player = self.controller.gw.player
 
-        action_options_for_display = self.state_machine.get_options_for_current_state(
-            self.controller, player
+        action_options_for_display = (
+            self.action_discovery.get_options_for_current_state(self.controller, player)
         )
 
         cache = self.controller.combat_intent_cache
@@ -64,7 +64,7 @@ class ActionBrowserMenu(Menu):
                     cache.target.y,
                 )
             ):
-                combat_disc = self.action_discovery.combat_discovery
+                combat_disc = self.discovery.combat_discovery
                 all_possible_actions = combat_disc.get_all_terminal_combat_actions(
                     self.controller,
                     player,
@@ -91,9 +91,14 @@ class ActionBrowserMenu(Menu):
                             self._execute_action_option, repeat_option
                         ),
                         color=colors.WHITE,
+                        is_primary_action=False,
                     )
                 )
-                self.add_option(MenuOption(key=None, text="-" * 40, enabled=False))
+                self.add_option(
+                    MenuOption(
+                        key=None, text="-" * 40, enabled=False, is_primary_action=False
+                    )
+                )
             else:
                 # Always offer to continue with the cached weapon/mode.
                 # The target selection screen will show if no targets remain.
@@ -105,15 +110,20 @@ class ActionBrowserMenu(Menu):
                             f"with {cache.weapon.name}..."
                         ),
                         action=functools.partial(
-                            self.state_machine.set_ui_state,
+                            self.action_discovery._set_ui_state,
                             "targets_for_weapon",
                             weapon=cache.weapon,
                             attack_mode=cache.attack_mode,
                         ),
                         color=colors.WHITE,
+                        is_primary_action=False,
                     )
                 )
-                self.add_option(MenuOption(key=None, text="-" * 40, enabled=False))
+                self.add_option(
+                    MenuOption(
+                        key=None, text="-" * 40, enabled=False, is_primary_action=False
+                    )
+                )
 
         action_options = action_options_for_display
 
@@ -128,6 +138,7 @@ class ActionBrowserMenu(Menu):
                     text="(no actions available)",
                     enabled=False,
                     color=colors.GREY,
+                    is_primary_action=False,
                 )
             )
             return
@@ -165,6 +176,7 @@ class ActionBrowserMenu(Menu):
                     enabled=True,
                     color=prob_color,
                     force_color=True,
+                    is_primary_action=action_option.id != "back",
                 )
             )
 
@@ -213,8 +225,8 @@ class ActionBrowserMenu(Menu):
         match event:
             case tcod.event.KeyDown(sym=tcod.event.KeySym.ESCAPE):
                 # Navigate back in the state machine
-                self.state_machine.handle_back_navigation(self.controller)
-                if self.state_machine.ui_state == "main":
+                self.action_discovery._go_back(self.controller)
+                if self.action_discovery.ui_state == "main":
                     self.hide()
                 else:
                     self.populate_options()
@@ -230,6 +242,20 @@ class ActionBrowserMenu(Menu):
                         self.hide()
                     else:
                         self.populate_options()
+                    return True
+                primary_actions = [
+                    opt
+                    for opt in self.options
+                    if opt.enabled and opt.action and opt.is_primary_action
+                ]
+                if len(primary_actions) == 1:
+                    opt = primary_actions[0]
+                    if opt.action:
+                        should_close = opt.action()
+                        if should_close:
+                            self.hide()
+                        else:
+                            self.populate_options()
                     return True
                 self.hide()
                 return True
