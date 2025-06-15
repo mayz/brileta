@@ -514,8 +514,6 @@ class ActionDiscovery:
         """Generate a flat list of every possible end combat action."""
 
         context = self._build_context(controller, actor)
-        if not context.in_combat:
-            return []
 
         options: list[ActionOption] = []
         equipped_weapons = [w for w in actor.inventory.attack_slots if w is not None]
@@ -1081,7 +1079,7 @@ class ActionDiscovery:
                     options.append(
                         ActionOption(
                             id=f"weapon-melee-{weapon.name}",
-                            name=f"{verb.title()} with {weapon.name}",
+                            name=f"{weapon.name} ({verb.title()})",
                             description=f"Melee attack using {weapon.name}",
                             category=ActionCategory.COMBAT,
                             hotkey=letters[option_index]
@@ -1116,7 +1114,7 @@ class ActionDiscovery:
                     options.append(
                         ActionOption(
                             id=f"weapon-ranged-{weapon.name}",
-                            name=f"{verb.title()} with {weapon.name}",
+                            name=f"{weapon.name} ({verb.title()})",
                             description=f"Ranged attack using {weapon.name}",
                             category=ActionCategory.COMBAT,
                             hotkey=letters[option_index]
