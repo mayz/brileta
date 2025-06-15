@@ -14,7 +14,19 @@ from catley.game.actions.executors.environment import (
     OpenDoorExecutor,
 )
 from catley.game.actions.executors.misc import PickupExecutor, SwitchWeaponExecutor
+from catley.game.actions.executors.recovery import (
+    ComfortableSleepExecutor,
+    RestExecutor,
+    SleepExecutor,
+    UseConsumableExecutor,
+)
 from catley.game.actions.misc import PickupIntent, SwitchWeaponIntent
+from catley.game.actions.recovery import (
+    ComfortableSleepIntent,
+    RestIntent,
+    SleepIntent,
+    UseConsumableIntent,
+)
 
 if TYPE_CHECKING:
     from catley.controller import Controller
@@ -115,6 +127,18 @@ class TurnManager:
                 result = executor.execute(action)
             elif isinstance(action, SwitchWeaponIntent):
                 executor = SwitchWeaponExecutor()
+                result = executor.execute(action)
+            elif isinstance(action, UseConsumableIntent):
+                executor = UseConsumableExecutor()
+                result = executor.execute(action)
+            elif isinstance(action, RestIntent):
+                executor = RestExecutor()
+                result = executor.execute(action)
+            elif isinstance(action, SleepIntent):
+                executor = SleepExecutor()
+                result = executor.execute(action)
+            elif isinstance(action, ComfortableSleepIntent):
+                executor = ComfortableSleepExecutor()
                 result = executor.execute(action)
             else:
                 assert isinstance(action, GameAction)

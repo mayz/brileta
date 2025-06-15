@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from catley.game.actions.combat import AttackIntent, ReloadIntent
-from catley.game.actions.recovery import UseConsumableAction
+from catley.game.actions.recovery import UseConsumableIntent
 
 if TYPE_CHECKING:
     from catley.controller import Controller
@@ -41,5 +41,5 @@ class ActionFactory:
 
     def create_use_consumable_action(
         self, controller: Controller, actor: Character, item: Item
-    ) -> UseConsumableAction:
-        return UseConsumableAction(controller, actor, item)
+    ) -> UseConsumableIntent:
+        return UseConsumableIntent(controller, actor, item)

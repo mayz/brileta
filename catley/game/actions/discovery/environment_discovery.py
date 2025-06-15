@@ -4,9 +4,9 @@ from typing import TYPE_CHECKING
 
 from catley.game.actions.environment import CloseDoorIntent, OpenDoorIntent
 from catley.game.actions.recovery import (
-    ComfortableSleepAction,
-    RestAction,
-    SleepAction,
+    ComfortableSleepIntent,
+    RestIntent,
+    SleepIntent,
 )
 from catley.game.actors import Character
 
@@ -110,7 +110,7 @@ class EnvironmentActionDiscovery:
                     name="Rest",
                     description="Recover armor points",
                     category=ActionCategory.ENVIRONMENT,
-                    action_class=RestAction,
+                    action_class=RestIntent,
                     requirements=[],
                     static_params={},
                 )
@@ -128,7 +128,7 @@ class EnvironmentActionDiscovery:
                     name="Sleep",
                     description="Sleep to restore HP and ease exhaustion",
                     category=ActionCategory.ENVIRONMENT,
-                    action_class=SleepAction,
+                    action_class=SleepIntent,
                     requirements=[],
                     static_params={},
                 )
@@ -141,7 +141,7 @@ class EnvironmentActionDiscovery:
                     name="Comfortable Sleep",
                     description="Remove all exhaustion and restore HP",
                     category=ActionCategory.ENVIRONMENT,
-                    action_class=ComfortableSleepAction,
+                    action_class=ComfortableSleepIntent,
                     requirements=[],
                     static_params={},
                 )
