@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from catley.game.actions.combat import ReloadIntent
 
 # Optional action classes that may not yet exist
-from catley.game.actions.misc import PickupAction, SwitchWeaponAction  # type: ignore
+from catley.game.actions.misc import PickupIntent, SwitchWeaponIntent
 from catley.game.actions.recovery import (
     ComfortableSleepAction,
     RestAction,
@@ -95,7 +95,7 @@ class ItemActionDiscovery:
                     name=f"Pick up items ({len(context.items_on_ground)})",
                     description="Pick up items from the ground",
                     category=ActionCategory.ITEMS,
-                    action_class=PickupAction,
+                    action_class=PickupIntent,
                     requirements=[],
                     static_params={"items": context.items_on_ground},
                     hotkey="g",
@@ -112,7 +112,7 @@ class ItemActionDiscovery:
                             name=f"Switch to {item.name}",
                             description=f"Equip {item.name} as active weapon",
                             category=ActionCategory.ITEMS,
-                            action_class=SwitchWeaponAction,
+                            action_class=SwitchWeaponIntent,
                             requirements=[],
                             static_params={"slot": i},
                             hotkey=str(i + 1),

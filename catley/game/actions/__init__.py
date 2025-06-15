@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from .misc import PickupAction, SwitchWeaponAction
+from .misc import PickupIntent, SwitchWeaponIntent
 
 __all__ = [
-    "PickupAction",
-    "SwitchWeaponAction",
+    "PickupIntent",
+    "SwitchWeaponIntent",
 ]
