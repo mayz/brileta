@@ -16,6 +16,7 @@ from catley.game.actions.discovery import (
     ActionOption,
     CombatIntentCache,
 )
+from catley.view.ui.action_browser_state import ActionBrowserStateMachine
 from catley.view.ui.overlays import REPEAT_PREFIX, Menu, MenuOption
 
 if TYPE_CHECKING:
@@ -28,14 +29,12 @@ class ActionBrowserMenu(Menu):
     def __init__(self, controller: Controller) -> None:
         super().__init__("Available Actions", controller, width=60)
         self.action_discovery = ActionDiscovery()
+        self.state_machine = ActionBrowserStateMachine(self.action_discovery)
 
     def show(self) -> None:
         """Display the menu and reset discovery state."""
         # Reset state machine so each use starts from the main screen
-        self.action_discovery.ui_state = "main"
-        self.action_discovery.selected_target = None
-        self.action_discovery.selected_weapon = None
-        self.action_discovery.selected_attack_mode = None
+        self.state_machine.reset_state()
 
         super().show()
 
@@ -45,9 +44,8 @@ class ActionBrowserMenu(Menu):
 
         player = self.controller.gw.player
 
-        action_options_for_display = self.action_discovery.get_available_options(
-            self.controller,
-            player,
+        action_options_for_display = self.state_machine.get_options_for_current_state(
+            self.controller, player
         )
 
         cache = self.controller.combat_intent_cache
@@ -66,11 +64,10 @@ class ActionBrowserMenu(Menu):
                     cache.target.y,
                 )
             ):
-                all_possible_actions = (
-                    self.action_discovery._get_all_terminal_combat_actions(
-                        self.controller,
-                        player,
-                    )
+                combat_disc = self.action_discovery.combat_discovery
+                all_possible_actions = combat_disc.get_all_terminal_combat_actions(
+                    self.controller,
+                    player,
                 )
                 for opt in all_possible_actions:
                     if not opt.execute:
@@ -108,7 +105,7 @@ class ActionBrowserMenu(Menu):
                             f"with {cache.weapon.name}..."
                         ),
                         action=functools.partial(
-                            self.action_discovery._set_ui_state,
+                            self.state_machine.set_ui_state,
                             "targets_for_weapon",
                             weapon=cache.weapon,
                             attack_mode=cache.attack_mode,
@@ -216,8 +213,8 @@ class ActionBrowserMenu(Menu):
         match event:
             case tcod.event.KeyDown(sym=tcod.event.KeySym.ESCAPE):
                 # Navigate back in the state machine
-                self.action_discovery._go_back(self.controller)
-                if self.action_discovery.ui_state == "main":
+                self.state_machine.handle_back_navigation(self.controller)
+                if self.state_machine.ui_state == "main":
                     self.hide()
                 else:
                     self.populate_options()
