@@ -6,7 +6,8 @@ from unittest.mock import patch
 
 from catley import colors
 from catley.controller import Controller
-from catley.game.actions.combat import AttackAction
+from catley.game.actions.combat import AttackIntent
+from catley.game.actions.executors.combat import AttackExecutor
 from catley.game.actors import PC, Character, status_effects
 from catley.game.game_world import GameWorld
 from catley.game.items.capabilities import Attack
@@ -34,7 +35,9 @@ class DummyController(Controller):
         self.update_fov_called = True
 
 
-def make_combat_world() -> tuple[DummyController, Character, Character, AttackAction]:
+def make_combat_world() -> tuple[
+    DummyController, Character, Character, AttackIntent, AttackExecutor
+]:
     gw = DummyGameWorld()
     attacker = Character(
         1,
@@ -54,47 +57,49 @@ def make_combat_world() -> tuple[DummyController, Character, Character, AttackAc
     gw.player = attacker
     controller = DummyController(gw=gw)
     weapon = FISTS_TYPE.create()
-    action = AttackAction(cast(Controller, controller), attacker, defender, weapon)
-    return controller, attacker, defender, action
+    intent = AttackIntent(cast(Controller, controller), attacker, defender, weapon)
+    executor = AttackExecutor()
+    return controller, attacker, defender, intent, executor
 
 
 def test_offbalance_gives_disadvantage() -> None:
-    controller, attacker, defender, action = make_combat_world()
-    weapon = cast(Item, action.weapon)
+    controller, attacker, defender, intent, executor = make_combat_world()
+    weapon = cast(Item, intent.weapon)
     attack = cast(Attack, weapon.melee_attack)
     attacker.status_effects.apply_status_effect(status_effects.OffBalanceEffect())
     with patch("random.randint", side_effect=[2, 18]):
         result = cast(
             D20ResolutionResult,
-            action._execute_attack_roll(attack, weapon, {}),
+            executor._execute_attack_roll(intent, attack, weapon, {}),
         )
     assert result.has_disadvantage
     assert result.final_roll_used == 2
 
 
 def test_focused_gives_advantage() -> None:
-    controller, attacker, defender, action = make_combat_world()
-    weapon = cast(Item, action.weapon)
+    controller, attacker, defender, intent, executor = make_combat_world()
+    weapon = cast(Item, intent.weapon)
     attack = cast(Attack, weapon.melee_attack)
     attacker.status_effects.apply_status_effect(status_effects.FocusedEffect())
     with patch("random.randint", side_effect=[5, 17]):
         result = cast(
             D20ResolutionResult,
-            action._execute_attack_roll(attack, weapon, {}),
+            executor._execute_attack_roll(intent, attack, weapon, {}),
         )
     assert result.has_advantage
     assert result.final_roll_used == 17
 
 
 def test_modifier_combination_cancels() -> None:
-    controller, attacker, defender, action = make_combat_world()
-    weapon = cast(Item, action.weapon)
+    controller, attacker, defender, intent, executor = make_combat_world()
+    weapon = cast(Item, intent.weapon)
     attack = cast(Attack, weapon.melee_attack)
     attacker.status_effects.apply_status_effect(status_effects.FocusedEffect())
     with patch("random.randint", return_value=11):
         result = cast(
             D20ResolutionResult,
-            action._execute_attack_roll(
+            executor._execute_attack_roll(
+                intent,
                 attack,
                 weapon,
                 {"has_disadvantage": True},
@@ -106,8 +111,8 @@ def test_modifier_combination_cancels() -> None:
 
 
 def test_strength_boost_applies_to_roll() -> None:
-    controller, attacker, defender, action = make_combat_world()
-    weapon = cast(Item, action.weapon)
+    controller, attacker, defender, intent, executor = make_combat_world()
+    weapon = cast(Item, intent.weapon)
     attack = cast(Attack, weapon.melee_attack)
     attacker.status_effects.apply_status_effect(
         status_effects.StrengthBoostEffect(duration=1)
@@ -115,7 +120,7 @@ def test_strength_boost_applies_to_roll() -> None:
     with patch("random.randint", return_value=10):
         result = cast(
             D20ResolutionResult,
-            action._execute_attack_roll(attack, weapon, {}),
+            executor._execute_attack_roll(intent, attack, weapon, {}),
         )
     assert result.total_value == 10 + 7  # strength boosted to 7
 
@@ -130,7 +135,7 @@ def test_tripped_skips_turn() -> None:
 
     player.status_effects.apply_status_effect(status_effects.TrippedEffect())
     tm.queue_action(
-        AttackAction(cast(Controller, controller), player, player, FISTS_TYPE.create())
+        AttackIntent(cast(Controller, controller), player, player, FISTS_TYPE.create())
     )
     tm.process_unified_round()
     assert not controller.update_fov_called

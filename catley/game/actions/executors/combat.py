@@ -1,0 +1,497 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
+
+from catley import colors
+from catley.constants.combat import CombatConstants as Combat
+from catley.environment import tile_types
+from catley.events import (
+    ActorDeathEvent,
+    EffectEvent,
+    MessageEvent,
+    ScreenShakeEvent,
+    publish_event,
+)
+from catley.game import ranges
+from catley.game.actions.base import GameActionResult
+from catley.game.actors import ai, status_effects
+from catley.game.consequences import (
+    AttackConsequenceGenerator,
+    ConsequenceHandler,
+)
+from catley.game.enums import Disposition, OutcomeTier
+from catley.game.items.capabilities import Attack
+from catley.game.items.item_core import Item
+from catley.game.items.item_types import FISTS_TYPE
+from catley.game.items.properties import TacticalProperty, WeaponProperty
+from catley.game.resolution import combat_arbiter
+from catley.game.resolution.base import ResolutionResult
+from catley.game.resolution.outcomes import CombatOutcome
+
+if TYPE_CHECKING:
+    from catley.game.actions.combat import AttackIntent
+
+
+class AttackExecutor:
+    """Executes attack intents by applying all combat logic."""
+
+    def execute(self, intent: AttackIntent) -> GameActionResult | None:
+        # 1. Determine what attack method to use
+        attack, weapon = self._determine_attack_method(intent)
+        if not attack:
+            return None
+
+        # 2. Validate the attack can be performed
+        range_modifiers = self._validate_attack(intent, attack, weapon)
+        if range_modifiers is None:
+            return None  # Validation failed, error messages already logged
+
+        # 3. Perform the attack roll and immediate effects
+        attack_result = self._execute_attack_roll(
+            intent, attack, weapon, range_modifiers
+        )
+        if attack_result is None:
+            return None
+
+        # 4. Determine combat consequences based on the resolution result
+        outcome = combat_arbiter.determine_outcome(
+            attack_result, intent.attacker, intent.defender, weapon
+        )
+
+        # 5. Apply the outcome and post-attack effects
+        damage = self._apply_combat_outcome(
+            intent, attack_result, outcome, attack, weapon
+        )
+        self._handle_post_attack_effects(intent, attack_result, attack, weapon, damage)
+
+        # 6. Generate and apply additional consequences
+        generator = AttackConsequenceGenerator()
+        consequences = generator.generate(
+            attacker=intent.attacker,
+            weapon=weapon,
+            outcome_tier=attack_result.outcome_tier,
+        )
+        handler = ConsequenceHandler()
+        for consequence in consequences:
+            handler.apply_consequence(consequence)
+
+        # Switch active weapon to the one that was just used
+        if intent.weapon is not None and intent.attacker.inventory is not None:
+            for slot_index, equipped_weapon in enumerate(
+                intent.attacker.inventory.attack_slots
+            ):
+                if equipped_weapon == intent.weapon:
+                    if slot_index != intent.attacker.inventory.active_weapon_slot:
+                        intent.attacker.inventory.switch_to_weapon_slot(slot_index)
+                    break
+
+        return GameActionResult(consequences=consequences)
+
+    def _determine_attack_method(
+        self, intent: AttackIntent
+    ) -> tuple[Attack | None, Item]:
+        """Determine which attack method and weapon to use."""
+        weapon = (
+            intent.weapon
+            or intent.attacker.inventory.get_active_weapon()
+            or FISTS_TYPE.create()
+        )
+
+        distance = ranges.calculate_distance(
+            intent.attacker.x,
+            intent.attacker.y,
+            intent.defender.x,
+            intent.defender.y,
+        )
+
+        # Highest priority: explicit attack mode selection
+        if intent.attack_mode == "melee":
+            return weapon.melee_attack, weapon
+        if intent.attack_mode == "ranged":
+            return weapon.ranged_attack, weapon
+
+        # Next priority: weapon's preferred attack for this distance
+        preferred = weapon.get_preferred_attack_mode(distance)
+        if (
+            isinstance(preferred, Attack)
+            and WeaponProperty.PREFERRED in preferred.properties
+        ):
+            return preferred, weapon
+
+        # Fallback heuristic based on distance if no preference exists
+        if distance == 1 and weapon.melee_attack:
+            return weapon.melee_attack, weapon
+
+        if weapon.ranged_attack:
+            return weapon.ranged_attack, weapon
+
+        if weapon.melee_attack:
+            return weapon.melee_attack, weapon
+
+        publish_event(
+            MessageEvent(f"{intent.attacker.name} has no way to attack!", colors.RED)
+        )
+        return None, weapon
+
+    def _validate_attack(
+        self, intent: AttackIntent, attack: Attack, weapon: Item
+    ) -> dict | None:
+        """Validate the attack can be performed and return range modifiers."""
+        if attack is None:
+            publish_event(
+                MessageEvent(f"{weapon.name} cannot perform this attack!", colors.RED)
+            )
+            return None
+
+        distance = ranges.calculate_distance(
+            intent.attacker.x, intent.attacker.y, intent.defender.x, intent.defender.y
+        )
+
+        range_modifiers: dict[str, bool] = {}
+
+        if attack == weapon.melee_attack and distance > 1:
+            publish_event(
+                MessageEvent(
+                    f"Too far away for melee attack with {weapon.name}!", colors.RED
+                )
+            )
+            return None
+
+        ranged_attack = weapon.ranged_attack
+        if attack == ranged_attack and ranged_attack is not None:
+            if ranged_attack.current_ammo <= 0:
+                publish_event(
+                    MessageEvent(f"{weapon.name} is out of ammo!", colors.RED)
+                )
+                return None
+
+            range_category = ranges.get_range_category(distance, weapon)
+            if range_category == "out_of_range":
+                publish_event(
+                    MessageEvent(
+                        f"{intent.defender.name} is too far away for {weapon.name}!",
+                        colors.RED,
+                    )
+                )
+                return None
+
+            if not ranges.has_line_of_sight(
+                intent.controller.gw.game_map,
+                intent.attacker.x,
+                intent.attacker.y,
+                intent.defender.x,
+                intent.defender.y,
+            ):
+                publish_event(
+                    MessageEvent(
+                        f"No clear shot to {intent.defender.name}!", colors.RED
+                    )
+                )
+                return None
+
+            range_modifiers = ranges.get_range_modifier(weapon, range_category) or {}
+
+        return range_modifiers
+
+    def _adjacent_cover_bonus(self, intent: AttackIntent) -> int:
+        """Return the highest cover bonus adjacent to the defender."""
+        game_map = intent.controller.gw.game_map
+        max_bonus = 0
+        x, y = intent.defender.x, intent.defender.y
+
+        # Cover checks are infrequent, so we prioritize memory usage over
+        # lookup speed by querying tile types directly rather than caching a
+        # full map of bonuses.
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                if dx == 0 and dy == 0:
+                    continue
+                nx, ny = x + dx, y + dy
+                if 0 <= nx < game_map.width and 0 <= ny < game_map.height:
+                    tile_id = game_map.tiles[nx, ny]
+                    tile_data = tile_types.get_tile_type_data_by_id(int(tile_id))
+                    bonus = int(tile_data["cover_bonus"])
+                    max_bonus = max(max_bonus, bonus)
+
+        return max_bonus
+
+    def _execute_attack_roll(
+        self, intent: AttackIntent, attack: Attack, weapon: Item, range_modifiers: dict
+    ) -> ResolutionResult | None:
+        """Perform the attack roll and handle immediate effects like ammo use."""
+        stat_name = attack.stat_name
+        attacker_score = getattr(intent.attacker.stats, stat_name)
+        defender_score = intent.defender.stats.agility + self._adjacent_cover_bonus(
+            intent
+        )
+
+        # Get all resolution modifiers from the unified facade
+        resolution_args: dict[str, Any] = (
+            intent.attacker.modifiers.get_resolution_modifiers(stat_name)
+        )
+
+        if resolution_args.get("action_prevented", False):
+            return None
+
+        final_advantage = range_modifiers.get(
+            "has_advantage", False
+        ) or resolution_args.get("has_advantage", False)
+        final_disadvantage = range_modifiers.get(
+            "has_disadvantage", False
+        ) or resolution_args.get("has_disadvantage", False)
+
+        resolver = intent.controller.create_resolver(
+            ability_score=attacker_score,
+            roll_to_exceed=defender_score + 10,
+            has_advantage=final_advantage,
+            has_disadvantage=final_disadvantage,
+        )
+        attack_result = resolver.resolve(intent.attacker, intent.defender, weapon)
+
+        # Consume ammo for ranged attacks
+        ranged_attack = weapon.ranged_attack
+        if attack == ranged_attack and ranged_attack is not None:
+            if ranged_attack.current_ammo > 0:
+                ranged_attack.current_ammo -= 1
+            else:
+                # This shouldn't happen if validation worked, but safety check
+                publish_event(
+                    MessageEvent(f"No ammo left in {weapon.name}!", colors.RED)
+                )
+
+        # Emit muzzle flash for ranged attacks
+        if attack == weapon.ranged_attack:
+            self._emit_muzzle_flash(intent)
+
+        return attack_result
+
+    def _emit_muzzle_flash(self, intent: AttackIntent) -> None:
+        """Emit muzzle flash particle effect."""
+        direction_x = intent.defender.x - intent.attacker.x
+        direction_y = intent.defender.y - intent.attacker.y
+
+        publish_event(
+            EffectEvent(
+                "muzzle_flash",
+                intent.attacker.x,
+                intent.attacker.y,
+                direction_x=direction_x,
+                direction_y=direction_y,
+            )
+        )
+
+    def _apply_combat_outcome(
+        self,
+        intent: AttackIntent,
+        attack_result: ResolutionResult,
+        outcome: CombatOutcome,
+        attack: Attack,
+        weapon: Item,
+    ) -> int:
+        """Apply the combat outcome and return the damage dealt."""
+        if attack_result.outcome_tier in (
+            OutcomeTier.SUCCESS,
+            OutcomeTier.CRITICAL_SUCCESS,
+            OutcomeTier.PARTIAL_SUCCESS,
+        ):
+            damage = outcome.damage_dealt
+            if outcome.armor_damage > 0:
+                intent.defender.health.ap = max(
+                    0, intent.defender.health.ap - outcome.armor_damage
+                )
+            if outcome.injury_inflicted is not None:
+                intent.defender.inventory.add_to_inventory(outcome.injury_inflicted)
+
+            # Check if this is radiation damage
+            damage_type = "normal"
+            if weapon and TacticalProperty.RADIATION in weapon.get_weapon_properties():
+                damage_type = "radiation"
+
+            if damage > 0:
+                intent.defender.take_damage(damage, damage_type=damage_type)
+                publish_event(
+                    EffectEvent(
+                        "blood_splatter",
+                        intent.defender.x,
+                        intent.defender.y,
+                        intensity=damage / 20.0,
+                    )
+                )
+                self._log_hit_message(intent, attack_result, weapon, damage)
+
+                if not intent.defender.health.is_alive():
+                    publish_event(
+                        MessageEvent(
+                            f"{intent.defender.name} has been killed!", colors.RED
+                        )
+                    )
+                    publish_event(ActorDeathEvent(intent.defender))
+            return damage
+
+        self._handle_attack_miss(intent, attack_result, attack, weapon)
+        return 0
+
+    def _handle_attack_miss(
+        self,
+        intent: AttackIntent,
+        attack_result: ResolutionResult,
+        attack: Attack,
+        weapon: Item,
+    ) -> None:
+        """Handle an attack miss - messages and weapon property effects."""
+        # Miss
+        if attack_result.outcome_tier == OutcomeTier.CRITICAL_FAILURE:
+            # "Crits favoring defense cause the attacker's weapon to break,
+            # and leave them confused or off-balance."
+            # FIXME: Break the attacker's weapon.
+            # FIXME: If the attacker is unarmed and attacking with fists or
+            # kicking, etc., they pull a muscle and have disadvantage on their
+            # next attack. (house rule)
+            # FIXME: Give the attacker the condition "confused" or "off-balance".
+
+            miss_color = colors.ORANGE  # A warning color for critical miss
+            publish_event(
+                MessageEvent(
+                    (
+                        f"Critical miss! {intent.attacker.name}'s attack on "
+                        f"{intent.defender.name} fails."
+                    ),
+                    miss_color,
+                )
+            )
+        else:
+            miss_color = colors.GREY  # Standard miss color
+            publish_event(
+                MessageEvent(
+                    f"{intent.attacker.name} misses {intent.defender.name}.",
+                    miss_color,
+                )
+            )
+
+        # Handle 'awkward' weapon property on miss
+        if (
+            weapon
+            and weapon.melee_attack
+            and attack is weapon.melee_attack
+            and WeaponProperty.AWKWARD in weapon.melee_attack.properties
+        ):
+            publish_event(
+                MessageEvent(
+                    f"{intent.attacker.name} is off balance from the awkward swing "
+                    f"with {weapon.name}!",
+                    colors.LIGHT_BLUE,
+                )
+            )
+            intent.attacker.status_effects.apply_status_effect(
+                status_effects.OffBalanceEffect()
+            )
+
+    def _log_hit_message(
+        self,
+        intent: AttackIntent,
+        attack_result: ResolutionResult,
+        weapon: Item,
+        damage: int,
+    ) -> None:
+        """Log appropriate hit message based on critical status."""
+        if attack_result.outcome_tier == OutcomeTier.CRITICAL_SUCCESS:
+            hit_color = colors.YELLOW
+            message = (
+                f"Critical hit! {intent.attacker.name} strikes {intent.defender.name} "
+                f"with {weapon.name} for {damage} damage."
+            )
+        else:
+            hit_color = colors.WHITE  # Default color for a standard hit
+            message = (
+                f"{intent.attacker.name} hits {intent.defender.name} "
+                f"with {weapon.name} for {damage} damage."
+            )
+        hp_message_part = (
+            f" ({intent.defender.name} has {intent.defender.health.hp} HP left.)"
+        )
+        publish_event(MessageEvent(message + hp_message_part, hit_color))
+
+    def _handle_post_attack_effects(
+        self,
+        intent: AttackIntent,
+        attack_result: ResolutionResult,
+        attack: Attack,
+        weapon: Item,
+        damage: int,
+    ) -> None:
+        """Handle post-attack effects like screen shake and AI disposition changes."""
+        # Screen shake only when PLAYER gets hit
+        if (
+            attack_result.outcome_tier
+            in (
+                OutcomeTier.SUCCESS,
+                OutcomeTier.CRITICAL_SUCCESS,
+                OutcomeTier.PARTIAL_SUCCESS,
+            )
+            and intent.defender == intent.controller.gw.player
+        ):
+            self._apply_screen_shake(intent, attack_result, attack, weapon, damage)
+
+        # Update AI disposition if player attacked an NPC
+        self._update_ai_disposition(intent)
+
+    def _apply_screen_shake(
+        self,
+        intent: AttackIntent,
+        attack_result: ResolutionResult,
+        attack: Attack,
+        weapon: Item,
+        damage: int,
+    ) -> None:
+        """Apply screen shake when player is hit."""
+        # Screen shake only when PLAYER gets hit
+        # (player's perspective getting jarred)
+        base_damage = damage
+
+        # Different shake for different attack types
+        if weapon.melee_attack and attack is weapon.melee_attack:
+            # Melee attacks - use probability instead of pixel distance
+            shake_intensity = min(
+                base_damage * Combat.MELEE_SHAKE_INTENSITY_MULT,
+                Combat.MELEE_SHAKE_INTENSITY_CAP,
+            )
+            shake_duration = (
+                Combat.MELEE_SHAKE_DURATION_BASE
+                + base_damage * Combat.MELEE_SHAKE_DURATION_MULT
+            )
+        else:
+            # Ranged attacks - lower probability
+            shake_intensity = min(
+                base_damage * Combat.RANGED_SHAKE_INTENSITY_MULT,
+                Combat.RANGED_SHAKE_INTENSITY_CAP,
+            )
+            shake_duration = (
+                Combat.RANGED_SHAKE_DURATION_BASE
+                + base_damage * Combat.RANGED_SHAKE_DURATION_MULT
+            )
+
+        # Extra shake for critical hits against player
+        if attack_result.outcome_tier == OutcomeTier.CRITICAL_SUCCESS:
+            shake_intensity *= Combat.CRIT_SHAKE_INTENSITY_MULT
+            shake_duration *= Combat.CRIT_SHAKE_DURATION_MULT
+
+        publish_event(ScreenShakeEvent(shake_intensity, shake_duration))
+
+    def _update_ai_disposition(self, intent: AttackIntent) -> None:
+        """Update AI disposition if player attacked an NPC."""
+        if (
+            intent.attacker == intent.controller.gw.player
+            and intent.defender != intent.controller.gw.player
+            and isinstance(intent.defender.ai, ai.DispositionBasedAI)
+            and intent.defender.ai.disposition != Disposition.HOSTILE
+        ):
+            intent.defender.ai.disposition = Disposition.HOSTILE
+            publish_event(
+                MessageEvent(
+                    (
+                        f"{intent.defender.name} becomes hostile towards "
+                        f"{intent.attacker.name} due to the attack!"
+                    ),
+                    colors.ORANGE,
+                )
+            )

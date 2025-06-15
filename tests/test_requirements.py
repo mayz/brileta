@@ -7,7 +7,7 @@ from catley import colors
 from catley.controller import Controller
 from catley.environment import tile_types
 from catley.game.actions.base import GameAction
-from catley.game.actions.combat import AttackAction
+from catley.game.actions.combat import AttackIntent
 from catley.game.actions.discovery import ActionDiscovery
 from catley.game.actions.discovery.types import ActionRequirement, CombatIntentCache
 from catley.game.actions.environment import OpenDoorAction
@@ -58,7 +58,7 @@ def test_attack_requirement_handoff() -> None:
     select_opt.execute()
     sm.get_options_for_current_state(cast(Controller, controller), player)
 
-    assert isinstance(controller.queued_action, AttackAction)
+    assert isinstance(controller.queued_action, AttackIntent)
     assert controller.queued_action.defender == melee_target
 
 

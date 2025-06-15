@@ -9,7 +9,7 @@ import tcod
 from catley import colors
 from catley.game import ranges
 from catley.game.actions.base import GameAction
-from catley.game.actions.combat import AttackAction
+from catley.game.actions.combat import AttackIntent
 from catley.game.actions.discovery import (
     ActionCategory,
     ActionDiscovery,
@@ -74,7 +74,7 @@ class ActionBrowserMenu(Menu):
                         continue
                     action = opt.execute()
                     if (
-                        isinstance(action, AttackAction)
+                        isinstance(action, AttackIntent)
                         and action.weapon == cache.weapon
                         and action.attack_mode == cache.attack_mode
                         and action.defender == cache.target
@@ -109,7 +109,7 @@ class ActionBrowserMenu(Menu):
                     (
                         opt
                         for opt in all_actions
-                        if opt.action_class is AttackAction
+                        if opt.action_class is AttackIntent
                         and opt.static_params.get("weapon") == cache.weapon
                         and opt.static_params.get("attack_mode") == cache.attack_mode
                     ),
@@ -202,7 +202,7 @@ class ActionBrowserMenu(Menu):
             result = action_option.execute()
             if isinstance(result, GameAction):
                 self.controller.queue_action(result)
-                if isinstance(result, AttackAction):
+                if isinstance(result, AttackIntent):
                     weapon = result.weapon
                     attack_mode = result.attack_mode
                     if weapon and attack_mode:
@@ -232,7 +232,7 @@ class ActionBrowserMenu(Menu):
             except TypeError:
                 return True
             self.controller.queue_action(action_instance)
-            if isinstance(action_instance, AttackAction):
+            if isinstance(action_instance, AttackIntent):
                 weapon = action_instance.weapon
                 attack_mode = action_instance.attack_mode
                 if weapon and attack_mode:

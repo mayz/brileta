@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from catley.game import ranges
 from catley.game.actions.base import GameAction
-from catley.game.actions.combat import AttackAction
+from catley.game.actions.combat import AttackIntent
 from catley.game.actions.discovery import ActionDiscovery
 from catley.game.actions.discovery.core_discovery import (
     ActionCategory,
@@ -548,7 +548,7 @@ class ActionBrowserStateMachine:
         all_params = dict(self.current_action_option.static_params)
 
         action_param_mapping = {
-            "AttackAction": {ActionRequirement.TARGET_ACTOR: "defender"},
+            "AttackIntent": {ActionRequirement.TARGET_ACTOR: "defender"},
             "OpenDoorAction": {ActionRequirement.TARGET_TILE: ["x", "y"]},
             "CloseDoorAction": {ActionRequirement.TARGET_TILE: ["x", "y"]},
             "DEFAULT": {
@@ -597,7 +597,7 @@ class ActionBrowserStateMachine:
             return
 
         controller.queue_action(action_instance)
-        if isinstance(action_instance, AttackAction):
+        if isinstance(action_instance, AttackIntent):
             weapon = action_instance.weapon
             attack_mode = action_instance.attack_mode
             if weapon and attack_mode:

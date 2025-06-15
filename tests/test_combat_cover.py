@@ -4,7 +4,8 @@ from unittest.mock import patch
 
 from catley.controller import Controller
 from catley.environment import tile_types
-from catley.game.actions.combat import AttackAction
+from catley.game.actions.combat import AttackIntent
+from catley.game.actions.executors.combat import AttackExecutor
 from catley.game.actors import Character
 from catley.game.enums import OutcomeTier
 from catley.game.game_world import GameWorld
@@ -42,12 +43,13 @@ def test_cover_bonus_reduces_hit_chance() -> None:
     assert attack is not None
 
     controller = DummyController(gw=raw_gw)
-    action = AttackAction(cast(Controller, controller), attacker, defender, weapon)
+    intent = AttackIntent(cast(Controller, controller), attacker, defender, weapon)
+    executor = AttackExecutor()
 
     with patch("random.randint", return_value=7):
         result = cast(
             D20ResolutionResult,
-            action._execute_attack_roll(attack, weapon, {}),
+            executor._execute_attack_roll(intent, attack, weapon, {}),
         )
     assert result.outcome_tier in (
         OutcomeTier.FAILURE,

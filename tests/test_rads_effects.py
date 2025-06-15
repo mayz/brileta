@@ -6,7 +6,8 @@ from unittest.mock import patch
 
 from catley import colors
 from catley.controller import Controller
-from catley.game.actions.combat import AttackAction
+from catley.game.actions.combat import AttackIntent
+from catley.game.actions.executors.combat import AttackExecutor
 from catley.game.actors import Character, conditions
 from catley.game.game_world import GameWorld
 from catley.game.items.capabilities import Attack
@@ -41,7 +42,9 @@ class DummyController(Controller):
         self.update_fov_called = True
 
 
-def make_combat_world() -> tuple[DummyController, Character, Character, AttackAction]:
+def make_combat_world() -> tuple[
+    DummyController, Character, Character, AttackIntent, AttackExecutor
+]:
     gw = DummyGameWorld()
     attacker = Character(
         1,
@@ -61,19 +64,21 @@ def make_combat_world() -> tuple[DummyController, Character, Character, AttackAc
     gw.player = attacker
     controller = DummyController(gw=gw)
     weapon = FISTS_TYPE.create()
-    action = AttackAction(controller, attacker, defender, weapon)
-    return controller, attacker, defender, action
+    intent = AttackIntent(controller, attacker, defender, weapon)
+    executor = AttackExecutor()
+    return controller, attacker, defender, intent, executor
 
 
 def test_rads_melee_attack_disadvantage() -> None:
-    controller, attacker, defender, action = make_combat_world()
+    controller, attacker, defender, intent, executor = make_combat_world()
     attacker.conditions.add_condition(conditions.Rads())
-    weapon = cast(Item, action.weapon)
+    weapon = cast(Item, intent.weapon)
     attack = cast(Attack, weapon.melee_attack)
     assert attack is not None
     with patch("random.randint", side_effect=[2, 18]):
         result = cast(
-            D20ResolutionResult, action._execute_attack_roll(attack, weapon, {})
+            D20ResolutionResult,
+            executor._execute_attack_roll(intent, attack, weapon, {}),
         )
     assert result.has_disadvantage
 

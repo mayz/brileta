@@ -11,7 +11,8 @@ from catley.events import (
 )
 from catley.game import ranges
 from catley.game.actions.area_effects import AreaEffectAction
-from catley.game.actions.combat import AttackAction
+from catley.game.actions.combat import AttackIntent
+from catley.game.actions.executors.combat import AttackExecutor
 from catley.game.actors import Character
 from catley.game.enums import OutcomeTier
 from catley.game.game_world import GameWorld
@@ -78,21 +79,23 @@ def _make_world(weapon_key: str):
 
 def test_awkward_weapon_miss_effect() -> None:
     controller, attacker, defender, weapon = _make_world("hunting")
-    action = AttackAction(cast(Controller, controller), attacker, defender, weapon)
+    intent = AttackIntent(cast(Controller, controller), attacker, defender, weapon)
+    executor = AttackExecutor()
     attack = weapon.melee_attack
     assert attack is not None
     result = D20ResolutionResult(outcome_tier=OutcomeTier.FAILURE)
-    action._handle_attack_miss(result, attack, weapon)
+    executor._handle_attack_miss(intent, result, attack, weapon)
     assert any("off balance" in msg for msg in controller.message_log.messages)
 
 
 def test_awkward_weapon_ranged_miss_no_effect() -> None:
     controller, attacker, defender, weapon = _make_world("sniper")
-    action = AttackAction(cast(Controller, controller), attacker, defender, weapon)
+    intent = AttackIntent(cast(Controller, controller), attacker, defender, weapon)
+    executor = AttackExecutor()
     attack = weapon.ranged_attack
     assert attack is not None
     result = D20ResolutionResult(outcome_tier=OutcomeTier.FAILURE)
-    action._handle_attack_miss(result, attack, weapon)
+    executor._handle_attack_miss(intent, result, attack, weapon)
     assert not any("off balance" in msg for msg in controller.message_log.messages)
 
 
