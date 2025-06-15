@@ -1,18 +1,17 @@
 from __future__ import annotations
 
-import functools
-import string
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from catley.game import ranges
 from catley.game.actions.base import GameAction
+from catley.game.actions.combat import AttackAction
 from catley.game.actions.discovery import ActionDiscovery
 from catley.game.actions.discovery.core_discovery import (
     ActionCategory,
     ActionOption,
 )
+from catley.game.actions.discovery.types import ActionRequirement, CombatIntentCache
 from catley.game.actors import Character
-from catley.game.items.capabilities import MeleeAttack, RangedAttack
 from catley.game.items.item_core import Item
 
 if TYPE_CHECKING:
@@ -20,11 +19,14 @@ if TYPE_CHECKING:
 
 
 class ActionBrowserStateMachine:
-    """State machine for navigating the action browser UI."""
+    """Generic requirement-driven state machine for the action browser."""
 
     def __init__(self, action_discovery: ActionDiscovery) -> None:
         self.action_discovery = action_discovery
-        self.ui_state = "main"
+        self.ui_state: str = "main"
+        self.current_action_option: ActionOption | None = None
+        self.fulfilled_requirements: dict[ActionRequirement, Any] = {}
+        # Legacy combat workflow selections
         self.selected_target: Character | None = None
         self.selected_weapon: Item | None = None
         self.selected_attack_mode: str | None = None
@@ -33,216 +35,213 @@ class ActionBrowserStateMachine:
     def get_options_for_current_state(
         self, controller: Controller, actor: Character
     ) -> list[ActionOption]:
-        context = self.action_discovery.context_builder.build_context(controller, actor)
-        all_actions: list[ActionOption] = []
-        all_actions.extend(
-            self.action_discovery.combat_discovery.discover_combat_actions(
-                controller, actor, context
+        """Return the list of action options for the current state."""
+        if self.current_action_option is not None:
+            next_requirement = self._get_next_unfulfilled_requirement()
+            if next_requirement is None:
+                self._execute_completed_action(controller, actor)
+                return []
+            return self._get_options_for_requirement(
+                controller, actor, next_requirement
             )
-        )
-        all_actions.extend(
-            self.action_discovery.item_discovery.discover_item_actions(
-                controller, actor, context
-            )
-        )
-        all_actions.extend(
-            self.action_discovery.environment_discovery.discover_environment_actions(
-                controller, actor, context
-            )
-        )
 
         match self.ui_state:
             case "main":
-                options = self._get_main_options(
-                    controller, actor, context, all_actions
-                )
-                options = self.action_discovery._sort_by_relevance(options, context)
-            case "submenu_items":
-                options = self._get_submenu_options(
-                    controller, actor, context, ActionCategory.ITEMS, all_actions
-                )
-            case "submenu_environment":
-                options = self._get_submenu_options(
-                    controller, actor, context, ActionCategory.ENVIRONMENT, all_actions
-                )
-            case "submenu_social":
-                options = self._get_submenu_options(
-                    controller, actor, context, ActionCategory.SOCIAL, all_actions
-                )
-            case "select_attack_approach":
-                options = self._get_attack_approach_options(controller, actor, context)
+                return self._get_main_menu_options(controller, actor)
+            case "combat":
+                return self._get_combat_category_options(controller, actor)
             case "select_target":
-                options = self._get_target_selection_options(controller, actor, context)
+                return self._get_target_selection_options(controller, actor)
             case "select_weapon":
-                options = self._get_weapon_selection_options(controller, actor, context)
+                return self._get_weapon_selection_options(controller, actor)
             case "weapons_for_target":
-                options = self._get_weapons_for_selected_target(
-                    controller, actor, context
-                )
+                return self._get_weapons_for_selected_target(controller, actor)
             case "targets_for_weapon":
-                options = self._get_targets_for_selected_weapon(
-                    controller, actor, context
-                )
+                return self._get_targets_for_selected_weapon(controller, actor)
+            case "items":
+                return self._get_items_category_options(controller, actor)
+            case "environment":
+                return self._get_environment_category_options(controller, actor)
+            case "social":
+                return self._get_social_category_options(controller, actor)
             case _:
                 self.ui_state = "main"
-                options = self._get_main_options(
-                    controller, actor, context, all_actions
-                )
-                options = self.action_discovery._sort_by_relevance(options, context)
-        return options
+                return self._get_main_menu_options(controller, actor)
 
-    def handle_back_navigation(self, controller: Controller) -> bool:
-        return self._go_back(controller)
-
-    def set_ui_state(self, new_state: str, **kwargs) -> bool:
-        return self._set_ui_state(new_state, **kwargs)
+    # ------------------------------------------------------------------
+    def handle_back_navigation(self) -> bool:
+        return self._go_back()
 
     def reset_state(self) -> None:
+        self.current_action_option = None
+        self.fulfilled_requirements = {}
         self.ui_state = "main"
         self.selected_target = None
         self.selected_weapon = None
         self.selected_attack_mode = None
 
+    def set_current_action(self, action_option: ActionOption) -> bool:
+        self.current_action_option = action_option
+        self.fulfilled_requirements = {}
+        self.selected_target = None
+        self.selected_weapon = None
+        self.selected_attack_mode = None
+        return False
+
     # ------------------------------------------------------------------
-    # Internal state helpers
-    def _get_main_options(
-        self,
-        controller: Controller,
-        actor: Character,
-        context,
-        all_actions: list[ActionOption],
+    # Menu option generation helpers
+    def _get_main_menu_options(
+        self, controller: Controller, actor: Character
     ) -> list[ActionOption]:
-        by_category: dict[ActionCategory, list[ActionOption]] = {}
-        for act in all_actions:
-            by_category.setdefault(act.category, []).append(act)
+        """Show top-level categories that actually contain actions."""
+        all_actions = self.action_discovery.get_all_available_actions(controller, actor)
+        categories_present = {opt.category for opt in all_actions}
 
         options: list[ActionOption] = []
         for label, cats in ActionDiscovery.TOP_LEVEL_CATEGORIES.items():
-            if any(by_category.get(cat) for cat in cats):
-                if cats[0] == ActionCategory.COMBAT:
-                    execute = functools.partial(
-                        self._set_ui_state, "select_attack_approach"
-                    )
-                else:
-                    execute = functools.partial(
-                        self._set_ui_state, f"submenu_{cats[0].name.lower()}"
-                    )
+            if any(cat in categories_present for cat in cats):
+                cat_state = cats[0].name.lower()
                 options.append(
                     ActionOption(
-                        id=label,
+                        id=f"category-{cat_state}",
                         name=label,
-                        description="",
+                        description=f"Browse {cat_state} actions",
                         category=cats[0],
                         action_class=cast(type[GameAction], type(None)),
                         requirements=[],
-                        static_params={},
-                        execute=execute,
+                        execute=lambda s=cat_state: self._set_ui_state(s),
                     )
                 )
+
         return options
 
-    def _get_submenu_options(
-        self,
-        controller: Controller,
-        actor: Character,
-        context,
-        target_category: ActionCategory,
-        all_actions: list[ActionOption],
+    def _get_combat_category_options(
+        self, controller: Controller, actor: Character
     ) -> list[ActionOption]:
-        filtered = [act for act in all_actions if act.category == target_category]
-
-        return [
-            ActionOption(
-                id="back",
-                name="\u2190 Back",
-                description="Return to previous screen",
-                category=target_category,
-                action_class=cast(type[GameAction], type(None)),
-                requirements=[],
-                static_params={},
-                hotkey="escape",
-                execute=functools.partial(self._go_back, controller),
-            ),
-            *filtered,
-        ]
-
-    def _get_attack_approach_options(
-        self, controller: Controller, actor: Character, context
-    ) -> list[ActionOption]:
-        options: list[ActionOption] = []
+        """Show T/W choice directly instead of intermediate step."""
+        context = self.action_discovery.context_builder.build_context(controller, actor)
+        options = [self._get_back_option()]
 
         if context.nearby_actors:
             options.append(
                 ActionOption(
-                    id="approach-target",
+                    id="attack-target-first",
                     name="Attack a target...",
                     description="Select target, then choose how to attack",
                     category=ActionCategory.COMBAT,
                     action_class=cast(type[GameAction], type(None)),
                     requirements=[],
-                    static_params={},
                     hotkey="t",
-                    execute=functools.partial(self._set_ui_state, "select_target"),
+                    execute=lambda: self._set_ui_state("select_target"),
                 )
             )
+
+        if self._has_usable_weapons(controller, actor, context):
             options.append(
                 ActionOption(
-                    id="approach-weapon",
-                    name="Attack with a weapon...",
+                    id="attack-weapon-first",
+                    name="Attack with weapon...",
                     description="Select weapon/attack mode, then choose target",
                     category=ActionCategory.COMBAT,
                     action_class=cast(type[GameAction], type(None)),
                     requirements=[],
-                    static_params={},
                     hotkey="w",
-                    execute=functools.partial(self._set_ui_state, "select_weapon"),
+                    execute=lambda: self._set_ui_state("select_weapon"),
                 )
             )
 
-        options.insert(
-            0,
-            ActionOption(
-                id="back",
-                name="\u2190 Back",
-                description="Return to previous screen",
-                category=ActionCategory.COMBAT,
-                action_class=cast(type[GameAction], type(None)),
-                requirements=[],
-                static_params={},
-                hotkey="escape",
-                execute=functools.partial(self._go_back, controller),
-            ),
+        return options
+
+    def _get_items_category_options(
+        self, controller: Controller, actor: Character
+    ) -> list[ActionOption]:
+        options = [self._get_back_option()]
+        options.extend(
+            self.action_discovery.get_options_for_category(
+                controller, actor, ActionCategory.ITEMS
+            )
         )
         return options
 
-    def _get_target_selection_options(
-        self, controller: Controller, actor: Character, context
+    def _get_environment_category_options(
+        self, controller: Controller, actor: Character
     ) -> list[ActionOption]:
-        options: list[ActionOption] = [
-            ActionOption(
-                id="back",
-                name="\u2190 Back",
-                description="Return to previous screen",
-                category=ActionCategory.COMBAT,
-                action_class=cast(type[GameAction], type(None)),
-                requirements=[],
-                static_params={},
-                hotkey="escape",
-                execute=functools.partial(self._go_back, controller),
+        options = [self._get_back_option()]
+        options.extend(
+            self.action_discovery.get_options_for_category(
+                controller, actor, ActionCategory.ENVIRONMENT
             )
-        ]
-        letters = string.ascii_lowercase
-        sorted_targets = sorted(
-            context.nearby_actors,
-            key=lambda t: ranges.calculate_distance(actor.x, actor.y, t.x, t.y),
         )
-        for i, target in enumerate(sorted_targets):
-            if target == actor or not isinstance(target, Character):
-                continue
-            if not target.health.is_alive():
-                continue
+        return options
+
+    def _get_social_category_options(
+        self, controller: Controller, actor: Character
+    ) -> list[ActionOption]:
+        options = [self._get_back_option()]
+        options.extend(
+            self.action_discovery.get_options_for_category(
+                controller, actor, ActionCategory.SOCIAL
+            )
+        )
+        return options
+
+    def _has_usable_weapons(
+        self, controller: Controller, actor: Character, context
+    ) -> bool:
+        """Return True if the actor has any usable weapons in the current context."""
+        equipped_weapons = [w for w in actor.inventory.attack_slots if w]
+        if not equipped_weapons:
+            return True  # Fists always available
+
+        for weapon in equipped_weapons:
+            if weapon.melee_attack and any(
+                ranges.calculate_distance(actor.x, actor.y, t.x, t.y) == 1
+                for t in context.nearby_actors
+                if t != actor and t.health.is_alive()
+            ):
+                return True
+            if (
+                weapon.ranged_attack
+                and weapon.ranged_attack.current_ammo > 0
+                and any(
+                    ranges.get_range_modifier(
+                        weapon,
+                        ranges.get_range_category(
+                            ranges.calculate_distance(actor.x, actor.y, t.x, t.y),
+                            weapon,
+                        ),
+                    )
+                    is not None
+                    for t in context.nearby_actors
+                    if t != actor and t.health.is_alive()
+                )
+            ):
+                return True
+        return False
+
+    def _get_target_selection_options(
+        self, controller: Controller, actor: Character
+    ) -> list[ActionOption]:
+        """Show targets for selection (target-first workflow)."""
+        context = self.action_discovery.context_builder.build_context(controller, actor)
+        options = [self._get_back_option()]
+
+        valid_targets = [
+            t
+            for t in context.nearby_actors
+            if t != actor
+            and isinstance(t, Character)
+            and t.health.is_alive()
+            and controller.gw.game_map.visible[t.x, t.y]
+        ]
+
+        for target in sorted(
+            valid_targets,
+            key=lambda t: ranges.calculate_distance(actor.x, actor.y, t.x, t.y),
+        ):
             distance = ranges.calculate_distance(actor.x, actor.y, target.x, target.y)
             desc = "adjacent" if distance == 1 else "close" if distance <= 3 else "far"
+
             options.append(
                 ActionOption(
                     id=f"target-{target.name}",
@@ -251,131 +250,98 @@ class ActionBrowserStateMachine:
                     category=ActionCategory.COMBAT,
                     action_class=cast(type[GameAction], type(None)),
                     requirements=[],
-                    static_params={},
-                    hotkey=letters[i] if i < len(letters) else None,
-                    execute=functools.partial(
-                        self._set_ui_state, "weapons_for_target", target=target
-                    ),
+                    execute=lambda t=target: self._select_target_then_weapon(t),
                 )
             )
+
         return options
 
+    def _select_target_then_weapon(self, target: Character) -> bool:
+        """Target selected, now show valid weapons for that target."""
+        self.selected_target = target
+        self.ui_state = "weapons_for_target"
+        return False
+
     def _get_weapon_selection_options(
-        self, controller: Controller, actor: Character, context
+        self, controller: Controller, actor: Character
     ) -> list[ActionOption]:
-        options: list[ActionOption] = [
-            ActionOption(
-                id="back",
-                name="\u2190 Back",
-                description="Return to previous screen",
-                category=ActionCategory.COMBAT,
-                action_class=cast(type[GameAction], type(None)),
-                requirements=[],
-                static_params={},
-                hotkey="escape",
-                execute=functools.partial(self._go_back, controller),
-            )
-        ]
-        equipped_weapons = [w for w in actor.inventory.attack_slots if w is not None]
+        """Show weapons for selection (weapon-first workflow)."""
+        context = self.action_discovery.context_builder.build_context(controller, actor)
+        options = [self._get_back_option()]
+
+        equipped_weapons = [w for w in actor.inventory.attack_slots if w]
         if not equipped_weapons:
             from catley.game.items.item_types import FISTS_TYPE
 
             equipped_weapons = [FISTS_TYPE.create()]
 
-        option_index = 0
-        letters = string.ascii_lowercase
         for weapon in equipped_weapons:
-            if weapon.melee_attack:
-                has_adjacent = any(
-                    t
-                    for t in context.nearby_actors
-                    if t != actor
-                    and isinstance(t, Character)
-                    and t.health.is_alive()
-                    and ranges.calculate_distance(actor.x, actor.y, t.x, t.y) == 1
-                )
-                if has_adjacent:
-                    melee = cast(MeleeAttack, weapon.melee_attack)
-                    verb = melee._spec.verb
-                    options.append(
-                        ActionOption(
-                            id=f"weapon-melee-{weapon.name}",
-                            name=f"{weapon.name} ({verb.title()})",
-                            description=f"Melee attack using {weapon.name}",
-                            category=ActionCategory.COMBAT,
-                            action_class=cast(type[GameAction], type(None)),
-                            requirements=[],
-                            static_params={},
-                            hotkey=letters[option_index]
-                            if option_index < len(letters)
-                            else None,
-                            execute=functools.partial(
-                                self._set_ui_state,
-                                "targets_for_weapon",
-                                weapon=weapon,
-                                attack_mode="melee",
-                            ),
-                        )
+            if weapon.melee_attack and any(
+                ranges.calculate_distance(actor.x, actor.y, t.x, t.y) == 1
+                for t in context.nearby_actors
+                if t != actor and t.health.is_alive()
+            ):
+                options.append(
+                    ActionOption(
+                        id=f"weapon-melee-{weapon.name}",
+                        name=f"{weapon.name} (Melee)",
+                        description=f"Melee attack using {weapon.name}",
+                        category=ActionCategory.COMBAT,
+                        action_class=cast(type[GameAction], type(None)),
+                        requirements=[],
+                        execute=lambda w=weapon: self._select_weapon_then_target(
+                            w, "melee"
+                        ),
                     )
-                    option_index += 1
+                )
+
             if weapon.ranged_attack and weapon.ranged_attack.current_ammo > 0:
-                has_ranged_targets = any(
-                    t
-                    for t in context.nearby_actors
-                    if t != actor
-                    and isinstance(t, Character)
-                    and t.health.is_alive()
-                    and ranges.get_range_category(
-                        ranges.calculate_distance(actor.x, actor.y, t.x, t.y), weapon
+                has_valid_targets = any(
+                    ranges.get_range_modifier(
+                        weapon,
+                        ranges.get_range_category(
+                            ranges.calculate_distance(actor.x, actor.y, t.x, t.y),
+                            weapon,
+                        ),
                     )
-                    != "out_of_range"
+                    is not None
+                    for t in context.nearby_actors
+                    if t != actor and t.health.is_alive()
                 )
-                if has_ranged_targets:
-                    ranged = cast(RangedAttack, weapon.ranged_attack)
-                    verb = ranged._spec.verb
+                if has_valid_targets:
                     options.append(
                         ActionOption(
                             id=f"weapon-ranged-{weapon.name}",
-                            name=f"{weapon.name} ({verb.title()})",
+                            name=f"{weapon.name} (Ranged)",
                             description=f"Ranged attack using {weapon.name}",
                             category=ActionCategory.COMBAT,
                             action_class=cast(type[GameAction], type(None)),
                             requirements=[],
-                            static_params={},
-                            hotkey=letters[option_index]
-                            if option_index < len(letters)
-                            else None,
-                            execute=functools.partial(
-                                self._set_ui_state,
-                                "targets_for_weapon",
-                                weapon=weapon,
-                                attack_mode="ranged",
+                            execute=lambda w=weapon: self._select_weapon_then_target(
+                                w, "ranged"
                             ),
                         )
                     )
-                    option_index += 1
+
         return options
 
+    def _select_weapon_then_target(self, weapon: Item, mode: str) -> bool:
+        """Weapon selected, now choose a target."""
+        self.selected_weapon = weapon
+        self.selected_attack_mode = mode
+        self.ui_state = "targets_for_weapon"
+        return False
+
     def _get_weapons_for_selected_target(
-        self, controller: Controller, actor: Character, context
+        self, controller: Controller, actor: Character
     ) -> list[ActionOption]:
+        """Show weapons valid for the chosen target."""
         if not self.selected_target:
             self.ui_state = "select_target"
             return []
 
-        options = [
-            ActionOption(
-                id="back",
-                name="\u2190 Back",
-                description="Return to previous screen",
-                category=ActionCategory.COMBAT,
-                action_class=cast(type[GameAction], type(None)),
-                requirements=[],
-                static_params={},
-                hotkey="escape",
-                execute=functools.partial(self._go_back, controller),
-            )
-        ]
+        context = self.action_discovery.context_builder.build_context(controller, actor)
+        options = [self._get_back_option()]
         options.extend(
             self.action_discovery.combat_discovery.get_combat_options_for_target(
                 controller, actor, self.selected_target, context
@@ -384,37 +350,27 @@ class ActionBrowserStateMachine:
         return options
 
     def _get_targets_for_selected_weapon(
-        self, controller: Controller, actor: Character, context
+        self, controller: Controller, actor: Character
     ) -> list[ActionOption]:
+        """Show targets valid for the chosen weapon and mode."""
         weapon = self.selected_weapon
         mode = self.selected_attack_mode
         if not weapon or not mode:
             self.ui_state = "select_weapon"
             return []
 
-        options: list[ActionOption] = [
-            ActionOption(
-                id="back",
-                name="\u2190 Back",
-                description="Return to previous screen",
-                category=ActionCategory.COMBAT,
-                action_class=cast(type[GameAction], type(None)),
-                requirements=[],
-                static_params={},
-                hotkey="escape",
-                execute=functools.partial(self._go_back, controller),
-            )
-        ]
+        context = self.action_discovery.context_builder.build_context(controller, actor)
+        options = [self._get_back_option()]
         sorted_targets = sorted(
             context.nearby_actors,
             key=lambda t: ranges.calculate_distance(actor.x, actor.y, t.x, t.y),
         )
+        gm = controller.gw.game_map
         for target in sorted_targets:
             if target == actor or not isinstance(target, Character):
                 continue
             if not target.health.is_alive():
                 continue
-            gm = controller.gw.game_map
             if not gm.visible[target.x, target.y]:
                 continue
             if not ranges.has_line_of_sight(gm, actor.x, actor.y, target.x, target.y):
@@ -436,11 +392,14 @@ class ActionBrowserStateMachine:
                         category=ActionCategory.COMBAT,
                         action_class=cast(type[GameAction], type(None)),
                         requirements=[],
-                        static_params={},
                         success_probability=prob,
-                        execute=lambda t=target,
-                        w=weapon: self.action_discovery.factory.create_melee_attack(
-                            controller, actor, t, w
+                        execute=lambda t=target, w=weapon: (
+                            self.action_discovery.factory.create_melee_attack(
+                                controller,
+                                actor,
+                                t,
+                                w,
+                            )
                         ),
                     )
                 )
@@ -468,14 +427,17 @@ class ActionBrowserStateMachine:
                             category=ActionCategory.COMBAT,
                             action_class=cast(type[GameAction], type(None)),
                             requirements=[],
-                            static_params={},
                             success_probability=0.0,
                         )
                     )
                     continue
                 prob = (
                     self.action_discovery.context_builder.calculate_combat_probability(
-                        controller, actor, target, "observation", range_mods
+                        controller,
+                        actor,
+                        target,
+                        "observation",
+                        range_mods,
                     )
                 )
                 options.append(
@@ -488,34 +450,285 @@ class ActionBrowserStateMachine:
                         category=ActionCategory.COMBAT,
                         action_class=cast(type[GameAction], type(None)),
                         requirements=[],
-                        static_params={},
                         success_probability=prob,
-                        execute=lambda t=target,
-                        w=weapon: self.action_discovery.factory.create_ranged_attack(
-                            controller, actor, t, w
+                        execute=lambda t=target, w=weapon: (
+                            self.action_discovery.factory.create_ranged_attack(
+                                controller,
+                                actor,
+                                t,
+                                w,
+                            )
                         ),
                     )
                 )
+
         return options
 
-    # Navigation helpers
-    def _go_back(self, controller: Controller) -> bool:
-        if self.ui_state in [
-            "submenu_items",
-            "submenu_environment",
-            "submenu_social",
+    def _get_back_option(self) -> ActionOption:
+        return ActionOption(
+            id="back",
+            name="\u2190 Back",
+            description="Return to previous screen",
+            category=ActionCategory.MOVEMENT,
+            action_class=cast(type[GameAction], type(None)),
+            requirements=[],
+            execute=lambda: self._go_back(),
+        )
+
+    def _get_next_unfulfilled_requirement(self) -> ActionRequirement | None:
+        if not self.current_action_option:
+            return None
+
+        priority = [
+            ActionRequirement.TARGET_ACTOR,
+            ActionRequirement.ITEM_FROM_INVENTORY,
+            ActionRequirement.TARGET_TILE,
+        ]
+
+        for req_type in priority:
+            if (
+                req_type in self.current_action_option.requirements
+                and req_type not in self.fulfilled_requirements
+            ):
+                return req_type
+
+        for requirement in self.current_action_option.requirements:
+            if requirement not in self.fulfilled_requirements:
+                return requirement
+        return None
+
+    def _get_options_for_requirement(
+        self, controller: Controller, actor: Character, requirement: ActionRequirement
+    ) -> list[ActionOption]:
+        options = [
+            ActionOption(
+                id="back",
+                name="\u2190 Back",
+                description="Return to action selection",
+                category=ActionCategory.MOVEMENT,
+                action_class=cast(type[GameAction], type(None)),
+                requirements=[],
+                execute=lambda: self._go_back(),
+            )
+        ]
+
+        match requirement:
+            case ActionRequirement.TARGET_ACTOR:
+                options.extend(self._get_target_actor_options(controller, actor))
+            case ActionRequirement.TARGET_TILE:
+                options.extend(self._get_target_tile_options(controller, actor))
+            case ActionRequirement.ITEM_FROM_INVENTORY:
+                options.extend(self._get_inventory_item_options(controller, actor))
+            case _:
+                print(f"Warning: Unknown requirement type: {requirement}")
+
+        if len(options) == 1:
+            options.append(
+                ActionOption(
+                    id="none",
+                    name="(no valid options)",
+                    description="",
+                    category=ActionCategory.MOVEMENT,
+                    action_class=cast(type[GameAction], type(None)),
+                    requirements=[],
+                )
+            )
+
+        return options
+
+    def _execute_completed_action(
+        self, controller: Controller, actor: Character
+    ) -> None:
+        if (
+            not self.current_action_option
+            or not self.current_action_option.action_class
+        ):
+            return
+
+        all_params = dict(self.current_action_option.static_params)
+
+        action_param_mapping = {
+            "AttackAction": {ActionRequirement.TARGET_ACTOR: "defender"},
+            "OpenDoorAction": {ActionRequirement.TARGET_TILE: ["x", "y"]},
+            "CloseDoorAction": {ActionRequirement.TARGET_TILE: ["x", "y"]},
+            "DEFAULT": {
+                ActionRequirement.TARGET_ACTOR: "target",
+                ActionRequirement.TARGET_TILE: "target_tile",
+                ActionRequirement.ITEM_FROM_INVENTORY: "item",
+            },
+        }
+
+        mapping = action_param_mapping.get(
+            self.current_action_option.action_class.__name__,
+            action_param_mapping["DEFAULT"],
+        )
+
+        for req_type, value in self.fulfilled_requirements.items():
+            # Validate requirement value before applying
+            if req_type is ActionRequirement.TARGET_ACTOR and (
+                not value.health.is_alive()
+                or not controller.gw.game_map.visible[value.x, value.y]
+            ):
+                print("Target no longer valid")
+                self.reset_state()
+                return
+            if (
+                req_type is ActionRequirement.ITEM_FROM_INVENTORY
+                and value not in actor.inventory
+            ):
+                print("Item no longer available")
+                self.reset_state()
+                return
+
+            param = mapping.get(req_type)
+            if isinstance(param, list):
+                try:
+                    all_params[param[0]] = value[0]
+                    all_params[param[1]] = value[1]
+                except Exception:
+                    pass
+            elif param:
+                all_params[param] = value
+
+        try:
+            action_instance = self.current_action_option.action_class(
+                controller, actor, **all_params
+            )
+        except TypeError as exc:  # pragma: no cover - runtime feedback only
+            print(f"Action init error: {exc}")
+            self.reset_state()
+            return
+
+        controller.queue_action(action_instance)
+        if isinstance(action_instance, AttackAction):
+            weapon = action_instance.weapon
+            attack_mode = action_instance.attack_mode
+            if weapon and attack_mode:
+                controller.combat_intent_cache = CombatIntentCache(
+                    weapon=weapon,
+                    attack_mode=attack_mode,
+                    target=action_instance.defender,
+                )
+        else:
+            controller.combat_intent_cache = None
+
+        self.reset_state()
+
+    # ------------------------------------------------------------------
+    # Requirement-specific option builders
+    def _get_target_actor_options(
+        self, controller: Controller, actor: Character
+    ) -> list[ActionOption]:
+        context = self.action_discovery.context_builder.build_context(controller, actor)
+        options: list[ActionOption] = []
+
+        gm = controller.gw.game_map
+        for target in context.nearby_actors:
+            if target == actor or not isinstance(target, Character):
+                continue
+            if not target.health.is_alive():
+                continue
+            if not gm.visible[target.x, target.y]:
+                continue
+
+            distance = ranges.calculate_distance(actor.x, actor.y, target.x, target.y)
+            desc = "adjacent" if distance == 1 else "close" if distance <= 3 else "far"
+
+            options.append(
+                ActionOption(
+                    id=f"select-target-{target.name}",
+                    name=f"{target.name} ({desc})",
+                    description=f"Select {target.name} as target",
+                    category=ActionCategory.COMBAT,
+                    action_class=cast(type[GameAction], type(None)),
+                    requirements=[],
+                    execute=lambda t=target: self._fulfill_requirement(
+                        ActionRequirement.TARGET_ACTOR, t
+                    ),
+                )
+            )
+
+        return options
+
+    def _get_target_tile_options(
+        self, controller: Controller, actor: Character
+    ) -> list[ActionOption]:
+        options: list[ActionOption] = []
+
+        gm = controller.gw.game_map
+        for dx, dy in [
+            (-1, 0),
+            (1, 0),
+            (0, -1),
+            (0, 1),
+            (-1, -1),
+            (-1, 1),
+            (1, -1),
+            (1, 1),
         ]:
+            tx, ty = actor.x + dx, actor.y + dy
+            if 0 <= tx < gm.width and 0 <= ty < gm.height and gm.visible[tx, ty]:
+                options.append(
+                    ActionOption(
+                        id=f"select-tile-{tx}-{ty}",
+                        name=f"Tile ({tx}, {ty})",
+                        description=f"Select tile at ({tx}, {ty})",
+                        category=ActionCategory.ENVIRONMENT,
+                        action_class=cast(type[GameAction], type(None)),
+                        requirements=[],
+                        execute=lambda x=tx, y=ty: self._fulfill_requirement(
+                            ActionRequirement.TARGET_TILE, (x, y)
+                        ),
+                    )
+                )
+
+        return options
+
+    def _get_inventory_item_options(
+        self, controller: Controller, actor: Character
+    ) -> list[ActionOption]:
+        options: list[ActionOption] = []
+        for item in actor.inventory:
+            if not hasattr(item, "name"):
+                continue
+            options.append(
+                ActionOption(
+                    id=f"select-item-{item.name}",
+                    name=f"{item.name}",
+                    description=f"Select {item.name}",
+                    category=ActionCategory.ITEMS,
+                    action_class=cast(type[GameAction], type(None)),
+                    requirements=[],
+                    execute=lambda i=item: self._fulfill_requirement(
+                        ActionRequirement.ITEM_FROM_INVENTORY, i
+                    ),
+                )
+            )
+        return options
+
+    # ------------------------------------------------------------------
+    # State management helpers
+    def _fulfill_requirement(self, requirement: ActionRequirement, value: Any) -> bool:
+        self.fulfilled_requirements[requirement] = value
+        return False
+
+    def _go_back(self) -> bool:
+        if self.fulfilled_requirements:
+            last_requirement = list(self.fulfilled_requirements.keys())[-1]
+            del self.fulfilled_requirements[last_requirement]
+        elif self.current_action_option is not None:
+            self.current_action_option = None
+            self.fulfilled_requirements = {}
+        elif self.ui_state in ["items", "environment", "social", "combat"]:
             self.ui_state = "main"
             self.selected_target = None
             self.selected_weapon = None
             self.selected_attack_mode = None
-        elif self.ui_state == "select_attack_approach":
-            self.ui_state = "main"
         elif self.ui_state == "select_target":
-            self.ui_state = "select_attack_approach"
+            self.ui_state = "combat"
             self.selected_target = None
         elif self.ui_state == "select_weapon":
-            self.ui_state = "select_attack_approach"
+            self.ui_state = "combat"
             self.selected_weapon = None
             self.selected_attack_mode = None
         elif self.ui_state == "weapons_for_target":
@@ -525,19 +738,12 @@ class ActionBrowserStateMachine:
         elif self.ui_state == "targets_for_weapon":
             self.ui_state = "select_weapon"
             self.selected_target = None
-        else:
+        elif self.ui_state != "main":
             self.ui_state = "main"
-            self.selected_target = None
-            self.selected_weapon = None
-            self.selected_attack_mode = None
+        else:
+            self.reset_state()
         return False
 
-    def _set_ui_state(self, new_state: str, **kwargs) -> bool:
+    def _set_ui_state(self, new_state: str) -> bool:
         self.ui_state = new_state
-        if "target" in kwargs:
-            self.selected_target = kwargs["target"]
-        if "weapon" in kwargs:
-            self.selected_weapon = kwargs["weapon"]
-        if "attack_mode" in kwargs:
-            self.selected_attack_mode = kwargs["attack_mode"]
         return False
