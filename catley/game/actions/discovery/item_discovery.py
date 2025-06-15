@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from catley.game.actions.base import GameAction, GameActionResult
 from catley.game.actions.combat import ReloadAction
+
+# Optional action classes that may not yet exist
+from catley.game.actions.misc import PickupAction, SwitchWeaponAction  # type: ignore
 from catley.game.actions.recovery import (
     ComfortableSleepAction,
     RestAction,
@@ -11,28 +13,6 @@ from catley.game.actions.recovery import (
     UseConsumableAction,
     is_safe_location,
 )
-
-# Optional action classes that may not yet exist
-try:
-    from catley.game.actions.misc import (  # type: ignore
-        PickupAction,
-        SwitchWeaponAction,
-    )
-except Exception:  # pragma: no cover - placeholder fallback
-
-    class PickupAction(GameAction):
-        """Placeholder for unimplemented pickup action."""
-
-        def execute(self) -> GameActionResult | None:  # pragma: no cover - placeholder
-            return None
-
-    class SwitchWeaponAction(GameAction):
-        """Placeholder for unimplemented weapon switch action."""
-
-        def execute(self) -> GameActionResult | None:  # pragma: no cover - placeholder
-            return None
-
-
 from catley.game.actors import Character
 from catley.game.items.item_core import Item
 

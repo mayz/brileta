@@ -51,7 +51,7 @@ class ActionBrowserMenu(Menu):
         cache = self.controller.combat_intent_cache
         if cache:
             gm = self.controller.gw.game_map
-            repeat_option = None
+            repeat_option: ActionOption | None = None
             if (
                 cache.target
                 and cache.target.health.is_alive()
@@ -101,29 +101,44 @@ class ActionBrowserMenu(Menu):
                 )
             else:
                 # Always offer to continue with the cached weapon/mode.
-                # The target selection screen will show if no targets remain.
-                self.add_option(
-                    MenuOption(
-                        key=None,
-                        text=(
-                            f"[Enter] Continue: {cache.attack_mode.title()} "
-                            f"with {cache.weapon.name}..."
-                        ),
-                        action=functools.partial(
-                            self.action_discovery._set_ui_state,
-                            "targets_for_weapon",
-                            weapon=cache.weapon,
-                            attack_mode=cache.attack_mode,
-                        ),
-                        color=colors.WHITE,
-                        is_primary_action=False,
-                    )
+                # Find the corresponding generic action option.
+                all_actions = self.discovery.get_all_available_actions(
+                    self.controller, player
                 )
-                self.add_option(
-                    MenuOption(
-                        key=None, text="-" * 40, enabled=False, is_primary_action=False
-                    )
+                continue_opt = next(
+                    (
+                        opt
+                        for opt in all_actions
+                        if opt.action_class is AttackAction
+                        and opt.static_params.get("weapon") == cache.weapon
+                        and opt.static_params.get("attack_mode") == cache.attack_mode
+                    ),
+                    None,
                 )
+
+                if continue_opt is not None:
+                    self.add_option(
+                        MenuOption(
+                            key=None,
+                            text=(
+                                f"[Enter] Continue: {cache.attack_mode.title()} "
+                                f"with {cache.weapon.name}..."
+                            ),
+                            action=functools.partial(
+                                self._execute_action_option, continue_opt
+                            ),
+                            color=colors.WHITE,
+                            is_primary_action=False,
+                        )
+                    )
+                    self.add_option(
+                        MenuOption(
+                            key=None,
+                            text="-" * 40,
+                            enabled=False,
+                            is_primary_action=False,
+                        )
+                    )
 
         action_options = action_options_for_display
 
@@ -182,28 +197,60 @@ class ActionBrowserMenu(Menu):
 
     def _execute_action_option(self, action_option: ActionOption) -> bool:
         """Execute an action option. Returns True if menu should close."""
-        execute_fn = action_option.execute
-        if execute_fn is not None:
-            result = execute_fn()
+        # 1. Legacy callbacks for navigation or compatibility
+        if hasattr(action_option, "execute") and action_option.execute:
+            result = action_option.execute()
             if isinstance(result, GameAction):
                 self.controller.queue_action(result)
                 if isinstance(result, AttackAction):
                     weapon = result.weapon
                     attack_mode = result.attack_mode
-                    if weapon is not None and attack_mode is not None:
-                        # A combat action was taken. Create and set the cache.
+                    if weapon and attack_mode:
                         self.controller.combat_intent_cache = CombatIntentCache(
                             weapon=weapon,
                             attack_mode=attack_mode,
                             target=result.defender,
                         )
                 else:
-                    # A non-combat action was taken. Clear the cache.
                     self.controller.combat_intent_cache = None
                 return True
-            # This was a state change (e.g., entering a sub-menu), not a final action
+            return bool(result)
+
+        # 2. Requirement-based actions
+        if action_option.requirements:
+            self.action_discovery.set_current_action(action_option)
             return False
-        # This was likely a "Back" button or similar UI-only action
+
+        # 3. Simple actions executed immediately
+        if action_option.action_class:
+            try:
+                action_instance = action_option.action_class(
+                    self.controller,
+                    self.controller.gw.player,
+                    **action_option.static_params,
+                )
+            except TypeError as exc:  # pragma: no cover - runtime
+                print(f"Action init error: {exc}")
+                return True
+            self.controller.queue_action(action_instance)
+            if isinstance(action_instance, AttackAction):
+                weapon = action_instance.weapon
+                attack_mode = action_instance.attack_mode
+                if weapon and attack_mode:
+                    self.controller.combat_intent_cache = CombatIntentCache(
+                        weapon=weapon,
+                        attack_mode=attack_mode,
+                        target=action_instance.defender,
+                    )
+            else:
+                self.controller.combat_intent_cache = None
+            return True
+
+        # 4. Fallback to execute if defined
+        if hasattr(action_option, "execute") and action_option.execute:
+            result = action_option.execute()
+            return bool(result)
+
         return True
 
     def _get_category_color(self, category: ActionCategory) -> colors.Color:
@@ -225,8 +272,12 @@ class ActionBrowserMenu(Menu):
         match event:
             case tcod.event.KeyDown(sym=tcod.event.KeySym.ESCAPE):
                 # Navigate back in the state machine
-                self.action_discovery._go_back(self.controller)
-                if self.action_discovery.ui_state == "main":
+                self.action_discovery._go_back()
+                if (
+                    self.action_discovery.ui_state == "main"
+                    and self.action_discovery.current_action_option is None
+                    and not self.action_discovery.fulfilled_requirements
+                ):
                     self.hide()
                 else:
                     self.populate_options()
