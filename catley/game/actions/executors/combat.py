@@ -14,6 +14,7 @@ from catley.events import (
 )
 from catley.game import ranges
 from catley.game.actions.base import GameActionResult
+from catley.game.actions.executors.base import ActionExecutor
 from catley.game.actors import Character, ai, status_effects
 from catley.game.consequences import (
     AttackConsequenceGenerator,
@@ -32,26 +33,32 @@ if TYPE_CHECKING:
     from catley.game.actions.combat import AttackIntent, ReloadIntent
 
 
-class AttackExecutor:
+class AttackExecutor(ActionExecutor):
     """Executes attack intents by applying all combat logic."""
 
-    def execute(self, intent: AttackIntent) -> GameActionResult | None:
+    def __init__(self) -> None:
+        """Create an AttackExecutor without requiring a controller."""
+        pass
+
+    def execute(self, intent: AttackIntent) -> GameActionResult | None:  # type: ignore[override]
         # 1. Determine what attack method to use
         attack, weapon = self._determine_attack_method(intent)
         if not attack:
-            return None
+            return GameActionResult(succeeded=False)
 
         # 2. Validate the attack can be performed
         range_modifiers = self._validate_attack(intent, attack, weapon)
         if range_modifiers is None:
-            return None  # Validation failed, error messages already logged
+            return GameActionResult(
+                succeeded=False
+            )  # Validation failed, error messages already logged
 
         # 3. Perform the attack roll and immediate effects
         attack_result = self._execute_attack_roll(
             intent, attack, weapon, range_modifiers
         )
         if attack_result is None:
-            return None
+            return GameActionResult(succeeded=False)
 
         # 4. Determine combat consequences based on the resolution result
         outcome = combat_arbiter.determine_outcome(
@@ -543,13 +550,17 @@ class AttackExecutor:
             )
 
 
-class ReloadExecutor:
+class ReloadExecutor(ActionExecutor):
     """Executes reload intents."""
 
-    def execute(self, intent: ReloadIntent) -> GameActionResult | None:
+    def __init__(self) -> None:
+        """Create a ReloadExecutor without requiring a controller."""
+        pass
+
+    def execute(self, intent: ReloadIntent) -> GameActionResult | None:  # type: ignore[override]
         ranged_attack = intent.weapon.ranged_attack
         if not ranged_attack:
-            return None
+            return GameActionResult(succeeded=False)
 
         ammo_item = None
         for item in intent.actor.inventory:
@@ -577,4 +588,4 @@ class ReloadExecutor:
                     colors.RED,
                 )
             )
-        return None
+        return GameActionResult()

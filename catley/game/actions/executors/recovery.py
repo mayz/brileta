@@ -29,15 +29,15 @@ class UseConsumableExecutor(ActionExecutor):
             publish_event(
                 MessageEvent(f"{intent.item.name} cannot be used", colors.RED)
             )
-            return None
+            return GameActionResult(succeeded=False)
 
         inventory = intent.actor.inventory
         if not inventory:
-            return None
+            return GameActionResult(succeeded=False)
 
         if not inventory.remove_from_inventory(intent.item):
             publish_event(MessageEvent("Item not found in inventory", colors.RED))
-            return None
+            return GameActionResult(succeeded=False)
 
         success = intent.item.consumable_effect.consume(intent.actor, intent.controller)
 
@@ -62,10 +62,10 @@ class RestExecutor(ActionExecutor):
         safe, reason = is_safe_location(intent.actor)
         if not safe:
             publish_event(MessageEvent(f"Cannot rest: {reason}", colors.RED))
-            return None
+            return GameActionResult(succeeded=False)
 
         if not intent.actor.health:
-            return None
+            return GameActionResult(succeeded=False)
 
         if intent.actor.health.ap == 0:
             publish_event(
@@ -74,7 +74,7 @@ class RestExecutor(ActionExecutor):
                     colors.YELLOW,
                 )
             )
-            return None
+            return GameActionResult(succeeded=False)
 
         if intent.actor.health.ap < intent.actor.health.max_ap:
             intent.actor.health.ap = intent.actor.health.max_ap
@@ -97,7 +97,7 @@ class SleepExecutor(ActionExecutor):
         safe, reason = is_safe_location(intent.actor)
         if not safe:
             publish_event(MessageEvent(f"Cannot sleep: {reason}", colors.RED))
-            return None
+            return GameActionResult(succeeded=False)
 
         if intent.actor.health:
             intent.actor.health.hp = intent.actor.health.max_hp
@@ -128,7 +128,7 @@ class ComfortableSleepExecutor(ActionExecutor):
         safe, reason = is_safe_location(intent.actor)
         if not safe:
             publish_event(MessageEvent(f"Cannot sleep: {reason}", colors.RED))
-            return None
+            return GameActionResult(succeeded=False)
 
         if intent.actor.health:
             intent.actor.health.hp = intent.actor.health.max_hp

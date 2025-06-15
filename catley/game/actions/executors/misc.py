@@ -37,4 +37,4 @@ class SwitchWeaponExecutor(ActionExecutor):
         inventory = getattr(intent.actor, "inventory", None)
         if inventory:
             inventory.switch_to_weapon_slot(intent.slot)
-        return None
+        return GameActionResult()
