@@ -6,7 +6,7 @@ from typing import cast
 from catley import colors
 from catley.controller import Controller
 from catley.environment import tile_types
-from catley.game.actions.base import GameAction
+from catley.game.actions.base import GameIntent
 from catley.game.actions.combat import AttackIntent
 from catley.game.actions.discovery import ActionDiscovery
 from catley.game.actions.discovery.types import ActionRequirement, CombatIntentCache
@@ -24,14 +24,14 @@ class DummyController:
     frame_manager: object | None = None
     message_log: object | None = None
     combat_intent_cache: CombatIntentCache | None = None
-    queued_action: GameAction | None = None
+    queued_action: GameIntent | None = None
 
     def create_resolver(self, **kwargs: object) -> object:
         from catley.game.resolution.d20_system import D20System
 
         return D20System(**kwargs)  # type: ignore[call-arg]
 
-    def queue_action(self, action: GameAction) -> None:
+    def queue_action(self, action: GameIntent) -> None:
         self.queued_action = action
 
 

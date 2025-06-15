@@ -8,7 +8,7 @@ from enum import Enum, auto
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from catley.game.actions.base import GameAction, GameIntent
+    from catley.game.actions.base import GameIntent
     from catley.game.actors import Character
     from catley.game.items.item_core import Item
 
@@ -46,7 +46,7 @@ class ActionOption:
     name: str
     description: str
     category: ActionCategory
-    action_class: type[GameAction] | type[GameIntent]
+    action_class: type[GameIntent]
     requirements: list[ActionRequirement] = field(default_factory=list)
     static_params: dict[str, Any] = field(default_factory=dict)
     hotkey: str | None = None
@@ -54,7 +54,7 @@ class ActionOption:
     success_probability: float | None = None
     cost_description: str | None = None
     # Temporary backwards compatibility - will be removed in Task 3
-    execute: Callable[[], GameAction | GameIntent | bool | None] | None = None
+    execute: Callable[[], GameIntent | bool | None] | None = None
 
     def __post_init__(self) -> None:
         if self.display_text is None:

@@ -8,7 +8,7 @@ import tcod
 
 from catley import colors
 from catley.game import ranges
-from catley.game.actions.base import GameAction
+from catley.game.actions.base import GameIntent
 from catley.game.actions.combat import AttackIntent
 from catley.game.actions.discovery import (
     ActionCategory,
@@ -200,7 +200,7 @@ class ActionBrowserMenu(Menu):
         # 1. Legacy callbacks for navigation or compatibility
         if hasattr(action_option, "execute") and action_option.execute:
             result = action_option.execute()
-            if isinstance(result, GameAction):
+            if isinstance(result, GameIntent):
                 self.controller.queue_action(result)
                 if isinstance(result, AttackIntent):
                     weapon = result.weapon

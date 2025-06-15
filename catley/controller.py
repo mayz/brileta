@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from catley.game.actions.discovery import CombatIntentCache
 
 from . import config
-from .game.actions.base import GameAction, GameIntent
+from .game.actions.base import GameIntent
 from .game.game_world import GameWorld
 from .game.turn_manager import TurnManager
 from .input_handler import InputHandler
@@ -123,7 +123,7 @@ class Controller:
             # Show the system mouse cursor again.
             tcod.sdl.mouse.show(True)
 
-    def queue_action(self, action: GameAction | GameIntent) -> None:
+    def queue_action(self, action: GameIntent) -> None:
         """
         Queue a game action to be processed on the next turn.
 
@@ -131,7 +131,7 @@ class Controller:
         the unified round system (giving all actors a chance to act).
 
         Args:
-            action: The GameAction to queue for execution
+            action: The intent to queue for execution
         """
         self.turn_manager.queue_action(action)
 

@@ -3,7 +3,7 @@ from typing import cast
 
 from catley import colors
 from catley.controller import Controller
-from catley.game.actions.base import GameAction, GameActionResult
+from catley.game.actions.movement import MoveIntent
 from catley.game.actors import Character
 from catley.game.game_world import GameWorld
 from catley.game.turn_manager import TurnManager
@@ -39,26 +39,16 @@ def _make_world() -> tuple[DummyController, Character]:
     return controller, player
 
 
-class DummyAction(GameAction):
-    def __init__(self, controller: Controller, actor: Character, flag: bool) -> None:
-        super().__init__(controller, actor)
-        self.flag = flag
-
-    def execute(self) -> GameActionResult | None:
-        if self.flag:
-            return GameActionResult(should_update_fov=True)
-        return None
-
-
 def test_turn_manager_updates_fov_using_action_result() -> None:
     controller, player = _make_world()
     tm = TurnManager(cast(Controller, controller))
 
-    action = DummyAction(cast(Controller, controller), player, True)
-    tm._execute_action(action)
+    intent = MoveIntent(cast(Controller, controller), player, 1, 0)
+    tm._execute_action(intent)
     assert controller.update_fov_called
 
     controller.update_fov_called = False
-    action = DummyAction(cast(Controller, controller), player, False)
-    tm._execute_action(action)
+    # Move into same tile (no actual move) by using dx=0
+    intent = MoveIntent(cast(Controller, controller), player, 0, 0)
+    tm._execute_action(intent)
     assert not controller.update_fov_called

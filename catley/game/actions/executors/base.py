@@ -7,7 +7,7 @@ from catley.game.actions.base import GameActionResult
 
 if TYPE_CHECKING:
     from catley.controller import Controller
-    from catley.game.actions.base import GameAction
+    from catley.game.actions.base import GameIntent
 
 
 class ActionExecutor(abc.ABC):
@@ -23,7 +23,7 @@ class ActionExecutor(abc.ABC):
         self.controller = controller
 
     @abc.abstractmethod
-    def execute(self, intent: GameAction) -> GameActionResult | None:
+    def execute(self, intent: GameIntent) -> GameActionResult | None:
         """Execute the given intent.
 
         Args:

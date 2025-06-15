@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from catley import colors
 from catley.events import MessageEvent, publish_event
 from catley.game.actions.area_effects import AreaEffectIntent
-from catley.game.actions.base import GameAction, GameActionResult, GameIntent
+from catley.game.actions.base import GameActionResult, GameIntent
 from catley.game.actions.combat import AttackIntent, ReloadIntent
 from catley.game.actions.environment import CloseDoorIntent, OpenDoorIntent
 from catley.game.actions.executors.area_effects import AreaEffectExecutor
@@ -43,12 +43,12 @@ class TurnManager:
     def __init__(self, controller: Controller) -> None:
         self.controller = controller
         self.player = self.controller.gw.player
-        self._pending_action: GameAction | GameIntent | None = None
+        self._pending_action: GameIntent | None = None
         # Executor registry for future Intent/Executor dispatch
         # TODO: Populate in Task 2 - not used yet
         self._executor_registry: dict[type, ActionExecutor] = {}
 
-    def queue_action(self, action: GameAction | GameIntent) -> None:
+    def queue_action(self, action: GameIntent) -> None:
         """Queue a game action to be processed on the next turn."""
         self._pending_action = action
 
@@ -103,17 +103,18 @@ class TurnManager:
         if hasattr(self.controller, "active_mode") and self.controller.active_mode:
             self.controller.active_mode.update()
 
-    def dequeue_player_action(self) -> GameAction | GameIntent | None:
+    def dequeue_player_action(self) -> GameIntent | None:
         """Dequeue and return the pending player action."""
         action = self._pending_action
         self._pending_action = None
         return action
 
-    def _execute_action(self, action: GameAction | GameIntent | None) -> None:
-        """Execute an action immediately without turn processing."""
+    def _execute_action(self, action: GameIntent | None) -> None:
+        """Execute an intent immediately through the appropriate executor."""
         if not action:
             return
 
+        result: GameActionResult | None = None
         try:
             if isinstance(action, MoveIntent):
                 executor = MoveExecutor()
@@ -151,9 +152,6 @@ class TurnManager:
             elif isinstance(action, AreaEffectIntent):
                 executor = AreaEffectExecutor()
                 result = executor.execute(action)
-            else:
-                assert isinstance(action, GameAction)
-                result = action.execute()
         except SystemExit:
             raise
         except Exception as e:
@@ -172,9 +170,7 @@ class TurnManager:
         if action.actor == self.controller.gw.player and result.should_update_fov:
             self.controller.update_fov()
 
-    def _get_executor_for_intent(
-        self, intent: GameAction | GameIntent
-    ) -> ActionExecutor | None:
+    def _get_executor_for_intent(self, intent: GameIntent) -> ActionExecutor | None:
         """Get the appropriate executor for an intent type.
 
         TODO: Implement routing logic in Task 2
@@ -182,7 +178,7 @@ class TurnManager:
         return self._executor_registry.get(type(intent))
 
     def _handle_collision(
-        self, original_action: GameAction | GameIntent, result: GameActionResult
+        self, original_action: GameIntent, result: GameActionResult
     ) -> None:
         """Create follow-up intents in response to failed movement."""
 
