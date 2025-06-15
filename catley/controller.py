@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from catley.game.actions.discovery import CombatIntentCache
 
 from . import config
-from .game.actions.base import GameAction
+from .game.actions.base import GameAction, GameIntent
 from .game.game_world import GameWorld
 from .game.turn_manager import TurnManager
 from .input_handler import InputHandler
@@ -123,7 +123,7 @@ class Controller:
             # Show the system mouse cursor again.
             tcod.sdl.mouse.show(True)
 
-    def queue_action(self, action: GameAction) -> None:
+    def queue_action(self, action: GameAction | GameIntent) -> None:
         """
         Queue a game action to be processed on the next turn.
 

@@ -9,9 +9,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from catley import colors
-from catley.events import MessageEvent, publish_event
-from catley.game.actions.base import GameAction, GameActionResult
+from catley.game.actions.base import GameIntent
 from catley.game.actors import Character
 from catley.game.items.item_core import Item
 
@@ -19,8 +17,13 @@ if TYPE_CHECKING:
     from catley.controller import Controller
 
 
-class AttackIntent(GameAction):
-    """Intent for one `Actor` to attack another."""
+class AttackIntent(GameIntent):
+    """Intent for one :class:`Actor` to attack another.
+
+    This object only stores attack parameters. Execution occurs via
+    :class:`~catley.game.actions.executors.combat.AttackExecutor` through the
+    :class:`~catley.game.turn_manager.TurnManager`.
+    """
 
     def __init__(
         self,
@@ -49,15 +52,13 @@ class AttackIntent(GameAction):
         self.weapon = weapon
         self.attack_mode = attack_mode
 
-    def execute(self) -> GameActionResult | None:
-        """Temporary method for compatibility."""
-        raise NotImplementedError(
-            "AttackIntent.execute() removed. Use AttackExecutor in Task 2B."
-        )
 
+class ReloadIntent(GameIntent):
+    """Intent for reloading a ranged weapon.
 
-class ReloadAction(GameAction):
-    """Action for reloading a ranged weapon."""
+    Execution is performed by
+    :class:`~catley.game.actions.executors.combat.ReloadExecutor`.
+    """
 
     def __init__(self, controller: Controller, actor: Character, weapon: Item) -> None:
         super().__init__(controller, actor)
@@ -65,36 +66,3 @@ class ReloadAction(GameAction):
 
         # Type narrowing.
         self.actor: Character
-
-    def execute(self) -> GameActionResult | None:
-        ranged_attack = self.weapon.ranged_attack
-        if not ranged_attack:
-            return None
-
-        # Find compatible ammo in inventory
-        ammo_item = None
-        for item in self.actor.inventory:
-            if (
-                isinstance(item, Item)
-                and item.ammo
-                and item.ammo.ammo_type == ranged_attack.ammo_type
-            ):
-                ammo_item = item
-                break
-
-        if ammo_item:
-            # Remove ammo from inventory and reload weapon
-            self.actor.inventory.remove_from_inventory(ammo_item)
-            ranged_attack.current_ammo = ranged_attack.max_ammo
-            publish_event(
-                MessageEvent(
-                    f"{self.actor.name} reloaded {self.weapon.name}.", colors.GREEN
-                )
-            )
-        else:
-            publish_event(
-                MessageEvent(
-                    f"No {ranged_attack.ammo_type} ammo available!", colors.RED
-                )
-            )
-        return None

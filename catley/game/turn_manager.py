@@ -4,8 +4,10 @@ from typing import TYPE_CHECKING
 
 from catley import colors
 from catley.events import MessageEvent, publish_event
-from catley.game.actions.base import GameAction, GameActionResult
+from catley.game.actions.base import GameAction, GameActionResult, GameIntent
+from catley.game.actions.combat import AttackIntent, ReloadIntent
 from catley.game.actions.executors.base import ActionExecutor
+from catley.game.actions.executors.combat import AttackExecutor, ReloadExecutor
 
 if TYPE_CHECKING:
     from catley.controller import Controller
@@ -17,12 +19,12 @@ class TurnManager:
     def __init__(self, controller: Controller) -> None:
         self.controller = controller
         self.player = self.controller.gw.player
-        self._pending_action: GameAction | None = None
+        self._pending_action: GameAction | GameIntent | None = None
         # Executor registry for future Intent/Executor dispatch
         # TODO: Populate in Task 2 - not used yet
         self._executor_registry: dict[type, ActionExecutor] = {}
 
-    def queue_action(self, action: GameAction) -> None:
+    def queue_action(self, action: GameAction | GameIntent) -> None:
         """Queue a game action to be processed on the next turn."""
         self._pending_action = action
 
@@ -77,19 +79,27 @@ class TurnManager:
         if hasattr(self.controller, "active_mode") and self.controller.active_mode:
             self.controller.active_mode.update()
 
-    def dequeue_player_action(self) -> GameAction | None:
+    def dequeue_player_action(self) -> GameAction | GameIntent | None:
         """Dequeue and return the pending player action."""
         action = self._pending_action
         self._pending_action = None
         return action
 
-    def _execute_action(self, action: GameAction | None) -> None:
+    def _execute_action(self, action: GameAction | GameIntent | None) -> None:
         """Execute an action immediately without turn processing."""
         if not action:
             return
 
         try:
-            result = action.execute()
+            if isinstance(action, AttackIntent):
+                executor = AttackExecutor()
+                result = executor.execute(action)
+            elif isinstance(action, ReloadIntent):
+                executor = ReloadExecutor()
+                result = executor.execute(action)
+            else:
+                assert isinstance(action, GameAction)
+                result = action.execute()
         except SystemExit:
             raise
         except Exception as e:
@@ -104,7 +114,9 @@ class TurnManager:
         if action.actor == self.controller.gw.player and result.should_update_fov:
             self.controller.update_fov()
 
-    def _get_executor_for_intent(self, intent: GameAction) -> ActionExecutor | None:
+    def _get_executor_for_intent(
+        self, intent: GameAction | GameIntent
+    ) -> ActionExecutor | None:
         """Get the appropriate executor for an intent type.
 
         TODO: Implement routing logic in Task 2
