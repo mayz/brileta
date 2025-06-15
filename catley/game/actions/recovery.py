@@ -51,14 +51,18 @@ class UseConsumableAction(GameAction):
             publish_event(MessageEvent(f"{self.item.name} cannot be used", colors.RED))
             return None
 
-        if not self.actor.inventory.remove_from_inventory(self.item):
+        inventory = self.actor.inventory
+        if not inventory:
+            return None
+
+        if not inventory.remove_from_inventory(self.item):
             publish_event(MessageEvent("Item not found in inventory", colors.RED))
             return None
 
         success = self.item.consumable_effect.consume(self.actor, self.controller)
 
         if not success:
-            self.actor.inventory.add_to_inventory(self.item)
+            inventory.add_to_inventory(self.item)
             publish_event(MessageEvent(f"Cannot use {self.item.name}", colors.RED))
 
         return GameActionResult()
@@ -71,6 +75,7 @@ class RestAction(GameAction):
     description = "Take a brief rest to recover AP"
 
     def execute(self) -> GameActionResult | None:
+        assert isinstance(self.actor, Character)
         safe, reason = is_safe_location(self.actor)
         if not safe:
             publish_event(MessageEvent(f"Cannot rest: {reason}", colors.RED))
@@ -102,6 +107,7 @@ class SleepAction(GameAction):
     description = "Sleep to fully restore HP and reduce exhaustion"
 
     def execute(self) -> GameActionResult | None:
+        assert isinstance(self.actor, Character)
         safe, reason = is_safe_location(self.actor)
         if not safe:
             publish_event(MessageEvent(f"Cannot sleep: {reason}", colors.RED))
@@ -129,6 +135,7 @@ class ComfortableSleepAction(GameAction):
     description = "Sleep soundly to remove all exhaustion and restore HP"
 
     def execute(self) -> GameActionResult | None:
+        assert isinstance(self.actor, Character)
         safe, reason = is_safe_location(self.actor)
         if not safe:
             publish_event(MessageEvent(f"Cannot sleep: {reason}", colors.RED))

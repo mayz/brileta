@@ -10,7 +10,7 @@ The Python code is set up as a Python package that was set up with `uv`.
 
 To create a virtual environment and install all dependencies, run `uv sync`. Everything is in the local `uv.lock` file.
 
-I've been using `ruff check` as a linter, and Pylance/Pyright as a language server in VSCode and type checker. I've also been experimenting with the new `ty` type checker from Astral.
+I've been using `ruff check` as a linter, and Pylance/Pyright as a language server in VSCode and type checker.
 
 To run unit tests:
 `make test`
@@ -24,7 +24,7 @@ This command, defined in the `Makefile`, will automatically sync dependencies an
 make
 ```
 
-This runs the full quality pipeline: `ruff format`, `ruff check`, `ty check`, and `pytest`. All checks must pass before considering work complete.
+This runs the full quality pipeline: `ruff format`, `ruff check`, `pyright`, and `pytest`. All checks must pass before considering work complete.
 
 Individual commands are available as `make lint`, `make format`, `make typecheck`, or `make test`.
 
