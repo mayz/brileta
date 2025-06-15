@@ -84,9 +84,8 @@ class CursorManager:
     def _load_cursor(
         self, cursor_name: str, filename: str, hotspot: tuple[int, int]
     ) -> None:
+        full_path = BASE_MOUSE_CURSOR_PATH / filename
         try:
-            full_path = BASE_MOUSE_CURSOR_PATH / filename
-
             if not full_path.exists():
                 print(f"ERROR: Cursor file not found at {full_path.resolve()}")
                 return

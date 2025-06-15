@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, TypeGuard, cast
 
 from catley import colors
 from catley.game.actors import Actor, Character, components
@@ -45,7 +45,9 @@ class ItemSpawner:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
-    def _can_consolidate_with(self, actor: Actor | None, item: Item) -> bool:
+    def _can_consolidate_with(
+        self, actor: Actor | None, item: Item
+    ) -> TypeGuard[Actor]:
         """Check if an item can be added to an existing actor."""
         return (
             actor is not None

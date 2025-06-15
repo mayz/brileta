@@ -1,6 +1,6 @@
 import types
 from dataclasses import dataclass
-from typing import cast
+from typing import Any, cast
 
 from catley import colors
 from catley.controller import Controller
@@ -12,6 +12,7 @@ from catley.game.actions.discovery import (
     ActionContext,
     ActionDiscovery,
     ActionOption,
+    CombatIntentCache,
 )
 from catley.game.actions.environment import OpenDoorAction
 from catley.game.actors import Character, status_effects
@@ -27,6 +28,7 @@ class DummyController:
     gw: DummyGameWorld
     frame_manager: object | None = None
     message_log: object | None = None
+    combat_intent_cache: CombatIntentCache | None = None
 
     def create_resolver(self, **kwargs: object) -> object:
         from catley.game.resolution.d20_system import D20Resolver
@@ -47,7 +49,7 @@ def _make_context_world():
     hostile = Character(
         5, 5, "H", colors.RED, "Hostile", game_world=cast(GameWorld, gw)
     )
-    hostile.ai = types.SimpleNamespace(disposition=Disposition.HOSTILE)  # type: ignore[attr-defined]
+    hostile.ai = cast(Any, types.SimpleNamespace(disposition=Disposition.HOSTILE))
     friend = Character(
         20, 20, "F", colors.WHITE, "Friend", game_world=cast(GameWorld, gw)
     )
@@ -269,7 +271,7 @@ def test_inventory_options_hide_weapon_switching_when_in_combat() -> None:
     opts = disc._get_inventory_options(cast(Controller, controller), player, ctx)
     assert all(not o.name.startswith("Switch to") for o in opts)
 
-    hostile.ai.disposition = Disposition.FRIENDLY  # Out of combat
+    cast(Any, hostile.ai).disposition = Disposition.FRIENDLY  # Out of combat
     ctx = disc._build_context(cast(Controller, controller), player)
     assert not ctx.in_combat
     opts = disc._get_inventory_options(cast(Controller, controller), player, ctx)

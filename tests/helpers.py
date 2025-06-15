@@ -42,7 +42,7 @@ class DummyGameWorld(GameWorld):
                 self.add_actor(actor)
 
         self.player: Character | None = None
-        self.selected_actor: Character | None = None
+        self.selected_actor: Actor | None = None
         self.items: dict[tuple[int, int], list] = {}
 
     def add_actor(self, actor: Actor) -> None:
