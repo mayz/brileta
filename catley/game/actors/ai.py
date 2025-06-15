@@ -31,6 +31,7 @@ from catley.game.enums import Disposition
 if TYPE_CHECKING:
     from catley.controller import Controller
     from catley.game.actions.base import GameAction, GameIntent
+    from catley.game.actions.movement import MoveIntent
 
     from . import NPC, Actor, Character
 
@@ -168,9 +169,9 @@ class HostileAI(AIComponent):
         player: Character,
         dx: int,
         dy: int,
-    ) -> GameAction | GameIntent | None:
+    ) -> MoveIntent | None:
         """Calculate movement toward the player with basic pathfinding."""
-        from catley.game.actions.movement import MoveAction
+        from catley.game.actions.movement import MoveIntent
 
         # Determine preferred movement direction
         move_dx = 0
@@ -197,7 +198,7 @@ class HostileAI(AIComponent):
                         f"{actor.name} charges towards {player.name}.", colors.ORANGE
                     )
                 )
-                return MoveAction(controller, actor, test_dx, test_dy)
+                return MoveIntent(controller, actor, test_dx, test_dy)
 
         # No valid move found
         publish_event(

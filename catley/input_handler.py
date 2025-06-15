@@ -11,8 +11,8 @@ from catley.view.ui.action_browser_menu import ActionBrowserMenu
 from catley.view.ui.help_menu import HelpMenu
 from catley.view.ui.inventory_menu import InventoryMenu
 
-from .game.actions.base import GameAction
-from .game.actions.movement import MoveAction
+from .game.actions.base import GameAction, GameIntent
+from .game.actions.movement import MoveIntent
 
 if TYPE_CHECKING:
     from .controller import Controller
@@ -64,7 +64,7 @@ class InputHandler:
         # Process a round (the controller will decide if anything needs to happen)
         self.controller.process_unified_round()
 
-    def handle_event(self, event: tcod.event.Event) -> GameAction | None:
+    def handle_event(self, event: tcod.event.Event) -> GameAction | GameIntent | None:
         # Don't process game actions if menus are active
         if self.controller.overlay_system.has_active_menus():
             return None
@@ -196,39 +196,41 @@ class InputHandler:
             case _:
                 return None
 
-    def _check_for_game_action(self, event: tcod.event.Event) -> GameAction | None:
+    def _check_for_game_action(
+        self, event: tcod.event.Event
+    ) -> GameAction | GameIntent | None:
         match event:
             # Movement keys (Arrows and VIM)
             case (
                 tcod.event.KeyDown(sym=tcod.event.KeySym.UP)
                 | tcod.event.KeyDown(sym=tcod.event.KeySym.k)
             ):
-                return MoveAction(self.controller, self.p, 0, -1)
+                return MoveIntent(self.controller, self.p, 0, -1)
             case (
                 tcod.event.KeyDown(sym=tcod.event.KeySym.DOWN)
                 | tcod.event.KeyDown(sym=tcod.event.KeySym.j)
             ):
-                return MoveAction(self.controller, self.p, 0, 1)
+                return MoveIntent(self.controller, self.p, 0, 1)
             case (
                 tcod.event.KeyDown(sym=tcod.event.KeySym.LEFT)
                 | tcod.event.KeyDown(sym=tcod.event.KeySym.h)
             ):
-                return MoveAction(self.controller, self.p, -1, 0)
+                return MoveIntent(self.controller, self.p, -1, 0)
             case (
                 tcod.event.KeyDown(sym=tcod.event.KeySym.RIGHT)
                 | tcod.event.KeyDown(sym=tcod.event.KeySym.l)
             ):
-                return MoveAction(self.controller, self.p, 1, 0)
+                return MoveIntent(self.controller, self.p, 1, 0)
 
             # Diagonal movement (numpad or vi-keys)
             case tcod.event.KeyDown(sym=tcod.event.KeySym.KP_7):  # Up-left
-                return MoveAction(self.controller, self.p, -1, -1)
+                return MoveIntent(self.controller, self.p, -1, -1)
             case tcod.event.KeyDown(sym=tcod.event.KeySym.KP_9):  # Up-right
-                return MoveAction(self.controller, self.p, 1, -1)
+                return MoveIntent(self.controller, self.p, 1, -1)
             case tcod.event.KeyDown(sym=tcod.event.KeySym.KP_1):  # Down-left
-                return MoveAction(self.controller, self.p, -1, 1)
+                return MoveIntent(self.controller, self.p, -1, 1)
             case tcod.event.KeyDown(sym=tcod.event.KeySym.KP_3):  # Down-right
-                return MoveAction(self.controller, self.p, 1, 1)
+                return MoveIntent(self.controller, self.p, 1, 1)
 
             case _:
                 return None

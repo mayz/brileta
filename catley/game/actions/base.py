@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import abc
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from catley.game.consequences import Consequence
 
@@ -27,8 +27,11 @@ class GameActionResult:
     :class:`~catley.turn_manager.TurnManager`.
     """
 
-    consequences: list[Consequence] = field(default_factory=list)
+    succeeded: bool = True
     should_update_fov: bool = False
+    blocked_by: Any | None = None
+    block_reason: str | None = None
+    consequences: list[Consequence] = field(default_factory=list)
 
 
 class GameAction(abc.ABC):

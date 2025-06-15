@@ -16,6 +16,7 @@ from catley.game.actions.executors.environment import (
     OpenDoorExecutor,
 )
 from catley.game.actions.executors.misc import PickupExecutor, SwitchWeaponExecutor
+from catley.game.actions.executors.movement import MoveExecutor
 from catley.game.actions.executors.recovery import (
     ComfortableSleepExecutor,
     RestExecutor,
@@ -23,6 +24,7 @@ from catley.game.actions.executors.recovery import (
     UseConsumableExecutor,
 )
 from catley.game.actions.misc import PickupIntent, SwitchWeaponIntent
+from catley.game.actions.movement import MoveIntent
 from catley.game.actions.recovery import (
     ComfortableSleepIntent,
     RestIntent,
@@ -112,7 +114,10 @@ class TurnManager:
             return
 
         try:
-            if isinstance(action, AttackIntent):
+            if isinstance(action, MoveIntent):
+                executor = MoveExecutor()
+                result = executor.execute(action)
+            elif isinstance(action, AttackIntent):
                 executor = AttackExecutor()
                 result = executor.execute(action)
             elif isinstance(action, ReloadIntent):
