@@ -14,6 +14,7 @@ from .action_context import ActionContext
 from .action_factory import ActionFactory
 from .action_formatters import ActionFormatter
 from .core_discovery import ActionCategory, ActionOption
+from .types import ActionRequirement  # noqa: F401
 
 if TYPE_CHECKING:
     from catley.controller import Controller
@@ -68,9 +69,6 @@ class EnvironmentActionDiscovery:
                         action_class=OpenDoorAction,
                         requirements=[],
                         static_params={"x": tx, "y": ty},
-                        execute=lambda x=tx, y=ty: OpenDoorAction(
-                            controller, actor, x, y
-                        ),
                     )
                 )
             elif tile_id == tile_types.TILE_TYPE_ID_DOOR_OPEN:  # type: ignore[attr-defined]
@@ -83,9 +81,6 @@ class EnvironmentActionDiscovery:
                         action_class=CloseDoorAction,
                         requirements=[],
                         static_params={"x": tx, "y": ty},
-                        execute=lambda x=tx, y=ty: CloseDoorAction(
-                            controller, actor, x, y
-                        ),
                     )
                 )
 
@@ -115,7 +110,6 @@ class EnvironmentActionDiscovery:
                     action_class=RestAction,
                     requirements=[],
                     static_params={},
-                    execute=lambda: RestAction(controller, actor),
                 )
             )
 
@@ -134,7 +128,6 @@ class EnvironmentActionDiscovery:
                     action_class=SleepAction,
                     requirements=[],
                     static_params={},
-                    execute=lambda: SleepAction(controller, actor),
                 )
             )
 
@@ -148,7 +141,6 @@ class EnvironmentActionDiscovery:
                     action_class=ComfortableSleepAction,
                     requirements=[],
                     static_params={},
-                    execute=lambda: ComfortableSleepAction(controller, actor),
                 )
             )
 

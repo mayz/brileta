@@ -133,8 +133,8 @@ def test_get_combat_options_melee_ranged_and_reload() -> None:
     opts = disc._get_combat_options(cast(Controller, controller), player, ctx)
     names = {o.name for o in opts}
 
-    assert f"Pistol-Whip {melee_target.name} with {pistol.name}" in names
-    assert f"Shoot {ranged_target.name} with {pistol.name} (LAST SHOT!)" in names
+    assert f"Melee attack with {pistol.name}" in names
+    assert f"Ranged attack with {pistol.name}" in names
     assert f"Reload {pistol.name}" not in names
 
     inv_opts = disc._get_inventory_options(
@@ -145,7 +145,7 @@ def test_get_combat_options_melee_ranged_and_reload() -> None:
     inv_names = {o.name for o in inv_opts}
     assert f"Reload {pistol.name}" in inv_names
 
-    melee_opt = next(o for o in opts if o.name.startswith("Pistol-Whip"))
+    melee_opt = next(o for o in opts if o.name.startswith("Melee attack"))
     expected_melee_prob = disc._calculate_combat_probability(
         cast(Controller, controller),
         player,
@@ -153,18 +153,16 @@ def test_get_combat_options_melee_ranged_and_reload() -> None:
         "strength",
     )
     assert melee_opt.success_probability == expected_melee_prob
-    ranged_opt = next(
-        o for o in opts if o.name.startswith(f"Shoot {ranged_target.name}")
-    )
+    ranged_opt = next(o for o in opts if o.name.startswith("Ranged attack"))
     distance = ranges.calculate_distance(
-        player.x, player.y, ranged_target.x, ranged_target.y
+        player.x, player.y, melee_target.x, melee_target.y
     )
     range_cat = ranges.get_range_category(distance, pistol)
     range_mods = ranges.get_range_modifier(pistol, range_cat)
     expected_ranged_prob = disc._calculate_combat_probability(
         cast(Controller, controller),
         player,
-        ranged_target,
+        melee_target,
         "observation",
         range_mods,
     )
@@ -200,8 +198,10 @@ def test_combat_options_ignore_dead_and_unseen() -> None:
     ctx = disc._build_context(cast(Controller, controller), player)
     opts = disc._get_combat_options(cast(Controller, controller), player, ctx)
     names = {o.name for o in opts}
-    assert all(melee_target.name not in n for n in names)
-    assert all(ranged_target.name not in n for n in names)
+    assert names == {
+        f"Melee attack with {pistol.name}",
+        f"Ranged attack with {pistol.name}",
+    }
 
 
 def test_combat_option_probabilities_reflect_status_effects() -> None:
@@ -211,7 +211,7 @@ def test_combat_option_probabilities_reflect_status_effects() -> None:
     ctx = disc._build_context(cast(Controller, controller), player)
 
     opts = disc._get_combat_options(cast(Controller, controller), player, ctx)
-    melee_opt = next(o for o in opts if o.name.startswith("Pistol-Whip"))
+    melee_opt = next(o for o in opts if o.name.startswith("Melee attack"))
     expected_melee_prob = disc._calculate_combat_probability(
         cast(Controller, controller),
         player,
@@ -220,18 +220,16 @@ def test_combat_option_probabilities_reflect_status_effects() -> None:
     )
     assert melee_opt.success_probability == expected_melee_prob
 
-    ranged_opt = next(
-        o for o in opts if o.name.startswith(f"Shoot {ranged_target.name}")
-    )
+    ranged_opt = next(o for o in opts if o.name.startswith("Ranged attack"))
     distance = ranges.calculate_distance(
-        player.x, player.y, ranged_target.x, ranged_target.y
+        player.x, player.y, melee_target.x, melee_target.y
     )
     range_cat = ranges.get_range_category(distance, pistol)
     range_mods = ranges.get_range_modifier(pistol, range_cat)
     expected_ranged_prob = disc._calculate_combat_probability(
         cast(Controller, controller),
         player,
-        ranged_target,
+        melee_target,
         "observation",
         range_mods,
     )
@@ -347,9 +345,8 @@ def test_environment_options_include_door_actions() -> None:
     names = {o.name for o in opts}
     assert "Open Door" in names
     open_door_option = next(o for o in opts if o.name == "Open Door")
-    assert open_door_option.execute is not None
-    action = open_door_option.execute()
-    assert isinstance(action, OpenDoorAction)
+    assert open_door_option.action_class is OpenDoorAction
+    assert open_door_option.static_params == {"x": 1, "y": 0}
 
 
 def test_probability_descriptor_mapping() -> None:
