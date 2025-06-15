@@ -3,7 +3,8 @@ from typing import cast
 
 from catley import colors
 from catley.controller import Controller
-from catley.game.actions.recovery import UseConsumableAction
+from catley.game.actions.executors.recovery import UseConsumableExecutor
+from catley.game.actions.recovery import UseConsumableIntent
 from catley.game.actors import Character
 from catley.game.game_world import GameWorld
 from catley.game.items.item_types import STIM_TYPE
@@ -31,8 +32,9 @@ def test_use_consumable_action_heals_and_consumes_item() -> None:
     item = STIM_TYPE.create()
     actor.inventory.add_to_inventory(item)
 
-    action = UseConsumableAction(controller, actor, item)
-    result = action.execute()
+    intent = UseConsumableIntent(controller, actor, item)
+    executor = UseConsumableExecutor()
+    result = executor.execute(intent)
 
     assert result is not None
     assert actor.health.hp == actor.health.max_hp

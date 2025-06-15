@@ -7,10 +7,10 @@ from catley.game.actions.combat import ReloadIntent
 # Optional action classes that may not yet exist
 from catley.game.actions.misc import PickupIntent, SwitchWeaponIntent
 from catley.game.actions.recovery import (
-    ComfortableSleepAction,
-    RestAction,
-    SleepAction,
-    UseConsumableAction,
+    ComfortableSleepIntent,
+    RestIntent,
+    SleepIntent,
+    UseConsumableIntent,
     is_safe_location,
 )
 from catley.game.actors import Character
@@ -72,7 +72,7 @@ class ItemActionDiscovery:
                 name=f"Use {item.name}",
                 description=f"Consume {item.name}",
                 category=ActionCategory.ITEMS,
-                action_class=UseConsumableAction,
+                action_class=UseConsumableIntent,
                 requirements=[],
                 static_params={"item": item},
             )
@@ -134,7 +134,7 @@ class ItemActionDiscovery:
                     name="Rest",
                     description="Recover armor points",
                     category=ActionCategory.ENVIRONMENT,
-                    action_class=RestAction,
+                    action_class=RestIntent,
                     requirements=[],
                     static_params={},
                 )
@@ -152,7 +152,7 @@ class ItemActionDiscovery:
                     name="Sleep",
                     description="Sleep to restore HP and ease exhaustion",
                     category=ActionCategory.ENVIRONMENT,
-                    action_class=SleepAction,
+                    action_class=SleepIntent,
                     requirements=[],
                     static_params={},
                 )
@@ -165,7 +165,7 @@ class ItemActionDiscovery:
                     name="Comfortable Sleep",
                     description="Remove all exhaustion and restore HP",
                     category=ActionCategory.ENVIRONMENT,
-                    action_class=ComfortableSleepAction,
+                    action_class=ComfortableSleepIntent,
                     requirements=[],
                     static_params={},
                 )
