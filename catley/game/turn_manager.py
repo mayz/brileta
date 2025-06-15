@@ -8,6 +8,8 @@ from catley.game.actions.base import GameAction, GameActionResult, GameIntent
 from catley.game.actions.combat import AttackIntent, ReloadIntent
 from catley.game.actions.executors.base import ActionExecutor
 from catley.game.actions.executors.combat import AttackExecutor, ReloadExecutor
+from catley.game.actions.executors.misc import PickupExecutor, SwitchWeaponExecutor
+from catley.game.actions.misc import PickupIntent, SwitchWeaponIntent
 
 if TYPE_CHECKING:
     from catley.controller import Controller
@@ -96,6 +98,12 @@ class TurnManager:
                 result = executor.execute(action)
             elif isinstance(action, ReloadIntent):
                 executor = ReloadExecutor()
+                result = executor.execute(action)
+            elif isinstance(action, PickupIntent):
+                executor = PickupExecutor()
+                result = executor.execute(action)
+            elif isinstance(action, SwitchWeaponIntent):
+                executor = SwitchWeaponExecutor()
                 result = executor.execute(action)
             else:
                 assert isinstance(action, GameAction)
