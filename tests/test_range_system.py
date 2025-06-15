@@ -1,9 +1,11 @@
 from dataclasses import dataclass
+from typing import cast
 
 import numpy as np
 
 from catley.environment.map import GameMap
 from catley.game import ranges
+from catley.game.items.capabilities import RangedAttack
 from catley.game.items.item_core import Item
 from catley.game.items.properties import ItemProperty, WeaponProperty
 
@@ -17,7 +19,7 @@ class DummyRangedAttack:
 
 @dataclass
 class DummyItem(Item):
-    ranged_attack: DummyRangedAttack | None = None
+    ranged_attack: RangedAttack | None = None
 
 
 class DummyMap(GameMap):
@@ -28,7 +30,7 @@ class DummyMap(GameMap):
 
 def test_get_range_category():
     attack = DummyRangedAttack(optimal_range=3, max_range=5)
-    item = DummyItem(ranged_attack=attack)
+    item = DummyItem(ranged_attack=cast(RangedAttack, attack))
     assert ranges.get_range_category(1, item) == "adjacent"
     assert ranges.get_range_category(3, item) == "close"
     assert ranges.get_range_category(5, item) == "far"
@@ -41,7 +43,7 @@ def test_get_range_modifier_scoped():
     attack = DummyRangedAttack(
         optimal_range=3, max_range=5, properties={WeaponProperty.SCOPED}
     )
-    item = DummyItem(ranged_attack=attack)
+    item = DummyItem(ranged_attack=cast(RangedAttack, attack))
     mod = ranges.get_range_modifier(item, "far")
     assert mod == {"has_advantage": True}
 
