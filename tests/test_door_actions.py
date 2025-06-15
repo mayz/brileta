@@ -4,7 +4,11 @@ from typing import cast
 from catley import colors
 from catley.controller import Controller
 from catley.environment import tile_types
-from catley.game.actions.environment import CloseDoorAction, OpenDoorAction
+from catley.game.actions.environment import CloseDoorIntent, OpenDoorIntent
+from catley.game.actions.executors.environment import (
+    CloseDoorExecutor,
+    OpenDoorExecutor,
+)
 from catley.game.actors import Character
 from catley.game.game_world import GameWorld
 from tests.helpers import DummyGameWorld
@@ -37,8 +41,9 @@ def test_open_door_action_opens_door() -> None:
     gm = controller.gw.game_map
     gm.tiles[1, 0] = tile_types.TILE_TYPE_ID_DOOR_CLOSED  # type: ignore[attr-defined]
     _ = gm.walkable[1, 0]
-    action = OpenDoorAction(cast(Controller, controller), player, 1, 0)
-    action.execute()
+    intent = OpenDoorIntent(cast(Controller, controller), player, 1, 0)
+    executor = OpenDoorExecutor()
+    executor.execute(intent)
     assert gm.tiles[1, 0] == tile_types.TILE_TYPE_ID_DOOR_OPEN  # type: ignore[attr-defined]
     assert gm.walkable[1, 0]
     assert gm.transparent[1, 0]
@@ -49,8 +54,9 @@ def test_close_door_action_closes_door() -> None:
     gm = controller.gw.game_map
     gm.tiles[1, 0] = tile_types.TILE_TYPE_ID_DOOR_OPEN  # type: ignore[attr-defined]
     _ = gm.walkable[1, 0]
-    action = CloseDoorAction(cast(Controller, controller), player, 1, 0)
-    action.execute()
+    intent = CloseDoorIntent(cast(Controller, controller), player, 1, 0)
+    executor = CloseDoorExecutor()
+    executor.execute(intent)
     assert gm.tiles[1, 0] == tile_types.TILE_TYPE_ID_DOOR_CLOSED  # type: ignore[attr-defined]
     assert not gm.walkable[1, 0]
     assert not gm.transparent[1, 0]

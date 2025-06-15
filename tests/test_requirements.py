@@ -10,7 +10,7 @@ from catley.game.actions.base import GameAction
 from catley.game.actions.combat import AttackIntent
 from catley.game.actions.discovery import ActionDiscovery
 from catley.game.actions.discovery.types import ActionRequirement, CombatIntentCache
-from catley.game.actions.environment import OpenDoorAction
+from catley.game.actions.environment import OpenDoorIntent
 from catley.game.actors import Character
 from catley.game.game_world import GameWorld
 from catley.view.ui.action_browser_state import ActionBrowserStateMachine
@@ -89,5 +89,5 @@ def test_environment_target_tile_requirement() -> None:
     sm.get_options_for_current_state(cast(Controller, controller), player)
 
     action = controller.queued_action
-    assert isinstance(action, OpenDoorAction)
+    assert isinstance(action, OpenDoorIntent)
     assert (action.x, action.y) == (1, 0)

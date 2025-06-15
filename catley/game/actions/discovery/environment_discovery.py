@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from catley.game.actions.environment import CloseDoorAction, OpenDoorAction
+from catley.game.actions.environment import CloseDoorIntent, OpenDoorIntent
 from catley.game.actions.recovery import (
     ComfortableSleepAction,
     RestAction,
@@ -68,7 +68,7 @@ class EnvironmentActionDiscovery:
                     name="Open Door",
                     description="Choose a door to open",
                     category=ActionCategory.ENVIRONMENT,
-                    action_class=OpenDoorAction,
+                    action_class=OpenDoorIntent,
                     requirements=[ActionRequirement.TARGET_TILE],
                     static_params={},
                 )
@@ -81,7 +81,7 @@ class EnvironmentActionDiscovery:
                     name="Close Door",
                     description="Choose a door to close",
                     category=ActionCategory.ENVIRONMENT,
-                    action_class=CloseDoorAction,
+                    action_class=CloseDoorIntent,
                     requirements=[ActionRequirement.TARGET_TILE],
                     static_params={},
                 )

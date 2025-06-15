@@ -15,6 +15,8 @@ from catley.constants.movement import MovementConstants
 from catley.environment import tile_types
 from catley.events import MessageEvent, publish_event
 from catley.game.actions.base import GameAction, GameActionResult
+from catley.game.actions.environment import OpenDoorIntent
+from catley.game.actions.executors.environment import OpenDoorExecutor
 from catley.game.actors import Character
 from catley.game.items.item_types import FISTS_TYPE
 from catley.game.items.properties import WeaponProperty
@@ -107,14 +109,14 @@ class MoveAction(GameAction):
 
         if tile_id == tile_types.TILE_TYPE_ID_DOOR_CLOSED:  # type: ignore[attr-defined]
             # Automatically open doors when bumped into.
-            from catley.game.actions.environment import OpenDoorAction
-
-            OpenDoorAction(
+            intent = OpenDoorIntent(
                 self.controller,
                 self.actor,
                 self.newx,
                 self.newy,
-            ).execute()
+            )
+            executor = OpenDoorExecutor()
+            executor.execute(intent)
 
         if not self.game_map.walkable[self.newx, self.newy]:
             return None
