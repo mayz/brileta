@@ -3,7 +3,7 @@ from unittest.mock import patch
 from catley import colors
 from catley.game.actors import Actor, Character
 from catley.game.enums import OutcomeTier
-from catley.game.resolution.d20_system import D20ResolutionResult, D20Resolver
+from catley.game.resolution.d20_system import D20ResolutionResult, D20System
 
 
 class FixedRandom:
@@ -19,7 +19,7 @@ class FixedRandom:
 
 def test_d20_resolver_basic_success() -> None:
     fr = FixedRandom([10])
-    resolver = D20Resolver(5, 12)
+    resolver = D20System(5, 12)
     actor = Character(0, 0, "@", colors.WHITE, "A")
     target = Actor(1, 0, "T", colors.WHITE)
     with patch("random.randint", fr):
@@ -32,8 +32,8 @@ def test_d20_resolver_basic_success() -> None:
 
 def test_d20_resolver_critical_outcomes() -> None:
     fr = FixedRandom([20, 1])
-    hit_resolver = D20Resolver(0, 100)
-    miss_resolver = D20Resolver(10, 5)
+    hit_resolver = D20System(0, 100)
+    miss_resolver = D20System(10, 5)
     actor = Character(0, 0, "@", colors.WHITE, "A")
     target = Actor(1, 0, "T", colors.WHITE)
     with patch("random.randint", fr):
@@ -45,8 +45,8 @@ def test_d20_resolver_critical_outcomes() -> None:
 
 def test_d20_resolver_advantage_disadvantage() -> None:
     fr = FixedRandom([3, 17, 17, 5])
-    adv_resolver = D20Resolver(0, 10, has_advantage=True)
-    dis_resolver = D20Resolver(0, 10, has_disadvantage=True)
+    adv_resolver = D20System(0, 10, has_advantage=True)
+    dis_resolver = D20System(0, 10, has_disadvantage=True)
     actor = Character(0, 0, "@", colors.WHITE, "A")
     target = Actor(1, 0, "T", colors.WHITE)
     with patch("random.randint", fr):

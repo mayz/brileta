@@ -18,14 +18,13 @@ class ResolutionResult(abc.ABC):  # noqa: B024 - no abstract methods defined
     outcome_tier: OutcomeTier = OutcomeTier.FAILURE
 
 
-class Resolver(abc.ABC):
-    """
-    Abstract base class for a system that resolves an action.
+class ResolutionSystem(abc.ABC):
+    """Abstract base class for a system that resolves an action.
 
     This defines the common interface for any dice mechanic or other rule
     system used to determine the outcome of an attempted action. Concrete
     implementations (like a D20System or a TwoD6System) will implement
-    the `resolve` method.
+    the :py:meth:`resolve` method.
     """
 
     @abc.abstractmethod

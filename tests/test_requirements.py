@@ -27,9 +27,9 @@ class DummyController:
     queued_action: GameAction | None = None
 
     def create_resolver(self, **kwargs: object) -> object:
-        from catley.game.resolution.d20_system import D20Resolver
+        from catley.game.resolution.d20_system import D20System
 
-        return D20Resolver(**kwargs)  # type: ignore[call-arg]
+        return D20System(**kwargs)  # type: ignore[call-arg]
 
     def queue_action(self, action: GameAction) -> None:
         self.queued_action = action

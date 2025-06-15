@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from catley.game.enums import OutcomeTier
 
-from .base import ResolutionResult, Resolver
+from .base import ResolutionResult, ResolutionSystem
 
 if TYPE_CHECKING:
     from catley.game.actors import Actor, Character
@@ -25,7 +25,7 @@ class D20ResolutionResult(ResolutionResult):
     has_disadvantage: bool = False
 
 
-class D20Resolver(Resolver):
+class D20System(ResolutionSystem):
     """Concrete implementation of a d20-based resolution system."""
 
     def __init__(

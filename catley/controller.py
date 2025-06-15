@@ -7,7 +7,7 @@ import tcod.map
 import tcod.sdl.mouse
 from tcod.console import Console
 
-from catley.game.resolution.base import Resolver
+from catley.game.resolution.base import ResolutionSystem
 
 if TYPE_CHECKING:
     from catley.game.actions.discovery import CombatIntentCache
@@ -157,12 +157,12 @@ class Controller:
         """Check if currently in targeting mode"""
         return self.active_mode == self.targeting_mode
 
-    def create_resolver(self, **kwargs: object) -> Resolver:
+    def create_resolver(self, **kwargs: object) -> ResolutionSystem:
         """Factory method for resolution systems.
 
-        Currently returns a :class:`D20Resolver` but allows future
+        Currently returns a :class:`D20System` but allows future
         customization without changing action code.
         """
-        from catley.game.resolution.d20_system import D20Resolver
+        from catley.game.resolution.d20_system import D20System
 
-        return D20Resolver(**kwargs)  # type: ignore[call-arg]
+        return D20System(**kwargs)  # type: ignore[call-arg]
