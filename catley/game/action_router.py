@@ -1,0 +1,108 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, cast
+
+from catley.game.actions.area_effects import AreaEffectIntent
+from catley.game.actions.base import GameActionResult, GameIntent
+from catley.game.actions.combat import AttackIntent, ReloadIntent
+from catley.game.actions.environment import CloseDoorIntent, OpenDoorIntent
+from catley.game.actions.executors.area_effects import AreaEffectExecutor
+from catley.game.actions.executors.base import ActionExecutor
+from catley.game.actions.executors.combat import AttackExecutor, ReloadExecutor
+from catley.game.actions.executors.environment import (
+    CloseDoorExecutor,
+    OpenDoorExecutor,
+)
+from catley.game.actions.executors.misc import PickupExecutor, SwitchWeaponExecutor
+from catley.game.actions.executors.movement import MoveExecutor
+from catley.game.actions.executors.recovery import (
+    ComfortableSleepExecutor,
+    RestExecutor,
+    SleepExecutor,
+    UseConsumableExecutor,
+)
+from catley.game.actions.misc import PickupIntent, SwitchWeaponIntent
+from catley.game.actions.movement import MoveIntent
+from catley.game.actions.recovery import (
+    ComfortableSleepIntent,
+    RestIntent,
+    SleepIntent,
+    UseConsumableIntent,
+)
+from catley.game.actors import Character
+
+if TYPE_CHECKING:
+    from catley.controller import Controller
+
+
+class ActionRouter:
+    """Dispatches intents to executors and arbitrates their results."""
+
+    def __init__(self, controller: Controller):
+        self.controller = controller
+        # This registry is the heart of the dispatcher.
+        self._executor_registry: dict[type, ActionExecutor] = {
+            MoveIntent: MoveExecutor(),
+            AttackIntent: AttackExecutor(),
+            ReloadIntent: ReloadExecutor(),
+            PickupIntent: PickupExecutor(),
+            SwitchWeaponIntent: SwitchWeaponExecutor(),
+            OpenDoorIntent: OpenDoorExecutor(),
+            CloseDoorIntent: CloseDoorExecutor(),
+            UseConsumableIntent: UseConsumableExecutor(),
+            RestIntent: RestExecutor(),
+            SleepIntent: SleepExecutor(),
+            ComfortableSleepIntent: ComfortableSleepExecutor(),
+            AreaEffectIntent: AreaEffectExecutor(),
+        }
+
+    def execute_intent(self, intent: GameIntent) -> None:
+        """The single public entry point for executing any action.
+        It dispatches the intent and arbitrates its result."""
+        executor = self._executor_registry.get(type(intent))
+        if not executor:
+            # Optionally, log an error for an unhandled intent type.
+            return
+
+        result = executor.execute(intent)
+        if not result:
+            result = GameActionResult()
+
+        # Arbitrate the result to handle special cases and chained actions.
+        self._arbitrate_result(intent, result)
+
+    def _arbitrate_result(
+        self, original_intent: GameIntent, result: GameActionResult
+    ) -> None:
+        """Contains all the world's interaction rules for action outcomes."""
+        if result.succeeded:
+            # Handle successful action finalization (e.g., FOV updates).
+            if (
+                original_intent.actor == self.controller.gw.player
+                and result.should_update_fov
+            ):
+                self.controller.update_fov()
+            return
+
+        # Handle failed actions that might trigger a new intent.
+        if isinstance(original_intent, MoveIntent):
+            self._handle_failed_move(original_intent, result)
+
+    def _handle_failed_move(self, intent: MoveIntent, result: GameActionResult) -> None:
+        """Rulebook for what happens after a failed move."""
+        if result.block_reason == "actor" and result.blocked_by:
+            # Rule: Bumping into a living character means you attack them.
+            blocking_actor = cast(Character, result.blocked_by)
+            if blocking_actor.health.is_alive():
+                new_intent = AttackIntent(
+                    self.controller, intent.actor, blocking_actor, weapon=None
+                )
+                self.execute_intent(new_intent)  # Recursive call
+
+        elif result.block_reason == "door" and result.blocked_by:
+            # Rule: Bumping into a closed door means you try to open it.
+            door_pos = cast(tuple[int, int], result.blocked_by)
+            new_intent = OpenDoorIntent(
+                self.controller, intent.actor, door_pos[0], door_pos[1]
+            )
+            self.execute_intent(new_intent)  # Recursive call

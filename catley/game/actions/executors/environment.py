@@ -25,7 +25,7 @@ class OpenDoorExecutor(ActionExecutor):
             game_map.tiles[intent.x, intent.y] = tile_types.TILE_TYPE_ID_DOOR_OPEN  # type: ignore[attr-defined]
             game_map.invalidate_property_caches()
             return GameActionResult(should_update_fov=True)
-        return None
+        return GameActionResult()
 
 
 class CloseDoorExecutor(ActionExecutor):
@@ -43,4 +43,4 @@ class CloseDoorExecutor(ActionExecutor):
             game_map.tiles[intent.x, intent.y] = tile_types.TILE_TYPE_ID_DOOR_CLOSED  # type: ignore[attr-defined]
             game_map.invalidate_property_caches()
             return GameActionResult(should_update_fov=True)
-        return None
+        return GameActionResult()

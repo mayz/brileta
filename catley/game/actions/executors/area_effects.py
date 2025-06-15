@@ -32,7 +32,7 @@ class AreaEffectExecutor(ActionExecutor):
     def execute(self, intent: AreaEffectIntent) -> GameActionResult | None:  # type: ignore[override]
         effect = intent.weapon.area_effect
         if effect is None:
-            return None
+            return GameActionResult(succeeded=False)
 
         # 1. Check ammo requirements if weapon uses ammo
         ranged = intent.weapon.ranged_attack
@@ -40,13 +40,13 @@ class AreaEffectExecutor(ActionExecutor):
             publish_event(
                 MessageEvent(f"{intent.weapon.name} is out of ammo!", colors.RED)
             )
-            return None
+            return GameActionResult(succeeded=False)
 
         # 2. Determine which tiles are affected by the effect
         tiles = self._calculate_tiles(intent, effect)
         if not tiles:
             publish_event(MessageEvent("Nothing is affected.", colors.GREY))
-            return None
+            return GameActionResult(succeeded=False)
 
         # 3. Apply damage or healing to actors in the affected tiles
         hits = self._apply_damage(intent, tiles, effect)
@@ -60,7 +60,7 @@ class AreaEffectExecutor(ActionExecutor):
 
         # 6. Trigger the appropriate visual effect
         self._trigger_visual_effect(intent, effect)
-        return None
+        return GameActionResult()
 
     def _calculate_tiles(
         self, intent: AreaEffectIntent, effect: AreaEffect
