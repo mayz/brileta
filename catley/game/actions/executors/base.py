@@ -11,12 +11,17 @@ if TYPE_CHECKING:
 
 
 class ActionExecutor(abc.ABC):
-    """Base class for action executors.
+    """
+    Base class for action executors.
 
     ActionExecutors are specialist classes responsible for orchestrating
     the entire resolution of a single type of Intent. Each executor contains
-    all the high-level coordination logic for an action type, using various
+    all the high-level coordination logic for an action, using various
     low-level systems to apply the final results to the GameWorld.
+
+    Executors are the "private implementation" of an action's logic and should
+    only ever be called by the `ActionRouter`. They should never be called
+    directly from UI or AI code.
     """
 
     def __init__(self, controller: Controller) -> None:

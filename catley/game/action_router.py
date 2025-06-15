@@ -1,3 +1,10 @@
+"""
+The central dispatcher and arbiter for the game's action system.
+
+This module contains the ActionRouter, which is the heart of the Intent/Executor
+pattern. It is the single point of entry for all game actions.
+"""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast
@@ -36,7 +43,22 @@ if TYPE_CHECKING:
 
 
 class ActionRouter:
-    """Dispatches intents to executors and arbitrates their results."""
+    """
+    Dispatches intents to executors and arbitrates their results.
+
+    The ActionRouter has two primary responsibilities:
+    1.  Dispatching: It maintains a registry mapping `GameIntent` types to their
+        corresponding `ActionExecutor` classes. When it receives an intent, it
+        looks up and calls the correct executor.
+    2.  Arbitration: It inspects the `GameActionResult` returned by an executor.
+        It is the single, centralized location for all "World Interaction Rules"
+        that define what happens in special cases. For example, it contains the
+        rule that a failed `MoveIntent` due to collision with an actor should be
+        translated into a new `AttackIntent`.
+
+    This class is the "private implementation" of the action system and should
+    only be instantiated and used by the `TurnManager`.
+    """
 
     def __init__(self, controller: Controller):
         self.controller = controller
