@@ -13,6 +13,7 @@ from catley.game.actions.discovery import (
     ActionContext,
     ActionDiscovery,
     ActionOption,
+    ActionRequirement,
     CombatIntentCache,
 )
 from catley.game.actions.environment import OpenDoorAction
@@ -346,7 +347,7 @@ def test_environment_options_include_door_actions() -> None:
     assert "Open Door" in names
     open_door_option = next(o for o in opts if o.name == "Open Door")
     assert open_door_option.action_class is OpenDoorAction
-    assert open_door_option.static_params == {"x": 1, "y": 0}
+    assert open_door_option.requirements == [ActionRequirement.TARGET_TILE]
 
 
 def test_probability_descriptor_mapping() -> None:

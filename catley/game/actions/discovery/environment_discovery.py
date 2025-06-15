@@ -14,7 +14,7 @@ from .action_context import ActionContext
 from .action_factory import ActionFactory
 from .action_formatters import ActionFormatter
 from .core_discovery import ActionCategory, ActionOption
-from .types import ActionRequirement  # noqa: F401
+from .types import ActionRequirement
 
 if TYPE_CHECKING:
     from catley.controller import Controller
@@ -40,11 +40,6 @@ class EnvironmentActionDiscovery:
 
     # ------------------------------------------------------------------
     # Discovery helpers
-    def _get_all_environment_actions(
-        self, controller: Controller, actor: Character, context: ActionContext
-    ) -> list[ActionOption]:
-        return []
-
     def _get_environment_options(
         self, controller: Controller, actor: Character, context: ActionContext
     ) -> list[ActionOption]:
@@ -52,6 +47,8 @@ class EnvironmentActionDiscovery:
 
         options: list[ActionOption] = []
         gm = controller.gw.game_map
+        has_closed_door = False
+        has_open_door = False
 
         for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
             tx = actor.x + dx
@@ -60,36 +57,42 @@ class EnvironmentActionDiscovery:
                 continue
             tile_id = gm.tiles[tx, ty]
             if tile_id == tile_types.TILE_TYPE_ID_DOOR_CLOSED:  # type: ignore[attr-defined]
-                options.append(
-                    ActionOption(
-                        id="open-door",
-                        name="Open Door",
-                        description="Open the door",
-                        category=ActionCategory.ENVIRONMENT,
-                        action_class=OpenDoorAction,
-                        requirements=[],
-                        static_params={"x": tx, "y": ty},
-                    )
-                )
+                has_closed_door = True
             elif tile_id == tile_types.TILE_TYPE_ID_DOOR_OPEN:  # type: ignore[attr-defined]
-                options.append(
-                    ActionOption(
-                        id="close-door",
-                        name="Close Door",
-                        description="Close the door",
-                        category=ActionCategory.ENVIRONMENT,
-                        action_class=CloseDoorAction,
-                        requirements=[],
-                        static_params={"x": tx, "y": ty},
-                    )
+                has_open_door = True
+
+        if has_closed_door:
+            options.append(
+                ActionOption(
+                    id="open-door",
+                    name="Open Door",
+                    description="Choose a door to open",
+                    category=ActionCategory.ENVIRONMENT,
+                    action_class=OpenDoorAction,
+                    requirements=[ActionRequirement.TARGET_TILE],
+                    static_params={},
                 )
+            )
+
+        if has_open_door:
+            options.append(
+                ActionOption(
+                    id="close-door",
+                    name="Close Door",
+                    description="Choose a door to close",
+                    category=ActionCategory.ENVIRONMENT,
+                    action_class=CloseDoorAction,
+                    requirements=[ActionRequirement.TARGET_TILE],
+                    static_params={},
+                )
+            )
 
         return options
 
     def _get_movement_options(
         self, controller: Controller, actor: Character, context: ActionContext
     ) -> list[ActionOption]:
-        # TODO: Add movement-related actions
+        # Placeholder for future movement-related actions
         return []
 
     def _get_recovery_actions(

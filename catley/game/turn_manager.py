@@ -91,7 +91,6 @@ class TurnManager:
         except Exception as e:
             error_message = f"Error executing action '{type(action).__name__}': {e!s}"
             publish_event(MessageEvent(error_message, colors.RED))
-            print(f"Unhandled exception during action execution: {e}")
             return
 
         if result is None:

@@ -172,11 +172,3 @@ class ItemActionDiscovery:
             )
 
         return options
-
-    # ------------------------------------------------------------------
-    # Internal utilities
-    def _open_pickup_menu(self, controller: Controller) -> None:
-        return None
-
-    def _switch_weapon(self, actor: Character, slot: int) -> None:
-        actor.inventory.switch_to_weapon_slot(slot)

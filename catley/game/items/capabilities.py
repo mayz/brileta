@@ -141,8 +141,7 @@ class MeleeAttack(Attack[MeleeAttackSpec]):
     ) -> None:
         """Carry out the melee attack."""
         # Access definitions via self._spec.damage_dice, etc.
-        # Actual melee attack logic (Phase 4)
-        print(f"Performing melee: {self._spec.damage_dice.dice_str}")
+        # Actual melee attack logic will be implemented later
         pass
 
 
@@ -177,14 +176,11 @@ class RangedAttack(Attack[RangedAttackSpec]):
         """Carry out the ranged attack and reduce ammo."""
         # Actual ranged attack logic (Phase 4)
         if self.current_ammo > 0:
-            print(
-                f"Performing ranged: {self._spec.damage_dice.dice_str}, "
-                f"Ammo: {self.current_ammo}"
-            )
             self.current_ammo -= 1
         else:
-            print("Out of ammo!")
-        pass
+            # Out of ammo should already be validated before calling.
+            pass
+        # Attack logic to be implemented
 
     def reload(self, rounds_to_add: int) -> int:
         needed = self._spec.max_ammo - self.current_ammo
