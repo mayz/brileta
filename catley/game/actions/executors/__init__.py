@@ -2,6 +2,7 @@ from .area_effects import AreaEffectExecutor
 from .base import ActionExecutor
 from .environment import CloseDoorExecutor, OpenDoorExecutor
 from .misc import PickupExecutor, SwitchWeaponExecutor
+from .movement import MoveExecutor
 from .recovery import (
     ComfortableSleepExecutor,
     RestExecutor,
@@ -14,6 +15,7 @@ __all__ = [
     "AreaEffectExecutor",
     "CloseDoorExecutor",
     "ComfortableSleepExecutor",
+    "MoveExecutor",
     "OpenDoorExecutor",
     "PickupExecutor",
     "RestExecutor",
