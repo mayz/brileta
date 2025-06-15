@@ -8,8 +8,9 @@ from catley import colors
 from catley.controller import Controller
 from catley.environment.map import GameMap
 from catley.events import reset_event_bus_for_testing
-from catley.game.actions.area_effects import AreaEffectAction
+from catley.game.actions.area_effects import AreaEffectIntent
 from catley.game.actions.combat import AttackIntent
+from catley.game.actions.executors.area_effects import AreaEffectExecutor
 from catley.game.actions.executors.combat import AttackExecutor
 from catley.game.actors import Character, conditions
 from catley.game.enums import OutcomeTier
@@ -80,8 +81,9 @@ def make_bomb_world():
         gw=gw, message_log=DummyMessageLog(), frame_manager=DummyFrameManager()
     )
     bomb = DIRTY_BOMB_TYPE.create()
-    action = AreaEffectAction(game_map, gw.actors, attacker, 5, 5, bomb)
-    return controller, attacker, target, action
+    intent = AreaEffectIntent(controller, attacker, 5, 5, bomb)
+    executor = AreaEffectExecutor()
+    return controller, attacker, target, intent, executor
 
 
 def test_radiation_damage_direct() -> None:
@@ -113,16 +115,16 @@ def test_radiation_weapon_attack() -> None:
 
 def test_dirty_bomb_area_effect() -> None:
     reset_event_bus_for_testing()
-    controller, attacker, target, action = make_bomb_world()
-    effect = action.weapon.area_effect
+    controller, attacker, target, intent, executor = make_bomb_world()
+    effect = intent.weapon.area_effect
     assert effect is not None
-    tiles = action._circle_tiles(effect)
+    tiles = executor._circle_tiles(intent, effect)
 
     def fixed_randint(_a: int, _b: int) -> int:
         return 6
 
     with patch("random.randint", fixed_randint):
-        hits = action._apply_damage(tiles, effect)
+        hits = executor._apply_damage(intent, tiles, effect)
     assert hits == [(target, 4)]
     assert target.health.hp == target.health.max_hp - 4
     assert len(target.conditions.get_conditions_by_type(conditions.Rads)) == 4

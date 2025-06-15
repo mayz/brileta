@@ -291,7 +291,7 @@ class AreaEffect:
     - "I can target locations within range Z"
 
     *Does Not Handle*: Map-specific calculations, actor finding, damage application.
-    Those belong in AreaEffectAction.
+    Those belong in the AreaEffectExecutor.
     """
 
     def __init__(self, spec: AreaEffectSpec) -> None:

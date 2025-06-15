@@ -4,9 +4,11 @@ from typing import TYPE_CHECKING
 
 from catley import colors
 from catley.events import MessageEvent, publish_event
+from catley.game.actions.area_effects import AreaEffectIntent
 from catley.game.actions.base import GameAction, GameActionResult, GameIntent
 from catley.game.actions.combat import AttackIntent, ReloadIntent
 from catley.game.actions.environment import CloseDoorIntent, OpenDoorIntent
+from catley.game.actions.executors.area_effects import AreaEffectExecutor
 from catley.game.actions.executors.base import ActionExecutor
 from catley.game.actions.executors.combat import AttackExecutor, ReloadExecutor
 from catley.game.actions.executors.environment import (
@@ -139,6 +141,9 @@ class TurnManager:
                 result = executor.execute(action)
             elif isinstance(action, ComfortableSleepIntent):
                 executor = ComfortableSleepExecutor()
+                result = executor.execute(action)
+            elif isinstance(action, AreaEffectIntent):
+                executor = AreaEffectExecutor()
                 result = executor.execute(action)
             else:
                 assert isinstance(action, GameAction)
