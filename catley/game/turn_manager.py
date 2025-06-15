@@ -1,3 +1,7 @@
+"""
+Manages the game's turn-based clock and action queue.
+"""
+
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -10,7 +14,19 @@ if TYPE_CHECKING:
 
 
 class TurnManager:
-    """Manages turn-based gameplay, actor energy, and action queuing."""
+    """
+    Manages the game's turn-based clock, actor energy, and action queuing.
+
+    The TurnManager is responsible for the "when" of actions, but not the "how."
+    Its core responsibility is to manage the `process_unified_round` loop,
+    giving energy to actors and allowing them to act when they have enough.
+
+    When an actor decides to perform an action, the TurnManager takes the
+    generated `GameIntent` and passes it to its internal `ActionRouter` instance,
+    which handles the actual execution and arbitration. The TurnManager does not
+    contain any specific game rules about what actions mean or how they are
+    resolved.
+    """
 
     def __init__(self, controller: Controller):
         self.controller = controller

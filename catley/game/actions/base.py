@@ -1,9 +1,28 @@
 """
-Base classes for game intents.
+Base classes for the Intent/Executor action system.
 
-Defines the core GameIntent interface that all in-world intents inherit from.
-These represent meaningful decisions made by actors that will be executed
-by the TurnManager through the Intent/Executor pattern.
+This module defines the core data structures for the game's action system, which
+is built on the "Intent and Executor" pattern. This pattern decouples the
+specification of an action from its implementation.
+
+Core Components:
+- GameIntent: A pure data object, or "blueprint," that specifies an actor's
+  desired action (e.g., AttackIntent, MoveIntent). It contains no game logic.
+  These are the "public API" of the action system.
+
+- ActionExecutor: A specialist class that contains all the logic for a single
+  type of Intent. It takes an Intent and applies its effects to the game world.
+  Executors are the "private implementation" and should only be called by the
+  ActionRouter.
+
+- GameActionResult: A data object returned by an Executor that reports the
+  mechanical outcome of an action, such as success, failure, or whether a
+  Field of View update is required.
+
+- ActionRouter: The central dispatcher that receives all GameIntents, looks up
+  the correct ActionExecutor in a registry, and manages the execution flow. It
+  is also responsible for arbitrating the results of actions to handle special
+  cases and chained actions (e.g., a failed move becoming an attack).
 """
 
 from __future__ import annotations
@@ -20,11 +39,13 @@ if TYPE_CHECKING:
 
 @dataclass
 class GameActionResult:
-    """Result returned by action executors.
+    """
+    A data object returned by an ActionExecutor to report an action's outcome.
 
-    When ``should_update_fov`` is ``True`` the player's field of view will be
-    recomputed after the action is processed by
-    :class:`~catley.turn_manager.TurnManager`.
+    This class provides a structured report on the mechanical results of an
+    executed intent. The ActionRouter inspects this result to determine
+    what happens next, such as updating the player's field of view or
+    triggering a new, chained action in response to a specific failure.
     """
 
     succeeded: bool = True
@@ -35,12 +56,13 @@ class GameActionResult:
 
 
 class GameIntent:
-    """Data-only object describing an intended game action.
+    """
+    A pure data object representing an actor's intended action.
 
-    Intents are routed through dedicated executors by
-    :class:`~catley.game.turn_manager.TurnManager`. They contain only
-    the data needed to describe what the actor wants to do, with no
-    execution logic.
+    Intents are the "blueprints" for actions. They are created by UI handlers or
+    AI components to describe what an actor *wants* to do, but contain no
+    execution logic themselves. They are the public-facing part of the action
+    system and are passed to the ActionRouter for processing.
     """
 
     def __init__(self, controller: Controller, actor: Actor) -> None:
