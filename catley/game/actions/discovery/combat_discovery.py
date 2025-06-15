@@ -3,12 +3,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, cast
 
 from catley.game import ranges
+from catley.game.actions.combat import AttackAction
 from catley.game.actors import Character
 
 from .action_context import ActionContext, ActionContextBuilder
 from .action_factory import ActionFactory
 from .action_formatters import ActionFormatter
-from .core_discovery import ActionCategory, ActionOption
+from .types import ActionCategory, ActionOption, ActionRequirement
 
 if TYPE_CHECKING:
     from catley.controller import Controller
@@ -78,6 +79,9 @@ class CombatActionDiscovery:
                             ),
                             description=f"Close combat attack using {weapon.name}",
                             category=ActionCategory.COMBAT,
+                            action_class=AttackAction,
+                            requirements=[ActionRequirement.TARGET_ACTOR],
+                            static_params={"weapon": weapon, "attack_mode": "melee"},
                             success_probability=prob,
                             execute=lambda w=weapon,
                             t=target: self.factory.create_melee_attack(
@@ -104,6 +108,12 @@ class CombatActionDiscovery:
                                     f"Target is beyond {weapon.name}'s maximum range"
                                 ),
                                 category=ActionCategory.COMBAT,
+                                action_class=AttackAction,
+                                requirements=[ActionRequirement.TARGET_ACTOR],
+                                static_params={
+                                    "weapon": weapon,
+                                    "attack_mode": "ranged",
+                                },
                                 success_probability=0.0,
                             )
                         )
@@ -137,6 +147,9 @@ class CombatActionDiscovery:
                             name=display_name,
                             description=f"Ranged attack at {range_cat} range",
                             category=ActionCategory.COMBAT,
+                            action_class=AttackAction,
+                            requirements=[ActionRequirement.TARGET_ACTOR],
+                            static_params={"weapon": weapon, "attack_mode": "ranged"},
                             success_probability=prob,
                             cost_description=None,
                             execute=lambda w=weapon,
@@ -195,6 +208,9 @@ class CombatActionDiscovery:
                         display_text=display_text,
                         description=f"Close combat attack using {weapon.name}",
                         category=ActionCategory.COMBAT,
+                        action_class=AttackAction,
+                        requirements=[ActionRequirement.TARGET_ACTOR],
+                        static_params={"weapon": weapon, "attack_mode": "melee"},
                         success_probability=prob,
                         execute=lambda w=weapon,
                         t=target: self.factory.create_melee_attack(
@@ -225,6 +241,9 @@ class CombatActionDiscovery:
                                 f"Target is beyond {weapon.name}'s maximum range"
                             ),
                             category=ActionCategory.COMBAT,
+                            action_class=AttackAction,
+                            requirements=[ActionRequirement.TARGET_ACTOR],
+                            static_params={"weapon": weapon, "attack_mode": "ranged"},
                             success_probability=0.0,
                         )
                     )
@@ -260,6 +279,9 @@ class CombatActionDiscovery:
                         display_text=display_name,
                         description=f"Ranged attack at {range_cat} range",
                         category=ActionCategory.COMBAT,
+                        action_class=AttackAction,
+                        requirements=[ActionRequirement.TARGET_ACTOR],
+                        static_params={"weapon": weapon, "attack_mode": "ranged"},
                         success_probability=prob,
                         cost_description=None,
                         execute=lambda w=weapon,
