@@ -232,6 +232,28 @@ class ActionBrowserMenu(Menu):
                     self.populate_options()
                 return True
             case tcod.event.KeyDown(sym=tcod.event.KeySym.RETURN):
+                # Skip "[Enter] Continue..." when there's only one real action
+                primary_actions = [
+                    opt
+                    for opt in self.options
+                    if opt.enabled
+                    and opt.action
+                    and opt.is_primary_action
+                    and not opt.text.startswith("[Enter]")  # Exclude Continue options
+                    and not opt.text.startswith("←")  # Exclude Back options
+                ]
+
+                if len(primary_actions) == 1:
+                    opt = primary_actions[0]
+                    if opt.action:
+                        should_close = opt.action()
+                        if should_close:
+                            self.hide()
+                        else:
+                            self.populate_options()
+                    return True
+
+                # Fall back to original logic for "[Enter] Continue..."
                 if (
                     self.options
                     and self.options[0].text.startswith("[Enter]")
@@ -243,20 +265,7 @@ class ActionBrowserMenu(Menu):
                     else:
                         self.populate_options()
                     return True
-                primary_actions = [
-                    opt
-                    for opt in self.options
-                    if opt.enabled and opt.action and opt.is_primary_action
-                ]
-                if len(primary_actions) == 1:
-                    opt = primary_actions[0]
-                    if opt.action:
-                        should_close = opt.action()
-                        if should_close:
-                            self.hide()
-                        else:
-                            self.populate_options()
-                    return True
+
                 self.hide()
                 return True
             case tcod.event.KeyDown() as key_event:
