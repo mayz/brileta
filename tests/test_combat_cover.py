@@ -20,9 +20,9 @@ class DummyController:
     message_log: object | None = None
 
     def create_resolver(self, **kwargs: object) -> object:
-        from catley.game.resolution.d20_system import D20Resolver
+        from catley.game.resolution.d20_system import D20System
 
-        return D20Resolver(**kwargs)  # type: ignore[call-arg]
+        return D20System(**kwargs)  # type: ignore[call-arg]
 
 
 def test_cover_bonus_reduces_hit_chance() -> None:

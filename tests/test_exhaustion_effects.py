@@ -9,7 +9,7 @@ from catley.game.actions.movement import MoveAction
 from catley.game.actors import Character, conditions
 from catley.game.enums import InjuryLocation
 from catley.game.game_world import GameWorld
-from catley.game.resolution.d20_system import D20ResolutionResult, D20Resolver
+from catley.game.resolution.d20_system import D20ResolutionResult, D20System
 from tests.helpers import DummyGameWorld
 
 
@@ -61,7 +61,7 @@ def test_double_exhaustion_disadvantage_and_energy() -> None:
         1, 0, "T", colors.WHITE, "Tar", game_world=cast(GameWorld, controller.gw)
     )
     with patch("random.randint", side_effect=[4, 18]):
-        result = D20Resolver(0, 10).resolve(actor, target)
+        result = D20System(0, 10).resolve(actor, target)
     assert isinstance(result, D20ResolutionResult)
     assert result.has_disadvantage
     assert result.final_roll_used == 4

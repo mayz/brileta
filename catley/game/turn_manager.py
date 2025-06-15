@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 from catley import colors
 from catley.events import MessageEvent, publish_event
 from catley.game.actions.base import GameAction, GameActionResult
+from catley.game.actions.executors.base import ActionExecutor
 
 if TYPE_CHECKING:
     from catley.controller import Controller
@@ -17,6 +18,9 @@ class TurnManager:
         self.controller = controller
         self.player = self.controller.gw.player
         self._pending_action: GameAction | None = None
+        # Executor registry for future Intent/Executor dispatch
+        # TODO: Populate in Task 2 - not used yet
+        self._executor_registry: dict[type, ActionExecutor] = {}
 
     def queue_action(self, action: GameAction) -> None:
         """Queue a game action to be processed on the next turn."""
@@ -99,3 +103,10 @@ class TurnManager:
         # Update FOV if the player's action indicated a change in visibility
         if action.actor == self.controller.gw.player and result.should_update_fov:
             self.controller.update_fov()
+
+    def _get_executor_for_intent(self, intent: GameAction) -> ActionExecutor | None:
+        """Get the appropriate executor for an intent type.
+
+        TODO: Implement routing logic in Task 2
+        """
+        return self._executor_registry.get(type(intent))
