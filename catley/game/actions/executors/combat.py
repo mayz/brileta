@@ -14,7 +14,7 @@ from catley.events import (
 )
 from catley.game import ranges
 from catley.game.actions.base import GameActionResult
-from catley.game.actors import ai, status_effects
+from catley.game.actors import Character, ai, status_effects
 from catley.game.consequences import (
     AttackConsequenceGenerator,
     ConsequenceHandler,
@@ -91,11 +91,7 @@ class AttackExecutor:
         self, intent: AttackIntent
     ) -> tuple[Attack | None, Item]:
         """Determine which attack method and weapon to use."""
-        weapon = (
-            intent.weapon
-            or intent.attacker.inventory.get_active_weapon()
-            or FISTS_TYPE.create()
-        )
+        weapon = intent.weapon or self._select_appropriate_weapon(intent.attacker)
 
         distance = ranges.calculate_distance(
             intent.attacker.x,
@@ -132,6 +128,56 @@ class AttackExecutor:
             MessageEvent(f"{intent.attacker.name} has no way to attack!", colors.RED)
         )
         return None, weapon
+
+    def _select_appropriate_weapon(self, actor: Character) -> Item:
+        """Select the most appropriate weapon for the attack.
+
+        When no specific weapon is provided, choose the best available weapon,
+        preferring melee weapons suitable for close combat (like ramming).
+        """
+
+        active_weapon = actor.inventory.get_active_weapon()
+
+        # If we have an active weapon and it's suitable for melee, use it
+        if active_weapon and self._is_suitable_melee_for_ramming(active_weapon):
+            return active_weapon
+
+        # Look for other suitable melee weapons in equipped slots
+        candidates: list[Item] = []
+        for weapon, _ in actor.inventory.get_equipped_items():
+            if weapon is not active_weapon and self._is_suitable_melee_for_ramming(
+                weapon
+            ):
+                candidates.append(weapon)
+
+        if candidates:
+            # Prefer designed weapons over improvised ones
+            non_improvised = [
+                w
+                for w in candidates
+                if WeaponProperty.IMPROVISED not in w.melee_attack.properties  # type: ignore[union-attr]
+            ]
+            if non_improvised:
+                return non_improvised[0]
+            return candidates[0]
+
+        # If active weapon exists but isn't suitable for melee, still use it
+        if active_weapon:
+            return active_weapon
+
+        # Fall back to fists
+        return FISTS_TYPE.create()
+
+    def _is_suitable_melee_for_ramming(self, weapon: Item) -> bool:
+        """Return True if the weapon can be used effectively in melee combat."""
+        melee = weapon.melee_attack
+        if melee is None:
+            return False
+
+        ranged = weapon.ranged_attack
+        return not (
+            ranged is not None and WeaponProperty.PREFERRED in ranged.properties
+        )
 
     def _validate_attack(
         self, intent: AttackIntent, attack: Attack, weapon: Item

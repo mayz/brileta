@@ -31,6 +31,7 @@ from catley.game.actions.recovery import (
     SleepIntent,
     UseConsumableIntent,
 )
+from catley.game.actors import Actor, Character
 
 if TYPE_CHECKING:
     from catley.controller import Controller
@@ -163,6 +164,10 @@ class TurnManager:
         if result is None:
             result = GameActionResult()
 
+        # Handle collision results by creating follow-up intents
+        if not result.succeeded:
+            self._handle_collision(action, result)
+
         # Update FOV if the player's action indicated a change in visibility
         if action.actor == self.controller.gw.player and result.should_update_fov:
             self.controller.update_fov()
@@ -175,3 +180,48 @@ class TurnManager:
         TODO: Implement routing logic in Task 2
         """
         return self._executor_registry.get(type(intent))
+
+    def _handle_collision(
+        self, original_action: GameAction | GameIntent, result: GameActionResult
+    ) -> None:
+        """Create follow-up intents in response to failed movement."""
+
+        # Only handle collisions from MoveIntent for now
+        if not isinstance(original_action, MoveIntent):
+            return
+
+        # Handle different types of collisions
+        if result.block_reason == "actor" and result.blocked_by:
+            self._handle_actor_collision(original_action, result.blocked_by)
+        elif result.block_reason == "door" and result.blocked_by:
+            self._handle_door_collision(original_action, result.blocked_by)
+        # Other collision types don't need follow-up actions
+
+    def _handle_actor_collision(
+        self, move_intent: MoveIntent, blocking_actor: Actor
+    ) -> None:
+        """Handle collision with an actor by creating a ramming attack."""
+        # Only ram living characters
+        if isinstance(blocking_actor, Character) and blocking_actor.health.is_alive():
+            attack_intent = AttackIntent(
+                controller=move_intent.controller,
+                attacker=move_intent.actor,
+                defender=blocking_actor,
+                weapon=None,  # Let AttackExecutor choose the appropriate weapon
+            )
+            # Recursively execute the attack through TurnManager
+            self._execute_action(attack_intent)
+
+    def _handle_door_collision(
+        self, move_intent: MoveIntent, door_location: tuple[int, int]
+    ) -> None:
+        """Handle collision with a door by opening it."""
+        door_x, door_y = door_location
+        open_door_intent = OpenDoorIntent(
+            move_intent.controller,
+            move_intent.actor,
+            door_x,
+            door_y,
+        )
+        # Recursively execute the door opening through TurnManager
+        self._execute_action(open_door_intent)
