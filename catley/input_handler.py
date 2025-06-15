@@ -11,7 +11,7 @@ from catley.view.ui.action_browser_menu import ActionBrowserMenu
 from catley.view.ui.help_menu import HelpMenu
 from catley.view.ui.inventory_menu import InventoryMenu
 
-from .game.actions.base import GameAction, GameIntent
+from .game.actions.base import GameIntent
 from .game.actions.movement import MoveIntent
 
 if TYPE_CHECKING:
@@ -64,7 +64,7 @@ class InputHandler:
         # Process a round (the controller will decide if anything needs to happen)
         self.controller.process_unified_round()
 
-    def handle_event(self, event: tcod.event.Event) -> GameAction | GameIntent | None:
+    def handle_event(self, event: tcod.event.Event) -> GameIntent | None:
         # Don't process game actions if menus are active
         if self.controller.overlay_system.has_active_menus():
             return None
@@ -196,9 +196,7 @@ class InputHandler:
             case _:
                 return None
 
-    def _check_for_game_action(
-        self, event: tcod.event.Event
-    ) -> GameAction | GameIntent | None:
+    def _check_for_game_action(self, event: tcod.event.Event) -> GameIntent | None:
         match event:
             # Movement keys (Arrows and VIM)
             case (

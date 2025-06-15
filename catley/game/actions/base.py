@@ -1,13 +1,13 @@
 """
-Base classes for game actions.
+Base classes for game intents.
 
-Defines the core GameAction interface that all in-world actions inherit from.
-These represent meaningful decisions made by actors that change the game world state.
+Defines the core GameIntent interface that all in-world intents inherit from.
+These represent meaningful decisions made by actors that will be executed
+by the TurnManager through the Intent/Executor pattern.
 """
 
 from __future__ import annotations
 
-import abc
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
 @dataclass
 class GameActionResult:
-    """Result returned by :meth:`GameAction.execute`.
+    """Result returned by action executors.
 
     When ``should_update_fov`` is ``True`` the player's field of view will be
     recomputed after the action is processed by
@@ -34,37 +34,13 @@ class GameActionResult:
     consequences: list[Consequence] = field(default_factory=list)
 
 
-class GameAction(abc.ABC):
-    """An action that represents a game turn, such as moving an actor or
-    performing an attack. This is distinct from UI actions and is meant to
-    be executed within the game loop.
-
-    An action performed by an actor (player or NPC) that directly affects the
-    game world's state and typically consumes that actor's turn. Examples include
-    moving, attacking, performing stunts or tricks, etc.
-    """
-
-    def __init__(self, controller: Controller, actor: Actor) -> None:
-        self.controller = controller
-        self.actor = actor
-
-    @abc.abstractmethod
-    def execute(self) -> GameActionResult | None:
-        """Execute this action.
-
-        Returning ``None`` means no special post-processing is required by the
-        caller. A :class:`GameActionResult` can be returned to request additional
-        handling such as a field-of-view update.
-        """
-        pass
-
-
 class GameIntent:
     """Data-only object describing an intended game action.
 
-    Unlike :class:`GameAction`, intents do not implement :meth:`execute`.
-    They are routed through dedicated executors by
-    :class:`~catley.game.turn_manager.TurnManager`.
+    Intents are routed through dedicated executors by
+    :class:`~catley.game.turn_manager.TurnManager`. They contain only
+    the data needed to describe what the actor wants to do, with no
+    execution logic.
     """
 
     def __init__(self, controller: Controller, actor: Actor) -> None:

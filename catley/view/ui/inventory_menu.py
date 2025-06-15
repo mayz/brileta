@@ -153,13 +153,11 @@ class InventoryMenu(Menu):
                 color = colors.GREEN if success else colors.YELLOW
                 publish_event(MessageEvent(message, color))
         else:
-            from catley.game.actions.executors.recovery import UseConsumableExecutor
             from catley.game.actions.recovery import UseConsumableIntent
 
             if item.consumable_effect:
                 intent = UseConsumableIntent(self.controller, player, item)
-                executor = UseConsumableExecutor()
-                executor.execute(intent)
+                self.controller.queue_action(intent)
             else:
                 publish_event(
                     MessageEvent(f"{item.name} cannot be used", colors.YELLOW)

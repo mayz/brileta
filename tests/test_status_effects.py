@@ -3,8 +3,8 @@ from typing import cast
 
 from catley import colors
 from catley.controller import Controller
-from catley.game.actions.base import GameAction, GameActionResult
-from catley.game.actors import PC, Character, conditions, status_effects
+from catley.game.actions.movement import MoveIntent
+from catley.game.actors import PC, conditions, status_effects
 from catley.game.enums import InjuryLocation
 from catley.game.game_world import GameWorld
 from catley.game.turn_manager import TurnManager
@@ -18,6 +18,9 @@ class DummyController:
     def __post_init__(self) -> None:
         self.action_cost = 100
         self.turn_manager = TurnManager(cast(Controller, self))
+
+    def update_fov(self) -> None:
+        pass
 
 
 def make_world() -> tuple[DummyController, PC]:
@@ -87,27 +90,14 @@ def test_offbalance_persists_until_next_round() -> None:
     controller, actor = make_world()
     tm = controller.turn_manager
 
-    class DummyAction(GameAction):
-        def __init__(
-            self, controller: Controller, actor: Character, apply: bool
-        ) -> None:
-            super().__init__(controller, actor)
-            self.apply = apply
-
-        def execute(self) -> GameActionResult | None:  # pragma: no cover - simple
-            if self.apply:
-                actor.status_effects.apply_status_effect(
-                    status_effects.OffBalanceEffect()
-                )
-            return None
-
-    # First round applies the effect
-    tm.queue_action(DummyAction(cast(Controller, controller), actor, True))
+    # Simulate an action applying OffBalanceEffect at the end of the round
+    tm.queue_action(MoveIntent(cast(Controller, controller), actor, 1, 0))
     tm.process_unified_round()
+    actor.status_effects.apply_status_effect(status_effects.OffBalanceEffect())
     assert actor.status_effects.has_status_effect(status_effects.OffBalanceEffect)
 
-    # Next round should remove it before acting again
-    tm.queue_action(DummyAction(cast(Controller, controller), actor, False))
+    # Next round should remove it before the actor acts again
+    tm.queue_action(MoveIntent(cast(Controller, controller), actor, 1, 0))
     tm.process_unified_round()
     assert not actor.status_effects.has_status_effect(status_effects.OffBalanceEffect)
 

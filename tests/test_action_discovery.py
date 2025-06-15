@@ -7,7 +7,7 @@ from catley.controller import Controller
 from catley.environment import tile_types
 from catley.environment.map import GameMap
 from catley.game import ranges
-from catley.game.actions.base import GameAction
+from catley.game.actions.base import GameIntent
 from catley.game.actions.discovery import (
     ActionCategory,
     ActionContext,
@@ -244,7 +244,7 @@ def test_sort_by_relevance_orders_actions() -> None:
         "a",
         "",
         ActionCategory.COMBAT,
-        cast(type[GameAction], type(None)),
+        cast(type[GameIntent], type(None)),
         requirements=[],
         static_params={},
         hotkey="a",
@@ -255,14 +255,14 @@ def test_sort_by_relevance_orders_actions() -> None:
         "b",
         "",
         ActionCategory.ITEMS,
-        cast(type[GameAction], type(None)),
+        cast(type[GameIntent], type(None)),
     )
     opt3 = ActionOption(
         "id3",
         "c",
         "",
         ActionCategory.COMBAT,
-        cast(type[GameAction], type(None)),
+        cast(type[GameIntent], type(None)),
         success_probability=0.8,
     )
 

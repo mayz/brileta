@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any, cast
 
 from catley.game import ranges
-from catley.game.actions.base import GameAction
+from catley.game.actions.base import GameIntent
 from catley.game.actions.combat import AttackIntent
 from catley.game.actions.discovery import ActionDiscovery
 from catley.game.actions.discovery.core_discovery import (
@@ -107,7 +107,7 @@ class ActionBrowserStateMachine:
                         name=label,
                         description=f"Browse {cat_state} actions",
                         category=cats[0],
-                        action_class=cast(type[GameAction], type(None)),
+                        action_class=cast(type[GameIntent], type(None)),
                         requirements=[],
                         execute=lambda s=cat_state: self._set_ui_state(s),
                     )
@@ -129,7 +129,7 @@ class ActionBrowserStateMachine:
                     name="Attack a target...",
                     description="Select target, then choose how to attack",
                     category=ActionCategory.COMBAT,
-                    action_class=cast(type[GameAction], type(None)),
+                    action_class=cast(type[GameIntent], type(None)),
                     requirements=[],
                     hotkey="t",
                     execute=lambda: self._set_ui_state("select_target"),
@@ -143,7 +143,7 @@ class ActionBrowserStateMachine:
                     name="Attack with weapon...",
                     description="Select weapon/attack mode, then choose target",
                     category=ActionCategory.COMBAT,
-                    action_class=cast(type[GameAction], type(None)),
+                    action_class=cast(type[GameIntent], type(None)),
                     requirements=[],
                     hotkey="w",
                     execute=lambda: self._set_ui_state("select_weapon"),
@@ -248,7 +248,7 @@ class ActionBrowserStateMachine:
                     name=f"{target.name} ({desc})",
                     description=f"Attack {target.name}",
                     category=ActionCategory.COMBAT,
-                    action_class=cast(type[GameAction], type(None)),
+                    action_class=cast(type[GameIntent], type(None)),
                     requirements=[],
                     execute=lambda t=target: self._select_target_then_weapon(t),
                 )
@@ -287,7 +287,7 @@ class ActionBrowserStateMachine:
                         name=f"{weapon.name} (Melee)",
                         description=f"Melee attack using {weapon.name}",
                         category=ActionCategory.COMBAT,
-                        action_class=cast(type[GameAction], type(None)),
+                        action_class=cast(type[GameIntent], type(None)),
                         requirements=[],
                         execute=lambda w=weapon: self._select_weapon_then_target(
                             w, "melee"
@@ -315,7 +315,7 @@ class ActionBrowserStateMachine:
                             name=f"{weapon.name} (Ranged)",
                             description=f"Ranged attack using {weapon.name}",
                             category=ActionCategory.COMBAT,
-                            action_class=cast(type[GameAction], type(None)),
+                            action_class=cast(type[GameIntent], type(None)),
                             requirements=[],
                             execute=lambda w=weapon: self._select_weapon_then_target(
                                 w, "ranged"
@@ -390,7 +390,7 @@ class ActionBrowserStateMachine:
                         ),
                         description=f"Close combat attack using {weapon.name}",
                         category=ActionCategory.COMBAT,
-                        action_class=cast(type[GameAction], type(None)),
+                        action_class=cast(type[GameIntent], type(None)),
                         requirements=[],
                         success_probability=prob,
                         execute=lambda t=target, w=weapon: (
@@ -425,7 +425,7 @@ class ActionBrowserStateMachine:
                                 f"Target is beyond {weapon.name}'s maximum range"
                             ),
                             category=ActionCategory.COMBAT,
-                            action_class=cast(type[GameAction], type(None)),
+                            action_class=cast(type[GameIntent], type(None)),
                             requirements=[],
                             success_probability=0.0,
                         )
@@ -448,7 +448,7 @@ class ActionBrowserStateMachine:
                         ),
                         description=f"Ranged attack at {range_cat} range",
                         category=ActionCategory.COMBAT,
-                        action_class=cast(type[GameAction], type(None)),
+                        action_class=cast(type[GameIntent], type(None)),
                         requirements=[],
                         success_probability=prob,
                         execute=lambda t=target, w=weapon: (
@@ -470,7 +470,7 @@ class ActionBrowserStateMachine:
             name="\u2190 Back",
             description="Return to previous screen",
             category=ActionCategory.MOVEMENT,
-            action_class=cast(type[GameAction], type(None)),
+            action_class=cast(type[GameIntent], type(None)),
             requirements=[],
             execute=lambda: self._go_back(),
         )
@@ -506,7 +506,7 @@ class ActionBrowserStateMachine:
                 name="\u2190 Back",
                 description="Return to action selection",
                 category=ActionCategory.MOVEMENT,
-                action_class=cast(type[GameAction], type(None)),
+                action_class=cast(type[GameIntent], type(None)),
                 requirements=[],
                 execute=lambda: self._go_back(),
             )
@@ -529,7 +529,7 @@ class ActionBrowserStateMachine:
                     name="(no valid options)",
                     description="",
                     category=ActionCategory.MOVEMENT,
-                    action_class=cast(type[GameAction], type(None)),
+                    action_class=cast(type[GameIntent], type(None)),
                     requirements=[],
                 )
             )
@@ -637,7 +637,7 @@ class ActionBrowserStateMachine:
                     name=f"{target.name} ({desc})",
                     description=f"Select {target.name} as target",
                     category=ActionCategory.COMBAT,
-                    action_class=cast(type[GameAction], type(None)),
+                    action_class=cast(type[GameIntent], type(None)),
                     requirements=[],
                     execute=lambda t=target: self._fulfill_requirement(
                         ActionRequirement.TARGET_ACTOR, t
@@ -671,7 +671,7 @@ class ActionBrowserStateMachine:
                         name=f"Tile ({tx}, {ty})",
                         description=f"Select tile at ({tx}, {ty})",
                         category=ActionCategory.ENVIRONMENT,
-                        action_class=cast(type[GameAction], type(None)),
+                        action_class=cast(type[GameIntent], type(None)),
                         requirements=[],
                         execute=lambda x=tx, y=ty: self._fulfill_requirement(
                             ActionRequirement.TARGET_TILE, (x, y)
@@ -694,7 +694,7 @@ class ActionBrowserStateMachine:
                     name=f"{item.name}",
                     description=f"Select {item.name}",
                     category=ActionCategory.ITEMS,
-                    action_class=cast(type[GameAction], type(None)),
+                    action_class=cast(type[GameIntent], type(None)),
                     requirements=[],
                     execute=lambda i=item: self._fulfill_requirement(
                         ActionRequirement.ITEM_FROM_INVENTORY, i
