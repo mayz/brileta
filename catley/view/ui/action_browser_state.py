@@ -520,7 +520,7 @@ class ActionBrowserStateMachine:
             case ActionRequirement.ITEM_FROM_INVENTORY:
                 options.extend(self._get_inventory_item_options(controller, actor))
             case _:
-                print(f"Warning: Unknown requirement type: {requirement}")
+                return []
 
         if len(options) == 1:
             options.append(
@@ -569,14 +569,12 @@ class ActionBrowserStateMachine:
                 not value.health.is_alive()
                 or not controller.gw.game_map.visible[value.x, value.y]
             ):
-                print("Target no longer valid")
                 self.reset_state()
                 return
             if (
                 req_type is ActionRequirement.ITEM_FROM_INVENTORY
                 and value not in actor.inventory
             ):
-                print("Item no longer available")
                 self.reset_state()
                 return
 
@@ -594,8 +592,7 @@ class ActionBrowserStateMachine:
             action_instance = self.current_action_option.action_class(
                 controller, actor, **all_params
             )
-        except TypeError as exc:  # pragma: no cover - runtime feedback only
-            print(f"Action init error: {exc}")
+        except TypeError:
             self.reset_state()
             return
 

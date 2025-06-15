@@ -229,8 +229,7 @@ class ActionBrowserMenu(Menu):
                     self.controller.gw.player,
                     **action_option.static_params,
                 )
-            except TypeError as exc:  # pragma: no cover - runtime
-                print(f"Action init error: {exc}")
+            except TypeError:
                 return True
             self.controller.queue_action(action_instance)
             if isinstance(action_instance, AttackAction):

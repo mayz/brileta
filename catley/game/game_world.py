@@ -265,7 +265,5 @@ class GameWorld:
                     break
 
             if not placed:
-                print(
-                    f"Could not place Trog {npc_index + 1} after "
-                    f"{max_attempts_per_npc} attempts"
-                )
+                # NPC could not be placed after several attempts; skip it
+                pass
