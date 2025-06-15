@@ -35,5 +35,6 @@ class HelpMenu(Menu):
                     text=f"{command:<15} {description}",
                     enabled=False,
                     color=colors.WHITE,
+                    is_primary_action=False,
                 )
             )

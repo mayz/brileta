@@ -214,6 +214,7 @@ class MenuOption:
         color: colors.Color = colors.WHITE,
         force_color: bool = False,
         data: Any | None = None,
+        is_primary_action: bool = True,
     ) -> None:
         self.key = key
         self.text = text
@@ -222,6 +223,7 @@ class MenuOption:
         self.force_color = force_color
         self.color = color if enabled or force_color else colors.GREY
         self.data = data
+        self.is_primary_action = is_primary_action
 
 
 class Menu(TextOverlay):
