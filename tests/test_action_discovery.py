@@ -337,3 +337,21 @@ def test_probability_descriptor_mapping() -> None:
     desc, color = ActionDiscovery.get_probability_descriptor(0.35)
     assert desc == "Unlikely"
     assert color == "orange"
+
+
+def test_terminal_combat_actions_available_out_of_combat() -> None:
+    """`_get_all_terminal_combat_actions` should work outside of combat."""
+    controller, player, melee_target, ranged_target, _ = _make_combat_world()
+    disc = ActionDiscovery()
+
+    # No actor starts hostile so the player is technically out of combat.
+    ctx = disc._build_context(cast(Controller, controller), player)
+    assert not ctx.in_combat
+
+    actions = disc._get_all_terminal_combat_actions(
+        cast(Controller, controller), player
+    )
+
+    # Both targets should yield at least one attack option each.
+    assert len(actions) >= 2
+    assert all(callable(opt.execute) for opt in actions)

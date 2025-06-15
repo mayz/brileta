@@ -105,6 +105,16 @@ class AttackAction(GameAction):
         for consequence in consequences:
             handler.apply_consequence(consequence)
 
+        # Switch active weapon to the one that was just used
+        if self.weapon is not None and self.attacker.inventory is not None:
+            for slot_index, equipped_weapon in enumerate(
+                self.attacker.inventory.attack_slots
+            ):
+                if equipped_weapon == self.weapon:
+                    if slot_index != self.attacker.inventory.active_weapon_slot:
+                        self.attacker.inventory.switch_to_weapon_slot(slot_index)
+                    break
+
         return GameActionResult(consequences=consequences)
 
     def _determine_attack_method(self) -> tuple[Attack | None, Item]:
