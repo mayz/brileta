@@ -98,42 +98,25 @@ class ActionBrowserMenu(Menu):
                 )
                 self.add_option(MenuOption(key=None, text="-" * 40, enabled=False))
             else:
-                all_possible_actions = (
-                    self.action_discovery._get_all_terminal_combat_actions(
-                        self.controller,
-                        player,
+                # Always offer to continue with the cached weapon/mode.
+                # The target selection screen will show if no targets remain.
+                self.add_option(
+                    MenuOption(
+                        key=None,
+                        text=(
+                            f"[Enter] Continue: {cache.attack_mode.title()} "
+                            f"with {cache.weapon.name}..."
+                        ),
+                        action=functools.partial(
+                            self.action_discovery._set_ui_state,
+                            "targets_for_weapon",
+                            weapon=cache.weapon,
+                            attack_mode=cache.attack_mode,
+                        ),
+                        color=colors.WHITE,
                     )
                 )
-                has_other_targets = False
-                for opt in all_possible_actions:
-                    if not opt.execute:
-                        continue
-                    # Check if this option matches our cached weapon/mode
-                    # without executing
-                    if (
-                        cache.attack_mode in opt.id.lower()
-                        and cache.weapon.name.lower() in opt.id.lower()
-                    ):
-                        has_other_targets = True
-                        break
-                if has_other_targets:
-                    self.add_option(
-                        MenuOption(
-                            key=None,
-                            text=(
-                                f"[Enter] Continue: {cache.attack_mode.title()} "
-                                f"with {cache.weapon.name}..."
-                            ),
-                            action=functools.partial(
-                                self.action_discovery._set_ui_state,
-                                "targets_for_weapon",
-                                weapon=cache.weapon,
-                                attack_mode=cache.attack_mode,
-                            ),
-                            color=colors.WHITE,
-                        )
-                    )
-                    self.add_option(MenuOption(key=None, text="-" * 40, enabled=False))
+                self.add_option(MenuOption(key=None, text="-" * 40, enabled=False))
 
         action_options = action_options_for_display
 
