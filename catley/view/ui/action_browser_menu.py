@@ -7,11 +7,14 @@ from typing import TYPE_CHECKING
 import tcod
 
 from catley import colors
+from catley.game import ranges
 from catley.game.actions.base import GameAction
+from catley.game.actions.combat import AttackAction
 from catley.game.actions.discovery import (
     ActionCategory,
     ActionDiscovery,
     ActionOption,
+    CombatIntentCache,
 )
 from catley.view.ui.overlays import REPEAT_PREFIX, Menu, MenuOption
 
@@ -47,33 +50,90 @@ class ActionBrowserMenu(Menu):
             player,
         )
 
-        cached_action = self.controller.last_browser_action
-        if cached_action:
-            all_possible_actions = (
-                self.action_discovery._get_all_terminal_combat_actions(
-                    self.controller, player
+        cache = self.controller.combat_intent_cache
+        if cache:
+            gm = self.controller.gw.game_map
+            repeat_option = None
+            if (
+                cache.target
+                and cache.target.health.is_alive()
+                and gm.visible[cache.target.x, cache.target.y]
+                and ranges.has_line_of_sight(
+                    gm,
+                    player.x,
+                    player.y,
+                    cache.target.x,
+                    cache.target.y,
                 )
-            )
-            fresh_action = next(
-                (
-                    opt
-                    for opt in all_possible_actions
-                    if opt.id == cached_action.id and opt.execute
-                ),
-                None,
-            )
-            if fresh_action:
+            ):
+                all_possible_actions = (
+                    self.action_discovery._get_all_terminal_combat_actions(
+                        self.controller,
+                        player,
+                    )
+                )
+                for opt in all_possible_actions:
+                    if not opt.execute:
+                        continue
+                    action = opt.execute()
+                    if (
+                        isinstance(action, AttackAction)
+                        and action.weapon == cache.weapon
+                        and action.attack_mode == cache.attack_mode
+                        and action.defender == cache.target
+                    ):
+                        repeat_option = opt
+                        break
+
+            if repeat_option:
                 self.add_option(
                     MenuOption(
                         key=None,
-                        text=f"{REPEAT_PREFIX} {fresh_action.menu_text}",
+                        text=f"{REPEAT_PREFIX} {repeat_option.menu_text}",
                         action=functools.partial(
-                            self._execute_action_option, fresh_action
+                            self._execute_action_option, repeat_option
                         ),
                         color=colors.WHITE,
                     )
                 )
                 self.add_option(MenuOption(key=None, text="-" * 40, enabled=False))
+            else:
+                all_possible_actions = (
+                    self.action_discovery._get_all_terminal_combat_actions(
+                        self.controller,
+                        player,
+                    )
+                )
+                has_other_targets = False
+                for opt in all_possible_actions:
+                    if not opt.execute:
+                        continue
+                    # Check if this option matches our cached weapon/mode
+                    # without executing
+                    if (
+                        cache.attack_mode in opt.id.lower()
+                        and cache.weapon.name.lower() in opt.id.lower()
+                    ):
+                        has_other_targets = True
+                        break
+                if has_other_targets:
+                    self.add_option(
+                        MenuOption(
+                            key=None,
+                            text=(
+                                f"[Enter] Continue: {cache.attack_mode.title()} "
+                                f"with {cache.weapon.name}..."
+                            ),
+                            action=functools.partial(
+                                self.action_discovery._set_ui_state,
+                                "targets_for_weapon",
+                                weapon=cache.weapon,
+                                attack_mode=cache.attack_mode,
+                            ),
+                            color=colors.WHITE,
+                        )
+                    )
+                    self.add_option(MenuOption(key=None, text="-" * 40, enabled=False))
 
         action_options = action_options_for_display
 
@@ -135,8 +195,19 @@ class ActionBrowserMenu(Menu):
             result = execute_fn()
             if isinstance(result, GameAction):
                 self.controller.queue_action(result)
-                # Cache the action that was just successfully executed
-                self.controller.last_browser_action = action_option
+                if isinstance(result, AttackAction):
+                    weapon = result.weapon
+                    attack_mode = result.attack_mode
+                    if weapon is not None and attack_mode is not None:
+                        # A combat action was taken. Create and set the cache.
+                        self.controller.combat_intent_cache = CombatIntentCache(
+                            weapon=weapon,
+                            attack_mode=attack_mode,
+                            target=result.defender,
+                        )
+                else:
+                    # A non-combat action was taken. Clear the cache.
+                    self.controller.combat_intent_cache = None
                 return True
             # This was a state change (e.g., entering a sub-menu), not a final action
             return False
@@ -167,6 +238,20 @@ class ActionBrowserMenu(Menu):
                     self.hide()
                 else:
                     self.populate_options()
+                return True
+            case tcod.event.KeyDown(sym=tcod.event.KeySym.RETURN):
+                if (
+                    self.options
+                    and self.options[0].text.startswith("[Enter]")
+                    and self.options[0].action
+                ):
+                    should_close = self.options[0].action()
+                    if should_close:
+                        self.hide()
+                    else:
+                        self.populate_options()
+                    return True
+                self.hide()
                 return True
             case tcod.event.KeyDown() as key_event:
                 key_char = (

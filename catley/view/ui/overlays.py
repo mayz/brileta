@@ -209,7 +209,7 @@ class MenuOption:
         self,
         key: str | None,
         text: str,
-        action: Callable[[], None] | None = None,
+        action: Callable[[], None | bool] | None = None,
         enabled: bool = True,
         color: colors.Color = colors.WHITE,
         force_color: bool = False,

@@ -37,7 +37,18 @@ from catley.game.items.item_core import Item
 
 if TYPE_CHECKING:
     from catley.controller import Controller
+    from catley.game.actors import Character as _Character
     from catley.game.items.capabilities import MeleeAttack, RangedAttack
+    from catley.game.items.item_core import Item as _Item
+
+
+@dataclass
+class CombatIntentCache:
+    """Cached combat parameters from the most recent attack."""
+
+    weapon: _Item
+    attack_mode: str
+    target: _Character | None = None
 
 
 class ActionCategory(Enum):
@@ -1055,48 +1066,71 @@ class ActionDiscovery:
         letters = string.ascii_lowercase
         for weapon in equipped_weapons:
             if weapon.melee_attack:
-                melee = cast("MeleeAttack", weapon.melee_attack)
-                verb = melee._spec.verb
-                options.append(
-                    ActionOption(
-                        id=f"weapon-melee-{weapon.name}",
-                        name=f"{verb.title()} with {weapon.name}",
-                        description=f"Melee attack using {weapon.name}",
-                        category=ActionCategory.COMBAT,
-                        hotkey=letters[option_index]
-                        if option_index < len(letters)
-                        else None,
-                        execute=functools.partial(
-                            self._set_ui_state,
-                            "targets_for_weapon",
-                            weapon=weapon,
-                            attack_mode="melee",
-                        ),
-                    )
+                has_adjacent_enemies = any(
+                    target
+                    for target in context.nearby_actors
+                    if target != actor
+                    and isinstance(target, Character)
+                    and target.health.is_alive()
+                    and ranges.calculate_distance(actor.x, actor.y, target.x, target.y)
+                    == 1
                 )
-                option_index += 1
+                if has_adjacent_enemies:
+                    melee = cast("MeleeAttack", weapon.melee_attack)
+                    verb = melee._spec.verb
+                    options.append(
+                        ActionOption(
+                            id=f"weapon-melee-{weapon.name}",
+                            name=f"{verb.title()} with {weapon.name}",
+                            description=f"Melee attack using {weapon.name}",
+                            category=ActionCategory.COMBAT,
+                            hotkey=letters[option_index]
+                            if option_index < len(letters)
+                            else None,
+                            execute=functools.partial(
+                                self._set_ui_state,
+                                "targets_for_weapon",
+                                weapon=weapon,
+                                attack_mode="melee",
+                            ),
+                        )
+                    )
+                    option_index += 1
 
             if weapon.ranged_attack and weapon.ranged_attack.current_ammo > 0:
-                ranged = cast("RangedAttack", weapon.ranged_attack)
-                verb = ranged._spec.verb
-                options.append(
-                    ActionOption(
-                        id=f"weapon-ranged-{weapon.name}",
-                        name=f"{verb.title()} with {weapon.name}",
-                        description=f"Ranged attack using {weapon.name}",
-                        category=ActionCategory.COMBAT,
-                        hotkey=letters[option_index]
-                        if option_index < len(letters)
-                        else None,
-                        execute=functools.partial(
-                            self._set_ui_state,
-                            "targets_for_weapon",
-                            weapon=weapon,
-                            attack_mode="ranged",
-                        ),
+                has_ranged_targets = any(
+                    target
+                    for target in context.nearby_actors
+                    if target != actor
+                    and isinstance(target, Character)
+                    and target.health.is_alive()
+                    and ranges.get_range_category(
+                        ranges.calculate_distance(actor.x, actor.y, target.x, target.y),
+                        weapon,
                     )
+                    != "out_of_range"
                 )
-                option_index += 1
+                if has_ranged_targets:
+                    ranged = cast("RangedAttack", weapon.ranged_attack)
+                    verb = ranged._spec.verb
+                    options.append(
+                        ActionOption(
+                            id=f"weapon-ranged-{weapon.name}",
+                            name=f"{verb.title()} with {weapon.name}",
+                            description=f"Ranged attack using {weapon.name}",
+                            category=ActionCategory.COMBAT,
+                            hotkey=letters[option_index]
+                            if option_index < len(letters)
+                            else None,
+                            execute=functools.partial(
+                                self._set_ui_state,
+                                "targets_for_weapon",
+                                weapon=weapon,
+                                attack_mode="ranged",
+                            ),
+                        )
+                    )
+                    option_index += 1
 
         return options
 
@@ -1210,16 +1244,6 @@ class ActionDiscovery:
                     controller, actor, target, "observation", range_mods
                 )
 
-                ammo_warning = ""
-                current_ammo = weapon.ranged_attack.current_ammo
-                if current_ammo == 1:
-                    ammo_warning = " (LAST SHOT!)"
-                elif current_ammo <= 3:
-                    ammo_warning = " (Low ammo)"
-                cost_desc = (
-                    f"Uses 1 {weapon.ranged_attack.ammo_type} ammo{ammo_warning}"
-                )
-
                 options.append(
                     ActionOption(
                         id=f"ranged-{weapon.name}-{target.name}",
@@ -1229,7 +1253,6 @@ class ActionDiscovery:
                         description=f"Ranged attack at {range_cat} range",
                         category=ActionCategory.COMBAT,
                         success_probability=prob,
-                        cost_description=cost_desc,
                         execute=functools.partial(
                             self._create_ranged_attack,
                             controller,

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
 import tcod.event
@@ -8,7 +10,7 @@ from tcod.console import Console
 from catley.game.resolution.base import Resolver
 
 if TYPE_CHECKING:
-    from catley.game.actions.discovery import ActionOption
+    from catley.game.actions.discovery import CombatIntentCache
 
 from . import config
 from .game.actions.base import GameAction
@@ -59,7 +61,8 @@ class Controller:
         self.gw = GameWorld(self.map_width, self.map_height)
 
         self.turn_manager = TurnManager(self)
-        self.last_browser_action: ActionOption | None = None
+
+        self.combat_intent_cache: CombatIntentCache | None = None
 
         # Initialize Message Log
         self.message_log = MessageLog()
@@ -154,7 +157,7 @@ class Controller:
         """Check if currently in targeting mode"""
         return self.active_mode == self.targeting_mode
 
-    def create_resolver(self, **kwargs: object) -> "Resolver":
+    def create_resolver(self, **kwargs: object) -> Resolver:
         """Factory method for resolution systems.
 
         Currently returns a :class:`D20Resolver` but allows future
