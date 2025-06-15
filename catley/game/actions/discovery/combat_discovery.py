@@ -48,116 +48,81 @@ class CombatActionDiscovery:
 
             equipped_weapons = [FISTS_TYPE.create()]
 
-        for target in context.nearby_actors:
-            if target == actor:
-                continue
-            if not isinstance(target, Character):
-                continue
-            if not target.stats or not target.health or not target.health.is_alive():
-                continue
-            gm = controller.gw.game_map
-            if not gm.visible[target.x, target.y]:
-                continue
-            if not ranges.has_line_of_sight(gm, actor.x, actor.y, target.x, target.y):
-                continue
+        # Choose a representative target for probability calculations
+        representative: Character | None = None
+        closest_dist: float | None = None
+        for potential in context.nearby_actors:
+            if (
+                isinstance(potential, Character)
+                and potential.health
+                and potential.health.is_alive()
+            ):
+                dist = ranges.calculate_distance(
+                    actor.x, actor.y, potential.x, potential.y
+                )
+                if closest_dist is None or dist < closest_dist:
+                    closest_dist = dist
+                    representative = potential
 
-            distance = ranges.calculate_distance(actor.x, actor.y, target.x, target.y)
-
-            for weapon in equipped_weapons:
-                if weapon.melee_attack and distance == 1:
-                    prob = self.context_builder.calculate_combat_probability(
-                        controller, actor, target, "strength"
+        for weapon in equipped_weapons:
+            # Melee attacks
+            melee_prob: float | None = None
+            if representative is not None:
+                dist = ranges.calculate_distance(
+                    actor.x, actor.y, representative.x, representative.y
+                )
+                if weapon.melee_attack and dist == 1:
+                    melee_prob = self.context_builder.calculate_combat_probability(
+                        controller, actor, representative, "strength"
                     )
-
-                    verb_name = weapon.melee_attack._spec.verb.title()
-                    action_id = f"melee-{verb_name}-{target.name}"
-                    options.append(
-                        ActionOption(
-                            id=action_id,
-                            name=self.formatter.get_attack_display_name(
-                                weapon, "melee", target.name
-                            ),
-                            description=f"Close combat attack using {weapon.name}",
-                            category=ActionCategory.COMBAT,
-                            action_class=AttackAction,
-                            requirements=[ActionRequirement.TARGET_ACTOR],
-                            static_params={"weapon": weapon, "attack_mode": "melee"},
-                            success_probability=prob,
-                            execute=lambda w=weapon,
-                            t=target: self.factory.create_melee_attack(
-                                controller, actor, t, w
-                            ),
-                        )
+            if weapon.melee_attack:
+                options.append(
+                    ActionOption(
+                        id=f"melee-{weapon.name}",
+                        name=f"Melee attack with {weapon.name}",
+                        description=f"Close combat attack using {weapon.name}",
+                        category=ActionCategory.COMBAT,
+                        action_class=AttackAction,
+                        requirements=[ActionRequirement.TARGET_ACTOR],
+                        static_params={"weapon": weapon, "attack_mode": "melee"},
+                        success_probability=melee_prob,
                     )
+                )
 
-                if weapon.ranged_attack and weapon.ranged_attack.current_ammo > 0:
-                    range_cat = ranges.get_range_category(distance, weapon)
-                    range_mods = ranges.get_range_modifier(weapon, range_cat)
-                    if range_mods is None:
-                        base_name = self.formatter.get_attack_display_name(
-                            weapon, "ranged", target.name
-                        )
-                        out_of_range_name = base_name + " (OUT OF RANGE)"
-                        verb_name = weapon.ranged_attack._spec.verb.title()
-                        ranged_id = f"ranged-{verb_name}-{target.name}"
-                        options.append(
-                            ActionOption(
-                                id=ranged_id,
-                                name=out_of_range_name,
-                                description=(
-                                    f"Target is beyond {weapon.name}'s maximum range"
-                                ),
-                                category=ActionCategory.COMBAT,
-                                action_class=AttackAction,
-                                requirements=[ActionRequirement.TARGET_ACTOR],
-                                static_params={
-                                    "weapon": weapon,
-                                    "attack_mode": "ranged",
-                                },
-                                success_probability=0.0,
-                            )
-                        )
-                        continue
-
-                    prob = self.context_builder.calculate_combat_probability(
+            # Ranged attacks
+            ranged_prob: float | None = None
+            if (
+                weapon.ranged_attack
+                and weapon.ranged_attack.current_ammo > 0
+                and representative is not None
+            ):
+                dist = ranges.calculate_distance(
+                    actor.x, actor.y, representative.x, representative.y
+                )
+                range_cat = ranges.get_range_category(dist, weapon)
+                range_mods = ranges.get_range_modifier(weapon, range_cat)
+                if range_mods is not None:
+                    ranged_prob = self.context_builder.calculate_combat_probability(
                         controller,
                         actor,
-                        target,
+                        representative,
                         "observation",
                         range_mods,
                     )
 
-                    display_name = self.formatter.get_attack_display_name(
-                        weapon, "ranged", target.name
+            if weapon.ranged_attack and weapon.ranged_attack.current_ammo > 0:
+                options.append(
+                    ActionOption(
+                        id=f"ranged-{weapon.name}",
+                        name=f"Ranged attack with {weapon.name}",
+                        description=f"Use {weapon.name} for a ranged attack",
+                        category=ActionCategory.COMBAT,
+                        action_class=AttackAction,
+                        requirements=[ActionRequirement.TARGET_ACTOR],
+                        static_params={"weapon": weapon, "attack_mode": "ranged"},
+                        success_probability=ranged_prob,
                     )
-                    ammo_warning = ""
-                    current_ammo = weapon.ranged_attack.current_ammo
-                    if current_ammo == 1:
-                        ammo_warning = " (LAST SHOT!)"
-                    elif current_ammo <= 3:
-                        ammo_warning = " (Low Ammo)"
-
-                    display_name += ammo_warning
-
-                    verb_name = weapon.ranged_attack._spec.verb.title()
-                    ranged_id = f"ranged-{verb_name}-{target.name}"
-                    options.append(
-                        ActionOption(
-                            id=ranged_id,
-                            name=display_name,
-                            description=f"Ranged attack at {range_cat} range",
-                            category=ActionCategory.COMBAT,
-                            action_class=AttackAction,
-                            requirements=[ActionRequirement.TARGET_ACTOR],
-                            static_params={"weapon": weapon, "attack_mode": "ranged"},
-                            success_probability=prob,
-                            cost_description=None,
-                            execute=lambda w=weapon,
-                            t=target: self.factory.create_ranged_attack(
-                                controller, actor, t, w
-                            ),
-                        )
-                    )
+                )
 
         return options
 
@@ -168,7 +133,10 @@ class CombatActionDiscovery:
         target: Character,
         context: ActionContext,
     ) -> list[ActionOption]:
-        """Get combat options specifically for a given target."""
+        """Get combat options specifically for a given target.
+
+        DEPRECATED: used by the old state machine, will be removed in Task 3.
+        """
         options: list[ActionOption] = []
         equipped_weapons = [w for w in actor.inventory.attack_slots if w is not None]
 
@@ -296,7 +264,10 @@ class CombatActionDiscovery:
     def get_all_terminal_combat_actions(
         self, controller: Controller, actor: Character
     ) -> list[ActionOption]:
-        """Generate a flat list of every possible end combat action."""
+        """Generate a flat list of every possible end combat action.
+
+        DEPRECATED: used by the old state machine, will be removed in Task 3.
+        """
         context = self.context_builder.build_context(controller, actor)
 
         options: list[ActionOption] = []

@@ -67,6 +67,25 @@ class ActionDiscovery:
             all_actions = self._sort_by_relevance(all_actions, context)
         return all_actions
 
+    def get_all_available_actions(
+        self, controller: Controller, actor: Character
+    ) -> list[ActionOption]:
+        """Get all available actions without UI categorization or sorting."""
+        context = self.context_builder.build_context(controller, actor)
+        all_actions: list[ActionOption] = []
+        all_actions.extend(
+            self.combat_discovery.discover_combat_actions(controller, actor, context)
+        )
+        all_actions.extend(
+            self.item_discovery.discover_item_actions(controller, actor, context)
+        )
+        all_actions.extend(
+            self.environment_discovery.discover_environment_actions(
+                controller, actor, context
+            )
+        )
+        return all_actions
+
     def get_options_for_category(
         self, controller: Controller, actor: Character, category: ActionCategory
     ) -> list[ActionOption]:
@@ -103,8 +122,10 @@ class ActionDiscovery:
 
     # ------------------------------------------------------------------
     # Backwards compatibility wrappers for old API
+    # DEPRECATED: These will be removed in Task 3
 
     def _build_context(self, controller: Controller, actor: Character) -> ActionContext:
+        """DEPRECATED wrapper for context building."""
         return self.context_builder.build_context(controller, actor)
 
     def _calculate_combat_probability(
@@ -115,6 +136,7 @@ class ActionDiscovery:
         stat_name: str,
         range_modifiers: dict | None = None,
     ) -> float:
+        """DEPRECATED helper for combat probability."""
         return self.context_builder.calculate_combat_probability(
             controller, actor, target, stat_name, range_modifiers
         )
@@ -122,11 +144,13 @@ class ActionDiscovery:
     def _get_all_terminal_combat_actions(
         self, controller: Controller, actor: Character
     ) -> list[ActionOption]:
+        """DEPRECATED wrapper for legacy combat actions."""
         return self.combat_discovery.get_all_terminal_combat_actions(controller, actor)
 
     def _get_combat_options(
         self, controller: Controller, actor: Character, context: ActionContext
     ) -> list[ActionOption]:
+        """DEPRECATED wrapper for combat options."""
         return self.combat_discovery.get_all_combat_actions(controller, actor, context)
 
     def _get_combat_options_for_target(
@@ -136,6 +160,7 @@ class ActionDiscovery:
         target: Character,
         context: ActionContext,
     ) -> list[ActionOption]:
+        """DEPRECATED wrapper for target combat options."""
         return self.combat_discovery.get_combat_options_for_target(
             controller, actor, target, context
         )
@@ -143,16 +168,19 @@ class ActionDiscovery:
     def _get_inventory_options(
         self, controller: Controller, actor: Character, context: ActionContext
     ) -> list[ActionOption]:
+        """DEPRECATED wrapper for inventory options."""
         return self.item_discovery._get_inventory_options(controller, actor, context)
 
     def _get_recovery_options(
         self, controller: Controller, actor: Character, context: ActionContext
     ) -> list[ActionOption]:
+        """DEPRECATED wrapper for recovery options."""
         return self.item_discovery._get_recovery_options(controller, actor, context)
 
     def _get_environment_options(
         self, controller: Controller, actor: Character, context: ActionContext
     ) -> list[ActionOption]:
+        """DEPRECATED wrapper for environment options."""
         return self.environment_discovery._get_environment_options(
             controller,
             actor,

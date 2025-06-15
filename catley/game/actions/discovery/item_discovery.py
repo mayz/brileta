@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
-from catley.game.actions.base import GameAction
+from catley.game.actions.base import GameAction, GameActionResult
 from catley.game.actions.combat import ReloadAction
 from catley.game.actions.recovery import (
     ComfortableSleepAction,
@@ -11,13 +11,35 @@ from catley.game.actions.recovery import (
     UseConsumableAction,
     is_safe_location,
 )
+
+# Optional action classes that may not yet exist
+try:
+    from catley.game.actions.misc import (  # type: ignore
+        PickupAction,
+        SwitchWeaponAction,
+    )
+except Exception:  # pragma: no cover - placeholder fallback
+
+    class PickupAction(GameAction):
+        """Placeholder for unimplemented pickup action."""
+
+        def execute(self) -> GameActionResult | None:  # pragma: no cover - placeholder
+            return None
+
+    class SwitchWeaponAction(GameAction):
+        """Placeholder for unimplemented weapon switch action."""
+
+        def execute(self) -> GameActionResult | None:  # pragma: no cover - placeholder
+            return None
+
+
 from catley.game.actors import Character
 from catley.game.items.item_core import Item
 
 from .action_context import ActionContext
 from .action_factory import ActionFactory
 from .action_formatters import ActionFormatter
-from .types import ActionCategory, ActionOption
+from .types import ActionCategory, ActionOption, ActionRequirement  # noqa: F401
 
 if TYPE_CHECKING:
     from catley.controller import Controller
@@ -56,9 +78,6 @@ class ItemActionDiscovery:
                 action_class=ReloadAction,
                 requirements=[],
                 static_params={"weapon": weapon},
-                execute=lambda w=weapon: self.factory.create_reload_action(
-                    controller, actor, w
-                ),
             )
             for weapon in equipped_weapons
             if (
@@ -76,9 +95,6 @@ class ItemActionDiscovery:
                 action_class=UseConsumableAction,
                 requirements=[],
                 static_params={"item": item},
-                execute=lambda i=item: self.factory.create_use_consumable_action(
-                    controller, actor, i
-                ),
             )
             for item in actor.inventory
             if isinstance(item, Item) and item.consumable_effect
@@ -97,13 +113,12 @@ class ItemActionDiscovery:
                 ActionOption(
                     id="pickup",
                     name=f"Pick up items ({len(context.items_on_ground)})",
-                    description="Pickup items from the ground",
+                    description="Pick up items from the ground",
                     category=ActionCategory.ITEMS,
-                    action_class=cast(type[GameAction], type(None)),
+                    action_class=PickupAction,
                     requirements=[],
-                    static_params={},
+                    static_params={"items": context.items_on_ground},
                     hotkey="g",
-                    execute=lambda: self._open_pickup_menu(controller),
                 )
             )
 
@@ -117,11 +132,10 @@ class ItemActionDiscovery:
                             name=f"Switch to {item.name}",
                             description=f"Equip {item.name} as active weapon",
                             category=ActionCategory.ITEMS,
-                            action_class=cast(type[GameAction], type(None)),
+                            action_class=SwitchWeaponAction,
                             requirements=[],
-                            static_params={},
+                            static_params={"slot": i},
                             hotkey=str(i + 1),
-                            execute=lambda slot=i: self._switch_weapon(actor, slot),
                         )
                     )
 
@@ -143,7 +157,6 @@ class ItemActionDiscovery:
                     action_class=RestAction,
                     requirements=[],
                     static_params={},
-                    execute=lambda: RestAction(controller, actor),
                 )
             )
 
@@ -162,7 +175,6 @@ class ItemActionDiscovery:
                     action_class=SleepAction,
                     requirements=[],
                     static_params={},
-                    execute=lambda: SleepAction(controller, actor),
                 )
             )
 
@@ -176,7 +188,6 @@ class ItemActionDiscovery:
                     action_class=ComfortableSleepAction,
                     requirements=[],
                     static_params={},
-                    execute=lambda: ComfortableSleepAction(controller, actor),
                 )
             )
 
