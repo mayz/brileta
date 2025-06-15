@@ -12,7 +12,8 @@ from catley.events import (
     reset_event_bus_for_testing,
     subscribe_to_event,
 )
-from catley.game.actions.area_effects import AreaEffectAction
+from catley.game.actions.area_effects import AreaEffectIntent
+from catley.game.actions.executors.area_effects import AreaEffectExecutor
 from catley.game.actors import Character
 from catley.game.game_world import GameWorld
 from catley.game.items.item_types import GRENADE_TYPE
@@ -73,7 +74,12 @@ class DummyController(Controller):
 
 
 def make_world() -> tuple[
-    DummyController, Character, Character, AreaEffectAction, GameMap
+    DummyController,
+    Character,
+    Character,
+    AreaEffectIntent,
+    AreaEffectExecutor,
+    GameMap,
 ]:
     game_map = DummyMap(10, 10)
     gw = DummyGameWorld()
@@ -90,31 +96,32 @@ def make_world() -> tuple[
     gw.add_actor(target)
     controller = DummyController(cast(GameWorld, gw))
     grenade = GRENADE_TYPE.create()
-    action = AreaEffectAction(game_map, gw.actors, attacker, 5, 5, grenade)
-    return controller, attacker, target, action, game_map
+    intent = AreaEffectIntent(controller, attacker, 5, 5, grenade)
+    executor = AreaEffectExecutor()
+    return controller, attacker, target, intent, executor, game_map
 
 
 def test_grenade_circle_tiles() -> None:
-    controller, attacker, target, action, _ = make_world()
-    effect = action.weapon.area_effect
+    controller, attacker, target, intent, executor, _ = make_world()
+    effect = intent.weapon.area_effect
     assert effect is not None
-    tiles = action._circle_tiles(effect)
+    tiles = executor._circle_tiles(intent, effect)
     assert len(tiles) == 49
     assert tiles[(5, 5)] == 0
     assert tiles[(8, 5)] == 3
 
 
 def test_grenade_damage_calculation() -> None:
-    controller, attacker, target, action, _ = make_world()
-    effect = action.weapon.area_effect
+    controller, attacker, target, intent, executor, _ = make_world()
+    effect = intent.weapon.area_effect
     assert effect is not None
-    tiles = action._circle_tiles(effect)
+    tiles = executor._circle_tiles(intent, effect)
 
     def fixed_randint(_a: int, _b: int) -> int:
         return 6
 
     with patch("random.randint", fixed_randint):
-        hits = action._apply_damage(tiles, effect)
+        hits = executor._apply_damage(intent, tiles, effect)
     assert hits == [(target, 4)]
     assert target.health.hp == target.health.max_hp - 4
 
@@ -123,13 +130,13 @@ def test_grenade_action_execution() -> None:
     reset_event_bus_for_testing()
     effects: list[str] = []
     subscribe_to_event(EffectEvent, lambda e: effects.append(e.effect_name))
-    controller, attacker, target, action, _ = make_world()
+    controller, attacker, target, intent, executor, _ = make_world()
 
     def fixed_randint(_a: int, _b: int) -> int:
         return 6
 
     with patch("random.randint", fixed_randint):
-        action.execute()
+        executor.execute(intent)
     assert target.health.hp == target.health.max_hp - 4
     assert controller.message_log.messages[-1] == "Target takes 4 damage."
     assert effects == ["explosion"]

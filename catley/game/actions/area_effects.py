@@ -7,230 +7,29 @@ multiple targets or tiles simultaneously.
 
 from __future__ import annotations
 
-from catley import colors
-from catley.constants.combat import CombatConstants as Combat
-from catley.environment.map import GameMap
-from catley.events import EffectEvent, MessageEvent, publish_event
-from catley.game import ranges
-from catley.game.actions.base import GameAction, GameActionResult
-from catley.game.actors import Actor, Character
-from catley.game.enums import AreaType
-from catley.game.items.capabilities import AreaEffect, RangedAttack
-from catley.game.items.item_core import Item
-from catley.game.items.properties import TacticalProperty, WeaponProperty
+from typing import TYPE_CHECKING
 
-# Convenience type aliases for area-effect calculations
-Coord = tuple[int, int]
-# Maps an (x, y) tile coordinate to the distance from the effect's origin.
-DistanceByTile = dict[Coord, int]
+from .base import GameIntent
+
+if TYPE_CHECKING:
+    from catley.controller import Controller
+    from catley.game.actors import Character
+    from catley.game.items.item_core import Item
 
 
-class AreaEffectAction(GameAction):
-    """Action for executing an item's area effect."""
+class AreaEffectIntent(GameIntent):
+    """Intent for executing an item's area effect."""
 
     def __init__(
         self,
-        game_map: GameMap,
-        actors: list[Actor],
+        controller: Controller,
         attacker: Character,
         target_x: int,
         target_y: int,
         weapon: Item,
     ) -> None:
-        self.game_map = game_map
-        self.actors = actors
+        super().__init__(controller, attacker)
         self.attacker = attacker
         self.target_x = target_x
         self.target_y = target_y
         self.weapon = weapon
-
-    def execute(self) -> GameActionResult | None:
-        effect = self.weapon.area_effect
-        if effect is None:
-            return None
-
-        # 1. Check ammo requirements if weapon uses ammo
-        ranged = self.weapon.ranged_attack
-        if ranged and ranged.current_ammo <= 0:
-            publish_event(
-                MessageEvent(f"{self.weapon.name} is out of ammo!", colors.RED)
-            )
-            return None
-
-        # 2. Determine which tiles are affected by the effect
-        tiles = self._calculate_tiles(effect)
-        if not tiles:
-            publish_event(MessageEvent("Nothing is affected.", colors.GREY))
-            return None
-
-        # 3. Apply damage or healing to actors in the affected tiles
-        hits = self._apply_damage(tiles, effect)
-
-        # 4. Consume ammo if necessary
-        if ranged:
-            self._consume_ammo(ranged)
-
-        # 5. Log messages about the outcome of the effect
-        self._log_effect_results(hits)
-
-        # 6. Trigger the appropriate visual effect
-        self._trigger_visual_effect(effect)
-        return None
-
-    def _calculate_tiles(self, effect: AreaEffect) -> DistanceByTile:
-        match effect.area_type:
-            case AreaType.CIRCLE:
-                return self._circle_tiles(effect)
-            case AreaType.LINE:
-                return self._line_tiles(effect)
-            case AreaType.CONE:
-                return self._cone_tiles(effect)
-            case _:
-                return {}
-
-    def _circle_tiles(self, effect: AreaEffect) -> DistanceByTile:
-        game_map = self.game_map
-        tiles: dict[tuple[int, int], int] = {}
-        for dx in range(-effect.size, effect.size + 1):
-            for dy in range(-effect.size, effect.size + 1):
-                tx = self.target_x + dx
-                ty = self.target_y + dy
-                if not (0 <= tx < game_map.width and 0 <= ty < game_map.height):
-                    continue
-                distance = max(abs(dx), abs(dy))
-                if distance > effect.size:
-                    continue
-                if effect.requires_line_of_sight and not ranges.has_line_of_sight(
-                    game_map,
-                    self.attacker.x,
-                    self.attacker.y,
-                    tx,
-                    ty,
-                ):
-                    continue
-                if not effect.penetrates_walls and not game_map.transparent[tx, ty]:
-                    continue
-                tiles[(tx, ty)] = distance
-        return tiles
-
-    def _line_tiles(self, effect: AreaEffect) -> DistanceByTile:
-        game_map = self.game_map
-        tiles: dict[tuple[int, int], int] = {}
-        line = ranges.get_line(
-            self.attacker.x,
-            self.attacker.y,
-            self.target_x,
-            self.target_y,
-        )
-        for i, (tx, ty) in enumerate(line[1 : effect.size + 1], start=1):
-            if not (0 <= tx < game_map.width and 0 <= ty < game_map.height):
-                break
-            if not effect.penetrates_walls and not game_map.transparent[tx, ty]:
-                break
-            if effect.requires_line_of_sight and not ranges.has_line_of_sight(
-                game_map,
-                self.attacker.x,
-                self.attacker.y,
-                tx,
-                ty,
-            ):
-                continue
-            tiles[(tx, ty)] = i
-        return tiles
-
-    def _cone_tiles(self, effect: AreaEffect) -> DistanceByTile:
-        game_map = self.game_map
-        tiles: dict[tuple[int, int], int] = {}
-
-        dir_x = self.target_x - self.attacker.x
-        dir_y = self.target_y - self.attacker.y
-        length = (dir_x**2 + dir_y**2) ** 0.5 or 1.0
-        dir_x /= length
-        dir_y /= length
-        cos_limit = Combat.CONE_SPREAD_COSINE
-
-        for dx in range(-effect.size, effect.size + 1):
-            for dy in range(-effect.size, effect.size + 1):
-                tx = self.attacker.x + dx
-                ty = self.attacker.y + dy
-                if not (0 <= tx < game_map.width and 0 <= ty < game_map.height):
-                    continue
-                distance = (dx**2 + dy**2) ** 0.5
-                if distance == 0 or distance > effect.size:
-                    continue
-                dot = dx * dir_x + dy * dir_y
-                if dot <= 0:
-                    continue
-                cos_angle = dot / distance
-                if cos_angle < cos_limit:
-                    continue
-                if effect._spec.requires_line_of_sight and not ranges.has_line_of_sight(
-                    game_map,
-                    self.attacker.x,
-                    self.attacker.y,
-                    tx,
-                    ty,
-                ):
-                    continue
-                if not effect.penetrates_walls and not game_map.transparent[tx, ty]:
-                    continue
-                tiles[(tx, ty)] = round(distance)
-        return tiles
-
-    def _apply_damage(
-        self, tiles: DistanceByTile, effect: AreaEffect
-    ) -> list[tuple[Character, int]]:
-        """Apply damage or healing to actors within the affected tiles."""
-        base_damage = effect.damage_dice.roll()
-        hits: list[tuple[Character, int]] = []
-
-        # Determine damage type
-        damage_type = "normal"
-        if TacticalProperty.RADIATION in effect.properties:
-            damage_type = "radiation"
-        for actor in self.actors:
-            if not isinstance(actor, Character) or not actor.health.is_alive():
-                continue
-            if (actor.x, actor.y) not in tiles:
-                continue
-            distance = tiles[(actor.x, actor.y)]
-            damage = base_damage
-            if effect.damage_falloff:
-                falloff = max(0.0, 1.0 - (distance / max(1, effect.size)))
-                damage = round(base_damage * falloff)
-            if damage == 0:
-                continue
-            if damage > 0:
-                actor.take_damage(damage, damage_type=damage_type)
-            else:
-                actor.health.heal(-damage)
-            hits.append((actor, damage))
-        return hits
-
-    def _consume_ammo(self, ranged_attack: RangedAttack) -> None:
-        """Consume ammo for weapons with a ranged attack."""
-        ammo_used = 1
-        if WeaponProperty.AUTOMATIC in ranged_attack.properties:
-            ammo_used = min(3, ranged_attack.current_ammo)
-        ranged_attack.current_ammo -= ammo_used
-
-    def _log_effect_results(self, hits: list[tuple[Character, int]]) -> None:
-        """Log messages summarizing the effect results."""
-        for actor, dmg in hits:
-            if dmg > 0:
-                publish_event(
-                    MessageEvent(f"{actor.name} takes {dmg} damage.", colors.ORANGE)
-                )
-            else:
-                publish_event(
-                    MessageEvent(f"{actor.name} recovers {-dmg} HP.", colors.GREEN)
-                )
-        if not hits:
-            publish_event(MessageEvent("The effect hits nothing.", colors.GREY))
-
-    def _trigger_visual_effect(self, effect: AreaEffect) -> None:
-        """Emit particle effects based on the effect properties."""
-        if TacticalProperty.EXPLOSIVE in effect.properties:
-            publish_event(EffectEvent("explosion", self.target_x, self.target_y))
-        elif TacticalProperty.SMOKE in effect.properties:
-            publish_event(EffectEvent("smoke_cloud", self.target_x, self.target_y))
