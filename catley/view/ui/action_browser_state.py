@@ -549,8 +549,8 @@ class ActionBrowserStateMachine:
 
         action_param_mapping = {
             "AttackIntent": {ActionRequirement.TARGET_ACTOR: "defender"},
-            "OpenDoorAction": {ActionRequirement.TARGET_TILE: ["x", "y"]},
-            "CloseDoorAction": {ActionRequirement.TARGET_TILE: ["x", "y"]},
+            "OpenDoorIntent": {ActionRequirement.TARGET_TILE: ["x", "y"]},
+            "CloseDoorIntent": {ActionRequirement.TARGET_TILE: ["x", "y"]},
             "DEFAULT": {
                 ActionRequirement.TARGET_ACTOR: "target",
                 ActionRequirement.TARGET_TILE: "target_tile",

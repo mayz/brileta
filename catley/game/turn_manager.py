@@ -6,8 +6,13 @@ from catley import colors
 from catley.events import MessageEvent, publish_event
 from catley.game.actions.base import GameAction, GameActionResult, GameIntent
 from catley.game.actions.combat import AttackIntent, ReloadIntent
+from catley.game.actions.environment import CloseDoorIntent, OpenDoorIntent
 from catley.game.actions.executors.base import ActionExecutor
 from catley.game.actions.executors.combat import AttackExecutor, ReloadExecutor
+from catley.game.actions.executors.environment import (
+    CloseDoorExecutor,
+    OpenDoorExecutor,
+)
 from catley.game.actions.executors.misc import PickupExecutor, SwitchWeaponExecutor
 from catley.game.actions.misc import PickupIntent, SwitchWeaponIntent
 
@@ -101,6 +106,12 @@ class TurnManager:
                 result = executor.execute(action)
             elif isinstance(action, PickupIntent):
                 executor = PickupExecutor()
+                result = executor.execute(action)
+            elif isinstance(action, OpenDoorIntent):
+                executor = OpenDoorExecutor()
+                result = executor.execute(action)
+            elif isinstance(action, CloseDoorIntent):
+                executor = CloseDoorExecutor()
                 result = executor.execute(action)
             elif isinstance(action, SwitchWeaponIntent):
                 executor = SwitchWeaponExecutor()

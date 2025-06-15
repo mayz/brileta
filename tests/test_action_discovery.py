@@ -16,7 +16,7 @@ from catley.game.actions.discovery import (
     ActionRequirement,
     CombatIntentCache,
 )
-from catley.game.actions.environment import OpenDoorAction
+from catley.game.actions.environment import OpenDoorIntent
 from catley.game.actors import Character, status_effects
 from catley.game.enums import Disposition
 from catley.game.game_world import GameWorld
@@ -346,7 +346,7 @@ def test_environment_options_include_door_actions() -> None:
     names = {o.name for o in opts}
     assert "Open Door" in names
     open_door_option = next(o for o in opts if o.name == "Open Door")
-    assert open_door_option.action_class is OpenDoorAction
+    assert open_door_option.action_class is OpenDoorIntent
     assert open_door_option.requirements == [ActionRequirement.TARGET_TILE]
 
 
