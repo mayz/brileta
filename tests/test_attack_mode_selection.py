@@ -3,7 +3,8 @@ from typing import cast
 
 from catley import colors
 from catley.controller import Controller
-from catley.game.actions.combat import AttackAction
+from catley.game.actions.combat import AttackIntent
+from catley.game.actions.executors.combat import AttackExecutor
 from catley.game.actors import Character
 from catley.game.game_world import GameWorld
 from catley.game.items.item_types import (
@@ -49,8 +50,8 @@ def test_sniper_prefers_ranged_adjacent() -> None:
     weapon = SNIPER_RIFLE_TYPE.create()
     attacker.inventory.equip_to_slot(weapon, 0)
 
-    action = AttackAction(cast(Controller, controller), attacker, defender, weapon)
-    attack, _ = action._determine_attack_method()
+    intent = AttackIntent(cast(Controller, controller), attacker, defender, weapon)
+    attack, _ = AttackExecutor()._determine_attack_method(intent)
 
     assert attack is weapon.ranged_attack
 
@@ -60,8 +61,8 @@ def test_pistol_prefers_ranged_adjacent() -> None:
     weapon = PISTOL_TYPE.create()
     attacker.inventory.equip_to_slot(weapon, 0)
 
-    action = AttackAction(cast(Controller, controller), attacker, defender, weapon)
-    attack, _ = action._determine_attack_method()
+    intent = AttackIntent(cast(Controller, controller), attacker, defender, weapon)
+    attack, _ = AttackExecutor()._determine_attack_method(intent)
 
     assert attack is weapon.ranged_attack
 
@@ -71,8 +72,8 @@ def test_knife_prefers_melee_adjacent() -> None:
     weapon = COMBAT_KNIFE_TYPE.create()
     attacker.inventory.equip_to_slot(weapon, 0)
 
-    action = AttackAction(cast(Controller, controller), attacker, defender, weapon)
-    attack, _ = action._determine_attack_method()
+    intent = AttackIntent(cast(Controller, controller), attacker, defender, weapon)
+    attack, _ = AttackExecutor()._determine_attack_method(intent)
 
     assert attack is weapon.melee_attack
 
@@ -82,13 +83,13 @@ def test_manual_mode_overrides_preferences() -> None:
     weapon = SNIPER_RIFLE_TYPE.create()
     attacker.inventory.equip_to_slot(weapon, 0)
 
-    action = AttackAction(
+    intent = AttackIntent(
         cast(Controller, controller),
         attacker,
         defender,
         weapon,
         attack_mode="melee",
     )
-    attack, _ = action._determine_attack_method()
+    attack, _ = AttackExecutor()._determine_attack_method(intent)
 
     assert attack is weapon.melee_attack

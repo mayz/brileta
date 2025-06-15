@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, cast
 
 from catley.game import ranges
-from catley.game.actions.combat import AttackAction
+from catley.game.actions.combat import AttackIntent
 from catley.game.actors import Character
 
 from .action_context import ActionContext, ActionContextBuilder
@@ -82,7 +82,7 @@ class CombatActionDiscovery:
                         name=f"Melee attack with {weapon.name}",
                         description=f"Close combat attack using {weapon.name}",
                         category=ActionCategory.COMBAT,
-                        action_class=AttackAction,
+                        action_class=AttackIntent,
                         requirements=[ActionRequirement.TARGET_ACTOR],
                         static_params={"weapon": weapon, "attack_mode": "melee"},
                         success_probability=melee_prob,
@@ -117,7 +117,7 @@ class CombatActionDiscovery:
                         name=f"Ranged attack with {weapon.name}",
                         description=f"Use {weapon.name} for a ranged attack",
                         category=ActionCategory.COMBAT,
-                        action_class=AttackAction,
+                        action_class=AttackIntent,
                         requirements=[ActionRequirement.TARGET_ACTOR],
                         static_params={"weapon": weapon, "attack_mode": "ranged"},
                         success_probability=ranged_prob,
@@ -176,7 +176,7 @@ class CombatActionDiscovery:
                         display_text=display_text,
                         description=f"Close combat attack using {weapon.name}",
                         category=ActionCategory.COMBAT,
-                        action_class=AttackAction,
+                        action_class=AttackIntent,
                         requirements=[ActionRequirement.TARGET_ACTOR],
                         static_params={"weapon": weapon, "attack_mode": "melee"},
                         success_probability=prob,
@@ -209,7 +209,7 @@ class CombatActionDiscovery:
                                 f"Target is beyond {weapon.name}'s maximum range"
                             ),
                             category=ActionCategory.COMBAT,
-                            action_class=AttackAction,
+                            action_class=AttackIntent,
                             requirements=[ActionRequirement.TARGET_ACTOR],
                             static_params={"weapon": weapon, "attack_mode": "ranged"},
                             success_probability=0.0,
@@ -247,7 +247,7 @@ class CombatActionDiscovery:
                         display_text=display_name,
                         description=f"Ranged attack at {range_cat} range",
                         category=ActionCategory.COMBAT,
-                        action_class=AttackAction,
+                        action_class=AttackIntent,
                         requirements=[ActionRequirement.TARGET_ACTOR],
                         static_params={"weapon": weapon, "attack_mode": "ranged"},
                         success_probability=prob,

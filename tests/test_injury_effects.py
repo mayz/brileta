@@ -6,7 +6,8 @@ from unittest.mock import patch
 
 from catley import colors
 from catley.controller import Controller
-from catley.game.actions.combat import AttackAction
+from catley.game.actions.combat import AttackIntent
+from catley.game.actions.executors.combat import AttackExecutor
 from catley.game.actors import PC, Character, conditions
 from catley.game.enums import InjuryLocation, OutcomeTier
 from catley.game.game_world import GameWorld
@@ -36,7 +37,9 @@ class DummyController(Controller):
         self.update_fov_called = True
 
 
-def make_combat_world() -> tuple[DummyController, Character, Character, AttackAction]:
+def make_combat_world() -> tuple[
+    DummyController, Character, Character, AttackIntent, AttackExecutor
+]:
     gw = DummyGameWorld()
     attacker = Character(
         1,
@@ -56,8 +59,9 @@ def make_combat_world() -> tuple[DummyController, Character, Character, AttackAc
     gw.player = attacker
     controller = DummyController(gw=gw)
     weapon = FISTS_TYPE.create()
-    action = AttackAction(controller, attacker, defender, weapon)
-    return controller, attacker, defender, action
+    intent = AttackIntent(controller, attacker, defender, weapon)
+    executor = AttackExecutor()
+    return controller, attacker, defender, intent, executor
 
 
 def test_head_injury_disadvantage_on_intelligence() -> None:
@@ -72,8 +76,8 @@ def test_head_injury_disadvantage_on_intelligence() -> None:
 
 
 def test_arm_injury_gives_attack_disadvantage() -> None:
-    controller, attacker, defender, action = make_combat_world()
-    weapon = cast(Item, action.weapon)
+    controller, attacker, defender, intent, executor = make_combat_world()
+    weapon = cast(Item, intent.weapon)
     attack = cast(Attack, weapon.melee_attack)
     assert attack is not None
     if attacker.conditions is not None:
@@ -82,7 +86,8 @@ def test_arm_injury_gives_attack_disadvantage() -> None:
         )
     with patch("random.randint", side_effect=[2, 18]):
         result = cast(
-            D20ResolutionResult, action._execute_attack_roll(attack, weapon, {})
+            D20ResolutionResult,
+            executor._execute_attack_roll(intent, attack, weapon, {}),
         )
     assert isinstance(result, D20ResolutionResult)
     assert result.has_disadvantage
@@ -112,8 +117,8 @@ def test_multiple_leg_injuries_stack() -> None:
 
 
 def test_random_injury_location_assigned() -> None:
-    controller, attacker, defender, action = make_combat_world()
-    weapon = cast(Item, action.weapon)
+    controller, attacker, defender, intent, executor = make_combat_world()
+    weapon = cast(Item, intent.weapon)
     attack = cast(Attack, weapon.melee_attack)
     assert attack is not None
     defender.health.ap = 0

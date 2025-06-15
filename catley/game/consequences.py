@@ -22,7 +22,7 @@ class Consequence:
 
 
 class AttackConsequenceGenerator:
-    """Generate consequences for :class:`AttackAction`.
+    """Generate consequences for :class:`AttackIntent`.
 
     Starting with combat validates the approach before expanding to other systems.
     """

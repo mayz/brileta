@@ -7,7 +7,8 @@ from unittest.mock import patch
 from catley import colors
 from catley.controller import Controller
 from catley.events import MessageEvent, reset_event_bus_for_testing, subscribe_to_event
-from catley.game.actions.combat import AttackAction
+from catley.game.actions.combat import AttackIntent
+from catley.game.actions.executors.combat import AttackExecutor
 from catley.game.actors import Character, ai
 from catley.game.enums import Disposition, OutcomeTier
 from catley.game.game_world import GameWorld
@@ -46,7 +47,7 @@ class DummyController(Controller):
 
 
 def make_world() -> tuple[
-    DummyController, Character, Character, Character, AttackAction
+    DummyController, Character, Character, Character, AttackIntent
 ]:
     reset_event_bus_for_testing()
     gw = DummyGameWorld()
@@ -64,31 +65,32 @@ def make_world() -> tuple[
     )
     weapon = PISTOL_TYPE.create()
     attacker.inventory.equip_to_slot(weapon, 0)
-    action = AttackAction(cast(Controller, controller), attacker, defender, weapon)
-    return controller, attacker, defender, bystander, action
+    intent = AttackIntent(cast(Controller, controller), attacker, defender, weapon)
+    return controller, attacker, defender, bystander, intent
 
 
 def test_weapon_drop_and_noise_alert() -> None:
-    controller, attacker, defender, bystander, action = make_world()
+    controller, attacker, defender, bystander, intent = make_world()
+    executor = AttackExecutor()
 
     with (
-        patch.object(AttackAction, "_validate_attack", return_value={}),
+        patch.object(AttackExecutor, "_validate_attack", return_value={}),
         patch.object(
-            AttackAction,
+            AttackExecutor,
             "_execute_attack_roll",
             return_value=D20ResolutionResult(outcome_tier=OutcomeTier.CRITICAL_FAILURE),
         ),
         patch.object(
-            AttackAction,
+            AttackExecutor,
             "_apply_combat_outcome",
             return_value=0,
         ),
         patch.object(
-            AttackAction,
+            AttackExecutor,
             "_handle_post_attack_effects",
         ),
     ):
-        result = action.execute()
+        result = executor.execute(intent)
 
     assert result is not None
     assert any(c.type == "weapon_drop" for c in result.consequences)
@@ -100,7 +102,7 @@ def test_weapon_drop_and_noise_alert() -> None:
     )
     assert ground_actor.inventory is not None
     assert any(
-        it.name == cast(Item, action.weapon).name for it in ground_actor.inventory
+        it.name == cast(Item, intent.weapon).name for it in ground_actor.inventory
     )
     assert isinstance(bystander.ai, ai.DispositionBasedAI)
     b_ai = cast(ai.DispositionBasedAI, bystander.ai)

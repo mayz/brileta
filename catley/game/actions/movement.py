@@ -93,7 +93,7 @@ class MoveAction(GameAction):
 
     def execute(self) -> GameActionResult | None:
         # Import here to avoid circular import
-        from catley.game.actions.combat import AttackAction
+        from catley.game.actions.combat import AttackIntent
 
         # Prevent indexing errors by bounding to the map dimensions first.
         if not (
@@ -126,7 +126,7 @@ class MoveAction(GameAction):
                 and blocking_actor.health.is_alive()
             ):
                 weapon = self._select_ram_weapon()
-                AttackAction(
+                AttackIntent(
                     controller=self.controller,
                     attacker=self.actor,
                     defender=blocking_actor,

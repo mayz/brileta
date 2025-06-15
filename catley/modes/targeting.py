@@ -8,7 +8,7 @@ from tcod.console import Console
 from catley import colors
 from catley.events import ActorDeathEvent, subscribe_to_event, unsubscribe_from_event
 from catley.game import ranges
-from catley.game.actions.combat import AttackAction
+from catley.game.actions.combat import AttackIntent
 from catley.game.actors import Character
 from catley.modes.base import Mode
 
@@ -100,7 +100,7 @@ class TargetingMode(Mode):
                 if self._get_current_target():
                     target = self._get_current_target()
                     if isinstance(target, Character):
-                        attack_action = AttackAction(
+                        attack_action = AttackIntent(
                             self.controller, self.controller.gw.player, target
                         )
                         self.controller.queue_action(attack_action)

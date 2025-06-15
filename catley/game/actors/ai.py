@@ -138,14 +138,14 @@ class HostileAI(AIComponent):
         distance = abs(dx) + abs(dy)  # Manhattan distance
 
         # Import here to avoid circular imports
-        from catley.game.actions.combat import AttackAction
+        from catley.game.actions.combat import AttackIntent
 
         # Adjacent to player - attack!
         if distance == 1:
             publish_event(
                 MessageEvent(f"{actor.name} lunges at {player.name}!", colors.RED)
             )
-            return AttackAction(controller, actor, player)
+            return AttackIntent(controller, actor, player)
 
         # Within aggro range - chase the player
         if distance <= self.aggro_radius:

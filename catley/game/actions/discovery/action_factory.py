@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from catley.game.actions.combat import AttackAction, ReloadAction
+from catley.game.actions.combat import AttackIntent, ReloadAction
 from catley.game.actions.recovery import UseConsumableAction
 
 if TYPE_CHECKING:
@@ -20,9 +20,9 @@ class ActionFactory:
         attacker: Character,
         target: Character,
         weapon: Item,
-    ) -> AttackAction:
-        """Helper to build a melee AttackAction."""
-        return AttackAction(controller, attacker, target, weapon, attack_mode="melee")
+    ) -> AttackIntent:
+        """Helper to build a melee AttackIntent."""
+        return AttackIntent(controller, attacker, target, weapon, attack_mode="melee")
 
     def create_ranged_attack(
         self,
@@ -30,9 +30,9 @@ class ActionFactory:
         attacker: Character,
         target: Character,
         weapon: Item,
-    ) -> AttackAction:
-        """Helper to build a ranged AttackAction."""
-        return AttackAction(controller, attacker, target, weapon, attack_mode="ranged")
+    ) -> AttackIntent:
+        """Helper to build a ranged AttackIntent."""
+        return AttackIntent(controller, attacker, target, weapon, attack_mode="ranged")
 
     def create_reload_action(
         self, controller: Controller, actor: Character, weapon: Item

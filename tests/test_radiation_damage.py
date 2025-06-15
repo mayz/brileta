@@ -9,7 +9,8 @@ from catley.controller import Controller
 from catley.environment.map import GameMap
 from catley.events import reset_event_bus_for_testing
 from catley.game.actions.area_effects import AreaEffectAction
-from catley.game.actions.combat import AttackAction
+from catley.game.actions.combat import AttackIntent
+from catley.game.actions.executors.combat import AttackExecutor
 from catley.game.actors import Character, conditions
 from catley.game.enums import OutcomeTier
 from catley.game.game_world import GameWorld
@@ -101,8 +102,9 @@ def test_radiation_weapon_attack() -> None:
     assert attack is not None
     result = D20ResolutionResult(outcome_tier=OutcomeTier.SUCCESS)
     outcome = CombatOutcome(damage_dealt=2)
-    action = AttackAction(cast(Controller, controller), attacker, defender, weapon)
-    damage = action._apply_combat_outcome(result, outcome, attack, weapon)
+    intent = AttackIntent(cast(Controller, controller), attacker, defender, weapon)
+    executor = AttackExecutor()
+    damage = executor._apply_combat_outcome(intent, result, outcome, attack, weapon)
     assert damage == 2
     assert defender.health.hp == defender.health.max_hp - 2
     assert defender.health.ap == 4
