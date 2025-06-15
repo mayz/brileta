@@ -2,7 +2,12 @@ from .action_context import ActionContext, ActionContextBuilder
 from .action_factory import ActionFactory
 from .action_formatters import ActionFormatter
 from .core_discovery import ActionDiscovery
-from .types import ActionCategory, ActionOption, CombatIntentCache
+from .types import (
+    ActionCategory,
+    ActionOption,
+    ActionRequirement,
+    CombatIntentCache,
+)
 
 __all__ = [
     "ActionCategory",
@@ -12,5 +17,6 @@ __all__ = [
     "ActionFactory",
     "ActionFormatter",
     "ActionOption",
+    "ActionRequirement",
     "CombatIntentCache",
 ]

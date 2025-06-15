@@ -5,8 +5,12 @@ import string
 from typing import TYPE_CHECKING, cast
 
 from catley.game import ranges
+from catley.game.actions.base import GameAction
 from catley.game.actions.discovery import ActionDiscovery
-from catley.game.actions.discovery.core_discovery import ActionCategory, ActionOption
+from catley.game.actions.discovery.core_discovery import (
+    ActionCategory,
+    ActionOption,
+)
 from catley.game.actors import Character
 from catley.game.items.capabilities import MeleeAttack, RangedAttack
 from catley.game.items.item_core import Item
@@ -129,6 +133,9 @@ class ActionBrowserStateMachine:
                         name=label,
                         description="",
                         category=cats[0],
+                        action_class=cast(type[GameAction], type(None)),
+                        requirements=[],
+                        static_params={},
                         execute=execute,
                     )
                 )
@@ -150,6 +157,9 @@ class ActionBrowserStateMachine:
                 name="\u2190 Back",
                 description="Return to previous screen",
                 category=target_category,
+                action_class=cast(type[GameAction], type(None)),
+                requirements=[],
+                static_params={},
                 hotkey="escape",
                 execute=functools.partial(self._go_back, controller),
             ),
@@ -168,6 +178,9 @@ class ActionBrowserStateMachine:
                     name="Attack a target...",
                     description="Select target, then choose how to attack",
                     category=ActionCategory.COMBAT,
+                    action_class=cast(type[GameAction], type(None)),
+                    requirements=[],
+                    static_params={},
                     hotkey="t",
                     execute=functools.partial(self._set_ui_state, "select_target"),
                 )
@@ -178,6 +191,9 @@ class ActionBrowserStateMachine:
                     name="Attack with a weapon...",
                     description="Select weapon/attack mode, then choose target",
                     category=ActionCategory.COMBAT,
+                    action_class=cast(type[GameAction], type(None)),
+                    requirements=[],
+                    static_params={},
                     hotkey="w",
                     execute=functools.partial(self._set_ui_state, "select_weapon"),
                 )
@@ -190,6 +206,9 @@ class ActionBrowserStateMachine:
                 name="\u2190 Back",
                 description="Return to previous screen",
                 category=ActionCategory.COMBAT,
+                action_class=cast(type[GameAction], type(None)),
+                requirements=[],
+                static_params={},
                 hotkey="escape",
                 execute=functools.partial(self._go_back, controller),
             ),
@@ -205,6 +224,9 @@ class ActionBrowserStateMachine:
                 name="\u2190 Back",
                 description="Return to previous screen",
                 category=ActionCategory.COMBAT,
+                action_class=cast(type[GameAction], type(None)),
+                requirements=[],
+                static_params={},
                 hotkey="escape",
                 execute=functools.partial(self._go_back, controller),
             )
@@ -227,6 +249,9 @@ class ActionBrowserStateMachine:
                     name=f"{target.name} ({desc})",
                     description=f"Attack {target.name}",
                     category=ActionCategory.COMBAT,
+                    action_class=cast(type[GameAction], type(None)),
+                    requirements=[],
+                    static_params={},
                     hotkey=letters[i] if i < len(letters) else None,
                     execute=functools.partial(
                         self._set_ui_state, "weapons_for_target", target=target
@@ -244,6 +269,9 @@ class ActionBrowserStateMachine:
                 name="\u2190 Back",
                 description="Return to previous screen",
                 category=ActionCategory.COMBAT,
+                action_class=cast(type[GameAction], type(None)),
+                requirements=[],
+                static_params={},
                 hotkey="escape",
                 execute=functools.partial(self._go_back, controller),
             )
@@ -275,6 +303,9 @@ class ActionBrowserStateMachine:
                             name=f"{weapon.name} ({verb.title()})",
                             description=f"Melee attack using {weapon.name}",
                             category=ActionCategory.COMBAT,
+                            action_class=cast(type[GameAction], type(None)),
+                            requirements=[],
+                            static_params={},
                             hotkey=letters[option_index]
                             if option_index < len(letters)
                             else None,
@@ -308,6 +339,9 @@ class ActionBrowserStateMachine:
                             name=f"{weapon.name} ({verb.title()})",
                             description=f"Ranged attack using {weapon.name}",
                             category=ActionCategory.COMBAT,
+                            action_class=cast(type[GameAction], type(None)),
+                            requirements=[],
+                            static_params={},
                             hotkey=letters[option_index]
                             if option_index < len(letters)
                             else None,
@@ -335,6 +369,9 @@ class ActionBrowserStateMachine:
                 name="\u2190 Back",
                 description="Return to previous screen",
                 category=ActionCategory.COMBAT,
+                action_class=cast(type[GameAction], type(None)),
+                requirements=[],
+                static_params={},
                 hotkey="escape",
                 execute=functools.partial(self._go_back, controller),
             )
@@ -361,6 +398,9 @@ class ActionBrowserStateMachine:
                 name="\u2190 Back",
                 description="Return to previous screen",
                 category=ActionCategory.COMBAT,
+                action_class=cast(type[GameAction], type(None)),
+                requirements=[],
+                static_params={},
                 hotkey="escape",
                 execute=functools.partial(self._go_back, controller),
             )
@@ -394,6 +434,9 @@ class ActionBrowserStateMachine:
                         ),
                         description=f"Close combat attack using {weapon.name}",
                         category=ActionCategory.COMBAT,
+                        action_class=cast(type[GameAction], type(None)),
+                        requirements=[],
+                        static_params={},
                         success_probability=prob,
                         execute=lambda t=target,
                         w=weapon: self.action_discovery.factory.create_melee_attack(
@@ -423,6 +466,9 @@ class ActionBrowserStateMachine:
                                 f"Target is beyond {weapon.name}'s maximum range"
                             ),
                             category=ActionCategory.COMBAT,
+                            action_class=cast(type[GameAction], type(None)),
+                            requirements=[],
+                            static_params={},
                             success_probability=0.0,
                         )
                     )
@@ -440,6 +486,9 @@ class ActionBrowserStateMachine:
                         ),
                         description=f"Ranged attack at {range_cat} range",
                         category=ActionCategory.COMBAT,
+                        action_class=cast(type[GameAction], type(None)),
+                        requirements=[],
+                        static_params={},
                         success_probability=prob,
                         execute=lambda t=target,
                         w=weapon: self.action_discovery.factory.create_ranged_attack(

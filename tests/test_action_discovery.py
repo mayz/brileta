@@ -7,6 +7,7 @@ from catley.controller import Controller
 from catley.environment import tile_types
 from catley.environment.map import GameMap
 from catley.game import ranges
+from catley.game.actions.base import GameAction
 from catley.game.actions.discovery import (
     ActionCategory,
     ActionContext,
@@ -244,11 +245,27 @@ def test_sort_by_relevance_orders_actions() -> None:
         "a",
         "",
         ActionCategory.COMBAT,
+        cast(type[GameAction], type(None)),
+        requirements=[],
+        static_params={},
         hotkey="a",
         success_probability=0.5,
     )
-    opt2 = ActionOption("id2", "b", "", ActionCategory.ITEMS)
-    opt3 = ActionOption("id3", "c", "", ActionCategory.COMBAT, success_probability=0.8)
+    opt2 = ActionOption(
+        "id2",
+        "b",
+        "",
+        ActionCategory.ITEMS,
+        cast(type[GameAction], type(None)),
+    )
+    opt3 = ActionOption(
+        "id3",
+        "c",
+        "",
+        ActionCategory.COMBAT,
+        cast(type[GameAction], type(None)),
+        success_probability=0.8,
+    )
 
     disc = ActionDiscovery()
     ordered = disc._sort_by_relevance([opt2, opt3, opt1], ctx)

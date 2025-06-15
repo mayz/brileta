@@ -2,6 +2,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from catley.game.actions.environment import CloseDoorAction, OpenDoorAction
+from catley.game.actions.recovery import (
+    ComfortableSleepAction,
+    RestAction,
+    SleepAction,
+)
 from catley.game.actors import Character
 
 from .action_context import ActionContext
@@ -42,7 +48,6 @@ class EnvironmentActionDiscovery:
         self, controller: Controller, actor: Character, context: ActionContext
     ) -> list[ActionOption]:
         from catley.environment import tile_types
-        from catley.game.actions.environment import CloseDoorAction, OpenDoorAction
 
         options: list[ActionOption] = []
         gm = controller.gw.game_map
@@ -60,6 +65,9 @@ class EnvironmentActionDiscovery:
                         name="Open Door",
                         description="Open the door",
                         category=ActionCategory.ENVIRONMENT,
+                        action_class=OpenDoorAction,
+                        requirements=[],
+                        static_params={"x": tx, "y": ty},
                         execute=lambda x=tx, y=ty: OpenDoorAction(
                             controller, actor, x, y
                         ),
@@ -72,6 +80,9 @@ class EnvironmentActionDiscovery:
                         name="Close Door",
                         description="Close the door",
                         category=ActionCategory.ENVIRONMENT,
+                        action_class=CloseDoorAction,
+                        requirements=[],
+                        static_params={"x": tx, "y": ty},
                         execute=lambda x=tx, y=ty: CloseDoorAction(
                             controller, actor, x, y
                         ),
@@ -89,12 +100,7 @@ class EnvironmentActionDiscovery:
     def _get_recovery_actions(
         self, controller: Controller, actor: Character, context: ActionContext
     ) -> list[ActionOption]:
-        from catley.game.actions.recovery import (
-            ComfortableSleepAction,
-            RestAction,
-            SleepAction,
-            is_safe_location,
-        )
+        from catley.game.actions.recovery import is_safe_location
 
         options: list[ActionOption] = []
         safe, _ = is_safe_location(actor)
@@ -106,6 +112,9 @@ class EnvironmentActionDiscovery:
                     name="Rest",
                     description="Recover armor points",
                     category=ActionCategory.ENVIRONMENT,
+                    action_class=RestAction,
+                    requirements=[],
+                    static_params={},
                     execute=lambda: RestAction(controller, actor),
                 )
             )
@@ -122,6 +131,9 @@ class EnvironmentActionDiscovery:
                     name="Sleep",
                     description="Sleep to restore HP and ease exhaustion",
                     category=ActionCategory.ENVIRONMENT,
+                    action_class=SleepAction,
+                    requirements=[],
+                    static_params={},
                     execute=lambda: SleepAction(controller, actor),
                 )
             )
@@ -133,6 +145,9 @@ class EnvironmentActionDiscovery:
                     name="Comfortable Sleep",
                     description="Remove all exhaustion and restore HP",
                     category=ActionCategory.ENVIRONMENT,
+                    action_class=ComfortableSleepAction,
+                    requirements=[],
+                    static_params={},
                     execute=lambda: ComfortableSleepAction(controller, actor),
                 )
             )

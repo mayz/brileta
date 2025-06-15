@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from catley.game.actions.base import GameAction
@@ -30,6 +30,14 @@ class ActionCategory(Enum):
     SOCIAL = auto()
 
 
+class ActionRequirement(Enum):
+    """Represents what an action needs from the user to be executed."""
+
+    TARGET_ACTOR = auto()
+    TARGET_TILE = auto()
+    ITEM_FROM_INVENTORY = auto()
+
+
 @dataclass
 class ActionOption:
     """Represents an action choice the player can select from a menu."""
@@ -38,10 +46,14 @@ class ActionOption:
     name: str
     description: str
     category: ActionCategory
+    action_class: type[GameAction]
+    requirements: list[ActionRequirement] = field(default_factory=list)
+    static_params: dict[str, Any] = field(default_factory=dict)
     hotkey: str | None = None
     display_text: str | None = None
     success_probability: float | None = None
     cost_description: str | None = None
+    # Temporary backwards compatibility - will be removed in Task 3
     execute: Callable[[], GameAction | bool | None] | None = None
 
     def __post_init__(self) -> None:
