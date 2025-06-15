@@ -17,7 +17,7 @@ ruff-check:
 
 # Run type checking
 typecheck:
-	uv run ty check . --error-on-warning
+	uv run pyright
 
 # Run tests. Installs/syncs dependencies AND runs pytest in the same logical command.
 test:
