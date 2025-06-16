@@ -166,12 +166,9 @@ class Actor:
         return f"{self.__class__.__name__}({fields})"
 
     def update_render_position(self, delta_time: float) -> None:
-        """Smoothly move the visual position towards the logical position."""
-        # A higher LERP_FACTOR makes the movement faster and snappier.
-        # A lower value makes it smoother but introduces more "lag".
-        LERP_FACTOR = 30.0 * delta_time
-        self.render_x += (self.x - self.render_x) * LERP_FACTOR
-        self.render_y += (self.y - self.render_y) * LERP_FACTOR
+        """Snap the visual position directly to the logical position."""
+        self.render_x = float(self.x)
+        self.render_y = float(self.y)
 
     def move(self, dx: TileCoord, dy: TileCoord) -> None:
         # The move method now only updates the logical position.
@@ -350,6 +347,12 @@ class Character(Actor):
 
         if starting_weapon:
             self.inventory.equip_to_slot(starting_weapon, 0)
+
+    def update_render_position(self, delta_time: float) -> None:  # type: ignore[override]
+        """Linearly interpolate the visual position toward the logical position."""
+        lerp_factor = 30.0 * delta_time
+        self.render_x += (self.x - self.render_x) * lerp_factor
+        self.render_y += (self.y - self.render_y) * lerp_factor
 
     def can_use_two_handed_weapons(self) -> bool:
         """Return ``False`` if both arms are injured."""

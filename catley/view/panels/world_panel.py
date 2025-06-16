@@ -148,9 +148,7 @@ class WorldPanel(Panel):
 
         # Update render positions for all visible actors
         for actor in self.controller.gw.actors:
-            update_pos = getattr(actor, "update_render_position", None)
-            if update_pos is not None:
-                update_pos(delta_time)
+            actor.update_render_position(delta_time)
 
         self._render_map()
         self._render_actors()
@@ -263,11 +261,9 @@ class WorldPanel(Panel):
         if self.current_light_intensity is None:
             return
         # Use render_x and render_y for calculating screen position
-        render_x = getattr(a, "render_x", a.x)
-        render_y = getattr(a, "render_y", a.y)
         vp_x, vp_y = self.viewport_system.world_to_screen(
-            render_x,  # pyright: ignore[reportArgumentType]
-            render_y,  # pyright: ignore[reportArgumentType]
+            a.render_x,  # pyright: ignore[reportArgumentType]
+            a.render_y,  # pyright: ignore[reportArgumentType]
         )
 
         # We need to round to the nearest tile for console rendering
