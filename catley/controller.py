@@ -87,6 +87,8 @@ class Controller:
 
         # For handling input events in run_game_loop().
         self.input_handler = InputHandler(self)
+        self.last_input_time: float | None = None
+        self.action_count_for_latency_metric: int = 0
 
         # Initialize mode system
         self.targeting_mode = TargetingMode(self)

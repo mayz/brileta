@@ -54,17 +54,30 @@ SCREEN_SHAKE_INTENSITY_MULTIPLIER = 0.2
 
 FPS_SAMPLE_SIZE = 256  # Number of frame time samples to track
 
-PERFORMANCE_TESTING = False
-if PERFORMANCE_TESTING:
+# --- Performance & Debug Toggles ---
+# These are independent flags to control debugging features.
+
+# Set to True for uncapped FPS to identify performance bottlenecks.
+PERFORMANCE_PROFILING = False
+
+# Set to True to display the FPS counter in the corner of the screen.
+SHOW_FPS = False
+
+# Set to True to print action processing metrics (count, total time, avg time)
+# to the console for debugging game feel and performance
+SHOW_ACTION_PROCESSING_METRICS = False
+
+# --- Engine Settings (Derived from flags above) - DO NOT CHANGE DIRECTLY ---
+if PERFORMANCE_PROFILING:
     # Shows true uncapped performance for bottleneck identification
     TARGET_FPS = None
     VSYNC = False
+    # Profiling almost always means you want to see the FPS counter.
     SHOW_FPS = True
 else:
     # Release Build & Daily Development (battery-friendly)
     TARGET_FPS = 60
     VSYNC = True
-    SHOW_FPS = False
 
 # =============================================================================
 # GAMEPLAY MECHANICS

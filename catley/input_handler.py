@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import time
 from typing import TYPE_CHECKING
 
 import tcod.event
@@ -74,6 +75,11 @@ class InputHandler:
             action = self.handle_event(event)
             if action:
                 self.controller.queue_action(action)
+
+        # If there's a pending action, we know process_unified_round is
+        # about to consume it. This is where we count the action.
+        if self.controller.turn_manager.has_pending_actions():
+            self.controller.action_count_for_latency_metric += 1
 
         # Process a round (the controller will decide if anything needs to happen)
         self.controller.process_unified_round()
@@ -209,41 +215,51 @@ class InputHandler:
                 return None
 
     def _check_for_game_action(self, event: tcod.event.Event) -> GameIntent | None:
+        move_intent = None
         match event:
             # Movement keys (Arrows and VIM)
             case (
                 tcod.event.KeyDown(sym=tcod.event.KeySym.UP)
                 | tcod.event.KeyDown(sym=tcod.event.KeySym.k)
             ):
-                return MoveIntent(self.controller, self.p, 0, -1)
+                move_intent = MoveIntent(self.controller, self.p, 0, -1)
             case (
                 tcod.event.KeyDown(sym=tcod.event.KeySym.DOWN)
                 | tcod.event.KeyDown(sym=tcod.event.KeySym.j)
             ):
-                return MoveIntent(self.controller, self.p, 0, 1)
+                move_intent = MoveIntent(self.controller, self.p, 0, 1)
             case (
                 tcod.event.KeyDown(sym=tcod.event.KeySym.LEFT)
                 | tcod.event.KeyDown(sym=tcod.event.KeySym.h)
             ):
-                return MoveIntent(self.controller, self.p, -1, 0)
+                move_intent = MoveIntent(self.controller, self.p, -1, 0)
             case (
                 tcod.event.KeyDown(sym=tcod.event.KeySym.RIGHT)
                 | tcod.event.KeyDown(sym=tcod.event.KeySym.l)
             ):
-                return MoveIntent(self.controller, self.p, 1, 0)
+                move_intent = MoveIntent(self.controller, self.p, 1, 0)
 
             # Diagonal movement (numpad or vi-keys)
             case tcod.event.KeyDown(sym=tcod.event.KeySym.KP_7):  # Up-left
-                return MoveIntent(self.controller, self.p, -1, -1)
+                move_intent = MoveIntent(self.controller, self.p, -1, -1)
             case tcod.event.KeyDown(sym=tcod.event.KeySym.KP_9):  # Up-right
-                return MoveIntent(self.controller, self.p, 1, -1)
+                move_intent = MoveIntent(self.controller, self.p, 1, -1)
             case tcod.event.KeyDown(sym=tcod.event.KeySym.KP_1):  # Down-left
-                return MoveIntent(self.controller, self.p, -1, 1)
+                move_intent = MoveIntent(self.controller, self.p, -1, 1)
             case tcod.event.KeyDown(sym=tcod.event.KeySym.KP_3):  # Down-right
-                return MoveIntent(self.controller, self.p, 1, 1)
+                move_intent = MoveIntent(self.controller, self.p, 1, 1)
 
             case _:
-                return None
+                move_intent = None
+
+        if move_intent:
+            # Only time the first input of a chain
+            if self.controller.last_input_time is None:
+                self.controller.last_input_time = time.perf_counter()
+                self.controller.action_count_for_latency_metric = 0
+            return move_intent
+
+        return None
 
     def _handle_mouse_button_down_event(
         self, event: tcod.event.MouseButtonDown

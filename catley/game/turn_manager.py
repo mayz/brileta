@@ -38,6 +38,12 @@ class TurnManager:
         """Queue a game action to be processed on the next turn."""
         self._pending_action = action
 
+    def has_pending_actions(self) -> bool:
+        """
+        Check if there is a pending action.
+        """
+        return self._pending_action is not None
+
     def process_unified_round(self) -> None:
         """Process a single round where all actors can act."""
         if not self._pending_action:

@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from catley import colors
-from catley.config import PERFORMANCE_TESTING
+from catley.config import PERFORMANCE_PROFILING
 from catley.constants.view import ViewConstants as View
 from catley.view.render.text_backend import TCODTextBackend
 
@@ -40,7 +40,7 @@ class FPSPanel(TextPanel):
 
         current_time = self.clock.last_time
         if current_time - self.last_update >= self.update_interval:
-            if PERFORMANCE_TESTING:
+            if PERFORMANCE_PROFILING:
                 self.display_string = (
                     f"FPS: mean {self.clock.mean_fps:.0f}, "
                     f"last {self.clock.last_fps:.0f}"
