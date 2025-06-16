@@ -112,3 +112,14 @@ class OpenPickupMenuUICommand(OpenMenuUICommand):
         ):
             menu = PickupMenu(self.controller, (self.player.x, self.player.y))
             self.controller.overlay_system.show_menu(menu)
+
+
+class OpenExistingMenuUICommand(UICommand):
+    """Command to open an already-created menu instance."""
+
+    def __init__(self, controller: Controller, menu: Menu) -> None:
+        self.controller = controller
+        self.menu = menu
+
+    def execute(self) -> None:
+        self.controller.overlay_system.show_menu(self.menu)

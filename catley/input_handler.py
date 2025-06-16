@@ -7,7 +7,9 @@ import tcod.event
 
 from catley import colors
 from catley.events import MessageEvent, publish_event
+from catley.game.actors import Actor, Character
 from catley.view.ui.action_browser_menu import ActionBrowserMenu
+from catley.view.ui.context_menu import ContextMenu
 from catley.view.ui.help_menu import HelpMenu
 from catley.view.ui.inventory_menu import InventoryMenu
 
@@ -18,6 +20,7 @@ if TYPE_CHECKING:
     from .controller import Controller
 
 from .view.ui.commands import (
+    OpenExistingMenuUICommand,
     OpenMenuUICommand,
     OpenPickupMenuUICommand,
     QuitUICommand,
@@ -245,6 +248,26 @@ class InputHandler:
         map_coords = self.controller.frame_manager.get_tile_map_coords_from_root_coords(
             root_tile_pos
         )
+
+        if event.button == tcod.event.MouseButton.RIGHT:
+            target: Actor | tuple[int, int] | None = None
+            if map_coords:
+                mx, my = map_coords
+                if (
+                    0 <= mx < self.game_map.width
+                    and 0 <= my < self.game_map.height
+                    and self.game_map.visible[mx, my]
+                ):
+                    actor_at_click = self.gw.get_actor_at_location(mx, my)
+                    if actor_at_click is not None and (
+                        not isinstance(actor_at_click, Character)
+                        or actor_at_click.health.is_alive()
+                    ):
+                        target = actor_at_click
+                    else:
+                        target = (mx, my)
+            context_menu = ContextMenu(self.controller, target, root_tile_pos)
+            return OpenExistingMenuUICommand(self.controller, context_menu)
 
         if event.button != tcod.event.MouseButton.LEFT:
             return None
