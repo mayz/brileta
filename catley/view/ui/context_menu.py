@@ -4,6 +4,8 @@ import functools
 import string
 from typing import TYPE_CHECKING
 
+import tcod.event
+
 from catley import colors
 from catley.environment import tile_types
 from catley.game.actions.base import GameIntent
@@ -154,6 +156,26 @@ class ContextMenu(Menu):
         max_y = self.renderer.root_console.height - self.height
         self.x_tiles = max(0, min(x, max_x))
         self.y_tiles = max(0, min(y, max_y))
+
+    def handle_input(self, event: tcod.event.Event) -> bool:
+        """Close the menu if a mouse click occurs outside its bounds."""
+
+        if not self.is_active:
+            return False
+
+        match event:
+            case tcod.event.MouseButtonDown(position=position):
+                tx, ty = self.controller.coordinate_converter.pixel_to_tile(
+                    position[0], position[1]
+                )
+                if not (
+                    self.x_tiles <= tx < self.x_tiles + self.width
+                    and self.y_tiles <= ty < self.y_tiles + self.height
+                ):
+                    self.hide()
+                    return True
+
+        return super().handle_input(event)
 
     def _execute_action_option(self, action_option: ActionOption) -> bool:
         """Execute an action option and return True if the menu should close."""
