@@ -59,7 +59,7 @@ def test_root_to_world_conversion_inside_panel() -> None:
     root_coords = (panel.x + 5, panel.y + 2)  # This is (10, 5)
 
     # 3. Call the class method, passing our mock as the 'self' argument.
-    result = FrameManager.get_tile_map_coords_from_root_coords(
+    result = FrameManager.get_world_coords_from_root_tile_coords(
         mock_fm_self, root_coords
     )
 
@@ -86,7 +86,7 @@ def test_root_to_world_conversion_outside_panel() -> None:
 
     root_coords = (0, 0)  # Clearly outside the panel which starts at (5, 3)
 
-    result = FrameManager.get_tile_map_coords_from_root_coords(
+    result = FrameManager.get_world_coords_from_root_tile_coords(
         mock_fm_self, root_coords
     )
     assert result is None

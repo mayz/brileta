@@ -35,8 +35,8 @@ def test_is_visible() -> None:
     vs = ViewportSystem(8, 6)
     vs.camera.set_position(5.0, 5.0)
 
-    assert vs.is_visible(5, 5, 10, 10)
-    assert not vs.is_visible(0, 0, 10, 10)
+    assert vs.is_visible(5, 5)
+    assert not vs.is_visible(0, 0)
 
 
 def test_screen_offset_for_small_map() -> None:

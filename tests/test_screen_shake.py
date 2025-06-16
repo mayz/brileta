@@ -147,13 +147,13 @@ def test_world_panel_screen_shake_does_not_overflow(monkeypatch) -> None:
     def wrapped_render_map() -> None:
         gw = controller.gw
         vs = panel.viewport_system
-        world_left, world_right, world_top, world_bottom = vs.get_visible_bounds()
-        world_left = max(0, world_left)
-        world_top = max(0, world_top)
-        world_right = min(gw.game_map.width - 1, world_right)
-        world_bottom = min(gw.game_map.height - 1, world_bottom)
-        captured["dest_width"] = world_right - world_left + 1
-        captured["dest_height"] = world_bottom - world_top + 1
+        bounds = vs.get_visible_bounds()
+        bounds.x1 = max(0, bounds.x1)
+        bounds.y1 = max(0, bounds.y1)
+        world_right = min(gw.game_map.width - 1, bounds.x2)
+        world_bottom = min(gw.game_map.height - 1, bounds.y2)
+        captured["dest_width"] = world_right - bounds.x1 + 1
+        captured["dest_height"] = world_bottom - bounds.y1 + 1
         original_render_map()
 
     panel._render_map = wrapped_render_map  # type: ignore[assignment]

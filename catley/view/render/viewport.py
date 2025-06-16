@@ -56,6 +56,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from catley.environment.map import TileCoord
+from catley.util.coordinates import (
+    Rect,
+    ViewportTileCoord,
+    ViewportTilePos,
+    WorldTileCoord,
+    WorldTilePos,
+)
+
 if TYPE_CHECKING:
     from catley.game.actors import Actor
 
@@ -64,6 +73,8 @@ if TYPE_CHECKING:
 class Camera:
     """Camera that tracks a position in world space."""
 
+    # Keep the type as float instead of WorldTileCoord for
+    # smooth interpolation between tiles
     world_x: float = 0.0  # Camera center in world coordinates
     world_y: float = 0.0
 
@@ -84,17 +95,17 @@ class Camera:
 class Viewport:
     """Defines the visible area of the game world and handles coordinate transforms."""
 
-    width_tiles: int
-    height_tiles: int
-    offset_x: int = 0
-    offset_y: int = 0
-    map_width: int | None = None
-    map_height: int | None = None
+    width_tiles: TileCoord
+    height_tiles: TileCoord
+    offset_x: TileCoord = 0
+    offset_y: TileCoord = 0
+    map_width: TileCoord | None = None
+    map_height: TileCoord | None = None
 
-    def get_world_bounds(self, camera: Camera) -> tuple[int, int, int, int]:
+    def get_world_bounds(self, camera: Camera) -> Rect:
         """Return the clamped world-space bounds currently visible."""
-        half_w = self.width_tiles // 2
-        half_h = self.height_tiles // 2
+        half_w: TileCoord = self.width_tiles // 2
+        half_h: TileCoord = self.height_tiles // 2
         center_x = round(camera.world_x)
         center_y = round(camera.world_y)
         left = center_x - half_w
@@ -109,27 +120,29 @@ class Viewport:
 
         right = left + self.width_tiles - 1
         bottom = top + self.height_tiles - 1
-        return left, right, top, bottom
+        return Rect.from_bounds(left, top, right, bottom)
 
     def world_to_viewport(
-        self, world_x: int, world_y: int, camera: Camera
-    ) -> tuple[int, int]:
+        self, world_x: WorldTileCoord, world_y: WorldTileCoord, camera: Camera
+    ) -> ViewportTilePos:
         """Converts world coordinates to viewport (panel-relative) coordinates."""
-        left, _, top, _ = self.get_world_bounds(camera)
+        bounds = self.get_world_bounds(camera)
+        left, top = bounds.x1, bounds.y1
         return world_x - left + self.offset_x, world_y - top + self.offset_y
 
     def viewport_to_world(
-        self, vp_x: int, vp_y: int, camera: Camera
-    ) -> tuple[int, int]:
+        self, vp_x: ViewportTileCoord, vp_y: ViewportTileCoord, camera: Camera
+    ) -> WorldTilePos:
         """Converts viewport (panel-relative) coordinates to world coordinates."""
-        left, _, top, _ = self.get_world_bounds(camera)
+        bounds = self.get_world_bounds(camera)
+        left, top = bounds.x1, bounds.y1
         return vp_x - self.offset_x + left, vp_y - self.offset_y + top
 
 
 class ViewportSystem:
     """Manages the Camera and Viewport to provide a clean API for rendering."""
 
-    def __init__(self, viewport_width: int, viewport_height: int) -> None:
+    def __init__(self, viewport_width: TileCoord, viewport_height: TileCoord) -> None:
         self.camera = Camera()
         self.viewport = Viewport(viewport_width, viewport_height)
 
@@ -166,22 +179,22 @@ class ViewportSystem:
             )
             self.viewport.offset_y = 0
 
-    def get_visible_bounds(self) -> tuple[int, int, int, int]:
+    def get_visible_bounds(self) -> Rect:
         """Get the world coordinates that are currently visible."""
         return self.viewport.get_world_bounds(self.camera)
 
-    def is_visible(
-        self, world_x: int, world_y: int, map_width: int, map_height: int
-    ) -> bool:
+    def is_visible(self, world_x: int, world_y: int) -> bool:
         """Check if a world position is currently inside the viewport."""
-        left, right, top, bottom = self.get_visible_bounds()
-        return left <= world_x <= right and top <= world_y <= bottom
+        bounds = self.get_visible_bounds()
+        return bounds.x1 <= world_x <= bounds.x2 and bounds.y1 <= world_y <= bounds.y2
 
     def world_to_screen(self, world_x: int, world_y: int) -> tuple[int, int]:
         """Converts world coordinates to viewport/screen coordinates."""
         return self.viewport.world_to_viewport(world_x, world_y, self.camera)
 
-    def screen_to_world(self, vp_x: int, vp_y: int) -> tuple[int, int]:
+    def screen_to_world(
+        self, vp_x: ViewportTileCoord, vp_y: ViewportTileCoord
+    ) -> WorldTilePos:
         """Converts viewport/screen coordinates to world coordinates."""
         return self.viewport.viewport_to_world(vp_x, vp_y, self.camera)
 
