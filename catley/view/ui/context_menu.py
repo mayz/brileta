@@ -19,6 +19,12 @@ from catley.game.actions.discovery import (
 )
 from catley.game.actions.environment import CloseDoorIntent, OpenDoorIntent
 from catley.game.actors import Actor, Character
+from catley.util.coordinates import (
+    PixelCoord,
+    PixelPos,
+    RootConsoleTilePos,
+    WorldTilePos,
+)
 from catley.view.ui.overlays import Menu, MenuOption
 
 if TYPE_CHECKING:  # pragma: no cover - only for type checking
@@ -31,11 +37,11 @@ class ContextMenu(Menu):
     def __init__(
         self,
         controller: Controller,
-        target: Actor | tuple[int, int] | None,
-        click_position: tuple[int, int],
+        target: Actor | WorldTilePos | None,
+        click_position: RootConsoleTilePos,
     ) -> None:
         self.target = target
-        self.click_position = click_position
+        self.click_position: RootConsoleTilePos = click_position
         self.discovery = ActionDiscovery()
 
         title = self._get_title()
@@ -149,13 +155,13 @@ class ContextMenu(Menu):
 
     def _calculate_dimensions(self) -> None:
         super()._calculate_dimensions()
-        x, y = self.click_position
-        x += 1
-        y += 1
+        root_x, root_y = self.click_position
+        root_x += 1
+        root_y += 1
         max_x = self.renderer.root_console.width - self.width
         max_y = self.renderer.root_console.height - self.height
-        self.x_tiles = max(0, min(x, max_x))
-        self.y_tiles = max(0, min(y, max_y))
+        self.x_tiles = max(0, min(root_x, max_x))
+        self.y_tiles = max(0, min(root_y, max_y))
 
     def handle_input(self, event: tcod.event.Event) -> bool:
         """Close the menu if a mouse click occurs outside its bounds."""
@@ -165,12 +171,15 @@ class ContextMenu(Menu):
 
         match event:
             case tcod.event.MouseButtonDown(position=position):
-                tx, ty = self.controller.coordinate_converter.pixel_to_tile(
-                    position[0], position[1]
+                px_pos: PixelPos = position
+                px_x: PixelCoord = px_pos[0]
+                px_y: PixelCoord = px_pos[1]
+                root_tile_x, root_tile_y = (
+                    self.controller.coordinate_converter.pixel_to_tile(px_x, px_y)
                 )
                 if not (
-                    self.x_tiles <= tx < self.x_tiles + self.width
-                    and self.y_tiles <= ty < self.y_tiles + self.height
+                    self.x_tiles <= root_tile_x < self.x_tiles + self.width
+                    and self.y_tiles <= root_tile_y < self.y_tiles + self.height
                 ):
                     self.hide()
                     return True

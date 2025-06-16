@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from unittest.mock import MagicMock
 
+from catley.util.coordinates import RootConsoleTilePos
 from catley.view.frame_manager import FrameManager
 from catley.view.panels.world_panel import WorldPanel
 from catley.view.render.effects.effects import EffectLibrary
@@ -56,7 +57,7 @@ def test_root_to_world_conversion_inside_panel() -> None:
     mock_fm_self.controller = controller
     mock_fm_self.world_panel = panel
 
-    root_coords = (panel.x + 5, panel.y + 2)  # This is (10, 5)
+    root_coords: RootConsoleTilePos = (panel.x + 5, panel.y + 2)  # This is (10, 5)
 
     # 3. Call the class method, passing our mock as the 'self' argument.
     result = FrameManager.get_world_coords_from_root_tile_coords(
@@ -84,7 +85,10 @@ def test_root_to_world_conversion_outside_panel() -> None:
     mock_fm_self.controller = controller
     mock_fm_self.world_panel = panel
 
-    root_coords = (0, 0)  # Clearly outside the panel which starts at (5, 3)
+    root_coords: RootConsoleTilePos = (
+        0,
+        0,
+    )  # Clearly outside the panel which starts at (5, 3)
 
     result = FrameManager.get_world_coords_from_root_tile_coords(
         mock_fm_self, root_coords

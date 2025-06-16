@@ -8,6 +8,7 @@ from catley import colors
 from catley.events import MessageEvent, publish_event
 from catley.game.actors import Character
 from catley.game.items.item_core import Item
+from catley.util.coordinates import WorldTilePos
 from catley.view.ui.overlays import Menu, MenuOption
 
 if TYPE_CHECKING:
@@ -17,9 +18,9 @@ if TYPE_CHECKING:
 class PickupMenu(Menu):
     """Menu for picking up items from the ground or from dead bodies."""
 
-    def __init__(self, controller: Controller, location: tuple[int, int]) -> None:
+    def __init__(self, controller: Controller, location: WorldTilePos) -> None:
         super().__init__("Pick up items", controller)
-        self.location = location
+        self.location: WorldTilePos = location
 
     def populate_options(self) -> None:
         """Populate pickup options based on items at the location."""
@@ -55,9 +56,8 @@ class PickupMenu(Menu):
 
     def _get_items_at_location(self) -> list[Item]:
         """Get all items at the specified location."""
-        return self.controller.gw.get_pickable_items_at_location(
-            self.location[0], self.location[1]
-        )
+        world_x, world_y = self.location
+        return self.controller.gw.get_pickable_items_at_location(world_x, world_y)
 
     def _pickup_item(self, item: Item) -> None:
         """Pickup an item and add it to player inventory."""
@@ -68,10 +68,9 @@ class PickupMenu(Menu):
             return
 
         # Remove item from whichever actor at the location actually holds it
+        world_x, world_y = self.location
         actors_here = [
-            a
-            for a in self.controller.gw.actors
-            if a.x == self.location[0] and a.y == self.location[1]
+            a for a in self.controller.gw.actors if a.x == world_x and a.y == world_y
         ]
         for actor in actors_here:
             inv = getattr(actor, "inventory", None)
