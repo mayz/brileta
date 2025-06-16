@@ -4,6 +4,7 @@ from typing import cast
 
 from catley.controller import Controller
 from catley.game.actors import Actor
+from catley.util.coordinates import RootConsoleTilePos
 from catley.view.panels.world_panel import WorldPanel
 from catley.view.render.effects.screen_shake import ScreenShake
 
@@ -33,11 +34,14 @@ class DummyGW:
 
 class DummyFrameManager:
     def __init__(self) -> None:
-        self.cursor_manager = SimpleNamespace(mouse_pixel_x=0, mouse_pixel_y=0)
+        self.cursor_manager = SimpleNamespace(
+            mouse_pixel_x=0,
+            mouse_pixel_y=0,
+        )
         self.world_panel: WorldPanel | None = None
 
-    def get_tile_map_coords_from_root_coords(
-        self, coords: tuple[int, int]
+    def get_world_coords_from_root_tile_coords(
+        self, coords: RootConsoleTilePos
     ) -> tuple[int, int] | None:
         assert self.world_panel is not None
         panel = self.world_panel
@@ -59,7 +63,7 @@ class DummyController:
     frame_manager: DummyFrameManager
 
 
-def make_controller(root_tile: tuple[int, int] = (5, 5)) -> DummyController:
+def make_controller(root_tile: RootConsoleTilePos = (5, 5)) -> DummyController:
     gw = DummyGW()
     renderer = SimpleNamespace(
         clear_console=lambda *a, **k: None,

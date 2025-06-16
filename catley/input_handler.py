@@ -8,6 +8,14 @@ import tcod.event
 from catley import colors
 from catley.events import MessageEvent, publish_event
 from catley.game.actors import Actor, Character
+from catley.util.coordinates import (
+    PixelCoord,
+    PixelPos,
+    RootConsoleTileCoord,
+    RootConsoleTilePos,
+    WorldTileCoord,
+    WorldTilePos,
+)
 from catley.view.ui.action_browser_menu import ActionBrowserMenu
 from catley.view.ui.context_menu import ContextMenu
 from catley.view.ui.help_menu import HelpMenu
@@ -42,9 +50,11 @@ class InputHandler:
 
     def dispatch(self, event: tcod.event.Event) -> None:
         if isinstance(event, tcod.event.MouseState):
-            # Update mouse cursor position.
-            position = event.position
-            self.cursor_manager.update_mouse_position(position[0], position[1])
+            # Update mouse cursor position using pixel coordinates.
+            px_pos: PixelPos = event.position
+            px_x: PixelCoord = px_pos[0]
+            px_y: PixelCoord = px_pos[1]
+            self.cursor_manager.update_mouse_position(px_x, px_y)
 
         # Handle window resize events
         if isinstance(event, tcod.event.WindowResized):
@@ -77,13 +87,13 @@ class InputHandler:
             case tcod.event.MouseMotion():
                 event = self.convert_mouse_coordinates(event)
 
-                root_tile_pos = event.position
-                map_coords = self.fm.get_world_coords_from_root_tile_coords(
-                    root_tile_pos
+                root_tile_pos: RootConsoleTilePos = event.position
+                world_tile_pos: WorldTilePos | None = (
+                    self.fm.get_world_coords_from_root_tile_coords(root_tile_pos)
                 )
 
-                if map_coords is not None:
-                    self.gw.mouse_tile_location_on_map = map_coords
+                if world_tile_pos is not None:
+                    self.gw.mouse_tile_location_on_map = world_tile_pos
                 else:
                     # Mouse is outside the game map area (e.g., on UI panels).
                     self.gw.mouse_tile_location_on_map = None
@@ -243,26 +253,30 @@ class InputHandler:
         Returns an action if the event is handled, otherwise None.
         """
         event_with_tile_coords = self.convert_mouse_coordinates(event)
-        root_tile_pos = event_with_tile_coords.position
-        map_coords = self.fm.get_world_coords_from_root_tile_coords(root_tile_pos)
+        root_tile_pos: RootConsoleTilePos = event_with_tile_coords.position
+        world_tile_pos: WorldTilePos | None = (
+            self.fm.get_world_coords_from_root_tile_coords(root_tile_pos)
+        )
 
         if event.button == tcod.event.MouseButton.RIGHT:
-            target: Actor | tuple[int, int] | None = None
-            if map_coords:
-                mx, my = map_coords
+            target: Actor | WorldTilePos | None = None
+            if world_tile_pos:
+                world_x: WorldTileCoord
+                world_y: WorldTileCoord
+                world_x, world_y = world_tile_pos
                 if (
-                    0 <= mx < self.game_map.width
-                    and 0 <= my < self.game_map.height
-                    and self.game_map.visible[mx, my]
+                    0 <= world_x < self.game_map.width
+                    and 0 <= world_y < self.game_map.height
+                    and self.game_map.visible[world_x, world_y]
                 ):
-                    actor_at_click = self.gw.get_actor_at_location(mx, my)
+                    actor_at_click = self.gw.get_actor_at_location(world_x, world_y)
                     if actor_at_click is not None and (
                         not isinstance(actor_at_click, Character)
                         or actor_at_click.health.is_alive()
                     ):
                         target = actor_at_click
                     else:
-                        target = (mx, my)
+                        target = (world_x, world_y)
             if target and self._has_available_actions(target):
                 context_menu = ContextMenu(self.controller, target, root_tile_pos)
                 return OpenExistingMenuUICommand(self.controller, context_menu)
@@ -271,12 +285,12 @@ class InputHandler:
         if event.button != tcod.event.MouseButton.LEFT:
             return None
 
-        if not map_coords:
+        if not world_tile_pos:
             # Clicked outside the map area (e.g., on UI panels).
             return SelectOrDeselectActorUICommand(self.controller, None)
 
-        mx, my = map_coords
-        actor_at_click = self.gw.get_actor_at_location(mx, my)
+        world_x, world_y = world_tile_pos
+        actor_at_click = self.gw.get_actor_at_location(world_x, world_y)
 
         if self.gw.selected_actor == actor_at_click:
             # If the clicked actor is already selected, deselect it.
@@ -284,7 +298,7 @@ class InputHandler:
 
         return SelectOrDeselectActorUICommand(self.controller, actor_at_click)
 
-    def _has_available_actions(self, target: Actor | tuple[int, int]) -> bool:
+    def _has_available_actions(self, target: Actor | WorldTilePos) -> bool:
         """Quickly check if any actions are available for a target."""
         from catley.environment import tile_types
         from catley.game.actions.discovery import ActionDiscovery
@@ -298,12 +312,14 @@ class InputHandler:
         if isinstance(target, Actor):
             return False
 
-        x, y = target
-        if not (0 <= x < self.game_map.width and 0 <= y < self.game_map.height):
+        world_x, world_y = target
+        if not (
+            0 <= world_x < self.game_map.width and 0 <= world_y < self.game_map.height
+        ):
             return False
 
-        tile = self.game_map.tiles[x, y]
-        distance = abs(player.x - x) + abs(player.y - y)
+        tile = self.game_map.tiles[world_x, world_y]
+        distance = abs(player.x - world_x) + abs(player.y - world_y)
 
         return bool(
             distance <= 1
@@ -317,12 +333,16 @@ class InputHandler:
     def convert_mouse_coordinates(
         self, event: tcod.event.MouseState
     ) -> tcod.event.MouseState:
-        """Convert event coordinates."""
-        pixel_x, pixel_y = event.position
-        tile_x, tile_y = self.controller.coordinate_converter.pixel_to_tile(
-            pixel_x, pixel_y
+        """Convert event pixel coordinates to root console tile coordinates."""
+        px_pos: PixelPos = event.position
+        px_x: PixelCoord = px_pos[0]
+        px_y: PixelCoord = px_pos[1]
+        root_tile_x: RootConsoleTileCoord
+        root_tile_y: RootConsoleTileCoord
+        root_tile_x, root_tile_y = self.controller.coordinate_converter.pixel_to_tile(
+            px_x, px_y
         )
 
         event_copy = copy.copy(event)
-        event_copy.position = tcod.event.Point(tile_x, tile_y)
+        event_copy.position = tcod.event.Point(root_tile_x, root_tile_y)
         return event_copy

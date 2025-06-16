@@ -5,6 +5,7 @@ import tcod.sdl.render
 from PIL import Image as PILImage
 
 from catley.config import BASE_MOUSE_CURSOR_PATH
+from catley.util.coordinates import PixelCoord
 from catley.view.render.renderer import Renderer
 
 
@@ -31,13 +32,13 @@ class CursorManager:
         self.base_asset_path = base_asset_path
         self.cursors: dict[str, CursorData] = {}
 
-        self.mouse_pixel_x: int = 0
-        self.mouse_pixel_y: int = 0
+        self.mouse_pixel_x: PixelCoord = 0
+        self.mouse_pixel_y: PixelCoord = 0
         self.active_cursor_type: str = "arrow"
 
         self._load_default_cursors()
 
-    def update_mouse_position(self, x: int, y: int) -> None:
+    def update_mouse_position(self, x: PixelCoord, y: PixelCoord) -> None:
         """Updates the stored mouse pixel coordinates."""
         self.mouse_pixel_x = x
         self.mouse_pixel_y = y

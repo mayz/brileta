@@ -4,6 +4,7 @@ from typing import Any, cast
 import tcod.event
 
 from catley.controller import Controller
+from catley.util.coordinates import RootConsoleTilePos
 from catley.view.ui.context_menu import ContextMenu
 from tests.test_text_backends import _make_renderer
 
@@ -24,7 +25,10 @@ def test_context_menu_closes_on_click_outside() -> None:
     menu.show()
     menu._calculate_dimensions()
 
-    outside = (menu.x_tiles + menu.width + 1, menu.y_tiles + menu.height + 1)
+    outside: RootConsoleTilePos = (
+        menu.x_tiles + menu.width + 1,
+        menu.y_tiles + menu.height + 1,
+    )
     event = tcod.event.MouseButtonDown(outside, outside, tcod.event.MouseButton.LEFT)
 
     consumed = menu.handle_input(event)
@@ -39,7 +43,7 @@ def test_context_menu_stays_open_on_click_inside() -> None:
     menu.show()
     menu._calculate_dimensions()
 
-    inside = (menu.x_tiles + 1, menu.y_tiles + 1)
+    inside: RootConsoleTilePos = (menu.x_tiles + 1, menu.y_tiles + 1)
     event = tcod.event.MouseButtonDown(inside, inside, tcod.event.MouseButton.LEFT)
 
     consumed = menu.handle_input(event)

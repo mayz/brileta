@@ -19,6 +19,7 @@ from catley.game.items.item_types import (
     RIFLE_MAGAZINE_TYPE,
     SNIPER_RIFLE_TYPE,
 )
+from catley.input_handler import WorldTileCoord
 from catley.util.coordinates import Rect
 from catley.util.spatial import SpatialHashGrid, SpatialIndex
 from catley.view.render.effects.lighting import LightingSystem, LightSource
@@ -183,7 +184,9 @@ class GameWorld:
         # e.g., items_found.extend(self.game_map.get_items_on_ground(x,y))
         return items_found
 
-    def get_actor_at_location(self, x: int, y: int) -> Actor | None:
+    def get_actor_at_location(
+        self, x: WorldTileCoord, y: WorldTileCoord
+    ) -> Actor | None:
         """Return an actor at the given location using the spatial index.
 
         Prioritizes returning a blocking actor if multiple actors are present.

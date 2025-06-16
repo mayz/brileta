@@ -14,6 +14,10 @@ from catley.config import (
     PULSATION_PERIOD,
     SELECTION_HIGHLIGHT_ALPHA,
 )
+from catley.util.coordinates import (
+    PixelCoord,
+    RootConsoleTilePos,
+)
 from catley.view.render.effects.effects import EffectLibrary
 from catley.view.render.effects.particles import SubTileParticleSystem
 from catley.view.render.effects.screen_shake import ScreenShake
@@ -343,13 +347,13 @@ class WorldPanel(Panel):
         fm: FrameManager | None = getattr(self.controller, "frame_manager", None)
         if fm is None:
             return
-        pixel_x = fm.cursor_manager.mouse_pixel_x
-        pixel_y = fm.cursor_manager.mouse_pixel_y
-        root_coords = self.controller.coordinate_converter.pixel_to_tile(
-            pixel_x, pixel_y
+        px_x: PixelCoord = fm.cursor_manager.mouse_pixel_x
+        px_y: PixelCoord = fm.cursor_manager.mouse_pixel_y
+        root_tile_pos: RootConsoleTilePos = (
+            self.controller.coordinate_converter.pixel_to_tile(px_x, px_y)
         )
-        world_coords = fm.get_world_coords_from_root_tile_coords(root_coords)
-        self.controller.gw.mouse_tile_location_on_map = world_coords
+        world_tile_pos = fm.get_world_coords_from_root_tile_coords(root_tile_pos)
+        self.controller.gw.mouse_tile_location_on_map = world_tile_pos
 
     def _apply_pulsating_effect(
         self, input_color: colors.Color, base_actor_color: colors.Color
