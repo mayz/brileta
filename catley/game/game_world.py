@@ -2,7 +2,7 @@ import random
 
 from catley import colors, config
 from catley.config import PLAYER_BASE_STRENGTH, PLAYER_BASE_TOUGHNESS
-from catley.environment.map import GameMap, Rect
+from catley.environment.map import GameMap
 from catley.game.actors import (
     Actor,
     Character,
@@ -19,6 +19,7 @@ from catley.game.items.item_types import (
     RIFLE_MAGAZINE_TYPE,
     SNIPER_RIFLE_TYPE,
 )
+from catley.util.coordinates import Rect
 from catley.util.spatial import SpatialHashGrid, SpatialIndex
 from catley.view.render.effects.lighting import LightingSystem, LightSource
 

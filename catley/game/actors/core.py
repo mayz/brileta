@@ -36,6 +36,7 @@ from catley.config import DEFAULT_ACTOR_SPEED
 from catley.game.actors import conditions
 from catley.game.enums import Disposition, InjuryLocation
 from catley.game.items.item_core import Item
+from catley.util.coordinates import TileCoord, WorldTileCoord
 from catley.view.render.effects.lighting import LightSource
 
 from .ai import AIComponent, DispositionBasedAI
@@ -107,8 +108,8 @@ class Actor:
 
     def __init__(
         self,
-        x: int,
-        y: int,
+        x: WorldTileCoord,
+        y: WorldTileCoord,
         ch: str,
         color: colors.Color,
         name: str = "<Unnamed Actor>",
@@ -124,8 +125,8 @@ class Actor:
         speed: int = DEFAULT_ACTOR_SPEED,
     ) -> None:
         # === Core Identity & World Presence ===
-        self.x = x
-        self.y = y
+        self.x: WorldTileCoord = x
+        self.y: WorldTileCoord = y
         self.ch = ch
         self.color = color
         self.name = name
@@ -161,7 +162,7 @@ class Actor:
         fields = ", ".join(f"{k}={v!r}" for k, v in vars(self).items())
         return f"{self.__class__.__name__}({fields})"
 
-    def move(self, dx: int, dy: int) -> None:
+    def move(self, dx: TileCoord, dy: TileCoord) -> None:
         self.x += dx
         self.y += dy
 
