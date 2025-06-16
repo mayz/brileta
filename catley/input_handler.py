@@ -266,8 +266,10 @@ class InputHandler:
                         target = actor_at_click
                     else:
                         target = (mx, my)
-            context_menu = ContextMenu(self.controller, target, root_tile_pos)
-            return OpenExistingMenuUICommand(self.controller, context_menu)
+            if target and self._has_available_actions(target):
+                context_menu = ContextMenu(self.controller, target, root_tile_pos)
+                return OpenExistingMenuUICommand(self.controller, context_menu)
+            return None
 
         if event.button != tcod.event.MouseButton.LEFT:
             return None
@@ -284,6 +286,36 @@ class InputHandler:
             return SelectOrDeselectActorUICommand(self.controller, None)
 
         return SelectOrDeselectActorUICommand(self.controller, actor_at_click)
+
+    def _has_available_actions(self, target: Actor | tuple[int, int]) -> bool:
+        """Quickly check if any actions are available for a target."""
+        from catley.environment import tile_types
+        from catley.game.actions.discovery import ActionDiscovery
+
+        disc = ActionDiscovery()
+        player = self.p
+
+        if isinstance(target, Character):
+            options = disc.get_options_for_target(self.controller, player, target)
+            return bool(options)
+        if isinstance(target, Actor):
+            return False
+
+        x, y = target
+        if not (0 <= x < self.game_map.width and 0 <= y < self.game_map.height):
+            return False
+
+        tile = self.game_map.tiles[x, y]
+        distance = abs(player.x - x) + abs(player.y - y)
+
+        return bool(
+            distance <= 1
+            and tile
+            in (
+                tile_types.TILE_TYPE_ID_DOOR_CLOSED,  # type: ignore[attr-defined]
+                tile_types.TILE_TYPE_ID_DOOR_OPEN,  # type: ignore[attr-defined]
+            )
+        )
 
     def convert_mouse_coordinates(
         self, event: tcod.event.MouseState
