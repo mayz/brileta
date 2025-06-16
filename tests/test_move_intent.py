@@ -101,3 +101,29 @@ def test_move_updates_spatial_index() -> None:
     assert (player.x, player.y) == (1, 1)
     assert not gw.actor_spatial_index.get_at_point(0, 0)
     assert gw.actor_spatial_index.get_at_point(1, 1) == [player]
+
+
+def test_queued_moves_use_updated_position() -> None:
+    """Queued movement intents should resolve using the actor's latest position."""
+    controller, player = make_world()
+    gw = controller.gw
+
+    # Setup: open north and east but place a wall to the northeast.
+    player.x = 1
+    player.y = 1
+    gw.game_map.tiles[2, 0] = tile_types.TILE_TYPE_ID_WALL  # type: ignore[attr-defined]
+    gw.game_map.invalidate_property_caches()
+
+    move_up = MoveIntent(cast(Controller, controller), player, 0, -1)
+    move_right = MoveIntent(cast(Controller, controller), player, 1, 0)
+
+    result_up = MoveExecutor().execute(move_up)
+    assert result_up is not None and result_up.succeeded
+    assert (player.x, player.y) == (1, 0)
+
+    result_right = MoveExecutor().execute(move_right)
+    assert result_right is not None
+    assert not result_right.succeeded
+    assert result_right.block_reason == "wall"
+    # Player should remain at (1, 0) because the diagonal tile is a wall.
+    assert (player.x, player.y) == (1, 0)

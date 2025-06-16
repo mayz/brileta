@@ -29,5 +29,13 @@ class MoveIntent(GameIntent):
 
         self.dx = dx
         self.dy = dy
-        self.newx = self.actor.x + self.dx
-        self.newy = self.actor.y + self.dy
+
+    @property
+    def newx(self) -> int:
+        """Return the actor's prospective x-coordinate when this intent executes."""
+        return self.actor.x + self.dx
+
+    @property
+    def newy(self) -> int:
+        """Return the actor's prospective y-coordinate when this intent executes."""
+        return self.actor.y + self.dy
