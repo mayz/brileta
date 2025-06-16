@@ -15,11 +15,13 @@ if TYPE_CHECKING:
 
 from . import config
 from .game.actions.base import GameIntent
+from .game.actions.movement import MoveIntent  # noqa: F401
 from .game.game_world import GameWorld
 from .game.turn_manager import TurnManager
 from .input_handler import InputHandler
 from .modes.base import Mode
 from .modes.targeting import TargetingMode
+from .movement_handler import MovementInputHandler
 from .util.clock import Clock
 from .util.message_log import MessageLog
 from .view.frame_manager import FrameManager
@@ -87,6 +89,7 @@ class Controller:
 
         # For handling input events in run_game_loop().
         self.input_handler = InputHandler(self)
+        self.movement_handler = MovementInputHandler(self)
         self.last_input_time: float | None = None
         self.action_count_for_latency_metric: int = 0
 
@@ -113,6 +116,12 @@ class Controller:
             tcod.sdl.mouse.show(False)
 
             while True:
+                move_intent = self.movement_handler.generate_intent(
+                    self.input_handler.movement_keys
+                )
+                if move_intent:
+                    self.queue_action(move_intent)
+
                 # Now, collect all new input for the next frame.
                 for event in tcod.event.get():
                     self.input_handler.dispatch(event)

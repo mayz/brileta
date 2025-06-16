@@ -48,8 +48,24 @@ class InputHandler:
         self.gw = controller.gw
         self.game_map = self.gw.game_map
         self.p = self.gw.player
+        self.movement_keys: set[tcod.event.KeySym] = set()
 
     def dispatch(self, event: tcod.event.Event) -> None:
+        if isinstance(event, tcod.event.KeyDown | tcod.event.KeyUp) and event.sym in {
+            tcod.event.KeySym.UP,
+            tcod.event.KeySym.DOWN,
+            tcod.event.KeySym.LEFT,
+            tcod.event.KeySym.RIGHT,
+            tcod.event.KeySym.h,
+            tcod.event.KeySym.j,
+            tcod.event.KeySym.k,
+            tcod.event.KeySym.l,
+        }:
+            if isinstance(event, tcod.event.KeyDown):
+                self.movement_keys.add(event.sym)
+            else:
+                self.movement_keys.discard(event.sym)
+
         if isinstance(event, tcod.event.MouseState):
             # Update mouse cursor position using pixel coordinates.
             px_pos: PixelPos = event.position
