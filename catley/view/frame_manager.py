@@ -5,8 +5,10 @@ Each frame it draws panels, processes overlays, and presents the final image."""
 
 from __future__ import annotations
 
+import time
 from typing import TYPE_CHECKING
 
+from catley import config
 from catley.config import (
     HELP_HEIGHT,
     SHOW_FPS,
@@ -201,6 +203,8 @@ class FrameManager:
         # Flip the backbuffer to the screen
         self.renderer.finalize_present()
 
+        self._maybe_show_action_processing_metrics()
+
     def get_world_coords_from_root_tile_coords(
         self, root_tile_pos: RootConsoleTilePos
     ) -> WorldTilePos | None:
@@ -275,3 +279,26 @@ class FrameManager:
     def _handle_screen_shake_event(self, event: ScreenShakeEvent) -> None:
         """Handle screen shake events from the global event bus."""
         self.trigger_screen_shake(event.intensity, event.duration)
+
+    def _maybe_show_action_processing_metrics(self) -> None:
+        if (
+            not config.SHOW_ACTION_PROCESSING_METRICS
+            or self.controller.last_input_time is None
+            or self.controller.turn_manager.has_pending_actions()
+        ):
+            return
+
+        action_count = self.controller.action_count_for_latency_metric
+        if action_count > 0:
+            total_latency = (
+                time.perf_counter() - self.controller.last_input_time
+            ) * 1000
+            avg_action_time = total_latency / action_count
+            print(
+                f"Processed {action_count} actions in {total_latency:.2f} ms. "
+                f"Avg Action Processing Time: {avg_action_time:.2f} ms"
+            )
+
+        # Reset the timer and the counter for the next batch
+        self.controller.last_input_time = None
+        self.controller.action_count_for_latency_metric = 0
