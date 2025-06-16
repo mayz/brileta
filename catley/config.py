@@ -60,12 +60,12 @@ FPS_SAMPLE_SIZE = 256  # Number of frame time samples to track
 # Set to True for uncapped FPS to identify performance bottlenecks.
 PERFORMANCE_PROFILING = False
 
-# Set to True to display the FPS counter in the corner of the screen.
-SHOW_FPS = False
-
 # Set to True to print action processing metrics (count, total time, avg time)
 # to the console for debugging game feel and performance
 SHOW_ACTION_PROCESSING_METRICS = False
+
+# Set to True to display the FPS counter in the corner of the screen.
+SHOW_FPS = False
 
 # --- Engine Settings (Derived from flags above) - DO NOT CHANGE DIRECTLY ---
 if PERFORMANCE_PROFILING:

@@ -113,13 +113,18 @@ class Controller:
             tcod.sdl.mouse.show(False)
 
             while True:
+                # Now, collect all new input for the next frame.
                 for event in tcod.event.get():
                     self.input_handler.dispatch(event)
 
-                # Update using clock's delta time
-                delta_time = self.clock.sync(fps=self.target_fps)
+                # Process all pending game turns as fast as possible before rendering.
+                while self.turn_manager.has_pending_actions():
+                    # Increment the counter for each action processed
+                    self.action_count_for_latency_metric += 1
+                    self.process_unified_round()
 
-                # Update lighting and render using FrameManager
+                # This part is paced by the clock.
+                delta_time = self.clock.sync(fps=self.target_fps)
                 self.gw.lighting.update(delta_time)
                 self.frame_manager.render_frame(delta_time)
         finally:

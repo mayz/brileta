@@ -76,14 +76,6 @@ class InputHandler:
             if action:
                 self.controller.queue_action(action)
 
-        # If there's a pending action, we know process_unified_round is
-        # about to consume it. This is where we count the action.
-        if self.controller.turn_manager.has_pending_actions():
-            self.controller.action_count_for_latency_metric += 1
-
-        # Process a round (the controller will decide if anything needs to happen)
-        self.controller.process_unified_round()
-
     def handle_event(self, event: tcod.event.Event) -> GameIntent | None:
         # Don't process game actions if menus are active
         if self.controller.overlay_system.has_active_menus():

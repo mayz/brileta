@@ -4,6 +4,7 @@ Manages the game's turn-based clock and action queue.
 
 from __future__ import annotations
 
+from collections import deque
 from typing import TYPE_CHECKING
 
 from catley.game.action_router import ActionRouter
@@ -31,22 +32,22 @@ class TurnManager:
     def __init__(self, controller: Controller):
         self.controller = controller
         self.player = self.controller.gw.player
-        self._pending_action: GameIntent | None = None
+        self._action_queue: deque[GameIntent] = deque()
         self.action_router = ActionRouter(self.controller)
 
     def queue_action(self, action: GameIntent) -> None:
         """Queue a game action to be processed on the next turn."""
-        self._pending_action = action
+        self._action_queue.append(action)
 
     def has_pending_actions(self) -> bool:
         """
         Check if there is a pending action.
         """
-        return self._pending_action is not None
+        return len(self._action_queue) > 0
 
     def process_unified_round(self) -> None:
         """Process a single round where all actors can act."""
-        if not self._pending_action:
+        if not self.has_pending_actions():
             return
 
         for actor in self.controller.gw.actors:
@@ -82,6 +83,4 @@ class TurnManager:
 
     def dequeue_player_action(self) -> GameIntent | None:
         """Dequeue and return the pending player action."""
-        action = self._pending_action
-        self._pending_action = None
-        return action
+        return self._action_queue.popleft() if len(self._action_queue) > 0 else None
