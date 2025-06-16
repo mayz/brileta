@@ -40,6 +40,12 @@ class DummyActor:
         self.y = y
         self.ch = "@"
         self.color = (255, 255, 255)
+        self.render_x = float(x)
+        self.render_y = float(y)
+
+    def update_render_position(self, _dt: float) -> None:
+        self.render_x = float(self.x)
+        self.render_y = float(self.y)
 
 
 class DummyGameMap:
