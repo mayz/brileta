@@ -11,7 +11,7 @@ import tcod.sdl.render
 from tcod.console import Console
 
 from catley import colors
-from catley.util.coordinates import CoordinateConverter
+from catley.util.coordinates import CoordinateConverter, TileDimensions
 
 
 class Renderer:
@@ -21,7 +21,7 @@ class Renderer:
         self,
         context: tcod.context.Context,
         root_console: Console,
-        tile_dimensions: tuple[int, int],
+        tile_dimensions: TileDimensions,
     ) -> None:
         # Extract SDL components from context
         sdl_renderer = context.sdl_renderer
@@ -38,14 +38,7 @@ class Renderer:
 
         # Set up coordinate conversion
         renderer_width, renderer_height = self.sdl_renderer.output_size
-        self.coordinate_converter = CoordinateConverter(
-            console_width=root_console.width,
-            console_height=root_console.height,
-            tile_width=self.tile_dimensions[0],
-            tile_height=self.tile_dimensions[1],
-            renderer_width=renderer_width,
-            renderer_height=renderer_height,
-        )
+        self.coordinate_converter = self._create_coordinate_converter()
 
     def clear_console(self, console: Console) -> None:
         """Clear a console."""
@@ -107,11 +100,17 @@ class Renderer:
         tile_height = max(1, renderer_height // self.root_console.height)
         self.tile_dimensions = (tile_width, tile_height)
 
-        self.coordinate_converter = CoordinateConverter(
-            console_width=self.root_console.width,
-            console_height=self.root_console.height,
-            tile_width=tile_width,
-            tile_height=tile_height,
+        self.coordinate_converter = self._create_coordinate_converter()
+
+    def _create_coordinate_converter(self) -> CoordinateConverter:
+        """Create a coordinate converter with current dimensions."""
+        renderer_width, renderer_height = self.sdl_renderer.output_size
+
+        return CoordinateConverter(
+            console_width_in_tiles=self.root_console.width,
+            console_height_in_tiles=self.root_console.height,
+            tile_width_px=self.tile_dimensions[0],
+            tile_height_px=self.tile_dimensions[1],
             renderer_width=renderer_width,
             renderer_height=renderer_height,
         )

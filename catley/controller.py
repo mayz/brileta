@@ -8,6 +8,7 @@ import tcod.sdl.mouse
 from tcod.console import Console
 
 from catley.game.resolution.base import ResolutionSystem
+from catley.util.coordinates import TileDimensions
 
 if TYPE_CHECKING:
     from catley.game.actions.discovery import CombatIntentCache
@@ -40,7 +41,7 @@ class Controller:
         self,
         context: tcod.context.Context,
         root_console: Console,
-        tile_dimensions: tuple[int, int],
+        tile_dimensions: TileDimensions,
     ) -> None:
         self.context = context
         self.root_console = root_console

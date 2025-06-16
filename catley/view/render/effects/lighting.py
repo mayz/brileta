@@ -22,6 +22,14 @@ from catley.config import (
     TORCH_MIN_BRIGHTNESS,
     TORCH_RADIUS,
 )
+from catley.environment.map import TileCoord
+from catley.util.coordinates import (
+    Rect,
+    ViewportTileCoord,
+    ViewportTilePos,
+    WorldTileCoord,
+    WorldTilePos,
+)
 
 if TYPE_CHECKING:
     from catley.environment.map import GameMap
@@ -44,7 +52,7 @@ TORCH_PRESET = {
 class LightingConfig:
     """Configuration for the lighting system"""
 
-    fov_radius: int = 15
+    fov_radius: TileCoord = 15
     ambient_light: float = AMBIENT_LIGHT_LEVEL
 
 
@@ -52,8 +60,8 @@ class LightingConfig:
 class LightSource:
     """Represents a light source in the game world"""
 
-    radius: int  # Required parameter must come first
-    _pos: tuple[int, int] | None = None  # Internal position storage
+    radius: TileCoord  # Required parameter must come first
+    _pos: WorldTilePos | None = None  # Internal position storage
     color: colors.Color = DEFAULT_LIGHT_COLOR
     light_type: Literal["static", "dynamic"] = "static"
     flicker_enabled: bool = False
@@ -63,7 +71,7 @@ class LightSource:
     max_brightness: float = DEFAULT_MAX_BRIGHTNESS
 
     @classmethod
-    def create_torch(cls, position: tuple[int, int] | None = None) -> LightSource:
+    def create_torch(cls, position: WorldTilePos | None = None) -> LightSource:
         """Create a torch light source with preset values"""
         # Create the instance with TORCH_PRESET, then set position
         instance = cls(**TORCH_PRESET)
@@ -75,7 +83,7 @@ class LightSource:
         self._lighting_system = None
 
     @property
-    def position(self) -> tuple[int, int]:
+    def position(self) -> WorldTilePos:
         """Returns position from owner if attached, otherwise stored position"""
         if self._owner:
             return (self._owner.x, self._owner.y)
@@ -84,7 +92,7 @@ class LightSource:
         return self._pos
 
     @position.setter
-    def position(self, value: tuple[int, int]) -> None:
+    def position(self, value: WorldTilePos) -> None:
         self._pos = value
 
     def attach(self, owner: Actor, lighting_system: LightingSystem) -> None:
@@ -133,7 +141,10 @@ class LightingSystem:
         self.time += delta_time  # Just track raw time, light sources will scale it
 
     def compute_lighting(
-        self, map_width: int, map_height: int, viewport_offset: tuple[int, int] = (0, 0)
+        self,
+        map_width: TileCoord,
+        map_height: TileCoord,
+        viewport_offset: ViewportTilePos = (0, 0),
     ) -> np.ndarray:
         """Compute lighting values for the given map size.
 
@@ -162,17 +173,17 @@ class LightingSystem:
 
     def compute_lighting_with_shadows(
         self,
-        map_width: int,
-        map_height: int,
+        map_width: TileCoord,
+        map_height: TileCoord,
         actors,
-        viewport_offset: tuple[int, int] | None = None,
+        viewport_offset: ViewportTilePos | None = None,
     ) -> np.ndarray:
         """Compute lighting with optional viewport culling and actor shadows."""
         from catley.config import SHADOWS_ENABLED
 
         if viewport_offset:
             base_lighting = self.compute_lighting_for_viewport(
-                viewport_offset[0], viewport_offset[1], map_width, map_height, actors
+                Rect(viewport_offset[0], viewport_offset[1], map_width, map_height)
             )
         else:
             base_lighting = self.compute_lighting(map_width, map_height)
@@ -180,34 +191,30 @@ class LightingSystem:
             return base_lighting
         offset_x = viewport_offset[0] if viewport_offset else 0
         offset_y = viewport_offset[1] if viewport_offset else 0
-        return self._apply_actor_shadows(base_lighting, actors, offset_x, offset_y)
+        return self._apply_actor_shadows(base_lighting, offset_x, offset_y)
 
     def compute_lighting_for_viewport(
         self,
-        viewport_left: int,
-        viewport_top: int,
-        viewport_width: int,
-        viewport_height: int,
-        actors,
+        viewport_bounds: Rect,
     ) -> np.ndarray:
         """Compute lighting only for the viewport currently in view."""
         light_map = np.full(
-            (viewport_width, viewport_height, 3),
+            (viewport_bounds.width, viewport_bounds.height, 3),
             self.config.ambient_light,
             dtype=np.float32,
         )
         for light in self.light_sources:
             lx, ly = light.position
             if (
-                viewport_left - light.radius
+                viewport_bounds.x1 - light.radius
                 <= lx
-                < viewport_left + viewport_width + light.radius
-                and viewport_top - light.radius
+                < viewport_bounds.x1 + viewport_bounds.width + light.radius
+                and viewport_bounds.y1 - light.radius
                 <= ly
-                < viewport_top + viewport_height + light.radius
+                < viewport_bounds.y1 + viewport_bounds.height + light.radius
             ):
                 self._apply_light_to_viewport(
-                    light, light_map, viewport_left, viewport_top
+                    light, light_map, viewport_bounds.x1, viewport_bounds.y1
                 )
         return np.clip(light_map, 0.0, 1.0)
 
@@ -215,8 +222,8 @@ class LightingSystem:
         self,
         light: LightSource,
         light_map: np.ndarray,
-        viewport_left: int,
-        viewport_top: int,
+        viewport_left: ViewportTileCoord,
+        viewport_top: ViewportTileCoord,
     ) -> None:
         """Apply a light source to a viewport-sized light map."""
         world_pos_x, world_pos_y = light.position
@@ -224,23 +231,18 @@ class LightingSystem:
         if radius <= 0:
             return
         flicker_multiplier = self._calculate_light_flicker(light)
-        vp_pos_x = world_pos_x - viewport_left
-        vp_pos_y = world_pos_y - viewport_top
+        vp_pos_x: ViewportTileCoord = world_pos_x - viewport_left
+        vp_pos_y: ViewportTileCoord = world_pos_y - viewport_top
         bounds = self._compute_light_bounds(
             vp_pos_x, vp_pos_y, radius, light_map.shape[0], light_map.shape[1]
         )
         if not bounds:
             return
-        min_bx, max_bx, min_by, max_by = bounds
         intensity_data = self._calculate_light_intensity(
-            light,
             vp_pos_x,
             vp_pos_y,
             radius,
-            min_bx,
-            max_bx,
-            min_by,
-            max_by,
+            bounds,
             flicker_multiplier,
         )
         if not intensity_data:
@@ -249,16 +251,13 @@ class LightingSystem:
         self._blend_light_contribution(
             light,
             light_map,
-            min_bx,
-            max_bx,
-            min_by,
-            max_by,
+            bounds,
             in_circle_mask,
             scalar_intensity_values,
         )
 
     def _apply_actor_shadows(
-        self, light_map: np.ndarray, actors, offset_x: int, offset_y: int
+        self, light_map: np.ndarray, offset_x: TileCoord, offset_y: TileCoord
     ) -> np.ndarray:
         """Apply shadows from actors and shadow-casting tiles."""
 
@@ -299,7 +298,7 @@ class LightingSystem:
                         shadow_map[sx, sy] *= 1.0 - intensity
 
             shadow_casting_positions = self._get_shadow_casting_tiles(
-                lx, ly, light_radius, offset_x, offset_y
+                lx, ly, light_radius
             )
 
             for tile_x, tile_y in shadow_casting_positions:
@@ -317,8 +316,8 @@ class LightingSystem:
         return shadow_map
 
     def _cast_gradual_shadow(
-        self, light_pos: tuple[int, int], actor_pos: tuple[int, int], max_distance: int
-    ) -> list[tuple[int, int, float]]:
+        self, light_pos: WorldTilePos, actor_pos: WorldTilePos, max_distance: TileCoord
+    ) -> list[tuple[WorldTileCoord, WorldTileCoord, float]]:
         """Cast a shadow with gradual falloff and softer edges."""
         lx, ly = light_pos
         ax, ay = actor_pos
@@ -333,15 +332,15 @@ class LightingSystem:
         shadow_dx = 1 if dx > 0 else (-1 if dx < 0 else 0)
         shadow_dy = 1 if dy > 0 else (-1 if dy < 0 else 0)
 
-        shadow_data = []
+        shadow_data: list[tuple[WorldTileCoord, WorldTileCoord, float]] = []
         shadow_length = min(SHADOW_MAX_LENGTH, max_distance - distance + 2)
 
         for i in range(1, shadow_length + 1):
             # Falloff: shadows get lighter with distance
             distance_falloff = 1.0 - (i - 1) / shadow_length if SHADOW_FALLOFF else 1.0
 
-            center_x = ax + shadow_dx * i
-            center_y = ay + shadow_dy * i
+            center_x: WorldTileCoord = ax + shadow_dx * i
+            center_y: WorldTileCoord = ay + shadow_dy * i
 
             # Core shadow (strongest)
             core_intensity = SHADOW_INTENSITY * distance_falloff
@@ -374,23 +373,21 @@ class LightingSystem:
 
     def _get_shadow_casting_tiles(
         self,
-        light_x: int,
-        light_y: int,
-        light_radius: int,
-        offset_x: int,
-        offset_y: int,
-    ) -> list[tuple[int, int]]:
+        light_x: WorldTileCoord,
+        light_y: WorldTileCoord,
+        light_radius: TileCoord,
+    ) -> list[WorldTilePos]:
         """Find tiles that cast shadows within light radius."""
         from catley.environment import tile_types
 
         if self._game_map is None:
             return []
 
-        shadow_casters: list[tuple[int, int]] = []
+        shadow_casters: list[WorldTilePos] = []
         for dx in range(-light_radius, light_radius + 1):
             for dy in range(-light_radius, light_radius + 1):
-                world_x = light_x + dx
-                world_y = light_y + dy
+                world_x: WorldTileCoord = light_x + dx
+                world_y: WorldTileCoord = light_y + dy
                 if (
                     0 <= world_x < self._game_map.width
                     and 0 <= world_y < self._game_map.height
@@ -406,9 +403,9 @@ class LightingSystem:
         self,
         light: LightSource,
         light_map: np.ndarray,
-        map_width: int,
-        map_height: int,
-        viewport_offset: tuple[int, int] = (0, 0),
+        map_width: TileCoord,
+        map_height: TileCoord,
+        viewport_offset: ViewportTilePos = (0, 0),
     ) -> None:
         """Apply a single light source's contribution to the light map."""
         pos_x, pos_y = light.position
@@ -424,22 +421,18 @@ class LightingSystem:
         flicker_multiplier = self._calculate_light_flicker(light)
 
         # Compute bounding box and validate
-        bounds = self._compute_light_bounds(pos_x, pos_y, radius, map_width, map_height)
+        bounds: Rect | None = self._compute_light_bounds(
+            pos_x, pos_y, radius, map_width, map_height
+        )
         if not bounds:
             return  # Light is completely off-map or invalid
 
-        min_bx, max_bx, min_by, max_by = bounds
-
         # Calculate light intensity within bounds
         intensity_data = self._calculate_light_intensity(
-            light,
             pos_x,
             pos_y,
             radius,
-            min_bx,
-            max_bx,
-            min_by,
-            max_by,
+            bounds,
             flicker_multiplier,
         )
         if not intensity_data:
@@ -451,10 +444,7 @@ class LightingSystem:
         self._blend_light_contribution(
             light,
             light_map,
-            min_bx,
-            max_bx,
-            min_by,
-            max_by,
+            bounds,
             in_circle_mask,
             scalar_intensity_values,
         )
@@ -484,40 +474,43 @@ class LightingSystem:
         return flicker
 
     def _compute_light_bounds(
-        self, pos_x: float, pos_y: float, radius: int, map_width: int, map_height: int
-    ) -> tuple[int, int, int, int] | None:
-        """Compute and validate the bounding box for a light's influence."""
-        # Determine the bounding box for the light's influence,
-        # clamped to map boundaries. Ensure integer results for slicing.
-        min_bx = max(0, int(np.floor(pos_x - radius)))
-        max_bx = min(map_width - 1, int(np.ceil(pos_x + radius)))
-        min_by = max(0, int(np.floor(pos_y - radius)))
-        max_by = min(map_height - 1, int(np.ceil(pos_y + radius)))
-
-        # If the bounding box is invalid (e.g., light entirely off-map or zero
-        # effective area), skip.
-        if min_bx > max_bx or min_by > max_by:
-            return None
-
-        return min_bx, max_bx, min_by, max_by
-
-    def _calculate_light_intensity(
         self,
-        light: LightSource,
         pos_x: float,
         pos_y: float,
         radius: int,
-        min_bx: int,
-        max_bx: int,
-        min_by: int,
-        max_by: int,
+        map_width: TileCoord,
+        map_height: TileCoord,
+    ) -> Rect | None:
+        """Compute and validate the bounding box for a light's influence."""
+        # Determine the bounding box for the light's influence,
+        # clamped to map boundaries. Ensure integer results for slicing.
+        bounds: Rect = Rect.from_bounds(
+            max(0, int(np.floor(pos_x - radius))),
+            max(0, int(np.floor(pos_y - radius))),
+            min(map_width - 1, int(np.ceil(pos_x + radius))),
+            min(map_height - 1, int(np.ceil(pos_y + radius))),
+        )
+
+        # If the bounding box is invalid (e.g., light entirely off-map or zero
+        # effective area), skip.
+        if bounds.x1 > bounds.x2 or bounds.y1 > bounds.y2:
+            return None
+
+        return bounds
+
+    def _calculate_light_intensity(
+        self,
+        pos_x: TileCoord,
+        pos_y: TileCoord,
+        radius: TileCoord,
+        bounds: Rect,
         flicker_multiplier: float,
     ) -> tuple[np.ndarray, np.ndarray] | None:
         """Calculate light intensity values within the bounding box."""
         # Create coordinate grid for the bounding box only
         # np.mgrid uses [inclusive:exclusive] for the stop value in slices, so +1
         tile_x_coords, tile_y_coords = np.mgrid[
-            min_bx : max_bx + 1, min_by : max_by + 1
+            bounds.x1 : bounds.x2 + 1, bounds.y1 : bounds.y2 + 1
         ]
 
         # Calculate distances from the light source to each tile in the bounding box
@@ -557,10 +550,7 @@ class LightingSystem:
         self,
         light: LightSource,
         light_map: np.ndarray,
-        min_bx: int,
-        max_bx: int,
-        min_by: int,
-        max_by: int,
+        bounds: Rect,
         in_circle_mask: np.ndarray,
         scalar_intensity_values: np.ndarray,
     ) -> None:
@@ -568,7 +558,9 @@ class LightingSystem:
         # Get the slice of the main light_map we'll be updating
         # We need to apply the 1D scalar_intensity_values to the 2D masked region
         # of the slice.
-        light_map_slice = light_map[min_bx : max_bx + 1, min_by : max_by + 1, :]
+        light_map_slice = light_map[
+            bounds.x1 : bounds.x2 + 1, bounds.y1 : bounds.y2 + 1, :
+        ]
 
         # Convert integer color to normalized (0.0-1.0) range for lighting calculations
         light_color_array = np.array(light.color, dtype=np.float32) / 255.0

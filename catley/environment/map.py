@@ -6,39 +6,19 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from catley.environment import tile_types
+from catley.game.actors.core import TileCoord
+from catley.util.coordinates import Rect
 
 if TYPE_CHECKING:
     from catley.game.game_world import GameWorld
 
 
-class Rect:
-    def __init__(self, x: int, y: int, w: int, h: int) -> None:
-        self.x1 = x
-        self.y1 = y
-        self.x2 = x + w
-        self.y2 = y + h
-
-    def center(self) -> tuple[int, int]:
-        return (int((self.x1 + self.x2) / 2), int((self.y1 + self.y2) / 2))
-
-    def intersects(self, other: Rect) -> bool:
-        return (
-            self.x1 <= other.x2
-            and self.x2 >= other.x1
-            and self.y1 <= other.y2
-            and self.y2 >= other.y1
-        )
-
-    def __repr__(self) -> str:
-        return f"Rect(x1={self.x1}, y1={self.y1}, x2={self.x2}, y2={self.y2})"
-
-
 class GameMap:
     """The game map."""
 
-    def __init__(self, width: int, height: int) -> None:
-        self.width = width
-        self.height = height
+    def __init__(self, width: TileCoord, height: TileCoord) -> None:
+        self.width: TileCoord = width
+        self.height: TileCoord = height
         self.gw: GameWorld | None = None
 
         # Initialize the map with walls. We'll carve out rooms later.
