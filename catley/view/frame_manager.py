@@ -16,6 +16,7 @@ from catley.events import (
     ScreenShakeEvent,
     subscribe_to_event,
 )
+from catley.util.coordinates import RootConsoleTilePos, ViewportTileCoord, WorldTilePos
 
 from .panels.equipment_panel import EquipmentPanel
 from .panels.fps_panel import FPSPanel
@@ -200,14 +201,16 @@ class FrameManager:
         # Flip the backbuffer to the screen
         self.renderer.finalize_present()
 
-    def get_tile_map_coords_from_root_coords(
-        self, root_tile_coords: tuple[int, int]
-    ) -> tuple[int, int] | None:
+    def get_world_coords_from_root_tile_coords(
+        self, root_tile_pos: RootConsoleTilePos
+    ) -> WorldTilePos | None:
         """Converts root console tile coordinates to game map tile coordinates."""
+        root_x, root_y = root_tile_pos
+
         # Translate from root-console coordinates to viewport coordinates by
         # subtracting the panel's screen position.
-        vp_x = root_tile_coords[0] - self.world_panel.x
-        vp_y = root_tile_coords[1] - self.world_panel.y
+        vp_x: ViewportTileCoord = root_x - self.world_panel.x
+        vp_y: ViewportTileCoord = root_y - self.world_panel.y
 
         # Ignore coordinates that fall outside the visible game world panel.
         if not (
@@ -245,9 +248,7 @@ class FrameManager:
     ) -> None:
         """Create a visual effect if the world position is visible."""
         vs = self.world_panel.viewport_system
-        if not vs.is_visible(
-            x, y, self.controller.gw.game_map.width, self.controller.gw.game_map.height
-        ):
+        if not vs.is_visible(x, y):
             return
         vp_x, vp_y = vs.world_to_screen(x, y)
         context = EffectContext(

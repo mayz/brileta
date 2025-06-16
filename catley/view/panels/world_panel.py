@@ -22,7 +22,7 @@ from catley.view.render.viewport import ViewportSystem
 from .panel import Panel
 
 if TYPE_CHECKING:
-    from catley.controller import Controller
+    from catley.controller import Controller, FrameManager
     from catley.game.actors import Actor
     from catley.view.render.renderer import Renderer
 
@@ -79,9 +79,7 @@ class WorldPanel(Panel):
     ) -> None:
         """Highlight a tile with an optional effect using world coordinates."""
         vs = self.viewport_system
-        if not vs.is_visible(
-            x, y, self.controller.gw.game_map.width, self.controller.gw.game_map.height
-        ):
+        if not vs.is_visible(x, y):
             return
         vp_x, vp_y = vs.world_to_screen(x, y)
         if not (
@@ -158,7 +156,13 @@ class WorldPanel(Panel):
     def _render_map(self) -> None:
         gw = self.controller.gw
         vs = self.viewport_system
-        world_left, world_right, world_top, world_bottom = vs.get_visible_bounds()
+        bounds = vs.get_visible_bounds()
+        world_left, world_right, world_top, world_bottom = (
+            bounds.x1,
+            bounds.x2,
+            bounds.y1,
+            bounds.y2,
+        )
         # Clamp the visible bounds to the actual map size so slicing is safe.
         world_left = max(0, world_left)
         world_top = max(0, world_top)
@@ -221,7 +225,13 @@ class WorldPanel(Panel):
     def _render_actors(self) -> None:
         gw = self.controller.gw
         vs = self.viewport_system
-        world_left, world_right, world_top, world_bottom = vs.get_visible_bounds()
+        bounds = vs.get_visible_bounds()
+        world_left, world_right, world_top, world_bottom = (
+            bounds.x1,
+            bounds.x2,
+            bounds.y1,
+            bounds.y2,
+        )
         # Get only actors within the viewport using the spatial index, then sort
         # them so the player appears on top of other blocking actors.
         actors_in_viewport = gw.actor_spatial_index.get_in_bounds(
@@ -258,7 +268,8 @@ class WorldPanel(Panel):
                 base_actor_color = flash_color
         # Map the actor's position into the lighting array so we can look up
         # the intensity for this tile.
-        world_left, _, world_top, _ = self.viewport_system.get_visible_bounds()
+        bounds = self.viewport_system.get_visible_bounds()
+        world_left, world_top = bounds.x1, bounds.y1
         light_x, light_y = a.x - world_left, a.y - world_top
         if not (
             0 <= light_x < self.current_light_intensity.shape[0]
@@ -329,7 +340,7 @@ class WorldPanel(Panel):
 
     def _update_mouse_tile_location(self) -> None:
         """Update the stored world-space mouse tile based on the current camera."""
-        fm = getattr(self.controller, "frame_manager", None)
+        fm: FrameManager | None = getattr(self.controller, "frame_manager", None)
         if fm is None:
             return
         pixel_x = fm.cursor_manager.mouse_pixel_x
@@ -337,8 +348,8 @@ class WorldPanel(Panel):
         root_coords = self.controller.coordinate_converter.pixel_to_tile(
             pixel_x, pixel_y
         )
-        map_coords = fm.get_tile_map_coords_from_root_coords(root_coords)
-        self.controller.gw.mouse_tile_location_on_map = map_coords
+        world_coords = fm.get_world_coords_from_root_tile_coords(root_coords)
+        self.controller.gw.mouse_tile_location_on_map = world_coords
 
     def _apply_pulsating_effect(
         self, input_color: colors.Color, base_actor_color: colors.Color

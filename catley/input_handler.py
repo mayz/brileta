@@ -34,7 +34,8 @@ class InputHandler:
     def __init__(self, controller: Controller) -> None:
         self.controller = controller
         self.renderer = self.controller.renderer
-        self.cursor_manager = controller.frame_manager.cursor_manager
+        self.fm = self.controller.frame_manager
+        self.cursor_manager = self.fm.cursor_manager
         self.gw = controller.gw
         self.game_map = self.gw.game_map
         self.p = self.gw.player
@@ -53,7 +54,7 @@ class InputHandler:
                 self.controller.renderer.coordinate_converter
             )
             # Update panel layouts for new window size
-            self.controller.frame_manager.on_window_resized()
+            self.fm.on_window_resized()
 
         # Try to handle the event with the menu system
         menu_consumed = self.controller.overlay_system.handle_input(event)
@@ -77,10 +78,8 @@ class InputHandler:
                 event = self.convert_mouse_coordinates(event)
 
                 root_tile_pos = event.position
-                map_coords = (
-                    self.controller.frame_manager.get_tile_map_coords_from_root_coords(
-                        root_tile_pos
-                    )
+                map_coords = self.fm.get_world_coords_from_root_tile_coords(
+                    root_tile_pos
                 )
 
                 if map_coords is not None:
@@ -245,9 +244,7 @@ class InputHandler:
         """
         event_with_tile_coords = self.convert_mouse_coordinates(event)
         root_tile_pos = event_with_tile_coords.position
-        map_coords = self.controller.frame_manager.get_tile_map_coords_from_root_coords(
-            root_tile_pos
-        )
+        map_coords = self.fm.get_world_coords_from_root_tile_coords(root_tile_pos)
 
         if event.button == tcod.event.MouseButton.RIGHT:
             target: Actor | tuple[int, int] | None = None
