@@ -122,7 +122,8 @@ class GameWorld:
 
     def _position_player(self, room: Rect) -> None:
         """Place the player in the center of ``room``."""
-        self.player.x, self.player.y = room.center()
+        # Use teleport() to sync logical and visual positions instantly
+        self.player.teleport(*room.center())
 
     def _add_starting_injury(self) -> None:
         """Give the player their initial injury and drop any overflow items."""
