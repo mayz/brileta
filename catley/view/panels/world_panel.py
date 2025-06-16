@@ -145,6 +145,13 @@ class WorldPanel(Panel):
     def _render_game_world(self, delta_time: float) -> None:
         renderer = self.controller.renderer
         renderer.clear_console(self.game_map_console)
+
+        # Update render positions for all visible actors
+        for actor in self.controller.gw.actors:
+            update_pos = getattr(actor, "update_render_position", None)
+            if update_pos is not None:
+                update_pos(delta_time)
+
         self._render_map()
         self._render_actors()
 
@@ -255,13 +262,24 @@ class WorldPanel(Panel):
     def _render_actor(self, a: Actor) -> None:
         if self.current_light_intensity is None:
             return
-        vp_x, vp_y = self.viewport_system.world_to_screen(a.x, a.y)
+        # Use render_x and render_y for calculating screen position
+        render_x = getattr(a, "render_x", a.x)
+        render_y = getattr(a, "render_y", a.y)
+        vp_x, vp_y = self.viewport_system.world_to_screen(
+            render_x,  # pyright: ignore[reportArgumentType]
+            render_y,  # pyright: ignore[reportArgumentType]
+        )
+
+        # We need to round to the nearest tile for console rendering
+        vp_x_int, vp_y_int = round(vp_x), round(vp_y)
+
         if not (
-            0 <= vp_x < self.game_map_console.width
-            and 0 <= vp_y < self.game_map_console.height
+            0 <= vp_x_int < self.game_map_console.width
+            and 0 <= vp_y_int < self.game_map_console.height
         ):
             return
-        self.game_map_console.rgb["ch"][vp_x, vp_y] = ord(a.ch)
+
+        self.game_map_console.rgb["ch"][vp_x_int, vp_y_int] = ord(a.ch)
         base_actor_color: colors.Color = a.color
         # Some simple actors in tests may not define visual_effects.
         visual_effects = getattr(a, "visual_effects", None)
@@ -296,7 +314,7 @@ class WorldPanel(Panel):
             final_fg_color = self._apply_pulsating_effect(
                 normally_lit_fg_components, base_actor_color
             )
-        self.game_map_console.rgb["fg"][vp_x, vp_y] = final_fg_color
+        self.game_map_console.rgb["fg"][vp_x_int, vp_y_int] = final_fg_color
 
     def _render_selected_actor_highlight(self) -> None:
         if self.controller.is_targeting_mode():

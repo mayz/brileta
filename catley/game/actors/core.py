@@ -127,6 +127,9 @@ class Actor:
         # === Core Identity & World Presence ===
         self.x: WorldTileCoord = x
         self.y: WorldTileCoord = y
+        # Visual position (deliberately typed as floats but in world tile space)
+        self.render_x: float = float(x)
+        self.render_y: float = float(y)
         self.ch = ch
         self.color = color
         self.name = name
@@ -162,7 +165,16 @@ class Actor:
         fields = ", ".join(f"{k}={v!r}" for k, v in vars(self).items())
         return f"{self.__class__.__name__}({fields})"
 
+    def update_render_position(self, delta_time: float) -> None:
+        """Smoothly move the visual position towards the logical position."""
+        # A higher LERP_FACTOR makes the movement faster and snappier.
+        # A lower value makes it smoother but introduces more "lag".
+        LERP_FACTOR = 30.0 * delta_time
+        self.render_x += (self.x - self.render_x) * LERP_FACTOR
+        self.render_y += (self.y - self.render_y) * LERP_FACTOR
+
     def move(self, dx: TileCoord, dy: TileCoord) -> None:
+        # The move method now only updates the logical position.
         self.x += dx
         self.y += dy
 
@@ -171,6 +183,17 @@ class Actor:
             self.gw.actor_spatial_index.update(self)
 
         # Update the light source position when actor moves
+        if self.light_source:
+            self.light_source.position = (self.x, self.y)
+
+    def teleport(self, x: WorldTileCoord, y: WorldTileCoord) -> None:
+        """Instantly move the actor's logical and visual position."""
+        self.x = x
+        self.y = y
+        self.render_x = float(x)
+        self.render_y = float(y)
+        if self.gw:
+            self.gw.actor_spatial_index.update(self)
         if self.light_source:
             self.light_source.position = (self.x, self.y)
 
