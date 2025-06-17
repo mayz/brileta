@@ -282,23 +282,22 @@ class FrameManager:
 
     def _maybe_show_action_processing_metrics(self) -> None:
         if (
-            not config.SHOW_ACTION_PROCESSING_METRICS
-            or self.controller.last_input_time is None
-            or self.controller.turn_manager.has_pending_actions()
+            config.SHOW_ACTION_PROCESSING_METRICS
+            and self.controller.last_input_time is not None
+            and not self.controller.input_handler.movement_keys
+            and not self.controller.turn_manager.has_pending_actions()
         ):
-            return
+            action_count = self.controller.action_count_for_latency_metric
+            if action_count > 0:
+                total_latency = (
+                    time.perf_counter() - self.controller.last_input_time
+                ) * 1000
+                avg_action_time = total_latency / action_count
+                print(
+                    f"Processed {action_count} actions in {total_latency:.2f} ms. "
+                    f"Avg Action Processing Time: {avg_action_time:.2f} ms"
+                )
 
-        action_count = self.controller.action_count_for_latency_metric
-        if action_count > 0:
-            total_latency = (
-                time.perf_counter() - self.controller.last_input_time
-            ) * 1000
-            avg_action_time = total_latency / action_count
-            print(
-                f"Processed {action_count} actions in {total_latency:.2f} ms. "
-                f"Avg Action Processing Time: {avg_action_time:.2f} ms"
-            )
-
-        # Reset the timer and the counter for the next batch
-        self.controller.last_input_time = None
-        self.controller.action_count_for_latency_metric = 0
+            # Reset the state here after printing metrics
+            self.controller.last_input_time = None
+            self.controller.action_count_for_latency_metric = 0

@@ -23,7 +23,6 @@ from catley.view.ui.help_menu import HelpMenu
 from catley.view.ui.inventory_menu import InventoryMenu
 
 from .game.actions.base import GameIntent
-from .game.actions.movement import MoveIntent
 
 if TYPE_CHECKING:
     from .controller import Controller
@@ -62,6 +61,9 @@ class InputHandler:
             tcod.event.KeySym.l,
         }:
             if isinstance(event, tcod.event.KeyDown):
+                if not self.movement_keys:
+                    self.controller.last_input_time = time.perf_counter()
+                    self.controller.action_count_for_latency_metric = 0
                 self.movement_keys.add(event.sym)
             else:
                 self.movement_keys.discard(event.sym)
@@ -124,7 +126,7 @@ class InputHandler:
         if self.p.health and not self.p.health.is_alive():
             return None
 
-        return self._check_for_game_action(event)
+        return None
 
     def _check_for_ui_command(self, event: tcod.event.Event) -> UICommand | None:
         # Check if a mode wants to handle this first
@@ -221,53 +223,6 @@ class InputHandler:
 
             case _:
                 return None
-
-    def _check_for_game_action(self, event: tcod.event.Event) -> GameIntent | None:
-        move_intent = None
-        match event:
-            # Movement keys (Arrows and VIM)
-            case (
-                tcod.event.KeyDown(sym=tcod.event.KeySym.UP)
-                | tcod.event.KeyDown(sym=tcod.event.KeySym.k)
-            ):
-                move_intent = MoveIntent(self.controller, self.p, 0, -1)
-            case (
-                tcod.event.KeyDown(sym=tcod.event.KeySym.DOWN)
-                | tcod.event.KeyDown(sym=tcod.event.KeySym.j)
-            ):
-                move_intent = MoveIntent(self.controller, self.p, 0, 1)
-            case (
-                tcod.event.KeyDown(sym=tcod.event.KeySym.LEFT)
-                | tcod.event.KeyDown(sym=tcod.event.KeySym.h)
-            ):
-                move_intent = MoveIntent(self.controller, self.p, -1, 0)
-            case (
-                tcod.event.KeyDown(sym=tcod.event.KeySym.RIGHT)
-                | tcod.event.KeyDown(sym=tcod.event.KeySym.l)
-            ):
-                move_intent = MoveIntent(self.controller, self.p, 1, 0)
-
-            # Diagonal movement (numpad or vi-keys)
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.KP_7):  # Up-left
-                move_intent = MoveIntent(self.controller, self.p, -1, -1)
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.KP_9):  # Up-right
-                move_intent = MoveIntent(self.controller, self.p, 1, -1)
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.KP_1):  # Down-left
-                move_intent = MoveIntent(self.controller, self.p, -1, 1)
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.KP_3):  # Down-right
-                move_intent = MoveIntent(self.controller, self.p, 1, 1)
-
-            case _:
-                move_intent = None
-
-        if move_intent:
-            # Only time the first input of a chain
-            if self.controller.last_input_time is None:
-                self.controller.last_input_time = time.perf_counter()
-                self.controller.action_count_for_latency_metric = 0
-            return move_intent
-
-        return None
 
     def _handle_mouse_button_down_event(
         self, event: tcod.event.MouseButtonDown

@@ -60,8 +60,10 @@ FPS_SAMPLE_SIZE = 256  # Number of frame time samples to track
 # Set to True for uncapped FPS to identify performance bottlenecks.
 PERFORMANCE_PROFILING = False
 
-# Set to True to print action processing metrics (count, total time, avg time)
-# to the console for debugging game feel and performance
+# Set to True to print metrics about the "tap vs. hold" input system.
+# This measures the real-world time between player-perceived moves, which is
+# dominated by the KEY_REPEAT_INTERVAL in the MovementInputHandler.
+# Useful for tuning game feel, not for measuring raw CPU performance.
 SHOW_ACTION_PROCESSING_METRICS = False
 
 # Set to True to display the FPS counter in the corner of the screen.
