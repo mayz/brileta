@@ -10,6 +10,8 @@ import abc
 from collections import defaultdict
 from typing import Generic, Protocol, TypeVar
 
+from .coordinates import WorldTileCoord
+
 # A type alias for coordinate tuples to improve readability.
 type Coord = tuple[int, int]
 
@@ -45,12 +47,14 @@ class SpatialIndex(abc.ABC, Generic[T]):
         pass
 
     @abc.abstractmethod
-    def get_at_point(self, x: int, y: int) -> list[T]:
+    def get_at_point(self, x: WorldTileCoord, y: WorldTileCoord) -> list[T]:
         """Get all objects at a specific tile (x, y)."""
         pass
 
     @abc.abstractmethod
-    def get_in_radius(self, x: int, y: int, radius: int) -> list[T]:
+    def get_in_radius(
+        self, x: WorldTileCoord, y: WorldTileCoord, radius: int
+    ) -> list[T]:
         """Get all objects within a certain Chebyshev distance (radius) of a point."""
         pass
 

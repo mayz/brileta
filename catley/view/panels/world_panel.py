@@ -17,6 +17,7 @@ from catley.util.coordinates import (
     PixelCoord,
     Rect,
     RootConsoleTilePos,
+    ViewportTileCoord,
 )
 from catley.view.render.effects.effects import EffectLibrary
 from catley.view.render.effects.environmental import EnvironmentalEffectSystem
@@ -472,7 +473,9 @@ class WorldPanel(Panel):
             max(0, min(255, c)) for c in blended_color
         ]
 
-    def _apply_replacement_highlight(self, x: int, y: int, color: colors.Color) -> None:
+    def _apply_replacement_highlight(
+        self, x: ViewportTileCoord, y: ViewportTileCoord, color: colors.Color
+    ) -> None:
         self.game_map_console.rgb["bg"][x, y] = color
 
     def _update_mouse_tile_location(self) -> None:

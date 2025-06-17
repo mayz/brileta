@@ -19,8 +19,7 @@ from catley.game.items.item_types import (
     RIFLE_MAGAZINE_TYPE,
     SNIPER_RIFLE_TYPE,
 )
-from catley.input_handler import WorldTileCoord
-from catley.util.coordinates import Rect
+from catley.util.coordinates import Rect, TileCoord, WorldTileCoord, WorldTilePos
 from catley.util.spatial import SpatialHashGrid, SpatialIndex
 from catley.view.render.effects.lighting import LightingSystem, LightSource
 
@@ -35,8 +34,8 @@ class GameWorld:
     the single source of truth for the game's state.
     """
 
-    def __init__(self, map_width: int, map_height: int) -> None:
-        self.mouse_tile_location_on_map: tuple[int, int] | None = None
+    def __init__(self, map_width: TileCoord, map_height: TileCoord) -> None:
+        self.mouse_tile_location_on_map: WorldTilePos | None = None
         self.lighting = LightingSystem()
         self.item_spawner = ItemSpawner(self)
         self.selected_actor: Actor | None = None
@@ -135,7 +134,9 @@ class GameWorld:
         if dropped_items:
             self.spawn_ground_items(dropped_items, self.player.x, self.player.y)
 
-    def spawn_ground_item(self, item: Item, x: int, y: int, **kwargs) -> Actor:
+    def spawn_ground_item(
+        self, item: Item, x: WorldTileCoord, y: WorldTileCoord, **kwargs
+    ) -> Actor:
         """Spawn an item on the ground with smart placement and consolidation."""
         return self.item_spawner.spawn_item(item, x, y, **kwargs)
 
@@ -148,7 +149,9 @@ class GameWorld:
         if self.player.light_source:
             self.player.light_source.position = (self.player.x, self.player.y)
 
-    def get_pickable_items_at_location(self, x: int, y: int) -> list[Item]:
+    def get_pickable_items_at_location(
+        self, x: WorldTileCoord, y: WorldTileCoord
+    ) -> list[Item]:
         """Get all pickable items at the specified location.
 
         Currently, this includes items from dead actors' inventories and their
@@ -206,7 +209,9 @@ class GameWorld:
         # If no blocking actor exists, return whichever actor is found first.
         return actors_at_point[0]
 
-    def has_pickable_items_at_location(self, x: int, y: int) -> bool:
+    def has_pickable_items_at_location(
+        self, x: WorldTileCoord, y: WorldTileCoord
+    ) -> bool:
         """Check if there are any pickable items at the specified location."""
         return bool(self.get_pickable_items_at_location(x, y))
 
