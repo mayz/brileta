@@ -98,7 +98,10 @@ class AttackExecutor(ActionExecutor):
         self, intent: AttackIntent
     ) -> tuple[Attack | None, Item]:
         """Determine which attack method and weapon to use."""
-        weapon = intent.weapon or self._select_appropriate_weapon(intent.attacker)
+        weapon = intent.weapon or self._select_appropriate_weapon(
+            intent.attacker,
+            force_melee=intent.attack_mode == "melee",
+        )
 
         distance = ranges.calculate_distance(
             intent.attacker.x,
@@ -136,11 +139,15 @@ class AttackExecutor(ActionExecutor):
         )
         return None, weapon
 
-    def _select_appropriate_weapon(self, actor: Character) -> Item:
+    def _select_appropriate_weapon(
+        self, actor: Character, *, force_melee: bool = False
+    ) -> Item:
         """Select the most appropriate weapon for the attack.
 
-        When no specific weapon is provided, choose the best available weapon,
-        preferring melee weapons suitable for close combat (like ramming).
+        When ``force_melee`` is True (used for ramming), only consider weapons
+        that are viable for melee combat. If none are available, return fists.
+        Otherwise, follow the normal heuristic which may fall back to the active
+        weapon even if it is ranged-only.
         """
 
         active_weapon = actor.inventory.get_active_weapon()
@@ -168,7 +175,12 @@ class AttackExecutor(ActionExecutor):
                 return non_improvised[0]
             return candidates[0]
 
-        # If active weapon exists but isn't suitable for melee, still use it
+        # If we specifically require a melee option and none are found,
+        # fall back to fists instead of an unsuitable active weapon.
+        if force_melee:
+            return FISTS_TYPE.create()
+
+        # Otherwise, fall back to the active weapon even if it's ranged-only.
         if active_weapon:
             return active_weapon
 

@@ -117,7 +117,11 @@ class ActionRouter:
             blocking_actor = cast(Character, result.blocked_by)
             if blocking_actor.health.is_alive():
                 new_intent = AttackIntent(
-                    self.controller, intent.actor, blocking_actor, weapon=None
+                    self.controller,
+                    intent.actor,
+                    blocking_actor,
+                    weapon=None,
+                    attack_mode="melee",
                 )
                 self.execute_intent(new_intent)  # Recursive call
 
