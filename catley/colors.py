@@ -20,6 +20,9 @@ DARK_GREY: Color = (50, 50, 50)
 LIGHT_BLUE: Color = (173, 216, 230)
 MAGENTA: Color = (255, 0, 255)
 
+# UI specific colors
+MENU_HOVER_BG: Color = (40, 40, 40)  # Dark grey for hover background
+
 # Map colors
 DARK_WALL: Color = BLACK
 DARK_GROUND: Color = (0, 0, 100)

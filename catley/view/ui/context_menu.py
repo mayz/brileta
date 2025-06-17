@@ -171,18 +171,24 @@ class ContextMenu(Menu):
 
         match event:
             case tcod.event.MouseButtonDown(position=position):
-                px_pos: PixelPos = position
-                px_x: PixelCoord = px_pos[0]
-                px_y: PixelCoord = px_pos[1]
-                root_tile_x, root_tile_y = (
-                    self.controller.coordinate_converter.pixel_to_tile(px_x, px_y)
+                mouse_pixel_pos: PixelPos = position
+                mouse_px_x: PixelCoord = mouse_pixel_pos[0]
+                mouse_px_y: PixelCoord = mouse_pixel_pos[1]
+
+                rel_px_x: PixelCoord
+                rel_px_y: PixelCoord
+                rel_px_x, rel_px_y = self._convert_global_mouse_to_menu_relative(
+                    mouse_px_x, mouse_px_y
                 )
+
                 if not (
-                    self.x_tiles <= root_tile_x < self.x_tiles + self.width
-                    and self.y_tiles <= root_tile_y < self.y_tiles + self.height
+                    0 <= rel_px_x < self.pixel_width
+                    and 0 <= rel_px_y < self.pixel_height
                 ):
                     self.hide()
                     return True
+
+                return super().handle_input(event)
 
         return super().handle_input(event)
 

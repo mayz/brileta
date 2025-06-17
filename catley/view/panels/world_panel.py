@@ -9,7 +9,6 @@ from tcod.console import Console
 from catley import colors, config
 from catley.config import (
     LUMINANCE_THRESHOLD,
-    MOUSE_HIGHLIGHT_ALPHA,
     PULSATION_MAX_BLEND_ALPHA,
     PULSATION_PERIOD,
     SELECTION_HIGHLIGHT_ALPHA,
@@ -200,7 +199,6 @@ class WorldPanel(Panel):
             self.controller.active_mode.render_world()
         else:
             self._render_selected_actor_highlight()
-            self._render_mouse_cursor_highlight()
 
         self.particle_system.update(delta_time)
         self.environmental_system.update(delta_time)
@@ -461,24 +459,6 @@ class WorldPanel(Panel):
                 self._apply_blended_highlight(
                     vp_x, vp_y, colors.SELECTED_HIGHLIGHT, SELECTION_HIGHLIGHT_ALPHA
                 )
-
-    def _render_mouse_cursor_highlight(self) -> None:
-        if self.controller.is_targeting_mode():
-            return
-        mouse_world_pos = self.controller.gw.mouse_tile_location_on_map
-        if not mouse_world_pos:
-            return
-        world_x, world_y = mouse_world_pos
-        vp_x, vp_y = self.viewport_system.world_to_screen(world_x, world_y)
-        if 0 <= vp_x < self.width and 0 <= vp_y < self.height:
-            target_color = (
-                colors.WHITE
-                if self.controller.gw.game_map.visible[world_x, world_y]
-                else colors.GREY
-            )
-            self._apply_blended_highlight(
-                vp_x, vp_y, target_color, MOUSE_HIGHLIGHT_ALPHA
-            )
 
     def _apply_blended_highlight(
         self, x: int, y: int, target_color: colors.Color, alpha: float

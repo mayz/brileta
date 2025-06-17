@@ -169,7 +169,7 @@ class FrameManager:
         1. Preparation - Clear buffers
         2. UI Panels - Each panel renders itself
         3. Menus - Draw any active menus on top of everything
-        4. Presentation - Draw custom cursor and display the final frame
+        4. Presentation - Composite overlays then draw the mouse cursor
         """
         # 1. PREPARATION PHASE
         self.renderer.clear_console(self.renderer.root_console)
@@ -192,13 +192,15 @@ class FrameManager:
         self.renderer.prepare_to_present()
 
         # Allow panels and other systems to perform low-level SDL drawing
-        self.cursor_manager.draw_cursor()
         for panel in self.panels:
             if panel.visible:
                 panel.present(self.renderer)
 
         # 5. OVERLAY PRESENTATION (texture blitting phase)
         self.controller.overlay_system.present_overlays()
+
+        # Draw the mouse cursor on top of all overlays
+        self.cursor_manager.draw_cursor()
 
         # Flip the backbuffer to the screen
         self.renderer.finalize_present()
