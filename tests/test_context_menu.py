@@ -26,8 +26,8 @@ def test_context_menu_closes_on_click_outside() -> None:
     menu._calculate_dimensions()
 
     outside: RootConsoleTilePos = (
-        menu.x_tiles + menu.width + 1,
-        menu.y_tiles + menu.height + 1,
+        (menu.x_tiles + menu.width + 1) * controller.renderer.tile_dimensions[0],
+        (menu.y_tiles + menu.height + 1) * controller.renderer.tile_dimensions[1],
     )
     event = tcod.event.MouseButtonDown(outside, outside, tcod.event.MouseButton.LEFT)
 
@@ -43,10 +43,13 @@ def test_context_menu_stays_open_on_click_inside() -> None:
     menu.show()
     menu._calculate_dimensions()
 
-    inside: RootConsoleTilePos = (menu.x_tiles + 1, menu.y_tiles + 1)
+    inside: RootConsoleTilePos = (
+        (menu.x_tiles + 1) * controller.renderer.tile_dimensions[0],
+        (menu.y_tiles + 1) * controller.renderer.tile_dimensions[1],
+    )
     event = tcod.event.MouseButtonDown(inside, inside, tcod.event.MouseButton.LEFT)
 
     consumed = menu.handle_input(event)
 
-    assert not consumed
+    assert consumed
     assert menu.is_active

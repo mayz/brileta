@@ -185,8 +185,23 @@ class CoordinateConverter:
         expected_width_px: PixelCoord = console_width_in_tiles * tile_width_px
         expected_height_px: PixelCoord = console_height_in_tiles * tile_height_px
 
-        self.scale_x: float = expected_width_px / renderer_width
-        self.scale_y: float = expected_height_px / renderer_height
+        console_aspect: float = expected_width_px / expected_height_px
+        window_aspect: float = renderer_width / renderer_height
+
+        if console_aspect > window_aspect:
+            # Letterboxed vertically - top/bottom bars
+            scaled_height = renderer_width / console_aspect
+            self.offset_x = 0
+            self.offset_y = (renderer_height - scaled_height) / 2
+            self.tile_width_screen_px = renderer_width / console_width_in_tiles
+            self.tile_height_screen_px = scaled_height / console_height_in_tiles
+        else:
+            # Letterboxed horizontally - left/right bars
+            scaled_width = renderer_height * console_aspect
+            self.offset_x = (renderer_width - scaled_width) / 2
+            self.offset_y = 0
+            self.tile_width_screen_px = scaled_width / console_width_in_tiles
+            self.tile_height_screen_px = renderer_height / console_height_in_tiles
 
     def pixel_to_tile(
         self, pixel_x: PixelCoord, pixel_y: PixelCoord
@@ -196,13 +211,12 @@ class CoordinateConverter:
         Return:
             A RootConsoleTilePos.
         """
-        # Apply scaling if needed
-        scaled_x: PixelCoord = pixel_x * self.scale_x
-        scaled_y: PixelCoord = pixel_y * self.scale_y
+        # Adjust for letterboxing offsets
+        adj_x: float = pixel_x - self.offset_x
+        adj_y: float = pixel_y - self.offset_y
 
-        # Convert to tile coordinates (floor division works with floats)
-        tile_x: TileCoord = int(scaled_x // self.tile_width_px)
-        tile_y: TileCoord = int(scaled_y // self.tile_height_px)
+        tile_x: TileCoord = int(adj_x // self.tile_width_screen_px)
+        tile_y: TileCoord = int(adj_y // self.tile_height_screen_px)
 
         # Clamp to valid range
         tile_x = max(0, min(tile_x, self.console_width_in_tiles - 1))

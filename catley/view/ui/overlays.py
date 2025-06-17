@@ -24,6 +24,7 @@ import tcod
 import tcod.sdl.render
 
 from catley import colors
+from catley.util.coordinates import PixelCoord, PixelPos, RootConsoleTileCoord
 from catley.view.render.text_backend import TCODTextBackend, TextBackend
 
 if TYPE_CHECKING:
@@ -248,6 +249,9 @@ class Menu(TextOverlay):
         self.max_height_tiles = max_height
         self.options: list[MenuOption] = []
         self._content_revision = -1
+        self.hovered_option_index: int | None = None
+        self.mouse_px_x: PixelCoord = 0
+        self.mouse_px_y: PixelCoord = 0
 
     @abc.abstractmethod
     def populate_options(self) -> None:
@@ -271,12 +275,87 @@ class Menu(TextOverlay):
         super().hide()
         self.options.clear()
 
+    def _convert_global_mouse_to_menu_relative(
+        self, global_px_x: PixelCoord, global_px_y: PixelCoord
+    ) -> tuple[PixelCoord, PixelCoord]:
+        """Convert global pixel coordinates to menu-relative pixel coordinates."""
+        menu_px_x: PixelCoord = self.x_tiles * self.tile_dimensions[0]
+        menu_px_y: PixelCoord = self.y_tiles * self.tile_dimensions[1]
+
+        relative_px_x: PixelCoord = global_px_x - menu_px_x
+        relative_px_y: PixelCoord = global_px_y - menu_px_y
+
+        return relative_px_x, relative_px_y
+
+    def _get_hovered_option_index(
+        self, menu_relative_px_x: PixelCoord, menu_relative_px_y: PixelCoord
+    ) -> int | None:
+        """Determine which menu option (if any) is under the mouse cursor."""
+        if not (
+            0 <= menu_relative_px_x < self.pixel_width
+            and 0 <= menu_relative_px_y < self.pixel_height
+        ):
+            return None
+
+        tile_x: RootConsoleTileCoord = int(
+            menu_relative_px_x // self.tile_dimensions[0]
+        )
+        tile_y: RootConsoleTileCoord = int(
+            menu_relative_px_y // self.tile_dimensions[1]
+        )
+
+        if not (1 <= tile_x < self.width - 1 and 2 <= tile_y < self.height - 1):
+            return None
+
+        option_line: int = tile_y - 2
+
+        if 0 <= option_line < len(self.options):
+            return option_line
+
+        return None
+
+    def _update_mouse_state(
+        self, global_px_x: PixelCoord, global_px_y: PixelCoord
+    ) -> None:
+        """Update internal mouse tracking state."""
+        self.mouse_px_x, self.mouse_px_y = self._convert_global_mouse_to_menu_relative(
+            global_px_x, global_px_y
+        )
+        self.hovered_option_index = self._get_hovered_option_index(
+            self.mouse_px_x, self.mouse_px_y
+        )
+
     def handle_input(self, event: tcod.event.Event) -> bool:
         """Handle input events for the menu. Returns True if event was consumed."""
         if not self.is_active:
             return False
 
         match event:
+            case tcod.event.MouseMotion():
+                mouse_pixel_pos: PixelPos = event.position
+                mouse_px_x: PixelCoord = mouse_pixel_pos[0]
+                mouse_px_y: PixelCoord = mouse_pixel_pos[1]
+                self._update_mouse_state(mouse_px_x, mouse_px_y)
+                return True
+
+            case tcod.event.MouseButtonDown(button=tcod.event.MouseButton.LEFT):
+                mouse_pixel_pos: PixelPos = event.position
+                mouse_px_x: PixelCoord = mouse_pixel_pos[0]
+                mouse_px_y: PixelCoord = mouse_pixel_pos[1]
+                self._update_mouse_state(mouse_px_x, mouse_px_y)
+
+                if (
+                    self.hovered_option_index is not None
+                    and self.hovered_option_index < len(self.options)
+                ):
+                    option = self.options[self.hovered_option_index]
+                    if option.enabled and option.action:
+                        result = option.action()
+                        if result is not False:
+                            self.hide()
+                        return True
+                return True
+
             case tcod.event.KeyDown(sym=tcod.event.KeySym.ESCAPE):
                 self.hide()
                 return True
@@ -361,32 +440,67 @@ class Menu(TextOverlay):
             bg=colors.BLACK,
         )
 
-        # Clear the menu interior using local pixel coordinates.
+        interior_px_x: PixelCoord = self.tile_dimensions[0]
+        interior_px_y: PixelCoord = self.tile_dimensions[1]
+        interior_width_px: PixelCoord = (self.width - 2) * self.tile_dimensions[0]
+        interior_height_px: PixelCoord = (self.height - 2) * self.tile_dimensions[1]
+
         self.text_backend.draw_rect(
-            pixel_x=self.tile_dimensions[0],
-            pixel_y=self.tile_dimensions[1],
-            width=(self.width - 2) * self.tile_dimensions[0],
-            height=(self.height - 2) * self.tile_dimensions[1],
+            pixel_x=interior_px_x,
+            pixel_y=interior_px_y,
+            width=interior_width_px,
+            height=interior_height_px,
             color=colors.BLACK,
             fill=True,
         )
 
-        # Draw the title and any subclass-specific header contents.
+        # Draw the title
         self.render_title()
 
-        # Draw options
-        y_offset_tiles = 2
-        for option in self.options:
+        # Draw options with hover highlighting
+        y_offset_tiles: RootConsoleTileCoord = 2
+        for i, option in enumerate(self.options):
             if y_offset_tiles >= self.height - 1:
                 break
 
+            is_hovered = self.hovered_option_index == i and option.enabled
+
+            if is_hovered:
+                hover_bg_px_x: PixelCoord = self.tile_dimensions[0]
+                hover_bg_px_y: PixelCoord = self.tile_dimensions[1] * y_offset_tiles
+                hover_bg_width_px: PixelCoord = (self.width - 2) * self.tile_dimensions[
+                    0
+                ]
+                hover_bg_height_px: PixelCoord = self.tile_dimensions[1]
+
+                self.text_backend.draw_rect(
+                    pixel_x=hover_bg_px_x,
+                    pixel_y=hover_bg_px_y,
+                    width=hover_bg_width_px,
+                    height=hover_bg_height_px,
+                    color=colors.DARK_GREY,
+                    fill=True,
+                )
+
             option_text = f"({option.key}) {option.text}" if option.key else option.text
 
+            text_color = option.color
+            if is_hovered:
+                r, g, b = text_color
+                text_color = (
+                    min(255, r + 40),
+                    min(255, g + 40),
+                    min(255, b + 40),
+                )
+
+            text_px_x: PixelCoord = self.tile_dimensions[0] * 2
+            text_px_y: PixelCoord = self.tile_dimensions[1] * y_offset_tiles
+
             self.text_backend.draw_text(
-                pixel_x=self.tile_dimensions[0] * 2,
-                pixel_y=self.tile_dimensions[1] * y_offset_tiles,
+                pixel_x=text_px_x,
+                pixel_y=text_px_y,
                 text=option_text,
-                color=option.color,
+                color=text_color,
             )
             y_offset_tiles += 1
 

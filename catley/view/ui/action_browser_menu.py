@@ -16,6 +16,7 @@ from catley.game.actions.discovery import (
     ActionOption,
     CombatIntentCache,
 )
+from catley.util.coordinates import PixelCoord, PixelPos
 from catley.view.ui.action_browser_state import ActionBrowserStateMachine
 from catley.view.ui.overlays import REPEAT_PREFIX, Menu, MenuOption
 
@@ -269,6 +270,32 @@ class ActionBrowserMenu(Menu):
             return False
 
         match event:
+            case tcod.event.MouseMotion():
+                mouse_pixel_pos: PixelPos = event.position
+                mouse_px_x: PixelCoord = mouse_pixel_pos[0]
+                mouse_px_y: PixelCoord = mouse_pixel_pos[1]
+                self._update_mouse_state(mouse_px_x, mouse_px_y)
+                return True
+
+            case tcod.event.MouseButtonDown(button=tcod.event.MouseButton.LEFT):
+                mouse_pixel_pos: PixelPos = event.position
+                mouse_px_x: PixelCoord = mouse_pixel_pos[0]
+                mouse_px_y: PixelCoord = mouse_pixel_pos[1]
+                self._update_mouse_state(mouse_px_x, mouse_px_y)
+
+                if (
+                    self.hovered_option_index is not None
+                    and self.hovered_option_index < len(self.options)
+                ):
+                    option = self.options[self.hovered_option_index]
+                    if option.enabled and option.action:
+                        should_close = option.action()
+                        if should_close:
+                            self.hide()
+                        else:
+                            self.populate_options()
+                        return True
+                return True
             case tcod.event.KeyDown(sym=tcod.event.KeySym.ESCAPE):
                 # Navigate back in the state machine
                 self.action_discovery._go_back()
