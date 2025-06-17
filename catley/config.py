@@ -36,6 +36,9 @@ DEFAULT_VIEWPORT_HEIGHT = 40  # Initial height before layout adjustments
 # UI Layout
 HELP_HEIGHT = 1  # Lines reserved for help text at top
 
+# Use "smooth" rendering for actors (sub-tile render coordinates).
+SMOOTH_ACTOR_RENDERING_ENABLED = True
+
 # Rendering effects
 PULSATION_PERIOD = 2.0  # Seconds for full pulsation cycle (selected actor)
 PULSATION_MAX_BLEND_ALPHA = 0.5  # Maximum alpha for pulsation blending

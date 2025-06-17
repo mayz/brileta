@@ -6,6 +6,9 @@ and present_frame() to control the frame pipeline."""
 
 from __future__ import annotations
 
+from typing import cast
+
+import numpy as np
 import tcod.render
 import tcod.sdl.render
 from tcod.console import Console
@@ -37,12 +40,78 @@ class Renderer:
         self.tile_dimensions = tile_dimensions
 
         # Set up coordinate conversion
-        renderer_width, renderer_height = self.sdl_renderer.output_size
         self.coordinate_converter = self._create_coordinate_converter()
+
+        # Set up smooth actor rendering
+        self._actor_texture_cache = {}
+        self._tileset = context.sdl_atlas.tileset if context.sdl_atlas else None
 
     def clear_console(self, console: Console) -> None:
         """Clear a console."""
         console.clear()
+
+    def draw_actor_smooth(
+        self,
+        char: str,
+        color: colors.Color,
+        screen_x: float,
+        screen_y: float,
+        light_intensity: tuple[float, float, float] = (1.0, 1.0, 1.0),
+    ) -> None:
+        """Draw an actor character at sub-pixel screen coordinates.
+
+        Args:
+            char: Character to draw (e.g., '@', 'g')
+            color: Base actor color in 0-255 RGB format
+            screen_x: Screen X coordinate in pixels (can be fractional)
+            screen_y: Screen Y coordinate in pixels (can be fractional)
+            light_intensity: RGB lighting multipliers in 0.0-1.0 range
+        """
+        if not self._tileset:
+            return
+
+        char_code = ord(char)
+        tile_pixels = self._tileset.get_tile(char_code)
+
+        # Get or create cached texture
+        if char_code not in self._actor_texture_cache:
+            # Ensure RGBA format
+            if tile_pixels.shape[2] == 3:
+                rgba_pixels = np.zeros((*tile_pixels.shape[:2], 4), dtype=np.uint8)
+                rgba_pixels[:, :, :3] = tile_pixels
+                rgba_pixels[:, :, 3] = 255
+                tile_pixels = rgba_pixels
+
+            texture = self.sdl_renderer.upload_texture(tile_pixels)
+            texture.blend_mode = tcod.sdl.render.BlendMode.BLEND
+            self._actor_texture_cache[char_code] = texture
+
+        texture = self._actor_texture_cache[char_code]
+
+        # Apply lighting and color
+        final_color = (
+            int(color[0] * light_intensity[0]),
+            int(color[1] * light_intensity[1]),
+            int(color[2] * light_intensity[2]),
+        )
+        texture.color_mod = final_color
+
+        # Draw at precise position with scaling
+        shape = cast(tuple[int, int, int], tile_pixels.shape)
+        texture_h = shape[0]
+        texture_w = shape[1]
+
+        # Scale texture proportionally to current tile size
+        tile_w, tile_h = self.tile_dimensions
+        scale = min(tile_w / texture_w, tile_h / texture_h)
+        scaled_w = int(texture_w * scale)
+        scaled_h = int(texture_h * scale)
+
+        dest_rect = (int(screen_x), int(screen_y), scaled_w, scaled_h)
+        self.sdl_renderer.copy(texture, dest=dest_rect)
+
+        # Reset for next use
+        texture.color_mod = (255, 255, 255)
 
     def draw_text(
         self, x: int, y: int, text: str, fg: colors.Color = colors.WHITE
@@ -73,14 +142,18 @@ class Renderer:
         # Convert TCOD console to SDL texture
         console_texture = self.console_render.render(self.root_console)
 
-        renderer_width, renderer_height = self.sdl_renderer.output_size
-
-        # Copy texture to screen, scaling to match the window size
-        self.sdl_renderer.clear()
-        self.sdl_renderer.copy(
-            console_texture,
-            dest=(0, 0, renderer_width, renderer_height),
+        left_x, top_y = self.console_to_screen_coords(0, 0)
+        right_x, bottom_y = self.console_to_screen_coords(
+            self.root_console.width, self.root_console.height
         )
+
+        width = right_x - left_x
+        height = bottom_y - top_y
+
+        dest = (int(left_x), int(top_y), int(width), int(height))
+
+        self.sdl_renderer.clear()
+        self.sdl_renderer.copy(console_texture, dest=dest)
 
     def finalize_present(self) -> None:
         """Presents the backbuffer to the screen."""
@@ -101,6 +174,30 @@ class Renderer:
         self.tile_dimensions = (tile_width, tile_height)
 
         self.coordinate_converter = self._create_coordinate_converter()
+
+    def console_to_screen_coords(
+        self, console_x: float, console_y: float
+    ) -> tuple[float, float]:
+        """Convert console coordinates to final screen pixel coordinates,
+        accounting for letterboxing."""
+        renderer_width, renderer_height = self.sdl_renderer.output_size
+        console_aspect = self.root_console.width / self.root_console.height
+        window_aspect = renderer_width / renderer_height
+
+        if console_aspect > window_aspect:
+            # Console is letterboxed vertically
+            scaled_height = int(renderer_width / console_aspect)
+            offset_y = (renderer_height - scaled_height) // 2
+            screen_x = console_x * (renderer_width / self.root_console.width)
+            screen_y = offset_y + console_y * (scaled_height / self.root_console.height)
+        else:
+            # Console is letterboxed horizontally
+            scaled_width = int(renderer_height * console_aspect)
+            offset_x = (renderer_width - scaled_width) // 2
+            screen_x = offset_x + console_x * (scaled_width / self.root_console.width)
+            screen_y = console_y * (renderer_height / self.root_console.height)
+
+        return screen_x, screen_y
 
     def _create_coordinate_converter(self) -> CoordinateConverter:
         """Create a coordinate converter with current dimensions."""

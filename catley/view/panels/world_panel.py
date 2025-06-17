@@ -16,6 +16,7 @@ from catley.config import (
 )
 from catley.util.coordinates import (
     PixelCoord,
+    Rect,
     RootConsoleTilePos,
 )
 from catley.view.render.effects.effects import EffectLibrary
@@ -139,6 +140,15 @@ class WorldPanel(Panel):
             height=self.height,
         )
 
+    def present(self, renderer: Renderer) -> None:
+        """Handle texture presentation + smooth actor rendering."""
+        # First, handle any texture-based rendering from base class
+        super().present(renderer)
+
+        # Then add our smooth actor rendering
+        if self.visible and config.SMOOTH_ACTOR_RENDERING_ENABLED:
+            self._render_actors_smooth(renderer)
+
     # ------------------------------------------------------------------
     # Internal rendering helpers
     # ------------------------------------------------------------------
@@ -232,6 +242,102 @@ class WorldPanel(Panel):
         )
 
     def _render_actors(self) -> None:
+        if not config.SMOOTH_ACTOR_RENDERING_ENABLED:
+            self._render_actors_traditional()
+            return
+
+        # When smooth rendering is enabled, skip console rendering
+        # Actors will be drawn in present() phase
+        pass
+
+    def _render_actors_smooth(self, renderer: Renderer) -> None:
+        """Render all actors with smooth sub-pixel positioning."""
+        gw = self.controller.gw
+        vs = self.viewport_system
+        bounds = vs.get_visible_bounds()
+        world_left, world_right, world_top, world_bottom = (
+            bounds.x1,
+            bounds.x2,
+            bounds.y1,
+            bounds.y2,
+        )
+
+        # Get visible actors using existing spatial index
+        actors_in_viewport = gw.actor_spatial_index.get_in_bounds(
+            world_left, world_top, world_right, world_bottom
+        )
+
+        # Sort for proper z-order (existing logic)
+        sorted_actors = sorted(
+            actors_in_viewport,
+            key=lambda a: (
+                getattr(a, "blocks_movement", False),
+                a == gw.player,
+            ),
+        )
+
+        for actor in sorted_actors:
+            if gw.game_map.visible[actor.x, actor.y]:
+                self._render_single_actor_smooth(actor, renderer, bounds, vs)
+
+    def _render_single_actor_smooth(
+        self, actor: Actor, renderer: Renderer, bounds: Rect, vs: ViewportSystem
+    ) -> None:
+        """Render a single actor with smooth positioning and lighting."""
+        # Get lighting intensity (reuse existing lighting logic)
+        light_rgb = self._get_actor_lighting_intensity(actor, bounds)
+
+        # Convert actor's render position to viewport coordinates
+        vp_x, vp_y = vs.world_to_screen_float(actor.render_x, actor.render_y)
+
+        # Root console position where this viewport pixel ends up
+        root_x = self.x + vp_x
+        root_y = self.y + vp_y
+
+        screen_pixel_x, screen_pixel_y = renderer.console_to_screen_coords(
+            root_x, root_y
+        )
+
+        # Get actor color with visual effects (reuse existing logic)
+        final_color = self._get_actor_display_color(actor)
+
+        # Render using the enhanced renderer
+        renderer.draw_actor_smooth(
+            actor.ch, final_color, screen_pixel_x, screen_pixel_y, light_rgb
+        )
+
+    def _get_actor_lighting_intensity(self, actor: Actor, bounds: Rect) -> tuple:
+        """Get lighting intensity for actor (extracted from existing code)."""
+        if self.current_light_intensity is None:
+            return (1.0, 1.0, 1.0)
+
+        world_left, world_top = bounds.x1, bounds.y1
+        light_x, light_y = actor.x - world_left, actor.y - world_top
+
+        if (
+            0 <= light_x < self.current_light_intensity.shape[0]
+            and 0 <= light_y < self.current_light_intensity.shape[1]
+        ):
+            return tuple(self.current_light_intensity[light_x, light_y])
+
+        return (1.0, 1.0, 1.0)
+
+    def _get_actor_display_color(self, actor: Actor) -> tuple:
+        """Get actor's final display color with visual effects."""
+        base_color = actor.color
+
+        # Apply visual effects if present (existing logic)
+        visual_effects = actor.visual_effects
+        if visual_effects is not None:
+            visual_effects.update()
+            flash_color = visual_effects.get_flash_color()
+            if flash_color:
+                base_color = flash_color
+
+        return base_color
+
+    def _render_actors_traditional(self) -> None:
+        """Original actor rendering method (tile-aligned)."""
         gw = self.controller.gw
         vs = self.viewport_system
         bounds = vs.get_visible_bounds()

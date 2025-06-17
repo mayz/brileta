@@ -183,14 +183,28 @@ class ViewportSystem:
         """Get the world coordinates that are currently visible."""
         return self.viewport.get_world_bounds(self.camera)
 
-    def is_visible(self, world_x: int, world_y: int) -> bool:
+    def is_visible(self, world_x: WorldTileCoord, world_y: WorldTileCoord) -> bool:
         """Check if a world position is currently inside the viewport."""
         bounds = self.get_visible_bounds()
         return bounds.x1 <= world_x <= bounds.x2 and bounds.y1 <= world_y <= bounds.y2
 
-    def world_to_screen(self, world_x: int, world_y: int) -> tuple[int, int]:
+    def world_to_screen(
+        self, world_x: WorldTileCoord, world_y: WorldTileCoord
+    ) -> ViewportTilePos:
         """Converts world coordinates to viewport/screen coordinates."""
         return self.viewport.world_to_viewport(world_x, world_y, self.camera)
+
+    def world_to_screen_float(
+        self, world_x: float, world_y: float
+    ) -> tuple[float, float]:
+        """Converts world coordinates to viewport/screen coordinates."""
+        # Same math as world_to_screen but accepts/returns floats
+        bounds = self.viewport.get_world_bounds(self.camera)
+        left, top = bounds.x1, bounds.y1
+        return (
+            world_x - left + self.viewport.offset_x,
+            world_y - top + self.viewport.offset_y,
+        )
 
     def screen_to_world(
         self, vp_x: ViewportTileCoord, vp_y: ViewportTileCoord
