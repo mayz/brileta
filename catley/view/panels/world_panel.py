@@ -20,7 +20,11 @@ from catley.util.coordinates import (
     RootConsoleTilePos,
 )
 from catley.view.render.effects.effects import EffectLibrary
-from catley.view.render.effects.particles import SubTileParticleSystem
+from catley.view.render.effects.environmental import EnvironmentalEffectSystem
+from catley.view.render.effects.particles import (
+    ParticleLayer,
+    SubTileParticleSystem,
+)
 from catley.view.render.effects.screen_shake import ScreenShake
 from catley.view.render.viewport import ViewportSystem
 
@@ -57,6 +61,7 @@ class WorldPanel(Panel):
         self.particle_system = SubTileParticleSystem(
             config.DEFAULT_VIEWPORT_WIDTH, config.DEFAULT_VIEWPORT_HEIGHT
         )
+        self.environmental_system = EnvironmentalEffectSystem()
         self.effect_library = EffectLibrary()
         self.current_light_intensity: np.ndarray | None = None
 
@@ -68,6 +73,7 @@ class WorldPanel(Panel):
         self.viewport_system = ViewportSystem(self.width, self.height)
         self.game_map_console = Console(self.width, self.height, order="F")
         self.particle_system = SubTileParticleSystem(self.width, self.height)
+        self.environmental_system = EnvironmentalEffectSystem()
 
     # ------------------------------------------------------------------
     # Public API
@@ -141,13 +147,40 @@ class WorldPanel(Panel):
         )
 
     def present(self, renderer: Renderer) -> None:
-        """Handle texture presentation + smooth actor rendering."""
-        # First, handle any texture-based rendering from base class
+        """Composite final frame layers in proper order."""
         super().present(renderer)
 
-        # Then add our smooth actor rendering
-        if self.visible and config.SMOOTH_ACTOR_RENDERING_ENABLED:
+        if not self.visible:
+            return
+
+        viewport_bounds = Rect.from_bounds(0, 0, self.width - 1, self.height - 1)
+        panel_offset = (self.x, self.y)
+
+        self.particle_system.render_particles(
+            renderer,
+            ParticleLayer.UNDER_ACTORS,
+            viewport_bounds,
+            panel_offset,
+        )
+
+        if config.SMOOTH_ACTOR_RENDERING_ENABLED:
             self._render_actors_smooth(renderer)
+        else:
+            self._render_actors()
+
+        self.particle_system.render_particles(
+            renderer,
+            ParticleLayer.OVER_ACTORS,
+            viewport_bounds,
+            panel_offset,
+        )
+
+        if config.ENVIRONMENTAL_EFFECTS_ENABLED:
+            self.environmental_system.render_effects(
+                renderer,
+                viewport_bounds,
+                panel_offset,
+            )
 
     # ------------------------------------------------------------------
     # Internal rendering helpers
@@ -170,7 +203,7 @@ class WorldPanel(Panel):
             self._render_mouse_cursor_highlight()
 
         self.particle_system.update(delta_time)
-        self.particle_system.render_to_console(self.game_map_console)
+        self.environmental_system.update(delta_time)
 
     def _render_map(self) -> None:
         gw = self.controller.gw

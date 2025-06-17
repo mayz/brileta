@@ -51,7 +51,8 @@ from catley import colors
 from catley.constants.view import ViewConstants as View
 from catley.game.enums import BlendMode
 
-from .particles import SubTileParticleSystem
+from .environmental import EnvironmentalEffect, EnvironmentalEffectSystem
+from .particles import ParticleLayer, SubTileParticleSystem
 
 
 @dataclass
@@ -81,6 +82,7 @@ class EffectContext:
     """
 
     particle_system: "SubTileParticleSystem"
+    environmental_system: "EnvironmentalEffectSystem"
     x: int
     y: int
     intensity: float = 1.0
@@ -162,6 +164,7 @@ class BloodSplatterEffect(Effect):
                 View.RADIAL_LIFETIME_MAX,
             ),
             colors_and_chars=blood_colors_chars,
+            layer=ParticleLayer.OVER_ACTORS,
         )
 
 
@@ -208,6 +211,7 @@ class MuzzleFlashEffect(Effect):
             ),
             colors_and_chars=flash_colors_chars,
             origin_offset_tiles=View.MUZZLE_ORIGIN_OFFSET,
+            layer=ParticleLayer.OVER_ACTORS,
         )
 
 
@@ -244,16 +248,17 @@ class ExplosionEffect(Effect):
 
         # 1. Create the initial bright flash across the explosion area
         # This represents the intense light and heat of the blast
-        context.particle_system.emit_area_flash(
-            context.x,
-            context.y,
+        flash = EnvironmentalEffect(
+            position=(context.x, context.y),
             radius=radius,
-            flash_color=(255, 255, 200),  # Bright yellow-white
-            lifetime_range=(
-                View.EXPLOSION_FLASH_LIFE_MIN,
-                View.EXPLOSION_FLASH_LIFE_MAX,
-            ),
+            effect_type="explosion_flash",
+            intensity=1.0,
+            lifetime=(View.EXPLOSION_FLASH_LIFE_MIN + View.EXPLOSION_FLASH_LIFE_MAX)
+            / 2,
+            tint_color=(255, 255, 200),
+            blend_mode=BlendMode.REPLACE,
         )
+        context.environmental_system.add_effect(flash)
 
         # 2. Create flying debris particles
         # These represent fragments, sparks, and smoke from the explosion
@@ -281,6 +286,7 @@ class ExplosionEffect(Effect):
             ),
             colors_and_chars=debris_colors_chars,
             gravity=View.EXPLOSION_DEBRIS_GRAVITY,
+            layer=ParticleLayer.OVER_ACTORS,
         )
 
 
@@ -311,7 +317,6 @@ class SmokeCloudEffect(Effect):
 
         # Calculate smoke area based on intensity
         radius = max(1, int(2 * context.intensity))
-        count = radius * 6  # More particles for larger smoke clouds
 
         # Generate a random gray color for this smoke cloud
         # Varies from medium gray to light gray
@@ -319,23 +324,16 @@ class SmokeCloudEffect(Effect):
         tint_color: colors.Color = (smoke_gray, smoke_gray, smoke_gray)
 
         # Create the background tinting smoke particles
-        context.particle_system.emit_background_tint(
-            context.x,
-            context.y,
-            count=count,
-            drift_speed=(
-                View.SMOKE_DRIFT_MIN,
-                View.SMOKE_DRIFT_MAX,
-            ),
-            lifetime_range=(
-                View.SMOKE_LIFE_MIN,
-                View.SMOKE_LIFE_MAX,
-            ),
+        effect = EnvironmentalEffect(
+            position=(context.x, context.y),
+            radius=radius,
+            effect_type="smoke",
+            intensity=1.0,
+            lifetime=(View.SMOKE_LIFE_MIN + View.SMOKE_LIFE_MAX) / 2,
             tint_color=tint_color,
-            blend_mode=BlendMode.TINT,  # Subtle blending with background
-            chars=[".", ",", " "],  # Small characters and spaces
-            upward_drift=View.SMOKE_UPWARD_DRIFT,
+            blend_mode=BlendMode.TINT,
         )
+        context.environmental_system.add_effect(effect)
 
 
 class PoisonGasEffect(Effect):
@@ -359,7 +357,6 @@ class PoisonGasEffect(Effect):
 
         # Calculate gas area based on intensity
         radius = max(1, int(2 * context.intensity))
-        count = radius * 4  # Fewer particles than smoke (denser gas)
 
         # Generate a random green color for the poison gas
         # Varies in intensity but stays green
@@ -367,23 +364,16 @@ class PoisonGasEffect(Effect):
         tint_color: colors.Color = (0, green_intensity, 0)
 
         # Create the background tinting gas particles
-        context.particle_system.emit_background_tint(
-            context.x,
-            context.y,
-            count=count,
-            drift_speed=(
-                View.POISON_DRIFT_MIN,
-                View.POISON_DRIFT_MAX,
-            ),
-            lifetime_range=(
-                View.POISON_LIFE_MIN,
-                View.POISON_LIFE_MAX,
-            ),
+        effect = EnvironmentalEffect(
+            position=(context.x, context.y),
+            radius=radius,
+            effect_type="poison",
+            intensity=1.0,
+            lifetime=(View.POISON_LIFE_MIN + View.POISON_LIFE_MAX) / 2,
             tint_color=tint_color,
-            blend_mode=BlendMode.TINT,  # Tints areas with poison color
-            chars=[".", ",", "~"],  # Includes wavy character for gas movement
-            upward_drift=View.POISON_UPWARD_DRIFT,
+            blend_mode=BlendMode.TINT,
         )
+        context.environmental_system.add_effect(effect)
 
 
 # =============================================================================
@@ -517,6 +507,7 @@ class EffectLibrary:
 
 def create_combat_effect_context(
     particle_system: "SubTileParticleSystem",
+    environmental_system: "EnvironmentalEffectSystem",
     attacker_x: int,
     attacker_y: int,
     target_x: int,
@@ -570,6 +561,7 @@ def create_combat_effect_context(
 
     return EffectContext(
         particle_system=particle_system,
+        environmental_system=environmental_system,
         x=target_x,  # Effects appear at target location
         y=target_y,
         intensity=intensity,
@@ -579,7 +571,11 @@ def create_combat_effect_context(
 
 
 def create_environmental_effect_context(
-    particle_system: "SubTileParticleSystem", x: int, y: int, intensity: float = 1.0
+    particle_system: "SubTileParticleSystem",
+    environmental_system: "EnvironmentalEffectSystem",
+    x: int,
+    y: int,
+    intensity: float = 1.0,
 ) -> EffectContext:
     """
     Create an EffectContext for environmental effects.
@@ -605,6 +601,7 @@ def create_environmental_effect_context(
     """
     return EffectContext(
         particle_system=particle_system,
+        environmental_system=environmental_system,
         x=x,
         y=y,
         intensity=intensity,

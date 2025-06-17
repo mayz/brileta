@@ -6,6 +6,7 @@ and present_frame() to control the frame pipeline."""
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from typing import cast
 
 import numpy as np
@@ -14,6 +15,7 @@ import tcod.sdl.render
 from tcod.console import Console
 
 from catley import colors
+from catley.game.enums import BlendMode
 from catley.util.coordinates import CoordinateConverter, TileDimensions
 
 
@@ -44,6 +46,10 @@ class Renderer:
 
         # Set up smooth actor rendering
         self._actor_texture_cache = {}
+        self._effect_texture_cache: OrderedDict[int, tcod.sdl.render.Texture] = (
+            OrderedDict()
+        )
+        self._effect_cache_limit = 20
         self._tileset = context.sdl_atlas.tileset if context.sdl_atlas else None
 
     def clear_console(self, console: Console) -> None:
@@ -112,6 +118,103 @@ class Renderer:
 
         # Reset for next use
         texture.color_mod = (255, 255, 255)
+
+    def draw_particle_smooth(
+        self,
+        char: str,
+        color: colors.Color,
+        screen_x: float,
+        screen_y: float,
+        alpha: float,
+    ) -> None:
+        """Draw a particle with alpha blending."""
+        if not self._tileset:
+            return
+
+        char_code = ord(char) if char else ord(" ")
+        tile_pixels = self._tileset.get_tile(char_code)
+
+        if char_code not in self._actor_texture_cache:
+            if tile_pixels.shape[2] == 3:
+                rgba_pixels = np.zeros((*tile_pixels.shape[:2], 4), dtype=np.uint8)
+                rgba_pixels[:, :, :3] = tile_pixels
+                rgba_pixels[:, :, 3] = 255
+                tile_pixels = rgba_pixels
+            texture = self.sdl_renderer.upload_texture(tile_pixels)
+            texture.blend_mode = tcod.sdl.render.BlendMode.BLEND
+            self._actor_texture_cache[char_code] = texture
+
+        texture = self._actor_texture_cache[char_code]
+        texture.color_mod = color
+        texture.alpha_mod = int(max(0.0, min(1.0, alpha)) * 255)
+
+        shape = cast(tuple[int, int, int], tile_pixels.shape)
+        texture_h = shape[0]
+        texture_w = shape[1]
+
+        tile_w, tile_h = self.tile_dimensions
+        scale = min(tile_w / texture_w, tile_h / texture_h)
+        scaled_w = int(texture_w * scale)
+        scaled_h = int(texture_h * scale)
+
+        dest_rect = (int(screen_x), int(screen_y), scaled_w, scaled_h)
+        self.sdl_renderer.copy(texture, dest=dest_rect)
+
+        texture.color_mod = (255, 255, 255)
+        texture.alpha_mod = 255
+
+    def apply_environmental_effect(
+        self,
+        position: tuple[float, float],
+        radius: float,
+        tint_color: colors.Color,
+        intensity: float,
+        blend_mode: BlendMode,
+    ) -> None:
+        """Apply a circular environmental effect using cached textures."""
+        if radius <= 0 or intensity <= 0:
+            return
+
+        px_radius = max(1, int(radius * self.tile_dimensions[0]))
+
+        texture = self._effect_texture_cache.get(px_radius)
+        if texture is None:
+            size = px_radius * 2 + 1
+            y, x = np.ogrid[-px_radius : px_radius + 1, -px_radius : px_radius + 1]
+            dist = np.sqrt(x * x + y * y)
+            alpha = np.clip(1.0 - dist / px_radius, 0.0, 1.0)
+            arr = np.zeros((size, size, 4), dtype=np.uint8)
+            arr[..., :3] = 255
+            arr[..., 3] = (alpha * 255).astype(np.uint8)
+
+            texture = self.sdl_renderer.upload_texture(arr)
+            texture.blend_mode = tcod.sdl.render.BlendMode.BLEND
+            self._effect_texture_cache[px_radius] = texture
+
+            if len(self._effect_texture_cache) > self._effect_cache_limit:
+                old_radius, old_texture = self._effect_texture_cache.popitem(last=False)
+                if hasattr(old_texture, "destroy"):
+                    old_texture.destroy()  # pyright: ignore[reportAttributeAccessIssue]
+
+        texture.color_mod = (
+            int(tint_color[0] * intensity),
+            int(tint_color[1] * intensity),
+            int(tint_color[2] * intensity),
+        )
+        texture.alpha_mod = int(255 * intensity)
+
+        if blend_mode is BlendMode.TINT:
+            texture.blend_mode = tcod.sdl.render.BlendMode.MOD
+        else:
+            texture.blend_mode = tcod.sdl.render.BlendMode.BLEND
+
+        screen_x, screen_y = self.console_to_screen_coords(*position)
+        size = px_radius * 2 + 1
+        dest = (int(screen_x - px_radius), int(screen_y - px_radius), size, size)
+        self.sdl_renderer.copy(texture, dest=dest)
+
+        texture.color_mod = (255, 255, 255)
+        texture.alpha_mod = 255
 
     def draw_text(
         self, x: int, y: int, text: str, fg: colors.Color = colors.WHITE

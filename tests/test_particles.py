@@ -1,9 +1,13 @@
 import math
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from catley.view.render.effects.particles import SubTileParticleSystem
+from catley.util.coordinates import Rect
+from catley.view.render.effects.particles import (
+    ParticleLayer,
+    SubTileParticleSystem,
+)
 
 
 class FixedUniform:
@@ -271,3 +275,53 @@ def test_emit_radial_burst_origin_is_centered(
     assert ps.active_count == 1
     assert ps.positions[0, 0] == pytest.approx(expected_sub_x)
     assert ps.positions[0, 1] == pytest.approx(expected_sub_y)
+
+
+def test_particle_layer_assignment() -> None:
+    ps = SubTileParticleSystem(3, 3, subdivision=1)
+    ps.add_particle(0, 0, 0.0, 0.0, lifetime=1.0, layer=ParticleLayer.UNDER_ACTORS)
+    ps.add_particle(0, 0, 0.0, 0.0, lifetime=1.0)
+    assert ps.layers[0] == ParticleLayer.UNDER_ACTORS.value
+    assert ps.layers[1] == ParticleLayer.OVER_ACTORS.value
+
+
+def test_render_particles_filters_by_layer() -> None:
+    ps = SubTileParticleSystem(2, 2, subdivision=1)
+    with patch("random.uniform", return_value=0.0):
+        ps.add_particle(
+            0, 0, 0.0, 0.0, lifetime=1.0, char="a", layer=ParticleLayer.UNDER_ACTORS
+        )
+        ps.add_particle(
+            1, 0, 0.0, 0.0, lifetime=1.0, char="b", layer=ParticleLayer.OVER_ACTORS
+        )
+
+    renderer = MagicMock()
+    renderer.console_to_screen_coords.return_value = (5.0, 5.0)
+
+    viewport = Rect.from_bounds(0, 0, 2, 2)
+    ps.render_particles(renderer, ParticleLayer.OVER_ACTORS, viewport, (0, 0))
+
+    renderer.draw_particle_smooth.assert_called_once()
+    called_char = renderer.draw_particle_smooth.call_args[0][0]
+    assert called_char == "b"
+
+
+def test_convert_particle_to_screen_coords() -> None:
+    ps = SubTileParticleSystem(3, 3, subdivision=1)
+    with patch("random.uniform", return_value=0.0):
+        ps.add_particle(1, 1, 0.0, 0.0, lifetime=1.0, char="c")
+    renderer = MagicMock()
+    renderer.console_to_screen_coords.return_value = (10.0, 20.0)
+
+    viewport = Rect.from_bounds(0, 0, 2, 2)
+    result = ps._convert_particle_to_screen_coords(0, viewport, (2, 3), renderer)
+    x_arg, y_arg = renderer.console_to_screen_coords.call_args[0]
+    assert pytest.approx(3.5, rel=1e-2) == x_arg
+    assert pytest.approx(4.5, rel=1e-2) == y_arg
+    assert result == (10.0, 20.0)
+
+    # Off-screen should return None
+    off_viewport = Rect.from_bounds(2, 2, 3, 3)
+    assert (
+        ps._convert_particle_to_screen_coords(0, off_viewport, (0, 0), renderer) is None
+    )
