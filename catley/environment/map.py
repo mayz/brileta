@@ -6,8 +6,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from catley.environment import tile_types
-from catley.game.actors.core import TileCoord
-from catley.util.coordinates import Rect
+from catley.util.coordinates import Rect, TileCoord, WorldTileCoord
 
 if TYPE_CHECKING:
     from catley.game.game_world import GameWorld
@@ -165,7 +164,7 @@ class GameMap:
         v_slice = slice(min(y1, y2), max(y1, y2) + 1)
         self.tiles[x, v_slice] = tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[unresolved-attribute]
 
-    def _place_door(self, x: int, y: int) -> None:
+    def _place_door(self, x: WorldTileCoord, y: WorldTileCoord) -> None:
         if (
             0 <= x < self.width
             and 0 <= y < self.height
