@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 
+from catley import config
 from catley.controller import Controller
 from catley.util.spatial import SpatialHashGrid
 from catley.view.render.effects.screen_shake import ScreenShake
@@ -191,7 +192,11 @@ def test_small_map_actor_alignment(monkeypatch) -> None:
 
     vs = panel.viewport_system
     px, py = vs.world_to_screen(controller.gw.player.x, controller.gw.player.y)
-    assert panel.game_map_console.rgb["ch"][px, py] == ord("@")
+    # With smooth rendering enabled, actors are drawn via SDL, not console
+    if config.SMOOTH_ACTOR_RENDERING_ENABLED:
+        assert panel.game_map_console.rgb["ch"][px, py] == 0  # No character in console
+    else:
+        assert panel.game_map_console.rgb["ch"][px, py] == ord("@")
     assert (px, py) == (
         vs.offset_x + controller.gw.player.x,
         vs.offset_y + controller.gw.player.y,
