@@ -257,6 +257,7 @@ class FrameManager:
         vp_x, vp_y = vs.world_to_screen(x, y)
         context = EffectContext(
             particle_system=self.world_panel.particle_system,
+            environmental_system=self.world_panel.environmental_system,
             x=vp_x,
             y=vp_y,
             intensity=intensity,

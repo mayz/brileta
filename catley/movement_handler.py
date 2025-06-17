@@ -11,6 +11,7 @@ from catley.game.actions.movement import MoveIntent
 if TYPE_CHECKING:
     from catley.controller import Controller
 
+
 class MovementInputHandler:
     """Handles smooth movement input with key repeat timing for turn-based gameplay.
 
@@ -46,6 +47,7 @@ class MovementInputHandler:
     The separation allows movement to have special timing logic while keeping
     other game actions (combat, menus, etc.) as immediate single-press responses.
     """
+
     def __init__(self, controller: Controller) -> None:
         self.controller = controller
         self.next_move_time: float = 0.0

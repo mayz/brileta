@@ -38,6 +38,8 @@ HELP_HEIGHT = 1  # Lines reserved for help text at top
 
 # Use "smooth" rendering for actors (sub-tile render coordinates).
 SMOOTH_ACTOR_RENDERING_ENABLED = True
+# Toggle environmental overlay effects
+ENVIRONMENTAL_EFFECTS_ENABLED = True
 
 # Rendering effects
 PULSATION_PERIOD = 2.0  # Seconds for full pulsation cycle (selected actor)

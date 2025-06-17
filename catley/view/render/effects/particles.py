@@ -1,12 +1,25 @@
 import math
 import random
+from enum import Enum
+from typing import TYPE_CHECKING
 
 import numpy as np
-import tcod.console
 
 from catley import colors
 from catley.constants.view import ViewConstants as View
 from catley.game.enums import AreaType, BlendMode, ConsumableEffectType  # noqa: F401
+from catley.util.coordinates import Rect
+
+if TYPE_CHECKING:
+    from catley.view.render.renderer import Renderer
+
+
+class ParticleLayer(Enum):
+    """Render layer for particles."""
+
+    UNDER_ACTORS = 0
+    OVER_ACTORS = 1
+
 
 # Usage example:
 # particle_system = SubTileParticleSystem(map_width, map_height)
@@ -25,7 +38,12 @@ from catley.game.enums import AreaType, BlendMode, ConsumableEffectType  # noqa:
 #
 # # In render loop:
 # particle_system.update(delta_time)
-# particle_system.render_to_console(self.game_map_console)
+# particle_system.render_particles(
+#     renderer,
+#     ParticleLayer.OVER_ACTORS,
+#     viewport_bounds,
+#     (0, 0),
+# )
 
 
 class SubTileParticleSystem:
@@ -76,6 +94,9 @@ class SubTileParticleSystem:
         self.gravity = np.zeros(max_particles, dtype=np.float32)
         # NaN sentinel means no explicit flash intensity supplied.
         self.flash_intensity = np.full(max_particles, np.nan, dtype=np.float32)
+        self.layers = np.full(
+            max_particles, ParticleLayer.UNDER_ACTORS.value, dtype=np.int8
+        )
 
     def add_particle(
         self,
@@ -88,6 +109,7 @@ class SubTileParticleSystem:
         color: colors.Color = (255, 0, 0),
         bg_color: colors.Color | None = None,
         bg_blend_mode: BlendMode = BlendMode.TINT,
+        layer: ParticleLayer = ParticleLayer.OVER_ACTORS,
     ) -> None:
         """
         Add a single particle to the system.
@@ -144,6 +166,7 @@ class SubTileParticleSystem:
             self.has_bg_color[index] = False
         self.gravity[index] = 0.0
         self.flash_intensity[index] = np.nan
+        self.layers[index] = layer.value
 
         self.active_count += 1
 
@@ -170,6 +193,7 @@ class SubTileParticleSystem:
         gravity: float = 0.0,
         bg_color: colors.Color | None = None,
         bg_blend_mode: BlendMode = BlendMode.TINT,
+        layer: ParticleLayer = ParticleLayer.OVER_ACTORS,
     ) -> None:
         """
         Emit particles in all directions from a central point.
@@ -234,6 +258,7 @@ class SubTileParticleSystem:
                 self.has_bg_color[idx] = False
             self.gravity[idx] = gravity * self.subdivision
             self.flash_intensity[idx] = np.nan
+            self.layers[idx] = layer.value
 
             self.active_count += 1
 
@@ -250,6 +275,7 @@ class SubTileParticleSystem:
         colors_and_chars: list[tuple[colors.Color, str]] | None = None,
         gravity: float = 0.0,
         origin_offset_tiles: float = 0.0,
+        layer: ParticleLayer = ParticleLayer.OVER_ACTORS,
     ) -> None:
         """
         Emit particles in a cone shape in a specific direction.
@@ -334,6 +360,7 @@ class SubTileParticleSystem:
             self.has_bg_color[idx] = False
             self.gravity[idx] = gravity * self.subdivision
             self.flash_intensity[idx] = np.nan
+            self.layers[idx] = layer.value
             self.active_count += 1
 
     def emit_area_flash(
@@ -344,6 +371,7 @@ class SubTileParticleSystem:
         flash_color: colors.Color = (255, 255, 200),
         lifetime_range: tuple[float, float] = (0.1, 0.2),
         intensity_falloff: bool = True,
+        layer: ParticleLayer = ParticleLayer.OVER_ACTORS,
     ) -> None:
         """
         Create a bright background flash effect over a circular area.
@@ -394,6 +422,7 @@ class SubTileParticleSystem:
                     self.bg_blend_mode[idx] = BlendMode.REPLACE.value
                     self.gravity[idx] = 0.0
                     self.flash_intensity[idx] = flash_intensity
+                    self.layers[idx] = layer.value
                     self.active_count += 1
 
     def emit_background_tint(
@@ -413,6 +442,7 @@ class SubTileParticleSystem:
         blend_mode: BlendMode = BlendMode.TINT,
         chars: list[str] | None = None,
         upward_drift: float = View.SMOKE_UPWARD_DRIFT,
+        layer: ParticleLayer = ParticleLayer.OVER_ACTORS,
     ) -> None:
         """
         Create particles that primarily affect background color (smoke, gas, etc.).
@@ -480,6 +510,7 @@ class SubTileParticleSystem:
                 varied_tint,
                 bg_tint,
                 blend_mode,
+                layer,
             )
 
     # =============================================================================
@@ -535,158 +566,64 @@ class SubTileParticleSystem:
                     self.bg_blend_mode[write_idx] = self.bg_blend_mode[read_idx]
                     self.gravity[write_idx] = self.gravity[read_idx]
                     self.flash_intensity[write_idx] = self.flash_intensity[read_idx]
+                    self.layers[write_idx] = self.layers[read_idx]
                 write_idx += 1
 
         self.active_count = write_idx
 
-    def render_to_console(self, console: tcod.console.Console) -> None:
-        """
-        Render particles to the console using sub-tile blending.
+    def _convert_particle_to_screen_coords(
+        self,
+        particle_index: int,
+        viewport_bounds: Rect,
+        panel_offset: tuple[int, int],
+        renderer: "Renderer",
+    ) -> tuple[float, float] | None:
+        """Convert particle index to screen coordinates, or None if off-screen."""
+        if not (0 <= particle_index < self.active_count):
+            return None
 
-        This method handles the complex process of converting sub-tile particle
-        positions into tile-based console effects. Multiple particles in the same
-        tile are blended together for the final visual result.
+        sub_x, sub_y = self.positions[particle_index]
+        vp_x = sub_x / self.subdivision
+        vp_y = sub_y / self.subdivision
 
-        The rendering process:
-        1. Accumulate all particle effects per tile
-        2. Blend multiple particles in the same tile
-        3. Apply background effects first, then foreground effects
-        4. Choose the most intense particle for character display
+        if (
+            vp_x < viewport_bounds.x1
+            or vp_x > viewport_bounds.x2
+            or vp_y < viewport_bounds.y1
+            or vp_y > viewport_bounds.y2
+        ):
+            return None
 
-        Args:
-            console: TCOD console to render particles onto
-        """
-        # Create arrays to track particle effects per tile
-        particle_intensity = np.zeros((self.map_width, self.map_height))
-        particle_chars = {}  # tile_pos -> list[(char, intensity, color)]
-        particle_bg_effects = {}  # tile_pos -> list[(bg_color, intensity, blend_mode)]
+        root_x = panel_offset[0] + vp_x
+        root_y = panel_offset[1] + vp_y
+        return renderer.console_to_screen_coords(root_x, root_y)
 
-        for i in range(self.active_count):
-            sub_x, sub_y = self.positions[i]
-            tile_x = int(sub_x // self.subdivision)
-            tile_y = int(sub_y // self.subdivision)
-
-            if 0 <= tile_x < self.map_width and 0 <= tile_y < self.map_height:
-                if not np.isnan(self.flash_intensity[i]):
-                    intensity = self.flash_intensity[i]
-                else:
-                    intensity = self.lifetimes[i] / self.max_lifetimes[i]
-
-                particle_intensity[tile_x, tile_y] += intensity
-
-                tile_pos = (tile_x, tile_y)
-                if tile_pos not in particle_chars:
-                    particle_chars[tile_pos] = []
-
-                if self.chars[i]:
-                    particle_chars[tile_pos].append(
-                        (self.chars[i], intensity, tuple(self.colors[i]))
-                    )
-
-                if self.has_bg_color[i]:
-                    if tile_pos not in particle_bg_effects:
-                        particle_bg_effects[tile_pos] = []
-                    blend_mode = BlendMode(self.bg_blend_mode[i])
-                    particle_bg_effects[tile_pos].append(
-                        (tuple(self.bg_colors[i]), intensity, blend_mode)
-                    )
-
-        # Render accumulated effects to console
-        for x in range(self.map_width):
-            for y in range(self.map_height):
-                # Apply background effects first (smoke, flashes, etc.)
-                if (x, y) in particle_bg_effects:
-                    self._apply_background_effects(
-                        console, x, y, particle_bg_effects[(x, y)]
-                    )
-
-                # Then apply foreground effects (characters and colors)
-                total_intensity = particle_intensity[x, y]
-                if total_intensity > 0 and (x, y) in particle_chars:
-                    # Choose the most intense particle for this tile's character
-                    char_data = particle_chars[(x, y)]
-
-                    # Skip if no particles with actual characters
-                    # (e.g., explosion flash only)
-                    if not char_data:
-                        continue
-
-                    # Sort by intensity to find the most prominent particle
-                    char_data.sort(
-                        key=lambda x: x[1], reverse=True
-                    )  # Sort by intensity
-
-                    best_char, best_intensity, best_color = char_data[0]
-
-                    # Scale intensity (multiple particles can make it brighter)
-                    # Cap at 1.0 to prevent over-brightening
-                    display_intensity = min(total_intensity, 1.0)
-
-                    # Blend color based on intensity
-                    final_color = tuple(int(c * display_intensity) for c in best_color)
-
-                    # Don't overwrite important map elements, blend instead
-                    current_char = chr(console.rgb["ch"][x, y])
-                    if current_char == " ":  # Empty space, can overwrite safely
-                        console.rgb["ch"][x, y] = ord(best_char)
-                        console.rgb["fg"][x, y] = final_color
-                    else:  # Blend with existing content
-                        # Just modify the foreground color for blend effect
-                        # This preserves map content while showing particle influence
-                        current_fg = console.rgb["fg"][x, y]
-                        blended_fg = tuple(
-                            min(255, int(current_fg[i] + final_color[i] * 0.3))
-                            for i in range(3)
-                        )
-                        console.rgb["fg"][x, y] = blended_fg
-
-    def _apply_background_effects(
-        self, console: tcod.console.Console, x: int, y: int, bg_effects
+    def render_particles(
+        self,
+        renderer: "Renderer",
+        layer: ParticleLayer,
+        viewport_bounds: Rect,
+        panel_offset: tuple[int, int],
     ) -> None:
-        """
-        Apply background color effects to a single tile.
+        for i in range(self.active_count):
+            if self.layers[i] != layer.value:
+                continue
+            coords = self._convert_particle_to_screen_coords(
+                i, viewport_bounds, panel_offset, renderer
+            )
+            if coords is None:
+                continue
+            screen_x, screen_y = coords
 
-        This method handles the different background blending modes:
-        - "tint": Subtle additive blending with existing background
-        - "overlay": Stronger blending that replaces more of the original
-        - "replace": Complete replacement of background color
+            if not np.isnan(self.flash_intensity[i]):
+                alpha = self.flash_intensity[i]
+            else:
+                alpha = self.lifetimes[i] / self.max_lifetimes[i]
 
-        Multiple background effects on the same tile are applied sequentially.
-
-        Args:
-            console: TCOD console to modify
-            x: Tile X coordinate
-            y: Tile Y coordinate
-            bg_effects: List of (bg_color, intensity, blend_mode) tuples
-        """
-        current_bg = console.rgb["bg"][x, y]
-
-        # Apply each background effect in sequence
-        for bg_color, intensity, blend_mode in bg_effects:
-            if blend_mode == BlendMode.TINT:
-                # Subtle blend with existing background
-                # Adds some of the effect color to the existing color
-                blended_bg = tuple(
-                    min(255, int(current_bg[i] + bg_color[i] * intensity * 0.4))
-                    for i in range(3)
-                )
-                console.rgb["bg"][x, y] = blended_bg
-
-            elif blend_mode == BlendMode.OVERLAY:
-                # Stronger overlay effect
-                # Blends between original and effect color based on intensity
-                blend_factor = intensity * 0.6
-                blended_bg = tuple(
-                    int(current_bg[i] * (1 - blend_factor) + bg_color[i] * blend_factor)
-                    for i in range(3)
-                )
-                console.rgb["bg"][x, y] = blended_bg
-
-            elif blend_mode == BlendMode.REPLACE:
-                # Full replacement (for bright flashes)
-                # Completely replaces background with effect color
-                console.rgb["bg"][x, y] = tuple(int(c * intensity) for c in bg_color)
-
-            # Update current_bg for next effect in the list
-            # This allows multiple effects to compound properly
-            current_bg = console.rgb["bg"][x, y]
+            renderer.draw_particle_smooth(
+                self.chars[i],
+                tuple(self.colors[i]),
+                screen_x,
+                screen_y,
+                alpha,
+            )
