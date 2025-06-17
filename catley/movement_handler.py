@@ -48,7 +48,7 @@ class MovementInputHandler:
             self.is_first_move_of_burst = True
             return None
 
-        current_time = time.time()
+        current_time = time.perf_counter()
 
         if self.is_first_move_of_burst:
             self.is_first_move_of_burst = False
