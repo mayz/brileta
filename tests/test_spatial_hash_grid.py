@@ -90,7 +90,7 @@ def test_update_object_within_same_cell() -> None:
     obj1 = MutablePointy(2, 2, "obj1")
     grid.add(obj1)
     cell = grid._hash(2, 2)
-    assert grid.grid[cell] == {obj1}
+    assert grid.grid[cell] == {id(obj1): obj1}
 
     obj1.x = 3
     obj1.y = 3
@@ -98,7 +98,7 @@ def test_update_object_within_same_cell() -> None:
 
     assert not grid.get_at_point(2, 2)
     assert grid.get_at_point(3, 3) == [obj1]
-    assert grid.grid[cell] == {obj1}  # Should still be in the same cell
+    assert grid.grid[cell] == {id(obj1): obj1}  # Should still be in the same cell
 
 
 def test_update_object_across_cells() -> None:
@@ -114,7 +114,7 @@ def test_update_object_across_cells() -> None:
     grid.update(obj1)
 
     assert old_cell not in grid.grid  # Old cell should be gone
-    assert grid.grid[new_cell] == {obj1}
+    assert grid.grid[new_cell] == {id(obj1): obj1}
     assert not grid.get_at_point(5, 5)
     assert grid.get_at_point(15, 15) == [obj1]
 

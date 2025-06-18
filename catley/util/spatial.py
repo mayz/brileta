@@ -83,8 +83,14 @@ class SpatialHashGrid(SpatialIndex[T]):
         if cell_size <= 0:
             raise ValueError("Cell size must be a positive integer.")
         self.cell_size = cell_size
-        self.grid: dict[Coord, set[T]] = defaultdict(set)
-        self._obj_to_cell: dict[T, Coord] = {}
+        # Store objects in each cell keyed by their ``id`` to avoid issues with
+        # user-defined ``__hash__`` implementations on the objects themselves.
+        # ``_obj_to_cell`` maps an object's ``id`` back to its current cell and
+        # ``_id_to_obj`` lets us recover the object from the identifier when
+        # returning query results.
+        self.grid: dict[Coord, dict[int, T]] = defaultdict(dict)
+        self._obj_to_cell: dict[int, Coord] = {}
+        self._id_to_obj: dict[int, T] = {}
 
     def _hash(self, x: int, y: int) -> Coord:
         """Converts world coordinates to grid cell coordinates."""
@@ -93,37 +99,40 @@ class SpatialHashGrid(SpatialIndex[T]):
     def add(self, obj: T) -> None:
         """Add an object to the grid."""
         cell_xy = self._hash(obj.x, obj.y)
-        self.grid[cell_xy].add(obj)
-        self._obj_to_cell[obj] = cell_xy
+        obj_id = id(obj)
+        self.grid[cell_xy][obj_id] = obj
+        self._obj_to_cell[obj_id] = cell_xy
+        self._id_to_obj[obj_id] = obj
 
     def remove(self, obj: T) -> None:
         """Remove an object from the grid."""
-        cell_xy = self._obj_to_cell.get(obj)
+        obj_id = id(obj)
+        cell_xy = self._obj_to_cell.get(obj_id)
         if cell_xy is None:
             return  # Object not in the grid.
 
-        try:
-            self.grid[cell_xy].remove(obj)
-            # If the cell is now empty, remove it from the grid to save memory.
-            if not self.grid[cell_xy]:
+        cell = self.grid.get(cell_xy)
+        if cell is not None:
+            # ``pop`` with a default avoids ValueError and keeps the structures
+            # consistent even if the object was missing from the cell set.
+            cell.pop(obj_id, None)
+            if not cell:
                 del self.grid[cell_xy]
-        except ValueError:
-            # Object was not in the list, which is fine. It might have been
-            # removed already or state is out of sync.
-            pass
 
-        if obj in self._obj_to_cell:
-            del self._obj_to_cell[obj]
+        self._obj_to_cell.pop(obj_id, None)
+        self._id_to_obj.pop(obj_id, None)
 
     def update(self, obj: T) -> None:
         """Update an object's position after it has moved."""
-        old_cell_xy = self._obj_to_cell.get(obj)
+        obj_id = id(obj)
+        old_cell_xy = self._obj_to_cell.get(obj_id)
         new_cell_xy = self._hash(obj.x, obj.y)
 
         if old_cell_xy is None:
             # Object wasn't tracked; treat as a fresh add
-            self.grid[new_cell_xy].add(obj)
-            self._obj_to_cell[obj] = new_cell_xy
+            self.grid[new_cell_xy][obj_id] = obj
+            self._obj_to_cell[obj_id] = new_cell_xy
+            self._id_to_obj[obj_id] = obj
             return
 
         if old_cell_xy == new_cell_xy:
@@ -131,22 +140,20 @@ class SpatialHashGrid(SpatialIndex[T]):
 
         cell = self.grid.get(old_cell_xy)
         if cell is not None:
-            try:
-                cell.remove(obj)
-                if not cell:
-                    del self.grid[old_cell_xy]
-            except ValueError:
-                pass
+            cell.pop(obj_id, None)
+            if not cell:
+                del self.grid[old_cell_xy]
 
-        self.grid[new_cell_xy].add(obj)
-        self._obj_to_cell[obj] = new_cell_xy
+        self.grid[new_cell_xy][obj_id] = obj
+        self._obj_to_cell[obj_id] = new_cell_xy
+        self._id_to_obj[obj_id] = obj
 
     def get_at_point(self, x: int, y: int) -> list[T]:
         """Get all objects at a specific tile (x, y)."""
         cell_xy = self._hash(x, y)
-        cell_contents = self.grid.get(cell_xy, [])
-        # A cell contains a region; we must filter for the exact coordinates.
-        return [obj for obj in cell_contents if obj.x == x and obj.y == y]
+        cell_contents = self.grid.get(cell_xy, {})
+        # Filter by exact coordinates because a cell covers a larger region.
+        return [obj for obj in cell_contents.values() if obj.x == x and obj.y == y]
 
     def get_in_bounds(self, x1: int, y1: int, x2: int, y2: int) -> list[T]:
         """Get all objects within a rectangular bounding box."""
@@ -187,7 +194,7 @@ class SpatialHashGrid(SpatialIndex[T]):
             obj
             for cx in range(cx1, cx2 + 1)
             for cy in range(cy1, cy2 + 1)
-            for obj in self.grid.get((cx, cy), [])
+            for obj in self.grid.get((cx, cy), {}).values()
             if x1 <= obj.x <= x2 and y1 <= obj.y <= y2
         ]
 
@@ -195,3 +202,4 @@ class SpatialHashGrid(SpatialIndex[T]):
         """Remove all objects from the index."""
         self.grid.clear()
         self._obj_to_cell.clear()
+        self._id_to_obj.clear()
