@@ -550,26 +550,33 @@ class SubTileParticleSystem:
         )
         alive_mask = (self.lifetimes[active] > 0) & in_bounds_x & in_bounds_y
 
-        # Compact arrays in a single pass
-        write_idx = 0
-        for read_idx in range(self.active_count):
-            if alive_mask[read_idx]:
-                if write_idx != read_idx:
-                    self.positions[write_idx] = self.positions[read_idx]
-                    self.velocities[write_idx] = self.velocities[read_idx]
-                    self.lifetimes[write_idx] = self.lifetimes[read_idx]
-                    self.max_lifetimes[write_idx] = self.max_lifetimes[read_idx]
-                    self.colors[write_idx] = self.colors[read_idx]
-                    self.chars[write_idx] = self.chars[read_idx]
-                    self.bg_colors[write_idx] = self.bg_colors[read_idx]
-                    self.has_bg_color[write_idx] = self.has_bg_color[read_idx]
-                    self.bg_blend_mode[write_idx] = self.bg_blend_mode[read_idx]
-                    self.gravity[write_idx] = self.gravity[read_idx]
-                    self.flash_intensity[write_idx] = self.flash_intensity[read_idx]
-                    self.layers[write_idx] = self.layers[read_idx]
-                write_idx += 1
+        if alive_mask.all():
+            # All particles are still alive
+            return
 
-        self.active_count = write_idx
+        # Count alive particles for new active_count
+        new_active_count = int(np.sum(alive_mask))
+        if new_active_count == 0:
+            self.active_count = 0
+            return
+
+        # Use boolean indexing to compact all arrays in vectorized operations
+        self.positions[:new_active_count] = self.positions[active][alive_mask]
+        self.velocities[:new_active_count] = self.velocities[active][alive_mask]
+        self.lifetimes[:new_active_count] = self.lifetimes[active][alive_mask]
+        self.max_lifetimes[:new_active_count] = self.max_lifetimes[active][alive_mask]
+        self.colors[:new_active_count] = self.colors[active][alive_mask]
+        self.chars[:new_active_count] = self.chars[active][alive_mask]
+        self.bg_colors[:new_active_count] = self.bg_colors[active][alive_mask]
+        self.has_bg_color[:new_active_count] = self.has_bg_color[active][alive_mask]
+        self.bg_blend_mode[:new_active_count] = self.bg_blend_mode[active][alive_mask]
+        self.gravity[:new_active_count] = self.gravity[active][alive_mask]
+        self.flash_intensity[:new_active_count] = self.flash_intensity[active][
+            alive_mask
+        ]
+        self.layers[:new_active_count] = self.layers[active][alive_mask]
+
+        self.active_count = new_active_count
 
     def _convert_particle_to_screen_coords(
         self,
