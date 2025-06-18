@@ -397,7 +397,9 @@ class InventoryComponent:
 
     def get_active_weapon(self) -> Item | None:
         """Get the currently active weapon."""
-        return self.attack_slots[self.active_weapon_slot]
+        if 0 <= self.active_weapon_slot < len(self.attack_slots):
+            return self.attack_slots[self.active_weapon_slot]
+        return None
 
     @property
     def num_attack_slots(self) -> int:
