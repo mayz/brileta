@@ -71,4 +71,15 @@ class MoveExecutor(ActionExecutor):
 
         # Success! Actually move the actor
         intent.actor.move(intent.dx, intent.dy)
+
+        if (
+            isinstance(intent.actor, Character)
+            and (goal := intent.actor.pathfinding_goal)
+            and (intent.actor.x, intent.actor.y) == goal.target_pos
+        ):
+            final_intent = goal.final_intent
+            intent.controller.stop_actor_pathfinding(intent.actor)
+            if final_intent is not None:
+                intent.controller.queue_action(final_intent)
+
         return GameActionResult(succeeded=True, should_update_fov=True)

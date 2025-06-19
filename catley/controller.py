@@ -13,17 +13,22 @@ from catley.util.coordinates import TileDimensions
 if TYPE_CHECKING:
     from catley.game.actions.discovery import CombatIntentCache
 
-from . import config
+from . import colors, config
+from .events import MessageEvent, publish_event
 from .game.actions.base import GameIntent
 from .game.actions.movement import MoveIntent  # noqa: F401
+from .game.actors.core import Character
 from .game.game_world import GameWorld
+from .game.pathfinding_goal import PathfindingGoal
 from .game.turn_manager import TurnManager
 from .input_handler import InputHandler
 from .modes.base import Mode
 from .modes.targeting import TargetingMode
 from .movement_handler import MovementInputHandler
 from .util.clock import Clock
+from .util.coordinates import WorldTilePos
 from .util.message_log import MessageLog
+from .util.pathfinding import find_path
 from .view.frame_manager import FrameManager
 from .view.render.renderer import Renderer
 from .view.ui.overlays import OverlaySystem
@@ -183,3 +188,43 @@ class Controller:
         from catley.game.resolution.d20_system import D20System
 
         return D20System(**kwargs)  # type: ignore[call-arg]
+
+    def start_actor_pathfinding(
+        self,
+        actor: Character,
+        target_pos: WorldTilePos,
+        final_intent: GameIntent | None = None,
+    ) -> bool:
+        """Calculate a path and assign a PathfindingGoal to ``actor``.
+
+        Returns ``True`` if a path to ``target_pos`` was found and the goal was
+        assigned. Returns ``False`` if no path exists. Any existing goal is
+        cleared on failure and the player receives feedback when applicable.
+        """
+
+        path = find_path(
+            self.gw.game_map,
+            self.gw.actor_spatial_index,
+            actor,
+            (actor.x, actor.y),
+            target_pos,
+        )
+
+        if path:
+            goal = PathfindingGoal(
+                target_pos=target_pos,
+                final_intent=final_intent,
+                _cached_path=path,
+            )
+            actor.pathfinding_goal = goal
+            return True
+
+        self.stop_actor_pathfinding(actor)
+        if actor is self.gw.player:
+            publish_event(MessageEvent("Path is blocked.", colors.YELLOW))
+        return False
+
+    def stop_actor_pathfinding(self, actor: Character) -> None:
+        """Immediately cancel ``actor``'s active pathfinding goal."""
+
+        actor.pathfinding_goal = None
