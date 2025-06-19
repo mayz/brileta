@@ -36,6 +36,7 @@ from catley.config import DEFAULT_ACTOR_SPEED
 from catley.game.actors import conditions
 from catley.game.enums import Disposition, InjuryLocation
 from catley.game.items.item_core import Item
+from catley.game.pathfinding_goal import PathfindingGoal
 from catley.util.coordinates import TileCoord, WorldTileCoord
 from catley.view.render.effects.lighting import LightSource
 
@@ -336,6 +337,8 @@ class Character(Actor):
             speed=speed,
             **kwargs,
         )
+
+        self.pathfinding_goal: PathfindingGoal | None = None
 
         # Type narrowing - these are guaranteed to exist.
         self.stats: StatsComponent
