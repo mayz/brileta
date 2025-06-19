@@ -1,5 +1,9 @@
 import os
-from typing import cast
+
+os.environ["SDL_VIDEODRIVER"] = "dummy"
+os.environ["SDL_RENDER_DRIVER"] = "software"
+
+from typing import Any, cast
 from unittest.mock import MagicMock
 
 import tcod.sdl.render
@@ -12,12 +16,42 @@ from catley.view.render.renderer import Renderer
 from catley.view.render.text_backend import PillowTextBackend
 
 
-def test_message_log_panel_ttf_rendering_visible() -> None:
-    os.environ["SDL_VIDEODRIVER"] = "dummy"
-    os.environ["SDL_RENDER_DRIVER"] = "software"
+class DummyTexture:
+    def __init__(self) -> None:
+        self.blend_mode = None
+
+
+class DummyRenderer:
+    def clear(self) -> None:
+        pass
+
+    def copy(self, *args, **kwargs) -> None:
+        pass
+
+    def present(self) -> None:
+        pass
+
+    def read_pixels(self, format: str = "RGBA"):
+        import numpy as np
+
+        return np.ones((10, 10, 4), dtype=np.uint8)
+
+    def upload_texture(self, pixels) -> DummyTexture:
+        return DummyTexture()
+
+
+def test_message_log_panel_ttf_rendering_visible(monkeypatch: Any) -> None:
+    monkeypatch.setattr(tcod.sdl.video, "new_window", lambda *a, **kw: object())
+    monkeypatch.setattr(
+        tcod.sdl.render, "new_renderer", lambda *a, **kw: DummyRenderer()
+    )
 
     window = tcod.sdl.video.new_window(160, 80)
-    renderer = tcod.sdl.render.new_renderer(window, software=True, target_textures=True)
+    renderer = tcod.sdl.render.new_renderer(
+        window,
+        software=True,  # pyright: ignore[reportCallIssue]
+        target_textures=True,  # pyright: ignore[reportCallIssue]
+    )
 
     log = MessageLog()
     log.add_message("Hello", fg=colors.WHITE)
@@ -39,12 +73,18 @@ def test_message_log_panel_ttf_rendering_visible() -> None:
     assert pixels.max() > 0, "Expected rendered texture to have non-black pixels"
 
 
-def test_message_log_panel_font_scales_on_resize() -> None:
-    os.environ["SDL_VIDEODRIVER"] = "dummy"
-    os.environ["SDL_RENDER_DRIVER"] = "software"
+def test_message_log_panel_font_scales_on_resize(monkeypatch: Any) -> None:
+    monkeypatch.setattr(tcod.sdl.video, "new_window", lambda *a, **kw: object())
+    monkeypatch.setattr(
+        tcod.sdl.render, "new_renderer", lambda *a, **kw: DummyRenderer()
+    )
 
     window = tcod.sdl.video.new_window(160, 80)
-    renderer = tcod.sdl.render.new_renderer(window, software=True, target_textures=True)
+    renderer = tcod.sdl.render.new_renderer(
+        window,
+        software=True,  # pyright: ignore[reportCallIssue]
+        target_textures=True,  # pyright: ignore[reportCallIssue]
+    )
 
     log = MessageLog()
     log.add_message("Hello", fg=colors.WHITE)

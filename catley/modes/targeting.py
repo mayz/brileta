@@ -10,6 +10,7 @@ from catley.events import ActorDeathEvent, subscribe_to_event, unsubscribe_from_
 from catley.game import ranges
 from catley.game.actions.combat import AttackIntent
 from catley.game.actors import Character
+from catley.input_handler import Keys
 from catley.modes.base import Mode
 
 if TYPE_CHECKING:
@@ -86,7 +87,7 @@ class TargetingMode(Mode):
                 self.controller.exit_targeting_mode()
                 return True
 
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.t):
+            case tcod.event.KeyDown(sym=Keys.KEY_T):
                 self.controller.exit_targeting_mode()
                 return True
 

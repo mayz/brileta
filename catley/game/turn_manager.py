@@ -45,9 +45,20 @@ class TurnManager:
         """
         return len(self._action_queue) > 0
 
+    def is_player_turn_available(self) -> bool:
+        """Return True if player input or autopilot requires a turn."""
+
+        has_manual_action = self.has_pending_actions()
+        has_autopilot_goal = getattr(self.player, "pathfinding_goal", None) is not None
+        return has_manual_action or has_autopilot_goal
+
+    # Backwards compatibility for old name
+    def is_turn_available(self) -> bool:  # pragma: no cover - legacy
+        return self.is_player_turn_available()
+
     def process_unified_round(self) -> None:
         """Process a single round where all actors can act."""
-        if not self.has_pending_actions():
+        if not self.is_player_turn_available():
             return
 
         for actor in self.controller.gw.actors:

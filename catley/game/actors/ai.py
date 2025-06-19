@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING
 from catley import colors
 from catley.constants.combat import CombatConstants as Combat
 from catley.events import MessageEvent, publish_event
+from catley.game import ranges
 from catley.game.enums import Disposition
 
 if TYPE_CHECKING:
@@ -129,31 +130,52 @@ class HostileAI(AIComponent):
     def get_action(self, controller: Controller, actor: NPC) -> GameIntent | None:
         player = controller.gw.player
 
-        # Don't act if actor or player is dead
         if not actor.health.is_alive() or not player.health.is_alive():
             return None
 
-        # Calculate distance to player
-        dx = player.x - actor.x
-        dy = player.y - actor.y
-        distance = abs(dx) + abs(dy)  # Manhattan distance
+        distance = ranges.calculate_distance(actor.x, actor.y, player.x, player.y)
 
-        # Import here to avoid circular imports
         from catley.game.actions.combat import AttackIntent
 
-        # Adjacent to player - attack!
         if distance == 1:
-            publish_event(
-                MessageEvent(f"{actor.name} lunges at {player.name}!", colors.RED)
-            )
+            controller.stop_actor_pathfinding(actor)
             return AttackIntent(controller, actor, player)
 
-        # Within aggro range - chase the player
-        if distance <= self.aggro_radius:
-            return self._get_move_toward_player(controller, actor, player, dx, dy)
+        goal = actor.pathfinding_goal
+        if goal:
+            gx, gy = goal.target_pos
+            if (
+                ranges.calculate_distance(player.x, player.y, gx, gy) == 1
+                and controller.gw.game_map.walkable[gx, gy]
+            ):
+                return None
 
-        # Too far away - just prowl menacingly
-        publish_event(MessageEvent(f"{actor.name} prowls menacingly.", colors.ORANGE))
+        best_dest: tuple[int, int] | None = None
+        best_dist = float("inf")
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                if dx == 0 and dy == 0:
+                    continue
+                tx = player.x + dx
+                ty = player.y + dy
+                if not (
+                    0 <= tx < controller.gw.game_map.width
+                    and 0 <= ty < controller.gw.game_map.height
+                ):
+                    continue
+                if not controller.gw.game_map.walkable[tx, ty]:
+                    continue
+                blocker = controller.gw.get_actor_at_location(tx, ty)
+                if blocker and blocker.blocks_movement and blocker is not actor:
+                    continue
+                d = ranges.calculate_distance(actor.x, actor.y, tx, ty)
+                if d < best_dist:
+                    best_dist = d
+                    best_dest = (tx, ty)
+
+        if best_dest and controller.start_actor_pathfinding(actor, best_dest):
+            return None
+
         return None
 
     def _get_move_toward_player(

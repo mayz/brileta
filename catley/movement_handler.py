@@ -7,6 +7,7 @@ import tcod.event
 
 from catley import config
 from catley.game.actions.movement import MoveIntent
+from catley.input_handler import Keys
 
 if TYPE_CHECKING:
     from catley.controller import Controller
@@ -61,25 +62,13 @@ class MovementInputHandler:
             return None
 
         dx, dy = 0, 0
-        if (
-            tcod.event.KeySym.UP in movement_keys
-            or tcod.event.KeySym.k in movement_keys
-        ):
+        if tcod.event.KeySym.UP in movement_keys or Keys.KEY_K in movement_keys:
             dy -= 1
-        if (
-            tcod.event.KeySym.DOWN in movement_keys
-            or tcod.event.KeySym.j in movement_keys
-        ):
+        if tcod.event.KeySym.DOWN in movement_keys or Keys.KEY_J in movement_keys:
             dy += 1
-        if (
-            tcod.event.KeySym.LEFT in movement_keys
-            or tcod.event.KeySym.h in movement_keys
-        ):
+        if tcod.event.KeySym.LEFT in movement_keys or Keys.KEY_H in movement_keys:
             dx -= 1
-        if (
-            tcod.event.KeySym.RIGHT in movement_keys
-            or tcod.event.KeySym.l in movement_keys
-        ):
+        if tcod.event.KeySym.RIGHT in movement_keys or Keys.KEY_L in movement_keys:
             dx += 1
 
         if dx == 0 and dy == 0:

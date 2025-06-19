@@ -3,7 +3,9 @@ from typing import cast
 
 from catley import colors
 from catley.controller import Controller
+from catley.environment import tile_types
 from catley.game.actions.base import GameIntent
+from catley.game.actions.environment import OpenDoorIntent
 from catley.game.actions.executors.movement import MoveExecutor
 from catley.game.actions.movement import MoveIntent
 from catley.game.actors import Character
@@ -63,3 +65,19 @@ def test_autopilot_moves_and_triggers_final_intent() -> None:
     assert player.pathfinding_goal is None
     queued = controller.turn_manager.dequeue_player_action()
     assert queued is final_intent
+
+
+def test_start_actor_pathfinding_handles_door() -> None:
+    controller, player = make_world()
+    gm = controller.gw.game_map
+    gm.tiles[3, 0] = tile_types.TILE_TYPE_ID_DOOR_CLOSED  # type: ignore[attr-defined]
+    gm.invalidate_property_caches()
+
+    success = controller.start_actor_pathfinding(
+        player,
+        (3, 0),
+        final_intent=OpenDoorIntent(controller, player, 3, 0),
+    )
+    assert success
+    assert player.pathfinding_goal is not None
+    assert player.pathfinding_goal.target_pos == (2, 0)
