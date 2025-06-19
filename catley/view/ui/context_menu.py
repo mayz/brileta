@@ -8,6 +8,7 @@ import tcod.event
 
 from catley import colors
 from catley.environment import tile_types
+from catley.game import ranges
 from catley.game.actions.base import GameIntent
 from catley.game.actions.combat import AttackIntent
 from catley.game.actions.discovery import (
@@ -25,6 +26,7 @@ from catley.util.coordinates import (
     RootConsoleTilePos,
     WorldTilePos,
 )
+from catley.util.pathfinding import find_path
 from catley.view.ui.overlays import Menu, MenuOption
 
 if TYPE_CHECKING:  # pragma: no cover - only for type checking
@@ -74,13 +76,98 @@ class ContextMenu(Menu):
         elif isinstance(self.target, tuple):
             x, y = self.target
             tile = gm.tiles[x, y]
-            distance = abs(player.x - x) + abs(player.y - y)
+            distance = ranges.calculate_distance(player.x, player.y, x, y)
 
-            # TODO: FUTURE ENHANCEMENT - Implement pathfinding system so players
-            # can right-click distant doors and automatically walk over to interact
-            # with them. This will require pathfinding, autonomous movement, and an
-            # action queue. For now, only show door actions when adjacent.
-            if distance <= 1:
+            def _reachable_adjacent(dest: WorldTilePos) -> WorldTilePos | None:
+                best: WorldTilePos | None = None
+                best_len = float("inf")
+                for dx in (-1, 0, 1):
+                    for dy in (-1, 0, 1):
+                        if dx == 0 and dy == 0:
+                            continue
+                        tx = dest[0] + dx
+                        ty = dest[1] + dy
+                        if not (0 <= tx < gm.width and 0 <= ty < gm.height):
+                            continue
+                        if not gm.walkable[tx, ty]:
+                            continue
+                        blocker = self.controller.gw.get_actor_at_location(tx, ty)
+                        if (
+                            blocker
+                            and blocker.blocks_movement
+                            and blocker is not player
+                        ):
+                            continue
+                        path = find_path(
+                            gm,
+                            self.controller.gw.actor_spatial_index,
+                            player,
+                            (player.x, player.y),
+                            (tx, ty),
+                        )
+                        if path and len(path) < best_len:
+                            best = (tx, ty)
+                            best_len = len(path)
+                return best
+
+            if distance > 1:
+                if tile == tile_types.TILE_TYPE_ID_DOOR_CLOSED:  # type: ignore[attr-defined]
+                    dest = _reachable_adjacent((x, y))
+                    if dest is not None:
+                        door_intent = OpenDoorIntent(self.controller, player, x, y)
+                        self.add_option(
+                            MenuOption(
+                                key=None,
+                                text="Go to and Open Door",
+                                action=lambda i=door_intent, d=dest: (
+                                    self.controller.start_actor_pathfinding(
+                                        player,
+                                        d,
+                                        final_intent=i,
+                                    )
+                                ),
+                            )
+                        )
+                elif tile == tile_types.TILE_TYPE_ID_DOOR_OPEN:  # type: ignore[attr-defined]
+                    dest = _reachable_adjacent((x, y))
+                    if dest is not None:
+                        door_intent = CloseDoorIntent(self.controller, player, x, y)
+                        self.add_option(
+                            MenuOption(
+                                key=None,
+                                text="Go to and Close Door",
+                                action=lambda i=door_intent, d=dest: (
+                                    self.controller.start_actor_pathfinding(
+                                        player,
+                                        d,
+                                        final_intent=i,
+                                    )
+                                ),
+                            )
+                        )
+                else:
+                    path = find_path(
+                        gm,
+                        self.controller.gw.actor_spatial_index,
+                        player,
+                        (player.x, player.y),
+                        (x, y),
+                    )
+                    if path:
+                        self.add_option(
+                            MenuOption(
+                                key=None,
+                                text=f"Go to ({x}, {y})",
+                                action=lambda d=(
+                                    x,
+                                    y,
+                                ): self.controller.start_actor_pathfinding(
+                                    player,
+                                    d,
+                                ),
+                            )
+                        )
+            else:
                 if tile == tile_types.TILE_TYPE_ID_DOOR_CLOSED:  # type: ignore[attr-defined]
                     action_options.append(
                         ActionOption(

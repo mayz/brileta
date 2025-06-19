@@ -27,6 +27,8 @@ from .game.actions.base import GameIntent
 if TYPE_CHECKING:
     from .controller import Controller
 
+from typing import Final
+
 from .view.ui.commands import (
     OpenExistingMenuUICommand,
     OpenMenuUICommand,
@@ -36,6 +38,22 @@ from .view.ui.commands import (
     ToggleFullscreenUICommand,
     UICommand,
 )
+
+# Define KeySym constants for alphabetic keys missing from type stubs.
+
+
+class Keys:
+    """Container for letter KeySym constants used in pattern matching."""
+
+    KEY_H: Final = tcod.event.KeySym(ord("h"))
+    KEY_J: Final = tcod.event.KeySym(ord("j"))
+    KEY_K: Final = tcod.event.KeySym(ord("k"))
+    KEY_L: Final = tcod.event.KeySym(ord("l"))
+    KEY_Q: Final = tcod.event.KeySym(ord("q"))
+    KEY_I: Final = tcod.event.KeySym(ord("i"))
+    KEY_G: Final = tcod.event.KeySym(ord("g"))
+    KEY_T: Final = tcod.event.KeySym(ord("t"))
+    KEY_R: Final = tcod.event.KeySym(ord("r"))
 
 
 class InputHandler:
@@ -55,10 +73,10 @@ class InputHandler:
             tcod.event.KeySym.DOWN,
             tcod.event.KeySym.LEFT,
             tcod.event.KeySym.RIGHT,
-            tcod.event.KeySym.h,
-            tcod.event.KeySym.j,
-            tcod.event.KeySym.k,
-            tcod.event.KeySym.l,
+            Keys.KEY_H,
+            Keys.KEY_J,
+            Keys.KEY_K,
+            Keys.KEY_L,
         }:
             if isinstance(event, tcod.event.KeyDown):
                 if not self.movement_keys:
@@ -103,7 +121,10 @@ class InputHandler:
             case tcod.event.MouseMotion():
                 event = self.convert_mouse_coordinates(event)
 
-                root_tile_pos: RootConsoleTilePos = event.position
+                root_tile_pos: RootConsoleTilePos = (
+                    int(event.position.x),
+                    int(event.position.y),
+                )
                 world_tile_pos: WorldTilePos | None = (
                     self.fm.get_world_coords_from_root_tile_coords(root_tile_pos)
                 )
@@ -138,12 +159,12 @@ class InputHandler:
         match event:
             case tcod.event.Quit():
                 return QuitUICommand()
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.q):
+            case tcod.event.KeyDown(sym=Keys.KEY_Q):
                 return QuitUICommand()
             case tcod.event.KeyDown(sym=tcod.event.KeySym.ESCAPE):
                 return QuitUICommand()
 
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.i):
+            case tcod.event.KeyDown(sym=Keys.KEY_I):
                 return OpenMenuUICommand(self.controller, InventoryMenu)
 
             case tcod.event.KeyDown(sym=key_sym, mod=key_mod) if (
@@ -158,10 +179,10 @@ class InputHandler:
             case tcod.event.KeyDown(sym=tcod.event.KeySym.SPACE):
                 return OpenMenuUICommand(self.controller, ActionBrowserMenu)
 
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.g):
+            case tcod.event.KeyDown(sym=Keys.KEY_G):
                 return OpenPickupMenuUICommand(self.controller)
 
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.t):
+            case tcod.event.KeyDown(sym=Keys.KEY_T):
                 # Toggle targeting mode
                 if self.controller.is_targeting_mode():
                     self.controller.exit_targeting_mode()
@@ -169,7 +190,7 @@ class InputHandler:
                     self.controller.enter_targeting_mode()
                 return None
 
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.r):
+            case tcod.event.KeyDown(sym=Keys.KEY_R):
                 # Reload active weapon
                 active_weapon = self.p.inventory.get_active_weapon()
                 if (
@@ -232,10 +253,21 @@ class InputHandler:
         Returns an action if the event is handled, otherwise None.
         """
         event_with_tile_coords = self.convert_mouse_coordinates(event)
-        root_tile_pos: RootConsoleTilePos = event_with_tile_coords.position
+        root_tile_pos: RootConsoleTilePos = (
+            int(event_with_tile_coords.position.x),
+            int(event_with_tile_coords.position.y),
+        )
         world_tile_pos: WorldTilePos | None = (
             self.fm.get_world_coords_from_root_tile_coords(root_tile_pos)
         )
+
+        if event.button == tcod.event.MouseButton.LEFT and (
+            tcod.event.get_modifier_state() & tcod.event.Modifier.SHIFT
+        ):
+            if world_tile_pos is None:
+                return None
+            self.controller.start_actor_pathfinding(self.p, world_tile_pos)
+            return None
 
         if event.button == tcod.event.MouseButton.RIGHT:
             target: Actor | WorldTilePos | None = None
@@ -279,7 +311,6 @@ class InputHandler:
 
     def _has_available_actions(self, target: Actor | WorldTilePos) -> bool:
         """Quickly check if any actions are available for a target."""
-        from catley.environment import tile_types
         from catley.game.actions.discovery import ActionDiscovery
 
         disc = ActionDiscovery()
@@ -297,17 +328,7 @@ class InputHandler:
         ):
             return False
 
-        tile = self.game_map.tiles[world_x, world_y]
-        distance = abs(player.x - world_x) + abs(player.y - world_y)
-
-        return bool(
-            distance <= 1
-            and tile
-            in (
-                tile_types.TILE_TYPE_ID_DOOR_CLOSED,  # type: ignore[attr-defined]
-                tile_types.TILE_TYPE_ID_DOOR_OPEN,  # type: ignore[attr-defined]
-            )
-        )
+        return bool(self.game_map.visible[world_x, world_y])
 
     def convert_mouse_coordinates(
         self, event: tcod.event.MouseState

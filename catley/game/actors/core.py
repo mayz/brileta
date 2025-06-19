@@ -562,14 +562,13 @@ class NPC(Character):
         self.ai: AIComponent
 
     def get_next_action(self, controller: Controller) -> GameIntent | None:
-        """
-        Determines the next action for this actor.
-        """
-        if self.health.is_alive():
-            # Allow AI to update its internal state before deciding on an action.
-            self.ai.update(
-                controller
-            )  # Pass only controller as per AIComponent.update signature
-            return self.ai.get_action(controller, self)
+        """Return the next action for this NPC, including autopilot goals."""
+        if not self.health.is_alive():
+            return None
 
-        return None
+        autopilot_action = super().get_next_action(controller)
+        if autopilot_action:
+            return autopilot_action
+
+        self.ai.update(controller)
+        return self.ai.get_action(controller, self)

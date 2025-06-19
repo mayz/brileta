@@ -132,7 +132,7 @@ class Controller:
                     self.input_handler.dispatch(event)
 
                 # Process all pending game turns as fast as possible before rendering.
-                while self.turn_manager.has_pending_actions():
+                while self.turn_manager.is_player_turn_available():
                     # Increment the counter for each action processed
                     self.action_count_for_latency_metric += 1
                     self.process_unified_round()
@@ -195,28 +195,53 @@ class Controller:
         target_pos: WorldTilePos,
         final_intent: GameIntent | None = None,
     ) -> bool:
-        """Calculate a path and assign a PathfindingGoal to ``actor``.
+        """Calculate a path and assign a :class:`PathfindingGoal` to ``actor``.
 
-        Returns ``True`` if a path to ``target_pos`` was found and the goal was
-        assigned. Returns ``False`` if no path exists. Any existing goal is
-        cleared on failure and the player receives feedback when applicable.
+        If the direct destination is blocked, the search falls back to any
+        adjacent walkable tile.  ``False`` is returned if no path can be found.
         """
 
-        path = find_path(
-            self.gw.game_map,
-            self.gw.actor_spatial_index,
-            actor,
-            (actor.x, actor.y),
-            target_pos,
-        )
+        gm = self.gw.game_map
+        asi = self.gw.actor_spatial_index
+
+        def _best_path(dest: WorldTilePos) -> list[WorldTilePos] | None:
+            return find_path(gm, asi, actor, (actor.x, actor.y), dest)
+
+        path = _best_path(target_pos)
+        dest = target_pos
+
+        if not path:
+            best_path: list[WorldTilePos] | None = None
+            best_dest: WorldTilePos | None = None
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    if dx == 0 and dy == 0:
+                        continue
+                    tx = target_pos[0] + dx
+                    ty = target_pos[1] + dy
+                    if not (0 <= tx < gm.width and 0 <= ty < gm.height):
+                        continue
+                    if not gm.walkable[tx, ty]:
+                        continue
+                    blocker = self.gw.get_actor_at_location(tx, ty)
+                    if blocker and blocker.blocks_movement and blocker is not actor:
+                        continue
+                    candidate = _best_path((tx, ty))
+                    if candidate and (
+                        best_path is None or len(candidate) < len(best_path)
+                    ):
+                        best_path = candidate
+                        best_dest = (tx, ty)
+            if best_path is not None and best_dest is not None:
+                path = best_path
+                dest = best_dest
 
         if path:
-            goal = PathfindingGoal(
-                target_pos=target_pos,
+            actor.pathfinding_goal = PathfindingGoal(
+                target_pos=dest,
                 final_intent=final_intent,
                 _cached_path=path,
             )
-            actor.pathfinding_goal = goal
             return True
 
         self.stop_actor_pathfinding(actor)
