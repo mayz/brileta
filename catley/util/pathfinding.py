@@ -22,6 +22,12 @@ def find_path(
     """
     Calculates a path from a start to an end position using A*.
 
+    ################################################################################
+    TODO: This implementation has scaling limitations for large maps.
+          A more robust hierarchical pathfinding (HPA*) system is planned.
+          See the "Pathfinding Scaling Strategy - Catley" note for the full spec.
+    ################################################################################
+
     This pathfinder is aware of both static, unwalkable map tiles and
     dynamic, blocking actors. It generates a temporary cost map for each
     request to ensure the path is valid for the current game state.

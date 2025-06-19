@@ -94,6 +94,14 @@ class GameMap:
         min_room_size: int,
         max_room_size: int,
     ) -> list[Rect]:
+        """
+        ################################################################################
+        TODO: This function currently discards valuable structural information (rooms,
+              tunnels). It should be updated to generate and store a high-level
+              region graph for use by systems like hierarchical pathfinding.
+              See the "Pathfinding Scaling Strategy - Catley" note for the full spec.
+        ################################################################################
+        """
         rooms = []
         first_room = None
 
