@@ -53,7 +53,7 @@ def find_path(
         if actor.blocks_movement and actor is not pathing_actor:
             cost[actor.x, actor.y] = 0
 
-    astar = tcod.path.AStar(cost=cost, diagonal=1)  # pyright: ignore[reportCallIssue]
+    astar = tcod.path.AStar(cost=cost, diagonal=1)
 
     path: list[tuple[int, int]] = astar.get_path(
         start_pos[0], start_pos[1], end_pos[0], end_pos[1]

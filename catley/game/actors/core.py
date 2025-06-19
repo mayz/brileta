@@ -38,6 +38,7 @@ from catley.game.enums import Disposition, InjuryLocation
 from catley.game.items.item_core import Item
 from catley.game.pathfinding_goal import PathfindingGoal
 from catley.util.coordinates import TileCoord, WorldTileCoord
+from catley.util.pathfinding import find_path
 from catley.view.render.effects.lighting import LightSource
 
 from .ai import AIComponent, DispositionBasedAI
@@ -371,6 +372,45 @@ class Character(Actor):
         ]
         return len({c.injury_location for c in arm_injuries}) < 2
 
+    def get_next_action(self, controller: Controller) -> GameIntent | None:
+        """Return a MoveIntent following this character's PathfindingGoal.
+
+        The autopilot revalidates the next step each turn. If the cached path is
+        blocked, a new path is calculated. When no path can be found the goal is
+        cleared and ``None`` is returned.
+        """
+
+        goal = self.pathfinding_goal
+        if goal is None:
+            return None
+
+        path_is_valid = False
+        if goal._cached_path:
+            next_pos = goal._cached_path[0]
+            validation = find_path(
+                controller.gw.game_map,
+                controller.gw.actor_spatial_index,
+                self,
+                (self.x, self.y),
+                next_pos,
+            )
+            if len(validation) == 2:
+                path_is_valid = True
+
+        if not path_is_valid:
+            recalculated = controller.start_actor_pathfinding(
+                self, goal.target_pos, goal.final_intent
+            )
+            if not recalculated:
+                return None
+
+        assert self.pathfinding_goal and self.pathfinding_goal._cached_path
+        next_pos = self.pathfinding_goal._cached_path.pop(0)
+        dx, dy = next_pos[0] - self.x, next_pos[1] - self.y
+        from catley.game.actions.movement import MoveIntent
+
+        return MoveIntent(controller, self, dx, dy)
+
 
 class PC(Character):
     """A player character.
@@ -434,10 +474,18 @@ class PC(Character):
         )
 
     def get_next_action(self, controller: Controller) -> GameIntent | None:
-        """
-        Determines the next action for this actor.
-        """
-        return controller.turn_manager.dequeue_player_action()
+        """Return the player's next action, prioritizing direct input."""
+
+        if controller.turn_manager.has_pending_actions():
+            if hasattr(controller, "stop_actor_pathfinding"):
+                controller.stop_actor_pathfinding(self)
+            return controller.turn_manager.dequeue_player_action()
+
+        autopilot_action = super().get_next_action(controller)
+        if autopilot_action:
+            return autopilot_action
+
+        return None
 
 
 class NPC(Character):
