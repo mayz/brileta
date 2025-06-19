@@ -17,6 +17,13 @@ To run unit tests:
 
 This command, defined in the `Makefile`, will automatically sync dependencies and run the test suite within the correct environment.
 
+  **CRITICAL**: This project uses `uv` for dependency management. Always run Python commands with `uv run`:
+  - Use `uv run python script.py` NOT `python script.py`
+  - Use `uv run pyright` NOT `pyright`
+  - Use `uv run pytest` NOT `pytest`
+
+  The only exception is the Makefile targets which already handle this automatically.
+
 ## Quality Checks
 
 **IMPORTANT: After finishing any code changes, always run:**
