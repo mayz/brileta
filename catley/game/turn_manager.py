@@ -1,22 +1,23 @@
 """
 Manages the game's action scheduling using the Reactive Actor Framework (RAF).
 
-The RAF TurnManager eliminates the concept of synchronized "rounds" in favor
-of event-driven scheduling. When the player acts, the world reacts immediately:
+The RAF TurnManager implements speed-based energy accumulation in a purely
+turn-based context. When the player acts, the world reacts immediately:
 
-1. All actors get their energy updated based on their individual speeds
-2. Any NPCs who can now afford actions get those actions queued
-3. The Controller smoothly executes these queued actions one per frame
+1. All actors get energy proportional to their individual speeds
+2. Faster actors accumulate more energy per player action
+3. NPCs who can afford actions get those actions queued
+4. The Controller smoothly executes these queued actions one per frame
 
 This creates responsive player input (zero delay) while maintaining fair
 energy economy (faster actors naturally get more actions over time) and
 smooth world presentation (simultaneous NPC reactions).
 
-Key Differences from Round-Based Systems:
-- No waiting for "rounds" to complete before accepting player input
-- NPCs react immediately to world state changes rather than on fixed schedules
-- Energy accumulates independently per actor rather than in synchronized batches
-- Action execution is distributed smoothly over frames rather than in bursts
+Key Principles:
+- Energy accumulates ONLY when the player acts (turn-based, not real-time)
+- Faster actors get proportionally more energy per player action
+- No time passes when player is idle - game state is stable
+- Action execution is distributed smoothly over frames for visual appeal
 """
 
 from __future__ import annotations
@@ -54,7 +55,7 @@ class TurnManager:
     """
 
     def __init__(self, controller: Controller) -> None:
-        """Initialize the action scheduler.
+        """Initialize the action scheduler with performance optimizations.
 
         Args:
             controller: The main game controller for accessing actors and world state
@@ -71,28 +72,47 @@ class TurnManager:
         # Action execution router (unchanged)
         self.action_router = ActionRouter(self.controller)
 
+        # Performance optimization: cache actors with energy components
+        self._energy_actors_cache: list = []
+        self._cache_dirty: bool = True
+
+    def _update_energy_actors_cache(self) -> None:
+        """Update cached list of actors with energy components for performance."""
+        if self._cache_dirty:
+            self._energy_actors_cache = [
+                actor for actor in self.controller.gw.actors if hasattr(actor, "energy")
+            ]
+            self._cache_dirty = False
+
+    def invalidate_cache(self) -> None:
+        """Mark actor cache as dirty (call when actors are added/removed)."""
+        self._cache_dirty = True
+
     def on_player_action(self) -> None:
-        """Called when the player has just acted.
+        """Called when the player has just acted (optimized version).
 
         This is the core of RAF scheduling - immediately update energy for all
-        actors and queue any NPC actions that become available. This creates
-        the "reactive" behavior where NPCs respond instantly to player actions.
+        actors based on their speed (faster actors get more energy), then queue
+        any NPC actions that become available. This creates the "reactive" behavior
+        where NPCs respond instantly to player actions.
+
+        Energy accumulation is proportional to actor speed but only triggered by
+        player actions, maintaining the turn-based nature of the game.
         """
-        # Regenerate energy for all actors based on their speed
-        for actor in self.controller.gw.actors:
-            if hasattr(actor, "energy"):
-                actor.energy.regenerate()
+        # Update cache if needed for performance
+        self._update_energy_actors_cache()
 
-        # Queue actions for any NPCs who can now afford them
-        for actor in self.controller.gw.actors:
+        # Update energy for all actors with energy components
+        for actor in self._energy_actors_cache:
+            energy_amount = actor.energy.get_speed_based_energy_amount()
+            actor.energy.accumulate_energy(energy_amount)
+
+        # Queue actions for NPCs who can afford them
+        for actor in self._energy_actors_cache:
             if actor is self.player:
-                continue  # Skip the player
+                continue
 
-            if (
-                hasattr(actor, "energy")
-                and hasattr(actor.energy, "can_afford")
-                and actor.energy.can_afford(self.controller.action_cost)
-            ):
+            if actor.energy.can_afford(self.controller.action_cost):
                 action = actor.get_next_action(self.controller)
                 if action is not None:
                     self._npc_action_queue.append(action)
@@ -158,3 +178,35 @@ class TurnManager:
     def clear_npc_queue(self) -> None:
         """Clear all pending NPC actions (for testing/debugging)."""
         self._npc_action_queue.clear()
+
+    def debug_energy_state(self) -> None:
+        """Print current energy state for all actors (debugging only)."""
+        print("=== RAF Energy State Debug ===")
+        for actor in self.controller.gw.actors:
+            if hasattr(actor, "energy"):
+                energy_per_action = actor.energy.get_speed_based_energy_amount()
+                energy_info = f"{actor.energy.energy:.1f}/{actor.energy.max_energy}"
+                speed_info = f"speed: {actor.energy.speed}, +{energy_per_action:.1f}"
+                print(f"{actor.name}: {energy_info} ({speed_info} per player action)")
+        print(f"NPC Queue Length: {len(self._npc_action_queue)}")
+        print("==============================")
+
+    def get_speed_ratios(self) -> dict[str, float]:
+        """Get speed ratios for balancing analysis.
+
+        Returns:
+            Dictionary mapping actor names to their relative speed ratios
+        """
+        if not self.controller.gw.actors:
+            return {}
+
+        # Find base speed (usually player speed)
+        base_speed = self.player.energy.speed if hasattr(self.player, "energy") else 100
+
+        ratios = {}
+        for actor in self.controller.gw.actors:
+            if hasattr(actor, "energy"):
+                ratio = actor.energy.speed / base_speed
+                ratios[actor.name] = ratio
+
+        return ratios

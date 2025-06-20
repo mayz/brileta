@@ -761,24 +761,92 @@ class ConditionsComponent:
 
 @dataclass(slots=True)
 class EnergyComponent:
-    """Handle an actor's action economy (speed and energy)."""
+    """
+    Manages an actor's energy for the Reactive Actor Framework (RAF).
+
+    In RAF, energy accumulates proportionally to the actor's speed when the
+    player acts. Faster actors get more energy per player action, ensuring
+    they naturally get more turns over time while maintaining the turn-based
+    nature of the game.
+
+    Key RAF Energy Principles:
+    - Energy accumulates when the player acts, not based on real time
+    - Faster actors get proportionally more energy per player action
+    - Energy is capped at maximum to prevent infinite buildup
+    - Energy is spent when actions are taken
+    - Game remains purely turn-based - nothing happens when player is idle
+    """
 
     actor: Actor
     speed: int = DEFAULT_ACTOR_SPEED
-    accumulated_energy: int = 0
+    accumulated_energy: float = 0.0
+    max_energy: int = 200  # Energy cap to prevent infinite accumulation
 
     def __post_init__(self) -> None:
         self.accumulated_energy = self.speed
 
+    @property
+    def energy(self) -> float:
+        """Alias for accumulated_energy for compatibility."""
+        return self.accumulated_energy
+
+    @energy.setter
+    def energy(self, value: float) -> None:
+        """Alias setter for accumulated_energy for compatibility."""
+        self.accumulated_energy = value
+
+    def accumulate_energy(self, amount: float) -> None:
+        """Add energy up to the maximum cap.
+
+        This is the core method for RAF energy accumulation. Energy is added
+        smoothly up to the maximum, preventing infinite buildup while ensuring
+        faster actors can accumulate energy more quickly per player action.
+
+        Args:
+            amount: Amount of energy to add (can be fractional)
+        """
+        if amount <= 0:
+            return
+
+        # Add energy but cap at maximum to prevent infinite accumulation
+        self.accumulated_energy = min(self.max_energy, self.accumulated_energy + amount)
+
+    def get_speed_based_energy_amount(self) -> float:
+        """Calculate energy amount based on this actor's speed.
+
+        This determines how much energy this actor should get per player action.
+        Faster actors get proportionally more energy, ensuring they act more
+        frequently over time.
+
+        Returns:
+            Energy amount proportional to actor speed
+        """
+        # Base energy amount that gets scaled by speed
+        # This is calibrated so that speed=100 actors get roughly 100 energy per action
+        base_energy = 100.0
+
+        # Apply movement speed multiplier from conditions (exhaustion, etc.)
+        speed_multiplier = self.actor.modifiers.get_movement_speed_multiplier()
+
+        # Apply exhaustion energy reduction
+        exhaustion_multiplier = self.actor.modifiers.get_exhaustion_energy_multiplier()
+
+        # Speed scaling factor - adjust this to tune the speed differences
+        # Higher speeds will get proportionally more energy
+        normalized_speed = self.speed / 100.0  # Normalize speed to reasonable range
+
+        return base_energy * normalized_speed * speed_multiplier * exhaustion_multiplier
+
     def regenerate(self) -> None:
-        """Accumulate energy based on speed and active modifiers."""
-        effective_speed = int(
-            self.speed * self.actor.modifiers.get_movement_speed_multiplier()
-        )
-        final_energy_gain = int(
-            effective_speed * self.actor.modifiers.get_exhaustion_energy_multiplier()
-        )
-        self.accumulated_energy += final_energy_gain
+        """Legacy regeneration method (deprecated in RAF).
+
+        This method is kept for compatibility during transition but should
+        not be used in RAF. Use accumulate_energy() with speed-based amounts.
+
+        For now, falls back to speed-based accumulation to maintain functionality.
+        """
+        # Fallback to speed-based accumulation for compatibility
+        self.accumulate_energy(self.get_speed_based_energy_amount())
 
     def can_afford(self, cost: int) -> bool:
         """Return True if there is enough stored energy."""
@@ -786,4 +854,4 @@ class EnergyComponent:
 
     def spend(self, cost: int) -> None:
         """Spend accumulated energy."""
-        self.accumulated_energy -= cost
+        self.accumulated_energy = max(0, self.accumulated_energy - cost)

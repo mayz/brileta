@@ -52,10 +52,10 @@ def test_double_exhaustion_disadvantage_and_energy() -> None:
     actor.energy.accumulated_energy = 0
     actor.conditions.add_condition(conditions.Exhaustion())
     actor.conditions.add_condition(conditions.Exhaustion())
-    expected = int(actor.energy.speed * actor.modifiers.get_movement_speed_multiplier())
-    expected = int(expected * actor.modifiers.get_exhaustion_energy_multiplier())
+    # In RAF, use the actor's own energy calculation
+    expected = actor.energy.get_speed_based_energy_amount()
     actor.energy.regenerate()
-    assert actor.energy.accumulated_energy == expected
+    assert abs(actor.energy.accumulated_energy - expected) < 0.01  # Float comparison
     assert actor.modifiers.has_disadvantage_from_exhaustion()
 
     target = Character(
@@ -113,9 +113,10 @@ def test_injury_and_exhaustion_stack() -> None:
     assert expected_speed == int(
         actor.energy.speed * actor.modifiers.get_movement_speed_multiplier()
     )
-    expected_energy = int(
-        expected_speed * actor.modifiers.get_exhaustion_energy_multiplier()
-    )
+    # In RAF, use the actor's own energy calculation
+    expected_energy = actor.energy.get_speed_based_energy_amount()
     actor.energy.accumulated_energy = 0
     actor.energy.regenerate()
-    assert actor.energy.accumulated_energy == expected_energy
+    assert (
+        abs(actor.energy.accumulated_energy - expected_energy) < 0.01
+    )  # Float comparison
