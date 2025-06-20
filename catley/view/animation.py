@@ -5,6 +5,8 @@ from visual presentation. It enables smooth, time-based transitions for game
 actions like movement, making them feel more natural and easier to follow.
 """
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from collections import deque
 from typing import TYPE_CHECKING
@@ -43,7 +45,7 @@ class MoveAnimation(Animation):
 
     def __init__(
         self,
-        actor: "Actor",
+        actor: Actor,
         start_pos: tuple[float, float],
         end_pos: tuple[float, float],
     ) -> None:
@@ -130,6 +132,36 @@ class AnimationManager:
         remaining_animations = deque()
         for animation in self._queue:
             if not animation.update(delta_time):
+                remaining_animations.append(animation)
+
+        self._queue = remaining_animations
+
+    def finish_all_and_clear(self) -> None:
+        """Instantly complete all animations and clear the queue.
+
+        This "snap" mechanism forces every queued animation to finish
+        immediately. Actors involved in ``MoveAnimation`` instances are
+        positioned at their final coordinates and released from animation
+        control. The animation queue is emptied afterwards.
+        """
+
+        for animation in self._queue:
+            if isinstance(animation, MoveAnimation):
+                animation.actor.render_x = animation.end_x
+                animation.actor.render_y = animation.end_y
+                animation.actor._animation_controlled = False
+
+        self._queue.clear()
+
+    def interrupt_player_animations(self, player_actor: Actor) -> None:
+        """Remove all animations belonging to ``player_actor`` from the queue."""
+
+        remaining_animations: deque[Animation] = deque()
+
+        for animation in self._queue:
+            if isinstance(animation, MoveAnimation) and animation.actor is player_actor:
+                animation.actor._animation_controlled = False
+            else:
                 remaining_animations.append(animation)
 
         self._queue = remaining_animations
