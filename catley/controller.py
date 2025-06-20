@@ -188,10 +188,9 @@ class Controller:
             # TODO: This may be simplified further in future phases
             return
 
-        # For INSTANT actions, execute immediately
-        # Update energy and process turn effects for all actors
-        for actor in self.gw.actors:
-            actor.update_turn(self)
+        # For INSTANT actions, execute immediately.
+        # Process turn effects for the acting player only.
+        self.gw.player.update_turn(self)
 
         # Execute the player's action
         self.turn_manager.execute_intent(action)
