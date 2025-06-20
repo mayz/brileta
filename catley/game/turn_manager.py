@@ -30,6 +30,7 @@ from catley.game.actions.base import GameIntent
 
 if TYPE_CHECKING:
     from catley.controller import Controller
+    from catley.game.actors import Actor
 
 
 class TurnManager:
@@ -63,9 +64,6 @@ class TurnManager:
         self.controller = controller
         self.player = self.controller.gw.player
 
-        # Queue for pending NPC actions (FIFO)
-        self._npc_action_queue: deque[GameIntent] = deque()
-
         # Player action queue (preserved for compatibility)
         self._player_action_queue: deque[GameIntent] = deque()
 
@@ -73,7 +71,7 @@ class TurnManager:
         self.action_router = ActionRouter(self.controller)
 
         # Performance optimization: cache actors with energy components
-        self._energy_actors_cache: list = []
+        self._energy_actors_cache: list[Actor] = []
         self._cache_dirty: bool = True
 
     def _update_energy_actors_cache(self) -> None:
@@ -89,15 +87,11 @@ class TurnManager:
         self._cache_dirty = True
 
     def on_player_action(self) -> None:
-        """Called when the player has just acted (optimized version).
+        """Update energy for all actors when player acts (V2 - energy only).
 
-        This is the core of RAF scheduling - immediately update energy for all
-        actors based on their speed (faster actors get more energy), then queue
-        any NPC actions that become available. This creates the "reactive" behavior
-        where NPCs respond instantly to player actions.
-
-        Energy accumulation is proportional to actor speed but only triggered by
-        player actions, maintaining the turn-based nature of the game.
+        This method now ONLY handles energy accumulation. Action processing
+        is handled separately by process_all_npc_reactions() to eliminate
+        the timing asymmetry that allowed players to outrun equal-speed NPCs.
         """
         # Update cache if needed for performance
         self._update_energy_actors_cache()
@@ -107,7 +101,9 @@ class TurnManager:
             energy_amount = actor.energy.get_speed_based_energy_amount()
             actor.energy.accumulate_energy(energy_amount)
 
-        # Queue actions for NPCs who can afford them
+    def process_all_npc_reactions(self) -> None:
+        """Process all NPCs who can currently afford actions immediately."""
+        # Collect all potential NPC actions
         for actor in self._energy_actors_cache:
             if actor is self.player:
                 continue
@@ -115,20 +111,10 @@ class TurnManager:
             if actor.energy.can_afford(self.controller.action_cost):
                 action = actor.get_next_action(self.controller)
                 if action is not None:
-                    self._npc_action_queue.append(action)
-
-    def get_next_npc_action(self) -> GameIntent | None:
-        """Return the next queued NPC action, or None if no actions pending.
-
-        This method is called by the Controller each frame to smoothly execute
-        NPC actions one at a time. Returns None when no NPCs have pending actions.
-
-        Returns:
-            The next NPC action to execute, or None if queue is empty
-        """
-        if self._npc_action_queue:
-            return self._npc_action_queue.popleft()
-        return None
+                    # Execute immediately - let the action system handle everything
+                    self.execute_intent(action)
+                    if hasattr(actor, "energy"):
+                        actor.energy.spend(self.controller.action_cost)
 
     def execute_intent(self, intent: GameIntent) -> None:
         """Execute a single GameIntent by routing it to the ActionRouter.
@@ -172,12 +158,20 @@ class TurnManager:
     # === Debug and Diagnostic Methods ===
 
     def get_npc_queue_length(self) -> int:
-        """Return the current number of queued NPC actions (for debugging)."""
-        return len(self._npc_action_queue)
+        """Return the current number of queued NPC actions (for debugging).
+
+        Note: In RAF V2, NPCs act immediately so this always returns 0.
+        Kept for compatibility with debugging code.
+        """
+        return 0
 
     def clear_npc_queue(self) -> None:
-        """Clear all pending NPC actions (for testing/debugging)."""
-        self._npc_action_queue.clear()
+        """Clear all pending NPC actions (for testing/debugging).
+
+        Note: In RAF V2, NPCs act immediately so there's no queue to clear.
+        Kept for compatibility with testing code.
+        """
+        pass
 
     def debug_energy_state(self) -> None:
         """Print current energy state for all actors (debugging only)."""
@@ -188,7 +182,7 @@ class TurnManager:
                 energy_info = f"{actor.energy.energy:.1f}/{actor.energy.max_energy}"
                 speed_info = f"speed: {actor.energy.speed}, +{energy_per_action:.1f}"
                 print(f"{actor.name}: {energy_info} ({speed_info} per player action)")
-        print(f"NPC Queue Length: {len(self._npc_action_queue)}")
+        print("NPC Queue Length: 0 (RAF V2 - immediate processing)")
         print("==============================")
 
     def get_speed_ratios(self) -> dict[str, float]:
