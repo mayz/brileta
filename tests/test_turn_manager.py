@@ -25,6 +25,33 @@ class DummyControllerAutopilot(Controller):
     def update_fov(self) -> None:
         pass
 
+    def run_one_turn(self) -> None:
+        # Only process if there's a player turn available
+        if not self.turn_manager.is_player_turn_available():
+            return
+
+        # Start of Turn phase: All actors regenerate energy and process status effects
+        for actor in self.gw.actors:
+            actor.update_turn(cast(Controller, self))
+            actor.energy.regenerate()
+
+        # Player action (from autopilot)
+        if self.gw.player:
+            player_action = self.gw.player.get_next_action(cast(Controller, self))
+            if player_action:
+                self.turn_manager.execute_intent(player_action)
+                self.gw.player.energy.spend(self.action_cost)
+
+        # NPC Action Resolution: Process all NPCs with sufficient energy
+        for actor in list(self.gw.actors):
+            if actor is self.gw.player:
+                continue
+            if hasattr(actor, "energy") and actor.energy.can_afford(self.action_cost):
+                action = actor.get_next_action(cast(Controller, self))
+                if action is not None:
+                    self.turn_manager.execute_intent(action)
+                    actor.energy.spend(self.action_cost)
+
 
 def _make_autopilot_world() -> tuple[DummyControllerAutopilot, Character]:
     gw = DummyGameWorld()
@@ -60,6 +87,33 @@ class DummyController:
 
     def update_fov(self) -> None:
         self.update_fov_called = True
+
+    def run_one_turn(self) -> None:
+        # Only process if there's a player turn available
+        if not self.turn_manager.is_player_turn_available():
+            return
+
+        # Start of Turn phase: All actors regenerate energy and process status effects
+        for actor in self.gw.actors:
+            actor.update_turn(cast(Controller, self))
+            actor.energy.regenerate()
+
+        # Player action (from autopilot)
+        if self.gw.player:
+            player_action = self.gw.player.get_next_action(cast(Controller, self))
+            if player_action:
+                self.turn_manager.execute_intent(player_action)
+                self.gw.player.energy.spend(self.action_cost)
+
+        # NPC Action Resolution: Process all NPCs with sufficient energy
+        for actor in list(self.gw.actors):
+            if actor is self.gw.player:
+                continue
+            if hasattr(actor, "energy") and actor.energy.can_afford(self.action_cost):
+                action = actor.get_next_action(cast(Controller, self))
+                if action is not None:
+                    self.turn_manager.execute_intent(action)
+                    actor.energy.spend(self.action_cost)
 
 
 def _make_world() -> tuple[DummyController, Character]:
@@ -126,7 +180,7 @@ def test_process_unified_round_handles_autopilot() -> None:
     controller, player = _make_autopilot_world()
     tm = controller.turn_manager
     controller.start_actor_pathfinding(player, (1, 0))
-    tm.process_unified_round()
+    controller.run_one_turn()
     assert (player.x, player.y) == (1, 0)
     assert player.pathfinding_goal is None
     assert not tm.is_player_turn_available()
@@ -140,6 +194,6 @@ def test_npc_autopilot_waits_without_player_turn() -> None:
     assert npc.pathfinding_goal is not None
     assert not tm.is_player_turn_available()
 
-    tm.process_unified_round()
+    controller.run_one_turn()
     # No movement should occur without player action
     assert (npc.x, npc.y) == (3, 0)

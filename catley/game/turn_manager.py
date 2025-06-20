@@ -56,27 +56,6 @@ class TurnManager:
     def is_turn_available(self) -> bool:  # pragma: no cover - legacy
         return self.is_player_turn_available()
 
-    def process_unified_round(self) -> None:
-        """
-        Process a single round. DEPRECATED for main loop, kept for autopilot/tests.
-        This now delegates to the new, more granular processing methods.
-        """
-        if not self.is_player_turn_available():
-            return
-
-        for actor in self.controller.gw.actors:
-            actor.update_turn(self.controller)
-
-        player_action = self.player.get_next_action(self.controller)
-
-        if player_action:
-            self.execute_intent(player_action)
-
-        self.process_all_npc_turns()
-
-        if hasattr(self.controller, "active_mode") and self.controller.active_mode:
-            self.controller.active_mode.update()
-
     def dequeue_player_action(self) -> GameIntent | None:
         """Dequeue and return the pending player action."""
         return self._action_queue.popleft() if len(self._action_queue) > 0 else None
