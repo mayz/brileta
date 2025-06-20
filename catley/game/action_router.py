@@ -113,6 +113,8 @@ class ActionRouter:
     def _handle_failed_move(self, intent: MoveIntent, result: GameActionResult) -> None:
         """Rulebook for what happens after a failed move."""
         if result.block_reason == "actor" and result.blocked_by:
+            # FIXME: Note that this currently makes NPCs who collide with each
+            # other attack each other too!
             # Rule: Bumping into a living character means you attack them.
             blocking_actor = cast(Character, result.blocked_by)
             if blocking_actor.health.is_alive():
