@@ -193,7 +193,6 @@ class Controller:
         # Update energy and process turn effects for all actors
         for actor in self.gw.actors:
             actor.update_turn(self)
-            actor.energy.regenerate()
 
         # Execute the player's action
         self.turn_manager.execute_intent(action)
@@ -202,34 +201,22 @@ class Controller:
         # Update FOV after player action (important for movement)
         self.update_fov()
 
+        # RAF: Trigger immediate NPC scheduling based on the world state change
+        self.turn_manager.on_player_action()
+
     def _process_one_npc_action_if_available(self) -> None:
-        """Temporary method to process NPC actions until Task 2 implementation.
+        """Process one pending NPC action using the RAF scheduling system.
 
-        This preserves existing NPC behavior while we transition to the new
-        architecture. In Task 2, this will be replaced with get_next_npc_action().
+        This method gets the next queued NPC action and executes it immediately.
+        NPCs are queued by the TurnManager when the player acts, creating smooth
+        reactive gameplay where the world responds to player actions.
         """
-        # Find actors with energy for actions (existing logic)
-        actors_with_energy = [
-            actor
-            for actor in self.gw.actors
-            if (
-                hasattr(actor, "energy")
-                and hasattr(actor.energy, "can_afford")
-                and actor.energy.can_afford(self.action_cost)
-                and actor is not self.gw.player
-            )
-        ]
-
-        # Process one action from the first available actor
-        if actors_with_energy:
-            actor = actors_with_energy[0]
-            action = actor.get_next_action(self)
-            if action is not None:
-                self.turn_manager.execute_intent(action)
-                actor.energy.spend(self.action_cost)
-            else:
-                # Spend energy to prevent infinite loop
-                actor.energy.spend(1)
+        npc_action = self.turn_manager.get_next_npc_action()
+        if npc_action:
+            # Execute the action and spend the actor's energy
+            self.turn_manager.execute_intent(npc_action)
+            if hasattr(npc_action.actor, "energy"):
+                npc_action.actor.energy.spend(self.action_cost)
 
     def queue_action(self, action: GameIntent) -> None:
         """

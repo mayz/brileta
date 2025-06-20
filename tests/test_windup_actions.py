@@ -90,6 +90,7 @@ class DummyTurnManager:
     def __init__(self, controller: Controller) -> None:
         self._queue: list[GameIntent] = []
         self.processed: list[GameIntent] = []
+        self._npc_queue: list[GameIntent] = []
 
     def queue_action(self, action: GameIntent) -> None:
         self._queue.append(action)
@@ -108,6 +109,15 @@ class DummyTurnManager:
 
     def process_all_npc_turns(self) -> None:
         pass
+
+    # RAF methods
+    def on_player_action(self) -> None:
+        """Dummy implementation of RAF on_player_action method."""
+        pass
+
+    def get_next_npc_action(self) -> GameIntent | None:
+        """Dummy implementation of RAF get_next_npc_action method."""
+        return self._npc_queue.pop(0) if self._npc_queue else None
 
 
 class DummyOverlaySystem:
