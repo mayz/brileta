@@ -69,8 +69,8 @@ class MoveExecutor(ActionExecutor):
                     )
                     return GameActionResult(succeeded=False, block_reason="stumble")
 
-        # Success! Actually move the actor
-        intent.actor.move(intent.dx, intent.dy)
+        # Success! Move the actor (this automatically creates animation)
+        intent.actor.move(intent.dx, intent.dy, intent.controller)
 
         if (
             isinstance(intent.actor, Character)

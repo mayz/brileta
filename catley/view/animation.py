@@ -60,6 +60,9 @@ class MoveAnimation(Animation):
         self.duration = 0.15  # Animation duration in seconds
         self.elapsed_time = 0.0
 
+        # Take control of the actor's render position
+        self.actor._animation_controlled = True
+
         # Set initial render position
         self.actor.render_x = self.start_x
         self.actor.render_y = self.start_y
@@ -76,9 +79,10 @@ class MoveAnimation(Animation):
         self.elapsed_time += delta_time
 
         if self.elapsed_time >= self.duration:
-            # Animation complete - snap to final position
+            # Animation complete - snap to final position and release control
             self.actor.render_x = self.end_x
             self.actor.render_y = self.end_y
+            self.actor._animation_controlled = False
             return True
 
         # Linear interpolation between start and end positions
