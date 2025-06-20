@@ -30,12 +30,13 @@ class DrawOperation(Enum):
 class TextBackend(ABC):
     """Abstract interface for text rendering backends."""
 
-    def __init__(self) -> None:
+    def __init__(self, transparent: bool = True) -> None:
         self.drawing_offset_x = 0
         self.drawing_offset_y = 0
         self._last_tile_height: int = 0
         self.width = 0
         self.height = 0
+        self.transparent = transparent
 
         # Shared caching logic
         self._frame_ops: list = []
@@ -272,8 +273,8 @@ class TextBackend(ABC):
 class TCODTextBackend(TextBackend):
     """Text backend that draws directly to a tcod :class:`Console`."""
 
-    def __init__(self, renderer: Renderer) -> None:
-        super().__init__()
+    def __init__(self, renderer: Renderer, transparent: bool = True) -> None:
+        super().__init__(transparent)
         self.renderer = renderer
         self.private_console: Console | None = None
 
@@ -432,7 +433,9 @@ class TCODTextBackend(TextBackend):
             return None
 
         texture = self.renderer.console_render.render(self.private_console)
-        texture.blend_mode = BlendMode.ADD
+
+        # Use additive blending for transparent overlays, normal for opaque menus
+        texture.blend_mode = BlendMode.ADD if self.transparent else BlendMode.BLEND
         return texture
 
 
@@ -442,8 +445,9 @@ class PillowTextBackend(TextBackend):
     def __init__(
         self,
         renderer: Renderer,
+        transparent: bool = True,
     ) -> None:
-        super().__init__()
+        super().__init__(transparent)
         self.font_path = Path(config.MESSAGE_LOG_FONT_PATH)
         self._current_font_size = 0
         # Temporary default font before scaling is configured.

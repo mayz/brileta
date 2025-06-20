@@ -395,7 +395,7 @@ class Menu(TextOverlay):
     def _get_backend(self) -> TextBackend:
         """Lazily initializes and returns a TCODTextBackend for Phase 1."""
         if self.text_backend is None:
-            self.text_backend = TCODTextBackend(self.renderer)
+            self.text_backend = TCODTextBackend(self.renderer, transparent=False)
         return self.text_backend
 
     def draw(self) -> None:
