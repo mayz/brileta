@@ -160,23 +160,40 @@ class Controller:
                             self.game_state = GameState.PROCESSING_TURN
 
                     case GameState.PROCESSING_TURN:
-                        # This is the "Instant Tick" where all mechanics resolve.
                         player_action = self.turn_manager.dequeue_player_action()
                         if player_action:
+                            # The "Instant Tick" happens here. All mechanical changes
+                            # for the turn are resolved before any animations begin.
                             self.turn_manager.process_player_action(player_action)
-
-                        # After the player acts, all NPCs take their turn instantly.
-                        self.turn_manager.process_all_npc_turns()
+                            self.turn_manager.process_all_npc_turns()
 
                         # Once the turn is resolved, transition to playing animations.
                         self.game_state = GameState.PLAYING_ANIMATIONS
 
                     case GameState.PLAYING_ANIMATIONS:
-                        # In this state, we simply wait for animations to finish.
-                        # Player input is not processed here to ensure cinematics
-                        # play out.
-                        # (This will change in Phase 2 to allow interruptions).
+                        # --- START OF TASK 2.2 MODIFICATION ---
+                        # While animations are playing, we must still check for new
+                        # player input to allow for interruptions.
+                        for event in tcod.event.get():
+                            self.input_handler.dispatch(event)
+
+                        move_intent = self.movement_handler.generate_intent(
+                            self.input_handler.movement_keys
+                        )
+                        if move_intent:
+                            self.queue_action(move_intent)
+
+                        if self.turn_manager.has_pending_actions():
+                            # Player input was detected! Interrupt the animations.
+                            self.animation_manager.finish_all_and_clear()
+                            # Immediately process the new turn.
+                            self.game_state = GameState.PROCESSING_TURN
+                            continue  # Skip to the next loop iteration.
+                        # --- END OF TASK 2.2 MODIFICATION ---
+
                         if self.animation_manager.is_queue_empty():
+                            # No more animations to play, and no new input was received.
+                            # Return to awaiting input.
                             self.game_state = GameState.AWAITING_INPUT
 
                 # Render the final frame.
