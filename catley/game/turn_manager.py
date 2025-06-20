@@ -111,6 +111,8 @@ class TurnManager:
             if actor.energy.can_afford(self.controller.action_cost):
                 action = actor.get_next_action(self.controller)
                 if action is not None:
+                    # Update turn effects for this specific actor right before it acts.
+                    actor.update_turn(self.controller)
                     # Execute immediately - let the action system handle everything
                     self.execute_intent(action)
                     if hasattr(actor, "energy"):

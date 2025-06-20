@@ -1,8 +1,15 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from types import SimpleNamespace
+from typing import cast
+from unittest.mock import patch
 
-from catley.controller import GameWorld
+import tcod.context
+from tcod.console import Console
+
+from catley import config
+from catley.controller import Controller, GameWorld
 from catley.environment import tile_types
 from catley.environment.map import GameMap
 from catley.game.actors import Actor, Character
@@ -77,3 +84,59 @@ class DummyGameWorld(GameWorld):
 
     def spawn_ground_items(self, items: list[Item], x: int, y: int) -> Actor:
         return self.item_spawner.spawn_multiple(items, x, y)
+
+
+def get_controller_with_player_and_map() -> Controller:
+    """Return a fully initialized ``Controller`` using dummy SDL context."""
+
+    class DummyRenderer:
+        def __init__(self, *_args, **_kwargs) -> None:
+            self.coordinate_converter = None
+            self.root_console = SimpleNamespace(
+                width=config.SCREEN_WIDTH, height=config.SCREEN_HEIGHT
+            )
+
+        def clear_console(self, *_a, **_kw) -> None:  # pragma: no cover - stub
+            pass
+
+        def blit_console(self, *_a, **_kw) -> None:  # pragma: no cover - stub
+            pass
+
+        def present_frame(self, *_a, **_kw) -> None:  # pragma: no cover - stub
+            pass
+
+    class DummyFrameManager:
+        def __init__(self, controller: Controller) -> None:
+            self.controller = controller
+            self.cursor_manager = SimpleNamespace(
+                update_mouse_position=lambda *_a, **_kw: None
+            )
+
+        def render_frame(self, *_a, **_kw) -> None:  # pragma: no cover - stub
+            pass
+
+    class DummyAtlas:
+        def __init__(self) -> None:
+            self.p = SimpleNamespace(texture=None)
+            self.tileset = None
+
+    class DummyContext:
+        def __init__(self) -> None:
+            self.sdl_renderer = SimpleNamespace()
+            self.sdl_atlas = DummyAtlas()
+
+        def __enter__(self) -> DummyContext:  # pragma: no cover - context stub
+            return self
+
+        def __exit__(self, exc_type, exc_val, exc_tb) -> None:  # pragma: no cover
+            pass
+
+    context = DummyContext()
+    root_console = Console(config.SCREEN_WIDTH, config.SCREEN_HEIGHT, order="F")
+    with (
+        patch("catley.controller.Renderer", DummyRenderer),
+        patch("catley.controller.FrameManager", DummyFrameManager),
+        patch("catley.controller.InputHandler", lambda c: None),
+        patch("catley.controller.MovementInputHandler", lambda c: None),
+    ):
+        return Controller(cast(tcod.context.Context, context), root_console, (16, 16))
