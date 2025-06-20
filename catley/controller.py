@@ -192,6 +192,12 @@ class Controller:
                                     self.game_state = GameState.PROCESSING_TURN
 
                     case GameState.PROCESSING_TURN:
+                        # Start of Turn phase: All actors regenerate energy and
+                        # process status effects
+                        for actor in self.gw.actors:
+                            actor.update_turn(self)
+                            actor.energy.regenerate()
+
                         player_action = self._pending_player_action
                         if player_action:
                             # The "Instant Tick" happens here. All mechanical changes
