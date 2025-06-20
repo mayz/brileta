@@ -36,6 +36,7 @@ from catley.game.consequences import Consequence
 if TYPE_CHECKING:
     from catley.controller import Controller
     from catley.game.actors import Actor
+    from catley.view.animation import Animation
 
 
 @dataclass
@@ -73,7 +74,10 @@ class GameIntent:
             animation_type (AnimationType): Controls the action's timing behavior
                 (INSTANT vs. WIND_UP) as part of the PPIAS system. Defaults to
                 INSTANT for all common actions.
+            windup_animation (Animation | None): The animation to play *before*
+                a WIND_UP action is resolved. This is ignored for INSTANT actions.
         """
         self.controller = controller
         self.actor = actor
         self.animation_type: AnimationType = AnimationType.INSTANT
+        self.windup_animation: Animation | None = None
