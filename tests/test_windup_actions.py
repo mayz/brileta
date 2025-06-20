@@ -99,7 +99,7 @@ class DummyTurnManager:
     def is_player_turn_available(self) -> bool:
         return bool(self._queue)
 
-    def process_player_action(self, action: GameIntent) -> None:
+    def execute_intent(self, action: GameIntent) -> None:
         self.processed.append(action)
 
     def process_all_npc_turns(self) -> None:

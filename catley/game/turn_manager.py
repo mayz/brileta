@@ -70,7 +70,7 @@ class TurnManager:
         player_action = self.player.get_next_action(self.controller)
 
         if player_action:
-            self.process_player_action(player_action)
+            self.execute_intent(player_action)
 
         self.process_all_npc_turns()
 
@@ -81,20 +81,10 @@ class TurnManager:
         """Dequeue and return the pending player action."""
         return self._action_queue.popleft() if len(self._action_queue) > 0 else None
 
-    def process_player_action(self, intent: GameIntent) -> None:
-        """Process a single action intent from the player."""
+    def execute_intent(self, intent: GameIntent) -> None:
+        """Execute a single GameIntent by routing it to the ActionRouter."""
         self.action_router.execute_intent(intent)
 
     def process_all_npc_turns(self) -> None:
         """Resolve all NPC actions for the current turn."""
-        for actor in list(self.controller.gw.actors):
-            if (
-                actor is self.player
-                or actor.health is None
-                or not actor.health.is_alive()
-            ):
-                continue
-
-            action = actor.get_next_action(self.controller)
-            if action:
-                self.action_router.execute_intent(action)
+        pass
