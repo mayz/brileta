@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from enum import Enum, auto
 from typing import TYPE_CHECKING
 
 import tcod.event
@@ -29,9 +30,16 @@ from .util.clock import Clock
 from .util.coordinates import WorldTilePos
 from .util.message_log import MessageLog
 from .util.pathfinding import find_path
+from .view.animation import AnimationManager
 from .view.frame_manager import FrameManager
 from .view.render.renderer import Renderer
 from .view.ui.overlays import OverlaySystem
+
+
+class GameState(Enum):
+    AWAITING_INPUT = auto()
+    PROCESSING_TURN = auto()
+    PLAYING_ANIMATIONS = auto()
 
 
 class Controller:
@@ -69,6 +77,12 @@ class Controller:
         self.gw = GameWorld(self.map_width, self.map_height)
 
         self.turn_manager = TurnManager(self)
+
+        # Game state machine
+        self.game_state = GameState.AWAITING_INPUT
+
+        # Animation manager for handling movement and effects
+        self.animation_manager = AnimationManager()
 
         self.combat_intent_cache: CombatIntentCache | None = None
 
@@ -117,32 +131,58 @@ class Controller:
 
     def run_game_loop(self) -> None:
         try:
-            # Hide the system mouse cursor. We'll draw our own.
             tcod.sdl.mouse.show(False)
 
             while True:
-                move_intent = self.movement_handler.generate_intent(
-                    self.input_handler.movement_keys
-                )
-                if move_intent:
-                    self.queue_action(move_intent)
-
-                # Now, collect all new input for the next frame.
-                for event in tcod.event.get():
-                    self.input_handler.dispatch(event)
-
-                # Process all pending game turns as fast as possible before rendering.
-                while self.turn_manager.is_player_turn_available():
-                    # Increment the counter for each action processed
-                    self.action_count_for_latency_metric += 1
-                    self.process_unified_round()
-
-                # This part is paced by the clock.
                 delta_time = self.clock.sync(fps=self.target_fps)
+
+                # --- State-Independent Updates ---
+                # Animation and lighting should update every frame, regardless of state.
+                self.animation_manager.update(delta_time)
                 self.gw.lighting.update(delta_time)
+
+                # --- State Machine Logic ---
+                match self.game_state:
+                    case GameState.AWAITING_INPUT:
+                        # Process all pending input events.
+                        for event in tcod.event.get():
+                            self.input_handler.dispatch(event)
+
+                        # Check for player-initiated actions (movement or queued).
+                        move_intent = self.movement_handler.generate_intent(
+                            self.input_handler.movement_keys
+                        )
+                        if move_intent:
+                            self.queue_action(move_intent)
+
+                        # If an action has been queued, transition to processing.
+                        if self.turn_manager.has_pending_actions():
+                            self.game_state = GameState.PROCESSING_TURN
+
+                    case GameState.PROCESSING_TURN:
+                        # This is the "Instant Tick" where all mechanics resolve.
+                        player_action = self.turn_manager.dequeue_player_action()
+                        if player_action:
+                            self.turn_manager.process_player_action(player_action)
+
+                        # After the player acts, all NPCs take their turn instantly.
+                        self.turn_manager.process_all_npc_turns()
+
+                        # Once the turn is resolved, transition to playing animations.
+                        self.game_state = GameState.PLAYING_ANIMATIONS
+
+                    case GameState.PLAYING_ANIMATIONS:
+                        # In this state, we simply wait for animations to finish.
+                        # Player input is not processed here to ensure cinematics
+                        # play out.
+                        # (This will change in Phase 2 to allow interruptions).
+                        if self.animation_manager.is_queue_empty():
+                            self.game_state = GameState.AWAITING_INPUT
+
+                # Render the final frame.
                 self.frame_manager.render_frame(delta_time)
+
         finally:
-            # Show the system mouse cursor again.
             tcod.sdl.mouse.show(True)
 
     def queue_action(self, action: GameIntent) -> None:
