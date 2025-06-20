@@ -90,12 +90,7 @@ class MoveAnimation(Animation):
 
 
 class AnimationManager:
-    """Manages a queue of animations and processes them sequentially.
-
-    The AnimationManager ensures that animations play in order, with only
-    one animation active at a time. This creates a predictable sequence
-    of visual events that matches the turn-based nature of the game.
-    """
+    """Manage a queue of animations and process them simultaneously."""
 
     def __init__(self) -> None:
         """Initialize an empty animation manager."""
@@ -118,12 +113,19 @@ class AnimationManager:
         return len(self._queue) == 0
 
     def update(self, delta_time: float) -> None:
-        """Update the current animation and remove it when finished.
+        """Update all animations simultaneously and remove finished ones.
 
         Args:
             delta_time: Time elapsed since last update in seconds.
         """
-        if self._queue:
-            current_animation = self._queue[0]
-            if current_animation.update(delta_time):
-                self._queue.popleft()
+        # Process all animations simultaneously for responsive gameplay
+        if not self._queue:
+            return
+
+        # Update all animations and collect those still running
+        remaining_animations = deque()
+        for animation in self._queue:
+            if not animation.update(delta_time):
+                remaining_animations.append(animation)
+
+        self._queue = remaining_animations
