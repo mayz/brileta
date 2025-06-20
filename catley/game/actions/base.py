@@ -30,6 +30,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from catley.game.actions.types import AnimationType
 from catley.game.consequences import Consequence
 
 if TYPE_CHECKING:
@@ -66,5 +67,13 @@ class GameIntent:
     """
 
     def __init__(self, controller: Controller, actor: Actor) -> None:
+        """Initialize the intent with its context.
+
+        Attributes:
+            animation_type (AnimationType): Controls the action's timing behavior
+                (INSTANT vs. WIND_UP) as part of the PPIAS system. Defaults to
+                INSTANT for all common actions.
+        """
         self.controller = controller
         self.actor = actor
+        self.animation_type: AnimationType = AnimationType.INSTANT
