@@ -152,7 +152,7 @@ class TestAnimationManager:
         assert actor.render_y == 10.0
 
     def test_multiple_animation_queue(self) -> None:
-        """Multiple animations are processed sequentially."""
+        """Multiple animations are processed simultaneously."""
         manager = AnimationManager()
         actor1 = DummyActor(0, 0)
         actor2 = DummyActor(5, 5)
@@ -164,31 +164,21 @@ class TestAnimationManager:
         manager.add(anim1)
         manager.add(anim2)
 
-        # First animation should run
-        manager.update(0.075)  # 50% of first animation
+        # Both animations should run simultaneously
+        manager.update(0.075)  # 50% of both animations
         assert not manager.is_queue_empty()
+        # First actor moves from (0,0) to (2,2), so 50% progress = (1,1)
         assert actor1.render_x == pytest.approx(1.0)
         assert actor1.render_y == pytest.approx(1.0)
-        assert actor2.render_x == 5.0  # Second actor unchanged
-        assert actor2.render_y == 5.0
-
-        # Complete first animation, start second
-        manager.update(0.075)  # Complete first animation
-        assert not manager.is_queue_empty()
-        assert actor1.render_x == 2.0  # First actor at final position
-        assert actor1.render_y == 2.0
-        assert actor2.render_x == 5.0  # Second actor at start position
-        assert actor2.render_y == 5.0
-
-        # Progress second animation
-        manager.update(0.075)  # 50% of second animation
-        assert not manager.is_queue_empty()
+        # Second actor moves from (5,5) to (7,7), so 50% progress = (6,6)
         assert actor2.render_x == pytest.approx(6.0)
         assert actor2.render_y == pytest.approx(6.0)
 
-        # Complete second animation
-        manager.update(0.075)  # Complete second animation
+        # Complete both animations
+        manager.update(0.075)  # Complete both animations simultaneously
         assert manager.is_queue_empty()
+        assert actor1.render_x == 2.0
+        assert actor1.render_y == 2.0
         assert actor2.render_x == 7.0
         assert actor2.render_y == 7.0
 
