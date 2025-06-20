@@ -18,6 +18,7 @@ from . import colors, config
 from .events import MessageEvent, publish_event
 from .game.actions.base import GameIntent
 from .game.actions.movement import MoveIntent  # noqa: F401
+from .game.actions.types import AnimationType
 from .game.actors.core import Character
 from .game.game_world import GameWorld
 from .game.pathfinding_goal import PathfindingGoal
@@ -40,6 +41,7 @@ class GameState(Enum):
     AWAITING_INPUT = auto()
     PROCESSING_TURN = auto()
     PLAYING_ANIMATIONS = auto()
+    AWAITING_WINDUP = auto()
 
 
 class Controller:
@@ -77,6 +79,9 @@ class Controller:
         self.gw = GameWorld(self.map_width, self.map_height)
 
         self.turn_manager = TurnManager(self)
+
+        # Store a queued player action while its wind-up animation plays.
+        self._pending_player_action: GameIntent | None = None
 
         # Game state machine
         self.game_state = GameState.AWAITING_INPUT
@@ -164,20 +169,63 @@ class Controller:
                             if autopilot_action:
                                 self.queue_action(autopilot_action)
 
-                        # If an action has been queued, transition to processing.
+                        # Handle any queued action based on its animation type.
                         if self.turn_manager.has_pending_actions():
-                            self.game_state = GameState.PROCESSING_TURN
+                            player_action = self.turn_manager.dequeue_player_action()
+                            if player_action:
+                                self._pending_player_action = player_action
+                                if (
+                                    player_action.animation_type
+                                    == AnimationType.WIND_UP
+                                ):
+                                    # Queue wind-up animation then enter state.
+                                    if player_action.windup_animation:
+                                        self.animation_manager.add(
+                                            player_action.windup_animation
+                                        )
+                                        self.game_state = GameState.AWAITING_WINDUP
+                                    else:
+                                        # Fallback for misconfigured WIND_UP actions.
+                                        self.game_state = GameState.PROCESSING_TURN
+                                else:
+                                    # For INSTANT actions, proceed directly.
+                                    self.game_state = GameState.PROCESSING_TURN
 
                     case GameState.PROCESSING_TURN:
-                        player_action = self.turn_manager.dequeue_player_action()
+                        player_action = self._pending_player_action
                         if player_action:
                             # The "Instant Tick" happens here. All mechanical changes
                             # for the turn are resolved before any animations begin.
                             self.turn_manager.process_player_action(player_action)
                             self.turn_manager.process_all_npc_turns()
 
+                        self._pending_player_action = None
+
                         # Once the turn is resolved, transition to playing animations.
                         self.game_state = GameState.PLAYING_ANIMATIONS
+
+                    case GameState.AWAITING_WINDUP:
+                        # Check for new input that would cancel the wind-up.
+                        for event in tcod.event.get():
+                            self.input_handler.dispatch(event)
+
+                        move_intent = self.movement_handler.generate_intent(
+                            self.input_handler.movement_keys
+                        )
+                        if move_intent:
+                            self.queue_action(move_intent)
+
+                        if self.turn_manager.has_pending_actions():
+                            # New action cancels the wind-up.
+                            self.animation_manager.finish_all_and_clear()
+                            self._pending_player_action = None
+                            self.game_state = GameState.AWAITING_INPUT
+                            continue
+
+                        # If the queue is empty, the wind-up finished successfully.
+                        if self.animation_manager.is_queue_empty():
+                            # Proceed to resolve the turn.
+                            self.game_state = GameState.PROCESSING_TURN
 
                     case GameState.PLAYING_ANIMATIONS:
                         # --- START OF TASK 2.2 MODIFICATION ---
@@ -193,11 +241,17 @@ class Controller:
                             self.queue_action(move_intent)
 
                         if self.turn_manager.has_pending_actions():
-                            # Player input was detected! Interrupt the animations.
+                            # New action detected! Interrupt the current animations.
                             self.animation_manager.finish_all_and_clear()
-                            # Immediately process the new turn.
-                            self.game_state = GameState.PROCESSING_TURN
-                            continue  # Skip to the next loop iteration.
+                            # Dequeue the new action and store it for processing.
+                            new_action = self.turn_manager.dequeue_player_action()
+                            if new_action:
+                                self._pending_player_action = new_action
+                                self.game_state = GameState.PROCESSING_TURN
+                            else:
+                                # Should not happen, but as a fallback, go to input.
+                                self.game_state = GameState.AWAITING_INPUT
+                            continue
                         # --- END OF TASK 2.2 MODIFICATION ---
 
                         if self.animation_manager.is_queue_empty():
