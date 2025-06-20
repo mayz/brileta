@@ -15,6 +15,7 @@ class DummyActor:
         self.y = y
         self.render_x = float(x)
         self.render_y = float(y)
+        self._animation_controlled = False
 
 
 class TestAnimation:
@@ -212,3 +213,90 @@ class TestAnimationManager:
         assert manager.is_queue_empty()
         assert actor.render_x == 0.0
         assert actor.render_y == 1.0
+
+
+@pytest.fixture
+def manager() -> AnimationManager:
+    """Return a fresh AnimationManager for interruption tests."""
+
+    return AnimationManager()
+
+
+class TestAnimationManagerInterruption:
+    """Tests for the new interruption and snap methods."""
+
+    def test_finish_all_and_clear_snaps_actors(self, manager: AnimationManager) -> None:
+        actor1 = DummyActor(0, 0)
+        actor2 = DummyActor(5, 5)
+
+        anim1 = MoveAnimation(cast(Any, actor1), (0.0, 0.0), (2.0, 3.0))
+        anim2 = MoveAnimation(cast(Any, actor2), (5.0, 5.0), (8.0, 9.0))
+        manager.add(anim1)
+        manager.add(anim2)
+
+        manager.finish_all_and_clear()
+
+        assert actor1.render_x == 2.0
+        assert actor1.render_y == 3.0
+        assert actor2.render_x == 8.0
+        assert actor2.render_y == 9.0
+        assert not actor1._animation_controlled
+        assert not actor2._animation_controlled
+
+    def test_finish_all_and_clear_clears_queue(self, manager: AnimationManager) -> None:
+        actor1 = DummyActor(0, 0)
+        actor2 = DummyActor(1, 1)
+
+        manager.add(MoveAnimation(cast(Any, actor1), (0.0, 0.0), (1.0, 1.0)))
+        manager.add(MoveAnimation(cast(Any, actor2), (1.0, 1.0), (2.0, 2.0)))
+
+        manager.finish_all_and_clear()
+
+        assert manager.is_queue_empty()
+
+    def test_finish_all_and_clear_on_empty_queue(
+        self, manager: AnimationManager
+    ) -> None:
+        manager.finish_all_and_clear()
+        assert manager.is_queue_empty()
+
+    def test_interrupt_player_animations_removes_only_player(
+        self, manager: AnimationManager
+    ) -> None:
+        player_actor = DummyActor(0, 0)
+        npc_actor = DummyActor(5, 5)
+
+        player_anim = MoveAnimation(cast(Any, player_actor), (0.0, 0.0), (1.0, 1.0))
+        npc_anim = MoveAnimation(cast(Any, npc_actor), (5.0, 5.0), (6.0, 6.0))
+        manager.add(player_anim)
+        manager.add(npc_anim)
+
+        manager.interrupt_player_animations(cast(Any, player_actor))
+
+        assert len(manager._queue) == 1
+        remaining = cast(MoveAnimation, manager._queue[0])
+        assert remaining.actor is npc_actor
+        assert not player_actor._animation_controlled
+        assert npc_actor._animation_controlled
+
+    def test_interrupt_player_animations_on_empty_queue(
+        self, manager: AnimationManager
+    ) -> None:
+        player_actor = DummyActor(0, 0)
+        manager.interrupt_player_animations(cast(Any, player_actor))
+        assert manager.is_queue_empty()
+
+    def test_interrupt_player_animations_with_no_player_anims(
+        self, manager: AnimationManager
+    ) -> None:
+        player_actor = DummyActor(0, 0)
+        npc_actor = DummyActor(1, 1)
+
+        npc_anim = MoveAnimation(cast(Any, npc_actor), (1.0, 1.0), (2.0, 2.0))
+        manager.add(npc_anim)
+
+        manager.interrupt_player_animations(cast(Any, player_actor))
+
+        assert len(manager._queue) == 1
+        assert manager._queue[0] is npc_anim
+        assert npc_actor._animation_controlled
