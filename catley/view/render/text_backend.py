@@ -9,6 +9,7 @@ import numpy as np
 import tcod.sdl.render
 from PIL import Image as PILImage
 from PIL import ImageDraw, ImageFont
+from tcod.console import Console
 from tcod.sdl.render import BlendMode, Texture
 
 from catley import colors, config
@@ -126,7 +127,9 @@ class TCODTextBackend(TextBackend):
     def __init__(self, renderer: Renderer) -> None:
         super().__init__()
         self.renderer = renderer
-        self.console = renderer.root_console
+        self.private_console: Console | None = None
+        self.width = 0
+        self.height = 0
         self.configure_scaling(renderer.tile_dimensions[1])
 
     def draw_text(
@@ -140,18 +143,17 @@ class TCODTextBackend(TextBackend):
         """Draw a line of text whose top-left corner is at ``(pixel_x, pixel_y)``
         using ``color``."""
         _ = font_size
+        if not self.private_console:
+            return
+
         tile_width, tile_height = self.renderer.tile_dimensions
         if tile_width == 0 or tile_height == 0:
             return
 
-        # Convert panel-relative pixel coords to panel-relative tile coords
         tile_x = pixel_x // tile_width
         tile_y = pixel_y // tile_height
 
-        # Apply panel's position offset (in tiles) to get root console tile coords
-        absolute_x = tile_x + self.drawing_offset_x
-        absolute_y = tile_y + self.drawing_offset_y
-        self.console.print(x=absolute_x, y=absolute_y, text=text, fg=color)
+        self.private_console.print(x=tile_x, y=tile_y, text=text, fg=color)
 
     def get_text_metrics(
         self, text: str, font_size: int | None = None
@@ -189,11 +191,11 @@ class TCODTextBackend(TextBackend):
         bg: colors.Color,
     ) -> None:
         """Draw a frame using the underlying console, respecting the drawing offset."""
-        absolute_x = tile_x + self.drawing_offset_x
-        absolute_y = tile_y + self.drawing_offset_y
-        self.console.draw_frame(
-            x=absolute_x,
-            y=absolute_y,
+        if not self.private_console:
+            return
+        self.private_console.draw_frame(
+            x=tile_x,
+            y=tile_y,
             width=width,
             height=height,
             title="",
@@ -211,27 +213,26 @@ class TCODTextBackend(TextBackend):
         color: colors.Color,
         fill: bool,
     ) -> None:
+        if not self.private_console:
+            return
         tile_w, tile_h = self.renderer.tile_dimensions
         if not tile_w or not tile_h:
             return
 
-        start_tx = pixel_x // tile_w + self.drawing_offset_x
-        start_ty = pixel_y // tile_h + self.drawing_offset_y
-        end_tx = (pixel_x + width) // tile_w + self.drawing_offset_x
-        end_ty = (pixel_y + height) // tile_h + self.drawing_offset_y
+        start_tx = pixel_x // tile_w
+        start_ty = pixel_y // tile_h
+        end_tx = (pixel_x + width) // tile_w
+        end_ty = (pixel_y + height) // tile_h
 
         for tx in range(start_tx, end_tx):
             for ty in range(start_ty, end_ty):
                 if fill:
-                    # When filling, clear the character and set both bg and fg colors
-                    self.console.bg[tx, ty] = color
-                    # Clear character with space
-                    self.console.ch[tx, ty] = ord(" ")
-                    # Set foreground to match background
-                    self.console.fg[tx, ty] = color
+                    self.private_console.bg[tx, ty] = color
+                    self.private_console.ch[tx, ty] = ord(" ")
+                    self.private_console.fg[tx, ty] = color
                 else:
                     if tx in (start_tx, end_tx - 1) or ty in (start_ty, end_ty - 1):
-                        self.console.bg[tx, ty] = color
+                        self.private_console.bg[tx, ty] = color
 
     def _update_scaling_internal(
         self, tile_height: int
@@ -248,14 +249,33 @@ class TCODTextBackend(TextBackend):
         return ascent, descent
 
     def configure_dimensions(self, width: int, height: int) -> None:
-        """No-op for TCOD backend."""
-        _ = width
-        _ = height
+        """Create a private console based on pixel dimensions."""
+        # Call parent first to set width/height attributes
+        super().configure_dimensions(width, height)
 
-    def begin_frame(self) -> None:  # pragma: no cover - no work needed
-        pass
+        tile_w, tile_h = self.renderer.tile_dimensions
+        if not tile_w or not tile_h:
+            return
 
-    def end_frame(self) -> Texture | None:  # pragma: no cover - no work needed
+        width_tiles = width // tile_w
+        height_tiles = height // tile_h
+
+        if (
+            not self.private_console
+            or self.private_console.width != width_tiles
+            or self.private_console.height != height_tiles
+        ):
+            self.private_console = Console(width_tiles, height_tiles, order="F")
+
+    def begin_frame(self) -> None:
+        if self.private_console:
+            self.private_console.clear()
+
+    def end_frame(self) -> Texture | None:
+        if self.private_console:
+            texture = self.renderer.console_render.render(self.private_console)
+            texture.blend_mode = BlendMode.BLEND
+            return texture
         return None
 
 
