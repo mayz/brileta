@@ -205,6 +205,16 @@ class Controller:
                             self.turn_manager.execute_intent(player_action)
                             self.gw.player.energy.spend(self.action_cost)
 
+                        # NPC Action Resolution: Process all NPCs with sufficient energy
+                        for actor in list(self.gw.actors):
+                            if actor is self.gw.player:
+                                continue
+                            if actor.energy.can_afford(self.action_cost):
+                                action = actor.get_next_action(self)
+                                if action is not None:
+                                    self.turn_manager.execute_intent(action)
+                                    actor.energy.spend(self.action_cost)
+
                         self._pending_player_action = None
 
                         # Once the turn is resolved, transition to playing animations.
