@@ -155,6 +155,15 @@ class Controller:
                         if move_intent:
                             self.queue_action(move_intent)
 
+                        # Check for autopilot actions if no manual input is given.
+                        if (
+                            not move_intent
+                            and self.turn_manager.is_player_turn_available()
+                        ):
+                            autopilot_action = self.gw.player.get_next_action(self)
+                            if autopilot_action:
+                                self.queue_action(autopilot_action)
+
                         # If an action has been queued, transition to processing.
                         if self.turn_manager.has_pending_actions():
                             self.game_state = GameState.PROCESSING_TURN
