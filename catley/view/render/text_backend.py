@@ -88,7 +88,7 @@ class TextBackend(ABC):
         if self.width != width or self.height != height:
             # Dimensions changed - clear cache
             self._cached_frame_texture = None  # Let GC handle cleanup
-            self._last_frame_texts = []
+            self._last_frame_ops = []
 
         self.width = width
         self.height = height
@@ -130,6 +130,12 @@ class TCODTextBackend(TextBackend):
         self.private_console: Console | None = None
         self.width = 0
         self.height = 0
+
+        # Caching logic
+        self._frame_ops: list = []  # Defer drawing operations
+        self._last_frame_ops: list = []
+        self._cached_frame_texture: Texture | None = None
+
         self.configure_scaling(renderer.tile_dimensions[1])
 
     def draw_text(
@@ -140,20 +146,9 @@ class TCODTextBackend(TextBackend):
         color: colors.Color,
         font_size: int | None = None,
     ) -> None:
-        """Draw a line of text whose top-left corner is at ``(pixel_x, pixel_y)``
-        using ``color``."""
+        """Record a text drawing operation to be rendered later."""
         _ = font_size
-        if not self.private_console:
-            return
-
-        tile_width, tile_height = self.renderer.tile_dimensions
-        if tile_width == 0 or tile_height == 0:
-            return
-
-        tile_x = pixel_x // tile_width
-        tile_y = pixel_y // tile_height
-
-        self.private_console.print(x=tile_x, y=tile_y, text=text, fg=color)
+        self._frame_ops.append(("text", pixel_x, pixel_y, text, color))
 
     def get_text_metrics(
         self, text: str, font_size: int | None = None
@@ -169,6 +164,8 @@ class TCODTextBackend(TextBackend):
     ) -> list[str]:
         _ = font_size
         tile_width, _ = self.renderer.tile_dimensions
+        if tile_width == 0:
+            return [text]  # Avoid division by zero
         chars_per_line = max_width // tile_width
         if chars_per_line <= 0:
             return [text]
@@ -190,19 +187,8 @@ class TCODTextBackend(TextBackend):
         fg: colors.Color,
         bg: colors.Color,
     ) -> None:
-        """Draw a frame using the underlying console, respecting the drawing offset."""
-        if not self.private_console:
-            return
-        self.private_console.draw_frame(
-            x=tile_x,
-            y=tile_y,
-            width=width,
-            height=height,
-            title="",
-            clear=False,
-            fg=fg,
-            bg=bg,
-        )
+        """Record a frame drawing operation."""
+        self._frame_ops.append(("frame", tile_x, tile_y, width, height, fg, bg))
 
     def draw_rect(
         self,
@@ -213,26 +199,8 @@ class TCODTextBackend(TextBackend):
         color: colors.Color,
         fill: bool,
     ) -> None:
-        if not self.private_console:
-            return
-        tile_w, tile_h = self.renderer.tile_dimensions
-        if not tile_w or not tile_h:
-            return
-
-        start_tx = pixel_x // tile_w
-        start_ty = pixel_y // tile_h
-        end_tx = (pixel_x + width) // tile_w
-        end_ty = (pixel_y + height) // tile_h
-
-        for tx in range(start_tx, end_tx):
-            for ty in range(start_ty, end_ty):
-                if fill:
-                    self.private_console.bg[tx, ty] = color
-                    self.private_console.ch[tx, ty] = ord(" ")
-                    self.private_console.fg[tx, ty] = color
-                else:
-                    if tx in (start_tx, end_tx - 1) or ty in (start_ty, end_ty - 1):
-                        self.private_console.bg[tx, ty] = color
+        """Record a rectangle drawing operation."""
+        self._frame_ops.append(("rect", pixel_x, pixel_y, width, height, color, fill))
 
     def _update_scaling_internal(
         self, tile_height: int
@@ -266,17 +234,72 @@ class TCODTextBackend(TextBackend):
             or self.private_console.height != height_tiles
         ):
             self.private_console = Console(width_tiles, height_tiles, order="F")
+            # New console means cache is invalid
+            self._cached_frame_texture = None
+            self._last_frame_ops = []
 
     def begin_frame(self) -> None:
-        if self.private_console:
-            self.private_console.clear()
+        self._frame_ops = []
 
     def end_frame(self) -> Texture | None:
-        if self.private_console:
-            texture = self.renderer.console_render.render(self.private_console)
-            texture.blend_mode = BlendMode.BLEND
-            return texture
-        return None
+        # If content hasn't changed, return the cached texture
+        if self._frame_ops == self._last_frame_ops and self._cached_frame_texture:
+            return self._cached_frame_texture
+
+        if not self.private_console:
+            return None
+
+        # Content has changed, so re-render
+        self.private_console.clear()
+
+        tile_width, tile_height = self.renderer.tile_dimensions
+        if tile_width == 0 or tile_height == 0:
+            return None
+
+        for op in self._frame_ops:
+            op_type = op[0]
+            if op_type == "text":
+                _, pixel_x, pixel_y, text, color = op
+                tile_x = pixel_x // tile_width
+                tile_y = pixel_y // tile_height
+                self.private_console.print(x=tile_x, y=tile_y, text=text, fg=color)
+            elif op_type == "frame":
+                _, tile_x, tile_y, width, height, fg, bg = op
+                self.private_console.draw_frame(
+                    x=tile_x,
+                    y=tile_y,
+                    width=width,
+                    height=height,
+                    title="",
+                    clear=False,
+                    fg=fg,
+                    bg=bg,
+                )
+            elif op_type == "rect":
+                _, pixel_x, pixel_y, width, height, color, fill = op
+                start_tx = pixel_x // tile_width
+                start_ty = pixel_y // tile_height
+                end_tx = (pixel_x + width) // tile_width
+                end_ty = (pixel_y + height) // tile_height
+                for tx in range(start_tx, end_tx):
+                    for ty in range(start_ty, end_ty):
+                        if fill:
+                            self.private_console.bg[tx, ty] = color
+                        else:
+                            if tx in (start_tx, end_tx - 1) or ty in (
+                                start_ty,
+                                end_ty - 1,
+                            ):
+                                self.private_console.bg[tx, ty] = color
+
+        texture = self.renderer.console_render.render(self.private_console)
+        texture.blend_mode = BlendMode.ADD
+
+        # Cache the new texture and the operations that created it
+        self._cached_frame_texture = texture
+        self._last_frame_ops = self._frame_ops.copy()
+
+        return texture
 
 
 class PillowTextBackend(TextBackend):
@@ -303,10 +326,9 @@ class PillowTextBackend(TextBackend):
         self.width = 0
         self.height = 0
 
-        self._text_cache = {}  # (text, font_size, color) -> texture
-        self._frame_texts = []  # [(x, y, text, color, font_size), ...]
-        self._cached_frame_texture = None
-        self._last_frame_texts = []
+        self._frame_ops = []  # [(x, y, text, color, font_size), ...]
+        self._cached_frame_texture: Texture | None = None
+        self._last_frame_ops: list = []
 
         tile_height = renderer.tile_dimensions[1]
 
@@ -365,7 +387,7 @@ class PillowTextBackend(TextBackend):
         self._effective_line_height = tile_height  # For layout consistency
 
     def begin_frame(self) -> None:
-        self._frame_texts = []  # Reset frame text list
+        self._frame_ops = []  # Reset frame text list
 
     def draw_text(
         self,
@@ -376,7 +398,7 @@ class PillowTextBackend(TextBackend):
         font_size: int | None = None,
     ) -> None:
         # Just record what text to draw - don't render yet
-        self._frame_texts.append((pixel_x, pixel_y, text, color, font_size))
+        self._frame_ops.append(("text", pixel_x, pixel_y, text, color, font_size))
 
     def get_text_metrics(
         self, text: str, font_size: int | None = None
@@ -423,13 +445,8 @@ class PillowTextBackend(TextBackend):
         color: colors.Color,
         fill: bool,
     ) -> None:
-        if self._drawer:
-            fill_color = color if fill else None
-            self._drawer.rectangle(
-                [pixel_x, pixel_y, pixel_x + width, pixel_y + height],
-                fill=fill_color,
-                outline=color if not fill else None,
-            )
+        """Record a rectangle drawing operation."""
+        self._frame_ops.append(("rect", pixel_x, pixel_y, width, height, color, fill))
 
     def draw_frame(
         self,
@@ -445,20 +462,14 @@ class PillowTextBackend(TextBackend):
         px_y = tile_y * self._effective_line_height
         px_width = width * self.font.getbbox(" ")[2]
         px_height = height * self._effective_line_height
-
-        if self._drawer:
-            self._drawer.rectangle(
-                [px_x, px_y, px_x + px_width, px_y + px_height],
-                fill=bg,
-                outline=fg,
-            )
+        self._frame_ops.append(("frame", px_x, px_y, px_width, px_height, fg, bg))
 
     def end_frame(self) -> Texture | None:
         if self.sdl_renderer is None:
             return None
 
         # Check if frame content changed
-        if self._frame_texts == self._last_frame_texts and self._cached_frame_texture:
+        if self._frame_ops == self._last_frame_ops and self._cached_frame_texture:
             return self._cached_frame_texture
 
         # Content changed - need to re-render
@@ -468,8 +479,27 @@ class PillowTextBackend(TextBackend):
         self.image = PILImage.new("RGBA", (self.width, self.height), (0, 0, 0, 0))
         self._drawer = ImageDraw.Draw(self.image)
 
-        for pixel_x, pixel_y, text, color, font_size in self._frame_texts:
-            self._render_single_text(pixel_x, pixel_y, text, color, font_size)
+        for op in self._frame_ops:
+            op_type = op[0]
+            if op_type == "text":
+                _, pixel_x, pixel_y, text, color, font_size = op
+                self._render_single_text(pixel_x, pixel_y, text, color, font_size)
+            elif op_type == "rect":
+                _, pixel_x, pixel_y, width, height, color, fill = op
+                fill_color = color if fill else None
+                outline_color = color if not fill else None
+                self._drawer.rectangle(
+                    [pixel_x, pixel_y, pixel_x + width, pixel_y + height],
+                    fill=fill_color,
+                    outline=outline_color,
+                )
+            elif op_type == "frame":
+                _, px_x, px_y, px_width, px_height, fg, bg = op
+                self._drawer.rectangle(
+                    [px_x, px_y, px_x + px_width, px_y + px_height],
+                    fill=bg,
+                    outline=fg,
+                )
 
         # Convert to texture
         pixels = np.array(self.image, dtype=np.uint8)
@@ -479,7 +509,7 @@ class PillowTextBackend(TextBackend):
 
         # Cache the result
         self._cached_frame_texture = texture
-        self._last_frame_texts = self._frame_texts.copy()
+        self._last_frame_ops = self._frame_ops.copy()
 
         # Cleanup
         self.image = None
