@@ -10,7 +10,7 @@ The Python code is set up as a Python package that was set up with `uv`.
 
 To create a virtual environment and install all dependencies, run `uv sync`. Everything is in the local `uv.lock` file.
 
-I've been using `ruff check` as a linter, and Pylance/Pyright as a language server in VSCode and type checker.
+I've been using `uv run ruff check` as a linter, and Pylance/Pyright as a language server in VSCode and type checker.
 
 To run unit tests:
 `make test`
@@ -31,13 +31,13 @@ This command, defined in the `Makefile`, will automatically sync dependencies an
 make
 ```
 
-This runs the full quality pipeline: `ruff format`, `ruff check`, `pyright`, and `pytest`. All checks must pass before considering work complete.
+This runs the full quality pipeline: `uv run ruff format`, `uv run ruff check`, `uv run pyright`, and `uv run pytest`. All checks must pass before considering work complete.
 
 Individual commands are available as `make lint`, `make format`, `make typecheck`, or `make test`.
 
 ## Style
 
-- I've been using `ruff format` to format code. Wherever possible, I try to annotate params and variable with their types, as you can see throughout the code.
+- I've been using `uv run ruff format` to format code. Wherever possible, I try to annotate params and variable with their types, as you can see throughout the code.
 - All new code must be fully type-hinted and pass static analysis.
 - Good Documentation: Comments should describe what code is doing and (if particularly complex) why it is doing it.
 
