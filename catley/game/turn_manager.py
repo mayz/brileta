@@ -57,37 +57,22 @@ class TurnManager:
         return self.is_player_turn_available()
 
     def process_unified_round(self) -> None:
-        """Process a single round where all actors can act."""
+        """
+        Process a single round. DEPRECATED for main loop, kept for autopilot/tests.
+        This now delegates to the new, more granular processing methods.
+        """
         if not self.is_player_turn_available():
             return
 
         for actor in self.controller.gw.actors:
             actor.update_turn(self.controller)
 
-        for actor in self.controller.gw.actors:
-            actor.energy.regenerate()
+        player_action = self.player.get_next_action(self.controller)
 
-        max_iterations = 50
-        iteration = 0
-        while iteration < max_iterations:
-            someone_acted = False
-            iteration += 1
+        if player_action:
+            self.process_player_action(player_action)
 
-            for actor in self.controller.gw.actors.copy():
-                if actor.energy.can_afford(self.controller.action_cost):
-                    action = actor.get_next_action(self.controller)
-                    actor.energy.spend(self.controller.action_cost)
-
-                    if action:
-                        self.action_router.execute_intent(action)
-                        someone_acted = True
-
-                    if not self.player.health.is_alive():
-                        # The router handles events, but we stop the loop here.
-                        return
-
-            if not someone_acted:
-                break
+        self.process_all_npc_turns()
 
         if hasattr(self.controller, "active_mode") and self.controller.active_mode:
             self.controller.active_mode.update()
@@ -95,3 +80,21 @@ class TurnManager:
     def dequeue_player_action(self) -> GameIntent | None:
         """Dequeue and return the pending player action."""
         return self._action_queue.popleft() if len(self._action_queue) > 0 else None
+
+    def process_player_action(self, intent: GameIntent) -> None:
+        """Process a single action intent from the player."""
+        self.action_router.execute_intent(intent)
+
+    def process_all_npc_turns(self) -> None:
+        """Resolve all NPC actions for the current turn."""
+        for actor in list(self.controller.gw.actors):
+            if (
+                actor is self.player
+                or actor.health is None
+                or not actor.health.is_alive()
+            ):
+                continue
+
+            action = actor.get_next_action(self.controller)
+            if action:
+                self.action_router.execute_intent(action)
