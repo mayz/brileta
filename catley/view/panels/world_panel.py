@@ -273,20 +273,6 @@ class WorldPanel(Panel):
             blended_tiles
         )
 
-        player = self.controller.gw.player
-        if (
-            hasattr(player, "pathfinding_goal")
-            and player.pathfinding_goal
-            and player.pathfinding_goal._cached_path
-        ):
-            for path_x, path_y in player.pathfinding_goal._cached_path:
-                vp_x, vp_y = self.viewport_system.world_to_screen(path_x, path_y)
-                if (
-                    0 <= vp_x < self.game_map_console.width
-                    and 0 <= vp_y < self.game_map_console.height
-                ):
-                    self._apply_blended_highlight(vp_x, vp_y, colors.YELLOW, 0.3)
-
     def _render_actors(self) -> None:
         if not config.SMOOTH_ACTOR_RENDERING_ENABLED:
             self._render_actors_traditional()
