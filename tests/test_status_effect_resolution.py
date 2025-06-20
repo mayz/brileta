@@ -34,6 +34,28 @@ class DummyController(Controller):
     def update_fov(self) -> None:  # pragma: no cover - simple flag
         self.update_fov_called = True
 
+    def run_one_turn(self) -> None:
+        # Start of Turn phase: All actors regenerate energy and process status effects
+        for actor in self.gw.actors:
+            actor.update_turn(cast(Controller, self))
+            actor.energy.regenerate()
+
+        # Player action (check if there's a queued action)
+        player_action = self.turn_manager.dequeue_player_action()
+        if player_action and self.gw.player:
+            self.turn_manager.execute_intent(player_action)
+            self.gw.player.energy.spend(self.action_cost)
+
+        # NPC Action Resolution: Process all NPCs with sufficient energy
+        for actor in list(self.gw.actors):
+            if actor is self.gw.player:
+                continue
+            if hasattr(actor, "energy") and actor.energy.can_afford(self.action_cost):
+                action = actor.get_next_action(cast(Controller, self))
+                if action is not None:
+                    self.turn_manager.execute_intent(action)
+                    actor.energy.spend(self.action_cost)
+
 
 def make_combat_world() -> tuple[
     DummyController, Character, Character, AttackIntent, AttackExecutor
@@ -131,13 +153,13 @@ def test_tripped_skips_turn() -> None:
     gw.player = player
     gw.add_actor(player)
     controller = DummyController(gw=gw)
-    tm = TurnManager(cast(Controller, controller))
+    tm = controller.turn_manager
 
     player.status_effects.apply_status_effect(status_effects.TrippedEffect())
     tm.queue_action(
         AttackIntent(cast(Controller, controller), player, player, FISTS_TYPE.create())
     )
-    tm.process_unified_round()
+    controller.run_one_turn()
     assert not controller.update_fov_called
     assert player.energy.accumulated_energy == player.energy.speed
     assert not player.status_effects.has_status_effect(status_effects.TrippedEffect)

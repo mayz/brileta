@@ -293,13 +293,6 @@ class Controller:
         """
         self.turn_manager.queue_action(action)
 
-    def process_unified_round(self) -> None:
-        """
-        Processes a single round where all actors can act.
-        Uses a frequency-based system where faster actors act more often.
-        """
-        self.turn_manager.process_unified_round()
-
     def enter_targeting_mode(self) -> None:
         """Enter targeting mode"""
         self.active_mode = self.targeting_mode

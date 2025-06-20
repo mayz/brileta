@@ -22,6 +22,28 @@ class DummyController:
     def update_fov(self) -> None:
         pass
 
+    def run_one_turn(self) -> None:
+        # Start of Turn phase: All actors regenerate energy and process status effects
+        for actor in self.gw.actors:
+            actor.update_turn(cast(Controller, self))
+            actor.energy.regenerate()
+
+        # Player action (check if there's a queued action)
+        player_action = self.turn_manager.dequeue_player_action()
+        if player_action and self.gw.player:
+            self.turn_manager.execute_intent(player_action)
+            self.gw.player.energy.spend(self.action_cost)
+
+        # NPC Action Resolution: Process all NPCs with sufficient energy
+        for actor in list(self.gw.actors):
+            if actor is self.gw.player:
+                continue
+            if hasattr(actor, "energy") and actor.energy.can_afford(self.action_cost):
+                action = actor.get_next_action(cast(Controller, self))
+                if action is not None:
+                    self.turn_manager.execute_intent(action)
+                    actor.energy.spend(self.action_cost)
+
 
 def make_world() -> tuple[DummyController, PC]:
     gw = DummyGameWorld()
@@ -92,13 +114,13 @@ def test_offbalance_persists_until_next_round() -> None:
 
     # Simulate an action applying OffBalanceEffect at the end of the round
     tm.queue_action(MoveIntent(cast(Controller, controller), actor, 1, 0))
-    tm.process_unified_round()
+    controller.run_one_turn()
     actor.status_effects.apply_status_effect(status_effects.OffBalanceEffect())
     assert actor.status_effects.has_status_effect(status_effects.OffBalanceEffect)
 
     # Next round should remove it before the actor acts again
     tm.queue_action(MoveIntent(cast(Controller, controller), actor, 1, 0))
-    tm.process_unified_round()
+    controller.run_one_turn()
     assert not actor.status_effects.has_status_effect(status_effects.OffBalanceEffect)
 
 
