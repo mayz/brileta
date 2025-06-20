@@ -113,19 +113,45 @@ class ActionRouter:
     def _handle_failed_move(self, intent: MoveIntent, result: GameActionResult) -> None:
         """Rulebook for what happens after a failed move."""
         if result.block_reason == "actor" and result.blocked_by:
-            # FIXME: Note that this currently makes NPCs who collide with each
-            # other attack each other too!
-            # Rule: Bumping into a living character means you attack them.
-            blocking_actor = cast(Character, result.blocked_by)
-            if blocking_actor.health.is_alive():
+            # The actor who tried to move.
+            bumper = intent.actor
+            # The actor who was in the way.
+            bumpee = cast(Character, result.blocked_by)
+
+            # Ensure the bumpee is a valid, living target.
+            if not bumpee.health or not bumpee.health.is_alive():
+                return
+
+            # --- WORLD INTERACTION RULE ---
+            # Player ramming an NPC should always trigger an attack.
+            if bumper is self.controller.gw.player:
                 new_intent = AttackIntent(
                     self.controller,
-                    intent.actor,
-                    blocking_actor,
+                    bumper,
+                    bumpee,
                     weapon=None,
                     attack_mode="melee",
                 )
-                self.execute_intent(new_intent)  # Recursive call
+                self.execute_intent(new_intent)
+                return
+
+            # An NPC ramming another actor should ONLY trigger an attack
+            # if the target is the player. This prevents friendly fire from
+            # pathfinding traffic jams.
+            if bumpee is self.controller.gw.player:
+                new_intent = AttackIntent(
+                    self.controller,
+                    bumper,
+                    bumpee,
+                    weapon=None,
+                    attack_mode="melee",
+                )
+                self.execute_intent(new_intent)
+                return
+
+            # In all other cases (NPC bumping into another NPC), do nothing.
+            # The NPC will just wait its turn and the AI will reroute on its
+            # next action.
 
         elif result.block_reason == "door" and result.blocked_by:
             # Rule: Bumping into a closed door means you try to open it.
