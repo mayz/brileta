@@ -156,6 +156,10 @@ class Actor:
         self.ai = ai
         self.visual_effects = visual_effects
 
+        # === Animation Control ===
+        # Flag to indicate if this actor is under animation control
+        self._animation_controlled: bool = False
+
         # === Final Setup & Registration ===
         # This should come last, ensuring the actor is fully constructed
         # before being registered with external systems.
@@ -172,8 +176,21 @@ class Actor:
         self.render_x = float(self.x)
         self.render_y = float(self.y)
 
-    def move(self, dx: TileCoord, dy: TileCoord) -> None:
-        # The move method now only updates the logical position.
+    def move(
+        self, dx: TileCoord, dy: TileCoord, controller: Controller | None = None
+    ) -> None:
+        """Move the actor and automatically create movement animation.
+
+        Args:
+            dx: Change in x coordinate
+            dy: Change in y coordinate
+            controller: Controller to queue animation with (if available)
+        """
+
+        # Store old position for animation
+        old_x, old_y = self.x, self.y
+
+        # Update logical position
         self.x += dx
         self.y += dy
 
@@ -184,6 +201,15 @@ class Actor:
         # Update the light source position when actor moves
         if self.light_source:
             self.light_source.position = (self.x, self.y)
+
+        # Automatically create animation if controller available
+        if controller and hasattr(controller, "animation_manager"):
+            from catley.view.animation import MoveAnimation
+
+            start_pos = (float(old_x), float(old_y))
+            end_pos = (float(self.x), float(self.y))
+            animation = MoveAnimation(self, start_pos, end_pos)
+            controller.animation_manager.add(animation)  # pyright: ignore[reportAttributeAccessIssue]
 
     def teleport(self, x: WorldTileCoord, y: WorldTileCoord) -> None:
         """Instantly move the actor's logical and visual position."""
@@ -353,10 +379,19 @@ class Character(Actor):
             self.inventory.equip_to_slot(starting_weapon, 0)
 
     def update_render_position(self, delta_time: float) -> None:  # type: ignore[override]
-        """Linearly interpolate the visual position toward the logical position."""
-        lerp_factor = 30.0 * delta_time
-        self.render_x += (self.x - self.render_x) * lerp_factor
-        self.render_y += (self.y - self.render_y) * lerp_factor
+        """
+        Update render position. Animation system has priority over interpolation.
+        If not controlled by animation, falls back to the parent Actor's
+        simple snapping behavior.
+        """
+        # If an animation is in control, it handles setting render_x/y.
+        # Do nothing here to avoid interfering with it.
+        if self._animation_controlled:
+            return
+
+        # If not controlled by an animation, use the standard behavior
+        # from the parent class (snapping render position to logical position).
+        super().update_render_position(delta_time)
 
     def can_use_two_handed_weapons(self) -> bool:
         """Return ``False`` if both arms are injured."""
