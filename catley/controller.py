@@ -19,6 +19,7 @@ from .events import MessageEvent, publish_event
 from .game.actions.base import GameIntent
 from .game.actions.movement import MoveIntent  # noqa: F401
 from .game.actions.types import AnimationType
+from .game.actors import Actor
 from .game.actors.core import Character
 from .game.game_world import GameWorld
 from .game.pathfinding_goal import PathfindingGoal
@@ -121,6 +122,18 @@ class Controller:
         self.targeting_mode = TargetingMode(self)
         self.active_mode: Mode | None = None
 
+    def _get_actors_with_energy(self) -> list[Actor]:
+        """Return a list of actors who can currently afford an action."""
+        return [
+            actor
+            for actor in self.gw.actors
+            if (
+                hasattr(actor, "energy")
+                and hasattr(actor.energy, "can_afford")
+                and actor.energy.can_afford(self.action_cost)
+            )
+        ]
+
     def update_fov(self) -> None:
         """Recompute the visible area based on the player's point of view."""
         self.gw.game_map.visible[:] = tcod.map.compute_fov(
@@ -205,15 +218,22 @@ class Controller:
                             self.turn_manager.execute_intent(player_action)
                             self.gw.player.energy.spend(self.action_cost)
 
-                        # NPC Action Resolution: Process all NPCs with sufficient energy
-                        for actor in list(self.gw.actors):
-                            if actor is self.gw.player:
-                                continue
-                            if actor.energy.can_afford(self.action_cost):
+                        # Process all actors with a while loop until no one has energy
+                        # This restores the original, correct action economy.
+                        actors_to_process = self._get_actors_with_energy()
+                        while actors_to_process:
+                            for actor in actors_to_process:
+                                if actor is self.gw.player:
+                                    continue
                                 action = actor.get_next_action(self)
                                 if action is not None:
                                     self.turn_manager.execute_intent(action)
                                     actor.energy.spend(self.action_cost)
+                                else:
+                                    # Spend energy to prevent infinite loop
+                                    actor.energy.spend(1)
+                                continue
+                            actors_to_process = self._get_actors_with_energy()
 
                         self._pending_player_action = None
 
@@ -263,7 +283,7 @@ class Controller:
                             new_action = self.turn_manager.dequeue_player_action()
                             if new_action:
                                 self._pending_player_action = new_action
-                                self.game_state = GameState.PROCESSING_TURN
+                                self.game_state = GameState.AWAITING_INPUT
                             else:
                                 # Should not happen, but as a fallback, go to input.
                                 self.game_state = GameState.AWAITING_INPUT
