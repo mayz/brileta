@@ -119,6 +119,10 @@ class DummyTurnManager:
         """Dummy implementation of RAF get_next_npc_action method."""
         return self._npc_queue.pop(0) if self._npc_queue else None
 
+    def process_all_npc_reactions(self) -> None:
+        """Dummy implementation of RAF V2 process_all_npc_reactions method."""
+        pass
+
 
 class DummyOverlaySystem:
     def __init__(self, controller: Controller) -> None:

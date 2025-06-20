@@ -162,9 +162,8 @@ class Controller:
                     if autopilot_action:
                         self._execute_player_action_immediately(autopilot_action)
 
-                # Step 3: Process one pending NPC action (using existing methods)
-                # TODO: This will be replaced with get_next_npc_action() in Task 2
-                self._process_one_npc_action_if_available()
+                # Step 3: Process all available NPC actions immediately
+                self._process_all_available_npc_actions()
 
                 # Step 4: Render frame
                 self.frame_manager.render_frame(delta_time)
@@ -204,19 +203,29 @@ class Controller:
         # RAF: Trigger immediate NPC scheduling based on the world state change
         self.turn_manager.on_player_action()
 
+    def _process_all_available_npc_actions(self) -> None:
+        """Process all NPCs who can currently afford actions immediately.
+
+        This eliminates the artificial frame-rate delay that was breaking speed ratios
+        in RAF V1. All NPCs who gained sufficient energy from the last player action
+        will act immediately, maintaining perfect proportional speed relationships.
+        """
+        # Process all available NPC actions from TurnManager
+        self.turn_manager.process_all_npc_reactions()
+
     def _process_one_npc_action_if_available(self) -> None:
         """Process one pending NPC action using the RAF scheduling system.
 
-        This method gets the next queued NPC action and executes it immediately.
-        NPCs are queued by the TurnManager when the player acts, creating smooth
-        reactive gameplay where the world responds to player actions.
+        DEPRECATED: This method is deprecated in RAF V2.
+        Use _process_all_available_npc_actions() instead.
+        NPCs now act immediately rather than being queued,
+        maintaining perfect speed ratios.
+
+        This method is kept for backwards compatibility during transition.
         """
-        npc_action = self.turn_manager.get_next_npc_action()
-        if npc_action:
-            # Execute the action and spend the actor's energy
-            self.turn_manager.execute_intent(npc_action)
-            if hasattr(npc_action.actor, "energy"):
-                npc_action.actor.energy.spend(self.action_cost)
+        # In RAF V2, this method does nothing since NPCs act immediately
+        # Left as no-op for backwards compatibility
+        pass
 
     def queue_action(self, action: GameIntent) -> None:
         """
