@@ -203,7 +203,7 @@ class Controller:
                             # The "Instant Tick" happens here. All mechanical changes
                             # for the turn are resolved before any animations begin.
                             self.turn_manager.execute_intent(player_action)
-                            self.turn_manager.process_all_npc_turns()
+                            self.gw.player.energy.spend(self.action_cost)
 
                         self._pending_player_action = None
 

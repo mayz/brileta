@@ -28,9 +28,13 @@ class DummyPlayer:
         self.x = 0
         self.y = 0
         self.health = SimpleNamespace(is_alive=lambda: True)
+        self.energy = SimpleNamespace(spend=lambda cost: None, regenerate=lambda: None)
 
     def get_next_action(self, controller: Controller) -> None:
         return None
+
+    def update_turn(self, controller: Controller) -> None:
+        pass
 
 
 class DummyLighting:
@@ -42,7 +46,7 @@ class DummyGameWorld:
     def __init__(self, w: int, h: int) -> None:
         self.player = DummyPlayer()
         self.lighting = DummyLighting()
-        self.actors: list = []
+        self.actors = [self.player]
         self.game_map = SimpleNamespace(transparent=[], visible=[], explored=[])
 
 
