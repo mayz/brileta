@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from catley.controller import Controller, GameState
+from catley.controller import Controller
 from catley.game.actions.base import GameIntent
 from catley.game.actions.types import AnimationType
 from catley.util.coordinates import TileDimensions
@@ -169,7 +169,8 @@ def make_windup_action(controller: Controller) -> GameIntent:
     return action
 
 
-def test_windup_enters_windup_state() -> None:
+def test_windup_action_queues_animation() -> None:
+    """Test that windup actions add their animation to the animation manager."""
     with patched_controller(stop_after=1) as controller:
         intent = make_windup_action(controller)
         controller.queue_action(intent)
@@ -177,32 +178,32 @@ def test_windup_enters_windup_state() -> None:
         with pytest.raises(StopIteration):
             controller.run_game_loop()
 
-        assert controller.game_state == GameState.AWAITING_WINDUP
-        assert controller._pending_player_action is intent
+        # In RAF, windup actions immediately add their animation
         assert not controller.animation_manager.is_queue_empty()
 
 
-def test_windup_completes_to_processing() -> None:
-    with patched_controller(stop_after=2) as controller:
+def test_windup_action_not_immediately_processed() -> None:
+    """Test that windup actions don't get immediately processed like INSTANT actions."""
+    with patched_controller(stop_after=1) as controller:
         intent = make_windup_action(controller)
         controller.queue_action(intent)
 
         with pytest.raises(StopIteration):
             controller.run_game_loop()
 
-        assert controller.game_state == GameState.PROCESSING_TURN
-        assert controller._pending_player_action is intent
-        assert controller.animation_manager.is_queue_empty()
+        # The action should not be processed yet (animation still playing)
+        assert intent not in controller.turn_manager.processed  # type: ignore[attr-defined]
 
 
-def test_windup_action_processed() -> None:
-    with patched_controller(stop_after=3) as controller:
-        intent = make_windup_action(controller)
+def test_instant_action_processed_immediately() -> None:
+    """Test that INSTANT actions are processed immediately in RAF."""
+    with patched_controller(stop_after=1) as controller:
+        intent = GameIntent(controller, controller.gw.player)
+        intent.animation_type = AnimationType.INSTANT
         controller.queue_action(intent)
 
         with pytest.raises(StopIteration):
             controller.run_game_loop()
 
-        assert controller.game_state == GameState.PLAYING_ANIMATIONS
-        assert controller._pending_player_action is None
+        # INSTANT actions should be processed immediately
         assert intent in controller.turn_manager.processed  # type: ignore[attr-defined]

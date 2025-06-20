@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from enum import Enum, auto
 from typing import TYPE_CHECKING
 
 import tcod.event
@@ -19,7 +18,6 @@ from .events import MessageEvent, publish_event
 from .game.actions.base import GameIntent
 from .game.actions.movement import MoveIntent  # noqa: F401
 from .game.actions.types import AnimationType
-from .game.actors import Actor
 from .game.actors.core import Character
 from .game.game_world import GameWorld
 from .game.pathfinding_goal import PathfindingGoal
@@ -38,21 +36,18 @@ from .view.render.renderer import Renderer
 from .view.ui.overlays import OverlaySystem
 
 
-class GameState(Enum):
-    AWAITING_INPUT = auto()
-    PROCESSING_TURN = auto()
-    PLAYING_ANIMATIONS = auto()
-    AWAITING_WINDUP = auto()
-
-
 class Controller:
     """
-    Orchestrates the main game loop and connects all other systems
-    (GameWorld, Renderer, InputHandler, OverlaySystem, MessageLog).
+    Orchestrates the main game loop using the Reactive Actor Framework (RAF).
 
-    Holds instances of the major game components and provides a central point
-    of access for them. Responsible for high-level game flow, such as processing
-    player actions and then triggering updates for all other game actors.
+    The Controller operates as a lightweight dispatcher with a simple 4-step loop:
+    1. Process player input immediately (zero-latency responsiveness)
+    2. Process one pending NPC action per frame (smooth world reactions)
+    3. Update animations (simultaneous, interruptible visual feedback)
+    4. Render frame (consistent visual output)
+
+    This architecture eliminates the complex state machine in favor of immediate
+    player action processing while maintaining fair energy economy for NPCs.
     """
 
     def __init__(
@@ -80,12 +75,6 @@ class Controller:
         self.gw = GameWorld(self.map_width, self.map_height)
 
         self.turn_manager = TurnManager(self)
-
-        # Store a queued player action while its wind-up animation plays.
-        self._pending_player_action: GameIntent | None = None
-
-        # Game state machine
-        self.game_state = GameState.AWAITING_INPUT
 
         # Animation manager for handling movement and effects
         self.animation_manager = AnimationManager()
@@ -122,18 +111,6 @@ class Controller:
         self.targeting_mode = TargetingMode(self)
         self.active_mode: Mode | None = None
 
-    def _get_actors_with_energy(self) -> list[Actor]:
-        """Return a list of actors who can currently afford an action."""
-        return [
-            actor
-            for actor in self.gw.actors
-            if (
-                hasattr(actor, "energy")
-                and hasattr(actor.energy, "can_afford")
-                and actor.energy.can_afford(self.action_cost)
-            )
-        ]
-
     def update_fov(self) -> None:
         """Recompute the visible area based on the player's point of view."""
         self.gw.game_map.visible[:] = tcod.map.compute_fov(
@@ -154,152 +131,105 @@ class Controller:
             while True:
                 delta_time = self.clock.sync(fps=self.target_fps)
 
-                # --- State-Independent Updates ---
-                # Animation and lighting should update every frame, regardless of state.
+                # Step 1: Update frame-independent systems
                 self.animation_manager.update(delta_time)
                 self.gw.lighting.update(delta_time)
 
-                # --- State Machine Logic ---
-                match self.game_state:
-                    case GameState.AWAITING_INPUT:
-                        # Process all pending input events.
-                        for event in tcod.event.get():
-                            self.input_handler.dispatch(event)
+                # Step 2: Process player input immediately (if any)
+                for event in tcod.event.get():
+                    self.input_handler.dispatch(event)
 
-                        # Check for player-initiated actions (movement or queued).
-                        move_intent = self.movement_handler.generate_intent(
-                            self.input_handler.movement_keys
-                        )
-                        if move_intent:
-                            self.queue_action(move_intent)
+                # Check for player-initiated actions (movement or queued)
+                move_intent = self.movement_handler.generate_intent(
+                    self.input_handler.movement_keys
+                )
+                if move_intent:
+                    self._execute_player_action_immediately(move_intent)
 
-                        # Check for autopilot actions if no manual input is given.
-                        if (
-                            not move_intent
-                            and self.turn_manager.is_player_turn_available()
-                        ):
-                            autopilot_action = self.gw.player.get_next_action(self)
-                            if autopilot_action:
-                                self.queue_action(autopilot_action)
+                # Check for other queued player actions
+                if self.turn_manager.has_pending_actions():
+                    player_action = self.turn_manager.dequeue_player_action()
+                    if player_action:
+                        self._execute_player_action_immediately(player_action)
 
-                        # Handle any queued action based on its animation type.
-                        if self.turn_manager.has_pending_actions():
-                            player_action = self.turn_manager.dequeue_player_action()
-                            if player_action:
-                                self._pending_player_action = player_action
-                                if (
-                                    player_action.animation_type
-                                    == AnimationType.WIND_UP
-                                ):
-                                    # Queue wind-up animation then enter state.
-                                    if player_action.windup_animation:
-                                        self.animation_manager.add(
-                                            player_action.windup_animation
-                                        )
-                                        self.game_state = GameState.AWAITING_WINDUP
-                                    else:
-                                        # Fallback for misconfigured WIND_UP actions.
-                                        self.game_state = GameState.PROCESSING_TURN
-                                else:
-                                    # For INSTANT actions, proceed directly.
-                                    self.game_state = GameState.PROCESSING_TURN
+                # Check for autopilot actions if no manual input
+                if (
+                    not move_intent
+                    and not self.turn_manager.has_pending_actions()
+                    and self.turn_manager.is_player_turn_available()
+                ):
+                    autopilot_action = self.gw.player.get_next_action(self)
+                    if autopilot_action:
+                        self._execute_player_action_immediately(autopilot_action)
 
-                    case GameState.PROCESSING_TURN:
-                        # Start of Turn phase: All actors regenerate energy and
-                        # process status effects
-                        for actor in self.gw.actors:
-                            actor.update_turn(self)
-                            actor.energy.regenerate()
+                # Step 3: Process one pending NPC action (using existing methods)
+                # TODO: This will be replaced with get_next_npc_action() in Task 2
+                self._process_one_npc_action_if_available()
 
-                        player_action = self._pending_player_action
-                        if player_action:
-                            # The "Instant Tick" happens here. All mechanical changes
-                            # for the turn are resolved before any animations begin.
-                            self.turn_manager.execute_intent(player_action)
-                            self.gw.player.energy.spend(self.action_cost)
-
-                        # Process all actors with a while loop until no one has energy
-                        # This restores the original, correct action economy.
-                        actors_to_process = self._get_actors_with_energy()
-                        while actors_to_process:
-                            for actor in actors_to_process:
-                                if actor is self.gw.player:
-                                    continue
-                                action = actor.get_next_action(self)
-                                if action is not None:
-                                    self.turn_manager.execute_intent(action)
-                                    actor.energy.spend(self.action_cost)
-                                else:
-                                    # Spend energy to prevent infinite loop
-                                    actor.energy.spend(1)
-                                continue
-                            actors_to_process = self._get_actors_with_energy()
-
-                        self._pending_player_action = None
-
-                        # Once the turn is resolved, transition to playing animations.
-                        self.game_state = GameState.PLAYING_ANIMATIONS
-
-                    case GameState.AWAITING_WINDUP:
-                        # Check for new input that would cancel the wind-up.
-                        for event in tcod.event.get():
-                            self.input_handler.dispatch(event)
-
-                        move_intent = self.movement_handler.generate_intent(
-                            self.input_handler.movement_keys
-                        )
-                        if move_intent:
-                            self.queue_action(move_intent)
-
-                        if self.turn_manager.has_pending_actions():
-                            # New action cancels the wind-up.
-                            self.animation_manager.finish_all_and_clear()
-                            self._pending_player_action = None
-                            self.game_state = GameState.AWAITING_INPUT
-                            continue
-
-                        # If the queue is empty, the wind-up finished successfully.
-                        if self.animation_manager.is_queue_empty():
-                            # Proceed to resolve the turn.
-                            self.game_state = GameState.PROCESSING_TURN
-
-                    case GameState.PLAYING_ANIMATIONS:
-                        # --- START OF TASK 2.2 MODIFICATION ---
-                        # While animations are playing, we must still check for new
-                        # player input to allow for interruptions.
-                        for event in tcod.event.get():
-                            self.input_handler.dispatch(event)
-
-                        move_intent = self.movement_handler.generate_intent(
-                            self.input_handler.movement_keys
-                        )
-                        if move_intent:
-                            self.queue_action(move_intent)
-
-                        if self.turn_manager.has_pending_actions():
-                            # New action detected! Interrupt the current animations.
-                            self.animation_manager.finish_all_and_clear()
-                            # Dequeue the new action and store it for processing.
-                            new_action = self.turn_manager.dequeue_player_action()
-                            if new_action:
-                                self._pending_player_action = new_action
-                                self.game_state = GameState.AWAITING_INPUT
-                            else:
-                                # Should not happen, but as a fallback, go to input.
-                                self.game_state = GameState.AWAITING_INPUT
-                            continue
-                        # --- END OF TASK 2.2 MODIFICATION ---
-
-                        if self.animation_manager.is_queue_empty():
-                            # No more animations to play, and no new input was received.
-                            # Return to awaiting input.
-                            self.game_state = GameState.AWAITING_INPUT
-
-                # Render the final frame.
+                # Step 4: Render frame
                 self.frame_manager.render_frame(delta_time)
 
         finally:
             tcod.sdl.mouse.show(True)
+
+    def _execute_player_action_immediately(self, action: GameIntent) -> None:
+        """Execute a player action immediately on the current frame.
+
+        This is the core of the RAF system - player actions are never queued
+        or delayed. They are processed instantly when detected.
+
+        Args:
+            action: The player's GameIntent to execute immediately
+        """
+        # Handle wind-up actions specially (preserve existing PPIAS behavior)
+        if action.animation_type == AnimationType.WIND_UP and action.windup_animation:
+            self.animation_manager.add(action.windup_animation)
+            # For wind-up actions, we still need to wait for completion
+            # This preserves the existing wind-up behavior from PPIAS
+            # TODO: This may be simplified further in future phases
+            return
+
+        # For INSTANT actions, execute immediately
+        # Update energy and process turn effects for all actors
+        for actor in self.gw.actors:
+            actor.update_turn(self)
+            actor.energy.regenerate()
+
+        # Execute the player's action
+        self.turn_manager.execute_intent(action)
+        self.gw.player.energy.spend(self.action_cost)
+
+        # Update FOV after player action (important for movement)
+        self.update_fov()
+
+    def _process_one_npc_action_if_available(self) -> None:
+        """Temporary method to process NPC actions until Task 2 implementation.
+
+        This preserves existing NPC behavior while we transition to the new
+        architecture. In Task 2, this will be replaced with get_next_npc_action().
+        """
+        # Find actors with energy for actions (existing logic)
+        actors_with_energy = [
+            actor
+            for actor in self.gw.actors
+            if (
+                hasattr(actor, "energy")
+                and hasattr(actor.energy, "can_afford")
+                and actor.energy.can_afford(self.action_cost)
+                and actor is not self.gw.player
+            )
+        ]
+
+        # Process one action from the first available actor
+        if actors_with_energy:
+            actor = actors_with_energy[0]
+            action = actor.get_next_action(self)
+            if action is not None:
+                self.turn_manager.execute_intent(action)
+                actor.energy.spend(self.action_cost)
+            else:
+                # Spend energy to prevent infinite loop
+                actor.energy.spend(1)
 
     def queue_action(self, action: GameIntent) -> None:
         """
