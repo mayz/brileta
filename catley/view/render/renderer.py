@@ -1,8 +1,21 @@
-"""Low-level renderer bridging tcod and SDL.
+"""
+The low-level rendering engine for the game.
 
-Instantiate with a tcod Context and root Console.
-Use clear_console(), draw_text(), blit_console(),
-and present_frame() to control the frame pipeline."""
+The Renderer is the only component that directly interacts with the SDL rendering
+context. Its primary responsibility is to take intermediate "artifacts" (like
+`tcod.Console` objects or NumPy pixel arrays) and convert them into final
+textures that can be drawn to the screen.
+
+Key Principles:
+- The Renderer knows *how* to draw things, but not *what* to draw.
+- It provides a set of `texture_from_*` methods to create textures from
+  standard data types.
+- It offers high-performance drawing functions for specialized objects that
+  bypass the main View/Canvas system, such as `draw_actor_smooth` for sub-pixel
+  actor rendering.
+- It is the final stage in the rendering pipeline before the frame is presented
+  to the user.
+"""
 
 from __future__ import annotations
 
