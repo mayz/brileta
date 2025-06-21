@@ -7,15 +7,15 @@ from catley.config import PERFORMANCE_PROFILING
 from catley.constants.view import ViewConstants as View
 from catley.view.render.text_backend import TCODTextBackend
 
-from .panel import TextPanel
+from .base import TextView
 
 if TYPE_CHECKING:
     from catley.util.clock import Clock
     from catley.view.render.renderer import Renderer
 
 
-class FPSPanel(TextPanel):
-    """Simple panel that displays the current frames per second."""
+class FPSView(TextView):
+    """Simple view that displays the current frames per second."""
 
     def __init__(
         self,
@@ -51,7 +51,7 @@ class FPSPanel(TextPanel):
 
         tile_width, tile_height = self.tile_dimensions
 
-        # Right-align within panel bounds
+        # Right-align within view bounds
         fps_width = len(self.display_string)
         x_position = max(0, self.width - fps_width)
         self.text_backend.draw_text(

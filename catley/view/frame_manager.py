@@ -1,7 +1,7 @@
 """Manages the main frame lifecycle.
 
-FrameManager holds the Renderer, positions UI panels, and triggers global effects.
-Each frame it draws panels, processes overlays, and presents the final image."""
+FrameManager holds the Renderer, positions UI views, and triggers global effects.
+Each frame it draws views, processes overlays, and presents the final image."""
 
 from __future__ import annotations
 
@@ -20,25 +20,25 @@ from catley.events import (
 )
 from catley.util.coordinates import RootConsoleTilePos, ViewportTileCoord, WorldTilePos
 
-from .panels.equipment_panel import EquipmentPanel
-from .panels.fps_panel import FPSPanel
-from .panels.health_panel import HealthPanel
-from .panels.help_text_panel import HelpTextPanel
-from .panels.message_log_panel import MessageLogPanel
-from .panels.panel import Panel
-from .panels.status_panel import StatusPanel
-from .panels.world_panel import WorldPanel
 from .render.effects.effects import EffectContext
 from .render.effects.screen_shake import ScreenShake
 from .render.renderer import Renderer
 from .ui.cursor_manager import CursorManager
+from .views.base import View
+from .views.equipment_view import EquipmentView
+from .views.fps_view import FPSView
+from .views.health_view import HealthView
+from .views.help_text_view import HelpTextView
+from .views.message_log_view import MessageLogView
+from .views.status_view import StatusView
+from .views.world_view import WorldView
 
 if TYPE_CHECKING:
     from catley.controller import Controller
 
 
 class FrameManager:
-    """Coordinates panels and manages the frame lifecycle, including global effects."""
+    """Coordinates views and manages the frame lifecycle, including global effects."""
 
     def __init__(self, controller: Controller) -> None:
         """Initialize the frame manager and supporting systems."""
@@ -58,51 +58,51 @@ class FrameManager:
         self._setup_game_ui()
 
     def _setup_game_ui(self) -> None:
-        """Configure and position panels for the main game interface."""
-        # Create panels (dimensions will be set via resize() calls below)
-        self.fps_panel = FPSPanel(
+        """Configure and position views for the main game interface."""
+        # Create views (dimensions will be set via resize() calls below)
+        self.fps_view = FPSView(
             self.controller.clock,
             renderer=self.renderer,
         )
-        self.fps_panel.visible = SHOW_FPS
+        self.fps_view.visible = SHOW_FPS
 
-        self.help_text_panel = HelpTextPanel(self.controller, renderer=self.renderer)
+        self.help_text_view = HelpTextView(self.controller, renderer=self.renderer)
 
-        self.world_panel = WorldPanel(self.controller, self.screen_shake)
-        self.message_log_panel = MessageLogPanel(
+        self.world_view = WorldView(self.controller, self.screen_shake)
+        self.message_log_view = MessageLogView(
             message_log=self.controller.message_log,
             renderer=self.renderer,
         )
-        self.equipment_panel = EquipmentPanel(
+        self.equipment_view = EquipmentView(
             self.controller,
             renderer=self.renderer,
         )
 
-        self.health_panel = HealthPanel(self.controller, renderer=self.renderer)
-        self.status_panel = StatusPanel(self.controller, renderer=self.renderer)
+        self.health_view = HealthView(self.controller, renderer=self.renderer)
+        self.status_view = StatusView(self.controller, renderer=self.renderer)
 
-        self.panels: list[Panel] = [
-            self.help_text_panel,
-            self.world_panel,
-            self.health_panel,
-            self.status_panel,
-            self.equipment_panel,
-            self.message_log_panel,
-            self.fps_panel,
+        self.views: list[View] = [
+            self.help_text_view,
+            self.world_view,
+            self.health_view,
+            self.status_view,
+            self.equipment_view,
+            self.message_log_view,
+            self.fps_view,
         ]
 
-        # Set panel boundaries using resize()
-        self._resize_panels()
+        # Set view boundaries using resize()
+        self._resize_views()
 
-    def _resize_panels(self) -> None:
-        """Calculate and set panel boundaries based on current screen size."""
+    def _resize_views(self) -> None:
+        """Calculate and set view boundaries based on current screen size."""
         screen_width_tiles = self.renderer.root_console.width
         screen_height_tiles = self.renderer.root_console.height
         tile_dimensions = self.renderer.tile_dimensions
 
         # Recalculate layout
         message_log_height = 10
-        equipment_height = 4  # Equipment panel needs 4 lines (2 weapons + 2 hints)
+        equipment_height = 4  # Equipment view needs 4 lines (2 weapons + 2 hints)
         bottom_ui_height = message_log_height + 1
 
         game_world_y = self.help_height
@@ -114,52 +114,52 @@ class FrameManager:
         equipment_width = 25
         equipment_x = screen_width_tiles - equipment_width - 2
 
-        # Status panel positioned to the left of health panel to avoid overlap
-        status_panel_width = 25
-        status_panel_x = screen_width_tiles - 20 - status_panel_width - 1
-        status_panel_y = self.help_height + 1
-        status_panel_height = 10
+        # Status view positioned to the left of health view to avoid overlap
+        status_view_width = 25
+        status_view_x = screen_width_tiles - 20 - status_view_width - 1
+        status_view_y = self.help_height + 1
+        status_view_height = 10
 
-        # Resize all panels
-        self.help_text_panel.tile_dimensions = tile_dimensions
-        self.help_text_panel.resize(0, 0, screen_width_tiles, self.help_height)
-        self.world_panel.tile_dimensions = tile_dimensions
-        self.world_panel.resize(
+        # Resize all views
+        self.help_text_view.tile_dimensions = tile_dimensions
+        self.help_text_view.resize(0, 0, screen_width_tiles, self.help_height)
+        self.world_view.tile_dimensions = tile_dimensions
+        self.world_view.resize(
             0, game_world_y, screen_width_tiles, game_world_y + game_world_height
         )
-        self.health_panel.tile_dimensions = tile_dimensions
-        self.health_panel.resize(
+        self.health_view.tile_dimensions = tile_dimensions
+        self.health_view.resize(
             screen_width_tiles - 20, 0, screen_width_tiles, self.help_height
         )
-        self.status_panel.tile_dimensions = tile_dimensions
-        self.status_panel.resize(
-            status_panel_x,
-            status_panel_y,
-            status_panel_x + status_panel_width,
-            status_panel_y + status_panel_height,
+        self.status_view.tile_dimensions = tile_dimensions
+        self.status_view.resize(
+            status_view_x,
+            status_view_y,
+            status_view_x + status_view_width,
+            status_view_y + status_view_height,
         )
-        self.equipment_panel.tile_dimensions = tile_dimensions
-        self.equipment_panel.resize(
+        self.equipment_view.tile_dimensions = tile_dimensions
+        self.equipment_view.resize(
             equipment_x, equipment_y, screen_width_tiles, screen_height_tiles
         )
-        self.message_log_panel.tile_dimensions = tile_dimensions
-        self.message_log_panel.resize(1, message_log_y, 31, screen_height_tiles)
-        self.fps_panel.tile_dimensions = tile_dimensions
+        self.message_log_view.tile_dimensions = tile_dimensions
+        self.message_log_view.resize(1, message_log_y, 31, screen_height_tiles)
+        self.fps_view.tile_dimensions = tile_dimensions
 
-        # Position FPS panel below health panel with proper spacing and width
+        # Position FPS view below health view with proper spacing and width
         fps_width = 25  # Increase width to fit full FPS text
         fps_height = 3
         fps_x = screen_width_tiles - fps_width  # Right-aligned but wider
         fps_y = self.help_height + 2
-        self.fps_panel.resize(fps_x, fps_y, screen_width_tiles, fps_y + fps_height)
+        self.fps_view.resize(fps_x, fps_y, screen_width_tiles, fps_y + fps_height)
 
     def on_window_resized(self) -> None:
-        """Called when the game window is resized to update panel layouts."""
-        self._resize_panels()
+        """Called when the game window is resized to update view layouts."""
+        self._resize_views()
 
-    def add_panel(self, panel: Panel) -> None:
-        """Add a UI panel to be rendered each frame."""
-        self.panels.append(panel)
+    def add_view(self, view: View) -> None:
+        """Add a UI view to be rendered each frame."""
+        self.views.append(view)
 
     def render_frame(self, delta_time: float) -> None:
         """
@@ -167,22 +167,22 @@ class FrameManager:
 
         Pipeline stages:
         1. Preparation - Clear buffers
-        2. UI Panels - Each panel renders itself
+        2. UI Views - Each view renders itself
         3. Menus - Draw any active menus on top of everything
         4. Presentation - Composite overlays then draw the mouse cursor
         """
         # 1. PREPARATION PHASE
         self.renderer.clear_console(self.renderer.root_console)
-        # 2. UI PANEL RENDERING
-        for panel in self.panels:
-            if panel.visible:
-                panel.draw(self.renderer)
+        # 2. UI VIEW RENDERING
+        for view in self.views:
+            if view.visible:
+                view.draw(self.renderer)
 
         # Allow active mode to render its additional UI
         if self.controller.active_mode:
             self.controller.active_mode.render_ui(self.renderer.root_console)
 
-        # Panels may render overlays like FPS after game UI.
+        # Views may render overlays like FPS after game UI.
 
         # 3. OVERLAY DRAWING (texture generation phase)
         self.controller.overlay_system.draw_overlays()
@@ -191,10 +191,10 @@ class FrameManager:
         # Copy the final console state to the backbuffer
         self.renderer.prepare_to_present()
 
-        # Allow panels and other systems to perform low-level SDL drawing
-        for panel in self.panels:
-            if panel.visible:
-                panel.present(self.renderer)
+        # Allow views and other systems to perform low-level SDL drawing
+        for view in self.views:
+            if view.visible:
+                view.present(self.renderer)
 
         # 5. OVERLAY PRESENTATION (texture blitting phase)
         self.controller.overlay_system.present_overlays()
@@ -214,18 +214,18 @@ class FrameManager:
         root_x, root_y = root_tile_pos
 
         # Translate from root-console coordinates to viewport coordinates by
-        # subtracting the panel's screen position.
-        vp_x: ViewportTileCoord = root_x - self.world_panel.x
-        vp_y: ViewportTileCoord = root_y - self.world_panel.y
+        # subtracting the view's screen position.
+        vp_x: ViewportTileCoord = root_x - self.world_view.x
+        vp_y: ViewportTileCoord = root_y - self.world_view.y
 
-        # Ignore coordinates that fall outside the visible game world panel.
+        # Ignore coordinates that fall outside the visible game world view.
         if not (
-            0 <= vp_x < self.world_panel.width and 0 <= vp_y < self.world_panel.height
+            0 <= vp_x < self.world_view.width and 0 <= vp_y < self.world_view.height
         ):
             return None
 
         # Use the viewport system to convert viewport coords to world map coords.
-        world_x, world_y = self.world_panel.viewport_system.screen_to_world(vp_x, vp_y)
+        world_x, world_y = self.world_view.viewport_system.screen_to_world(vp_x, vp_y)
         gw = self.controller.gw
         if 0 <= world_x < gw.game_map.width and 0 <= world_y < gw.game_map.height:
             return world_x, world_y
@@ -253,20 +253,20 @@ class FrameManager:
         direction_y: float = 0.0,
     ) -> None:
         """Create a visual effect if the world position is visible."""
-        vs = self.world_panel.viewport_system
+        vs = self.world_view.viewport_system
         if not vs.is_visible(x, y):
             return
         vp_x, vp_y = vs.world_to_screen(x, y)
         context = EffectContext(
-            particle_system=self.world_panel.particle_system,
-            environmental_system=self.world_panel.environmental_system,
+            particle_system=self.world_view.particle_system,
+            environmental_system=self.world_view.environmental_system,
             x=vp_x,
             y=vp_y,
             intensity=intensity,
             direction_x=direction_x,
             direction_y=direction_y,
         )
-        self.world_panel.effect_library.trigger(effect_name, context)
+        self.world_view.effect_library.trigger(effect_name, context)
 
     def _handle_effect_event(self, event: EffectEvent) -> None:
         """Handle effect events from the global event bus."""

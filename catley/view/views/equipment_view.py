@@ -7,13 +7,13 @@ from catley.constants.view import ViewConstants as View
 from catley.view.render.renderer import Renderer
 from catley.view.render.text_backend import TCODTextBackend
 
-from .panel import TextPanel
+from .base import TextView
 
 if TYPE_CHECKING:
     from catley.controller import Controller
 
 
-class EquipmentPanel(TextPanel):
+class EquipmentView(TextView):
     """Displays the player's equipped weapons and ammo counts."""
 
     def __init__(self, controller: Controller, renderer: Renderer) -> None:

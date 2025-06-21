@@ -3,16 +3,17 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from catley import colors
-from catley.view.panels.panel import TextPanel
 from catley.view.render.text_backend import TCODTextBackend
+
+from .base import TextView
 
 if TYPE_CHECKING:
     from catley.controller import Controller
     from catley.view.render.renderer import Renderer
 
 
-class HelpTextPanel(TextPanel):
-    """Panel that displays basic control hints at the top of the screen."""
+class HelpTextView(TextView):
+    """View that displays basic control hints at the top of the screen."""
 
     def __init__(self, controller: Controller, renderer: Renderer) -> None:
         super().__init__()

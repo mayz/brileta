@@ -28,7 +28,7 @@ from catley.view.render.effects.particles import (
 from catley.view.render.effects.screen_shake import ScreenShake
 from catley.view.render.viewport import ViewportSystem
 
-from .panel import Panel
+from .base import View
 
 if TYPE_CHECKING:
     from catley.controller import Controller, FrameManager
@@ -36,8 +36,8 @@ if TYPE_CHECKING:
     from catley.view.render.renderer import Renderer
 
 
-class WorldPanel(Panel):
-    """Panel responsible for rendering the game world (map, actors, effects)."""
+class WorldView(View):
+    """View responsible for rendering the game world (map, actors, effects)."""
 
     def __init__(
         self,
@@ -48,7 +48,7 @@ class WorldPanel(Panel):
         self.controller = controller
         self.screen_shake = screen_shake
         # Initialize a viewport system sized using configuration defaults.
-        # These defaults are replaced once resize() sets the real panel bounds.
+        # These defaults are replaced once resize() sets the real view bounds.
         self.viewport_system = ViewportSystem(
             config.DEFAULT_VIEWPORT_WIDTH, config.DEFAULT_VIEWPORT_HEIGHT
         )
@@ -135,7 +135,7 @@ class WorldPanel(Panel):
         # Restore the original camera position so subsequent frames start clean.
         self.viewport_system.camera.set_position(original_cam_x, original_cam_y)
 
-        # Blit the viewport-sized console to the root console at our panel's
+        # Blit the viewport-sized console to the root console at our view's
         # location.
         renderer.blit_console(
             source=self.game_map_console,
@@ -154,13 +154,13 @@ class WorldPanel(Panel):
             return
 
         viewport_bounds = Rect.from_bounds(0, 0, self.width - 1, self.height - 1)
-        panel_offset = (self.x, self.y)
+        view_offset = (self.x, self.y)
 
         self.particle_system.render_particles(
             renderer,
             ParticleLayer.UNDER_ACTORS,
             viewport_bounds,
-            panel_offset,
+            view_offset,
         )
 
         if config.SMOOTH_ACTOR_RENDERING_ENABLED:
@@ -172,14 +172,14 @@ class WorldPanel(Panel):
             renderer,
             ParticleLayer.OVER_ACTORS,
             viewport_bounds,
-            panel_offset,
+            view_offset,
         )
 
         if config.ENVIRONMENTAL_EFFECTS_ENABLED:
             self.environmental_system.render_effects(
                 renderer,
                 viewport_bounds,
-                panel_offset,
+                view_offset,
             )
 
     # ------------------------------------------------------------------
