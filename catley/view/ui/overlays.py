@@ -116,18 +116,32 @@ class TextOverlay(Overlay):
 
         self.canvas.begin_frame()
         self.draw_content()
-        self._cached_texture = self.canvas.end_frame()
+        artifact = self.canvas.end_frame()
+        if artifact is not None:
+            # Convert artifact to texture using renderer
+            if hasattr(artifact, "width"):  # tcod.Console has width attribute
+                texture = self.renderer.texture_from_console(
+                    artifact, self.canvas.transparent
+                )
+            else:  # numpy.ndarray
+                texture = self.renderer.texture_from_numpy(
+                    artifact, self.canvas.transparent
+                )
+            self._cached_texture = texture
 
     def present(self) -> None:
         """Presents the cached texture if one was created by the backend."""
         if not self.is_active or not self._cached_texture:
             return
 
-        px_x = self.x_tiles * self.tile_dimensions[0]
-        px_y = self.y_tiles * self.tile_dimensions[1]
+        # Convert pixel position to tile position for the renderer
+        tile_width, tile_height = self.tile_dimensions
+        width_tiles = self.pixel_width // tile_width if tile_width > 0 else 0
+        height_tiles = self.pixel_height // tile_height if tile_height > 0 else 0
 
-        dest_rect = (px_x, px_y, self.pixel_width, self.pixel_height)
-        self.renderer.sdl_renderer.copy(self._cached_texture, dest=dest_rect)
+        self.renderer.present_texture(
+            self._cached_texture, self.x_tiles, self.y_tiles, width_tiles, height_tiles
+        )
 
 
 class OverlaySystem:

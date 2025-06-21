@@ -53,15 +53,9 @@ class View(abc.ABC):
         if not self.visible or self._cached_texture is None:
             return
 
-        if self.tile_dimensions != (0, 0):
-            tile_width, tile_height = self.tile_dimensions
-            dest_x = self.x * tile_width
-            dest_y = self.y * tile_height
-            dest_width = self.width * tile_width
-            dest_height = self.height * tile_height
-
-            dest_rect = (dest_x, dest_y, dest_width, dest_height)
-            renderer.sdl_renderer.copy(self._cached_texture, dest=dest_rect)
+        renderer.present_texture(
+            self._cached_texture, self.x, self.y, self.width, self.height
+        )
 
     def resize(self, x1: int, y1: int, x2: int, y2: int) -> None:
         """Set view screen boundaries."""
@@ -106,8 +100,17 @@ class TextView(View):
         if self.needs_redraw(renderer):
             self.canvas.begin_frame()
             self.draw_content(renderer)
-            texture = self.canvas.end_frame()
-            if texture is not None:
+            artifact = self.canvas.end_frame()
+            if artifact is not None:
+                # Convert artifact to texture using renderer
+                if hasattr(artifact, "width"):  # tcod.Console has width attribute
+                    texture = renderer.texture_from_console(
+                        artifact, self.canvas.transparent
+                    )
+                else:  # numpy.ndarray
+                    texture = renderer.texture_from_numpy(
+                        artifact, self.canvas.transparent
+                    )
                 self._cached_texture = texture
 
     def resize(self, x1: int, y1: int, x2: int, y2: int) -> None:

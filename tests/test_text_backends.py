@@ -244,7 +244,7 @@ def test_dimension_cache_invalidation() -> None:
         backend.configure_dimensions(120, 100)
 
         # Verify cache was invalidated by checking internal state
-        assert backend._cached_frame_texture is None
+        assert backend._cached_frame_artifact is None
         assert backend._last_frame_ops == []
 
         # Same operations, but should create new texture due to dimension change

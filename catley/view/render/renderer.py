@@ -314,3 +314,42 @@ class Renderer:
             renderer_width=renderer_width,
             renderer_height=renderer_height,
         )
+
+    def texture_from_console(
+        self, console: Console, transparent: bool = True
+    ) -> tcod.sdl.render.Texture:
+        """Convert a tcod Console to an SDL texture."""
+        texture = self.console_render.render(console)
+        # Use additive blending for transparent overlays, normal for opaque menus
+        texture.blend_mode = (
+            tcod.sdl.render.BlendMode.ADD
+            if transparent
+            else tcod.sdl.render.BlendMode.BLEND
+        )
+        return texture
+
+    def texture_from_numpy(
+        self, pixels: np.ndarray, transparent: bool = True
+    ) -> tcod.sdl.render.Texture:
+        """Convert a numpy array to an SDL texture."""
+        texture = self.sdl_renderer.upload_texture(pixels)
+        texture.blend_mode = tcod.sdl.render.BlendMode.BLEND
+        return texture
+
+    def present_texture(
+        self,
+        texture: tcod.sdl.render.Texture,
+        x_tile: int,
+        y_tile: int,
+        width_tiles: int,
+        height_tiles: int,
+    ) -> None:
+        """Present a texture at the specified tile coordinates."""
+        tile_width, tile_height = self.tile_dimensions
+        dest_x = x_tile * tile_width
+        dest_y = y_tile * tile_height
+        dest_width = width_tiles * tile_width
+        dest_height = height_tiles * tile_height
+
+        dest_rect = (dest_x, dest_y, dest_width, dest_height)
+        self.sdl_renderer.copy(texture, dest=dest_rect)
