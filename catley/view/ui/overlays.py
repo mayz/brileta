@@ -1,17 +1,16 @@
-"""UI Overlay System - Temporary modal UI elements.
+"""
+Defines the Overlay system for temporary, modal UI elements.
 
-Overlays are temporary UI that appear over the game world:
-- Menus (inventory, help, pickup)
-- Tooltips and status displays
-- Confirmation dialogs
+Overlays are UI components that appear on top of the main `View` hierarchy and
+typically consume all input while active. They are used for transient interfaces
+like menus, dialog boxes, and informational pop-ups.
 
-Use overlays for temporary UI. Use views for persistent UI.
-Use modes for behavioral changes.
-
-Quick decisions:
-- "Show tooltip" -> Create Tooltip(Overlay)
-- "Ask confirmation" -> Create Dialog(Overlay)
-- "Show inventory" -> Use InventoryMenu(Menu)
+Key Principles:
+- Overlays are managed in a stack by the `FrameManager`. Only the top-most
+  overlay is interactive.
+- They are distinct from `Views`, which are persistent parts of the main layout.
+- An overlay is shown, handles its lifecycle, and then hides itself, at which
+  point it is removed from the active stack.
 """
 
 from __future__ import annotations
@@ -45,6 +44,7 @@ class Overlay(abc.ABC):
     def __init__(self, controller: Controller) -> None:
         self.controller = controller
         self.is_active = False
+        self.is_interactive = True  # Most overlays handle input by default
 
     @abc.abstractmethod
     def handle_input(self, event: tcod.event.Event) -> bool:
@@ -174,15 +174,23 @@ class OverlaySystem:
     def handle_input(self, event: tcod.event.Event) -> bool:
         """Handle input for the active overlays. Returns True if event was consumed."""
         if self.active_overlays:
-            # Handle input for the topmost overlay
-            overlay = self.active_overlays[-1]
-            consumed = overlay.handle_input(event)
+            # Find the topmost interactive overlay
+            for overlay in reversed(self.active_overlays):
+                if not overlay.is_interactive:
+                    continue
 
-            # Remove overlay from stack if it was hidden
-            if not overlay.is_active and overlay in self.active_overlays:
-                self.active_overlays.remove(overlay)
+                consumed = overlay.handle_input(event)
 
-            return consumed
+                # Remove overlay from stack if it was hidden
+                if not overlay.is_active and overlay in self.active_overlays:
+                    self.active_overlays.remove(overlay)
+
+                return consumed
+
+            # If we get here, there were only non-interactive overlays
+            # Return False so input passes through to the main game
+            return False
+
         return False
 
     def draw_overlays(self) -> None:
@@ -198,6 +206,10 @@ class OverlaySystem:
     def has_active_overlays(self) -> bool:
         """Check if there are any active overlays."""
         return len(self.active_overlays) > 0
+
+    def has_interactive_overlays(self) -> bool:
+        """Check if there are any active, interactive overlays."""
+        return any(o.is_interactive for o in self.active_overlays)
 
     # Legacy methods for backward compatibility
     def show_menu(self, menu: Menu) -> None:

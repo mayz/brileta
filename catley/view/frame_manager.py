@@ -1,7 +1,17 @@
-"""Manages the main frame lifecycle.
+"""
+Coordinates the main frame lifecycle, UI layout, and global effects.
 
-FrameManager holds the Renderer, positions UI views, and triggers global effects.
-Each frame it draws views, processes overlays, and presents the final image."""
+The FrameManager is the top-level coordinator for the entire view system. It
+instantiates and manages all the persistent `View`s and temporary `Overlay`s.
+
+Key Responsibilities:
+- Creates and owns a list of all primary `View`s (e.g., WorldView, MessageLogView).
+- Manages the layout by calculating and setting the screen bounds for each `View`.
+- Manages the `Overlay` stack, controlling which menus or dialogs are active.
+- Orchestrates the main `render_frame` loop, telling all visible components
+  to draw themselves in the correct order.
+- Subscribes to and triggers global visual effects like screen shake.
+"""
 
 from __future__ import annotations
 
@@ -11,7 +21,6 @@ from typing import TYPE_CHECKING
 from catley import config
 from catley.config import (
     HELP_HEIGHT,
-    SHOW_FPS,
 )
 from catley.events import (
     EffectEvent,
@@ -26,7 +35,6 @@ from .render.renderer import Renderer
 from .ui.cursor_manager import CursorManager
 from .views.base import View
 from .views.equipment_view import EquipmentView
-from .views.fps_view import FPSView
 from .views.health_view import HealthView
 from .views.help_text_view import HelpTextView
 from .views.message_log_view import MessageLogView
@@ -60,12 +68,6 @@ class FrameManager:
     def _setup_game_ui(self) -> None:
         """Configure and position views for the main game interface."""
         # Create views (dimensions will be set via resize() calls below)
-        self.fps_view = FPSView(
-            self.controller.clock,
-            renderer=self.renderer,
-        )
-        self.fps_view.visible = SHOW_FPS
-
         self.help_text_view = HelpTextView(self.controller, renderer=self.renderer)
 
         self.world_view = WorldView(self.controller, self.screen_shake)
@@ -88,7 +90,6 @@ class FrameManager:
             self.status_view,
             self.equipment_view,
             self.message_log_view,
-            self.fps_view,
         ]
 
         # Set view boundaries using resize()
@@ -144,14 +145,6 @@ class FrameManager:
         )
         self.message_log_view.tile_dimensions = tile_dimensions
         self.message_log_view.resize(1, message_log_y, 31, screen_height_tiles)
-        self.fps_view.tile_dimensions = tile_dimensions
-
-        # Position FPS view below health view with proper spacing and width
-        fps_width = 25  # Increase width to fit full FPS text
-        fps_height = 3
-        fps_x = screen_width_tiles - fps_width  # Right-aligned but wider
-        fps_y = self.help_height + 2
-        self.fps_view.resize(fps_x, fps_y, screen_width_tiles, fps_y + fps_height)
 
     def on_window_resized(self) -> None:
         """Called when the game window is resized to update view layouts."""
