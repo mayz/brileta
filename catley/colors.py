@@ -35,3 +35,13 @@ NPC_COLOR: Color = YELLOW
 SELECTED_HIGHLIGHT: Color = WHITE
 
 DEAD: Color = (128, 128, 128)
+
+# Debugging colors
+DEBUG_COLORS: list[Color] = [
+    (0, 255, 0),  # Lime Green
+    (255, 0, 255),  # Magenta
+    (0, 255, 255),  # Cyan
+    (255, 128, 0),  # Orange
+    (128, 0, 255),  # Purple
+    (255, 255, 0),  # Yellow
+]

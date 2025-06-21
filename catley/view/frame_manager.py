@@ -198,6 +198,28 @@ class FrameManager:
         # 5. OVERLAY PRESENTATION (texture blitting phase)
         self.controller.overlay_system.present_overlays()
 
+        # 6. (DEBUG) Draw view outlines if enabled
+        if config.DEBUG_DRAW_VIEW_OUTLINES:
+            from catley import (
+                colors as debug_colors,
+            )  # Import locally to avoid circular dependency issues
+
+            for i, view in enumerate(self.views):
+                if not view.visible:
+                    continue
+
+                # Convert tile-based view bounds to pixel coordinates
+                tile_w, tile_h = self.renderer.tile_dimensions
+                px_x = view.x * tile_w
+                px_y = view.y * tile_h
+                px_w = view.width * tile_w
+                px_h = view.height * tile_h
+
+                # Pick a color from the debug palette, wrapping around if needed
+                color = debug_colors.DEBUG_COLORS[i % len(debug_colors.DEBUG_COLORS)]
+
+                self.renderer.draw_debug_rect(px_x, px_y, px_w, px_h, color)
+
         # Draw the mouse cursor on top of all overlays
         self.cursor_manager.draw_cursor()
 

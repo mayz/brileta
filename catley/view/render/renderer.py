@@ -366,3 +366,37 @@ class Renderer:
 
         dest_rect = (dest_x, dest_y, dest_width, dest_height)
         self.sdl_renderer.copy(texture, dest=dest_rect)
+
+    def draw_debug_rect(
+        self, px_x: int, px_y: int, px_w: int, px_h: int, color: colors.Color
+    ) -> None:
+        """Draws a raw, unfilled rectangle directly to the screen for debugging."""
+        if not self.sdl_renderer:
+            return
+
+        # Create a small 1x1 pixel texture for drawing the outline
+        if not hasattr(self, "_debug_pixel_texture"):
+            # Create a 1x1 white pixel texture
+            pixel_array = np.ones((1, 1, 4), dtype=np.uint8) * 255
+            self._debug_pixel_texture = self.sdl_renderer.upload_texture(pixel_array)
+            self._debug_pixel_texture.blend_mode = tcod.sdl.render.BlendMode.BLEND
+
+        # Set the color for the texture
+        self._debug_pixel_texture.color_mod = color
+
+        # Draw the four sides of the rectangle using the 1x1 texture
+        # Top edge
+        self.sdl_renderer.copy(self._debug_pixel_texture, dest=(px_x, px_y, px_w, 1))
+        # Bottom edge
+        self.sdl_renderer.copy(
+            self._debug_pixel_texture, dest=(px_x, px_y + px_h - 1, px_w, 1)
+        )
+        # Left edge
+        self.sdl_renderer.copy(self._debug_pixel_texture, dest=(px_x, px_y, 1, px_h))
+        # Right edge
+        self.sdl_renderer.copy(
+            self._debug_pixel_texture, dest=(px_x + px_w - 1, px_y, 1, px_h)
+        )
+
+        # Reset color mod for next use
+        self._debug_pixel_texture.color_mod = (255, 255, 255)
