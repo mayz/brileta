@@ -24,13 +24,13 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from enum import Enum, auto
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import tcod.sdl.render
 from PIL import Image as PILImage
 from PIL import ImageDraw, ImageFont
 from tcod.console import Console
-from tcod.sdl.render import BlendMode, Texture
 
 from catley import colors, config
 from catley.util.coordinates import PixelCoord, TileCoord
@@ -60,7 +60,7 @@ class Canvas(ABC):
         # Shared caching logic
         self._frame_ops: list = []
         self._last_frame_ops: list = []
-        self._cached_frame_texture = None
+        self._cached_frame_artifact = None
 
     def draw_text(
         self,
@@ -91,13 +91,13 @@ class Canvas(ABC):
         self._frame_ops = []
 
     def end_frame(self):
-        """Finalize the frame and return a texture if one was produced."""
+        """Finalize the frame and return intermediate artifact."""
         # Check if frame content changed
         if self._should_rerender():
-            return self._cached_frame_texture
+            return self._cached_frame_artifact
 
         # Content changed - need to re-render
-        self._cached_frame_texture = None  # Let GC handle cleanup
+        self._cached_frame_artifact = None  # Let GC handle cleanup
 
         if not self._prepare_for_rendering():
             return None
@@ -115,15 +115,15 @@ class Canvas(ABC):
                     _, tile_x, tile_y, width, height, fg, bg = op
                     self._render_frame_op(tile_x, tile_y, width, height, fg, bg)
 
-        # Create texture from rendered content
-        texture = self._create_texture_from_rendered_content()
+        # Create intermediate artifact from rendered content
+        artifact = self._create_artifact_from_rendered_content()
 
-        if texture is not None:
+        if artifact is not None:
             # Cache the result
-            self._cached_frame_texture = texture
+            self._cached_frame_artifact = artifact
             self._last_frame_ops = self._frame_ops.copy()
 
-        return texture
+        return artifact
 
     def draw_frame(
         self,
@@ -155,7 +155,7 @@ class Canvas(ABC):
     def configure_dimensions(self, width: PixelCoord, height: PixelCoord) -> None:
         if self.width != width or self.height != height:
             # Dimensions changed - clear cache
-            self._cached_frame_texture = None  # Let GC handle cleanup
+            self._cached_frame_artifact = None  # Let GC handle cleanup
             self._last_frame_ops = []
 
         self.width = width
@@ -233,10 +233,10 @@ class Canvas(ABC):
         )
 
     def _should_rerender(self) -> bool:
-        """Check if we should reuse cached texture instead of re-rendering."""
+        """Check if we should reuse cached artifact instead of re-rendering."""
         return (
             self._frame_ops == self._last_frame_ops
-            and self._cached_frame_texture is not None
+            and self._cached_frame_artifact is not None
         )
 
     # ------------------------------------------------------------------
@@ -285,8 +285,8 @@ class Canvas(ABC):
         """Render a single frame operation."""
 
     @abstractmethod
-    def _create_texture_from_rendered_content(self) -> Texture | None:
-        """Create and return a texture from the rendered content."""
+    def _create_artifact_from_rendered_content(self) -> Any:
+        """Create and return intermediate artifact from the rendered content."""
 
 
 class TCODConsoleCanvas(Canvas):
@@ -360,7 +360,7 @@ class TCODConsoleCanvas(Canvas):
         ):
             self.private_console = Console(width_tiles, height_tiles, order="F")
             # New console means cache is invalid
-            self._cached_frame_texture = None
+            self._cached_frame_artifact = None
             self._last_frame_ops = []
 
     def _prepare_for_rendering(self) -> bool:
@@ -446,16 +446,9 @@ class TCODConsoleCanvas(Canvas):
             bg=bg,
         )
 
-    def _create_texture_from_rendered_content(self) -> Texture | None:
-        """Create texture from the console content."""
-        if not self.private_console:
-            return None
-
-        texture = self.renderer.console_render.render(self.private_console)
-
-        # Use additive blending for transparent overlays, normal for opaque menus
-        texture.blend_mode = BlendMode.ADD if self.transparent else BlendMode.BLEND
-        return texture
+    def _create_artifact_from_rendered_content(self) -> Console | None:
+        """Return the console as the intermediate artifact."""
+        return self.private_console
 
 
 class PillowImageCanvas(Canvas):
@@ -641,22 +634,20 @@ class PillowImageCanvas(Canvas):
             outline=fg,
         )
 
-    def _create_texture_from_rendered_content(self) -> Texture | None:
-        """Create texture from PIL image content."""
-        if self.image is None or self.sdl_renderer is None:
+    def _create_artifact_from_rendered_content(self) -> np.ndarray | None:
+        """Return the numpy array as the intermediate artifact."""
+        if self.image is None:
             return None
 
-        # Convert to texture
+        # Convert to numpy array
         pixels = np.array(self.image, dtype=np.uint8)
         pixels = np.ascontiguousarray(pixels)
-        texture = self.sdl_renderer.upload_texture(pixels)
-        texture.blend_mode = BlendMode.BLEND
 
         # Cleanup
         self.image = None
         self._drawer = None
 
-        return texture
+        return pixels
 
     def _render_single_text(
         self,
