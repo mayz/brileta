@@ -74,6 +74,9 @@ SHOW_ACTION_PROCESSING_METRICS = False
 # Set to True to display the FPS counter in the corner of the screen.
 SHOW_FPS = False
 
+# Set to True to draw colored outlines around each View for debugging layouts.
+DEBUG_DRAW_VIEW_OUTLINES = False
+
 # --- Engine Settings (Derived from flags above) - DO NOT CHANGE DIRECTLY ---
 if PERFORMANCE_PROFILING:
     # Shows true uncapped performance for bottleneck identification
