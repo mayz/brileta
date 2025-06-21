@@ -57,8 +57,8 @@ class View(abc.ABC):
             self._cached_texture, self.x, self.y, self.width, self.height
         )
 
-    def resize(self, x1: int, y1: int, x2: int, y2: int) -> None:
-        """Set view screen boundaries."""
+    def set_bounds(self, x1: int, y1: int, x2: int, y2: int) -> None:
+        """Set view screen boundaries. Called by an external layout manager."""
         self.x = x1
         self.y = y1
         self.width = x2 - x1
@@ -113,9 +113,9 @@ class TextView(View):
                     )
                 self._cached_texture = texture
 
-    def resize(self, x1: int, y1: int, x2: int, y2: int) -> None:
-        """Resize and configure the text backend."""
-        super().resize(x1, y1, x2, y2)
+    def set_bounds(self, x1: int, y1: int, x2: int, y2: int) -> None:
+        """Set bounds and configure the text backend."""
+        super().set_bounds(x1, y1, x2, y2)
 
         if self.tile_dimensions != (0, 0):
             tile_width, tile_height = self.tile_dimensions

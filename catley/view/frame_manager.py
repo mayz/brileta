@@ -92,10 +92,10 @@ class FrameManager:
             self.message_log_view,
         ]
 
-        # Set view boundaries using resize()
-        self._resize_views()
+        # Set view boundaries using layout
+        self._layout_views()
 
-    def _resize_views(self) -> None:
+    def _layout_views(self) -> None:
         """Calculate and set view boundaries based on current screen size."""
         screen_width_tiles = self.renderer.root_console.width
         screen_height_tiles = self.renderer.root_console.height
@@ -121,34 +121,34 @@ class FrameManager:
         status_view_y = self.help_height + 1
         status_view_height = 10
 
-        # Resize all views
+        # Set bounds for all views
         self.help_text_view.tile_dimensions = tile_dimensions
-        self.help_text_view.resize(0, 0, screen_width_tiles, self.help_height)
+        self.help_text_view.set_bounds(0, 0, screen_width_tiles, self.help_height)
         self.world_view.tile_dimensions = tile_dimensions
-        self.world_view.resize(
+        self.world_view.set_bounds(
             0, game_world_y, screen_width_tiles, game_world_y + game_world_height
         )
         self.health_view.tile_dimensions = tile_dimensions
-        self.health_view.resize(
+        self.health_view.set_bounds(
             screen_width_tiles - 20, 0, screen_width_tiles, self.help_height
         )
         self.status_view.tile_dimensions = tile_dimensions
-        self.status_view.resize(
+        self.status_view.set_bounds(
             status_view_x,
             status_view_y,
             status_view_x + status_view_width,
             status_view_y + status_view_height,
         )
         self.equipment_view.tile_dimensions = tile_dimensions
-        self.equipment_view.resize(
+        self.equipment_view.set_bounds(
             equipment_x, equipment_y, screen_width_tiles, screen_height_tiles
         )
         self.message_log_view.tile_dimensions = tile_dimensions
-        self.message_log_view.resize(1, message_log_y, 31, screen_height_tiles)
+        self.message_log_view.set_bounds(1, message_log_y, 31, screen_height_tiles)
 
     def on_window_resized(self) -> None:
         """Called when the game window is resized to update view layouts."""
-        self._resize_views()
+        self._layout_views()
 
     def add_view(self, view: View) -> None:
         """Add a UI view to be rendered each frame."""

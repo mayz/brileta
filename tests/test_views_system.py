@@ -30,18 +30,18 @@ class TestViewBasics:
         assert view.height == 0
         assert view.visible is True
 
-    def test_resize_sets_dimensions_correctly(self):
+    def test_set_bounds_sets_dimensions_correctly(self):
         view = ConcreteTestView()
-        view.resize(10, 20, 50, 80)
+        view.set_bounds(10, 20, 50, 80)
 
         assert view.x == 10
         assert view.y == 20
         assert view.width == 40  # 50 - 10
         assert view.height == 60  # 80 - 20
 
-    def test_resize_handles_zero_dimensions(self):
+    def test_set_bounds_handles_zero_dimensions(self):
         view = ConcreteTestView()
-        view.resize(5, 5, 5, 5)
+        view.set_bounds(5, 5, 5, 5)
 
         assert view.x == 5
         assert view.y == 5
@@ -82,7 +82,7 @@ class TestWorldViewBoundaryEnforcement:
     def test_world_view_respects_smaller_boundaries(self):
         """Test that WorldView clips when view is smaller than game map."""
         # Set view to be smaller than the game map
-        self.view.resize(0, 0, 50, 40)  # 50x40 view for 100x100 map
+        self.view.set_bounds(0, 0, 50, 40)  # 50x40 view for 100x100 map
 
         # Mock the internal rendering
         self.view._render_game_world = Mock()
@@ -103,7 +103,7 @@ class TestWorldViewBoundaryEnforcement:
         self.mock_screen_shake.update.return_value = (5, 3)  # Some shake offset
 
         # Set view boundaries
-        self.view.resize(10, 15, 60, 55)  # View at (10,15) with 50x40 size
+        self.view.set_bounds(10, 15, 60, 55)  # View at (10,15) with 50x40 size
 
         # Mock the internal rendering
         self.view._render_game_world = Mock()
@@ -122,7 +122,7 @@ class TestWorldViewBoundaryEnforcement:
 
     def test_world_view_skips_draw_when_invisible(self):
         """Test that invisible views don't render."""
-        self.view.resize(0, 0, 50, 50)
+        self.view.set_bounds(0, 0, 50, 50)
         self.view.hide()
 
         self.view.draw(self.mock_renderer)
@@ -200,7 +200,7 @@ class TestViewCoordinateConversion:
     def test_view_boundary_containment(self):
         """Test logic for checking if coordinates are within view bounds."""
         view = ConcreteTestView()
-        view.resize(10, 20, 50, 60)  # View from (10,20) to (50,60)
+        view.set_bounds(10, 20, 50, 60)  # View from (10,20) to (50,60)
 
         # Test points inside view
         assert 10 <= 25 < 50 and 20 <= 35 < 60  # (25, 35) should be inside

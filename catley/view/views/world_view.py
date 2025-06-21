@@ -65,9 +65,9 @@ class WorldView(View):
         self.effect_library = EffectLibrary()
         self.current_light_intensity: np.ndarray | None = None
 
-    def resize(self, x1: int, y1: int, x2: int, y2: int) -> None:
-        """Override resize to update viewport and console dimensions."""
-        super().resize(x1, y1, x2, y2)
+    def set_bounds(self, x1: int, y1: int, x2: int, y2: int) -> None:
+        """Override set_bounds to update viewport and console dimensions."""
+        super().set_bounds(x1, y1, x2, y2)
         # When the window size changes we recreate the viewport and consoles
         # so that rendering operates on the new visible dimensions.
         self.viewport_system = ViewportSystem(self.width, self.height)

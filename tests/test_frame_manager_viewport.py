@@ -40,7 +40,7 @@ def make_dummy_data() -> tuple[DummyController, WorldView]:
     x1, y1 = 5, 3
     width, height = 10, 8
     x2, y2 = x1 + width, y1 + height
-    view.resize(x1=x1, y1=y1, x2=x2, y2=y2)
+    view.set_bounds(x1=x1, y1=y1, x2=x2, y2=y2)
 
     view.viewport_system = vs
 

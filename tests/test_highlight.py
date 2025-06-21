@@ -86,7 +86,7 @@ def test_highlight_actor_converts_world_to_screen() -> None:
     controller.gw.player.x = 10
     controller.gw.player.y = 10
     view = WorldView(cast(Controller, controller), ScreenShake())
-    view.resize(0, 0, 10, 10)
+    view.set_bounds(0, 0, 10, 10)
     view.viewport_system.update_camera(
         cast(Actor, controller.gw.player),
         controller.gw.game_map.width,
@@ -108,7 +108,7 @@ def test_highlight_actor_offscreen_is_ignored() -> None:
     controller.gw.player.x = 10
     controller.gw.player.y = 10
     view = WorldView(cast(Controller, controller), ScreenShake())
-    view.resize(0, 0, 10, 10)
+    view.set_bounds(0, 0, 10, 10)
     view.viewport_system.update_camera(
         cast(Actor, controller.gw.player),
         controller.gw.game_map.width,

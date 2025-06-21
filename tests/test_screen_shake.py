@@ -116,7 +116,7 @@ def test_world_view_applies_screen_shake_before_render(monkeypatch) -> None:
     shake = ScreenShake()
     shake.update = lambda dt: (1, 0)  # type: ignore[assignment]
     view = WorldView(cast("Controller", controller), shake)
-    view.resize(0, 0, 10, 10)
+    view.set_bounds(0, 0, 10, 10)
 
     captured = {}
     original_render_map = view._render_map
@@ -145,7 +145,7 @@ def test_world_view_screen_shake_does_not_overflow(monkeypatch) -> None:
     shake = ScreenShake()
     shake.update = lambda dt: (1, 0)  # type: ignore[assignment]
     view = WorldView(cast("Controller", controller), shake)
-    view.resize(0, 0, 10, 10)
+    view.set_bounds(0, 0, 10, 10)
 
     captured: dict[str, Any] = {}
 
@@ -184,7 +184,7 @@ def test_small_map_actor_alignment(monkeypatch) -> None:
     shake = ScreenShake()
     shake.update = lambda dt: (0, 0)  # type: ignore[assignment]
     view = WorldView(cast("Controller", controller), shake)
-    view.resize(0, 0, 10, 8)
+    view.set_bounds(0, 0, 10, 8)
 
     from catley.view.render.renderer import Renderer
 
