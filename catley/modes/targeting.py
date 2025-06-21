@@ -115,10 +115,10 @@ class TargetingMode(Mode):
             return
 
         # Render "TARGETING" status text in bottom margin area
-        # Position it in an area that doesn't block game map or other panels
+        # Position it in an area that doesn't block game map or other views
         status_text = "TARGETING"
-        # Place it in the bottom area, but above equipment/message panels
-        status_y = console.height - 10  # Above the UI panels
+        # Place it in the bottom area, but above equipment/message views
+        status_y = console.height - 10  # Above the UI views
         status_x = console.width // 2 - len(status_text) // 2  # Centered horizontally
         console.print(status_x, status_y, status_text, fg=colors.RED)  # type: ignore[no-matching-overload]
 
@@ -128,15 +128,15 @@ class TargetingMode(Mode):
             return
 
         current_target = self._get_current_target()
-        gw_panel = self.controller.frame_manager.world_panel
+        gw_view = self.controller.frame_manager.world_view
 
         for actor in self.candidates:
             if not self.controller.gw.game_map.visible[actor.x, actor.y]:
                 continue
             if actor == current_target:
-                gw_panel.highlight_actor(actor, (255, 0, 0), effect="pulse")
+                gw_view.highlight_actor(actor, (255, 0, 0), effect="pulse")
             else:
-                gw_panel.highlight_actor(actor, (100, 0, 0), effect="solid")
+                gw_view.highlight_actor(actor, (100, 0, 0), effect="solid")
 
     def update(self) -> None:
         """Rebuild target candidates each frame and maintain selection."""

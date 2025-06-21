@@ -3,9 +3,9 @@ from unittest.mock import MagicMock
 
 from catley.util.coordinates import RootConsoleTilePos
 from catley.view.frame_manager import FrameManager
-from catley.view.panels.world_panel import WorldPanel
 from catley.view.render.effects.effects import EffectLibrary
 from catley.view.render.viewport import ViewportSystem
+from catley.view.views.world_view import WorldView
 
 
 @dataclass
@@ -13,7 +13,7 @@ class DummyController:
     gw: MagicMock
 
 
-def make_dummy_data() -> tuple[DummyController, WorldPanel]:
+def make_dummy_data() -> tuple[DummyController, WorldView]:
     """Creates the data structures needed for the FrameManager methods."""
     gw = MagicMock()
     gw.game_map.width = 20
@@ -32,32 +32,32 @@ def make_dummy_data() -> tuple[DummyController, WorldPanel]:
     mock_player.y = 4
     vs.update_camera(mock_player, map_width=20, map_height=20)
 
-    # Use the real GameWorldPanel, but we don't need to give it a real controller
+    # Use the real GameWorldView, but we don't need to give it a real controller
     # since we are only testing coordinate transforms.
-    panel = WorldPanel(controller=None, screen_shake=None)  # type: ignore
+    view = WorldView(controller=None, screen_shake=None)  # type: ignore
     # Manually resize and set the viewport
 
     x1, y1 = 5, 3
     width, height = 10, 8
     x2, y2 = x1 + width, y1 + height
-    panel.resize(x1=x1, y1=y1, x2=x2, y2=y2)
+    view.resize(x1=x1, y1=y1, x2=x2, y2=y2)
 
-    panel.viewport_system = vs
+    view.viewport_system = vs
 
-    return controller, panel
+    return controller, view
 
 
-def test_root_to_world_conversion_inside_panel() -> None:
-    controller, panel = make_dummy_data()
+def test_root_to_world_conversion_inside_view() -> None:
+    controller, view = make_dummy_data()
 
     # 1. Create a mock object to stand in for the FrameManager instance.
     mock_fm_self = MagicMock(spec=FrameManager)
 
     # 2. Attach the attributes the real method needs, using the correct names.
     mock_fm_self.controller = controller
-    mock_fm_self.world_panel = panel
+    mock_fm_self.world_view = view
 
-    root_coords: RootConsoleTilePos = (panel.x + 5, panel.y + 2)  # This is (10, 5)
+    root_coords: RootConsoleTilePos = (view.x + 5, view.y + 2)  # This is (10, 5)
 
     # 3. Call the class method, passing our mock as the 'self' argument.
     result = FrameManager.get_world_coords_from_root_tile_coords(
@@ -66,7 +66,7 @@ def test_root_to_world_conversion_inside_panel() -> None:
 
     # Let's trace the math:
     # root_coords = (10, 5)
-    # panel top-left = (5, 3)
+    # view top-left = (5, 3)
     # vp_x = 10 - 5 = 5
     # vp_y = 5 - 3 = 2
     # ---
@@ -79,16 +79,16 @@ def test_root_to_world_conversion_inside_panel() -> None:
     assert result == (5, 2)
 
 
-def test_root_to_world_conversion_outside_panel() -> None:
-    controller, panel = make_dummy_data()
+def test_root_to_world_conversion_outside_view() -> None:
+    controller, view = make_dummy_data()
     mock_fm_self = MagicMock(spec=FrameManager)
     mock_fm_self.controller = controller
-    mock_fm_self.world_panel = panel
+    mock_fm_self.world_view = view
 
     root_coords: RootConsoleTilePos = (
         0,
         0,
-    )  # Clearly outside the panel which starts at (5, 3)
+    )  # Clearly outside the view which starts at (5, 3)
 
     result = FrameManager.get_world_coords_from_root_tile_coords(
         mock_fm_self, root_coords
@@ -97,20 +97,20 @@ def test_root_to_world_conversion_outside_panel() -> None:
 
 
 def test_create_effect_visibility_and_coords() -> None:
-    controller, panel = make_dummy_data()
+    controller, view = make_dummy_data()
     mock_fm_self = MagicMock(spec=FrameManager)
     mock_fm_self.controller = controller
-    mock_fm_self.world_panel = panel
+    mock_fm_self.world_view = view
 
     # Create a MagicMock to stand in for the EffectLibrary.
     # Using `spec=EffectLibrary` is good practice as it ensures the mock
     # can only be called with methods that the real class has.
     mock_effect_library = MagicMock(spec=EffectLibrary)
 
-    # Replace the real effect_library on the panel with our mock.
-    panel.effect_library = mock_effect_library
+    # Replace the real effect_library on the view with our mock.
+    view.effect_library = mock_effect_library
 
-    vs = panel.viewport_system
+    vs = view.viewport_system
 
     # The point (4, 4) is visible by the camera at (4, 4).
     FrameManager.create_effect(mock_fm_self, "spark", 4, 4)

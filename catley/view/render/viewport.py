@@ -20,15 +20,15 @@ A strict naming convention is used to make the code self-documenting.
 
 2.  Viewport Coordinates (`vp_x`, `vp_y`)
     -   Description: The coordinate relative to the top-left of the visible
-        rendering area (the `GameWorldPanel`'s console). Also referred to as "screen"
-        or "panel" coordinates in the context of the game world view.
+        rendering area (the `GameWorldView`'s console). Also referred to as "screen"
+        or "view" coordinates in the context of the game world view.
     -   Origin: (0, 0) is the top-left tile of the `game_map_console`.
     -   Example: `game_map_console.rgb["ch"][vp_x, vp_y] = ord('@')`
 
 3.  Root Console Coordinates (`root_x`, `root_y`)
     -   Description: The coordinate on the main application's root console.
-        This is used for positioning UI panels and handling mouse events that
-        could be over any panel, not just the game world.
+        This is used for positioning UI views and handling mouse events that
+        could be over any view, not just the game world.
     -   Origin: (0, 0) is the top-left corner of the game window.
     -   Example: `root_console.print(x=root_x, y=root_y, text="HP: 10")`
 
@@ -42,7 +42,7 @@ A strict naming convention is used to make the code self-documenting.
 
 -   Input (Mouse Click):
     `Pixel` -> `Root Console` (via `coordinate_converter`)
-    `Root Console` -> `Viewport` (by subtracting panel offset)
+    `Root Console` -> `Viewport` (by subtracting view offset)
     `Viewport` -> `World` (via `viewport_to_world`)
 
 -   Output (Rendering an Actor):
@@ -125,7 +125,7 @@ class Viewport:
     def world_to_viewport(
         self, world_x: WorldTileCoord, world_y: WorldTileCoord, camera: Camera
     ) -> ViewportTilePos:
-        """Converts world coordinates to viewport (panel-relative) coordinates."""
+        """Converts world coordinates to viewport (view-relative) coordinates."""
         bounds = self.get_world_bounds(camera)
         left, top = bounds.x1, bounds.y1
         return world_x - left + self.offset_x, world_y - top + self.offset_y
@@ -133,7 +133,7 @@ class Viewport:
     def viewport_to_world(
         self, vp_x: ViewportTileCoord, vp_y: ViewportTileCoord, camera: Camera
     ) -> WorldTilePos:
-        """Converts viewport (panel-relative) coordinates to world coordinates."""
+        """Converts viewport (view-relative) coordinates to world coordinates."""
         bounds = self.get_world_bounds(camera)
         left, top = bounds.x1, bounds.y1
         return vp_x - self.offset_x + left, vp_y - self.offset_y + top

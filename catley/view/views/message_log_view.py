@@ -7,23 +7,23 @@ from tcod.sdl.render import Texture
 from catley.view.render.renderer import Renderer
 from catley.view.render.text_backend import PillowTextBackend
 
-from .panel import TextPanel
+from .base import TextView
 
 if TYPE_CHECKING:
     from catley.util.message_log import MessageLog
 
 
-class MessageLogPanel(TextPanel):
-    """Panel for displaying the message log in the bottom-left corner."""
+class MessageLogView(TextView):
+    """View for displaying the message log in the bottom-left corner."""
 
     def __init__(self, message_log: MessageLog, renderer: Renderer) -> None:
         super().__init__()
         self.message_log = message_log
         self.text_backend = PillowTextBackend(renderer)
 
-        # Panel pixel dimensions will be calculated when resize() is called
-        self.panel_width_px = 0
-        self.panel_height_px = 0
+        # View pixel dimensions will be calculated when resize() is called
+        self.view_width_px = 0
+        self.view_height_px = 0
 
         self._cached_texture: Texture | None = None
         # store the MessageLog.revision used to build _cached_texture so we
@@ -35,43 +35,43 @@ class MessageLogPanel(TextPanel):
 
     def needs_redraw(self, renderer: Renderer) -> bool:
         current_tile_dimensions = renderer.tile_dimensions
-        new_panel_width_px = self.width * current_tile_dimensions[0]
-        new_panel_height_px = self.height * current_tile_dimensions[1]
+        new_view_width_px = self.width * current_tile_dimensions[0]
+        new_view_height_px = self.height * current_tile_dimensions[1]
 
         return (
             self._render_revision != self.message_log.revision
             or current_tile_dimensions != self.tile_dimensions
-            or new_panel_width_px != self._cached_texture_width
-            or new_panel_height_px != self._cached_texture_height
+            or new_view_width_px != self._cached_texture_width
+            or new_view_height_px != self._cached_texture_height
         )
 
     def resize(self, x1: int, y1: int, x2: int, y2: int) -> None:
-        """Override resize to update pixel dimensions when panel is resized."""
+        """Override resize to update pixel dimensions when view is resized."""
         super().resize(x1, y1, x2, y2)
         # Update pixel dimensions based on new size
-        self.panel_width_px = self.width * self.tile_dimensions[0]
-        self.panel_height_px = self.height * self.tile_dimensions[1]
+        self.view_width_px = self.width * self.tile_dimensions[0]
+        self.view_height_px = self.height * self.tile_dimensions[1]
         self.text_backend.configure_scaling(self.tile_dimensions[1])
 
     def draw_content(self, renderer: Renderer) -> None:
         # Update cached tile dimensions and recalculate pixel dimensions
         self.tile_dimensions = renderer.tile_dimensions
-        self.panel_width_px = self.width * self.tile_dimensions[0]
-        self.panel_height_px = self.height * self.tile_dimensions[1]
-        self._cached_texture_width = self.panel_width_px
-        self._cached_texture_height = self.panel_height_px
+        self.view_width_px = self.width * self.tile_dimensions[0]
+        self.view_height_px = self.height * self.tile_dimensions[1]
+        self._cached_texture_width = self.view_width_px
+        self._cached_texture_height = self.view_height_px
         self.text_backend.configure_renderer(renderer.sdl_renderer)
 
         ascent, descent = self.text_backend.get_font_metrics()
         line_height = ascent + descent
-        y_baseline = self.panel_height_px - descent
+        y_baseline = self.view_height_px - descent
 
         for message in reversed(self.message_log.messages):
             if y_baseline < line_height:
                 break
 
             wrapped_lines = self.text_backend.wrap_text(
-                message.full_text, self.panel_width_px
+                message.full_text, self.view_width_px
             )
             for line in reversed(wrapped_lines):
                 text_top = y_baseline - ascent

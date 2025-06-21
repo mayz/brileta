@@ -41,7 +41,7 @@ ViewportTilePos = tuple[
     ViewportTileCoord, ViewportTileCoord
 ]  # Example: (0, 0) = top-left of viewport
 
-# Root console coordinates - UI panel positioning
+# Root console coordinates - UI view positioning
 RootConsoleTileCoord = TileCoord  # Example: root_x=10, root_y=5
 RootConsoleTilePos = tuple[
     RootConsoleTileCoord, RootConsoleTileCoord

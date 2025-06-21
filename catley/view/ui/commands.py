@@ -12,7 +12,7 @@ UICommand:
 Examples:
     - QuitUICommand: Exit the application
     - ToggleFullscreenUICommand: Change display mode
-    - OpenMenuUICommand: Show/hide interface panels
+    - OpenMenuUICommand: Show/hide interface views
     - SelectOrDeselectActorUICommand: Change UI selection state
 
 UI commands are immediate and don't consume game turns. They handle the

@@ -109,51 +109,51 @@ class DummyController:
         self.is_targeting_mode = lambda: False
 
 
-def test_world_panel_applies_screen_shake_before_render(monkeypatch) -> None:
-    from catley.view.panels.world_panel import WorldPanel
+def test_world_view_applies_screen_shake_before_render(monkeypatch) -> None:
+    from catley.view.views.world_view import WorldView
 
     controller = DummyController()
     shake = ScreenShake()
     shake.update = lambda dt: (1, 0)  # type: ignore[assignment]
-    panel = WorldPanel(cast("Controller", controller), shake)
-    panel.resize(0, 0, 10, 10)
+    view = WorldView(cast("Controller", controller), shake)
+    view.resize(0, 0, 10, 10)
 
     captured = {}
-    original_render_map = panel._render_map
+    original_render_map = view._render_map
 
     def wrapped_render_map() -> None:
         captured["cam_pos"] = (
-            panel.viewport_system.camera.world_x,
-            panel.viewport_system.camera.world_y,
+            view.viewport_system.camera.world_x,
+            view.viewport_system.camera.world_y,
         )
         original_render_map()
 
-    panel._render_map = wrapped_render_map  # type: ignore[assignment]
+    view._render_map = wrapped_render_map  # type: ignore[assignment]
 
     from catley.view.render.renderer import Renderer
 
-    panel.draw(cast(Renderer, controller.renderer))
+    view.draw(cast(Renderer, controller.renderer))
 
     assert captured["cam_pos"] == (5.5, 4.5)
 
 
-def test_world_panel_screen_shake_does_not_overflow(monkeypatch) -> None:
+def test_world_view_screen_shake_does_not_overflow(monkeypatch) -> None:
     """Ensure screen shake offsets keep rendering within console bounds."""
-    from catley.view.panels.world_panel import WorldPanel
+    from catley.view.views.world_view import WorldView
 
     controller = DummyController()
     shake = ScreenShake()
     shake.update = lambda dt: (1, 0)  # type: ignore[assignment]
-    panel = WorldPanel(cast("Controller", controller), shake)
-    panel.resize(0, 0, 10, 10)
+    view = WorldView(cast("Controller", controller), shake)
+    view.resize(0, 0, 10, 10)
 
     captured: dict[str, Any] = {}
 
-    original_render_map = panel._render_map
+    original_render_map = view._render_map
 
     def wrapped_render_map() -> None:
         gw = controller.gw
-        vs = panel.viewport_system
+        vs = view.viewport_system
         bounds = vs.get_visible_bounds()
         bounds.x1 = max(0, bounds.x1)
         bounds.y1 = max(0, bounds.y1)
@@ -163,19 +163,19 @@ def test_world_panel_screen_shake_does_not_overflow(monkeypatch) -> None:
         captured["dest_height"] = world_bottom - bounds.y1 + 1
         original_render_map()
 
-    panel._render_map = wrapped_render_map  # type: ignore[assignment]
+    view._render_map = wrapped_render_map  # type: ignore[assignment]
 
     from catley.view.render.renderer import Renderer
 
-    panel.draw(cast(Renderer, controller.renderer))
+    view.draw(cast(Renderer, controller.renderer))
 
-    assert captured["dest_width"] <= panel.width
-    assert captured["dest_height"] <= panel.height
+    assert captured["dest_width"] <= view.width
+    assert captured["dest_height"] <= view.height
 
 
 def test_small_map_actor_alignment(monkeypatch) -> None:
     """Actors should align with the map when it is smaller than the viewport."""
-    from catley.view.panels.world_panel import WorldPanel
+    from catley.view.views.world_view import WorldView
 
     controller = DummyController()
     controller.gw.game_map = DummyGameMap(5, 5)
@@ -183,20 +183,20 @@ def test_small_map_actor_alignment(monkeypatch) -> None:
 
     shake = ScreenShake()
     shake.update = lambda dt: (0, 0)  # type: ignore[assignment]
-    panel = WorldPanel(cast("Controller", controller), shake)
-    panel.resize(0, 0, 10, 8)
+    view = WorldView(cast("Controller", controller), shake)
+    view.resize(0, 0, 10, 8)
 
     from catley.view.render.renderer import Renderer
 
-    panel.draw(cast(Renderer, controller.renderer))
+    view.draw(cast(Renderer, controller.renderer))
 
-    vs = panel.viewport_system
+    vs = view.viewport_system
     px, py = vs.world_to_screen(controller.gw.player.x, controller.gw.player.y)
     # With smooth rendering enabled, actors are drawn via SDL, not console
     if config.SMOOTH_ACTOR_RENDERING_ENABLED:
-        assert panel.game_map_console.rgb["ch"][px, py] == 0  # No character in console
+        assert view.game_map_console.rgb["ch"][px, py] == 0  # No character in console
     else:
-        assert panel.game_map_console.rgb["ch"][px, py] == ord("@")
+        assert view.game_map_console.rgb["ch"][px, py] == ord("@")
     assert (px, py) == (
         vs.offset_x + controller.gw.player.x,
         vs.offset_y + controller.gw.player.y,

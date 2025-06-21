@@ -100,7 +100,7 @@ class InputHandler:
             self.controller.coordinate_converter = (
                 self.controller.renderer.coordinate_converter
             )
-            # Update panel layouts for new window size
+            # Update view layouts for new window size
             self.fm.on_window_resized()
 
         # Try to handle the event with the menu system
@@ -132,7 +132,7 @@ class InputHandler:
                 if world_tile_pos is not None:
                     self.gw.mouse_tile_location_on_map = world_tile_pos
                 else:
-                    # Mouse is outside the game map area (e.g., on UI panels).
+                    # Mouse is outside the game map area (e.g., on UI views).
                     self.gw.mouse_tile_location_on_map = None
 
                 return None
@@ -297,7 +297,7 @@ class InputHandler:
             return None
 
         if not world_tile_pos:
-            # Clicked outside the map area (e.g., on UI panels).
+            # Clicked outside the map area (e.g., on UI views).
             return SelectOrDeselectActorUICommand(self.controller, None)
 
         world_x, world_y = world_tile_pos

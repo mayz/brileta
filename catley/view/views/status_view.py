@@ -1,4 +1,4 @@
-"""UI panel for displaying active status effects and conditions."""
+"""UI view for displaying active status effects and conditions."""
 
 from __future__ import annotations
 
@@ -9,14 +9,14 @@ from catley.game.actors import Character, Condition, StatusEffect
 from catley.view.render.renderer import Renderer
 from catley.view.render.text_backend import TCODTextBackend
 
-from .panel import TextPanel
+from .base import TextView
 
 if TYPE_CHECKING:
     from catley.controller import Controller
 
 
-class StatusPanel(TextPanel):
-    """Panel that displays active conditions and status effects."""
+class StatusView(TextView):
+    """View that displays active conditions and status effects."""
 
     def __init__(self, controller: Controller, renderer: Renderer) -> None:
         super().__init__()
@@ -28,7 +28,7 @@ class StatusPanel(TextPanel):
         return True
 
     def draw_content(self, renderer: Renderer) -> None:
-        """Render the status panel if player has active effects."""
+        """Render the status view if player has active effects."""
 
         player = self.controller.gw.player
         all_effects = player.modifiers.get_all_active_effects()

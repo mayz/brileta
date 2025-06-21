@@ -11,9 +11,9 @@ import tcod.sdl.video
 
 from catley import colors
 from catley.util.message_log import MessageLog
-from catley.view.panels.message_log_panel import MessageLogPanel
 from catley.view.render.renderer import Renderer
 from catley.view.render.text_backend import PillowTextBackend
+from catley.view.views.message_log_view import MessageLogView
 
 
 class DummyTexture:
@@ -40,7 +40,7 @@ class DummyRenderer:
         return DummyTexture()
 
 
-def test_message_log_panel_ttf_rendering_visible(monkeypatch: Any) -> None:
+def test_message_log_view_ttf_rendering_visible(monkeypatch: Any) -> None:
     monkeypatch.setattr(tcod.sdl.video, "new_window", lambda *a, **kw: object())
     monkeypatch.setattr(
         tcod.sdl.render, "new_renderer", lambda *a, **kw: DummyRenderer()
@@ -60,20 +60,20 @@ def test_message_log_panel_ttf_rendering_visible(monkeypatch: Any) -> None:
     renderer_stub.sdl_renderer = renderer
     renderer_stub.tile_dimensions = (8, 16)
 
-    panel = MessageLogPanel(log, renderer=renderer_stub)
-    panel.tile_dimensions = (8, 16)
-    panel.resize(0, 0, 20, 5)
+    view = MessageLogView(log, renderer=renderer_stub)
+    view.tile_dimensions = (8, 16)
+    view.resize(0, 0, 20, 5)
 
-    panel.draw(renderer_stub)
+    view.draw(renderer_stub)
     renderer.clear()
-    panel.present(renderer_stub)
+    view.present(renderer_stub)
 
     pixels = renderer.read_pixels(format="RGBA")
 
     assert pixels.max() > 0, "Expected rendered texture to have non-black pixels"
 
 
-def test_message_log_panel_font_scales_on_resize(monkeypatch: Any) -> None:
+def test_message_log_view_font_scales_on_resize(monkeypatch: Any) -> None:
     monkeypatch.setattr(tcod.sdl.video, "new_window", lambda *a, **kw: object())
     monkeypatch.setattr(
         tcod.sdl.render, "new_renderer", lambda *a, **kw: DummyRenderer()
@@ -93,22 +93,22 @@ def test_message_log_panel_font_scales_on_resize(monkeypatch: Any) -> None:
     renderer_stub.sdl_renderer = renderer
     renderer_stub.tile_dimensions = (8, 16)
 
-    panel = MessageLogPanel(log, renderer=renderer_stub)
-    panel.tile_dimensions = (8, 16)
-    panel.resize(0, 0, 20, 5)
+    view = MessageLogView(log, renderer=renderer_stub)
+    view.tile_dimensions = (8, 16)
+    view.resize(0, 0, 20, 5)
 
-    panel.draw(renderer_stub)
-    assert panel.text_backend is not None
-    tb = cast(PillowTextBackend, panel.text_backend)
+    view.draw(renderer_stub)
+    assert view.text_backend is not None
+    tb = cast(PillowTextBackend, view.text_backend)
     ascent, descent = tb.get_font_metrics()
     initial_line_height = ascent + descent
 
     renderer_stub.tile_dimensions = (16, 32)
-    panel.tile_dimensions = (16, 32)
-    panel.resize(0, 0, 20, 5)
-    panel.draw(renderer_stub)
+    view.tile_dimensions = (16, 32)
+    view.resize(0, 0, 20, 5)
+    view.draw(renderer_stub)
 
-    assert panel.text_backend is not None
-    tb = cast(PillowTextBackend, panel.text_backend)
+    assert view.text_backend is not None
+    tb = cast(PillowTextBackend, view.text_backend)
     ascent, descent = tb.get_font_metrics()
     assert (ascent + descent) > initial_line_height

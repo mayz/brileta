@@ -8,8 +8,8 @@ import numpy as np
 
 from catley.controller import Controller
 from catley.game.actors import Actor
-from catley.view.panels.world_panel import WorldPanel
 from catley.view.render.effects.screen_shake import ScreenShake
+from catley.view.views.world_view import WorldView
 
 
 class DummyActor:
@@ -85,41 +85,41 @@ def test_highlight_actor_converts_world_to_screen() -> None:
     controller = make_controller()
     controller.gw.player.x = 10
     controller.gw.player.y = 10
-    panel = WorldPanel(cast(Controller, controller), ScreenShake())
-    panel.resize(0, 0, 10, 10)
-    panel.viewport_system.update_camera(
+    view = WorldView(cast(Controller, controller), ScreenShake())
+    view.resize(0, 0, 10, 10)
+    view.viewport_system.update_camera(
         cast(Actor, controller.gw.player),
         controller.gw.game_map.width,
         controller.gw.game_map.height,
     )
-    panel.viewport_system.camera.set_position(10.0, 10.0)
+    view.viewport_system.camera.set_position(10.0, 10.0)
 
     actor = DummyActor(12, 10)
     controller.gw.add_actor(actor)
 
-    panel.highlight_actor(cast(Actor, actor), (1, 2, 3))
+    view.highlight_actor(cast(Actor, actor), (1, 2, 3))
 
-    px, py = panel.viewport_system.world_to_screen(actor.x, actor.y)
-    assert np.array_equal(panel.game_map_console.rgb["bg"][px, py], [1, 2, 3])
+    px, py = view.viewport_system.world_to_screen(actor.x, actor.y)
+    assert np.array_equal(view.game_map_console.rgb["bg"][px, py], [1, 2, 3])
 
 
 def test_highlight_actor_offscreen_is_ignored() -> None:
     controller = make_controller()
     controller.gw.player.x = 10
     controller.gw.player.y = 10
-    panel = WorldPanel(cast(Controller, controller), ScreenShake())
-    panel.resize(0, 0, 10, 10)
-    panel.viewport_system.update_camera(
+    view = WorldView(cast(Controller, controller), ScreenShake())
+    view.resize(0, 0, 10, 10)
+    view.viewport_system.update_camera(
         cast(Actor, controller.gw.player),
         controller.gw.game_map.width,
         controller.gw.game_map.height,
     )
-    panel.viewport_system.camera.set_position(10.0, 10.0)
+    view.viewport_system.camera.set_position(10.0, 10.0)
 
     offscreen_actor = DummyActor(0, 0)
     controller.gw.add_actor(offscreen_actor)
-    before = panel.game_map_console.rgb["bg"].copy()
+    before = view.game_map_console.rgb["bg"].copy()
 
-    panel.highlight_actor(cast(Actor, offscreen_actor), (4, 5, 6))
+    view.highlight_actor(cast(Actor, offscreen_actor), (4, 5, 6))
 
-    assert np.array_equal(panel.game_map_console.rgb["bg"], before)
+    assert np.array_equal(view.game_map_console.rgb["bg"], before)

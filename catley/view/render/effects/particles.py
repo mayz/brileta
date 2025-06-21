@@ -582,7 +582,7 @@ class SubTileParticleSystem:
         self,
         particle_index: int,
         viewport_bounds: Rect,
-        panel_offset: tuple[int, int],
+        view_offset: tuple[int, int],
         renderer: "Renderer",
     ) -> tuple[float, float] | None:
         """Convert particle index to screen coordinates, or None if off-screen."""
@@ -601,8 +601,8 @@ class SubTileParticleSystem:
         ):
             return None
 
-        root_x = panel_offset[0] + vp_x
-        root_y = panel_offset[1] + vp_y
+        root_x = view_offset[0] + vp_x
+        root_y = view_offset[1] + vp_y
         return renderer.console_to_screen_coords(root_x, root_y)
 
     def render_particles(
@@ -610,13 +610,13 @@ class SubTileParticleSystem:
         renderer: "Renderer",
         layer: ParticleLayer,
         viewport_bounds: Rect,
-        panel_offset: tuple[int, int],
+        view_offset: tuple[int, int],
     ) -> None:
         for i in range(self.active_count):
             if self.layers[i] != layer.value:
                 continue
             coords = self._convert_particle_to_screen_coords(
-                i, viewport_bounds, panel_offset, renderer
+                i, viewport_bounds, view_offset, renderer
             )
             if coords is None:
                 continue

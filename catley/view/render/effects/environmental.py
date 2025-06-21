@@ -77,7 +77,7 @@ class EnvironmentalEffectSystem:
 
         # Update and render each frame
         env_system.update(delta_time)
-        env_system.render_effects(renderer, viewport_bounds, panel_offset)
+        env_system.render_effects(renderer, viewport_bounds, view_offset)
     """
 
     def __init__(self) -> None:
@@ -119,7 +119,7 @@ class EnvironmentalEffectSystem:
         self,
         renderer: Renderer,
         viewport_bounds: Rect,
-        panel_offset: tuple[int, int],
+        view_offset: tuple[int, int],
     ) -> None:
         """
         Render all active environmental effects using the renderer.
@@ -132,8 +132,8 @@ class EnvironmentalEffectSystem:
         Args:
             renderer: The renderer to use for drawing effects
             viewport_bounds: The currently visible area in tile coordinates
-            panel_offset: Offset to convert viewport coordinates to screen coordinates
-                         as (panel_x, panel_y) in tiles
+            view_offset: Offset to convert viewport coordinates to screen coordinates
+                         as (view_x, view_y) in tiles
 
         Performance Notes:
             - Effects completely outside the viewport are skipped (culled)
@@ -153,7 +153,7 @@ class EnvironmentalEffectSystem:
                 continue
             intensity = effect.intensity * (effect.lifetime / effect.max_lifetime)
             renderer.apply_environmental_effect(
-                (panel_offset[0] + x, panel_offset[1] + y),
+                (view_offset[0] + x, view_offset[1] + y),
                 effect.radius,
                 effect.tint_color,
                 intensity,
