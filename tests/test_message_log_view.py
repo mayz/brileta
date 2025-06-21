@@ -11,8 +11,8 @@ import tcod.sdl.video
 
 from catley import colors
 from catley.util.message_log import MessageLog
+from catley.view.render.canvas import PillowImageCanvas
 from catley.view.render.renderer import Renderer
-from catley.view.render.text_backend import PillowTextBackend
 from catley.view.views.message_log_view import MessageLogView
 
 
@@ -98,8 +98,8 @@ def test_message_log_view_font_scales_on_resize(monkeypatch: Any) -> None:
     view.resize(0, 0, 20, 5)
 
     view.draw(renderer_stub)
-    assert view.text_backend is not None
-    tb = cast(PillowTextBackend, view.text_backend)
+    assert view.canvas is not None
+    tb = cast(PillowImageCanvas, view.canvas)
     ascent, descent = tb.get_font_metrics()
     initial_line_height = ascent + descent
 
@@ -108,7 +108,7 @@ def test_message_log_view_font_scales_on_resize(monkeypatch: Any) -> None:
     view.resize(0, 0, 20, 5)
     view.draw(renderer_stub)
 
-    assert view.text_backend is not None
-    tb = cast(PillowTextBackend, view.text_backend)
+    assert view.canvas is not None
+    tb = cast(PillowImageCanvas, view.canvas)
     ascent, descent = tb.get_font_metrics()
     assert (ascent + descent) > initial_line_height

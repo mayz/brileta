@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from catley import colors
 from catley.config import PERFORMANCE_PROFILING
 from catley.constants.view import ViewConstants as View
-from catley.view.render.text_backend import TCODTextBackend
+from catley.view.render.canvas import TCODConsoleCanvas
 
 from .base import TextView
 
@@ -29,7 +29,7 @@ class FPSView(TextView):
         self.update_interval = update_interval
         self.last_update = clock.last_time
         self.display_string = "FPS: 0.0"
-        self.text_backend = TCODTextBackend(renderer)
+        self.canvas = TCODConsoleCanvas(renderer)
 
     def needs_redraw(self, renderer: Renderer) -> bool:
         _ = renderer
@@ -54,7 +54,7 @@ class FPSView(TextView):
         # Right-align within view bounds
         fps_width = len(self.display_string)
         x_position = max(0, self.width - fps_width)
-        self.text_backend.draw_text(
+        self.canvas.draw_text(
             x_position * tile_width,
             0,
             self.display_string,

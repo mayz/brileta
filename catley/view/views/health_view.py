@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from catley import colors
+from catley.view.render.canvas import TCODConsoleCanvas
 from catley.view.render.renderer import Renderer
-from catley.view.render.text_backend import TCODTextBackend
 
 from .base import TextView
 
@@ -23,7 +23,7 @@ class HealthView(TextView):
 
         super().__init__()
         self.controller = controller
-        self.text_backend = TCODTextBackend(renderer)
+        self.canvas = TCODConsoleCanvas(renderer)
 
     def needs_redraw(self, renderer: Renderer) -> bool:
         _ = renderer
@@ -36,4 +36,4 @@ class HealthView(TextView):
 
         # Calculate x in tiles, then convert to pixels
         x_pos_tiles = self.width - len(text) - 1
-        self.text_backend.draw_text(x_pos_tiles * tile_width, 0, text, colors.WHITE)
+        self.canvas.draw_text(x_pos_tiles * tile_width, 0, text, colors.WHITE)

@@ -4,8 +4,8 @@ from typing import TYPE_CHECKING
 
 from tcod.sdl.render import Texture
 
+from catley.view.render.canvas import PillowImageCanvas
 from catley.view.render.renderer import Renderer
-from catley.view.render.text_backend import PillowTextBackend
 
 from .base import TextView
 
@@ -19,7 +19,7 @@ class MessageLogView(TextView):
     def __init__(self, message_log: MessageLog, renderer: Renderer) -> None:
         super().__init__()
         self.message_log = message_log
-        self.text_backend = PillowTextBackend(renderer)
+        self.canvas = PillowImageCanvas(renderer)
 
         # View pixel dimensions will be calculated when resize() is called
         self.view_width_px = 0
@@ -51,7 +51,7 @@ class MessageLogView(TextView):
         # Update pixel dimensions based on new size
         self.view_width_px = self.width * self.tile_dimensions[0]
         self.view_height_px = self.height * self.tile_dimensions[1]
-        self.text_backend.configure_scaling(self.tile_dimensions[1])
+        self.canvas.configure_scaling(self.tile_dimensions[1])
 
     def draw_content(self, renderer: Renderer) -> None:
         # Update cached tile dimensions and recalculate pixel dimensions
@@ -60,9 +60,9 @@ class MessageLogView(TextView):
         self.view_height_px = self.height * self.tile_dimensions[1]
         self._cached_texture_width = self.view_width_px
         self._cached_texture_height = self.view_height_px
-        self.text_backend.configure_renderer(renderer.sdl_renderer)
+        self.canvas.configure_renderer(renderer.sdl_renderer)
 
-        ascent, descent = self.text_backend.get_font_metrics()
+        ascent, descent = self.canvas.get_font_metrics()
         line_height = ascent + descent
         y_baseline = self.view_height_px - descent
 
@@ -70,16 +70,14 @@ class MessageLogView(TextView):
             if y_baseline < line_height:
                 break
 
-            wrapped_lines = self.text_backend.wrap_text(
-                message.full_text, self.view_width_px
-            )
+            wrapped_lines = self.canvas.wrap_text(message.full_text, self.view_width_px)
             for line in reversed(wrapped_lines):
                 text_top = y_baseline - ascent
                 if text_top < 0:
                     y_baseline = -1
                     break
 
-                self.text_backend.draw_text(
+                self.canvas.draw_text(
                     pixel_x=0, pixel_y=text_top, text=line, color=message.fg
                 )
                 y_baseline -= line_height

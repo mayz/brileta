@@ -4,8 +4,8 @@ from typing import TYPE_CHECKING
 
 from catley import colors
 from catley.constants.view import ViewConstants as View
+from catley.view.render.canvas import TCODConsoleCanvas
 from catley.view.render.renderer import Renderer
-from catley.view.render.text_backend import TCODTextBackend
 
 from .base import TextView
 
@@ -19,7 +19,7 @@ class EquipmentView(TextView):
     def __init__(self, controller: Controller, renderer: Renderer) -> None:
         super().__init__()
         self.controller = controller
-        self.text_backend = TCODTextBackend(renderer)
+        self.canvas = TCODConsoleCanvas(renderer)
 
     def needs_redraw(self, renderer: Renderer) -> bool:
         _ = renderer
@@ -32,7 +32,7 @@ class EquipmentView(TextView):
 
         # Add weapon switching hint
         hint_text = "Weapons: [1][2] to switch"
-        self.text_backend.draw_text(0, 0, hint_text, colors.GREY)
+        self.canvas.draw_text(0, 0, hint_text, colors.GREY)
 
         # Check for reload hint and display on separate line
         active_weapon = player.inventory.get_active_weapon()
@@ -43,7 +43,7 @@ class EquipmentView(TextView):
             < active_weapon.ranged_attack.max_ammo
         ):
             reload_text = "[R] to reload"
-            self.text_backend.draw_text(
+            self.canvas.draw_text(
                 0,
                 View.EQUIPMENT_RELOAD_HINT_OFFSET * tile_height,
                 reload_text,
@@ -71,7 +71,7 @@ class EquipmentView(TextView):
             else:
                 item_text = f"{slot_name}: Empty"
                 color = colors.GREY
-            self.text_backend.draw_text(
+            self.canvas.draw_text(
                 pixel_x=0,
                 pixel_y=(y_start + i) * tile_height,
                 text=item_text,

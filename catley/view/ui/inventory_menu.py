@@ -170,7 +170,7 @@ class InventoryMenu(Menu):
 
     def render_title(self) -> None:
         """Render the inventory header with prefix, bar, and suffix."""
-        assert self.text_backend is not None
+        assert self.canvas is not None
 
         player = self.controller.gw.player
         used_space = player.inventory.get_used_inventory_slots()
@@ -182,7 +182,7 @@ class InventoryMenu(Menu):
         title_y_tile = 0
 
         prefix_text = f"{self.title}:"
-        self.text_backend.draw_text(
+        self.canvas.draw_text(
             pixel_x=current_x_tile * tile_w,
             pixel_y=title_y_tile * tile_h,
             text=prefix_text,
@@ -197,7 +197,7 @@ class InventoryMenu(Menu):
                 color = (
                     slot_colors_list[i] if i < len(slot_colors_list) else colors.GREY
                 )
-                self.text_backend.draw_rect(
+                self.canvas.draw_rect(
                     pixel_x=current_x_tile * tile_w,
                     pixel_y=title_y_tile * tile_h,
                     width=tile_w,
@@ -206,7 +206,7 @@ class InventoryMenu(Menu):
                     fill=True,
                 )
                 # Set a space character so the cell is fully drawn
-                self.text_backend.draw_text(
+                self.canvas.draw_text(
                     pixel_x=current_x_tile * tile_w,
                     pixel_y=title_y_tile * tile_h,
                     text=" ",
@@ -220,7 +220,7 @@ class InventoryMenu(Menu):
         if current_x_tile <= max_content_tile:
             available_tiles = max_content_tile - current_x_tile + 1
             text_to_draw = suffix_text[:available_tiles]
-            self.text_backend.draw_text(
+            self.canvas.draw_text(
                 pixel_x=current_x_tile * tile_w,
                 pixel_y=title_y_tile * tile_h,
                 text=text_to_draw,

@@ -25,8 +25,8 @@ import tcod.sdl.render
 from tcod.console import Console
 
 from catley import colors
+from catley.view.render.canvas import PillowImageCanvas, TCODConsoleCanvas
 from catley.view.render.renderer import Renderer
-from catley.view.render.text_backend import PillowTextBackend, TCODTextBackend
 
 
 @dataclass
@@ -86,25 +86,25 @@ class TCODBackendBenchmark(BackendBenchmark):
     def __init__(self):
         super().__init__("TCOD")
 
-    def setup(self, renderer: Renderer) -> TCODTextBackend:
-        return TCODTextBackend(renderer)
+    def setup(self, renderer: Renderer) -> TCODConsoleCanvas:
+        return TCODConsoleCanvas(renderer)
 
-    def cleanup(self, backend: TCODTextBackend) -> None:
+    def cleanup(self, backend: TCODConsoleCanvas) -> None:
         # TCOD backend doesn't need explicit cleanup
         pass
 
     def configure_backend(
-        self, backend: TCODTextBackend, width: int, height: int, tile_height: int
+        self, backend: TCODConsoleCanvas, width: int, height: int, tile_height: int
     ) -> None:
         backend.configure_dimensions(width, height)
         backend.configure_scaling(tile_height)
 
     def draw_text_operation(
-        self, backend: TCODTextBackend, x: int, y: int, text: str, color: colors.Color
+        self, backend: TCODConsoleCanvas, x: int, y: int, text: str, color: colors.Color
     ) -> None:
         backend.draw_text(x, y, text, color)
 
-    def frame_cycle(self, backend: TCODTextBackend) -> Any:
+    def frame_cycle(self, backend: TCODConsoleCanvas) -> Any:
         backend.begin_frame()
         return backend.end_frame()
 
@@ -115,10 +115,10 @@ class PillowBackendBenchmark(BackendBenchmark):
     def __init__(self):
         super().__init__("Pillow")
 
-    def setup(self, renderer: Renderer) -> PillowTextBackend:
-        return PillowTextBackend(renderer)
+    def setup(self, renderer: Renderer) -> PillowImageCanvas:
+        return PillowImageCanvas(renderer)
 
-    def cleanup(self, backend: PillowTextBackend) -> None:
+    def cleanup(self, backend: PillowImageCanvas) -> None:
         # Clean up any remaining PIL resources
         if hasattr(backend, "image") and backend.image is not None:
             img = backend.image
@@ -126,17 +126,17 @@ class PillowBackendBenchmark(BackendBenchmark):
             img.close()
 
     def configure_backend(
-        self, backend: PillowTextBackend, width: int, height: int, tile_height: int
+        self, backend: PillowImageCanvas, width: int, height: int, tile_height: int
     ) -> None:
         backend.configure_dimensions(width, height)
         backend.configure_scaling(tile_height)
 
     def draw_text_operation(
-        self, backend: PillowTextBackend, x: int, y: int, text: str, color: colors.Color
+        self, backend: PillowImageCanvas, x: int, y: int, text: str, color: colors.Color
     ) -> None:
         backend.draw_text(x, y, text, color)
 
-    def frame_cycle(self, backend: PillowTextBackend) -> Any:
+    def frame_cycle(self, backend: PillowImageCanvas) -> Any:
         backend.begin_frame()
         return backend.end_frame()
 

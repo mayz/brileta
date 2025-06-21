@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from catley import colors
-from catley.view.render.text_backend import TCODTextBackend
+from catley.view.render.canvas import TCODConsoleCanvas
 
 from .base import TextView
 
@@ -18,7 +18,7 @@ class HelpTextView(TextView):
     def __init__(self, controller: Controller, renderer: Renderer) -> None:
         super().__init__()
         self.controller = controller
-        self.text_backend = TCODTextBackend(renderer)
+        self.canvas = TCODConsoleCanvas(renderer)
 
     def needs_redraw(self, renderer: Renderer) -> bool:
         _ = renderer
@@ -34,4 +34,4 @@ class HelpTextView(TextView):
             help_items.append("G: Get items")
 
         text = " | ".join(help_items)
-        self.text_backend.draw_text(0, 0, text, colors.GREY)
+        self.canvas.draw_text(0, 0, text, colors.GREY)

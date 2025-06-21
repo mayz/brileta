@@ -25,7 +25,7 @@ import tcod.sdl.render
 
 from catley import colors
 from catley.util.coordinates import PixelCoord, PixelPos, RootConsoleTileCoord
-from catley.view.render.text_backend import TCODTextBackend, TextBackend
+from catley.view.render.canvas import Canvas, TCODConsoleCanvas
 
 if TYPE_CHECKING:
     from catley.controller import Controller
@@ -75,12 +75,12 @@ class Overlay(abc.ABC):
 class TextOverlay(Overlay):
     """An overlay that renders via a TextBackend."""
 
-    text_backend: TextBackend | None
+    canvas: Canvas | None
 
     def __init__(self, controller: Controller) -> None:
         super().__init__(controller)
         self.renderer = controller.renderer
-        self.text_backend = None
+        self.canvas = None
         self._cached_texture: tcod.sdl.render.Texture | None = None
         self.x_tiles, self.y_tiles, self.width, self.height = 0, 0, 0, 0
         self.pixel_width, self.pixel_height = 0, 0
@@ -91,7 +91,7 @@ class TextOverlay(Overlay):
         )
 
     @abc.abstractmethod
-    def _get_backend(self) -> TextBackend:
+    def _get_backend(self) -> Canvas:
         """Subclasses must implement this to provide a specific backend."""
 
     @abc.abstractmethod
@@ -100,23 +100,23 @@ class TextOverlay(Overlay):
 
     @abc.abstractmethod
     def draw_content(self) -> None:
-        """Subclasses implement the actual drawing commands using the text_backend."""
+        """Subclasses implement the actual drawing commands using the canvas."""
 
     def draw(self) -> None:
         """Orchestrate rendering. This is the main entry point."""
         if not self.is_active:
             return
 
-        self.text_backend = self._get_backend()
+        self.canvas = self._get_backend()
         self._calculate_dimensions()
 
-        self.text_backend.configure_drawing_offset(self.x_tiles, self.y_tiles)
-        self.text_backend.configure_dimensions(self.pixel_width, self.pixel_height)
-        self.text_backend.configure_scaling(self.tile_dimensions[1])
+        self.canvas.configure_drawing_offset(self.x_tiles, self.y_tiles)
+        self.canvas.configure_dimensions(self.pixel_width, self.pixel_height)
+        self.canvas.configure_scaling(self.tile_dimensions[1])
 
-        self.text_backend.begin_frame()
+        self.canvas.begin_frame()
         self.draw_content()
-        self._cached_texture = self.text_backend.end_frame()
+        self._cached_texture = self.canvas.end_frame()
 
     def present(self) -> None:
         """Presents the cached texture if one was created by the backend."""
@@ -392,11 +392,11 @@ class Menu(TextOverlay):
 
         return False
 
-    def _get_backend(self) -> TextBackend:
-        """Lazily initializes and returns a TCODTextBackend for Phase 1."""
-        if self.text_backend is None:
-            self.text_backend = TCODTextBackend(self.renderer, transparent=False)
-        return self.text_backend
+    def _get_backend(self) -> Canvas:
+        """Lazily initializes and returns a TCODConsoleCanvas for Phase 1."""
+        if self.canvas is None:
+            self.canvas = TCODConsoleCanvas(self.renderer, transparent=False)
+        return self.canvas
 
     def draw(self) -> None:
         super().draw()
@@ -425,13 +425,13 @@ class Menu(TextOverlay):
         self.y_tiles = (self.renderer.root_console.height - self.height) // 2
 
     def draw_content(self) -> None:
-        """Render the menu content using only the TextBackend interface."""
-        assert self.text_backend is not None
+        """Render the menu content using only the Canvas interface."""
+        assert self.canvas is not None
 
         # Draw the frame without a title.  The backend's draw_frame method no
         # longer accepts a title parameter, so the render_title hook handles
         # drawing header text explicitly.
-        self.text_backend.draw_frame(
+        self.canvas.draw_frame(
             tile_x=0,
             tile_y=0,
             width=self.width,
@@ -445,7 +445,7 @@ class Menu(TextOverlay):
         interior_width_px: PixelCoord = (self.width - 2) * self.tile_dimensions[0]
         interior_height_px: PixelCoord = (self.height - 2) * self.tile_dimensions[1]
 
-        self.text_backend.draw_rect(
+        self.canvas.draw_rect(
             pixel_x=interior_px_x,
             pixel_y=interior_px_y,
             width=interior_width_px,
@@ -473,7 +473,7 @@ class Menu(TextOverlay):
                 ]
                 hover_bg_height_px: PixelCoord = self.tile_dimensions[1]
 
-                self.text_backend.draw_rect(
+                self.canvas.draw_rect(
                     pixel_x=hover_bg_px_x,
                     pixel_y=hover_bg_px_y,
                     width=hover_bg_width_px,
@@ -496,7 +496,7 @@ class Menu(TextOverlay):
             text_px_x: PixelCoord = self.tile_dimensions[0] * 2
             text_px_y: PixelCoord = self.tile_dimensions[1] * y_offset_tiles
 
-            self.text_backend.draw_text(
+            self.canvas.draw_text(
                 pixel_x=text_px_x,
                 pixel_y=text_px_y,
                 text=option_text,
@@ -506,12 +506,12 @@ class Menu(TextOverlay):
 
     def render_title(self) -> None:
         """Renders the menu's title, centered, in the header area."""
-        assert self.text_backend is not None
+        assert self.canvas is not None
 
         title_width_tiles = len(self.title)
         center_x_tile = (self.width - title_width_tiles) // 2
 
-        self.text_backend.draw_text(
+        self.canvas.draw_text(
             pixel_x=center_x_tile * self.tile_dimensions[0],
             pixel_y=0,
             text=self.title,
