@@ -8,7 +8,7 @@ x, y coordinates, replacing O(n) linear scans with O(1) average-time lookups.
 
 import abc
 from collections import defaultdict
-from typing import Generic, Protocol, TypeVar
+from typing import Protocol, TypeVar
 
 from .coordinates import WorldTileCoord
 
@@ -28,7 +28,7 @@ class HasPosition(Protocol):
 T = TypeVar("T", bound=HasPosition)
 
 
-class SpatialIndex(abc.ABC, Generic[T]):
+class SpatialIndex[T: HasPosition](abc.ABC):
     """Abstract base class for a spatial indexing data structure."""
 
     @abc.abstractmethod
