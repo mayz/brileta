@@ -113,8 +113,8 @@ class InputHandler:
                 self.controller.queue_action(action)
 
     def handle_event(self, event: tcod.event.Event) -> GameIntent | None:
-        # Don't process game actions if menus are active
-        if self.controller.overlay_system.has_active_menus():
+        # Don't process game actions if INTERACTIVE menus are active
+        if self.controller.overlay_system.has_interactive_overlays():
             return None
 
         match event:

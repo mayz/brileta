@@ -33,6 +33,7 @@ from .util.pathfinding import find_path
 from .view.animation import AnimationManager
 from .view.frame_manager import FrameManager
 from .view.render.renderer import Renderer
+from .view.ui.fps_overlay import FPSOverlay
 from .view.ui.overlays import OverlaySystem
 
 
@@ -94,6 +95,13 @@ class Controller:
         # Create new low-level renderer
         self.renderer = Renderer(context, root_console, tile_dimensions)
         self.coordinate_converter = self.renderer.coordinate_converter
+
+        # Add FPS overlay if enabled (after renderer is created)
+        if config.SHOW_FPS:
+            self.fps_overlay = FPSOverlay(self, self.clock)
+            # Handle test environments with mock overlay systems
+            if hasattr(self.overlay_system, "show_overlay"):
+                self.overlay_system.show_overlay(self.fps_overlay)
 
         # Create FrameManager to coordinate rendering
         self.frame_manager = FrameManager(self)
