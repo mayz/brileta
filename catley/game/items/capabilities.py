@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import abc
-from typing import TYPE_CHECKING, Generic, TypeVar, cast
+from typing import TYPE_CHECKING, TypeVar, cast
 
 from catley.game.actors.conditions import Condition
 from catley.game.enums import AreaType, BlendMode, ConsumableEffectType  # noqa: F401
@@ -79,7 +79,7 @@ class RangedAttackSpec(AttackSpec):
 SpecType = TypeVar("SpecType", bound=AttackSpec)
 
 
-class Attack(abc.ABC, Generic[SpecType]):
+class Attack[SpecType: AttackSpec](abc.ABC):
     """Interface for item components that can perform attacks."""
 
     def __init__(self, spec: SpecType) -> None:
