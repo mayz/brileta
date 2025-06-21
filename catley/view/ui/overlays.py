@@ -119,14 +119,18 @@ class TextOverlay(Overlay):
         artifact = self.canvas.end_frame()
         if artifact is not None:
             # Convert artifact to texture using renderer
-            if hasattr(artifact, "width"):  # tcod.Console has width attribute
+            if self.canvas.artifact_type == "console":
                 texture = self.renderer.texture_from_console(
                     artifact, self.canvas.transparent
                 )
-            else:  # numpy.ndarray
+            elif self.canvas.artifact_type == "numpy":
                 texture = self.renderer.texture_from_numpy(
                     artifact, self.canvas.transparent
                 )
+            else:
+                # Handle unknown artifact types gracefully
+                texture = None
+
             self._cached_texture = texture
 
     def present(self) -> None:

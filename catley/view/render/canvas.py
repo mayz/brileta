@@ -86,6 +86,12 @@ class Canvas(ABC):
     ) -> list[str]:
         """Wrap ``text`` into lines that fit within ``max_width`` pixels."""
 
+    @property
+    @abstractmethod
+    def artifact_type(self) -> str:
+        """Return type of artifact this canvas produces (e.g., 'console', 'numpy')."""
+        pass
+
     def begin_frame(self) -> None:
         """Prepare backend for a new frame."""
         self._frame_ops = []
@@ -299,6 +305,10 @@ class TCODConsoleCanvas(Canvas):
 
         self.configure_scaling(renderer.tile_dimensions[1])
 
+    @property
+    def artifact_type(self) -> str:
+        return "console"
+
     def get_text_metrics(
         self, text: str, font_size: int | None = None
     ) -> tuple[int, int, int]:
@@ -478,6 +488,10 @@ class PillowImageCanvas(Canvas):
 
         self.configure_scaling(tile_height)
         self.configure_renderer(renderer.sdl_renderer)
+
+    @property
+    def artifact_type(self) -> str:
+        return "numpy"
 
     # ------------------------------------------------------------------
     # Utility helpers

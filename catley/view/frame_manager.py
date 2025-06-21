@@ -33,6 +33,7 @@ from .render.effects.effects import EffectContext
 from .render.effects.screen_shake import ScreenShake
 from .render.renderer import Renderer
 from .ui.cursor_manager import CursorManager
+from .ui.fps_overlay import FPSOverlay
 from .views.base import View
 from .views.equipment_view import EquipmentView
 from .views.health_view import HealthView
@@ -94,6 +95,11 @@ class FrameManager:
 
         # Set view boundaries using layout
         self._layout_views()
+
+        # Create and manage overlays owned by the frame manager
+        if config.SHOW_FPS:
+            self.fps_overlay = FPSOverlay(self.controller, self.controller.clock)
+            self.controller.overlay_system.show_overlay(self.fps_overlay)
 
     def _layout_views(self) -> None:
         """Calculate and set view boundaries based on current screen size."""
