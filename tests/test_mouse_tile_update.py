@@ -88,7 +88,7 @@ def test_mouse_tile_location_updates_with_camera() -> None:
     controller = make_controller()
     view = WorldView(cast(Controller, controller), ScreenShake())
     controller.frame_manager.world_view = view
-    view.resize(0, 0, 10, 10)
+    view.set_bounds(0, 0, 10, 10)
 
     player = controller.gw.player
     player.x = 5

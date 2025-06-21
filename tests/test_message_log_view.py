@@ -62,7 +62,7 @@ def test_message_log_view_ttf_rendering_visible(monkeypatch: Any) -> None:
 
     view = MessageLogView(log, renderer=renderer_stub)
     view.tile_dimensions = (8, 16)
-    view.resize(0, 0, 20, 5)
+    view.set_bounds(0, 0, 20, 5)
 
     view.draw(renderer_stub)
     renderer.clear()
@@ -95,7 +95,7 @@ def test_message_log_view_font_scales_on_resize(monkeypatch: Any) -> None:
 
     view = MessageLogView(log, renderer=renderer_stub)
     view.tile_dimensions = (8, 16)
-    view.resize(0, 0, 20, 5)
+    view.set_bounds(0, 0, 20, 5)
 
     view.draw(renderer_stub)
     assert view.canvas is not None
@@ -105,7 +105,7 @@ def test_message_log_view_font_scales_on_resize(monkeypatch: Any) -> None:
 
     renderer_stub.tile_dimensions = (16, 32)
     view.tile_dimensions = (16, 32)
-    view.resize(0, 0, 20, 5)
+    view.set_bounds(0, 0, 20, 5)
     view.draw(renderer_stub)
 
     assert view.canvas is not None

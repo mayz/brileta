@@ -45,9 +45,9 @@ class MessageLogView(TextView):
             or new_view_height_px != self._cached_texture_height
         )
 
-    def resize(self, x1: int, y1: int, x2: int, y2: int) -> None:
-        """Override resize to update pixel dimensions when view is resized."""
-        super().resize(x1, y1, x2, y2)
+    def set_bounds(self, x1: int, y1: int, x2: int, y2: int) -> None:
+        """Override set_bounds to update pixel dimensions when view is resized."""
+        super().set_bounds(x1, y1, x2, y2)
         # Update pixel dimensions based on new size
         self.view_width_px = self.width * self.tile_dimensions[0]
         self.view_height_px = self.height * self.tile_dimensions[1]
