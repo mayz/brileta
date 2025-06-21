@@ -1,4 +1,23 @@
-"""Abstractions for text rendering backends."""
+"""
+Defines the Canvas, an immediate-mode drawing API for Views and Overlays.
+
+A Canvas's role is to provide a standardized, implementation-agnostic interface
+for drawing primitives like text and rectangles. It acts as an intermediary between
+the high-level View components and the low-level Renderer.
+
+Key Principles:
+- A Canvas is a "drawing command recorder." It's used by a View to describe its
+  visual content for a single frame.
+- It is stateless between frames. A new frame begins with a `begin_frame()` call.
+- The `end_frame()` method processes the recorded commands and produces an
+  intermediate "artifact" (e.g., a `tcod.Console` object or a NumPy array of
+  pixels).
+- This artifact is then passed to the `Renderer` to be converted into a final
+  texture for display.
+
+This separation allows Views to be ignorant of the underlying rendering technology
+(e.g., TCOD glyphs vs. Pillow TrueType fonts).
+"""
 
 from __future__ import annotations
 
@@ -27,8 +46,8 @@ class DrawOperation(Enum):
     FRAME = auto()
 
 
-class TextBackend(ABC):
-    """Abstract interface for text rendering backends."""
+class Canvas(ABC):
+    """Abstract interface for drawing canvases."""
 
     def __init__(self, transparent: bool = True) -> None:
         self.drawing_offset_x = 0
@@ -41,7 +60,7 @@ class TextBackend(ABC):
         # Shared caching logic
         self._frame_ops: list = []
         self._last_frame_ops: list = []
-        self._cached_frame_texture: Texture | None = None
+        self._cached_frame_texture = None
 
     def draw_text(
         self,
@@ -71,7 +90,7 @@ class TextBackend(ABC):
         """Prepare backend for a new frame."""
         self._frame_ops = []
 
-    def end_frame(self) -> Texture | None:
+    def end_frame(self):
         """Finalize the frame and return a texture if one was produced."""
         # Check if frame content changed
         if self._should_rerender():
@@ -99,7 +118,7 @@ class TextBackend(ABC):
         # Create texture from rendered content
         texture = self._create_texture_from_rendered_content()
 
-        if texture:
+        if texture is not None:
             # Cache the result
             self._cached_frame_texture = texture
             self._last_frame_ops = self._frame_ops.copy()
@@ -270,8 +289,8 @@ class TextBackend(ABC):
         """Create and return a texture from the rendered content."""
 
 
-class TCODTextBackend(TextBackend):
-    """Text backend that draws directly to a tcod :class:`Console`."""
+class TCODConsoleCanvas(Canvas):
+    """Canvas that draws directly to a tcod :class:`Console`."""
 
     def __init__(self, renderer: Renderer, transparent: bool = True) -> None:
         super().__init__(transparent)
@@ -439,8 +458,8 @@ class TCODTextBackend(TextBackend):
         return texture
 
 
-class PillowTextBackend(TextBackend):
-    """Text backend that renders using PIL and uploads to an SDL texture."""
+class PillowImageCanvas(Canvas):
+    """Canvas that renders using PIL and uploads to an SDL texture."""
 
     def __init__(
         self,

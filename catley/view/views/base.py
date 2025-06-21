@@ -19,8 +19,8 @@ of rendering, making the system more modular and maintainable.
 import abc
 from typing import Any
 
+from catley.view.render.canvas import Canvas
 from catley.view.render.renderer import Renderer
-from catley.view.render.text_backend import TextBackend
 
 
 class View(abc.ABC):
@@ -50,7 +50,7 @@ class View(abc.ABC):
 
     def present(self, renderer: Renderer) -> None:
         """Handle texture presentation for backends that produce textures."""
-        if not self.visible or not self._cached_texture:
+        if not self.visible or self._cached_texture is None:
             return
 
         if self.tile_dimensions != (0, 0):
@@ -80,9 +80,9 @@ class View(abc.ABC):
 
 
 class TextView(View):
-    """An abstract view that is guaranteed to have a TextBackend."""
+    """An abstract view that is guaranteed to have a Canvas."""
 
-    text_backend: TextBackend
+    canvas: Canvas
 
     def __init__(self) -> None:
         super().__init__()
@@ -104,9 +104,9 @@ class TextView(View):
             return
 
         if self.needs_redraw(renderer):
-            self.text_backend.begin_frame()
+            self.canvas.begin_frame()
             self.draw_content(renderer)
-            texture = self.text_backend.end_frame()
+            texture = self.canvas.end_frame()
             if texture is not None:
                 self._cached_texture = texture
 
@@ -120,6 +120,6 @@ class TextView(View):
             pixel_height = self.height * tile_height
             if (pixel_width, pixel_height) != self._last_pixel_dims:
                 self._last_pixel_dims = (pixel_width, pixel_height)
-                self.text_backend.configure_dimensions(pixel_width, pixel_height)
-            self.text_backend.configure_scaling(tile_height)
-            self.text_backend.configure_drawing_offset(self.x, self.y)
+                self.canvas.configure_dimensions(pixel_width, pixel_height)
+            self.canvas.configure_scaling(tile_height)
+            self.canvas.configure_drawing_offset(self.x, self.y)

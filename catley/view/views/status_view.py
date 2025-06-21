@@ -6,8 +6,8 @@ from typing import TYPE_CHECKING
 
 from catley import colors
 from catley.game.actors import Character, Condition, StatusEffect
+from catley.view.render.canvas import TCODConsoleCanvas
 from catley.view.render.renderer import Renderer
-from catley.view.render.text_backend import TCODTextBackend
 
 from .base import TextView
 
@@ -21,7 +21,7 @@ class StatusView(TextView):
     def __init__(self, controller: Controller, renderer: Renderer) -> None:
         super().__init__()
         self.controller = controller
-        self.text_backend = TCODTextBackend(renderer)
+        self.canvas = TCODConsoleCanvas(renderer)
 
     def needs_redraw(self, renderer: Renderer) -> bool:
         _ = renderer
@@ -42,22 +42,22 @@ class StatusView(TextView):
         current_y = 0
 
         if conditions:
-            self.text_backend.draw_text(
+            self.canvas.draw_text(
                 0, current_y * tile_height, "CONDITIONS:", colors.YELLOW
             )
             current_y += 1
             for text, color in conditions:
-                self.text_backend.draw_text(0, current_y * tile_height, text, color)
+                self.canvas.draw_text(0, current_y * tile_height, text, color)
                 current_y += 1
             current_y += 1
 
         if status_effects:
-            self.text_backend.draw_text(
+            self.canvas.draw_text(
                 0, current_y * tile_height, "STATUS EFFECTS:", colors.CYAN
             )
             current_y += 1
             for text in status_effects:
-                self.text_backend.draw_text(
+                self.canvas.draw_text(
                     0, current_y * tile_height, text, colors.LIGHT_GREY
                 )
                 current_y += 1
