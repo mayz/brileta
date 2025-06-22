@@ -5,13 +5,13 @@ from typing import TYPE_CHECKING
 import tcod.event
 from tcod.console import Console
 
-from catley import colors
 from catley.events import ActorDeathEvent, subscribe_to_event, unsubscribe_from_event
 from catley.game import ranges
 from catley.game.actions.combat import AttackIntent
 from catley.game.actors import Character
 from catley.input_handler import Keys
 from catley.modes.base import Mode
+from catley.view.ui.targeting_indicator_overlay import TargetingIndicatorOverlay
 
 if TYPE_CHECKING:
     from catley.controller import Controller
@@ -26,6 +26,7 @@ class TargetingMode(Mode):
         self.candidates: list[Character] = []
         self.current_index: int = 0
         self.last_targeted: Character | None = None
+        self.targeting_indicator_overlay = TargetingIndicatorOverlay(controller)
 
     def enter(self) -> None:
         """Enter targeting mode and find all valid targets"""
@@ -36,6 +37,7 @@ class TargetingMode(Mode):
         subscribe_to_event(ActorDeathEvent, self._handle_actor_death_event)
 
         self.cursor_manager.set_active_cursor_type("crosshair")
+        self.controller.overlay_system.show_overlay(self.targeting_indicator_overlay)
 
         # Build initial candidate list
         self.update()
@@ -66,6 +68,7 @@ class TargetingMode(Mode):
         self.controller.gw.selected_actor = None
 
         self.cursor_manager.set_active_cursor_type("arrow")
+        self.targeting_indicator_overlay.hide()
 
         # Clean up event subscriptions
         unsubscribe_from_event(ActorDeathEvent, self._handle_actor_death_event)
@@ -110,17 +113,13 @@ class TargetingMode(Mode):
         return False
 
     def render_ui(self, console: Console) -> None:
-        """Render targeting mode UI text"""
-        if not self.active:
-            return
+        """Render mode-specific UI. Handled by TargetingIndicatorOverlay.
 
-        # Render "TARGETING" status text in bottom margin area
-        # Position it in an area that doesn't block game map or other views
-        status_text = "TARGETING"
-        # Place it in the bottom area, but above equipment/message views
-        status_y = console.height - 10  # Above the UI views
-        status_x = console.width // 2 - len(status_text) // 2  # Centered horizontally
-        console.print(status_x, status_y, status_text, fg=colors.RED)  # type: ignore[no-matching-overload]
+        This method is intentionally empty. The UI for this mode (the
+        "[ TARGETING ]" text) was refactored into a dedicated, non-interactive
+        Overlay for better separation of concerns and layout management.
+        """
+        pass
 
     def render_world(self) -> None:
         """Render targeting highlights in world space"""
