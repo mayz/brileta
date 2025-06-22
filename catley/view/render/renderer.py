@@ -256,18 +256,23 @@ class Renderer:
     def prepare_to_present(self) -> None:
         """Converts the root console to a texture and copies it to the backbuffer."""
         console_texture = self.console_render.render(self.root_console)
-
-        left_x, top_y = self.console_to_screen_coords(0, 0)
-        right_x, bottom_y = self.console_to_screen_coords(
-            self.root_console.width, self.root_console.height
-        )
-
-        width = right_x - left_x
-        height = bottom_y - top_y
-
-        dest = (int(left_x), int(top_y), int(width), int(height))
-
         self.sdl_renderer.clear()
+
+        renderer_width, renderer_height = self.sdl_renderer.output_size
+        console_aspect = self.root_console.width / self.root_console.height
+        window_aspect = renderer_width / renderer_height
+
+        if console_aspect > window_aspect:
+            # Letterboxing (black bars on top/bottom)
+            dest_w = renderer_width
+            dest_h = int(renderer_width / console_aspect)
+            dest = (0, (renderer_height - dest_h) // 2, renderer_width, dest_h)
+        else:
+            # Pillarboxing (black bars on left/right)
+            dest_w = int(renderer_height * console_aspect)
+            dest_h = renderer_height
+            dest = ((renderer_width - dest_w) // 2, 0, dest_w, renderer_height)
+
         self.sdl_renderer.copy(console_texture, dest=dest)
 
     def finalize_present(self) -> None:
@@ -357,13 +362,14 @@ class Renderer:
         height_tiles: int,
     ) -> None:
         """Present a texture at the specified tile coordinates."""
-        tile_width, tile_height = self.tile_dimensions
-        dest_x = x_tile * tile_width
-        dest_y = y_tile * tile_height
-        dest_width = width_tiles * tile_width
-        dest_height = height_tiles * tile_height
+        left, top = self.console_to_screen_coords(x_tile, y_tile)
+        right, bottom = self.console_to_screen_coords(
+            x_tile + width_tiles, y_tile + height_tiles
+        )
+        dest_width = right - left
+        dest_height = bottom - top
 
-        dest_rect = (dest_x, dest_y, dest_width, dest_height)
+        dest_rect = (int(left), int(top), int(dest_width), int(dest_height))
         self.sdl_renderer.copy(texture, dest=dest_rect)
 
     def draw_debug_rect(

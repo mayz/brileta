@@ -212,16 +212,17 @@ class FrameManager:
                     continue
 
                 # Convert tile-based view bounds to pixel coordinates
-                tile_w, tile_h = self.renderer.tile_dimensions
-                px_x = view.x * tile_w
-                px_y = view.y * tile_h
-                px_w = view.width * tile_w
-                px_h = view.height * tile_h
+                px_x, px_y = self.renderer.console_to_screen_coords(view.x, view.y)
+                px_x2, px_y2 = self.renderer.console_to_screen_coords(
+                    view.x + view.width, view.y + view.height
+                )
+                px_w = px_x2 - px_x
+                px_h = px_y2 - px_y
 
                 # Pick a color from the debug palette, wrapping around if needed
                 color = debug_colors.DEBUG_COLORS[i % len(debug_colors.DEBUG_COLORS)]
 
-                self.renderer.draw_debug_rect(px_x, px_y, px_w, px_h, color)
+                self.renderer.draw_debug_rect(int(px_x), int(px_y), int(px_w), int(px_h), color)
 
         # Draw the mouse cursor on top of all overlays
         self.cursor_manager.draw_cursor()
