@@ -62,6 +62,7 @@ class InputHandler:
         self.renderer = self.controller.renderer
         self.fm = self.controller.frame_manager
         self.cursor_manager = self.fm.cursor_manager
+        self.dev_console_overlay = getattr(self.fm, "dev_console_overlay", None)
         self.gw = controller.gw
         self.game_map = self.gw.game_map
         self.p = self.gw.player
@@ -169,11 +170,16 @@ class InputHandler:
                 return QuitUICommand()
             case tcod.event.KeyDown(sym=Keys.KEY_Q):
                 return QuitUICommand()
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.ESCAPE):
-                return QuitUICommand()
 
             case tcod.event.KeyDown(sym=Keys.KEY_I):
                 return OpenMenuUICommand(self.controller, InventoryMenu)
+
+            case tcod.event.KeyDown(sym=tcod.event.KeySym.BACKQUOTE):
+                if self.dev_console_overlay is not None:
+                    self.controller.overlay_system.toggle_overlay(
+                        self.dev_console_overlay
+                    )
+                return None
 
             case tcod.event.KeyDown(sym=key_sym, mod=key_mod) if (
                 key_sym == tcod.event.KeySym.QUESTION

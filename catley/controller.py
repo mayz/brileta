@@ -140,11 +140,13 @@ class Controller:
                     self.input_handler.dispatch(event)
 
                 # Check for player-initiated actions (movement or queued)
-                move_intent = self.movement_handler.generate_intent(
-                    self.input_handler.movement_keys
-                )
-                if move_intent:
-                    self._execute_player_action_immediately(move_intent)
+                move_intent = None
+                if not self.overlay_system.has_interactive_overlays():
+                    move_intent = self.movement_handler.generate_intent(
+                        self.input_handler.movement_keys
+                    )
+                    if move_intent:
+                        self._execute_player_action_immediately(move_intent)
 
                 # Check for other queued player actions
                 if self.turn_manager.has_pending_actions():

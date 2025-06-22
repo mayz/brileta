@@ -32,6 +32,7 @@ class DummyController:
     coordinate_converter: Any
     frame_manager: DummyFrameManager
     start_actor_pathfinding: Any
+    active_mode: Any = None
 
 
 def make_input_handler() -> tuple[InputHandler, list[tuple[Any, tuple[int, int], Any]]]:
@@ -83,3 +84,9 @@ def test_right_click_distant_tile_opens_menu() -> None:
     event = tcod.event.MouseButtonDown((5, 5), (5, 5), tcod.event.MouseButton.RIGHT)
     result = ih._handle_mouse_button_down_event(event)
     assert isinstance(result, OpenExistingMenuUICommand)
+
+
+def test_escape_does_not_quit() -> None:
+    ih, _ = make_input_handler()
+    event = tcod.event.KeyDown(0, tcod.event.KeySym.ESCAPE, 0)
+    assert ih._check_for_ui_command(event) is None

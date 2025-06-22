@@ -13,6 +13,7 @@ class LiveVariable:
     description: str
     getter: Callable[[], Any]
     setter: Callable[[Any], None] | None = None
+    formatter: Callable[[Any], str] | None = None
 
     def get_value(self) -> Any:
         """Return the current value using the getter."""
@@ -41,7 +42,9 @@ class LiveVariableRegistry:
         name: str,
         getter: Callable[[], Any],
         setter: Callable[[Any], None] | None = None,
+        *,
         description: str = "",
+        formatter: Callable[[Any], str] | None = None,
     ) -> None:
         """Register a new live variable."""
         if name in self._variables:
@@ -51,6 +54,7 @@ class LiveVariableRegistry:
             description=description,
             getter=getter,
             setter=setter,
+            formatter=formatter,
         )
 
     def get_variable(self, name: str) -> LiveVariable | None:

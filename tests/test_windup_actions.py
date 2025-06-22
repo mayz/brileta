@@ -134,6 +134,9 @@ class DummyOverlaySystem:
     def has_active_menus(self) -> bool:
         return False
 
+    def has_interactive_overlays(self) -> bool:
+        return False
+
 
 class DummyTargetingMode:
     def __init__(self, controller: Controller) -> None:

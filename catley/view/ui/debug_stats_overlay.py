@@ -39,7 +39,11 @@ class DebugStatsOverlay(TextOverlay):
 
         max_width = 0
         for var in watched:
-            line = f"{var.name}: {var.get_value()}"
+            raw_value = var.get_value()
+            display_value = (
+                var.formatter(raw_value) if var.formatter else str(raw_value)
+            )
+            line = f"{var.name}: {display_value}"
             max_width = max(max_width, len(line))
 
         self.width = max_width + 2  # small padding
@@ -57,7 +61,11 @@ class DebugStatsOverlay(TextOverlay):
 
         tile_width, tile_height = self.tile_dimensions
         for y_offset, var in enumerate(watched):
-            text = f"{var.name}: {var.get_value()}"
+            raw_value = var.get_value()
+            display_value = (
+                var.formatter(raw_value) if var.formatter else str(raw_value)
+            )
+            text = f"{var.name}: {display_value}"
             self.canvas.draw_text(
                 0,
                 y_offset * tile_height,
