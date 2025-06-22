@@ -26,9 +26,13 @@ class EquipmentView(TextView):
         return True
 
     def draw_content(self, renderer: Renderer) -> None:
+        tile_width, tile_height = self.tile_dimensions
+        pixel_width = self.width * tile_width
+        pixel_height = self.height * tile_height
+        self.canvas.draw_rect(0, 0, pixel_width, pixel_height, colors.BLACK, fill=True)
+
         y_start = 1
         player = self.controller.gw.player
-        _, tile_height = self.tile_dimensions
 
         # Add weapon switching hint
         hint_text = "Weapons: [1][2] to switch"

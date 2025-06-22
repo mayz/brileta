@@ -30,37 +30,33 @@ class StatusView(TextView):
     def draw_content(self, renderer: Renderer) -> None:
         """Render the status view if player has active effects."""
 
+        tile_w, tile_h = self.tile_dimensions
+        pixel_width = self.width * tile_w
+        pixel_height = self.height * tile_h
+        self.canvas.draw_rect(0, 0, pixel_width, pixel_height, colors.BLACK, fill=True)
+
         player = self.controller.gw.player
         all_effects = player.modifiers.get_all_active_effects()
         if not all_effects:
             return
 
-        tile_width, tile_height = self.tile_dimensions
+        current_x_tile = 0
         conditions = self._get_condition_lines(player)
         status_effects = self._get_status_effect_lines(player)
 
-        current_y = 0
+        for text, color in conditions:
+            token = f"[{text}]"
+            if current_x_tile + len(token) > self.width:
+                break
+            self.canvas.draw_text(current_x_tile * tile_w, 0, token, color)
+            current_x_tile += len(token) + 1
 
-        if conditions:
-            self.canvas.draw_text(
-                0, current_y * tile_height, "CONDITIONS:", colors.YELLOW
-            )
-            current_y += 1
-            for text, color in conditions:
-                self.canvas.draw_text(0, current_y * tile_height, text, color)
-                current_y += 1
-            current_y += 1
-
-        if status_effects:
-            self.canvas.draw_text(
-                0, current_y * tile_height, "STATUS EFFECTS:", colors.CYAN
-            )
-            current_y += 1
-            for text in status_effects:
-                self.canvas.draw_text(
-                    0, current_y * tile_height, text, colors.LIGHT_GREY
-                )
-                current_y += 1
+        for text in status_effects:
+            token = f"[{text}]"
+            if current_x_tile + len(token) > self.width:
+                break
+            self.canvas.draw_text(current_x_tile * tile_w, 0, token, colors.LIGHT_GREY)
+            current_x_tile += len(token) + 1
 
     def _get_condition_lines(self, player: Character) -> list[tuple[str, colors.Color]]:
         """Get formatted display lines for conditions."""

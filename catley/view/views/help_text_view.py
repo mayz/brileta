@@ -27,6 +27,11 @@ class HelpTextView(TextView):
     def draw_content(self, renderer: Renderer) -> None:
         """Render a short string with helpful key bindings."""
 
+        tile_w, tile_h = self.tile_dimensions
+        pixel_width = self.width * tile_w
+        pixel_height = self.height * tile_h
+        self.canvas.draw_rect(0, 0, pixel_width, pixel_height, colors.BLACK, fill=True)
+
         help_items = ["?: Help", "I: Inventory", "Space: Actions"]
 
         player = self.controller.gw.player

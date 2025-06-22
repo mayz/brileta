@@ -103,54 +103,57 @@ class FrameManager:
 
     def _layout_views(self) -> None:
         """Calculate and set view boundaries based on current screen size."""
-        screen_width_tiles = self.renderer.root_console.width
-        screen_height_tiles = self.renderer.root_console.height
+        # Use the configured screen dimensions so the entire UI maintains
+        # a consistent aspect ratio regardless of window size.
+        screen_width_tiles = config.SCREEN_WIDTH
+        screen_height_tiles = config.SCREEN_HEIGHT
         tile_dimensions = self.renderer.tile_dimensions
 
-        # Recalculate layout
-        message_log_height = 10
-        equipment_height = 4  # Equipment view needs 4 lines (2 weapons + 2 hints)
-        bottom_ui_height = message_log_height + 1
+        # Consolidated bottom bar dimensions
+        bottom_ui_height = 10
+        bottom_ui_y = screen_height_tiles - bottom_ui_height
 
+        # World view is everything between the top bar and bottom bar
         game_world_y = self.help_height
-        game_world_height = screen_height_tiles - game_world_y - bottom_ui_height
 
-        message_log_y = screen_height_tiles - message_log_height - 1
-        equipment_y = screen_height_tiles - equipment_height - 2
-
+        # Fixed widths for bottom bar components
+        message_log_width = 30
         equipment_width = 25
-        equipment_x = screen_width_tiles - equipment_width - 2
 
-        # Status view positioned to the left of health view to avoid overlap
-        status_view_width = 25
-        status_view_x = screen_width_tiles - 20 - status_view_width - 1
-        status_view_y = self.help_height + 1
-        status_view_height = 10
+        message_log_x1 = 1
+        message_log_x2 = message_log_x1 + message_log_width
 
-        # Set bounds for all views
+        equipment_x1 = screen_width_tiles - equipment_width - 1
+        equipment_x2 = equipment_x1 + equipment_width
+
+        status_x1 = message_log_x2 + 1
+        status_x2 = equipment_x1 - 1
+
         self.help_text_view.tile_dimensions = tile_dimensions
         self.help_text_view.set_bounds(0, 0, screen_width_tiles, self.help_height)
+
         self.world_view.tile_dimensions = tile_dimensions
-        self.world_view.set_bounds(
-            0, game_world_y, screen_width_tiles, game_world_y + game_world_height
-        )
+        self.world_view.set_bounds(0, game_world_y, screen_width_tiles, bottom_ui_y)
+
         self.health_view.tile_dimensions = tile_dimensions
         self.health_view.set_bounds(
             screen_width_tiles - 20, 0, screen_width_tiles, self.help_height
         )
+
         self.status_view.tile_dimensions = tile_dimensions
         self.status_view.set_bounds(
-            status_view_x,
-            status_view_y,
-            status_view_x + status_view_width,
-            status_view_y + status_view_height,
+            status_x1, bottom_ui_y, status_x2, screen_height_tiles
         )
+
         self.equipment_view.tile_dimensions = tile_dimensions
         self.equipment_view.set_bounds(
-            equipment_x, equipment_y, screen_width_tiles, screen_height_tiles
+            equipment_x1, bottom_ui_y, equipment_x2, screen_height_tiles
         )
+
         self.message_log_view.tile_dimensions = tile_dimensions
-        self.message_log_view.set_bounds(1, message_log_y, 31, screen_height_tiles)
+        self.message_log_view.set_bounds(
+            message_log_x1, bottom_ui_y, message_log_x2, screen_height_tiles
+        )
 
     def on_window_resized(self) -> None:
         """Called when the game window is resized to update view layouts."""

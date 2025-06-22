@@ -95,6 +95,14 @@ class InputHandler:
 
         # Handle window resize events
         if isinstance(event, tcod.event.WindowResized):
+            # Enforce a constant 8:5 aspect ratio
+            ASPECT_RATIO = 8 / 5
+            new_width = event.width
+            new_height = int(new_width / ASPECT_RATIO)
+            sdl_window = self.controller.context.sdl_window
+            if sdl_window is not None:
+                sdl_window.size = new_width, new_height
+
             # Update coordinate conversion when the window size changes
             self.controller.renderer.update_dimensions()
             self.controller.coordinate_converter = (

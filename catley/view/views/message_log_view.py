@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 from tcod.sdl.render import Texture
 
+from catley import colors
 from catley.view.render.canvas import PillowImageCanvas
 from catley.view.render.renderer import Renderer
 
@@ -58,6 +59,9 @@ class MessageLogView(TextView):
         self.tile_dimensions = renderer.tile_dimensions
         self.view_width_px = self.width * self.tile_dimensions[0]
         self.view_height_px = self.height * self.tile_dimensions[1]
+        self.canvas.draw_rect(
+            0, 0, self.view_width_px, self.view_height_px, colors.BLACK, fill=True
+        )
         self._cached_texture_width = self.view_width_px
         self._cached_texture_height = self.view_height_px
         self.canvas.configure_renderer(renderer.sdl_renderer)
