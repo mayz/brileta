@@ -84,7 +84,9 @@ class ResourceCache[KeyType, ValueType]:
         self._cache[key] = value
         self._cache.move_to_end(key)
 
-        if len(self._cache) > self.max_size:
+        # Use a while-loop for defensive correctness. This ensures the cache
+        # size is enforced even if a future change adds multiple items at once.
+        while len(self._cache) > self.max_size:
             # Evict the least recently used item
             _evicted_key, evicted_value = self._cache.popitem(last=False)
             if self.on_evict:

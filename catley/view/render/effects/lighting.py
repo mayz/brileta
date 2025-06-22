@@ -23,6 +23,7 @@ from catley.config import (
     TORCH_RADIUS,
 )
 from catley.environment.map import TileCoord
+from catley.util.caching import ResourceCache
 from catley.util.coordinates import (
     Rect,
     ViewportTileCoord,
@@ -124,16 +125,7 @@ class LightingSystem:
         self._game_map: GameMap | None = game_map
 
         # Lighting cache for viewport-based lighting computations
-        from collections import OrderedDict
-
-        # Key -> cached np.ndarray of lighting values
-        self._lighting_cache: OrderedDict[tuple, np.ndarray] = OrderedDict()
-        # Maximum number of cache entries before evicting the least recently used
-        self._cache_max_size = 15
-
-        # Performance tracking
-        self._cache_hits = 0
-        self._cache_misses = 0
+        self._lighting_cache = ResourceCache[tuple, np.ndarray]("Lighting", max_size=15)
 
     def set_game_map(self, game_map: GameMap) -> None:
         """Assign the current game map for shadow calculations."""
@@ -151,12 +143,6 @@ class LightingSystem:
             self.light_sources.remove(light)
             # Lighting conditions changed, invalidate cache
             self._lighting_cache.clear()
-
-    def clear_lighting_cache(self) -> None:
-        """Manually clear the lighting cache and reset tracking stats."""
-        self._lighting_cache.clear()
-        self._cache_hits = 0
-        self._cache_misses = 0
 
     def update(self, delta_time: float) -> None:
         """Update lighting effects based on elapsed time"""
@@ -263,13 +249,10 @@ class LightingSystem:
                 viewport_bounds, actors, map_width, map_height
             )
 
-            if cache_key in self._lighting_cache:
-                cached_result = self._lighting_cache.pop(cache_key)
-                self._lighting_cache[cache_key] = cached_result
-                self._cache_hits += 1
+            # Check the cache for a pre-computed lighting map.
+            cached_result = self._lighting_cache.get(cache_key)
+            if cached_result is not None:
                 return cached_result.copy()
-
-            self._cache_misses += 1
 
         if viewport_offset:
             base_lighting = self.compute_lighting_for_viewport(
@@ -288,9 +271,8 @@ class LightingSystem:
             )
 
         if cache_key is not None:
-            self._lighting_cache[cache_key] = final_lighting.copy()
-            while len(self._lighting_cache) > self._cache_max_size:
-                self._lighting_cache.popitem(last=False)
+            # Store a copy to prevent mutation of the cached array.
+            self._lighting_cache.store(cache_key, final_lighting.copy())
 
         return final_lighting
 
