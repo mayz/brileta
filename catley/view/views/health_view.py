@@ -30,10 +30,13 @@ class HealthView(TextView):
         return True
 
     def draw_content(self, renderer: Renderer) -> None:
-        player = self.controller.gw.player
         tile_width, tile_height = self.tile_dimensions
+        pixel_width = self.width * tile_width
+        pixel_height = self.height * tile_height
+        self.canvas.draw_rect(0, 0, pixel_width, pixel_height, colors.BLACK, fill=True)
+
+        player = self.controller.gw.player
         text = f"HP: {player.health.hp}/{player.health.max_hp} AP: {player.health.ap}"
 
-        # Calculate x in tiles, then convert to pixels
         x_pos_tiles = self.width - len(text) - 1
         self.canvas.draw_text(x_pos_tiles * tile_width, 0, text, colors.WHITE)

@@ -255,7 +255,6 @@ class Renderer:
 
     def prepare_to_present(self) -> None:
         """Converts the root console to a texture and copies it to the backbuffer."""
-        # Convert TCOD console to SDL texture
         console_texture = self.console_render.render(self.root_console)
 
         left_x, top_y = self.console_to_screen_coords(0, 0)

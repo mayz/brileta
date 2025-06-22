@@ -49,18 +49,8 @@ class Injury(Condition):
         description: str = "A physical wound.",
     ) -> None:
         self.injury_location = injury_location
-        location_names: dict[InjuryLocation, str] = {
-            InjuryLocation.HEAD: "Head",
-            InjuryLocation.TORSO: "Torso",
-            InjuryLocation.LEFT_ARM: "Left Arm",
-            InjuryLocation.RIGHT_ARM: "Right Arm",
-            InjuryLocation.LEFT_LEG: "Left Leg",
-            InjuryLocation.RIGHT_LEG: "Right Leg",
-        }
-        loc_name = location_names.get(
-            injury_location, injury_location.name.replace("_", " ").title()
-        )
-        name = f"{loc_name} Injury: {injury_type}"
+        # Condition names should be short so they fit inside the status view.
+        name = injury_type
 
         super().__init__(
             name=name,

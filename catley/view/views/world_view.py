@@ -207,6 +207,9 @@ class WorldView(View):
     def _render_map(self) -> None:
         gw = self.controller.gw
         vs = self.viewport_system
+        # Clear entire console to create pillarbox/letterbox bars
+        self.game_map_console.rgb[:] = (ord(" "), (0, 0, 0), (0, 0, 0))
+
         bounds = vs.get_visible_bounds()
         world_left, world_right, world_top, world_bottom = (
             bounds.x1,
@@ -233,8 +236,6 @@ class WorldView(View):
         # than the viewport.
         dark_app_slice = gw.game_map.dark_appearance_map[world_slice]
         explored_mask_slice = gw.game_map.explored[world_slice]
-        # Clear the viewport with an empty shroud before drawing.
-        self.game_map_console.rgb[:] = (ord(" "), (0, 0, 0), (0, 0, 0))
         ex_x, ex_y = np.nonzero(explored_mask_slice)
         self.game_map_console.rgb[dest_x_start + ex_x, dest_y_start + ex_y] = (
             dark_app_slice[ex_x, ex_y]
