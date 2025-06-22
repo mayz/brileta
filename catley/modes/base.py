@@ -13,7 +13,8 @@ Use a Mode when you need to:
   multi-step lockpicking sequence).
 
 The input handling priority is always: Active Mode -> UI Overlays -> Game Actions.
-The lifecycle is managed by the Controller: enter() -> handle input/render -> exit_..._mode().
+The lifecycle is managed by the Controller:
+  enter() -> handle input/render -> exit_..._mode().
 """
 
 from __future__ import annotations
