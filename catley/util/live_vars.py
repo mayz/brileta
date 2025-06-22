@@ -34,6 +34,7 @@ class LiveVariableRegistry:
 
     def __init__(self) -> None:
         self._variables: dict[str, LiveVariable] = {}
+        self._watched_variables: set[str] = set()
 
     def register(
         self,
@@ -59,6 +60,34 @@ class LiveVariableRegistry:
     def get_all_variables(self) -> list[LiveVariable]:
         """Return all registered variables sorted alphabetically."""
         return [self._variables[name] for name in sorted(self._variables)]
+
+    # ------------------------------------------------------------------
+    # Watch Management
+    # ------------------------------------------------------------------
+    def watch(self, name: str) -> None:
+        """Add ``name`` to the watched set if the variable exists."""
+        if name in self._variables:
+            self._watched_variables.add(name)
+
+    def unwatch(self, name: str) -> None:
+        """Remove ``name`` from the watched set if present."""
+        self._watched_variables.discard(name)
+
+    def toggle_watch(self, name: str) -> None:
+        """Toggle the watched state of ``name``."""
+        if name in self._watched_variables:
+            self._watched_variables.remove(name)
+        elif name in self._variables:
+            self._watched_variables.add(name)
+
+    def is_watched(self, name: str) -> bool:
+        """Return ``True`` if ``name`` is currently being watched."""
+        return name in self._watched_variables
+
+    def get_watched_variables(self) -> list[LiveVariable]:
+        """Return watched variables sorted alphabetically by name."""
+        names = sorted(self._watched_variables)
+        return [self._variables[n] for n in names if n in self._variables]
 
 
 # Global registry instance used throughout the application

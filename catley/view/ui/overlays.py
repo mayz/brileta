@@ -110,6 +110,12 @@ class TextOverlay(Overlay):
         self.canvas = self._get_backend()
         self._calculate_dimensions()
 
+        if self.width <= 0 or self.height <= 0:
+            # Nothing to render when dimensions are zero.
+            self.canvas = None
+            self._cached_texture = None
+            return
+
         self.canvas.configure_drawing_offset(self.x_tiles, self.y_tiles)
         self.canvas.configure_dimensions(self.pixel_width, self.pixel_height)
         self.canvas.configure_scaling(self.tile_dimensions[1])

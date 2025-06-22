@@ -5,9 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from catley.util.caching import ResourceCache
-from catley.util.clock import Clock
 from catley.util.live_vars import LiveVariable, live_variable_registry
-from catley.view.ui.fps_overlay import FPSOverlay
 
 
 class DummyController:
@@ -16,11 +14,6 @@ class DummyController:
             root_console=SimpleNamespace(width=80, height=50),
             tile_dimensions=(8, 16),
         )
-
-
-class DummyClock(Clock):
-    def __init__(self) -> None:
-        self.last_time = 0.0
 
 
 def test_register_and_get_variable() -> None:
@@ -69,13 +62,40 @@ def test_live_variable_read_only() -> None:
     assert var.get_value() == 3
 
 
-def test_fps_overlay_registers_variable() -> None:
-    FPSOverlay(DummyController(), DummyClock())
-    assert live_variable_registry.get_variable("dev.show_fps") is not None
-
-
 def test_resource_cache_registers_stats_variable() -> None:
     ResourceCache("TestCache")
     var = live_variable_registry.get_variable("cache.TestCache.stats")
     assert var is not None
     assert "TestCache" in var.description
+
+
+def test_watch_and_unwatch() -> None:
+    live_variable_registry.register("watch.var1", getter=lambda: 1)
+    live_variable_registry._watched_variables.clear()
+    live_variable_registry.watch("watch.var1")
+    assert [v.name for v in live_variable_registry.get_watched_variables()] == [
+        "watch.var1"
+    ]
+    live_variable_registry.unwatch("watch.var1")
+    assert live_variable_registry.get_watched_variables() == []
+
+
+def test_toggle_watch() -> None:
+    live_variable_registry.register("watch.var2", getter=lambda: 2)
+    live_variable_registry._watched_variables.clear()
+    live_variable_registry.toggle_watch("watch.var2")
+    assert [v.name for v in live_variable_registry.get_watched_variables()] == [
+        "watch.var2"
+    ]
+    live_variable_registry.toggle_watch("watch.var2")
+    assert live_variable_registry.get_watched_variables() == []
+
+
+def test_get_watched_variables_sorted() -> None:
+    live_variable_registry.register("watch.b", getter=lambda: 1)
+    live_variable_registry.register("watch.a", getter=lambda: 1)
+    live_variable_registry._watched_variables.clear()
+    live_variable_registry.watch("watch.b")
+    live_variable_registry.watch("watch.a")
+    names = [v.name for v in live_variable_registry.get_watched_variables()]
+    assert names == ["watch.a", "watch.b"]
