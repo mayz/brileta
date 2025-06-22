@@ -28,12 +28,13 @@ from catley.events import (
     subscribe_to_event,
 )
 from catley.util.coordinates import RootConsoleTilePos, ViewportTileCoord, WorldTilePos
+from catley.util.live_vars import live_variable_registry
 
 from .render.effects.effects import EffectContext
 from .render.effects.screen_shake import ScreenShake
 from .render.renderer import Renderer
 from .ui.cursor_manager import CursorManager
-from .ui.fps_overlay import FPSOverlay
+from .ui.debug_stats_overlay import DebugStatsOverlay
 from .views.base import View
 from .views.equipment_view import EquipmentView
 from .views.health_view import HealthView
@@ -97,9 +98,25 @@ class FrameManager:
         self._layout_views()
 
         # Create and manage overlays owned by the frame manager
+        self.debug_stats_overlay = DebugStatsOverlay(self.controller)
+        self.controller.overlay_system.show_overlay(self.debug_stats_overlay)
+
+        # Register live variables owned by the frame manager
+        live_variable_registry.register(
+            "dev.fps",
+            getter=lambda: f"{self.controller.clock.mean_fps:4.0f}",
+            description="Current frames per second.",
+        )
+
+        live_variable_registry.register(
+            "dev.show_fps",
+            getter=lambda: live_variable_registry.is_watched("dev.fps"),
+            setter=lambda value: live_variable_registry.toggle_watch("dev.fps"),
+            description="Toggle the FPS counter visibility.",
+        )
+
         if config.SHOW_FPS:
-            self.fps_overlay = FPSOverlay(self.controller, self.controller.clock)
-            self.controller.overlay_system.show_overlay(self.fps_overlay)
+            live_variable_registry.watch("dev.fps")
 
     def _layout_views(self) -> None:
         """Calculate and set view boundaries based on current screen size."""

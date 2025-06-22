@@ -71,7 +71,8 @@ PERFORMANCE_PROFILING = False
 # Useful for tuning game feel, not for measuring raw CPU performance.
 SHOW_ACTION_PROCESSING_METRICS = False
 
-# Set to True to display the FPS counter in the corner of the screen.
+# Set to True to initially watch the ``dev.fps`` variable, causing
+# the FPS counter to appear in the debug stats overlay at startup.
 SHOW_FPS = False
 
 # Set to True to draw colored outlines around each View for debugging layouts.
