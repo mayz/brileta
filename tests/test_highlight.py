@@ -56,7 +56,7 @@ class DummyGW:
 @dataclass
 class DummyController:
     gw: DummyGW
-    renderer: object
+    renderer: MagicMock
     clock: object
     active_mode: object | None
     is_targeting_mode: object
@@ -66,11 +66,10 @@ def make_controller() -> DummyController:
     from types import SimpleNamespace
 
     gw = DummyGW()
-    renderer = SimpleNamespace(
-        clear_console=lambda *args, **kwargs: None,
-        root_console=None,
-        blit_console=lambda *args, **kwargs: None,
-    )
+    renderer = MagicMock()
+    renderer.clear_console = lambda *args, **kwargs: None
+    renderer.root_console = None
+    renderer.blit_console = lambda *args, **kwargs: None
     clock = SimpleNamespace(last_delta_time=0.016)
     return DummyController(
         gw=gw,
@@ -99,8 +98,13 @@ def test_highlight_actor_converts_world_to_screen() -> None:
 
     view.highlight_actor(cast(Actor, actor), (1, 2, 3))
 
-    px, py = view.viewport_system.world_to_screen(actor.x, actor.y)
-    assert np.array_equal(view.game_map_console.rgb["bg"][px, py], [1, 2, 3])
+    # Verify the renderer method was called with correct coordinates
+    vp_x, vp_y = view.viewport_system.world_to_screen(actor.x, actor.y)
+    expected_root_x = view.x + vp_x
+    expected_root_y = view.y + vp_y
+    controller.renderer.draw_tile_highlight.assert_called_once_with(
+        expected_root_x, expected_root_y, (1, 2, 3), 0.4
+    )
 
 
 def test_highlight_actor_offscreen_is_ignored() -> None:
@@ -118,8 +122,8 @@ def test_highlight_actor_offscreen_is_ignored() -> None:
 
     offscreen_actor = DummyActor(0, 0)
     controller.gw.add_actor(offscreen_actor)
-    before = view.game_map_console.rgb["bg"].copy()
 
     view.highlight_actor(cast(Actor, offscreen_actor), (4, 5, 6))
 
-    assert np.array_equal(view.game_map_console.rgb["bg"], before)
+    # Verify the renderer method was not called for offscreen actors
+    controller.renderer.draw_tile_highlight.assert_not_called()

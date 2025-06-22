@@ -19,7 +19,6 @@ from catley.util.coordinates import (
     PixelCoord,
     Rect,
     RootConsoleTilePos,
-    ViewportTileCoord,
 )
 from catley.view.render.effects.effects import EffectLibrary
 from catley.view.render.effects.environmental import EnvironmentalEffectSystem
@@ -85,28 +84,36 @@ class WorldView(View):
     # Public API
     # ------------------------------------------------------------------
     def highlight_actor(
-        self, actor: Actor, color: colors.Color, effect: str = "solid"
+        self,
+        actor: Actor,
+        color: colors.Color,
+        effect: str = "solid",
+        alpha: float = 0.4,
     ) -> None:
         """Highlight an actor if it is visible."""
         if self.controller.gw.game_map.visible[actor.x, actor.y]:
-            self.highlight_tile(actor.x, actor.y, color, effect)
+            self.highlight_tile(actor.x, actor.y, color, effect, alpha)
 
     def highlight_tile(
-        self, x: int, y: int, color: colors.Color, effect: str = "solid"
+        self,
+        x: int,
+        y: int,
+        color: colors.Color,
+        effect: str = "solid",
+        alpha: float = 0.4,
     ) -> None:
         """Highlight a tile with an optional effect using world coordinates."""
         vs = self.viewport_system
         if not vs.is_visible(x, y):
             return
         vp_x, vp_y = vs.world_to_screen(x, y)
-        if not (
-            0 <= vp_x < self.game_map_console.width
-            and 0 <= vp_y < self.game_map_console.height
-        ):
+        if not (0 <= vp_x < self.width and 0 <= vp_y < self.height):
             return
+        final_color = color
         if effect == "pulse":
-            color = self._apply_pulsating_effect(color, color)
-        self._apply_replacement_highlight(vp_x, vp_y, color)
+            final_color = self._apply_pulsating_effect(color, color)
+        root_x, root_y = self.x + vp_x, self.y + vp_y
+        self.controller.renderer.draw_tile_highlight(root_x, root_y, final_color, alpha)
 
     # ------------------------------------------------------------------
     # Drawing
@@ -174,8 +181,6 @@ class WorldView(View):
         if texture is None:
             # CACHE MISS: Re-render the static background
             self._render_map()  # This populates self.game_map_console
-            if not config.SMOOTH_ACTOR_RENDERING_ENABLED:
-                self._render_actors_traditional()  # Bake traditional actors into cache
             texture = renderer.texture_from_console(self.game_map_console)
             self._texture_cache.store(cache_key, texture)
 
@@ -213,6 +218,8 @@ class WorldView(View):
 
         if config.SMOOTH_ACTOR_RENDERING_ENABLED:
             self._render_actors_smooth(renderer)
+        else:
+            self._render_actors_traditional(renderer)
 
         # Render highlights and mode-specific UI on top of actors
         if self.controller.active_mode:
@@ -403,8 +410,8 @@ class WorldView(View):
 
         return base_color
 
-    def _render_actors_traditional(self) -> None:
-        """Original actor rendering method (tile-aligned)."""
+    def _render_actors_traditional(self, renderer: Renderer) -> None:
+        """Tile-aligned actor rendering, adapted for dynamic rendering."""
         gw = self.controller.gw
         vs = self.viewport_system
         bounds = vs.get_visible_bounds()
@@ -428,24 +435,24 @@ class WorldView(View):
         )
         for actor in sorted_actors:
             if gw.game_map.visible[actor.x, actor.y]:
-                # Use render_x and render_y for calculating screen position
-                vp_x, vp_y = self.viewport_system.world_to_screen(
-                    actor.render_x,  # pyright: ignore[reportArgumentType]
-                    actor.render_y,  # pyright: ignore[reportArgumentType]
+                # Get lighting intensity
+                light_rgb = self._get_actor_lighting_intensity(actor, bounds)
+
+                # Convert actor's TILE position to viewport coordinates
+                # Note: We use actor.x/y directly for tile-aligned rendering
+                vp_x, vp_y = vs.world_to_screen(actor.x, actor.y)
+
+                # Root console position where this viewport tile ends up
+                root_x = self.x + vp_x
+                root_y = self.y + vp_y
+
+                # Convert to final screen pixel coordinates
+                screen_pixel_x, screen_pixel_y = renderer.console_to_screen_coords(
+                    root_x, root_y
                 )
 
-                vp_x_int, vp_y_int = round(vp_x), round(vp_y)
-
-                if not (
-                    0 <= vp_x_int < self.game_map_console.width
-                    and 0 <= vp_y_int < self.game_map_console.height
-                ):
-                    continue
-
-                # Get final color
+                # Get final color with pulsating effect if needed
                 base_actor_color = self._get_actor_display_color(actor)
-
-                # Apply pulsating effect if selected
                 final_fg_color = base_actor_color
                 if (
                     self.controller.gw.selected_actor == actor
@@ -456,11 +463,13 @@ class WorldView(View):
                         base_actor_color, actor.color
                     )
 
-                # Draw to the game_map_console to bake into cached texture
-                self.game_map_console.rgb[vp_x_int, vp_y_int] = (
-                    ord(actor.ch),
+                # Render using the renderer's smooth drawing function
+                renderer.draw_actor_smooth(
+                    actor.ch,
                     final_fg_color,
-                    self.game_map_console.rgb["bg"][vp_x_int, vp_y_int],
+                    screen_pixel_x,
+                    screen_pixel_y,
+                    light_rgb,
                 )
 
     def _render_selected_actor_highlight(self) -> None:
@@ -468,28 +477,12 @@ class WorldView(View):
             return
         actor = self.controller.gw.selected_actor
         if actor and self.controller.gw.game_map.visible[actor.x, actor.y]:
-            vp_x, vp_y = self.viewport_system.world_to_screen(actor.x, actor.y)
-            if 0 <= vp_x < self.width and 0 <= vp_y < self.height:
-                self._apply_blended_highlight(
-                    vp_x, vp_y, colors.SELECTED_HIGHLIGHT, SELECTION_HIGHLIGHT_ALPHA
-                )
-
-    def _apply_blended_highlight(
-        self, x: int, y: int, target_color: colors.Color, alpha: float
-    ) -> None:
-        current_bg = self.game_map_console.rgb["bg"][x, y]
-        blended_color = [
-            int(target_color[i] * alpha + current_bg[i] * (1.0 - alpha))
-            for i in range(3)
-        ]
-        self.game_map_console.rgb["bg"][x, y] = [
-            max(0, min(255, c)) for c in blended_color
-        ]
-
-    def _apply_replacement_highlight(
-        self, x: ViewportTileCoord, y: ViewportTileCoord, color: colors.Color
-    ) -> None:
-        self.game_map_console.rgb["bg"][x, y] = color
+            self.highlight_actor(
+                actor,
+                colors.SELECTED_HIGHLIGHT,
+                effect="solid",
+                alpha=SELECTION_HIGHLIGHT_ALPHA,
+            )
 
     def _update_mouse_tile_location(self) -> None:
         """Update the stored world-space mouse tile based on the current camera."""
