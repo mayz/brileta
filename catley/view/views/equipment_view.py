@@ -20,10 +20,14 @@ class EquipmentView(TextView):
         super().__init__()
         self.controller = controller
         self.canvas = TCODConsoleCanvas(renderer)
+        # Track inventory revision to avoid unnecessary redraws
+        self._last_inventory_revision = -1
 
     def needs_redraw(self, renderer: Renderer) -> bool:
-        _ = renderer
-        return True
+        player = self.controller.gw.player
+        current_revision = player.inventory.revision
+
+        return current_revision != self._last_inventory_revision
 
     def draw_content(self, renderer: Renderer) -> None:
         tile_width, tile_height = self.tile_dimensions
@@ -81,3 +85,6 @@ class EquipmentView(TextView):
                 text=item_text,
                 color=color,
             )
+
+        # Cache current inventory revision after drawing
+        self._last_inventory_revision = player.inventory.revision

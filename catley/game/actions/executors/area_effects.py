@@ -54,6 +54,7 @@ class AreaEffectExecutor(ActionExecutor):
         # 4. Consume ammo if necessary
         if ranged:
             self._consume_ammo(ranged)
+            intent.attacker.inventory._increment_revision()
 
         # 5. Log messages about the outcome of the effect
         self._log_effect_results(hits)
