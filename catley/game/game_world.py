@@ -2,6 +2,7 @@ import random
 
 from catley import colors, config
 from catley.config import PLAYER_BASE_STRENGTH, PLAYER_BASE_TOUGHNESS
+from catley.environment.generators import RoomsAndCorridorsGenerator
 from catley.environment.map import GameMap
 from catley.game.actors import (
     Actor,
@@ -110,14 +111,22 @@ class GameWorld:
         self, map_width: int, map_height: int
     ) -> tuple[GameMap, list[Rect]]:
         """Create the game map and return it along with generated rooms."""
-        game_map = GameMap(map_width, map_height)
-        game_map.gw = self
-        rooms = game_map.make_map(
-            config.MAX_NUM_ROOMS,
-            config.MIN_ROOM_SIZE,
-            config.MAX_ROOM_SIZE,
+        generator = RoomsAndCorridorsGenerator(
+            map_width,
+            map_height,
+            max_rooms=config.MAX_NUM_ROOMS,
+            min_room_size=config.MIN_ROOM_SIZE,
+            max_room_size=config.MAX_ROOM_SIZE,
         )
-        return game_map, rooms
+        map_data = generator.generate()
+
+        game_map = GameMap(map_width, map_height, map_data)
+        game_map.gw = self
+
+        room_regions = [r for r in map_data.regions.values() if r.region_type == "room"]
+        room_rects = [r.bounds[0] for r in room_regions if r.bounds]
+
+        return game_map, room_rects
 
     def _position_player(self, room: Rect) -> None:
         """Place the player in the center of ``room``."""

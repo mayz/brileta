@@ -1,9 +1,15 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 
+from catley.environment.generators import GeneratedMapData
 from catley.environment.map import GameMap
+
+if TYPE_CHECKING:
+    from catley.environment.map import MapRegion
 from catley.game import ranges
 from catley.game.items.capabilities import RangedAttack
 from catley.game.items.item_core import Item
@@ -24,7 +30,15 @@ class DummyItem(Item):
 
 class DummyMap(GameMap):
     def __init__(self, transparent: np.ndarray) -> None:
-        super().__init__(transparent.shape[0], transparent.shape[1])
+        width, height = transparent.shape
+        tiles = np.full((width, height), 1, dtype=np.uint8)
+        regions: dict[int, MapRegion] = {}
+        map_data = GeneratedMapData(
+            tiles=tiles,
+            regions=regions,
+            tile_to_region_id=np.full((width, height), -1, dtype=np.int16),
+        )
+        super().__init__(width, height, map_data)
         self._transparent_map_cache = transparent
 
 

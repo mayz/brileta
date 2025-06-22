@@ -1,11 +1,19 @@
+from __future__ import annotations
+
 import types
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
+
+import numpy as np
 
 from catley import colors
 from catley.controller import Controller
 from catley.environment import tile_types
+from catley.environment.generators import GeneratedMapData
 from catley.environment.map import GameMap
+
+if TYPE_CHECKING:
+    from catley.environment.map import MapRegion
 from catley.game import ranges
 from catley.game.actions.base import GameIntent
 from catley.game.actions.discovery import (
@@ -40,9 +48,15 @@ class DummyController:
 
 def _make_context_world():
     gw = DummyGameWorld()
-    gw.game_map = GameMap(30, 30)
+    tiles = np.full((30, 30), tile_types.TILE_TYPE_ID_FLOOR, dtype=np.uint8, order="F")  # type: ignore[attr-defined]
+    regions: dict[int, MapRegion] = {}
+    map_data = GeneratedMapData(
+        tiles=tiles,
+        regions=regions,
+        tile_to_region_id=np.full((30, 30), -1, dtype=np.int16, order="F"),
+    )
+    gw.game_map = GameMap(30, 30, map_data)
     gw.game_map.gw = cast(GameWorld, gw)
-    gw.game_map.tiles[:] = tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[attr-defined]
     gw.game_map.visible[:] = True
     gw.items = {}
     player = Character(
