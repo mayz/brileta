@@ -1,11 +1,17 @@
-from dataclasses import dataclass
-from typing import cast
+from __future__ import annotations
 
-import numpy as np  # noqa: F401
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, cast
+
+import numpy as np
 import pytest
 
 from catley.environment import tile_types
+from catley.environment.generators import GeneratedMapData
 from catley.environment.map import GameMap
+
+if TYPE_CHECKING:
+    from catley.environment.map import MapRegion
 from catley.game.actors import Actor
 from catley.util.pathfinding import find_path
 from catley.util.spatial import SpatialHashGrid, SpatialIndex
@@ -20,8 +26,14 @@ class DummyActor:
 
 @pytest.fixture
 def basic_setup() -> tuple[GameMap, SpatialHashGrid[DummyActor]]:
-    gm = GameMap(10, 10)
-    gm.tiles[:] = tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[attr-defined]
+    tiles = np.full((10, 10), tile_types.TILE_TYPE_ID_FLOOR, dtype=np.uint8, order="F")  # type: ignore[attr-defined]
+    regions: dict[int, MapRegion] = {}
+    map_data = GeneratedMapData(
+        tiles=tiles,
+        regions=regions,
+        tile_to_region_id=np.full((10, 10), -1, dtype=np.int16, order="F"),
+    )
+    gm = GameMap(10, 10, map_data)
     gm.invalidate_property_caches()
     index: SpatialHashGrid[DummyActor] = SpatialHashGrid(cell_size=16)
     return gm, index

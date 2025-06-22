@@ -5,13 +5,15 @@ from types import SimpleNamespace
 from typing import cast
 from unittest.mock import patch
 
+import numpy as np
 import tcod.context
 from tcod.console import Console
 
 from catley import config
 from catley.controller import Controller, GameWorld
 from catley.environment import tile_types
-from catley.environment.map import GameMap
+from catley.environment.generators import GeneratedMapData
+from catley.environment.map import GameMap, MapRegion
 from catley.game.actors import Actor, Character
 from catley.game.item_spawner import ItemSpawner
 from catley.game.items.item_core import Item
@@ -31,10 +33,20 @@ class DummyGameWorld(GameWorld):
     ) -> None:
         # Avoid heavy GameWorld initialization.
         if game_map is None:
-            game_map = GameMap(width, height)
-            game_map.tiles[:] = tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[attr-defined]
-            game_map.transparent[:] = True
+            tiles = np.full(
+                (width, height),
+                tile_types.TILE_TYPE_ID_FLOOR,  # type: ignore[attr-defined]
+                dtype=np.uint8,
+                order="F",
+            )
+            regions: dict[int, MapRegion] = {}
+            tile_to_region_id = np.full((width, height), -1, dtype=np.int16, order="F")
+            map_data = GeneratedMapData(
+                tiles=tiles, regions=regions, tile_to_region_id=tile_to_region_id
+            )
+            game_map = GameMap(width, height, map_data)
             game_map.visible[:] = True
+            game_map.transparent[:] = True
         self.game_map = game_map
         self.game_map.gw = self
 
