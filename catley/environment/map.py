@@ -33,6 +33,7 @@ class GameMap:
     ) -> None:
         self.width: TileCoord = width
         self.height: TileCoord = height
+        self.revision: int = 0
         self.gw: GameWorld | None = None
 
         # Directly use the generated tile map and region data.
@@ -63,6 +64,7 @@ class GameMap:
         self._transparent_map_cache = None
         self._dark_appearance_map_cache = None
         self._light_appearance_map_cache = None
+        self.revision += 1
 
     @property
     def walkable(self) -> np.ndarray:

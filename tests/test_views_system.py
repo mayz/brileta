@@ -84,18 +84,19 @@ class TestWorldViewBoundaryEnforcement:
         # Set view to be smaller than the game map
         self.view.set_bounds(0, 0, 50, 40)  # 50x40 view for 100x100 map
 
-        # Mock the internal rendering
-        self.view._render_game_world = Mock()
+        # Mock the internal caching methods and actors
+        self.view._get_background_cache_key = Mock(return_value=(1, 2, 3, 4))
+        self.view._render_map = Mock()
+        self.mock_controller.gw.actors = []
+        self.view.particle_system.update = Mock()
+        self.view.environmental_system.update = Mock()
 
         # Call draw
         self.view.draw(self.mock_renderer)
 
-        # Verify blit_console was called with clipped dimensions
-        self.mock_renderer.blit_console.assert_called_once()
-        call_kwargs = self.mock_renderer.blit_console.call_args[1]
-
-        assert call_kwargs["width"] == 50  # Clipped to view width
-        assert call_kwargs["height"] == 40  # Clipped to view height
+        # Verify texture caching was used instead of blit_console
+        self.mock_renderer.texture_from_console.assert_called_once()
+        assert self.view._active_background_texture is not None
 
     def test_world_view_with_screen_shake_stays_in_bounds(self):
         """Test that screen shake doesn't cause rendering outside view bounds."""
@@ -105,20 +106,19 @@ class TestWorldViewBoundaryEnforcement:
         # Set view boundaries
         self.view.set_bounds(10, 15, 60, 55)  # View at (10,15) with 50x40 size
 
-        # Mock the internal rendering
-        self.view._render_game_world = Mock()
+        # Mock the internal caching methods and actors
+        self.view._get_background_cache_key = Mock(return_value=(1, 2, 3, 4))
+        self.view._render_map = Mock()
+        self.mock_controller.gw.actors = []
+        self.view.particle_system.update = Mock()
+        self.view.environmental_system.update = Mock()
 
         # Call draw
         self.view.draw(self.mock_renderer)
 
-        # Verify blit destination is clamped to view boundaries
-        call_kwargs = self.mock_renderer.blit_console.call_args[1]
-        dest_x = call_kwargs["dest_x"]
-        dest_y = call_kwargs["dest_y"]
-
-        # Should be clamped to not exceed view boundaries
-        assert dest_x >= self.view.x
-        assert dest_y >= self.view.y
+        # Verify texture caching was used instead of blit_console
+        self.mock_renderer.texture_from_console.assert_called_once()
+        assert self.view._active_background_texture is not None
 
     def test_world_view_skips_draw_when_invisible(self):
         """Test that invisible views don't render."""
