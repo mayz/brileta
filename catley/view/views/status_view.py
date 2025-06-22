@@ -22,14 +22,10 @@ class StatusView(TextView):
         super().__init__()
         self.controller = controller
         self.canvas = TCODConsoleCanvas(renderer)
-        # Track modifiers revision for caching
-        self._last_modifiers_revision = -1
 
-    def needs_redraw(self, renderer: Renderer) -> bool:
-        player = self.controller.gw.player
-        current_revision = player.modifiers.revision
-
-        return current_revision != self._last_modifiers_revision
+    def get_cache_key(self) -> int:
+        """The key is the modifiers' revision number."""
+        return self.controller.gw.player.modifiers.revision
 
     def draw_content(self, renderer: Renderer) -> None:
         """Render the status view if player has active effects."""
@@ -61,9 +57,6 @@ class StatusView(TextView):
                 break
             self.canvas.draw_text(current_x_tile * tile_w, 0, token, colors.LIGHT_GREY)
             current_x_tile += len(token) + 1
-
-        # Cache the current revision so redraws only occur on changes
-        self._last_modifiers_revision = player.modifiers.revision
 
     def _get_condition_lines(self, player: Character) -> list[tuple[str, colors.Color]]:
         """Get formatted display lines for conditions."""

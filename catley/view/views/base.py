@@ -19,6 +19,9 @@ of rendering, making the system more modular and maintainable.
 import abc
 from typing import Any
 
+import tcod.sdl.render
+
+from catley.util.caching import ResourceCache
 from catley.view.render.canvas import Canvas
 from catley.view.render.renderer import Renderer
 
@@ -80,11 +83,19 @@ class TextView(View):
 
     def __init__(self) -> None:
         super().__init__()
-        self._last_pixel_dims: tuple[int, int] = (0, 0)
+        # Each view gets its own tiny cache. max_size=1 is perfect
+        # for views that only ever need to cache their most recent state.
+        self._texture_cache = ResourceCache[Any, tcod.sdl.render.Texture](
+            name=self.__class__.__name__, max_size=1
+        )
 
     @abc.abstractmethod
-    def needs_redraw(self, renderer: Renderer) -> bool:
-        """Return ``True`` if the view needs to regenerate its texture."""
+    def get_cache_key(self) -> Any:
+        """
+        Return a hashable key representing the current state of the view's data.
+        If this key is unchanged, the view does not need to be redrawn.
+        Examples: a revision number, a tuple of values (hp, ap), etc.
+        """
         pass
 
     @abc.abstractmethod
@@ -97,10 +108,15 @@ class TextView(View):
         if not self.visible:
             return
 
-        if self.needs_redraw(renderer):
+        cache_key = self.get_cache_key()
+        cached_texture = self._texture_cache.get(cache_key)
+
+        if cached_texture is None:
+            # CACHE MISS: The state has changed. We need to re-render.
             self.canvas.begin_frame()
             self.draw_content(renderer)
             artifact = self.canvas.end_frame()
+
             if artifact is not None:
                 # Convert artifact to texture using renderer
                 if self.canvas.artifact_type == "console":
@@ -112,10 +128,15 @@ class TextView(View):
                         artifact, self.canvas.transparent
                     )
                 else:
-                    # Handle unknown artifact types gracefully
                     texture = None
 
-                self._cached_texture = texture
+                if texture:
+                    # Store the newly rendered texture in the cache
+                    self._texture_cache.store(cache_key, texture)
+                    self._cached_texture = texture
+        else:
+            # CACHE HIT: Use the existing texture
+            self._cached_texture = cached_texture
 
     def set_bounds(self, x1: int, y1: int, x2: int, y2: int) -> None:
         """Set bounds and configure the text backend."""
@@ -125,8 +146,6 @@ class TextView(View):
             tile_width, tile_height = self.tile_dimensions
             pixel_width = self.width * tile_width
             pixel_height = self.height * tile_height
-            if (pixel_width, pixel_height) != self._last_pixel_dims:
-                self._last_pixel_dims = (pixel_width, pixel_height)
-                self.canvas.configure_dimensions(pixel_width, pixel_height)
+            self.canvas.configure_dimensions(pixel_width, pixel_height)
             self.canvas.configure_scaling(tile_height)
             self.canvas.configure_drawing_offset(self.x, self.y)

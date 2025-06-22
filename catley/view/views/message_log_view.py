@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 from tcod.sdl.render import Texture
 
 from catley import colors
+from catley.util.caching import ResourceCache
 from catley.view.render.canvas import PillowImageCanvas
 from catley.view.render.renderer import Renderer
 
@@ -21,29 +22,29 @@ class MessageLogView(TextView):
         super().__init__()
         self.message_log = message_log
         self.canvas = PillowImageCanvas(renderer)
+        self.renderer = renderer
 
         # View pixel dimensions will be calculated when resize() is called
         self.view_width_px = 0
         self.view_height_px = 0
 
-        self._cached_texture: Texture | None = None
-        # store the MessageLog.revision used to build _cached_texture so we
-        # know when a new texture needs to be generated
-        self._render_revision = -1
-        # Track the texture dimensions to detect when we need to regenerate
-        self._cached_texture_width = 0
-        self._cached_texture_height = 0
+        # Override the cache from the base class,
+        # as this view requires a more complex, tuple-based key.
+        self._texture_cache = ResourceCache[tuple, Texture](
+            name=self.__class__.__name__, max_size=1
+        )
 
-    def needs_redraw(self, renderer: Renderer) -> bool:
-        current_tile_dimensions = renderer.tile_dimensions
+    def get_cache_key(self) -> tuple:
+        """The key is a combination of data revision and view dimensions."""
+        current_tile_dimensions = self.renderer.tile_dimensions
         new_view_width_px = self.width * current_tile_dimensions[0]
         new_view_height_px = self.height * current_tile_dimensions[1]
 
         return (
-            self._render_revision != self.message_log.revision
-            or current_tile_dimensions != self.tile_dimensions
-            or new_view_width_px != self._cached_texture_width
-            or new_view_height_px != self._cached_texture_height
+            self.message_log.revision,
+            current_tile_dimensions,
+            new_view_width_px,
+            new_view_height_px,
         )
 
     def set_bounds(self, x1: int, y1: int, x2: int, y2: int) -> None:
@@ -62,8 +63,6 @@ class MessageLogView(TextView):
         self.canvas.draw_rect(
             0, 0, self.view_width_px, self.view_height_px, colors.BLACK, fill=True
         )
-        self._cached_texture_width = self.view_width_px
-        self._cached_texture_height = self.view_height_px
         self.canvas.configure_renderer(renderer.sdl_renderer)
 
         ascent, descent = self.canvas.get_font_metrics()
@@ -88,6 +87,3 @@ class MessageLogView(TextView):
 
             if y_baseline == -1:
                 break
-
-        # Update render revision now that the frame has been drawn.
-        self._render_revision = self.message_log.revision
