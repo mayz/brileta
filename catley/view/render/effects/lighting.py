@@ -123,6 +123,18 @@ class LightingSystem:
         self.light_sources: list[LightSource] = []
         self._game_map: GameMap | None = game_map
 
+        # Lighting cache for viewport-based lighting computations
+        from collections import OrderedDict
+
+        # Key -> cached np.ndarray of lighting values
+        self._lighting_cache: OrderedDict[tuple, np.ndarray] = OrderedDict()
+        # Maximum number of cache entries before evicting the least recently used
+        self._cache_max_size = 15
+
+        # Performance tracking
+        self._cache_hits = 0
+        self._cache_misses = 0
+
     def set_game_map(self, game_map: GameMap) -> None:
         """Assign the current game map for shadow calculations."""
         self._game_map = game_map
@@ -130,15 +142,73 @@ class LightingSystem:
     def add_light(self, light: LightSource) -> None:
         """Add a light source to the system"""
         self.light_sources.append(light)
+        # Lighting conditions changed, invalidate cache
+        self._lighting_cache.clear()
 
     def remove_light(self, light: LightSource) -> None:
         """Remove a light source from the system"""
         if light in self.light_sources:
             self.light_sources.remove(light)
+            # Lighting conditions changed, invalidate cache
+            self._lighting_cache.clear()
+
+    def clear_lighting_cache(self) -> None:
+        """Manually clear the lighting cache and reset tracking stats."""
+        self._lighting_cache.clear()
+        self._cache_hits = 0
+        self._cache_misses = 0
 
     def update(self, delta_time: float) -> None:
         """Update lighting effects based on elapsed time"""
         self.time += delta_time  # Just track raw time, light sources will scale it
+
+    def _generate_cache_key(
+        self,
+        viewport_bounds: Rect,
+        actors: list,
+        map_width: int,
+        map_height: int,
+    ) -> tuple:
+        """Generate a hashable key capturing the lighting state."""
+
+        # Viewport bounds are part of the key
+        bounds_key = (
+            viewport_bounds.x1,
+            viewport_bounds.y1,
+            map_width,
+            map_height,
+        )
+
+        # Include all light source properties that affect lighting
+        light_sources_key = tuple(
+            (
+                light.position[0],
+                light.position[1],
+                light.radius,
+                light.color,
+                light.light_type,
+                light.min_brightness if light.light_type == "dynamic" else None,
+                light.max_brightness if light.light_type == "dynamic" else None,
+                round(self.time, 1)
+                if light.light_type == "dynamic" and light.flicker_enabled
+                else None,
+            )
+            for light in self.light_sources
+        )
+
+        # Shadow-casting actors within the viewport
+        shadow_actors_key = tuple(
+            (actor.x, actor.y)
+            for actor in actors
+            if (
+                hasattr(actor, "blocks_movement")
+                and actor.blocks_movement
+                and viewport_bounds.x1 <= actor.x <= viewport_bounds.x2
+                and viewport_bounds.y1 <= actor.y <= viewport_bounds.y2
+            )
+        )
+
+        return (bounds_key, light_sources_key, shadow_actors_key)
 
     def compute_lighting(
         self,
@@ -178,8 +248,28 @@ class LightingSystem:
         actors,
         viewport_offset: ViewportTilePos | None = None,
     ) -> np.ndarray:
-        """Compute lighting with optional viewport culling and actor shadows."""
+        """Compute lighting with optional viewport culling and actor shadows.
+
+        Uses an LRU cache when ``viewport_offset`` is provided."""
         from catley.config import SHADOWS_ENABLED
+
+        cache_key: tuple | None = None
+
+        if viewport_offset is not None:
+            viewport_bounds = Rect(
+                viewport_offset[0], viewport_offset[1], map_width, map_height
+            )
+            cache_key = self._generate_cache_key(
+                viewport_bounds, actors, map_width, map_height
+            )
+
+            if cache_key in self._lighting_cache:
+                cached_result = self._lighting_cache.pop(cache_key)
+                self._lighting_cache[cache_key] = cached_result
+                self._cache_hits += 1
+                return cached_result.copy()
+
+            self._cache_misses += 1
 
         if viewport_offset:
             base_lighting = self.compute_lighting_for_viewport(
@@ -187,11 +277,22 @@ class LightingSystem:
             )
         else:
             base_lighting = self.compute_lighting(map_width, map_height)
+
         if not SHADOWS_ENABLED:
-            return base_lighting
-        offset_x = viewport_offset[0] if viewport_offset else 0
-        offset_y = viewport_offset[1] if viewport_offset else 0
-        return self._apply_actor_shadows(base_lighting, offset_x, offset_y)
+            final_lighting = base_lighting
+        else:
+            offset_x = viewport_offset[0] if viewport_offset else 0
+            offset_y = viewport_offset[1] if viewport_offset else 0
+            final_lighting = self._apply_actor_shadows(
+                base_lighting, offset_x, offset_y
+            )
+
+        if cache_key is not None:
+            self._lighting_cache[cache_key] = final_lighting.copy()
+            while len(self._lighting_cache) > self._cache_max_size:
+                self._lighting_cache.popitem(last=False)
+
+        return final_lighting
 
     def compute_lighting_for_viewport(
         self,
