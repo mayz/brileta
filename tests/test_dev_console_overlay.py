@@ -192,9 +192,46 @@ def test_draw_content_uses_tile_height() -> None:
     ov._cursor_visible = False
     ov.canvas.get_effective_line_height.return_value = 12
     ov.canvas.get_text_metrics.return_value = (4, 0, 12)
+    ov.canvas.get_font_metrics.return_value = (8, 4)
 
     ov.draw_content()
 
     calls = ov.canvas.draw_text.call_args_list
     assert calls[0].args[1] == 16  # history line y position
     assert calls[1].args[1] == 32  # prompt y position
+
+
+def test_tab_completion_cycles_candidates() -> None:
+    live_variable_registry.register("tab.alpha", getter=lambda: 0)
+    live_variable_registry.register("tab.beta", getter=lambda: 0)
+
+    ov = make_overlay()
+    ov.show()
+    ov.input_buffer = "get tab."
+
+    e = tcod.event.KeyDown(0, tcod.event.KeySym.TAB, 0)
+    ov.handle_input(e)
+    first = ov.input_buffer
+    assert first in {"get tab.alpha", "get tab.beta"}
+
+    ov.handle_input(tcod.event.KeyDown(0, tcod.event.KeySym.TAB, 0))
+    assert ov.input_buffer != first
+
+
+def test_history_navigation_up_down() -> None:
+    ov = make_overlay()
+    ov.input_buffer = "cmd1"
+    ov._execute_command()
+    ov.input_buffer = "cmd2"
+    ov._execute_command()
+    ov.show()
+    ov.input_buffer = ""
+
+    ov.handle_input(tcod.event.KeyDown(0, tcod.event.KeySym.UP, 0))
+    assert ov.input_buffer == "cmd2"
+    ov.handle_input(tcod.event.KeyDown(0, tcod.event.KeySym.UP, 0))
+    assert ov.input_buffer == "cmd1"
+    ov.handle_input(tcod.event.KeyDown(0, tcod.event.KeySym.DOWN, 0))
+    assert ov.input_buffer == "cmd2"
+    ov.handle_input(tcod.event.KeyDown(0, tcod.event.KeySym.DOWN, 0))
+    assert ov.input_buffer == ""
