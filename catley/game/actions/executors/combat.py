@@ -318,6 +318,7 @@ class AttackExecutor(ActionExecutor):
         if attack == ranged_attack and ranged_attack is not None:
             if ranged_attack.current_ammo > 0:
                 ranged_attack.current_ammo -= 1
+                intent.attacker.inventory._increment_revision()
             else:
                 # This shouldn't happen if validation worked, but safety check
                 publish_event(
@@ -587,6 +588,7 @@ class ReloadExecutor(ActionExecutor):
         if ammo_item:
             intent.actor.inventory.remove_from_inventory(ammo_item)
             ranged_attack.current_ammo = ranged_attack.max_ammo
+            intent.actor.inventory._increment_revision()
             publish_event(
                 MessageEvent(
                     f"{intent.actor.name} reloaded {intent.weapon.name}.",

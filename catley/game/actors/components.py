@@ -149,8 +149,15 @@ class InventoryComponent:
         self.actor = actor  # Back-reference for status effects
         self._stored_items: list[Item | Condition] = []
 
+        # Revision counter for UI caching
+        self.revision = 0
+
         self.attack_slots: list[Item | None] = [None] * num_attack_slots
         self.active_weapon_slot: int = 0
+
+    def _increment_revision(self) -> None:
+        """Bump the revision to signal a state change."""
+        self.revision += 1
 
     def __iter__(self):
         """Allow iteration over stored items."""
@@ -260,6 +267,7 @@ class InventoryComponent:
         if self.can_add_voluntary_item(item):
             self._stored_items.append(item)
             self._update_encumbrance_status()
+            self._increment_revision()
             return True, f"Added {item.name}."
         return False, f"Cannot carry {item.name} - inventory full!"
 
@@ -281,9 +289,11 @@ class InventoryComponent:
 
             self._stored_items.remove(droppable_item)
             dropped_items.append(droppable_item)
+            self._increment_revision()
 
         self._stored_items.append(condition)
         self._update_encumbrance_status()
+        self._increment_revision()
 
         message_parts = [f"Added {condition.name}."]
 
@@ -341,6 +351,7 @@ class InventoryComponent:
         if item in self._stored_items:
             self._stored_items.remove(item)
             self._update_encumbrance_status()
+            self._increment_revision()
             return True
         return False
 
@@ -392,6 +403,7 @@ class InventoryComponent:
         """Switch to a specific weapon slot. Returns True if successful."""
         if 0 <= slot_index < len(self.attack_slots):
             self.active_weapon_slot = slot_index
+            self._increment_revision()
             return True
         return False
 
@@ -413,6 +425,7 @@ class InventoryComponent:
 
         old_item = self.attack_slots[slot_index]
         self.attack_slots[slot_index] = item
+        self._increment_revision()
         return old_item
 
     def unequip_slot(self, slot_index: int) -> Item | None:
@@ -422,6 +435,8 @@ class InventoryComponent:
 
         item = self.attack_slots[slot_index]
         self.attack_slots[slot_index] = None
+        if item is not None:
+            self._increment_revision()
         return item
 
     def equip_from_inventory(self, item: Item, slot_index: int) -> tuple[bool, str]:
@@ -452,6 +467,7 @@ class InventoryComponent:
 
         self.attack_slots[slot_index] = item
         self._update_encumbrance_status()
+        self._increment_revision()
 
         if old_item is not None:
             return True, f"Equipped {item.name}; unequipped {old_item.name}."
@@ -473,6 +489,7 @@ class InventoryComponent:
         self.attack_slots[slot_index] = None
         self._stored_items.append(item)
         self._update_encumbrance_status()
+        self._increment_revision()
         return True, f"Unequipped {item.name}."
 
     def get_equipped_items(self) -> list[tuple[Item, int]]:
@@ -530,7 +547,6 @@ class VisualEffectsComponent:
         return self._flash_color if self._flash_duration_frames > 0 else None
 
 
-@dataclass(slots=True)
 class ModifiersComponent:
     """A facade for querying all of an actor's status effects and conditions.
 
@@ -544,7 +560,15 @@ class ModifiersComponent:
     on the actor directly.
     """
 
-    actor: Actor
+    __slots__ = ("actor", "revision")
+
+    def __init__(self, actor: Actor) -> None:
+        self.actor = actor
+        # Revision counter increments whenever modifiers change
+        self.revision = 0
+
+    def _increment_revision(self) -> None:
+        self.revision += 1
 
     def get_all_status_effects(self) -> list[StatusEffect]:
         """Returns a list of all active StatusEffect instances."""
@@ -661,6 +685,7 @@ class StatusEffectsComponent:
             return
         self._status_effects.append(effect)
         effect.apply_on_start(self.actor)
+        self.actor.modifiers._increment_revision()
 
     def remove_status_effect(
         self, effect_type: type[StatusEffect]
@@ -672,6 +697,8 @@ class StatusEffectsComponent:
                 self._status_effects.remove(effect)
                 effect.remove_effect(self.actor)
                 removed_effects.append(effect)
+        if removed_effects:
+            self.actor.modifiers._increment_revision()
         return removed_effects
 
     def has_status_effect(self, effect_type: type[StatusEffect]) -> bool:
@@ -697,6 +724,7 @@ class StatusEffectsComponent:
             if effect.should_remove(self.actor):
                 effect.remove_effect(self.actor)
                 self._status_effects.remove(effect)
+        self.actor.modifiers._increment_revision()
 
 
 class ConditionsComponent:
