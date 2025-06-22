@@ -26,7 +26,71 @@ class DevConsoleOverlay(TextOverlay):
         self.command_cursor_pos: int = 0
         self._cursor_visible: bool = True
         self._last_blink_time: float = 0.0
+        self.tab_completion_candidates: list[str] = []
+        self.tab_completion_index: int = -1
+        self.tab_completion_prefix: str = ""
+        self.history_index: int = -1
+        self._saved_input: str = ""
         self.is_interactive = True
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+    def _reset_input_state(self) -> None:
+        """Reset tab completion and history navigation state."""
+        self.tab_completion_candidates = []
+        self.tab_completion_index = -1
+        self.tab_completion_prefix = ""
+        self.history_index = -1
+        self._saved_input = ""
+
+    def _handle_tab_completion(self) -> None:
+        """Perform or cycle tab completion for variable names."""
+        if not self.input_buffer:
+            return
+
+        if not self.tab_completion_candidates:
+            prefix = self.input_buffer.split()[-1]
+            self.tab_completion_prefix = prefix
+            candidates = [
+                v.name
+                for v in live_variable_registry.get_all_variables()
+                if v.name.startswith(prefix)
+            ]
+            if not candidates:
+                return
+            self.tab_completion_candidates = candidates
+            self.tab_completion_index = 0
+        else:
+            self.tab_completion_index = (self.tab_completion_index + 1) % len(
+                self.tab_completion_candidates
+            )
+
+        completion = self.tab_completion_candidates[self.tab_completion_index]
+        start = self.input_buffer.rfind(self.tab_completion_prefix)
+        self.input_buffer = self.input_buffer[:start] + completion
+
+    def _handle_history_navigation(self, direction: int) -> None:
+        """Navigate command history with ``direction`` of ``-1`` or ``1``."""
+        commands = [line[2:] for line in self.history if line.startswith("> ")]
+        if not commands:
+            return
+
+        if self.history_index == -1:
+            self._saved_input = self.input_buffer
+            self.history_index = len(commands)
+
+        self.history_index += direction
+
+        if self.history_index < 0:
+            self.history_index = 0
+
+        if self.history_index >= len(commands):
+            self.history_index = -1
+            self.input_buffer = self._saved_input
+            return
+
+        self.input_buffer = commands[self.history_index]
 
     def _show_help(self) -> None:
         """Append the list of available commands to the history."""
@@ -76,6 +140,25 @@ class DevConsoleOverlay(TextOverlay):
             True,
         )
 
+        # Border outlines
+        self.canvas.draw_rect(0, 0, 1, self.pixel_height, colors.WHITE, True)
+        self.canvas.draw_rect(
+            self.pixel_width - 1,
+            0,
+            1,
+            self.pixel_height,
+            colors.WHITE,
+            True,
+        )
+        self.canvas.draw_rect(
+            0,
+            self.pixel_height - 1,
+            self.pixel_width,
+            1,
+            colors.WHITE,
+            True,
+        )
+
         tile_w, tile_h = self.tile_dimensions
         prompt_y = (self.height - 1) * tile_h
 
@@ -91,7 +174,8 @@ class DevConsoleOverlay(TextOverlay):
         self.canvas.draw_text(0, prompt_y, prompt, colors.YELLOW)
         if self._cursor_visible:
             cursor_x, _, _ = self.canvas.get_text_metrics(prompt)
-            self.canvas.draw_text(cursor_x, prompt_y, "_", colors.WHITE)
+            ascent, _ = self.canvas.get_font_metrics()
+            self.canvas.draw_text(cursor_x, prompt_y, "|", colors.WHITE)
 
     # ------------------------------------------------------------------
     # Input handling
@@ -104,18 +188,32 @@ class DevConsoleOverlay(TextOverlay):
                 tcod.event.KeySym.BACKQUOTE,
             ):
                 self.hide()
+                self._reset_input_state()
                 return True
             case tcod.event.KeyDown(sym=tcod.event.KeySym.RETURN):
                 self._execute_command()
                 self.input_buffer = ""
+                self._reset_input_state()
                 return True
             case tcod.event.KeyDown(sym=tcod.event.KeySym.BACKSPACE):
                 if self.input_buffer:
                     self.input_buffer = self.input_buffer[:-1]
+                self._reset_input_state()
+                return True
+            case tcod.event.KeyDown(sym=tcod.event.KeySym.TAB, mod=mod):
+                if mod == 0:  # Only respond to Tab without modifiers
+                    self._handle_tab_completion()
+                return True
+            case tcod.event.KeyDown(sym=tcod.event.KeySym.UP):
+                self._handle_history_navigation(-1)
+                return True
+            case tcod.event.KeyDown(sym=tcod.event.KeySym.DOWN):
+                self._handle_history_navigation(1)
                 return True
             case tcod.event.TextInput(text=text):
                 if text.isprintable() and text != "`":
                     self.input_buffer += text
+                self._reset_input_state()
                 return True
         return False
 
