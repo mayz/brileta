@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from catley import colors
-from catley.config import PERFORMANCE_PROFILING
 from catley.constants.view import ViewConstants as View
 from catley.view.render.canvas import TCODConsoleCanvas
 from catley.view.ui.overlays import TextOverlay
@@ -40,10 +39,10 @@ class FPSOverlay(TextOverlay):
     def _calculate_dimensions(self) -> None:
         """Calculate overlay dimensions based on FPS text."""
         # Position in top-right corner, small size
-        self.x_tiles = 50  # Adjust based on screen width
-        self.y_tiles = 0
         self.width = 20  # Tiles wide enough for FPS text
         self.height = 1  # Single line
+        self.x_tiles = self.renderer.root_console.width - self.width
+        self.y_tiles = 1
 
         tile_width, tile_height = self.tile_dimensions
         self.pixel_width = self.width * tile_width
@@ -58,13 +57,8 @@ class FPSOverlay(TextOverlay):
 
         current_time = getattr(self.clock, "last_time", 0.0)
         if current_time - self.last_update >= self.update_interval:
-            if PERFORMANCE_PROFILING:
-                mean_fps = getattr(self.clock, "mean_fps", 0.0)
-                last_fps = getattr(self.clock, "last_fps", 0.0)
-                self.display_string = f"FPS: mean {mean_fps:.0f}, last {last_fps:.0f}"
-            else:
-                mean_fps = getattr(self.clock, "mean_fps", 0.0)
-                self.display_string = f"FPS: {mean_fps:.1f}"
+            mean_fps = getattr(self.clock, "mean_fps", 0.0)
+            self.display_string = f"FPS: {mean_fps:4.0f}"
             self.last_update = current_time
 
         tile_width, tile_height = self.tile_dimensions
