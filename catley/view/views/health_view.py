@@ -24,22 +24,11 @@ class HealthView(TextView):
         super().__init__()
         self.controller = controller
         self.canvas = TCODConsoleCanvas(renderer)
-        # Track last known health state for caching
-        self._last_hp = -1
-        self._last_max_hp = -1
-        self._last_ap = -1
 
-    def needs_redraw(self, renderer: Renderer) -> bool:
+    def get_cache_key(self) -> tuple[int, int, int]:
+        """The key is a tuple of the health values. If it hasn't changed, no redraw."""
         player = self.controller.gw.player
-        current_hp = player.health.hp
-        current_max_hp = player.health.max_hp
-        current_ap = player.health.ap
-
-        return (
-            current_hp != self._last_hp
-            or current_max_hp != self._last_max_hp
-            or current_ap != self._last_ap
-        )
+        return (player.health.hp, player.health.max_hp, player.health.ap)
 
     def draw_content(self, renderer: Renderer) -> None:
         tile_width, tile_height = self.tile_dimensions
@@ -52,8 +41,3 @@ class HealthView(TextView):
 
         x_pos_tiles = self.width - len(text) - 1
         self.canvas.draw_text(x_pos_tiles * tile_width, 0, text, colors.WHITE)
-
-        # Cache current health values after drawing
-        self._last_hp = player.health.hp
-        self._last_max_hp = player.health.max_hp
-        self._last_ap = player.health.ap

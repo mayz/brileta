@@ -19,16 +19,11 @@ class HelpTextView(TextView):
         super().__init__()
         self.controller = controller
         self.canvas = TCODConsoleCanvas(renderer)
-        # Cache state for whether items are pickable at player location
-        self._last_has_pickable_items = None
 
-    def needs_redraw(self, renderer: Renderer) -> bool:
+    def get_cache_key(self) -> bool:
+        """The key is simply whether there are items to pick up."""
         player = self.controller.gw.player
-        current_has_pickable_items = self.controller.gw.has_pickable_items_at_location(
-            player.x, player.y
-        )
-
-        return current_has_pickable_items != self._last_has_pickable_items
+        return self.controller.gw.has_pickable_items_at_location(player.x, player.y)
 
     def draw_content(self, renderer: Renderer) -> None:
         """Render a short string with helpful key bindings."""
@@ -46,7 +41,3 @@ class HelpTextView(TextView):
 
         text = " | ".join(help_items)
         self.canvas.draw_text(0, 0, text, colors.GREY)
-
-        self._last_has_pickable_items = (
-            self.controller.gw.has_pickable_items_at_location(player.x, player.y)
-        )
