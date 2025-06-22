@@ -4,6 +4,8 @@ from typing import TYPE_CHECKING
 
 from catley import colors
 from catley.constants.view import ViewConstants as View
+from catley.util.live_vars import live_variable_registry
+from catley.util.misc import to_bool
 from catley.view.render.canvas import TCODConsoleCanvas
 from catley.view.ui.overlays import TextOverlay
 
@@ -31,6 +33,13 @@ class FPSOverlay(TextOverlay):
         self.is_interactive = False
         # Mark as non-interactive overlay
         self.is_interactive = False
+
+        live_variable_registry.register(
+            "dev.show_fps",
+            getter=lambda: self.is_active,
+            setter=lambda value: self.show() if to_bool(value) else self.hide(),
+            description="Toggle the FPS overlay visibility.",
+        )
 
     def _get_backend(self):
         """Return a TCODConsoleCanvas for FPS display."""
