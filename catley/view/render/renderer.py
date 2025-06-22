@@ -132,6 +132,45 @@ class Renderer:
         # Reset for next use
         texture.color_mod = (255, 255, 255)
 
+    def draw_tile_highlight(
+        self,
+        root_x: int,
+        root_y: int,
+        color: colors.Color,
+        alpha: float,
+    ) -> None:
+        """Draws a semi-transparent highlight over a single tile."""
+        if not self.sdl_renderer:
+            return
+
+        # Convert tile coordinates to screen pixel coordinates
+        px_x1, px_y1 = self.console_to_screen_coords(root_x, root_y)
+        px_x2, px_y2 = self.console_to_screen_coords(root_x + 1, root_y + 1)
+        px_w = px_x2 - px_x1
+        px_h = px_y2 - px_y1
+
+        r, g, b = color
+        a = int(255 * alpha)
+
+        # Create reusable highlight texture on first use
+        if not hasattr(self, "_highlight_texture"):
+            # Create a 1x1 white pixel texture
+            pixel_array = np.ones((1, 1, 4), dtype=np.uint8) * 255
+            self._highlight_texture = self.sdl_renderer.upload_texture(pixel_array)
+            self._highlight_texture.blend_mode = tcod.sdl.render.BlendMode.BLEND
+
+        # Modify the reusable texture for this highlight
+        self._highlight_texture.color_mod = (r, g, b)
+        self._highlight_texture.alpha_mod = a
+
+        # Draw the highlight rectangle by stretching the 1x1 texture
+        dest_rect = (int(px_x1), int(px_y1), int(px_w), int(px_h))
+        self.sdl_renderer.copy(self._highlight_texture, dest=dest_rect)
+
+        # Reset the texture for next use
+        self._highlight_texture.color_mod = (255, 255, 255)
+        self._highlight_texture.alpha_mod = 255
+
     def draw_particle_smooth(
         self,
         char: str,
