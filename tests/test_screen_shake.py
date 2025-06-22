@@ -55,6 +55,7 @@ class DummyGameMap:
 
         self.width = width
         self.height = height
+        self.revision = 0
         self.dark_appearance_map = np.zeros(
             (width, height), dtype=tile_types.TileTypeAppearance
         )
@@ -79,6 +80,7 @@ class DummyGW:
         self.lighting.compute_lighting_with_shadows.side_effect = (
             lambda w, h, *_args, **_kwargs: 1.0 * np.ones((w, h, 3))
         )
+        self.lighting._generate_cache_key = MagicMock(return_value="test_lighting_key")
 
     def add_actor(self, actor: DummyActor) -> None:
         self.actors.append(actor)
@@ -103,6 +105,7 @@ class DummyController:
             clear_console=lambda *args, **kwargs: None,
             root_console=None,
             blit_console=lambda *args, **kwargs: None,
+            texture_from_console=lambda console: f"mock_texture_for_{id(console)}",
         )
         self.clock = SimpleNamespace(last_delta_time=0.016)
         self.active_mode = None

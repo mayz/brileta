@@ -4,6 +4,7 @@ import math
 from typing import TYPE_CHECKING
 
 import numpy as np
+import tcod.sdl.render
 from tcod.console import Console
 
 from catley import colors, config
@@ -13,6 +14,7 @@ from catley.config import (
     PULSATION_PERIOD,
     SELECTION_HIGHLIGHT_ALPHA,
 )
+from catley.util.caching import ResourceCache
 from catley.util.coordinates import (
     PixelCoord,
     Rect,
@@ -64,6 +66,10 @@ class WorldView(View):
         self.environmental_system = EnvironmentalEffectSystem()
         self.effect_library = EffectLibrary()
         self.current_light_intensity: np.ndarray | None = None
+        self._texture_cache = ResourceCache[tuple, tcod.sdl.render.Texture](
+            name="WorldViewCache", max_size=5
+        )
+        self._active_background_texture: tcod.sdl.render.Texture | None = None
 
     def set_bounds(self, x1: int, y1: int, x2: int, y2: int) -> None:
         """Override set_bounds to update viewport and console dimensions."""
@@ -105,6 +111,38 @@ class WorldView(View):
     # ------------------------------------------------------------------
     # Drawing
     # ------------------------------------------------------------------
+    def _get_background_cache_key(self) -> tuple:
+        """Generate a hashable key representing the state of the static background."""
+        gw = self.controller.gw
+        vs = self.viewport_system
+
+        camera_key = (
+            round(vs.camera.world_x, 2),
+            round(vs.camera.world_y, 2),
+            vs.offset_x,
+            vs.offset_y,
+        )
+
+        fov_key = gw.game_map.visible.data.tobytes()
+
+        viewport_bounds = vs.get_visible_bounds()
+        relevant_actors = gw.actor_spatial_index.get_in_bounds(
+            viewport_bounds.x1,
+            viewport_bounds.y1,
+            viewport_bounds.x2,
+            viewport_bounds.y2,
+        )
+        lighting_key = gw.lighting._generate_cache_key(
+            viewport_bounds,
+            relevant_actors,
+            viewport_bounds.width,
+            viewport_bounds.height,
+        )
+
+        map_key = gw.game_map.revision
+
+        return (camera_key, fov_key, lighting_key, map_key)
+
     def draw(self, renderer: Renderer) -> None:
         if not self.visible:
             return
@@ -129,26 +167,36 @@ class WorldView(View):
         vs.camera.world_x += shake_x
         vs.camera.world_y += shake_y
 
-        # Render everything to the off-screen console.
-        self._render_game_world(delta_time)
+        # --- Cache lookup and management ---
+        cache_key = self._get_background_cache_key()
+        texture = self._texture_cache.get(cache_key)
+
+        if texture is None:
+            # CACHE MISS: Re-render the static background
+            self._render_map()  # This populates self.game_map_console
+            if not config.SMOOTH_ACTOR_RENDERING_ENABLED:
+                self._render_actors_traditional()  # Bake traditional actors into cache
+            texture = renderer.texture_from_console(self.game_map_console)
+            self._texture_cache.store(cache_key, texture)
+
+        self._active_background_texture = texture
 
         # Restore the original camera position so subsequent frames start clean.
         self.viewport_system.camera.set_position(original_cam_x, original_cam_y)
 
-        # Blit the viewport-sized console to the root console at our view's
-        # location.
-        renderer.blit_console(
-            source=self.game_map_console,
-            dest=renderer.root_console,
-            dest_x=self.x,
-            dest_y=self.y,
-            width=self.width,
-            height=self.height,
-        )
+        # Update dynamic systems that need to process every frame
+        for actor in self.controller.gw.actors:
+            actor.update_render_position(delta_time)
+
+        self.particle_system.update(delta_time)
+        self.environmental_system.update(delta_time)
 
     def present(self, renderer: Renderer) -> None:
         """Composite final frame layers in proper order."""
-        super().present(renderer)
+        if self._active_background_texture:
+            renderer.present_texture(
+                self._active_background_texture, self.x, self.y, self.width, self.height
+            )
 
         if not self.visible:
             return
@@ -165,8 +213,12 @@ class WorldView(View):
 
         if config.SMOOTH_ACTOR_RENDERING_ENABLED:
             self._render_actors_smooth(renderer)
+
+        # Render highlights and mode-specific UI on top of actors
+        if self.controller.active_mode:
+            self.controller.active_mode.render_world()
         else:
-            self._render_actors()
+            self._render_selected_actor_highlight()
 
         self.particle_system.render_particles(
             renderer,
@@ -185,24 +237,6 @@ class WorldView(View):
     # ------------------------------------------------------------------
     # Internal rendering helpers
     # ------------------------------------------------------------------
-    def _render_game_world(self, delta_time: float) -> None:
-        renderer = self.controller.renderer
-        renderer.clear_console(self.game_map_console)
-
-        # Update render positions for all visible actors
-        for actor in self.controller.gw.actors:
-            actor.update_render_position(delta_time)
-
-        self._render_map()
-        self._render_actors()
-
-        if self.controller.active_mode:
-            self.controller.active_mode.render_world()
-        else:
-            self._render_selected_actor_highlight()
-
-        self.particle_system.update(delta_time)
-        self.environmental_system.update(delta_time)
 
     def _render_map(self) -> None:
         gw = self.controller.gw
@@ -275,13 +309,13 @@ class WorldView(View):
         )
 
     def _render_actors(self) -> None:
-        if not config.SMOOTH_ACTOR_RENDERING_ENABLED:
-            self._render_actors_traditional()
-            return
-
-        # When smooth rendering is enabled, skip console rendering
-        # Actors will be drawn in present() phase
-        pass
+        # Traditional actors are now baked into the cache during the draw phase.
+        # This method is now only for presenting dynamic elements on top of the cache.
+        # Therefore, we do nothing if smooth rendering is disabled.
+        if config.SMOOTH_ACTOR_RENDERING_ENABLED:
+            # The present() method calls _render_actors_smooth() directly,
+            # so this method can simply be a no-op or pass.
+            pass
 
     def _render_actors_smooth(self, renderer: Renderer) -> None:
         """Render all actors with smooth sub-pixel positioning."""
@@ -394,62 +428,40 @@ class WorldView(View):
         )
         for actor in sorted_actors:
             if gw.game_map.visible[actor.x, actor.y]:
-                self._render_actor(actor)
+                # Use render_x and render_y for calculating screen position
+                vp_x, vp_y = self.viewport_system.world_to_screen(
+                    actor.render_x,  # pyright: ignore[reportArgumentType]
+                    actor.render_y,  # pyright: ignore[reportArgumentType]
+                )
 
-    def _render_actor(self, a: Actor) -> None:
-        if self.current_light_intensity is None:
-            return
-        # Use render_x and render_y for calculating screen position
-        vp_x, vp_y = self.viewport_system.world_to_screen(
-            a.render_x,  # pyright: ignore[reportArgumentType]
-            a.render_y,  # pyright: ignore[reportArgumentType]
-        )
+                vp_x_int, vp_y_int = round(vp_x), round(vp_y)
 
-        # We need to round to the nearest tile for console rendering
-        vp_x_int, vp_y_int = round(vp_x), round(vp_y)
+                if not (
+                    0 <= vp_x_int < self.game_map_console.width
+                    and 0 <= vp_y_int < self.game_map_console.height
+                ):
+                    continue
 
-        if not (
-            0 <= vp_x_int < self.game_map_console.width
-            and 0 <= vp_y_int < self.game_map_console.height
-        ):
-            return
+                # Get final color
+                base_actor_color = self._get_actor_display_color(actor)
 
-        self.game_map_console.rgb["ch"][vp_x_int, vp_y_int] = ord(a.ch)
-        base_actor_color: colors.Color = a.color
-        # Some simple actors in tests may not define visual_effects.
-        visual_effects = getattr(a, "visual_effects", None)
-        if visual_effects is not None:
-            visual_effects.update()
-            flash_color = visual_effects.get_flash_color()
-            if flash_color:
-                base_actor_color = flash_color
-        # Map the actor's position into the lighting array so we can look up
-        # the intensity for this tile.
-        bounds = self.viewport_system.get_visible_bounds()
-        world_left, world_top = bounds.x1, bounds.y1
-        light_x, light_y = a.x - world_left, a.y - world_top
-        if not (
-            0 <= light_x < self.current_light_intensity.shape[0]
-            and 0 <= light_y < self.current_light_intensity.shape[1]
-        ):
-            return
-        light_rgb = self.current_light_intensity[light_x, light_y]
-        normally_lit_fg_components: colors.Color = (
-            max(0, min(255, int(base_actor_color[0] * light_rgb[0]))),
-            max(0, min(255, int(base_actor_color[1] * light_rgb[1]))),
-            max(0, min(255, int(base_actor_color[2] * light_rgb[2]))),
-        )
-        final_fg_color = normally_lit_fg_components
-        if (
-            self.controller.gw.selected_actor == a
-            and self.controller.gw.game_map.visible[a.x, a.y]
-            and not self.controller.is_targeting_mode()
-        ):
-            # Give the selected actor a subtle pulse so it's easy to spot.
-            final_fg_color = self._apply_pulsating_effect(
-                normally_lit_fg_components, base_actor_color
-            )
-        self.game_map_console.rgb["fg"][vp_x_int, vp_y_int] = final_fg_color
+                # Apply pulsating effect if selected
+                final_fg_color = base_actor_color
+                if (
+                    self.controller.gw.selected_actor == actor
+                    and self.controller.gw.game_map.visible[actor.x, actor.y]
+                    and not self.controller.is_targeting_mode()
+                ):
+                    final_fg_color = self._apply_pulsating_effect(
+                        base_actor_color, actor.color
+                    )
+
+                # Draw to the game_map_console to bake into cached texture
+                self.game_map_console.rgb[vp_x_int, vp_y_int] = (
+                    ord(actor.ch),
+                    final_fg_color,
+                    self.game_map_console.rgb["bg"][vp_x_int, vp_y_int],
+                )
 
     def _render_selected_actor_highlight(self) -> None:
         if self.controller.is_targeting_mode():
