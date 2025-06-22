@@ -7,6 +7,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TypeVar
 
+from .live_vars import live_variable_registry
+
 # Define generic types for keys and values
 KeyType = TypeVar("KeyType")
 ValueType = TypeVar("ValueType")
@@ -58,6 +60,13 @@ class ResourceCache[KeyType, ValueType]:
         self._cache: OrderedDict[KeyType, ValueType] = OrderedDict()
         self.stats = CacheStats()
         self.on_evict = on_evict
+
+        live_variable_registry.register(
+            name=f"cache.{self.name}.stats",
+            getter=lambda: str(self.stats),
+            setter=None,
+            description=f"Live stats for the {self.name} cache.",
+        )
 
     def get(self, key: KeyType) -> ValueType | None:
         """

@@ -31,7 +31,7 @@ class MessageLogView(TextView):
         # Override the cache from the base class,
         # as this view requires a more complex, tuple-based key.
         self._texture_cache = ResourceCache[tuple, Texture](
-            name=self.__class__.__name__, max_size=1
+            name=f"{self.__class__.__name__}Render", max_size=1
         )
 
     def get_cache_key(self) -> tuple:
