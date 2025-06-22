@@ -19,7 +19,6 @@ Key Principles:
 
 from __future__ import annotations
 
-from collections import OrderedDict
 from typing import cast
 
 import numpy as np
@@ -29,6 +28,7 @@ from tcod.console import Console
 
 from catley import colors
 from catley.game.enums import BlendMode
+from catley.util.caching import ResourceCache
 from catley.util.coordinates import CoordinateConverter, TileDimensions
 
 
@@ -59,10 +59,10 @@ class Renderer:
 
         # Set up smooth actor rendering
         self._actor_texture_cache = {}
-        self._effect_texture_cache: OrderedDict[int, tcod.sdl.render.Texture] = (
-            OrderedDict()
-        )
         self._effect_cache_limit = 20
+        self._effect_texture_cache = ResourceCache[int, tcod.sdl.render.Texture](
+            name="EffectTextureCache", max_size=self._effect_cache_limit
+        )
         self._tileset = context.sdl_atlas.tileset if context.sdl_atlas else None
 
     def clear_console(self, console: Console) -> None:
@@ -202,12 +202,7 @@ class Renderer:
 
             texture = self.sdl_renderer.upload_texture(arr)
             texture.blend_mode = tcod.sdl.render.BlendMode.BLEND
-            self._effect_texture_cache[px_radius] = texture
-
-            if len(self._effect_texture_cache) > self._effect_cache_limit:
-                old_radius, old_texture = self._effect_texture_cache.popitem(last=False)
-                if hasattr(old_texture, "destroy"):
-                    old_texture.destroy()  # pyright: ignore[reportAttributeAccessIssue]
+            self._effect_texture_cache.store(px_radius, texture)
 
         texture.color_mod = (
             int(tint_color[0] * intensity),
