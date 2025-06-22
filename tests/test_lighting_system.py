@@ -37,11 +37,11 @@ def test_lighting_cache_hit() -> None:
     ls.add_light(LightSource(radius=2, _pos=(10, 10)))
 
     result1 = ls.compute_lighting_with_shadows(5, 5, [], viewport_offset=(8, 8))
-    misses_after_first = ls._cache_misses
+    misses_after_first = ls._lighting_cache.stats.misses
 
     result2 = ls.compute_lighting_with_shadows(5, 5, [], viewport_offset=(8, 8))
-    assert ls._cache_hits == 1
-    assert ls._cache_misses == misses_after_first
+    assert ls._lighting_cache.stats.hits == 1
+    assert ls._lighting_cache.stats.misses == misses_after_first
     assert np.array_equal(result1, result2)
 
 
@@ -51,8 +51,14 @@ def test_cache_invalidation_on_add_light() -> None:
     ls.add_light(light1)
     ls.compute_lighting_with_shadows(5, 5, [], viewport_offset=(8, 8))
 
+    # Cache should have 1 item after first computation
+    assert len(ls._lighting_cache) == 1
+
     ls.add_light(LightSource(radius=1, _pos=(5, 5)))
 
+    # Cache should be cleared after adding a light
+    assert len(ls._lighting_cache) == 0
+
     ls.compute_lighting_with_shadows(5, 5, [], viewport_offset=(8, 8))
-    # After adding a light, cache should have been cleared resulting in a miss
-    assert ls._cache_misses == 2
+    # After adding a light and recomputing, cache should have content again
+    assert len(ls._lighting_cache) == 1
