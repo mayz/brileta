@@ -23,7 +23,7 @@ class HelpMenu(Menu):
             ("Target Menu", "T - Full targeting options for selected actor"),
             ("Inventory", "I - Open inventory menu"),
             ("Get Items", "G - Pick up items from ground/corpses"),
-            ("Quit", "Q or Escape - Quit game"),
+            ("Quit", "Q - Quit game"),
             ("Help", "? - Show this help menu"),
         ]
 

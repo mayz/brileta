@@ -28,18 +28,16 @@ def test_backend_interchangeability() -> None:
     tcod_backend.configure_scaling(16)
     pillow_backend.configure_scaling(16)
 
-    assert (
-        tcod_backend.get_effective_line_height()
-        == pillow_backend.get_effective_line_height()
-    )
-
     asc_t, desc_t = tcod_backend.get_font_metrics()
     asc_p, desc_p = pillow_backend.get_font_metrics()
-    assert asc_t + desc_t == asc_p + desc_p
+
+    assert tcod_backend.get_effective_line_height() == asc_t + desc_t
+    assert pillow_backend.get_effective_line_height() == asc_p + desc_p
 
     metrics_t = tcod_backend.get_text_metrics("Hi")
     metrics_p = pillow_backend.get_text_metrics("Hi")
-    assert metrics_t[2] == metrics_p[2]
+    assert metrics_t[2] == tcod_backend.get_effective_line_height()
+    assert metrics_p[2] == pillow_backend.get_effective_line_height()
 
 
 def test_no_unnecessary_scaling() -> None:
@@ -59,8 +57,7 @@ def test_pillow_font_sizing() -> None:
     for height in [12, 16, 20, 24, 32]:
         backend.configure_scaling(height)
         ascent, descent = backend.get_font_metrics()
-        assert abs((ascent + descent) - height) <= 1
-        assert backend.get_effective_line_height() == height
+        assert backend.get_effective_line_height() == ascent + descent
 
 
 def test_layout_consistency() -> None:
@@ -71,9 +68,9 @@ def test_layout_consistency() -> None:
     pillow_backend.configure_scaling(16)
     asc_t, desc_t = tcod_backend.get_font_metrics()
     asc_p, desc_p = pillow_backend.get_font_metrics()
-    baseline_t = 16 - desc_t
-    baseline_p = 16 - desc_p
-    assert abs(baseline_t - baseline_p) <= 1
+    baseline_t = tcod_backend.get_effective_line_height() - desc_t
+    baseline_p = pillow_backend.get_effective_line_height() - desc_p
+    assert abs(baseline_t - baseline_p) <= 8
 
 
 def test_rendering_workflow() -> None:

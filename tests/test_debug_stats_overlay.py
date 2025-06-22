@@ -19,7 +19,11 @@ class DummyController:
 
 def test_calculate_dimensions() -> None:
     live_variable_registry.register("ds.var1", getter=lambda: 1)
-    live_variable_registry.register("ds.longer", getter=lambda: 22)
+    live_variable_registry.register(
+        "ds.longer",
+        getter=lambda: 22.5,
+        formatter=lambda v: f"{v:.1f}",
+    )
     live_variable_registry._watched_variables.clear()
     live_variable_registry.watch("ds.var1")
     live_variable_registry.watch("ds.longer")
@@ -27,7 +31,7 @@ def test_calculate_dimensions() -> None:
     overlay = DebugStatsOverlay(cast("Controller", DummyController()))
     overlay._calculate_dimensions()
 
-    expected_width = max(len("ds.var1: 1"), len("ds.longer: 22")) + 2
+    expected_width = max(len("ds.var1: 1"), len("ds.longer: 22.5")) + 2
     assert overlay.width == expected_width
     assert overlay.height == 2
     assert overlay.x_tiles == 80 - overlay.width
@@ -42,7 +46,11 @@ def test_calculate_dimensions() -> None:
 
 
 def test_draw_content() -> None:
-    live_variable_registry.register("ds.b", getter=lambda: 2)
+    live_variable_registry.register(
+        "ds.b",
+        getter=lambda: 2.0,
+        formatter=lambda v: f"{v:.1f}",
+    )
     live_variable_registry.register("ds.a", getter=lambda: 1)
     live_variable_registry._watched_variables.clear()
     live_variable_registry.watch("ds.b")
@@ -57,7 +65,7 @@ def test_draw_content() -> None:
     calls = overlay.canvas.draw_text.call_args_list
     assert len(calls) == 2
     assert calls[0].args[2] == "ds.a: 1"
-    assert calls[1].args[2] == "ds.b: 2"
+    assert calls[1].args[2] == "ds.b: 2.0"
     assert calls[0].args[0] == 0
     assert calls[0].args[1] == 0
     assert calls[1].args[1] == 16

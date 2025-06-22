@@ -17,3 +17,30 @@ def to_bool(value: Any) -> bool:
         if lowered in {"false", "0", "no", "off", "f", "n"}:
             return False
     return bool(value)
+
+
+def string_to_type(value_str: str, target_type: type) -> Any:
+    """Safely convert ``value_str`` to ``target_type``.
+
+    Supports ``int``, ``float``, and ``bool``. Falls back to ``target_type``
+    casting and returns the original string if conversion fails.
+    """
+    if target_type is bool:
+        return to_bool(value_str)
+
+    if target_type is int:
+        try:
+            return int(value_str)
+        except (TypeError, ValueError):
+            return value_str
+
+    if target_type is float:
+        try:
+            return float(value_str)
+        except (TypeError, ValueError):
+            return value_str
+
+    try:
+        return target_type(value_str)
+    except Exception:
+        return value_str

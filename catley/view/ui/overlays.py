@@ -181,6 +181,14 @@ class OverlaySystem:
         while self.active_overlays:
             self.hide_current_overlay()
 
+    def toggle_overlay(self, overlay: Overlay) -> None:
+        """Show the overlay if hidden or hide it if already active."""
+        if overlay in self.active_overlays:
+            overlay.hide()
+            self.active_overlays.remove(overlay)
+        else:
+            self.show_overlay(overlay)
+
     def handle_input(self, event: tcod.event.Event) -> bool:
         """Handle input for the active overlays. Returns True if event was consumed."""
         if self.active_overlays:

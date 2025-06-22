@@ -541,7 +541,7 @@ class PillowImageCanvas(Canvas):
         ascent, descent = self.font.getmetrics()
         self._actual_ascent = ascent
         self._actual_descent = descent
-        self._effective_line_height = tile_height  # For layout consistency
+        self._effective_line_height = ascent + descent
 
     def get_text_metrics(
         self, text: str, font_size: int | None = None
@@ -671,7 +671,7 @@ class PillowImageCanvas(Canvas):
         color: colors.Color,
         font_size: int | None,
     ) -> None:
-        """Render a single piece of text (extracted from old draw_text)."""
+        """Render text anchored to the top-left corner."""
         if self._drawer is None:
             return
 
@@ -679,14 +679,10 @@ class PillowImageCanvas(Canvas):
         if font_size is not None:
             font_to_use = ImageFont.truetype(str(self.font_path), font_size)
 
-        ascent, descent = font_to_use.getmetrics()
-        top_padding = (self._effective_line_height - (ascent + descent)) // 2
-        baseline_y = int(pixel_y + top_padding + ascent)
-
         self._drawer.text(
-            (int(pixel_x), baseline_y),
+            (int(pixel_x), int(pixel_y)),
             text,
             font=font_to_use,
             fill=(*color, 255),
-            anchor="ls",
+            anchor="lt",
         )
