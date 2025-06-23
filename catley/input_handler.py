@@ -12,7 +12,6 @@ from catley.game.actors import Actor, Character
 from catley.util.coordinates import (
     PixelCoord,
     PixelPos,
-    RootConsoleTileCoord,
     RootConsoleTilePos,
     WorldTileCoord,
     WorldTilePos,
@@ -106,9 +105,6 @@ class InputHandler:
 
             # Update coordinate conversion when the window size changes
             self.controller.renderer.update_dimensions()
-            self.controller.coordinate_converter = (
-                self.controller.renderer.coordinate_converter
-            )
             # Update view layouts for new window size
             self.fm.on_window_resized()
 
@@ -248,10 +244,7 @@ class InputHandler:
             case tcod.event.KeyDown(sym=tcod.event.KeySym.RETURN, mod=mod) if (
                 mod & tcod.event.Modifier.ALT
             ):
-                return ToggleFullscreenUICommand(
-                    self.renderer.context,
-                    self.renderer.root_console,
-                )
+                return ToggleFullscreenUICommand(self.renderer)
 
             case tcod.event.MouseButtonDown():
                 return self._handle_mouse_button_down_event(event)
@@ -351,11 +344,8 @@ class InputHandler:
         px_pos: PixelPos = event.position
         px_x: PixelCoord = px_pos[0]
         px_y: PixelCoord = px_pos[1]
-        root_tile_x: RootConsoleTileCoord
-        root_tile_y: RootConsoleTileCoord
-        root_tile_x, root_tile_y = self.controller.coordinate_converter.pixel_to_tile(
-            px_x, px_y
-        )
+
+        root_tile_x, root_tile_y = self.renderer.pixel_to_tile(px_x, px_y)
 
         event_copy = copy.copy(event)
         event_copy.position = tcod.event.Point(root_tile_x, root_tile_y)

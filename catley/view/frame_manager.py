@@ -16,7 +16,7 @@ Key Responsibilities:
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from catley import config
 from catley.config import (
@@ -30,9 +30,10 @@ from catley.events import (
 from catley.util.coordinates import RootConsoleTilePos, ViewportTileCoord, WorldTilePos
 from catley.util.live_vars import live_variable_registry
 
+from .render.base_renderer import Renderer
 from .render.effects.effects import EffectContext
 from .render.effects.screen_shake import ScreenShake
-from .render.renderer import Renderer
+from .render.tcod_renderer import TCODRenderer
 from .ui.cursor_manager import CursorManager
 from .ui.debug_stats_overlay import DebugStatsOverlay
 from .ui.dev_console_overlay import DevConsoleOverlay
@@ -187,7 +188,8 @@ class FrameManager:
         4. Presentation - Composite overlays then draw the mouse cursor
         """
         # 1. PREPARATION PHASE
-        self.renderer.clear_console(self.renderer.root_console)
+        self.renderer.prepare_to_present()
+
         # 2. UI VIEW RENDERING
         for view in self.views:
             if view.visible:
@@ -195,7 +197,10 @@ class FrameManager:
 
         # Allow active mode to render its additional UI
         if self.controller.active_mode:
-            self.controller.active_mode.render_ui(self.renderer.root_console)
+            # FIXME: I explicitly acknowledge this is a TCOD-specific operation for
+            #        Phase 0 of the Graphics Migration Plan.
+            tcod_renderer = cast(TCODRenderer, self.renderer)
+            self.controller.active_mode.render_ui(tcod_renderer.root_console)
 
         # Views may render overlays like FPS after game UI.
 
@@ -240,7 +245,7 @@ class FrameManager:
                 )
 
         # Draw the mouse cursor on top of all overlays
-        self.cursor_manager.draw_cursor()
+        self.renderer.draw_mouse_cursor(self.cursor_manager)
 
         # Flip the backbuffer to the screen
         self.renderer.finalize_present()

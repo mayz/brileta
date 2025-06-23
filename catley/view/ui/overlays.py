@@ -124,19 +124,7 @@ class TextOverlay(Overlay):
         self.draw_content()
         artifact = self.canvas.end_frame()
         if artifact is not None:
-            # Convert artifact to texture using renderer
-            if self.canvas.artifact_type == "console":
-                texture = self.renderer.texture_from_console(
-                    artifact, self.canvas.transparent
-                )
-            elif self.canvas.artifact_type == "numpy":
-                texture = self.renderer.texture_from_numpy(
-                    artifact, self.canvas.transparent
-                )
-            else:
-                # Handle unknown artifact types gracefully
-                texture = None
-
+            texture = self.canvas.create_texture(self.renderer, artifact)
             self._cached_texture = texture
 
     def present(self) -> None:
@@ -465,8 +453,8 @@ class Menu(TextOverlay):
         self.pixel_width = self.width * self.tile_dimensions[0]
         self.pixel_height = self.height * self.tile_dimensions[1]
 
-        self.x_tiles = (self.renderer.root_console.width - self.width) // 2
-        self.y_tiles = (self.renderer.root_console.height - self.height) // 2
+        self.x_tiles = (self.renderer.console_width_tiles - self.width) // 2
+        self.y_tiles = (self.renderer.console_height_tiles - self.height) // 2
 
     def draw_content(self) -> None:
         """Render the menu content using only the Canvas interface."""

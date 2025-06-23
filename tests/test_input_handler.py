@@ -52,6 +52,7 @@ def make_input_handler() -> tuple[InputHandler, list[tuple[Any, tuple[int, int],
     renderer = SimpleNamespace(
         tile_dimensions=(1, 1),
         root_console=SimpleNamespace(width=80, height=50),
+        pixel_to_tile=lambda x, y: (x, y),
     )
     coordinate_converter = SimpleNamespace(pixel_to_tile=lambda x, y: (x, y))
     frame_manager = DummyFrameManager()

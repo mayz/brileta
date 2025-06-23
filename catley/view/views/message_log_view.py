@@ -6,8 +6,8 @@ from tcod.sdl.render import Texture
 
 from catley import colors
 from catley.util.caching import ResourceCache
+from catley.view.render.base_renderer import Renderer
 from catley.view.render.canvas import PillowImageCanvas
-from catley.view.render.renderer import Renderer
 
 from .base import TextView
 
@@ -63,7 +63,6 @@ class MessageLogView(TextView):
         self.canvas.draw_rect(
             0, 0, self.view_width_px, self.view_height_px, colors.BLACK, fill=True
         )
-        self.canvas.configure_renderer(renderer.sdl_renderer)
 
         ascent, descent = self.canvas.get_font_metrics()
         line_height = ascent + descent

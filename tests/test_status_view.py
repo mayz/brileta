@@ -7,7 +7,7 @@ from catley.controller import Controller
 from catley.game.actors import Character, conditions, status_effects
 from catley.game.enums import InjuryLocation
 from catley.game.game_world import GameWorld
-from catley.view.render.renderer import Renderer
+from catley.view.render.base_renderer import Renderer
 from catley.view.views.status_view import StatusView
 from tests.helpers import DummyGameWorld
 

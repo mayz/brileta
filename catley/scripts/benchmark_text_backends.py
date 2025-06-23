@@ -21,12 +21,12 @@ from typing import Any
 
 import tcod
 import tcod.context
-import tcod.sdl.render
 from tcod.console import Console
 
 from catley import colors
+from catley.view.render.base_renderer import Renderer
 from catley.view.render.canvas import PillowImageCanvas, TCODConsoleCanvas
-from catley.view.render.renderer import Renderer
+from catley.view.render.tcod_renderer import TCODRenderer
 
 
 @dataclass
@@ -173,7 +173,7 @@ class TextBackendBenchmarkSuite:
             title="Text Backend Benchmark",
             sdl_window_flags=tcod.context.SDL_WINDOW_HIDDEN,
         )
-        self.renderer = Renderer(self.context, self.console, (10, 12))
+        self.renderer = TCODRenderer(self.context, self.console, (10, 12))
 
     def __enter__(self):
         return self

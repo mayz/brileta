@@ -9,7 +9,7 @@ from .base import TextView
 
 if TYPE_CHECKING:
     from catley.controller import Controller
-    from catley.view.render.renderer import Renderer
+    from catley.view.render.base_renderer import Renderer
 
 
 class HelpTextView(TextView):

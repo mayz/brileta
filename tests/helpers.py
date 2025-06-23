@@ -131,6 +131,7 @@ def get_controller_with_player_and_map() -> Controller:
         def __init__(self) -> None:
             self.p = SimpleNamespace(texture=None)
             self.tileset = None
+            self._renderer = SimpleNamespace()
 
     class DummyContext:
         def __init__(self) -> None:
@@ -146,7 +147,7 @@ def get_controller_with_player_and_map() -> Controller:
     context = DummyContext()
     root_console = Console(config.SCREEN_WIDTH, config.SCREEN_HEIGHT, order="F")
     with (
-        patch("catley.controller.Renderer", DummyRenderer),
+        patch("catley.controller.TCODRenderer", DummyRenderer),
         patch("catley.controller.FrameManager", DummyFrameManager),
         patch("catley.controller.InputHandler", lambda c: None),
         patch("catley.controller.MovementInputHandler", lambda c: None),

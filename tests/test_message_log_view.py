@@ -11,8 +11,8 @@ import tcod.sdl.video
 
 from catley import colors
 from catley.util.message_log import MessageLog
+from catley.view.render.base_renderer import Renderer
 from catley.view.render.canvas import PillowImageCanvas
-from catley.view.render.renderer import Renderer
 from catley.view.views.message_log_view import MessageLogView
 
 

@@ -49,7 +49,7 @@ class DebugStatsOverlay(TextOverlay):
         self.width = max_width + 2  # small padding
         self.height = len(watched)
 
-        self.x_tiles = self.renderer.root_console.width - self.width
+        self.x_tiles = self.renderer.console_width_tiles - self.width
         self.y_tiles = 1
 
         self.pixel_width = self.width * self.tile_dimensions[0]

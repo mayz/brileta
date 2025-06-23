@@ -16,7 +16,6 @@ if TYPE_CHECKING:
 from . import colors, config
 from .events import MessageEvent, publish_event
 from .game.actions.base import GameIntent
-from .game.actions.movement import MoveIntent  # noqa: F401
 from .game.actions.types import AnimationType
 from .game.actors.core import Character
 from .game.game_world import GameWorld
@@ -32,7 +31,8 @@ from .util.message_log import MessageLog
 from .util.pathfinding import find_path
 from .view.animation import AnimationManager
 from .view.frame_manager import FrameManager
-from .view.render.renderer import Renderer
+from .view.render.base_renderer import Renderer
+from .view.render.tcod_renderer import TCODRenderer
 from .view.ui.overlays import OverlaySystem
 
 
@@ -92,7 +92,7 @@ class Controller:
         self.overlay_system = OverlaySystem(self)
 
         # Create new low-level renderer
-        self.renderer = Renderer(context, root_console, tile_dimensions)
+        self.renderer: Renderer = TCODRenderer(context, root_console, tile_dimensions)
         self.coordinate_converter = self.renderer.coordinate_converter
 
         # Create FrameManager to coordinate rendering

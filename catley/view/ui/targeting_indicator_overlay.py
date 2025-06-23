@@ -37,7 +37,7 @@ class TargetingIndicatorOverlay(TextOverlay):
         self.height = 1
 
         # Center horizontally, place just below top bar
-        self.x_tiles = (self.renderer.root_console.width - self.width) // 2
+        self.x_tiles = (self.renderer.console_width_tiles - self.width) // 2
         self.y_tiles = 1
 
         # Calculate pixel dimensions

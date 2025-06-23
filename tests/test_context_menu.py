@@ -11,6 +11,7 @@ from catley.game.actors import Character
 from catley.game.game_world import GameWorld
 from catley.game.turn_manager import TurnManager
 from catley.util.coordinates import RootConsoleTilePos
+from catley.view.render.tcod_renderer import TCODRenderer
 from catley.view.ui.context_menu import ContextMenu
 from tests.helpers import DummyGameWorld
 from tests.test_text_backends import _make_renderer
@@ -25,8 +26,9 @@ class DummyController(Controller):
         self.frame_manager = None
         self.message_log = None
         self.renderer = _make_renderer()
-        cast(Any, self.renderer.root_console).width = 80
-        cast(Any, self.renderer.root_console).height = 50
+        tcod_renderer = cast(TCODRenderer, self.renderer)
+        cast(Any, tcod_renderer.root_console).width = 80
+        cast(Any, tcod_renderer.root_console).height = 50
         self.coordinate_converter = SimpleNamespace(pixel_to_tile=lambda x, y: (x, y))
 
 

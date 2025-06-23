@@ -116,8 +116,8 @@ class DevConsoleOverlay(TextOverlay):
 
     def _calculate_dimensions(self) -> None:
         self.tile_dimensions = self.renderer.tile_dimensions
-        self.width = self.renderer.root_console.width
-        self.height = max(1, self.renderer.root_console.height // 3)
+        self.width = self.renderer.console_width_tiles
+        self.height = max(1, self.renderer.console_height_tiles // 3)
         self.pixel_width = self.width * self.tile_dimensions[0]
         self.pixel_height = self.height * self.tile_dimensions[1]
         self.x_tiles = 0

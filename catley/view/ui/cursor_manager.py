@@ -1,22 +1,29 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 
 import numpy as np
-import tcod.sdl.render
 from PIL import Image as PILImage
 
 from catley.config import BASE_MOUSE_CURSOR_PATH
 from catley.util.coordinates import PixelCoord
-from catley.view.render.renderer import Renderer
+from catley.view.render.base_renderer import Renderer
 
 
 @dataclass
 class CursorData:
-    """Stores the texture and hotspot for a single cursor type."""
+    """Stores the data and lazily-loaded texture for a single cursor type."""
 
-    texture: tcod.sdl.render.Texture
-    hotspot: tuple[int, int]  # (hot_x, hot_y) from top-left of image
     name: str
     filename: str
+    hotspot: tuple[int, int]  # (hot_x, hot_y) from top-left of image
+
+    # This will hold the raw pixel data loaded from the file.
+    # It's renderer-agnostic.
+    pixels: np.ndarray
+
+    # This will cache the backend-specific texture object once it's created
+    # by a renderer. The `Any` type is crucial here.
+    texture: Any = field(default=None, repr=False)
 
 
 class CursorManager:
@@ -28,7 +35,6 @@ class CursorManager:
         renderer: Renderer,
         base_asset_path: str = "assets/cursors/",
     ) -> None:
-        self.sdl_renderer = renderer.sdl_renderer
         self.base_asset_path = base_asset_path
         self.cursors: dict[str, CursorData] = {}
 
@@ -54,25 +60,6 @@ class CursorManager:
             )
             self.active_cursor_type = "arrow"
 
-    def draw_cursor(self) -> None:
-        """Draws the active cursor at the current mouse position."""
-        cursor_data = self.cursors.get(self.active_cursor_type)
-
-        if not cursor_data:
-            # This might happen if active_cursor_type was set to something not loaded
-            return
-
-        texture = cursor_data.texture
-        hotspot_x, hotspot_y = cursor_data.hotspot
-
-        dest_rect = (
-            self.mouse_pixel_x - hotspot_x,
-            self.mouse_pixel_y - hotspot_y,
-            texture.width,
-            texture.height,
-        )
-        self.sdl_renderer.copy(texture, dest=dest_rect)
-
     def get_cursor_data(self, cursor_name: str) -> CursorData | None:
         """Retrieves the CursorData object for a given cursor name."""
         return self.cursors.get(cursor_name)
@@ -85,36 +72,48 @@ class CursorManager:
     def _load_cursor(
         self, cursor_name: str, filename: str, hotspot: tuple[int, int]
     ) -> None:
+        """
+        Loads cursor image data from a file and stores it.
+
+        This method no longer creates a texture. It only loads the raw RGBA
+        pixel data into a NumPy array, which is stored in a CursorData object.
+        The actual texture creation is deferred to the active renderer.
+        """
         full_path = BASE_MOUSE_CURSOR_PATH / filename
         try:
             if not full_path.exists():
                 print(f"ERROR: Cursor file not found at {full_path.resolve()}")
                 return
 
+            # Load the image using Pillow and convert to a standard RGBA format
             img_pil = PILImage.open(str(full_path))
             img_pil = img_pil.convert("RGBA")
 
+            # Convert the Pillow image to a NumPy array
             pixels_rgba = np.array(img_pil, dtype=np.uint8)
+
+            # Ensure the array is C-contiguous for compatibility with graphics libraries
             pixels_rgba = np.ascontiguousarray(pixels_rgba)
 
             if pixels_rgba.ndim != 3 or pixels_rgba.shape[2] != 4:
                 print(
-                    f"ERROR: Image '{filename}' not in RGBA format"
-                    f" (shape: {pixels_rgba.shape})"
+                    f"ERROR: Image '{filename}' is not in a valid RGBA format. "
+                    f"Shape is {pixels_rgba.shape}."
                 )
                 return
 
-            texture = self.sdl_renderer.upload_texture(pixels_rgba)
-            texture.blend_mode = tcod.sdl.render.BlendMode.BLEND
-
-            # Create and store the CursorData object
+            # Create and store the new, renderer-agnostic CursorData object.
+            # It contains the pixel data but no texture yet.
             self.cursors[cursor_name] = CursorData(
-                texture=texture, hotspot=hotspot, name=cursor_name, filename=filename
+                name=cursor_name,
+                filename=filename,
+                hotspot=hotspot,
+                pixels=pixels_rgba,
             )
 
         except Exception as e:
             print(
-                f"ERROR: Failed to load/upload cursor '{cursor_name}' "
+                f"ERROR: Failed to load cursor data for '{cursor_name}' "
                 f"from '{full_path}'. Exception: {e!s}"
             )
             import traceback

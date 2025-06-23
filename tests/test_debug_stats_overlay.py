@@ -14,6 +14,8 @@ class DummyController:
         self.renderer = SimpleNamespace(
             root_console=SimpleNamespace(width=80, height=50),
             tile_dimensions=(8, 16),
+            console_width_tiles=80,
+            console_height_tiles=50,
         )
 
 

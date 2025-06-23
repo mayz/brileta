@@ -24,10 +24,9 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from enum import Enum, auto
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
-import tcod.sdl.render
 from PIL import Image as PILImage
 from PIL import ImageDraw, ImageFont
 from tcod.console import Console
@@ -35,7 +34,8 @@ from tcod.console import Console
 from catley import colors, config
 from catley.util.coordinates import PixelCoord, TileCoord
 
-from .renderer import Renderer
+from .base_renderer import Renderer
+from .tcod_renderer import TCODRenderer
 
 
 class DrawOperation(Enum):
@@ -130,6 +130,11 @@ class Canvas(ABC):
             self._last_frame_ops = self._frame_ops.copy()
 
         return artifact
+
+    @abstractmethod
+    def create_texture(self, renderer: Renderer, artifact: Any) -> Any:
+        """Creates a backend-specific texture from this canvas's artifact."""
+        pass
 
     def draw_frame(
         self,
@@ -309,6 +314,13 @@ class TCODConsoleCanvas(Canvas):
     def artifact_type(self) -> str:
         return "console"
 
+    def create_texture(self, renderer: Renderer, artifact: Any) -> Any:
+        """Creates a backend-specific texture from this canvas's artifact."""
+        # We need to cast the renderer to access its TCOD-specific method.
+        # This is acceptable because this canvas is TCOD-specific.
+        tcod_renderer = cast("TCODRenderer", renderer)
+        return tcod_renderer.texture_from_console(artifact, self.transparent)
+
     def get_text_metrics(
         self, text: str, font_size: int | None = None
     ) -> tuple[int, int, int]:
@@ -482,12 +494,10 @@ class PillowImageCanvas(Canvas):
         self._font_needs_update: bool = True
         self.image: PILImage.Image | None = None
         self._drawer: ImageDraw.ImageDraw | None = None
-        self.sdl_renderer: tcod.sdl.render.Renderer | None = None
 
         tile_height = renderer.tile_dimensions[1]
 
         self.configure_scaling(tile_height)
-        self.configure_renderer(renderer.sdl_renderer)
 
     @property
     def artifact_type(self) -> str:
@@ -497,11 +507,12 @@ class PillowImageCanvas(Canvas):
     # Utility helpers
     # ------------------------------------------------------------------
 
+    def create_texture(self, renderer: Renderer, artifact: Any) -> Any:
+        """Creates a backend-specific texture from this canvas's artifact."""
+        return renderer.texture_from_numpy(artifact, self.transparent)
+
     def configure_dimensions(self, width: PixelCoord, height: PixelCoord) -> None:
         super().configure_dimensions(width, height)
-
-    def configure_renderer(self, sdl_renderer) -> None:
-        self.sdl_renderer = sdl_renderer
 
     def get_font_metrics(self) -> tuple[int, int]:
         ascent = self._actual_ascent
@@ -581,9 +592,6 @@ class PillowImageCanvas(Canvas):
 
     def _prepare_for_rendering(self) -> bool:
         """Prepare PIL image for rendering operations."""
-        if self.sdl_renderer is None:
-            return False
-
         # Create new image and drawer
         self.image = PILImage.new(
             "RGBA", (int(self.width), int(self.height)), (0, 0, 0, 0)

@@ -11,7 +11,7 @@ from catley.game.enums import AreaType, BlendMode, ConsumableEffectType  # noqa:
 from catley.util.coordinates import Rect
 
 if TYPE_CHECKING:
-    from catley.view.render.renderer import Renderer
+    from catley.view.render.base_renderer import Renderer
 
 
 class ParticleLayer(Enum):
@@ -38,8 +38,8 @@ class ParticleLayer(Enum):
 #
 # # In render loop:
 # particle_system.update(delta_time)
-# particle_system.render_particles(
-#     renderer,
+# renderer.render_particles(
+#     particle_system,
 #     ParticleLayer.OVER_ACTORS,
 #     viewport_bounds,
 #     (0, 0),
@@ -604,33 +604,3 @@ class SubTileParticleSystem:
         root_x = view_offset[0] + vp_x
         root_y = view_offset[1] + vp_y
         return renderer.console_to_screen_coords(root_x, root_y)
-
-    def render_particles(
-        self,
-        renderer: "Renderer",
-        layer: ParticleLayer,
-        viewport_bounds: Rect,
-        view_offset: tuple[int, int],
-    ) -> None:
-        for i in range(self.active_count):
-            if self.layers[i] != layer.value:
-                continue
-            coords = self._convert_particle_to_screen_coords(
-                i, viewport_bounds, view_offset, renderer
-            )
-            if coords is None:
-                continue
-            screen_x, screen_y = coords
-
-            if not np.isnan(self.flash_intensity[i]):
-                alpha = self.flash_intensity[i]
-            else:
-                alpha = self.lifetimes[i] / self.max_lifetimes[i]
-
-            renderer.draw_particle_smooth(
-                self.chars[i],
-                tuple(self.colors[i]),
-                screen_x,
-                screen_y,
-                alpha,
-            )

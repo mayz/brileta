@@ -5,10 +5,10 @@ from typing import TYPE_CHECKING
 
 from catley import colors
 from catley.game.enums import BlendMode
-from catley.util.coordinates import Rect
+from catley.util.coordinates import Rect, TileCoord
 
 if TYPE_CHECKING:
-    from catley.view.render.renderer import Renderer
+    from catley.view.render.base_renderer import Renderer
 
 
 @dataclass
@@ -119,7 +119,7 @@ class EnvironmentalEffectSystem:
         self,
         renderer: Renderer,
         viewport_bounds: Rect,
-        view_offset: tuple[int, int],
+        view_offset: tuple[TileCoord, TileCoord],
     ) -> None:
         """
         Render all active environmental effects using the renderer.

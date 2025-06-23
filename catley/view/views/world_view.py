@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 import tcod.sdl.render
@@ -34,7 +34,7 @@ from .base import View
 if TYPE_CHECKING:
     from catley.controller import Controller, FrameManager
     from catley.game.actors import Actor
-    from catley.view.render.renderer import Renderer
+    from catley.view.render.base_renderer import Renderer
 
 
 class WorldView(View):
@@ -198,7 +198,15 @@ class WorldView(View):
         if texture is None:
             # CACHE MISS: Re-render the static background
             self._render_map()  # This populates self.game_map_console
-            texture = renderer.texture_from_console(self.game_map_console)
+
+            # Cast the generic renderer to the TCOD-specific one we know we're using in
+            # Phase 0 of the Graphics Migration Plan. This is an explicit acknowledgment
+            # of the technical debt we will pay off in Phase 2.
+            from catley.view.render.tcod_renderer import TCODRenderer
+
+            tcod_renderer = cast(TCODRenderer, renderer)
+
+            texture = tcod_renderer.texture_from_console(self.game_map_console)
             self._texture_cache.store(cache_key, texture)
 
         self._active_background_texture = texture
@@ -226,8 +234,8 @@ class WorldView(View):
         viewport_bounds = Rect.from_bounds(0, 0, self.width - 1, self.height - 1)
         view_offset = (self.x, self.y)
 
-        self.particle_system.render_particles(
-            renderer,
+        self.controller.renderer.render_particles(
+            self.particle_system,
             ParticleLayer.UNDER_ACTORS,
             viewport_bounds,
             view_offset,
@@ -244,8 +252,8 @@ class WorldView(View):
         else:
             self._render_selected_actor_highlight()
 
-        self.particle_system.render_particles(
-            renderer,
+        self.controller.renderer.render_particles(
+            self.particle_system,
             ParticleLayer.OVER_ACTORS,
             viewport_bounds,
             view_offset,

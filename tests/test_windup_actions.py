@@ -174,7 +174,18 @@ def patched_controller(stop_after: int):
         stack.enter_context(patch("tcod.event.get", return_value=[]))
         stack.enter_context(patch("tcod.sdl.mouse.show", lambda val: None))
 
-        controller = Controller(MagicMock(), MagicMock(), (1, 1))
+        # Mock SDL renderer for TCODRenderer initialization
+        sdl_renderer_mock = MagicMock()
+        sdl_renderer_mock.output_size = (800, 600)
+        context_mock = MagicMock()
+        context_mock.sdl_renderer = sdl_renderer_mock
+
+        # Mock root console with proper dimensions
+        root_console_mock = MagicMock()
+        root_console_mock.width = 80
+        root_console_mock.height = 50
+
+        controller = Controller(context_mock, root_console_mock, (1, 1))
         controller.stop_after = stop_after  # type: ignore[attr-defined]
         yield controller
 

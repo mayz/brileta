@@ -26,10 +26,8 @@ import abc
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-import tcod.console
-import tcod.context
-
 from catley.game.actors import Actor
+from catley.view.render.base_renderer import Renderer
 from catley.view.ui.overlays import Menu
 from catley.view.ui.pickup_menu import PickupMenu
 
@@ -48,14 +46,11 @@ class UICommand(abc.ABC):
 class ToggleFullscreenUICommand(UICommand):
     """Command for toggling fullscreen mode."""
 
-    def __init__(
-        self, context: tcod.context.Context, console: tcod.console.Console
-    ) -> None:
-        self.context = context
-        self.console = console
+    def __init__(self, renderer: Renderer) -> None:
+        self.renderer = renderer
 
     def execute(self) -> None:
-        self.context.present(self.console, keep_aspect=True)
+        self.renderer.toggle_fullscreen()
 
 
 class QuitUICommand(UICommand):

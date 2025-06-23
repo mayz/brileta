@@ -22,8 +22,8 @@ from typing import Any
 import tcod.sdl.render
 
 from catley.util.caching import ResourceCache
+from catley.view.render.base_renderer import Renderer
 from catley.view.render.canvas import Canvas
-from catley.view.render.renderer import Renderer
 
 
 class View(abc.ABC):
@@ -118,18 +118,7 @@ class TextView(View):
             artifact = self.canvas.end_frame()
 
             if artifact is not None:
-                # Convert artifact to texture using renderer
-                if self.canvas.artifact_type == "console":
-                    texture = renderer.texture_from_console(
-                        artifact, self.canvas.transparent
-                    )
-                elif self.canvas.artifact_type == "numpy":
-                    texture = renderer.texture_from_numpy(
-                        artifact, self.canvas.transparent
-                    )
-                else:
-                    texture = None
-
+                texture = self.canvas.create_texture(renderer, artifact)
                 if texture:
                     # Store the newly rendered texture in the cache
                     self._texture_cache.store(cache_key, texture)

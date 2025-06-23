@@ -6,6 +6,7 @@ import numpy as np
 from catley import config
 from catley.controller import Controller
 from catley.util.spatial import SpatialHashGrid
+from catley.view.render.base_renderer import Renderer
 from catley.view.render.effects.screen_shake import ScreenShake
 
 
@@ -133,8 +134,6 @@ def test_world_view_applies_screen_shake_before_render(monkeypatch) -> None:
 
     view._render_map = wrapped_render_map  # type: ignore[assignment]
 
-    from catley.view.render.renderer import Renderer
-
     view.draw(cast(Renderer, controller.renderer))
 
     assert captured["cam_pos"] == (5.5, 4.5)
@@ -168,8 +167,6 @@ def test_world_view_screen_shake_does_not_overflow(monkeypatch) -> None:
 
     view._render_map = wrapped_render_map  # type: ignore[assignment]
 
-    from catley.view.render.renderer import Renderer
-
     view.draw(cast(Renderer, controller.renderer))
 
     assert captured["dest_width"] <= view.width
@@ -188,8 +185,6 @@ def test_small_map_actor_alignment(monkeypatch) -> None:
     shake.update = lambda dt: (0, 0)  # type: ignore[assignment]
     view = WorldView(cast("Controller", controller), shake)
     view.set_bounds(0, 0, 10, 8)
-
-    from catley.view.render.renderer import Renderer
 
     view.draw(cast(Renderer, controller.renderer))
 
