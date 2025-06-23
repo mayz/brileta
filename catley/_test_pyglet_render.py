@@ -1,10 +1,13 @@
+import time
+
+import numpy as np
 import pyglet
 from pyglet.window import Window
 
-from catley import config
+from catley import colors, config
+from catley.view.render.canvas.pyglet_canvas import PygletCanvas
 from catley.view.render.pyglet_renderer import PygletRenderer
 
-# from catley.view.render.pyglet_canvas import PygletCanvas
 # from catley.view.views.health_view import HealthView # Test a view
 
 # Basic window setup
@@ -18,35 +21,300 @@ window = Window(
 # --- YOUR TEST SETUP GOES HERE ---
 # 1. Instantiate your PygletRenderer
 try:
-    # This will fail until you create PygletRenderer, which is the point!
     renderer = PygletRenderer(window)
-except NameError:
-    print("PygletRenderer not yet created. Exiting.")
+    print("PygletRenderer created successfully.")
+    print(f"Tile dimensions: {renderer.tile_dimensions}")
+    print(
+        f"Console size: {renderer.console_width_tiles}x{renderer.console_height_tiles}"
+    )
+except Exception as e:
+    print(f"Failed to create PygletRenderer: {e}")
     exit()
 
-# 2. Example: Test drawing a single sprite
-# tile_atlas = renderer.get_tile_atlas() # A method you'll add to your renderer
-# test_sprite = pyglet.sprite.Sprite(img=tile_atlas[ord('@')], batch=renderer.ui_batch)
+
+# 2. Create a dummy map for testing
+def create_test_map():
+    """Create a simple test map with borders and some features."""
+    width = min(config.SCREEN_WIDTH, 40)  # Smaller for easier testing
+    height = min(config.SCREEN_HEIGHT, 30)
+
+    # Create map filled with floor tiles
+    test_map = np.full((height, width), ord("."), dtype=int)
+
+    # Add borders
+    for x in range(width):
+        test_map[0, x] = ord("#")  # Top wall
+        test_map[height - 1, x] = ord("#")  # Bottom wall
+    for y in range(height):
+        test_map[y, 0] = ord("#")  # Left wall
+        test_map[y, width - 1] = ord("#")  # Right wall
+
+    # Add some interesting features
+    for i in range(5, width - 5, 7):
+        for j in range(5, height - 5, 7):
+            test_map[j, i] = ord("*")  # Pillars
+
+    # Add a few doors in the walls
+    test_map[height // 2, 0] = ord("+")  # Left door
+    test_map[height // 2, width - 1] = ord("+")  # Right door
+    test_map[0, width // 2] = ord("+")  # Top door
+    test_map[height - 1, width // 2] = ord("+")  # Bottom door
+
+    return test_map
 
 
-# 3. Example: Test rendering a View
-# health_view = HealthView(...) # Needs a dummy controller/gw
-# health_view.canvas = PygletCanvas(renderer) # Manually assign the new canvas
-# health_view.set_bounds(...)
+test_map = create_test_map()
+print(f"Created test map: {test_map.shape}")
+
+# 3. Test actor for smooth rendering
+test_actor_pos = [10.5, 8.7]  # Smooth float coordinates
+test_actor_char = "@"
+test_actor_color = colors.WHITE
+test_actor_lighting = (1.0, 0.9, 0.8)  # Warm lighting
+
+# 4. Animation state for testing movement
+animation_time = 0.0
+
+# 5. Test canvas
+test_canvas = PygletCanvas(renderer)
+print("PygletCanvas created successfully!")
+
+# 6. Performance tracking
+frame_count = 0
+last_fps_time = time.time()
+frame_times = []
+
+# 7. Map rendering optimization - only render once
+map_rendered = False
+
+
+def render_test_map():
+    """Render the test map using the sprite pool - only once."""
+    global map_rendered
+
+    if map_rendered:
+        return  # Map is static, only render once
+
+    height, width = test_map.shape
+
+    for y in range(height):
+        for x in range(width):
+            # Get the character for this tile
+            char_code = test_map[y, x]
+
+            # Calculate sprite index (row-major order)
+            sprite_index = y * config.SCREEN_WIDTH + x
+
+            # Make sure we don't exceed our sprite pool
+            if sprite_index < len(renderer.map_sprites):
+                sprite = renderer.map_sprites[sprite_index]
+
+                # Update sprite properties
+                sprite.image = renderer.tile_atlas[char_code]
+                screen_x, screen_y = renderer.console_to_screen_coords(x, y)
+                sprite.x = screen_x
+                sprite.y = screen_y
+                sprite.visible = True
+
+                # Color tiles based on type
+                if char_code == ord("#"):
+                    sprite.color = colors.GREY
+                elif char_code == ord("+"):
+                    sprite.color = colors.ORANGE
+                elif char_code == ord("*"):
+                    sprite.color = colors.YELLOW
+                else:
+                    sprite.color = colors.WHITE
+
+    map_rendered = True
+
+
+def animate_test_actor():
+    """Update test actor position with simple circular movement."""
+    global animation_time, test_actor_pos
+
+    animation_time += 1.0 / 60.0  # Assume 60fps
+
+    # Circular movement around center point
+    center_x, center_y = 20.0, 15.0
+    radius = 3.0
+
+    test_actor_pos[0] = center_x + radius * np.cos(animation_time * 0.5)
+    test_actor_pos[1] = center_y + radius * np.sin(animation_time * 0.5)
+
+    # Draw the actor
+    screen_x, screen_y = renderer.console_to_screen_coords(
+        test_actor_pos[0], test_actor_pos[1]
+    )
+
+    renderer.draw_actor_smooth(
+        test_actor_char, test_actor_color, screen_x, screen_y, test_actor_lighting
+    )
+
+
+# Create UI objects once and reuse them
+ui_objects_created = False
+ui_labels = []
+ui_rects = []
+ui_frame = None
+
+
+def test_pyglet_canvas():
+    """Test the PygletCanvas functionality - fully optimized."""
+    global ui_objects_created, ui_labels, ui_rects, ui_frame
+
+    # Only create UI objects once, don't update them every frame
+    if not ui_objects_created:
+        from pyglet.shapes import BorderedRectangle, Rectangle
+        from pyglet.text import Label
+
+        # Create labels once with the current batch
+        ui_labels = [
+            Label(
+                "Hello Pyglet Canvas!",
+                font_name=str(config.MESSAGE_LOG_FONT_PATH),
+                font_size=16,
+                x=50,
+                y=renderer.window.height - 50,
+                anchor_y="top",
+                color=(*colors.GREEN, 255),
+                batch=renderer.ui_batch,
+            ),
+            Label(
+                "Text rendering test",
+                font_name=str(config.MESSAGE_LOG_FONT_PATH),
+                font_size=14,
+                x=50,
+                y=renderer.window.height - 80,
+                anchor_y="top",
+                color=(*colors.BLUE, 255),
+                batch=renderer.ui_batch,
+            ),
+            Label(
+                "Multiple lines work!",
+                font_name=str(config.MESSAGE_LOG_FONT_PATH),
+                font_size=12,
+                x=50,
+                y=renderer.window.height - 110,
+                anchor_y="top",
+                color=(*colors.RED, 255),
+                batch=renderer.ui_batch,
+            ),
+        ]
+
+        # Create rectangles once
+        ui_rects = [
+            Rectangle(
+                x=300,
+                y=renderer.window.height - 50 - 80,
+                width=150,
+                height=80,
+                color=(*colors.YELLOW, 255),
+                batch=renderer.ui_batch,
+            ),
+            Rectangle(
+                x=320,
+                y=renderer.window.height - 70 - 40,
+                width=110,
+                height=40,
+                color=(*colors.CYAN, 255),
+                batch=renderer.ui_batch,
+            ),
+        ]
+        ui_rects[0].opacity = 128  # Unfilled rect
+
+        # Create frame once
+        tile_w, tile_h = renderer.tile_dimensions
+        ui_frame = BorderedRectangle(
+            x=2 * tile_w,
+            y=renderer.window.height - (2 + 8) * tile_h,
+            width=15 * tile_w,
+            height=8 * tile_h,
+            border=1,
+            color=colors.BLACK,
+            border_color=colors.WHITE,
+            batch=renderer.ui_batch,
+        )
+
+        ui_objects_created = True
+
+    # Since UI objects were created with the batch that gets recreated each frame,
+    # they will automatically be included in the new batch when it's drawn.
+    # No need to update batch references every frame.
+
+    return  # No artifact needed
 
 
 @window.event
 def on_draw():
-    window.clear()
+    global frame_count, last_fps_time, frame_times
 
-    # --- YOUR TEST DRAWING GOES HERE ---
-    # Call the methods on your renderer to see if they work.
+    frame_start = time.time()
 
-    # renderer.world_batch.draw()
-    # renderer.ui_batch.draw()
+    # Use the renderer's proper methods instead of manual clearing
+    prepare_start = time.time()
+    renderer.prepare_to_present()
+    prepare_time = time.time() - prepare_start
 
-    # health_view.draw_content() # Test the canvas
-    # health_view.present() # Test texture presentation
+    # Canvas batch will be updated automatically
+
+    # Test 1: Render the map
+    map_start = time.time()
+    render_test_map()
+    map_time = time.time() - map_start
+
+    # Test 2: Draw animated actor
+    actor_start = time.time()
+    animate_test_actor()
+    actor_time = time.time() - actor_start
+
+    # Test 3: Draw some tile highlights for testing
+    highlight_start = time.time()
+    renderer.draw_tile_highlight(5, 5, colors.YELLOW, 0.6)
+    renderer.draw_tile_highlight(15, 10, colors.CYAN, 0.4)
+    highlight_time = time.time() - highlight_start
+
+    # Test 4: Test the canvas
+    canvas_start = time.time()
+    test_pyglet_canvas()
+    canvas_time = time.time() - canvas_start
+
+    # Use the renderer's finalize method to draw all batches
+    finalize_start = time.time()
+    renderer.finalize_present()
+    finalize_time = time.time() - finalize_start
+
+    frame_end = time.time()
+    total_frame_time = frame_end - frame_start
+    frame_times.append(total_frame_time)
+
+    frame_count += 1
+    if frame_count % 60 == 0:  # Print stats every 60 frames
+        current_time = time.time()
+        fps = 60 / (current_time - last_fps_time)
+        avg_frame_time = sum(frame_times[-60:]) / min(60, len(frame_times))
+
+        print("\n=== PERFORMANCE STATS ===")
+        print(f"FPS: {fps:.1f}")
+        print(f"Avg frame time: {avg_frame_time * 1000:.2f}ms")
+        print(f"  Prepare: {prepare_time * 1000:.2f}ms")
+        print(f"  Map: {map_time * 1000:.2f}ms")
+        print(f"  Actor: {actor_time * 1000:.2f}ms")
+        print(f"  Highlights: {highlight_time * 1000:.2f}ms")
+        print(f"  Canvas: {canvas_time * 1000:.2f}ms")
+        print(f"  Finalize: {finalize_time * 1000:.2f}ms")
+        other_time = (
+            total_frame_time
+            - prepare_time
+            - map_time
+            - actor_time
+            - highlight_time
+            - canvas_time
+            - finalize_time
+        )
+        print(f"  Other: {other_time * 1000:.2f}ms")
+
+        last_fps_time = current_time
 
 
 pyglet.app.run()

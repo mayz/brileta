@@ -64,6 +64,9 @@ class PygletRenderer(Renderer):
         # A dedicated batch for all UI elements, drawn last (on top).
         self.ui_batch = Batch()
 
+        # Track dynamic UI elements that need to be cleared each frame
+        self._dynamic_ui_elements = []
+
         # --- Tileset and Sprite Atlas ---
         self.tile_width_px, self.tile_height_px = self._get_tile_pixel_size()
         self.tile_atlas = self._load_tile_atlas()
@@ -79,10 +82,41 @@ class PygletRenderer(Renderer):
         return (img.width // config.TILESET_COLUMNS, img.height // config.TILESET_ROWS)
 
     def _load_tile_atlas(self) -> ImageGrid:
-        """Loads the tileset image and slices it into a grid of textures."""
+        """Loads the tileset, makes magenta pixels transparent, and slices it."""
+        # Load the original image, and get the raw pixel data
         tileset_image = pyglet.image.load(str(config.TILESET_PATH))
+        raw_data = tileset_image.get_image_data()
+        pixels = raw_data.get_data("RGBA", raw_data.width * 4)
+
+        # Convert to a mutable NumPy array to manipulate it
+        pixel_array = (
+            np.frombuffer(pixels, dtype=np.uint8)
+            .reshape((raw_data.height, raw_data.width, 4))
+            .copy()
+        )
+
+        # Find all magenta pixels (R=255, G=0, B=255)
+        magenta_mask = (
+            (pixel_array[:, :, 0] == 255)
+            & (pixel_array[:, :, 1] == 0)
+            & (pixel_array[:, :, 2] == 255)
+        )
+
+        # Set the alpha channel of these pixels to 0 (fully transparent)
+        pixel_array[magenta_mask, 3] = 0
+
+        # Create a new, transparency-fixed ImageData object from our modified array
+        fixed_image_data = ImageData(
+            raw_data.width,
+            raw_data.height,
+            "RGBA",
+            pixel_array.tobytes(),
+            raw_data.width * -4,
+        )
+
+        # Create the ImageGrid from the corrected image data
         return ImageGrid(
-            tileset_image,
+            fixed_image_data,
             rows=config.TILESET_ROWS,
             columns=config.TILESET_COLUMNS,
         )
@@ -167,14 +201,18 @@ class PygletRenderer(Renderer):
         """Draws a semi-transparent highlight over a single tile."""
         px_x, px_y = self.console_to_screen_coords(root_x, root_y)
 
-        Rectangle(
+        highlight = Rectangle(
             x=px_x,
             y=px_y,
             width=self.tile_width_px,
             height=self.tile_height_px,
             color=(*color, int(alpha * 255)),
             batch=self.ui_batch,  # Highlights are UI elements
-        ).opacity = int(alpha * 255)
+        )
+        highlight.opacity = int(alpha * 255)
+
+        # Track this as a dynamic UI element to be cleared next frame
+        self._dynamic_ui_elements.append(highlight)
 
     def render_particles(
         self,
@@ -240,6 +278,22 @@ class PygletRenderer(Renderer):
         """Clears the window in preparation for drawing the batches."""
         self.window.clear()
 
+        # Clear dynamic UI elements from previous frame
+        for element in self._dynamic_ui_elements:
+            element.delete()
+        self._dynamic_ui_elements.clear()
+
+        # Only clear the dynamic world objects batch that needs to be
+        # recreated each frame
+        self.world_objects_batch = Batch()
+        # Note: ui_batch and map_batch are persistent and don't need to be recreated
+
+        # Recreate the groups since they're tied to the world_objects_batch
+        self.particle_under_group = Group(0)
+        self.actor_group = Group(1)
+        self.particle_over_group = Group(2)
+        self.environmental_effects_group = Group(3)
+
     def finalize_present(self) -> None:
         """Draws all the batches to the screen."""
         self.map_batch.draw()
@@ -251,15 +305,40 @@ class PygletRenderer(Renderer):
         pass
 
     def console_to_screen_coords(self, console_x: float, console_y: float) -> PixelPos:
-        # FIXME:
-        # This is a simplified conversion. A real implementation needs to account
-        # for letterboxing if the window aspect ratio doesn't match the console
-        # aspect ratio. For now, we assume a direct mapping.
+        """
+        Convert console coordinates to screen coordinates with proper
+        letterboxing/pillarboxing. This matches the logic from TCODRenderer to
+        ensure consistent coordinate mapping.
+        """
+        window_width = self.window.width
+        window_height = self.window.height
+        console_width = self.console_width_tiles
+        console_height = self.console_height_tiles
 
-        # Pyglet's origin is bottom-left, the existing console's is top-left.
-        # We must flip Y.
-        screen_y = self.window.height - ((console_y + 1) * self.tile_height_px)
-        screen_x = console_x * self.tile_width_px
+        console_aspect = console_width / console_height
+        window_aspect = window_width / window_height
+
+        if console_aspect > window_aspect:
+            # Console is letterboxed vertically (black bars on top/bottom)
+            scaled_height = int(window_width / console_aspect)
+            offset_y = (window_height - scaled_height) // 2
+            screen_x = console_x * (window_width / console_width)
+            # Pyglet uses bottom-left origin, so we need to account for that
+            screen_y = (
+                window_height
+                - offset_y
+                - (console_y + 1) * (scaled_height / console_height)
+            )
+        else:
+            # Console is pillarboxed horizontally (black bars on left/right)
+            scaled_width = int(window_height * console_aspect)
+            offset_x = (window_width - scaled_width) // 2
+            screen_x = offset_x + console_x * (scaled_width / console_width)
+            # Pyglet uses bottom-left origin, so we need to flip Y
+            screen_y = window_height - (console_y + 1) * (
+                window_height / console_height
+            )
+
         return (screen_x, screen_y)
 
     def pixel_to_tile(
