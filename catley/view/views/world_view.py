@@ -65,10 +65,12 @@ class WorldView(View):
         self.environmental_system = EnvironmentalEffectSystem()
         self.effect_library = EffectLibrary()
         self.current_light_intensity: np.ndarray | None = None
+        self._static_light_intensity: np.ndarray | None = None
         self._texture_cache = ResourceCache[tuple, tcod.sdl.render.Texture](
             name="WorldViewCache", max_size=5
         )
         self._active_background_texture: tcod.sdl.render.Texture | None = None
+        self._dynamic_light_texture: tcod.sdl.render.Texture | None = None
 
     def set_bounds(self, x1: int, y1: int, x2: int, y2: int) -> None:
         """Override set_bounds to update viewport and console dimensions."""
@@ -139,11 +141,13 @@ class WorldView(View):
             viewport_bounds.x2,
             viewport_bounds.y2,
         )
-        lighting_key = gw.lighting._generate_cache_key(
+        static_lights, _ = gw.lighting._split_lights()
+        lighting_key = gw.lighting._generate_static_cache_key(
             viewport_bounds,
             relevant_actors,
             viewport_bounds.width,
             viewport_bounds.height,
+            static_lights,
         )
 
         map_key = gw.game_map.revision
@@ -186,6 +190,44 @@ class WorldView(View):
 
         self._active_background_texture = texture
 
+        # Compute final lighting (static + dynamic) every frame and prepare
+        # a multiplicative overlay so dynamic lights and shadows affect the
+        # cached background.
+        bounds = vs.get_visible_bounds()
+        world_left = max(0, bounds.x1)
+        world_top = max(0, bounds.y1)
+        world_right = min(gw.game_map.width - 1, bounds.x2)
+        world_bottom = min(gw.game_map.height - 1, bounds.y2)
+        dest_width = world_right - world_left + 1
+        dest_height = world_bottom - world_top + 1
+
+        relevant_actors = gw.actor_spatial_index.get_in_bounds(
+            world_left, world_top, world_right, world_bottom
+        )
+
+        final_lighting = gw.lighting.compute_lighting_with_shadows(
+            dest_width,
+            dest_height,
+            relevant_actors,
+            viewport_offset=(world_left, world_top),
+        )
+
+        self.current_light_intensity = final_lighting
+
+        if self._static_light_intensity is not None:
+            ratio = final_lighting / np.clip(self._static_light_intensity, 1e-3, None)
+        else:
+            ratio = final_lighting
+
+        ratio = np.clip(ratio, 0.0, 2.0)
+        ratio_pixels = (ratio * 255).astype(np.uint8)
+        ratio_pixels = np.transpose(ratio_pixels, (1, 0, 2))
+        alpha = np.full((dest_height, dest_width, 1), 255, dtype=np.uint8)
+        ratio_rgba = np.concatenate([ratio_pixels, alpha], axis=2)
+        overlay_texture = renderer.texture_from_numpy(ratio_rgba, transparent=True)
+        overlay_texture.blend_mode = tcod.sdl.render.BlendMode.MOD
+        self._dynamic_light_texture = overlay_texture
+
         # Restore the original camera position so subsequent frames start clean.
         self.viewport_system.camera.set_position(original_cam_x, original_cam_y)
 
@@ -201,6 +243,10 @@ class WorldView(View):
         if self._active_background_texture:
             renderer.present_texture(
                 self._active_background_texture, self.x, self.y, self.width, self.height
+            )
+        if self._dynamic_light_texture:
+            renderer.present_texture(
+                self._dynamic_light_texture, self.x, self.y, self.width, self.height
             )
 
         if not self.visible:
@@ -289,12 +335,13 @@ class WorldView(View):
         relevant_actors = gw.actor_spatial_index.get_in_bounds(
             world_left, world_top, world_right, world_bottom
         )
-        self.current_light_intensity = gw.lighting.compute_lighting_with_shadows(
+        self._static_light_intensity = gw.lighting.compute_static_lighting_only(
             dest_width,
             dest_height,
             relevant_actors,
             viewport_offset=(world_left, world_top),
         )
+        self.current_light_intensity = self._static_light_intensity
         light_app_slice = gw.game_map.light_appearance_map[world_slice]
         dark_tiles_to_light = dark_app_slice[visible_mask_slice]
         light_tiles_to_light = light_app_slice[visible_mask_slice]

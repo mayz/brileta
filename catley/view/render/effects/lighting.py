@@ -124,8 +124,10 @@ class LightingSystem:
         self.light_sources: list[LightSource] = []
         self._game_map: GameMap | None = game_map
 
-        # Lighting cache for viewport-based lighting computations
-        self._lighting_cache = ResourceCache[tuple, np.ndarray]("Lighting", max_size=15)
+        # Cache for expensive static lighting calculations
+        self._static_lighting_cache = ResourceCache[tuple, np.ndarray](
+            "StaticLighting", max_size=10
+        )
 
     def set_game_map(self, game_map: GameMap) -> None:
         """Assign the current game map for shadow calculations."""
@@ -134,55 +136,51 @@ class LightingSystem:
     def add_light(self, light: LightSource) -> None:
         """Add a light source to the system"""
         self.light_sources.append(light)
-        # Lighting conditions changed, invalidate cache
-        self._lighting_cache.clear()
+        # Lighting conditions changed, invalidate static cache
+        self._static_lighting_cache.clear()
 
     def remove_light(self, light: LightSource) -> None:
         """Remove a light source from the system"""
         if light in self.light_sources:
             self.light_sources.remove(light)
-            # Lighting conditions changed, invalidate cache
-            self._lighting_cache.clear()
+            # Lighting conditions changed, invalidate static cache
+            self._static_lighting_cache.clear()
 
     def update(self, delta_time: float) -> None:
         """Update lighting effects based on elapsed time"""
         self.time += delta_time  # Just track raw time, light sources will scale it
 
-    def _generate_cache_key(
+    def _is_dynamic_light(self, light: LightSource) -> bool:
+        """Returns True if light has any dynamic properties that change over time."""
+        return light.light_type == "dynamic" and light.flicker_enabled
+
+    def _split_lights(self) -> tuple[list[LightSource], list[LightSource]]:
+        """Split lights into static and dynamic lists."""
+        static_lights = [
+            light for light in self.light_sources if not self._is_dynamic_light(light)
+        ]
+        dynamic_lights = [
+            light for light in self.light_sources if self._is_dynamic_light(light)
+        ]
+        return static_lights, dynamic_lights
+
+    def _generate_static_cache_key(
         self,
         viewport_bounds: Rect,
         actors: list,
         map_width: int,
         map_height: int,
+        static_lights: list[LightSource],
     ) -> tuple:
-        """Generate a hashable key capturing the lighting state."""
+        """Generate cache key for static lighting only."""
 
-        # Viewport bounds are part of the key
-        bounds_key = (
-            viewport_bounds.x1,
-            viewport_bounds.y1,
-            map_width,
-            map_height,
+        bounds_key = (viewport_bounds.x1, viewport_bounds.y1, map_width, map_height)
+
+        static_lights_key = tuple(
+            (light.position[0], light.position[1], light.radius, light.color)
+            for light in static_lights
         )
 
-        # Include all light source properties that affect lighting
-        light_sources_key = tuple(
-            (
-                light.position[0],
-                light.position[1],
-                light.radius,
-                light.color,
-                light.light_type,
-                light.min_brightness if light.light_type == "dynamic" else None,
-                light.max_brightness if light.light_type == "dynamic" else None,
-                round(self.time, 1)
-                if light.light_type == "dynamic" and light.flicker_enabled
-                else None,
-            )
-            for light in self.light_sources
-        )
-
-        # Shadow-casting actors within the viewport
         shadow_actors_key = tuple(
             (actor.x, actor.y)
             for actor in actors
@@ -194,7 +192,111 @@ class LightingSystem:
             )
         )
 
-        return (bounds_key, light_sources_key, shadow_actors_key)
+        return (bounds_key, static_lights_key, shadow_actors_key)
+
+    def _compute_base_lighting(
+        self,
+        map_width: TileCoord,
+        map_height: TileCoord,
+        actors,
+        viewport_offset: ViewportTilePos,
+        lights: list[LightSource],
+        *,
+        use_ambient: bool = True,
+    ) -> np.ndarray:
+        """Compute the lighting contribution for a set of lights."""
+
+        viewport_bounds = Rect(
+            viewport_offset[0], viewport_offset[1], map_width, map_height
+        )
+
+        static_pass = bool(lights) and all(
+            not self._is_dynamic_light(light) for light in lights
+        )
+        cache_key: tuple | None = None
+        if static_pass:
+            cache_key = self._generate_static_cache_key(
+                viewport_bounds, actors, map_width, map_height, lights
+            )
+            cached_result = self._static_lighting_cache.get(cache_key)
+            if cached_result is not None:
+                return cached_result.copy()
+
+        base_map = (
+            np.full(
+                (map_width, map_height, 3), self.config.ambient_light, dtype=np.float32
+            )
+            if use_ambient
+            else np.zeros((map_width, map_height, 3), dtype=np.float32)
+        )
+
+        original_lights = self.light_sources
+        self.light_sources = lights
+
+        try:
+            for light in lights:
+                lx, ly = light.position
+                if (
+                    viewport_bounds.x1 - light.radius
+                    <= lx
+                    < viewport_bounds.x1 + viewport_bounds.width + light.radius
+                    and viewport_bounds.y1 - light.radius
+                    <= ly
+                    < viewport_bounds.y1 + viewport_bounds.height + light.radius
+                ):
+                    self._apply_light_to_viewport(
+                        light, base_map, viewport_bounds.x1, viewport_bounds.y1
+                    )
+        finally:
+            self.light_sources = original_lights
+
+        if static_pass and cache_key is not None:
+            self._static_lighting_cache.store(cache_key, base_map.copy())
+
+        return base_map
+
+    def compute_static_lighting_only(
+        self,
+        map_width: TileCoord,
+        map_height: TileCoord,
+        actors,
+        viewport_offset: ViewportTilePos,
+    ) -> np.ndarray:
+        """Compute lighting from static lights only, without shadows."""
+
+        static_lights, _ = self._split_lights()
+        base = self._compute_base_lighting(
+            map_width,
+            map_height,
+            actors,
+            viewport_offset,
+            static_lights,
+            use_ambient=True,
+        )
+
+        return np.clip(base, 0.0, 1.0)
+
+    def compute_dynamic_lighting_only(
+        self,
+        map_width: TileCoord,
+        map_height: TileCoord,
+        actors,
+        viewport_offset: ViewportTilePos,
+    ) -> np.ndarray:
+        """Compute lighting from dynamic lights only, without caching."""
+
+        _, dynamic_lights = self._split_lights()
+
+        base = self._compute_base_lighting(
+            map_width,
+            map_height,
+            actors,
+            viewport_offset,
+            dynamic_lights,
+            use_ambient=False,
+        )
+
+        return np.clip(base, 0.0, 1.0)
 
     def compute_lighting(
         self,
@@ -234,47 +336,51 @@ class LightingSystem:
         actors,
         viewport_offset: ViewportTilePos | None = None,
     ) -> np.ndarray:
-        """Compute lighting with optional viewport culling and actor shadows.
+        """Compute lighting with static/dynamic separation for better caching."""
 
-        Uses an LRU cache when ``viewport_offset`` is provided."""
+        if viewport_offset is None:
+            # Fallback to original method for full-map lighting
+            base_lighting = self.compute_lighting(map_width, map_height)
+            if not hasattr(self, "_game_map") or self._game_map is None:
+                return base_lighting
+
+            from catley.config import SHADOWS_ENABLED
+
+            if not SHADOWS_ENABLED:
+                return base_lighting
+            return self._apply_actor_shadows(base_lighting, 0, 0)
+
+        static_lights, dynamic_lights = self._split_lights()
+
+        static_lighting = self._compute_base_lighting(
+            map_width,
+            map_height,
+            actors,
+            viewport_offset,
+            static_lights,
+            use_ambient=True,
+        )
+
+        dynamic_lighting = self._compute_base_lighting(
+            map_width,
+            map_height,
+            actors,
+            viewport_offset,
+            dynamic_lights,
+            use_ambient=False,
+        )
+
+        combined_light_map = np.maximum(static_lighting, dynamic_lighting)
+
         from catley.config import SHADOWS_ENABLED
 
-        cache_key: tuple | None = None
-
-        if viewport_offset is not None:
-            viewport_bounds = Rect(
-                viewport_offset[0], viewport_offset[1], map_width, map_height
-            )
-            cache_key = self._generate_cache_key(
-                viewport_bounds, actors, map_width, map_height
+        if SHADOWS_ENABLED:
+            offset_x, offset_y = viewport_offset
+            combined_light_map = self._apply_actor_shadows(
+                combined_light_map, offset_x, offset_y
             )
 
-            # Check the cache for a pre-computed lighting map.
-            cached_result = self._lighting_cache.get(cache_key)
-            if cached_result is not None:
-                return cached_result.copy()
-
-        if viewport_offset:
-            base_lighting = self.compute_lighting_for_viewport(
-                Rect(viewport_offset[0], viewport_offset[1], map_width, map_height)
-            )
-        else:
-            base_lighting = self.compute_lighting(map_width, map_height)
-
-        if not SHADOWS_ENABLED:
-            final_lighting = base_lighting
-        else:
-            offset_x = viewport_offset[0] if viewport_offset else 0
-            offset_y = viewport_offset[1] if viewport_offset else 0
-            final_lighting = self._apply_actor_shadows(
-                base_lighting, offset_x, offset_y
-            )
-
-        if cache_key is not None:
-            # Store a copy to prevent mutation of the cached array.
-            self._lighting_cache.store(cache_key, final_lighting.copy())
-
-        return final_lighting
+        return np.clip(combined_light_map, 0.0, 1.0)
 
     def compute_lighting_for_viewport(
         self,

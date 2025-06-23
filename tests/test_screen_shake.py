@@ -77,10 +77,16 @@ class DummyGW:
         self.selected_actor = None
         self.mouse_tile_location_on_map = None
         self.lighting = MagicMock()
+        self.lighting.compute_static_lighting_only.side_effect = (
+            lambda w, h, *_args, **_kwargs: 1.0 * np.ones((w, h, 3))
+        )
         self.lighting.compute_lighting_with_shadows.side_effect = (
             lambda w, h, *_args, **_kwargs: 1.0 * np.ones((w, h, 3))
         )
-        self.lighting._generate_cache_key = MagicMock(return_value="test_lighting_key")
+        self.lighting._split_lights = MagicMock(return_value=([], []))
+        self.lighting._generate_static_cache_key = MagicMock(
+            return_value="test_lighting_key"
+        )
 
     def add_actor(self, actor: DummyActor) -> None:
         self.actors.append(actor)
@@ -106,6 +112,9 @@ class DummyController:
             root_console=None,
             blit_console=lambda *args, **kwargs: None,
             texture_from_console=lambda console: f"mock_texture_for_{id(console)}",
+            texture_from_numpy=lambda arr, transparent=True: SimpleNamespace(
+                blend_mode=None
+            ),
         )
         self.clock = SimpleNamespace(last_delta_time=0.016)
         self.active_mode = None

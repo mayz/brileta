@@ -1,7 +1,9 @@
 """Tests for the views system including resizing and boundary enforcement."""
 
+from types import SimpleNamespace
 from unittest.mock import Mock
 
+import numpy as np
 import pytest
 
 from catley.view.views.base import View
@@ -75,9 +77,20 @@ class TestWorldViewBoundaryEnforcement:
         self.mock_screen_shake.update.return_value = (0, 0)  # No shake
 
         self.mock_renderer = Mock()
+        self.mock_renderer.texture_from_numpy = Mock(
+            return_value=SimpleNamespace(blend_mode=None)
+        )
 
         # Create view
         self.view = WorldView(self.mock_controller, self.mock_screen_shake)
+
+        # Mock lighting methods used by WorldView
+        self.mock_controller.gw.lighting.compute_static_lighting_only = Mock(
+            side_effect=lambda w, h, *_args, **_kw: np.ones((w, h, 3))
+        )
+        self.mock_controller.gw.lighting.compute_lighting_with_shadows = Mock(
+            side_effect=lambda w, h, *_args, **_kw: np.ones((w, h, 3))
+        )
 
     def test_world_view_respects_smaller_boundaries(self):
         """Test that WorldView clips when view is smaller than game map."""
