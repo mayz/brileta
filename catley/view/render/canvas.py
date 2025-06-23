@@ -24,7 +24,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from enum import Enum, auto
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 from PIL import Image as PILImage
@@ -34,8 +34,10 @@ from tcod.console import Console
 from catley import colors, config
 from catley.util.coordinates import PixelCoord, TileCoord
 
-from .base_renderer import Renderer
 from .tcod_renderer import TCODRenderer
+
+if TYPE_CHECKING:
+    from .base_renderer import Renderer
 
 
 class DrawOperation(Enum):

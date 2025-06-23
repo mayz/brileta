@@ -27,9 +27,9 @@ import numpy as np
 
 from catley import colors
 from catley.game.enums import BlendMode
-from catley.input_handler import PixelPos
 from catley.util.coordinates import (
     PixelCoord,
+    PixelPos,
     Rect,
     RootConsoleTilePos,
     TileDimensions,
