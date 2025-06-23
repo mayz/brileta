@@ -151,6 +151,23 @@ class WorldView(View):
         return (camera_key, fov_key, lighting_key, map_key)
 
     def draw(self, renderer: Renderer) -> None:
+        """Main drawing method for the world view.
+
+        ---------------------------------------------------------------------------
+        FIXME: LIGHTING/CACHING INTERACTION
+
+        Current behavior: We cache the background texture which includes baked-in
+        lighting results. This prevents dynamic lighting (torch flicker) from updating
+        unless the cache misses. Lighting system cache is disabled (0% hit rate) to
+        work around this.
+
+        Better approach: Cache unlit background texture, compute and apply lighting
+        every frame as an overlay. This would enable both texture caching AND
+        lighting caching to work together properly.
+
+        See lighting.py _generate_cache_key for related issue.
+        ---------------------------------------------------------------------------
+        """
         if not self.visible:
             return
 

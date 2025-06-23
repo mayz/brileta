@@ -155,7 +155,30 @@ class LightingSystem:
         map_width: int,
         map_height: int,
     ) -> tuple:
-        """Generate a hashable key capturing the lighting state."""
+        """Generate a hashable key capturing the lighting state.
+
+        ---------------------------------------------------------------------------
+        FIXME: LIGHTING CACHE ARCHITECTURE ISSUE
+
+        Problem: Including time-dependent data (round(self.time, 1)) for dynamic lights
+        causes 0% cache hit rate, defeating the purpose of caching entirely.
+
+        Root Cause: Two conflicting caching layers:
+        1. This lighting cache (broken by time dependency)
+        2. WorldView texture cache (works but *bakes in lighting*,
+                                    freezing torch flicker)
+
+        Current Status: Disabled time caching → 0% hit rate but flicker works.
+
+        Proper Solution: Architectural change needed:
+        - Cache static lighting computation separately from dynamic lights
+        - WorldView should cache unlit background, apply lighting every frame
+        - OR: Use time bucketing (round(self.time, 0.5)) for choppier but cached flicker
+
+        Performance Impact: Currently computing lighting every frame (~2-5ms).
+        This is acceptable for now but suboptimal for complex scenes.
+        ---------------------------------------------------------------------------
+        """
 
         # Viewport bounds are part of the key
         bounds_key = (
