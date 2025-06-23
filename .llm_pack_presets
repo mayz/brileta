@@ -1,10 +1,10 @@
 # LLM Pack presets for Catley project
 # Format: preset_name: ripgrep_options
 
-view: --glob "catley/constants/**/*" --glob "catley/view/**/*" --glob "config.py" --glob "colors.py" --glob "!tests/" --glob "!catley/scripts/" .
+view: --glob "catley/constants/**/*.py" --glob "catley/view/**/*.py" --glob "config.py" --glob "colors.py" --glob "!tests/" --glob "!catley/scripts/" .
 
-view_and_modes: --glob "catley/constants/**/*" --glob "catley/view/**/*" --glob "catley/modes/**/*" --glob "config.py" --glob "colors.py" --glob "!tests/" --glob "!catley/scripts/" .
+view_and_modes: --glob "catley/constants/**/*.py" --glob "catley/view/**/*.py" --glob "catley/modes/**/*.py" --glob "config.py" --glob "colors.py" --glob "!tests/" --glob "!catley/scripts/" .
 
-game: --glob "catley/constants/**/*" --glob "catley/game/**/*" --glob "catley/modes/**/*" --glob "colors.py" --glob "config.py" --glob "!tests/" --glob "!catley/scripts/" .
+game: --glob "catley/constants/**/*.py" --glob "catley/game/**/*.py" --glob "catley/modes/**/*.py" --glob "colors.py" --glob "config.py" --glob "!tests/" --glob "!catley/scripts/" .
 
-map_and_env: --glob "catley/constants/**/*" --glob "catley/environment/**/*" --glob "colors.py" --glob "config.py" --glob "!tests/" --glob "!catley/scripts/" .
+map_and_env: --glob "catley/constants/**/*.py" --glob "catley/environment/**/*.py" --glob "colors.py" --glob "config.py" --glob "!tests/" --glob "!catley/scripts/" .
