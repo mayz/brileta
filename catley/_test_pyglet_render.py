@@ -5,7 +5,11 @@ import pyglet
 from pyglet.window import Window
 
 from catley import colors, config
+from catley.util.coordinates import Rect
 from catley.view.render.canvas.pyglet_canvas import PygletCanvas
+from catley.view.render.effects.effects import EffectContext, EffectLibrary
+from catley.view.render.effects.environmental import EnvironmentalEffectSystem
+from catley.view.render.effects.particles import ParticleLayer, SubTileParticleSystem
 from catley.view.render.pyglet_renderer import PygletRenderer
 
 # from catley.view.views.health_view import HealthView # Test a view
@@ -86,6 +90,52 @@ frame_times = []
 
 # 7. Map rendering optimization - only render once
 map_rendered = False
+
+# 8. Test effects system
+test_particle_system = SubTileParticleSystem(config.SCREEN_WIDTH, config.SCREEN_HEIGHT)
+test_environmental_system = EnvironmentalEffectSystem()
+effect_library = EffectLibrary()
+viewport_bounds = Rect(0, 0, config.SCREEN_WIDTH, config.SCREEN_HEIGHT)
+view_offset = (0, 0)  # Simple tuple for view offset
+
+# Create different effect contexts for testing
+blood_context = EffectContext(
+    particle_system=test_particle_system,
+    environmental_system=test_environmental_system,
+    x=15,
+    y=10,
+    intensity=1.0,
+)
+
+muzzle_context = EffectContext(
+    particle_system=test_particle_system,
+    environmental_system=test_environmental_system,
+    x=20,
+    y=8,
+    intensity=0.8,
+    direction_x=1.0,
+    direction_y=0.0,
+)
+
+explosion_context = EffectContext(
+    particle_system=test_particle_system,
+    environmental_system=test_environmental_system,
+    x=25,
+    y=15,
+    intensity=1.2,
+)
+
+smoke_context = EffectContext(
+    particle_system=test_particle_system,
+    environmental_system=test_environmental_system,
+    x=10,
+    y=20,
+    intensity=0.7,
+)
+
+# Trigger effects every few seconds
+effect_timer = 0.0
+last_effect_time = 0.0
 
 
 def render_test_map():
@@ -274,7 +324,51 @@ def on_draw():
     renderer.draw_tile_highlight(15, 10, colors.CYAN, 0.4)
     highlight_time = time.time() - highlight_start
 
-    # Test 4: Test the canvas
+    # Test 4: Update effects and render particles
+    particles_start = time.time()
+    global effect_timer, last_effect_time
+
+    # Update timer
+    dt = 1.0 / 60.0
+    effect_timer += dt
+
+    # Trigger different effects periodically
+    if effect_timer - last_effect_time > 2.0:  # Every 2 seconds
+        current_time = int(effect_timer) % 8  # Cycle through effects
+        if current_time == 0:
+            effect_library.trigger("blood_splatter", blood_context)
+            print("Triggered blood splatter effect")
+        elif current_time == 2:
+            effect_library.trigger("muzzle_flash", muzzle_context)
+            print("Triggered muzzle flash effect")
+        elif current_time == 4:
+            effect_library.trigger("explosion", explosion_context)
+            print("Triggered explosion effect")
+        elif current_time == 6:
+            effect_library.trigger("smoke_cloud", smoke_context)
+            print("Triggered smoke cloud effect")
+        last_effect_time = effect_timer
+
+    # Update particle and environmental systems
+    test_particle_system.update(dt)
+    test_environmental_system.update(dt)
+
+    # Render particles and environmental effects
+    renderer.render_particles(
+        test_particle_system, ParticleLayer.OVER_ACTORS, viewport_bounds, view_offset
+    )
+    # Apply environmental effects (manually for testing)
+    for effect in test_environmental_system.effects:
+        renderer.apply_environmental_effect(
+            position=effect.position,
+            radius=effect.radius,
+            tint_color=effect.tint_color,
+            intensity=effect.intensity,
+            blend_mode=effect.blend_mode,
+        )
+    particles_time = time.time() - particles_start
+
+    # Test 5: Test the canvas
     canvas_start = time.time()
     test_pyglet_canvas()
     canvas_time = time.time() - canvas_start
@@ -301,6 +395,7 @@ def on_draw():
         print(f"  Map: {map_time * 1000:.2f}ms")
         print(f"  Actor: {actor_time * 1000:.2f}ms")
         print(f"  Highlights: {highlight_time * 1000:.2f}ms")
+        print(f"  Particles: {particles_time * 1000:.2f}ms")
         print(f"  Canvas: {canvas_time * 1000:.2f}ms")
         print(f"  Finalize: {finalize_time * 1000:.2f}ms")
         other_time = (
@@ -309,6 +404,7 @@ def on_draw():
             - map_time
             - actor_time
             - highlight_time
+            - particles_time
             - canvas_time
             - finalize_time
         )

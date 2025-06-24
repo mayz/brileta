@@ -119,6 +119,22 @@ class PygletRenderer(Renderer):
             lambda: Rectangle(0, 0, 0, 0, batch=self.ui_batch)
         )
 
+        self.particle_under_pool: PygletObjectPool[Sprite] = PygletObjectPool(
+            lambda: Sprite(
+                img=self.tile_atlas[ord(" ")],
+                batch=self.world_objects_batch,
+                group=self.particle_under_group,
+            )
+        )
+
+        self.particle_over_pool: PygletObjectPool[Sprite] = PygletObjectPool(
+            lambda: Sprite(
+                img=self.tile_atlas[ord(" ")],
+                batch=self.world_objects_batch,
+                group=self.particle_over_group,
+            )
+        )
+
     def _get_tile_pixel_size(self) -> tuple[int, int]:
         """Calculates the pixel dimensions of a single tile from the tileset image."""
         # This is a temporary way to get tile size before loading.
@@ -256,35 +272,37 @@ class PygletRenderer(Renderer):
         viewport_bounds: Rect,
         view_offset: RootConsoleTilePos,
     ) -> None:
-        """Renders particles using temporary Sprites."""
-        # For a more optimized version, you would manage a pool of sprites
-        # or use a single VertexList. For the initial port, this is fine.
-        group = (
-            self.particle_under_group
+        # Choose the right pool based on layer
+        particle_pool = (
+            self.particle_under_pool
             if layer == ParticleLayer.UNDER_ACTORS
-            else self.particle_over_group
+            else self.particle_over_pool
         )
 
         for i in range(particle_system.active_count):
             if particle_system.layers[i] != layer.value:
                 continue
+            coords = particle_system._convert_particle_to_screen_coords(
+                i, viewport_bounds, view_offset, self
+            )
+            if coords is None:
+                continue
 
-            # This logic will need to be part of the renderer.
-            # Simplified for this example.
-            px, py = 0, 0  # FIXME: Implement particle_to_screen_coords
-
+            px, py = coords
             char_code = (
                 ord(particle_system.chars[i]) if particle_system.chars[i] else ord(" ")
             )
-            sprite = Sprite(
-                img=self.tile_atlas[char_code],
-                x=px,
-                y=py,
-                batch=self.world_objects_batch,
-                group=group,
+
+            sprite = particle_pool.get_or_create()
+            sprite.image = self.tile_atlas[char_code]
+            sprite.x = px
+            sprite.y = py
+            sprite.color = tuple(particle_system.colors[i])
+
+            lifetime_ratio = (
+                particle_system.lifetimes[i] / particle_system.max_lifetimes[i]
             )
-            sprite.color = particle_system.colors[i]
-            # ... set opacity based on lifetime ...
+            sprite.opacity = int(255 * lifetime_ratio)
 
     def apply_environmental_effect(
         self,
@@ -315,6 +333,8 @@ class PygletRenderer(Renderer):
 
         self.actor_sprite_pool.return_all_to_pool()
         self.highlight_pool.return_all_to_pool()
+        self.particle_under_pool.return_all_to_pool()
+        self.particle_over_pool.return_all_to_pool()
 
     def finalize_present(self) -> None:
         """Draws all the batches to the screen."""
