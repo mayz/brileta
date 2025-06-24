@@ -15,11 +15,13 @@ from catley.view.render.pyglet_renderer import PygletRenderer
 # from catley.view.views.health_view import HealthView # Test a view
 
 # Basic window setup
+VSYNC = True
 window = Window(
     width=config.SCREEN_WIDTH * 16,  # Start with some reasonable pixel size
     height=config.SCREEN_HEIGHT * 16,
     caption="Pyglet Renderer Test Harness",
     resizable=True,
+    vsync=VSYNC,
 )
 
 # --- YOUR TEST SETUP GOES HERE ---

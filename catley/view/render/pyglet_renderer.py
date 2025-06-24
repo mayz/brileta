@@ -135,6 +135,16 @@ class PygletRenderer(Renderer):
             )
         )
 
+        self.environmental_effect_pool: PygletObjectPool[Circle] = PygletObjectPool(
+            lambda: Circle(
+                0,
+                0,
+                1,
+                batch=self.world_objects_batch,
+                group=self.environmental_effects_group,
+            )
+        )
+
     def _get_tile_pixel_size(self) -> tuple[int, int]:
         """Calculates the pixel dimensions of a single tile from the tileset image."""
         # This is a temporary way to get tile size before loading.
@@ -317,14 +327,13 @@ class PygletRenderer(Renderer):
         px_x, px_y = self.console_to_screen_coords(*position)
         px_radius = radius * self.tile_width_px
 
-        circle = Circle(
-            x=px_x,
-            y=px_y,
-            radius=px_radius,
-            color=tint_color,
-            batch=self.world_objects_batch,
-            group=self.environmental_effects_group,
-        )
+        circle = self.environmental_effect_pool.get_or_create()
+
+        # Update its properties
+        circle.x = px_x
+        circle.y = px_y
+        circle.radius = px_radius
+        circle.color = tint_color
         circle.opacity = int(intensity * 255)
 
     def prepare_to_present(self) -> None:
@@ -335,6 +344,7 @@ class PygletRenderer(Renderer):
         self.highlight_pool.return_all_to_pool()
         self.particle_under_pool.return_all_to_pool()
         self.particle_over_pool.return_all_to_pool()
+        self.environmental_effect_pool.return_all_to_pool()
 
     def finalize_present(self) -> None:
         """Draws all the batches to the screen."""
