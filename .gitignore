@@ -13,4 +13,4 @@ wheels/
 .aider*
 
 # Generated LLM text bundle
-llm_bundle.txt
+llm_bundle*.txt
