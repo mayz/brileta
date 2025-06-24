@@ -7,6 +7,7 @@ from pyglet.text import Label
 
 from catley import config
 from catley.util.coordinates import PixelCoord, TileCoord
+from catley.view.render.pyglet_renderer import PygletObjectPool
 
 from .base import Canvas
 
@@ -21,14 +22,32 @@ class PygletCanvas(Canvas):
         self.window = renderer.window
         self.configure_scaling(renderer.tile_dimensions[1])
 
-        # Keep references to UI objects to prevent garbage collection
-        self._ui_objects = []
+        # Add object pools
+        self.label_pool: PygletObjectPool[Label] = PygletObjectPool(
+            lambda: Label("", batch=self.batch)
+        )
+        self.rect_pool: PygletObjectPool[Rectangle] = PygletObjectPool(
+            lambda: Rectangle(0, 0, 0, 0, batch=self.batch)
+        )
+        self.frame_pool = PygletObjectPool[BorderedRectangle](
+            lambda: BorderedRectangle(
+                0,
+                0,
+                0,
+                0,
+                border=1,
+                color=(0, 0, 0),
+                border_color=(255, 255, 255),
+                batch=self.batch,
+            )
+        )
 
     # --- Frame Lifecycle: We don't need to manage objects anymore ---
 
-    def begin_frame(self) -> None:
-        """Clear previous UI objects and prepare for new frame."""
-        self._ui_objects.clear()
+    def begin_frame(self):
+        self.label_pool.return_all_to_pool()
+        self.rect_pool.return_all_to_pool()
+        self.frame_pool.return_all_to_pool()
 
     def end_frame(self):
         """Return the batch as the artifact."""
@@ -91,36 +110,29 @@ class PygletCanvas(Canvas):
     # --- Backend-Specific Rendering Operations ---
 
     def _render_text_op(self, pixel_x, pixel_y, text: str, color, font_size=None):
-        label = Label(
-            text,
-            font_name=str(config.MESSAGE_LOG_FONT_PATH),
-            font_size=font_size or self.renderer.tile_dimensions[1],
-            x=pixel_x,
-            y=self.window.height - pixel_y,  # Flip Y-coord for top-left origin
-            anchor_y="top",
-            color=(*color, 255),
-            batch=self.batch,
-        )
-        # Keep reference to prevent garbage collection
-        self._ui_objects.append(label)
+        # Get from pool instead of creating new
+        label = self.label_pool.get_or_create()
+
+        # Update existing object
+        label.text = text
+        label.font_name = str(config.MESSAGE_LOG_FONT_PATH)
+        label.font_size = font_size or self.renderer.tile_dimensions[1]
+        label.x = pixel_x
+        label.y = self.window.height - pixel_y
+        label.anchor_y = "top"
+        label.color = (*color, 255)
 
     def _render_rect_op(self, pixel_x, pixel_y, width, height, color, fill):
-        flipped_y = self.window.height - pixel_y - height
-        color_with_alpha = (*color, 255) if len(color) == 3 else color
+        rect = self.rect_pool.get_or_create()
 
-        rect = Rectangle(
-            x=pixel_x,
-            y=flipped_y,
-            width=width,
-            height=height,
-            color=color_with_alpha,
-            batch=self.batch,
-        )
+        flipped_y = self.window.height - pixel_y - height
+        rect.x = pixel_x
+        rect.y = flipped_y
+        rect.width = width
+        rect.height = height
+        rect.color = (*color, 255) if len(color) == 3 else color
         if not fill:
             rect.opacity = 128
-
-        # Keep reference to prevent garbage collection
-        self._ui_objects.append(rect)
 
     def _render_frame_op(self, tile_x, tile_y, width, height, fg, bg):
         tile_w, tile_h = self.renderer.tile_dimensions
@@ -130,18 +142,14 @@ class PygletCanvas(Canvas):
         pixel_height = height * tile_h
         flipped_y = self.window.height - pixel_y - pixel_height
 
-        frame = BorderedRectangle(
-            x=pixel_x,
-            y=flipped_y,
-            width=pixel_width,
-            height=pixel_height,
-            border=1,
-            color=bg,
-            border_color=fg,
-            batch=self.batch,
-        )
-        # Keep reference to prevent garbage collection
-        self._ui_objects.append(frame)
+        frame = self.frame_pool.get_or_create()
+
+        frame.x = pixel_x
+        frame.y = flipped_y
+        frame.width = pixel_width
+        frame.height = pixel_height
+        frame.color = bg
+        frame.border_color = fg
 
     def get_text_metrics(
         self, text: str, font_size: int | None = None

@@ -17,7 +17,8 @@ Key Implementation Details:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from collections.abc import Callable
+from typing import TYPE_CHECKING, Any, Protocol
 
 import numpy as np
 import pyglet.image
@@ -39,6 +40,41 @@ if TYPE_CHECKING:
     from catley.view.ui.cursor_manager import CursorManager
 
     from .effects.particles import SubTileParticleSystem
+
+
+class HasVisible(Protocol):
+    @property
+    def visible(self) -> bool: ...
+
+    @visible.setter
+    def visible(self, __value: bool, /) -> None: ...
+
+    # The '/' tells the type checker:
+    # "This parameter must be passed by position, not by keyword."
+    # This makes the parameter's name irrelevant for compatibility checks.
+
+
+class PygletObjectPool[T: HasVisible]:
+    """Generic object pool for reusing UI objects."""
+
+    def __init__(self, factory: Callable[[], T]) -> None:
+        self.factory = factory
+        self.pooled_objects: list[T] = []
+        self.active_objects: list[T] = []
+
+    def get_or_create(self) -> T:
+        """Get object from pool or create new one."""
+        obj = self.pooled_objects.pop() if self.pooled_objects else self.factory()
+        obj.visible = True  # Ensure the object is visible when reused
+        self.active_objects.append(obj)
+        return obj
+
+    def return_all_to_pool(self) -> None:
+        """Return all active objects to pool."""
+        for obj in self.active_objects:
+            obj.visible = False
+            self.pooled_objects.append(obj)
+        self.active_objects.clear()
 
 
 class PygletRenderer(Renderer):
@@ -64,15 +100,24 @@ class PygletRenderer(Renderer):
         # A dedicated batch for all UI elements, drawn last (on top).
         self.ui_batch = Batch()
 
-        # Track dynamic UI elements that need to be cleared each frame
-        self._dynamic_ui_elements = []
-
         # --- Tileset and Sprite Atlas ---
         self.tile_width_px, self.tile_height_px = self._get_tile_pixel_size()
         self.tile_atlas = self._load_tile_atlas()
 
         # A pre-allocated pool of sprites for rendering the map efficiently.
         self.map_sprites: list[Sprite] = self._initialize_map_sprites()
+
+        self.actor_sprite_pool: PygletObjectPool[Sprite] = PygletObjectPool(
+            lambda: Sprite(
+                img=self.tile_atlas[ord(" ")],
+                batch=self.world_objects_batch,
+                group=self.actor_group,
+            )
+        )
+
+        self.highlight_pool: PygletObjectPool[Rectangle] = PygletObjectPool(
+            lambda: Rectangle(0, 0, 0, 0, batch=self.ui_batch)
+        )
 
     def _get_tile_pixel_size(self) -> tuple[int, int]:
         """Calculates the pixel dimensions of a single tile from the tileset image."""
@@ -164,24 +209,19 @@ class PygletRenderer(Renderer):
         screen_y: float,
         light_intensity: tuple[float, float, float] = (1.0, 1.0, 1.0),
     ) -> None:
-        """Draw an actor by creating a temporary Sprite."""
+        sprite = self.actor_sprite_pool.get_or_create()
+
         char_code = ord(char)
-        texture = self.tile_atlas[char_code]
+        sprite.image = self.tile_atlas[char_code]
+        sprite.x = screen_x
+        sprite.y = screen_y
 
         final_color = (
             int(color[0] * light_intensity[0]),
             int(color[1] * light_intensity[1]),
             int(color[2] * light_intensity[2]),
         )
-
-        # For one-off draws, creating a sprite is fine.
-        Sprite(
-            img=texture,
-            x=screen_x,
-            y=screen_y,
-            batch=self.world_objects_batch,
-            group=self.actor_group,
-        ).color = final_color
+        sprite.color = final_color
 
     def draw_mouse_cursor(self, cursor_manager: CursorManager) -> None:
         """Draws the active cursor using data from the cursor manager."""
@@ -201,18 +241,13 @@ class PygletRenderer(Renderer):
         """Draws a semi-transparent highlight over a single tile."""
         px_x, px_y = self.console_to_screen_coords(root_x, root_y)
 
-        highlight = Rectangle(
-            x=px_x,
-            y=px_y,
-            width=self.tile_width_px,
-            height=self.tile_height_px,
-            color=(*color, int(alpha * 255)),
-            batch=self.ui_batch,  # Highlights are UI elements
-        )
+        highlight = self.highlight_pool.get_or_create()
+        highlight.x = px_x
+        highlight.y = px_y
+        highlight.width = self.tile_width_px
+        highlight.height = self.tile_height_px
+        highlight.color = (*color, int(alpha * 255))
         highlight.opacity = int(alpha * 255)
-
-        # Track this as a dynamic UI element to be cleared next frame
-        self._dynamic_ui_elements.append(highlight)
 
     def render_particles(
         self,
@@ -278,21 +313,8 @@ class PygletRenderer(Renderer):
         """Clears the window in preparation for drawing the batches."""
         self.window.clear()
 
-        # Clear dynamic UI elements from previous frame
-        for element in self._dynamic_ui_elements:
-            element.delete()
-        self._dynamic_ui_elements.clear()
-
-        # Only clear the dynamic world objects batch that needs to be
-        # recreated each frame
-        self.world_objects_batch = Batch()
-        # Note: ui_batch and map_batch are persistent and don't need to be recreated
-
-        # Recreate the groups since they're tied to the world_objects_batch
-        self.particle_under_group = Group(0)
-        self.actor_group = Group(1)
-        self.particle_over_group = Group(2)
-        self.environmental_effects_group = Group(3)
+        self.actor_sprite_pool.return_all_to_pool()
+        self.highlight_pool.return_all_to_pool()
 
     def finalize_present(self) -> None:
         """Draws all the batches to the screen."""
