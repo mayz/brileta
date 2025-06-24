@@ -484,12 +484,9 @@ class TCODRenderer(Renderer):
     ) -> tcod.sdl.render.Texture:
         """Convert a tcod Console to an SDL texture."""
         texture = self.console_render.render(console)
-        # Use additive blending for transparent overlays, normal for opaque menus
-        texture.blend_mode = (
-            tcod.sdl.render.BlendMode.ADD
-            if transparent
-            else tcod.sdl.render.BlendMode.BLEND
-        )
+        # All lighting/UI textures use pre-multiplied alpha blending.
+        texture.blend_mode = tcod.sdl.render.BlendMode.BLEND
+
         return texture
 
     def texture_from_numpy(

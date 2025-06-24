@@ -148,6 +148,7 @@ class ViewportSystem:
 
     def update_camera(self, player: Actor, map_width: int, map_height: int) -> None:
         """Update camera to follow the player and compute viewport offsets."""
+        # This should be the ONLY line that updates the camera's raw position.
         self.camera.follow_actor(player)
 
         self.viewport.map_width = map_width
@@ -155,27 +156,32 @@ class ViewportSystem:
 
         vp_w = self.viewport.width_tiles
         vp_h = self.viewport.height_tiles
+
+        # Clamp camera to world boundaries and calculate viewport offsets.
         half_vp_w = vp_w / 2.0
         half_vp_h = vp_h / 2.0
 
-        if map_width <= vp_w:
-            # Center small maps in the viewport
+        if map_width < vp_w:
+            # Center map in viewport if map is smaller than viewport
             self.camera.world_x = map_width / 2.0 - 0.5
             self.viewport.offset_x = (vp_w - map_width) // 2
         else:
+            # Clamp camera to map edges
             self.camera.world_x = max(
                 half_vp_w - 0.5,
-                min(map_width - half_vp_w - 0.5, self.camera.world_x),
+                min(self.camera.world_x, map_width - half_vp_w - 0.5),
             )
             self.viewport.offset_x = 0
 
-        if map_height <= vp_h:
+        if map_height < vp_h:
+            # Center map in viewport if map is smaller than viewport
             self.camera.world_y = map_height / 2.0 - 0.5
             self.viewport.offset_y = (vp_h - map_height) // 2
         else:
+            # Clamp camera to map edges
             self.camera.world_y = max(
                 half_vp_h - 0.5,
-                min(map_height - half_vp_h - 0.5, self.camera.world_y),
+                min(self.camera.world_y, map_height - half_vp_h - 0.5),
             )
             self.viewport.offset_y = 0
 

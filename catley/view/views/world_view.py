@@ -69,6 +69,7 @@ class WorldView(View):
             name="WorldViewCache", max_size=5
         )
         self._active_background_texture: tcod.sdl.render.Texture | None = None
+        self._light_overlay_texture: tcod.sdl.render.Texture | None = None
 
     def set_bounds(self, x1: int, y1: int, x2: int, y2: int) -> None:
         """Override set_bounds to update viewport and console dimensions."""
@@ -130,44 +131,12 @@ class WorldView(View):
             vs.offset_y,
         )
 
-        fov_key = gw.game_map.visible.data.tobytes()
-
-        viewport_bounds = vs.get_visible_bounds()
-        relevant_actors = gw.actor_spatial_index.get_in_bounds(
-            viewport_bounds.x1,
-            viewport_bounds.y1,
-            viewport_bounds.x2,
-            viewport_bounds.y2,
-        )
-        lighting_key = gw.lighting._generate_cache_key(
-            viewport_bounds,
-            relevant_actors,
-            viewport_bounds.width,
-            viewport_bounds.height,
-        )
-
         map_key = gw.game_map.revision
 
-        return (camera_key, fov_key, lighting_key, map_key)
+        return (camera_key, map_key)
 
     def draw(self, renderer: Renderer) -> None:
-        """Main drawing method for the world view.
-
-        ---------------------------------------------------------------------------
-        FIXME: LIGHTING/CACHING INTERACTION
-
-        Current behavior: We cache the background texture which includes baked-in
-        lighting results. This prevents dynamic lighting (torch flicker) from updating
-        unless the cache misses. Lighting system cache is disabled (0% hit rate) to
-        work around this.
-
-        Better approach: Cache unlit background texture, compute and apply lighting
-        every frame as an overlay. This would enable both texture caching AND
-        lighting caching to work together properly.
-
-        See lighting.py _generate_cache_key for related issue.
-        ---------------------------------------------------------------------------
-        """
+        """Main drawing method for the world view."""
         if not self.visible:
             return
 
@@ -197,7 +166,7 @@ class WorldView(View):
 
         if texture is None:
             # CACHE MISS: Re-render the static background
-            self._render_map()  # This populates self.game_map_console
+            self._render_map_unlit()  # This populates self.game_map_console
 
             # Cast the generic renderer to the TCOD-specific one we know we're using in
             # Phase 0 of the Graphics Migration Plan. This is an explicit acknowledgment
@@ -211,6 +180,9 @@ class WorldView(View):
 
         self._active_background_texture = texture
 
+        # Generate the light overlay texture every frame for dynamic effects.
+        self._light_overlay_texture = self._render_light_overlay(renderer)
+
         # Restore the original camera position so subsequent frames start clean.
         self.viewport_system.camera.set_position(original_cam_x, original_cam_y)
 
@@ -223,14 +195,22 @@ class WorldView(View):
 
     def present(self, renderer: Renderer) -> None:
         """Composite final frame layers in proper order."""
+        if not self.visible:
+            return
+
+        # 1. Present the cached unlit background
         if self._active_background_texture:
             renderer.present_texture(
                 self._active_background_texture, self.x, self.y, self.width, self.height
             )
 
-        if not self.visible:
-            return
+        # 2. Present the dynamic light overlay on top of the background
+        if self._light_overlay_texture:
+            renderer.present_texture(
+                self._light_overlay_texture, self.x, self.y, self.width, self.height
+            )
 
+        # 3. Continue with the rest of the rendering
         viewport_bounds = Rect.from_bounds(0, 0, self.width - 1, self.height - 1)
         view_offset = (self.x, self.y)
 
@@ -270,7 +250,7 @@ class WorldView(View):
     # Internal rendering helpers
     # ------------------------------------------------------------------
 
-    def _render_map(self) -> None:
+    def _render_map_unlit(self) -> None:
         gw = self.controller.gw
         vs = self.viewport_system
         # Clear entire console to create pillarbox/letterbox bars
@@ -292,8 +272,6 @@ class WorldView(View):
             slice(world_left, world_right + 1),
             slice(world_top, world_bottom + 1),
         )
-        dest_width = world_right - world_left + 1
-        dest_height = world_bottom - world_top + 1
         # Offset to center smaller maps within the viewport
         dest_x_start = vs.offset_x
         dest_y_start = vs.offset_y
@@ -301,44 +279,18 @@ class WorldView(View):
         # slice will be drawn. This keeps the map centered even when smaller
         # than the viewport.
         dark_app_slice = gw.game_map.dark_appearance_map[world_slice]
+
+        # Use ONLY the explored map for the unlit background.
         explored_mask_slice = gw.game_map.explored[world_slice]
+
         ex_x, ex_y = np.nonzero(explored_mask_slice)
-        self.game_map_console.rgb[dest_x_start + ex_x, dest_y_start + ex_y] = (
-            dark_app_slice[ex_x, ex_y]
-        )
-        visible_mask_slice = gw.game_map.visible[world_slice]
-        if not np.any(visible_mask_slice):
-            return
-        # Only consider actors currently inside the viewport when calculating
-        # lighting. Use the spatial index to avoid scanning the full actor list.
-        relevant_actors = gw.actor_spatial_index.get_in_bounds(
-            world_left, world_top, world_right, world_bottom
-        )
-        self.current_light_intensity = gw.lighting.compute_lighting_with_shadows(
-            dest_width,
-            dest_height,
-            relevant_actors,
-            viewport_offset=(world_left, world_top),
-        )
-        light_app_slice = gw.game_map.light_appearance_map[world_slice]
-        dark_tiles_to_light = dark_app_slice[visible_mask_slice]
-        light_tiles_to_light = light_app_slice[visible_mask_slice]
-        light_intensities_to_apply = self.current_light_intensity[visible_mask_slice]
-        blended_tiles = np.empty_like(dark_tiles_to_light)
-        blended_tiles["ch"] = light_tiles_to_light["ch"]
-        blended_tiles["fg"] = light_tiles_to_light["fg"]
-        # Blend each RGB channel separately based on computed lighting intensity.
-        for i in range(3):
-            light_intensity_channel = light_intensities_to_apply[..., i]
-            blended_tiles["bg"][..., i] = light_tiles_to_light["bg"][
-                ..., i
-            ] * light_intensity_channel + dark_tiles_to_light["bg"][..., i] * (
-                1.0 - light_intensity_channel
+
+        if ex_x.size > 0:
+            self.game_map_console.rgb[dest_x_start + ex_x, dest_y_start + ex_y] = (
+                dark_app_slice[ex_x, ex_y]
             )
-        vis_x, vis_y = np.nonzero(visible_mask_slice)
-        self.game_map_console.rgb[dest_x_start + vis_x, dest_y_start + vis_y] = (
-            blended_tiles
-        )
+
+        # The visible mask is NOT used here. It is used by the light overlay.
 
     def _render_actors(self) -> None:
         # Traditional actors are now baked into the cache during the draw phase.
@@ -521,6 +473,124 @@ class WorldView(View):
         )
         world_tile_pos = fm.get_world_coords_from_root_tile_coords(root_tile_pos)
         self.controller.gw.mouse_tile_location_on_map = world_tile_pos
+
+    def _render_light_overlay(
+        self, renderer: Renderer
+    ) -> tcod.sdl.render.Texture | None:
+        """Render pure light world overlay with GPU alpha blending."""
+        # -- Lazy-compute light intensity for the current viewport ------------
+        vs = self.viewport_system
+        gw = self.controller.gw
+
+        bounds = vs.get_visible_bounds()
+        world_left, world_right = (
+            max(0, bounds.x1),
+            min(gw.game_map.width - 1, bounds.x2),
+        )
+        world_top, world_bottom = (
+            max(0, bounds.y1),
+            min(gw.game_map.height - 1, bounds.y2),
+        )
+
+        dest_width = world_right - world_left + 1
+        dest_height = world_bottom - world_top + 1
+
+        relevant_actors = gw.actor_spatial_index.get_in_bounds(
+            world_left, world_top, world_right, world_bottom
+        )
+
+        self.current_light_intensity = gw.lighting.compute_lighting_with_shadows(
+            dest_width,
+            dest_height,
+            relevant_actors,
+            viewport_offset=(world_left, world_top),
+        )
+        # ---------------------------------------------------------------------
+
+        # Create temporary console for the light overlay
+        light_console = Console(self.width, self.height, order="F")
+
+        # Get viewport bounds and calculate world coordinates
+        vs = self.viewport_system
+        gw = self.controller.gw
+        bounds = vs.get_visible_bounds()
+        world_left = max(0, bounds.x1)
+        world_top = max(0, bounds.y1)
+        world_right = min(gw.game_map.width - 1, bounds.x2)
+        world_bottom = min(gw.game_map.height - 1, bounds.y2)
+
+        # Get the world slice that corresponds to current light intensity
+        world_slice = (
+            slice(world_left, world_right + 1),
+            slice(world_top, world_bottom + 1),
+        )
+        visible_mask_slice = gw.game_map.visible[world_slice]
+
+        # Initialize light console with fully transparent
+        light_console.rgba[:] = (ord(" "), (0, 0, 0, 0), (0, 0, 0, 0))
+
+        if np.any(visible_mask_slice):
+            # Get pure light appearance for overlay
+            light_app_slice = gw.game_map.light_appearance_map[world_slice]
+            light_intensities = self.current_light_intensity[visible_mask_slice]
+
+            # Map world coordinates to viewport coordinates
+            vis_x, vis_y = np.nonzero(visible_mask_slice)
+            viewport_x = vs.offset_x + vis_x
+            viewport_y = vs.offset_y + vis_y
+
+            # Ensure coordinates are within bounds
+            valid_mask = (
+                (viewport_x >= 0)
+                & (viewport_x < self.width)
+                & (viewport_y >= 0)
+                & (viewport_y < self.height)
+            )
+
+            if np.any(valid_mask):
+                final_vp_x = viewport_x[valid_mask]
+                final_vp_y = viewport_y[valid_mask]
+
+                # Get pure light appearance data
+                light_chars = light_app_slice["ch"][
+                    vis_x[valid_mask], vis_y[valid_mask]
+                ]
+                light_fg = light_app_slice["fg"][vis_x[valid_mask], vis_y[valid_mask]]
+                light_bg = light_app_slice["bg"][vis_x[valid_mask], vis_y[valid_mask]]
+                dark_bg = gw.game_map.dark_appearance_map[world_slice]["bg"][
+                    vis_x[valid_mask], vis_y[valid_mask]
+                ]
+
+                # Per-channel scaling: warm colours stay warm
+                light_intensity_valid = light_intensities[valid_mask]  # shape (N,3)
+
+                # --- exact CPU blend to match pre-refactor appearance ---
+                # light_intensity_valid shape: (N, 3) already carries warm torch colours
+                scaled_bg = (
+                    light_bg.astype(np.float32) * light_intensity_valid
+                    + dark_bg.astype(np.float32) * (1.0 - light_intensity_valid)
+                ).astype(np.uint8)
+                alpha_values = np.full(
+                    len(scaled_bg), 255, dtype=np.uint8
+                )  # fully opaque
+
+                # Fully vectorized assignment to RGBA console
+                light_console.rgba["ch"][final_vp_x, final_vp_y] = light_chars
+                light_console.rgba["fg"][final_vp_x, final_vp_y] = np.column_stack(
+                    (
+                        light_fg,
+                        np.full(len(alpha_values), 255, dtype=np.uint8),  # opaque FG
+                    )
+                )
+                light_console.rgba["bg"][final_vp_x, final_vp_y] = np.column_stack(
+                    (scaled_bg, alpha_values)  # RGB already pre-multiplied by alpha
+                )
+
+        # Convert console to texture with alpha blending
+        from catley.view.render.tcod_renderer import TCODRenderer
+
+        tcod_renderer = cast(TCODRenderer, renderer)
+        return tcod_renderer.texture_from_console(light_console, transparent=True)
 
     def _apply_pulsating_effect(
         self, input_color: colors.Color, base_actor_color: colors.Color

@@ -95,6 +95,7 @@ class LightSource:
     @position.setter
     def position(self, value: WorldTilePos) -> None:
         self._pos = value
+        self._bump_revision()
 
     def attach(self, owner: Actor, lighting_system: LightingSystem) -> None:
         """Attach this light source to an actor and lighting system"""
@@ -108,6 +109,15 @@ class LightSource:
             self._lighting_system.remove_light(self)
         self._owner = None
         self._lighting_system = None
+
+    @property
+    def is_active(self) -> bool:
+        """True if this light currently contributes visible light."""
+        return self.max_brightness > 0 and self.radius > 0
+
+    def _bump_revision(self) -> None:
+        if self._lighting_system is not None:
+            self._lighting_system.revision += 1
 
 
 class LightingSystem:
@@ -126,6 +136,8 @@ class LightingSystem:
 
         # Lighting cache for viewport-based lighting computations
         self._lighting_cache = ResourceCache[tuple, np.ndarray]("Lighting", max_size=15)
+
+        self.revision = 0  # Increments each time light map changes
 
     def set_game_map(self, game_map: GameMap) -> None:
         """Assign the current game map for shadow calculations."""
@@ -155,30 +167,7 @@ class LightingSystem:
         map_width: int,
         map_height: int,
     ) -> tuple:
-        """Generate a hashable key capturing the lighting state.
-
-        ---------------------------------------------------------------------------
-        FIXME: LIGHTING CACHE ARCHITECTURE ISSUE
-
-        Problem: Including time-dependent data (round(self.time, 1)) for dynamic lights
-        causes 0% cache hit rate, defeating the purpose of caching entirely.
-
-        Root Cause: Two conflicting caching layers:
-        1. This lighting cache (broken by time dependency)
-        2. WorldView texture cache (works but *bakes in lighting*,
-                                    freezing torch flicker)
-
-        Current Status: Disabled time caching → 0% hit rate but flicker works.
-
-        Proper Solution: Architectural change needed:
-        - Cache static lighting computation separately from dynamic lights
-        - WorldView should cache unlit background, apply lighting every frame
-        - OR: Use time bucketing (round(self.time, 0.5)) for choppier but cached flicker
-
-        Performance Impact: Currently computing lighting every frame (~2-5ms).
-        This is acceptable for now but suboptimal for complex scenes.
-        ---------------------------------------------------------------------------
-        """
+        """Generate a hashable key capturing the lighting state."""
 
         # Viewport bounds are part of the key
         bounds_key = (
@@ -296,6 +285,9 @@ class LightingSystem:
         if cache_key is not None:
             # Store a copy to prevent mutation of the cached array.
             self._lighting_cache.store(cache_key, final_lighting.copy())
+
+        # Finished a fresh lighting pass - notify views
+        self.revision += 1
 
         return final_lighting
 

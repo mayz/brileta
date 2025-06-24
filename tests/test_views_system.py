@@ -86,10 +86,13 @@ class TestWorldViewBoundaryEnforcement:
 
         # Mock the internal caching methods and actors
         self.view._get_background_cache_key = Mock(return_value=(1, 2, 3, 4))
-        self.view._render_map = Mock()
+        self.view._render_map_unlit = Mock()
         self.mock_controller.gw.actors = []
         self.view.particle_system.update = Mock()
         self.view.environmental_system.update = Mock()
+
+        # Mock the light overlay rendering to avoid mocking game_map.visible
+        self.view._render_light_overlay = Mock(return_value=None)
 
         # Call draw
         self.view.draw(self.mock_renderer)
@@ -108,10 +111,13 @@ class TestWorldViewBoundaryEnforcement:
 
         # Mock the internal caching methods and actors
         self.view._get_background_cache_key = Mock(return_value=(1, 2, 3, 4))
-        self.view._render_map = Mock()
+        self.view._render_map_unlit = Mock()
         self.mock_controller.gw.actors = []
         self.view.particle_system.update = Mock()
         self.view.environmental_system.update = Mock()
+
+        # Mock the light overlay rendering to avoid mocking game_map.visible
+        self.view._render_light_overlay = Mock(return_value=None)
 
         # Call draw
         self.view.draw(self.mock_renderer)
