@@ -31,15 +31,13 @@ from pyglet.window import Window
 from catley import colors, config
 from catley.game.enums import BlendMode
 from catley.util.coordinates import Rect, RootConsoleTilePos, TileDimensions
-from catley.view.render.effects.particles import ParticleLayer
+from catley.view.render.effects.particles import ParticleLayer, SubTileParticleSystem
 
 from .base_renderer import Renderer
 
 if TYPE_CHECKING:
     from catley.util.coordinates import PixelCoord, PixelPos
     from catley.view.ui.cursor_manager import CursorManager
-
-    from .effects.particles import SubTileParticleSystem
 
 
 class HasVisible(Protocol):
@@ -144,6 +142,52 @@ class PygletRenderer(Renderer):
                 group=self.environmental_effects_group,
             )
         )
+
+        # Cache coordinate transformation parameters
+        self._coord_cache_valid = False
+        self._scale_x = 1.0
+        self._scale_y = 1.0
+        self._offset_x = 0.0
+        self._offset_y = 0.0
+        self._window_height = window.height
+
+        # Hook into window resize events to invalidate cache
+        window.event(self._on_window_resize)
+
+    def _on_window_resize(self, width, height):
+        """Invalidate coordinate cache when window resizes."""
+        self._coord_cache_valid = False
+        self._window_height = height
+
+    def _ensure_coord_cache_valid(self):
+        """Ensure coordinate transformation cache is up to date."""
+        if self._coord_cache_valid:
+            return
+
+        window_width = self.window.width
+        window_height = self.window.height
+        console_width = self.console_width_tiles
+        console_height = self.console_height_tiles
+
+        console_aspect = console_width / console_height
+        window_aspect = window_width / window_height
+
+        if console_aspect > window_aspect:
+            # Letterboxed vertically
+            scaled_height = int(window_width / console_aspect)
+            self._offset_y = (window_height - scaled_height) // 2
+            self._offset_x = 0
+            self._scale_x = window_width / console_width
+            self._scale_y = scaled_height / console_height
+        else:
+            # Pillarboxed horizontally
+            scaled_width = int(window_height * console_aspect)
+            self._offset_x = (window_width - scaled_width) // 2
+            self._offset_y = 0
+            self._scale_x = scaled_width / console_width
+            self._scale_y = window_height / console_height
+
+        self._coord_cache_valid = True
 
     def _get_tile_pixel_size(self) -> tuple[int, int]:
         """Calculates the pixel dimensions of a single tile from the tileset image."""
@@ -282,32 +326,58 @@ class PygletRenderer(Renderer):
         viewport_bounds: Rect,
         view_offset: RootConsoleTilePos,
     ) -> None:
-        # Choose the right pool based on layer
+        """Optimized particle rendering."""
+        # Ensure coordinate cache is valid once per frame
+        self._ensure_coord_cache_valid()
+
         particle_pool = (
             self.particle_under_pool
             if layer == ParticleLayer.UNDER_ACTORS
             else self.particle_over_pool
         )
 
+        # Pre-calculate view offset in screen coordinates to avoid repeated calls
+        view_offset_screen_x = self._offset_x + view_offset[0] * self._scale_x
+        view_offset_screen_y_base = self._window_height - self._offset_y - self._scale_y
+
         for i in range(particle_system.active_count):
             if particle_system.layers[i] != layer.value:
                 continue
-            coords = particle_system._convert_particle_to_screen_coords(
-                i, viewport_bounds, view_offset, self
-            )
-            if coords is None:
+
+            # Do coordinate conversion inline to avoid function call overhead
+            sub_x, sub_y = particle_system.positions[i]
+            vp_x = sub_x / particle_system.subdivision
+            vp_y = sub_y / particle_system.subdivision
+
+            # Viewport culling
+            if (
+                vp_x < viewport_bounds.x1
+                or vp_x > viewport_bounds.x2
+                or vp_y < viewport_bounds.y1
+                or vp_y > viewport_bounds.y2
+            ):
                 continue
 
-            px, py = coords
+            # Fast coordinate transformation
+            root_x = view_offset[0] + vp_x
+            root_y = view_offset[1] + vp_y
+            px = view_offset_screen_x + (root_x - view_offset[0]) * self._scale_x
+            py = view_offset_screen_y_base - root_y * self._scale_y
+
+            # Get sprite and set properties
+            sprite = particle_pool.get_or_create()
+
+            # Only change image if different (avoid Pyglet overhead)
             char_code = (
                 ord(particle_system.chars[i]) if particle_system.chars[i] else ord(" ")
             )
+            new_image = self.tile_atlas[char_code]
+            if sprite.image != new_image:
+                sprite.image = new_image
 
-            sprite = particle_pool.get_or_create()
-            sprite.image = self.tile_atlas[char_code]
             sprite.x = px
             sprite.y = py
-            sprite.color = tuple(particle_system.colors[i])
+            sprite.color = tuple(particle_system.colors[i])  # This might still be slow
 
             lifetime_ratio = (
                 particle_system.lifetimes[i] / particle_system.max_lifetimes[i]
@@ -357,39 +427,14 @@ class PygletRenderer(Renderer):
         pass
 
     def console_to_screen_coords(self, console_x: float, console_y: float) -> PixelPos:
-        """
-        Convert console coordinates to screen coordinates with proper
-        letterboxing/pillarboxing. This matches the logic from TCODRenderer to
-        ensure consistent coordinate mapping.
-        """
-        window_width = self.window.width
-        window_height = self.window.height
-        console_width = self.console_width_tiles
-        console_height = self.console_height_tiles
+        """Fast coordinate transformation using cached values."""
+        self._ensure_coord_cache_valid()
 
-        console_aspect = console_width / console_height
-        window_aspect = window_width / window_height
-
-        if console_aspect > window_aspect:
-            # Console is letterboxed vertically (black bars on top/bottom)
-            scaled_height = int(window_width / console_aspect)
-            offset_y = (window_height - scaled_height) // 2
-            screen_x = console_x * (window_width / console_width)
-            # Pyglet uses bottom-left origin, so we need to account for that
-            screen_y = (
-                window_height
-                - offset_y
-                - (console_y + 1) * (scaled_height / console_height)
-            )
-        else:
-            # Console is pillarboxed horizontally (black bars on left/right)
-            scaled_width = int(window_height * console_aspect)
-            offset_x = (window_width - scaled_width) // 2
-            screen_x = offset_x + console_x * (scaled_width / console_width)
-            # Pyglet uses bottom-left origin, so we need to flip Y
-            screen_y = window_height - (console_y + 1) * (
-                window_height / console_height
-            )
+        screen_x = self._offset_x + console_x * self._scale_x
+        # Pyglet uses bottom-left origin
+        screen_y = (
+            self._window_height - self._offset_y - (console_y + 1) * self._scale_y
+        )
 
         return (screen_x, screen_y)
 
