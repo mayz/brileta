@@ -64,6 +64,10 @@ class DummyGameWorld(GameWorld):
         self.selected_actor: Actor | None = None
         self.items: dict[tuple[int, int], list] = {}
 
+        # New lighting system architecture - Phase 1 scaffolding
+        self.lights: list = []
+        self.lighting_system = None
+
     def add_actor(self, actor: Actor) -> None:
         """Adds an actor to the list and the spatial index."""
         self.actors.append(actor)
@@ -96,6 +100,21 @@ class DummyGameWorld(GameWorld):
 
     def spawn_ground_items(self, items: list[Item], x: int, y: int) -> Actor:
         return self.item_spawner.spawn_multiple(items, x, y)
+
+    def add_light(self, light) -> None:
+        """Add a light source to the world."""
+        self.lights.append(light)
+        if self.lighting_system is not None:
+            self.lighting_system.on_light_added(light)
+
+    def remove_light(self, light) -> None:
+        """Remove a light source from the world."""
+        try:
+            self.lights.remove(light)
+            if self.lighting_system is not None:
+                self.lighting_system.on_light_removed(light)
+        except ValueError:
+            pass
 
 
 def get_controller_with_player_and_map() -> Controller:

@@ -1,5 +1,9 @@
 import random
 
+# Import the new lighting system interface and light types
+# TYPE_CHECKING import to avoid circular imports during Phase 1
+from typing import TYPE_CHECKING, Any
+
 from catley import colors, config
 from catley.config import PLAYER_BASE_STRENGTH, PLAYER_BASE_TOUGHNESS
 from catley.environment.generators import RoomsAndCorridorsGenerator
@@ -22,7 +26,9 @@ from catley.game.items.item_types import (
 )
 from catley.util.coordinates import Rect, TileCoord, WorldTileCoord, WorldTilePos
 from catley.util.spatial import SpatialHashGrid, SpatialIndex
-from catley.view.render.effects.lighting import LightingSystem, LightSource
+
+if TYPE_CHECKING:
+    pass
 
 
 class GameWorld:
@@ -37,13 +43,17 @@ class GameWorld:
 
     def __init__(self, map_width: TileCoord, map_height: TileCoord) -> None:
         self.mouse_tile_location_on_map: WorldTilePos | None = None
-        self.lighting = LightingSystem()
         self.item_spawner = ItemSpawner(self)
         self.selected_actor: Actor | None = None
 
+        # New lighting system architecture - Phase 1 scaffolding
+        # lights list will hold all LightSource objects in the world
+        self.lights: list[Any] = []  # Will be list[NewLightSource] in Phase 2
+        # lighting_system will be set by the application code during Phase 3
+        self.lighting_system: Any = None  # Will be NewLightingSystem | None in Phase 2
+
         self._init_actor_storage()
         self.game_map, rooms = self._generate_map(map_width, map_height)
-        self.lighting.set_game_map(self.game_map)
 
         self.player = self._create_player()
         self.add_actor(self.player)
@@ -66,6 +76,30 @@ class GameWorld:
             # Actor was not in the list; ignore.
             pass
 
+    def add_light(self, light: Any) -> None:  # Will be NewLightSource in Phase 2
+        """Add a light source to the world and notify the lighting system.
+
+        Args:
+            light: The light source to add
+        """
+        self.lights.append(light)
+        if self.lighting_system is not None:
+            self.lighting_system.on_light_added(light)
+
+    def remove_light(self, light: Any) -> None:  # Will be NewLightSource in Phase 2
+        """Remove a light source from the world and notify the lighting system.
+
+        Args:
+            light: The light source to remove
+        """
+        try:
+            self.lights.remove(light)
+            if self.lighting_system is not None:
+                self.lighting_system.on_light_removed(light)
+        except ValueError:
+            # Light was not in the list; ignore.
+            pass
+
     # ---------------------------------------------------------------------
     # Initialization helpers
     # ---------------------------------------------------------------------
@@ -79,7 +113,6 @@ class GameWorld:
         """Instantiate the player character and starting inventory."""
         from catley.game.actors import PC
 
-        light = LightSource.create_torch()
         player = PC(
             x=0,
             y=0,
@@ -87,12 +120,12 @@ class GameWorld:
             name="Player",
             color=colors.PLAYER_COLOR,
             game_world=self,
-            light_source=light,
             strength=PLAYER_BASE_STRENGTH,
             toughness=PLAYER_BASE_TOUGHNESS,
             starting_weapon=PISTOL_TYPE.create(),
         )
         self._setup_player_inventory(player)
+
         return player
 
     def _setup_player_inventory(self, player: Character) -> None:
@@ -153,10 +186,22 @@ class GameWorld:
         """Spawn multiple items efficiently as a single pile."""
         return self.item_spawner.spawn_multiple(items, x, y)
 
-    def update_player_light(self) -> None:
-        """Update player light source position"""
-        if self.player.light_source:
-            self.player.light_source.position = (self.player.x, self.player.y)
+    def on_actor_moved(self, actor: Actor) -> None:
+        """Notify the lighting system when an actor with a dynamic light moves.
+
+        This method should be called whenever an actor moves. It will check if the
+        actor has any associated dynamic lights and update their positions, then
+        notify the lighting system to invalidate relevant caches.
+
+        Args:
+            actor: The actor that moved
+        """
+        if hasattr(self, "lighting_system") and self.lighting_system is not None:
+            # Find and update any lights owned by this actor
+            for light in self.lights:
+                if hasattr(light, "owner") and light.owner == actor:
+                    light.position = (actor.x, actor.y)
+                    self.lighting_system.on_light_moved(light)
 
     def get_pickable_items_at_location(
         self, x: WorldTileCoord, y: WorldTileCoord

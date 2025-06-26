@@ -74,7 +74,9 @@ class FrameManager:
         # Create views (dimensions will be set via resize() calls below)
         self.help_text_view = HelpTextView(self.controller, renderer=self.renderer)
 
-        self.world_view = WorldView(self.controller, self.screen_shake)
+        self.world_view = WorldView(
+            self.controller, self.screen_shake, self.controller.gw.lighting_system
+        )
         self.message_log_view = MessageLogView(
             message_log=self.controller.message_log,
             renderer=self.renderer,

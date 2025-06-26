@@ -39,7 +39,6 @@ from catley.game.items.item_core import Item
 from catley.game.pathfinding_goal import PathfindingGoal
 from catley.util.coordinates import TileCoord, WorldTileCoord
 from catley.util.pathfinding import find_path
-from catley.view.render.effects.lighting import LightSource
 
 from .ai import AIComponent, DispositionBasedAI
 from .components import (
@@ -122,7 +121,6 @@ class Actor:
         ai: AIComponent | None = None,
         # World and appearance
         game_world: GameWorld | None = None,
-        light_source: LightSource | None = None,
         blocks_movement: bool = True,
         speed: int = DEFAULT_ACTOR_SPEED,
     ) -> None:
@@ -137,7 +135,7 @@ class Actor:
         self.name = name
         self.gw = game_world
         self.blocks_movement = blocks_movement
-        self.light_source = light_source
+        # Light source removed - handled by new lighting system
 
         # === Core Data Components ===
         self.stats = stats
@@ -163,8 +161,7 @@ class Actor:
         # === Final Setup & Registration ===
         # This should come last, ensuring the actor is fully constructed
         # before being registered with external systems.
-        if self.light_source and self.gw:
-            self.light_source.attach(self, self.gw.lighting)
+        # Light source attachment removed in Phase 3 - new lighting system handles this
 
     def __repr__(self) -> str:
         """Return a debug representation of this actor."""
@@ -198,9 +195,9 @@ class Actor:
             # Notify the spatial index of this actor's new position.
             self.gw.actor_spatial_index.update(self)
 
-        # Update the light source position when actor moves
-        if self.light_source:
-            self.light_source.position = (self.x, self.y)
+        # Update any lights owned by this actor
+        if self.gw:
+            self.gw.on_actor_moved(self)
 
         # Automatically create animation if controller available
         if controller and hasattr(controller, "animation_manager"):
@@ -219,8 +216,9 @@ class Actor:
         self.render_y = float(y)
         if self.gw:
             self.gw.actor_spatial_index.update(self)
-        if self.light_source:
-            self.light_source.position = (self.x, self.y)
+        # Update any lights owned by this actor
+        if self.gw:
+            self.gw.on_actor_moved(self)
 
     def take_damage(self, amount: int, damage_type: str = "normal") -> None:
         """Handle damage to the actor.
@@ -315,7 +313,6 @@ class Character(Actor):
         demeanor: int = 0,
         weirdness: int = 0,
         ai: AIComponent | None = None,
-        light_source: LightSource | None = None,
         starting_weapon: Item | None = None,
         num_attack_slots: int = 2,
         speed: int = DEFAULT_ACTOR_SPEED,
@@ -360,7 +357,6 @@ class Character(Actor):
             inventory=InventoryComponent(stats, num_attack_slots, actor=self),
             visual_effects=VisualEffectsComponent(),
             ai=ai,
-            light_source=light_source,
             speed=speed,
             **kwargs,
         )
@@ -469,7 +465,6 @@ class PC(Character):
         intelligence: int = 0,
         demeanor: int = 0,
         weirdness: int = 0,
-        light_source: LightSource | None = None,
         starting_weapon: Item | None = None,
         num_attack_slots: int = 2,
         speed: int = DEFAULT_ACTOR_SPEED,
@@ -502,7 +497,6 @@ class PC(Character):
             intelligence=intelligence,
             demeanor=demeanor,
             weirdness=weirdness,
-            light_source=light_source,
             starting_weapon=starting_weapon,
             num_attack_slots=num_attack_slots,
             speed=speed,
@@ -548,7 +542,6 @@ class NPC(Character):
         intelligence: int = 0,
         demeanor: int = 0,
         weirdness: int = 0,
-        light_source: LightSource | None = None,
         starting_weapon: Item | None = None,
         num_attack_slots: int = 2,
         disposition: Disposition = Disposition.WARY,
@@ -586,7 +579,6 @@ class NPC(Character):
             demeanor=demeanor,
             weirdness=weirdness,
             ai=DispositionBasedAI(disposition=disposition),
-            light_source=light_source,
             starting_weapon=starting_weapon,
             num_attack_slots=num_attack_slots,
             speed=speed,

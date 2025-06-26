@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import tcod.sdl.render
@@ -44,10 +44,12 @@ class WorldView(View):
         self,
         controller: Controller,
         screen_shake: ScreenShake,
+        lighting_system: Any = None,  # Will be LightingSystem | None in Phase 2
     ) -> None:
         super().__init__()
         self.controller = controller
         self.screen_shake = screen_shake
+        self.lighting_system = lighting_system
         # Initialize a viewport system sized using configuration defaults.
         # These defaults are replaced once resize() sets the real view bounds.
         self.viewport_system = ViewportSystem(
@@ -181,7 +183,11 @@ class WorldView(View):
         self._active_background_texture = texture
 
         # Generate the light overlay texture every frame for dynamic effects.
-        self._light_overlay_texture = self._render_light_overlay(renderer)
+        # Phase 2: Use new lighting system if available, otherwise render unlit
+        if self.lighting_system is not None:
+            self._light_overlay_texture = self._render_light_overlay(renderer)
+        else:
+            self._light_overlay_texture = None
 
         # Restore the original camera position so subsequent frames start clean.
         self.viewport_system.camera.set_position(original_cam_x, original_cam_y)
@@ -478,7 +484,7 @@ class WorldView(View):
         self, renderer: Renderer
     ) -> tcod.sdl.render.Texture | None:
         """Render pure light world overlay with GPU alpha blending."""
-        # -- Lazy-compute light intensity for the current viewport ------------
+        # -- Compute light intensity using the new lighting system ------------
         vs = self.viewport_system
         gw = self.controller.gw
 
@@ -495,16 +501,14 @@ class WorldView(View):
         dest_width = world_right - world_left + 1
         dest_height = world_bottom - world_top + 1
 
-        relevant_actors = gw.actor_spatial_index.get_in_bounds(
-            world_left, world_top, world_right, world_bottom
+        # Use new lighting system to compute light intensity
+        viewport_bounds = Rect(world_left, world_top, dest_width, dest_height)
+        self.current_light_intensity = self.lighting_system.compute_lightmap(
+            viewport_bounds
         )
 
-        self.current_light_intensity = gw.lighting.compute_lighting_with_shadows(
-            dest_width,
-            dest_height,
-            relevant_actors,
-            viewport_offset=(world_left, world_top),
-        )
+        if self.current_light_intensity is None:
+            return None
         # ---------------------------------------------------------------------
 
         # Create temporary console for the light overlay

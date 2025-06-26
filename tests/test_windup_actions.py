@@ -48,6 +48,12 @@ class DummyGameWorld:
         self.lighting = DummyLighting()
         self.actors = [self.player]
         self.game_map = SimpleNamespace(transparent=[], visible=[], explored=[])
+        self.lights = []
+        self.lighting_system = None
+
+    def add_light(self, light) -> None:
+        """Add a light source to the world."""
+        self.lights.append(light)
 
 
 class DummyRenderer:

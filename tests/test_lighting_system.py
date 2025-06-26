@@ -1,64 +1,58 @@
 import numpy as np
 
+from catley.game.game_world import GameWorld
+from catley.game.lights import DynamicLight, StaticLight
 from catley.util.coordinates import Rect
-from catley.view.render.effects.lighting import LightingSystem, LightSource
+from catley.view.render.cpu_lighting import CPULightingSystem
 
 
-def test_compute_lighting_with_viewport_offset() -> None:
-    ls = LightingSystem()
-    ls.add_light(LightSource(radius=2, _pos=(10, 10)))
+def test_cpu_lighting_system_basic() -> None:
+    """Test that CPULightingSystem can be created and compute a basic lightmap."""
+    gw = GameWorld(50, 50)
+    lighting_system = CPULightingSystem(gw)
 
-    ambient = ls.config.ambient_light
-    # Slice that includes the light when offset is applied.
-    with_offset = ls.compute_lighting_with_shadows(5, 5, [], viewport_offset=(8, 8))
-    assert with_offset.shape == (5, 5, 3)
-    assert np.all(with_offset[2, 2] > ambient)
+    # Add a static light
+    static_light = StaticLight(position=(25, 25), radius=5, color=(255, 255, 255))
+    gw.add_light(static_light)
 
-    # Same slice without offset should not include the light.
-    without_offset = ls.compute_lighting_with_shadows(5, 5, [], viewport_offset=(0, 0))
-    assert np.allclose(without_offset, ambient)
+    # Compute lightmap for a small area around the light
+    viewport_bounds = Rect(20, 20, 10, 10)
+    lightmap = lighting_system.compute_lightmap(viewport_bounds)
 
+    # Should return a numpy array
+    assert isinstance(lightmap, np.ndarray)
+    assert lightmap.shape == (10, 10, 3)
 
-def test_compute_lighting_for_viewport() -> None:
-    ls = LightingSystem()
-    ls.add_light(LightSource(radius=2, _pos=(10, 10)))
-
-    ambient = ls.config.ambient_light
-    off_map = ls.compute_lighting_for_viewport(Rect(0, 0, 5, 5))
-    assert np.allclose(off_map, ambient)
-
-    on_map = ls.compute_lighting_for_viewport(Rect(8, 8, 5, 5))
-    assert on_map.shape == (5, 5, 3)
-    assert np.all(on_map[2, 2] > ambient)
+    # Light should be brighter in the center
+    center_intensity = lightmap[5, 5]
+    corner_intensity = lightmap[0, 0]
+    assert np.any(center_intensity > corner_intensity)
 
 
-def test_lighting_cache_hit() -> None:
-    ls = LightingSystem()
-    ls.add_light(LightSource(radius=2, _pos=(10, 10)))
+def test_cpu_lighting_system_dynamic_light() -> None:
+    """Test that dynamic lights can be added and affect the lightmap."""
+    gw = GameWorld(50, 50)
+    lighting_system = CPULightingSystem(gw)
 
-    result1 = ls.compute_lighting_with_shadows(5, 5, [], viewport_offset=(8, 8))
-    misses_after_first = ls._lighting_cache.stats.misses
+    # Add a dynamic light
+    dynamic_light = DynamicLight(
+        position=(25, 25), radius=3, color=(255, 128, 64), flicker_enabled=True
+    )
+    gw.add_light(dynamic_light)
 
-    result2 = ls.compute_lighting_with_shadows(5, 5, [], viewport_offset=(8, 8))
-    assert ls._lighting_cache.stats.hits == 1
-    assert ls._lighting_cache.stats.misses == misses_after_first
-    assert np.array_equal(result1, result2)
+    # Compute lightmap
+    viewport_bounds = Rect(22, 22, 6, 6)
+    lightmap = lighting_system.compute_lightmap(viewport_bounds)
+
+    # Should return a numpy array with the right shape
+    assert isinstance(lightmap, np.ndarray)
+    assert lightmap.shape == (6, 6, 3)
 
 
-def test_cache_invalidation_on_add_light() -> None:
-    ls = LightingSystem()
-    light1 = LightSource(radius=2, _pos=(10, 10))
-    ls.add_light(light1)
-    ls.compute_lighting_with_shadows(5, 5, [], viewport_offset=(8, 8))
+def test_cpu_lighting_system_update() -> None:
+    """Test that lighting system can be updated without errors."""
+    gw = GameWorld(50, 50)
+    lighting_system = CPULightingSystem(gw)
 
-    # Cache should have 1 item after first computation
-    assert len(ls._lighting_cache) == 1
-
-    ls.add_light(LightSource(radius=1, _pos=(5, 5)))
-
-    # Cache should be cleared after adding a light
-    assert len(ls._lighting_cache) == 0
-
-    ls.compute_lighting_with_shadows(5, 5, [], viewport_offset=(8, 8))
-    # After adding a light and recomputing, cache should have content again
-    assert len(ls._lighting_cache) == 1
+    # Should not raise any exceptions
+    lighting_system.update(0.016)  # 60 FPS delta time
