@@ -47,12 +47,23 @@ class View(abc.ABC):
         self._cached_texture: Any | None = None
 
     @abc.abstractmethod
-    def draw(self, renderer: Renderer) -> None:
-        """Draw view content. Subclasses implement this."""
+    def draw(self, renderer: Renderer, alpha: float) -> None:
+        """Draw view content. Subclasses implement this.
+
+        Args:
+            renderer: The rendering backend to use
+            alpha: Interpolation factor between game logic steps (0.0-1.0)
+                  Used for smooth animations independent of visual framerate
+        """
         pass
 
-    def present(self, renderer: Renderer) -> None:
-        """Handle texture presentation for backends that produce textures."""
+    def present(self, renderer: Renderer, alpha: float) -> None:
+        """Handle texture presentation for backends that produce textures.
+
+        Args:
+            renderer: The rendering backend to use
+            alpha: Interpolation factor (unused in base implementation)
+        """
         if not self.visible or self._cached_texture is None:
             return
 
@@ -99,12 +110,23 @@ class TextView(View):
         pass
 
     @abc.abstractmethod
-    def draw_content(self, renderer: Renderer) -> None:
-        """Subclasses implement the actual drawing commands."""
+    def draw_content(self, renderer: Renderer, alpha: float) -> None:
+        """Subclasses implement the actual drawing commands.
+
+        Args:
+            renderer: The rendering backend to use
+            alpha: Interpolation factor for smooth animations (0.0-1.0)
+                  Most UI views don't use this, but it's available
+        """
         pass
 
-    def draw(self, renderer: Renderer) -> None:
-        """Orchestrate rendering with caching support."""
+    def draw(self, renderer: Renderer, alpha: float) -> None:
+        """Orchestrate rendering with caching support.
+
+        Args:
+            renderer: The rendering backend to use
+            alpha: Interpolation factor passed to draw_content
+        """
         if not self.visible:
             return
 
@@ -114,7 +136,7 @@ class TextView(View):
         if cached_texture is None:
             # CACHE MISS: The state has changed. We need to re-render.
             self.canvas.begin_frame()
-            self.draw_content(renderer)
+            self.draw_content(renderer, alpha)
             artifact = self.canvas.end_frame()
 
             if artifact is not None:

@@ -27,7 +27,7 @@ class StatusView(TextView):
         """The key is the modifiers' revision number."""
         return self.controller.gw.player.modifiers.revision
 
-    def draw_content(self, renderer: Renderer) -> None:
+    def draw_content(self, renderer: Renderer, alpha: float) -> None:
         """Render the status view if player has active effects."""
 
         tile_w, tile_h = self.tile_dimensions

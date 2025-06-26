@@ -55,7 +55,7 @@ class MessageLogView(TextView):
         self.view_height_px = self.height * self.tile_dimensions[1]
         self.canvas.configure_scaling(self.tile_dimensions[1])
 
-    def draw_content(self, renderer: Renderer) -> None:
+    def draw_content(self, renderer: Renderer, alpha: float) -> None:
         # Update cached tile dimensions and recalculate pixel dimensions
         self.tile_dimensions = renderer.tile_dimensions
         self.view_width_px = self.width * self.tile_dimensions[0]

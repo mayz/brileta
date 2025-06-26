@@ -179,7 +179,7 @@ class FrameManager:
         """Add a UI view to be rendered each frame."""
         self.views.append(view)
 
-    def render_frame(self, delta_time: float) -> None:
+    def render_frame(self, alpha: float) -> None:
         """
         Main rendering pipeline that composites the final frame.
 
@@ -195,7 +195,7 @@ class FrameManager:
         # 2. UI VIEW RENDERING
         for view in self.views:
             if view.visible:
-                view.draw(self.renderer)
+                view.draw(self.renderer, alpha)
 
         # Allow active mode to render its additional UI
         if self.controller.active_mode:
@@ -216,7 +216,7 @@ class FrameManager:
         # Allow views and other systems to perform low-level SDL drawing
         for view in self.views:
             if view.visible:
-                view.present(self.renderer)
+                view.present(self.renderer, alpha)
 
         # 5. OVERLAY PRESENTATION (texture blitting phase)
         self.controller.overlay_system.present_overlays()

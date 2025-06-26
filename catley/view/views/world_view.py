@@ -20,6 +20,7 @@ from catley.util.coordinates import (
     Rect,
     RootConsoleTilePos,
 )
+from catley.util.live_vars import record_time_live_variable
 from catley.view.render.effects.effects import EffectLibrary
 from catley.view.render.effects.environmental import EnvironmentalEffectSystem
 from catley.view.render.effects.particles import (
@@ -138,7 +139,7 @@ class WorldView(View):
 
         return (camera_key, map_key)
 
-    def draw(self, renderer: Renderer) -> None:
+    def draw(self, renderer: Renderer, alpha: float) -> None:
         """Main drawing method for the world view."""
         if not self.visible:
             return
@@ -194,68 +195,79 @@ class WorldView(View):
 
         # Update dynamic systems that need to process every frame
         for actor in self.controller.gw.actors:
-            actor.update_render_position(delta_time)
+            actor.update_render_position(alpha)
 
-        self.particle_system.update(delta_time)
-        self.environmental_system.update(delta_time)
+        self.particle_system.update(alpha)
+        self.environmental_system.update(alpha)
 
-    def present(self, renderer: Renderer) -> None:
+    def present(self, renderer: Renderer, alpha: float) -> None:
         """Composite final frame layers in proper order."""
         if not self.visible:
             return
 
         # 1. Present the cached unlit background
         if self._active_background_texture:
-            renderer.present_texture(
-                self._active_background_texture, self.x, self.y, self.width, self.height
-            )
+            with record_time_live_variable("cpu.render.present_background_ms"):
+                renderer.present_texture(
+                    self._active_background_texture,
+                    self.x,
+                    self.y,
+                    self.width,
+                    self.height,
+                )
 
         # 2. Present the dynamic light overlay on top of the background
         if self._light_overlay_texture:
-            renderer.present_texture(
-                self._light_overlay_texture, self.x, self.y, self.width, self.height
-            )
+            with record_time_live_variable("cpu.render.present_light_overlay_ms"):
+                renderer.present_texture(
+                    self._light_overlay_texture, self.x, self.y, self.width, self.height
+                )
 
         # 3. Continue with the rest of the rendering
         viewport_bounds = Rect.from_bounds(0, 0, self.width - 1, self.height - 1)
         view_offset = (self.x, self.y)
 
-        self.controller.renderer.render_particles(
-            self.particle_system,
-            ParticleLayer.UNDER_ACTORS,
-            viewport_bounds,
-            view_offset,
-        )
-
-        if config.SMOOTH_ACTOR_RENDERING_ENABLED:
-            self._render_actors_smooth(renderer)
-        else:
-            self._render_actors_traditional(renderer)
-
-        # Render highlights and mode-specific UI on top of actors
-        if self.controller.active_mode:
-            self.controller.active_mode.render_world()
-        else:
-            self._render_selected_actor_highlight()
-
-        self.controller.renderer.render_particles(
-            self.particle_system,
-            ParticleLayer.OVER_ACTORS,
-            viewport_bounds,
-            view_offset,
-        )
-
-        if config.ENVIRONMENTAL_EFFECTS_ENABLED:
-            self.environmental_system.render_effects(
-                renderer,
+        with record_time_live_variable("cpu.render.particles_under_actors_ms"):
+            self.controller.renderer.render_particles(
+                self.particle_system,
+                ParticleLayer.UNDER_ACTORS,
                 viewport_bounds,
                 view_offset,
             )
+
+        if config.SMOOTH_ACTOR_RENDERING_ENABLED:
+            self._render_actors_smooth(renderer, alpha)
+        else:
+            self._render_actors_traditional(renderer, alpha)
+
+        # Render highlights and mode-specific UI on top of actors
+        if self.controller.active_mode:
+            with record_time_live_variable("cpu.render.active_mode_world_ms"):
+                self.controller.active_mode.render_world()
+        else:
+            self._render_selected_actor_highlight()
+
+        with record_time_live_variable("cpu.render.particles_over_actors_ms"):
+            self.controller.renderer.render_particles(
+                self.particle_system,
+                ParticleLayer.OVER_ACTORS,
+                viewport_bounds,
+                view_offset,
+            )
+
+        if config.ENVIRONMENTAL_EFFECTS_ENABLED:
+            with record_time_live_variable("cpu.render.environmental_effects_ms"):
+                self.environmental_system.render_effects(
+                    renderer,
+                    viewport_bounds,
+                    view_offset,
+                )
 
     # ------------------------------------------------------------------
     # Internal rendering helpers
     # ------------------------------------------------------------------
 
+    @record_time_live_variable("cpu.render.map_unlit_ms")
     def _render_map_unlit(self) -> None:
         gw = self.controller.gw
         vs = self.viewport_system
@@ -307,7 +319,8 @@ class WorldView(View):
             # so this method can simply be a no-op or pass.
             pass
 
-    def _render_actors_smooth(self, renderer: Renderer) -> None:
+    @record_time_live_variable("cpu.render.actors_smooth_ms")
+    def _render_actors_smooth(self, renderer: Renderer, alpha: float) -> None:
         """Render all actors with smooth sub-pixel positioning."""
         gw = self.controller.gw
         vs = self.viewport_system
@@ -335,17 +348,41 @@ class WorldView(View):
 
         for actor in sorted_actors:
             if gw.game_map.visible[actor.x, actor.y]:
-                self._render_single_actor_smooth(actor, renderer, bounds, vs)
+                self._render_single_actor_smooth(actor, renderer, bounds, vs, alpha)
 
     def _render_single_actor_smooth(
-        self, actor: Actor, renderer: Renderer, bounds: Rect, vs: ViewportSystem
+        self,
+        actor: Actor,
+        renderer: Renderer,
+        bounds: Rect,
+        vs: ViewportSystem,
+        alpha: float,
     ) -> None:
-        """Render a single actor with smooth positioning and lighting."""
+        """Render a single actor with smooth positioning and lighting.
+
+        Uses linear interpolation between the actor's previous position (from last step)
+        and current position (from current logic step) to create fluid movement that's
+        independent of visual framerate.
+
+        Args:
+            actor: The actor to render
+            renderer: Rendering backend
+            bounds: Viewport bounds for culling
+            vs: Viewport system for coordinate conversion
+            alpha: Interpolation factor (0.0=previous state, 1.0=current state)
+        """
         # Get lighting intensity (reuse existing lighting logic)
         light_rgb = self._get_actor_lighting_intensity(actor, bounds)
 
-        # Convert actor's render position to viewport coordinates
-        vp_x, vp_y = vs.world_to_screen_float(actor.render_x, actor.render_y)
+        # INTERPOLATION MAGIC: Blend between previous and current position
+        # When alpha=0.0: Show exactly where actor was last logic step (prev_x/prev_y)
+        # When alpha=1.0: Show exactly where actor is now (x/y)
+        # When alpha=0.5: Show exactly halfway between - this creates smooth movement!
+        # Formula: lerp(prev, current, alpha) = prev * (1-alpha) + current * alpha
+        interpolated_x = actor.prev_x * (1.0 - alpha) + actor.x * alpha
+        interpolated_y = actor.prev_y * (1.0 - alpha) + actor.y * alpha
+
+        vp_x, vp_y = vs.world_to_screen_float(interpolated_x, interpolated_y)
 
         # Root console position where this viewport pixel ends up
         root_x = self.x + vp_x
@@ -360,7 +397,7 @@ class WorldView(View):
 
         # Render using the enhanced renderer
         renderer.draw_actor_smooth(
-            actor.ch, final_color, screen_pixel_x, screen_pixel_y, light_rgb
+            actor.ch, final_color, screen_pixel_x, screen_pixel_y, light_rgb, alpha
         )
 
     def _get_actor_lighting_intensity(self, actor: Actor, bounds: Rect) -> tuple:
@@ -393,7 +430,8 @@ class WorldView(View):
 
         return base_color
 
-    def _render_actors_traditional(self, renderer: Renderer) -> None:
+    @record_time_live_variable("cpu.render.actors_traditional_ms")
+    def _render_actors_traditional(self, renderer: Renderer, alpha: float) -> None:
         """Tile-aligned actor rendering, adapted for dynamic rendering."""
         gw = self.controller.gw
         vs = self.viewport_system
@@ -453,8 +491,10 @@ class WorldView(View):
                     screen_pixel_x,
                     screen_pixel_y,
                     light_rgb,
+                    alpha,
                 )
 
+    @record_time_live_variable("cpu.render.selected_actor_highlight_ms")
     def _render_selected_actor_highlight(self) -> None:
         if self.controller.is_targeting_mode():
             return
@@ -480,6 +520,7 @@ class WorldView(View):
         world_tile_pos = fm.get_world_coords_from_root_tile_coords(root_tile_pos)
         self.controller.gw.mouse_tile_location_on_map = world_tile_pos
 
+    @record_time_live_variable("cpu.render.light_overlay_ms")
     def _render_light_overlay(
         self, renderer: Renderer
     ) -> tcod.sdl.render.Texture | None:

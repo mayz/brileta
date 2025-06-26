@@ -138,7 +138,7 @@ def test_world_view_applies_screen_shake_before_render(monkeypatch) -> None:
     # Mock the light overlay rendering to avoid mocking game_map.visible
     view._render_light_overlay = lambda renderer: None  # type: ignore[assignment]
 
-    view.draw(cast(Renderer, controller.renderer))
+    view.draw(cast(Renderer, controller.renderer), 0.0)
 
     assert captured["cam_pos"] == (5.5, 4.5)
 
@@ -174,7 +174,7 @@ def test_world_view_screen_shake_does_not_overflow(monkeypatch) -> None:
     # Mock the light overlay rendering to avoid mocking game_map.visible
     view._render_light_overlay = lambda renderer: None  # type: ignore[assignment]
 
-    view.draw(cast(Renderer, controller.renderer))
+    view.draw(cast(Renderer, controller.renderer), 0.0)
 
     assert captured["dest_width"] <= view.width
     assert captured["dest_height"] <= view.height
@@ -197,7 +197,7 @@ def test_small_map_actor_alignment(monkeypatch) -> None:
     # Mock the light overlay rendering to avoid mocking game_map.visible
     view._render_light_overlay = lambda renderer: None  # type: ignore[assignment]
 
-    view.draw(cast(Renderer, controller.renderer))
+    view.draw(cast(Renderer, controller.renderer), 0.0)
 
     vs = view.viewport_system
     px, py = vs.world_to_screen(controller.gw.player.x, controller.gw.player.y)

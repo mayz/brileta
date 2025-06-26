@@ -66,6 +66,7 @@ class Renderer(abc.ABC):
         screen_x: float,
         screen_y: float,
         light_intensity: tuple[float, float, float] = (1.0, 1.0, 1.0),
+        alpha: float = 1.0,
     ) -> None:
         """Draw an actor character at sub-pixel screen coordinates.
 
@@ -75,6 +76,8 @@ class Renderer(abc.ABC):
             screen_x: Screen X coordinate in pixels (can be fractional)
             screen_y: Screen Y coordinate in pixels (can be fractional)
             light_intensity: RGB lighting multipliers in 0.0-1.0 range
+            alpha: Interpolation factor between previous and current state (0.0-1.0)
+                  Used for smooth movement between fixed timestep updates
         """
         pass
 

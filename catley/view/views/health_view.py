@@ -30,7 +30,7 @@ class HealthView(TextView):
         player = self.controller.gw.player
         return (player.health.hp, player.health.max_hp, player.health.ap)
 
-    def draw_content(self, renderer: Renderer) -> None:
+    def draw_content(self, renderer: Renderer, alpha: float) -> None:
         tile_width, tile_height = self.tile_dimensions
         pixel_width = self.width * tile_width
         pixel_height = self.height * tile_height

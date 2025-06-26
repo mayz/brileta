@@ -127,6 +127,13 @@ class Actor:
         # === Core Identity & World Presence ===
         self.x: WorldTileCoord = x
         self.y: WorldTileCoord = y
+
+        # INTERPOLATION TRACKING: Previous position for smooth movement
+        # These are updated each fixed timestep to enable linear interpolation
+        # between logic steps, creating smooth movement independent of visual framerate
+        self.prev_x: WorldTileCoord = x
+        self.prev_y: WorldTileCoord = y
+
         # Visual position (deliberately typed as floats but in world tile space)
         self.render_x: float = float(x)
         self.render_y: float = float(y)

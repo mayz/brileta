@@ -277,6 +277,7 @@ class PygletRenderer(Renderer):
         screen_x: float,
         screen_y: float,
         light_intensity: tuple[float, float, float] = (1.0, 1.0, 1.0),
+        alpha: float = 1.0,
     ) -> None:
         sprite = self.actor_sprite_pool.get_or_create()
 

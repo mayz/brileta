@@ -63,7 +63,7 @@ FPS_SAMPLE_SIZE = 256  # Number of frame time samples to track
 # These are independent flags to control debugging features.
 
 # Set to True for uncapped FPS to identify performance bottlenecks.
-PERFORMANCE_PROFILING = True
+PERFORMANCE_PROFILING = False
 
 # Set to True to print metrics about the "tap vs. hold" input system.
 # This measures the real-world time between player-perceived moves, which is
@@ -86,8 +86,9 @@ if PERFORMANCE_PROFILING:
     # Profiling almost always means you want to see the FPS counter.
     SHOW_FPS = True
 else:
-    # Release Build & Daily Development (battery-friendly)
-    TARGET_FPS = 60
+    # Release Build & Daily Development
+    # TARGET_FPS = 120  # Target framerate for smooth gameplay
+    TARGET_FPS = 60  # Battery friendly mode
     VSYNC = True
 
 # =============================================================================

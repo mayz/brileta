@@ -99,8 +99,9 @@ class TCODRenderer(Renderer):
         screen_x: float,
         screen_y: float,
         light_intensity: tuple[float, float, float] = (1.0, 1.0, 1.0),
+        alpha: float = 1.0,
     ) -> None:
-        """Draw an actor character at sub-pixel screen coordinates.
+        """Draw an actor character at sub-pixel screen coordinates with interpolation.
 
         Args:
             char: Character to draw (e.g., '@', 'g')
@@ -108,9 +109,14 @@ class TCODRenderer(Renderer):
             screen_x: Screen X coordinate in pixels (can be fractional)
             screen_y: Screen Y coordinate in pixels (can be fractional)
             light_intensity: RGB lighting multipliers in 0.0-1.0 range
+            alpha: Interpolation factor (0.0 = previous state, 1.0 = current state)
         """
         if not self._tileset:
             return
+
+        # Interpolate the screen coordinates based on alpha
+        # screen_x and screen_y are already interpolated by the caller (WorldView)
+        # This method just uses them as is.
 
         char_code = ord(char)
         tile_pixels = self._tileset.get_tile(char_code)

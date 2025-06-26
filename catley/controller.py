@@ -94,9 +94,22 @@ class Controller:
         # Initialize Message Log
         self.message_log = MessageLog()
 
-        # Initialize clock for frame timing
+        # Fixed timestep game loop implementation
+        # This separates rendering (variable framerate) from game logic (fixed rate)
         self.clock = Clock()
-        self.target_fps = config.TARGET_FPS
+        self.target_fps = config.TARGET_FPS  # Visual framerate cap
+
+        # Game logic runs at exactly 60Hz regardless of visual framerate
+        # This ensures consistent physics, movement, and game timing
+        self.fixed_timestep = 1.0 / 60.0  # 16.67ms per logic step
+
+        # Accumulator tracks excess frame time to "catch up" logic steps
+        # When accumulator >= fixed_timestep, we run one logic update
+        self.accumulator = 0.0
+
+        # Death spiral protection: Never run more than this many logic steps per frame
+        # Prevents performance collapse when rendering framerate drops below timestep
+        self.max_logic_steps_per_frame = 5
 
         # Initialize overlay system
         self.overlay_system = OverlaySystem(self)
@@ -135,61 +148,203 @@ class Controller:
         self.gw.game_map.explored |= self.gw.game_map.visible
 
     def run_game_loop(self) -> None:
+        """Main game loop using fixed timestep with interpolation.
+
+        Architecture Overview:
+        - FIXED TIMESTEP: Game logic runs at exactly 60Hz for consistent simulation
+        - VARIABLE RENDERING: Visual frames render as fast as possible (up to cap)
+        - INTERPOLATION: Smooth movement between logic steps using alpha blending
+
+        The "accumulator pattern" ensures:
+        1. Deterministic game state (same inputs = same outputs)
+        2. Smooth visuals even when logic/rendering rates differ
+        3. Responsive input (processed immediately, not queued)
+
+        Flow:
+        1. Process input immediately (maximum responsiveness)
+        2. Accumulate frame time since last update
+        3. Run 0+ fixed logic steps (16.67ms each) to "catch up"
+        4. Render with alpha interpolation between previous/current state
+
+        Alpha represents how far between logic steps we are:
+        - alpha=0.0: Show previous logic state
+        - alpha=1.0: Show current logic state
+        - alpha=0.5: Show halfway interpolated between them
+        """
         assert self.gw.lighting_system is not None, (
             "Lighting system must be initialized"
         )
 
         live_variable_registry.register_metric(
-            "frame_time_ms",
-            description="Frame rendering time",
+            "cpu.total_frame_ms",
+            description="Total CPU time for one visual frame",
             num_samples=1000,
+        )
+        live_variable_registry.register_metric(
+            "cpu.logic_step_ms",
+            description="CPU time for one fixed logic step",
+            num_samples=500,
+        )
+        live_variable_registry.register_metric(
+            "cpu.animation_update_ms",
+            description="CPU time for animation updates",
+            num_samples=500,
+        )
+
+        live_variable_registry.register_metric(
+            "cpu.action_processing_ms",
+            description="CPU time for action processing",
+            num_samples=500,
+        )
+        live_variable_registry.register_metric(
+            "cpu.render_ms",
+            description="CPU time for rendering",
+            num_samples=500,
+        )
+        live_variable_registry.register_metric(
+            "cpu.render.light_overlay_ms",
+            description="CPU time for light overlay rendering",
+            num_samples=100,
+        )
+        live_variable_registry.register_metric(
+            "cpu.render.map_unlit_ms",
+            description="CPU time for unlit map rendering",
+            num_samples=100,
+        )
+        live_variable_registry.register_metric(
+            "cpu.render.actors_smooth_ms",
+            description="CPU time for smooth actor rendering",
+            num_samples=100,
+        )
+        live_variable_registry.register_metric(
+            "cpu.render.actors_traditional_ms",
+            description="CPU time for traditional actor rendering",
+            num_samples=100,
+        )
+        live_variable_registry.register_metric(
+            "cpu.render.selected_actor_highlight_ms",
+            description="CPU time for selected actor highlight rendering",
+            num_samples=100,
+        )
+        live_variable_registry.register_metric(
+            "cpu.render.present_background_ms",
+            description="CPU time for presenting background texture",
+            num_samples=100,
+        )
+        live_variable_registry.register_metric(
+            "cpu.render.present_light_overlay_ms",
+            description="CPU time for presenting light overlay texture",
+            num_samples=100,
+        )
+        live_variable_registry.register_metric(
+            "cpu.render.particles_under_actors_ms",
+            description="CPU time for rendering particles under actors",
+            num_samples=100,
+        )
+        live_variable_registry.register_metric(
+            "cpu.render.particles_over_actors_ms",
+            description="CPU time for rendering particles over actors",
+            num_samples=100,
+        )
+        live_variable_registry.register_metric(
+            "cpu.render.active_mode_world_ms",
+            description="CPU time for rendering active mode world elements",
+            num_samples=100,
+        )
+        live_variable_registry.register_metric(
+            "cpu.render.environmental_effects_ms",
+            description="CPU time for rendering environmental effects",
+            num_samples=100,
         )
 
         try:
             tcod.sdl.mouse.show(False)
 
             while True:
+                # FRAME TIMING: Get elapsed time and add to accumulator
+                # This caps visual framerate while accumulating "debt" for logic updates
                 delta_time = self.clock.sync(fps=self.target_fps)
+                self.accumulator += delta_time
 
-                with record_time_live_variable("frame_time_ms"):
-                    # Step 1: Update frame-independent systems
-                    self.animation_manager.update(delta_time)
-                    self.gw.lighting_system.update(delta_time)
+                # INPUT PROCESSING: Handle input immediately for maximum responsiveness
+                # Input is NOT tied to fixed timestep - processed every visual frame
+                for event in tcod.event.get():
+                    self.input_handler.dispatch(event)
 
-                    # Step 2: Process player input immediately (if any)
-                    for event in tcod.event.get():
-                        self.input_handler.dispatch(event)
+                # Check for player-initiated actions (movement or queued)
+                move_intent = None
+                if not self.overlay_system.has_interactive_overlays():
+                    move_intent = self.movement_handler.generate_intent(
+                        self.input_handler.movement_keys
+                    )
+                    if move_intent:
+                        self._execute_player_action_immediately(move_intent)
 
-                    # Check for player-initiated actions (movement or queued)
-                    move_intent = None
-                    if not self.overlay_system.has_interactive_overlays():
-                        move_intent = self.movement_handler.generate_intent(
-                            self.input_handler.movement_keys
-                        )
-                        if move_intent:
-                            self._execute_player_action_immediately(move_intent)
+                # Check for other queued player actions
+                if self.turn_manager.has_pending_actions():
+                    player_action = self.turn_manager.dequeue_player_action()
+                    if player_action:
+                        self._execute_player_action_immediately(player_action)
 
-                    # Check for other queued player actions
-                    if self.turn_manager.has_pending_actions():
-                        player_action = self.turn_manager.dequeue_player_action()
-                        if player_action:
-                            self._execute_player_action_immediately(player_action)
+                # Check for autopilot actions if no manual input
+                if (
+                    not move_intent
+                    and not self.turn_manager.has_pending_actions()
+                    and self.turn_manager.is_player_turn_available()
+                ):
+                    autopilot_action = self.gw.player.get_next_action(self)
+                    if autopilot_action:
+                        self._execute_player_action_immediately(autopilot_action)
 
-                    # Check for autopilot actions if no manual input
-                    if (
-                        not move_intent
-                        and not self.turn_manager.has_pending_actions()
-                        and self.turn_manager.is_player_turn_available()
+                with record_time_live_variable("cpu.total_frame_ms"):
+                    # INTERPOLATION ALPHA: Calculate how far between logic steps we are
+                    # alpha=0.0 means "exactly at previous step", alpha=1.0 is "current"
+                    # alpha=0.5 means "halfway between steps" - creates smooth movement
+                    # Clamp to 1.0 to prevent overshoot when death spiral hits
+                    alpha = min(1.0, self.accumulator / self.fixed_timestep)
+
+                    # FIXED TIMESTEP LOOP: Run logic updates at exactly 60Hz
+                    # May run 0, 1, or multiple times per visual frame for consistency
+                    # Death spiral protection: limit logic steps per frame
+                    logic_steps_this_frame = 0
+                    while (
+                        self.accumulator >= self.fixed_timestep
+                        and logic_steps_this_frame < self.max_logic_steps_per_frame
                     ):
-                        autopilot_action = self.gw.player.get_next_action(self)
-                        if autopilot_action:
-                            self._execute_player_action_immediately(autopilot_action)
+                        with record_time_live_variable("cpu.logic_step_ms"):
+                            # SNAPSHOT PREVIOUS STATE: Save current positions for smooth
+                            # This allows rendering to blend smoothly between old/new
+                            for actor in self.gw.actors:
+                                actor.prev_x = actor.x
+                                actor.prev_y = actor.y
 
-                    # Step 3: Process all available NPC actions immediately
-                    self._process_all_available_npc_actions()
+                            with record_time_live_variable("cpu.animation_update_ms"):
+                                # ANIMATIONS: Update frame-independent systems
+                                # Ensures consistent animation timing regardless of FPS
+                                self.animation_manager.update(self.fixed_timestep)
 
-                    # Step 4: Render frame
-                    self.frame_manager.render_frame(delta_time)
+                            self.gw.lighting_system.update(self.fixed_timestep)
+
+                            with record_time_live_variable("cpu.action_processing_ms"):
+                                # GAME LOGIC: Process all NPC actions for this step
+                                # This is where the core game simulation happens
+                                self._process_all_available_npc_actions()
+
+                        # CONSUME TIME: Remove one fixed timestep from accumulator
+                        # Continue loop if more time needs to be processed
+                        self.accumulator -= self.fixed_timestep
+                        logic_steps_this_frame += 1
+
+                    # RECOVERY: If death spiral protection kicked in, gradually reduce
+                    # This prevents permanent slowdown when performance recovers
+                    if logic_steps_this_frame >= self.max_logic_steps_per_frame:
+                        # Gradually bleed off excess time to recover from spikes
+                        self.accumulator *= 0.8
+
+                    with record_time_live_variable("cpu.render_ms"):
+                        # RENDER FRAME: Draw visual frame with interpolation
+                        # Uses alpha to smoothly blend between prev_* and current
+                        self.frame_manager.render_frame(alpha)
 
         finally:
             tcod.sdl.mouse.show(True)

@@ -25,7 +25,7 @@ class HelpTextView(TextView):
         player = self.controller.gw.player
         return self.controller.gw.has_pickable_items_at_location(player.x, player.y)
 
-    def draw_content(self, renderer: Renderer) -> None:
+    def draw_content(self, renderer: Renderer, alpha: float) -> None:
         """Render a short string with helpful key bindings."""
 
         tile_w, tile_h = self.tile_dimensions

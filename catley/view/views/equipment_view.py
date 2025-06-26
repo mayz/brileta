@@ -25,7 +25,7 @@ class EquipmentView(TextView):
         """The key is the inventory's revision number."""
         return self.controller.gw.player.inventory.revision
 
-    def draw_content(self, renderer: Renderer) -> None:
+    def draw_content(self, renderer: Renderer, alpha: float) -> None:
         tile_width, tile_height = self.tile_dimensions
         pixel_width = self.width * tile_width
         pixel_height = self.height * tile_height
