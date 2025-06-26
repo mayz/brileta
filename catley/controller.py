@@ -19,6 +19,7 @@ from .game.actions.base import GameIntent
 from .game.actions.types import AnimationType
 from .game.actors.core import Character
 from .game.game_world import GameWorld
+from .game.lights import DynamicLight
 from .game.pathfinding_goal import PathfindingGoal
 from .game.turn_manager import TurnManager
 from .input_handler import InputHandler
@@ -80,8 +81,6 @@ class Controller:
         self.gw.lighting_system = cpu_lighting_system
 
         # Create the player's light now that lighting system is connected
-        from catley.game.lights import DynamicLight
-
         player_torch = DynamicLight.create_player_torch(self.gw.player)
         self.gw.add_light(player_torch)
 
@@ -136,6 +135,10 @@ class Controller:
         self.gw.game_map.explored |= self.gw.game_map.visible
 
     def run_game_loop(self) -> None:
+        assert self.gw.lighting_system is not None, (
+            "Lighting system must be initialized"
+        )
+
         try:
             tcod.sdl.mouse.show(False)
 

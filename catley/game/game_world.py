@@ -1,9 +1,5 @@
 import random
 
-# Import the new lighting system interface and light types
-# TYPE_CHECKING import to avoid circular imports during Phase 1
-from typing import TYPE_CHECKING, Any
-
 from catley import colors, config
 from catley.config import PLAYER_BASE_STRENGTH, PLAYER_BASE_TOUGHNESS
 from catley.environment.generators import RoomsAndCorridorsGenerator
@@ -24,11 +20,10 @@ from catley.game.items.item_types import (
     RIFLE_MAGAZINE_TYPE,
     SNIPER_RIFLE_TYPE,
 )
+from catley.game.lights import DynamicLight, LightSource
 from catley.util.coordinates import Rect, TileCoord, WorldTileCoord, WorldTilePos
 from catley.util.spatial import SpatialHashGrid, SpatialIndex
-
-if TYPE_CHECKING:
-    pass
+from catley.view.render.lighting_system import LightingSystem
 
 
 class GameWorld:
@@ -46,11 +41,9 @@ class GameWorld:
         self.item_spawner = ItemSpawner(self)
         self.selected_actor: Actor | None = None
 
-        # New lighting system architecture - Phase 1 scaffolding
-        # lights list will hold all LightSource objects in the world
-        self.lights: list[Any] = []  # Will be list[NewLightSource] in Phase 2
-        # lighting_system will be set by the application code during Phase 3
-        self.lighting_system: Any = None  # Will be NewLightingSystem | None in Phase 2
+        # All LightSource objects in the world
+        self.lights: list[LightSource] = []
+        self.lighting_system: LightingSystem | None = None
 
         self._init_actor_storage()
         self.game_map, rooms = self._generate_map(map_width, map_height)
@@ -76,7 +69,7 @@ class GameWorld:
             # Actor was not in the list; ignore.
             pass
 
-    def add_light(self, light: Any) -> None:  # Will be NewLightSource in Phase 2
+    def add_light(self, light: LightSource) -> None:
         """Add a light source to the world and notify the lighting system.
 
         Args:
@@ -86,7 +79,7 @@ class GameWorld:
         if self.lighting_system is not None:
             self.lighting_system.on_light_added(light)
 
-    def remove_light(self, light: Any) -> None:  # Will be NewLightSource in Phase 2
+    def remove_light(self, light: LightSource) -> None:
         """Remove a light source from the world and notify the lighting system.
 
         Args:
@@ -196,10 +189,10 @@ class GameWorld:
         Args:
             actor: The actor that moved
         """
-        if hasattr(self, "lighting_system") and self.lighting_system is not None:
+        if self.lighting_system is not None:
             # Find and update any lights owned by this actor
             for light in self.lights:
-                if hasattr(light, "owner") and light.owner == actor:
+                if isinstance(light, DynamicLight):
                     light.position = (actor.x, actor.y)
                     self.lighting_system.on_light_moved(light)
 

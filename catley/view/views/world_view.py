@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 import tcod.sdl.render
@@ -27,6 +27,7 @@ from catley.view.render.effects.particles import (
     SubTileParticleSystem,
 )
 from catley.view.render.effects.screen_shake import ScreenShake
+from catley.view.render.lighting_system import LightingSystem
 from catley.view.render.viewport import ViewportSystem
 
 from .base import View
@@ -44,7 +45,7 @@ class WorldView(View):
         self,
         controller: Controller,
         screen_shake: ScreenShake,
-        lighting_system: Any = None,  # Will be LightingSystem | None in Phase 2
+        lighting_system: LightingSystem | None = None,
     ) -> None:
         super().__init__()
         self.controller = controller
@@ -183,7 +184,6 @@ class WorldView(View):
         self._active_background_texture = texture
 
         # Generate the light overlay texture every frame for dynamic effects.
-        # Phase 2: Use new lighting system if available, otherwise render unlit
         if self.lighting_system is not None:
             self._light_overlay_texture = self._render_light_overlay(renderer)
         else:
@@ -484,7 +484,9 @@ class WorldView(View):
         self, renderer: Renderer
     ) -> tcod.sdl.render.Texture | None:
         """Render pure light world overlay with GPU alpha blending."""
-        # -- Compute light intensity using the new lighting system ------------
+        if self.lighting_system is None:
+            return None
+
         vs = self.viewport_system
         gw = self.controller.gw
 

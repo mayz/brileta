@@ -1,8 +1,8 @@
 """CPU-based implementation of the lighting system.
 
-This module contains the concrete CPU-based implementation of the LightingSystem
-interface. In Phase 2, all the existing logic from lighting.py will be moved here.
-For now, this is just a skeleton that implements the interface.
+This class is responsible for all lighting calculations performed on the CPU,
+including light intensity, color blending, flicker effects, and shadow casting.
+It maintains internal caches to optimize performance.
 """
 
 from __future__ import annotations
@@ -46,12 +46,7 @@ class LightingConfig:
 
 
 class CPULightingSystem(LightingSystem):
-    """CPU-based implementation of the lighting system.
-
-    This class will eventually contain all the lighting calculation logic
-    that currently exists in lighting.py. For Phase 1, it's just a skeleton
-    that implements the required interface methods.
-    """
+    """CPU-based implementation of the lighting system."""
 
     def __init__(
         self, game_world: GameWorld, config: LightingConfig | None = None
@@ -227,10 +222,6 @@ class CPULightingSystem(LightingSystem):
         Returns:
             A hashable tuple representing the static lighting state
         """
-        # In Phase 2, this will include:
-        # - viewport bounds
-        # - positions and properties of all static lights
-        # - game map revision for shadows
         return (
             viewport_bounds.x1,
             viewport_bounds.y1,
