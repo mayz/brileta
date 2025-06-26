@@ -1,8 +1,9 @@
 from unittest.mock import MagicMock
 
 from catley import colors
-from catley.view.render.base_renderer import Renderer
-from catley.view.render.canvas import PillowImageCanvas, TCODConsoleCanvas
+from catley.view.render.backends.pillow.canvas import PillowImageCanvas
+from catley.view.render.backends.tcod.canvas import TCODConsoleCanvas
+from catley.view.render.renderer import Renderer
 
 
 def _make_renderer(tile_height: int = 16) -> Renderer:

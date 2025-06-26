@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from catley import colors
-from catley.view.render.base_renderer import Renderer
-from catley.view.render.canvas import TCODConsoleCanvas
+from catley.view.render.backends.tcod.canvas import TCODConsoleCanvas
+from catley.view.render.renderer import Renderer
 
 from .base import TextView
 

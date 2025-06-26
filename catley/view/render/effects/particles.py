@@ -7,11 +7,11 @@ import numpy as np
 
 from catley import colors
 from catley.constants.view import ViewConstants as View
-from catley.game.enums import AreaType, BlendMode, ConsumableEffectType  # noqa: F401
+from catley.game.enums import BlendMode
 from catley.util.coordinates import Rect
 
 if TYPE_CHECKING:
-    from catley.view.render.base_renderer import Renderer
+    from catley.view.render.renderer import Renderer
 
 
 class ParticleLayer(Enum):

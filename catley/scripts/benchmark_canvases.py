@@ -24,9 +24,10 @@ import tcod.context
 from tcod.console import Console
 
 from catley import colors
-from catley.view.render.base_renderer import Renderer
-from catley.view.render.canvas import PillowImageCanvas, TCODConsoleCanvas
-from catley.view.render.tcod_renderer import TCODRenderer
+from catley.view.render.backends.pillow.canvas import PillowImageCanvas
+from catley.view.render.backends.tcod.canvas import TCODConsoleCanvas
+from catley.view.render.backends.tcod.renderer import TCODRenderer
+from catley.view.render.renderer import Renderer
 
 
 @dataclass

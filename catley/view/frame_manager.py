@@ -30,10 +30,10 @@ from catley.events import (
 from catley.util.coordinates import RootConsoleTilePos, ViewportTileCoord, WorldTilePos
 from catley.util.live_vars import live_variable_registry
 
-from .render.base_renderer import Renderer
+from .render.backends.tcod.renderer import TCODRenderer
 from .render.effects.effects import EffectContext
 from .render.effects.screen_shake import ScreenShake
-from .render.tcod_renderer import TCODRenderer
+from .render.renderer import Renderer
 from .ui.cursor_manager import CursorManager
 from .ui.debug_stats_overlay import DebugStatsOverlay
 from .ui.dev_console_overlay import DevConsoleOverlay

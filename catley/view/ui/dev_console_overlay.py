@@ -9,7 +9,8 @@ import tcod.event
 from catley import colors
 from catley.util.live_vars import live_variable_registry
 from catley.util.misc import string_to_type
-from catley.view.render.canvas import Canvas, PillowImageCanvas
+from catley.view.render.backends.pillow.canvas import PillowImageCanvas
+from catley.view.render.canvas import Canvas
 from catley.view.ui.overlays import TextOverlay
 
 if TYPE_CHECKING:  # pragma: no cover - for type checking only

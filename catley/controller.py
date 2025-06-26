@@ -31,8 +31,8 @@ from .util.message_log import MessageLog
 from .util.pathfinding import find_path
 from .view.animation import AnimationManager
 from .view.frame_manager import FrameManager
-from .view.render.base_renderer import Renderer
-from .view.render.tcod_renderer import TCODRenderer
+from .view.render.backends.tcod.renderer import TCODRenderer
+from .view.render.renderer import Renderer
 from .view.ui.overlays import OverlaySystem
 
 

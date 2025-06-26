@@ -8,10 +8,10 @@ from catley.game.actors import Character
 from catley.game.consequences import ConsequenceHandler
 from catley.game.game_world import GameWorld
 from catley.game.items.item_types import FISTS_TYPE, PISTOL_TYPE
-from catley.view.render.base_renderer import Renderer
+from catley.view.render.renderer import Renderer
 from catley.view.ui.pickup_menu import PickupMenu
 from tests.helpers import DummyGameWorld
-from tests.test_text_backends import _make_renderer
+from tests.test_canvases import _make_renderer
 
 
 @dataclass

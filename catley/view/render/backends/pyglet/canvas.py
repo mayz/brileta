@@ -7,9 +7,8 @@ from pyglet.text import Label
 
 from catley import config
 from catley.util.coordinates import PixelCoord, TileCoord
-from catley.view.render.pyglet_renderer import PygletObjectPool
-
-from .base import Canvas
+from catley.view.render.backends.pyglet.renderer import PygletObjectPool
+from catley.view.render.canvas import Canvas
 
 
 class PygletCanvas(Canvas):

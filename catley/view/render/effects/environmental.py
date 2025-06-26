@@ -8,7 +8,7 @@ from catley.game.enums import BlendMode
 from catley.util.coordinates import Rect, TileCoord
 
 if TYPE_CHECKING:
-    from catley.view.render.base_renderer import Renderer
+    from catley.view.render.renderer import Renderer
 
 
 @dataclass

@@ -6,11 +6,10 @@ from tcod.console import Console
 
 from catley import colors
 from catley.util.coordinates import PixelCoord, TileCoord
-
-from .base import Canvas
+from catley.view.render.canvas import Canvas
 
 if TYPE_CHECKING:
-    from catley.view.render.base_renderer import Renderer
+    from catley.view.render.renderer import Renderer
 
 
 class TCODConsoleCanvas(Canvas):
@@ -30,7 +29,7 @@ class TCODConsoleCanvas(Canvas):
     def create_texture(self, renderer: Renderer, artifact: Any) -> Any:
         """Creates a backend-specific texture from this canvas's artifact."""
         # This import is here to avoid a circular dependency.
-        from catley.view.render.tcod_renderer import TCODRenderer
+        from catley.view.render.backends.tcod.renderer import TCODRenderer
 
         # We need to cast the renderer to access its TCOD-specific method.
         # This is acceptable because this canvas is TCOD-specific.

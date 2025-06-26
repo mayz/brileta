@@ -34,7 +34,7 @@ from .base import View
 if TYPE_CHECKING:
     from catley.controller import Controller, FrameManager
     from catley.game.actors import Actor
-    from catley.view.render.base_renderer import Renderer
+    from catley.view.render.renderer import Renderer
 
 
 class WorldView(View):
@@ -171,7 +171,7 @@ class WorldView(View):
             # Cast the generic renderer to the TCOD-specific one we know we're using in
             # Phase 0 of the Graphics Migration Plan. This is an explicit acknowledgment
             # of the technical debt we will pay off in Phase 2.
-            from catley.view.render.tcod_renderer import TCODRenderer
+            from catley.view.render.backends.tcod.renderer import TCODRenderer
 
             tcod_renderer = cast(TCODRenderer, renderer)
 
@@ -587,7 +587,7 @@ class WorldView(View):
                 )
 
         # Convert console to texture with alpha blending
-        from catley.view.render.tcod_renderer import TCODRenderer
+        from catley.view.render.backends.tcod.renderer import TCODRenderer
 
         tcod_renderer = cast(TCODRenderer, renderer)
         return tcod_renderer.texture_from_console(light_console, transparent=True)

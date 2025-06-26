@@ -27,7 +27,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from catley.game.actors import Actor
-from catley.view.render.base_renderer import Renderer
+from catley.view.render.renderer import Renderer
 from catley.view.ui.overlays import Menu
 from catley.view.ui.pickup_menu import PickupMenu
 

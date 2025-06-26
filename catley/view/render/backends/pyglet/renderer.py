@@ -32,8 +32,7 @@ from catley import colors, config
 from catley.game.enums import BlendMode
 from catley.util.coordinates import Rect, RootConsoleTilePos, TileDimensions
 from catley.view.render.effects.particles import ParticleLayer, SubTileParticleSystem
-
-from .base_renderer import Renderer
+from catley.view.render.renderer import Renderer
 
 if TYPE_CHECKING:
     from catley.util.coordinates import PixelCoord, PixelPos

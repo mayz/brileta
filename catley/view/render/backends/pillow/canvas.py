@@ -9,11 +9,10 @@ from PIL import ImageDraw, ImageFont
 
 from catley import colors, config
 from catley.util.coordinates import PixelCoord, TileCoord
-
-from .base import Canvas
+from catley.view.render.canvas import Canvas
 
 if TYPE_CHECKING:
-    from catley.view.render.base_renderer import Renderer
+    from catley.view.render.renderer import Renderer
 
 
 class PillowImageCanvas(Canvas):

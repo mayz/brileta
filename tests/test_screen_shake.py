@@ -6,8 +6,8 @@ import numpy as np
 from catley import config
 from catley.controller import Controller
 from catley.util.spatial import SpatialHashGrid
-from catley.view.render.base_renderer import Renderer
 from catley.view.render.effects.screen_shake import ScreenShake
+from catley.view.render.renderer import Renderer
 
 
 def test_screen_shake_update_and_completion() -> None:

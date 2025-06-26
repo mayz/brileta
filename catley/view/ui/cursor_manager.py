@@ -6,7 +6,7 @@ from PIL import Image as PILImage
 
 from catley.config import BASE_MOUSE_CURSOR_PATH
 from catley.util.coordinates import PixelCoord
-from catley.view.render.base_renderer import Renderer
+from catley.view.render.renderer import Renderer
 
 
 @dataclass

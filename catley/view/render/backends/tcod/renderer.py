@@ -37,8 +37,7 @@ from catley.util.coordinates import (
     TileDimensions,
 )
 from catley.view.render.effects.particles import ParticleLayer, SubTileParticleSystem
-
-from .base_renderer import Renderer
+from catley.view.render.renderer import Renderer
 
 if TYPE_CHECKING:
     from catley.view.ui.cursor_manager import CursorManager

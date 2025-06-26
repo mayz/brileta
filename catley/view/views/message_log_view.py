@@ -6,8 +6,8 @@ from tcod.sdl.render import Texture
 
 from catley import colors
 from catley.util.caching import ResourceCache
-from catley.view.render.base_renderer import Renderer
-from catley.view.render.canvas import PillowImageCanvas
+from catley.view.render.backends.pillow.canvas import PillowImageCanvas
+from catley.view.render.renderer import Renderer
 
 from .base import TextView
 

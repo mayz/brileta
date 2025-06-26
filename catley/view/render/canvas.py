@@ -29,7 +29,7 @@ from catley import colors
 from catley.util.coordinates import PixelCoord, TileCoord
 
 if TYPE_CHECKING:
-    from catley.view.render.base_renderer import Renderer
+    from catley.view.render.renderer import Renderer
 
 
 class DrawOperation(Enum):

@@ -22,8 +22,8 @@ from typing import Any
 import tcod.sdl.render
 
 from catley.util.caching import ResourceCache
-from catley.view.render.base_renderer import Renderer
 from catley.view.render.canvas import Canvas
+from catley.view.render.renderer import Renderer
 
 
 class View(abc.ABC):
