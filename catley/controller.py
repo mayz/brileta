@@ -33,7 +33,7 @@ from .util.pathfinding import find_path
 from .view.animation import AnimationManager
 from .view.frame_manager import FrameManager
 from .view.render.backends.tcod.renderer import TCODRenderer
-from .view.render.cpu_lighting import CPULightingSystem
+from .view.render.lighting.cpu import CPULightingSystem
 from .view.render.renderer import Renderer
 from .view.ui.overlays import OverlaySystem
 
@@ -77,8 +77,7 @@ class Controller:
         self.gw = GameWorld(self.map_width, self.map_height)
 
         # Create and connect the new lighting system
-        cpu_lighting_system = CPULightingSystem(self.gw)
-        self.gw.lighting_system = cpu_lighting_system
+        self.gw.lighting_system = CPULightingSystem(self.gw)
 
         # Create the player's light now that lighting system is connected
         player_torch = DynamicLight.create_player_torch(self.gw.player)

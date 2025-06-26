@@ -3,7 +3,7 @@ import numpy as np
 from catley.game.game_world import GameWorld
 from catley.game.lights import DynamicLight, StaticLight
 from catley.util.coordinates import Rect
-from catley.view.render.cpu_lighting import CPULightingSystem
+from catley.view.render.lighting.cpu import CPULightingSystem
 
 
 def test_cpu_lighting_system_basic() -> None:

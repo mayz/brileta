@@ -30,7 +30,7 @@ from catley.util.coordinates import (
     WorldTilePos,
 )
 
-from .lighting_system import LightingSystem
+from .base import LightingSystem
 
 if TYPE_CHECKING:
     from catley.game.game_world import GameWorld

@@ -23,7 +23,7 @@ from catley.game.items.item_types import (
 from catley.game.lights import DynamicLight, LightSource
 from catley.util.coordinates import Rect, TileCoord, WorldTileCoord, WorldTilePos
 from catley.util.spatial import SpatialHashGrid, SpatialIndex
-from catley.view.render.lighting_system import LightingSystem
+from catley.view.render.lighting.base import LightingSystem
 
 
 class GameWorld:
@@ -41,8 +41,7 @@ class GameWorld:
         self.item_spawner = ItemSpawner(self)
         self.selected_actor: Actor | None = None
 
-        # All LightSource objects in the world
-        self.lights: list[LightSource] = []
+        self.lights: list[LightSource] = []  # All light sources in the world
         self.lighting_system: LightingSystem | None = None
 
         self._init_actor_storage()

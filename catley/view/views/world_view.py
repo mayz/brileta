@@ -27,7 +27,7 @@ from catley.view.render.effects.particles import (
     SubTileParticleSystem,
 )
 from catley.view.render.effects.screen_shake import ScreenShake
-from catley.view.render.lighting_system import LightingSystem
+from catley.view.render.lighting.base import LightingSystem
 from catley.view.render.viewport import ViewportSystem
 
 from .base import View
