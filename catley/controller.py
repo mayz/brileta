@@ -28,6 +28,7 @@ from .modes.targeting import TargetingMode
 from .movement_handler import MovementInputHandler
 from .util.clock import Clock
 from .util.coordinates import WorldTilePos
+from .util.live_vars import live_variable_registry, record_time_live_variable
 from .util.message_log import MessageLog
 from .util.pathfinding import find_path
 from .view.animation import AnimationManager
@@ -138,50 +139,57 @@ class Controller:
             "Lighting system must be initialized"
         )
 
+        live_variable_registry.register_metric(
+            "frame_time_ms",
+            description="Frame rendering time",
+            num_samples=1000,
+        )
+
         try:
             tcod.sdl.mouse.show(False)
 
             while True:
                 delta_time = self.clock.sync(fps=self.target_fps)
 
-                # Step 1: Update frame-independent systems
-                self.animation_manager.update(delta_time)
-                self.gw.lighting_system.update(delta_time)
+                with record_time_live_variable("frame_time_ms"):
+                    # Step 1: Update frame-independent systems
+                    self.animation_manager.update(delta_time)
+                    self.gw.lighting_system.update(delta_time)
 
-                # Step 2: Process player input immediately (if any)
-                for event in tcod.event.get():
-                    self.input_handler.dispatch(event)
+                    # Step 2: Process player input immediately (if any)
+                    for event in tcod.event.get():
+                        self.input_handler.dispatch(event)
 
-                # Check for player-initiated actions (movement or queued)
-                move_intent = None
-                if not self.overlay_system.has_interactive_overlays():
-                    move_intent = self.movement_handler.generate_intent(
-                        self.input_handler.movement_keys
-                    )
-                    if move_intent:
-                        self._execute_player_action_immediately(move_intent)
+                    # Check for player-initiated actions (movement or queued)
+                    move_intent = None
+                    if not self.overlay_system.has_interactive_overlays():
+                        move_intent = self.movement_handler.generate_intent(
+                            self.input_handler.movement_keys
+                        )
+                        if move_intent:
+                            self._execute_player_action_immediately(move_intent)
 
-                # Check for other queued player actions
-                if self.turn_manager.has_pending_actions():
-                    player_action = self.turn_manager.dequeue_player_action()
-                    if player_action:
-                        self._execute_player_action_immediately(player_action)
+                    # Check for other queued player actions
+                    if self.turn_manager.has_pending_actions():
+                        player_action = self.turn_manager.dequeue_player_action()
+                        if player_action:
+                            self._execute_player_action_immediately(player_action)
 
-                # Check for autopilot actions if no manual input
-                if (
-                    not move_intent
-                    and not self.turn_manager.has_pending_actions()
-                    and self.turn_manager.is_player_turn_available()
-                ):
-                    autopilot_action = self.gw.player.get_next_action(self)
-                    if autopilot_action:
-                        self._execute_player_action_immediately(autopilot_action)
+                    # Check for autopilot actions if no manual input
+                    if (
+                        not move_intent
+                        and not self.turn_manager.has_pending_actions()
+                        and self.turn_manager.is_player_turn_available()
+                    ):
+                        autopilot_action = self.gw.player.get_next_action(self)
+                        if autopilot_action:
+                            self._execute_player_action_immediately(autopilot_action)
 
-                # Step 3: Process all available NPC actions immediately
-                self._process_all_available_npc_actions()
+                    # Step 3: Process all available NPC actions immediately
+                    self._process_all_available_npc_actions()
 
-                # Step 4: Render frame
-                self.frame_manager.render_frame(delta_time)
+                    # Step 4: Render frame
+                    self.frame_manager.render_frame(delta_time)
 
         finally:
             tcod.sdl.mouse.show(True)
