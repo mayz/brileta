@@ -147,34 +147,8 @@ class Controller:
         # If a tile is "visible" it should be added to "explored"
         self.gw.game_map.explored |= self.gw.game_map.visible
 
-    def run_game_loop(self) -> None:
-        """Main game loop using fixed timestep with interpolation.
-
-        Architecture Overview:
-        - FIXED TIMESTEP: Game logic runs at exactly 60Hz for consistent simulation
-        - VARIABLE RENDERING: Visual frames render as fast as possible (up to cap)
-        - INTERPOLATION: Smooth movement between logic steps using alpha blending
-
-        The "accumulator pattern" ensures:
-        1. Deterministic game state (same inputs = same outputs)
-        2. Smooth visuals even when logic/rendering rates differ
-        3. Responsive input (processed immediately, not queued)
-
-        Flow:
-        1. Process input immediately (maximum responsiveness)
-        2. Accumulate frame time since last update
-        3. Run 0+ fixed logic steps (16.67ms each) to "catch up"
-        4. Render with alpha interpolation between previous/current state
-
-        Alpha represents how far between logic steps we are:
-        - alpha=0.0: Show previous logic state
-        - alpha=1.0: Show current logic state
-        - alpha=0.5: Show halfway interpolated between them
-        """
-        assert self.gw.lighting_system is not None, (
-            "Lighting system must be initialized"
-        )
-
+    def _register_live_variables(self) -> None:
+        """Register all performance monitoring metrics with live variable registry."""
         live_variable_registry.register_metric(
             "cpu.total_frame_ms",
             description="Total CPU time for one visual frame",
@@ -190,7 +164,6 @@ class Controller:
             description="CPU time for animation updates",
             num_samples=500,
         )
-
         live_variable_registry.register_metric(
             "cpu.action_processing_ms",
             description="CPU time for action processing",
@@ -256,6 +229,36 @@ class Controller:
             description="CPU time for rendering environmental effects",
             num_samples=100,
         )
+
+    def run_game_loop(self) -> None:
+        """Main game loop using fixed timestep with interpolation.
+
+        Architecture Overview:
+        - FIXED TIMESTEP: Game logic runs at exactly 60Hz for consistent simulation
+        - VARIABLE RENDERING: Visual frames render as fast as possible (up to cap)
+        - INTERPOLATION: Smooth movement between logic steps using alpha blending
+
+        The "accumulator pattern" ensures:
+        1. Deterministic game state (same inputs = same outputs)
+        2. Smooth visuals even when logic/rendering rates differ
+        3. Responsive input (processed immediately, not queued)
+
+        Flow:
+        1. Process input immediately (maximum responsiveness)
+        2. Accumulate frame time since last update
+        3. Run 0+ fixed logic steps (16.67ms each) to "catch up"
+        4. Render with alpha interpolation between previous/current state
+
+        Alpha represents how far between logic steps we are:
+        - alpha=0.0: Show previous logic state
+        - alpha=1.0: Show current logic state
+        - alpha=0.5: Show halfway interpolated between them
+        """
+        assert self.gw.lighting_system is not None, (
+            "Lighting system must be initialized"
+        )
+
+        self._register_live_variables()
 
         try:
             tcod.sdl.mouse.show(False)
