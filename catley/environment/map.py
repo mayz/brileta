@@ -23,6 +23,22 @@ class MapRegion:
     bounds: list[Rect] = field(default_factory=list)
     # Mapping of neighbor_region_id -> (x, y) door tile connecting them
     connections: dict[int, tuple[int, int]] = field(default_factory=dict)
+    # Sky exposure for global lighting (0.0 = no sky, 1.0 = full sky exposure)
+    sky_exposure: float = 0.0
+
+    @classmethod
+    def create_outdoor_region(
+        cls, id: int, region_type: str = "outdoor", sky_exposure: float = 1.0, **kwargs
+    ) -> MapRegion:
+        """Factory for outdoor regions with full sky exposure."""
+        return cls(id=id, region_type=region_type, sky_exposure=sky_exposure, **kwargs)
+
+    @classmethod
+    def create_indoor_region(
+        cls, id: int, region_type: str = "indoor", sky_exposure: float = 0.0, **kwargs
+    ) -> MapRegion:
+        """Factory for indoor regions with no sky exposure."""
+        return cls(id=id, region_type=region_type, sky_exposure=sky_exposure, **kwargs)
 
 
 class GameMap:
@@ -86,8 +102,8 @@ class GameMap:
     def dark_appearance_map(self) -> np.ndarray:
         """A map of 'dark' TileTypeAppearance structs derived from self.tiles."""
         if self._dark_appearance_map_cache is None:
-            self._dark_appearance_map_cache = tile_types.get_dark_appearance_map(
-                self.tiles
+            self._dark_appearance_map_cache = self._get_region_aware_appearance_map(
+                is_light=False
             )
         return self._dark_appearance_map_cache
 
@@ -95,7 +111,92 @@ class GameMap:
     def light_appearance_map(self) -> np.ndarray:
         """A map of 'light' TileTypeAppearance structs derived from self.tiles."""
         if self._light_appearance_map_cache is None:
-            self._light_appearance_map_cache = tile_types.get_light_appearance_map(
-                self.tiles
+            self._light_appearance_map_cache = self._get_region_aware_appearance_map(
+                is_light=True
             )
         return self._light_appearance_map_cache
+
+    def _get_region_aware_appearance_map(self, is_light: bool) -> np.ndarray:
+        """Get appearance map with region-aware background colors for certain tiles."""
+        # Start with the base appearance map from tile types
+        if is_light:
+            appearance_map = tile_types.get_light_appearance_map(self.tiles)
+        else:
+            appearance_map = tile_types.get_dark_appearance_map(self.tiles)
+
+        # Create a copy so we can modify it
+        appearance_map = appearance_map.copy()
+
+        # Apply region-aware background colors for specific tile types
+        for y in range(self.height):
+            for x in range(self.width):
+                tile_id = self.tiles[x, y]
+
+                # Modify boulders and floor tiles - inherit regional ground colors
+                # Doors should use their standard tile colors to match surrounding walls
+                if tile_id in (
+                    tile_types.TILE_TYPE_ID_BOULDER,
+                    tile_types.TILE_TYPE_ID_FLOOR,
+                ):
+                    region = self.get_region_at((x, y))
+                    if region:
+                        # Boulders and floor tiles inherit ground color from region
+                        ground_bg_color = self._get_region_ground_color(
+                            region, is_light
+                        )
+
+                        # Update background color preserving char and foreground
+                        current_appearance = appearance_map[x, y]
+                        appearance_map[x, y] = (
+                            current_appearance["ch"],
+                            current_appearance["fg"],
+                            ground_bg_color,
+                        )
+
+        return appearance_map
+
+    def _get_region_ground_color(
+        self, region: MapRegion, is_light: bool
+    ) -> tuple[int, int, int]:
+        """Get the appropriate ground background color for a region."""
+        from catley import colors
+
+        # Determine if this is an outdoor region based on sky exposure
+        is_outdoor = region.sky_exposure > 0.5
+
+        if is_outdoor:
+            return (
+                colors.OUTDOOR_LIGHT_GROUND if is_light else colors.OUTDOOR_DARK_GROUND
+            )
+        return colors.LIGHT_GROUND if is_light else colors.DARK_GROUND
+
+    def _get_region_wall_color(
+        self, region: MapRegion, is_light: bool
+    ) -> tuple[int, int, int]:
+        """Get the appropriate wall background color for a region."""
+        from catley import colors
+
+        # Determine if this is an outdoor region based on sky exposure
+        is_outdoor = region.sky_exposure > 0.5
+
+        if is_outdoor:
+            return colors.OUTDOOR_LIGHT_WALL if is_light else colors.OUTDOOR_DARK_WALL
+        return colors.LIGHT_WALL if is_light else colors.DARK_WALL
+
+    def get_region_at(self, world_pos: tuple[int, int]) -> MapRegion | None:
+        """Get the MapRegion at the given world position, if any."""
+        x, y = world_pos
+        if not (0 <= x < self.width and 0 <= y < self.height):
+            return None
+
+        region_id = self.tile_to_region_id[x, y]
+        if region_id < 0:  # No region assigned
+            return None
+
+        # Look up the region by ID in the dictionary
+        return self.regions.get(region_id)
+
+    def invalidate_appearance_caches(self) -> None:
+        """Invalidate appearance caches when regions change."""
+        self._dark_appearance_map_cache = None
+        self._light_appearance_map_cache = None

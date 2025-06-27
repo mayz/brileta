@@ -3,7 +3,7 @@ import random
 from catley import colors, config
 from catley.config import PLAYER_BASE_STRENGTH, PLAYER_BASE_TOUGHNESS
 from catley.environment.generators import RoomsAndCorridorsGenerator
-from catley.environment.map import GameMap
+from catley.environment.map import GameMap, MapRegion
 from catley.game.actors import (
     Actor,
     Character,
@@ -20,7 +20,7 @@ from catley.game.items.item_types import (
     RIFLE_MAGAZINE_TYPE,
     SNIPER_RIFLE_TYPE,
 )
-from catley.game.lights import DynamicLight, LightSource
+from catley.game.lights import DynamicLight, GlobalLight, LightSource
 from catley.types import TileCoord, WorldTileCoord, WorldTilePos
 from catley.util.coordinates import Rect
 from catley.util.spatial import SpatialHashGrid, SpatialIndex
@@ -52,6 +52,8 @@ class GameWorld:
         self.add_actor(self.player)
         self._position_player(rooms[0])
         self._add_starting_injury()
+
+        # Note: Rooms now have random 20% chance of being outdoor (set in generator)
 
         self._populate_npcs(rooms)
 
@@ -92,6 +94,95 @@ class GameWorld:
         except ValueError:
             # Light was not in the list; ignore.
             pass
+
+    def get_global_lights(self) -> list[GlobalLight]:
+        """Get all global lights (sun, moon, etc.) in the world.
+
+        Returns:
+            A list of all GlobalLight instances
+        """
+        return [light for light in self.lights if isinstance(light, GlobalLight)]
+
+    def get_static_lights(self) -> list[LightSource]:
+        """Get all static point lights in the world.
+
+        Returns:
+            A list of all static LightSource instances (excluding global lights)
+        """
+        return [
+            light
+            for light in self.lights
+            if light.is_static() and not isinstance(light, GlobalLight)
+        ]
+
+    def set_time_of_day(self, time_hours: float) -> None:
+        """Update sun position based on time of day and invalidate lighting cache.
+
+        Args:
+            time_hours: Time in 24-hour format (0.0 = midnight, 12.0 = noon)
+        """
+        import math
+
+        from catley.game.lights import DirectionalLight
+
+        # Update sun direction based on time for all directional lights
+        for light in self.get_global_lights():
+            if isinstance(light, DirectionalLight):
+                # Calculate sun elevation (peaks at noon)
+                # Simple sinusoidal model: 0° at sunrise/sunset, 90° at noon
+                time_normalized = (
+                    time_hours - 6.0
+                ) / 12.0  # -0.5 to 0.5 (sunrise to sunset)
+                if -0.5 <= time_normalized <= 0.5:
+                    # Sun is above horizon
+                    elevation_rad = math.pi * (0.5 - abs(time_normalized))  # 0 to π/2
+                    elevation_degrees = math.degrees(elevation_rad)
+
+                    # Update the light with new sun position
+                    from catley.view.render.lighting.cpu import CPULightingSystem
+
+                    azimuth = 135.0  # Default
+                    if isinstance(self.lighting_system, CPULightingSystem):
+                        azimuth = self.lighting_system.config.sun_azimuth_degrees
+
+                    light.direction = DirectionalLight.create_sun(
+                        elevation_degrees=elevation_degrees,
+                        azimuth_degrees=azimuth,
+                        intensity=light.intensity,
+                        color=light.color,
+                    ).direction
+                else:
+                    # Sun is below horizon (night)
+                    light.intensity = 0.0
+
+        # Invalidate lighting cache since global lighting changed
+        if self.lighting_system:
+            self.lighting_system.on_global_light_changed()
+
+    def set_region_sky_exposure(self, world_pos: WorldTilePos, exposure: float) -> bool:
+        """Debug function to set sky exposure for a region at given position.
+
+        Args:
+            world_pos: World tile position to find the region
+            exposure: Sky exposure value (0.0 = no sky, 1.0 = full sky)
+
+        Returns:
+            True if region was found and modified, False otherwise
+        """
+        if not self.game_map:
+            return False
+
+        region = self.game_map.get_region_at(world_pos)
+        if region:
+            region.sky_exposure = exposure
+            # Invalidate lighting cache since global lighting conditions changed
+            if self.lighting_system:
+                self.lighting_system.on_global_light_changed()
+            # Invalidate appearance caches since region properties changed
+            if self.game_map:
+                self.game_map.invalidate_appearance_caches()
+            return True
+        return False
 
     # ---------------------------------------------------------------------
     # Initialization helpers
@@ -153,6 +244,54 @@ class GameWorld:
         room_rects = [r.bounds[0] for r in room_regions if r.bounds]
 
         return game_map, room_rects
+
+    def _setup_test_outdoor_room(self) -> None:
+        """TEMPORARY: Convert starting room to outdoor for sunlight testing.
+
+        This modifies the region containing the player's starting position
+        to have sky exposure, allowing sunlight testing in an otherwise
+        indoor-only scenario.
+        """
+        if not self.game_map:
+            return
+
+        # Get the region at player's starting position
+        player_pos = (self.player.x, self.player.y)
+        region = self.game_map.get_region_at(player_pos)
+
+        if region:
+            # TEMPORARY: Simulate full outdoor area for testing
+            region.sky_exposure = 1.0  # Full outdoor exposure
+            region.region_type = "test_outdoor"  # Mark as test
+
+            # Convert floor tiles in this region to outdoor tiles
+            self._convert_region_to_outdoor_tiles(region)
+
+            # Invalidate lighting cache since global lighting conditions changed
+            if self.lighting_system:
+                self.lighting_system.on_global_light_changed()
+            # Invalidate appearance caches since region properties changed
+            self.game_map.invalidate_appearance_caches()
+
+    def _convert_region_to_outdoor_tiles(self, region: MapRegion) -> None:
+        """TEMPORARY: Convert indoor floor tiles to outdoor tiles in a region."""
+        from catley.environment import tile_types
+
+        if not self.game_map:
+            return
+
+        # Find all tiles that belong to this region
+        for x in range(self.game_map.width):
+            for y in range(self.game_map.height):
+                if self.game_map.tile_to_region_id[x, y] == region.id:
+                    current_tile_id = self.game_map.tiles[x, y]
+                    # Convert indoor tiles to outdoor variants
+                    if current_tile_id == tile_types.TILE_TYPE_ID_FLOOR:
+                        self.game_map.tiles[x, y] = (
+                            tile_types.TILE_TYPE_ID_OUTDOOR_FLOOR
+                        )
+                    elif current_tile_id == tile_types.TILE_TYPE_ID_WALL:
+                        self.game_map.tiles[x, y] = tile_types.TILE_TYPE_ID_OUTDOOR_WALL
 
     def _position_player(self, room: Rect) -> None:
         """Place the player in the center of ``room``."""

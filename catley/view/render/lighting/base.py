@@ -106,3 +106,12 @@ class LightingSystem(ABC):
             light: The light source that moved
         """
         pass
+
+    def on_global_light_changed(self) -> None:
+        """Notification that global lighting has changed (e.g., time of day).
+
+        Default implementation does nothing. Subclasses can override to
+        invalidate caches when global lighting conditions change.
+        """
+        # Default implementation does nothing
+        return

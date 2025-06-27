@@ -158,7 +158,7 @@ _wall_data = make_tile_type_data(
     dark=(ord(" "), colors.DARK_GREY, colors.DARK_WALL),
     light=(ord(" "), colors.LIGHT_GREY, colors.LIGHT_WALL),
 )
-register_tile_type("WALL", _wall_data)  # TILE_TYPE_ID_WALL will be 0
+register_tile_type("WALL", _wall_data)
 
 _floor_data = make_tile_type_data(
     walkable=True,
@@ -166,7 +166,24 @@ _floor_data = make_tile_type_data(
     dark=(ord(" "), colors.DARK_GREY, colors.DARK_GROUND),
     light=(ord(" "), colors.LIGHT_GREY, colors.LIGHT_GROUND),
 )
-register_tile_type("FLOOR", _floor_data)  # TILE_TYPE_ID_FLOOR will be 1
+register_tile_type("FLOOR", _floor_data)
+
+_outdoor_floor_data = make_tile_type_data(
+    walkable=True,
+    transparent=True,
+    dark=(ord(" "), colors.DARK_GREY, colors.OUTDOOR_DARK_GROUND),
+    light=(ord(" "), colors.LIGHT_GREY, colors.OUTDOOR_LIGHT_GROUND),
+)
+register_tile_type("OUTDOOR_FLOOR", _outdoor_floor_data)
+
+_outdoor_wall_data = make_tile_type_data(
+    walkable=False,
+    transparent=False,
+    casts_shadows=True,
+    dark=(ord("#"), colors.LIGHT_GREY, colors.OUTDOOR_DARK_WALL),
+    light=(ord("#"), colors.LIGHT_GREY, colors.OUTDOOR_LIGHT_WALL),
+)
+register_tile_type("OUTDOOR_WALL", _outdoor_wall_data)
 
 _door_closed_data = make_tile_type_data(
     walkable=False,
@@ -174,9 +191,7 @@ _door_closed_data = make_tile_type_data(
     dark=(ord("+"), colors.ORANGE, colors.DARK_WALL),
     light=(ord("+"), colors.LIGHT_ORANGE, colors.LIGHT_WALL),
 )
-register_tile_type(
-    "DOOR_CLOSED", _door_closed_data
-)  # TILE_TYPE_ID_DOOR_CLOSED will be 2
+register_tile_type("DOOR_CLOSED", _door_closed_data)
 
 _door_open_data = make_tile_type_data(
     walkable=True,
@@ -184,7 +199,7 @@ _door_open_data = make_tile_type_data(
     dark=(ord("'"), colors.ORANGE, colors.DARK_GROUND),
     light=(ord("'"), colors.LIGHT_ORANGE, colors.LIGHT_GROUND),
 )
-register_tile_type("DOOR_OPEN", _door_open_data)  # TILE_TYPE_ID_DOOR_OPEN will be 3
+register_tile_type("DOOR_OPEN", _door_open_data)
 
 _boulder_data = make_tile_type_data(
     walkable=False,
@@ -194,7 +209,7 @@ _boulder_data = make_tile_type_data(
     dark=(ord("#"), colors.DARK_GREY, colors.DARK_GROUND),
     light=(ord("#"), colors.MEDIUM_GREY, colors.LIGHT_GROUND),
 )
-register_tile_type("BOULDER", _boulder_data)  # TILE_TYPE_ID_BOULDER will be 4
+register_tile_type("BOULDER", _boulder_data)
 
 
 # --- Pre-calculated Property Arrays for Efficient Lookups ---

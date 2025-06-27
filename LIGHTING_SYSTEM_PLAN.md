@@ -25,13 +25,14 @@ This plan outlines the implementation of a GPU-based lighting system to replace 
 
 ### Phase 1: Foundation & Integration (High Priority)
 
-#### 1.1 Merge wip-sunlight Branch
-- Goal: Integrate DirectionalLight support into main branch
-- Deliverables:
+#### 1.1 Merge wip-sunlight Branch (CURRENT)
+- **Goal**: Integrate cleaned-up DirectionalLight support into main branch
+- **Priority**: 9/10 - Unblocks GPU development
+- **Deliverables**:
   - DirectionalLight class available in lighting system
   - Sun/moonlight capability in CPU system
-  - Test coverage for directional lighting
-- Risk: Minimal - clean addition to existing light hierarchy
+  - Stable, simplified lighting code in main branch
+- **Status**: Ready to execute - CPU cleanup completed
 
 #### 1.2 GPU Infrastructure Setup
 - Goal: Create core GPU lighting architecture
@@ -124,6 +125,114 @@ This plan outlines the implementation of a GPU-based lighting system to replace 
   - Debug visualization tools
   - Hardware capability detection
 - Priority: 4/10 - User experience and debugging improvements
+
+## Current Sunlight Implementation Issues
+
+Based on extensive testing of the CPU sunlight system, several critical issues have been identified that need resolution before GPU implementation:
+
+### High Priority Issues
+
+#### Issue 1: Inconsistent Boulder/Wall Background Colors
+- Problem: Boulders (walls) show blue backgrounds in some regions despite outdoor tile conversion
+- Root Cause: Tile conversion only applies to test region, other walls still use indoor WALL tiles
+- Symptoms: Blue backgrounds appear when player moves between regions or areas outside FOV
+- Priority: 10/10 - Breaks outdoor scene immersion completely
+
+#### Issue 2: Missing Directional Sun Shadows
+- Problem: No directional shadows despite having sun angle/direction data
+- Current State: Only torch shadows exist, creating unrealistic outdoor lighting
+- Expected: All shadows should point away from sun direction (southeast per config)
+- Priority: 9/10 - Core feature of directional lighting system
+
+#### Issue 3: Torch Shadow Logic Reversed
+- Problem: Torch light invisible outdoors but torch shadows still appear
+- Root Cause: Daylight reduction affects light but not shadow calculation
+- Result: Dark areas behind enemies with no visible light source
+- Priority: 8/10 - Confusing and unrealistic lighting behavior
+
+### Medium Priority Issues
+
+#### Issue 4: Harsh Indoor/Outdoor Transitions
+- Problem: Sharp cutoff between bright outdoor and dark indoor areas
+- Missing: Light spillover from outdoor areas into indoor entrances
+- Impact: Jarring visual discontinuity, breaks immersion
+- Priority: 7/10 - Important for natural-feeling transitions
+
+#### Issue 5: Torch "Appearing from Nowhere" Effect
+- Problem: Torch suddenly becomes visible when moving indoors
+- Cause: Abrupt change from 10% to 100% torch intensity
+- Solution: Smoother intensity transitions between regions
+- Priority: 6/10 - Player feedback and continuity issue
+
+#### Issue 6: Flat Outdoor Visual Interest
+- Problem: Outdoor scenes less visually engaging than indoor torch-lit areas
+- Cause: Uniform sunlight lacks the gradient and variation of torch lighting
+- Note: May be addressed by varied terrain rather than lighting changes
+- Priority: 5/10 - Aesthetic enhancement opportunity
+
+### Solutions Priority
+
+#### Immediate Fixes (Before GPU Implementation)
+1. Fix boulder background colors globally (10/10)
+2. Implement directional sun shadows (9/10)
+3. Fix torch shadow logic in daylight (8/10)
+4. Improve torch visibility transition (6/10)
+
+#### Future Enhancements (GPU Implementation Phase)
+5. Light spillover system (7/10)
+6. Varied outdoor terrain/materials (5/10)
+7. Advanced shadow quality and soft shadows
+
+### Implementation Notes
+
+These issues reveal important design principles:
+- Outdoor lighting needs fundamentally different behavior than indoor lighting
+- Tile variants must be globally consistent, not region-specific
+- Shadow systems need to consider primary light source (sun vs torch)
+- Smooth transitions are crucial for believable lighting
+
+The GPU implementation should address these core issues rather than simply porting the current CPU behavior.
+
+### CPU System Status (July 2024)
+
+#### ✅ Fixed Issues
+1. **Boulder Background Colors** - Implemented region-aware tile appearance system that makes boulders inherit appropriate ground colors based on their region's sky exposure
+2. **Directional Sun Shadows** - Added complete directional shadow system that casts realistic shadows from the sun based on its direction, affecting both actors and shadow-casting tiles in outdoor areas
+3. **Torch Shadow Logic** - Fixed torch shadows to respect per-tile daylight reduction, preventing mysterious shadows from invisible torches in bright sunlight
+4. **Per-Tile Lighting Logic** - Changed from player-region-based to per-tile-based torch effectiveness, preventing torch from affecting outdoor areas when player moves indoors
+5. **Light Spillover Basic Implementation** - Working spillover system that streams light from outdoor areas into indoor areas with gradual falloff
+6. **FOV Integration** - Fixed field-of-view darkening to work properly with spillover effects (areas outside FOV are dimmed but spillover remains visible)
+
+#### 🔄 Partially Working: Light Spillover
+**Status: FUNCTIONAL BUT NEEDS REFINEMENT**
+- Basic spillover is working - light streams from outdoor areas into indoor hallways
+- Spillover respects actual outdoor light intensities (not fixed values)
+- Spillover has distance-based falloff and doesn't exceed source brightness
+- Current implementation in `_apply_final_spillover()` uses region-based detection
+
+**Working Features:**
+- Light streams through doorways into dark indoor areas
+- Gradual falloff over 2-3 tiles from outdoor sources
+- Spillover visible even outside player's field of view
+- Physics-correct: spillover never brighter than source
+
+#### ❌ Outstanding Issues
+1. **Torch Lighting Inconsistency** - Dark bands or inconsistent illumination patterns from torch light on walls
+2. **Door Background Colors** - Doors not matching surrounding wall colors consistently
+3. **Wall Lighting Uniformity** - Some walls show banding or inconsistent lighting treatment
+
+**Current State**: The spillover system works for the basic use case of outdoor→indoor light streaming, but there are rendering inconsistencies with torch lighting and tile appearance that create visual artifacts.
+
+#### 📋 GPU Implementation Notes
+
+**General Light Diffusion System (High Priority for GPU)**
+The current CPU system uses targeted spillover for doorways, but the GPU system should implement a **general light diffusion system** that handles natural light bleeding between adjacent tiles based on intensity differences. This would support:
+- Outdoor → Indoor spillover
+- Bright room → Dark room transitions
+- Torch → Shadow area diffusion
+- Any lighting scenario with intensity gradients
+
+This general system would replace the current targeted spillover and provide more realistic, physically-based lighting behavior across all scenarios.
 
 ## Technical Architecture
 
@@ -260,8 +369,53 @@ struct LightData {
 - Code quality and maintainability
 - Test coverage of new functionality
 
+## Completed Phases
+
+### ✅ Phase 1.0: CPU Code Cleanup & Stabilization (COMPLETED - Dec 2024)
+- **Goal**: Remove complex spillover code and stabilize for merge
+- **Status**: COMPLETED ✅
+- **Achievements**:
+  - Removed 6 complex spillover methods from cpu.py (341 line reduction, exceeded ~300 line target)
+  - Simplified spillover system to basic outdoor→indoor light streaming only
+  - Eliminated crashes and game-breaking bugs
+  - All 444 tests pass, all quality checks pass
+  - Core functionality preserved: torch lighting, directional sunlight, shadows, FOV integration
+- **Files Modified**:
+  - `/catley/view/render/lighting/cpu.py` - Removed complex spillover methods
+  - `/catley/game/game_world.py` - Removed forced starting room outdoor setup
+
+### ✅ Room Generation Enhancement (COMPLETED - Dec 2024)
+- **Goal**: Randomize outdoor room distribution instead of fixed starting room
+- **Status**: COMPLETED ✅
+- **Changes**:
+  - Each room now has 20% probability of being outdoor (instead of just starting room)
+  - Uses `MapRegion.create_outdoor_region()` and `create_indoor_region()` factory methods
+  - Outdoor rooms get proper `sky_exposure=1.0` for sunlight system
+- **Files Modified**:
+  - `/catley/environment/generators.py` - Added random outdoor room generation
+  - `/catley/game/game_world.py` - Removed starting room outdoor forcing
+
+### ✅ Visual Bug Fix: Outdoor Tile Colors (COMPLETED - Dec 2024)
+- **Goal**: Fix outdoor floor tiles appearing blue outside FOV
+- **Status**: COMPLETED ✅
+- **Problem Solved**: Outdoor room floor tiles were using indoor `DARK_GROUND` color instead of `OUTDOOR_DARK_GROUND`
+- **Solution**: Extended region-aware appearance system to include floor tiles (previously only boulders)
+- **Files Modified**:
+  - `/catley/environment/map.py` - Added floor tiles to region-aware color system
+
+### ✅ Phase 1.0a: Investigation Results (COMPLETED - 2024)
+- **Goal**: Test and refine outdoor sunlight system
+- **Status**: COMPLETED - Revealed fundamental architectural issues
+- **Key Findings**:
+  - CPU approach fights against natural light physics
+  - 12+ spillover methods create unmaintainable complexity
+  - Visual bugs persist despite extensive debugging
+  - **Strategic Decision**: Simplify CPU, fast-track GPU physics implementation
+
 ## Conclusion
 
 This plan provides a clear path to significantly improved lighting performance while maintaining the existing game architecture. The phased approach allows for incremental implementation, testing, and validation at each stage. The dual rendering capability (tile-based and continuous) ensures both visual consistency and future enhancement opportunities.
 
 The focus on high-impact phases ensures maximum return on implementation effort, while the comprehensive risk mitigation strategies minimize the chance of integration issues or performance regressions.
+
+**Current Status**: Phase 1.0 CPU cleanup is complete and stable. Ready to proceed with Phase 1.1 (merge to main) and Phase 1.2 (GPU infrastructure setup).

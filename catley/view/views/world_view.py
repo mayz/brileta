@@ -597,16 +597,36 @@ class WorldView(View):
             # Get pure light appearance for overlay
             light_app_slice = gw.game_map.light_appearance_map[world_slice]
 
-            # Create lighting intensity array for all explored tiles
+            # Create lighting intensity array for explored tiles
             # Start with zero intensity everywhere
             explored_light_intensities = np.zeros(
                 (*explored_mask_slice.shape, 3), dtype=np.float32
             )
-            # Set intensity for visible areas only
+            # Set full intensity only for visible areas (FOV)
             if np.any(visible_mask_slice):
                 explored_light_intensities[visible_mask_slice] = (
                     self.current_light_intensity[visible_mask_slice]
                 )
+
+            # Add spillover effects to non-visible but explored areas
+            # This allows spillover to be seen outside FOV while maintaining FOV
+            # darkening
+            non_visible_mask = explored_mask_slice & ~visible_mask_slice
+            if np.any(non_visible_mask):
+                # Sample spillover intensity for non-visible explored tiles
+                nvx, nvy = np.nonzero(non_visible_mask)
+                for _i, (rel_x, rel_y) in enumerate(zip(nvx, nvy, strict=True)):
+                    if (
+                        rel_x < self.current_light_intensity.shape[0]
+                        and rel_y < self.current_light_intensity.shape[1]
+                    ):
+                        # Get the computed spillover intensity
+                        spillover_intensity = self.current_light_intensity[rel_x, rel_y]
+                        # Apply a fraction of spillover to non-visible areas (dimmed
+                        # but visible)
+                        explored_light_intensities[rel_x, rel_y] = (
+                            spillover_intensity * 0.3
+                        )
 
             # Map world coordinates to viewport coordinates for all explored tiles
             exp_x, exp_y = np.nonzero(explored_mask_slice)

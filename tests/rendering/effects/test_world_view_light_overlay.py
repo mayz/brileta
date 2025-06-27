@@ -98,6 +98,7 @@ class TestWorldViewLightOverlay:
             mock_np_any.side_effect = [
                 True,  # explored=True
                 True,  # visible areas check
+                True,  # valid_mask check
                 False,  # others=False
             ]
 

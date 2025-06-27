@@ -144,7 +144,15 @@ TORCH_MIN_BRIGHTNESS = 1.15
 TORCH_MAX_BRIGHTNESS = 1.35
 
 # Lighting system defaults
-AMBIENT_LIGHT_LEVEL = 0.1  # Base light level for all areas
+AMBIENT_LIGHT_LEVEL = 0.2  # Base light level for all areas
+
+# Global sunlight configuration
+SUN_ENABLED = True  # Enable sunlight illumination
+SUN_COLOR = (255, 243, 204)  # Warm sunlight color (RGB 0-255)
+SUN_ELEVATION_DEGREES = 45.0  # Sun elevation above horizon (0-90 degrees)
+SUN_AZIMUTH_DEGREES = 135.0  # Sun direction (0=North, 90=East, 180=South, 270=West)
+SUN_INTENSITY = 0.4  # Base sun intensity multiplier
+SKY_EXPOSURE_POWER = 1.5  # Non-linear sky exposure curve (higher = more contrast)
 
 # Shadow system
 SHADOWS_ENABLED = True  # Set to False to disable shadows

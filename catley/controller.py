@@ -16,7 +16,7 @@ from .game.actions.base import GameIntent
 from .game.actions.types import AnimationType
 from .game.actors.core import Character
 from .game.game_world import GameWorld
-from .game.lights import DynamicLight
+from .game.lights import DirectionalLight, DynamicLight
 from .game.pathfinding_goal import PathfindingGoal
 from .game.turn_manager import TurnManager
 from .input_handler import InputHandler
@@ -82,6 +82,16 @@ class Controller:
         # Create the player's light now that lighting system is connected
         player_torch = DynamicLight.create_player_torch(self.gw.player)
         self.gw.add_light(player_torch)
+
+        # Create the sun if enabled
+        if config.SUN_ENABLED:
+            sun = DirectionalLight.create_sun(
+                elevation_degrees=config.SUN_ELEVATION_DEGREES,
+                azimuth_degrees=config.SUN_AZIMUTH_DEGREES,
+                intensity=config.SUN_INTENSITY,
+                color=config.SUN_COLOR,
+            )
+            self.gw.add_light(sun)
 
         self.turn_manager = TurnManager(self)
 

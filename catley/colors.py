@@ -29,6 +29,12 @@ DARK_GROUND: Color = (0, 0, 100)
 LIGHT_WALL: Color = (130, 110, 50)
 LIGHT_GROUND: Color = (200, 180, 50)
 
+# Outdoor map colors
+OUTDOOR_DARK_GROUND: Color = (60, 45, 30)  # Dark earth/dirt
+OUTDOOR_LIGHT_GROUND: Color = (120, 100, 70)  # Natural dirt/sand color
+OUTDOOR_DARK_WALL: Color = (40, 30, 20)  # Dark rock/stone
+OUTDOOR_LIGHT_WALL: Color = (80, 60, 40)  # Sunlit rock/stone
+
 # Actor colors
 PLAYER_COLOR: Color = WHITE
 NPC_COLOR: Color = YELLOW

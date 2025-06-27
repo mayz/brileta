@@ -17,6 +17,24 @@ if TYPE_CHECKING:
     from catley.game.actors import Actor, Character
 
 
+class Vec2:
+    """Simple 2D vector for directional lighting."""
+
+    def __init__(self, x: float, y: float) -> None:
+        self.x = x
+        self.y = y
+
+    def normalized(self) -> Vec2:
+        """Return a normalized version of this vector."""
+        magnitude = (self.x**2 + self.y**2) ** 0.5
+        if magnitude == 0:
+            return Vec2(0, 0)
+        return Vec2(self.x / magnitude, self.y / magnitude)
+
+    def __repr__(self) -> str:
+        return f"Vec2({self.x}, {self.y})"
+
+
 class LightSource(ABC):
     """Abstract base class for all light sources in the game world.
 
@@ -109,4 +127,74 @@ class DynamicLight(LightSource):
             min_brightness=config.TORCH_MIN_BRIGHTNESS,
             max_brightness=config.TORCH_MAX_BRIGHTNESS,
             owner=owner,
+        )
+
+
+class GlobalLight(LightSource):
+    """Abstract base class for lights that affect the entire world.
+
+    Global lights like sunlight or moonlight illuminate based on direction
+    and sky exposure rather than distance from a point.
+    """
+
+    def is_static(self) -> bool:
+        """Global lights change slowly if at all, cached with static lights."""
+        return True
+
+
+class DirectionalLight(GlobalLight):
+    """Sunlight or moonlight with direction and intensity.
+
+    Provides illumination based on a directional vector rather than
+    radiating from a point. Intensity is modulated by sky exposure.
+    """
+
+    def __init__(
+        self,
+        direction: Vec2,
+        color: colors.Color,
+        intensity: float = 1.0,
+    ) -> None:
+        """Initialize a directional light source.
+
+        Args:
+            direction: Normalized direction vector (e.g., Vec2(0.6, -0.8) for sun)
+            color: The RGB color of the light
+            intensity: Base intensity multiplier
+        """
+        # Global lights don't have a traditional position or radius
+        super().__init__(position=(0, 0), radius=0, color=color)
+        self.direction = direction.normalized()
+        self.intensity = intensity
+
+    @staticmethod
+    def create_sun(
+        elevation_degrees: float = 45.0,
+        azimuth_degrees: float = 135.0,  # Southeast
+        intensity: float = 0.8,
+        color: colors.Color = (255, 243, 204),  # Warm sunlight (converted to 0-255)
+    ) -> DirectionalLight:
+        """Factory method to create sunlight.
+
+        Args:
+            elevation_degrees: Sun elevation above horizon (0-90 degrees)
+            azimuth_degrees: Sun direction (0=North, 90=East, 180=South, 270=West)
+            intensity: Base sun intensity
+            color: Sun color (warm white by default)
+        """
+        import math
+
+        # Convert to radians
+        elevation_rad = math.radians(elevation_degrees)
+        azimuth_rad = math.radians(azimuth_degrees)
+
+        # Convert spherical to cartesian (2D projection)
+        # Y component is negative because down is positive in screen coordinates
+        direction_x = math.sin(azimuth_rad) * math.cos(elevation_rad)
+        direction_y = -math.sin(elevation_rad)  # Negative for downward light
+
+        return DirectionalLight(
+            direction=Vec2(direction_x, direction_y),
+            color=color,
+            intensity=intensity,
         )

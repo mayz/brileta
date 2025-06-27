@@ -154,9 +154,15 @@ class RoomsAndCorridorsGenerator(BaseMapGenerator):
 
             self._carve_room(tiles, new_room)
 
-            room_region = MapRegion(
-                id=next_region_id, region_type="room", bounds=[new_room]
-            )
+            # 20% chance for each room to be outdoor
+            if random.random() < 0.2:
+                room_region = MapRegion.create_outdoor_region(
+                    id=next_region_id, region_type="room", bounds=[new_room]
+                )
+            else:
+                room_region = MapRegion.create_indoor_region(
+                    id=next_region_id, region_type="room", bounds=[new_room]
+                )
             regions[next_region_id] = room_region
             tile_to_region_id[
                 new_room.x1 + 1 : new_room.x2, new_room.y1 + 1 : new_room.y2
