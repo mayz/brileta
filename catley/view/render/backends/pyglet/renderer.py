@@ -448,6 +448,12 @@ class PygletRenderer(Renderer):
         tile_y = int(flipped_y // self.tile_height_px)
         return (tile_x, tile_y)
 
+    def get_display_scale_factor(self) -> tuple[float, float]:
+        """Get the (x_scale, y_scale) factor for high-DPI displays."""
+        raise NotImplementedError(
+            "High-DPI scaling not yet implemented for Pyglet renderer"
+        )
+
     def texture_from_numpy(self, pixels: np.ndarray, transparent: bool = True) -> Any:
         """Creates a Pyglet texture from a raw NumPy RGBA pixel array."""
         if pixels.ndim != 3 or pixels.shape[2] != 4:

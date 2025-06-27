@@ -182,11 +182,20 @@ class TCODRenderer(Renderer):
         texture = cursor_data.texture
         hotspot_x, hotspot_y = cursor_data.hotspot
 
+        # Get display scale factor for high-DPI displays
+        scale_x, scale_y = self.get_display_scale_factor()
+
+        # Apply scaling to cursor size and hotspot (coordinates scaled in input handler)
+        scaled_width = int(texture.width * scale_x)
+        scaled_height = int(texture.height * scale_y)
+        scaled_hotspot_x = int(hotspot_x * scale_x)
+        scaled_hotspot_y = int(hotspot_y * scale_y)
+
         dest_rect = (
-            cursor_manager.mouse_pixel_x - hotspot_x,
-            cursor_manager.mouse_pixel_y - hotspot_y,
-            texture.width,
-            texture.height,
+            cursor_manager.mouse_pixel_x - scaled_hotspot_x,
+            cursor_manager.mouse_pixel_y - scaled_hotspot_y,
+            scaled_width,
+            scaled_height,
         )
         self.sdl_renderer.copy(texture, dest=dest_rect)
 
@@ -470,6 +479,22 @@ class TCODRenderer(Renderer):
     ) -> RootConsoleTilePos:
         """Converts final screen pixel coordinates to root console tile coordinates."""
         return self.coordinate_converter.pixel_to_tile(pixel_x, pixel_y)
+
+    def get_display_scale_factor(self) -> tuple[float, float]:
+        """Get the (x_scale, y_scale) factor for high-DPI displays."""
+        sdl_window = self.context.sdl_window
+        if sdl_window:
+            # Get logical window size (what the OS reports)
+            logical_w, logical_h = sdl_window.size
+            # Get actual renderer output size (high-DPI aware)
+            physical_w, physical_h = self.sdl_renderer.output_size
+
+            scale_x = physical_w / logical_w if logical_w > 0 else 1.0
+            scale_y = physical_h / logical_h if logical_h > 0 else 1.0
+        else:
+            scale_x = scale_y = 1.0
+
+        return scale_x, scale_y
 
     def _create_coordinate_converter(self) -> CoordinateConverter:
         """Create a coordinate converter with current dimensions."""

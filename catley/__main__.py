@@ -32,10 +32,7 @@ def main() -> None:
         WindowFlags.OPENGL
         # Enables high-DPI awareness. On displays like Retina or scaled 4K monitors,
         # this allows the game to render at the full native resolution, preventing blur.
-        #
-        # FIXME: This currently breaks the mouse cursor scaling. Figure out why,
-        #        then re-enable.
-        # | WindowFlags.ALLOW_HIGHDPI
+        | WindowFlags.ALLOW_HIGHDPI
         | WindowFlags.RESIZABLE
         | WindowFlags.MAXIMIZED
     )

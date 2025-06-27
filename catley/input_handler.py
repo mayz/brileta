@@ -91,7 +91,13 @@ class InputHandler:
             px_pos: PixelPos = event.position
             px_x: PixelCoord = px_pos[0]
             px_y: PixelCoord = px_pos[1]
-            self.cursor_manager.update_mouse_position(px_x, px_y)
+
+            # Scale coordinates for cursor rendering (cursor renderer expects scaled)
+            scale_x, scale_y = self.renderer.get_display_scale_factor()
+            scaled_px_x: PixelCoord = px_x * scale_x
+            scaled_px_y: PixelCoord = px_y * scale_y
+
+            self.cursor_manager.update_mouse_position(scaled_px_x, scaled_px_y)
 
         # Handle window resize events
         if isinstance(event, tcod.event.WindowResized):
@@ -109,7 +115,17 @@ class InputHandler:
             self.fm.on_window_resized()
 
         # Try to handle the event with the menu system
-        menu_consumed = self.controller.overlay_system.handle_input(event)
+        # For mouse events, we need to send scaled coordinates to match cursor position
+        menu_event = event
+        if isinstance(event, tcod.event.MouseButtonDown | tcod.event.MouseMotion):
+            # Create scaled version for menu system
+            scale_x, scale_y = self.renderer.get_display_scale_factor()
+            scaled_x = event.position.x * scale_x
+            scaled_y = event.position.y * scale_y
+            menu_event = copy.copy(event)
+            menu_event.position = tcod.event.Point(int(scaled_x), int(scaled_y))
+
+        menu_consumed = self.controller.overlay_system.handle_input(menu_event)
 
         # If no menu handled it, check for normal game actions
         if not menu_consumed:
@@ -345,7 +361,12 @@ class InputHandler:
         px_x: PixelCoord = px_pos[0]
         px_y: PixelCoord = px_pos[1]
 
-        root_tile_x, root_tile_y = self.renderer.pixel_to_tile(px_x, px_y)
+        # Scale coordinates to match cursor position (cursor renders at scaled coords)
+        scale_x, scale_y = self.renderer.get_display_scale_factor()
+        scaled_px_x: PixelCoord = px_x * scale_x
+        scaled_px_y: PixelCoord = px_y * scale_y
+
+        root_tile_x, root_tile_y = self.renderer.pixel_to_tile(scaled_px_x, scaled_px_y)
 
         event_copy = copy.copy(event)
         event_copy.position = tcod.event.Point(root_tile_x, root_tile_y)

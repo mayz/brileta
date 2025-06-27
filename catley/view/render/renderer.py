@@ -82,6 +82,17 @@ class Renderer(abc.ABC):
         pass
 
     @abc.abstractmethod
+    def get_display_scale_factor(self) -> tuple[float, float]:
+        """Get the (x_scale, y_scale) factor for high-DPI displays.
+
+        Returns (1.0, 1.0) for standard DPI displays.
+        Returns higher values (e.g., 2.0, 2.0) for high-DPI displays.
+
+        This is used to properly scale UI elements like cursors on high-DPI displays.
+        """
+        pass
+
+    @abc.abstractmethod
     def draw_mouse_cursor(self, cursor_manager: CursorManager) -> None:
         """Draws the active cursor using data from the cursor manager."""
         pass
