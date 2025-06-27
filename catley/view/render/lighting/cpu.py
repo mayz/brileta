@@ -93,10 +93,13 @@ class CPULightingSystem(LightingSystem):
         self._time += delta_time
 
     def compute_lightmap(self, viewport_bounds: Rect) -> np.ndarray | None:
-        """Compute the final lightmap for the visible area.
+        """Compute the final lightmap for the visible area using two-layer optimization.
 
-        This method computes lighting with optional viewport culling and actor shadows.
-        Uses an LRU cache for performance.
+        This method uses a two-layer approach for optimal performance:
+        1. Static lighting layer (cached) - ambient + static lights only
+        2. Dynamic lighting layer (computed fresh) - flickering/moving lights
+
+        Shadows are applied after combining both layers.
 
         Args:
             viewport_bounds: The visible area to compute lighting for
@@ -107,43 +110,27 @@ class CPULightingSystem(LightingSystem):
         """
         from catley.config import SHADOWS_ENABLED
 
-        map_width = viewport_bounds.width
-        map_height = viewport_bounds.height
         viewport_offset = (viewport_bounds.x1, viewport_bounds.y1)
 
-        # Get relevant actors for shadow casting
-        actors = self.game_world.actor_spatial_index.get_in_bounds(
-            viewport_bounds.x1,
-            viewport_bounds.y1,
-            viewport_bounds.x2,
-            viewport_bounds.y2,
-        )
+        # Layer 1: Get static lighting (from cache if possible)
+        static_cache_key = self._get_static_cache_key(viewport_bounds)
+        static_lighting = self._static_light_cache.get(static_cache_key)
 
-        # Generate cache key for this lighting computation
-        cache_key = self._generate_cache_key(
-            viewport_bounds, actors, map_width, map_height
-        )
+        if static_lighting is None:
+            # Cache miss - compute static lighting and store it
+            static_lighting = self._compute_static_lights(viewport_bounds)
+            self._static_light_cache.store(static_cache_key, static_lighting.copy())
 
-        # Check the cache for a pre-computed lighting map
-        cached_result = self._lighting_cache.get(cache_key)
-        if cached_result is not None:
-            return cached_result.copy()
-
-        # Compute base lighting for the viewport
-        base_lighting = self._compute_base_lighting(viewport_bounds)
+        # Layer 2: Compute dynamic lighting (always fresh for flicker/movement)
+        final_lighting = self._compute_dynamic_lights(viewport_bounds, static_lighting)
 
         # Apply shadows if enabled
-        if not SHADOWS_ENABLED:
-            final_lighting = base_lighting
-        else:
+        if SHADOWS_ENABLED:
             offset_x = viewport_offset[0]
             offset_y = viewport_offset[1]
             final_lighting = self._apply_actor_shadows(
-                base_lighting, offset_x, offset_y
+                final_lighting, offset_x, offset_y
             )
-
-        # Store result in cache (make a copy to prevent mutation)
-        self._lighting_cache.store(cache_key, final_lighting.copy())
 
         # Finished a fresh lighting pass - notify views
         self.revision += 1
@@ -160,6 +147,91 @@ class CPULightingSystem(LightingSystem):
 
         # Apply each light in the game world
         for light in self.game_world.lights:
+            lx, ly = light.position
+            if (
+                viewport_bounds.x1 - light.radius
+                <= lx
+                < viewport_bounds.x1 + viewport_bounds.width + light.radius
+                and viewport_bounds.y1 - light.radius
+                <= ly
+                < viewport_bounds.y1 + viewport_bounds.height + light.radius
+            ):
+                self._apply_light_to_map(
+                    light,
+                    light_map,
+                    viewport_bounds.width,
+                    viewport_bounds.height,
+                    (viewport_bounds.x1, viewport_bounds.y1),
+                )
+
+        return np.clip(light_map, 0.0, 1.0)
+
+    def _compute_static_lights(self, viewport_bounds: Rect) -> np.ndarray:
+        """Compute lighting contribution from static lights only.
+
+        This method creates the base lighting layer that can be cached since
+        static lights never change position, color, or intensity.
+
+        Args:
+            viewport_bounds: The visible area to compute lighting for
+
+        Returns:
+            A (width, height, 3) NumPy array with ambient + static contributions
+        """
+        light_map = np.full(
+            (viewport_bounds.width, viewport_bounds.height, 3),
+            self.config.ambient_light,
+            dtype=np.float32,
+        )
+
+        # Apply only static lights to the map
+        for light in self.game_world.lights:
+            if not light.is_static():
+                continue  # Skip dynamic lights
+
+            lx, ly = light.position
+            if (
+                viewport_bounds.x1 - light.radius
+                <= lx
+                < viewport_bounds.x1 + viewport_bounds.width + light.radius
+                and viewport_bounds.y1 - light.radius
+                <= ly
+                < viewport_bounds.y1 + viewport_bounds.height + light.radius
+            ):
+                self._apply_light_to_map(
+                    light,
+                    light_map,
+                    viewport_bounds.width,
+                    viewport_bounds.height,
+                    (viewport_bounds.x1, viewport_bounds.y1),
+                )
+
+        return np.clip(light_map, 0.0, 1.0)
+
+    def _compute_dynamic_lights(
+        self, viewport_bounds: Rect, static_base: np.ndarray
+    ) -> np.ndarray:
+        """Compute lighting contribution from dynamic lights and blend with static base.
+
+        This method takes the pre-computed static lighting layer and adds
+        the contribution
+        of all dynamic lights (flickering torches, actor-carried lights, etc.).
+
+        Args:
+            viewport_bounds: The visible area to compute lighting for
+            static_base: Pre-computed static lighting layer to build upon
+
+        Returns:
+            A (width, height, 3) NumPy array with static + dynamic light contributions
+        """
+        # Start with the static lighting base
+        light_map = static_base.copy()
+
+        # Apply only dynamic lights to the map
+        for light in self.game_world.lights:
+            if light.is_static():
+                continue  # Skip static lights (already in base layer)
+
             lx, ly = light.position
             if (
                 viewport_bounds.x1 - light.radius
@@ -222,11 +294,40 @@ class CPULightingSystem(LightingSystem):
         Returns:
             A hashable tuple representing the static lighting state
         """
+        # Collect static light properties for the cache key
+        static_lights = []
+        for light in self.game_world.lights:
+            if light.is_static():
+                lx, ly = light.position
+                # Only include lights that could affect this viewport
+                if (
+                    viewport_bounds.x1 - light.radius
+                    <= lx
+                    < viewport_bounds.x1 + viewport_bounds.width + light.radius
+                    and viewport_bounds.y1 - light.radius
+                    <= ly
+                    < viewport_bounds.y1 + viewport_bounds.height + light.radius
+                ):
+                    static_lights.append(
+                        (
+                            lx,
+                            ly,
+                            light.radius,
+                            light.color[0],
+                            light.color[1],
+                            light.color[2],
+                        )
+                    )
+
+        # Sort to ensure consistent key ordering
+        static_lights.sort()
+
         return (
             viewport_bounds.x1,
             viewport_bounds.y1,
             viewport_bounds.width,
             viewport_bounds.height,
+            tuple(static_lights),  # Include static light properties
         )
 
     def _calculate_light_flicker(self, light: LightSource) -> float:
