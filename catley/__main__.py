@@ -4,6 +4,7 @@ import random
 
 import tcod
 from tcod.console import Console
+from tcod.sdl.video import WindowFlags
 
 from . import config
 from .controller import Controller
@@ -25,12 +26,24 @@ def main() -> None:
 
     root_console = Console(screen_width, screen_height, order="F")
 
+    sdl_window_flags: int = (
+        # Requests an OpenGL-accelerated rendering context. Essential for compatibility
+        # with the future GPU-based lighting system using moderngl.
+        WindowFlags.OPENGL
+        # Enables high-DPI awareness. On displays like Retina or scaled 4K monitors,
+        # this allows the game to render at the full native resolution, preventing blur.
+        | WindowFlags.ALLOW_HIGHDPI
+        | WindowFlags.RESIZABLE
+        | WindowFlags.MAXIMIZED
+    )
+
     # Create TCOD context with proper resource management
     with tcod.context.new(
         console=root_console,
         tileset=tileset,
         title=title,
         vsync=config.VSYNC,
+        sdl_window_flags=sdl_window_flags,
     ) as context:
         controller = Controller(context, root_console, tileset.tile_shape)
         try:
