@@ -82,7 +82,6 @@ class CPULightingSystem(LightingSystem):
 
         # Track time for dynamic effects like flickering
         self._time = 0.0
-        self.revision = 0  # Increments each time light map changes
 
     def update(self, delta_time: float) -> None:
         """Update internal time-based state for dynamic effects.

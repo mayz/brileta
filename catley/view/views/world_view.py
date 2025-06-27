@@ -137,7 +137,14 @@ class WorldView(View):
 
         map_key = gw.game_map.revision
 
-        return (camera_key, map_key)
+        # The background cache must be invalidated whenever the player moves,
+        # because movement updates the `explored` map, which changes the appearance
+        # of the unlit background. The lighting system's revision is a perfect,
+        # lightweight proxy for player movement, as it increments every time the
+        # player's torch moves.
+        lighting_key = gw.lighting_system.revision if gw.lighting_system else 0
+
+        return (camera_key, map_key, lighting_key)
 
     def draw(self, renderer: Renderer, alpha: float) -> None:
         """Main drawing method for the world view."""
@@ -269,46 +276,30 @@ class WorldView(View):
 
     @record_time_live_variable("cpu.render.map_unlit_ms")
     def _render_map_unlit(self) -> None:
+        """Renders the static, unlit background of the game world."""
         gw = self.controller.gw
         vs = self.viewport_system
-        # Clear entire console to create pillarbox/letterbox bars
-        self.game_map_console.rgb[:] = (ord(" "), (0, 0, 0), (0, 0, 0))
 
-        bounds = vs.get_visible_bounds()
-        world_left, world_right, world_top, world_bottom = (
-            bounds.x1,
-            bounds.x2,
-            bounds.y1,
-            bounds.y2,
-        )
-        # Clamp the visible bounds to the actual map size so slicing is safe.
-        world_left = max(0, world_left)
-        world_top = max(0, world_top)
-        world_right = min(gw.game_map.width - 1, world_right)
-        world_bottom = min(gw.game_map.height - 1, world_bottom)
-        world_slice = (
-            slice(world_left, world_right + 1),
-            slice(world_top, world_bottom + 1),
-        )
-        # Offset to center smaller maps within the viewport
-        dest_x_start = vs.offset_x
-        dest_y_start = vs.offset_y
-        # Determine the offset within the viewport-sized console where the world
-        # slice will be drawn. This keeps the map centered even when smaller
-        # than the viewport.
-        dark_app_slice = gw.game_map.dark_appearance_map[world_slice]
+        # Clear the console for this view to a default black background.
+        self.game_map_console.clear()
 
-        # Use ONLY the explored map for the unlit background.
-        explored_mask_slice = gw.game_map.explored[world_slice]
+        # Iterate over every tile in the destination console (the viewport).
+        for vp_y in range(self.game_map_console.height):
+            for vp_x in range(self.game_map_console.width):
+                # For each screen tile, find out which world tile it corresponds to.
+                world_x, world_y = vs.screen_to_world(vp_x, vp_y)
 
-        ex_x, ex_y = np.nonzero(explored_mask_slice)
+                # Check if the world tile is within the map bounds.
+                if not (
+                    0 <= world_x < gw.game_map.width
+                    and 0 <= world_y < gw.game_map.height
+                ):
+                    continue
 
-        if ex_x.size > 0:
-            self.game_map_console.rgb[dest_x_start + ex_x, dest_y_start + ex_y] = (
-                dark_app_slice[ex_x, ex_y]
-            )
-
-        # The visible mask is NOT used here. It is used by the light overlay.
+                # If the world tile has been explored, draw its "dark" appearance.
+                if gw.game_map.explored[world_x, world_y]:
+                    dark_appearance = gw.game_map.dark_appearance_map[world_x, world_y]
+                    self.game_map_console.rgb[vp_x, vp_y] = dark_appearance
 
     def _render_actors(self) -> None:
         # Traditional actors are now baked into the cache during the draw phase.

@@ -82,6 +82,8 @@ class DummyGW:
             lambda w, h, *_args, **_kwargs: 1.0 * np.ones((w, h, 3))
         )
         self.lighting._generate_cache_key = MagicMock(return_value="test_lighting_key")
+        self.lighting_system = MagicMock()
+        self.lighting_system.revision = 0
 
     def add_actor(self, actor: DummyActor) -> None:
         self.actors.append(actor)

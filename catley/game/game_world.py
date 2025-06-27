@@ -191,7 +191,7 @@ class GameWorld:
         if self.lighting_system is not None:
             # Find and update any lights owned by this actor
             for light in self.lights:
-                if isinstance(light, DynamicLight):
+                if isinstance(light, DynamicLight) and light.owner is actor:
                     light.position = (actor.x, actor.y)
                     self.lighting_system.on_light_moved(light)
 

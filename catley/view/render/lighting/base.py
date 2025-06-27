@@ -23,7 +23,16 @@ class LightingSystem(ABC):
     """Abstract base class that defines the contract for any lighting engine.
 
     This interface allows the game to work with different lighting implementations
-    (CPU-based, GPU-accelerated, etc.) without changing the client code.
+    (e.g., CPU-based, GPU-accelerated) without changing the client code.
+
+    **Subclassing Contract:**
+    A concrete implementation of LightingSystem MUST adhere to the following:
+    1.  It must initialize `self.revision` to 0 via `super().__init__()`.
+    2.  It must increment `self.revision` whenever the lighting state changes
+        in a way that requires a visual update. This is critical for cache
+        invalidation in the rendering views.
+    3.  Key places to increment `revision` include after a full `compute_lightmap`
+        pass and within the `on_light_moved` handler.
     """
 
     def __init__(self, game_world: GameWorld) -> None:
@@ -33,6 +42,7 @@ class LightingSystem(ABC):
             game_world: The game world to query for lighting data
         """
         self.game_world = game_world
+        self.revision: int = 0  # Incremented when lighting state changes
 
     @abstractmethod
     def update(self, delta_time: float) -> None:
