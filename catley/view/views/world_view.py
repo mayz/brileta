@@ -562,19 +562,29 @@ class WorldView(View):
             slice(world_top, world_bottom + 1),
         )
         visible_mask_slice = gw.game_map.visible[world_slice]
+        explored_mask_slice = gw.game_map.explored[world_slice]
 
-        # Initialize light console with fully transparent
+        # Initialize all tiles to be fully transparent (alpha=0 for both fg and bg)
         light_console.rgba[:] = (ord(" "), (0, 0, 0, 0), (0, 0, 0, 0))
 
-        if np.any(visible_mask_slice):
+        if np.any(explored_mask_slice):
             # Get pure light appearance for overlay
             light_app_slice = gw.game_map.light_appearance_map[world_slice]
-            light_intensities = self.current_light_intensity[visible_mask_slice]
 
-            # Map world coordinates to viewport coordinates
-            vis_x, vis_y = np.nonzero(visible_mask_slice)
-            viewport_x = vs.offset_x + vis_x
-            viewport_y = vs.offset_y + vis_y
+            # Create lighting intensity array for all explored tiles
+            # Start with zero intensity everywhere
+            explored_light_intensities = np.zeros(
+                (*explored_mask_slice.shape, 3), dtype=np.float32
+            )
+            # Set intensity for visible areas only
+            explored_light_intensities[visible_mask_slice] = (
+                self.current_light_intensity[visible_mask_slice]
+            )
+
+            # Map world coordinates to viewport coordinates for all explored tiles
+            exp_x, exp_y = np.nonzero(explored_mask_slice)
+            viewport_x = vs.offset_x + exp_x
+            viewport_y = vs.offset_y + exp_y
 
             # Ensure coordinates are within bounds
             valid_mask = (
@@ -588,18 +598,20 @@ class WorldView(View):
                 final_vp_x = viewport_x[valid_mask]
                 final_vp_y = viewport_y[valid_mask]
 
-                # Get pure light appearance data
+                # Get pure light appearance data for all explored tiles
                 light_chars = light_app_slice["ch"][
-                    vis_x[valid_mask], vis_y[valid_mask]
+                    exp_x[valid_mask], exp_y[valid_mask]
                 ]
-                light_fg = light_app_slice["fg"][vis_x[valid_mask], vis_y[valid_mask]]
-                light_bg = light_app_slice["bg"][vis_x[valid_mask], vis_y[valid_mask]]
+                light_fg = light_app_slice["fg"][exp_x[valid_mask], exp_y[valid_mask]]
+                light_bg = light_app_slice["bg"][exp_x[valid_mask], exp_y[valid_mask]]
                 dark_bg = gw.game_map.dark_appearance_map[world_slice]["bg"][
-                    vis_x[valid_mask], vis_y[valid_mask]
+                    exp_x[valid_mask], exp_y[valid_mask]
                 ]
 
                 # Per-channel scaling: warm colours stay warm
-                light_intensity_valid = light_intensities[valid_mask]  # shape (N,3)
+                light_intensity_valid = explored_light_intensities[
+                    exp_x[valid_mask], exp_y[valid_mask]
+                ]  # shape (N,3)
 
                 # --- exact CPU blend to match pre-refactor appearance ---
                 # light_intensity_valid shape: (N, 3) already carries warm torch colours
