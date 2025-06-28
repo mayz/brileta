@@ -56,7 +56,8 @@ class DummyGameMap:
 
         self.width = width
         self.height = height
-        self.revision = 0
+        self.structural_revision = 0
+        self.exploration_revision = 0
         self.dark_appearance_map = np.zeros(
             (width, height), dtype=tile_types.TileTypeAppearance
         )
