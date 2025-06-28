@@ -18,6 +18,7 @@ Key Implementation Details:
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 import numpy as np
@@ -41,6 +42,17 @@ from catley.view.render.renderer import Renderer
 
 if TYPE_CHECKING:
     from catley.view.ui.cursor_manager import CursorManager
+
+
+@dataclass
+class LetterboxGeometry:
+    """Holds the calculated geometry for letterboxing/pillarboxing."""
+
+    scaled_w: int
+    scaled_h: int
+    offset_x: int
+    offset_y: int
+    dest_rect: tuple[int, int, int, int]
 
 
 class TCODRenderer(Renderer):
@@ -75,6 +87,29 @@ class TCODRenderer(Renderer):
             name="EffectTextureCache", max_size=self._effect_cache_limit
         )
         self._tileset = context.sdl_atlas.tileset if context.sdl_atlas else None
+
+    def _get_letterbox_geometry(self) -> LetterboxGeometry:
+        """Calculates letterbox/pillarbox geometry (single source of truth)."""
+        renderer_width, renderer_height = self.sdl_renderer.output_size
+        console_aspect = self.root_console.width / self.root_console.height
+        window_aspect = renderer_width / renderer_height
+
+        if console_aspect > window_aspect:
+            # Letterboxed vertically (top/bottom bars)
+            scaled_w = renderer_width
+            scaled_h = int(renderer_width / console_aspect)
+            offset_x = 0
+            offset_y = (renderer_height - scaled_h) // 2
+        else:
+            # Letterboxed horizontally (left/right bars)
+            scaled_h = renderer_height
+            scaled_w = int(renderer_height * console_aspect)
+            offset_x = (renderer_width - scaled_w) // 2
+            offset_y = 0
+
+        dest_rect = (offset_x, offset_y, scaled_w, scaled_h)
+
+        return LetterboxGeometry(scaled_w, scaled_h, offset_x, offset_y, dest_rect)
 
     @property
     def tile_dimensions(self) -> TileDimensions:
@@ -402,26 +437,11 @@ class TCODRenderer(Renderer):
     def prepare_to_present(self) -> None:
         """Converts the root console to a texture and copies it to the backbuffer."""
         self.root_console.clear()
-
         console_texture = self.console_render.render(self.root_console)
         self.sdl_renderer.clear()
 
-        renderer_width, renderer_height = self.sdl_renderer.output_size
-        console_aspect = self.root_console.width / self.root_console.height
-        window_aspect = renderer_width / renderer_height
-
-        if console_aspect > window_aspect:
-            # Letterboxing (black bars on top/bottom)
-            dest_w = renderer_width
-            dest_h = int(renderer_width / console_aspect)
-            dest = (0, (renderer_height - dest_h) // 2, renderer_width, dest_h)
-        else:
-            # Pillarboxing (black bars on left/right)
-            dest_w = int(renderer_height * console_aspect)
-            dest_h = renderer_height
-            dest = ((renderer_width - dest_w) // 2, 0, dest_w, renderer_height)
-
-        self.sdl_renderer.copy(console_texture, dest=dest)
+        geometry = self._get_letterbox_geometry()
+        self.sdl_renderer.copy(console_texture, dest=geometry.dest_rect)
 
     def finalize_present(self) -> None:
         """Presents the backbuffer to the screen."""
@@ -439,38 +459,15 @@ class TCODRenderer(Renderer):
         self.coordinate_converter = self._create_coordinate_converter()
 
     def console_to_screen_coords(self, console_x: float, console_y: float) -> PixelPos:
-        """
-        Converts root console coordinates to final, hardware-rendered
-        screen pixel coordinates.
+        """Converts root console coordinates to final screen pixel coordinates."""
+        geometry = self._get_letterbox_geometry()
 
-        This critical transformation step accounts for the current window size,
-        aspect ratio, and any letterboxing or pillarboxing applied by the renderer.
-
-        Args:
-            console_x: The x-coordinate on the root console grid. Must be a float
-                    to represent sub-tile positions for smooth rendering.
-            console_y: The y-coordinate on the root console grid. Must be a float.
-
-        Returns:
-            A PixelPos tuple (px_x, px_y) representing the top-left corner of the
-            given console coordinate on the final rendered screen.
-        """
-        renderer_width, renderer_height = self.sdl_renderer.output_size
-        console_aspect = self.root_console.width / self.root_console.height
-        window_aspect = renderer_width / renderer_height
-
-        if console_aspect > window_aspect:
-            # Console is letterboxed vertically
-            scaled_height = int(renderer_width / console_aspect)
-            offset_y = (renderer_height - scaled_height) // 2
-            screen_x = console_x * (renderer_width / self.root_console.width)
-            screen_y = offset_y + console_y * (scaled_height / self.root_console.height)
-        else:
-            # Console is letterboxed horizontally
-            scaled_width = int(renderer_height * console_aspect)
-            offset_x = (renderer_width - scaled_width) // 2
-            screen_x = offset_x + console_x * (scaled_width / self.root_console.width)
-            screen_y = console_y * (renderer_height / self.root_console.height)
+        screen_x = geometry.offset_x + console_x * (
+            geometry.scaled_w / self.root_console.width
+        )
+        screen_y = geometry.offset_y + console_y * (
+            geometry.scaled_h / self.root_console.height
+        )
 
         return screen_x, screen_y
 
@@ -478,7 +475,15 @@ class TCODRenderer(Renderer):
         self, pixel_x: PixelCoord, pixel_y: PixelCoord
     ) -> RootConsoleTilePos:
         """Converts final screen pixel coordinates to root console tile coordinates."""
-        return self.coordinate_converter.pixel_to_tile(pixel_x, pixel_y)
+        geometry = self._get_letterbox_geometry()
+
+        # Adjust for letterboxing offsets before passing to the converter
+        adjusted_pixel_x = pixel_x - geometry.offset_x
+        adjusted_pixel_y = pixel_y - geometry.offset_y
+
+        return self.coordinate_converter.pixel_to_tile(
+            adjusted_pixel_x, adjusted_pixel_y
+        )
 
     def get_display_scale_factor(self) -> tuple[float, float]:
         """Get the (x_scale, y_scale) factor for high-DPI displays."""
@@ -498,15 +503,16 @@ class TCODRenderer(Renderer):
 
     def _create_coordinate_converter(self) -> CoordinateConverter:
         """Create a coordinate converter with current dimensions."""
-        renderer_width, renderer_height = self.sdl_renderer.output_size
+        # Get the final, letterboxed geometry
+        geometry = self._get_letterbox_geometry()
 
+        # Initialize the converter with the SCALED dimensions, not the full
+        # renderer dimensions. This simplifies the converter's logic.
         return CoordinateConverter(
             console_width_in_tiles=self.root_console.width,
             console_height_in_tiles=self.root_console.height,
-            tile_width_px=self.tile_dimensions[0],
-            tile_height_px=self.tile_dimensions[1],
-            renderer_width=renderer_width,
-            renderer_height=renderer_height,
+            renderer_scaled_width=geometry.scaled_w,
+            renderer_scaled_height=geometry.scaled_h,
         )
 
     def texture_from_console(

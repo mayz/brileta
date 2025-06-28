@@ -171,37 +171,21 @@ class CoordinateConverter:
         self,
         console_width_in_tiles: TileCoord,
         console_height_in_tiles: TileCoord,
-        tile_width_px: PixelCoord,
-        tile_height_px: PixelCoord,
-        renderer_width: PixelCoord,
-        renderer_height: PixelCoord,
+        renderer_scaled_width: PixelCoord,
+        renderer_scaled_height: PixelCoord,
     ) -> None:
-        """Initialize coordinate converter with console and renderer dimensions."""
+        """Initializes converter with final rendered console dimensions."""
         self.console_width_in_tiles = console_width_in_tiles
         self.console_height_in_tiles = console_height_in_tiles
-        self.tile_width_px = tile_width_px
-        self.tile_height_px = tile_height_px
 
-        expected_width_px: PixelCoord = console_width_in_tiles * tile_width_px
-        expected_height_px: PixelCoord = console_height_in_tiles * tile_height_px
+        # The renderer now handles the offset calculation. This converter just needs
+        # to know the final size of the rendered area to calculate tile sizes.
+        self.offset_x = 0
+        self.offset_y = 0
 
-        console_aspect: float = expected_width_px / expected_height_px
-        window_aspect: float = renderer_width / renderer_height
-
-        if console_aspect > window_aspect:
-            # Letterboxed vertically - top/bottom bars
-            scaled_height = renderer_width / console_aspect
-            self.offset_x = 0
-            self.offset_y = (renderer_height - scaled_height) / 2
-            self.tile_width_screen_px = renderer_width / console_width_in_tiles
-            self.tile_height_screen_px = scaled_height / console_height_in_tiles
-        else:
-            # Letterboxed horizontally - left/right bars
-            scaled_width = renderer_height * console_aspect
-            self.offset_x = (renderer_width - scaled_width) / 2
-            self.offset_y = 0
-            self.tile_width_screen_px = scaled_width / console_width_in_tiles
-            self.tile_height_screen_px = renderer_height / console_height_in_tiles
+        # Calculate tile size based on the final scaled dimensions
+        self.tile_width_screen_px = renderer_scaled_width / console_width_in_tiles
+        self.tile_height_screen_px = renderer_scaled_height / console_height_in_tiles
 
     def pixel_to_tile(
         self, pixel_x: PixelCoord, pixel_y: PixelCoord
