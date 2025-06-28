@@ -10,23 +10,25 @@ from .base import TextView
 
 if TYPE_CHECKING:
     from catley.controller import Controller
-    from catley.view.render.renderer import Renderer
+    from catley.view.render.graphics import GraphicsContext
 
 
 class HelpTextView(TextView):
     """View that displays basic control hints at the top of the screen."""
 
-    def __init__(self, controller: Controller, renderer: Renderer) -> None:
+    def __init__(self, controller: Controller) -> None:
         super().__init__()
         self.controller = controller
-        self.canvas = TCODConsoleCanvas(renderer)
+        self.canvas = TCODConsoleCanvas(self.controller.graphics)
 
     def get_cache_key(self) -> bool:
         """The key is simply whether there are items to pick up."""
         player = self.controller.gw.player
         return self.controller.gw.has_pickable_items_at_location(player.x, player.y)
 
-    def draw_content(self, renderer: Renderer, alpha: InterpolationAlpha) -> None:
+    def draw_content(
+        self, graphics: GraphicsContext, alpha: InterpolationAlpha
+    ) -> None:
         """Render a short string with helpful key bindings."""
 
         tile_w, tile_h = self.tile_dimensions

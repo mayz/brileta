@@ -19,7 +19,7 @@ import time
 from typing import TYPE_CHECKING, cast
 
 from catley import config
-from catley.backends.tcod.renderer import TCODRenderer
+from catley.backends.tcod.graphics import TCODGraphicsContext
 from catley.config import (
     HELP_HEIGHT,
 )
@@ -39,7 +39,7 @@ from catley.util.live_vars import live_variable_registry
 
 from .render.effects.effects import EffectContext
 from .render.effects.screen_shake import ScreenShake
-from .render.renderer import Renderer
+from .render.graphics import GraphicsContext
 from .ui.cursor_manager import CursorManager
 from .ui.debug_stats_overlay import DebugStatsOverlay
 from .ui.dev_console_overlay import DevConsoleOverlay
@@ -58,11 +58,12 @@ if TYPE_CHECKING:
 class FrameManager:
     """Coordinates views and manages the frame lifecycle, including global effects."""
 
-    def __init__(self, controller: Controller) -> None:
+    def __init__(self, controller: Controller, graphics: GraphicsContext) -> None:
         """Initialize the frame manager and supporting systems."""
         self.controller = controller
-        self.renderer: Renderer = controller.renderer
-        self.cursor_manager = CursorManager(self.renderer)
+
+        self.graphics = graphics
+        self.cursor_manager = CursorManager()
 
         # Global effect systems
         self.screen_shake = ScreenShake()
@@ -77,23 +78,28 @@ class FrameManager:
 
     def _setup_game_ui(self) -> None:
         """Configure and position views for the main game interface."""
+        assert self.controller is not None
+        assert self.controller.overlay_system is not None
+
         # Create views (dimensions will be set via resize() calls below)
-        self.help_text_view = HelpTextView(self.controller, renderer=self.renderer)
+        self.help_text_view = HelpTextView(self.controller)
 
         self.world_view = WorldView(
-            self.controller, self.screen_shake, self.controller.gw.lighting_system
+            self.controller,
+            self.screen_shake,
+            self.controller.gw.lighting_system,
         )
         self.message_log_view = MessageLogView(
-            message_log=self.controller.message_log,
-            renderer=self.renderer,
+            self.controller.message_log,
+            self.graphics,
         )
         self.equipment_view = EquipmentView(
             self.controller,
-            renderer=self.renderer,
+            self.graphics,
         )
 
-        self.health_view = HealthView(self.controller, renderer=self.renderer)
-        self.status_view = StatusView(self.controller, renderer=self.renderer)
+        self.health_view = HealthView(self.controller, self.graphics)
+        self.status_view = StatusView(self.controller)
 
         self.views: list[View] = [
             self.help_text_view,
@@ -129,7 +135,7 @@ class FrameManager:
         # a consistent aspect ratio regardless of window size.
         screen_width_tiles = config.SCREEN_WIDTH
         screen_height_tiles = config.SCREEN_HEIGHT
-        tile_dimensions = self.renderer.tile_dimensions
+        tile_dimensions = self.graphics.tile_dimensions
 
         # Consolidated bottom bar dimensions
         bottom_ui_height = 10
@@ -177,6 +183,69 @@ class FrameManager:
             message_log_x1, bottom_ui_y, message_log_x2, screen_height_tiles
         )
 
+    def register_metrics(self) -> None:
+        """Registers live variables specific to the App layer."""
+        live_variable_registry.register_metric(
+            "cpu.render_ms",
+            description="CPU time for rendering",
+            num_samples=500,
+        )
+        live_variable_registry.register_metric(
+            "cpu.render.light_overlay_ms",
+            description="CPU time for light overlay rendering",
+            num_samples=100,
+        )
+        live_variable_registry.register_metric(
+            "cpu.render.map_unlit_ms",
+            description="CPU time for unlit map rendering",
+            num_samples=100,
+        )
+        live_variable_registry.register_metric(
+            "cpu.render.actors_smooth_ms",
+            description="CPU time for smooth actor rendering",
+            num_samples=100,
+        )
+        live_variable_registry.register_metric(
+            "cpu.render.actors_traditional_ms",
+            description="CPU time for traditional actor rendering",
+            num_samples=100,
+        )
+        live_variable_registry.register_metric(
+            "cpu.render.selected_actor_highlight_ms",
+            description="CPU time for selected actor highlight rendering",
+            num_samples=100,
+        )
+        live_variable_registry.register_metric(
+            "cpu.render.present_background_ms",
+            description="CPU time for presenting background texture",
+            num_samples=100,
+        )
+        live_variable_registry.register_metric(
+            "cpu.render.present_light_overlay_ms",
+            description="CPU time for presenting light overlay texture",
+            num_samples=100,
+        )
+        live_variable_registry.register_metric(
+            "cpu.render.particles_under_actors_ms",
+            description="CPU time for rendering particles under actors",
+            num_samples=100,
+        )
+        live_variable_registry.register_metric(
+            "cpu.render.particles_over_actors_ms",
+            description="CPU time for rendering particles over actors",
+            num_samples=100,
+        )
+        live_variable_registry.register_metric(
+            "cpu.render.active_mode_world_ms",
+            description="CPU time for rendering active mode world elements",
+            num_samples=100,
+        )
+        live_variable_registry.register_metric(
+            "cpu.render.environmental_effects_ms",
+            description="CPU time for rendering environmental effects",
+            num_samples=100,
+        )
+
     def on_window_resized(self) -> None:
         """Called when the game window is resized to update view layouts."""
         self._layout_views()
@@ -190,44 +259,41 @@ class FrameManager:
         Main rendering pipeline that composites the final frame.
 
         Pipeline stages:
-        1. Preparation - Clear buffers
-        2. UI Views - Each view renders itself
-        3. Menus - Draw any active menus on top of everything
-        4. Presentation - Composite overlays then draw the mouse cursor
+        - UI Views - Each view renders itself
+        - Menus - Draw any active menus on top of everything
+        - Presentation - Composite overlays then draw the mouse cursor
         """
-        # 1. PREPARATION PHASE
-        self.renderer.prepare_to_present()
+        assert self.controller.overlay_system is not None
 
-        # 2. UI VIEW RENDERING
+        # UI VIEW RENDERING
         for view in self.views:
             if view.visible:
-                view.draw(self.renderer, alpha)
+                view.draw(self.graphics, alpha)
 
-        # Allow active mode to render its additional UI
+        # Allow any active mode to render its additional UI
         if self.controller.active_mode:
-            # FIXME: I explicitly acknowledge this is a TCOD-specific operation for
-            #        Phase 0 of the Graphics Migration Plan.
-            tcod_renderer = cast(TCODRenderer, self.renderer)
-            self.controller.active_mode.render_ui(tcod_renderer.root_console)
+            # FIXME: This needs to be adapted. It can't assume a TCOD console.
+            # A better way would be for the mode to have its own canvas,
+            # which gets drawn like any other overlay.
+            # For now, we accept this as technical debt.
+            tcod_graphics = cast(TCODGraphicsContext, self.graphics)
+            self.controller.active_mode.render_ui(tcod_graphics.root_console)
 
         # Views may render overlays like FPS after game UI.
 
-        # 3. OVERLAY DRAWING (texture generation phase)
+        # OVERLAY DRAWING (texture generation phase)
         self.controller.overlay_system.draw_overlays()
 
-        # 4. PRESENTATION
-        # Copy the final console state to the backbuffer
-        self.renderer.prepare_to_present()
-
+        # PRESENTATION
         # Allow views and other systems to perform low-level SDL drawing
         for view in self.views:
             if view.visible:
-                view.present(self.renderer, alpha)
+                view.present(self.graphics, alpha)
 
-        # 5. OVERLAY PRESENTATION (texture blitting phase)
+        # OVERLAY PRESENTATION (texture blitting phase)
         self.controller.overlay_system.present_overlays()
 
-        # 6. (DEBUG) Draw view outlines if enabled
+        # Draw view outlines if enabled
         if config.DEBUG_DRAW_VIEW_OUTLINES:
             from catley import (
                 colors as debug_colors,
@@ -238,8 +304,8 @@ class FrameManager:
                     continue
 
                 # Convert tile-based view bounds to pixel coordinates
-                px_x, px_y = self.renderer.console_to_screen_coords(view.x, view.y)
-                px_x2, px_y2 = self.renderer.console_to_screen_coords(
+                px_x, px_y = self.graphics.console_to_screen_coords(view.x, view.y)
+                px_x2, px_y2 = self.graphics.console_to_screen_coords(
                     view.x + view.width, view.y + view.height
                 )
                 px_w = px_x2 - px_x
@@ -248,15 +314,12 @@ class FrameManager:
                 # Pick a color from the debug palette, wrapping around if needed
                 color = debug_colors.DEBUG_COLORS[i % len(debug_colors.DEBUG_COLORS)]
 
-                self.renderer.draw_debug_rect(
+                self.graphics.draw_debug_rect(
                     int(px_x), int(px_y), int(px_w), int(px_h), color
                 )
 
         # Draw the mouse cursor on top of all overlays
-        self.renderer.draw_mouse_cursor(self.cursor_manager)
-
-        # Flip the backbuffer to the screen
-        self.renderer.finalize_present()
+        self.graphics.draw_mouse_cursor(self.cursor_manager)
 
         self._maybe_show_action_processing_metrics()
 
@@ -337,6 +400,8 @@ class FrameManager:
         self.trigger_screen_shake(event.intensity, event.duration)
 
     def _maybe_show_action_processing_metrics(self) -> None:
+        assert self.controller.input_handler is not None
+
         if (
             config.SHOW_ACTION_PROCESSING_METRICS
             and self.controller.last_input_time is not None

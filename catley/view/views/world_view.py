@@ -14,7 +14,7 @@ from catley.config import (
     PULSATION_PERIOD,
     SELECTION_HIGHLIGHT_ALPHA,
 )
-from catley.types import DeltaTime, InterpolationAlpha, Opacity
+from catley.types import InterpolationAlpha, Opacity
 from catley.util.caching import ResourceCache
 from catley.util.coordinates import (
     PixelCoord,
@@ -29,6 +29,7 @@ from catley.view.render.effects.particles import (
     SubTileParticleSystem,
 )
 from catley.view.render.effects.screen_shake import ScreenShake
+from catley.view.render.graphics import GraphicsContext
 from catley.view.render.lighting.base import LightingSystem
 from catley.view.render.viewport import ViewportSystem
 
@@ -37,7 +38,6 @@ from .base import View
 if TYPE_CHECKING:
     from catley.controller import Controller, FrameManager
     from catley.game.actors import Actor
-    from catley.view.render.renderer import Renderer
 
 
 class WorldView(View):
@@ -51,6 +51,7 @@ class WorldView(View):
     ) -> None:
         super().__init__()
         self.controller = controller
+        self.graphics = controller.graphics
         self.screen_shake = screen_shake
         self.lighting_system = lighting_system
         # Initialize a viewport system sized using configuration defaults.
@@ -119,7 +120,7 @@ class WorldView(View):
         if effect == "pulse":
             final_color = self._apply_pulsating_effect(color, color)
         root_x, root_y = self.x + vp_x, self.y + vp_y
-        self.controller.renderer.draw_tile_highlight(root_x, root_y, final_color, alpha)
+        self.graphics.draw_tile_highlight(root_x, root_y, final_color, alpha)
 
     # ------------------------------------------------------------------
     # Drawing
@@ -146,7 +147,7 @@ class WorldView(View):
 
         return (camera_key, map_key, exploration_key)
 
-    def draw(self, renderer: Renderer, alpha: InterpolationAlpha) -> None:
+    def draw(self, graphics: GraphicsContext, alpha: float) -> None:
         """Main drawing method for the world view."""
         if not self.visible:
             return
@@ -165,7 +166,7 @@ class WorldView(View):
             self._update_mouse_tile_location()
 
         # Apply screen shake by temporarily offsetting the camera position.
-        shake_x, shake_y = self.screen_shake.update(DeltaTime(delta_time))
+        shake_x, shake_y = self.screen_shake.update(delta_time)
         original_cam_x = vs.camera.world_x
         original_cam_y = vs.camera.world_y
         vs.camera.world_x += shake_x
@@ -179,21 +180,20 @@ class WorldView(View):
             # CACHE MISS: Re-render the static background
             self._render_map_unlit()  # This populates self.game_map_console
 
-            # Cast the generic renderer to the TCOD-specific one we know we're using in
-            # Phase 0 of the Graphics Migration Plan. This is an explicit acknowledgment
-            # of the technical debt we will pay off in Phase 2.
-            from catley.backends.tcod.renderer import TCODRenderer
+            # FIXME: This needs to be adapted.
+            # For now, we accept this as technical debt.
+            from catley.backends.tcod.graphics import TCODGraphicsContext
 
-            tcod_renderer = cast(TCODRenderer, renderer)
+            tcod_graphics = cast(TCODGraphicsContext, graphics)
 
-            texture = tcod_renderer.texture_from_console(self.game_map_console)
+            texture = tcod_graphics.texture_from_console(self.game_map_console)
             self._texture_cache.store(cache_key, texture)
 
         self._active_background_texture = texture
 
         # Generate the light overlay texture every frame for dynamic effects.
         if self.lighting_system is not None:
-            self._light_overlay_texture = self._render_light_overlay(renderer)
+            self._light_overlay_texture = self._render_light_overlay(graphics)
         else:
             self._light_overlay_texture = None
 
@@ -207,10 +207,10 @@ class WorldView(View):
         # Visual effects like particles and environmental effects should update based
         # on the frame's delta_time for maximum smoothness, not the fixed
         # logic timestep or the interpolation alpha.
-        self.particle_system.update(DeltaTime(delta_time))
-        self.environmental_system.update(DeltaTime(delta_time))
+        self.particle_system.update(delta_time)
+        self.environmental_system.update(delta_time)
 
-    def present(self, renderer: Renderer, alpha: InterpolationAlpha) -> None:
+    def present(self, graphics: GraphicsContext, alpha: InterpolationAlpha) -> None:
         """Composite final frame layers in proper order."""
         if not self.visible:
             return
@@ -218,7 +218,7 @@ class WorldView(View):
         # 1. Present the cached unlit background
         if self._active_background_texture:
             with record_time_live_variable("cpu.render.present_background_ms"):
-                renderer.present_texture(
+                graphics.present_texture(
                     self._active_background_texture,
                     self.x,
                     self.y,
@@ -229,7 +229,7 @@ class WorldView(View):
         # 2. Present the dynamic light overlay on top of the background
         if self._light_overlay_texture:
             with record_time_live_variable("cpu.render.present_light_overlay_ms"):
-                renderer.present_texture(
+                graphics.present_texture(
                     self._light_overlay_texture, self.x, self.y, self.width, self.height
                 )
 
@@ -238,7 +238,7 @@ class WorldView(View):
         view_offset = (self.x, self.y)
 
         with record_time_live_variable("cpu.render.particles_under_actors_ms"):
-            self.controller.renderer.render_particles(
+            graphics.render_particles(
                 self.particle_system,
                 ParticleLayer.UNDER_ACTORS,
                 viewport_bounds,
@@ -246,9 +246,9 @@ class WorldView(View):
             )
 
         if config.SMOOTH_ACTOR_RENDERING_ENABLED:
-            self._render_actors_smooth(renderer, alpha)
+            self._render_actors_smooth(graphics, alpha)
         else:
-            self._render_actors_traditional(renderer, alpha)
+            self._render_actors_traditional(graphics, alpha)
 
         # Render highlights and mode-specific UI on top of actors
         if self.controller.active_mode:
@@ -258,7 +258,7 @@ class WorldView(View):
             self._render_selected_actor_highlight()
 
         with record_time_live_variable("cpu.render.particles_over_actors_ms"):
-            self.controller.renderer.render_particles(
+            graphics.render_particles(
                 self.particle_system,
                 ParticleLayer.OVER_ACTORS,
                 viewport_bounds,
@@ -268,7 +268,7 @@ class WorldView(View):
         if config.ENVIRONMENTAL_EFFECTS_ENABLED:
             with record_time_live_variable("cpu.render.environmental_effects_ms"):
                 self.environmental_system.render_effects(
-                    renderer,
+                    graphics,
                     viewport_bounds,
                     view_offset,
                 )
@@ -315,7 +315,7 @@ class WorldView(View):
 
     @record_time_live_variable("cpu.render.actors_smooth_ms")
     def _render_actors_smooth(
-        self, renderer: Renderer, alpha: InterpolationAlpha
+        self, graphics: GraphicsContext, alpha: InterpolationAlpha
     ) -> None:
         """Render all actors with smooth sub-pixel positioning."""
         gw = self.controller.gw
@@ -344,12 +344,12 @@ class WorldView(View):
 
         for actor in sorted_actors:
             if gw.game_map.visible[actor.x, actor.y]:
-                self._render_single_actor_smooth(actor, renderer, bounds, vs, alpha)
+                self._render_single_actor_smooth(actor, graphics, bounds, vs, alpha)
 
     def _render_single_actor_smooth(
         self,
         actor: Actor,
-        renderer: Renderer,
+        graphics: GraphicsContext,
         bounds: Rect,
         vs: ViewportSystem,
         alpha: InterpolationAlpha,
@@ -384,7 +384,7 @@ class WorldView(View):
         root_x = self.x + vp_x
         root_y = self.y + vp_y
 
-        screen_pixel_x, screen_pixel_y = renderer.console_to_screen_coords(
+        screen_pixel_x, screen_pixel_y = graphics.console_to_screen_coords(
             root_x, root_y
         )
 
@@ -392,7 +392,7 @@ class WorldView(View):
         final_color = self._get_actor_display_color(actor)
 
         # Render using the enhanced renderer
-        renderer.draw_actor_smooth(
+        graphics.draw_actor_smooth(
             actor.ch, final_color, screen_pixel_x, screen_pixel_y, light_rgb, alpha
         )
 
@@ -428,7 +428,7 @@ class WorldView(View):
 
     @record_time_live_variable("cpu.render.actors_traditional_ms")
     def _render_actors_traditional(
-        self, renderer: Renderer, alpha: InterpolationAlpha
+        self, graphics: GraphicsContext, alpha: InterpolationAlpha
     ) -> None:
         """Tile-aligned actor rendering, adapted for dynamic rendering."""
         gw = self.controller.gw
@@ -466,7 +466,7 @@ class WorldView(View):
                 root_y = self.y + vp_y
 
                 # Convert to final screen pixel coordinates
-                screen_pixel_x, screen_pixel_y = renderer.console_to_screen_coords(
+                screen_pixel_x, screen_pixel_y = graphics.console_to_screen_coords(
                     root_x, root_y
                 )
 
@@ -483,7 +483,7 @@ class WorldView(View):
                     )
 
                 # Render using the renderer's smooth drawing function
-                renderer.draw_actor_smooth(
+                graphics.draw_actor_smooth(
                     actor.ch,
                     final_fg_color,
                     screen_pixel_x,
@@ -502,7 +502,7 @@ class WorldView(View):
                 actor,
                 colors.SELECTED_HIGHLIGHT,
                 effect="solid",
-                alpha=Opacity(SELECTION_HIGHLIGHT_ALPHA),
+                alpha=SELECTION_HIGHLIGHT_ALPHA,
             )
 
     def _update_mouse_tile_location(self) -> None:
@@ -510,6 +510,9 @@ class WorldView(View):
         fm: FrameManager | None = getattr(self.controller, "frame_manager", None)
         if fm is None:
             return
+
+        assert self.controller.coordinate_converter is not None
+
         px_x: PixelCoord = fm.cursor_manager.mouse_pixel_x
         px_y: PixelCoord = fm.cursor_manager.mouse_pixel_y
         root_tile_pos: RootConsoleTilePos = (
@@ -520,7 +523,7 @@ class WorldView(View):
 
     @record_time_live_variable("cpu.render.light_overlay_ms")
     def _render_light_overlay(
-        self, renderer: Renderer
+        self, graphics: GraphicsContext
     ) -> tcod.sdl.render.Texture | None:
         """Render pure light world overlay with GPU alpha blending."""
         if self.lighting_system is None:
@@ -644,10 +647,10 @@ class WorldView(View):
                 )
 
         # Convert console to texture with alpha blending
-        from catley.backends.tcod.renderer import TCODRenderer
+        from catley.backends.tcod.graphics import TCODGraphicsContext
 
-        tcod_renderer = cast(TCODRenderer, renderer)
-        return tcod_renderer.texture_from_console(light_console, transparent=True)
+        tcod_graphics = cast(TCODGraphicsContext, graphics)
+        return tcod_graphics.texture_from_console(light_console, transparent=True)
 
     def _apply_pulsating_effect(
         self, input_color: colors.Color, base_actor_color: colors.Color

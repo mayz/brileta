@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import cast
+from typing import Any, cast
 from unittest.mock import MagicMock
 
 from catley import colors
@@ -7,7 +7,7 @@ from catley.controller import Controller
 from catley.game.actors import Character, conditions, status_effects
 from catley.game.enums import InjuryLocation
 from catley.game.game_world import GameWorld
-from catley.view.render.renderer import Renderer
+from catley.view.render.graphics import GraphicsContext
 from catley.view.views.status_view import StatusView
 from tests.helpers import DummyGameWorld
 
@@ -15,6 +15,7 @@ from tests.helpers import DummyGameWorld
 @dataclass
 class DummyController:
     gw: DummyGameWorld
+    graphics: Any = None
 
 
 def make_world() -> tuple[DummyController, Character, StatusView]:
@@ -22,11 +23,11 @@ def make_world() -> tuple[DummyController, Character, StatusView]:
     actor = Character(0, 0, "A", colors.WHITE, "Act", game_world=cast(GameWorld, gw))
     gw.player = actor
     gw.add_actor(actor)
-    controller = DummyController(gw=gw)
-    renderer = MagicMock(spec=Renderer)
+    renderer = MagicMock(spec=GraphicsContext)
     renderer.root_console = MagicMock()
     renderer.tile_dimensions = (8, 16)
-    view = StatusView(cast(Controller, controller), renderer=renderer)
+    controller = DummyController(gw=gw, graphics=renderer)
+    view = StatusView(cast(Controller, controller))
     return controller, actor, view
 
 

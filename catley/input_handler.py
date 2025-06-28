@@ -24,6 +24,7 @@ from catley.view.ui.inventory_menu import InventoryMenu
 from .game.actions.base import GameIntent
 
 if TYPE_CHECKING:
+    from .app import App
     from .controller import Controller
 
 from typing import Final
@@ -56,10 +57,12 @@ class Keys:
 
 
 class InputHandler:
-    def __init__(self, controller: Controller) -> None:
+    def __init__(self, app: App, controller: Controller) -> None:
+        self.app = app
         self.controller = controller
-        self.renderer = self.controller.renderer
         self.fm = self.controller.frame_manager
+        assert self.fm is not None
+        self.graphics = self.fm.graphics
         self.cursor_manager = self.fm.cursor_manager
         self.dev_console_overlay = getattr(self.fm, "dev_console_overlay", None)
         self.gw = controller.gw
@@ -93,38 +96,24 @@ class InputHandler:
             px_y: PixelCoord = px_pos[1]
 
             # Scale coordinates for cursor rendering (cursor renderer expects scaled)
-            scale_x, scale_y = self.renderer.get_display_scale_factor()
+            scale_x, scale_y = self.graphics.get_display_scale_factor()
             scaled_px_x: PixelCoord = px_x * scale_x
             scaled_px_y: PixelCoord = px_y * scale_y
 
             self.cursor_manager.update_mouse_position(scaled_px_x, scaled_px_y)
-
-        # Handle window resize events
-        if isinstance(event, tcod.event.WindowResized):
-            # Enforce a constant 8:5 aspect ratio
-            ASPECT_RATIO = 8 / 5
-            new_width = event.width
-            new_height = int(new_width / ASPECT_RATIO)
-            sdl_window = self.controller.context.sdl_window
-            if sdl_window is not None:
-                sdl_window.size = new_width, new_height
-
-            # Update coordinate conversion when the window size changes
-            self.controller.renderer.update_dimensions()
-            # Update view layouts for new window size
-            self.fm.on_window_resized()
 
         # Try to handle the event with the menu system
         # For mouse events, we need to send scaled coordinates to match cursor position
         menu_event = event
         if isinstance(event, tcod.event.MouseButtonDown | tcod.event.MouseMotion):
             # Create scaled version for menu system
-            scale_x, scale_y = self.renderer.get_display_scale_factor()
+            scale_x, scale_y = self.graphics.get_display_scale_factor()
             scaled_x = event.position.x * scale_x
             scaled_y = event.position.y * scale_y
             menu_event = copy.copy(event)
             menu_event.position = tcod.event.Point(int(scaled_x), int(scaled_y))
 
+        assert self.controller.overlay_system is not None
         menu_consumed = self.controller.overlay_system.handle_input(menu_event)
 
         # If no menu handled it, check for normal game actions
@@ -134,6 +123,9 @@ class InputHandler:
                 self.controller.queue_action(action)
 
     def handle_event(self, event: tcod.event.Event) -> GameIntent | None:
+        assert self.controller.overlay_system is not None
+        assert self.fm is not None
+
         # Don't process game actions if INTERACTIVE menus are active
         if self.controller.overlay_system.has_interactive_overlays():
             return None
@@ -176,6 +168,8 @@ class InputHandler:
             event
         ):
             return None
+
+        assert self.controller.overlay_system is not None
 
         match event:
             case tcod.event.Quit():
@@ -260,7 +254,7 @@ class InputHandler:
             case tcod.event.KeyDown(sym=tcod.event.KeySym.RETURN, mod=mod) if (
                 mod & tcod.event.Modifier.ALT
             ):
-                return ToggleFullscreenUICommand(self.renderer)
+                return ToggleFullscreenUICommand(self.app)
 
             case tcod.event.MouseButtonDown():
                 return self._handle_mouse_button_down_event(event)
@@ -275,6 +269,8 @@ class InputHandler:
         Handle mouse button down events.
         Returns an action if the event is handled, otherwise None.
         """
+        assert self.fm is not None
+
         event_with_tile_coords = self.convert_mouse_coordinates(event)
         root_tile_pos: RootConsoleTilePos = (
             int(event_with_tile_coords.position.x),
@@ -362,11 +358,11 @@ class InputHandler:
         px_y: PixelCoord = px_pos[1]
 
         # Scale coordinates to match cursor position (cursor renders at scaled coords)
-        scale_x, scale_y = self.renderer.get_display_scale_factor()
+        scale_x, scale_y = self.graphics.get_display_scale_factor()
         scaled_px_x: PixelCoord = px_x * scale_x
         scaled_px_y: PixelCoord = px_y * scale_y
 
-        root_tile_x, root_tile_y = self.renderer.pixel_to_tile(scaled_px_x, scaled_px_y)
+        root_tile_x, root_tile_y = self.graphics.pixel_to_tile(scaled_px_x, scaled_px_y)
 
         event_copy = copy.copy(event)
         event_copy.position = tcod.event.Point(root_tile_x, root_tile_y)

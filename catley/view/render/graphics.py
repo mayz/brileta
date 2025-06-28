@@ -1,15 +1,14 @@
 """
-Defines the abstract interface for all rendering engines in the game.
+Defines the abstract interface for a graphics backend in the game.
 
-This module provides the `Renderer` abstract base class, which defines a
-stable contract for all low-level rendering operations. Its primary
-responsibility is to provide a backend-agnostic API for drawing game elements
-to the screen.
+This module provides the `GraphicsContext` abstract base class, which defines a
+stable contract for all low-level rendering operations. Its primary responsibility
+is to provide a backend-agnostic API for drawing game elements to the screen.
 
 Key Principles:
-- A Renderer knows *how* to draw things (e.g., sprites, text, shapes), but not
-  *what* or *when* to draw them. That is the responsibility of higher-level
-  systems like the `FrameManager` and `View`s.
+- A GraphicsContext knows *how* to draw things (e.g., sprites, text, shapes), but not
+  *what* or *when* to draw them. That is the responsibility of higher-level systems
+  like the `FrameManager` and `View`s.
 - The interface provides high-level drawing commands (e.g., `draw_actor_smooth`,
   `render_particles`) that are independent of the underlying graphics library.
 - It is the final stage in the rendering pipeline, handling the conversion of
@@ -35,14 +34,14 @@ from catley.types import (
     RootConsoleTilePos,
     TileDimensions,
 )
-from catley.util.coordinates import Rect
+from catley.util.coordinates import CoordinateConverter, Rect
 from catley.view.render.effects.particles import ParticleLayer, SubTileParticleSystem
 
 if TYPE_CHECKING:
     from catley.view.ui.cursor_manager import CursorManager
 
 
-class Renderer(abc.ABC):
+class GraphicsContext(abc.ABC):
     """Abstract base class for drawing graphics to the screen."""
 
     @property
@@ -128,8 +127,8 @@ class Renderer(abc.ABC):
         Args:
             particle_system: The data source containing all particle states.
             layer: The specific layer to render (e.g., UNDER_ACTORS or OVER_ACTORS).
-            viewport_bounds: The currently visible area in the renderer's internal
-                             tile coordinates
+            viewport_bounds: The currently visible area in the GraphicsContext's
+                             internal tile coordinates
                              (e.g., world_view.width x world_view.height).
             view_offset: The offset of the viewport in root console coordinates,
                          used for calculating final screen positions.
@@ -149,16 +148,6 @@ class Renderer(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def prepare_to_present(self) -> None:
-        """Converts the root console to a texture and copies it to the backbuffer."""
-        pass
-
-    @abc.abstractmethod
-    def finalize_present(self) -> None:
-        """Presents the backbuffer to the screen."""
-        pass
-
-    @abc.abstractmethod
     def update_dimensions(self) -> None:
         """Update coordinate converter when window dimensions change."""
         pass
@@ -170,7 +159,8 @@ class Renderer(abc.ABC):
         screen pixel coordinates.
 
         This critical transformation step accounts for the current window size,
-        aspect ratio, and any letterboxing or pillarboxing applied by the renderer.
+        aspect ratio, and any letterboxing or pillarboxing applied by the
+        GraphicsContext.
 
         Args:
             console_x: The x-coordinate on the root console grid. Must be a float
@@ -209,13 +199,15 @@ class Renderer(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def toggle_fullscreen(self) -> None:
-        """Toggles the display between windowed and fullscreen mode."""
-        pass
-
-    @abc.abstractmethod
     def draw_debug_rect(
         self, px_x: int, px_y: int, px_w: int, px_h: int, color: colors.Color
     ) -> None:
         """Draws a raw, unfilled rectangle directly to the screen for debugging."""
+        pass
+
+    @property
+    @abc.abstractmethod
+    def coordinate_converter(self) -> CoordinateConverter:
+        """Provides access to the coordinate converter for converting between
+        console and screen coordinates."""
         pass

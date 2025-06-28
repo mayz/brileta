@@ -26,8 +26,8 @@ from tcod.console import Console
 from catley import colors
 from catley.backends.pillow.canvas import PillowImageCanvas
 from catley.backends.tcod.canvas import TCODConsoleCanvas
-from catley.backends.tcod.renderer import TCODRenderer
-from catley.view.render.renderer import Renderer
+from catley.backends.tcod.graphics import TCODGraphicsContext
+from catley.view.render.graphics import GraphicsContext
 
 
 @dataclass
@@ -52,7 +52,7 @@ class BackendBenchmark(ABC):
         self.name = name
 
     @abstractmethod
-    def setup(self, renderer: Renderer) -> Any:
+    def setup(self, renderer: GraphicsContext) -> Any:
         """Set up the backend for testing. Return backend instance."""
         pass
 
@@ -87,7 +87,7 @@ class TCODBackendBenchmark(BackendBenchmark):
     def __init__(self):
         super().__init__("TCOD")
 
-    def setup(self, renderer: Renderer) -> TCODConsoleCanvas:
+    def setup(self, renderer: GraphicsContext) -> TCODConsoleCanvas:
         return TCODConsoleCanvas(renderer)
 
     def cleanup(self, backend: TCODConsoleCanvas) -> None:
@@ -116,7 +116,7 @@ class PillowBackendBenchmark(BackendBenchmark):
     def __init__(self):
         super().__init__("Pillow")
 
-    def setup(self, renderer: Renderer) -> PillowImageCanvas:
+    def setup(self, renderer: GraphicsContext) -> PillowImageCanvas:
         return PillowImageCanvas(renderer)
 
     def cleanup(self, backend: PillowImageCanvas) -> None:
@@ -174,7 +174,7 @@ class TextBackendBenchmarkSuite:
             title="Text Backend Benchmark",
             sdl_window_flags=tcod.context.SDL_WINDOW_HIDDEN,
         )
-        self.renderer = TCODRenderer(self.context, self.console, (10, 12))
+        self.renderer = TCODGraphicsContext(self.context, self.console, (10, 12))
 
     def __enter__(self):
         return self

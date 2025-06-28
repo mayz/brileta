@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from types import SimpleNamespace
-from typing import cast
+from typing import Any
 from unittest.mock import patch
 
 import numpy as np
@@ -120,12 +120,46 @@ class DummyGameWorld(GameWorld):
 def get_controller_with_player_and_map() -> Controller:
     """Return a fully initialized ``Controller`` using dummy SDL context."""
 
-    class DummyRenderer:
+    class DummyApp:
         def __init__(self, *_args, **_kwargs) -> None:
-            self.coordinate_converter = None
+            pass
+
+        def run(self) -> None:  # pragma: no cover - stub
+            pass
+
+        def prepare_for_new_frame(self) -> None:  # pragma: no cover - stub
+            pass
+
+        def present_frame(self) -> None:  # pragma: no cover - stub
+            pass
+
+        def toggle_fullscreen(self) -> None:  # pragma: no cover - stub
+            pass
+
+    class DummyGraphicsContext:
+        def __init__(self, *_args, **_kwargs) -> None:
+            self._coordinate_converter = SimpleNamespace(
+                pixel_to_tile=lambda x, y: (x, y), tile_to_pixel=lambda x, y: (x, y)
+            )
             self.root_console = SimpleNamespace(
                 width=config.SCREEN_WIDTH, height=config.SCREEN_HEIGHT
             )
+
+        @property
+        def coordinate_converter(self):
+            return self._coordinate_converter
+
+        @property
+        def tile_dimensions(self):
+            return (16, 16)
+
+        @property
+        def console_width_tiles(self):
+            return config.SCREEN_WIDTH
+
+        @property
+        def console_height_tiles(self):
+            return config.SCREEN_HEIGHT
 
         def clear_console(self, *_a, **_kw) -> None:  # pragma: no cover - stub
             pass
@@ -136,9 +170,56 @@ def get_controller_with_player_and_map() -> Controller:
         def present_frame(self, *_a, **_kw) -> None:  # pragma: no cover - stub
             pass
 
+        # Add minimal implementations for all abstract methods
+        def get_display_scale_factor(self):
+            return (1.0, 1.0)
+
+        def render_effects_layer(self, *_a, **_kw):
+            pass
+
+        def render_particles(self, *_a, **_kw):
+            pass
+
+        def update_dimensions(self):
+            pass
+
+        def console_to_screen_coords(self, *_a):
+            return (0, 0)
+
+        def screen_to_console_coords(self, *_a):
+            return (0, 0)
+
+        def draw_actor_smooth(self, *_a, **_kw):
+            pass
+
+        def draw_particles_smooth(self, *_a, **_kw):
+            pass
+
+        def draw_texture_at_screen_pos(self, *_a, **_kw):
+            pass
+
+        def draw_texture_at_tile_pos(self, *_a, **_kw):
+            pass
+
+        def texture_from_console(self, *_a, **_kw):
+            return None
+
+        def texture_from_numpy(self, *_a, **_kw):
+            return None
+
+        def texture_from_surface(self, *_a, **_kw):
+            return None
+
+        def reset_texture_mods(self, *_a, **_kw):
+            pass
+
+        def draw_debug_rect(self, *_a, **_kw):
+            pass
+
     class DummyFrameManager:
-        def __init__(self, controller: Controller) -> None:
+        def __init__(self, controller: Controller, graphics: Any = None) -> None:
             self.controller = controller
+            self.graphics = graphics or getattr(controller, "graphics", None)
             self.cursor_manager = SimpleNamespace(
                 update_mouse_position=lambda *_a, **_kw: None
             )
@@ -166,9 +247,16 @@ def get_controller_with_player_and_map() -> Controller:
     context = DummyContext()
     root_console = Console(config.SCREEN_WIDTH, config.SCREEN_HEIGHT, order="F")
     with (
-        patch("catley.controller.TCODRenderer", DummyRenderer),
         patch("catley.controller.FrameManager", DummyFrameManager),
-        patch("catley.controller.InputHandler", lambda c: None),
+        patch("catley.controller.InputHandler", lambda c, a: None),
         patch("catley.controller.MovementInputHandler", lambda c: None),
     ):
-        return Controller(cast(tcod.context.Context, context), root_console, (16, 16))
+        from typing import cast
+
+        from catley.view.render.graphics import GraphicsContext
+
+        app = DummyApp()
+        graphics = DummyGraphicsContext(
+            cast(tcod.context.Context, context), root_console, (16, 16)
+        )
+        return Controller(app, cast(GraphicsContext, graphics))

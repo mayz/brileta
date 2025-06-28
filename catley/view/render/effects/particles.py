@@ -12,7 +12,7 @@ from catley.types import DeltaTime
 from catley.util.coordinates import Rect
 
 if TYPE_CHECKING:
-    from catley.view.render.renderer import Renderer
+    from catley.view.render.graphics import GraphicsContext
 
 
 class ParticleLayer(Enum):
@@ -584,7 +584,7 @@ class SubTileParticleSystem:
         particle_index: int,
         viewport_bounds: Rect,
         view_offset: tuple[int, int],
-        renderer: "Renderer",
+        renderer: "GraphicsContext",
     ) -> tuple[float, float] | None:
         """Convert particle index to screen coordinates, or None if off-screen."""
         if not (0 <= particle_index < self.active_count):

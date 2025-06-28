@@ -13,7 +13,7 @@ from catley import colors
 from catley.backends.pillow.canvas import PillowImageCanvas
 from catley.types import InterpolationAlpha
 from catley.util.message_log import MessageLog
-from catley.view.render.renderer import Renderer
+from catley.view.render.graphics import GraphicsContext
 from catley.view.views.message_log_view import MessageLogView
 
 
@@ -57,11 +57,11 @@ def test_message_log_view_ttf_rendering_visible(monkeypatch: Any) -> None:
     log = MessageLog()
     log.add_message("Hello", fg=colors.WHITE)
 
-    renderer_stub = MagicMock(spec=Renderer)
+    renderer_stub = MagicMock(spec=GraphicsContext)
     renderer_stub.sdl_renderer = renderer
     renderer_stub.tile_dimensions = (8, 16)
 
-    view = MessageLogView(log, renderer=renderer_stub)
+    view = MessageLogView(log, graphics=renderer_stub)
     view.tile_dimensions = (8, 16)
     view.set_bounds(0, 0, 20, 5)
 
@@ -90,11 +90,11 @@ def test_message_log_view_font_scales_on_resize(monkeypatch: Any) -> None:
     log = MessageLog()
     log.add_message("Hello", fg=colors.WHITE)
 
-    renderer_stub = MagicMock(spec=Renderer)
+    renderer_stub = MagicMock(spec=GraphicsContext)
     renderer_stub.sdl_renderer = renderer
     renderer_stub.tile_dimensions = (8, 16)
 
-    view = MessageLogView(log, renderer=renderer_stub)
+    view = MessageLogView(log, graphics=renderer_stub)
     view.tile_dimensions = (8, 16)
     view.set_bounds(0, 0, 20, 5)
 

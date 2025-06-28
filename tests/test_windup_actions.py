@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from contextlib import ExitStack, contextmanager
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -66,8 +67,9 @@ class DummyRenderer:
 
 
 class DummyFrameManager:
-    def __init__(self, controller: Controller) -> None:
+    def __init__(self, controller: Controller, graphics: Any = None) -> None:
         self.controller = controller
+        self.graphics = graphics
         self.counter = 0
 
     def render_frame(self, delta: float) -> None:
@@ -77,7 +79,9 @@ class DummyFrameManager:
 
 
 class DummyInputHandler:
-    def __init__(self, controller: Controller) -> None:
+    def __init__(self, app: Any, controller: Controller) -> None:
+        self.app = app
+        self.controller = controller
         self.movement_keys: set = set()
 
     def dispatch(self, event: object) -> None:
@@ -167,7 +171,6 @@ def patched_controller(stop_after: int):
             patch("catley.controller.MovementInputHandler", DummyMovementHandler)
         )
         stack.enter_context(patch("catley.controller.FrameManager", DummyFrameManager))
-        stack.enter_context(patch("catley.controller.Renderer", DummyRenderer))
         stack.enter_context(
             patch("catley.controller.OverlaySystem", DummyOverlaySystem)
         )
@@ -191,8 +194,112 @@ def patched_controller(stop_after: int):
         root_console_mock.width = 80
         root_console_mock.height = 50
 
-        controller = Controller(context_mock, root_console_mock, (1, 1))
+        from types import SimpleNamespace
+
+        class DummyApp:
+            def __init__(self, *_args, **_kwargs) -> None:
+                pass
+
+            def run(self) -> None:
+                pass
+
+            def prepare_for_new_frame(self) -> None:
+                pass
+
+            def present_frame(self) -> None:
+                pass
+
+            def toggle_fullscreen(self) -> None:
+                pass
+
+        class DummyGraphicsContext:
+            def __init__(self, *_args, **_kwargs) -> None:
+                self._coordinate_converter = SimpleNamespace(
+                    pixel_to_tile=lambda x, y: (x, y), tile_to_pixel=lambda x, y: (x, y)
+                )
+
+            @property
+            def coordinate_converter(self):
+                return self._coordinate_converter
+
+            @property
+            def tile_dimensions(self):
+                return (16, 16)
+
+            @property
+            def console_width_tiles(self):
+                return 80
+
+            @property
+            def console_height_tiles(self):
+                return 50
+
+            # Add minimal implementations for all abstract methods
+            def get_display_scale_factor(self):
+                return (1.0, 1.0)
+
+            def render_effects_layer(self, *_a, **_kw):
+                pass
+
+            def render_particles(self, *_a, **_kw):
+                pass
+
+            def update_dimensions(self):
+                pass
+
+            def console_to_screen_coords(self, *_a):
+                return (0, 0)
+
+            def screen_to_console_coords(self, *_a):
+                return (0, 0)
+
+            def draw_actor_smooth(self, *_a, **_kw):
+                pass
+
+            def draw_particles_smooth(self, *_a, **_kw):
+                pass
+
+            def draw_texture_at_screen_pos(self, *_a, **_kw):
+                pass
+
+            def draw_texture_at_tile_pos(self, *_a, **_kw):
+                pass
+
+            def texture_from_console(self, *_a, **_kw):
+                return None
+
+            def texture_from_numpy(self, *_a, **_kw):
+                return None
+
+            def texture_from_surface(self, *_a, **_kw):
+                return None
+
+            def reset_texture_mods(self, *_a, **_kw):
+                pass
+
+            def draw_debug_rect(self, *_a, **_kw):
+                pass
+
+        from typing import cast
+
+        from catley.view.render.graphics import GraphicsContext
+
+        app = DummyApp()
+        graphics = DummyGraphicsContext()
+        controller = Controller(app, cast(GraphicsContext, graphics))
         controller.stop_after = stop_after  # type: ignore[attr-defined]
+
+        # Patch update_logic_step to raise StopIteration after stop_after calls
+        original_update_logic_step = controller.update_logic_step
+        call_count = [0]
+
+        def patched_update_logic_step():
+            call_count[0] += 1
+            original_update_logic_step()
+            if call_count[0] >= stop_after:
+                raise StopIteration()
+
+        controller.update_logic_step = patched_update_logic_step  # type: ignore[assignment]
         yield controller
 
 
@@ -209,11 +316,15 @@ def test_windup_action_queues_animation() -> None:
         intent = make_windup_action(controller)
         controller.queue_action(intent)
 
-        with pytest.raises(StopIteration):
-            controller.run_game_loop()
+        # Process the queued player action - this should add the animation
+        controller.process_player_input()
 
         # In RAF, windup actions immediately add their animation
         assert not controller.animation_manager.is_queue_empty()
+
+        # Run one logic step to trigger StopIteration
+        with pytest.raises(StopIteration):
+            controller.update_logic_step()
 
 
 def test_windup_action_not_immediately_processed() -> None:
@@ -223,7 +334,7 @@ def test_windup_action_not_immediately_processed() -> None:
         controller.queue_action(intent)
 
         with pytest.raises(StopIteration):
-            controller.run_game_loop()
+            controller.update_logic_step()
 
         # The action should not be processed yet (animation still playing)
         assert intent not in controller.turn_manager.processed  # type: ignore[attr-defined]
@@ -236,8 +347,12 @@ def test_instant_action_processed_immediately() -> None:
         intent.animation_type = AnimationType.INSTANT
         controller.queue_action(intent)
 
-        with pytest.raises(StopIteration):
-            controller.run_game_loop()
+        # Process the queued player action - this should process the INSTANT action
+        controller.process_player_input()
 
         # INSTANT actions should be processed immediately
         assert intent in controller.turn_manager.processed  # type: ignore[attr-defined]
+
+        # Run one logic step to trigger StopIteration
+        with pytest.raises(StopIteration):
+            controller.update_logic_step()

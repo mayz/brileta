@@ -6,7 +6,7 @@ from catley import colors
 from catley.backends.tcod.canvas import TCODConsoleCanvas
 from catley.constants.view import ViewConstants as View
 from catley.types import InterpolationAlpha
-from catley.view.render.renderer import Renderer
+from catley.view.render.graphics import GraphicsContext
 
 from .base import TextView
 
@@ -17,16 +17,18 @@ if TYPE_CHECKING:
 class EquipmentView(TextView):
     """Displays the player's equipped weapons and ammo counts."""
 
-    def __init__(self, controller: Controller, renderer: Renderer) -> None:
+    def __init__(self, controller: Controller, graphics: GraphicsContext) -> None:
         super().__init__()
         self.controller = controller
-        self.canvas = TCODConsoleCanvas(renderer)
+        self.canvas = TCODConsoleCanvas(graphics)
 
     def get_cache_key(self) -> int:
         """The key is the inventory's revision number."""
         return self.controller.gw.player.inventory.revision
 
-    def draw_content(self, renderer: Renderer, alpha: InterpolationAlpha) -> None:
+    def draw_content(
+        self, graphics: GraphicsContext, alpha: InterpolationAlpha
+    ) -> None:
         tile_width, tile_height = self.tile_dimensions
         pixel_width = self.width * tile_width
         pixel_height = self.height * tile_height

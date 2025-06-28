@@ -6,7 +6,6 @@ from PIL import Image as PILImage
 
 from catley.config import BASE_MOUSE_CURSOR_PATH
 from catley.util.coordinates import PixelCoord
-from catley.view.render.renderer import Renderer
 
 
 @dataclass
@@ -32,7 +31,6 @@ class CursorManager:
 
     def __init__(
         self,
-        renderer: Renderer,
         base_asset_path: str = "assets/cursors/",
     ) -> None:
         self.base_asset_path = base_asset_path

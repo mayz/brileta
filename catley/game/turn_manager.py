@@ -25,6 +25,7 @@ from __future__ import annotations
 from collections import deque
 from typing import TYPE_CHECKING
 
+from catley import config
 from catley.game.action_router import ActionRouter
 from catley.game.actions.base import GameIntent
 
@@ -108,7 +109,7 @@ class TurnManager:
             if actor is self.player:
                 continue
 
-            if actor.energy.can_afford(self.controller.action_cost):
+            if actor.energy.can_afford(config.ACTION_COST):
                 action = actor.get_next_action(self.controller)
                 if action is not None:
                     # Update turn effects for this specific actor right before it acts.
@@ -116,7 +117,7 @@ class TurnManager:
                     # Execute immediately - let the action system handle everything
                     self.execute_intent(action)
                     if hasattr(actor, "energy"):
-                        actor.energy.spend(self.controller.action_cost)
+                        actor.energy.spend(config.ACTION_COST)
 
     def execute_intent(self, intent: GameIntent) -> None:
         """Execute a single GameIntent by routing it to the ActionRouter.

@@ -55,7 +55,7 @@ class DummyFrameManager:
 @dataclass
 class DummyController:
     gw: DummyGW
-    renderer: object
+    graphics: object
     clock: object
     active_mode: object | None
     is_targeting_mode: object
@@ -75,7 +75,7 @@ def make_controller(root_tile: RootConsoleTilePos = (5, 5)) -> DummyController:
     frame_manager = DummyFrameManager()
     return DummyController(
         gw=gw,
-        renderer=renderer,
+        graphics=renderer,
         clock=clock,
         active_mode=None,
         is_targeting_mode=lambda: False,

@@ -245,8 +245,8 @@ class ContextMenu(Menu):
         root_x, root_y = self.click_position
         root_x += 1
         root_y += 1
-        max_x = self.renderer.console_width_tiles - self.width
-        max_y = self.renderer.console_height_tiles - self.height
+        max_x = self.controller.graphics.console_width_tiles - self.width
+        max_y = self.controller.graphics.console_height_tiles - self.height
         self.x_tiles = max(0, min(root_x, max_x))
         self.y_tiles = max(0, min(root_y, max_y))
 

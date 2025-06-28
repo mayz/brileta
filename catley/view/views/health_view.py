@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from catley import colors
 from catley.backends.tcod.canvas import TCODConsoleCanvas
 from catley.types import InterpolationAlpha
-from catley.view.render.renderer import Renderer
+from catley.view.render.graphics import GraphicsContext
 
 from .base import TextView
 
@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 class HealthView(TextView):
     """View that displays the player's HP and AP status."""
 
-    def __init__(self, controller: Controller, renderer: Renderer) -> None:
+    def __init__(self, controller: Controller, graphics: GraphicsContext) -> None:
         """Initialize the view.
 
         Position and size will be set by FrameManager.resize().
@@ -24,14 +24,16 @@ class HealthView(TextView):
 
         super().__init__()
         self.controller = controller
-        self.canvas = TCODConsoleCanvas(renderer)
+        self.canvas = TCODConsoleCanvas(graphics)
 
     def get_cache_key(self) -> tuple[int, int, int]:
         """The key is a tuple of the health values. If it hasn't changed, no redraw."""
         player = self.controller.gw.player
         return (player.health.hp, player.health.max_hp, player.health.ap)
 
-    def draw_content(self, renderer: Renderer, alpha: InterpolationAlpha) -> None:
+    def draw_content(
+        self, graphics: GraphicsContext, alpha: InterpolationAlpha
+    ) -> None:
         tile_width, tile_height = self.tile_dimensions
         pixel_width = self.width * tile_width
         pixel_height = self.height * tile_height

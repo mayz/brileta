@@ -1,10 +1,9 @@
 """
-A concrete implementation of the Renderer interface using the TCOD library.
+A concrete implementation of the GraphicsContext interface using the TCOD library.
 
-This module provides the `TCODRenderer`, which handles all low-level drawing
-operations by interfacing directly with TCOD's SDL backend. It translates the
-abstract drawing commands from the `Renderer` interface into specific TCOD/SDL
-API calls.
+This module provides the `TCODGraphicsContext`, which handles all low-level drawing
+operations by interfacing directly with TCOD's SDL backend. It translates the abstract
+drawing commands from the `GraphicsContext` interface into specific TCOD/SDL API calls.
 
 Key Implementation Details:
 - It manages a TCOD `Context` and a root `Console`.
@@ -12,8 +11,6 @@ Key Implementation Details:
   some views and canvases) into drawable textures.
 - It leverages direct SDL calls via `tcod.sdl.render` for high-performance,
   specialized drawing tasks like smooth actor movement and particle rendering.
-- It is responsible for handling the main window, fullscreen toggling, and
-  presenting the final frame to the screen.
 """
 
 from __future__ import annotations
@@ -39,7 +36,7 @@ from catley.types import (
 from catley.util.caching import ResourceCache
 from catley.util.coordinates import CoordinateConverter, Rect
 from catley.view.render.effects.particles import ParticleLayer, SubTileParticleSystem
-from catley.view.render.renderer import Renderer
+from catley.view.render.graphics import GraphicsContext
 
 if TYPE_CHECKING:
     from catley.view.ui.cursor_manager import CursorManager
@@ -56,7 +53,7 @@ class LetterboxGeometry:
     dest_rect: tuple[int, int, int, int]
 
 
-class TCODRenderer(Renderer):
+class TCODGraphicsContext(GraphicsContext):
     """Low-level graphics primitives and SDL/TCOD operations."""
 
     def __init__(
@@ -79,7 +76,7 @@ class TCODRenderer(Renderer):
         self._tile_dimensions = tile_dimensions
 
         # Set up coordinate conversion
-        self.coordinate_converter = self._create_coordinate_converter()
+        self._coordinate_converter = self._create_coordinate_converter()
 
         # Set up smooth actor rendering
         self._actor_texture_cache = {}
@@ -111,6 +108,12 @@ class TCODRenderer(Renderer):
         dest_rect = (offset_x, offset_y, scaled_w, scaled_h)
 
         return LetterboxGeometry(scaled_w, scaled_h, offset_x, offset_y, dest_rect)
+
+    @property
+    def coordinate_converter(self) -> CoordinateConverter:
+        """Provides access to the coordinate converter for converting between
+        console and screen coordinates."""
+        return self._coordinate_converter
 
     @property
     def tile_dimensions(self) -> TileDimensions:
@@ -435,6 +438,9 @@ class TCODRenderer(Renderer):
         texture.color_mod = (255, 255, 255)
         texture.alpha_mod = 255
 
+    ################################################################################
+    # FIXME: Move into catley.backends.tcod.app.TCODApp.
+    ################################################################################
     def prepare_to_present(self) -> None:
         """Converts the root console to a texture and copies it to the backbuffer."""
         self.root_console.clear()
@@ -444,6 +450,9 @@ class TCODRenderer(Renderer):
         geometry = self._get_letterbox_geometry()
         self.sdl_renderer.copy(console_texture, dest=geometry.dest_rect)
 
+    ################################################################################
+    # FIXME: Move into catley.backends.tcod.app.TCODApp.
+    ################################################################################
     def finalize_present(self) -> None:
         """Presents the backbuffer to the screen."""
         self.sdl_renderer.present()
@@ -457,7 +466,7 @@ class TCODRenderer(Renderer):
         tile_height = max(1, renderer_height // self.root_console.height)
         self._tile_dimensions = (tile_width, tile_height)
 
-        self.coordinate_converter = self._create_coordinate_converter()
+        self._coordinate_converter = self._create_coordinate_converter()
 
     def console_to_screen_coords(self, console_x: float, console_y: float) -> PixelPos:
         """Converts root console coordinates to final screen pixel coordinates."""
@@ -482,7 +491,7 @@ class TCODRenderer(Renderer):
         adjusted_pixel_x = pixel_x - geometry.offset_x
         adjusted_pixel_y = pixel_y - geometry.offset_y
 
-        return self.coordinate_converter.pixel_to_tile(
+        return self._coordinate_converter.pixel_to_tile(
             adjusted_pixel_x, adjusted_pixel_y
         )
 
@@ -552,10 +561,6 @@ class TCODRenderer(Renderer):
 
         dest_rect = (int(left), int(top), int(dest_width), int(dest_height))
         self.sdl_renderer.copy(texture, dest=dest_rect)
-
-    def toggle_fullscreen(self) -> None:
-        """Toggles the display between windowed and fullscreen mode."""
-        self.context.present(self.root_console, keep_aspect=True)
 
     def draw_debug_rect(
         self, px_x: int, px_y: int, px_w: int, px_h: int, color: colors.Color

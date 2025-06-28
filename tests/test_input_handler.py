@@ -15,6 +15,7 @@ from tests.helpers import DummyGameWorld
 
 @dataclass
 class DummyFrameManager:
+    graphics: Any = None
     cursor_manager: Any = field(
         default_factory=lambda: SimpleNamespace(update_mouse_position=lambda *a: None)
     )
@@ -28,11 +29,12 @@ class DummyFrameManager:
 @dataclass
 class DummyController:
     gw: DummyGameWorld
-    renderer: Any
+    graphics: Any
     coordinate_converter: Any
     frame_manager: DummyFrameManager
     start_actor_pathfinding: Any
     active_mode: Any = None
+    overlay_system: Any = None
 
 
 def make_input_handler() -> tuple[InputHandler, list[tuple[Any, tuple[int, int], Any]]]:
@@ -49,6 +51,8 @@ def make_input_handler() -> tuple[InputHandler, list[tuple[Any, tuple[int, int],
         calls.append((actor, pos, final_intent))
         return True
 
+    from types import SimpleNamespace
+
     renderer = SimpleNamespace(
         tile_dimensions=(1, 1),
         root_console=SimpleNamespace(width=80, height=50),
@@ -56,15 +60,35 @@ def make_input_handler() -> tuple[InputHandler, list[tuple[Any, tuple[int, int],
         get_display_scale_factor=lambda: (1.0, 1.0),
     )
     coordinate_converter = SimpleNamespace(pixel_to_tile=lambda x, y: (x, y))
-    frame_manager = DummyFrameManager()
+    frame_manager = DummyFrameManager(graphics=renderer)
+    overlay_system = SimpleNamespace()
     controller = DummyController(
         gw=gw,
-        renderer=renderer,
+        graphics=renderer,
         coordinate_converter=coordinate_converter,
         frame_manager=frame_manager,
         start_actor_pathfinding=start_path,
+        overlay_system=overlay_system,
     )
-    ih = InputHandler(cast(Any, controller))
+
+    class DummyApp:
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
+
+        def run(self) -> None:
+            pass
+
+        def prepare_for_new_frame(self) -> None:
+            pass
+
+        def present_frame(self) -> None:
+            pass
+
+        def toggle_fullscreen(self) -> None:
+            pass
+
+    dummy_app = DummyApp()
+    ih = InputHandler(dummy_app, cast(Any, controller))
     return ih, calls
 
 

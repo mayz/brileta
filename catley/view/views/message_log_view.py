@@ -8,7 +8,7 @@ from catley import colors
 from catley.backends.pillow.canvas import PillowImageCanvas
 from catley.types import InterpolationAlpha
 from catley.util.caching import ResourceCache
-from catley.view.render.renderer import Renderer
+from catley.view.render.graphics import GraphicsContext
 
 from .base import TextView
 
@@ -19,11 +19,11 @@ if TYPE_CHECKING:
 class MessageLogView(TextView):
     """View for displaying the message log in the bottom-left corner."""
 
-    def __init__(self, message_log: MessageLog, renderer: Renderer) -> None:
+    def __init__(self, message_log: MessageLog, graphics: GraphicsContext) -> None:
         super().__init__()
         self.message_log = message_log
-        self.canvas = PillowImageCanvas(renderer)
-        self.renderer = renderer
+        self.canvas = PillowImageCanvas(graphics)
+        self.renderer = graphics
 
         # View pixel dimensions will be calculated when resize() is called
         self.view_width_px = 0
@@ -56,9 +56,11 @@ class MessageLogView(TextView):
         self.view_height_px = self.height * self.tile_dimensions[1]
         self.canvas.configure_scaling(self.tile_dimensions[1])
 
-    def draw_content(self, renderer: Renderer, alpha: InterpolationAlpha) -> None:
+    def draw_content(
+        self, graphics: GraphicsContext, alpha: InterpolationAlpha
+    ) -> None:
         # Update cached tile dimensions and recalculate pixel dimensions
-        self.tile_dimensions = renderer.tile_dimensions
+        self.tile_dimensions = graphics.tile_dimensions
         self.view_width_px = self.width * self.tile_dimensions[0]
         self.view_height_px = self.height * self.tile_dimensions[1]
         self.canvas.draw_rect(

@@ -5,6 +5,7 @@ import time
 from collections import deque
 
 from catley.config import FPS_SAMPLE_SIZE
+from catley.types import DeltaTime
 
 
 class Clock:
@@ -12,11 +13,11 @@ class Clock:
 
     def __init__(self) -> None:
         self.last_time = time.perf_counter()
-        self.last_delta_time = 0.0
+        self.last_delta_time: DeltaTime = DeltaTime(0.0)
         self.time_samples: deque[float] = deque(maxlen=FPS_SAMPLE_SIZE)
         self.drift_time = 0.0
 
-    def sync(self, fps: float | None = None) -> float:
+    def sync(self, fps: float | None = None) -> DeltaTime:
         """Sync to a given framerate and return the delta time."""
         if fps is not None:
             desired_frame_time = 1 / fps
@@ -29,7 +30,7 @@ class Clock:
             self.drift_time = min(drift_time, desired_frame_time)
 
         current_time = time.perf_counter()
-        delta_time = max(0, current_time - self.last_time)
+        delta_time = DeltaTime(max(0, current_time - self.last_time))
         self.last_time = current_time
         self.last_delta_time = delta_time
         self.time_samples.append(delta_time)

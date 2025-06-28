@@ -26,7 +26,7 @@ class TargetingIndicatorOverlay(TextOverlay):
 
     def _get_backend(self) -> Canvas:
         """Return a TCODConsoleCanvas backend."""
-        return TCODConsoleCanvas(self.renderer, transparent=True)
+        return TCODConsoleCanvas(self.controller.graphics, transparent=True)
 
     def _calculate_dimensions(self) -> None:
         """Calculate dimensions for the targeting indicator."""
@@ -37,11 +37,11 @@ class TargetingIndicatorOverlay(TextOverlay):
         self.height = 1
 
         # Center horizontally, place just below top bar
-        self.x_tiles = (self.renderer.console_width_tiles - self.width) // 2
+        self.x_tiles = (self.controller.graphics.console_width_tiles - self.width) // 2
         self.y_tiles = 1
 
         # Calculate pixel dimensions
-        self.tile_dimensions = self.renderer.tile_dimensions
+        self.tile_dimensions = self.controller.graphics.tile_dimensions
         self.pixel_width = self.width * self.tile_dimensions[0]
         self.pixel_height = self.height * self.tile_dimensions[1]
 

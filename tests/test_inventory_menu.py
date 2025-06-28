@@ -25,7 +25,7 @@ def test_inventory_menu_equips_to_active_slot() -> None:
         SimpleNamespace(
             gw=SimpleNamespace(player=player),
             message_log=MessageLog(),
-            renderer=_make_renderer(),
+            graphics=_make_renderer(),
         ),
     )
 

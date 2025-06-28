@@ -1,7 +1,11 @@
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, cast
 from unittest.mock import MagicMock
 
 from catley.util.coordinates import RootConsoleTilePos
+
+if TYPE_CHECKING:
+    from catley.controller import Controller
 from catley.view.frame_manager import FrameManager
 from catley.view.render.effects.effects import EffectLibrary
 from catley.view.render.viewport import ViewportSystem
@@ -11,6 +15,7 @@ from catley.view.views.world_view import WorldView
 @dataclass
 class DummyController:
     gw: MagicMock
+    graphics: MagicMock | None = None
 
 
 def make_dummy_data() -> tuple[DummyController, WorldView]:
@@ -18,7 +23,9 @@ def make_dummy_data() -> tuple[DummyController, WorldView]:
     gw = MagicMock()
     gw.game_map.width = 20
     gw.game_map.height = 20
-    controller = DummyController(gw=gw)
+    graphics = MagicMock()
+    graphics.tile_dimensions = (16, 16)
+    controller = DummyController(gw=gw, graphics=graphics)
 
     vs = ViewportSystem(10, 8)
     # The camera's center is at (4, 4) in world space.
@@ -34,7 +41,11 @@ def make_dummy_data() -> tuple[DummyController, WorldView]:
 
     # Use the real GameWorldView, but we don't need to give it a real controller
     # since we are only testing coordinate transforms.
-    view = WorldView(controller=None, screen_shake=None)  # type: ignore
+    screen_shake = MagicMock()
+    view = WorldView(
+        controller=cast("Controller", controller),
+        screen_shake=screen_shake,
+    )
     # Manually resize and set the viewport
 
     x1, y1 = 5, 3

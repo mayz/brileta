@@ -80,14 +80,13 @@ class TextOverlay(Overlay):
 
     def __init__(self, controller: Controller) -> None:
         super().__init__(controller)
-        self.renderer = controller.renderer
         self.canvas = None
         self._cached_texture: tcod.sdl.render.Texture | None = None
         self.x_tiles, self.y_tiles, self.width, self.height = 0, 0, 0, 0
         self.pixel_width, self.pixel_height = 0, 0
         self.tile_dimensions = (
-            self.renderer.tile_dimensions
-            if hasattr(self, "renderer") and hasattr(self.renderer, "tile_dimensions")
+            self.controller.graphics.tile_dimensions
+            if self.controller.graphics
             else (0, 0)
         )
 
@@ -125,7 +124,7 @@ class TextOverlay(Overlay):
         self.draw_content()
         artifact = self.canvas.end_frame()
         if artifact is not None:
-            texture = self.canvas.create_texture(self.renderer, artifact)
+            texture = self.canvas.create_texture(self.controller.graphics, artifact)
             self._cached_texture = texture
 
     def present(self) -> None:
@@ -138,7 +137,7 @@ class TextOverlay(Overlay):
         width_tiles = self.pixel_width // tile_width if tile_width > 0 else 0
         height_tiles = self.pixel_height // tile_height if tile_height > 0 else 0
 
-        self.renderer.present_texture(
+        self.controller.graphics.present_texture(
             self._cached_texture, self.x_tiles, self.y_tiles, width_tiles, height_tiles
         )
 
@@ -428,7 +427,7 @@ class Menu(TextOverlay):
     def _get_backend(self) -> Canvas:
         """Lazily initializes and returns a TCODConsoleCanvas for Phase 1."""
         if self.canvas is None:
-            self.canvas = TCODConsoleCanvas(self.renderer, transparent=False)
+            self.canvas = TCODConsoleCanvas(self.controller.graphics, transparent=False)
         return self.canvas
 
     def draw(self) -> None:
@@ -447,15 +446,17 @@ class Menu(TextOverlay):
         min_width_tiles = max(len(self.title) + 4, 20)
         menu_width_tiles = max(self.width_tiles, min_width_tiles)
 
-        self.tile_dimensions = self.renderer.tile_dimensions
+        self.tile_dimensions = self.controller.graphics.tile_dimensions
         self.width = menu_width_tiles
         self.height = menu_height_tiles
 
         self.pixel_width = self.width * self.tile_dimensions[0]
         self.pixel_height = self.height * self.tile_dimensions[1]
 
-        self.x_tiles = (self.renderer.console_width_tiles - self.width) // 2
-        self.y_tiles = (self.renderer.console_height_tiles - self.height) // 2
+        self.x_tiles = (self.controller.graphics.console_width_tiles - self.width) // 2
+        self.y_tiles = (
+            self.controller.graphics.console_height_tiles - self.height
+        ) // 2
 
     def draw_content(self) -> None:
         """Render the menu content using only the Canvas interface."""

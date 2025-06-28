@@ -29,7 +29,7 @@ from catley import colors
 from catley.util.coordinates import PixelCoord, TileCoord
 
 if TYPE_CHECKING:
-    from catley.view.render.renderer import Renderer
+    from catley.view.render.graphics import GraphicsContext
 
 
 class DrawOperation(Enum):
@@ -126,7 +126,7 @@ class Canvas(ABC):
         return artifact
 
     @abstractmethod
-    def create_texture(self, renderer: Renderer, artifact: Any) -> Any:
+    def create_texture(self, renderer: GraphicsContext, artifact: Any) -> Any:
         """Creates a backend-specific texture from this canvas's artifact."""
         pass
 

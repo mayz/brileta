@@ -33,7 +33,7 @@ from catley.game.enums import BlendMode
 from catley.types import InterpolationAlpha, Opacity, RootConsoleTilePos, TileDimensions
 from catley.util.coordinates import Rect
 from catley.view.render.effects.particles import ParticleLayer, SubTileParticleSystem
-from catley.view.render.renderer import Renderer
+from catley.view.render.graphics import GraphicsContext
 
 if TYPE_CHECKING:
     from catley.util.coordinates import PixelCoord, PixelPos
@@ -75,7 +75,7 @@ class PygletObjectPool[T: HasVisible]:
         self.active_objects.clear()
 
 
-class PygletRenderer(Renderer):
+class PygletRenderer(GraphicsContext):
     """Low-level graphics primitives and Pyglet/OpenGL operations."""
 
     def __init__(self, window: Window):

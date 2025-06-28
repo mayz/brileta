@@ -22,11 +22,11 @@ class DebugStatsOverlay(TextOverlay):
         self.is_interactive = False
 
     def _get_backend(self) -> Canvas:
-        return TCODConsoleCanvas(self.renderer, transparent=True)
+        return TCODConsoleCanvas(self.controller.graphics, transparent=True)
 
     def _calculate_dimensions(self) -> None:
         watched = live_variable_registry.get_watched_variables()
-        self.tile_dimensions = self.renderer.tile_dimensions
+        self.tile_dimensions = self.controller.graphics.tile_dimensions
 
         if not watched:
             self.width = 0
@@ -49,7 +49,7 @@ class DebugStatsOverlay(TextOverlay):
         self.width = max_width + 2  # small padding
         self.height = len(watched)
 
-        self.x_tiles = self.renderer.console_width_tiles - self.width
+        self.x_tiles = self.controller.graphics.console_width_tiles - self.width
         self.y_tiles = 1
 
         self.pixel_width = self.width * self.tile_dimensions[0]

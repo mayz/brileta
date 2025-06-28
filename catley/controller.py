@@ -2,19 +2,15 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import tcod.event
 import tcod.map
-import tcod.sdl.mouse
-from tcod.console import Console
 
+from catley.app import App
 from catley.game.resolution.base import ResolutionSystem
-from catley.types import TileDimensions
 
 if TYPE_CHECKING:
     from catley.game.actions.discovery import CombatIntentCache
 
 from . import colors, config
-from .backends.tcod.renderer import TCODRenderer
 from .events import MessageEvent, publish_event
 from .game.actions.base import GameIntent
 from .game.actions.types import AnimationType
@@ -27,7 +23,7 @@ from .input_handler import InputHandler
 from .modes.base import Mode
 from .modes.targeting import TargetingMode
 from .movement_handler import MovementInputHandler
-from .types import DeltaTime, FixedTimestep, InterpolationAlpha
+from .types import FixedTimestep, InterpolationAlpha
 from .util.clock import Clock
 from .util.coordinates import WorldTilePos
 from .util.live_vars import live_variable_registry, record_time_live_variable
@@ -35,13 +31,15 @@ from .util.message_log import MessageLog
 from .util.pathfinding import find_path
 from .view.animation import AnimationManager
 from .view.frame_manager import FrameManager
+from .view.render.graphics import GraphicsContext
 from .view.render.lighting.cpu import CPULightingSystem
-from .view.render.renderer import Renderer
 from .view.ui.overlays import OverlaySystem
 
 
 class Controller:
     """
+    FIXME: Update docstring to reflect new architecture.
+
     Orchestrates the main game loop using the Reactive Actor Framework (RAF).
 
     The Controller operates as a lightweight dispatcher with a simple 4-step loop:
@@ -54,32 +52,17 @@ class Controller:
     player action processing while maintaining fair energy economy for NPCs.
     """
 
-    def __init__(
-        self,
-        context: tcod.context.Context,
-        root_console: Console,
-        tile_dimensions: TileDimensions,
-    ) -> None:
-        self.context = context
-        self.root_console = root_console
-
-        self.help_height = config.HELP_HEIGHT
-
-        self.map_width = config.MAP_WIDTH
-        self.map_height = config.MAP_HEIGHT
-
-        # Field of view (FOV) configuration.
-        self.fov_algorithm = config.FOV_ALGORITHM
-        self.fov_light_walls = config.FOV_LIGHT_WALLS
-        self.fov_radius = config.FOV_RADIUS
-
-        self.action_cost = config.ACTION_COST
-
-        # GameWorld now handles all its own setup internally
-        self.gw = GameWorld(self.map_width, self.map_height)
-
-        # Create and connect the new lighting system
+    def __init__(self, app: App, graphics: GraphicsContext) -> None:
+        self.gw = GameWorld(config.MAP_WIDTH, config.MAP_HEIGHT)
         self.gw.lighting_system = CPULightingSystem(self.gw)
+
+        self.graphics = graphics
+        self.coordinate_converter = graphics.coordinate_converter
+
+        self.message_log = MessageLog()
+        self.overlay_system = OverlaySystem(self)
+        self.frame_manager = FrameManager(self, graphics)
+        self.input_handler = InputHandler(app, self)
 
         # Create the player's light now that lighting system is connected
         player_torch = DynamicLight.create_player_torch(self.gw.player)
@@ -91,9 +74,6 @@ class Controller:
         self.animation_manager = AnimationManager()
 
         self.combat_intent_cache: CombatIntentCache | None = None
-
-        # Initialize Message Log
-        self.message_log = MessageLog()
 
         # Fixed timestep game loop implementation
         # This separates rendering (variable framerate) from game logic (fixed rate)
@@ -113,21 +93,6 @@ class Controller:
         # Prevents performance collapse when rendering framerate drops below timestep
         self.max_logic_steps_per_frame = 5
 
-        # Initialize overlay system
-        self.overlay_system = OverlaySystem(self)
-
-        # Create new low-level renderer
-        self.renderer: Renderer = TCODRenderer(context, root_console, tile_dimensions)
-        self.coordinate_converter = self.renderer.coordinate_converter
-
-        # Create FrameManager to coordinate rendering
-        self.frame_manager = FrameManager(self)
-
-        # Initial FOV computation.
-        self.update_fov()
-
-        # For handling input events in run_game_loop().
-        self.input_handler = InputHandler(self)
         self.movement_handler = MovementInputHandler(self)
         self.last_input_time: float | None = None
         self.action_count_for_latency_metric: int = 0
@@ -141,22 +106,17 @@ class Controller:
         self.gw.game_map.visible[:] = tcod.map.compute_fov(
             self.gw.game_map.transparent,
             (self.gw.player.x, self.gw.player.y),
-            radius=self.fov_radius,
-            light_walls=self.fov_light_walls,
-            algorithm=self.fov_algorithm,
+            radius=config.FOV_RADIUS,
+            light_walls=config.FOV_LIGHT_WALLS,
+            algorithm=config.FOV_ALGORITHM,
         )
 
         # If a tile is "visible" it should be added to "explored"
         self.gw.game_map.explored |= self.gw.game_map.visible
         self.gw.game_map.exploration_revision += 1
 
-    def _register_live_variables(self) -> None:
+    def register_metrics(self) -> None:
         """Register all performance monitoring metrics with live variable registry."""
-        live_variable_registry.register_metric(
-            "cpu.total_frame_ms",
-            description="Total CPU time for one visual frame",
-            num_samples=1000,
-        )
         live_variable_registry.register_metric(
             "cpu.logic_step_ms",
             description="CPU time for one fixed logic step",
@@ -172,190 +132,74 @@ class Controller:
             description="CPU time for action processing",
             num_samples=500,
         )
-        live_variable_registry.register_metric(
-            "cpu.render_ms",
-            description="CPU time for rendering",
-            num_samples=500,
-        )
-        live_variable_registry.register_metric(
-            "cpu.render.light_overlay_ms",
-            description="CPU time for light overlay rendering",
-            num_samples=100,
-        )
-        live_variable_registry.register_metric(
-            "cpu.render.map_unlit_ms",
-            description="CPU time for unlit map rendering",
-            num_samples=100,
-        )
-        live_variable_registry.register_metric(
-            "cpu.render.actors_smooth_ms",
-            description="CPU time for smooth actor rendering",
-            num_samples=100,
-        )
-        live_variable_registry.register_metric(
-            "cpu.render.actors_traditional_ms",
-            description="CPU time for traditional actor rendering",
-            num_samples=100,
-        )
-        live_variable_registry.register_metric(
-            "cpu.render.selected_actor_highlight_ms",
-            description="CPU time for selected actor highlight rendering",
-            num_samples=100,
-        )
-        live_variable_registry.register_metric(
-            "cpu.render.present_background_ms",
-            description="CPU time for presenting background texture",
-            num_samples=100,
-        )
-        live_variable_registry.register_metric(
-            "cpu.render.present_light_overlay_ms",
-            description="CPU time for presenting light overlay texture",
-            num_samples=100,
-        )
-        live_variable_registry.register_metric(
-            "cpu.render.particles_under_actors_ms",
-            description="CPU time for rendering particles under actors",
-            num_samples=100,
-        )
-        live_variable_registry.register_metric(
-            "cpu.render.particles_over_actors_ms",
-            description="CPU time for rendering particles over actors",
-            num_samples=100,
-        )
-        live_variable_registry.register_metric(
-            "cpu.render.active_mode_world_ms",
-            description="CPU time for rendering active mode world elements",
-            num_samples=100,
-        )
-        live_variable_registry.register_metric(
-            "cpu.render.environmental_effects_ms",
-            description="CPU time for rendering environmental effects",
-            num_samples=100,
-        )
 
-    def run_game_loop(self) -> None:
-        """Main game loop using fixed timestep with interpolation.
+        # Cascade the call to the FrameManager
+        self.frame_manager.register_metrics()
 
-        Architecture Overview:
-        - FIXED TIMESTEP: Game logic runs at exactly 60Hz for consistent simulation
-        - VARIABLE RENDERING: Visual frames render as fast as possible (up to cap)
-        - INTERPOLATION: Smooth movement between logic steps using alpha blending
-
-        The "accumulator pattern" ensures:
-        1. Deterministic game state (same inputs = same outputs)
-        2. Smooth visuals even when logic/rendering rates differ
-        3. Responsive input (processed immediately, not queued)
-
-        Flow:
-        1. Process input immediately (maximum responsiveness)
-        2. Accumulate frame time since last update
-        3. Run 0+ fixed logic steps (16.67ms each) to "catch up"
-        4. Render with alpha interpolation between previous/current state
-
-        Alpha represents how far between logic steps we are:
-        - alpha=0.0: Show previous logic state
-        - alpha=1.0: Show current logic state
-        - alpha=0.5: Show halfway interpolated between them
+    def process_player_input(self) -> None:
         """
-        assert self.gw.lighting_system is not None, (
-            "Lighting system must be initialized"
-        )
+        Processes all pending player input. Should be called once per visual frame
+        before the logic step loop to ensure responsiveness.
+        """
+        # Assert that dependencies have been injected
+        assert self.overlay_system is not None and self.input_handler is not None
 
-        self._register_live_variables()
+        # Check for player-initiated actions (movement or queued)
+        move_intent = None
+        if not self.overlay_system.has_interactive_overlays():
+            move_intent = self.movement_handler.generate_intent(
+                self.input_handler.movement_keys
+            )
+            if move_intent:
+                self._execute_player_action_immediately(move_intent)
 
-        try:
-            tcod.sdl.mouse.show(False)
+        # Check for other queued player actions
+        if self.turn_manager.has_pending_actions():
+            player_action = self.turn_manager.dequeue_player_action()
+            if player_action:
+                self._execute_player_action_immediately(player_action)
 
-            while True:
-                # FRAME TIMING: Get elapsed time and add to accumulator
-                # This caps visual framerate while accumulating "debt" for logic updates
-                delta_time: DeltaTime = DeltaTime(self.clock.sync(fps=self.target_fps))
-                self.accumulator += delta_time
+        # Check for autopilot actions if no manual input
+        if (
+            not move_intent
+            and not self.turn_manager.has_pending_actions()
+            and self.turn_manager.is_player_turn_available()
+        ):
+            autopilot_action = self.gw.player.get_next_action(self)
+            if autopilot_action:
+                self._execute_player_action_immediately(autopilot_action)
 
-                # INPUT PROCESSING: Handle input immediately for maximum responsiveness
-                # Input is NOT tied to fixed timestep - processed every visual frame
-                for event in tcod.event.get():
-                    self.input_handler.dispatch(event)
+    def update_logic_step(self) -> None:
+        """
+        Runs one fixed-step of game logic for animations and non-player actors.
+        Called by the App's fixed-step loop.
+        """
+        with record_time_live_variable("cpu.logic_step_ms"):
+            # SNAPSHOT PREVIOUS STATE: Save current positions for smooth
+            # This allows rendering to blend smoothly between old/new
+            for actor in self.gw.actors:
+                actor.prev_x = actor.x
+                actor.prev_y = actor.y
 
-                # Check for player-initiated actions (movement or queued)
-                move_intent = None
-                if not self.overlay_system.has_interactive_overlays():
-                    move_intent = self.movement_handler.generate_intent(
-                        self.input_handler.movement_keys
-                    )
-                    if move_intent:
-                        self._execute_player_action_immediately(move_intent)
+            with record_time_live_variable("cpu.animation_update_ms"):
+                # ANIMATIONS: Update frame-independent systems
+                # Ensures consistent animation timing regardless of FPS
+                self.animation_manager.update(self.fixed_timestep)
 
-                # Check for other queued player actions
-                if self.turn_manager.has_pending_actions():
-                    player_action = self.turn_manager.dequeue_player_action()
-                    if player_action:
-                        self._execute_player_action_immediately(player_action)
+            if self.gw.lighting_system is not None:
+                self.gw.lighting_system.update(self.fixed_timestep)
 
-                # Check for autopilot actions if no manual input
-                if (
-                    not move_intent
-                    and not self.turn_manager.has_pending_actions()
-                    and self.turn_manager.is_player_turn_available()
-                ):
-                    autopilot_action = self.gw.player.get_next_action(self)
-                    if autopilot_action:
-                        self._execute_player_action_immediately(autopilot_action)
+            with record_time_live_variable("cpu.action_processing_ms"):
+                # GAME LOGIC: Process all NPC actions for this step
+                # This is where the core game simulation happens
+                self._process_all_available_npc_actions()
 
-                with record_time_live_variable("cpu.total_frame_ms"):
-                    # INTERPOLATION ALPHA: Calculate how far between logic steps we are
-                    # alpha=0.0 means "exactly at previous step", alpha=1.0 is "current"
-                    # alpha=0.5 means "halfway between steps" - creates smooth movement
-                    # Clamp to 1.0 to prevent overshoot when death spiral hits
-                    alpha: InterpolationAlpha = InterpolationAlpha(
-                        min(1.0, self.accumulator / self.fixed_timestep)
-                    )
-
-                    # FIXED TIMESTEP LOOP: Run logic updates at exactly 60Hz
-                    # May run 0, 1, or multiple times per visual frame for consistency
-                    # Death spiral protection: limit logic steps per frame
-                    logic_steps_this_frame = 0
-                    while (
-                        self.accumulator >= self.fixed_timestep
-                        and logic_steps_this_frame < self.max_logic_steps_per_frame
-                    ):
-                        with record_time_live_variable("cpu.logic_step_ms"):
-                            # SNAPSHOT PREVIOUS STATE: Save current positions for smooth
-                            # This allows rendering to blend smoothly between old/new
-                            for actor in self.gw.actors:
-                                actor.prev_x = actor.x
-                                actor.prev_y = actor.y
-
-                            with record_time_live_variable("cpu.animation_update_ms"):
-                                # ANIMATIONS: Update frame-independent systems
-                                # Ensures consistent animation timing regardless of FPS
-                                self.animation_manager.update(self.fixed_timestep)
-
-                            self.gw.lighting_system.update(self.fixed_timestep)
-
-                            with record_time_live_variable("cpu.action_processing_ms"):
-                                # GAME LOGIC: Process all NPC actions for this step
-                                # This is where the core game simulation happens
-                                self._process_all_available_npc_actions()
-
-                        # CONSUME TIME: Remove one fixed timestep from accumulator
-                        # Continue loop if more time needs to be processed
-                        self.accumulator -= self.fixed_timestep
-                        logic_steps_this_frame += 1
-
-                    # RECOVERY: If death spiral protection kicked in, gradually reduce
-                    # This prevents permanent slowdown when performance recovers
-                    if logic_steps_this_frame >= self.max_logic_steps_per_frame:
-                        # Gradually bleed off excess time to recover from spikes
-                        self.accumulator *= 0.8
-
-                    with record_time_live_variable("cpu.render_ms"):
-                        # RENDER FRAME: Draw visual frame with interpolation
-                        # Uses alpha to smoothly blend between prev_* and current
-                        self.frame_manager.render_frame(alpha)
-
-        finally:
-            tcod.sdl.mouse.show(True)
+    def render_visual_frame(self, alpha: InterpolationAlpha) -> None:
+        """Renders one visual frame with interpolation. Called by the App."""
+        assert self.frame_manager is not None
+        with record_time_live_variable("cpu.render_ms"):
+            # Uses alpha to smoothly blend between prev_* and current
+            self.frame_manager.render_frame(alpha)
 
     def _execute_player_action_immediately(self, action: GameIntent) -> None:
         """Execute a player action immediately on the current frame.
@@ -380,7 +224,7 @@ class Controller:
 
         # Execute the player's action
         self.turn_manager.execute_intent(action)
-        self.gw.player.energy.spend(self.action_cost)
+        self.gw.player.energy.spend(config.ACTION_COST)
 
         # Update FOV after player action (important for movement)
         self.update_fov()

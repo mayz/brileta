@@ -8,7 +8,7 @@ from catley import colors
 from catley.backends.tcod.canvas import TCODConsoleCanvas
 from catley.game.actors import Character, Condition, StatusEffect
 from catley.types import InterpolationAlpha
-from catley.view.render.renderer import Renderer
+from catley.view.render.graphics import GraphicsContext
 
 from .base import TextView
 
@@ -19,16 +19,18 @@ if TYPE_CHECKING:
 class StatusView(TextView):
     """View that displays active conditions and status effects."""
 
-    def __init__(self, controller: Controller, renderer: Renderer) -> None:
+    def __init__(self, controller: Controller) -> None:
         super().__init__()
         self.controller = controller
-        self.canvas = TCODConsoleCanvas(renderer)
+        self.canvas = TCODConsoleCanvas(self.controller.graphics)
 
     def get_cache_key(self) -> int:
         """The key is the modifiers' revision number."""
         return self.controller.gw.player.modifiers.revision
 
-    def draw_content(self, renderer: Renderer, alpha: InterpolationAlpha) -> None:
+    def draw_content(
+        self, graphics: GraphicsContext, alpha: InterpolationAlpha
+    ) -> None:
         """Render the status view if player has active effects."""
 
         tile_w, tile_h = self.tile_dimensions

@@ -9,13 +9,13 @@ from catley.util.coordinates import PixelCoord, TileCoord
 from catley.view.render.canvas import Canvas
 
 if TYPE_CHECKING:
-    from catley.view.render.renderer import Renderer
+    from catley.view.render.graphics import GraphicsContext
 
 
 class TCODConsoleCanvas(Canvas):
     """Canvas that draws directly to a tcod :class:`Console`."""
 
-    def __init__(self, renderer: Renderer, transparent: bool = True) -> None:
+    def __init__(self, renderer: GraphicsContext, transparent: bool = True) -> None:
         super().__init__(transparent)
         self.renderer = renderer
         self.private_console: Console | None = None
@@ -26,14 +26,14 @@ class TCODConsoleCanvas(Canvas):
     def artifact_type(self) -> str:
         return "console"
 
-    def create_texture(self, renderer: Renderer, artifact: Any) -> Any:
+    def create_texture(self, renderer: GraphicsContext, artifact: Any) -> Any:
         """Creates a backend-specific texture from this canvas's artifact."""
         # This import is here to avoid a circular dependency.
-        from catley.backends.tcod.renderer import TCODRenderer
+        from catley.backends.tcod.graphics import TCODGraphicsContext
 
         # We need to cast the renderer to access its TCOD-specific method.
         # This is acceptable because this canvas is TCOD-specific.
-        tcod_renderer = cast(TCODRenderer, renderer)
+        tcod_renderer = cast(TCODGraphicsContext, renderer)
         return tcod_renderer.texture_from_console(artifact, self.transparent)
 
     def get_text_metrics(

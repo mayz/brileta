@@ -9,7 +9,7 @@ from catley.types import DeltaTime
 from catley.util.coordinates import Rect, TileCoord
 
 if TYPE_CHECKING:
-    from catley.view.render.renderer import Renderer
+    from catley.view.render.graphics import GraphicsContext
 
 
 @dataclass
@@ -118,7 +118,7 @@ class EnvironmentalEffectSystem:
 
     def render_effects(
         self,
-        renderer: Renderer,
+        renderer: GraphicsContext,
         viewport_bounds: Rect,
         view_offset: tuple[TileCoord, TileCoord],
     ) -> None:

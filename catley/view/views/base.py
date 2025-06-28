@@ -10,7 +10,7 @@ Key Principles:
 - It's responsible for its own content and sub-layout, but its overall position
   and size are managed by the top-level `FrameManager`.
 - To render, a View uses a `Canvas` object to record drawing commands, which
-  are then turned into a final texture by the `Renderer`.
+  are then turned into a final texture by the `GraphicsContext`.
 
 This architecture decouples layout and content logic from the low-level details
 of rendering, making the system more modular and maintainable.
@@ -24,7 +24,7 @@ import tcod.sdl.render
 from catley.types import InterpolationAlpha
 from catley.util.caching import ResourceCache
 from catley.view.render.canvas import Canvas
-from catley.view.render.renderer import Renderer
+from catley.view.render.graphics import GraphicsContext
 
 
 class View(abc.ABC):
@@ -48,27 +48,27 @@ class View(abc.ABC):
         self._cached_texture: Any | None = None
 
     @abc.abstractmethod
-    def draw(self, renderer: Renderer, alpha: InterpolationAlpha) -> None:
+    def draw(self, graphics: GraphicsContext, alpha: InterpolationAlpha) -> None:
         """Draw view content. Subclasses implement this.
 
         Args:
-            renderer: The rendering backend to use
+            graphics: The graphics context to use
             alpha: Interpolation factor between game logic steps (0.0-1.0)
                   Used for smooth animations independent of visual framerate
         """
         pass
 
-    def present(self, renderer: Renderer, alpha: InterpolationAlpha) -> None:
+    def present(self, graphics: GraphicsContext, alpha: InterpolationAlpha) -> None:
         """Handle texture presentation for backends that produce textures.
 
         Args:
-            renderer: The rendering backend to use
+            graphics: The graphics context to use
             alpha: Interpolation factor (unused in base implementation)
         """
         if not self.visible or self._cached_texture is None:
             return
 
-        renderer.present_texture(
+        graphics.present_texture(
             self._cached_texture, self.x, self.y, self.width, self.height
         )
 
@@ -111,21 +111,23 @@ class TextView(View):
         pass
 
     @abc.abstractmethod
-    def draw_content(self, renderer: Renderer, alpha: InterpolationAlpha) -> None:
+    def draw_content(
+        self, graphics: GraphicsContext, alpha: InterpolationAlpha
+    ) -> None:
         """Subclasses implement the actual drawing commands.
 
         Args:
-            renderer: The rendering backend to use
+            graphics: The graphics context to use
             alpha: Interpolation factor for smooth animations (0.0-1.0)
                   Most UI views don't use this, but it's available
         """
         pass
 
-    def draw(self, renderer: Renderer, alpha: InterpolationAlpha) -> None:
+    def draw(self, graphics: GraphicsContext, alpha: InterpolationAlpha) -> None:
         """Orchestrate rendering with caching support.
 
         Args:
-            renderer: The rendering backend to use
+            graphics: The graphics context to use
             alpha: Interpolation factor passed to draw_content
         """
         if not self.visible:
@@ -137,11 +139,11 @@ class TextView(View):
         if cached_texture is None:
             # CACHE MISS: The state has changed. We need to re-render.
             self.canvas.begin_frame()
-            self.draw_content(renderer, alpha)
+            self.draw_content(graphics, alpha)
             artifact = self.canvas.end_frame()
 
             if artifact is not None:
-                texture = self.canvas.create_texture(renderer, artifact)
+                texture = self.canvas.create_texture(graphics, artifact)
                 if texture:
                     # Store the newly rendered texture in the cache
                     self._texture_cache.store(cache_key, texture)

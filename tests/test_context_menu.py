@@ -5,7 +5,7 @@ from typing import Any, cast
 import tcod.event
 
 from catley import colors
-from catley.backends.tcod.renderer import TCODRenderer
+from catley.backends.tcod.graphics import TCODGraphicsContext
 from catley.controller import Controller
 from catley.environment import tile_types
 from catley.game.actors import Character
@@ -25,8 +25,8 @@ class DummyController(Controller):
         self.turn_manager = TurnManager(self)
         self.frame_manager = None
         self.message_log = None
-        self.renderer = _make_renderer()
-        tcod_renderer = cast(TCODRenderer, self.renderer)
+        self.graphics = _make_renderer()
+        tcod_renderer = cast(TCODGraphicsContext, self.graphics)
         cast(Any, tcod_renderer.root_console).width = 80
         cast(Any, tcod_renderer.root_console).height = 50
         self.coordinate_converter = SimpleNamespace(pixel_to_tile=lambda x, y: (x, y))
@@ -64,8 +64,8 @@ def test_context_menu_closes_on_click_outside() -> None:
     menu._calculate_dimensions()
 
     outside: RootConsoleTilePos = (
-        (menu.x_tiles + menu.width + 1) * controller.renderer.tile_dimensions[0],
-        (menu.y_tiles + menu.height + 1) * controller.renderer.tile_dimensions[1],
+        (menu.x_tiles + menu.width + 1) * controller.graphics.tile_dimensions[0],
+        (menu.y_tiles + menu.height + 1) * controller.graphics.tile_dimensions[1],
     )
     event = tcod.event.MouseButtonDown(outside, outside, tcod.event.MouseButton.LEFT)
 
@@ -82,8 +82,8 @@ def test_context_menu_stays_open_on_click_inside() -> None:
     menu._calculate_dimensions()
 
     inside: RootConsoleTilePos = (
-        (menu.x_tiles + 1) * controller.renderer.tile_dimensions[0],
-        (menu.y_tiles + 1) * controller.renderer.tile_dimensions[1],
+        (menu.x_tiles + 1) * controller.graphics.tile_dimensions[0],
+        (menu.y_tiles + 1) * controller.graphics.tile_dimensions[1],
     )
     event = tcod.event.MouseButtonDown(inside, inside, tcod.event.MouseButton.LEFT)
 

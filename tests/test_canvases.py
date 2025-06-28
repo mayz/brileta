@@ -3,11 +3,11 @@ from unittest.mock import MagicMock
 from catley import colors
 from catley.backends.pillow.canvas import PillowImageCanvas
 from catley.backends.tcod.canvas import TCODConsoleCanvas
-from catley.view.render.renderer import Renderer
+from catley.view.render.graphics import GraphicsContext
 
 
-def _make_renderer(tile_height: int = 16) -> Renderer:
-    renderer = MagicMock(spec=Renderer)
+def _make_renderer(tile_height: int = 16) -> GraphicsContext:
+    renderer = MagicMock(spec=GraphicsContext)
     renderer.tile_dimensions = (8, tile_height)
     renderer.console_width_tiles = 80
     renderer.console_height_tiles = 50

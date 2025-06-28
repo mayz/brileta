@@ -22,6 +22,8 @@ class TargetingMode(Mode):
 
     def __init__(self, controller: Controller) -> None:
         super().__init__(controller)
+
+        assert controller.frame_manager is not None
         self.cursor_manager = controller.frame_manager.cursor_manager
         self.candidates: list[Character] = []
         self.current_index: int = 0
@@ -31,6 +33,8 @@ class TargetingMode(Mode):
     def enter(self) -> None:
         """Enter targeting mode and find all valid targets"""
         super().enter()
+
+        assert self.controller.overlay_system is not None
         self.candidates = []
 
         # Subscribe to actor death events only while targeting
@@ -125,6 +129,8 @@ class TargetingMode(Mode):
         """Render targeting highlights in world space"""
         if not self.active:
             return
+
+        assert self.controller.frame_manager is not None
 
         current_target = self._get_current_target()
         gw_view = self.controller.frame_manager.world_view

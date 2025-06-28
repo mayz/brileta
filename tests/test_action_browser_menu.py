@@ -12,7 +12,7 @@ def test_continue_option_shown_when_target_dead() -> None:
     controller, player, melee_target, ranged_target, pistol = _make_combat_world()
 
     # Provide required dependencies for the menu.
-    controller.renderer = _make_renderer()  # type: ignore[attr-defined]
+    controller.graphics = _make_renderer()  # type: ignore[attr-defined]
     controller.message_log = MessageLog()
 
     # Simulate a cached attack that killed the target.

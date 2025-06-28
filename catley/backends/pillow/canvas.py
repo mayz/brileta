@@ -12,7 +12,7 @@ from catley.util.coordinates import PixelCoord, TileCoord
 from catley.view.render.canvas import Canvas
 
 if TYPE_CHECKING:
-    from catley.view.render.renderer import Renderer
+    from catley.view.render.graphics import GraphicsContext
 
 
 class PillowImageCanvas(Canvas):
@@ -20,7 +20,7 @@ class PillowImageCanvas(Canvas):
 
     def __init__(
         self,
-        renderer: Renderer,
+        renderer: GraphicsContext,
         transparent: bool = True,
     ) -> None:
         super().__init__(transparent)
@@ -49,7 +49,7 @@ class PillowImageCanvas(Canvas):
     # Utility helpers
     # ------------------------------------------------------------------
 
-    def create_texture(self, renderer: Renderer, artifact: Any) -> Any:
+    def create_texture(self, renderer: GraphicsContext, artifact: Any) -> Any:
         """Creates a backend-specific texture from this canvas's artifact."""
         return renderer.texture_from_numpy(artifact, self.transparent)
 

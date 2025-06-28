@@ -27,11 +27,11 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from catley.game.actors import Actor
-from catley.view.render.renderer import Renderer
 from catley.view.ui.overlays import Menu
 from catley.view.ui.pickup_menu import PickupMenu
 
 if TYPE_CHECKING:
+    from catley.app import App
     from catley.controller import Controller
 
 
@@ -46,11 +46,11 @@ class UICommand(abc.ABC):
 class ToggleFullscreenUICommand(UICommand):
     """Command for toggling fullscreen mode."""
 
-    def __init__(self, renderer: Renderer) -> None:
-        self.renderer = renderer
+    def __init__(self, app: App) -> None:
+        self.app = app
 
     def execute(self) -> None:
-        self.renderer.toggle_fullscreen()
+        self.app.toggle_fullscreen()
 
 
 class QuitUICommand(UICommand):
@@ -83,12 +83,15 @@ class OpenMenuUICommand(UICommand):
     """Command to open a menu, like the inventory or help menu."""
 
     def __init__(
-        self, controller: Controller, menu_class: Callable[[Controller], Menu]
+        self,
+        controller: Controller,
+        menu_class: Callable[[Controller], Menu],
     ) -> None:
         self.controller = controller
         self.menu_class = menu_class
 
     def execute(self) -> None:
+        assert self.controller.overlay_system is not None
         menu = self.menu_class(self.controller)
         self.controller.overlay_system.show_menu(menu)
 
@@ -105,6 +108,7 @@ class OpenPickupMenuUICommand(OpenMenuUICommand):
         if self.controller.gw.has_pickable_items_at_location(
             self.player.x, self.player.y
         ):
+            assert self.controller.overlay_system is not None
             menu = PickupMenu(self.controller, (self.player.x, self.player.y))
             self.controller.overlay_system.show_menu(menu)
 
@@ -117,4 +121,5 @@ class OpenExistingMenuUICommand(UICommand):
         self.menu = menu
 
     def execute(self) -> None:
+        assert self.controller.overlay_system is not None
         self.controller.overlay_system.show_menu(self.menu)

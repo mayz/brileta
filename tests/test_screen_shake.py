@@ -8,7 +8,7 @@ from catley.controller import Controller
 from catley.types import DeltaTime, InterpolationAlpha
 from catley.util.spatial import SpatialHashGrid
 from catley.view.render.effects.screen_shake import ScreenShake
-from catley.view.render.renderer import Renderer
+from catley.view.render.graphics import GraphicsContext
 
 
 class DummyActor:
@@ -106,7 +106,7 @@ class DummyController:
         from types import SimpleNamespace
 
         self.gw = DummyGW()
-        self.renderer = SimpleNamespace(
+        self.graphics = SimpleNamespace(
             clear_console=lambda *args, **kwargs: None,
             root_console=None,
             blit_console=lambda *args, **kwargs: None,
@@ -142,7 +142,7 @@ def test_world_view_applies_screen_shake_before_render(monkeypatch) -> None:
     # Mock the light overlay rendering to avoid mocking game_map.visible
     view._render_light_overlay = lambda renderer: None  # type: ignore[assignment]
 
-    view.draw(cast(Renderer, controller.renderer), InterpolationAlpha(0.0))
+    view.draw(cast(GraphicsContext, controller.graphics), InterpolationAlpha(0.0))
 
     assert captured["cam_pos"] == (5.5, 4.5)
 
@@ -178,7 +178,7 @@ def test_world_view_screen_shake_does_not_overflow(monkeypatch) -> None:
     # Mock the light overlay rendering to avoid mocking game_map.visible
     view._render_light_overlay = lambda renderer: None  # type: ignore[assignment]
 
-    view.draw(cast(Renderer, controller.renderer), InterpolationAlpha(0.0))
+    view.draw(cast(GraphicsContext, controller.graphics), InterpolationAlpha(0.0))
 
     assert captured["dest_width"] <= view.width
     assert captured["dest_height"] <= view.height
@@ -201,7 +201,7 @@ def test_small_map_actor_alignment(monkeypatch) -> None:
     # Mock the light overlay rendering to avoid mocking game_map.visible
     view._render_light_overlay = lambda renderer: None  # type: ignore[assignment]
 
-    view.draw(cast(Renderer, controller.renderer), InterpolationAlpha(0.0))
+    view.draw(cast(GraphicsContext, controller.graphics), InterpolationAlpha(0.0))
 
     vs = view.viewport_system
     px, py = vs.world_to_screen(controller.gw.player.x, controller.gw.player.y)

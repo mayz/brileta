@@ -16,7 +16,7 @@ class ConcreteTestView(View):
         super().__init__()
         self.draw_called = False
 
-    def draw(self, renderer, alpha: InterpolationAlpha):
+    def draw(self, graphics, alpha: InterpolationAlpha):
         self.draw_called = True
 
 

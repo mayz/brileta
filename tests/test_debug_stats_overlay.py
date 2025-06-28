@@ -11,7 +11,7 @@ from catley.view.ui.debug_stats_overlay import DebugStatsOverlay
 
 class DummyController:
     def __init__(self) -> None:
-        self.renderer = SimpleNamespace(
+        self.graphics = SimpleNamespace(
             root_console=SimpleNamespace(width=80, height=50),
             tile_dimensions=(8, 16),
             console_width_tiles=80,

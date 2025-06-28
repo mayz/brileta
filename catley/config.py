@@ -9,6 +9,8 @@ from pathlib import Path
 
 import tcod.constants
 
+from catley.types import Opacity
+
 # =============================================================================
 # GENERAL
 # =============================================================================
@@ -155,8 +157,8 @@ SHADOW_FALLOFF = True  # Shadows get lighter with distance
 # =============================================================================
 
 # Mouse and selection
-MOUSE_HIGHLIGHT_ALPHA = 0.6  # Alpha blending for mouse cursor highlight
-SELECTION_HIGHLIGHT_ALPHA = 0.6  # Alpha blending for selected actor highlight
+MOUSE_HIGHLIGHT_ALPHA = Opacity(0.6)  # Alpha blending for mouse cursor highlight
+SELECTION_HIGHLIGHT_ALPHA = Opacity(0.6)  # Alpha blending for selected actor highlight
 
 # Movement
 MOVEMENT_KEY_REPEAT_DELAY = 0.25

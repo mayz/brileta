@@ -12,7 +12,7 @@ from catley.view.ui.dev_console_overlay import DevConsoleOverlay
 
 class DummyController:
     def __init__(self) -> None:
-        self.renderer = SimpleNamespace(
+        self.graphics = SimpleNamespace(
             root_console=SimpleNamespace(width=80, height=50),
             tile_dimensions=(8, 16),
             sdl_renderer=None,

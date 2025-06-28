@@ -24,7 +24,7 @@ from catley.game.actors import Character
 from catley.game.game_world import GameWorld
 from catley.game.items.item_types import GRENADE_TYPE
 from catley.view.frame_manager import FrameManager
-from catley.view.render.renderer import Renderer
+from catley.view.render.graphics import GraphicsContext
 from tests.helpers import DummyGameWorld
 
 
@@ -64,7 +64,7 @@ class DummyFrameManager(FrameManager):
         self.controller = controller
         # Create a mock Renderer that satisfies the type hint.
         # We don't need a real TCOD context for this test.
-        self.renderer = MagicMock(spec=Renderer)
+        self.renderer = MagicMock(spec=GraphicsContext)
 
     def create_effect(
         self,
