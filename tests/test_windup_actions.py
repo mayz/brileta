@@ -9,12 +9,12 @@ import pytest
 from catley.controller import Controller
 from catley.game.actions.base import GameIntent
 from catley.game.actions.types import AnimationType
-from catley.util.coordinates import TileDimensions
+from catley.types import FixedTimestep, TileDimensions
 from catley.view.animation import Animation
 
 
 class DummyAnimation(Animation):
-    def update(self, delta_time: float) -> bool:
+    def update(self, fixed_timestep: FixedTimestep) -> bool:
         return True
 
 

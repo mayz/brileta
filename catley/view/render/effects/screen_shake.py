@@ -1,5 +1,7 @@
 import random
 
+from catley.types import DeltaTime
+
 
 class ScreenShake:
     def __init__(self) -> None:
@@ -8,7 +10,7 @@ class ScreenShake:
         self.duration = 0.0
         self.time_remaining = 0.0
 
-    def trigger(self, intensity: float, duration: float) -> None:
+    def trigger(self, intensity: float, duration: DeltaTime) -> None:
         """Trigger a screen shake.
 
         Args:
@@ -20,7 +22,7 @@ class ScreenShake:
         self.duration = max(self.duration, duration)
         self.time_remaining = max(self.time_remaining, duration)
 
-    def update(self, delta_time: float) -> tuple[int, int]:
+    def update(self, delta_time: DeltaTime) -> tuple[int, int]:
         """Update and return current shake offset as tile coordinates."""
         if self.time_remaining <= 0:
             return 0, 0

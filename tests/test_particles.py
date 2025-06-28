@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from catley.types import DeltaTime
 from catley.util.coordinates import Rect
 from catley.view.render.effects.particles import (
     ParticleLayer,
@@ -177,14 +178,14 @@ def test_particle_update_movement_and_lifetime() -> None:
         ps.add_particle(0, 0, vel_x=20.0, vel_y=-10.0, lifetime=1.0)
 
     delta_time = 0.1
-    ps.update(delta_time)
+    ps.update(DeltaTime(delta_time))
     assert ps.positions[0, 0] == pytest.approx(0.5 + 20.0 * delta_time)
     assert ps.positions[0, 1] == pytest.approx(0.5 - 10.0 * delta_time)
     assert ps.lifetimes[0] == pytest.approx(1.0 - delta_time)
     assert ps.lifetimes[0] / ps.max_lifetimes[0] == pytest.approx(1.0 - delta_time)
 
     ps.lifetimes[0] = 0.05
-    ps.update(delta_time)
+    ps.update(DeltaTime(delta_time))
     assert ps.active_count == 0
 
 
@@ -196,15 +197,15 @@ def test_particle_update_gravity_effect() -> None:
     ps.gravity[0] = 100.0
     delta_time = 0.1
 
-    ps.update(delta_time)
+    ps.update(DeltaTime(delta_time))
     assert ps.velocities[0, 1] == pytest.approx(10.0)
     assert ps.positions[0, 1] == pytest.approx(0.5)
 
-    ps.update(delta_time)
+    ps.update(DeltaTime(delta_time))
     assert ps.velocities[0, 1] == pytest.approx(20.0)
     assert ps.positions[0, 1] == pytest.approx(0.5 + 10.0 * delta_time)
 
-    ps.update(delta_time)
+    ps.update(DeltaTime(delta_time))
     assert ps.velocities[0, 1] == pytest.approx(30.0)
     assert ps.positions[0, 1] == pytest.approx(
         0.5 + 10.0 * delta_time + 20.0 * delta_time
@@ -247,7 +248,7 @@ def test_system_update_removes_dead_particles_from_list(
     ps.add_particle(tile_x=2, tile_y=2, vel_x=0, vel_y=0, lifetime=1.0)  # Will live
 
     assert ps.active_count == 2
-    ps.update(delta_time=0.1)  # First particle should have its lifetime <= 0
+    ps.update(delta_time=DeltaTime(0.1))  # First particle should have its lifetime <= 0
 
     assert ps.active_count == 1
     assert ps.max_lifetimes[0] == 1.0

@@ -29,14 +29,15 @@ from tcod.console import Console
 from catley import colors
 from catley.game.enums import BlendMode
 from catley.input_handler import PixelPos
-from catley.util.caching import ResourceCache
-from catley.util.coordinates import (
-    CoordinateConverter,
+from catley.types import (
+    InterpolationAlpha,
+    Opacity,
     PixelCoord,
-    Rect,
     RootConsoleTilePos,
     TileDimensions,
 )
+from catley.util.caching import ResourceCache
+from catley.util.coordinates import CoordinateConverter, Rect
 from catley.view.render.effects.particles import ParticleLayer, SubTileParticleSystem
 from catley.view.render.renderer import Renderer
 
@@ -134,7 +135,7 @@ class TCODRenderer(Renderer):
         screen_x: float,
         screen_y: float,
         light_intensity: tuple[float, float, float] = (1.0, 1.0, 1.0),
-        alpha: float = 1.0,
+        alpha: InterpolationAlpha = InterpolationAlpha(1.0),  # noqa: B008
     ) -> None:
         """Draw an actor character at sub-pixel screen coordinates with interpolation.
 
@@ -266,7 +267,7 @@ class TCODRenderer(Renderer):
                 tuple(particle_system.colors[i]),
                 screen_x,
                 screen_y,
-                alpha,
+                Opacity(alpha),
             )
 
     def _draw_particle_smooth(
@@ -275,7 +276,7 @@ class TCODRenderer(Renderer):
         color: colors.Color,
         screen_x: float,
         screen_y: float,
-        alpha: float,
+        alpha: Opacity,
     ) -> None:
         """Draw a particle with alpha blending."""
         if not self._tileset:
@@ -352,7 +353,7 @@ class TCODRenderer(Renderer):
         root_x: int,
         root_y: int,
         color: colors.Color,
-        alpha: float,
+        alpha: Opacity,
     ) -> None:
         """Draws a semi-transparent highlight over a single tile."""
         if not self.sdl_renderer:

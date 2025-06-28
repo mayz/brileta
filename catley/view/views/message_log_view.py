@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 from tcod.sdl.render import Texture
 
 from catley import colors
+from catley.types import InterpolationAlpha
 from catley.util.caching import ResourceCache
 from catley.view.render.backends.pillow.canvas import PillowImageCanvas
 from catley.view.render.renderer import Renderer
@@ -55,7 +56,7 @@ class MessageLogView(TextView):
         self.view_height_px = self.height * self.tile_dimensions[1]
         self.canvas.configure_scaling(self.tile_dimensions[1])
 
-    def draw_content(self, renderer: Renderer, alpha: float) -> None:
+    def draw_content(self, renderer: Renderer, alpha: InterpolationAlpha) -> None:
         # Update cached tile dimensions and recalculate pixel dimensions
         self.tile_dimensions = renderer.tile_dimensions
         self.view_width_px = self.width * self.tile_dimensions[0]

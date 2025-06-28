@@ -28,6 +28,7 @@ from catley.game.items.properties import TacticalProperty, WeaponProperty
 from catley.game.resolution import combat_arbiter
 from catley.game.resolution.base import ResolutionResult
 from catley.game.resolution.outcomes import CombatOutcome
+from catley.types import DeltaTime
 
 if TYPE_CHECKING:
     from catley.game.actions.combat import AttackIntent, ReloadIntent
@@ -541,7 +542,7 @@ class AttackExecutor(ActionExecutor):
             shake_intensity *= Combat.CRIT_SHAKE_INTENSITY_MULT
             shake_duration *= Combat.CRIT_SHAKE_DURATION_MULT
 
-        publish_event(ScreenShakeEvent(shake_intensity, shake_duration))
+        publish_event(ScreenShakeEvent(shake_intensity, DeltaTime(shake_duration)))
 
     def _update_ai_disposition(self, intent: AttackIntent) -> None:
         """Update AI disposition if player attacked an NPC."""

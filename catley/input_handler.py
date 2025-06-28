@@ -9,7 +9,7 @@ import tcod.event
 from catley import colors
 from catley.events import MessageEvent, publish_event
 from catley.game.actors import Actor, Character
-from catley.util.coordinates import (
+from catley.types import (
     PixelCoord,
     PixelPos,
     RootConsoleTilePos,

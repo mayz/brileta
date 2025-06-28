@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from catley import colors
 from catley.game.actors import Character, Condition, StatusEffect
+from catley.types import InterpolationAlpha
 from catley.view.render.backends.tcod.canvas import TCODConsoleCanvas
 from catley.view.render.renderer import Renderer
 
@@ -27,7 +28,7 @@ class StatusView(TextView):
         """The key is the modifiers' revision number."""
         return self.controller.gw.player.modifiers.revision
 
-    def draw_content(self, renderer: Renderer, alpha: float) -> None:
+    def draw_content(self, renderer: Renderer, alpha: InterpolationAlpha) -> None:
         """Render the status view if player has active effects."""
 
         tile_w, tile_h = self.tile_dimensions

@@ -8,6 +8,7 @@ import numpy as np
 from catley import colors
 from catley.constants.view import ViewConstants as View
 from catley.game.enums import BlendMode
+from catley.types import DeltaTime
 from catley.util.coordinates import Rect
 
 if TYPE_CHECKING:
@@ -519,7 +520,7 @@ class SubTileParticleSystem:
     # These methods handle the fundamental particle system operations and
     # should not be changed.
 
-    def update(self, delta_time: float) -> None:
+    def update(self, delta_time: DeltaTime) -> None:
         """
         Update all particles and remove dead/out-of-bounds ones.
 

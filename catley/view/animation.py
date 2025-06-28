@@ -11,6 +11,8 @@ from abc import ABC, abstractmethod
 from collections import deque
 from typing import TYPE_CHECKING
 
+from catley.types import FixedTimestep
+
 if TYPE_CHECKING:
     from catley.game.actors.core import Actor
 
@@ -23,11 +25,11 @@ class Animation(ABC):
     """
 
     @abstractmethod
-    def update(self, delta_time: float) -> bool:
+    def update(self, fixed_timestep: FixedTimestep) -> bool:
         """Update the animation state based on elapsed time.
 
         Args:
-            delta_time: Time elapsed since last update in seconds.
+            fixed_timestep: Fixed time step duration for deterministic animation timing.
 
         Returns:
             True if the animation is finished, False if it should continue.
@@ -69,16 +71,16 @@ class MoveAnimation(Animation):
         self.actor.render_x = self.start_x
         self.actor.render_y = self.start_y
 
-    def update(self, delta_time: float) -> bool:
+    def update(self, fixed_timestep: FixedTimestep) -> bool:
         """Update the movement animation.
 
         Args:
-            delta_time: Time elapsed since last update in seconds.
+            fixed_timestep: Fixed time step duration for deterministic animation timing.
 
         Returns:
             True if the animation is finished, False otherwise.
         """
-        self.elapsed_time += delta_time
+        self.elapsed_time += fixed_timestep
 
         if self.elapsed_time >= self.duration:
             # Animation complete - snap to final position and release control
@@ -118,11 +120,11 @@ class AnimationManager:
         """
         return len(self._queue) == 0
 
-    def update(self, delta_time: float) -> None:
+    def update(self, fixed_timestep: FixedTimestep) -> None:
         """Update all animations simultaneously and remove finished ones.
 
         Args:
-            delta_time: Time elapsed since last update in seconds.
+            fixed_timestep: Fixed time step duration for deterministic animation timing.
         """
         # Process all animations simultaneously for responsive gameplay
         if not self._queue:
@@ -131,7 +133,7 @@ class AnimationManager:
         # Update all animations and collect those still running
         remaining_animations = deque()
         for animation in self._queue:
-            if not animation.update(delta_time):
+            if not animation.update(fixed_timestep):
                 remaining_animations.append(animation)
 
         self._queue = remaining_animations

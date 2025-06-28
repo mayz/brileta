@@ -23,7 +23,7 @@ import tcod
 import tcod.sdl.render
 
 from catley import colors
-from catley.util.coordinates import PixelCoord, PixelPos, RootConsoleTileCoord
+from catley.types import PixelCoord, PixelPos, RootConsoleTileCoord
 from catley.view.render.backends.tcod.canvas import TCODConsoleCanvas
 from catley.view.render.canvas import Canvas
 

@@ -28,6 +28,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from catley import colors
+from catley.types import DeltaTime
 
 
 @dataclass
@@ -70,7 +71,7 @@ class ScreenShakeEvent(GameEvent):
     """Event for triggering screen shake."""
 
     intensity: float
-    duration: float
+    duration: DeltaTime
 
 
 class EventBus:

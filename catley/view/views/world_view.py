@@ -14,6 +14,7 @@ from catley.config import (
     PULSATION_PERIOD,
     SELECTION_HIGHLIGHT_ALPHA,
 )
+from catley.types import DeltaTime, InterpolationAlpha, Opacity
 from catley.util.caching import ResourceCache
 from catley.util.coordinates import (
     PixelCoord,
@@ -93,7 +94,7 @@ class WorldView(View):
         actor: Actor,
         color: colors.Color,
         effect: str = "solid",
-        alpha: float = 0.4,
+        alpha: Opacity = Opacity(0.4),  # noqa: B008
     ) -> None:
         """Highlight an actor if it is visible."""
         if self.controller.gw.game_map.visible[actor.x, actor.y]:
@@ -105,7 +106,7 @@ class WorldView(View):
         y: int,
         color: colors.Color,
         effect: str = "solid",
-        alpha: float = 0.4,
+        alpha: Opacity = Opacity(0.4),  # noqa: B008
     ) -> None:
         """Highlight a tile with an optional effect using world coordinates."""
         vs = self.viewport_system
@@ -145,7 +146,7 @@ class WorldView(View):
 
         return (camera_key, map_key, exploration_key)
 
-    def draw(self, renderer: Renderer, alpha: float) -> None:
+    def draw(self, renderer: Renderer, alpha: InterpolationAlpha) -> None:
         """Main drawing method for the world view."""
         if not self.visible:
             return
@@ -164,7 +165,7 @@ class WorldView(View):
             self._update_mouse_tile_location()
 
         # Apply screen shake by temporarily offsetting the camera position.
-        shake_x, shake_y = self.screen_shake.update(delta_time)
+        shake_x, shake_y = self.screen_shake.update(DeltaTime(delta_time))
         original_cam_x = vs.camera.world_x
         original_cam_y = vs.camera.world_y
         vs.camera.world_x += shake_x
@@ -199,14 +200,17 @@ class WorldView(View):
         # Restore the original camera position so subsequent frames start clean.
         self.viewport_system.camera.set_position(original_cam_x, original_cam_y)
 
-        # Update dynamic systems that need to process every frame
-        for actor in self.controller.gw.actors:
-            actor.update_render_position(alpha)
+        # Update dynamic systems that need to process every frame.
+        # actor.update_render_position is a legacy call from the old rendering
+        # system and is no longer needed with fixed-timestep interpolation.
 
-        self.particle_system.update(alpha)
-        self.environmental_system.update(alpha)
+        # Visual effects like particles and environmental effects should update based
+        # on the frame's delta_time for maximum smoothness, not the fixed
+        # logic timestep or the interpolation alpha.
+        self.particle_system.update(DeltaTime(delta_time))
+        self.environmental_system.update(DeltaTime(delta_time))
 
-    def present(self, renderer: Renderer, alpha: float) -> None:
+    def present(self, renderer: Renderer, alpha: InterpolationAlpha) -> None:
         """Composite final frame layers in proper order."""
         if not self.visible:
             return
@@ -310,7 +314,9 @@ class WorldView(View):
             pass
 
     @record_time_live_variable("cpu.render.actors_smooth_ms")
-    def _render_actors_smooth(self, renderer: Renderer, alpha: float) -> None:
+    def _render_actors_smooth(
+        self, renderer: Renderer, alpha: InterpolationAlpha
+    ) -> None:
         """Render all actors with smooth sub-pixel positioning."""
         gw = self.controller.gw
         vs = self.viewport_system
@@ -346,7 +352,7 @@ class WorldView(View):
         renderer: Renderer,
         bounds: Rect,
         vs: ViewportSystem,
-        alpha: float,
+        alpha: InterpolationAlpha,
     ) -> None:
         """Render a single actor with smooth positioning and lighting.
 
@@ -421,7 +427,9 @@ class WorldView(View):
         return base_color
 
     @record_time_live_variable("cpu.render.actors_traditional_ms")
-    def _render_actors_traditional(self, renderer: Renderer, alpha: float) -> None:
+    def _render_actors_traditional(
+        self, renderer: Renderer, alpha: InterpolationAlpha
+    ) -> None:
         """Tile-aligned actor rendering, adapted for dynamic rendering."""
         gw = self.controller.gw
         vs = self.viewport_system
@@ -494,7 +502,7 @@ class WorldView(View):
                 actor,
                 colors.SELECTED_HIGHLIGHT,
                 effect="solid",
-                alpha=SELECTION_HIGHLIGHT_ALPHA,
+                alpha=Opacity(SELECTION_HIGHLIGHT_ALPHA),
             )
 
     def _update_mouse_tile_location(self) -> None:

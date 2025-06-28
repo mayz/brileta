@@ -37,7 +37,7 @@ from catley.game.actors import conditions
 from catley.game.enums import Disposition, InjuryLocation
 from catley.game.items.item_core import Item
 from catley.game.pathfinding_goal import PathfindingGoal
-from catley.util.coordinates import TileCoord, WorldTileCoord
+from catley.types import TileCoord, WorldTileCoord
 from catley.util.pathfinding import find_path
 
 from .ai import AIComponent, DispositionBasedAI
@@ -174,11 +174,6 @@ class Actor:
         """Return a debug representation of this actor."""
         fields = ", ".join(f"{k}={v!r}" for k, v in vars(self).items())
         return f"{self.__class__.__name__}({fields})"
-
-    def update_render_position(self, delta_time: float) -> None:
-        """Snap the visual position directly to the logical position."""
-        self.render_x = float(self.x)
-        self.render_y = float(self.y)
 
     def move(
         self, dx: TileCoord, dy: TileCoord, controller: Controller | None = None
@@ -380,21 +375,6 @@ class Character(Actor):
 
         if starting_weapon:
             self.inventory.equip_to_slot(starting_weapon, 0)
-
-    def update_render_position(self, delta_time: float) -> None:  # type: ignore[override]
-        """
-        Update render position. Animation system has priority over interpolation.
-        If not controlled by animation, falls back to the parent Actor's
-        simple snapping behavior.
-        """
-        # If an animation is in control, it handles setting render_x/y.
-        # Do nothing here to avoid interfering with it.
-        if self._animation_controlled:
-            return
-
-        # If not controlled by an animation, use the standard behavior
-        # from the parent class (snapping render position to logical position).
-        super().update_render_position(delta_time)
 
     def can_use_two_handed_weapons(self) -> bool:
         """Return ``False`` if both arms are injured."""

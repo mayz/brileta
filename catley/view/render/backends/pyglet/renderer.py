@@ -30,7 +30,8 @@ from pyglet.window import Window
 
 from catley import colors, config
 from catley.game.enums import BlendMode
-from catley.util.coordinates import Rect, RootConsoleTilePos, TileDimensions
+from catley.types import InterpolationAlpha, Opacity, RootConsoleTilePos, TileDimensions
+from catley.util.coordinates import Rect
 from catley.view.render.effects.particles import ParticleLayer, SubTileParticleSystem
 from catley.view.render.renderer import Renderer
 
@@ -277,7 +278,7 @@ class PygletRenderer(Renderer):
         screen_x: float,
         screen_y: float,
         light_intensity: tuple[float, float, float] = (1.0, 1.0, 1.0),
-        alpha: float = 1.0,
+        alpha: InterpolationAlpha = InterpolationAlpha(1.0),  # noqa: B008
     ) -> None:
         sprite = self.actor_sprite_pool.get_or_create()
 
@@ -306,7 +307,7 @@ class PygletRenderer(Renderer):
         root_x: int,
         root_y: int,
         color: colors.Color,
-        alpha: float,
+        alpha: Opacity,
     ) -> None:
         """Draws a semi-transparent highlight over a single tile."""
         px_x, px_y = self.console_to_screen_coords(root_x, root_y)

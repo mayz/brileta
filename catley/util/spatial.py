@@ -10,7 +10,7 @@ import abc
 from collections import defaultdict
 from typing import Protocol, TypeVar
 
-from .coordinates import WorldTileCoord
+from catley.types import WorldTileCoord
 
 # A type alias for coordinate tuples to improve readability.
 type Coord = tuple[int, int]

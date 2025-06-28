@@ -4,6 +4,7 @@ from typing import Any, cast
 
 import pytest
 
+from catley.types import FixedTimestep
 from catley.view.animation import Animation, AnimationManager, MoveAnimation
 
 
@@ -56,13 +57,13 @@ class TestMoveAnimation:
         animation = MoveAnimation(cast(Any, actor), (0.0, 0.0), (10.0, 20.0))
 
         # At 50% completion (0.075 seconds)
-        finished = animation.update(0.075)
+        finished = animation.update(FixedTimestep(0.075))
         assert not finished
         assert actor.render_x == pytest.approx(5.0)
         assert actor.render_y == pytest.approx(10.0)
 
         # At 75% completion (additional 0.0375 seconds = 0.1125 total)
-        finished = animation.update(0.0375)
+        finished = animation.update(FixedTimestep(0.0375))
         assert not finished
         assert actor.render_x == pytest.approx(7.5)
         assert actor.render_y == pytest.approx(15.0)
@@ -73,7 +74,7 @@ class TestMoveAnimation:
         animation = MoveAnimation(cast(Any, actor), (1.0, 2.0), (5.0, 6.0))
 
         # Complete the animation
-        finished = animation.update(0.15)
+        finished = animation.update(FixedTimestep(0.15))
         assert finished
         assert actor.render_x == 5.0
         assert actor.render_y == 6.0
@@ -84,7 +85,7 @@ class TestMoveAnimation:
         animation = MoveAnimation(cast(Any, actor), (0.0, 0.0), (4.0, 8.0))
 
         # Update with time much longer than duration
-        finished = animation.update(1.0)
+        finished = animation.update(FixedTimestep(1.0))
         assert finished
         assert actor.render_x == 4.0
         assert actor.render_y == 8.0
@@ -95,12 +96,12 @@ class TestMoveAnimation:
         animation = MoveAnimation(cast(Any, actor), (5.0, 5.0), (5.0, 5.0))
 
         # Should complete immediately but still respect timing
-        finished = animation.update(0.05)
+        finished = animation.update(FixedTimestep(0.05))
         assert not finished
         assert actor.render_x == 5.0
         assert actor.render_y == 5.0
 
-        finished = animation.update(0.15)
+        finished = animation.update(FixedTimestep(0.15))
         assert finished
 
     def test_negative_coordinates(self) -> None:
@@ -109,7 +110,7 @@ class TestMoveAnimation:
         animation = MoveAnimation(cast(Any, actor), (-2.0, -3.0), (2.0, 3.0))
 
         # At 50% completion
-        finished = animation.update(0.075)
+        finished = animation.update(FixedTimestep(0.075))
         assert not finished
         assert actor.render_x == pytest.approx(0.0)
         assert actor.render_y == pytest.approx(0.0)
@@ -141,13 +142,13 @@ class TestAnimationManager:
         manager.add(animation)
 
         # Animation in progress
-        manager.update(0.075)  # 50% completion
+        manager.update(FixedTimestep(0.075))  # 50% completion
         assert not manager.is_queue_empty()
         assert actor.render_x == pytest.approx(5.0)
         assert actor.render_y == pytest.approx(5.0)
 
         # Animation completes
-        manager.update(0.075)  # 100% completion
+        manager.update(FixedTimestep(0.075))  # 100% completion
         assert manager.is_queue_empty()
         assert actor.render_x == 10.0
         assert actor.render_y == 10.0
@@ -166,7 +167,7 @@ class TestAnimationManager:
         manager.add(anim2)
 
         # Both animations should run simultaneously
-        manager.update(0.075)  # 50% of both animations
+        manager.update(FixedTimestep(0.075))  # 50% of both animations
         assert not manager.is_queue_empty()
         # First actor moves from (0,0) to (2,2), so 50% progress = (1,1)
         assert actor1.render_x == pytest.approx(1.0)
@@ -176,7 +177,7 @@ class TestAnimationManager:
         assert actor2.render_y == pytest.approx(6.0)
 
         # Complete both animations
-        manager.update(0.075)  # Complete both animations simultaneously
+        manager.update(FixedTimestep(0.075))  # Complete both animations simultaneously
         assert manager.is_queue_empty()
         assert actor1.render_x == 2.0
         assert actor1.render_y == 2.0
@@ -188,7 +189,7 @@ class TestAnimationManager:
         manager = AnimationManager()
 
         # Should not raise any exceptions
-        manager.update(0.1)
+        manager.update(FixedTimestep(0.1))
         assert manager.is_queue_empty()
 
     def test_queue_order_preservation(self) -> None:
@@ -208,7 +209,7 @@ class TestAnimationManager:
 
         # Complete all animations
         for _ in range(3):
-            manager.update(0.15)
+            manager.update(FixedTimestep(0.15))
 
         assert manager.is_queue_empty()
         assert actor.render_x == 0.0

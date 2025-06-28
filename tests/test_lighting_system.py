@@ -2,6 +2,7 @@ import numpy as np
 
 from catley.game.game_world import GameWorld
 from catley.game.lights import DynamicLight, StaticLight
+from catley.types import FixedTimestep
 from catley.util.coordinates import Rect
 from catley.view.render.lighting.cpu import CPULightingSystem
 
@@ -55,4 +56,4 @@ def test_cpu_lighting_system_update() -> None:
     lighting_system = CPULightingSystem(gw)
 
     # Should not raise any exceptions
-    lighting_system.update(0.016)  # 60 FPS delta time
+    lighting_system.update(FixedTimestep(0.016))  # 60 FPS delta time

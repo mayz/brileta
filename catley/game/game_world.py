@@ -21,7 +21,8 @@ from catley.game.items.item_types import (
     SNIPER_RIFLE_TYPE,
 )
 from catley.game.lights import DynamicLight, LightSource
-from catley.util.coordinates import Rect, TileCoord, WorldTileCoord, WorldTilePos
+from catley.types import TileCoord, WorldTileCoord, WorldTilePos
+from catley.util.coordinates import Rect
 from catley.util.spatial import SpatialHashGrid, SpatialIndex
 from catley.view.render.lighting.base import LightingSystem
 

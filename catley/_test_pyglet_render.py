@@ -5,6 +5,7 @@ import pyglet
 from pyglet.window import Window
 
 from catley import colors, config
+from catley.types import DeltaTime, Opacity
 from catley.util.coordinates import Rect
 from catley.view.render.backends.pyglet.canvas import PygletCanvas
 from catley.view.render.backends.pyglet.renderer import PygletRenderer
@@ -322,8 +323,8 @@ def on_draw():
 
     # Test 3: Draw some tile highlights for testing
     highlight_start = time.time()
-    renderer.draw_tile_highlight(5, 5, colors.YELLOW, 0.6)
-    renderer.draw_tile_highlight(15, 10, colors.CYAN, 0.4)
+    renderer.draw_tile_highlight(5, 5, colors.YELLOW, Opacity(0.6))
+    renderer.draw_tile_highlight(15, 10, colors.CYAN, Opacity(0.4))
     highlight_time = time.time() - highlight_start
 
     # Test 4: Update effects and render particles
@@ -352,8 +353,8 @@ def on_draw():
         last_effect_time = effect_timer
 
     # Update particle and environmental systems
-    test_particle_system.update(dt)
-    test_environmental_system.update(dt)
+    test_particle_system.update(DeltaTime(dt))
+    test_environmental_system.update(DeltaTime(dt))
 
     # Render particles and environmental effects
     renderer.render_particles(

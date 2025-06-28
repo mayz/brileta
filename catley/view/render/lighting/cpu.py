@@ -22,13 +22,9 @@ from catley.config import (
     SHADOW_MAX_LENGTH,
 )
 from catley.environment.map import TileCoord
+from catley.types import FixedTimestep, ViewportTilePos, WorldTileCoord, WorldTilePos
 from catley.util.caching import ResourceCache
-from catley.util.coordinates import (
-    Rect,
-    ViewportTilePos,
-    WorldTileCoord,
-    WorldTilePos,
-)
+from catley.util.coordinates import Rect
 
 from .base import LightingSystem
 
@@ -83,13 +79,13 @@ class CPULightingSystem(LightingSystem):
         # Track time for dynamic effects like flickering
         self._time = 0.0
 
-    def update(self, delta_time: float) -> None:
+    def update(self, fixed_timestep: FixedTimestep) -> None:
         """Update internal time-based state for dynamic effects.
 
         Args:
-            delta_time: Time elapsed since last frame in seconds
+            fixed_timestep: Fixed time step duration for deterministic lighting timing
         """
-        self._time += delta_time
+        self._time += fixed_timestep
 
     def compute_lightmap(self, viewport_bounds: Rect) -> np.ndarray | None:
         """Compute the final lightmap for the visible area using two-layer optimization.

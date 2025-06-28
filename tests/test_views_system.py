@@ -4,6 +4,7 @@ from unittest.mock import Mock
 
 import pytest
 
+from catley.types import InterpolationAlpha
 from catley.view.views.base import View
 from catley.view.views.world_view import WorldView
 
@@ -15,7 +16,7 @@ class ConcreteTestView(View):
         super().__init__()
         self.draw_called = False
 
-    def draw(self, renderer, alpha):
+    def draw(self, renderer, alpha: InterpolationAlpha):
         self.draw_called = True
 
 
@@ -95,7 +96,7 @@ class TestWorldViewBoundaryEnforcement:
         self.view._render_light_overlay = Mock(return_value=None)
 
         # Call draw
-        self.view.draw(self.mock_renderer, 0.0)
+        self.view.draw(self.mock_renderer, InterpolationAlpha(0.0))
 
         # Verify texture caching was used instead of blit_console
         self.mock_renderer.texture_from_console.assert_called_once()
@@ -120,7 +121,7 @@ class TestWorldViewBoundaryEnforcement:
         self.view._render_light_overlay = Mock(return_value=None)
 
         # Call draw
-        self.view.draw(self.mock_renderer, 0.0)
+        self.view.draw(self.mock_renderer, InterpolationAlpha(0.0))
 
         # Verify texture caching was used instead of blit_console
         self.mock_renderer.texture_from_console.assert_called_once()
@@ -131,7 +132,7 @@ class TestWorldViewBoundaryEnforcement:
         self.view.set_bounds(0, 0, 50, 50)
         self.view.hide()
 
-        self.view.draw(self.mock_renderer, 0.0)
+        self.view.draw(self.mock_renderer, InterpolationAlpha(0.0))
 
         # Should not call blit_console when invisible
         self.mock_renderer.blit_console.assert_not_called()

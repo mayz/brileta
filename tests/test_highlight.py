@@ -8,6 +8,7 @@ import numpy as np
 
 from catley.controller import Controller
 from catley.game.actors import Actor
+from catley.types import Opacity
 from catley.view.render.effects.screen_shake import ScreenShake
 from catley.view.views.world_view import WorldView
 
@@ -103,7 +104,7 @@ def test_highlight_actor_converts_world_to_screen() -> None:
     expected_root_x = view.x + vp_x
     expected_root_y = view.y + vp_y
     controller.renderer.draw_tile_highlight.assert_called_once_with(
-        expected_root_x, expected_root_y, (1, 2, 3), 0.4
+        expected_root_x, expected_root_y, (1, 2, 3), Opacity(0.4)
     )
 
 

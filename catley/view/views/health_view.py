@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from catley import colors
+from catley.types import InterpolationAlpha
 from catley.view.render.backends.tcod.canvas import TCODConsoleCanvas
 from catley.view.render.renderer import Renderer
 
@@ -30,7 +31,7 @@ class HealthView(TextView):
         player = self.controller.gw.player
         return (player.health.hp, player.health.max_hp, player.health.ap)
 
-    def draw_content(self, renderer: Renderer, alpha: float) -> None:
+    def draw_content(self, renderer: Renderer, alpha: InterpolationAlpha) -> None:
         tile_width, tile_height = self.tile_dimensions
         pixel_width = self.width * tile_width
         pixel_height = self.height * tile_height

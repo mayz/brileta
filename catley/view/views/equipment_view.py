@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 from catley import colors
 from catley.constants.view import ViewConstants as View
+from catley.types import InterpolationAlpha
 from catley.view.render.backends.tcod.canvas import TCODConsoleCanvas
 from catley.view.render.renderer import Renderer
 
@@ -25,7 +26,7 @@ class EquipmentView(TextView):
         """The key is the inventory's revision number."""
         return self.controller.gw.player.inventory.revision
 
-    def draw_content(self, renderer: Renderer, alpha: float) -> None:
+    def draw_content(self, renderer: Renderer, alpha: InterpolationAlpha) -> None:
         tile_width, tile_height = self.tile_dimensions
         pixel_width = self.width * tile_width
         pixel_height = self.height * tile_height

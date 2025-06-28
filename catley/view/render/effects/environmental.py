@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 
 from catley import colors
 from catley.game.enums import BlendMode
+from catley.types import DeltaTime
 from catley.util.coordinates import Rect, TileCoord
 
 if TYPE_CHECKING:
@@ -96,7 +97,7 @@ class EnvironmentalEffectSystem:
         """
         self.effects.append(effect)
 
-    def update(self, delta_time: float) -> None:
+    def update(self, delta_time: DeltaTime) -> None:
         """
         Update all environmental effects and remove expired ones.
 

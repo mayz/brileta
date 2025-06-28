@@ -8,7 +8,7 @@ import tcod.sdl.mouse
 from tcod.console import Console
 
 from catley.game.resolution.base import ResolutionSystem
-from catley.util.coordinates import TileDimensions
+from catley.types import TileDimensions
 
 if TYPE_CHECKING:
     from catley.game.actions.discovery import CombatIntentCache
@@ -26,6 +26,7 @@ from .input_handler import InputHandler
 from .modes.base import Mode
 from .modes.targeting import TargetingMode
 from .movement_handler import MovementInputHandler
+from .types import DeltaTime, FixedTimestep, InterpolationAlpha
 from .util.clock import Clock
 from .util.coordinates import WorldTilePos
 from .util.live_vars import live_variable_registry, record_time_live_variable
@@ -101,7 +102,8 @@ class Controller:
 
         # Game logic runs at exactly 60Hz regardless of visual framerate
         # This ensures consistent physics, movement, and game timing
-        self.fixed_timestep = 1.0 / 60.0  # 16.67ms per logic step
+        # 16.67ms per logic step
+        self.fixed_timestep: FixedTimestep = FixedTimestep(1.0 / 60.0)
 
         # Accumulator tracks excess frame time to "catch up" logic steps
         # When accumulator >= fixed_timestep, we run one logic update
@@ -267,7 +269,7 @@ class Controller:
             while True:
                 # FRAME TIMING: Get elapsed time and add to accumulator
                 # This caps visual framerate while accumulating "debt" for logic updates
-                delta_time = self.clock.sync(fps=self.target_fps)
+                delta_time: DeltaTime = DeltaTime(self.clock.sync(fps=self.target_fps))
                 self.accumulator += delta_time
 
                 # INPUT PROCESSING: Handle input immediately for maximum responsiveness
@@ -305,7 +307,9 @@ class Controller:
                     # alpha=0.0 means "exactly at previous step", alpha=1.0 is "current"
                     # alpha=0.5 means "halfway between steps" - creates smooth movement
                     # Clamp to 1.0 to prevent overshoot when death spiral hits
-                    alpha = min(1.0, self.accumulator / self.fixed_timestep)
+                    alpha: InterpolationAlpha = InterpolationAlpha(
+                        min(1.0, self.accumulator / self.fixed_timestep)
+                    )
 
                     # FIXED TIMESTEP LOOP: Run logic updates at exactly 60Hz
                     # May run 0, 1, or multiple times per visual frame for consistency

@@ -27,7 +27,13 @@ from catley.events import (
     ScreenShakeEvent,
     subscribe_to_event,
 )
-from catley.util.coordinates import RootConsoleTilePos, ViewportTileCoord, WorldTilePos
+from catley.types import (
+    DeltaTime,
+    InterpolationAlpha,
+    RootConsoleTilePos,
+    ViewportTileCoord,
+    WorldTilePos,
+)
 from catley.util.live_vars import live_variable_registry
 
 from .render.backends.tcod.renderer import TCODRenderer
@@ -179,7 +185,7 @@ class FrameManager:
         """Add a UI view to be rendered each frame."""
         self.views.append(view)
 
-    def render_frame(self, alpha: float) -> None:
+    def render_frame(self, alpha: InterpolationAlpha) -> None:
         """
         Main rendering pipeline that composites the final frame.
 
@@ -278,7 +284,7 @@ class FrameManager:
             return world_x, world_y
         return None
 
-    def trigger_screen_shake(self, intensity: float, duration: float) -> None:
+    def trigger_screen_shake(self, intensity: float, duration: DeltaTime) -> None:
         """Trigger screen shake effect. Call this from combat actions."""
         from catley.config import (
             SCREEN_SHAKE_ENABLED,

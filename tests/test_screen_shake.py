@@ -5,49 +5,50 @@ import numpy as np
 
 from catley import config
 from catley.controller import Controller
+from catley.types import DeltaTime, InterpolationAlpha
 from catley.util.spatial import SpatialHashGrid
 from catley.view.render.effects.screen_shake import ScreenShake
 from catley.view.render.renderer import Renderer
-
-
-def test_screen_shake_update_and_completion() -> None:
-    shake = ScreenShake()
-    shake.trigger(intensity=1.0, duration=1.0)
-
-    with (
-        patch("random.random", return_value=0.0),
-        patch("random.choice", side_effect=lambda seq: seq[0]),
-    ):
-        offset = shake.update(0.5)
-    assert offset == (-1, -1)
-    assert shake.is_active()
-
-    offset = shake.update(0.6)
-    assert offset == (0, 0)
-    assert not shake.is_active()
-
-
-def test_screen_shake_trigger_overwrite() -> None:
-    shake = ScreenShake()
-    shake.trigger(intensity=0.2, duration=0.5)
-    shake.trigger(intensity=0.8, duration=1.0)
-    assert shake.intensity == 0.8
-    assert shake.duration == 1.0
-    assert shake.time_remaining == 1.0
 
 
 class DummyActor:
     def __init__(self, x: int, y: int) -> None:
         self.x = x
         self.y = y
+        self.prev_x = x
+        self.prev_y = y
         self.ch = "@"
         self.color = (255, 255, 255)
         self.render_x = float(x)
         self.render_y = float(y)
+        self.visual_effects = None
+        self.blocks_movement = True
 
-    def update_render_position(self, _dt: float) -> None:
-        self.render_x = float(self.x)
-        self.render_y = float(self.y)
+
+def test_screen_shake_update_and_completion() -> None:
+    shake = ScreenShake()
+    shake.trigger(intensity=1.0, duration=DeltaTime(1.0))
+
+    with (
+        patch("random.random", return_value=0.0),
+        patch("random.choice", side_effect=lambda seq: seq[0]),
+    ):
+        offset = shake.update(DeltaTime(0.5))
+    assert offset == (-1, -1)
+    assert shake.is_active()
+
+    offset = shake.update(DeltaTime(0.6))
+    assert offset == (0, 0)
+    assert not shake.is_active()
+
+
+def test_screen_shake_trigger_overwrite() -> None:
+    shake = ScreenShake()
+    shake.trigger(intensity=0.2, duration=DeltaTime(0.5))
+    shake.trigger(intensity=0.8, duration=DeltaTime(1.0))
+    assert shake.intensity == 0.8
+    assert shake.duration == 1.0
+    assert shake.time_remaining == 1.0
 
 
 class DummyGameMap:
@@ -141,7 +142,7 @@ def test_world_view_applies_screen_shake_before_render(monkeypatch) -> None:
     # Mock the light overlay rendering to avoid mocking game_map.visible
     view._render_light_overlay = lambda renderer: None  # type: ignore[assignment]
 
-    view.draw(cast(Renderer, controller.renderer), 0.0)
+    view.draw(cast(Renderer, controller.renderer), InterpolationAlpha(0.0))
 
     assert captured["cam_pos"] == (5.5, 4.5)
 
@@ -177,7 +178,7 @@ def test_world_view_screen_shake_does_not_overflow(monkeypatch) -> None:
     # Mock the light overlay rendering to avoid mocking game_map.visible
     view._render_light_overlay = lambda renderer: None  # type: ignore[assignment]
 
-    view.draw(cast(Renderer, controller.renderer), 0.0)
+    view.draw(cast(Renderer, controller.renderer), InterpolationAlpha(0.0))
 
     assert captured["dest_width"] <= view.width
     assert captured["dest_height"] <= view.height
@@ -200,7 +201,7 @@ def test_small_map_actor_alignment(monkeypatch) -> None:
     # Mock the light overlay rendering to avoid mocking game_map.visible
     view._render_light_overlay = lambda renderer: None  # type: ignore[assignment]
 
-    view.draw(cast(Renderer, controller.renderer), 0.0)
+    view.draw(cast(Renderer, controller.renderer), InterpolationAlpha(0.0))
 
     vs = view.viewport_system
     px, py = vs.world_to_screen(controller.gw.player.x, controller.gw.player.y)

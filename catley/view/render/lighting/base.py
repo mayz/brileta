@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from catley.types import FixedTimestep
 from catley.util.coordinates import Rect
 
 if TYPE_CHECKING:
@@ -45,14 +46,14 @@ class LightingSystem(ABC):
         self.revision: int = 0  # Incremented when lighting state changes
 
     @abstractmethod
-    def update(self, delta_time: float) -> None:
+    def update(self, fixed_timestep: FixedTimestep) -> None:
         """Update internal time-based state for dynamic effects.
 
         This method is called each frame to update time-dependent lighting
         effects like flickering torches.
 
         Args:
-            delta_time: Time elapsed since last frame in seconds
+            fixed_timestep: Fixed time step duration for deterministic lighting timing
         """
         pass
 

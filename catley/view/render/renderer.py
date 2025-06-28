@@ -27,13 +27,15 @@ import numpy as np
 
 from catley import colors
 from catley.game.enums import BlendMode
-from catley.util.coordinates import (
+from catley.types import (
+    InterpolationAlpha,
+    Opacity,
     PixelCoord,
     PixelPos,
-    Rect,
     RootConsoleTilePos,
     TileDimensions,
 )
+from catley.util.coordinates import Rect
 from catley.view.render.effects.particles import ParticleLayer, SubTileParticleSystem
 
 if TYPE_CHECKING:
@@ -66,7 +68,7 @@ class Renderer(abc.ABC):
         screen_x: float,
         screen_y: float,
         light_intensity: tuple[float, float, float] = (1.0, 1.0, 1.0),
-        alpha: float = 1.0,
+        alpha: InterpolationAlpha = InterpolationAlpha(1.0),  # noqa: B008
     ) -> None:
         """Draw an actor character at sub-pixel screen coordinates.
 
@@ -103,7 +105,7 @@ class Renderer(abc.ABC):
         root_x: int,
         root_y: int,
         color: colors.Color,
-        alpha: float,
+        alpha: Opacity,
     ) -> None:
         """Draws a semi-transparent highlight over a single tile."""
         pass

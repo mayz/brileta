@@ -21,6 +21,7 @@ from typing import Any
 
 import tcod.sdl.render
 
+from catley.types import InterpolationAlpha
 from catley.util.caching import ResourceCache
 from catley.view.render.canvas import Canvas
 from catley.view.render.renderer import Renderer
@@ -47,7 +48,7 @@ class View(abc.ABC):
         self._cached_texture: Any | None = None
 
     @abc.abstractmethod
-    def draw(self, renderer: Renderer, alpha: float) -> None:
+    def draw(self, renderer: Renderer, alpha: InterpolationAlpha) -> None:
         """Draw view content. Subclasses implement this.
 
         Args:
@@ -57,7 +58,7 @@ class View(abc.ABC):
         """
         pass
 
-    def present(self, renderer: Renderer, alpha: float) -> None:
+    def present(self, renderer: Renderer, alpha: InterpolationAlpha) -> None:
         """Handle texture presentation for backends that produce textures.
 
         Args:
@@ -110,7 +111,7 @@ class TextView(View):
         pass
 
     @abc.abstractmethod
-    def draw_content(self, renderer: Renderer, alpha: float) -> None:
+    def draw_content(self, renderer: Renderer, alpha: InterpolationAlpha) -> None:
         """Subclasses implement the actual drawing commands.
 
         Args:
@@ -120,7 +121,7 @@ class TextView(View):
         """
         pass
 
-    def draw(self, renderer: Renderer, alpha: float) -> None:
+    def draw(self, renderer: Renderer, alpha: InterpolationAlpha) -> None:
         """Orchestrate rendering with caching support.
 
         Args:

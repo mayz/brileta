@@ -10,6 +10,7 @@ import tcod.sdl.render
 import tcod.sdl.video
 
 from catley import colors
+from catley.types import InterpolationAlpha
 from catley.util.message_log import MessageLog
 from catley.view.render.backends.pillow.canvas import PillowImageCanvas
 from catley.view.render.renderer import Renderer
@@ -64,9 +65,9 @@ def test_message_log_view_ttf_rendering_visible(monkeypatch: Any) -> None:
     view.tile_dimensions = (8, 16)
     view.set_bounds(0, 0, 20, 5)
 
-    view.draw(renderer_stub, 0.0)
+    view.draw(renderer_stub, InterpolationAlpha(0.0))
     renderer.clear()
-    view.present(renderer_stub, 0.0)
+    view.present(renderer_stub, InterpolationAlpha(0.0))
 
     pixels = renderer.read_pixels(format="RGBA")
 
@@ -97,7 +98,7 @@ def test_message_log_view_font_scales_on_resize(monkeypatch: Any) -> None:
     view.tile_dimensions = (8, 16)
     view.set_bounds(0, 0, 20, 5)
 
-    view.draw(renderer_stub, 0.0)
+    view.draw(renderer_stub, InterpolationAlpha(0.0))
     assert view.canvas is not None
     tb = cast(PillowImageCanvas, view.canvas)
     ascent, descent = tb.get_font_metrics()
@@ -106,7 +107,7 @@ def test_message_log_view_font_scales_on_resize(monkeypatch: Any) -> None:
     renderer_stub.tile_dimensions = (16, 32)
     view.tile_dimensions = (16, 32)
     view.set_bounds(0, 0, 20, 5)
-    view.draw(renderer_stub, 0.0)
+    view.draw(renderer_stub, InterpolationAlpha(0.0))
 
     assert view.canvas is not None
     tb = cast(PillowImageCanvas, view.canvas)

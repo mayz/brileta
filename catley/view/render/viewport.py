@@ -57,13 +57,13 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from catley.environment.map import TileCoord
-from catley.util.coordinates import (
-    Rect,
+from catley.types import (
     ViewportTileCoord,
     ViewportTilePos,
     WorldTileCoord,
     WorldTilePos,
 )
+from catley.util.coordinates import Rect
 
 if TYPE_CHECKING:
     from catley.game.actors import Actor

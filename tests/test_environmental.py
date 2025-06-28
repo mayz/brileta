@@ -3,6 +3,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from catley.game.enums import BlendMode
+from catley.types import DeltaTime
 from catley.util.coordinates import Rect
 from catley.view.render.effects.environmental import (
     EnvironmentalEffect,
@@ -32,10 +33,10 @@ def test_add_effect_and_update_removal() -> None:
     system.add_effect(e1)
     system.add_effect(e2)
     assert len(system.effects) == 2
-    system.update(0.05)
+    system.update(DeltaTime(0.05))
     assert pytest.approx(0.95) == e1.lifetime
     assert pytest.approx(0.05) == e2.lifetime
-    system.update(0.1)
+    system.update(DeltaTime(0.1))
     assert len(system.effects) == 1
     assert system.effects[0] is e1
 
@@ -46,7 +47,7 @@ def test_render_effects_culling_and_intensity() -> None:
         (1.0, 1.0), 1.0, "flash", 1.0, 2.0, (100, 100, 100), BlendMode.REPLACE
     )
     system.add_effect(e)
-    system.update(1.0)
+    system.update(DeltaTime(1.0))
     renderer = MagicMock()
     viewport = Rect.from_bounds(0, 0, 2, 2)
     system.render_effects(renderer, viewport, (0, 0))

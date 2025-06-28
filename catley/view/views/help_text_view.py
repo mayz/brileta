@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from catley import colors
+from catley.types import InterpolationAlpha
 from catley.view.render.backends.tcod.canvas import TCODConsoleCanvas
 
 from .base import TextView
@@ -25,7 +26,7 @@ class HelpTextView(TextView):
         player = self.controller.gw.player
         return self.controller.gw.has_pickable_items_at_location(player.x, player.y)
 
-    def draw_content(self, renderer: Renderer, alpha: float) -> None:
+    def draw_content(self, renderer: Renderer, alpha: InterpolationAlpha) -> None:
         """Render a short string with helpful key bindings."""
 
         tile_w, tile_h = self.tile_dimensions
