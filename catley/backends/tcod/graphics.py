@@ -86,6 +86,13 @@ class TCODGraphicsContext(GraphicsContext):
         )
         self._tileset = context.sdl_atlas.tileset if context.sdl_atlas else None
 
+    def get_render_destination_rect(self) -> tuple[int, int, int, int]:
+        """
+        Returns the destination rectangle for the main console texture,
+        accounting for letterboxing or pillarboxing.
+        """
+        return self._get_letterbox_geometry().dest_rect
+
     def _get_letterbox_geometry(self) -> LetterboxGeometry:
         """Calculates letterbox/pillarbox geometry (single source of truth)."""
         renderer_width, renderer_height = self.sdl_renderer.output_size
@@ -437,25 +444,6 @@ class TCODGraphicsContext(GraphicsContext):
 
         texture.color_mod = (255, 255, 255)
         texture.alpha_mod = 255
-
-    ################################################################################
-    # FIXME: Move into catley.backends.tcod.app.TCODApp.
-    ################################################################################
-    def prepare_to_present(self) -> None:
-        """Converts the root console to a texture and copies it to the backbuffer."""
-        self.root_console.clear()
-        console_texture = self.console_render.render(self.root_console)
-        self.sdl_renderer.clear()
-
-        geometry = self._get_letterbox_geometry()
-        self.sdl_renderer.copy(console_texture, dest=geometry.dest_rect)
-
-    ################################################################################
-    # FIXME: Move into catley.backends.tcod.app.TCODApp.
-    ################################################################################
-    def finalize_present(self) -> None:
-        """Presents the backbuffer to the screen."""
-        self.sdl_renderer.present()
 
     def update_dimensions(self) -> None:
         """Update coordinate converter when window dimensions change."""

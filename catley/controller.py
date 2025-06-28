@@ -38,18 +38,32 @@ from .view.ui.overlays import OverlaySystem
 
 class Controller:
     """
-    FIXME: Update docstring to reflect new architecture.
+    The central coordinator of the game's logic, state, and subsystems.
 
-    Orchestrates the main game loop using the Reactive Actor Framework (RAF).
+    Orchestrates the main application flow by managing a fixed-timestep game loop with
+    interpolation. This architecture ensures two key things:
 
-    The Controller operates as a lightweight dispatcher with a simple 4-step loop:
-    1. Process player input immediately (zero-latency responsiveness)
-    2. Process one pending NPC action per frame (smooth world reactions)
-    3. Update animations (simultaneous, interruptible visual feedback)
-    4. Render frame (consistent visual output)
+    - Deterministic Game Logic: All game state updates (NPC actions, status effects,
+      etc.) occur in discrete, fixed-duration steps (e.g., 60 times per second). This
+      makes the simulation predictable and independent of the rendering speed or
+      hardware performance.
+    - Smooth Visuals: Rendering happens as fast as the hardware allows (up to a target
+      FPS cap), and is decoupled from the logic rate. Smooth animations and movement
+      are achieved by interpolating object positions and states between the last logic
+      step and the current one.
 
-    This architecture eliminates the complex state machine in favor of immediate
-    player action processing while maintaining fair energy economy for NPCs.
+    Key Responsibilities:
+    - Loop Management: Owns the game clock and uses an "accumulator" to manage the
+      fixed-timestep loop, dispatching calls to `update_logic_step`.
+    - System Orchestration: Initializes and holds references to all major subsystems,
+      including the `GameWorld` (model), `FrameManager` (view), `InputHandler`, and
+      `TurnManager`.
+    - Input Processing: Immediately processes player input intents each frame to ensure
+      zero-latency responsiveness, separate from the fixed logic loop.
+    - Mode Management: Controls the active game mode (e.g., normal, targeting) which
+      alters player input and rendering.
+    - Factory for Core Systems: Provides factory methods for creating essential game
+      systems like `ResolutionSystem`.
     """
 
     def __init__(self, app: App, graphics: GraphicsContext) -> None:

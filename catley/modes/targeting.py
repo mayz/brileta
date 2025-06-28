@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import tcod.event
-from tcod.console import Console
 
 from catley.events import ActorDeathEvent, subscribe_to_event, unsubscribe_from_event
 from catley.game import ranges
@@ -115,15 +114,6 @@ class TargetingMode(Mode):
                 return True
 
         return False
-
-    def render_ui(self, console: Console) -> None:
-        """Render mode-specific UI. Handled by TargetingIndicatorOverlay.
-
-        This method is intentionally empty. The UI for this mode (the
-        "[ TARGETING ]" text) was refactored into a dedicated, non-interactive
-        Overlay for better separation of concerns and layout management.
-        """
-        pass
 
     def render_world(self) -> None:
         """Render targeting highlights in world space"""

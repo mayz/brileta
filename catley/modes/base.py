@@ -23,7 +23,6 @@ import abc
 from typing import TYPE_CHECKING
 
 import tcod.event
-from tcod.console import Console
 
 from catley.game.actors import Character
 
@@ -66,16 +65,6 @@ class Mode(abc.ABC):
 
         Return True if the event was consumed, preventing it from being
         processed by overlays or the main input handler.
-        """
-        pass
-
-    @abc.abstractmethod
-    def render_ui(self, console: Console) -> None:
-        """Render UI elements on the root console, outside the world view.
-
-        Use this for status text or instructions related to the mode.
-        If a mode's UI needs become complex or interactive, consider using a
-        dedicated Overlay instead.
         """
         pass
 

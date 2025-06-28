@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tcod
 import tcod.sdl.mouse
+import tcod.sdl.render
 from tcod.console import Console
 from tcod.sdl.video import WindowFlags
 
@@ -65,6 +66,8 @@ class TCODApp:
             vsync=app_config.vsync,
             sdl_window_flags=sdl_flags,
         )
+
+        self.sdl_renderer: tcod.sdl.render.Renderer = self.tcod_context.sdl_renderer  # type: ignore[assignment]
 
         # Create the graphics context
         self.graphics = TCODGraphicsContext(
@@ -172,9 +175,14 @@ class TCODApp:
         # 1. Perform the resize logic using objects the App owns.
         sdl_window = self.tcod_context.sdl_window
         if sdl_window is not None:
+            # This logic can be more sophisticated, but for now, this works.
+            # A better approach might be to not force a size but to let letterboxing
+            # handle it.
             ASPECT_RATIO = 8 / 5
             new_width = event.width
             new_height = int(new_width / ASPECT_RATIO)
+            # Might want to remove this line to allow free resizing
+            # and let letterboxing handle the aspect ratio.
             sdl_window.size = new_width, new_height
 
         # 2. Notify the other components that need to know about the change.
@@ -185,15 +193,23 @@ class TCODApp:
 
     def prepare_for_new_frame(self) -> None:
         """Prepares the backbuffer for a new frame of rendering."""
-        # FIXME: Get rid of the prepare_to_present() method in TCODGraphicsContext and
-        #        move that code here.
-        self.graphics.prepare_to_present()
+        # It's the App's responsibility to manage the main render target.
+        self.root_console.clear()  # Clear the console that views will draw ON.
+        console_texture = self.graphics.texture_from_console(
+            self.root_console, transparent=False
+        )
+        self.sdl_renderer.clear()  # Clear the window backbuffer.
+
+        # Get the destination rect from the graphics context
+        dest_rect = self.graphics.get_render_destination_rect()
+
+        # Blit the (now cleared) root console texture to its letterboxed position.
+        # This sets up the black background for the frame.
+        self.sdl_renderer.copy(console_texture, dest=dest_rect)
 
     def present_frame(self) -> None:
         """Presents the fully rendered backbuffer to the screen."""
-        # FIXME: Get rid of the finalize_present() method in TCODGraphicsContext and
-        #        move that code here.
-        self.graphics.finalize_present()
+        self.sdl_renderer.present()
 
     def toggle_fullscreen(self) -> None:
         """Toggles the display between windowed and fullscreen mode."""

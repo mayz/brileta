@@ -16,10 +16,9 @@ Key Responsibilities:
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from catley import config
-from catley.backends.tcod.graphics import TCODGraphicsContext
 from catley.config import (
     HELP_HEIGHT,
 )
@@ -269,15 +268,6 @@ class FrameManager:
         for view in self.views:
             if view.visible:
                 view.draw(self.graphics, alpha)
-
-        # Allow any active mode to render its additional UI
-        if self.controller.active_mode:
-            # FIXME: This needs to be adapted. It can't assume a TCOD console.
-            # A better way would be for the mode to have its own canvas,
-            # which gets drawn like any other overlay.
-            # For now, we accept this as technical debt.
-            tcod_graphics = cast(TCODGraphicsContext, self.graphics)
-            self.controller.active_mode.render_ui(tcod_graphics.root_console)
 
         # Views may render overlays like FPS after game UI.
 
