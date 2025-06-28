@@ -6,8 +6,8 @@ from pyglet.shapes import BorderedRectangle, Rectangle
 from pyglet.text import Label
 
 from catley import config
+from catley.backends.pyglet.renderer import PygletObjectPool
 from catley.util.coordinates import PixelCoord, TileCoord
-from catley.view.render.backends.pyglet.renderer import PygletObjectPool
 from catley.view.render.canvas import Canvas
 
 

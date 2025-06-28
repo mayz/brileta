@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from catley.game.actions.discovery import CombatIntentCache
 
 from . import colors, config
+from .backends.tcod.renderer import TCODRenderer
 from .events import MessageEvent, publish_event
 from .game.actions.base import GameIntent
 from .game.actions.types import AnimationType
@@ -34,7 +35,6 @@ from .util.message_log import MessageLog
 from .util.pathfinding import find_path
 from .view.animation import AnimationManager
 from .view.frame_manager import FrameManager
-from .view.render.backends.tcod.renderer import TCODRenderer
 from .view.render.lighting.cpu import CPULightingSystem
 from .view.render.renderer import Renderer
 from .view.ui.overlays import OverlaySystem

@@ -103,7 +103,7 @@ class TestWorldViewLightOverlay:
 
             # Mock TCOD renderer
             with patch(
-                "catley.view.render.backends.tcod.renderer.TCODRenderer"
+                "catley.backends.tcod.renderer.TCODRenderer"
             ) as mock_tcod_renderer_class:
                 mock_tcod_renderer = Mock()
                 mock_tcod_renderer_class.return_value = mock_tcod_renderer
@@ -178,7 +178,7 @@ class TestWorldViewLightOverlay:
             mock_console.rgba = console_rgba
 
             with patch(
-                "catley.view.render.backends.tcod.renderer.TCODRenderer"
+                "catley.backends.tcod.renderer.TCODRenderer"
             ) as mock_tcod_renderer_class:
                 mock_tcod_renderer = Mock()
                 mock_tcod_renderer_class.return_value = mock_tcod_renderer

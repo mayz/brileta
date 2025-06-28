@@ -5,9 +5,9 @@ from typing import TYPE_CHECKING
 from tcod.sdl.render import Texture
 
 from catley import colors
+from catley.backends.pillow.canvas import PillowImageCanvas
 from catley.types import InterpolationAlpha
 from catley.util.caching import ResourceCache
-from catley.view.render.backends.pillow.canvas import PillowImageCanvas
 from catley.view.render.renderer import Renderer
 
 from .base import TextView

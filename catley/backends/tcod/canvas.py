@@ -29,7 +29,7 @@ class TCODConsoleCanvas(Canvas):
     def create_texture(self, renderer: Renderer, artifact: Any) -> Any:
         """Creates a backend-specific texture from this canvas's artifact."""
         # This import is here to avoid a circular dependency.
-        from catley.view.render.backends.tcod.renderer import TCODRenderer
+        from catley.backends.tcod.renderer import TCODRenderer
 
         # We need to cast the renderer to access its TCOD-specific method.
         # This is acceptable because this canvas is TCOD-specific.

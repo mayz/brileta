@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 import tcod.event
 
 from catley import colors
-from catley.view.render.backends.tcod.canvas import TCODConsoleCanvas
+from catley.backends.tcod.canvas import TCODConsoleCanvas
 from catley.view.ui.overlays import TextOverlay
 
 if TYPE_CHECKING:

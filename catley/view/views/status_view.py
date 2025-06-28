@@ -5,9 +5,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from catley import colors
+from catley.backends.tcod.canvas import TCODConsoleCanvas
 from catley.game.actors import Character, Condition, StatusEffect
 from catley.types import InterpolationAlpha
-from catley.view.render.backends.tcod.canvas import TCODConsoleCanvas
 from catley.view.render.renderer import Renderer
 
 from .base import TextView

@@ -10,9 +10,9 @@ import tcod.sdl.render
 import tcod.sdl.video
 
 from catley import colors
+from catley.backends.pillow.canvas import PillowImageCanvas
 from catley.types import InterpolationAlpha
 from catley.util.message_log import MessageLog
-from catley.view.render.backends.pillow.canvas import PillowImageCanvas
 from catley.view.render.renderer import Renderer
 from catley.view.views.message_log_view import MessageLogView
 

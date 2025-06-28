@@ -5,13 +5,13 @@ from typing import Any, cast
 import tcod.event
 
 from catley import colors
+from catley.backends.tcod.renderer import TCODRenderer
 from catley.controller import Controller
 from catley.environment import tile_types
 from catley.game.actors import Character
 from catley.game.game_world import GameWorld
 from catley.game.turn_manager import TurnManager
 from catley.util.coordinates import RootConsoleTilePos
-from catley.view.render.backends.tcod.renderer import TCODRenderer
 from catley.view.ui.context_menu import ContextMenu
 from tests.helpers import DummyGameWorld
 from tests.test_canvases import _make_renderer

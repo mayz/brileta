@@ -3,9 +3,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from catley import colors
+from catley.backends.tcod.canvas import TCODConsoleCanvas
 from catley.constants.view import ViewConstants as View
 from catley.types import InterpolationAlpha
-from catley.view.render.backends.tcod.canvas import TCODConsoleCanvas
 from catley.view.render.renderer import Renderer
 
 from .base import TextView

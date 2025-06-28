@@ -19,6 +19,7 @@ import time
 from typing import TYPE_CHECKING, cast
 
 from catley import config
+from catley.backends.tcod.renderer import TCODRenderer
 from catley.config import (
     HELP_HEIGHT,
 )
@@ -36,7 +37,6 @@ from catley.types import (
 )
 from catley.util.live_vars import live_variable_registry
 
-from .render.backends.tcod.renderer import TCODRenderer
 from .render.effects.effects import EffectContext
 from .render.effects.screen_shake import ScreenShake
 from .render.renderer import Renderer

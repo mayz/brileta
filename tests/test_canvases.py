@@ -1,8 +1,8 @@
 from unittest.mock import MagicMock
 
 from catley import colors
-from catley.view.render.backends.pillow.canvas import PillowImageCanvas
-from catley.view.render.backends.tcod.canvas import TCODConsoleCanvas
+from catley.backends.pillow.canvas import PillowImageCanvas
+from catley.backends.tcod.canvas import TCODConsoleCanvas
 from catley.view.render.renderer import Renderer
 
 

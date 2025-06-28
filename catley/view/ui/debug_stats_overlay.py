@@ -5,8 +5,8 @@ from typing import TYPE_CHECKING
 import tcod.event
 
 from catley import colors
+from catley.backends.tcod.canvas import TCODConsoleCanvas
 from catley.util.live_vars import live_variable_registry
-from catley.view.render.backends.tcod.canvas import TCODConsoleCanvas
 from catley.view.ui.overlays import TextOverlay
 
 if TYPE_CHECKING:  # pragma: no cover - for type checking only

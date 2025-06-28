@@ -5,10 +5,10 @@ import pyglet
 from pyglet.window import Window
 
 from catley import colors, config
+from catley.backends.pyglet.canvas import PygletCanvas
+from catley.backends.pyglet.renderer import PygletRenderer
 from catley.types import DeltaTime, Opacity
 from catley.util.coordinates import Rect
-from catley.view.render.backends.pyglet.canvas import PygletCanvas
-from catley.view.render.backends.pyglet.renderer import PygletRenderer
 from catley.view.render.effects.effects import EffectContext, EffectLibrary
 from catley.view.render.effects.environmental import EnvironmentalEffectSystem
 from catley.view.render.effects.particles import ParticleLayer, SubTileParticleSystem
