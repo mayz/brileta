@@ -135,16 +135,15 @@ class WorldView(View):
             vs.offset_y,
         )
 
-        map_key = gw.game_map.revision
+        map_key = gw.game_map.structural_revision
 
         # The background cache must be invalidated whenever the player moves,
         # because movement updates the `explored` map, which changes the appearance
-        # of the unlit background. The lighting system's revision is a perfect,
-        # lightweight proxy for player movement, as it increments every time the
-        # player's torch moves.
-        lighting_key = gw.lighting_system.revision if gw.lighting_system else 0
+        # of the unlit background. The new `exploration_revision` is the direct
+        # source of truth for this.
+        exploration_key = gw.game_map.exploration_revision
 
-        return (camera_key, map_key, lighting_key)
+        return (camera_key, map_key, exploration_key)
 
     def draw(self, renderer: Renderer, alpha: float) -> None:
         """Main drawing method for the world view."""

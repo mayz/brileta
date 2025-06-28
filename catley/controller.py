@@ -146,6 +146,7 @@ class Controller:
 
         # If a tile is "visible" it should be added to "explored"
         self.gw.game_map.explored |= self.gw.game_map.visible
+        self.gw.game_map.exploration_revision += 1
 
     def _register_live_variables(self) -> None:
         """Register all performance monitoring metrics with live variable registry."""

@@ -260,6 +260,7 @@ class CPULightingSystem(LightingSystem):
         self._lighting_cache.clear()
         if light.is_static():
             self._static_light_cache.clear()
+        self.revision += 1
 
     def on_light_removed(self, light: LightSource) -> None:
         """Handle notification that a light has been removed.
@@ -271,6 +272,7 @@ class CPULightingSystem(LightingSystem):
         self._lighting_cache.clear()
         if light.is_static():
             self._static_light_cache.clear()
+        self.revision += 1
 
     def on_light_moved(self, light: LightSource) -> None:
         """Handle notification that a light has moved.
@@ -283,6 +285,7 @@ class CPULightingSystem(LightingSystem):
         if light.is_static():
             # Static lights shouldn't move by definition, but clear cache if they do
             self._static_light_cache.clear()
+        self.revision += 1
 
     def _get_static_cache_key(self, viewport_bounds: Rect) -> tuple:
         """Generate a cache key for the static light layer.
