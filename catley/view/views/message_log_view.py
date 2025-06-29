@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-from tcod.sdl.render import Texture
+from typing import TYPE_CHECKING, Any
 
 from catley import colors
 from catley.backends.pillow.canvas import PillowImageCanvas
@@ -31,7 +29,7 @@ class MessageLogView(TextView):
 
         # Override the cache from the base class,
         # as this view requires a more complex, tuple-based key.
-        self._texture_cache = ResourceCache[tuple, Texture](
+        self._texture_cache = ResourceCache[tuple, Any](
             name=f"{self.__class__.__name__}Render", max_size=1
         )
 

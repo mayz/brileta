@@ -19,8 +19,7 @@ import abc
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-import tcod
-import tcod.sdl.render
+import tcod.event
 
 from catley import colors
 from catley.backends.tcod.canvas import TCODConsoleCanvas
@@ -81,7 +80,7 @@ class TextOverlay(Overlay):
     def __init__(self, controller: Controller) -> None:
         super().__init__(controller)
         self.canvas = None
-        self._cached_texture: tcod.sdl.render.Texture | None = None
+        self._cached_texture: Any | None = None
         self.x_tiles, self.y_tiles, self.width, self.height = 0, 0, 0, 0
         self.pixel_width, self.pixel_height = 0, 0
         self.tile_dimensions = (

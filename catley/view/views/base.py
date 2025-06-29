@@ -19,8 +19,6 @@ of rendering, making the system more modular and maintainable.
 import abc
 from typing import Any
 
-import tcod.sdl.render
-
 from catley.types import InterpolationAlpha
 from catley.util.caching import ResourceCache
 from catley.view.render.canvas import Canvas
@@ -33,7 +31,7 @@ class View(abc.ABC):
     Views are always visible and show continuously updated game info.
     Positioned by FrameManager, rendered every frame.
 
-    Two phases: draw() for console rendering, present() for SDL effects.
+    Two phases: draw() for console rendering, present() for effects.
     """
 
     def __init__(self) -> None:
@@ -97,7 +95,7 @@ class TextView(View):
         super().__init__()
         # Each view gets its own tiny cache. max_size=1 is perfect
         # for views that only ever need to cache their most recent state.
-        self._texture_cache = ResourceCache[Any, tcod.sdl.render.Texture](
+        self._texture_cache = ResourceCache[Any, Any](
             name=self.__class__.__name__, max_size=1
         )
 

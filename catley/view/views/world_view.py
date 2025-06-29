@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import math
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
-import tcod.sdl.render
 from tcod.console import Console
 
 from catley import colors, config
@@ -71,11 +70,11 @@ class WorldView(View):
         self.environmental_system = EnvironmentalEffectSystem()
         self.effect_library = EffectLibrary()
         self.current_light_intensity: np.ndarray | None = None
-        self._texture_cache = ResourceCache[tuple, tcod.sdl.render.Texture](
+        self._texture_cache = ResourceCache[tuple, Any](
             name="WorldViewCache", max_size=5
         )
-        self._active_background_texture: tcod.sdl.render.Texture | None = None
-        self._light_overlay_texture: tcod.sdl.render.Texture | None = None
+        self._active_background_texture: Any | None = None
+        self._light_overlay_texture: Any | None = None
 
     def set_bounds(self, x1: int, y1: int, x2: int, y2: int) -> None:
         """Override set_bounds to update viewport and console dimensions."""
@@ -522,9 +521,7 @@ class WorldView(View):
         self.controller.gw.mouse_tile_location_on_map = world_tile_pos
 
     @record_time_live_variable("cpu.render.light_overlay_ms")
-    def _render_light_overlay(
-        self, graphics: GraphicsContext
-    ) -> tcod.sdl.render.Texture | None:
+    def _render_light_overlay(self, graphics: GraphicsContext) -> Any | None:
         """Render pure light world overlay with GPU alpha blending."""
         if self.lighting_system is None:
             return None
