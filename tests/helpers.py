@@ -204,6 +204,9 @@ def get_controller_with_player_and_map() -> Controller:
         def texture_from_console(self, *_a, **_kw):
             return None
 
+        def render_glyph_buffer_to_texture(self, *_a, **_kw):
+            return None
+
         def texture_from_numpy(self, *_a, **_kw):
             return None
 

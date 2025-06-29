@@ -8,7 +8,7 @@ def test_glyph_buffer_init():
     buf = GlyphBuffer(10, 5)
     assert buf.width == 10
     assert buf.height == 5
-    assert buf.data.shape == (5, 10)
+    assert buf.data.shape == (10, 5)
     assert buf.data.dtype == GLYPH_DTYPE
 
 
@@ -66,9 +66,9 @@ def test_print_basic():
     buf = GlyphBuffer(10, 1)
     fg = (255, 255, 255, 255)
     buf.print(0, 0, "test", fg)
-    assert "".join(chr(c) for c in buf.data[0, 0:4]["ch"]) == "test"
+    assert "".join(chr(c) for c in buf.data[0:4, 0]["ch"]) == "test"
     for i in range(4):
-        np.testing.assert_array_equal(buf.data[0, i]["fg"], fg)
+        np.testing.assert_array_equal(buf.data[i, 0]["fg"], fg)
 
 
 def test_print_with_bg():
@@ -76,10 +76,10 @@ def test_print_with_bg():
     fg = (255, 255, 255, 255)
     bg = (128, 0, 128, 255)
     buf.print(0, 0, "test", fg, bg)
-    assert "".join(chr(c) for c in buf.data[0, 0:4]["ch"]) == "test"
+    assert "".join(chr(c) for c in buf.data[0:4, 0]["ch"]) == "test"
     for i in range(4):
-        np.testing.assert_array_equal(buf.data[0, i]["fg"], fg)
-        np.testing.assert_array_equal(buf.data[0, i]["bg"], bg)
+        np.testing.assert_array_equal(buf.data[i, 0]["fg"], fg)
+        np.testing.assert_array_equal(buf.data[i, 0]["bg"], bg)
 
 
 def test_print_off_screen():
@@ -93,14 +93,14 @@ def test_print_truncate_right():
     buf = GlyphBuffer(5, 1)
     fg = (255, 255, 255, 255)
     buf.print(3, 0, "hello", fg)
-    assert "".join(chr(c) for c in buf.data[0, 3:5]["ch"]) == "he"
+    assert "".join(chr(c) for c in buf.data[3:5, 0]["ch"]) == "he"
 
 
 def test_print_truncate_left():
     buf = GlyphBuffer(5, 1)
     fg = (255, 255, 255, 255)
     buf.print(-2, 0, "hello", fg)
-    assert "".join(chr(c) for c in buf.data[0, 0:3]["ch"]) == "llo"
+    assert "".join(chr(c) for c in buf.data[0:3, 0]["ch"]) == "llo"
 
 
 def test_print_empty_string():
@@ -118,21 +118,21 @@ def test_draw_frame():
 
     # Check corners
     assert buf.data[1, 1]["ch"] == 218  # Top-left
-    assert buf.data[1, 8]["ch"] == 191  # Top-right
-    assert buf.data[6, 1]["ch"] == 192  # Bottom-left
-    assert buf.data[6, 8]["ch"] == 217  # Bottom-right
+    assert buf.data[8, 1]["ch"] == 191  # Top-right
+    assert buf.data[1, 6]["ch"] == 192  # Bottom-left
+    assert buf.data[8, 6]["ch"] == 217  # Bottom-right
 
     # Check borders
-    assert all(c == 196 for c in buf.data[1, 2:8]["ch"])  # Top
-    assert all(c == 196 for c in buf.data[6, 2:8]["ch"])  # Bottom
-    assert all(c == 179 for c in buf.data[2:6, 1]["ch"])  # Left
-    assert all(c == 179 for c in buf.data[2:6, 8]["ch"])  # Right
+    assert all(c == 196 for c in buf.data[2:8, 1]["ch"])  # Top
+    assert all(c == 196 for c in buf.data[2:8, 6]["ch"])  # Bottom
+    assert all(c == 179 for c in buf.data[1, 2:6]["ch"])  # Left
+    assert all(c == 179 for c in buf.data[8, 2:6]["ch"])  # Right
 
     # Check background and foreground
     for y in range(1, 7):
         for x in range(1, 9):
-            np.testing.assert_array_equal(buf.data[y, x]["bg"], bg)
-            np.testing.assert_array_equal(buf.data[y, x]["fg"], fg)
+            np.testing.assert_array_equal(buf.data[x, y]["bg"], bg)
+            np.testing.assert_array_equal(buf.data[x, y]["fg"], fg)
 
 
 def test_draw_frame_with_title():
@@ -143,7 +143,7 @@ def test_draw_frame_with_title():
     buf.draw_frame(2, 2, 16, 8, fg, bg, title=title)
 
     # Title text should be inverted fg/bg
-    title_slice = buf.data[2, 4 : 4 + len(title) + 2]
+    title_slice = buf.data[4 : 4 + len(title) + 2, 2]
     assert "".join(chr(c) for c in title_slice["ch"]) == f" {title} "
     for cell in title_slice:
         np.testing.assert_array_equal(cell["fg"], bg)
@@ -158,8 +158,8 @@ def test_draw_frame_clipping():
 
     # Check that it drew a clipped frame
     assert buf.data[3, 3]["ch"] == 218
-    assert buf.data[3, 4]["ch"] == 191
-    assert buf.data[4, 3]["ch"] == 192
+    assert buf.data[4, 3]["ch"] == 191
+    assert buf.data[3, 4]["ch"] == 192
     assert buf.data[4, 4]["ch"] == 217
 
 
@@ -172,7 +172,7 @@ def test_draw_frame_no_clear():
     buf.draw_frame(2, 2, 6, 6, fg, bg, clear=False)
 
     # Check that the text is still there
-    assert "".join(chr(c) for c in buf.data[4, 3:7]["ch"]) == "test"
+    assert "".join(chr(c) for c in buf.data[3:7, 4]["ch"]) == "test"
 
     # Check that the border was drawn
     assert buf.data[2, 2]["ch"] == 218

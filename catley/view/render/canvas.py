@@ -10,7 +10,7 @@ Key Principles:
   visual content for a single frame.
 - It is stateless between frames. A new frame begins with a `begin_frame()` call.
 - The `end_frame()` method processes the recorded commands and produces an
-  intermediate "artifact" (e.g., a `tcod.Console` object or a NumPy array of
+  intermediate "artifact" (e.g., a `GlyphBuffer` object or a NumPy array of
   pixels).
 - This artifact is then passed to the `Renderer` to be converted into a final
   texture for display.
@@ -90,7 +90,7 @@ class Canvas(ABC):
         """Prepare backend for a new frame."""
         self._frame_ops = []
 
-    def end_frame(self):
+    def end_frame(self) -> Any | None:
         """Finalize the frame and return intermediate artifact."""
         # Check if frame content changed
         if self._should_rerender():

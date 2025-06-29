@@ -35,6 +35,7 @@ from catley.types import (
     TileDimensions,
 )
 from catley.util.coordinates import CoordinateConverter, Rect
+from catley.util.glyph_buffer import GlyphBuffer
 from catley.view.render.effects.particles import ParticleLayer, SubTileParticleSystem
 
 if TYPE_CHECKING:
@@ -57,6 +58,20 @@ class GraphicsContext(abc.ABC):
     @property
     @abc.abstractmethod
     def console_height_tiles(self) -> int:
+        pass
+
+    @abc.abstractmethod
+    def render_glyph_buffer_to_texture(self, glyph_buffer: GlyphBuffer) -> Any:
+        """
+        Takes a GlyphBuffer scene description and renders it to a new,
+        backend-specific texture object.
+
+        This is potentially an expensive operation, and the result should be
+        cached by the caller if it will be used across multiple frames.
+
+        Returns:
+            An opaque texture handle of a backend-specific type.
+        """
         pass
 
     @abc.abstractmethod

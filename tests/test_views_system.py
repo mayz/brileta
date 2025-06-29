@@ -76,6 +76,7 @@ class TestWorldViewBoundaryEnforcement:
         self.mock_screen_shake.update.return_value = (0, 0)  # No shake
 
         self.mock_renderer = Mock()
+        self.mock_renderer.render_glyph_buffer_to_texture.return_value = "mock_texture"
 
         # Create view
         self.view = WorldView(self.mock_controller, self.mock_screen_shake)
@@ -99,7 +100,7 @@ class TestWorldViewBoundaryEnforcement:
         self.view.draw(self.mock_renderer, InterpolationAlpha(0.0))
 
         # Verify texture caching was used instead of blit_console
-        self.mock_renderer.texture_from_console.assert_called_once()
+        self.mock_renderer.render_glyph_buffer_to_texture.assert_called_once()
         assert self.view._active_background_texture is not None
 
     def test_world_view_with_screen_shake_stays_in_bounds(self):
@@ -124,7 +125,7 @@ class TestWorldViewBoundaryEnforcement:
         self.view.draw(self.mock_renderer, InterpolationAlpha(0.0))
 
         # Verify texture caching was used instead of blit_console
-        self.mock_renderer.texture_from_console.assert_called_once()
+        self.mock_renderer.render_glyph_buffer_to_texture.assert_called_once()
         assert self.view._active_background_texture is not None
 
     def test_world_view_skips_draw_when_invisible(self):

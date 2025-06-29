@@ -21,10 +21,9 @@ from catley import colors
 # Defines the structure for the visual appearance of a tile type.
 # Used within TileTypeData for 'dark' and 'light' states.
 #
-# This is the exact structure that TCOD's Console.tiles_rgb expects.
-# It *must* match this exact format, or rendering will break.
-# Console.tiles_rgb[x, y] expects exactly:
-#   (character_code, [r,g,b], [r,g,b])
+# This structure is designed to be backend-agnostic and compatible with
+# GlyphBuffer. The RGB values are converted to RGBA as needed during
+# rendering (typically adding full alpha=255).
 TileTypeAppearance = np.dtype(
     [
         ("ch", np.int32),  # Character code (e.g., ord('@'))

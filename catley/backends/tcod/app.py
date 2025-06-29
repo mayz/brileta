@@ -195,7 +195,7 @@ class TCODApp:
         """Prepares the backbuffer for a new frame of rendering."""
         # It's the App's responsibility to manage the main render target.
         self.root_console.clear()  # Clear the console that views will draw ON.
-        console_texture = self.graphics.texture_from_console(
+        console_texture = self.graphics._texture_from_console(
             self.root_console, transparent=False
         )
         self.sdl_renderer.clear()  # Clear the window backbuffer.

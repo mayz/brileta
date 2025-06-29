@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import math
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
-from tcod.console import Console
 
 from catley import colors, config
 from catley.config import (
@@ -20,6 +19,7 @@ from catley.util.coordinates import (
     Rect,
     RootConsoleTilePos,
 )
+from catley.util.glyph_buffer import GlyphBuffer
 from catley.util.live_vars import record_time_live_variable
 from catley.view.render.effects.effects import EffectLibrary
 from catley.view.render.effects.environmental import EnvironmentalEffectSystem
@@ -60,8 +60,8 @@ class WorldView(View):
         )
         # Game map console matches the viewport dimensions rather than the
         # entire map. This keeps rendering fast and memory usage reasonable.
-        self.game_map_console = Console(
-            config.DEFAULT_VIEWPORT_WIDTH, config.DEFAULT_VIEWPORT_HEIGHT, order="F"
+        self.map_glyph_buffer = GlyphBuffer(
+            config.DEFAULT_VIEWPORT_WIDTH, config.DEFAULT_VIEWPORT_HEIGHT
         )
         # Particle system also operates only on the visible viewport area.
         self.particle_system = SubTileParticleSystem(
@@ -82,7 +82,7 @@ class WorldView(View):
         # When the window size changes we recreate the viewport and consoles
         # so that rendering operates on the new visible dimensions.
         self.viewport_system = ViewportSystem(self.width, self.height)
-        self.game_map_console = Console(self.width, self.height, order="F")
+        self.map_glyph_buffer = GlyphBuffer(self.width, self.height)
         self.particle_system = SubTileParticleSystem(self.width, self.height)
         self.environmental_system = EnvironmentalEffectSystem()
 
@@ -179,20 +179,19 @@ class WorldView(View):
             # CACHE MISS: Re-render the static background
             self._render_map_unlit()  # This populates self.game_map_console
 
-            # FIXME: This needs to be adapted.
-            # For now, we accept this as technical debt.
-            from catley.backends.tcod.graphics import TCODGraphicsContext
-
-            tcod_graphics = cast(TCODGraphicsContext, graphics)
-
-            texture = tcod_graphics.texture_from_console(self.game_map_console)
+            texture = graphics.render_glyph_buffer_to_texture(self.map_glyph_buffer)
             self._texture_cache.store(cache_key, texture)
 
         self._active_background_texture = texture
 
-        # Generate the light overlay texture every frame for dynamic effects.
-        if self.lighting_system is not None:
-            self._light_overlay_texture = self._render_light_overlay(graphics)
+        # Generate the light overlay DATA (GlyphBuffer)
+        light_overlay_data = self._render_light_overlay(graphics)
+
+        if light_overlay_data is not None:
+            # Ask the graphics context to turn this DATA into a RENDERABLE TEXTURE
+            self._light_overlay_texture = graphics.render_glyph_buffer_to_texture(
+                light_overlay_data
+            )
         else:
             self._light_overlay_texture = None
 
@@ -283,11 +282,11 @@ class WorldView(View):
         vs = self.viewport_system
 
         # Clear the console for this view to a default black background.
-        self.game_map_console.clear()
+        self.map_glyph_buffer.clear()
 
         # Iterate over every tile in the destination console (the viewport).
-        for vp_y in range(self.game_map_console.height):
-            for vp_x in range(self.game_map_console.width):
+        for vp_y in range(self.map_glyph_buffer.height):
+            for vp_x in range(self.map_glyph_buffer.width):
                 # For each screen tile, find out which world tile it corresponds to.
                 world_x, world_y = vs.screen_to_world(vp_x, vp_y)
 
@@ -301,7 +300,13 @@ class WorldView(View):
                 # If the world tile has been explored, draw its "dark" appearance.
                 if gw.game_map.explored[world_x, world_y]:
                     dark_appearance = gw.game_map.dark_appearance_map[world_x, world_y]
-                    self.game_map_console.rgb[vp_x, vp_y] = dark_appearance
+                    fg_rgba = (*dark_appearance["fg"], 255)
+                    bg_rgba = (*dark_appearance["bg"], 255)
+                    self.map_glyph_buffer.data[vp_x, vp_y] = (
+                        dark_appearance["ch"],
+                        fg_rgba,
+                        bg_rgba,
+                    )
 
     def _render_actors(self) -> None:
         # Traditional actors are now baked into the cache during the draw phase.
@@ -552,8 +557,9 @@ class WorldView(View):
             return None
         # ---------------------------------------------------------------------
 
-        # Create temporary console for the light overlay
-        light_console = Console(self.width, self.height, order="F")
+        # Create a GlyphBuffer for the light overlay.
+        # It's already transparent by default from its own .clear() method.
+        light_glyph_buffer = GlyphBuffer(self.width, self.height)
 
         # Get viewport bounds and calculate world coordinates
         vs = self.viewport_system
@@ -572,9 +578,6 @@ class WorldView(View):
         visible_mask_slice = gw.game_map.visible[world_slice]
         explored_mask_slice = gw.game_map.explored[world_slice]
 
-        # Initialize all tiles to be fully transparent (alpha=0 for both fg and bg)
-        light_console.rgba[:] = (ord(" "), (0, 0, 0, 0), (0, 0, 0, 0))
-
         if np.any(explored_mask_slice):
             # Get pure light appearance for overlay
             light_app_slice = gw.game_map.light_appearance_map[world_slice]
@@ -585,9 +588,10 @@ class WorldView(View):
                 (*explored_mask_slice.shape, 3), dtype=np.float32
             )
             # Set intensity for visible areas only
-            explored_light_intensities[visible_mask_slice] = (
-                self.current_light_intensity[visible_mask_slice]
-            )
+            if np.any(visible_mask_slice):
+                explored_light_intensities[visible_mask_slice] = (
+                    self.current_light_intensity[visible_mask_slice]
+                )
 
             # Map world coordinates to viewport coordinates for all explored tiles
             exp_x, exp_y = np.nonzero(explored_mask_slice)
@@ -610,9 +614,18 @@ class WorldView(View):
                 light_chars = light_app_slice["ch"][
                     exp_x[valid_mask], exp_y[valid_mask]
                 ]
-                light_fg = light_app_slice["fg"][exp_x[valid_mask], exp_y[valid_mask]]
-                light_bg = light_app_slice["bg"][exp_x[valid_mask], exp_y[valid_mask]]
-                dark_bg = gw.game_map.dark_appearance_map[world_slice]["bg"][
+
+                # light_app_slice['fg'] is (N, 3) RGB. Convert to (N, 4) RGBA.
+                light_fg_rgb = light_app_slice["fg"][
+                    exp_x[valid_mask], exp_y[valid_mask]
+                ]
+                alpha_channel = np.full((len(light_fg_rgb), 1), 255, dtype=np.uint8)
+                light_fg_rgba = np.hstack((light_fg_rgb, alpha_channel))
+
+                light_bg_rgb = light_app_slice["bg"][
+                    exp_x[valid_mask], exp_y[valid_mask]
+                ]
+                dark_bg_rgb = gw.game_map.dark_appearance_map[world_slice]["bg"][
                     exp_x[valid_mask], exp_y[valid_mask]
                 ]
 
@@ -623,31 +636,25 @@ class WorldView(View):
 
                 # --- exact CPU blend to match pre-refactor appearance ---
                 # light_intensity_valid shape: (N, 3) already carries warm torch colours
-                scaled_bg = (
-                    light_bg.astype(np.float32) * light_intensity_valid
-                    + dark_bg.astype(np.float32) * (1.0 - light_intensity_valid)
+                scaled_bg_rgb = (
+                    light_bg_rgb.astype(np.float32) * light_intensity_valid
+                    + dark_bg_rgb.astype(np.float32) * (1.0 - light_intensity_valid)
                 ).astype(np.uint8)
-                alpha_values = np.full(
-                    len(scaled_bg), 255, dtype=np.uint8
-                )  # fully opaque
 
-                # Fully vectorized assignment to RGBA console
-                light_console.rgba["ch"][final_vp_x, final_vp_y] = light_chars
-                light_console.rgba["fg"][final_vp_x, final_vp_y] = np.column_stack(
-                    (
-                        light_fg,
-                        np.full(len(alpha_values), 255, dtype=np.uint8),  # opaque FG
-                    )
-                )
-                light_console.rgba["bg"][final_vp_x, final_vp_y] = np.column_stack(
-                    (scaled_bg, alpha_values)  # RGB already pre-multiplied by alpha
-                )
+                # Combine scaled BG with a full alpha channel to get RGBA
+                bg_rgba = np.hstack((scaled_bg_rgb, alpha_channel))
 
-        # Convert console to texture with alpha blending
-        from catley.backends.tcod.graphics import TCODGraphicsContext
+                # Now, do the vectorized assignment to the GlyphBuffer.
+                # The mask is for (width, height) indexing with XY coordinates.
+                final_mask_T = np.zeros((self.width, self.height), dtype=bool)
+                final_mask_T[final_vp_x, final_vp_y] = True
 
-        tcod_graphics = cast(TCODGraphicsContext, graphics)
-        return tcod_graphics.texture_from_console(light_console, transparent=True)
+                light_glyph_buffer.data["ch"][final_mask_T] = light_chars
+                light_glyph_buffer.data["fg"][final_mask_T] = light_fg_rgba
+                light_glyph_buffer.data["bg"][final_mask_T] = bg_rgba
+
+        # Return the populated GlyphBuffer. The caller is responsible for rendering it.
+        return light_glyph_buffer
 
     def _apply_pulsating_effect(
         self, input_color: colors.Color, base_actor_color: colors.Color

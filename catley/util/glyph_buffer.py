@@ -30,7 +30,7 @@ class GlyphBuffer:
             raise ValueError("Width and height must be positive.")
         self.width = width
         self.height = height
-        self.data: np.ndarray = np.zeros((height, width), dtype=GLYPH_DTYPE)
+        self.data: np.ndarray = np.zeros((width, height), dtype=GLYPH_DTYPE)
         self.clear()
 
     def clear(
@@ -49,7 +49,7 @@ class GlyphBuffer:
     ) -> None:
         """Places a single character at a given coordinate."""
         if 0 <= x < self.width and 0 <= y < self.height:
-            self.data[y, x] = (ch, fg, bg)
+            self.data[x, y] = (ch, fg, bg)
 
     def print(
         self,
@@ -73,7 +73,7 @@ class GlyphBuffer:
         if not text:
             return
 
-        target_slice = self.data[y, x : x + len(text)]
+        target_slice = self.data[x : x + len(text), y]
 
         char_array = np.frombuffer(text.encode("utf-32-le"), dtype=np.int32)
         target_slice["ch"] = char_array
@@ -99,7 +99,7 @@ class GlyphBuffer:
         x1, y1 = x, y
         x2, y2 = min(x1 + width, self.width), min(y1 + height, self.height)
 
-        target_slice = self.data[y1:y2, x1:x2]
+        target_slice = self.data[x1:x2, y1:y2]
 
         if clear:
             target_slice["ch"] = ord(" ")
@@ -107,15 +107,15 @@ class GlyphBuffer:
         target_slice["bg"] = bg
 
         # Draw borders on the slice
-        target_slice[0, :]["ch"] = 196  # Top
-        target_slice[-1, :]["ch"] = 196  # Bottom
-        target_slice[:, 0]["ch"] = 179  # Left
-        target_slice[:, -1]["ch"] = 179  # Right
+        target_slice[:, 0]["ch"] = 196  # Top
+        target_slice[:, -1]["ch"] = 196  # Bottom
+        target_slice[0, :]["ch"] = 179  # Left
+        target_slice[-1, :]["ch"] = 179  # Right
 
         # Draw corners
         target_slice[0, 0]["ch"] = 218
-        target_slice[0, -1]["ch"] = 191
-        target_slice[-1, 0]["ch"] = 192
+        target_slice[-1, 0]["ch"] = 191
+        target_slice[0, -1]["ch"] = 192
         target_slice[-1, -1]["ch"] = 217
 
         target_slice["fg"] = fg

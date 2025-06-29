@@ -111,6 +111,7 @@ class DummyController:
             root_console=None,
             blit_console=lambda *args, **kwargs: None,
             texture_from_console=lambda console: f"mock_texture_for_{id(console)}",
+            render_glyph_buffer_to_texture=lambda gb: f"mock_texture_for_{id(gb)}",
             present_texture=lambda *args, **kwargs: None,
         )
         self.clock = SimpleNamespace(last_delta_time=0.016)
@@ -207,9 +208,9 @@ def test_small_map_actor_alignment(monkeypatch) -> None:
     px, py = vs.world_to_screen(controller.gw.player.x, controller.gw.player.y)
     # With smooth rendering enabled, actors are drawn via SDL, not console
     if config.SMOOTH_ACTOR_RENDERING_ENABLED:
-        assert view.game_map_console.rgb["ch"][px, py] == 0  # No character in console
+        assert view.map_glyph_buffer.data["ch"][px, py] == 0  # No character in console
     else:
-        assert view.game_map_console.rgb["ch"][px, py] == ord("@")
+        assert view.map_glyph_buffer.data["ch"][px, py] == ord("@")
     assert (px, py) == (
         vs.offset_x + controller.gw.player.x,
         vs.offset_y + controller.gw.player.y,

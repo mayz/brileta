@@ -16,7 +16,7 @@ Key Implementation Details:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import tcod.render
@@ -35,6 +35,7 @@ from catley.types import (
 )
 from catley.util.caching import ResourceCache
 from catley.util.coordinates import CoordinateConverter, Rect
+from catley.util.glyph_buffer import GlyphBuffer
 from catley.view.render.effects.particles import ParticleLayer, SubTileParticleSystem
 from catley.view.render.graphics import GraphicsContext
 
@@ -86,6 +87,25 @@ class TCODGraphicsContext(GraphicsContext):
         )
         self._tileset = context.sdl_atlas.tileset if context.sdl_atlas else None
 
+        # The cache for temporary TCOD consoles.
+        self._temp_console_cache: dict[tuple[int, int], Console] = {}
+
+    def _get_temp_console(self, width: int, height: int) -> Console:
+        """
+        Retrieves a reusable tcod.Console from a cache.
+
+        If a console of the specified size is not in the cache, a new one
+        is created and stored for future use. This avoids repeated memory
+        allocations each frame for views of a consistent size.
+        """
+        size = (width, height)
+        if size not in self._temp_console_cache:
+            # Cache miss: create and store a new console.
+            self._temp_console_cache[size] = Console(width, height, order="F")
+
+        # Return the cached or newly created console.
+        return self._temp_console_cache[size]
+
     def get_render_destination_rect(self) -> tuple[int, int, int, int]:
         """
         Returns the destination rectangle for the main console texture,
@@ -133,6 +153,32 @@ class TCODGraphicsContext(GraphicsContext):
     @property
     def console_height_tiles(self) -> int:
         return self.root_console.height
+
+    def render_glyph_buffer_to_texture(self, glyph_buffer: GlyphBuffer) -> Any:
+        """
+        Takes a GlyphBuffer scene description and renders it to a new,
+        backend-specific texture object.
+
+        This is potentially an expensive operation, and the result should be
+        cached by the caller if it will be used across multiple frames.
+
+        Returns:
+            An opaque texture handle of a backend-specific type.
+        """
+        # Adapts the generic GlyphBuffer data structure to the
+        # TCOD-specific rendering pipeline.
+
+        # Get a reusable tcod.Console from the cache.
+        temp_console = self._get_temp_console(glyph_buffer.width, glyph_buffer.height)
+
+        # Perform the fast, vectorized data copy.
+        # Both GlyphBuffer and TCOD console use (width, height) indexing
+        temp_console.rgba[0 : glyph_buffer.width, 0 : glyph_buffer.height] = (
+            glyph_buffer.data
+        )
+
+        # 3. Use TCOD's native renderer on its native data structure.
+        return self._texture_from_console(temp_console)
 
     def clear_console(self, console: Console) -> None:
         """Clear a console."""
@@ -513,7 +559,7 @@ class TCODGraphicsContext(GraphicsContext):
             renderer_scaled_height=geometry.scaled_h,
         )
 
-    def texture_from_console(
+    def _texture_from_console(
         self, console: Console, transparent: bool = True
     ) -> tcod.sdl.render.Texture:
         """Convert a tcod Console to an SDL texture."""

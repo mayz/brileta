@@ -34,7 +34,7 @@ class TCODConsoleCanvas(Canvas):
         # We need to cast the renderer to access its TCOD-specific method.
         # This is acceptable because this canvas is TCOD-specific.
         tcod_renderer = cast(TCODGraphicsContext, renderer)
-        return tcod_renderer.texture_from_console(artifact, self.transparent)
+        return tcod_renderer._texture_from_console(artifact, self.transparent)
 
     def get_text_metrics(
         self, text: str, font_size: int | None = None
