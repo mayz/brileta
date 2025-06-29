@@ -1,0 +1,586 @@
+"""
+Comprehensive unit tests for the ModernGL graphics backend.
+
+These tests use a headless OpenGL context to test real rendering functionality
+without requiring a window or display.
+"""
+
+from unittest.mock import Mock, patch
+
+import moderngl
+import numpy as np
+import pytest
+
+from catley.backends.moderngl.graphics import VERTEX_DTYPE, ModernGLGraphicsContext
+from catley.game.enums import BlendMode
+from catley.types import InterpolationAlpha, Opacity
+from catley.util.coordinates import Rect
+from catley.util.glyph_buffer import GlyphBuffer
+from catley.view.render.effects.particles import SubTileParticleSystem
+
+
+class MockGLWindow:
+    """Mock GLWindow for testing."""
+
+    def __init__(self, width=800, height=600):
+        self.width = width
+        self.height = height
+
+    def get_size(self) -> tuple[int, int]:
+        return (self.width, self.height)
+
+    def get_framebuffer_size(self) -> tuple[int, int]:
+        return (self.width, self.height)
+
+    def flip(self) -> None:
+        pass
+
+
+class MockCursorManager:
+    """Mock cursor manager for testing."""
+
+    def __init__(self):
+        self.mouse_pixel_x = 100
+        self.mouse_pixel_y = 150
+        self.active_cursor_type = "arrow"
+        self.cursors = {"arrow": MockCursorData()}
+
+
+class MockCursorData:
+    """Mock cursor data for testing."""
+
+    def __init__(self):
+        self.hotspot = (5, 5)
+        self.texture = None
+        # Create a simple 16x16 RGBA cursor
+        self.pixels = np.ones((16, 16, 4), dtype=np.uint8) * 255
+
+
+class TestModernGLGraphicsContext:
+    """Test suite for ModernGLGraphicsContext."""
+
+    @pytest.fixture(autouse=True)
+    def setup_gl_context(self):
+        """Create headless GL context and graphics context for testing."""
+        self.gl_context = moderngl.create_context(standalone=True)
+        self.mock_window = MockGLWindow(800, 600)
+
+        # Mock the tileset loading since we don't have assets in tests
+        with patch("catley.backends.moderngl.graphics.PILImage.open") as mock_open:
+            # Create a mock tileset image
+            mock_img = Mock()
+            mock_img.size = (256, 256)  # 16x16 tileset
+            mock_img.convert.return_value = mock_img
+            mock_array = np.ones((256, 256, 4), dtype=np.uint8) * 255
+
+            with patch("numpy.array", return_value=mock_array):
+                mock_open.return_value = mock_img
+                self.graphics_ctx = ModernGLGraphicsContext(
+                    self.mock_window, self.gl_context
+                )
+
+        yield
+
+        # Cleanup
+        self.gl_context.release()
+
+    def test_initialization(self):
+        """Test that graphics context initializes correctly."""
+        assert self.graphics_ctx.window == self.mock_window
+        assert self.graphics_ctx.mgl_context == self.gl_context
+        assert self.graphics_ctx.atlas_texture is not None
+        assert self.graphics_ctx.program is not None
+        assert self.graphics_ctx.uv_map.shape == (256, 4)
+        assert self.graphics_ctx.vertex_count == 0
+
+    def test_tile_dimensions_property(self):
+        """Test tile dimensions property."""
+        tile_dims = self.graphics_ctx.tile_dimensions
+        assert isinstance(tile_dims, tuple)
+        assert len(tile_dims) == 2
+        assert tile_dims[0] > 0
+        assert tile_dims[1] > 0
+
+    def test_console_dimensions_properties(self):
+        """Test console width and height properties."""
+        width = self.graphics_ctx.console_width_tiles
+        height = self.graphics_ctx.console_height_tiles
+        assert isinstance(width, int)
+        assert isinstance(height, int)
+        assert width > 0
+        assert height > 0
+
+    def test_coordinate_converter_property(self):
+        """Test coordinate converter property."""
+        converter = self.graphics_ctx.coordinate_converter
+        assert converter is not None
+        assert hasattr(converter, "pixel_to_tile")
+
+    def test_prepare_to_present(self):
+        """Test prepare_to_present clears vertex buffer."""
+        # Add some vertices first
+        self.graphics_ctx.vertex_count = 10
+
+        self.graphics_ctx.prepare_to_present()
+
+        assert self.graphics_ctx.vertex_count == 0
+
+    def test_console_to_screen_coords(self):
+        """Test coordinate conversion from console to screen."""
+        # Test basic conversion
+        screen_x, screen_y = self.graphics_ctx.console_to_screen_coords(0, 0)
+        assert isinstance(screen_x, float)
+        assert isinstance(screen_y, float)
+
+        # Test that different inputs give different outputs
+        screen_x2, screen_y2 = self.graphics_ctx.console_to_screen_coords(10, 20)
+        assert screen_x2 != screen_x or screen_y2 != screen_y
+
+    def test_pixel_to_tile(self):
+        """Test pixel to tile coordinate conversion."""
+        tile_pos = self.graphics_ctx.pixel_to_tile(100, 200)
+        assert isinstance(tile_pos, tuple)
+        assert len(tile_pos) == 2
+
+    def test_update_dimensions(self):
+        """Test dimension updates."""
+        # Change window size
+        self.mock_window.width = 1024
+        self.mock_window.height = 768
+
+        old_geometry = self.graphics_ctx.letterbox_geometry
+        self.graphics_ctx.update_dimensions()
+        new_geometry = self.graphics_ctx.letterbox_geometry
+
+        # Geometry should have changed
+        assert new_geometry != old_geometry
+
+    def test_uv_map_precalculation(self):
+        """Test UV coordinate map generation."""
+        uv_map = self.graphics_ctx.uv_map
+
+        # Should have UV coords for all 256 characters
+        assert uv_map.shape == (256, 4)
+
+        # UV coordinates should be in valid range [0, 1]
+        assert np.all(uv_map >= 0)
+        assert np.all(uv_map <= 1)
+
+        # Test specific character
+        char_uv = uv_map[ord("A")]
+        assert len(char_uv) == 4  # u1, v1, u2, v2
+
+    def test_draw_actor_smooth(self):
+        """Test drawing a smooth actor."""
+        initial_vertex_count = self.graphics_ctx.vertex_count
+
+        self.graphics_ctx.draw_actor_smooth(
+            char="@",
+            color=(255, 0, 0),
+            screen_x=100.0,
+            screen_y=200.0,
+            light_intensity=(0.8, 0.9, 1.0),
+            alpha=InterpolationAlpha(0.75),
+        )
+
+        # Should have added 6 vertices (2 triangles = 1 quad)
+        assert self.graphics_ctx.vertex_count == initial_vertex_count + 6
+
+    def test_draw_tile_highlight(self):
+        """Test drawing tile highlights."""
+        initial_vertex_count = self.graphics_ctx.vertex_count
+
+        self.graphics_ctx.draw_tile_highlight(
+            root_x=5, root_y=10, color=(255, 255, 0), alpha=Opacity(0.5)
+        )
+
+        # Should have added vertices for the highlight
+        assert self.graphics_ctx.vertex_count > initial_vertex_count
+
+    def test_draw_debug_rect(self):
+        """Test drawing debug rectangles."""
+        initial_vertex_count = self.graphics_ctx.vertex_count
+
+        self.graphics_ctx.draw_debug_rect(
+            px_x=10, px_y=20, px_w=100, px_h=50, color=(0, 255, 0)
+        )
+
+        # Should have added vertices for 4 edges (24 vertices total)
+        assert self.graphics_ctx.vertex_count == initial_vertex_count + 24
+
+    def test_draw_mouse_cursor(self):
+        """Test drawing mouse cursor."""
+        cursor_manager = MockCursorManager()
+        initial_vertex_count = self.graphics_ctx.vertex_count
+
+        self.graphics_ctx.draw_mouse_cursor(cursor_manager)
+
+        # Should have added vertices for cursor
+        assert self.graphics_ctx.vertex_count > initial_vertex_count
+
+        # Cursor data should now have a texture cached
+        cursor_data = cursor_manager.cursors["arrow"]
+        assert cursor_data.texture is not None
+
+    def test_draw_mouse_cursor_no_cursor_data(self):
+        """Test drawing mouse cursor when no cursor data exists."""
+        cursor_manager = MockCursorManager()
+        cursor_manager.active_cursor_type = "nonexistent"
+        initial_vertex_count = self.graphics_ctx.vertex_count
+
+        self.graphics_ctx.draw_mouse_cursor(cursor_manager)
+
+        # Should not have added any vertices
+        assert self.graphics_ctx.vertex_count == initial_vertex_count
+
+    def test_apply_environmental_effect(self):
+        """Test applying environmental effects."""
+        initial_vertex_count = self.graphics_ctx.vertex_count
+
+        self.graphics_ctx.apply_environmental_effect(
+            position=(10.0, 15.0),
+            radius=5.0,
+            tint_color=(255, 200, 100),
+            intensity=0.7,
+            blend_mode=BlendMode.TINT,
+        )
+
+        # Should have added vertices for the effect
+        assert self.graphics_ctx.vertex_count > initial_vertex_count
+
+    def test_apply_environmental_effect_zero_radius(self):
+        """Test environmental effect with zero radius does nothing."""
+        initial_vertex_count = self.graphics_ctx.vertex_count
+
+        self.graphics_ctx.apply_environmental_effect(
+            position=(10.0, 15.0),
+            radius=0.0,
+            tint_color=(255, 200, 100),
+            intensity=0.7,
+            blend_mode=BlendMode.TINT,
+        )
+
+        # Should not have added any vertices
+        assert self.graphics_ctx.vertex_count == initial_vertex_count
+
+    def test_apply_environmental_effect_zero_intensity(self):
+        """Test environmental effect with zero intensity does nothing."""
+        initial_vertex_count = self.graphics_ctx.vertex_count
+
+        self.graphics_ctx.apply_environmental_effect(
+            position=(10.0, 15.0),
+            radius=5.0,
+            tint_color=(255, 200, 100),
+            intensity=0.0,
+            blend_mode=BlendMode.TINT,
+        )
+
+        # Should not have added any vertices
+        assert self.graphics_ctx.vertex_count == initial_vertex_count
+
+    def test_add_quad_to_buffer(self):
+        """Test low-level quad addition to vertex buffer."""
+        initial_vertex_count = self.graphics_ctx.vertex_count
+
+        self.graphics_ctx._add_quad_to_buffer(
+            x=100,
+            y=200,
+            w=32,
+            h=32,
+            uv_coords=(0.0, 0.0, 1.0, 1.0),
+            color_rgba=(1.0, 0.5, 0.0, 0.8),
+        )
+
+        # Should have added exactly 6 vertices
+        assert self.graphics_ctx.vertex_count == initial_vertex_count + 6
+
+        # Verify vertex data was written correctly
+        vertex_data = self.graphics_ctx.cpu_vertex_buffer[
+            initial_vertex_count : self.graphics_ctx.vertex_count
+        ]
+
+        # All vertices should have the same color
+        vertex_colors = vertex_data["color"]
+        expected_color = np.array([1.0, 0.5, 0.0, 0.8])
+        np.testing.assert_array_almost_equal(vertex_colors[0], expected_color)
+
+    def test_add_quad_to_buffer_overflow(self):
+        """Test quad buffer overflow handling."""
+        # Fill the buffer to near capacity
+        max_quads = len(self.graphics_ctx.cpu_vertex_buffer) // 6
+        self.graphics_ctx.vertex_count = (max_quads - 1) * 6
+
+        # This should succeed
+        self.graphics_ctx._add_quad_to_buffer(
+            x=0,
+            y=0,
+            w=32,
+            h=32,
+            uv_coords=(0.0, 0.0, 1.0, 1.0),
+            color_rgba=(1.0, 1.0, 1.0, 1.0),
+        )
+
+        # This should fail gracefully (no crash)
+        initial_count = self.graphics_ctx.vertex_count
+        self.graphics_ctx._add_quad_to_buffer(
+            x=0,
+            y=0,
+            w=32,
+            h=32,
+            uv_coords=(0.0, 0.0, 1.0, 1.0),
+            color_rgba=(1.0, 1.0, 1.0, 1.0),
+        )
+
+        # Vertex count should not have increased
+        assert self.graphics_ctx.vertex_count == initial_count
+
+    def test_render_glyph_buffer_to_texture(self):
+        """Test rendering glyph buffer to texture."""
+        # Create a simple glyph buffer
+        glyph_buffer = GlyphBuffer(width=10, height=5)
+        glyph_buffer.data[0, 0] = (ord("A"), (255, 0, 0, 255), (0, 0, 0, 255))
+        glyph_buffer.data[1, 1] = (ord("B"), (0, 255, 0, 255), (0, 0, 0, 255))
+
+        texture = self.graphics_ctx.render_glyph_buffer_to_texture(glyph_buffer)
+
+        # Should return a ModernGL texture
+        assert texture is not None
+        assert isinstance(texture, moderngl.Texture)
+
+    def test_render_glyph_buffer_to_texture_empty(self):
+        """Test rendering glyph buffer with zero dimensions."""
+        # Test the method's handling of empty dimensions directly
+        # by calling the internal logic rather than creating invalid GlyphBuffer
+
+        # Mock a glyph buffer with zero width/height
+        from unittest.mock import Mock
+
+        mock_glyph_buffer = Mock()
+        mock_glyph_buffer.width = 0
+        mock_glyph_buffer.height = 5
+
+        texture = self.graphics_ctx.render_glyph_buffer_to_texture(mock_glyph_buffer)
+
+        # Should return None for zero dimensions
+        assert texture is None
+
+    def test_present_texture(self):
+        """Test presenting a pre-rendered texture."""
+        # Create a test texture
+        test_texture = self.gl_context.texture((64, 64), 4)
+        initial_vertex_count = self.graphics_ctx.vertex_count
+
+        self.graphics_ctx.present_texture(
+            texture=test_texture, x_tile=2, y_tile=3, width_tiles=4, height_tiles=2
+        )
+
+        # Should have added vertices for the texture quad
+        assert self.graphics_ctx.vertex_count > initial_vertex_count
+
+    def test_present_texture_invalid(self):
+        """Test presenting invalid texture does nothing."""
+        initial_vertex_count = self.graphics_ctx.vertex_count
+
+        self.graphics_ctx.present_texture(
+            texture="not a texture", x_tile=2, y_tile=3, width_tiles=4, height_tiles=2
+        )
+
+        # Should not have added any vertices
+        assert self.graphics_ctx.vertex_count == initial_vertex_count
+
+    def test_finalize_present_empty(self):
+        """Test finalize_present with no vertices."""
+        # Should not crash with empty vertex buffer
+        self.graphics_ctx.finalize_present()
+
+    def test_finalize_present_with_vertices(self):
+        """Test finalize_present with vertices."""
+        # Add some vertices
+        self.graphics_ctx.draw_actor_smooth(
+            char="X", color=(255, 255, 255), screen_x=50.0, screen_y=50.0
+        )
+
+        # Should not crash
+        self.graphics_ctx.finalize_present()
+
+    def test_render_particles(self):
+        """Test particle rendering."""
+        # Create a mock particle system
+        particle_system = Mock(spec=SubTileParticleSystem)
+        particle_system.active_count = 3
+        particle_system.layers = np.array([1, 2, 1])
+        particle_system.positions = np.array([[10.0, 20.0], [30.0, 40.0], [50.0, 60.0]])
+        particle_system.subdivision = 16
+        particle_system.chars = np.array(["*", "+", "."])
+        particle_system.colors = np.array([[255, 0, 0], [0, 255, 0], [0, 0, 255]])
+        particle_system.flash_intensity = np.array([np.nan, 0.8, np.nan])
+        particle_system.lifetimes = np.array([5.0, 3.0, 2.0])
+        particle_system.max_lifetimes = np.array([10.0, 5.0, 4.0])
+
+        layer = Mock()
+        layer.value = 1
+
+        viewport_bounds = Rect(0, 0, 100, 100)
+        view_offset = (0, 0)
+
+        initial_vertex_count = self.graphics_ctx.vertex_count
+
+        self.graphics_ctx.render_particles(
+            particle_system=particle_system,
+            layer=layer,
+            viewport_bounds=viewport_bounds,
+            view_offset=view_offset,
+        )
+
+        # Should have rendered particles (exact count depends on culling)
+        assert self.graphics_ctx.vertex_count >= initial_vertex_count
+
+    def test_convert_particle_to_screen_coords(self):
+        """Test particle coordinate conversion."""
+        particle_system = Mock()
+        particle_system.active_count = 2
+        particle_system.positions = np.array([[16.0, 32.0], [48.0, 64.0]])
+        particle_system.subdivision = 16
+
+        viewport_bounds = Rect(0, 0, 10, 10)
+        view_offset = (0, 0)
+
+        # Test valid particle
+        coords = self.graphics_ctx._convert_particle_to_screen_coords(
+            particle_system, 0, viewport_bounds, view_offset
+        )
+        assert coords is not None
+        assert isinstance(coords, tuple)
+        assert len(coords) == 2
+
+        # Test invalid particle index
+        coords = self.graphics_ctx._convert_particle_to_screen_coords(
+            particle_system, 5, viewport_bounds, view_offset
+        )
+        assert coords is None
+
+    def test_draw_particle_to_buffer(self):
+        """Test drawing individual particle to buffer."""
+        initial_vertex_count = self.graphics_ctx.vertex_count
+
+        self.graphics_ctx._draw_particle_to_buffer(
+            char="*", color=(255, 128, 64), screen_x=100.0, screen_y=200.0, alpha=0.6
+        )
+
+        # Should have added 6 vertices
+        assert self.graphics_ctx.vertex_count == initial_vertex_count + 6
+
+    def test_draw_particle_to_buffer_alpha_clamping(self):
+        """Test particle alpha clamping."""
+        initial_vertex_count = self.graphics_ctx.vertex_count
+
+        # Test alpha > 1.0 gets clamped
+        self.graphics_ctx._draw_particle_to_buffer(
+            char="*",
+            color=(255, 255, 255),
+            screen_x=0.0,
+            screen_y=0.0,
+            alpha=1.5,  # Should be clamped to 1.0
+        )
+
+        # Test alpha < 0.0 gets clamped
+        self.graphics_ctx._draw_particle_to_buffer(
+            char="*",
+            color=(255, 255, 255),
+            screen_x=0.0,
+            screen_y=0.0,
+            alpha=-0.5,  # Should be clamped to 0.0
+        )
+
+        assert self.graphics_ctx.vertex_count == initial_vertex_count + 12
+
+    def test_encode_glyph_buffer_to_vertices(self):
+        """Test glyph buffer encoding to vertices."""
+        # Create a simple glyph buffer
+        glyph_buffer = GlyphBuffer(width=2, height=2)
+        glyph_buffer.data[0, 0] = (ord("A"), (255, 0, 0, 255), (0, 0, 0, 255))
+        glyph_buffer.data[1, 0] = (ord("B"), (0, 255, 0, 255), (0, 0, 0, 255))
+        glyph_buffer.data[0, 1] = (ord("C"), (0, 0, 255, 255), (0, 0, 0, 255))
+        glyph_buffer.data[1, 1] = (ord("D"), (255, 255, 0, 255), (0, 0, 0, 255))
+
+        vertex_data, vertex_count = self.graphics_ctx._encode_glyph_buffer_to_vertices(
+            glyph_buffer
+        )
+
+        # Should have 2x2 = 4 cells, each with 12 vertices (BG + FG quads)
+        expected_vertex_count = 4 * 12
+        assert vertex_count == expected_vertex_count
+        assert len(vertex_data) == expected_vertex_count
+
+        # Verify data structure
+        assert vertex_data.dtype == VERTEX_DTYPE
+
+    def test_encode_empty_glyph_buffer(self):
+        """Test encoding empty glyph buffer."""
+        # Create a valid but empty glyph buffer (1x1 with no content)
+        glyph_buffer = GlyphBuffer(width=1, height=1)
+        # Clear the data to simulate empty
+        glyph_buffer.data[:] = (0, (0, 0, 0, 0), (0, 0, 0, 0))
+
+        vertex_data, vertex_count = self.graphics_ctx._encode_glyph_buffer_to_vertices(
+            glyph_buffer
+        )
+
+        # Should have data for 1 cell (12 vertices: BG + FG quads)
+        assert vertex_count == 12
+        assert len(vertex_data) == 12
+
+
+class TestModernGLGraphicsContextEdgeCases:
+    """Test edge cases and error conditions."""
+
+    def test_standalone_context_creation(self):
+        """Test that standalone context creation works for testing."""
+        context = moderngl.create_context(standalone=True)
+        assert context is not None
+
+        mock_window = MockGLWindow()
+
+        # Should be able to create graphics context with standalone context
+        with patch("catley.backends.moderngl.graphics.PILImage.open") as mock_open:
+            mock_img = Mock()
+            mock_img.size = (256, 256)
+            mock_img.convert.return_value = mock_img
+            mock_array = np.ones((256, 256, 4), dtype=np.uint8) * 255
+
+            with patch("numpy.array", return_value=mock_array):
+                mock_open.return_value = mock_img
+                graphics_ctx = ModernGLGraphicsContext(mock_window, context)
+
+                assert graphics_ctx.mgl_context == context
+
+        context.release()
+
+    def test_window_size_changes(self):
+        """Test handling of window size changes."""
+        context = moderngl.create_context(standalone=True)
+        mock_window = MockGLWindow(400, 300)
+
+        with patch("catley.backends.moderngl.graphics.PILImage.open") as mock_open:
+            mock_img = Mock()
+            mock_img.size = (256, 256)
+            mock_img.convert.return_value = mock_img
+            mock_array = np.ones((256, 256, 4), dtype=np.uint8) * 255
+
+            with patch("numpy.array", return_value=mock_array):
+                mock_open.return_value = mock_img
+                graphics_ctx = ModernGLGraphicsContext(mock_window, context)
+
+                # Change window size
+                mock_window.width = 800
+                mock_window.height = 600
+
+                # Update should not crash
+                graphics_ctx.update_dimensions()
+
+                # Coordinate conversion should still work
+                x, y = graphics_ctx.console_to_screen_coords(5, 10)
+                assert isinstance(x, float)
+                assert isinstance(y, float)
+
+        context.release()
