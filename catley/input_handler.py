@@ -173,9 +173,9 @@ class InputHandler:
 
         match event:
             case tcod.event.Quit():
-                return QuitUICommand()
+                return QuitUICommand(self.app)
             case tcod.event.KeyDown(sym=Keys.KEY_Q):
-                return QuitUICommand()
+                return QuitUICommand(self.app)
 
             case tcod.event.KeyDown(sym=Keys.KEY_I):
                 return OpenMenuUICommand(self.controller, InventoryMenu)

@@ -71,7 +71,9 @@ def make_input_handler() -> tuple[InputHandler, list[tuple[Any, tuple[int, int],
         overlay_system=overlay_system,
     )
 
-    class DummyApp:
+    from catley.app import App
+
+    class DummyApp(App):
         def __init__(self, *_args, **_kwargs) -> None:
             pass
 
@@ -85,6 +87,9 @@ def make_input_handler() -> tuple[InputHandler, list[tuple[Any, tuple[int, int],
             pass
 
         def toggle_fullscreen(self) -> None:
+            pass
+
+        def _exit_backend(self) -> None:
             pass
 
     dummy_app = DummyApp()

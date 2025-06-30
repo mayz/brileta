@@ -1,6 +1,7 @@
 from unittest.mock import MagicMock
 
 from catley import colors
+from catley.backends.moderngl.canvas import ModernGLCanvas
 from catley.backends.pillow.canvas import PillowImageCanvas
 from catley.backends.tcod.canvas import TCODConsoleCanvas
 from catley.view.render.graphics import GraphicsContext
@@ -254,3 +255,121 @@ def test_dimension_cache_invalidation() -> None:
 
         # Should be a new texture (cache was invalidated)
         assert texture3 is not None
+
+
+def test_moderngl_canvas_drawing_operations() -> None:
+    """Test ModernGLCanvas draw_text and draw_rect with GlyphBuffer verification.
+
+    Creates a ModernGLCanvas, calls draw_text and draw_rect, then verifies
+    the resulting GlyphBuffer contains expected characters and colors at
+    expected tile coordinates.
+    """
+    renderer = _make_renderer(tile_height=20)  # 8x20 tiles
+    canvas = ModernGLCanvas(
+        renderer, transparent=False
+    )  # Non-transparent for clearer testing
+
+    # Configure canvas with known dimensions
+    canvas.configure_dimensions(
+        80, 60
+    )  # 80x60 pixels -> 10x3 tiles (80/8 = 10, 60/20 = 3)
+
+    # Begin frame and perform drawing operations
+    canvas.begin_frame()
+
+    # Draw text "A" at pixel position (8, 0) -> tile position (1, 0)
+    canvas.draw_text(8, 0, "A", colors.WHITE)
+
+    # Draw filled rectangle at pixel position (16, 20) with size 16x20
+    # -> tiles (2,1) to (3,1)
+    canvas.draw_rect(16, 20, 16, 20, colors.RED, fill=True)
+
+    # Get the resulting GlyphBuffer
+    glyph_buffer = canvas.end_frame()
+
+    # Verify GlyphBuffer was created
+    assert glyph_buffer is not None
+    assert glyph_buffer.width == 10  # 80 pixels / 8 pixel-wide tiles
+    assert glyph_buffer.height == 3  # 60 pixels / 20 pixel-high tiles
+
+    # Verify text character 'A' at tile coordinate (1, 0)
+    char, fg_color, bg_color = glyph_buffer.data[1, 0]
+    assert char == ord("A")
+    assert tuple(fg_color) == (255, 255, 255, 255)  # WHITE with alpha
+    assert tuple(bg_color) == (0, 0, 0, 255)  # Non-transparent black background
+
+    # Verify filled rectangle uses solid block character (CP437 219) at tile (2, 1)
+    char, fg_color, bg_color = glyph_buffer.data[2, 1]
+    assert char == 219  # CP437 solid block character
+    assert tuple(fg_color) == (255, 0, 0, 255)  # RED foreground
+    assert tuple(bg_color) == (255, 0, 0, 255)  # RED background from fill color
+
+    # Verify another part of the rectangle at tile (3, 1)
+    char, fg_color, bg_color = glyph_buffer.data[3, 1]
+    assert char == 219  # CP437 solid block character
+    assert tuple(fg_color) == (255, 0, 0, 255)  # RED foreground
+    assert tuple(bg_color) == (255, 0, 0, 255)  # RED background from fill color
+
+    # Verify empty tile has default background at tile (0, 0)
+    char, fg_color, bg_color = glyph_buffer.data[0, 0]
+    assert char == ord(" ")  # Default space character (32)
+    assert tuple(bg_color) == (0, 0, 0, 255)  # Non-transparent black background
+
+
+def test_moderngl_canvas_transparent_mode() -> None:
+    """Test ModernGLCanvas with transparent background mode."""
+    renderer = _make_renderer(tile_height=16)
+    canvas = ModernGLCanvas(renderer, transparent=True)
+
+    canvas.configure_dimensions(32, 32)  # 4x2 tiles (32/8 = 4, 32/16 = 2)
+
+    canvas.begin_frame()
+    canvas.draw_text(0, 0, "B", colors.GREEN)
+    glyph_buffer = canvas.end_frame()
+
+    # Verify transparent background
+    assert glyph_buffer is not None
+    char, fg_color, bg_color = glyph_buffer.data[0, 0]
+    assert char == ord("B")
+    assert tuple(fg_color) == (0, 255, 0, 255)  # GREEN
+    assert tuple(bg_color) == (0, 0, 0, 0)  # Transparent background (alpha=0)
+
+
+def test_moderngl_canvas_rect_border_only() -> None:
+    """Test ModernGLCanvas draw_rect with fill=False (border only)."""
+    renderer = _make_renderer(tile_height=16)
+    canvas = ModernGLCanvas(renderer, transparent=False)
+
+    canvas.configure_dimensions(48, 48)  # 6x3 tiles
+
+    canvas.begin_frame()
+    # Draw 3x2 tile rectangle border at tile position (1,0) to (3,1)
+    canvas.draw_rect(8, 0, 24, 32, colors.BLUE, fill=False)
+    glyph_buffer = canvas.end_frame()
+
+    # Check corners and borders of the rectangle
+    assert glyph_buffer is not None
+    # Top-left corner at tile (1, 0)
+    char, fg_color, bg_color = glyph_buffer.data[1, 0]
+    assert char == 219  # Solid block for border
+    assert tuple(bg_color) == (0, 0, 255, 255)  # BLUE
+
+    # Top-right corner at tile (3, 0)
+    char, fg_color, bg_color = glyph_buffer.data[3, 0]
+    assert char == 219  # Solid block for border
+    assert tuple(bg_color) == (0, 0, 255, 255)  # BLUE
+
+    # Bottom-left corner at tile (1, 1)
+    char, fg_color, bg_color = glyph_buffer.data[1, 1]
+    assert char == 219  # Solid block for border
+    assert tuple(bg_color) == (0, 0, 255, 255)  # BLUE
+
+    # Interior should be empty (not filled) at tile (2, 0)
+    char, fg_color, bg_color = glyph_buffer.data[2, 0]
+    assert char == 219  # This is actually part of the border (top edge)
+    assert tuple(bg_color) == (0, 0, 255, 255)  # BLUE
+
+    # Check a tile outside the rectangle is empty at tile (0, 0)
+    char, fg_color, bg_color = glyph_buffer.data[0, 0]
+    assert char == ord(" ")  # Default space character
+    assert tuple(bg_color) == (0, 0, 0, 255)  # Default background

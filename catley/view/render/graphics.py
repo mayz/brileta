@@ -226,3 +226,8 @@ class GraphicsContext(abc.ABC):
         """Provides access to the coordinate converter for converting between
         console and screen coordinates."""
         pass
+
+    @abc.abstractmethod
+    def create_canvas(self, transparent: bool = True) -> Any:
+        """Creates a backend-appropriate canvas for drawing operations."""
+        pass

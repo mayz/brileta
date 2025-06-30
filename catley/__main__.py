@@ -4,7 +4,6 @@ import random
 
 from . import config
 from .app import App, AppConfig
-from .backends.tcod.app import TCODApp
 
 
 def main() -> None:
@@ -17,7 +16,15 @@ def main() -> None:
         vsync=config.VSYNC,
     )
 
-    app: App = TCODApp(app_config)
+    if True:
+        from .backends.tcod.app import TCODApp
+
+        app: App = TCODApp(app_config)
+    else:
+        from .backends.pyglet.app import PygletApp
+
+        app: App = PygletApp(app_config)
+
     app.run()
 
 

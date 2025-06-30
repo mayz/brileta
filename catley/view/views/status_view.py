@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from catley import colors
-from catley.backends.tcod.canvas import TCODConsoleCanvas
 from catley.game.actors import Character, Condition, StatusEffect
 from catley.types import InterpolationAlpha
 from catley.view.render.graphics import GraphicsContext
@@ -22,7 +21,7 @@ class StatusView(TextView):
     def __init__(self, controller: Controller) -> None:
         super().__init__()
         self.controller = controller
-        self.canvas = TCODConsoleCanvas(self.controller.graphics)
+        self.canvas = self.controller.graphics.create_canvas()
 
     def get_cache_key(self) -> int:
         """The key is the modifiers' revision number."""

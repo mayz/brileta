@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from catley import colors
-from catley.backends.tcod.canvas import TCODConsoleCanvas
 from catley.types import InterpolationAlpha
 from catley.view.render.graphics import GraphicsContext
 
@@ -24,7 +23,7 @@ class HealthView(TextView):
 
         super().__init__()
         self.controller = controller
-        self.canvas = TCODConsoleCanvas(graphics)
+        self.canvas = graphics.create_canvas()
 
     def get_cache_key(self) -> tuple[int, int, int]:
         """The key is a tuple of the health values. If it hasn't changed, no redraw."""

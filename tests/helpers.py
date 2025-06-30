@@ -10,6 +10,7 @@ import tcod.context
 from tcod.console import Console
 
 from catley import config
+from catley.app import App
 from catley.controller import Controller, GameWorld
 from catley.environment import tile_types
 from catley.environment.generators import GeneratedMapData
@@ -120,7 +121,7 @@ class DummyGameWorld(GameWorld):
 def get_controller_with_player_and_map() -> Controller:
     """Return a fully initialized ``Controller`` using dummy SDL context."""
 
-    class DummyApp:
+    class DummyApp(App):
         def __init__(self, *_args, **_kwargs) -> None:
             pass
 
@@ -134,6 +135,9 @@ def get_controller_with_player_and_map() -> Controller:
             pass
 
         def toggle_fullscreen(self) -> None:  # pragma: no cover - stub
+            pass
+
+        def _exit_backend(self) -> None:  # pragma: no cover - stub
             pass
 
     class DummyGraphicsContext:

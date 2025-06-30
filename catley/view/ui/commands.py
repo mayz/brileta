@@ -56,8 +56,11 @@ class ToggleFullscreenUICommand(UICommand):
 class QuitUICommand(UICommand):
     """Command for quitting the game."""
 
+    def __init__(self, app: App) -> None:
+        self.app = app
+
     def execute(self) -> None:
-        raise SystemExit()
+        self.app.quit()
 
 
 class SelectOrDeselectActorUICommand(UICommand):

@@ -196,7 +196,9 @@ def patched_controller(stop_after: int):
 
         from types import SimpleNamespace
 
-        class DummyApp:
+        from catley.app import App
+
+        class DummyApp(App):
             def __init__(self, *_args, **_kwargs) -> None:
                 pass
 
@@ -210,6 +212,9 @@ def patched_controller(stop_after: int):
                 pass
 
             def toggle_fullscreen(self) -> None:
+                pass
+
+            def _exit_backend(self) -> None:
                 pass
 
         class DummyGraphicsContext:

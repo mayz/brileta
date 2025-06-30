@@ -40,6 +40,9 @@ select = [
     "RUF",      # Ruff-specific rules
 ]
 
+[tool.pyright]
+reportAttributeAccessIssue = "none"
+
 [dependency-groups]
 dev = [
     "py-spy>=0.4.0",

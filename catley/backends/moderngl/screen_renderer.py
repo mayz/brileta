@@ -1,0 +1,123 @@
+import moderngl
+import numpy as np
+
+# Maximum number of quads (2 triangles per quad) to draw per frame.
+MAX_QUADS = 10000
+
+VERTEX_DTYPE = np.dtype(
+    [
+        ("position", "2f4"),  # (x, y)
+        ("uv", "2f4"),  # (u, v)
+        ("color", "4f4"),  # (r, g, b, a) as floats 0.0-1.0
+    ]
+)
+
+
+class ScreenRenderer:
+    """
+    Specialized class for batch-rendering all game world objects that use the
+    main tileset atlas to the screen.
+    """
+
+    def __init__(
+        self, mgl_context: moderngl.Context, atlas_texture: moderngl.Texture
+    ) -> None:
+        self.mgl_context = mgl_context
+        self.atlas_texture = atlas_texture
+
+        # Create shader program
+        self.screen_program = self._create_screen_shader_program()
+
+        # Main Vertex Buffer for Screen Rendering
+        self.cpu_vertex_buffer = np.zeros(MAX_QUADS * 6, dtype=VERTEX_DTYPE)
+        self.vertex_count = 0
+        self.vbo = self.mgl_context.buffer(
+            reserve=self.cpu_vertex_buffer.nbytes, dynamic=True
+        )
+        self.vao = self.mgl_context.vertex_array(
+            self.screen_program,
+            [(self.vbo, "2f 2f 4f", "in_vert", "in_uv", "in_color")],
+        )
+
+    def _create_screen_shader_program(self) -> moderngl.Program:
+        """Creates the GLSL program for rendering to the main screen, handling
+        Y-inversion."""
+        vertex_shader = """
+            #version 330
+            // Renders vertices to the screen, normalizing top-left pixel coords
+            // to clip space.
+            in vec2 in_vert;       // Input vertex position in top-left origin PIXELS
+            in vec2 in_uv;
+            in vec4 in_color;
+
+            out vec2 v_uv;
+            out vec4 v_color;
+
+            uniform vec2 u_screen_size; // Full window size in pixels
+
+            void main() {
+                v_uv = in_uv;
+                v_color = in_color;
+
+                // Normalize to clip space (-1 to 1) and flip Y-axis
+                float x = (in_vert.x / u_screen_size.x) * 2.0 - 1.0;
+                float y = (1.0 - (in_vert.y / u_screen_size.y)) * 2.0 - 1.0;
+
+                gl_Position = vec4(x, y, 0.0, 1.0);
+            }
+        """
+        fragment_shader = """
+            #version 330
+            in vec2 v_uv;
+            in vec4 v_color;
+            out vec4 f_color;
+            uniform sampler2D u_atlas;
+            void main() {
+                vec4 tex_color = texture(u_atlas, v_uv);
+                f_color = tex_color * v_color;
+            }
+        """
+        program = self.mgl_context.program(
+            vertex_shader=vertex_shader, fragment_shader=fragment_shader
+        )
+        program["u_atlas"].value = 0
+        return program
+
+    def begin_frame(self) -> None:
+        """Reset the internal vertex count to zero at the start of a frame."""
+        self.vertex_count = 0
+
+    def add_quad(
+        self,
+        x: float,
+        y: float,
+        w: float,
+        h: float,
+        uv_coords: tuple[float, float, float, float],
+        color_rgba: tuple[float, float, float, float],
+    ) -> None:
+        """Add a quad to the vertex buffer."""
+        if self.vertex_count + 6 > len(self.cpu_vertex_buffer):
+            return
+
+        u1, v1, u2, v2 = uv_coords
+        vertices = np.zeros(6, dtype=VERTEX_DTYPE)
+        vertices[0] = ((x, y), (u1, v1), color_rgba)
+        vertices[1] = ((x + w, y), (u2, v1), color_rgba)
+        vertices[2] = ((x, y + h), (u1, v2), color_rgba)
+        vertices[3] = ((x + w, y), (u2, v1), color_rgba)
+        vertices[4] = ((x, y + h), (u1, v2), color_rgba)
+        vertices[5] = ((x + w, y + h), (u2, v2), color_rgba)
+        self.cpu_vertex_buffer[self.vertex_count : self.vertex_count + 6] = vertices
+        self.vertex_count += 6
+
+    def render_to_screen(self, window_size: tuple[int, int]) -> None:
+        """Main drawing method that renders all batched vertex data to the screen."""
+        if self.vertex_count == 0:
+            return
+
+        self.screen_program["u_screen_size"].value = window_size
+        self.atlas_texture.use(location=0)
+
+        self.vbo.write(self.cpu_vertex_buffer[: self.vertex_count].tobytes())
+        self.vao.render(moderngl.TRIANGLES, vertices=self.vertex_count)

@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING
 import tcod.event
 
 from catley import colors
-from catley.backends.tcod.canvas import TCODConsoleCanvas
 from catley.view.ui.overlays import TextOverlay
 
 if TYPE_CHECKING:
@@ -25,8 +24,8 @@ class TargetingIndicatorOverlay(TextOverlay):
         self.is_interactive = False
 
     def _get_backend(self) -> Canvas:
-        """Return a TCODConsoleCanvas backend."""
-        return TCODConsoleCanvas(self.controller.graphics, transparent=True)
+        """Return a backend-appropriate canvas."""
+        return self.controller.graphics.create_canvas(transparent=True)
 
     def _calculate_dimensions(self) -> None:
         """Calculate dimensions for the targeting indicator."""

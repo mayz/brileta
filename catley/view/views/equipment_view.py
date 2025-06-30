@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from catley import colors
-from catley.backends.tcod.canvas import TCODConsoleCanvas
 from catley.constants.view import ViewConstants as View
 from catley.types import InterpolationAlpha
 from catley.view.render.graphics import GraphicsContext
@@ -20,7 +19,7 @@ class EquipmentView(TextView):
     def __init__(self, controller: Controller, graphics: GraphicsContext) -> None:
         super().__init__()
         self.controller = controller
-        self.canvas = TCODConsoleCanvas(graphics)
+        self.canvas = graphics.create_canvas()
 
     def get_cache_key(self) -> int:
         """The key is the inventory's revision number."""

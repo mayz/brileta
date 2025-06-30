@@ -3,7 +3,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from catley import colors
-from catley.backends.tcod.canvas import TCODConsoleCanvas
 from catley.types import InterpolationAlpha
 
 from .base import TextView
@@ -19,7 +18,7 @@ class HelpTextView(TextView):
     def __init__(self, controller: Controller) -> None:
         super().__init__()
         self.controller = controller
-        self.canvas = TCODConsoleCanvas(self.controller.graphics)
+        self.canvas = self.controller.graphics.create_canvas()
 
     def get_cache_key(self) -> bool:
         """The key is simply whether there are items to pick up."""

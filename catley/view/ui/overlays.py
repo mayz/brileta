@@ -22,7 +22,6 @@ from typing import TYPE_CHECKING, Any
 import tcod.event
 
 from catley import colors
-from catley.backends.tcod.canvas import TCODConsoleCanvas
 from catley.types import PixelCoord, PixelPos, RootConsoleTileCoord
 from catley.view.render.canvas import Canvas
 
@@ -424,9 +423,10 @@ class Menu(TextOverlay):
         return False
 
     def _get_backend(self) -> Canvas:
-        """Lazily initializes and returns a TCODConsoleCanvas for Phase 1."""
+        """Lazily initializes and returns a backend-appropriate canvas for Phase 1."""
         if self.canvas is None:
-            self.canvas = TCODConsoleCanvas(self.controller.graphics, transparent=False)
+            self.canvas = self.controller.graphics.create_canvas(transparent=False)
+        assert self.canvas is not None
         return self.canvas
 
     def draw(self) -> None:

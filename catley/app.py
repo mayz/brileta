@@ -1,7 +1,14 @@
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Protocol
+from typing import TYPE_CHECKING
+
+from catley.types import DeltaTime, InterpolationAlpha
+from catley.util.live_vars import live_variable_registry, record_time_live_variable
+
+if TYPE_CHECKING:
+    from catley.controller import Controller
 
 
 @dataclass
@@ -14,70 +21,164 @@ class AppConfig:
     vsync: bool
 
 
-class App(Protocol):
+class App(ABC):
     """
-    Defines the structural interface for an application driver.
+    Abstract base class for application drivers.
 
     An App is the top-level component responsible for bridging the abstract game
     logic with a concrete windowing and event-handling backend (e.g., TCOD,
     Pyglet, SDL). It owns the main loop and drives the entire application.
 
-    Responsibilities:
-    -----------------
+    This class implements the fixed timestep with interpolation pattern that
+    ensures a deterministic simulation and smooth visuals across all backends.
+
+    Architecture Overview:
+    ----------------------
+    - FIXED TIMESTEP: Game logic runs at a consistent rate (e.g., 60Hz)
+      for a deterministic simulation, handled by the accumulator pattern.
+    - VARIABLE RENDERING: Visual frames are rendered as fast as the hardware
+      allows (up to a configured cap), independent of logic speed.
+    - INTERPOLATION: Smooth movement and animations are achieved by rendering
+      objects at an interpolated state between the previous and current
+      logic steps, using an 'alpha' value.
+
+    The "accumulator pattern" ensures:
+    1. Deterministic game state (the same inputs will always produce the
+       same outputs).
+    2. Smooth visuals even when logic and rendering rates differ.
+    3. Responsive input, as events are processed immediately every visual
+       frame, not queued for a logic step.
+
+    Backend Responsibilities:
+    -------------------------
+    Subclasses must implement backend-specific functionality:
     - Window and Context Management: Creates and manages the main application window
       and its underlying graphics context (e.g., OpenGL).
-
-    - Main Loop Execution: Implements the run() method, which starts and manages the
-      application's main event loop. The nature of this loop (e.g., polling vs.
-      event-driven) is specific to the backend.
-
-    - Frame Tick Triggering: In each iteration of its main loop, the App must calculate
-      the delta_time (time elapsed since the last iteration) and call the Controller's
-      main update method. This drives the game's clock.
-
-    - Input Event Translation: Captures backend-specific input events (like keyboard
-      presses or mouse movement) and translates them into the game's internal,
-      backend-agnostic event format (tcod.event objects).  It then dispatches these
-      standardized events to the Controller.
-
-    Why a Protocol and not an ABC?
-    -------------------------------
-    This interface is defined as a Protocol rather than an Abstract Base Class for a
-    crucial architectural reason: different backends have fundamentally different
-    programming paradigms for their main loops.
-
-    - A TCOD-based implementation uses an active, polling `while True:` loop.
-    - A Pyglet-based implementation uses a passive, callback-driven event loop
-      (`pyglet.app.run()`).
-
-    Forcing these two disparate models to inherit from a common base class
-    would result in a leaky and awkward abstraction. One implementation would
-    have to contort its natural control flow to fit the abstract methods.
-
-    By using a Protocol, we define a contract based on structure and behavior
-    ("if it has a `run()` method, it's a valid App") rather than inheritance.
-    This allows each implementation to use its backend's idiomatic approach
-    while guaranteeing that they are interchangeable from the perspective of
-    __main__.py. It provides strong static type-checking without imposing a rigid,
-    inappropriate class hierarchy.
+    - Input Event Translation: Captures backend-specific input events and translates
+      them into the game's internal, backend-agnostic event format (tcod.event objects).
+    - Frame Presentation: Handles the final step of presenting rendered frames to
+      screen.
     """
 
     def __init__(self, app_config: AppConfig) -> None:
-        """Initializes the host with the controller and configuration."""
-        ...
+        """Initializes the application with shared components."""
+        self.app_config = app_config
 
+        # Will be set by subclasses after they create their graphics context
+        self.controller: Controller | None = None
+
+    def _initialize_controller(self, graphics_context) -> None:
+        """Initializes the controller after graphics context is ready."""
+        from catley.controller import Controller
+
+        self.controller = Controller(self, graphics_context)
+        self.controller.update_fov()
+
+        # Register performance metrics
+        self.register_metrics()
+        self.controller.register_metrics()
+
+    def register_metrics(self) -> None:
+        """Registers live variables for performance monitoring."""
+        live_variable_registry.register_metric(
+            "cpu.total_frame_ms",
+            description="Total CPU time for one visual frame",
+            num_samples=1000,
+        )
+
+    @abstractmethod
     def run(self) -> None:
         """Starts the main application loop and runs the game."""
-        ...
+        pass
 
+    def update_game_logic(self, delta_time: DeltaTime) -> None:
+        """
+        Updates game logic using fixed timestep with accumulator pattern.
+
+        This method implements the core timing logic shared by all backends:
+        - Accumulates frame time for consistent logic updates
+        - Runs fixed timestep logic updates (may be 0, 1, or multiple per frame)
+        - Implements death spiral protection to prevent permanent slowdown
+        """
+        assert self.controller is not None
+
+        # --- Player Action Processing (once per frame) ---
+        # This ensures player actions are processed with zero latency,
+        # independent of the fixed logic timestep.
+        self.controller.process_player_input()
+
+        # --- Time and Logic Loop ---
+        # FRAME TIMING: Get elapsed time and add to accumulator
+        # This caps visual framerate while accumulating "debt" for logic updates
+        self.controller.accumulator += delta_time
+
+        # FIXED TIMESTEP LOOP: Run logic updates at exactly 60Hz
+        # May run 0, 1, or multiple times per visual frame for consistency
+        # Death spiral protection: limit logic steps per frame
+        logic_steps_this_frame = 0
+        while (
+            self.controller.accumulator >= self.controller.fixed_timestep
+            and logic_steps_this_frame < self.controller.max_logic_steps_per_frame
+        ):
+            self.controller.update_logic_step()
+
+            # CONSUME TIME: Remove one fixed timestep from accumulator
+            # Continue loop if more time needs to be processed
+            self.controller.accumulator -= self.controller.fixed_timestep
+            logic_steps_this_frame += 1
+
+        # RECOVERY: If death spiral protection kicked in, gradually reduce
+        # This prevents permanent slowdown when performance recovers
+        if logic_steps_this_frame >= self.controller.max_logic_steps_per_frame:
+            self.controller.accumulator *= 0.8
+
+    def render_frame(self) -> None:
+        """
+        Renders a visual frame with interpolation.
+
+        This method implements the core rendering logic shared by all backends:
+        - Calculates interpolation alpha for smooth movement
+        - Prepares the frame buffer
+        - Renders the interpolated frame
+        - Presents the frame to screen
+        """
+        assert self.controller is not None
+
+        with record_time_live_variable("cpu.total_frame_ms"):
+            # INTERPOLATION ALPHA: Calculate how far between logic steps we are
+            # alpha=0.0 means "exactly at previous step", alpha=1.0 is "current"
+            # alpha=0.5 means "halfway between steps" - creates smooth movement
+            # Clamp to 1.0 to prevent overshoot when death spiral hits
+            alpha = InterpolationAlpha(
+                min(
+                    1.0,
+                    self.controller.accumulator / self.controller.fixed_timestep,
+                )
+            )
+            self.prepare_for_new_frame()
+            self.controller.render_visual_frame(alpha)
+            self.present_frame()
+
+    @abstractmethod
     def prepare_for_new_frame(self) -> None:
         """Prepares the backbuffer for a new frame of rendering."""
-        ...
+        pass
 
+    @abstractmethod
     def present_frame(self) -> None:
         """Presents the fully rendered backbuffer to the screen."""
-        ...
+        pass
 
+    @abstractmethod
     def toggle_fullscreen(self) -> None:
         """Toggles the display between windowed and fullscreen mode."""
-        ...
+        pass
+
+    @abstractmethod
+    def _exit_backend(self) -> None:
+        """Performs backend-specific exit procedures."""
+        pass
+
+    def quit(self) -> None:
+        """Initiates the application shutdown process."""
+        self._exit_backend()

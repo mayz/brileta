@@ -8,3 +8,5 @@ view: --glob "catley/backends/**/*.py" --glob "catley/constants/**/*.py" --glob 
 game: --glob "catley/constants/**/*.py" --glob "catley/game/**/*.py" --glob "catley/modes/**/*.py" --glob "catley/view/render/effects/**/*.py" --glob "catley/util/**/*.py" --glob "catley/environment/**/*.py" --glob "colors.py" --glob "config.py" --glob "!tests/" --glob "!catley/scripts/" .
 
 map_and_env: --glob "catley/constants/**/*.py" --glob "catley/environment/**/*.py" --glob "colors.py" --glob "config.py" --glob "!tests/" --glob "!catley/scripts/" .
+
+tests: --glob "tests/**/*.py"

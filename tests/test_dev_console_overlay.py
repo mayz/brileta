@@ -5,9 +5,34 @@ from unittest.mock import MagicMock
 import pytest
 import tcod.event
 
+from catley.app import App, AppConfig
 from catley.controller import Controller
 from catley.util.live_vars import live_variable_registry
 from catley.view.ui.dev_console_overlay import DevConsoleOverlay
+
+
+class DummyApp(App):
+    def __init__(self, *_args, **_kwargs) -> None:
+        super().__init__(AppConfig(width=80, height=50, title="test", vsync=False))
+
+    def run(self) -> None:
+        pass
+
+    def prepare_for_new_frame(self) -> None:
+        pass
+
+    def present_frame(self) -> None:
+        pass
+
+    def toggle_fullscreen(self) -> None:
+        pass
+
+    def _exit_backend(self) -> None:
+        pass
+
+    def quit(self) -> None:
+        """Simulate exit for testing."""
+        raise SystemExit()
 
 
 class DummyController:
@@ -17,6 +42,7 @@ class DummyController:
             tile_dimensions=(8, 16),
             sdl_renderer=None,
         )
+        self.app = DummyApp()
 
 
 def make_overlay() -> DevConsoleOverlay:

@@ -67,6 +67,7 @@ class Controller:
     """
 
     def __init__(self, app: App, graphics: GraphicsContext) -> None:
+        self.app = app
         self.gw = GameWorld(config.MAP_WIDTH, config.MAP_HEIGHT)
         self.gw.lighting_system = CPULightingSystem(self.gw)
 

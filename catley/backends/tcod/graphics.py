@@ -629,3 +629,9 @@ class TCODGraphicsContext(GraphicsContext):
 
         # Reset color mod for next use
         self._debug_pixel_texture.color_mod = (255, 255, 255)
+
+    def create_canvas(self, transparent: bool = True) -> Any:
+        """Creates a TCOD canvas that uses Console."""
+        from catley.backends.tcod.canvas import TCODConsoleCanvas
+
+        return TCODConsoleCanvas(self, transparent)

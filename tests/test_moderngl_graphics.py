@@ -91,7 +91,7 @@ class TestModernGLGraphicsContext:
         assert self.graphics_ctx.atlas_texture is not None
         assert self.graphics_ctx.program is not None
         assert self.graphics_ctx.uv_map.shape == (256, 4)
-        assert self.graphics_ctx.vertex_count == 0
+        assert self.graphics_ctx.screen_renderer.vertex_count == 0
 
     def test_tile_dimensions_property(self):
         """Test tile dimensions property."""
@@ -119,11 +119,11 @@ class TestModernGLGraphicsContext:
     def test_prepare_to_present(self):
         """Test prepare_to_present clears vertex buffer."""
         # Add some vertices first
-        self.graphics_ctx.vertex_count = 10
+        self.graphics_ctx.screen_renderer.vertex_count = 10
 
         self.graphics_ctx.prepare_to_present()
 
-        assert self.graphics_ctx.vertex_count == 0
+        assert self.graphics_ctx.screen_renderer.vertex_count == 0
 
     def test_console_to_screen_coords(self):
         """Test coordinate conversion from console to screen."""
@@ -172,7 +172,7 @@ class TestModernGLGraphicsContext:
 
     def test_draw_actor_smooth(self):
         """Test drawing a smooth actor."""
-        initial_vertex_count = self.graphics_ctx.vertex_count
+        initial_vertex_count = self.graphics_ctx.screen_renderer.vertex_count
 
         self.graphics_ctx.draw_actor_smooth(
             char="@",
@@ -184,39 +184,43 @@ class TestModernGLGraphicsContext:
         )
 
         # Should have added 6 vertices (2 triangles = 1 quad)
-        assert self.graphics_ctx.vertex_count == initial_vertex_count + 6
+        assert (
+            self.graphics_ctx.screen_renderer.vertex_count == initial_vertex_count + 6
+        )
 
     def test_draw_tile_highlight(self):
         """Test drawing tile highlights."""
-        initial_vertex_count = self.graphics_ctx.vertex_count
+        initial_vertex_count = self.graphics_ctx.screen_renderer.vertex_count
 
         self.graphics_ctx.draw_tile_highlight(
             root_x=5, root_y=10, color=(255, 255, 0), alpha=Opacity(0.5)
         )
 
         # Should have added vertices for the highlight
-        assert self.graphics_ctx.vertex_count > initial_vertex_count
+        assert self.graphics_ctx.screen_renderer.vertex_count > initial_vertex_count
 
     def test_draw_debug_rect(self):
         """Test drawing debug rectangles."""
-        initial_vertex_count = self.graphics_ctx.vertex_count
+        initial_vertex_count = self.graphics_ctx.screen_renderer.vertex_count
 
         self.graphics_ctx.draw_debug_rect(
             px_x=10, px_y=20, px_w=100, px_h=50, color=(0, 255, 0)
         )
 
         # Should have added vertices for 4 edges (24 vertices total)
-        assert self.graphics_ctx.vertex_count == initial_vertex_count + 24
+        assert (
+            self.graphics_ctx.screen_renderer.vertex_count == initial_vertex_count + 24
+        )
 
     def test_draw_mouse_cursor(self):
         """Test drawing mouse cursor."""
         cursor_manager = MockCursorManager()
-        initial_vertex_count = self.graphics_ctx.vertex_count
+        initial_vertex_count = self.graphics_ctx.screen_renderer.vertex_count
 
         self.graphics_ctx.draw_mouse_cursor(cursor_manager)
 
-        # Should have added vertices for cursor
-        assert self.graphics_ctx.vertex_count > initial_vertex_count
+        # Should not have added vertices to the main buffer (renders immediately)
+        assert self.graphics_ctx.screen_renderer.vertex_count == initial_vertex_count
 
         # Cursor data should now have a texture cached
         cursor_data = cursor_manager.cursors["arrow"]
@@ -226,16 +230,16 @@ class TestModernGLGraphicsContext:
         """Test drawing mouse cursor when no cursor data exists."""
         cursor_manager = MockCursorManager()
         cursor_manager.active_cursor_type = "nonexistent"
-        initial_vertex_count = self.graphics_ctx.vertex_count
+        initial_vertex_count = self.graphics_ctx.screen_renderer.vertex_count
 
         self.graphics_ctx.draw_mouse_cursor(cursor_manager)
 
         # Should not have added any vertices
-        assert self.graphics_ctx.vertex_count == initial_vertex_count
+        assert self.graphics_ctx.screen_renderer.vertex_count == initial_vertex_count
 
     def test_apply_environmental_effect(self):
         """Test applying environmental effects."""
-        initial_vertex_count = self.graphics_ctx.vertex_count
+        initial_vertex_count = self.graphics_ctx.screen_renderer.vertex_count
 
         self.graphics_ctx.apply_environmental_effect(
             position=(10.0, 15.0),
@@ -246,11 +250,11 @@ class TestModernGLGraphicsContext:
         )
 
         # Should have added vertices for the effect
-        assert self.graphics_ctx.vertex_count > initial_vertex_count
+        assert self.graphics_ctx.screen_renderer.vertex_count > initial_vertex_count
 
     def test_apply_environmental_effect_zero_radius(self):
         """Test environmental effect with zero radius does nothing."""
-        initial_vertex_count = self.graphics_ctx.vertex_count
+        initial_vertex_count = self.graphics_ctx.screen_renderer.vertex_count
 
         self.graphics_ctx.apply_environmental_effect(
             position=(10.0, 15.0),
@@ -261,11 +265,11 @@ class TestModernGLGraphicsContext:
         )
 
         # Should not have added any vertices
-        assert self.graphics_ctx.vertex_count == initial_vertex_count
+        assert self.graphics_ctx.screen_renderer.vertex_count == initial_vertex_count
 
     def test_apply_environmental_effect_zero_intensity(self):
         """Test environmental effect with zero intensity does nothing."""
-        initial_vertex_count = self.graphics_ctx.vertex_count
+        initial_vertex_count = self.graphics_ctx.screen_renderer.vertex_count
 
         self.graphics_ctx.apply_environmental_effect(
             position=(10.0, 15.0),
@@ -276,13 +280,13 @@ class TestModernGLGraphicsContext:
         )
 
         # Should not have added any vertices
-        assert self.graphics_ctx.vertex_count == initial_vertex_count
+        assert self.graphics_ctx.screen_renderer.vertex_count == initial_vertex_count
 
     def test_add_quad_to_buffer(self):
         """Test low-level quad addition to vertex buffer."""
-        initial_vertex_count = self.graphics_ctx.vertex_count
+        initial_vertex_count = self.graphics_ctx.screen_renderer.vertex_count
 
-        self.graphics_ctx._add_quad_to_buffer(
+        self.graphics_ctx.screen_renderer.add_quad(
             x=100,
             y=200,
             w=32,
@@ -292,11 +296,13 @@ class TestModernGLGraphicsContext:
         )
 
         # Should have added exactly 6 vertices
-        assert self.graphics_ctx.vertex_count == initial_vertex_count + 6
+        assert (
+            self.graphics_ctx.screen_renderer.vertex_count == initial_vertex_count + 6
+        )
 
         # Verify vertex data was written correctly
-        vertex_data = self.graphics_ctx.cpu_vertex_buffer[
-            initial_vertex_count : self.graphics_ctx.vertex_count
+        vertex_data = self.graphics_ctx.screen_renderer.cpu_vertex_buffer[
+            initial_vertex_count : self.graphics_ctx.screen_renderer.vertex_count
         ]
 
         # All vertices should have the same color
@@ -307,11 +313,11 @@ class TestModernGLGraphicsContext:
     def test_add_quad_to_buffer_overflow(self):
         """Test quad buffer overflow handling."""
         # Fill the buffer to near capacity
-        max_quads = len(self.graphics_ctx.cpu_vertex_buffer) // 6
-        self.graphics_ctx.vertex_count = (max_quads - 1) * 6
+        max_quads = len(self.graphics_ctx.screen_renderer.cpu_vertex_buffer) // 6
+        self.graphics_ctx.screen_renderer.vertex_count = (max_quads - 1) * 6
 
         # This should succeed
-        self.graphics_ctx._add_quad_to_buffer(
+        self.graphics_ctx.screen_renderer.add_quad(
             x=0,
             y=0,
             w=32,
@@ -321,8 +327,8 @@ class TestModernGLGraphicsContext:
         )
 
         # This should fail gracefully (no crash)
-        initial_count = self.graphics_ctx.vertex_count
-        self.graphics_ctx._add_quad_to_buffer(
+        initial_count = self.graphics_ctx.screen_renderer.vertex_count
+        self.graphics_ctx.screen_renderer.add_quad(
             x=0,
             y=0,
             w=32,
@@ -332,7 +338,7 @@ class TestModernGLGraphicsContext:
         )
 
         # Vertex count should not have increased
-        assert self.graphics_ctx.vertex_count == initial_count
+        assert self.graphics_ctx.screen_renderer.vertex_count == initial_count
 
     def test_render_glyph_buffer_to_texture(self):
         """Test rendering glyph buffer to texture."""
@@ -361,32 +367,35 @@ class TestModernGLGraphicsContext:
 
         texture = self.graphics_ctx.render_glyph_buffer_to_texture(mock_glyph_buffer)
 
-        # Should return None for zero dimensions
-        assert texture is None
+        # Should return a 1x1 texture for zero dimensions (not None)
+        assert texture is not None
+        assert isinstance(texture, moderngl.Texture)
+        assert texture.size == (1, 1)
 
     def test_present_texture(self):
         """Test presenting a pre-rendered texture."""
         # Create a test texture
         test_texture = self.gl_context.texture((64, 64), 4)
-        initial_vertex_count = self.graphics_ctx.vertex_count
+        initial_vertex_count = self.graphics_ctx.screen_renderer.vertex_count
 
+        # present_texture now renders immediately, not to vertex buffer
         self.graphics_ctx.present_texture(
             texture=test_texture, x_tile=2, y_tile=3, width_tiles=4, height_tiles=2
         )
 
-        # Should have added vertices for the texture quad
-        assert self.graphics_ctx.vertex_count > initial_vertex_count
+        # Should not have added vertices to the main buffer (renders immediately)
+        assert self.graphics_ctx.screen_renderer.vertex_count == initial_vertex_count
 
     def test_present_texture_invalid(self):
         """Test presenting invalid texture does nothing."""
-        initial_vertex_count = self.graphics_ctx.vertex_count
+        initial_vertex_count = self.graphics_ctx.screen_renderer.vertex_count
 
         self.graphics_ctx.present_texture(
             texture="not a texture", x_tile=2, y_tile=3, width_tiles=4, height_tiles=2
         )
 
         # Should not have added any vertices
-        assert self.graphics_ctx.vertex_count == initial_vertex_count
+        assert self.graphics_ctx.screen_renderer.vertex_count == initial_vertex_count
 
     def test_finalize_present_empty(self):
         """Test finalize_present with no vertices."""
@@ -423,7 +432,7 @@ class TestModernGLGraphicsContext:
         viewport_bounds = Rect(0, 0, 100, 100)
         view_offset = (0, 0)
 
-        initial_vertex_count = self.graphics_ctx.vertex_count
+        initial_vertex_count = self.graphics_ctx.screen_renderer.vertex_count
 
         self.graphics_ctx.render_particles(
             particle_system=particle_system,
@@ -433,7 +442,7 @@ class TestModernGLGraphicsContext:
         )
 
         # Should have rendered particles (exact count depends on culling)
-        assert self.graphics_ctx.vertex_count >= initial_vertex_count
+        assert self.graphics_ctx.screen_renderer.vertex_count >= initial_vertex_count
 
     def test_convert_particle_to_screen_coords(self):
         """Test particle coordinate conversion."""
@@ -461,18 +470,20 @@ class TestModernGLGraphicsContext:
 
     def test_draw_particle_to_buffer(self):
         """Test drawing individual particle to buffer."""
-        initial_vertex_count = self.graphics_ctx.vertex_count
+        initial_vertex_count = self.graphics_ctx.screen_renderer.vertex_count
 
         self.graphics_ctx._draw_particle_to_buffer(
             char="*", color=(255, 128, 64), screen_x=100.0, screen_y=200.0, alpha=0.6
         )
 
         # Should have added 6 vertices
-        assert self.graphics_ctx.vertex_count == initial_vertex_count + 6
+        assert (
+            self.graphics_ctx.screen_renderer.vertex_count == initial_vertex_count + 6
+        )
 
     def test_draw_particle_to_buffer_alpha_clamping(self):
         """Test particle alpha clamping."""
-        initial_vertex_count = self.graphics_ctx.vertex_count
+        initial_vertex_count = self.graphics_ctx.screen_renderer.vertex_count
 
         # Test alpha > 1.0 gets clamped
         self.graphics_ctx._draw_particle_to_buffer(
@@ -492,7 +503,9 @@ class TestModernGLGraphicsContext:
             alpha=-0.5,  # Should be clamped to 0.0
         )
 
-        assert self.graphics_ctx.vertex_count == initial_vertex_count + 12
+        assert (
+            self.graphics_ctx.screen_renderer.vertex_count == initial_vertex_count + 12
+        )
 
     def test_encode_glyph_buffer_to_vertices(self):
         """Test glyph buffer encoding to vertices."""
@@ -503,8 +516,10 @@ class TestModernGLGraphicsContext:
         glyph_buffer.data[0, 1] = (ord("C"), (0, 0, 255, 255), (0, 0, 0, 255))
         glyph_buffer.data[1, 1] = (ord("D"), (255, 255, 0, 255), (0, 0, 0, 255))
 
-        vertex_data, vertex_count = self.graphics_ctx._encode_glyph_buffer_to_vertices(
-            glyph_buffer
+        vertex_data, vertex_count = (
+            self.graphics_ctx.texture_renderer._encode_glyph_buffer_to_vertices(
+                glyph_buffer
+            )
         )
 
         # Should have 2x2 = 4 cells, each with 12 vertices (BG + FG quads)
@@ -522,13 +537,246 @@ class TestModernGLGraphicsContext:
         # Clear the data to simulate empty
         glyph_buffer.data[:] = (0, (0, 0, 0, 0), (0, 0, 0, 0))
 
-        vertex_data, vertex_count = self.graphics_ctx._encode_glyph_buffer_to_vertices(
-            glyph_buffer
+        vertex_data, vertex_count = (
+            self.graphics_ctx.texture_renderer._encode_glyph_buffer_to_vertices(
+                glyph_buffer
+            )
         )
 
         # Should have data for 1 cell (12 vertices: BG + FG quads)
         assert vertex_count == 12
         assert len(vertex_data) == 12
+
+    def test_vertex_encoding_uv_coordinates(self):
+        """Test that vertex encoding produces correct UV coordinates for specific
+        characters."""
+        # Create a simple 1x1 glyph buffer with a known character
+        glyph_buffer = GlyphBuffer(width=1, height=1)
+        glyph_buffer.data[0, 0] = (ord("A"), (255, 255, 255, 255), (0, 0, 0, 255))
+
+        vertex_data, vertex_count = (
+            self.graphics_ctx.texture_renderer._encode_glyph_buffer_to_vertices(
+                glyph_buffer
+            )
+        )
+
+        # Should have 1 cell * 12 vertices = 12 vertices
+        assert vertex_count == 12
+
+        # Get UV coordinates for character 'A' (should be at the start of vertex data)
+        # Each cell has 12 vertices: first 6 for background, next 6 for foreground
+        # We want the foreground vertices (6-11) for the first cell (character 'A')
+        fg_vertices_start = 6  # Skip background quad
+        fg_vertices_end = 12  # End of foreground quad
+
+        a_fg_vertices = vertex_data[fg_vertices_start:fg_vertices_end]
+
+        # All UV coordinates for this character should use the same UV mapping
+        # Get expected UV coordinates for 'A' from the UV map
+        expected_uv = self.graphics_ctx.uv_map[ord("A")]
+        u1, v1, u2, v2 = expected_uv
+
+        # Check that the UV coordinates are reasonable (not 0,0 to 1,1 which would be
+        # full texture)
+        assert u1 != 0.0 or v1 != 0.0 or u2 != 1.0 or v2 != 1.0, (
+            "UV coordinates should not span entire texture"
+        )
+        assert 0.0 <= u1 < u2 <= 1.0, f"Invalid U coordinates: {u1} to {u2}"
+        assert 0.0 <= v1 < v2 <= 1.0, f"Invalid V coordinates: {v1} to {v2}"
+
+        # Verify the vertices have the expected UV coordinates
+        # Triangle 1: (u1,v1), (u2,v1), (u1,v2)
+        # Triangle 2: (u2,v1), (u1,v2), (u2,v2)
+        expected_uvs = [
+            (u1, v1),
+            (u2, v1),
+            (u1, v2),  # Triangle 1
+            (u2, v1),
+            (u1, v2),
+            (u2, v2),  # Triangle 2
+        ]
+
+        for i, expected_uv_coord in enumerate(expected_uvs):
+            actual_uv = a_fg_vertices[i]["uv"]
+            np.testing.assert_array_almost_equal(
+                actual_uv,
+                expected_uv_coord,
+                decimal=5,
+                err_msg=f"UV coordinate mismatch at vertex {i}",
+            )
+
+    def test_render_glyph_buffer_creates_valid_texture(self):
+        """Test that render_glyph_buffer_to_texture creates a texture with valid
+        content."""
+        # Create a glyph buffer with a specific character
+        glyph_buffer = GlyphBuffer(width=2, height=2)
+        glyph_buffer.data[0, 0] = (ord("A"), (255, 0, 0, 255), (0, 0, 0, 255))
+        glyph_buffer.data[0, 1] = (ord("B"), (0, 255, 0, 255), (0, 0, 0, 255))
+        glyph_buffer.data[1, 0] = (ord("C"), (0, 0, 255, 255), (0, 0, 0, 255))
+        glyph_buffer.data[1, 1] = (ord("D"), (255, 255, 0, 255), (0, 0, 0, 255))
+
+        # Render to texture
+        texture = self.graphics_ctx.render_glyph_buffer_to_texture(glyph_buffer)
+
+        # Should return a valid texture
+        assert texture is not None
+        assert isinstance(texture, moderngl.Texture)
+
+        # Texture should have expected dimensions (2x2 tiles * 20x20 pixels each)
+        expected_width = 2 * self.graphics_ctx.tile_dimensions[0]
+        expected_height = 2 * self.graphics_ctx.tile_dimensions[1]
+        assert texture.size == (expected_width, expected_height)
+
+        # Texture should not be the same as the atlas texture
+        assert texture is not self.graphics_ctx.atlas_texture
+
+    def test_encode_glyph_buffer_to_vertices_exact_calculation(self):
+        """Test _encode_glyph_buffer_to_vertices with exact vertex calculations.
+
+        Creates a 1x1 GlyphBuffer with character 'A' and verifies that the output
+        NumPy array has exactly 12 vertices with manually calculated position,
+        color, and UV coordinates. This catches off-by-one, indexing, or
+        Y-flipping errors.
+        """
+        # Create a 1x1 GlyphBuffer with known character 'A'
+        glyph_buffer = GlyphBuffer(width=1, height=1)
+        fg_color = (255, 128, 64, 200)  # RGBA
+        bg_color = (32, 64, 128, 180)  # RGBA
+        glyph_buffer.data[0, 0] = (ord("A"), fg_color, bg_color)
+
+        # Call the method under test
+        vertex_data, vertex_count = (
+            self.graphics_ctx.texture_renderer._encode_glyph_buffer_to_vertices(
+                glyph_buffer
+            )
+        )
+
+        # Assert exactly 12 vertices (2 quads * 6 vertices per quad)
+        assert vertex_count == 12
+        assert len(vertex_data) == 12
+
+        # Get expected values for manual calculation
+        tile_w, tile_h = self.graphics_ctx._tile_dimensions
+
+        # Expected screen position (1x1 buffer, position (0,0) in buffer coordinates)
+        # Y-flipped: screen_y = (h - 1 - y) * tile_h = (1 - 1 - 0) * tile_h = 0
+        expected_screen_x = 0 * tile_w  # = 0
+        expected_screen_y = (1 - 1 - 0) * tile_h  # = 0
+
+        # Expected UV coordinates
+        expected_bg_uv = self.graphics_ctx.uv_map[
+            self.graphics_ctx.SOLID_BLOCK_CHAR
+        ]  # solid block
+        expected_fg_uv = self.graphics_ctx.uv_map[ord("A")]  # character 'A'
+
+        # Expected normalized colors
+        expected_bg_color_norm = tuple(c / 255.0 for c in bg_color)
+        expected_fg_color_norm = tuple(c / 255.0 for c in fg_color)
+
+        # Manually calculate expected vertices for background quad (first 6 vertices)
+        bg_u1, bg_v1, bg_u2, bg_v2 = expected_bg_uv
+        expected_bg_vertices = [
+            # Triangle 1
+            (
+                (expected_screen_x, expected_screen_y),
+                (bg_u1, bg_v1),
+                expected_bg_color_norm,
+            ),  # bottom-left
+            (
+                (expected_screen_x + tile_w, expected_screen_y),
+                (bg_u2, bg_v1),
+                expected_bg_color_norm,
+            ),  # bottom-right
+            (
+                (expected_screen_x, expected_screen_y + tile_h),
+                (bg_u1, bg_v2),
+                expected_bg_color_norm,
+            ),  # top-left
+            # Triangle 2
+            (
+                (expected_screen_x + tile_w, expected_screen_y),
+                (bg_u2, bg_v1),
+                expected_bg_color_norm,
+            ),  # bottom-right
+            (
+                (expected_screen_x, expected_screen_y + tile_h),
+                (bg_u1, bg_v2),
+                expected_bg_color_norm,
+            ),  # top-left
+            (
+                (expected_screen_x + tile_w, expected_screen_y + tile_h),
+                (bg_u2, bg_v2),
+                expected_bg_color_norm,
+            ),  # top-right
+        ]
+
+        # Manually calculate expected vertices for foreground quad (next 6 vertices)
+        fg_u1, fg_v1, fg_u2, fg_v2 = expected_fg_uv
+        expected_fg_vertices = [
+            # Triangle 1
+            (
+                (expected_screen_x, expected_screen_y),
+                (fg_u1, fg_v1),
+                expected_fg_color_norm,
+            ),  # bottom-left
+            (
+                (expected_screen_x + tile_w, expected_screen_y),
+                (fg_u2, fg_v1),
+                expected_fg_color_norm,
+            ),  # bottom-right
+            (
+                (expected_screen_x, expected_screen_y + tile_h),
+                (fg_u1, fg_v2),
+                expected_fg_color_norm,
+            ),  # top-left
+            # Triangle 2
+            (
+                (expected_screen_x + tile_w, expected_screen_y),
+                (fg_u2, fg_v1),
+                expected_fg_color_norm,
+            ),  # bottom-right
+            (
+                (expected_screen_x, expected_screen_y + tile_h),
+                (fg_u1, fg_v2),
+                expected_fg_color_norm,
+            ),  # top-left
+            (
+                (expected_screen_x + tile_w, expected_screen_y + tile_h),
+                (fg_u2, fg_v2),
+                expected_fg_color_norm,
+            ),  # top-right
+        ]
+
+        # Verify each vertex exactly matches expected calculations
+        all_expected_vertices = expected_bg_vertices + expected_fg_vertices
+
+        for i, expected_vertex in enumerate(all_expected_vertices):
+            actual_vertex = vertex_data[i]
+            expected_pos, expected_uv, expected_color = expected_vertex
+
+            # Check position
+            np.testing.assert_array_almost_equal(
+                actual_vertex["position"],
+                expected_pos,
+                decimal=5,
+                err_msg=f"Position mismatch at vertex {i}",
+            )
+
+            # Check UV coordinates
+            np.testing.assert_array_almost_equal(
+                actual_vertex["uv"],
+                expected_uv,
+                decimal=5,
+                err_msg=f"UV mismatch at vertex {i}",
+            )
+
+            # Check color
+            np.testing.assert_array_almost_equal(
+                actual_vertex["color"],
+                expected_color,
+                decimal=5,
+                err_msg=f"Color mismatch at vertex {i}",
+            )
 
 
 class TestModernGLGraphicsContextEdgeCases:

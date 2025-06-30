@@ -298,7 +298,7 @@ class DevConsoleOverlay(TextOverlay):
                 else:
                     self.history.append(f"No longer watching: {name}")
             case "quit" | "exit":
-                raise SystemExit()
+                self.controller.app.quit()
             case _:
                 self.history.append(f"Unknown command: '{cmd}'")
                 self._show_help()

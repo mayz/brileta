@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING
 import tcod.event
 
 from catley import colors
-from catley.backends.tcod.canvas import TCODConsoleCanvas
 from catley.util.live_vars import live_variable_registry
 from catley.view.ui.overlays import TextOverlay
 
@@ -22,7 +21,7 @@ class DebugStatsOverlay(TextOverlay):
         self.is_interactive = False
 
     def _get_backend(self) -> Canvas:
-        return TCODConsoleCanvas(self.controller.graphics, transparent=True)
+        return self.controller.graphics.create_canvas(transparent=True)
 
     def _calculate_dimensions(self) -> None:
         watched = live_variable_registry.get_watched_variables()
