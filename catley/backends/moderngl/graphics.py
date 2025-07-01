@@ -36,7 +36,7 @@ class UITextureRenderer:
 
     def __init__(self, mgl_context: moderngl.Context) -> None:
         self.mgl_context = mgl_context
-        self.render_queue: list[tuple[moderngl.Texture, np.ndarray]] = []
+        self.render_queue: list[tuple[moderngl.Texture, int]] = []
 
         # Create shader program similar to ScreenRenderer but for UI textures
         vertex_shader = """
@@ -89,10 +89,13 @@ class UITextureRenderer:
         )
         self.program["u_texture"].value = 0  # Use texture unit 0
 
-        # --- OPTIMIZATION: Create VBO and VAO only once ---
-        # Reserve buffer space for a single quad (6 vertices).
+        # Create CPU-side buffer to aggregate all vertex data
+        self.cpu_vertex_buffer = np.zeros(self.MAX_UI_QUADS * 6, dtype=VERTEX_DTYPE)
+        self.vertex_count = 0
+
+        # Create dynamic VBO large enough for all UI quads
         self.vbo = self.mgl_context.buffer(
-            reserve=6 * VERTEX_DTYPE.itemsize, dynamic=True
+            reserve=self.MAX_UI_QUADS * 6 * VERTEX_DTYPE.itemsize, dynamic=True
         )
         self.vao = self.mgl_context.vertex_array(
             self.program,
@@ -102,33 +105,43 @@ class UITextureRenderer:
     def begin_frame(self) -> None:
         """Clear the internal queue of textures to be rendered for the new frame."""
         self.render_queue.clear()
+        self.vertex_count = 0
 
     def add_textured_quad(
         self, texture: moderngl.Texture, vertices: np.ndarray
     ) -> None:
         """Add a texture and its corresponding vertex data to the internal
         render queue."""
-        self.render_queue.append((texture, vertices))
+        # Copy vertices into the CPU buffer
+        self.cpu_vertex_buffer[self.vertex_count : self.vertex_count + 6] = vertices
+        self.vertex_count += 6
+
+        # Queue only the texture and vertex count for this quad
+        self.render_queue.append((texture, 6))
 
     def render(self, letterbox_geometry: tuple[int, int, int, int]) -> None:
         """Render all queued textured quads."""
-        if not self.render_queue:
+        if not self.render_queue or self.vertex_count == 0:
             return
 
         # Set letterbox uniform once for all UI elements
         self.program["u_letterbox"].value = letterbox_geometry
 
-        # Render each queued texture. We still need to loop and switch textures,
-        # but we reuse the VBO and VAO.
-        for texture, vertices in self.render_queue:
+        # Upload all vertex data to GPU in a single operation
+        self.vbo.write(self.cpu_vertex_buffer[: self.vertex_count].tobytes())
+
+        # Render each quad with the correct texture binding
+        vertex_offset = 0
+        for texture, vertex_count in self.render_queue:
             # Bind the specific texture for this draw call
             texture.use(location=0)
 
-            # --- OPTIMIZATION: Write to the existing VBO, don't create a new one ---
-            self.vbo.write(vertices.tobytes())
+            # Render this quad using the correct slice of the VBO
+            self.vao.render(
+                moderngl.TRIANGLES, vertices=vertex_count, first=vertex_offset
+            )
 
-            # Render the single quad using the pre-existing VAO
-            self.vao.render(moderngl.TRIANGLES, vertices=6)
+            vertex_offset += vertex_count
 
     def release(self) -> None:
         """Clean up GPU resources."""

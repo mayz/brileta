@@ -94,50 +94,59 @@ class TestUITextureRenderer:
 
     def test_begin_frame(self):
         """Verify that calling this method clears any previously added quads
-        from the render queue."""
+        from the render queue and resets vertex count."""
         renderer = self.UITextureRenderer(self.mock_mgl_context)
 
         # Add some mock data to the render queue
-        test_vertices = np.zeros((6, 8), dtype=np.float32)
-        renderer.render_queue.append((self.mock_texture1, test_vertices))
-        renderer.render_queue.append((self.mock_texture2, test_vertices))
+        renderer.render_queue.append((self.mock_texture1, 6))
+        renderer.render_queue.append((self.mock_texture2, 6))
+        renderer.vertex_count = 12
 
-        # Verify queue has items
+        # Verify queue has items and vertex count is set
         assert len(renderer.render_queue) == 2
+        assert renderer.vertex_count == 12
 
         # Call begin_frame
         renderer.begin_frame()
 
-        # Verify queue is now empty
+        # Verify queue is now empty and vertex count is reset
         assert len(renderer.render_queue) == 0
+        assert renderer.vertex_count == 0
 
     def test_add_textured_quad(self):
-        """Verify that this method correctly adds a (texture, vertices) tuple
-        to its internal queue. Test adding multiple quads."""
+        """Verify that this method correctly adds vertex data to CPU buffer
+        and queues (texture, vertex_count) tuples."""
         renderer = self.UITextureRenderer(self.mock_mgl_context)
 
-        # Test data - 6 vertices with 8 components each (position + uv + color)
-        vertices1 = np.random.random((6, 8)).astype(np.float32)
-        vertices2 = np.random.random((6, 8)).astype(np.float32)
+        # Test data - vertices with the expected VERTEX_DTYPE structure
+        from catley.backends.moderngl.screen_renderer import VERTEX_DTYPE
 
-        # Initially queue should be empty
+        vertices1 = np.zeros(6, dtype=VERTEX_DTYPE)
+        vertices2 = np.zeros(6, dtype=VERTEX_DTYPE)
+
+        # Initially queue should be empty and vertex count should be 0
         assert len(renderer.render_queue) == 0
+        assert renderer.vertex_count == 0
 
         # Add first quad
         renderer.add_textured_quad(self.mock_texture1, vertices1)
 
-        # Verify first quad was added
+        # Verify first quad was added to queue and CPU buffer
         assert len(renderer.render_queue) == 1
-        assert renderer.render_queue[0][0] == self.mock_texture1
-        assert np.array_equal(renderer.render_queue[0][1], vertices1)
+        assert renderer.render_queue[0] == (self.mock_texture1, 6)
+        assert renderer.vertex_count == 6
+        # Verify vertices were copied to CPU buffer
+        assert np.array_equal(renderer.cpu_vertex_buffer[0:6], vertices1)
 
         # Add second quad
         renderer.add_textured_quad(self.mock_texture2, vertices2)
 
         # Verify both quads are in queue
         assert len(renderer.render_queue) == 2
-        assert renderer.render_queue[1][0] == self.mock_texture2
-        assert np.array_equal(renderer.render_queue[1][1], vertices2)
+        assert renderer.render_queue[1] == (self.mock_texture2, 6)
+        assert renderer.vertex_count == 12
+        # Verify second vertices were copied to CPU buffer
+        assert np.array_equal(renderer.cpu_vertex_buffer[6:12], vertices2)
 
     def test_render_empty_queue(self):
         """Verify that if render() is called when the queue is empty, no
@@ -167,8 +176,7 @@ class TestUITextureRenderer:
         self.mock_texture2.use.assert_not_called()
 
     def test_render_calls(self):
-        """Test that render() correctly processes queued textures and makes
-        proper moderngl calls."""
+        """Test that render() processes queued textures with batched upload."""
         renderer = self.UITextureRenderer(self.mock_mgl_context)
 
         # Reset mock call counts after initialization
@@ -177,8 +185,10 @@ class TestUITextureRenderer:
         self.mock_vao.render.reset_mock()
 
         # Create test vertex data for two quads
-        vertices1 = np.random.random((6, 8)).astype(np.float32)
-        vertices2 = np.random.random((6, 8)).astype(np.float32)
+        from catley.backends.moderngl.screen_renderer import VERTEX_DTYPE
+
+        vertices1 = np.zeros(6, dtype=VERTEX_DTYPE)
+        vertices2 = np.zeros(6, dtype=VERTEX_DTYPE)
 
         # Add two different textures with vertex data
         renderer.add_textured_quad(self.mock_texture1, vertices1)
@@ -193,9 +203,8 @@ class TestUITextureRenderer:
         self.mock_program.__getitem__.assert_called_with("u_letterbox")
         assert self.mock_uniform.value == letterbox_geometry
 
-        # With the optimized version, we reuse the VBO and VAO
-        # We expect 2 writes to the VBO (one for each quad)
-        assert self.mock_vbo.write.call_count == 2
+        # With true batching, we expect only 1 VBO write for all vertices
+        assert self.mock_vbo.write.call_count == 1
 
         # Verify texture.use() was called for both textures
         self.mock_texture1.use.assert_called_once()
@@ -204,22 +213,22 @@ class TestUITextureRenderer:
         # Verify render happened twice (once for each quad)
         assert self.mock_vao.render.call_count == 2
 
-        # Verify the correct sequence of calls for each iteration
-        # Check that VBO write was called with the correct vertex data
+        # Verify the single VBO write contains all vertex data
         write_calls = self.mock_vbo.write.call_args_list
+        assert len(write_calls) == 1
 
-        # First call should have vertices1
-        first_call_data = write_calls[0][0][0]  # First positional argument
-        assert np.array_equal(first_call_data, vertices1.tobytes())
-
-        # Second call should have vertices2
-        second_call_data = write_calls[1][0][0]  # First positional argument
-        assert np.array_equal(second_call_data, vertices2.tobytes())
-
-        # Verify render calls happened with correct vertex count (6 vertices per quad)
+        # Verify render calls happened with correct parameters
         render_calls = self.mock_vao.render.call_args_list
-        for call in render_calls:
-            assert call.kwargs.get("vertices") == 6
+
+        # First render call should be for vertices 0-5 (first=0, vertices=6)
+        first_call = render_calls[0]
+        assert first_call.kwargs.get("vertices") == 6
+        assert first_call.kwargs.get("first") == 0
+
+        # Second render call should be for vertices 6-11 (first=6, vertices=6)
+        second_call = render_calls[1]
+        assert second_call.kwargs.get("vertices") == 6
+        assert second_call.kwargs.get("first") == 6
 
     def test_release(self):
         """Test that release() properly cleans up GPU resources."""
