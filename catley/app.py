@@ -125,7 +125,8 @@ class App(ABC):
             self.controller.accumulator >= self.controller.fixed_timestep
             and logic_steps_this_frame < self.controller.max_logic_steps_per_frame
         ):
-            self.controller.update_logic_step()
+            # Call shared logic execution method
+            self.execute_fixed_logic_step()
 
             # CONSUME TIME: Remove one fixed timestep from accumulator
             # Continue loop if more time needs to be processed
@@ -137,29 +138,57 @@ class App(ABC):
         if logic_steps_this_frame >= self.controller.max_logic_steps_per_frame:
             self.controller.accumulator *= 0.8
 
+    def execute_fixed_logic_step(self) -> None:
+        """
+        Execute exactly one logic step at fixed 60Hz timing.
+
+        This method is called by both timing strategies:
+        - TCOD: 0-N times per visual frame (accumulator catches up to maintain 60Hz)
+        - Pyglet: exactly once per 1/60 second (scheduler guarantees 60Hz)
+
+        Shared execution ensures identical game logic across all backends.
+        """
+        assert self.controller is not None
+        # Note: process_player_input() is handled differently by each backend
+        # TCOD: calls it once per visual frame in update_game_logic()
+        # Pyglet: will call it in its own timing
+        self.controller.update_logic_step()
+
     def render_frame(self) -> None:
         """
-        Renders a visual frame with interpolation.
+        Renders a visual frame with interpolation (accumulator-based timing).
 
-        This method implements the core rendering logic shared by all backends:
-        - Calculates interpolation alpha for smooth movement
-        - Prepares the frame buffer
-        - Renders the interpolated frame
-        - Presents the frame to screen
+        This method is used by polling backends (TCOD) that use the accumulator
+        pattern. It calculates interpolation alpha from the accumulator state.
+        """
+        assert self.controller is not None
+
+        # INTERPOLATION ALPHA: Calculate how far between logic steps we are
+        # alpha=0.0 means "exactly at previous step", alpha=1.0 is "current"
+        # alpha=0.5 means "halfway between steps" - creates smooth movement
+        # Clamp to 1.0 to prevent overshoot when death spiral hits
+        alpha = InterpolationAlpha(
+            min(
+                1.0,
+                self.controller.accumulator / self.controller.fixed_timestep,
+            )
+        )
+
+        self.render_frame_with_alpha(alpha)
+
+    def render_frame_with_alpha(self, alpha: InterpolationAlpha) -> None:
+        """
+        Renders a visual frame with explicit interpolation alpha.
+
+        This method is called by both rendering strategies:
+        - TCOD: via render_frame() with accumulator-calculated alpha
+        - Pyglet: directly with manually-calculated alpha
+
+        Shared rendering ensures identical visual output across all backends.
         """
         assert self.controller is not None
 
         with record_time_live_variable("cpu.total_frame_ms"):
-            # INTERPOLATION ALPHA: Calculate how far between logic steps we are
-            # alpha=0.0 means "exactly at previous step", alpha=1.0 is "current"
-            # alpha=0.5 means "halfway between steps" - creates smooth movement
-            # Clamp to 1.0 to prevent overshoot when death spiral hits
-            alpha = InterpolationAlpha(
-                min(
-                    1.0,
-                    self.controller.accumulator / self.controller.fixed_timestep,
-                )
-            )
             self.prepare_for_new_frame()
             self.controller.render_visual_frame(alpha)
             self.present_frame()

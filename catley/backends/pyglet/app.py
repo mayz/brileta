@@ -49,10 +49,13 @@ class PygletApp(App):
         # Initialize shared controller
         self._initialize_controller(self.graphics)
 
-        # Schedule game logic updates at target FPS
-        pyglet.clock.schedule_interval(self.update, 1 / config.TARGET_FPS)
+        # 1. Schedule LOGIC updates at a high frequency
+        pyglet.clock.schedule_interval(self.update, 1.0 / 120.0)
 
-        # Register event handlers (manually control drawing)
+        # 2. Assign the RENDER callback
+        self.window.on_draw = self.on_draw
+
+        # Register event handlers
         self.window.on_key_press = self.on_key_press
         self.window.on_key_release = self.on_key_release
         self.window.on_mouse_motion = self.on_mouse_motion
@@ -72,14 +75,15 @@ class PygletApp(App):
             self.window.set_mouse_visible(True)
 
     def update(self, dt: float) -> None:
-        """The main update function, called by pyglet's clock."""
-        delta_time: DeltaTime = DeltaTime(dt)
-        self.update_game_logic(delta_time)
-        # Manually trigger drawing after game logic update
-        self.on_draw()
+        """Called 120 times/sec. ONLY updates game state."""
+        delta_time = DeltaTime(dt)
+        assert self.controller is not None
+        self.controller.clock.sync(config.TARGET_FPS)
+        self.update_game_logic(delta_time)  # Runs the accumulator for logic
 
     def on_draw(self) -> None:
-        """The main drawing function, called by pyglet's event loop."""
+        """Called by Pyglet to render. ONLY renders the current state."""
+        # render_frame() uses the accumulator state to calculate alpha and draw
         self.render_frame()
 
     def prepare_for_new_frame(self) -> None:
@@ -87,9 +91,8 @@ class PygletApp(App):
         self.graphics.prepare_to_present()
 
     def present_frame(self) -> None:
-        """Presents the fully rendered backbuffer to the screen."""
+        """Presents the fully rendered backbuffer to the screen, but does NOT flip."""
         self.graphics.finalize_present()
-        self.window.flip()
 
     def toggle_fullscreen(self) -> None:
         """Toggles the display between windowed and fullscreen mode."""
