@@ -209,7 +209,12 @@ class ModernGLGraphicsContext(GraphicsContext):
             alpha,
         )
         uv_coords = self.uv_map[ord(char)]
-        w, h = self.tile_dimensions
+
+        # Calculate scaled tile dimensions based on letterbox scaling
+        offset_x, offset_y, scaled_w, scaled_h = self.letterbox_geometry
+        w = scaled_w / self.console_width_tiles
+        h = scaled_h / self.console_height_tiles
+
         self.screen_renderer.add_quad(screen_x, screen_y, w, h, uv_coords, final_color)
 
     def render_particles(
