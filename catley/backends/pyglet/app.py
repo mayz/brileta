@@ -63,7 +63,13 @@ class PygletApp(App):
 
     def run(self) -> None:
         """Starts the main application loop and runs the game."""
-        pyglet.app.run()
+        try:
+            # Hide system cursor since we draw our own
+            self.window.set_mouse_visible(False)
+            pyglet.app.run()
+        finally:
+            # Restore system cursor when exiting
+            self.window.set_mouse_visible(True)
 
     def update(self, dt: float) -> None:
         """The main update function, called by pyglet's clock."""

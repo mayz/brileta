@@ -388,29 +388,20 @@ class ModernGLGraphicsContext(GraphicsContext):
         texture = cursor_data.texture
         hotspot_x, hotspot_y = cursor_data.hotspot
 
-        # Calculate position adjusted for hotspot
-        dest_x = cursor_manager.mouse_pixel_x - hotspot_x
-        dest_y = cursor_manager.mouse_pixel_y - hotspot_y
-        dest_w = texture.width
-        dest_h = texture.height
+        # Calculate position adjusted for hotspot with proper scaling
+        tile_w, tile_h = self.tile_dimensions
+        scale_factor = 2  # Make cursor 2x tile size for visibility
+        dest_x = cursor_manager.mouse_pixel_x - hotspot_x * scale_factor
+        dest_y = cursor_manager.mouse_pixel_y - hotspot_y * scale_factor
+        dest_w = texture.width * scale_factor
+        dest_h = texture.height * scale_factor
 
         # Use white color (no tint) and full alpha
         color_rgba = (1.0, 1.0, 1.0, 1.0)
-        u1, v1, u2, v2 = 0.0, 1.0, 1.0, 0.0  # Flipped V for PIL-based textures
+        # Correct UV coordinates (not flipped)
+        uv_coords = (0.0, 0.0, 1.0, 1.0)
 
-        # Create vertex data for a single quad
-        vertices = np.zeros(6, dtype=VERTEX_DTYPE)
-
-        # Triangle 1 (vertices 0, 1, 2)
-        vertices[0] = ((dest_x, dest_y), (u1, v1), color_rgba)
-        vertices[1] = ((dest_x + dest_w, dest_y), (u2, v1), color_rgba)
-        vertices[2] = ((dest_x, dest_y + dest_h), (u1, v2), color_rgba)
-
-        # Triangle 2 (vertices 3, 4, 5)
-        vertices[3] = ((dest_x + dest_w, dest_y), (u2, v1), color_rgba)
-        vertices[4] = ((dest_x, dest_y + dest_h), (u1, v2), color_rgba)
-        vertices[5] = ((dest_x + dest_w, dest_y + dest_h), (u2, v2), color_rgba)
-
+        # Use the common screen renderer to draw the cursor
         # Flush any pending vertex buffer data first
         if self.screen_renderer.vertex_count > 0:
             self.finalize_present()
@@ -421,17 +412,23 @@ class ModernGLGraphicsContext(GraphicsContext):
         ].value = self.letterbox_geometry
         texture.use(location=0)
 
-        # Create temporary VBO and render immediately
-        temp_vbo = self.mgl_context.buffer(vertices.tobytes())
-        temp_vao = self.mgl_context.vertex_array(
-            self.screen_renderer.screen_program,
-            [(temp_vbo, "2f 2f 4f", "in_vert", "in_uv", "in_color")],
+        # Use the common add_quad method for consistent rendering
+        self.screen_renderer.add_quad(
+            dest_x, dest_y, dest_w, dest_h, uv_coords, color_rgba
         )
-        temp_vao.render(moderngl.TRIANGLES, vertices=6)
 
-        # Clean up temporary objects
-        temp_vao.release()
-        temp_vbo.release()
+        # Render immediately
+        self.screen_renderer.vbo.write(
+            self.screen_renderer.cpu_vertex_buffer[
+                : self.screen_renderer.vertex_count
+            ].tobytes()
+        )
+        self.screen_renderer.vao.render(
+            moderngl.TRIANGLES, vertices=self.screen_renderer.vertex_count
+        )
+
+        # Reset vertex count after immediate render
+        self.screen_renderer.vertex_count = 0
 
         # Restore atlas texture for other rendering
         self.atlas_texture.use(location=0)
