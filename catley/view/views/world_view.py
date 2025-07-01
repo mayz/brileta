@@ -78,13 +78,14 @@ class WorldView(View):
 
     def set_bounds(self, x1: int, y1: int, x2: int, y2: int) -> None:
         """Override set_bounds to update viewport and console dimensions."""
-        super().set_bounds(x1, y1, x2, y2)
-        # When the window size changes we recreate the viewport and consoles
-        # so that rendering operates on the new visible dimensions.
-        self.viewport_system = ViewportSystem(self.width, self.height)
-        self.map_glyph_buffer = GlyphBuffer(self.width, self.height)
-        self.particle_system = SubTileParticleSystem(self.width, self.height)
-        self.environmental_system = EnvironmentalEffectSystem()
+        # Only perform resize logic if the dimensions have actually changed.
+        if self.width != (x2 - x1) or self.height != (y2 - y1):
+            super().set_bounds(x1, y1, x2, y2)
+            # Update the existing viewport's size instead of replacing it.
+            self.viewport_system.viewport.resize(self.width, self.height)
+            self.map_glyph_buffer = GlyphBuffer(self.width, self.height)
+            self.particle_system = SubTileParticleSystem(self.width, self.height)
+            self.environmental_system = EnvironmentalEffectSystem()
 
     # ------------------------------------------------------------------
     # Public API
@@ -216,7 +217,7 @@ class WorldView(View):
         # 1. Present the cached unlit background
         if self._active_background_texture:
             with record_time_live_variable("cpu.render.present_background_ms"):
-                graphics.present_texture(
+                graphics.draw_background(
                     self._active_background_texture,
                     self.x,
                     self.y,
@@ -225,9 +226,10 @@ class WorldView(View):
                 )
 
         # 2. Present the dynamic light overlay on top of the background
+        # The light overlay should also be drawn immediately after the background.
         if self._light_overlay_texture:
             with record_time_live_variable("cpu.render.present_light_overlay_ms"):
-                graphics.present_texture(
+                graphics.draw_background(  # We can reuse draw_background for this
                     self._light_overlay_texture, self.x, self.y, self.width, self.height
                 )
 

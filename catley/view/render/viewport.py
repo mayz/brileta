@@ -138,6 +138,11 @@ class Viewport:
         left, top = bounds.x1, bounds.y1
         return vp_x - self.offset_x + left, vp_y - self.offset_y + top
 
+    def resize(self, new_width: TileCoord, new_height: TileCoord) -> None:
+        """Updates the viewport's dimensions."""
+        self.width_tiles = new_width
+        self.height_tiles = new_height
+
 
 class ViewportSystem:
     """Manages the Camera and Viewport to provide a clean API for rendering."""

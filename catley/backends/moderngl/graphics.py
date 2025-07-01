@@ -24,6 +24,104 @@ from .screen_renderer import VERTEX_DTYPE, ScreenRenderer
 from .texture_renderer import TextureRenderer
 
 
+class UITextureRenderer:
+    """
+    A batched renderer for textured quads where each quad can have a
+    different source texture.
+    """
+
+    def __init__(self, mgl_context: moderngl.Context) -> None:
+        self.mgl_context = mgl_context
+        self.render_queue: list[tuple[moderngl.Texture, np.ndarray]] = []
+
+        # Create shader program similar to ScreenRenderer but for UI textures
+        vertex_shader = """
+        #version 330
+        in vec2 in_vert;
+        in vec2 in_uv;
+        in vec4 in_color;
+
+        uniform vec4 u_letterbox;
+
+        out vec2 v_uv;
+        out vec4 v_color;
+
+        void main() {
+            float letterbox_x = u_letterbox.x;
+            float letterbox_y = u_letterbox.y;
+            float letterbox_w = u_letterbox.z;
+            float letterbox_h = u_letterbox.w;
+
+            // Normalize to letterbox coordinates (0.0 to 1.0)
+            float norm_x = (in_vert.x - letterbox_x) / letterbox_w;
+            float norm_y = 1.0 - ((in_vert.y - letterbox_y) / letterbox_h);
+
+            // Convert to clip space (-1.0 to 1.0)
+            float x = norm_x * 2.0 - 1.0;
+            float y = norm_y * 2.0 - 1.0;
+
+            gl_Position = vec4(x, y, 0.0, 1.0);
+            v_uv = in_uv;
+            v_color = in_color;
+        }
+        """
+
+        fragment_shader = """
+        #version 330
+        uniform sampler2D u_texture;
+
+        in vec2 v_uv;
+        in vec4 v_color;
+
+        out vec4 fragColor;
+
+        void main() {
+            fragColor = texture(u_texture, v_uv) * v_color;
+        }
+        """
+
+        self.program = mgl_context.program(
+            vertex_shader=vertex_shader, fragment_shader=fragment_shader
+        )
+
+    def begin_frame(self) -> None:
+        """Clear the internal queue of textures to be rendered for the new frame."""
+        self.render_queue.clear()
+
+    def add_textured_quad(
+        self, texture: moderngl.Texture, vertices: np.ndarray
+    ) -> None:
+        """Add a texture and its corresponding vertex data to the internal
+        render queue."""
+        self.render_queue.append((texture, vertices))
+
+    def render(self, letterbox_geometry: tuple[int, int, int, int]) -> None:
+        """Render all queued textured quads."""
+        if not self.render_queue:
+            return
+
+        # Set letterbox uniform
+        self.program["u_letterbox"].value = letterbox_geometry
+
+        # Render each queued texture
+        for texture, vertices in self.render_queue:
+            # Bind the texture
+            texture.use(location=0)
+
+            # Create temporary VBO and VAO for this quad
+            temp_vbo = self.mgl_context.buffer(vertices.tobytes())
+            temp_vao = self.mgl_context.vertex_array(
+                self.program, [(temp_vbo, "2f 2f 4f", "in_vert", "in_uv", "in_color")]
+            )
+
+            # Render the quad
+            temp_vao.render(moderngl.TRIANGLES, vertices=6)
+
+            # Clean up temporary resources
+            temp_vao.release()
+            temp_vbo.release()
+
+
 class ModernGLGraphicsContext(GraphicsContext):
     """
     A high-performance GraphicsContext that uses ModernGL. It uses a two-shader
@@ -35,6 +133,7 @@ class ModernGLGraphicsContext(GraphicsContext):
         self.mgl_context = context
         self.mgl_context.enable(moderngl.BLEND)
         self.mgl_context.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
+        self.mgl_context.disable(moderngl.CULL_FACE)
 
         # --- Shader and Texture Setup ---
         self.atlas_texture = self._load_atlas_texture()
@@ -53,7 +152,64 @@ class ModernGLGraphicsContext(GraphicsContext):
             self.mgl_context, self.atlas_texture, self._tile_dimensions, self.uv_map
         )
 
+        # --- UITextureRenderer for batched texture rendering ---
+        self.ui_texture_renderer = UITextureRenderer(self.mgl_context)
+
         self.SOLID_BLOCK_CHAR = 219
+
+    def _draw_single_texture_immediately(
+        self, texture: moderngl.Texture, vertices: np.ndarray
+    ) -> None:
+        """Helper to render a single quad with a custom texture immediately."""
+        # This helper encapsulates the logic for a one-off draw call.
+        # We'll use the UI renderer's shader because it's generic.
+        program = self.ui_texture_renderer.program
+        program["u_letterbox"].value = self.letterbox_geometry
+
+        texture.use(location=0)
+
+        temp_vbo = self.mgl_context.buffer(vertices.tobytes())
+        temp_vao = self.mgl_context.vertex_array(
+            program, [(temp_vbo, "2f 2f 4f", "in_vert", "in_uv", "in_color")]
+        )
+        temp_vao.render(moderngl.TRIANGLES, vertices=6)
+
+        temp_vao.release()
+        temp_vbo.release()
+
+        # IMPORTANT: Restore the main atlas texture for the ScreenRenderer
+        self.atlas_texture.use(location=0)
+
+    def draw_background(
+        self,
+        texture: moderngl.Texture,
+        x_tile: int,
+        y_tile: int,
+        width_tiles: int,
+        height_tiles: int,
+    ) -> None:
+        """Draws the main world background texture. This is an immediate draw call
+        that should happen before other rendering."""
+        if not isinstance(texture, moderngl.Texture):
+            return
+
+        px_x1, px_y1 = self.console_to_screen_coords(x_tile, y_tile)
+        px_x2, px_y2 = self.console_to_screen_coords(
+            x_tile + width_tiles, y_tile + height_tiles
+        )
+
+        vertices = np.zeros(6, dtype=VERTEX_DTYPE)
+        u1, v1, u2, v2 = 0.0, 0.0, 1.0, 1.0  # Use non-flipped UVs
+        color_rgba = (1.0, 1.0, 1.0, 1.0)  # White, no tint
+
+        vertices[0] = ((px_x1, px_y1), (u1, v1), color_rgba)
+        vertices[1] = ((px_x2, px_y1), (u2, v1), color_rgba)
+        vertices[2] = ((px_x1, px_y2), (u1, v2), color_rgba)
+        vertices[3] = ((px_x2, px_y1), (u2, v1), color_rgba)
+        vertices[4] = ((px_x1, px_y2), (u1, v2), color_rgba)
+        vertices[5] = ((px_x2, px_y2), (u2, v2), color_rgba)
+
+        self._draw_single_texture_immediately(texture, vertices)
 
     # --- Initialization Helpers ---
 
@@ -88,6 +244,7 @@ class ModernGLGraphicsContext(GraphicsContext):
         """Clears the screen and resets the vertex buffer for a new frame."""
         self.mgl_context.clear(0.0, 0.0, 0.0)
         self.screen_renderer.begin_frame()
+        self.ui_texture_renderer.begin_frame()
 
     def finalize_present(self) -> None:
         """Uploads all vertex data and draws the scene in a single batch."""
@@ -95,6 +252,7 @@ class ModernGLGraphicsContext(GraphicsContext):
             self.window.get_framebuffer_size(),
             letterbox_geometry=self.letterbox_geometry,
         )
+        self.ui_texture_renderer.render(self.letterbox_geometry)
 
     # --- GraphicsContext ABC Implementation ---
 
@@ -131,7 +289,7 @@ class ModernGLGraphicsContext(GraphicsContext):
         width_tiles: int,
         height_tiles: int,
     ) -> None:
-        """Adds a pre-rendered texture to the main screen vertex buffer."""
+        """Queues a pre-rendered UI texture for batched rendering."""
         if not isinstance(texture, moderngl.Texture):
             return
 
@@ -140,28 +298,7 @@ class ModernGLGraphicsContext(GraphicsContext):
             x_tile + width_tiles, y_tile + height_tiles
         )
 
-        # Calculate dimensions (unused but kept for potential future use)
-        # px_w = px_x2 - px_x1
-        # px_h = px_y2 - px_y1
-
-        # This is now a batched operation. We need to flush the current buffer,
-        # render it, then set up to render this texture, render it, and then
-        # restore the state for subsequent batched rendering.
-        # This is complex. A simpler approach is to add its vertices to a
-        # separate buffer
-        # or handle it in a separate pass. For now, let's keep it immediate.
-
-        # Flush any pending vertex buffer data first
-        if self.screen_renderer.vertex_count > 0:
-            self.finalize_present()
-
-        # Set up for immediate rendering with the custom texture
-        self.screen_renderer.screen_program[
-            "u_letterbox"
-        ].value = self.letterbox_geometry
-        texture.use(location=0)
-
-        # Create vertices for this single texture quad
+        # Create vertices for this texture quad
         vertices = np.zeros(6, dtype=VERTEX_DTYPE)
         u1, v1, u2, v2 = 0.0, 0.0, 1.0, 1.0  # Use non-flipped UVs
         color_rgba = (1.0, 1.0, 1.0, 1.0)
@@ -173,18 +310,8 @@ class ModernGLGraphicsContext(GraphicsContext):
         vertices[4] = ((px_x1, px_y2), (u1, v2), color_rgba)
         vertices[5] = ((px_x2, px_y2), (u2, v2), color_rgba)
 
-        temp_vbo = self.mgl_context.buffer(vertices.tobytes())
-        temp_vao = self.mgl_context.vertex_array(
-            self.screen_renderer.screen_program,
-            [(temp_vbo, "2f 2f 4f", "in_vert", "in_uv", "in_color")],
-        )
-        temp_vao.render(moderngl.TRIANGLES, vertices=6)
-
-        temp_vao.release()
-        temp_vbo.release()
-
-        # Restore atlas texture for other rendering
-        self.atlas_texture.use(location=0)
+        # Queue the texture and vertices for batched rendering
+        self.ui_texture_renderer.add_textured_quad(texture, vertices)
 
     def draw_actor_smooth(
         self,
@@ -371,7 +498,7 @@ class ModernGLGraphicsContext(GraphicsContext):
     # --- Internal Helpers ---
 
     def draw_mouse_cursor(self, cursor_manager: Any) -> None:
-        """Draws the active cursor using data from the cursor manager."""
+        """Queues the active cursor for batched rendering."""
         cursor_data = cursor_manager.cursors.get(cursor_manager.active_cursor_type)
         if not cursor_data:
             return
@@ -389,49 +516,31 @@ class ModernGLGraphicsContext(GraphicsContext):
         hotspot_x, hotspot_y = cursor_data.hotspot
 
         # Calculate position adjusted for hotspot with proper scaling
-        tile_w, tile_h = self.tile_dimensions
         scale_factor = 2  # Make cursor 2x tile size for visibility
         dest_x = cursor_manager.mouse_pixel_x - hotspot_x * scale_factor
         dest_y = cursor_manager.mouse_pixel_y - hotspot_y * scale_factor
         dest_w = texture.width * scale_factor
         dest_h = texture.height * scale_factor
 
-        # Use white color (no tint) and full alpha
-        color_rgba = (1.0, 1.0, 1.0, 1.0)
-        # Correct UV coordinates (not flipped)
-        uv_coords = (0.0, 0.0, 1.0, 1.0)
+        # Create vertices for the cursor quad
+        vertices = np.zeros(6, dtype=VERTEX_DTYPE)
+        u1, v1, u2, v2 = 0.0, 0.0, 1.0, 1.0  # Standard UV coordinates
+        color_rgba = (1.0, 1.0, 1.0, 1.0)  # White color, no tint
 
-        # Use the common screen renderer to draw the cursor
-        # Flush any pending vertex buffer data first
-        if self.screen_renderer.vertex_count > 0:
-            self.finalize_present()
+        # Calculate quad corners
+        px_x1, px_y1 = dest_x, dest_y
+        px_x2, px_y2 = dest_x + dest_w, dest_y + dest_h
 
-        # Set up for immediate rendering with the custom texture
-        self.screen_renderer.screen_program[
-            "u_letterbox"
-        ].value = self.letterbox_geometry
-        texture.use(location=0)
+        # Create triangle vertices (2 triangles = 6 vertices)
+        vertices[0] = ((px_x1, px_y1), (u1, v1), color_rgba)
+        vertices[1] = ((px_x2, px_y1), (u2, v1), color_rgba)
+        vertices[2] = ((px_x1, px_y2), (u1, v2), color_rgba)
+        vertices[3] = ((px_x2, px_y1), (u2, v1), color_rgba)
+        vertices[4] = ((px_x1, px_y2), (u1, v2), color_rgba)
+        vertices[5] = ((px_x2, px_y2), (u2, v2), color_rgba)
 
-        # Use the common add_quad method for consistent rendering
-        self.screen_renderer.add_quad(
-            dest_x, dest_y, dest_w, dest_h, uv_coords, color_rgba
-        )
-
-        # Render immediately
-        self.screen_renderer.vbo.write(
-            self.screen_renderer.cpu_vertex_buffer[
-                : self.screen_renderer.vertex_count
-            ].tobytes()
-        )
-        self.screen_renderer.vao.render(
-            moderngl.TRIANGLES, vertices=self.screen_renderer.vertex_count
-        )
-
-        # Reset vertex count after immediate render
-        self.screen_renderer.vertex_count = 0
-
-        # Restore atlas texture for other rendering
-        self.atlas_texture.use(location=0)
+        # Queue the cursor for batched rendering
+        self.ui_texture_renderer.add_textured_quad(texture, vertices)
 
     def draw_tile_highlight(
         self, root_x: int, root_y: int, color: colors.Color, alpha: Opacity
