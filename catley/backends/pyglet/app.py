@@ -5,10 +5,9 @@ import pyglet
 import tcod
 from pyglet.window import key, mouse
 
-from catley import config
 from catley.app import App, AppConfig
 from catley.backends.moderngl.graphics import ModernGLGraphicsContext
-from catley.types import DeltaTime
+from catley.types import InterpolationAlpha
 
 
 class PygletApp(App):
@@ -21,6 +20,9 @@ class PygletApp(App):
 
     def __init__(self, app_config: AppConfig) -> None:
         super().__init__(app_config)
+
+        # Track time since last logic update for interpolation
+        self.time_since_last_logic_update: float = 0.0
 
         # Create Pyglet-specific window and context
         # Convert console tile dimensions to reasonable pixel dimensions
@@ -49,10 +51,13 @@ class PygletApp(App):
         # Initialize shared controller
         self._initialize_controller(self.graphics)
 
-        # 1. Schedule LOGIC updates at a high frequency
-        pyglet.clock.schedule_interval(self.update, 1.0 / 120.0)
+        # Schedule fixed logic updates using the controller's fixed timestep
+        assert self.controller is not None
+        pyglet.clock.schedule_interval(
+            self.update_logic_for_pyglet, self.controller.fixed_timestep
+        )
 
-        # 2. Assign the RENDER callback
+        # Assign the render callback
         self.window.on_draw = self.on_draw
 
         # Register event handlers
@@ -74,17 +79,38 @@ class PygletApp(App):
             # Restore system cursor when exiting
             self.window.set_mouse_visible(True)
 
-    def update(self, dt: float) -> None:
-        """Called 120 times/sec. ONLY updates game state."""
-        delta_time = DeltaTime(dt)
-        assert self.controller is not None
-        self.controller.clock.sync(config.TARGET_FPS)
-        self.update_game_logic(delta_time)  # Runs the accumulator for logic
+    def update_logic_for_pyglet(self, dt: float) -> None:
+        """Called at fixed timestep intervals. Executes logic step and resets timer."""
+        self.execute_fixed_logic_step()
+        # Reset the timer. The render loop will now accumulate time from this point.
+        self.time_since_last_logic_update = 0.0
 
     def on_draw(self) -> None:
-        """Called by Pyglet to render. ONLY renders the current state."""
-        # render_frame() uses the accumulator state to calculate alpha and draw
-        self.render_frame()
+        """Called by Pyglet to render. Handles input, calculates alpha, and renders."""
+        assert self.controller is not None
+
+        # Get delta time and update the controller's clock to calculate FPS.
+        dt = self.controller.clock.tick()
+
+        # Update our timer
+        self.time_since_last_logic_update += dt
+
+        # Process player input for responsiveness
+        self.controller.process_player_input()
+
+        # Calculate interpolation alpha (clamp to [0.0, 1.0] range)
+        alpha = InterpolationAlpha(
+            min(
+                1.0,
+                max(
+                    0.0,
+                    self.time_since_last_logic_update / self.controller.fixed_timestep,
+                ),
+            )
+        )
+
+        # Render with the calculated alpha
+        self.render_frame_with_alpha(alpha)
 
     def prepare_for_new_frame(self) -> None:
         """Prepares the backbuffer for a new frame of rendering."""
