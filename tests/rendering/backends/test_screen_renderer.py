@@ -219,8 +219,9 @@ class TestScreenRenderer:
         renderer.render_to_screen(window_size)
 
         # Verify uniform was set
-        self.mock_program.__getitem__.assert_called_with("u_screen_size")
-        assert self.mock_uniform.value == window_size
+        self.mock_program.__getitem__.assert_called_with("u_letterbox")
+        # Should set letterbox to full screen when no letterbox_geometry provided
+        assert self.mock_uniform.value == (0, 0, window_size[0], window_size[1])
 
         # Verify atlas texture was used
         self.mock_atlas_texture.use.assert_called_once_with(location=0)
@@ -293,7 +294,7 @@ class TestScreenRenderer:
         assert "in vec2 in_vert" in vertex_shader
         assert "in vec2 in_uv" in vertex_shader
         assert "in vec4 in_color" in vertex_shader
-        assert "uniform vec2 u_screen_size" in vertex_shader
+        assert "uniform vec4 u_letterbox" in vertex_shader
         assert "gl_Position = vec4(x, y, 0.0, 1.0)" in vertex_shader
 
         # Verify fragment shader contains expected content

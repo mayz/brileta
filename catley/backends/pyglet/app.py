@@ -23,7 +23,8 @@ class PygletApp(App):
         super().__init__(app_config)
 
         # Create Pyglet-specific window and context
-        # AppConfig dimensions are in tiles, convert to pixels
+        # Convert console tile dimensions to reasonable pixel dimensions
+        # AppConfig dimensions are in tiles, but Pyglet needs pixels
         tile_width = 20  # From TILESET (Taffer_20x20.png)
         tile_height = 20
         pixel_width = app_config.width * tile_width
@@ -34,8 +35,14 @@ class PygletApp(App):
             height=pixel_height,
             caption=app_config.title,
             vsync=app_config.vsync,
-            resizable=True,
+            resizable=app_config.resizable,
         )
+
+        # Apply window state based on AppConfig
+        if app_config.fullscreen:
+            self.window.set_fullscreen(True)
+        elif app_config.maximized:
+            self.window.maximize()
         self.mgl_context = moderngl.create_context()
         self.graphics = ModernGLGraphicsContext(self.window, self.mgl_context)
 

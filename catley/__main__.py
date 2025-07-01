@@ -16,7 +16,7 @@ def main() -> None:
         vsync=config.VSYNC,
     )
 
-    if True:
+    if False:
         from .backends.tcod.app import TCODApp
 
         app: App = TCODApp(app_config)

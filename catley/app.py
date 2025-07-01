@@ -15,10 +15,15 @@ if TYPE_CHECKING:
 class AppConfig:
     """Configuration for an App implementation."""
 
-    width: int
-    height: int
+    width: int  # Console width in tiles
+    height: int  # Console height in tiles
     title: str
     vsync: bool
+
+    # Window behavior
+    resizable: bool = True
+    maximized: bool = True
+    fullscreen: bool = False
 
 
 class App(ABC):

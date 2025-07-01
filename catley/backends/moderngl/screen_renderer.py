@@ -41,11 +41,11 @@ class ScreenRenderer:
 
     def _create_screen_shader_program(self) -> moderngl.Program:
         """Creates the GLSL program for rendering to the main screen, handling
-        Y-inversion."""
+        Y-inversion and letterboxing."""
         vertex_shader = """
             #version 330
             // Renders vertices to the screen, normalizing top-left pixel coords
-            // to clip space.
+            // to clip space with letterboxing support.
             in vec2 in_vert;       // Input vertex position in top-left origin PIXELS
             in vec2 in_uv;
             in vec4 in_color;
@@ -53,15 +53,18 @@ class ScreenRenderer:
             out vec2 v_uv;
             out vec4 v_color;
 
-            uniform vec2 u_screen_size; // Full window size in pixels
+            uniform vec4 u_letterbox;   // (offset_x, offset_y, scaled_w, scaled_h)
 
             void main() {
                 v_uv = in_uv;
                 v_color = in_color;
 
-                // Normalize to clip space (-1 to 1) and flip Y-axis
-                float x = (in_vert.x / u_screen_size.x) * 2.0 - 1.0;
-                float y = (1.0 - (in_vert.y / u_screen_size.y)) * 2.0 - 1.0;
+                // Adjust coordinates for letterboxing offset
+                vec2 adjusted_pos = in_vert - u_letterbox.xy;
+
+                // Normalize to letterbox space, then to clip space
+                float x = (adjusted_pos.x / u_letterbox.z) * 2.0 - 1.0;
+                float y = (1.0 - (adjusted_pos.y / u_letterbox.w)) * 2.0 - 1.0;
 
                 gl_Position = vec4(x, y, 0.0, 1.0);
             }
@@ -111,12 +114,32 @@ class ScreenRenderer:
         self.cpu_vertex_buffer[self.vertex_count : self.vertex_count + 6] = vertices
         self.vertex_count += 6
 
-    def render_to_screen(self, window_size: tuple[int, int]) -> None:
-        """Main drawing method that renders all batched vertex data to the screen."""
+    def render_to_screen(
+        self,
+        window_size: tuple[int, int],
+        letterbox_geometry: tuple[int, int, int, int] | None = None,
+    ) -> None:
+        """Main drawing method that renders all batched vertex data to the screen.
+
+        Args:
+            window_size: Full window dimensions
+            letterbox_geometry: (offset_x, offset_y, scaled_w, scaled_h) for letterbox
+        """
         if self.vertex_count == 0:
             return
 
-        self.screen_program["u_screen_size"].value = window_size
+        if letterbox_geometry is not None:
+            # Pass letterbox geometry to shader for proper coordinate transformation
+            self.screen_program["u_letterbox"].value = letterbox_geometry
+        else:
+            # No letterboxing - use full screen
+            self.screen_program["u_letterbox"].value = (
+                0,
+                0,
+                window_size[0],
+                window_size[1],
+            )
+
         self.atlas_texture.use(location=0)
 
         self.vbo.write(self.cpu_vertex_buffer[: self.vertex_count].tobytes())

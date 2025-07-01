@@ -56,6 +56,10 @@ class ModernGLGraphicsContext(GraphicsContext):
 
         self.SOLID_BLOCK_CHAR = 219
         self.letterbox_geometry = (0, 0, 0, 0)
+
+        # Set initial viewport and update dimensions
+        window_width, window_height = self.window.get_size()
+        self.mgl_context.viewport = (0, 0, window_width, window_height)
         self.update_dimensions()
 
     # --- Initialization Helpers ---
@@ -94,7 +98,9 @@ class ModernGLGraphicsContext(GraphicsContext):
 
     def finalize_present(self) -> None:
         """Uploads all vertex data and draws the scene in a single batch."""
-        self.screen_renderer.render_to_screen(self.window.get_size())
+        self.screen_renderer.render_to_screen(
+            self.window.get_size(), letterbox_geometry=self.letterbox_geometry
+        )
 
     # --- GraphicsContext ABC Implementation ---
 
@@ -157,8 +163,8 @@ class ModernGLGraphicsContext(GraphicsContext):
 
         # Set up for immediate rendering with the custom texture
         self.screen_renderer.screen_program[
-            "u_screen_size"
-        ].value = self.window.get_size()
+            "u_letterbox"
+        ].value = self.letterbox_geometry
         texture.use(location=0)
 
         # Create vertices for this single texture quad
@@ -327,6 +333,9 @@ class ModernGLGraphicsContext(GraphicsContext):
         self.letterbox_geometry = (offset_x, offset_y, scaled_w, scaled_h)
         self._coordinate_converter = self._create_coordinate_converter()
 
+        # Set OpenGL viewport to full window size
+        self.mgl_context.viewport = (0, 0, window_width, window_height)
+
     def console_to_screen_coords(self, console_x: float, console_y: float) -> PixelPos:
         """Converts root console coordinates to final screen pixel coordinates."""
         self._ensure_coord_cache_valid()
@@ -403,8 +412,8 @@ class ModernGLGraphicsContext(GraphicsContext):
 
         # Set up for immediate rendering with the custom texture
         self.screen_renderer.screen_program[
-            "u_screen_size"
-        ].value = self.window.get_size()
+            "u_letterbox"
+        ].value = self.letterbox_geometry
         texture.use(location=0)
 
         # Create temporary VBO and render immediately

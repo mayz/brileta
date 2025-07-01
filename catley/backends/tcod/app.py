@@ -31,18 +31,21 @@ class TCODApp(App):
             rows=config.TILESET_ROWS,
             charmap=tcod.tileset.CHARMAP_CP437,
         )
-        self.root_console = Console(
-            config.SCREEN_WIDTH, config.SCREEN_HEIGHT, order="F"
-        )
+        self.root_console = Console(app_config.width, app_config.height, order="F")
+        # Build SDL window flags from AppConfig
         sdl_flags = (
-            WindowFlags.OPENGL
+            WindowFlags.OPENGL  # TCOD always uses OpenGL
             # Enables high-DPI awareness. On displays like Retina or scaled 4K
             # monitors, this allows the game to render at the full native resolution,
             # preventing blur.
-            | WindowFlags.ALLOW_HIGHDPI
-            | WindowFlags.RESIZABLE
-            | WindowFlags.MAXIMIZED
+            | WindowFlags.ALLOW_HIGHDPI  # TCOD always enables high-DPI
         )
+        if app_config.resizable:
+            sdl_flags |= WindowFlags.RESIZABLE
+        if app_config.maximized:
+            sdl_flags |= WindowFlags.MAXIMIZED
+        if app_config.fullscreen:
+            sdl_flags |= WindowFlags.FULLSCREEN
         self.tcod_context = tcod.context.new(
             console=self.root_console,
             tileset=tileset,
@@ -101,14 +104,10 @@ class TCODApp(App):
         # 1. Perform the resize logic using objects the App owns.
         sdl_window = self.tcod_context.sdl_window
         if sdl_window is not None:
-            # This logic can be more sophisticated, but for now, this works.
-            # A better approach might be to not force a size but to let letterboxing
-            # handle it.
+            # TCOD enforces a 8:5 aspect ratio
             ASPECT_RATIO = 8 / 5
             new_width = event.width
             new_height = int(new_width / ASPECT_RATIO)
-            # Might want to remove this line to allow free resizing
-            # and let letterboxing handle the aspect ratio.
             sdl_window.size = new_width, new_height
 
         # 2. Notify the other components that need to know about the change.
