@@ -6,7 +6,7 @@ from catley.game.actors import components
 from catley.game.items.item_types import COMBAT_KNIFE_TYPE, PISTOL_TYPE
 from catley.util.message_log import MessageLog
 from catley.view.ui.inventory_menu import InventoryMenu
-from tests.test_canvases import _make_renderer
+from tests.rendering.backends.test_canvases import _make_renderer
 
 
 def test_inventory_menu_equips_to_active_slot() -> None:

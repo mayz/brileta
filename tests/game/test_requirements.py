@@ -14,8 +14,8 @@ from catley.game.actions.environment import OpenDoorIntent
 from catley.game.actors import Character
 from catley.game.game_world import GameWorld
 from catley.view.ui.action_browser_state import ActionBrowserStateMachine
+from tests.game.actions.test_action_discovery import _make_combat_world
 from tests.helpers import DummyGameWorld
-from tests.test_action_discovery import _make_combat_world
 
 
 @dataclass

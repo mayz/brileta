@@ -11,7 +11,7 @@ from catley.game.items.item_types import FISTS_TYPE, PISTOL_TYPE
 from catley.view.render.graphics import GraphicsContext
 from catley.view.ui.pickup_menu import PickupMenu
 from tests.helpers import DummyGameWorld
-from tests.test_canvases import _make_renderer
+from tests.rendering.backends.test_canvases import _make_renderer
 
 
 @dataclass

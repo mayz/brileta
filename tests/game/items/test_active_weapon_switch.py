@@ -10,7 +10,7 @@ from catley.game.consequences import AttackConsequenceGenerator
 from catley.game.enums import OutcomeTier
 from catley.game.items.item_types import HUNTING_RIFLE_TYPE
 from catley.game.resolution.d20_system import D20ResolutionResult
-from tests.test_action_discovery import _make_combat_world
+from tests.game.actions.test_action_discovery import _make_combat_world
 
 
 def test_attack_switches_active_weapon() -> None:

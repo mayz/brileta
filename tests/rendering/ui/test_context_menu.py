@@ -14,7 +14,7 @@ from catley.game.turn_manager import TurnManager
 from catley.util.coordinates import RootConsoleTilePos
 from catley.view.ui.context_menu import ContextMenu
 from tests.helpers import DummyGameWorld
-from tests.test_canvases import _make_renderer
+from tests.rendering.backends.test_canvases import _make_renderer
 
 
 @dataclass

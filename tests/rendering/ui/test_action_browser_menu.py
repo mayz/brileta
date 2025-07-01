@@ -4,8 +4,8 @@ from catley.controller import Controller
 from catley.game.actions.discovery import CombatIntentCache
 from catley.util.message_log import MessageLog
 from catley.view.ui.action_browser_menu import ActionBrowserMenu
-from tests.test_action_discovery import _make_combat_world
-from tests.test_canvases import _make_renderer
+from tests.game.actions.test_action_discovery import _make_combat_world
+from tests.rendering.backends.test_canvases import _make_renderer
 
 
 def test_continue_option_shown_when_target_dead() -> None:
