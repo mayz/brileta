@@ -1,5 +1,8 @@
 .PHONY: all format ruff-check lint typecheck test check clean run
 
+# Globally silence `make` output
+MAKEFLAGS += --silent
+
 # Default target - run all quality checks
 all: lint test
 	@echo "✅ All checks passed!"
@@ -21,7 +24,12 @@ typecheck:
 
 # Run tests. Installs/syncs dependencies AND runs pytest in the same logical command.
 test:
-	uv sync && uv run pytest tests/
+	uv sync && \
+	if [ -z "$$DISPLAY" ] && command -v xvfb-run >/dev/null 2>&1 ; then \
+		xvfb-run -s "-screen 0 1024x768x24" uv run pytest tests/ ; \
+	else \
+		uv run pytest tests/ ; \
+	fi
 
 # Alias for 'all'
 check: all
