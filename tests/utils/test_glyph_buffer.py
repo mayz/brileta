@@ -117,16 +117,16 @@ def test_draw_frame():
     buf.draw_frame(1, 1, 8, 6, fg, bg)
 
     # Check corners
-    assert buf.data[1, 1]["ch"] == 218  # Top-left
-    assert buf.data[8, 1]["ch"] == 191  # Top-right
-    assert buf.data[1, 6]["ch"] == 192  # Bottom-left
-    assert buf.data[8, 6]["ch"] == 217  # Bottom-right
+    assert buf.data[1, 1]["ch"] == 9484  # ┌ Top-left
+    assert buf.data[8, 1]["ch"] == 9488  # ┐ Top-right
+    assert buf.data[1, 6]["ch"] == 9492  # └ Bottom-left
+    assert buf.data[8, 6]["ch"] == 9496  # ┘ Bottom-right
 
     # Check borders
-    assert all(c == 196 for c in buf.data[2:8, 1]["ch"])  # Top
-    assert all(c == 196 for c in buf.data[2:8, 6]["ch"])  # Bottom
-    assert all(c == 179 for c in buf.data[1, 2:6]["ch"])  # Left
-    assert all(c == 179 for c in buf.data[8, 2:6]["ch"])  # Right
+    assert all(c == 9472 for c in buf.data[2:8, 1]["ch"])  # ─ Top
+    assert all(c == 9472 for c in buf.data[2:8, 6]["ch"])  # ─ Bottom
+    assert all(c == 9474 for c in buf.data[1, 2:6]["ch"])  # │ Left
+    assert all(c == 9474 for c in buf.data[8, 2:6]["ch"])  # │ Right
 
     # Check background and foreground
     for y in range(1, 7):
@@ -157,10 +157,10 @@ def test_draw_frame_clipping():
     buf.draw_frame(3, 3, 5, 5, fg, bg)
 
     # Check that it drew a clipped frame
-    assert buf.data[3, 3]["ch"] == 218
-    assert buf.data[4, 3]["ch"] == 191
-    assert buf.data[3, 4]["ch"] == 192
-    assert buf.data[4, 4]["ch"] == 217
+    assert buf.data[3, 3]["ch"] == 9484  # ┌ Top-left
+    assert buf.data[4, 3]["ch"] == 9488  # ┐ Top-right
+    assert buf.data[3, 4]["ch"] == 9492  # └ Bottom-left
+    assert buf.data[4, 4]["ch"] == 9496  # ┘ Bottom-right
 
 
 def test_draw_frame_no_clear():
@@ -175,4 +175,4 @@ def test_draw_frame_no_clear():
     assert "".join(chr(c) for c in buf.data[3:7, 4]["ch"]) == "test"
 
     # Check that the border was drawn
-    assert buf.data[2, 2]["ch"] == 218
+    assert buf.data[2, 2]["ch"] == 9484  # ┌ Top-left

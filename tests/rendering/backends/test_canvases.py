@@ -298,15 +298,15 @@ def test_moderngl_canvas_drawing_operations() -> None:
     assert tuple(fg_color) == (255, 255, 255, 255)  # WHITE with alpha
     assert tuple(bg_color) == (0, 0, 0, 255)  # Non-transparent black background
 
-    # Verify filled rectangle uses solid block character (CP437 219) at tile (2, 1)
+    # Verify filled rectangle uses solid block character (Unicode 9608) at tile (2, 1)
     char, fg_color, bg_color = glyph_buffer.data[2, 1]
-    assert char == 219  # CP437 solid block character
+    assert char == 9608  # Unicode █ solid block character
     assert tuple(fg_color) == (255, 0, 0, 255)  # RED foreground
     assert tuple(bg_color) == (255, 0, 0, 255)  # RED background from fill color
 
     # Verify another part of the rectangle at tile (3, 1)
     char, fg_color, bg_color = glyph_buffer.data[3, 1]
-    assert char == 219  # CP437 solid block character
+    assert char == 9608  # Unicode █ solid block character
     assert tuple(fg_color) == (255, 0, 0, 255)  # RED foreground
     assert tuple(bg_color) == (255, 0, 0, 255)  # RED background from fill color
 
@@ -351,22 +351,22 @@ def test_moderngl_canvas_rect_border_only() -> None:
     assert glyph_buffer is not None
     # Top-left corner at tile (1, 0)
     char, fg_color, bg_color = glyph_buffer.data[1, 0]
-    assert char == 219  # Solid block for border
+    assert char == 9608  # Unicode █ solid block for border
     assert tuple(bg_color) == (0, 0, 255, 255)  # BLUE
 
     # Top-right corner at tile (3, 0)
     char, fg_color, bg_color = glyph_buffer.data[3, 0]
-    assert char == 219  # Solid block for border
+    assert char == 9608  # Unicode █ solid block for border
     assert tuple(bg_color) == (0, 0, 255, 255)  # BLUE
 
     # Bottom-left corner at tile (1, 1)
     char, fg_color, bg_color = glyph_buffer.data[1, 1]
-    assert char == 219  # Solid block for border
+    assert char == 9608  # Unicode █ solid block for border
     assert tuple(bg_color) == (0, 0, 255, 255)  # BLUE
 
     # Interior should be empty (not filled) at tile (2, 0)
     char, fg_color, bg_color = glyph_buffer.data[2, 0]
-    assert char == 219  # This is actually part of the border (top edge)
+    assert char == 9608  # This is actually part of the border (top edge)
     assert tuple(bg_color) == (0, 0, 255, 255)  # BLUE
 
     # Check a tile outside the rectangle is empty at tile (0, 0)

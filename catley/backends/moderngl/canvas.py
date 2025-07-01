@@ -179,15 +179,15 @@ class ModernGLCanvas(Canvas):
         for tx in range(start_tx, end_tx):
             for ty in range(start_ty, end_ty):
                 if fill:
-                    # Fill with solid block character (CP437 219)
+                    # Fill with solid block character (Unicode █)
                     self.private_glyph_buffer.put_char(
-                        tx, ty, 219, rgba_color, rgba_color
+                        tx, ty, 9608, rgba_color, rgba_color
                     )
                 else:
                     # Border only
                     if tx in (start_tx, end_tx - 1) or ty in (start_ty, end_ty - 1):
                         self.private_glyph_buffer.put_char(
-                            tx, ty, 219, rgba_color, rgba_color
+                            tx, ty, 9608, rgba_color, rgba_color
                         )
 
     def _render_frame_op(
@@ -207,28 +207,30 @@ class ModernGLCanvas(Canvas):
         fg_rgba = (*fg, 255) if len(fg) == 3 else fg
         bg_rgba = (*bg, 255) if len(bg) == 3 else bg
 
-        # Draw frame using CP437 box drawing characters
+        # Draw frame using Unicode box drawing characters
         # Top and bottom borders
         for x in range(tile_x, tile_x + width):
             if 0 <= x < self.private_glyph_buffer.width:
                 # Top border
                 if 0 <= tile_y < self.private_glyph_buffer.height:
-                    # CP437: horizontal=196, top-left=218, top-right=191
+                    # Unicode: horizontal=─, top-left=┌, top-right=┐
                     char_code = (
-                        196  # horizontal line
+                        9472  # ─ horizontal line
                         if x != tile_x and x != tile_x + width - 1
-                        else (218 if x == tile_x else 191)  # top-left : top-right
+                        else (9484 if x == tile_x else 9488)  # ┌ top-left : ┐ top-right
                     )
                     self.private_glyph_buffer.put_char(
                         x, tile_y, char_code, fg_rgba, bg_rgba
                     )
                 # Bottom border
                 if 0 <= tile_y + height - 1 < self.private_glyph_buffer.height:
-                    # CP437: horizontal=196, bottom-left=192, bottom-right=217
+                    # Unicode: horizontal=─, bottom-left=└, bottom-right=┘
                     char_code = (
-                        196  # horizontal line
+                        9472  # ─ horizontal line
                         if x != tile_x and x != tile_x + width - 1
-                        else (192 if x == tile_x else 217)  # bottom-left : bottom-right
+                        else (
+                            9492 if x == tile_x else 9496
+                        )  # └ bottom-left : ┘ bottom-right
                     )
                     self.private_glyph_buffer.put_char(
                         x, tile_y + height - 1, char_code, fg_rgba, bg_rgba
@@ -237,13 +239,15 @@ class ModernGLCanvas(Canvas):
         # Left and right borders
         for y in range(tile_y + 1, tile_y + height - 1):
             if 0 <= y < self.private_glyph_buffer.height:
-                # Left border (CP437 vertical line = 179)
+                # Left border (Unicode vertical line │)
                 if 0 <= tile_x < self.private_glyph_buffer.width:
-                    self.private_glyph_buffer.put_char(tile_x, y, 179, fg_rgba, bg_rgba)
-                # Right border (CP437 vertical line = 179)
+                    self.private_glyph_buffer.put_char(
+                        tile_x, y, 9474, fg_rgba, bg_rgba
+                    )
+                # Right border (Unicode vertical line │)
                 if 0 <= tile_x + width - 1 < self.private_glyph_buffer.width:
                     self.private_glyph_buffer.put_char(
-                        tile_x + width - 1, y, 179, fg_rgba, bg_rgba
+                        tile_x + width - 1, y, 9474, fg_rgba, bg_rgba
                     )
 
     def _create_artifact_from_rendered_content(self) -> GlyphBuffer | None:

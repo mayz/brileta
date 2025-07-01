@@ -5,6 +5,26 @@ import tcod.tileset
 
 from catley import colors
 
+# Create a reverse mapping from Unicode code points to CP437 positions
+# This allows us to convert Unicode characters to their tileset indices
+UNICODE_TO_CP437: dict[int, int] = {
+    unicode_codepoint: cp437_index
+    for cp437_index, unicode_codepoint in enumerate(tcod.tileset.CHARMAP_CP437)
+}
+
+
+def unicode_to_cp437(codepoint: int, fallback: int = ord("?")) -> int:
+    """Convert a Unicode code point to its CP437 position.
+
+    Args:
+        codepoint: The Unicode code point to convert
+        fallback: The character to use if the codepoint isn't in CP437
+
+    Returns:
+        The CP437 position (0-255) for the character
+    """
+    return UNICODE_TO_CP437.get(codepoint, fallback)
+
 
 def derive_outlined_tileset(
     tileset: tcod.tileset.Tileset,

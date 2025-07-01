@@ -2,6 +2,7 @@ import moderngl
 import numpy as np
 
 from catley.util.glyph_buffer import GlyphBuffer
+from catley.util.tilesets import unicode_to_cp437
 
 # Vertex structure for rendering
 VERTEX_DTYPE = np.dtype(
@@ -39,7 +40,7 @@ class TextureRenderer:
         self.atlas_texture = atlas_texture
         self.tile_dimensions = tile_dimensions
         self.uv_map = uv_map
-        self.SOLID_BLOCK_CHAR = 219
+        self.SOLID_BLOCK_CHAR = 9608  # Unicode █ character
 
         # Create dedicated shader program for texture rendering
         self.texture_program = self._create_texture_shader_program()
@@ -127,8 +128,12 @@ class TextureRenderer:
                 screen_x = x_console * tile_w
                 screen_y = y_console * tile_h
 
-                fg_uv = self.uv_map[char]
-                bg_uv = self.uv_map[self.SOLID_BLOCK_CHAR]
+                # Convert Unicode characters to CP437 tileset positions
+                fg_char = unicode_to_cp437(char)
+                bg_char = unicode_to_cp437(self.SOLID_BLOCK_CHAR)
+
+                fg_uv = self.uv_map[fg_char]
+                bg_uv = self.uv_map[bg_char]
 
                 bg_color_norm = tuple(c / 255.0 for c in bg_color_rgba)
                 fg_color_norm = tuple(c / 255.0 for c in fg_color_rgba)

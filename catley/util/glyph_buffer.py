@@ -106,17 +106,17 @@ class GlyphBuffer:
 
         target_slice["bg"] = bg
 
-        # Draw borders on the slice
-        target_slice[:, 0]["ch"] = 196  # Top
-        target_slice[:, -1]["ch"] = 196  # Bottom
-        target_slice[0, :]["ch"] = 179  # Left
-        target_slice[-1, :]["ch"] = 179  # Right
+        # Draw borders on the slice using Unicode box-drawing characters
+        target_slice[:, 0]["ch"] = 9472  # ─ Top
+        target_slice[:, -1]["ch"] = 9472  # ─ Bottom
+        target_slice[0, :]["ch"] = 9474  # │ Left
+        target_slice[-1, :]["ch"] = 9474  # │ Right
 
         # Draw corners
-        target_slice[0, 0]["ch"] = 218
-        target_slice[-1, 0]["ch"] = 191
-        target_slice[0, -1]["ch"] = 192
-        target_slice[-1, -1]["ch"] = 217
+        target_slice[0, 0]["ch"] = 9484  # ┌ Top-left
+        target_slice[-1, 0]["ch"] = 9488  # ┐ Top-right
+        target_slice[0, -1]["ch"] = 9492  # └ Bottom-left
+        target_slice[-1, -1]["ch"] = 9496  # ┘ Bottom-right
 
         target_slice["fg"] = fg
 

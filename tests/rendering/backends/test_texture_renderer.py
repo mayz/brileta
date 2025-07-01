@@ -74,7 +74,7 @@ class TestTextureRenderer:
         assert renderer.atlas_texture == self.mock_atlas_texture
         assert renderer.tile_dimensions == self.tile_dimensions
         assert np.array_equal(renderer.uv_map, self.mock_uv_map)
-        assert renderer.SOLID_BLOCK_CHAR == 219
+        assert renderer.SOLID_BLOCK_CHAR == 9608  # Unicode █
 
         # Verify shader program was created
         self.mock_mgl_context.program.assert_called_once()
