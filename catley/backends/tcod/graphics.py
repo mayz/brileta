@@ -596,6 +596,19 @@ class TCODGraphicsContext(GraphicsContext):
         dest_rect = (int(left), int(top), int(dest_width), int(dest_height))
         self.sdl_renderer.copy(texture, dest=dest_rect)
 
+    def draw_background(
+        self,
+        texture: tcod.sdl.render.Texture,
+        x_tile: int,
+        y_tile: int,
+        width_tiles: int,
+        height_tiles: int,
+    ) -> None:
+        """Draws the main world background texture. This is an immediate draw call
+        that should happen before other rendering."""
+        # For TCOD, draw_background is just an alias for present_texture
+        self.present_texture(texture, x_tile, y_tile, width_tiles, height_tiles)
+
     def draw_debug_rect(
         self, px_x: int, px_y: int, px_w: int, px_h: int, color: colors.Color
     ) -> None:

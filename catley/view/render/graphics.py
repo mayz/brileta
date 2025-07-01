@@ -214,6 +214,19 @@ class GraphicsContext(abc.ABC):
         pass
 
     @abc.abstractmethod
+    def draw_background(
+        self,
+        texture: Any,
+        x_tile: int,
+        y_tile: int,
+        width_tiles: int,
+        height_tiles: int,
+    ) -> None:
+        """Draws the main world background texture. This is an immediate draw call
+        that should happen before other rendering."""
+        pass
+
+    @abc.abstractmethod
     def draw_debug_rect(
         self, px_x: int, px_y: int, px_w: int, px_h: int, color: colors.Color
     ) -> None:

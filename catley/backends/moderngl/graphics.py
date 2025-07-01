@@ -27,8 +27,12 @@ from .texture_renderer import TextureRenderer
 class UITextureRenderer:
     """
     A batched renderer for textured quads where each quad can have a
-    different source texture.
+    different source texture. This version is optimized to reuse GPU resources.
     """
+
+    # Define a reasonable max number of UI quads per frame.
+    # This is for reserving buffer space.
+    MAX_UI_QUADS = 500
 
     def __init__(self, mgl_context: moderngl.Context) -> None:
         self.mgl_context = mgl_context
@@ -83,6 +87,17 @@ class UITextureRenderer:
         self.program = mgl_context.program(
             vertex_shader=vertex_shader, fragment_shader=fragment_shader
         )
+        self.program["u_texture"].value = 0  # Use texture unit 0
+
+        # --- OPTIMIZATION: Create VBO and VAO only once ---
+        # Reserve buffer space for a single quad (6 vertices).
+        self.vbo = self.mgl_context.buffer(
+            reserve=6 * VERTEX_DTYPE.itemsize, dynamic=True
+        )
+        self.vao = self.mgl_context.vertex_array(
+            self.program,
+            [(self.vbo, "2f 2f 4f", "in_vert", "in_uv", "in_color")],
+        )
 
     def begin_frame(self) -> None:
         """Clear the internal queue of textures to be rendered for the new frame."""
@@ -100,26 +115,26 @@ class UITextureRenderer:
         if not self.render_queue:
             return
 
-        # Set letterbox uniform
+        # Set letterbox uniform once for all UI elements
         self.program["u_letterbox"].value = letterbox_geometry
 
-        # Render each queued texture
+        # Render each queued texture. We still need to loop and switch textures,
+        # but we reuse the VBO and VAO.
         for texture, vertices in self.render_queue:
-            # Bind the texture
+            # Bind the specific texture for this draw call
             texture.use(location=0)
 
-            # Create temporary VBO and VAO for this quad
-            temp_vbo = self.mgl_context.buffer(vertices.tobytes())
-            temp_vao = self.mgl_context.vertex_array(
-                self.program, [(temp_vbo, "2f 2f 4f", "in_vert", "in_uv", "in_color")]
-            )
+            # --- OPTIMIZATION: Write to the existing VBO, don't create a new one ---
+            self.vbo.write(vertices.tobytes())
 
-            # Render the quad
-            temp_vao.render(moderngl.TRIANGLES, vertices=6)
+            # Render the single quad using the pre-existing VAO
+            self.vao.render(moderngl.TRIANGLES, vertices=6)
 
-            # Clean up temporary resources
-            temp_vao.release()
-            temp_vbo.release()
+    def release(self) -> None:
+        """Clean up GPU resources."""
+        self.vao.release()
+        self.vbo.release()
+        self.program.release()
 
 
 class ModernGLGraphicsContext(GraphicsContext):
