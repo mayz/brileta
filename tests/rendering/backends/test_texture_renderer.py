@@ -162,8 +162,8 @@ class TestTextureRenderer:
         self.mock_mgl_context.texture.assert_called_with((1, 1), 4, b"\x00\x00\x00\x00")
         assert result == empty_texture
 
-    def test_vertex_encoding_and_y_flip(self):
-        """Test the core vertex encoding logic and Y-coordinate pre-flipping."""
+    def test_vertex_encoding_and_coordinate_mapping(self):
+        """Test the core vertex encoding logic and coordinate mapping."""
         renderer = TextureRenderer(
             mgl_context=self.mock_mgl_context,
             atlas_texture=self.mock_atlas_texture,
@@ -202,31 +202,30 @@ class TestTextureRenderer:
         # Verify the vertex data structure
         assert vertex_data.dtype == VERTEX_DTYPE
 
-        # Test Y-coordinate pre-flipping
+        # Test Y-coordinate handling (no pre-flipping)
         tile_w, tile_h = self.tile_dimensions
-        # buffer_height = 2  # Not used but kept for reference
 
-        # For a 2-tile high buffer:
-        # y_console=0 should map to screen_y = (2-1-0) * tile_h = 1 * 20 = 20
-        # y_console=1 should map to screen_y = (2-1-1) * tile_h = 0 * 20 = 0
+        # For a 2-tile high buffer with no Y-flipping:
+        # y_console=0 should map to screen_y = 0 * tile_h = 0
+        # y_console=1 should map to screen_y = 1 * tile_h = 20
 
-        # Check vertices for character at (0,0) - should be at screen_y = 20
+        # Check vertices for character at (0,0) - should be at screen_y = 0
         char_00_start_idx = 0  # First character vertices
         char_00_bg_vertices = vertex_data[char_00_start_idx : char_00_start_idx + 6]
 
-        # All vertices for this character should have screen_y = 20 or 20 + tile_h
+        # All vertices for this character should have screen_y = 0 or 0 + tile_h
         for vertex in char_00_bg_vertices:
             y_coord = vertex["position"][1]
-            assert y_coord == 20.0 or y_coord == 40.0  # 20 or 20 + tile_h
+            assert y_coord == 0.0 or y_coord == 20.0  # 0 or 0 + tile_h
 
-        # Check vertices for character at (0,1) - should be at screen_y = 0
+        # Check vertices for character at (0,1) - should be at screen_y = 20
         char_01_start_idx = 2 * 12  # Third character (0,1) vertices
         char_01_bg_vertices = vertex_data[char_01_start_idx : char_01_start_idx + 6]
 
-        # All vertices for this character should have screen_y = 0 or 0 + tile_h
+        # All vertices for this character should have screen_y = 20 or 20 + tile_h
         for vertex in char_01_bg_vertices:
             y_coord = vertex["position"][1]
-            assert y_coord == 0.0 or y_coord == 20.0  # 0 or 0 + tile_h
+            assert y_coord == 20.0 or y_coord == 40.0  # 20 or 20 + tile_h
 
         # Test X-coordinates (should not be flipped)
         # Character at (0,0) should have screen_x = 0

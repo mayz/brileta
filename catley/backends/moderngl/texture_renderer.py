@@ -123,9 +123,9 @@ class TextureRenderer:
                 fg_color_rgba = tuple(cell["fg"])
                 bg_color_rgba = tuple(cell["bg"])
 
-                # Pre-flip the Y-coordinate for the texture render pass
+                # Use normal Y-coordinate (no pre-flip needed)
                 screen_x = x_console * tile_w
-                screen_y = (h - 1 - y_console) * tile_h
+                screen_y = y_console * tile_h
 
                 fg_uv = self.uv_map[char]
                 bg_uv = self.uv_map[self.SOLID_BLOCK_CHAR]

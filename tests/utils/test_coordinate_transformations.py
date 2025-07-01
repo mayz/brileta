@@ -127,32 +127,28 @@ class TestCoordinateTransformations:
         tile_w, tile_h = self.graphics_ctx.tile_dimensions
 
         # Check positions for each cell's first vertex (BG quad, first vertex)
-        # Cell (0,0) should be at screen position (0, tile_h) due to Y pre-flip
+        # Cell (0,0) should be at screen position (0, 0) with no Y pre-flip
         cell_00_vertex = vertex_data[0]  # First vertex of first cell
         expected_x_00 = 0
-        expected_y_00 = (
-            tile_h  # Y is pre-flipped: (h-1-y)*tile_h = (2-1-0)*tile_h = tile_h
-        )
+        expected_y_00 = 0  # No Y pre-flip: y*tile_h = 0*tile_h = 0
 
         assert cell_00_vertex["position"][0] == expected_x_00
         assert cell_00_vertex["position"][1] == expected_y_00
 
-        # Cell (1,0) should be at screen position (tile_w, tile_h) due to Y pre-flip
+        # Cell (1,0) should be at screen position (tile_w, 0) with no Y pre-flip
         cell_10_vertex = vertex_data[
             12
         ]  # First vertex of second cell (skip 12 vertices)
         expected_x_10 = tile_w
-        expected_y_10 = (
-            tile_h  # Y is pre-flipped: (h-1-y)*tile_h = (2-1-0)*tile_h = tile_h
-        )
+        expected_y_10 = 0  # No Y pre-flip: y*tile_h = 0*tile_h = 0
 
         assert cell_10_vertex["position"][0] == expected_x_10
         assert cell_10_vertex["position"][1] == expected_y_10
 
-        # Cell (0,1) should be at screen position (0, 0) due to Y pre-flip
+        # Cell (0,1) should be at screen position (0, tile_h) with no Y pre-flip
         cell_01_vertex = vertex_data[24]  # First vertex of third cell
         expected_x_01 = 0
-        expected_y_01 = 0  # Y is pre-flipped: (h-1-y)*tile_h = (2-1-1)*tile_h = 0
+        expected_y_01 = tile_h  # No Y pre-flip: y*tile_h = 1*tile_h = tile_h
 
         assert cell_01_vertex["position"][0] == expected_x_01
         assert cell_01_vertex["position"][1] == expected_y_01
@@ -236,18 +232,18 @@ class TestCoordinateTransformations:
         middle_vertex = vertex_data[12]  # Cell (0,1) - buffer middle
         bottom_vertex = vertex_data[24]  # Cell (0,2) - buffer bottom
 
-        # With Y pre-flip: Buffer top (y=0) should have highest vertex Y
-        # Buffer bottom (y=2) should have lowest vertex Y
-        assert top_vertex["position"][1] > middle_vertex["position"][1]
-        assert middle_vertex["position"][1] > bottom_vertex["position"][1]
+        # With no Y pre-flip: Buffer top (y=0) should have lowest vertex Y
+        # Buffer bottom (y=2) should have highest vertex Y
+        assert top_vertex["position"][1] < middle_vertex["position"][1]
+        assert middle_vertex["position"][1] < bottom_vertex["position"][1]
 
-        # Verify exact values match expected calculation with Y pre-flip
-        # For h=3: top(y=0) -> (3-1-0)*tile_h = 2*tile_h
-        #          middle(y=1) -> (3-1-1)*tile_h = 1*tile_h
-        #          bottom(y=2) -> (3-1-2)*tile_h = 0*tile_h
-        expected_top_y = 2 * tile_h
+        # Verify exact values match expected calculation with no Y pre-flip
+        # For h=3: top(y=0) -> 0*tile_h = 0
+        #          middle(y=1) -> 1*tile_h = tile_h
+        #          bottom(y=2) -> 2*tile_h = 2*tile_h
+        expected_top_y = 0 * tile_h
         expected_middle_y = 1 * tile_h
-        expected_bottom_y = 0 * tile_h
+        expected_bottom_y = 2 * tile_h
 
         assert top_vertex["position"][1] == expected_top_y
         assert middle_vertex["position"][1] == expected_middle_y

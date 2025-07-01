@@ -659,9 +659,9 @@ class TestModernGLGraphicsContext:
         tile_w, tile_h = self.graphics_ctx._tile_dimensions
 
         # Expected screen position (1x1 buffer, position (0,0) in buffer coordinates)
-        # Y-flipped: screen_y = (h - 1 - y) * tile_h = (1 - 1 - 0) * tile_h = 0
+        # No Y-flipping: screen_y = y * tile_h = 0 * tile_h = 0
         expected_screen_x = 0 * tile_w  # = 0
-        expected_screen_y = (1 - 1 - 0) * tile_h  # = 0
+        expected_screen_y = 0 * tile_h  # = 0
 
         # Expected UV coordinates
         expected_bg_uv = self.graphics_ctx.uv_map[

@@ -40,27 +40,20 @@ class ModernGLGraphicsContext(GraphicsContext):
         self.atlas_texture = self._load_atlas_texture()
         self.uv_map = self._precalculate_uv_map()
 
-        # Calculate tile dimensions for TextureRenderer
-        self._tile_dimensions = (
-            self.atlas_texture.width // config.TILESET_COLUMNS,
-            self.atlas_texture.height // config.TILESET_ROWS,
-        )
-
         # --- ScreenRenderer for main screen rendering ---
         self.screen_renderer = ScreenRenderer(self.mgl_context, self.atlas_texture)
 
-        # --- TextureRenderer for UI rendering ---
+        # Set initial viewport and update dimensions (this will set _tile_dimensions)
+        window_width, window_height = self.window.get_framebuffer_size()
+        self.mgl_context.viewport = (0, 0, window_width, window_height)
+        self.update_dimensions()
+
+        # --- TextureRenderer for UI rendering (created after dimensions are set) ---
         self.texture_renderer = TextureRenderer(
             self.mgl_context, self.atlas_texture, self._tile_dimensions, self.uv_map
         )
 
         self.SOLID_BLOCK_CHAR = 219
-        self.letterbox_geometry = (0, 0, 0, 0)
-
-        # Set initial viewport and update dimensions
-        window_width, window_height = self.window.get_size()
-        self.mgl_context.viewport = (0, 0, window_width, window_height)
-        self.update_dimensions()
 
     # --- Initialization Helpers ---
 
@@ -99,7 +92,8 @@ class ModernGLGraphicsContext(GraphicsContext):
     def finalize_present(self) -> None:
         """Uploads all vertex data and draws the scene in a single batch."""
         self.screen_renderer.render_to_screen(
-            self.window.get_size(), letterbox_geometry=self.letterbox_geometry
+            self.window.get_framebuffer_size(),
+            letterbox_geometry=self.letterbox_geometry,
         )
 
     # --- GraphicsContext ABC Implementation ---
@@ -210,12 +204,12 @@ class ModernGLGraphicsContext(GraphicsContext):
         )
         uv_coords = self.uv_map[ord(char)]
 
-        # Calculate scaled tile dimensions based on letterbox scaling
-        offset_x, offset_y, scaled_w, scaled_h = self.letterbox_geometry
-        w = scaled_w / self.console_width_tiles
-        h = scaled_h / self.console_height_tiles
+        # Use integer tile dimensions like TCOD backend for consistent positioning
+        tile_w, tile_h = self.tile_dimensions
 
-        self.screen_renderer.add_quad(screen_x, screen_y, w, h, uv_coords, final_color)
+        self.screen_renderer.add_quad(
+            screen_x, screen_y, tile_w, tile_h, uv_coords, final_color
+        )
 
     def render_particles(
         self,
@@ -316,7 +310,7 @@ class ModernGLGraphicsContext(GraphicsContext):
 
     def update_dimensions(self) -> None:
         """Recalculates letterboxing and updates the coordinate converter."""
-        window_width, window_height = self.window.get_size()
+        window_width, window_height = self.window.get_framebuffer_size()
         console_width, console_height = (
             self.console_width_tiles,
             self.console_height_tiles,
@@ -336,9 +330,15 @@ class ModernGLGraphicsContext(GraphicsContext):
             offset_y = 0
 
         self.letterbox_geometry = (offset_x, offset_y, scaled_w, scaled_h)
+
+        # Calculate dynamic tile dimensions like TCOD backend for consistent positioning
+        tile_width = max(1, window_width // self.console_width_tiles)
+        tile_height = max(1, window_height // self.console_height_tiles)
+        self._tile_dimensions = (tile_width, tile_height)
+
         self._coordinate_converter = self._create_coordinate_converter()
 
-        # Set OpenGL viewport to full window size
+        # Set OpenGL viewport to full framebuffer size
         self.mgl_context.viewport = (0, 0, window_width, window_height)
 
     def console_to_screen_coords(self, console_x: float, console_y: float) -> PixelPos:

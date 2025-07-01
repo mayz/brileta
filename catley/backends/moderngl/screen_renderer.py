@@ -40,13 +40,16 @@ class ScreenRenderer:
         )
 
     def _create_screen_shader_program(self) -> moderngl.Program:
-        """Creates the GLSL program for rendering to the main screen, handling
-        Y-inversion and letterboxing."""
+        """Creates the GLSL program for rendering to the main screen with
+        letterboxing support.
+
+        Note: This shader does NOT flip the Y-axis, consistent with TextureRenderer.
+        Coordinates are expected to already be in the correct coordinate system."""
         vertex_shader = """
             #version 330
-            // Renders vertices to the screen, normalizing top-left pixel coords
+            // Renders vertices to the screen, normalizing pixel coordinates
             // to clip space with letterboxing support.
-            in vec2 in_vert;       // Input vertex position in top-left origin PIXELS
+            in vec2 in_vert;       // Input vertex position in PIXELS
             in vec2 in_uv;
             in vec4 in_color;
 
