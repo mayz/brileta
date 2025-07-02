@@ -13,7 +13,7 @@ from catley.types import DeltaTime
 from .graphics import TCODGraphicsContext
 
 
-class TCODApp(App):
+class TCODApp(App[TCODGraphicsContext]):
     """
     The TCOD implementation of the application driver.
 
@@ -62,7 +62,7 @@ class TCODApp(App):
         )
 
         # Initialize shared controller
-        self._initialize_controller(self.graphics)
+        self._initialize_controller()
 
     def run(self) -> None:
         """Starts the main application loop and runs the game."""

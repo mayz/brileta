@@ -65,7 +65,7 @@ FPS_SAMPLE_SIZE = 256  # Number of frame time samples to track
 # These are independent flags to control debugging features.
 
 # Set to True for uncapped FPS to identify performance bottlenecks.
-PERFORMANCE_PROFILING = True
+PERFORMANCE_PROFILING = False
 
 # Set to True to print metrics about the "tap vs. hold" input system.
 # This measures the real-world time between player-perceived moves, which is
@@ -75,7 +75,7 @@ SHOW_ACTION_PROCESSING_METRICS = False
 
 # Set to True to initially watch the ``dev.fps`` variable, causing
 # the FPS counter to appear in the debug stats overlay at startup.
-SHOW_FPS = False
+SHOW_FPS = True
 
 # Set to True to draw colored outlines around each View for debugging layouts.
 DEBUG_DRAW_VIEW_OUTLINES = False

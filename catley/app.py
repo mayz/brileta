@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from catley.types import DeltaTime, InterpolationAlpha
 from catley.util.live_vars import live_variable_registry, record_time_live_variable
+from catley.view.render.graphics import GraphicsContext
 
 if TYPE_CHECKING:
     from catley.controller import Controller
@@ -26,7 +27,7 @@ class AppConfig:
     fullscreen: bool = False
 
 
-class App(ABC):
+class App[TGraphics: GraphicsContext](ABC):
     """
     Abstract base class for application drivers.
 
@@ -70,13 +71,14 @@ class App(ABC):
         self.app_config = app_config
 
         # Will be set by subclasses after they create their graphics context
+        self.graphics: TGraphics  # Subclasses must initialize this
         self.controller: Controller | None = None
 
-    def _initialize_controller(self, graphics_context) -> None:
+    def _initialize_controller(self) -> None:
         """Initializes the controller after graphics context is ready."""
         from catley.controller import Controller
 
-        self.controller = Controller(self, graphics_context)
+        self.controller = Controller(self, self.graphics)
         self.controller.update_fov()
 
         # Register performance metrics

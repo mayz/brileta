@@ -10,7 +10,7 @@ from catley.backends.moderngl.graphics import ModernGLGraphicsContext
 from catley.types import InterpolationAlpha
 
 
-class PygletApp(App):
+class PygletApp(App[ModernGLGraphicsContext]):
     """
     The Pyglet implementation of the application driver.
 
@@ -24,6 +24,13 @@ class PygletApp(App):
         # Track time since last logic update for interpolation
         self.time_since_last_logic_update: float = 0.0
 
+        self._initialize_window(app_config)
+        self._initialize_graphics()
+        self._initialize_controller()
+        self._register_callbacks()
+
+    def _initialize_window(self, app_config: AppConfig) -> None:
+        """ """
         # Create Pyglet-specific window and context
         # Convert console tile dimensions to reasonable pixel dimensions
         # AppConfig dimensions are in tiles, but Pyglet needs pixels
@@ -45,29 +52,10 @@ class PygletApp(App):
             self.window.set_fullscreen(True)
         elif app_config.maximized:
             self.window.maximize()
+
+    def _initialize_graphics(self) -> None:
         self.mgl_context = moderngl.create_context()
         self.graphics = ModernGLGraphicsContext(self.window, self.mgl_context)
-
-        # Initialize shared controller
-        self._initialize_controller(self.graphics)
-
-        # Schedule fixed logic updates using the controller's fixed timestep
-        assert self.controller is not None
-        pyglet.clock.schedule_interval(
-            self.update_logic_for_pyglet, self.controller.fixed_timestep
-        )
-
-        # Assign the render callback
-        self.window.on_draw = self.on_draw
-
-        # Register event handlers
-        self.window.on_key_press = self.on_key_press
-        self.window.on_key_release = self.on_key_release
-        self.window.on_mouse_motion = self.on_mouse_motion
-        self.window.on_mouse_press = self.on_mouse_press
-        self.window.on_mouse_release = self.on_mouse_release
-        self.window.on_mouse_scroll = self.on_mouse_scroll
-        self.window.on_resize = self.on_resize
 
     def run(self) -> None:
         """Starts the main application loop and runs the game."""
@@ -200,6 +188,25 @@ class PygletApp(App):
         assert self.controller is not None
         assert self.controller.frame_manager is not None
         self.controller.frame_manager.on_window_resized()
+
+    def _register_callbacks(self) -> None:
+        # Schedule fixed logic updates using the controller's fixed timestep
+        assert self.controller is not None
+        pyglet.clock.schedule_interval(
+            self.update_logic_for_pyglet, self.controller.fixed_timestep
+        )
+
+        # Assign the render callback
+        self.window.on_draw = self.on_draw
+
+        # Register event handlers
+        self.window.on_key_press = self.on_key_press
+        self.window.on_key_release = self.on_key_release
+        self.window.on_mouse_motion = self.on_mouse_motion
+        self.window.on_mouse_press = self.on_mouse_press
+        self.window.on_mouse_release = self.on_mouse_release
+        self.window.on_mouse_scroll = self.on_mouse_scroll
+        self.window.on_resize = self.on_resize
 
     def _pyglet_key_to_tcod(self, symbol: int) -> int:
         """Converts a pyglet key symbol to a tcod keysym."""
