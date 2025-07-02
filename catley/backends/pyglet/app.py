@@ -74,7 +74,14 @@ class PygletApp(App):
         try:
             # Hide system cursor since we draw our own
             self.window.set_mouse_visible(False)
-            pyglet.app.run()
+
+            assert self.controller is not None
+            target_fps = self.controller.target_fps
+            interval = (
+                1.0 / target_fps if target_fps is not None and target_fps > 0 else 0.0
+            )
+
+            pyglet.app.run(interval=interval)
         finally:
             # Restore system cursor when exiting
             self.window.set_mouse_visible(True)
