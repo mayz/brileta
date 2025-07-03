@@ -20,6 +20,10 @@ class TextureRenderer:
     This isolates the logic for UI rendering from the main game world rendering.
     """
 
+    # Maximum dimensions we expect for glyph buffers - can be adjusted if needed
+    MAX_BUFFER_WIDTH = 200
+    MAX_BUFFER_HEIGHT = 100
+
     def __init__(
         self,
         mgl_context: moderngl.Context,
@@ -44,6 +48,20 @@ class TextureRenderer:
 
         # Create dedicated shader program for texture rendering
         self.texture_program = self._create_texture_shader_program()
+
+        # Pre-allocate vertex buffer for maximum expected size
+        max_cells = self.MAX_BUFFER_WIDTH * self.MAX_BUFFER_HEIGHT
+        max_vertices = max_cells * 12  # 2 quads * 6 vertices per quad
+        self.cpu_vertex_buffer = np.zeros(max_vertices, dtype=VERTEX_DTYPE)
+
+        # Create persistent VBO with dynamic updates
+        self.vbo = self.mgl_context.buffer(
+            reserve=max_vertices * VERTEX_DTYPE.itemsize, dynamic=True
+        )
+        self.vao = self.mgl_context.vertex_array(
+            self.texture_program,
+            [(self.vbo, "2f 2f 4f", "in_vert", "in_uv", "in_color")],
+        )
 
     def _create_texture_shader_program(self) -> moderngl.Program:
         """
@@ -98,22 +116,27 @@ class TextureRenderer:
         self, glyph_buffer: GlyphBuffer
     ) -> tuple[np.ndarray, int]:
         """
-        Translates a GlyphBuffer into a NumPy array of vertex data, PRE-FLIPPING
-        the Y-coordinates for the texture shader.
+        Translates a GlyphBuffer into the pre-allocated vertex buffer.
 
         Args:
             glyph_buffer: The GlyphBuffer to encode
 
         Returns:
-            Tuple of (vertex_data, vertex_count)
+            Tuple of (vertex_data slice, vertex_count) for compatibility
         """
         w, h = glyph_buffer.data.shape
         num_cells = h * w
         if num_cells == 0:
             return np.array([], dtype=VERTEX_DTYPE), 0
 
-        num_vertices = num_cells * 12  # 2 quads * 6 vertices per quad
-        vertex_data = np.zeros(num_vertices, dtype=VERTEX_DTYPE)
+        # Verify buffer size is sufficient
+        max_vertices_needed = num_cells * 12  # 2 quads * 6 vertices per quad
+        if max_vertices_needed > len(self.cpu_vertex_buffer):
+            raise ValueError(
+                f"GlyphBuffer too large: needs {max_vertices_needed} vertices, "
+                f"buffer has {len(self.cpu_vertex_buffer)}"
+            )
+
         tile_w, tile_h = self.tile_dimensions
         vertex_idx = 0
 
@@ -138,71 +161,75 @@ class TextureRenderer:
                 bg_color_norm = tuple(c / 255.0 for c in bg_color_rgba)
                 fg_color_norm = tuple(c / 255.0 for c in fg_color_rgba)
 
-                # Add BG quad (6 vertices)
-                bg_vertices = np.zeros(6, dtype=VERTEX_DTYPE)
+                # Write BG quad directly to buffer (6 vertices)
                 u1, v1, u2, v2 = bg_uv
-                bg_vertices[0] = ((screen_x, screen_y), (u1, v1), bg_color_norm)
-                bg_vertices[1] = (
+                self.cpu_vertex_buffer[vertex_idx] = (
+                    (screen_x, screen_y),
+                    (u1, v1),
+                    bg_color_norm,
+                )
+                self.cpu_vertex_buffer[vertex_idx + 1] = (
                     (screen_x + tile_w, screen_y),
                     (u2, v1),
                     bg_color_norm,
                 )
-                bg_vertices[2] = (
+                self.cpu_vertex_buffer[vertex_idx + 2] = (
                     (screen_x, screen_y + tile_h),
                     (u1, v2),
                     bg_color_norm,
                 )
-                bg_vertices[3] = (
+                self.cpu_vertex_buffer[vertex_idx + 3] = (
                     (screen_x + tile_w, screen_y),
                     (u2, v1),
                     bg_color_norm,
                 )
-                bg_vertices[4] = (
+                self.cpu_vertex_buffer[vertex_idx + 4] = (
                     (screen_x, screen_y + tile_h),
                     (u1, v2),
                     bg_color_norm,
                 )
-                bg_vertices[5] = (
+                self.cpu_vertex_buffer[vertex_idx + 5] = (
                     (screen_x + tile_w, screen_y + tile_h),
                     (u2, v2),
                     bg_color_norm,
                 )
-                vertex_data[vertex_idx : vertex_idx + 6] = bg_vertices
                 vertex_idx += 6
 
-                # Add FG quad (6 vertices)
-                fg_vertices = np.zeros(6, dtype=VERTEX_DTYPE)
+                # Write FG quad directly to buffer (6 vertices)
                 u1, v1, u2, v2 = fg_uv
-                fg_vertices[0] = ((screen_x, screen_y), (u1, v1), fg_color_norm)
-                fg_vertices[1] = (
+                self.cpu_vertex_buffer[vertex_idx] = (
+                    (screen_x, screen_y),
+                    (u1, v1),
+                    fg_color_norm,
+                )
+                self.cpu_vertex_buffer[vertex_idx + 1] = (
                     (screen_x + tile_w, screen_y),
                     (u2, v1),
                     fg_color_norm,
                 )
-                fg_vertices[2] = (
+                self.cpu_vertex_buffer[vertex_idx + 2] = (
                     (screen_x, screen_y + tile_h),
                     (u1, v2),
                     fg_color_norm,
                 )
-                fg_vertices[3] = (
+                self.cpu_vertex_buffer[vertex_idx + 3] = (
                     (screen_x + tile_w, screen_y),
                     (u2, v1),
                     fg_color_norm,
                 )
-                fg_vertices[4] = (
+                self.cpu_vertex_buffer[vertex_idx + 4] = (
                     (screen_x, screen_y + tile_h),
                     (u1, v2),
                     fg_color_norm,
                 )
-                fg_vertices[5] = (
+                self.cpu_vertex_buffer[vertex_idx + 5] = (
                     (screen_x + tile_w, screen_y + tile_h),
                     (u2, v2),
                     fg_color_norm,
                 )
-                vertex_data[vertex_idx : vertex_idx + 6] = fg_vertices
                 vertex_idx += 6
 
-        return vertex_data, vertex_idx
+        return self.cpu_vertex_buffer[:vertex_idx], vertex_idx
 
     def render(self, glyph_buffer: GlyphBuffer) -> moderngl.Texture:
         """
@@ -231,26 +258,18 @@ class TextureRenderer:
         fbo.use()
         fbo.clear()
 
-        # Get vertex data with pre-flipped Y-coordinates
+        # Encode vertices directly into pre-allocated buffer
         vertex_data, vertex_count = self._encode_glyph_buffer_to_vertices(glyph_buffer)
 
         if vertex_count > 0:
-            # Create temporary VBO and VAO for this render
-            temp_vbo = self.mgl_context.buffer(vertex_data.tobytes())
-            temp_vao = self.mgl_context.vertex_array(
-                self.texture_program,
-                [(temp_vbo, "2f 2f 4f", "in_vert", "in_uv", "in_color")],
-            )
+            # Update the persistent VBO with new vertex data
+            self.vbo.write(vertex_data.tobytes())
 
-            # Set uniforms and render
+            # Set uniforms and render using persistent VAO
             self.texture_program["u_texture_size"].value = (width_px, height_px)
             self.atlas_texture.use(location=0)
 
-            temp_vao.render(moderngl.TRIANGLES, vertices=vertex_count)
-
-            # Clean up temporary GL objects
-            temp_vao.release()
-            temp_vbo.release()
+            self.vao.render(moderngl.TRIANGLES, vertices=vertex_count)
 
         # Restore default framebuffer and clean up
         if self.mgl_context.screen:
@@ -258,3 +277,9 @@ class TextureRenderer:
         fbo.release()
 
         return dest_texture
+
+    def release(self) -> None:
+        """Clean up GPU resources."""
+        self.vao.release()
+        self.vbo.release()
+        self.texture_program.release()

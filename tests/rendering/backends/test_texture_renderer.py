@@ -84,6 +84,12 @@ class TestTextureRenderer:
         self.mock_program.__getitem__.assert_called_with("u_atlas")
         assert self.mock_uniform.value == 0
 
+        # Verify persistent VBO and VAO were created during initialization
+        self.mock_mgl_context.buffer.assert_called_once()
+        self.mock_mgl_context.vertex_array.assert_called_once()
+        assert renderer.vbo == self.mock_vbo
+        assert renderer.vao == self.mock_vao
+
     def test_render_to_fbo_calls(self):
         """Test the public render() method makes correct OpenGL calls."""
         renderer = TextureRenderer(
@@ -92,6 +98,12 @@ class TestTextureRenderer:
             tile_dimensions=self.tile_dimensions,
             uv_map=self.mock_uv_map,
         )
+
+        # Reset mock call counts after initialization
+        self.mock_mgl_context.buffer.reset_mock()
+        self.mock_mgl_context.vertex_array.reset_mock()
+        self.mock_mgl_context.texture.reset_mock()
+        self.mock_mgl_context.framebuffer.reset_mock()
 
         # Create a 10x5 GlyphBuffer for testing
         glyph_buffer = GlyphBuffer(10, 5)
@@ -119,16 +131,17 @@ class TestTextureRenderer:
         self.mock_fbo.use.assert_called_once()
         self.mock_fbo.clear.assert_called_once()
 
-        # Assert that temporary VBO and VAO were created
-        self.mock_mgl_context.buffer.assert_called_once()
-        self.mock_mgl_context.vertex_array.assert_called_once()
+        # Assert that no new VBO/VAO were created during render (they're persistent)
+        self.mock_mgl_context.buffer.assert_not_called()
+        self.mock_mgl_context.vertex_array.assert_not_called()
+
+        # Assert that VBO was written to (not created - it's persistent)
+        self.mock_vbo.write.assert_called_once()
 
         # Assert rendering happened
         self.mock_vao.render.assert_called_once()
 
-        # Assert cleanup
-        self.mock_vao.release.assert_called_once()
-        self.mock_vbo.release.assert_called_once()
+        # Assert only FBO cleanup (VBO/VAO are persistent)
         self.mock_fbo.release.assert_called_once()
 
         # Assert atlas texture was used
