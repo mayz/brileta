@@ -146,27 +146,35 @@ class TextureRenderer:
         fg_colors_norm = fg_colors_raw.astype(np.float32) / 255.0
         bg_colors_norm = bg_colors_raw.astype(np.float32) / 255.0
 
-        # Cache frequently used values
+        # Pre-cache background UV coordinates (solid block character)
         bg_char = unicode_to_cp437(self.SOLID_BLOCK_CHAR)
         bg_uv = self.uv_map[bg_char]
         bg_u1, bg_v1, bg_u2, bg_v2 = bg_uv
 
+        # Pre-calculate screen coordinates to avoid per-cell multiplication
+        screen_x_coords = np.arange(w) * tile_w
+        screen_y_coords = np.arange(h) * tile_h
+        screen_x2_coords = screen_x_coords + tile_w
+        screen_y2_coords = screen_y_coords + tile_h
+
         for y_console in range(h):
+            # Cache screen Y coordinates for this row
+            screen_y = screen_y_coords[y_console]
+            screen_y2 = screen_y2_coords[y_console]
+
             for x_console in range(w):
                 cell = glyph_buffer.data[x_console, y_console]
                 char = cell["ch"]
 
-                # Use normal Y-coordinate (no pre-flip needed)
-                screen_x = x_console * tile_w
-                screen_y = y_console * tile_h
-                screen_x2 = screen_x + tile_w
-                screen_y2 = screen_y + tile_h
+                # Use pre-calculated screen coordinates
+                screen_x = screen_x_coords[x_console]
+                screen_x2 = screen_x2_coords[x_console]
 
                 # Get pre-normalized colors
                 fg_color_norm = fg_colors_norm[x_console, y_console]
                 bg_color_norm = bg_colors_norm[x_console, y_console]
 
-                # Convert Unicode character to CP437 tileset position
+                # Convert Unicode character to CP437 and get UV coordinates
                 fg_char = unicode_to_cp437(char)
                 fg_uv = self.uv_map[fg_char]
                 fg_u1, fg_v1, fg_u2, fg_v2 = fg_uv
