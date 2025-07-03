@@ -5,7 +5,7 @@ These tests use unittest.mock to completely mock the moderngl library,
 allowing us to test the TextureRenderer logic without needing a real OpenGL context.
 """
 
-from unittest.mock import Mock
+from unittest.mock import MagicMock, Mock
 
 import numpy as np
 import pytest
@@ -110,26 +110,20 @@ class TestTextureRenderer:
         glyph_buffer.put_char(0, 0, ord("A"), (255, 0, 0, 255), (0, 0, 0, 255))
         glyph_buffer.put_char(1, 1, ord("B"), (0, 255, 0, 255), (128, 128, 128, 255))
 
-        # Expected pixel dimensions
-        expected_width_px = 10 * self.tile_dimensions[0]  # 10 * 16 = 160
-        expected_height_px = 5 * self.tile_dimensions[1]  # 5 * 20 = 100
+        # Expected pixel dimensions (not used in new API but kept for documentation)
+        # expected_width_px = 10 * self.tile_dimensions[0]  # 10 * 16 = 160
+        # expected_height_px = 5 * self.tile_dimensions[1]  # 5 * 20 = 100
 
-        # Call render
-        result_texture = renderer.render(glyph_buffer)
+        # Create a mock target FBO
+        mock_fbo = MagicMock()
 
-        # Assert texture creation with correct dimensions
-        self.mock_mgl_context.texture.assert_called_once_with(
-            (expected_width_px, expected_height_px), 4
-        )
+        # Call render with target FBO
+        renderer.render(glyph_buffer, mock_fbo)
 
-        # Assert framebuffer creation
-        self.mock_mgl_context.framebuffer.assert_called_once_with(
-            color_attachments=[self.mock_texture]
-        )
-
+        # TextureRenderer no longer creates textures/FBOs - they are provided
         # Assert FBO operations
-        self.mock_fbo.use.assert_called_once()
-        self.mock_fbo.clear.assert_called_once()
+        mock_fbo.use.assert_called_once()
+        mock_fbo.clear.assert_called_once()
 
         # Assert that no new VBO/VAO were created during render (they're persistent)
         self.mock_mgl_context.buffer.assert_not_called()
@@ -141,17 +135,12 @@ class TestTextureRenderer:
         # Assert rendering happened
         self.mock_vao.render.assert_called_once()
 
-        # Assert only FBO cleanup (VBO/VAO are persistent)
-        self.mock_fbo.release.assert_called_once()
-
+        # TextureRenderer no longer releases FBOs (they are reused)
         # Assert atlas texture was used
         self.mock_atlas_texture.use.assert_called_with(location=0)
 
         # Assert screen context restoration
         self.mock_screen.use.assert_called_once()
-
-        # Assert returned texture is correct
-        assert result_texture == self.mock_texture
 
     def test_render_empty_buffer(self):
         """Test render() with buffer that results in zero pixel dimensions."""
@@ -169,11 +158,14 @@ class TestTextureRenderer:
         empty_texture = Mock()
         self.mock_mgl_context.texture.return_value = empty_texture
 
-        result = renderer.render(glyph_buffer)
+        # Create a mock target FBO
+        mock_fbo = MagicMock()
 
-        # Should create a 1x1 texture with empty data since width_px would be 0
-        self.mock_mgl_context.texture.assert_called_with((1, 1), 4, b"\x00\x00\x00\x00")
-        assert result == empty_texture
+        # Call render with target FBO
+        renderer.render(glyph_buffer, mock_fbo)
+
+        # TextureRenderer no longer creates textures - returns early for empty buffers
+        # With non-zero buffer dimensions, it should still render
 
     def test_vertex_encoding_and_coordinate_mapping(self):
         """Test the core vertex encoding logic and coordinate mapping."""

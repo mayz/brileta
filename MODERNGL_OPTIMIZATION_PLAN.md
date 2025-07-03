@@ -103,11 +103,13 @@ This plan is structured in three phases, designed to be executed in order. Each 
 - Success Metric: Match or exceed TCOD's 700 FPS
 - Decision Point: Skip if within 80% of TCOD performance after Phase 2
 
-## Phase 1: Fixing Critical GPU Resource Churn (Highest Priority)
+## Phase 1: Fixing Critical GPU Resource Churn (Highest Priority) ✅ COMPLETED
 
 **Goal:** Eliminate all per-frame creation/destruction of Textures and Framebuffer Objects (FBOs). All such resources should be created once and reused.
 
-### Task 1.1: Implement FBO & Texture Pooling for UI/Canvas Rendering
+**Status:** Phase 1 completed successfully. All GPU resource churn has been eliminated through FBO pooling, reusable gradient textures, and persistent VBO/VAO resources. However, initial testing shows no significant FPS improvement, suggesting the bottleneck may be elsewhere (likely CPU-side operations). Profiling recommended before proceeding to Phase 2.
+
+### Task 1.1: Implement FBO & Texture Pooling for UI/Canvas Rendering ✅ COMPLETED
 
 **Problem:** The `catley.backends.moderngl.texture_renderer.TextureRenderer` creates a new `moderngl.Texture` and `moderngl.Framebuffer` every time its `render` method is called. This happens for every UI view and for the `WorldView`'s light overlay, every single frame. This is extremely slow.
 
@@ -149,7 +151,9 @@ return dest_texture
 
 **Expected Outcome:** A massive performance increase. FPS should jump from ~25 to well over 100, possibly into the 200-400 range, depending on other factors.
 
-### Task 1.2: Implement Reusable Texture for Environmental Effects
+**Actual Outcome:** Implementation completed successfully. FBO pooling system works correctly and eliminates GPU resource creation. However, no significant FPS improvement observed, indicating this was not the primary bottleneck.
+
+### Task 1.2: Implement Reusable Texture for Environmental Effects ✅ COMPLETED
 
 **Problem:** `apply_environmental_effect` in `ModernGLGraphicsContext` creates a NumPy array for a radial gradient, uploads it to a new GPU texture, uses it once, and releases it. This is done for every single light/fog effect on screen, every frame.
 
@@ -184,6 +188,16 @@ effect_texture.release()
         - **Option B (Better)**: Extend the renderer to handle multiple texture types (atlas vs effects) - but this can wait until Phase 2
 
 **Expected Outcome:** FPS will become stable and high even with many lights or fog effects on screen. This completes the critical performance fixes.
+
+**Actual Outcome:** Implementation completed successfully. Reusable gradient texture and persistent VBO/VAO resources eliminate all per-frame GPU resource creation for environmental effects. However, no significant FPS improvement observed, indicating the bottleneck lies elsewhere.
+
+### Additional Optimization (Task 1.3): Eliminate Temporary VBO/VAO Creation ✅ COMPLETED
+
+**Problem Discovered:** During implementation, identified that `_draw_single_texture_immediately()` and `_draw_environmental_effect_immediately()` were creating temporary VBO/VAO resources every frame for background rendering and environmental effects.
+
+**Solution Implemented:** Added persistent `immediate_vbo`, `immediate_vao_screen`, and `immediate_vao_ui` resources in `ModernGLGraphicsContext` to eliminate all temporary GPU resource creation.
+
+**Outcome:** All per-frame GPU resource creation has been eliminated. The optimization is technically successful but reveals that GPU resource churn was not the primary performance bottleneck.
 
 ---
 

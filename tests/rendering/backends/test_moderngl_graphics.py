@@ -249,8 +249,9 @@ class TestModernGLGraphicsContext:
             blend_mode=BlendMode.TINT,
         )
 
-        # Should have added vertices for the effect
-        assert self.graphics_ctx.screen_renderer.vertex_count > initial_vertex_count
+        # Environmental effects now use immediate rendering, vertex count stays same
+        # The effect was rendered immediately using the gradient texture
+        assert self.graphics_ctx.screen_renderer.vertex_count == initial_vertex_count
 
     def test_apply_environmental_effect_zero_radius(self):
         """Test environmental effect with zero radius does nothing."""

@@ -203,32 +203,26 @@ class TextureRenderer:
 
         return self.cpu_vertex_buffer[:vertex_idx], vertex_idx
 
-    def render(self, glyph_buffer: GlyphBuffer) -> moderngl.Texture:
+    def render(
+        self, glyph_buffer: GlyphBuffer, target_fbo: moderngl.Framebuffer
+    ) -> None:
         """
-        Renders a GlyphBuffer to a new, correctly oriented moderngl.Texture.
+        Renders a GlyphBuffer into the provided target framebuffer.
 
         Args:
             glyph_buffer: The GlyphBuffer to render
-
-        Returns:
-            A new moderngl.Texture containing the rendered glyph buffer
+            target_fbo: The pre-allocated framebuffer to render into
         """
-        # Calculate the pixel dimensions of the output texture
+        # Calculate the pixel dimensions for the shader uniforms
         width_px = glyph_buffer.width * self.tile_dimensions[0]
         height_px = glyph_buffer.height * self.tile_dimensions[1]
 
         if width_px == 0 or height_px == 0:
-            # Return a minimal 1x1 transparent texture for empty buffers
-            empty_data = np.zeros((1, 1, 4), dtype=np.uint8)
-            return self.mgl_context.texture((1, 1), 4, empty_data.tobytes())
+            return  # Nothing to render
 
-        # Create destination texture and FBO
-        dest_texture = self.mgl_context.texture((width_px, height_px), 4)
-        fbo = self.mgl_context.framebuffer(color_attachments=[dest_texture])
-
-        # Set up FBO for rendering
-        fbo.use()
-        fbo.clear()
+        # Set up target FBO for rendering
+        target_fbo.use()
+        target_fbo.clear()
 
         # Encode vertices directly into pre-allocated buffer
         vertex_data, vertex_count = self._encode_glyph_buffer_to_vertices(glyph_buffer)
@@ -243,12 +237,9 @@ class TextureRenderer:
 
             self.vao.render(moderngl.TRIANGLES, vertices=vertex_count)
 
-        # Restore default framebuffer and clean up
+        # Restore default framebuffer
         if self.mgl_context.screen:
             self.mgl_context.screen.use()
-        fbo.release()
-
-        return dest_texture
 
     def release(self) -> None:
         """Clean up GPU resources."""

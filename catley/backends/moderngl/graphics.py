@@ -167,6 +167,14 @@ class ModernGLGraphicsContext(GraphicsContext):
         self.atlas_texture = self._load_atlas_texture()
         self.uv_map = self._precalculate_uv_map()
 
+        # --- FBO and Texture Pooling for UI Rendering ---
+        self.fbo_cache: dict[
+            tuple[int, int], tuple[moderngl.Framebuffer, moderngl.Texture]
+        ] = {}
+
+        # --- Reusable Radial Gradient Texture for Environmental Effects ---
+        self.radial_gradient_texture = self._create_radial_gradient_texture(256)
+
         # --- ScreenRenderer for main screen rendering ---
         self.screen_renderer = ScreenRenderer(self.mgl_context, self.atlas_texture)
 
@@ -183,27 +191,24 @@ class ModernGLGraphicsContext(GraphicsContext):
         # --- UITextureRenderer for batched texture rendering ---
         self.ui_texture_renderer = UITextureRenderer(self.mgl_context)
 
+        # --- Persistent VBO/VAO for Immediate Rendering (after renderers created) ---
+        self._create_immediate_render_resources()
+
         self.SOLID_BLOCK_CHAR = 219
 
     def _draw_single_texture_immediately(
         self, texture: moderngl.Texture, vertices: np.ndarray
     ) -> None:
         """Helper to render a single quad with a custom texture immediately."""
-        # This helper encapsulates the logic for a one-off draw call.
-        # We'll use the UI renderer's shader because it's generic.
+        # Use persistent resources instead of creating temp VBO/VAO
         program = self.ui_texture_renderer.program
         program["u_letterbox"].value = self.letterbox_geometry
 
         texture.use(location=0)
 
-        temp_vbo = self.mgl_context.buffer(vertices.tobytes())
-        temp_vao = self.mgl_context.vertex_array(
-            program, [(temp_vbo, "2f 2f 4f", "in_vert", "in_uv", "in_color")]
-        )
-        temp_vao.render(moderngl.TRIANGLES, vertices=6)
-
-        temp_vao.release()
-        temp_vbo.release()
+        # Upload vertices to persistent VBO and render with persistent VAO
+        self.immediate_vbo.write(vertices.tobytes())
+        self.immediate_vao_ui.render(moderngl.TRIANGLES, vertices=6)
 
         # IMPORTANT: Restore the main atlas texture for the ScreenRenderer
         self.atlas_texture.use(location=0)
@@ -266,6 +271,72 @@ class ModernGLGraphicsContext(GraphicsContext):
             uv_map[i] = [u1, v1, u2, v2]
         return uv_map
 
+    def _get_or_create_render_target(
+        self, width: int, height: int
+    ) -> tuple[moderngl.Framebuffer, moderngl.Texture]:
+        """
+        Get or create a cached FBO and texture for the given dimensions.
+        This prevents per-frame GPU resource creation/destruction.
+        """
+        cache_key = (width, height)
+        if cache_key in self.fbo_cache:
+            return self.fbo_cache[cache_key]
+
+        # Create new FBO and texture
+        dest_texture = self.mgl_context.texture((width, height), 4)
+        fbo = self.mgl_context.framebuffer(color_attachments=[dest_texture])
+
+        # Cache them for future use
+        self.fbo_cache[cache_key] = (fbo, dest_texture)
+        return fbo, dest_texture
+
+    def _create_radial_gradient_texture(self, resolution: int) -> moderngl.Texture:
+        """
+        Create a reusable white radial gradient texture for environmental effects.
+        This prevents per-frame texture creation in apply_environmental_effect.
+        """
+        center = resolution // 2
+
+        # Create gradient using numpy
+        y_coords, x_coords = np.ogrid[:resolution, :resolution]
+        distances = np.sqrt((x_coords - center) ** 2 + (y_coords - center) ** 2)
+
+        # Create alpha gradient that fades from center to edge
+        alpha = np.clip(1.0 - distances / center, 0.0, 1.0)
+
+        # Create RGBA texture data (white with alpha gradient)
+        effect_data = np.zeros((resolution, resolution, 4), dtype=np.uint8)
+        effect_data[:, :, :3] = 255  # White base color
+        effect_data[:, :, 3] = (alpha * 255).astype(np.uint8)
+
+        # Create the texture
+        texture = self.mgl_context.texture(
+            (resolution, resolution), 4, effect_data.tobytes()
+        )
+        texture.filter = (moderngl.LINEAR, moderngl.LINEAR)
+
+        return texture
+
+    def _create_immediate_render_resources(self) -> None:
+        """
+        Create persistent VBO/VAO resources for immediate rendering operations.
+        This prevents per-frame GPU resource creation in immediate drawing methods.
+        """
+        # Create a persistent VBO for single quad immediate rendering (6 vertices)
+        self.immediate_vbo = self.mgl_context.buffer(
+            reserve=6 * VERTEX_DTYPE.itemsize, dynamic=True
+        )
+
+        # Create persistent VAOs for different shader programs
+        self.immediate_vao_screen = self.mgl_context.vertex_array(
+            self.screen_renderer.screen_program,
+            [(self.immediate_vbo, "2f 2f 4f", "in_vert", "in_uv", "in_color")],
+        )
+        self.immediate_vao_ui = self.mgl_context.vertex_array(
+            self.ui_texture_renderer.program,
+            [(self.immediate_vbo, "2f 2f 4f", "in_vert", "in_uv", "in_color")],
+        )
+
     # --- Frame Lifecycle & Main Rendering ---
 
     def prepare_to_present(self) -> None:
@@ -306,8 +377,25 @@ class ModernGLGraphicsContext(GraphicsContext):
         return self.screen_renderer.screen_program
 
     def render_glyph_buffer_to_texture(self, glyph_buffer: GlyphBuffer) -> Any:
-        """Renders a GlyphBuffer to a new, correctly oriented texture."""
-        return self.texture_renderer.render(glyph_buffer)
+        """Renders a GlyphBuffer to a cached, correctly oriented texture."""
+        # Calculate the pixel dimensions of the output texture
+        width_px = glyph_buffer.width * self.tile_dimensions[0]
+        height_px = glyph_buffer.height * self.tile_dimensions[1]
+
+        if width_px == 0 or height_px == 0:
+            # Return a minimal 1x1 transparent texture for empty buffers
+            empty_data = np.zeros((1, 1, 4), dtype=np.uint8)
+            return self.mgl_context.texture((1, 1), 4, empty_data.tobytes())
+
+        # Get or create cached render target
+        target_fbo, target_texture = self._get_or_create_render_target(
+            width_px, height_px
+        )
+
+        # Render into the cached FBO
+        self.texture_renderer.render(glyph_buffer, target_fbo)
+
+        return target_texture
 
     def present_texture(
         self,
@@ -596,28 +684,7 @@ class ModernGLGraphicsContext(GraphicsContext):
 
         # Calculate pixel radius based on tile dimensions
         px_radius = max(1, int(radius * self.tile_dimensions[0]))
-
-        # Create a circular gradient texture for the effect
-        size = px_radius * 2 + 1
-        center = px_radius
-
-        # Create gradient using numpy
-        y_coords, x_coords = np.ogrid[:size, :size]
-        distances = np.sqrt((x_coords - center) ** 2 + (y_coords - center) ** 2)
-
-        # Create alpha gradient that fades from center to edge
-        alpha = np.clip(1.0 - distances / px_radius, 0.0, 1.0)
-
-        # Create RGBA texture data
-        effect_data = np.zeros((size, size, 4), dtype=np.uint8)
-        effect_data[:, :, :3] = 255  # White base color
-        effect_data[:, :, 3] = (alpha * 255).astype(np.uint8)
-
-        # Create temporary texture for this effect
-        effect_texture = self.mgl_context.texture(
-            (size, size), 4, effect_data.tobytes()
-        )
-        effect_texture.filter = (moderngl.LINEAR, moderngl.LINEAR)
+        size = px_radius * 2
 
         # Calculate final color with intensity
         final_color = (
@@ -630,19 +697,47 @@ class ModernGLGraphicsContext(GraphicsContext):
         # Position the effect centered on the given position
         dest_x = screen_x - px_radius
         dest_y = screen_y - px_radius
-        uv_coords = (0.0, 0.0, 1.0, 1.0)  # Use full texture
+        uv_coords = (0.0, 0.0, 1.0, 1.0)  # Use full gradient texture
 
-        # Temporarily bind the effect texture
-        current_atlas = self.atlas_texture
-        effect_texture.use(location=0)
-        self.screen_renderer.add_quad(
+        # Use immediate rendering approach to avoid batching complications
+        # This approach is more direct and avoids needing to manage batch state
+        self._draw_environmental_effect_immediately(
             dest_x, dest_y, size, size, uv_coords, final_color
         )
-        # Restore atlas texture
-        current_atlas.use(location=0)
 
-        # Clean up temporary texture
-        effect_texture.release()
+    def _draw_environmental_effect_immediately(
+        self,
+        x: float,
+        y: float,
+        w: float,
+        h: float,
+        uv_coords: tuple[float, float, float, float],
+        color_rgba: tuple[float, float, float, float],
+    ) -> None:
+        """Helper to render a single environmental effect quad immediately."""
+        # Create vertices for this effect quad
+        u1, v1, u2, v2 = uv_coords
+        vertices = np.zeros(6, dtype=VERTEX_DTYPE)
+        vertices[0] = ((x, y), (u1, v1), color_rgba)
+        vertices[1] = ((x + w, y), (u2, v1), color_rgba)
+        vertices[2] = ((x, y + h), (u1, v2), color_rgba)
+        vertices[3] = ((x + w, y), (u2, v1), color_rgba)
+        vertices[4] = ((x, y + h), (u1, v2), color_rgba)
+        vertices[5] = ((x + w, y + h), (u2, v2), color_rgba)
+
+        # Set up shader uniforms like ScreenRenderer does
+        program = self.screen_renderer.screen_program
+        program["u_letterbox"].value = self.letterbox_geometry
+
+        # Use the reusable gradient texture
+        self.radial_gradient_texture.use(location=0)
+
+        # Use persistent VBO/VAO instead of creating temporary resources
+        self.immediate_vbo.write(vertices.tobytes())
+        self.immediate_vao_screen.render(moderngl.TRIANGLES, vertices=6)
+
+        # Restore atlas texture for normal rendering
+        self.atlas_texture.use(location=0)
 
     def draw_debug_rect(
         self, px_x: int, px_y: int, px_w: int, px_h: int, color: colors.Color
