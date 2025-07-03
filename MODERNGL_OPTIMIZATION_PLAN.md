@@ -1,9 +1,10 @@
 # ModernGL Rendering Performance Optimization Plan
 
 ## Current Situation
-- **Performance Issue**: Dropped from 700-800 FPS (TCOD+SDL) to 15-19 FPS (Pyglet/ModernGL)
-- **Main Bottleneck**: `TextureRenderer._encode_glyph_buffer_to_vertices()` at line 125
-- **Root Cause**: Creating 6,400 numpy arrays and 38,400 individual assignments per frame
+- **Original Performance**: 700-800 FPS (TCOD+SDL) → 15-19 FPS (Pyglet/ModernGL)
+- **Current Performance**: 25-29 FPS (after Steps 1-2) 📈
+- **Progress**: ~50% improvement, still targeting 300+ FPS to match TCOD
+- **Main Remaining Bottleneck**: Per-frame vertex generation in nested loops
 
 ## Optimization Strategy
 
@@ -22,22 +23,18 @@
 
 ---
 
-### Step 2: Eliminate Individual Vertex Array Allocations
+### ✅ Step 2: Eliminate Individual Vertex Array Allocations (COMPLETED)
 **Goal**: Remove the remaining 6,400 numpy array allocations per frame
 
-**Current Problem** (still exists):
-```python
-# These are still happening in the nested loops:
-bg_vertices = np.zeros(6, dtype=VERTEX_DTYPE)  # Called 3,200 times  
-fg_vertices = np.zeros(6, dtype=VERTEX_DTYPE)  # Called 3,200 times
-```
+**What Was Done**:
+- ✅ Implemented vectorized color normalization: `fg_colors_norm = fg_colors_raw.astype(np.float32) / 255.0`
+- ✅ Pre-calculated background UV coordinates (solid block character)
+- ✅ Replaced individual vertex assignments with array slice operations
+- ✅ Eliminated 6,400 per-frame color tuple conversions
+- ✅ Cached frequently used values to reduce redundant calculations
+- ✅ Optimized vertex coordinate calculations
 
-**Solution**: 
-- Replace individual `np.zeros(6, dtype=VERTEX_DTYPE)` calls with direct buffer writes
-- Use vectorized operations where possible
-- Eliminate intermediate vertex arrays entirely
-
-**Expected Gain**: Major performance improvement - this addresses the core bottleneck
+**Performance Result**: 🎉 **~50% improvement: 15-19 FPS → 25-29 FPS**
 
 ---
 
@@ -128,10 +125,10 @@ if buffer_hash == self.last_buffer_hash:
 
 ### ✅ Completed
 - **Step 1**: Applied UITextureRenderer pattern - persistent GPU resources in place
+- **Step 2**: Eliminated vertex allocation bottleneck - **50% performance gain (15-19 → 25-29 FPS)**
 
 ### 🔄 Next Steps
-- **Step 2**: Eliminate remaining 6,400 array allocations (major bottleneck)
-- **Step 3**: Implement glyph atlas + shader coloring (architectural improvement)
+- **Step 3**: Implement glyph atlas + shader coloring (biggest potential gain - could reach TCOD performance)
 - **Steps 4-6**: Final optimizations and caching
 
 ## Implementation Notes

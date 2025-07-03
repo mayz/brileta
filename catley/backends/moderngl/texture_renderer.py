@@ -140,93 +140,57 @@ class TextureRenderer:
         tile_w, tile_h = self.tile_dimensions
         vertex_idx = 0
 
+        # Pre-normalize colors for all cells using vectorized operations
+        fg_colors_raw = glyph_buffer.data["fg"]
+        bg_colors_raw = glyph_buffer.data["bg"]
+        fg_colors_norm = fg_colors_raw.astype(np.float32) / 255.0
+        bg_colors_norm = bg_colors_raw.astype(np.float32) / 255.0
+
+        # Cache frequently used values
+        bg_char = unicode_to_cp437(self.SOLID_BLOCK_CHAR)
+        bg_uv = self.uv_map[bg_char]
+        bg_u1, bg_v1, bg_u2, bg_v2 = bg_uv
+
         for y_console in range(h):
             for x_console in range(w):
                 cell = glyph_buffer.data[x_console, y_console]
                 char = cell["ch"]
-                fg_color_rgba = tuple(cell["fg"])
-                bg_color_rgba = tuple(cell["bg"])
 
                 # Use normal Y-coordinate (no pre-flip needed)
                 screen_x = x_console * tile_w
                 screen_y = y_console * tile_h
+                screen_x2 = screen_x + tile_w
+                screen_y2 = screen_y + tile_h
 
-                # Convert Unicode characters to CP437 tileset positions
+                # Get pre-normalized colors
+                fg_color_norm = fg_colors_norm[x_console, y_console]
+                bg_color_norm = bg_colors_norm[x_console, y_console]
+
+                # Convert Unicode character to CP437 tileset position
                 fg_char = unicode_to_cp437(char)
-                bg_char = unicode_to_cp437(self.SOLID_BLOCK_CHAR)
-
                 fg_uv = self.uv_map[fg_char]
-                bg_uv = self.uv_map[bg_char]
+                fg_u1, fg_v1, fg_u2, fg_v2 = fg_uv
 
-                bg_color_norm = tuple(c / 255.0 for c in bg_color_rgba)
-                fg_color_norm = tuple(c / 255.0 for c in fg_color_rgba)
-
-                # Write BG quad directly to buffer (6 vertices)
-                u1, v1, u2, v2 = bg_uv
-                self.cpu_vertex_buffer[vertex_idx] = (
-                    (screen_x, screen_y),
-                    (u1, v1),
-                    bg_color_norm,
-                )
-                self.cpu_vertex_buffer[vertex_idx + 1] = (
-                    (screen_x + tile_w, screen_y),
-                    (u2, v1),
-                    bg_color_norm,
-                )
-                self.cpu_vertex_buffer[vertex_idx + 2] = (
-                    (screen_x, screen_y + tile_h),
-                    (u1, v2),
-                    bg_color_norm,
-                )
-                self.cpu_vertex_buffer[vertex_idx + 3] = (
-                    (screen_x + tile_w, screen_y),
-                    (u2, v1),
-                    bg_color_norm,
-                )
-                self.cpu_vertex_buffer[vertex_idx + 4] = (
-                    (screen_x, screen_y + tile_h),
-                    (u1, v2),
-                    bg_color_norm,
-                )
-                self.cpu_vertex_buffer[vertex_idx + 5] = (
-                    (screen_x + tile_w, screen_y + tile_h),
-                    (u2, v2),
-                    bg_color_norm,
-                )
+                # Write BG quad as structured array slice (6 vertices)
+                self.cpu_vertex_buffer[vertex_idx : vertex_idx + 6] = [
+                    ((screen_x, screen_y), (bg_u1, bg_v1), bg_color_norm),
+                    ((screen_x2, screen_y), (bg_u2, bg_v1), bg_color_norm),
+                    ((screen_x, screen_y2), (bg_u1, bg_v2), bg_color_norm),
+                    ((screen_x2, screen_y), (bg_u2, bg_v1), bg_color_norm),
+                    ((screen_x, screen_y2), (bg_u1, bg_v2), bg_color_norm),
+                    ((screen_x2, screen_y2), (bg_u2, bg_v2), bg_color_norm),
+                ]
                 vertex_idx += 6
 
-                # Write FG quad directly to buffer (6 vertices)
-                u1, v1, u2, v2 = fg_uv
-                self.cpu_vertex_buffer[vertex_idx] = (
-                    (screen_x, screen_y),
-                    (u1, v1),
-                    fg_color_norm,
-                )
-                self.cpu_vertex_buffer[vertex_idx + 1] = (
-                    (screen_x + tile_w, screen_y),
-                    (u2, v1),
-                    fg_color_norm,
-                )
-                self.cpu_vertex_buffer[vertex_idx + 2] = (
-                    (screen_x, screen_y + tile_h),
-                    (u1, v2),
-                    fg_color_norm,
-                )
-                self.cpu_vertex_buffer[vertex_idx + 3] = (
-                    (screen_x + tile_w, screen_y),
-                    (u2, v1),
-                    fg_color_norm,
-                )
-                self.cpu_vertex_buffer[vertex_idx + 4] = (
-                    (screen_x, screen_y + tile_h),
-                    (u1, v2),
-                    fg_color_norm,
-                )
-                self.cpu_vertex_buffer[vertex_idx + 5] = (
-                    (screen_x + tile_w, screen_y + tile_h),
-                    (u2, v2),
-                    fg_color_norm,
-                )
+                # Write FG quad as structured array slice (6 vertices)
+                self.cpu_vertex_buffer[vertex_idx : vertex_idx + 6] = [
+                    ((screen_x, screen_y), (fg_u1, fg_v1), fg_color_norm),
+                    ((screen_x2, screen_y), (fg_u2, fg_v1), fg_color_norm),
+                    ((screen_x, screen_y2), (fg_u1, fg_v2), fg_color_norm),
+                    ((screen_x2, screen_y), (fg_u2, fg_v1), fg_color_norm),
+                    ((screen_x, screen_y2), (fg_u1, fg_v2), fg_color_norm),
+                    ((screen_x2, screen_y2), (fg_u2, fg_v2), fg_color_norm),
+                ]
                 vertex_idx += 6
 
         return self.cpu_vertex_buffer[:vertex_idx], vertex_idx
