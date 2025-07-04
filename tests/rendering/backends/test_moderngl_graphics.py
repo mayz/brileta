@@ -65,19 +65,17 @@ class TestModernGLGraphicsContext:
         self.gl_context = moderngl.create_context(standalone=True)
         self.mock_window = MockGLWindow(800, 600)
 
-        # Mock the tileset loading since we don't have assets in tests
-        with patch("catley.backends.moderngl.graphics.PILImage.open") as mock_open:
-            # Create a mock tileset image
-            mock_img = Mock()
-            mock_img.size = (256, 256)  # 16x16 tileset
-            mock_img.convert.return_value = mock_img
-            mock_array = np.ones((256, 256, 4), dtype=np.uint8) * 255
+        # Mock the atlas texture loading entirely to avoid interference
+        with patch.object(
+            ModernGLGraphicsContext, "_load_atlas_texture"
+        ) as mock_load_atlas:
+            # Create a mock atlas texture
+            mock_texture = Mock()
+            mock_load_atlas.return_value = mock_texture
 
-            with patch("numpy.array", return_value=mock_array):
-                mock_open.return_value = mock_img
-                self.graphics_ctx = ModernGLGraphicsContext(
-                    self.mock_window, self.gl_context
-                )
+            self.graphics_ctx = ModernGLGraphicsContext(
+                self.mock_window, self.gl_context
+            )
 
         yield
 

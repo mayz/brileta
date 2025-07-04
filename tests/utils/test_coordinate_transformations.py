@@ -9,7 +9,6 @@ correct positions.
 from unittest.mock import Mock, patch
 
 import moderngl
-import numpy as np
 import pytest
 
 from catley.backends.moderngl.graphics import ModernGLGraphicsContext
@@ -48,9 +47,15 @@ class TestCoordinateTransformations:
             mock_img = Mock()
             mock_img.size = (256, 256)  # 16x16 tileset
             mock_img.convert.return_value = mock_img
-            mock_array = np.ones((256, 256, 4), dtype=np.uint8) * 255
 
-            with patch("numpy.array", return_value=mock_array):
+            # More specific mock that only affects the atlas texture loading
+            with patch.object(
+                ModernGLGraphicsContext, "_load_atlas_texture"
+            ) as mock_load_atlas:
+                mock_texture = Mock()
+                mock_texture.filter = None
+                mock_load_atlas.return_value = mock_texture
+
                 mock_open.return_value = mock_img
                 self.graphics_ctx = ModernGLGraphicsContext(
                     self.mock_window, self.gl_context

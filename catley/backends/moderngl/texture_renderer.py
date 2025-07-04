@@ -46,6 +46,15 @@ class TextureRenderer:
         self.uv_map = uv_map
         self.SOLID_BLOCK_CHAR = 9608  # Unicode █ character
 
+        # Pre-compute unicode_to_cp437 mapping for common characters (0-255)
+        # This eliminates thousands of Python function calls per frame
+        self.unicode_to_cp437_map = np.array(
+            [unicode_to_cp437(i) for i in range(256)], dtype=np.uint8
+        )
+
+        # Pre-compute the background character CP437 value (solid block)
+        self.bg_char_cp437 = unicode_to_cp437(self.SOLID_BLOCK_CHAR)
+
         # Create dedicated shader program for texture rendering
         self.texture_program = self._create_texture_shader_program()
 
@@ -147,8 +156,7 @@ class TextureRenderer:
         bg_colors_norm = bg_colors_raw.astype(np.float32) / 255.0
 
         # Pre-cache background UV coordinates (solid block character)
-        bg_char = unicode_to_cp437(self.SOLID_BLOCK_CHAR)
-        bg_uv = self.uv_map[bg_char]
+        bg_uv = self.uv_map[self.bg_char_cp437]
         bg_u1, bg_v1, bg_u2, bg_v2 = bg_uv
 
         # Pre-calculate screen coordinates to avoid per-cell multiplication
@@ -175,7 +183,12 @@ class TextureRenderer:
                 bg_color_norm = bg_colors_norm[x_console, y_console]
 
                 # Convert Unicode character to CP437 and get UV coordinates
-                fg_char = unicode_to_cp437(char)
+                # Fast array lookup for common characters, fallback for others
+                if char < 256:
+                    fg_char = self.unicode_to_cp437_map[char]
+                else:
+                    fg_char = unicode_to_cp437(char)  # Rare edge case
+
                 fg_uv = self.uv_map[fg_char]
                 fg_u1, fg_v1, fg_u2, fg_v2 = fg_uv
 
