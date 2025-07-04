@@ -63,11 +63,12 @@ class TestScreenRenderer:
         self.mock_program.__getitem__.assert_called_with("u_atlas")
         assert self.mock_uniform.value == 0
 
-        # Verify VBO was created with correct size
-        expected_buffer_size = MAX_QUADS * 6 * VERTEX_DTYPE.itemsize
-        self.mock_mgl_context.buffer.assert_called_once_with(
-            reserve=expected_buffer_size, dynamic=True
-        )
+        # Verify VBO was created with initialized data (not reserve)
+        self.mock_mgl_context.buffer.assert_called_once()
+        call_args = self.mock_mgl_context.buffer.call_args
+        assert call_args.kwargs["dynamic"] is True
+        # Verify the buffer was created with actual data (not reserve)
+        assert len(call_args.args) > 0  # Should have data argument, not reserve
         assert renderer.vbo == self.mock_vbo
 
         # Verify VAO was created with correct format

@@ -354,3 +354,90 @@ Redesign the rendering pipeline to use integer indices and perform lookups in th
 **Expected Outcome:** Potentially higher performance than TCOD due to reduced vertex bandwidth, but adds significant complexity. **Only implement if Phases 1-2 don't achieve target performance.**
 
 **Key Decision Point:** After Phase 2 completion, benchmark against TCOD. If we're within 80% of TCOD's performance, **skip Phase 3** and focus on other game systems instead.
+
+---
+
+## Visual Artifact Investigation: Actor "Buzzing"
+
+**Issue:** After implementing single-quad rendering, actors (player and enemies) exhibit a visual "buzzing" or flickering effect on screen, even when stationary. This occurs despite achieving performance improvements and passing all tests.
+
+**Critical Observation:** The buzzing is **actor-specific**. Background tiles, UI elements, and other game objects render correctly without artifacts. This suggests the issue is not in the core rendering pipeline but in something specific to actor rendering.
+
+### Attempted Fixes and Results
+
+#### ✅ **COMPLETED: Z-Fighting Elimination (Single-Quad Approach)**
+- **Theory:** Coplanar geometry from dual quads (background + foreground) causing Z-fighting
+- **Implementation:** Replaced 12 vertices per tile with 6 vertices using GPU color mixing
+- **Result:** ❌ Buzzing persists, but achieved 50% vertex reduction
+- **Status:** Kept for performance benefits despite not fixing the visual issue
+
+#### ✅ **COMPLETED: Camera Stability Verification**
+- **Theory:** Micro-movements in camera position causing sub-pixel sampling differences  
+- **Test:** Added high-precision logging of camera coordinates per frame
+- **Result:** ❌ Camera perfectly stable at `x=39.5000000000, y=23.0000000000` with zero drift
+- **Status:** Camera jitter ruled out as the cause
+
+#### ✅ **COMPLETED: Texture Filtering Check**
+- **Theory:** `GL_LINEAR` filtering causing atlas bleeding from adjacent characters
+- **Verification:** Confirmed `texture.filter = (moderngl.NEAREST, moderngl.NEAREST)` already set
+- **Result:** ❌ Texture bleeding already prevented
+- **Status:** Not the cause of the issue
+
+#### ✅ **COMPLETED: Shader Precision Fix (Epsilon Approach)**
+- **Theory:** Floating-point precision issues in `mix()` function causing color instability
+- **Implementation:** Added epsilon-based thresholds around pure transparent/opaque values
+- **Result:** ❌ Buzzing persists unchanged
+- **Status:** Reverted to maintain anti-aliasing quality
+
+### Current Status: Investigating Actor-Specific Rendering
+
+**Key Insight:** Since only actors buzz while background tiles and UI remain stable, the issue likely lies in:
+
+1. **Actor positioning system** - Float coordinates vs integer tile alignment
+2. **Actor rendering path** - Different shader or vertex generation method  
+3. **Lighting effects** - Actor-specific lighting calculations
+4. **World coordinate transformation** - How actor positions are converted to screen coordinates
+5. **VBO update patterns** - Different update frequency or timing for actor data
+
+### ❌ **COMPLETED: Systematic Actor Buzzing Investigation (Test 1 & 2)**
+
+**Test 1 - Lighting Calculation Isolation:**
+- **Theory:** Dynamic lighting from torch flicker causing actor color instability
+- **Implementation:** Forced actors to full brightness `light_rgb = (1.0, 1.0, 1.0)` in `_render_single_actor_smooth`
+- **Result:** ❌ Buzzing persists - lighting calculation is NOT the cause
+- **Status:** Test completed, changes reverted
+
+**Test 2 - Position Calculation Isolation:**
+- **Theory:** Floating-point coordinate instability causing sub-pixel sampling differences
+- **Implementation:** Rounded final screen coordinates to whole pixels using `round(screen_pixel_x)` and `round(screen_pixel_y)`
+- **Result:** ❌ Buzzing persists - position coordinate instability is NOT the cause
+- **Status:** Test completed, changes reverted
+
+**Critical Finding:** Both primary hypotheses (lighting and position) have been ruled out. The buzzing continues despite:
+- Stable lighting values (forced to constant)
+- Pixel-perfect coordinate alignment (rounded to integers)
+- Previously confirmed stable camera position
+- Previously confirmed correct texture filtering
+
+This indicates the issue lies deeper in the rendering pipeline, possibly in:
+1. **VBO data generation** - Actor-specific vertex data may be regenerated differently each frame
+2. **Shader uniform values** - Actor rendering may use different shader uniforms than background tiles
+3. **Graphics driver/GPU timing** - Hardware-level instability in vertex processing
+4. **Memory layout differences** - Actor data may be stored/accessed differently causing cache misses
+
+### Next Investigation Targets (Updated)
+
+**High Priority:**
+- [ ] Compare VBO update patterns: actors vs background tiles
+- [ ] Check if actors bypass change detection system
+- [ ] Investigate shader uniform differences for actor rendering
+- [ ] Profile memory access patterns for actor vs tile data
+
+**Medium Priority:**  
+- [ ] Test with different graphics drivers/hardware
+- [ ] Check for alignment issues in vertex buffer layout
+- [ ] Investigate timing differences in actor vs tile rendering calls
+
+**Low Priority:**
+- [ ] Alternative rendering backends for comparison
+- [ ] GPU profiling tools to identify hardware-level issues

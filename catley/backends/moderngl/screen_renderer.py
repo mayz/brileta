@@ -31,9 +31,11 @@ class ScreenRenderer:
         # Main Vertex Buffer for Screen Rendering
         self.cpu_vertex_buffer = np.zeros(MAX_QUADS * 6, dtype=VERTEX_DTYPE)
         self.vertex_count = 0
-        self.vbo = self.mgl_context.buffer(
-            reserve=self.cpu_vertex_buffer.nbytes, dynamic=True
-        )
+
+        # Initialize VBO with clean zero data to prevent garbage memory artifacts
+        initial_data = np.zeros_like(self.cpu_vertex_buffer)
+        self.vbo = self.mgl_context.buffer(initial_data.tobytes(), dynamic=True)
+
         self.vao = self.mgl_context.vertex_array(
             self.screen_program,
             [(self.vbo, "2f 2f 4f", "in_vert", "in_uv", "in_color")],
