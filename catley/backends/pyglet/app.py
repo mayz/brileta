@@ -59,13 +59,14 @@ class PygletApp(App[ModernGLGraphicsContext]):
             # Hide system cursor since we draw our own
             self.window.set_mouse_visible(False)
 
-            assert self.controller is not None
-            target_fps = self.controller.target_fps
-            interval = (
-                1.0 / target_fps if target_fps is not None and target_fps > 0 else 0.0
-            )
-
-            pyglet.app.run(interval=interval)
+            # Run with interval=0 for unlimited FPS instead of using Pyglet's
+            # built-in frame limiting. Pyglet's interval-based scheduling
+            # consistently undershoots the target FPS (e.g., ~40 FPS when
+            # targeting 60) due to conservative OS-level event timing that
+            # doesn't compensate for sleep overshooting or cumulative drift.
+            # Our clock.sync() provides precise frame limiting with drift
+            # compensation, achieving accurate target FPS.
+            pyglet.app.run(interval=0)
         finally:
             # Restore system cursor when exiting
             self.window.set_mouse_visible(True)
@@ -74,8 +75,9 @@ class PygletApp(App[ModernGLGraphicsContext]):
         """Called by Pyglet to render. Handles full game loop with accumulator."""
         assert self.controller is not None
 
-        # Get delta time and update the controller's clock to calculate FPS.
-        dt = self.controller.clock.tick()
+        # Use clock.sync() instead of tick() to enforce frame rate limiting
+        # This matches TCODApp's approach and provides precise FPS control
+        dt = self.controller.clock.sync(fps=self.controller.target_fps)
 
         # Use the shared accumulator-based game logic update
         # This handles player input, fixed timestep logic, and death spiral protection

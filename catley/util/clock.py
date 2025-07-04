@@ -39,7 +39,7 @@ class Clock:
         to enforce an FPS cap by sleeping. It then calls tick() to perform
         the time measurement.
         """
-        if fps is not None:
+        if fps is not None and fps > 0:
             desired_frame_time = 1 / fps
             target_time = self.last_time + desired_frame_time - self.drift_time
             sleep_time = max(0, target_time - time.perf_counter() - 0.001)
