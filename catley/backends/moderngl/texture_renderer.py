@@ -12,7 +12,8 @@ VERTEX_DTYPE = np.dtype(
     [
         ("position", "2f4"),  # (x, y)
         ("uv", "2f4"),  # (u, v)
-        ("color", "4f4"),  # (r, g, b, a) as floats 0.0-1.0
+        ("fg_color", "4f4"),  # (r, g, b, a) as floats 0.0-1.0
+        ("bg_color", "4f4"),  # (r, g, b, a) as floats 0.0-1.0
     ]
 )
 
@@ -63,7 +64,7 @@ class TextureRenderer:
 
         # Pre-allocate vertex buffer for maximum expected size
         max_cells = self.MAX_BUFFER_WIDTH * self.MAX_BUFFER_HEIGHT
-        max_vertices = max_cells * 12  # 2 quads * 6 vertices per quad
+        max_vertices = max_cells * 6  # 1 quad * 6 vertices per quad
         self.cpu_vertex_buffer = np.zeros(max_vertices, dtype=VERTEX_DTYPE)
 
         # Create persistent VBO with dynamic updates
@@ -72,7 +73,16 @@ class TextureRenderer:
         self.vbo = self.mgl_context.buffer(initial_data.tobytes(), dynamic=True)
         self.vao = self.mgl_context.vertex_array(
             self.texture_program,
-            [(self.vbo, "2f 2f 4f", "in_vert", "in_uv", "in_color")],
+            [
+                (
+                    self.vbo,
+                    "2f 2f 4f 4f",
+                    "in_vert",
+                    "in_uv",
+                    "in_fg_color",
+                    "in_bg_color",
+                )
+            ],
         )
 
         # Cache for change detection (TCOD-style optimization)
@@ -89,39 +99,45 @@ class TextureRenderer:
         """
         vertex_shader = """
             #version 330
-            // Renders vertices to a texture, normalizing to the texture's own
-            // dimensions.
-            // IMPORTANT: This shader does NOT flip the Y-axis. The vertices are
-            // pre-flipped.
-            in vec2 in_vert;       // Input vertex position in PRE-FLIPPED pixels
+            in vec2 in_vert;
             in vec2 in_uv;
-            in vec4 in_color;
+            in vec4 in_fg_color;
+            in vec4 in_bg_color;
 
             out vec2 v_uv;
-            out vec4 v_color;
+            out vec4 v_fg_color;
+            out vec4 v_bg_color;
 
-            uniform vec2 u_texture_size; // The size of the TARGET TEXTURE in pixels
+            uniform vec2 u_texture_size;
 
             void main() {
                 v_uv = in_uv;
-                v_color = in_color;
+                v_fg_color = in_fg_color;
+                v_bg_color = in_bg_color;
 
-                // Normalize to clip space (-1 to 1) for the texture
                 float x = (in_vert.x / u_texture_size.x) * 2.0 - 1.0;
                 float y = (in_vert.y / u_texture_size.y) * 2.0 - 1.0;
-
                 gl_Position = vec4(x, y, 0.0, 1.0);
             }
         """
         fragment_shader = """
             #version 330
-            in vec2 v_uv;
-            in vec4 v_color;
-            out vec4 f_color;
             uniform sampler2D u_atlas;
+
+            in vec2 v_uv;
+            in vec4 v_fg_color;
+            in vec4 v_bg_color;
+
+            out vec4 f_color;
+
             void main() {
-                vec4 tex_color = texture(u_atlas, v_uv);
-                f_color = tex_color * v_color;
+                // Sample the character tile from the atlas
+                float char_alpha = texture(u_atlas, v_uv).a;
+
+                // Mix foreground and background colors based on texture alpha.
+                // If char_alpha is 1.0 (opaque pixel), the result is v_fg_color.
+                // If char_alpha is 0.0 (transparent pixel), the result is v_bg_color.
+                f_color = mix(v_bg_color, v_fg_color, char_alpha);
             }
         """
         program = self.mgl_context.program(
@@ -148,7 +164,7 @@ class TextureRenderer:
             return np.array([], dtype=VERTEX_DTYPE), 0
 
         # Verify buffer size is sufficient
-        max_vertices_needed = num_cells * 12  # 2 quads * 6 vertices per quad
+        max_vertices_needed = num_cells * 6  # 1 quad * 6 vertices per quad
         if max_vertices_needed > len(self.cpu_vertex_buffer):
             raise ValueError(
                 f"GlyphBuffer too large: needs {max_vertices_needed} vertices, "
@@ -163,10 +179,6 @@ class TextureRenderer:
         bg_colors_raw = glyph_buffer.data["bg"]
         fg_colors_norm = fg_colors_raw.astype(np.float32) / 255.0
         bg_colors_norm = bg_colors_raw.astype(np.float32) / 255.0
-
-        # Pre-cache background UV coordinates (solid block character)
-        bg_uv = self.uv_map[self.bg_char_cp437]
-        bg_u1, bg_v1, bg_u2, bg_v2 = bg_uv
 
         # Pre-calculate screen coordinates to avoid per-cell multiplication
         screen_x_coords = np.arange(w) * tile_w
@@ -199,27 +211,16 @@ class TextureRenderer:
                     fg_char = unicode_to_cp437(char)  # Rare edge case
 
                 fg_uv = self.uv_map[fg_char]
-                fg_u1, fg_v1, fg_u2, fg_v2 = fg_uv
+                u1, v1, u2, v2 = fg_uv
 
-                # Write BG quad as structured array slice (6 vertices)
+                # Write ONE quad (6 vertices) with both colors
                 self.cpu_vertex_buffer[vertex_idx : vertex_idx + 6] = [
-                    ((screen_x, screen_y), (bg_u1, bg_v1), bg_color_norm),
-                    ((screen_x2, screen_y), (bg_u2, bg_v1), bg_color_norm),
-                    ((screen_x, screen_y2), (bg_u1, bg_v2), bg_color_norm),
-                    ((screen_x2, screen_y), (bg_u2, bg_v1), bg_color_norm),
-                    ((screen_x, screen_y2), (bg_u1, bg_v2), bg_color_norm),
-                    ((screen_x2, screen_y2), (bg_u2, bg_v2), bg_color_norm),
-                ]
-                vertex_idx += 6
-
-                # Write FG quad as structured array slice (6 vertices)
-                self.cpu_vertex_buffer[vertex_idx : vertex_idx + 6] = [
-                    ((screen_x, screen_y), (fg_u1, fg_v1), fg_color_norm),
-                    ((screen_x2, screen_y), (fg_u2, fg_v1), fg_color_norm),
-                    ((screen_x, screen_y2), (fg_u1, fg_v2), fg_color_norm),
-                    ((screen_x2, screen_y), (fg_u2, fg_v1), fg_color_norm),
-                    ((screen_x, screen_y2), (fg_u1, fg_v2), fg_color_norm),
-                    ((screen_x2, screen_y2), (fg_u2, fg_v2), fg_color_norm),
+                    ((screen_x, screen_y), (u1, v1), fg_color_norm, bg_color_norm),
+                    ((screen_x2, screen_y), (u2, v1), fg_color_norm, bg_color_norm),
+                    ((screen_x, screen_y2), (u1, v2), fg_color_norm, bg_color_norm),
+                    ((screen_x2, screen_y), (u2, v1), fg_color_norm, bg_color_norm),
+                    ((screen_x, screen_y2), (u1, v2), fg_color_norm, bg_color_norm),
+                    ((screen_x2, screen_y2), (u2, v2), fg_color_norm, bg_color_norm),
                 ]
                 vertex_idx += 6
 
@@ -381,9 +382,9 @@ class TextureRenderer:
             )
 
             # Calculate VBO offset for this specific tile
-            # Each tile uses 12 vertices (2 quads * 6 vertices each)
+            # Each tile uses 6 vertices (1 quad * 6 vertices each)
             tile_index = (y * glyph_buffer.width) + x
-            vbo_offset = tile_index * 12 * VERTEX_DTYPE.itemsize
+            vbo_offset = tile_index * 6 * VERTEX_DTYPE.itemsize
 
             # Update only this tile's section of the VBO
             vbo.write(tile_vertices.tobytes(), offset=vbo_offset)
@@ -392,7 +393,7 @@ class TextureRenderer:
         self, x: int, y: int, tile_data: np.ndarray
     ) -> np.ndarray:
         """
-        Generate the 12 vertices (2 quads) for a single tile.
+        Generate the 6 vertices (1 quad) for a single tile.
         This is extracted from the main vertex generation logic.
 
         Args:
@@ -401,7 +402,7 @@ class TextureRenderer:
             tile_data: Single tile's data from GlyphBuffer.data[x, y]
 
         Returns:
-            Array of 12 vertices for this tile
+            Array of 6 vertices for this tile
         """
         # Extract tile data
         char = int(tile_data["ch"])
@@ -414,67 +415,48 @@ class TextureRenderer:
         else:
             fg_char = unicode_to_cp437(char)
 
-        # Get UV coordinates for foreground and background
+        # Get UV coordinates for foreground character
         fg_uv = self.uv_map[fg_char]
-        bg_uv = self.uv_map[self.bg_char_cp437]
+        u1, v1, u2, v2 = fg_uv
 
         # Calculate screen position for this tile
         screen_x = x * self.tile_dimensions[0]
         screen_y = y * self.tile_dimensions[1]
         tile_width, tile_height = self.tile_dimensions
 
-        # Create the 12 vertices for this tile (background + foreground quads)
-        vertices = np.zeros(12, dtype=VERTEX_DTYPE)
+        # Create the 6 vertices for this tile (single quad with both colors)
+        vertices = np.zeros(6, dtype=VERTEX_DTYPE)
 
-        # Background quad (first 6 vertices) - structured assignment
+        # Single quad (6 vertices) - structured assignment
         vertices[0]["position"] = (screen_x, screen_y)
-        vertices[0]["uv"] = (bg_uv[0], bg_uv[1])
-        vertices[0]["color"] = bg_color
+        vertices[0]["uv"] = (u1, v1)
+        vertices[0]["fg_color"] = fg_color
+        vertices[0]["bg_color"] = bg_color
 
         vertices[1]["position"] = (screen_x + tile_width, screen_y)
-        vertices[1]["uv"] = (bg_uv[2], bg_uv[1])
-        vertices[1]["color"] = bg_color
+        vertices[1]["uv"] = (u2, v1)
+        vertices[1]["fg_color"] = fg_color
+        vertices[1]["bg_color"] = bg_color
 
         vertices[2]["position"] = (screen_x, screen_y + tile_height)
-        vertices[2]["uv"] = (bg_uv[0], bg_uv[3])
-        vertices[2]["color"] = bg_color
+        vertices[2]["uv"] = (u1, v2)
+        vertices[2]["fg_color"] = fg_color
+        vertices[2]["bg_color"] = bg_color
 
         vertices[3]["position"] = (screen_x + tile_width, screen_y)
-        vertices[3]["uv"] = (bg_uv[2], bg_uv[1])
-        vertices[3]["color"] = bg_color
+        vertices[3]["uv"] = (u2, v1)
+        vertices[3]["fg_color"] = fg_color
+        vertices[3]["bg_color"] = bg_color
 
-        vertices[4]["position"] = (screen_x + tile_width, screen_y + tile_height)
-        vertices[4]["uv"] = (bg_uv[2], bg_uv[3])
-        vertices[4]["color"] = bg_color
+        vertices[4]["position"] = (screen_x, screen_y + tile_height)
+        vertices[4]["uv"] = (u1, v2)
+        vertices[4]["fg_color"] = fg_color
+        vertices[4]["bg_color"] = bg_color
 
-        vertices[5]["position"] = (screen_x, screen_y + tile_height)
-        vertices[5]["uv"] = (bg_uv[0], bg_uv[3])
-        vertices[5]["color"] = bg_color
-
-        # Foreground quad (next 6 vertices) - structured assignment
-        vertices[6]["position"] = (screen_x, screen_y)
-        vertices[6]["uv"] = (fg_uv[0], fg_uv[1])
-        vertices[6]["color"] = fg_color
-
-        vertices[7]["position"] = (screen_x + tile_width, screen_y)
-        vertices[7]["uv"] = (fg_uv[2], fg_uv[1])
-        vertices[7]["color"] = fg_color
-
-        vertices[8]["position"] = (screen_x, screen_y + tile_height)
-        vertices[8]["uv"] = (fg_uv[0], fg_uv[3])
-        vertices[8]["color"] = fg_color
-
-        vertices[9]["position"] = (screen_x + tile_width, screen_y)
-        vertices[9]["uv"] = (fg_uv[2], fg_uv[1])
-        vertices[9]["color"] = fg_color
-
-        vertices[10]["position"] = (screen_x + tile_width, screen_y + tile_height)
-        vertices[10]["uv"] = (fg_uv[2], fg_uv[3])
-        vertices[10]["color"] = fg_color
-
-        vertices[11]["position"] = (screen_x, screen_y + tile_height)
-        vertices[11]["uv"] = (fg_uv[0], fg_uv[3])
-        vertices[11]["color"] = fg_color
+        vertices[5]["position"] = (screen_x + tile_width, screen_y + tile_height)
+        vertices[5]["uv"] = (u2, v2)
+        vertices[5]["fg_color"] = fg_color
+        vertices[5]["bg_color"] = bg_color
 
         return vertices
 
@@ -497,7 +479,7 @@ class TextureRenderer:
         height_px = glyph_buffer.height * self.tile_dimensions[1]
 
         # Only render vertices for the current buffer size, not the entire VBO
-        total_vertices = glyph_buffer.width * glyph_buffer.height * 12
+        total_vertices = glyph_buffer.width * glyph_buffer.height * 6
 
         # Set uniforms and render only the vertices for this buffer
         self.texture_program["u_texture_size"].value = (width_px, height_px)

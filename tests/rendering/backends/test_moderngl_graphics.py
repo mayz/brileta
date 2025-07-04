@@ -11,7 +11,8 @@ import moderngl
 import numpy as np
 import pytest
 
-from catley.backends.moderngl.graphics import VERTEX_DTYPE, ModernGLGraphicsContext
+from catley.backends.moderngl.graphics import ModernGLGraphicsContext
+from catley.backends.moderngl.texture_renderer import VERTEX_DTYPE
 from catley.game.enums import BlendMode
 from catley.types import InterpolationAlpha, Opacity
 from catley.util.coordinates import Rect
@@ -521,8 +522,8 @@ class TestModernGLGraphicsContext:
             )
         )
 
-        # Should have 2x2 = 4 cells, each with 12 vertices (BG + FG quads)
-        expected_vertex_count = 4 * 12
+        # Should have 2x2 = 4 cells, each with 6 vertices (single quad with both colors)
+        expected_vertex_count = 4 * 6
         assert vertex_count == expected_vertex_count
         assert len(vertex_data) == expected_vertex_count
 
@@ -542,9 +543,9 @@ class TestModernGLGraphicsContext:
             )
         )
 
-        # Should have data for 1 cell (12 vertices: BG + FG quads)
-        assert vertex_count == 12
-        assert len(vertex_data) == 12
+        # Should have data for 1 cell (6 vertices: single quad with both colors)
+        assert vertex_count == 6
+        assert len(vertex_data) == 6
 
     def test_vertex_encoding_uv_coordinates(self):
         """Test that vertex encoding produces correct UV coordinates for specific
@@ -559,14 +560,14 @@ class TestModernGLGraphicsContext:
             )
         )
 
-        # Should have 1 cell * 12 vertices = 12 vertices
-        assert vertex_count == 12
+        # Should have 1 cell * 6 vertices = 6 vertices
+        assert vertex_count == 6
 
         # Get UV coordinates for character 'A' (should be at the start of vertex data)
-        # Each cell has 12 vertices: first 6 for background, next 6 for foreground
-        # We want the foreground vertices (6-11) for the first cell (character 'A')
-        fg_vertices_start = 6  # Skip background quad
-        fg_vertices_end = 12  # End of foreground quad
+        # Each cell has 6 vertices: single quad with character 'A' UV coordinates
+        # We want the vertices (0-5) for the first cell (character 'A')
+        fg_vertices_start = 0  # Start from beginning since single quad approach
+        fg_vertices_end = 6  # End of quad
 
         a_fg_vertices = vertex_data[fg_vertices_start:fg_vertices_end]
 
@@ -650,9 +651,9 @@ class TestModernGLGraphicsContext:
             )
         )
 
-        # Assert exactly 12 vertices (2 quads * 6 vertices per quad)
-        assert vertex_count == 12
-        assert len(vertex_data) == 12
+        # Assert exactly 6 vertices (1 quad * 6 vertices per quad)
+        assert vertex_count == 6
+        assert len(vertex_data) == 6
 
         # Get expected values for manual calculation
         tile_w, tile_h = self.graphics_ctx._tile_dimensions
@@ -662,96 +663,64 @@ class TestModernGLGraphicsContext:
         expected_screen_x = 0 * tile_w  # = 0
         expected_screen_y = 0 * tile_h  # = 0
 
-        # Expected UV coordinates
-        expected_bg_uv = self.graphics_ctx.uv_map[
-            self.graphics_ctx.SOLID_BLOCK_CHAR
-        ]  # solid block
+        # Expected UV coordinates for foreground character (single quad approach)
+        # Note: We no longer use background UV coordinates
         expected_fg_uv = self.graphics_ctx.uv_map[ord("A")]  # character 'A'
 
         # Expected normalized colors
         expected_bg_color_norm = tuple(c / 255.0 for c in bg_color)
         expected_fg_color_norm = tuple(c / 255.0 for c in fg_color)
 
-        # Manually calculate expected vertices for background quad (first 6 vertices)
-        bg_u1, bg_v1, bg_u2, bg_v2 = expected_bg_uv
-        expected_bg_vertices = [
-            # Triangle 1
-            (
-                (expected_screen_x, expected_screen_y),
-                (bg_u1, bg_v1),
-                expected_bg_color_norm,
-            ),  # bottom-left
-            (
-                (expected_screen_x + tile_w, expected_screen_y),
-                (bg_u2, bg_v1),
-                expected_bg_color_norm,
-            ),  # bottom-right
-            (
-                (expected_screen_x, expected_screen_y + tile_h),
-                (bg_u1, bg_v2),
-                expected_bg_color_norm,
-            ),  # top-left
-            # Triangle 2
-            (
-                (expected_screen_x + tile_w, expected_screen_y),
-                (bg_u2, bg_v1),
-                expected_bg_color_norm,
-            ),  # bottom-right
-            (
-                (expected_screen_x, expected_screen_y + tile_h),
-                (bg_u1, bg_v2),
-                expected_bg_color_norm,
-            ),  # top-left
-            (
-                (expected_screen_x + tile_w, expected_screen_y + tile_h),
-                (bg_u2, bg_v2),
-                expected_bg_color_norm,
-            ),  # top-right
-        ]
-
-        # Manually calculate expected vertices for foreground quad (next 6 vertices)
+        # Manually calculate expected vertices for single quad (6 vertices)
+        # Single quad approach uses foreground character UV coordinates
         fg_u1, fg_v1, fg_u2, fg_v2 = expected_fg_uv
-        expected_fg_vertices = [
+        expected_vertices = [
             # Triangle 1
             (
                 (expected_screen_x, expected_screen_y),
                 (fg_u1, fg_v1),
                 expected_fg_color_norm,
+                expected_bg_color_norm,
             ),  # bottom-left
             (
                 (expected_screen_x + tile_w, expected_screen_y),
                 (fg_u2, fg_v1),
                 expected_fg_color_norm,
+                expected_bg_color_norm,
             ),  # bottom-right
             (
                 (expected_screen_x, expected_screen_y + tile_h),
                 (fg_u1, fg_v2),
                 expected_fg_color_norm,
+                expected_bg_color_norm,
             ),  # top-left
             # Triangle 2
             (
                 (expected_screen_x + tile_w, expected_screen_y),
                 (fg_u2, fg_v1),
                 expected_fg_color_norm,
+                expected_bg_color_norm,
             ),  # bottom-right
             (
                 (expected_screen_x, expected_screen_y + tile_h),
                 (fg_u1, fg_v2),
                 expected_fg_color_norm,
+                expected_bg_color_norm,
             ),  # top-left
             (
                 (expected_screen_x + tile_w, expected_screen_y + tile_h),
                 (fg_u2, fg_v2),
                 expected_fg_color_norm,
+                expected_bg_color_norm,
             ),  # top-right
         ]
 
         # Verify each vertex exactly matches expected calculations
-        all_expected_vertices = expected_bg_vertices + expected_fg_vertices
-
-        for i, expected_vertex in enumerate(all_expected_vertices):
+        for i, expected_vertex in enumerate(expected_vertices):
             actual_vertex = vertex_data[i]
-            expected_pos, expected_uv, expected_color = expected_vertex
+            expected_pos, expected_uv, expected_fg_color, expected_bg_color = (
+                expected_vertex
+            )
 
             # Check position
             np.testing.assert_array_almost_equal(
@@ -769,12 +738,20 @@ class TestModernGLGraphicsContext:
                 err_msg=f"UV mismatch at vertex {i}",
             )
 
-            # Check color
+            # Check foreground color
             np.testing.assert_array_almost_equal(
-                actual_vertex["color"],
-                expected_color,
+                actual_vertex["fg_color"],
+                expected_fg_color,
                 decimal=5,
-                err_msg=f"Color mismatch at vertex {i}",
+                err_msg=f"Foreground color mismatch at vertex {i}",
+            )
+
+            # Check background color
+            np.testing.assert_array_almost_equal(
+                actual_vertex["bg_color"],
+                expected_bg_color,
+                decimal=5,
+                err_msg=f"Background color mismatch at vertex {i}",
             )
 
 

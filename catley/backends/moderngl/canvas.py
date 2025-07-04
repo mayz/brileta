@@ -152,7 +152,16 @@ class ModernGLCanvas(Canvas):
                 self.vbo = self.mgl_context.buffer(initial_data, dynamic=True)
                 self.vao = self.mgl_context.vertex_array(
                     self.texture_program,
-                    [(self.vbo, "2f 2f 4f", "in_vert", "in_uv", "in_color")],
+                    [
+                        (
+                            self.vbo,
+                            "2f 2f 4f 4f",
+                            "in_vert",
+                            "in_uv",
+                            "in_fg_color",
+                            "in_bg_color",
+                        )
+                    ],
                 )
 
     def _prepare_for_rendering(self) -> bool:

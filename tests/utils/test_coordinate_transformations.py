@@ -126,8 +126,8 @@ class TestCoordinateTransformations:
             )
         )
 
-        # Should have 4 cells * 12 vertices each (BG + FG quads)
-        assert vertex_count == 48
+        # Should have 4 cells * 6 vertices each (single quad with both colors)
+        assert vertex_count == 24
 
         tile_w, tile_h = self.graphics_ctx.tile_dimensions
 
@@ -141,9 +141,7 @@ class TestCoordinateTransformations:
         assert cell_00_vertex["position"][1] == expected_y_00
 
         # Cell (1,0) should be at screen position (tile_w, 0) with no Y pre-flip
-        cell_10_vertex = vertex_data[
-            12
-        ]  # First vertex of second cell (skip 12 vertices)
+        cell_10_vertex = vertex_data[6]  # First vertex of second cell (skip 6 vertices)
         expected_x_10 = tile_w
         expected_y_10 = 0  # No Y pre-flip: y*tile_h = 0*tile_h = 0
 
@@ -151,7 +149,7 @@ class TestCoordinateTransformations:
         assert cell_10_vertex["position"][1] == expected_y_10
 
         # Cell (0,1) should be at screen position (0, tile_h) with no Y pre-flip
-        cell_01_vertex = vertex_data[24]  # First vertex of third cell
+        cell_01_vertex = vertex_data[12]  # First vertex of third cell
         expected_x_01 = 0
         expected_y_01 = tile_h  # No Y pre-flip: y*tile_h = 1*tile_h = tile_h
 
@@ -203,7 +201,7 @@ class TestCoordinateTransformations:
         assert left_vertex["position"][0] == 0
 
         # Right character (R) should be at x=tile_w
-        right_vertex = vertex_data[12]  # First vertex of second cell
+        right_vertex = vertex_data[6]  # First vertex of second cell
         assert right_vertex["position"][0] == tile_w
 
         # Both should be at the same Y position since they're on the same row
@@ -234,8 +232,8 @@ class TestCoordinateTransformations:
         # So glyph buffer y=0 should map to the lowest vertex Y value
 
         top_vertex = vertex_data[0]  # Cell (0,0) - buffer top
-        middle_vertex = vertex_data[12]  # Cell (0,1) - buffer middle
-        bottom_vertex = vertex_data[24]  # Cell (0,2) - buffer bottom
+        middle_vertex = vertex_data[6]  # Cell (0,1) - buffer middle
+        bottom_vertex = vertex_data[12]  # Cell (0,2) - buffer bottom
 
         # With no Y pre-flip: Buffer top (y=0) should have lowest vertex Y
         # Buffer bottom (y=2) should have highest vertex Y

@@ -284,9 +284,9 @@ class TestTextureRenderer:
             glyph_buffer
         )
 
-        # Assert correct vertex count: 2x2 cells * 12 vertices/cell
-        # (6 for BG + 6 for FG)
-        expected_vertex_count = 2 * 2 * 12
+        # Assert correct vertex count: 2x2 cells * 6 vertices/cell
+        # (single quad with both fg and bg colors)
+        expected_vertex_count = 2 * 2 * 6
         assert vertex_count == expected_vertex_count
         assert len(vertex_data) == expected_vertex_count
 
@@ -302,58 +302,46 @@ class TestTextureRenderer:
 
         # Check vertices for character at (0,0) - should be at screen_y = 0
         char_00_start_idx = 0  # First character vertices
-        char_00_bg_vertices = vertex_data[char_00_start_idx : char_00_start_idx + 6]
+        char_00_vertices = vertex_data[char_00_start_idx : char_00_start_idx + 6]
 
         # All vertices for this character should have screen_y = 0 or 0 + tile_h
-        for vertex in char_00_bg_vertices:
+        for vertex in char_00_vertices:
             y_coord = vertex["position"][1]
             assert y_coord == 0.0 or y_coord == 20.0  # 0 or 0 + tile_h
 
         # Check vertices for character at (0,1) - should be at screen_y = 20
-        char_01_start_idx = 2 * 12  # Third character (0,1) vertices
-        char_01_bg_vertices = vertex_data[char_01_start_idx : char_01_start_idx + 6]
+        char_01_start_idx = 2 * 6  # Third character (0,1) vertices
+        char_01_vertices = vertex_data[char_01_start_idx : char_01_start_idx + 6]
 
         # All vertices for this character should have screen_y = 20 or 20 + tile_h
-        for vertex in char_01_bg_vertices:
+        for vertex in char_01_vertices:
             y_coord = vertex["position"][1]
             assert y_coord == 20.0 or y_coord == 40.0  # 20 or 20 + tile_h
 
         # Test X-coordinates (should not be flipped)
         # Character at (0,0) should have screen_x = 0
         # Character at (1,0) should have screen_x = 16
-        char_10_start_idx = 1 * 12  # Second character (1,0) vertices
-        char_10_bg_vertices = vertex_data[char_10_start_idx : char_10_start_idx + 6]
+        char_10_start_idx = 1 * 6  # Second character (1,0) vertices
+        char_10_vertices = vertex_data[char_10_start_idx : char_10_start_idx + 6]
 
-        for vertex in char_10_bg_vertices:
+        for vertex in char_10_vertices:
             x_coord = vertex["position"][0]
             assert x_coord == 16.0 or x_coord == 32.0  # 16 or 16 + tile_w
 
         # Test UV coordinates for known characters
-        # Background vertices should use solid block UV (character 219)
-        expected_bg_uv = self.mock_uv_map[219]  # [0.9, 0.9, 1.0, 1.0]
-
-        bg_vertex = char_00_bg_vertices[0]  # First background vertex
-        actual_uv = bg_vertex["uv"]
-        assert np.allclose(actual_uv, expected_bg_uv[:2])  # First UV pair
-
-        # Foreground vertices should use character 'A' UV
-        char_00_fg_start = (
-            char_00_start_idx + 6
-        )  # Foreground vertices start after background
-        char_00_fg_vertices = vertex_data[char_00_fg_start : char_00_fg_start + 6]
+        # Vertices should use foreground character 'A' UV (single quad approach)
         expected_fg_uv = self.mock_uv_map[ord("A")]  # [0.0, 0.0, 0.1, 0.1]
 
-        fg_vertex = char_00_fg_vertices[0]  # First foreground vertex
-        actual_fg_uv = fg_vertex["uv"]
-        assert np.allclose(actual_fg_uv, expected_fg_uv[:2])  # First UV pair
+        first_vertex = char_00_vertices[0]  # First vertex
+        actual_uv = first_vertex["uv"]
+        assert np.allclose(actual_uv, expected_fg_uv[:2])  # First UV pair
 
         # Test color normalization (should be converted from 0-255 to 0.0-1.0)
         expected_fg_color = (255 / 255.0, 0 / 255.0, 0 / 255.0, 255 / 255.0)  # Red
-        actual_fg_color = fg_vertex["color"]
-        assert np.allclose(actual_fg_color, expected_fg_color)
-
         expected_bg_color = (0 / 255.0, 0 / 255.0, 0 / 255.0, 255 / 255.0)  # Black
-        actual_bg_color = bg_vertex["color"]
+        actual_fg_color = first_vertex["fg_color"]
+        actual_bg_color = first_vertex["bg_color"]
+        assert np.allclose(actual_fg_color, expected_fg_color)
         assert np.allclose(actual_bg_color, expected_bg_color)
 
     def test_vertex_encoding_empty_buffer(self):
@@ -402,12 +390,13 @@ class TestTextureRenderer:
         assert "#version 330" in vertex_shader
         assert "in vec2 in_vert" in vertex_shader
         assert "in vec2 in_uv" in vertex_shader
-        assert "in vec4 in_color" in vertex_shader
+        assert "in vec4 in_fg_color" in vertex_shader
+        assert "in vec4 in_bg_color" in vertex_shader
         assert "uniform vec2 u_texture_size" in vertex_shader
-        assert "does NOT flip the Y-axis" in vertex_shader
 
         # Verify fragment shader contains expected content
         fragment_shader = call_args.kwargs["fragment_shader"]
         assert "#version 330" in fragment_shader
         assert "uniform sampler2D u_atlas" in fragment_shader
         assert "texture(u_atlas, v_uv)" in fragment_shader
+        assert "mix(v_bg_color, v_fg_color, char_alpha)" in fragment_shader
