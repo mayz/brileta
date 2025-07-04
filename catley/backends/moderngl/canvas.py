@@ -205,9 +205,10 @@ class ModernGLCanvas(Canvas):
                 0 <= x < self.private_glyph_buffer.width
                 and 0 <= tile_y < self.private_glyph_buffer.height
             ):
-                bg_color = (0, 0, 0, 0) if self.transparent else (0, 0, 0, 255)
+                # Preserve existing background color, similar to TCOD behavior
+                current_bg = self.private_glyph_buffer.data[x, tile_y]["bg"]
                 self.private_glyph_buffer.put_char(
-                    x, tile_y, ord(char), rgba_color, bg_color
+                    x, tile_y, ord(char), rgba_color, tuple(current_bg)
                 )
 
     def _render_rect_op(
@@ -244,12 +245,14 @@ class ModernGLCanvas(Canvas):
         for tx in range(start_tx, end_tx):
             for ty in range(start_ty, end_ty):
                 if fill:
-                    # Fill with solid block character (Unicode █)
+                    # For filled rectangles, use solid blocks but also set bg color
+                    # This provides the solid block for general rectangle drawing while
+                    # ensuring background color is available for text overlay
                     self.private_glyph_buffer.put_char(
                         tx, ty, 9608, rgba_color, rgba_color
                     )
                 else:
-                    # Border only
+                    # Border only - draw outline using solid block characters
                     if tx in (start_tx, end_tx - 1) or ty in (start_ty, end_ty - 1):
                         self.private_glyph_buffer.put_char(
                             tx, ty, 9608, rgba_color, rgba_color

@@ -105,7 +105,12 @@ class InputHandler:
         # Try to handle the event with the menu system
         # For mouse events, we need to send scaled coordinates to match cursor position
         menu_event = event
-        if isinstance(event, tcod.event.MouseButtonDown | tcod.event.MouseMotion):
+        if isinstance(
+            event,
+            tcod.event.MouseButtonDown
+            | tcod.event.MouseButtonUp
+            | tcod.event.MouseMotion,
+        ):
             # Create scaled version for menu system
             scale_x, scale_y = self.graphics.get_display_scale_factor()
             scaled_x = event.position.x * scale_x

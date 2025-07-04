@@ -618,7 +618,15 @@ class ModernGLGraphicsContext(GraphicsContext):
     def pixel_to_tile(
         self, pixel_x: PixelCoord, pixel_y: PixelCoord
     ) -> RootConsoleTilePos:
-        return self.coordinate_converter.pixel_to_tile(pixel_x, pixel_y)
+        """Converts final screen pixel coordinates to root console tile coordinates."""
+        # Adjust for letterboxing offsets before passing to the converter
+        offset_x, offset_y, _, _ = self.letterbox_geometry
+        adjusted_pixel_x = pixel_x - offset_x
+        adjusted_pixel_y = pixel_y - offset_y
+
+        return self.coordinate_converter.pixel_to_tile(
+            adjusted_pixel_x, adjusted_pixel_y
+        )
 
     def _create_coordinate_converter(self) -> CoordinateConverter:
         _, _, scaled_w, scaled_h = self.letterbox_geometry
@@ -779,9 +787,15 @@ class ModernGLGraphicsContext(GraphicsContext):
 
     def get_display_scale_factor(self) -> tuple[float, float]:
         """Get the (x_scale, y_scale) factor for high-DPI displays."""
-        # For ModernGL backend, we don't have direct access to DPI info
-        # Return standard scaling for now
-        return (1.0, 1.0)
+        # Get logical window size (what the OS reports)
+        logical_w, logical_h = self.window.get_size()
+        # Get actual framebuffer size (high-DPI aware)
+        physical_w, physical_h = self.window.get_framebuffer_size()
+
+        scale_x = physical_w / logical_w if logical_w > 0 else 1.0
+        scale_y = physical_h / logical_h if logical_h > 0 else 1.0
+
+        return (scale_x, scale_y)
 
     def texture_from_numpy(self, pixels: np.ndarray, transparent: bool = True) -> Any:
         """Creates a backend-specific texture from a raw NumPy RGBA pixel array."""

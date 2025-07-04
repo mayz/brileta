@@ -146,8 +146,9 @@ class PygletApp(App[ModernGLGraphicsContext]):
         self.controller.input_handler.dispatch(event)
 
     def on_mouse_release(self, x, y, button, modifiers):
+        flipped_y = self.window.height - 1 - y
         event = tcod.event.MouseButtonUp(
-            pixel=(x, y),
+            pixel=(x, flipped_y),
             tile=(0, 0),  # Will be filled in by the controller
             button=self._pyglet_button_to_tcod(button),
         )
