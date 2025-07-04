@@ -179,13 +179,65 @@ class TestModernGLGraphicsContext:
             screen_x=100.0,
             screen_y=200.0,
             light_intensity=(0.8, 0.9, 1.0),
-            alpha=InterpolationAlpha(0.75),
+            interpolation_alpha=InterpolationAlpha(0.75),
         )
 
         # Should have added 6 vertices (2 triangles = 1 quad)
         assert (
             self.graphics_ctx.screen_renderer.vertex_count == initial_vertex_count + 6
         )
+
+    def test_draw_actor_smooth_uses_opaque_color_alpha(self):
+        """
+        Verify that draw_actor_smooth always provides a fully opaque (1.0)
+        alpha to the quad color, ignoring the interpolation_alpha parameter.
+
+        This is a regression test for the "actor buzzing" bug where interpolation_alpha
+        was incorrectly used as the color alpha channel, causing actors to flicker
+        between transparent and opaque as the interpolation value changed.
+        """
+        # Arrange: Mock the screen_renderer.add_quad method to inspect its arguments
+        with patch.object(
+            self.graphics_ctx.screen_renderer, "add_quad"
+        ) as mock_add_quad:
+            test_interpolation_alpha = InterpolationAlpha(
+                0.37
+            )  # An unusual, non-1.0 value
+
+            # Act: Call draw_actor_smooth with the test interpolation alpha
+            self.graphics_ctx.draw_actor_smooth(
+                char="@",
+                color=(100, 150, 200),
+                screen_x=50.0,
+                screen_y=50.0,
+                light_intensity=(0.8, 0.9, 1.0),
+                interpolation_alpha=test_interpolation_alpha,
+            )
+
+            # Assert: Verify add_quad was called once
+            mock_add_quad.assert_called_once()
+
+            # Get the arguments passed to add_quad
+            call_args = mock_add_quad.call_args[0]
+
+            # The color tuple is the last positional argument
+            final_color_tuple = call_args[-1]
+
+            # Check that the 4th element (alpha) of the color tuple is 1.0
+            actual_alpha = final_color_tuple[3]
+            assert actual_alpha == 1.0, (
+                f"Color alpha should be 1.0 (fully opaque), but was {actual_alpha}. "
+                f"Interpolation alpha should not be used for color transparency."
+            )
+
+            # Additional check: ensure the RGB values are correctly calculated
+            expected_r = (100 / 255.0) * 0.8  # color[0] / 255.0 * light_intensity[0]
+            expected_g = (150 / 255.0) * 0.9  # color[1] / 255.0 * light_intensity[1]
+            expected_b = (200 / 255.0) * 1.0  # color[2] / 255.0 * light_intensity[2]
+
+            assert abs(final_color_tuple[0] - expected_r) < 0.001
+            assert abs(final_color_tuple[1] - expected_g) < 0.001
+            assert abs(final_color_tuple[2] - expected_b) < 0.001
 
     def test_draw_tile_highlight(self):
         """Test drawing tile highlights."""

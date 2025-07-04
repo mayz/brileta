@@ -358,7 +358,7 @@ class WorldView(View):
         graphics: GraphicsContext,
         bounds: Rect,
         vs: ViewportSystem,
-        alpha: InterpolationAlpha,
+        interpolation_alpha: InterpolationAlpha,
     ) -> None:
         """Render a single actor with smooth positioning and lighting.
 
@@ -371,18 +371,26 @@ class WorldView(View):
             renderer: Rendering backend
             bounds: Viewport bounds for culling
             vs: Viewport system for coordinate conversion
-            alpha: Interpolation factor (0.0=previous state, 1.0=current state)
+            interpolation_alpha: Interpolation factor (0.0=previous state,
+                1.0=current state)
         """
         # Get lighting intensity (reuse existing lighting logic)
         light_rgb = self._get_actor_lighting_intensity(actor, bounds)
 
         # INTERPOLATION MAGIC: Blend between previous and current position
-        # When alpha=0.0: Show exactly where actor was last logic step (prev_x/prev_y)
-        # When alpha=1.0: Show exactly where actor is now (x/y)
-        # When alpha=0.5: Show exactly halfway between - this creates smooth movement!
-        # Formula: lerp(prev, current, alpha) = prev * (1-alpha) + current * alpha
-        interpolated_x = actor.prev_x * (1.0 - alpha) + actor.x * alpha
-        interpolated_y = actor.prev_y * (1.0 - alpha) + actor.y * alpha
+        # When interpolation_alpha=0.0: Show exactly where actor was last logic step
+        # (prev_x/prev_y)
+        # When interpolation_alpha=1.0: Show exactly where actor is now (x/y)
+        # When interpolation_alpha=0.5: Show exactly halfway between - this creates
+        # smooth movement!
+        # Formula: lerp(prev, current, interpolation_alpha) =
+        # prev * (1-interpolation_alpha) + current * interpolation_alpha
+        interpolated_x = (
+            actor.prev_x * (1.0 - interpolation_alpha) + actor.x * interpolation_alpha
+        )
+        interpolated_y = (
+            actor.prev_y * (1.0 - interpolation_alpha) + actor.y * interpolation_alpha
+        )
 
         vp_x, vp_y = vs.world_to_screen_float(interpolated_x, interpolated_y)
 
@@ -399,7 +407,12 @@ class WorldView(View):
 
         # Render using the enhanced renderer
         graphics.draw_actor_smooth(
-            actor.ch, final_color, screen_pixel_x, screen_pixel_y, light_rgb, alpha
+            actor.ch,
+            final_color,
+            screen_pixel_x,
+            screen_pixel_y,
+            light_rgb,
+            interpolation_alpha,
         )
 
     def _get_actor_lighting_intensity(self, actor: Actor, bounds: Rect) -> tuple:

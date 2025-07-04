@@ -191,7 +191,7 @@ class TCODGraphicsContext(GraphicsContext):
         screen_x: float,
         screen_y: float,
         light_intensity: tuple[float, float, float] = (1.0, 1.0, 1.0),
-        alpha: InterpolationAlpha = InterpolationAlpha(1.0),  # noqa: B008
+        interpolation_alpha: InterpolationAlpha = InterpolationAlpha(1.0),  # noqa: B008
     ) -> None:
         """Draw an actor character at sub-pixel screen coordinates with interpolation.
 

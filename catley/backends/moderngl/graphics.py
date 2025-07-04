@@ -449,14 +449,19 @@ class ModernGLGraphicsContext(GraphicsContext):
         screen_x: float,
         screen_y: float,
         light_intensity: tuple[float, float, float] = (1.0, 1.0, 1.0),
-        alpha: InterpolationAlpha = InterpolationAlpha(1.0),  # noqa: B008
+        interpolation_alpha: InterpolationAlpha = InterpolationAlpha(1.0),  # noqa: B008
     ) -> None:
-        """Draws a single character by adding its quad to the vertex buffer."""
+        """Draws a single character by adding its quad to the vertex buffer.
+
+        Note: interpolation_alpha is for position interpolation only, NOT for color
+        transparency.
+        The color alpha is always 1.0 (fully opaque).
+        """
         final_color = (
             color[0] / 255.0 * light_intensity[0],
             color[1] / 255.0 * light_intensity[1],
             color[2] / 255.0 * light_intensity[2],
-            alpha,
+            1.0,  # Always fully opaque - interpolation_alpha is NOT used for color
         )
         uv_coords = self.uv_map[ord(char)]
 
