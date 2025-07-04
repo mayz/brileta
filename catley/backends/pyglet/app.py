@@ -169,6 +169,12 @@ class PygletApp(App[ModernGLGraphicsContext]):
         assert self.controller.frame_manager is not None
         self.controller.frame_manager.on_window_resized()
 
+    def on_text(self, text):
+        """Handle text input events from Pyglet and convert to TCOD TextInput events."""
+        event = tcod.event.TextInput(text=text)
+        assert self.controller is not None
+        self.controller.input_handler.dispatch(event)
+
     def _register_callbacks(self) -> None:
         # Assign the render callback (which now handles everything)
         self.window.on_draw = self.on_draw
@@ -176,6 +182,7 @@ class PygletApp(App[ModernGLGraphicsContext]):
         # Register event handlers
         self.window.on_key_press = self.on_key_press
         self.window.on_key_release = self.on_key_release
+        self.window.on_text = self.on_text
         self.window.on_mouse_motion = self.on_mouse_motion
         self.window.on_mouse_press = self.on_mouse_press
         self.window.on_mouse_release = self.on_mouse_release
