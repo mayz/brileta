@@ -130,6 +130,7 @@ class TestTextureRenderer:
         self.mock_mgl_context.vertex_array.assert_not_called()
 
         # Assert that VBO was written to (not created - it's persistent)
+        # For first render, complete VBO is updated once (not per tile)
         self.mock_vbo.write.assert_called_once()
 
         # Assert rendering happened
@@ -141,6 +142,91 @@ class TestTextureRenderer:
 
         # Assert screen context restoration
         self.mock_screen.use.assert_called_once()
+
+    def test_change_detection_optimization(self):
+        """Test that subsequent renders only update dirty tiles."""
+        renderer = TextureRenderer(
+            mgl_context=self.mock_mgl_context,
+            atlas_texture=self.mock_atlas_texture,
+            tile_dimensions=self.tile_dimensions,
+            uv_map=self.mock_uv_map,
+        )
+
+        # Create a buffer and render it once
+        glyph_buffer = GlyphBuffer(3, 2)  # Small buffer for testing
+        glyph_buffer.put_char(0, 0, ord("A"), (255, 0, 0, 255), (0, 0, 0, 255))
+        glyph_buffer.put_char(1, 0, ord("B"), (0, 255, 0, 255), (0, 0, 0, 255))
+
+        mock_fbo = MagicMock()
+
+        # First render - should update complete VBO
+        renderer.render(glyph_buffer, mock_fbo)
+
+        # Reset mock to track second render
+        self.mock_vbo.write.reset_mock()
+        mock_fbo.use.reset_mock()
+        mock_fbo.clear.reset_mock()
+
+        # Second render with no changes - should not render at all
+        renderer.render(glyph_buffer, mock_fbo)
+
+        # Assert no VBO writes or FBO operations for unchanged buffer
+        self.mock_vbo.write.assert_not_called()
+        mock_fbo.use.assert_not_called()
+        mock_fbo.clear.assert_not_called()
+
+        # Reset mock again
+        self.mock_vbo.write.reset_mock()
+        mock_fbo.use.reset_mock()
+        mock_fbo.clear.reset_mock()
+
+        # Third render with one tile changed
+        glyph_buffer.put_char(2, 1, ord("C"), (0, 0, 255, 255), (128, 128, 128, 255))
+        renderer.render(glyph_buffer, mock_fbo)
+
+        # Buffer has changed, so partial VBO update is performed
+        # Should have exactly 1 VBO write for only the dirty tile (with offset)
+        self.mock_vbo.write.assert_called_once()
+        # Verify that write was called with an offset (partial update)
+        call_args = self.mock_vbo.write.call_args
+        assert call_args.kwargs.get("offset") is not None, (
+            "VBO write should use offset for partial updates"
+        )
+        mock_fbo.use.assert_called_once()
+        mock_fbo.clear.assert_called_once()
+
+    def test_buffer_dimension_changes(self):
+        """Test that dimension changes trigger complete VBO update."""
+        renderer = TextureRenderer(
+            mgl_context=self.mock_mgl_context,
+            atlas_texture=self.mock_atlas_texture,
+            tile_dimensions=self.tile_dimensions,
+            uv_map=self.mock_uv_map,
+        )
+
+        # First render with small buffer
+        glyph_buffer = GlyphBuffer(2, 2)
+        glyph_buffer.put_char(0, 0, ord("A"), (255, 0, 0, 255), (0, 0, 0, 255))
+
+        mock_fbo = MagicMock()
+        renderer.render(glyph_buffer, mock_fbo)
+
+        # Reset mock to track second render
+        self.mock_vbo.write.reset_mock()
+
+        # Second render with different dimensions - should trigger complete update
+        larger_buffer = GlyphBuffer(5, 3)
+        larger_buffer.put_char(0, 0, ord("A"), (255, 0, 0, 255), (0, 0, 0, 255))
+
+        renderer.render(larger_buffer, mock_fbo)
+
+        # Should have exactly 1 VBO write for complete buffer update (no offset)
+        self.mock_vbo.write.assert_called_once()
+        # Verify that write was called without offset (full update)
+        call_args = self.mock_vbo.write.call_args
+        assert call_args.kwargs.get("offset") is None, (
+            "VBO write should not use offset for full updates"
+        )
 
     def test_render_empty_buffer(self):
         """Test render() with buffer that results in zero pixel dimensions."""

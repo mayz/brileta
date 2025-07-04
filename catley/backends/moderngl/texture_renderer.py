@@ -1,6 +1,9 @@
+# catley/backends/moderngl/texture_renderer.py
+
 import moderngl
 import numpy as np
 
+from catley.util.caching import ResourceCache
 from catley.util.glyph_buffer import GlyphBuffer
 from catley.util.tilesets import unicode_to_cp437
 
@@ -64,12 +67,18 @@ class TextureRenderer:
         self.cpu_vertex_buffer = np.zeros(max_vertices, dtype=VERTEX_DTYPE)
 
         # Create persistent VBO with dynamic updates
-        self.vbo = self.mgl_context.buffer(
-            reserve=max_vertices * VERTEX_DTYPE.itemsize, dynamic=True
-        )
+        # Initialize with zeros to ensure clean state
+        initial_data = np.zeros(max_vertices * VERTEX_DTYPE.itemsize, dtype=np.uint8)
+        self.vbo = self.mgl_context.buffer(initial_data.tobytes(), dynamic=True)
         self.vao = self.mgl_context.vertex_array(
             self.texture_program,
             [(self.vbo, "2f 2f 4f", "in_vert", "in_uv", "in_color")],
+        )
+
+        # Cache for change detection (TCOD-style optimization)
+        # Uses ResourceCache for proper LRU eviction
+        self.buffer_cache: ResourceCache[int, GlyphBuffer] = ResourceCache(
+            name="texture_renderer_buffers", max_size=100
         )
 
     def _create_texture_shader_program(self) -> moderngl.Program:
@@ -217,15 +226,26 @@ class TextureRenderer:
         return self.cpu_vertex_buffer[:vertex_idx], vertex_idx
 
     def render(
-        self, glyph_buffer: GlyphBuffer, target_fbo: moderngl.Framebuffer
+        self,
+        glyph_buffer: GlyphBuffer,
+        target_fbo: moderngl.Framebuffer,
+        # NEW: Optional arguments for UI isolation
+        vbo_override: moderngl.Buffer | None = None,
+        vao_override: moderngl.VertexArray | None = None,
     ) -> None:
         """
         Renders a GlyphBuffer into the provided target framebuffer.
+        Uses TCOD-style change detection to only process dirty tiles.
 
         Args:
             glyph_buffer: The GlyphBuffer to render
             target_fbo: The pre-allocated framebuffer to render into
+            vbo_override: Optional VBO to use instead of the default one
+            vao_override: Optional VAO to use instead of the default one
         """
+        # --- Determine which VBO/VAO to use ---
+        vbo_to_use = vbo_override if vbo_override is not None else self.vbo
+        vao_to_use = vao_override if vao_override is not None else self.vao
         # Calculate the pixel dimensions for the shader uniforms
         width_px = glyph_buffer.width * self.tile_dimensions[0]
         height_px = glyph_buffer.height * self.tile_dimensions[1]
@@ -233,26 +253,285 @@ class TextureRenderer:
         if width_px == 0 or height_px == 0:
             return  # Nothing to render
 
-        # Set up target FBO for rendering
+        buffer_id = id(glyph_buffer)
+        cache_buffer = self.buffer_cache.get(buffer_id)
+        needs_full_update = (
+            cache_buffer is None
+            or cache_buffer.width != glyph_buffer.width
+            or cache_buffer.height != glyph_buffer.height
+        )
+
+        if not needs_full_update:
+            dirty_tiles = self._find_dirty_tiles(glyph_buffer, cache_buffer)
+            if not dirty_tiles:
+                return  # Fast path for totally static buffers
+        else:
+            # If it's a full update, all tiles are dirty by definition.
+            dirty_tiles = [
+                (x, y)
+                for x in range(glyph_buffer.width)
+                for y in range(glyph_buffer.height)
+            ]
+
+        # --- If we are here, something has changed and we need to draw ---
         target_fbo.use()
-        target_fbo.clear()
+        target_fbo.clear()  # ALWAYS clear the destination texture to prevent artifacts.
 
-        # Encode vertices directly into pre-allocated buffer
-        vertex_data, vertex_count = self._encode_glyph_buffer_to_vertices(glyph_buffer)
+        if needs_full_update:
+            # A new buffer is being rendered, or dimensions changed.
+            # Do a full, single-write VBO update to overwrite any stale data.
+            self._update_complete_vbo(glyph_buffer, vbo_to_use)
+        else:
+            # An existing buffer changed. Do a partial VBO update for performance.
+            self._update_dirty_tiles_in_vbo(glyph_buffer, dirty_tiles, vbo_to_use)
 
-        if vertex_count > 0:
-            # Update the persistent VBO with new vertex data
-            self.vbo.write(vertex_data.tobytes())
+        # Now, render the entire buffer. The VBO is up-to-date.
+        # Unchanged tiles use their old vertex data, dirty tiles have new data.
+        self._render_complete_buffer(glyph_buffer, target_fbo, vao_to_use)
 
-            # Set uniforms and render using persistent VAO
-            self.texture_program["u_texture_size"].value = (width_px, height_px)
-            self.atlas_texture.use(location=0)
-
-            self.vao.render(moderngl.TRIANGLES, vertices=vertex_count)
+        # Update cache with current buffer state for the next frame's comparison.
+        self._update_cache(glyph_buffer, buffer_id)
 
         # Restore default framebuffer
         if self.mgl_context.screen:
             self.mgl_context.screen.use()
+
+    def _find_dirty_tiles(
+        self, glyph_buffer: GlyphBuffer, cache_buffer: GlyphBuffer | None
+    ) -> list[tuple[int, int]]:
+        """
+        Find tiles that have changed since the last frame using vectorized comparison.
+
+        Args:
+            glyph_buffer: Current frame's buffer
+            cache_buffer: Previous frame's buffer (None if first time)
+
+        Returns:
+            List of (x, y) coordinates of dirty tiles
+        """
+        if cache_buffer is None:
+            # First time rendering this buffer - all tiles are dirty
+            return [
+                (x, y)
+                for x in range(glyph_buffer.width)
+                for y in range(glyph_buffer.height)
+            ]
+
+        # Check for dimension mismatch - if dimensions changed, all tiles are dirty
+        if (
+            cache_buffer.width != glyph_buffer.width
+            or cache_buffer.height != glyph_buffer.height
+        ):
+            return [
+                (x, y)
+                for x in range(glyph_buffer.width)
+                for y in range(glyph_buffer.height)
+            ]
+
+        # Vectorized comparison using NumPy - this is the key TCOD optimization
+        # Compare character, foreground, and background data
+        dirty_mask = (
+            (glyph_buffer.data["ch"] != cache_buffer.data["ch"])
+            | np.any(glyph_buffer.data["fg"] != cache_buffer.data["fg"], axis=-1)
+            | np.any(glyph_buffer.data["bg"] != cache_buffer.data["bg"], axis=-1)
+        )
+
+        # Get coordinates of dirty tiles
+        dirty_coords = np.argwhere(dirty_mask)
+        return [(int(coord[0]), int(coord[1])) for coord in dirty_coords.tolist()]
+
+    def _update_complete_vbo(
+        self, glyph_buffer: GlyphBuffer, vbo: moderngl.Buffer
+    ) -> None:
+        """
+        Update the entire VBO with data from the complete buffer.
+        Used for first render or when buffer dimensions change.
+
+        Args:
+            glyph_buffer: The GlyphBuffer to encode completely
+            vbo: The VBO to update
+        """
+        # Use the original complete encoding method
+        vertex_data, vertex_count = self._encode_glyph_buffer_to_vertices(glyph_buffer)
+
+        if vertex_count > 0:
+            # Update the entire VBO with new vertex data
+            vbo.write(vertex_data.tobytes())
+
+    def _update_dirty_tiles_in_vbo(
+        self,
+        glyph_buffer: GlyphBuffer,
+        dirty_tiles: list[tuple[int, int]],
+        vbo: moderngl.Buffer,
+    ) -> None:
+        """
+        Update only the dirty tiles in the VBO - the real TCOD optimization.
+        This generates vertices for only the changed tiles and updates their
+        specific sections of the VBO.
+
+        Args:
+            glyph_buffer: The current GlyphBuffer
+            dirty_tiles: List of (x, y) coordinates of tiles that changed
+            vbo: The VBO to update
+        """
+        for x, y in dirty_tiles:
+            # Generate vertices for just this one tile
+            tile_vertices = self._generate_vertices_for_single_tile(
+                x, y, glyph_buffer.data[x, y]
+            )
+
+            # Calculate VBO offset for this specific tile
+            # Each tile uses 12 vertices (2 quads * 6 vertices each)
+            tile_index = (y * glyph_buffer.width) + x
+            vbo_offset = tile_index * 12 * VERTEX_DTYPE.itemsize
+
+            # Update only this tile's section of the VBO
+            vbo.write(tile_vertices.tobytes(), offset=vbo_offset)
+
+    def _generate_vertices_for_single_tile(
+        self, x: int, y: int, tile_data: np.ndarray
+    ) -> np.ndarray:
+        """
+        Generate the 12 vertices (2 quads) for a single tile.
+        This is extracted from the main vertex generation logic.
+
+        Args:
+            x: Tile X coordinate
+            y: Tile Y coordinate
+            tile_data: Single tile's data from GlyphBuffer.data[x, y]
+
+        Returns:
+            Array of 12 vertices for this tile
+        """
+        # Extract tile data
+        char = int(tile_data["ch"])
+        fg_color = tile_data["fg"].astype(np.float32) / 255.0
+        bg_color = tile_data["bg"].astype(np.float32) / 255.0
+
+        # Convert character to CP437 for atlas lookup
+        if char < 256:
+            fg_char = self.unicode_to_cp437_map[char]
+        else:
+            fg_char = unicode_to_cp437(char)
+
+        # Get UV coordinates for foreground and background
+        fg_uv = self.uv_map[fg_char]
+        bg_uv = self.uv_map[self.bg_char_cp437]
+
+        # Calculate screen position for this tile
+        screen_x = x * self.tile_dimensions[0]
+        screen_y = y * self.tile_dimensions[1]
+        tile_width, tile_height = self.tile_dimensions
+
+        # Create the 12 vertices for this tile (background + foreground quads)
+        vertices = np.zeros(12, dtype=VERTEX_DTYPE)
+
+        # Background quad (first 6 vertices) - structured assignment
+        vertices[0]["position"] = (screen_x, screen_y)
+        vertices[0]["uv"] = (bg_uv[0], bg_uv[1])
+        vertices[0]["color"] = bg_color
+
+        vertices[1]["position"] = (screen_x + tile_width, screen_y)
+        vertices[1]["uv"] = (bg_uv[2], bg_uv[1])
+        vertices[1]["color"] = bg_color
+
+        vertices[2]["position"] = (screen_x, screen_y + tile_height)
+        vertices[2]["uv"] = (bg_uv[0], bg_uv[3])
+        vertices[2]["color"] = bg_color
+
+        vertices[3]["position"] = (screen_x + tile_width, screen_y)
+        vertices[3]["uv"] = (bg_uv[2], bg_uv[1])
+        vertices[3]["color"] = bg_color
+
+        vertices[4]["position"] = (screen_x + tile_width, screen_y + tile_height)
+        vertices[4]["uv"] = (bg_uv[2], bg_uv[3])
+        vertices[4]["color"] = bg_color
+
+        vertices[5]["position"] = (screen_x, screen_y + tile_height)
+        vertices[5]["uv"] = (bg_uv[0], bg_uv[3])
+        vertices[5]["color"] = bg_color
+
+        # Foreground quad (next 6 vertices) - structured assignment
+        vertices[6]["position"] = (screen_x, screen_y)
+        vertices[6]["uv"] = (fg_uv[0], fg_uv[1])
+        vertices[6]["color"] = fg_color
+
+        vertices[7]["position"] = (screen_x + tile_width, screen_y)
+        vertices[7]["uv"] = (fg_uv[2], fg_uv[1])
+        vertices[7]["color"] = fg_color
+
+        vertices[8]["position"] = (screen_x, screen_y + tile_height)
+        vertices[8]["uv"] = (fg_uv[0], fg_uv[3])
+        vertices[8]["color"] = fg_color
+
+        vertices[9]["position"] = (screen_x + tile_width, screen_y)
+        vertices[9]["uv"] = (fg_uv[2], fg_uv[1])
+        vertices[9]["color"] = fg_color
+
+        vertices[10]["position"] = (screen_x + tile_width, screen_y + tile_height)
+        vertices[10]["uv"] = (fg_uv[2], fg_uv[3])
+        vertices[10]["color"] = fg_color
+
+        vertices[11]["position"] = (screen_x, screen_y + tile_height)
+        vertices[11]["uv"] = (fg_uv[0], fg_uv[3])
+        vertices[11]["color"] = fg_color
+
+        return vertices
+
+    def _render_complete_buffer(
+        self,
+        glyph_buffer: GlyphBuffer,
+        target_fbo: moderngl.Framebuffer,
+        vao: moderngl.VertexArray,
+    ) -> None:
+        """
+        Render only the vertices that correspond to the current buffer size.
+
+        Args:
+            glyph_buffer: The GlyphBuffer being rendered
+            target_fbo: Target framebuffer for rendering
+            vao: The VAO to use for rendering
+        """
+        # Calculate pixel dimensions for shader uniforms
+        width_px = glyph_buffer.width * self.tile_dimensions[0]
+        height_px = glyph_buffer.height * self.tile_dimensions[1]
+
+        # Only render vertices for the current buffer size, not the entire VBO
+        total_vertices = glyph_buffer.width * glyph_buffer.height * 12
+
+        # Set uniforms and render only the vertices for this buffer
+        self.texture_program["u_texture_size"].value = (width_px, height_px)
+        self.atlas_texture.use(location=0)
+
+        # Critical: only render the vertices that belong to this buffer
+        vao.render(moderngl.TRIANGLES, vertices=total_vertices)
+
+    def _update_cache(self, glyph_buffer: GlyphBuffer, buffer_id: int) -> None:
+        """
+        Update the cache with the current buffer state.
+
+        Args:
+            glyph_buffer: Current buffer to cache
+            buffer_id: ID of the buffer for cache key
+        """
+        # Get or create cache buffer
+        cache_buffer = self.buffer_cache.get(buffer_id)
+
+        if cache_buffer is None:
+            # First time caching this buffer
+            cache_buffer = GlyphBuffer(glyph_buffer.width, glyph_buffer.height)
+        elif (
+            cache_buffer.width != glyph_buffer.width
+            or cache_buffer.height != glyph_buffer.height
+        ):
+            # Buffer dimensions changed - recreate
+            cache_buffer = GlyphBuffer(glyph_buffer.width, glyph_buffer.height)
+
+        # Deep copy the data to preserve for next frame comparison
+        np.copyto(cache_buffer.data, glyph_buffer.data)
+
+        # Store in cache (ResourceCache handles LRU eviction)
+        self.buffer_cache.store(buffer_id, cache_buffer)
 
     def release(self) -> None:
         """Clean up GPU resources."""

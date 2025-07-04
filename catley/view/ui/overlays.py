@@ -74,11 +74,9 @@ class Overlay(abc.ABC):
 class TextOverlay(Overlay):
     """An overlay that renders via a TextBackend."""
 
-    canvas: Canvas | None
-
     def __init__(self, controller: Controller) -> None:
         super().__init__(controller)
-        self.canvas = None
+        self.canvas = self._get_backend()
         self._cached_texture: Any | None = None
         self.x_tiles, self.y_tiles, self.width, self.height = 0, 0, 0, 0
         self.pixel_width, self.pixel_height = 0, 0
@@ -105,12 +103,10 @@ class TextOverlay(Overlay):
         if not self.is_active:
             return
 
-        self.canvas = self._get_backend()
         self._calculate_dimensions()
 
         if self.width <= 0 or self.height <= 0:
             # Nothing to render when dimensions are zero.
-            self.canvas = None
             self._cached_texture = None
             return
 
@@ -424,10 +420,7 @@ class Menu(TextOverlay):
 
     def _get_backend(self) -> Canvas:
         """Lazily initializes and returns a backend-appropriate canvas for Phase 1."""
-        if self.canvas is None:
-            self.canvas = self.controller.graphics.create_canvas(transparent=False)
-        assert self.canvas is not None
-        return self.canvas
+        return self.controller.graphics.create_canvas(transparent=False)
 
     def draw(self) -> None:
         super().draw()

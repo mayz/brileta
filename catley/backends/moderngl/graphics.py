@@ -376,7 +376,13 @@ class ModernGLGraphicsContext(GraphicsContext):
         """Backward compatibility: returns the screen program."""
         return self.screen_renderer.screen_program
 
-    def render_glyph_buffer_to_texture(self, glyph_buffer: GlyphBuffer) -> Any:
+    def render_glyph_buffer_to_texture(
+        self,
+        glyph_buffer: GlyphBuffer,
+        # NEW: Optional overrides from the canvas
+        vbo_override: moderngl.Buffer | None = None,
+        vao_override: moderngl.VertexArray | None = None,
+    ) -> Any:
         """Renders a GlyphBuffer to a cached, correctly oriented texture."""
         # Calculate the pixel dimensions of the output texture
         width_px = glyph_buffer.width * self.tile_dimensions[0]
@@ -393,7 +399,14 @@ class ModernGLGraphicsContext(GraphicsContext):
         )
 
         # Render into the cached FBO
-        self.texture_renderer.render(glyph_buffer, target_fbo)
+        # Pass along the optional overrides. If they are None, the
+        # TextureRenderer will use its internal defaults.
+        self.texture_renderer.render(
+            glyph_buffer,
+            target_fbo,
+            vbo_override=vbo_override,
+            vao_override=vao_override,
+        )
 
         return target_texture
 

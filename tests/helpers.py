@@ -149,6 +149,11 @@ def get_controller_with_player_and_map() -> Controller:
                 width=config.SCREEN_WIDTH, height=config.SCREEN_HEIGHT
             )
 
+        def create_canvas(self, transparent: bool = True) -> Any:
+            from unittest.mock import MagicMock
+
+            return MagicMock()
+
         @property
         def coordinate_converter(self):
             return self._coordinate_converter

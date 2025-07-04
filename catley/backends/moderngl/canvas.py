@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
+import moderngl
+
 from catley import colors
 from catley.util.coordinates import PixelCoord, TileCoord
 from catley.util.glyph_buffer import GlyphBuffer
@@ -16,10 +18,39 @@ class ModernGLCanvas(Canvas):
 
     def __init__(self, renderer: GraphicsContext, transparent: bool = True) -> None:
         super().__init__(transparent)
-        self.renderer = renderer
+        self.renderer = renderer  # This is ModernGLGraphicsContext
         self.private_glyph_buffer: GlyphBuffer | None = None
 
+        # Canvas owns its GPU resources for isolation
+        self.vbo: moderngl.Buffer | None = None
+        self.vao: moderngl.VertexArray | None = None
+
+        # Get a reference to the shader program from the TextureRenderer
+        from catley.backends.moderngl.graphics import ModernGLGraphicsContext
+
+        moderngl_renderer = cast(ModernGLGraphicsContext, renderer)
+
+        # Handle both real and mock renderers
+        if hasattr(moderngl_renderer, "texture_renderer") and hasattr(
+            moderngl_renderer, "mgl_context"
+        ):
+            self.texture_program = moderngl_renderer.texture_renderer.texture_program
+            self.mgl_context = moderngl_renderer.mgl_context
+        else:
+            # Mock renderer for tests - create dummy values
+            self.texture_program = None
+            self.mgl_context = None
+
         self.configure_scaling(renderer.tile_dimensions[1])
+
+    def release(self) -> None:
+        """Release GPU resources when canvas is no longer needed."""
+        if self.vbo:
+            self.vbo.release()
+            self.vbo = None
+        if self.vao:
+            self.vao.release()
+            self.vao = None
 
     @property
     def artifact_type(self) -> str:
@@ -33,7 +64,11 @@ class ModernGLCanvas(Canvas):
         # We need to cast the renderer to access its ModernGL-specific method.
         # This is acceptable because this canvas is ModernGL-specific.
         moderngl_renderer = cast(ModernGLGraphicsContext, renderer)
-        return moderngl_renderer.render_glyph_buffer_to_texture(artifact)
+
+        # Pass THIS canvas's VBO and VAO to the renderer for isolation
+        return moderngl_renderer.render_glyph_buffer_to_texture(
+            artifact, self.vbo, self.vao
+        )
 
     def get_text_metrics(
         self, text: str, font_size: int | None = None
@@ -98,6 +133,27 @@ class ModernGLCanvas(Canvas):
             # New buffer means cache is invalid
             self._cached_frame_artifact = None
             self._last_frame_ops = []
+
+            # Recreate VBO and VAO for this canvas with the new dimensions
+            # Only create GPU resources if we have a real renderer (not a mock)
+            if self.mgl_context is not None and self.texture_program is not None:
+                max_vertices = width_tiles * height_tiles * 12
+                if self.vbo:
+                    self.vbo.release()
+                if self.vao:
+                    self.vao.release()
+
+                # Create VBO sized for this canvas, not the global max
+                # We need to import the VERTEX_DTYPE from texture_renderer
+                from catley.backends.moderngl.texture_renderer import VERTEX_DTYPE
+
+                vbo_size = max_vertices * VERTEX_DTYPE.itemsize
+                initial_data = b"\x00" * vbo_size  # Initialize with zeros
+                self.vbo = self.mgl_context.buffer(initial_data, dynamic=True)
+                self.vao = self.mgl_context.vertex_array(
+                    self.texture_program,
+                    [(self.vbo, "2f 2f 4f", "in_vert", "in_uv", "in_color")],
+                )
 
     def _prepare_for_rendering(self) -> bool:
         """Prepare glyph buffer for rendering operations."""

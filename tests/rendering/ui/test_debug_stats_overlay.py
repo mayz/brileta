@@ -16,6 +16,7 @@ class DummyController:
             tile_dimensions=(8, 16),
             console_width_tiles=80,
             console_height_tiles=50,
+            create_canvas=lambda transparent=True: MagicMock(),
         )
 
 
