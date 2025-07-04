@@ -386,3 +386,24 @@ def test_terminal_combat_actions_available_out_of_combat() -> None:
     # Both targets should yield at least one attack option each.
     assert len(actions) >= 2
     assert all(callable(opt.execute) for opt in actions)
+
+
+def test_combat_options_exclude_self_targeting() -> None:
+    """Combat options should not be available when targeting yourself."""
+    controller, player, melee_target, ranged_target, pistol = _make_combat_world()
+    disc = ActionDiscovery()
+    ctx = disc._build_context(cast(Controller, controller), player)
+
+    # Test that player cannot target themselves
+    self_opts = disc._get_combat_options_for_target(
+        cast(Controller, controller), player, player, ctx
+    )
+
+    # Should return empty list when targeting self
+    assert len(self_opts) == 0
+
+    # Verify that other targets still work normally
+    other_opts = disc._get_combat_options_for_target(
+        cast(Controller, controller), player, melee_target, ctx
+    )
+    assert len(other_opts) > 0

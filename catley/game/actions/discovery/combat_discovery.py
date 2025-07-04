@@ -147,7 +147,8 @@ class CombatActionDiscovery:
 
         gm = controller.gw.game_map
         if (
-            not isinstance(target, Character)
+            target == actor
+            or not isinstance(target, Character)
             or not target.stats
             or not target.health
             or not target.health.is_alive()
