@@ -65,7 +65,7 @@ FPS_SAMPLE_SIZE = 256  # Number of frame time samples to track
 # These are independent flags to control debugging features.
 
 # Set to True for uncapped FPS to identify performance bottlenecks.
-PERFORMANCE_PROFILING = True
+PERFORMANCE_PROFILING = False
 
 # Set to True to print metrics about the "tap vs. hold" input system.
 # This measures the real-world time between player-perceived moves, which is

@@ -7,7 +7,6 @@ from pyglet.window import key, mouse
 
 from catley.app import App, AppConfig
 from catley.backends.moderngl.graphics import ModernGLGraphicsContext
-from catley.types import InterpolationAlpha
 
 
 class PygletApp(App[ModernGLGraphicsContext]):
@@ -20,9 +19,6 @@ class PygletApp(App[ModernGLGraphicsContext]):
 
     def __init__(self, app_config: AppConfig) -> None:
         super().__init__(app_config)
-
-        # Track time since last logic update for interpolation
-        self.time_since_last_logic_update: float = 0.0
 
         self._initialize_window(app_config)
         self._initialize_graphics()
@@ -74,38 +70,20 @@ class PygletApp(App[ModernGLGraphicsContext]):
             # Restore system cursor when exiting
             self.window.set_mouse_visible(True)
 
-    def update_logic_for_pyglet(self, dt: float) -> None:
-        """Called at fixed timestep intervals. Executes logic step and resets timer."""
-        self.execute_fixed_logic_step()
-        # Reset the timer. The render loop will now accumulate time from this point.
-        self.time_since_last_logic_update = 0.0
-
     def on_draw(self) -> None:
-        """Called by Pyglet to render. Handles input, calculates alpha, and renders."""
+        """Called by Pyglet to render. Handles full game loop with accumulator."""
         assert self.controller is not None
 
         # Get delta time and update the controller's clock to calculate FPS.
         dt = self.controller.clock.tick()
 
-        # Update our timer
-        self.time_since_last_logic_update += dt
+        # Use the shared accumulator-based game logic update
+        # This handles player input, fixed timestep logic, and death spiral protection
+        self.update_game_logic(dt)
 
-        # Process player input for responsiveness
-        self.controller.process_player_input()
-
-        # Calculate interpolation alpha (clamp to [0.0, 1.0] range)
-        alpha = InterpolationAlpha(
-            min(
-                1.0,
-                max(
-                    0.0,
-                    self.time_since_last_logic_update / self.controller.fixed_timestep,
-                ),
-            )
-        )
-
-        # Render with the calculated alpha
-        self.render_frame_with_alpha(alpha)
+        # Render the frame using the shared rendering method
+        # This calculates alpha from the accumulator and renders with interpolation
+        self.render_frame()
 
     def prepare_for_new_frame(self) -> None:
         """Prepares the backbuffer for a new frame of rendering."""
@@ -190,13 +168,7 @@ class PygletApp(App[ModernGLGraphicsContext]):
         self.controller.frame_manager.on_window_resized()
 
     def _register_callbacks(self) -> None:
-        # Schedule fixed logic updates using the controller's fixed timestep
-        assert self.controller is not None
-        pyglet.clock.schedule_interval(
-            self.update_logic_for_pyglet, self.controller.fixed_timestep
-        )
-
-        # Assign the render callback
+        # Assign the render callback (which now handles everything)
         self.window.on_draw = self.on_draw
 
         # Register event handlers
