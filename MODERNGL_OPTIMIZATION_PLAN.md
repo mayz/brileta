@@ -201,57 +201,151 @@ effect_texture.release()
 
 ---
 
-## Phase 2: Optimize Data Transfer
+## Phase 2: Eliminate Remaining CPU Bottlenecks (Next Priority)
 
-**Goal:** Reduce the amount of CPU work and GPU data transfer for UI elements that do not change every frame.
+**Current Status:** Phase 1 has been completed successfully. The current baseline (commit 5f3026a) includes FBO pooling, pre-computed coordinate arrays, vectorized color operations, and working Canvas caching. Performance should already be significantly improved from the original ~25 FPS.
 
-### Task 2.1: Implement TCOD-Style Change Detection for `GlyphBuffer`
+**Goal:** Eliminate the remaining Python loops and function calls that prevent true vectorization, then implement TCOD-style change detection for static content optimization.
 
-**Problem:** `TextureRenderer._encode_glyph_buffer_to_vertices` reconstructs the entire vertex buffer from the `GlyphBuffer` every time it's called, even if only one character has changed (e.g., a blinking cursor).
+### Task 2.1: Pre-compute Unicode to CP437 Mapping
 
-**TCOD Reference:** TCOD achieves massive CPU savings by comparing each tile against a cached version from the previous frame (`renderer_sdl2.c:426-440`). It only processes tiles where background color, foreground color, or character has changed.
+**Problem:** The single remaining Python loop bottleneck is in `TextureRenderer._encode_glyph_buffer_to_vertices` at line 178: `fg_char = unicode_to_cp437(char)`. This function is called for every single character in every buffer, every frame. For a 100x50 UI buffer, this is 5,000 Python function calls per frame.
 
-**Our Solution:** Implement similar tile-by-tile change detection, adapted for our `GlyphBuffer` structure.
+**Solution:** Replace the function call with a pre-computed lookup table for common characters, falling back to the function only for edge cases.
 
 **Implementation Steps:**
 
-1.  **Modify `ModernGLCanvas` to Add Cache Buffer:**
-    -   This class owns the `private_glyph_buffer`. Add a cache buffer: `self.cache_glyph_buffer: GlyphBuffer | None = None`.
-    -   After a successful render, copy the current buffer to the cache slot: `self.cache_glyph_buffer = self.private_glyph_buffer.copy()`.
+1. **Create Pre-computed Mapping in `TextureRenderer.__init__`:**
+   ```python
+   # Pre-compute unicode_to_cp437 for all 256 common characters
+   self.unicode_to_cp437_map = np.array([
+       unicode_to_cp437(i) for i in range(256)
+   ], dtype=np.uint8)
+   ```
 
-2.  **Implement TCOD-Style Dirty Detection in `TextureRenderer`:**
-    -   Add method signature: `render(self, glyph_buffer: GlyphBuffer, cache_buffer: GlyphBuffer | None, target_fbo: moderngl.Framebuffer) -> None`
-    -   **Tile-by-Tile Comparison**: For each `(x, y)` position, compare current vs cache:
-        ```python
-        current_tile = glyph_buffer.data[y, x]
-        cached_tile = cache_buffer.data[y, x] if cache_buffer else None
+2. **Replace Function Call with Array Lookup:**
+   ```python
+   # OLD: fg_char = unicode_to_cp437(char)
+   # NEW: Fast array lookup for common characters, fallback for others
+   if char < 256:
+       fg_char = self.unicode_to_cp437_map[char]
+   else:
+       fg_char = unicode_to_cp437(char)  # Rare edge case
+   ```
 
-        # Check for changes (following TCOD's approach)
-        bg_changed = (cached_tile is None or
-                     current_tile.bg_color != cached_tile.bg_color)
-        fg_changed = (cached_tile is None or
-                     current_tile.character != cached_tile.character or
-                     current_tile.fg_color != cached_tile.fg_color)
+3. **Apply Same Optimization to Background Character:**
+   - The background character is always the same (`SOLID_BLOCK_CHAR`), so this can be pre-computed once in `__init__`
 
-        if not (bg_changed or fg_changed):
-            continue  # Skip unchanged tiles entirely
-        ```
-    -   **Sparse Vertex Generation**: Only add vertices for changed tiles to the VBO
-    -   **Partial VBO Updates**: Use `self.vbo.write(chunk, offset=...)` to update only the sections corresponding to changed tiles
+**Expected Outcome:** 20-50% improvement in vertex generation performance by eliminating thousands of Python function calls per frame.
 
-3.  **Optimize for Common UI Patterns:**
-    -   **Static Text**: Most UI text doesn't change between frames
-    -   **Cursor Blinking**: Only 1-2 characters change per frame
-    -   **Status Updates**: Only specific regions (health bars, scores) change
-    -   **Background Panels**: Often completely static
+### Task 2.2: Implement TCOD-Style Change Detection
 
-**Expected Outcome:** TCOD-level CPU efficiency gains. Massive reduction in vertex data generation and GPU uploads for mostly-static UI content. Should see 50-80% reduction in CPU usage for typical UI rendering scenarios.
+**Problem:** Even with optimized vertex generation, we're still processing every tile every frame. TCOD achieves 700 FPS by only processing tiles that have actually changed since the previous frame.
 
-**Note:** This implements the same core optimization that gives TCOD its performance advantage - the `continue` statement that skips unchanged content entirely.
+**TCOD Reference:** TCOD's core optimization (`renderer_sdl2.c:426-440`) compares each tile against a cached version:
+```c
+// TCOD's approach - skip unchanged tiles entirely
+if (console->tiles[i].ch == cache->tiles[i].ch &&
+    console->tiles[i].fg == cache->tiles[i].fg &&
+    console->tiles[i].bg == cache->tiles[i].bg) {
+    continue;  // Skip this tile - massive CPU savings
+}
+```
+
+**Our Implementation Strategy:** We have two architectural approaches to choose from:
+
+#### Option A: StatefulGlyphBuffer Approach (Original Phase 2 Plan)
+**Pros:** Clean separation of concerns, automatic change detection
+**Cons:** Previously failed due to Canvas architecture conflicts
+
+**Implementation:**
+1. **Create `StatefulGlyphBuffer` wrapper class** that manages two `GlyphBuffer` instances internally
+2. **Modify Canvas to use StatefulGlyphBuffer** instead of simple `GlyphBuffer`
+3. **Update `TextureRenderer`** to accept `StatefulGlyphBuffer` and use its dirty tile information
+
+**Critical Fix Required:** The original StatefulGlyphBuffer failed because Canvas rebuilds its buffer from scratch each frame, causing 100% dirty tiles. We must modify Canvas to preserve unchanged content between frames.
+
+#### Option B: Cache-at-Renderer Level (Recommended)
+**Pros:** Works with existing Canvas architecture, simpler implementation
+**Cons:** Renderer becomes slightly more complex
+
+**Implementation:**
+1. **Add cache buffer to `TextureRenderer`:**
+   ```python
+   class TextureRenderer:
+       def __init__(self, ...):
+           self.cache_buffer_map: dict[int, GlyphBuffer] = {}  # Keyed by buffer ID
+   ```
+
+2. **Implement change detection in `render` method:**
+   ```python
+   def render(self, glyph_buffer: GlyphBuffer, target_fbo: moderngl.Framebuffer) -> None:
+       buffer_id = id(glyph_buffer)
+       cache_buffer = self.cache_buffer_map.get(buffer_id)
+       
+       if cache_buffer is None:
+           # First time rendering this buffer - process all tiles
+           dirty_tiles = [(x, y) for x in range(glyph_buffer.width) 
+                                 for y in range(glyph_buffer.height)]
+       else:
+           # Find dirty tiles using vectorized comparison
+           dirty_mask = (
+               (glyph_buffer.data["ch"] != cache_buffer.data["ch"]) |
+               np.any(glyph_buffer.data["fg"] != cache_buffer.data["fg"], axis=-1) |
+               np.any(glyph_buffer.data["bg"] != cache_buffer.data["bg"], axis=-1)
+           )
+           dirty_tiles = np.argwhere(dirty_mask)
+       
+       # Only process dirty tiles
+       if len(dirty_tiles) > 0:
+           self._render_dirty_tiles(glyph_buffer, dirty_tiles, target_fbo)
+           
+       # Update cache
+       if cache_buffer is None:
+           self.cache_buffer_map[buffer_id] = GlyphBuffer(glyph_buffer.width, glyph_buffer.height)
+           cache_buffer = self.cache_buffer_map[buffer_id]
+       np.copyto(cache_buffer.data, glyph_buffer.data)
+   ```
+
+3. **Implement sparse vertex generation for dirty tiles:**
+   ```python
+   def _render_dirty_tiles(self, glyph_buffer: GlyphBuffer, dirty_tiles: np.ndarray, target_fbo: moderngl.Framebuffer) -> None:
+       # Generate vertices only for dirty tiles
+       for x, y in dirty_tiles:
+           tile_data = glyph_buffer.data[x, y]
+           vertices = self._generate_vertices_for_single_tile(x, y, tile_data)
+           
+           # Calculate VBO offset for this tile
+           vbo_offset = ((y * glyph_buffer.width) + x) * 12 * VERTEX_DTYPE.itemsize
+           
+           # Update only this tile's section of the VBO
+           self.vbo.write(vertices.tobytes(), offset=vbo_offset)
+   ```
+
+**Recommendation:** Use Option B (Cache-at-Renderer Level) because it works with the existing Canvas architecture and is simpler to implement reliably.
+
+**Expected Outcome:** Massive performance improvement for static content. UI elements that don't change between frames will generate zero CPU work. This is the key to achieving TCOD's 700 FPS performance.
+
+### Task 2.3: Optimize Common UI Patterns
+
+**Implementation Details for Specific Scenarios:**
+
+1. **Static Text Panels:** Once rendered, generate zero CPU work until content changes
+2. **Cursor Blinking:** Only 1-2 tiles marked dirty per frame instead of entire buffer
+3. **Health/Status Bars:** Only the changed portion gets re-rendered
+4. **Menu Hover Effects:** Only the highlighted item and previously highlighted item get updated
+5. **Scrolling Lists:** Only newly visible tiles at top/bottom get processed
+
+**Cache Memory Management:**
+- Implement LRU cache eviction for texture renderer cache buffers
+- Set reasonable limit (e.g., 50 cached buffers) to prevent memory growth
+- Clear cache on buffer dimension changes
+
+**Expected Outcome:** 50-80% reduction in CPU usage for typical UI rendering scenarios. This brings us to TCOD-level efficiency where static content costs virtually nothing to maintain.
 
 ---
 
-## Phase 3: Advanced Shader-Side Rendering - Profile the game again before implementing to see if this is still needed
+## Phase 3: Advanced Shader-Side Rendering
 
 **Goal:** Minimize CPU-to-GPU bandwidth by sending minimal integer data and performing lookups on the GPU. This was the original "endgame" optimization.
 
