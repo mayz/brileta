@@ -20,6 +20,7 @@ from catley.util.glyph_buffer import GlyphBuffer
 from catley.view.render.effects.particles import ParticleLayer, SubTileParticleSystem
 from catley.view.render.graphics import GraphicsContext
 
+from .resource_manager import ModernGLResourceManager
 from .screen_renderer import VERTEX_DTYPE, ScreenRenderer
 from .shader_manager import ShaderManager
 from .texture_renderer import TextureRenderer
@@ -124,10 +125,8 @@ class ModernGLGraphicsContext(GraphicsContext):
         self.atlas_texture = self._load_atlas_texture()
         self.uv_map = self._precalculate_uv_map()
 
-        # --- FBO and Texture Pooling for UI Rendering ---
-        self.fbo_cache: dict[
-            tuple[int, int], tuple[moderngl.Framebuffer, moderngl.Texture]
-        ] = {}
+        # --- Shared Resource Manager for GPU Resources ---
+        self.resource_manager = ModernGLResourceManager(self.mgl_context)
 
         # --- Reusable Radial Gradient Texture for Environmental Effects ---
         self.radial_gradient_texture = self._create_radial_gradient_texture(256)
@@ -235,17 +234,7 @@ class ModernGLGraphicsContext(GraphicsContext):
         Get or create a cached FBO and texture for the given dimensions.
         This prevents per-frame GPU resource creation/destruction.
         """
-        cache_key = (width, height)
-        if cache_key in self.fbo_cache:
-            return self.fbo_cache[cache_key]
-
-        # Create new FBO and texture
-        dest_texture = self.mgl_context.texture((width, height), 4)
-        fbo = self.mgl_context.framebuffer(color_attachments=[dest_texture])
-
-        # Cache them for future use
-        self.fbo_cache[cache_key] = (fbo, dest_texture)
-        return fbo, dest_texture
+        return self.resource_manager.get_or_create_simple_fbo(width, height)
 
     def _create_radial_gradient_texture(self, resolution: int) -> moderngl.Texture:
         """

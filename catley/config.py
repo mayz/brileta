@@ -131,7 +131,7 @@ MAX_NUM_ROOMS = 3
 # =============================================================================
 
 # GPU vs CPU lighting system selection
-GPU_LIGHTING_ENABLED = False  # Use GPU lighting when available, fallback to CPU
+GPU_LIGHTING_ENABLED = True  # Use GPU lighting when available, fallback to CPU
 
 # Generic light source defaults
 DEFAULT_LIGHT_COLOR = (255, 255, 255)  # Pure white

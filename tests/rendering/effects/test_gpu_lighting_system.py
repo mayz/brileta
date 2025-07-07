@@ -9,12 +9,12 @@ from unittest.mock import Mock, patch
 
 import numpy as np
 
+from catley.backends.moderngl.gpu_lighting import GPULightingSystem
 from catley.game.game_world import GameWorld
 from catley.game.lights import DynamicLight, StaticLight
 from catley.types import FixedTimestep
 from catley.util.coordinates import Rect
 from catley.view.render.lighting.base import LightingSystem
-from catley.view.render.lighting.gpu import GPULightingSystem
 
 
 class TestGPULightingSystem:

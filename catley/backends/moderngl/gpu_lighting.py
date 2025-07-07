@@ -18,10 +18,10 @@ import numpy as np
 from catley.config import AMBIENT_LIGHT_LEVEL
 from catley.types import FixedTimestep
 from catley.util.coordinates import Rect
-
-from .base import LightingSystem
+from catley.view.render.lighting.base import LightingSystem
 
 if TYPE_CHECKING:
+    from catley.backends.moderngl.resource_manager import ModernGLResourceManager
     from catley.backends.moderngl.shader_manager import ShaderManager
     from catley.game.game_world import GameWorld
     from catley.game.lights import LightSource
@@ -73,6 +73,7 @@ class GPULightingSystem(LightingSystem):
         # GPU resources
         self._fragment_program: moderngl.Program | None = None
         self._shader_manager: ShaderManager | None = None
+        self._resource_manager: ModernGLResourceManager | None = None
         self._output_texture: moderngl.Texture | None = None
         self._output_buffer: moderngl.Buffer | None = None
         self._fullscreen_vao: moderngl.VertexArray | None = None
@@ -82,6 +83,11 @@ class GPULightingSystem(LightingSystem):
 
         # Current viewport for resource sizing
         self._current_viewport: Rect | None = None
+
+        # Performance optimization: Track light configuration changes
+        self._last_light_data_hash: int | None = None
+        self._cached_light_data: list[float] | None = None
+        self._cached_light_revision: int = -1
 
         # Initialize GPU resources
         if not self._initialize_gpu_resources():
@@ -139,11 +145,20 @@ class GPULightingSystem(LightingSystem):
     def _initialize_fragment_lighting(self) -> bool:
         """Initialize fragment shader-based lighting."""
         try:
-            # Import ShaderManager here to avoid circular imports
+            # Import ShaderManager and ResourceManager here to avoid circular imports
+            from catley.backends.moderngl.resource_manager import (
+                ModernGLResourceManager,
+            )
             from catley.backends.moderngl.shader_manager import ShaderManager
 
             assert self.mgl_context is not None
             self._shader_manager = ShaderManager(self.mgl_context)
+
+            # Initialize resource manager - use shared one if available
+            if hasattr(self.graphics_context, "resource_manager"):
+                self._resource_manager = self.graphics_context.resource_manager
+            else:
+                self._resource_manager = ModernGLResourceManager(self.mgl_context)
 
             # Create fragment shader program
             self._fragment_program = self._shader_manager.create_program(
@@ -285,8 +300,15 @@ class GPULightingSystem(LightingSystem):
             assert self._output_buffer is not None
             assert self._fullscreen_vao is not None
 
-            # Collect light data from game world
-            light_data = self._collect_light_data(viewport_bounds)
+            # Use cached light data if revision hasn't changed
+            if (
+                self._cached_light_revision != self.revision
+                or self._cached_light_data is None
+            ):
+                self._cached_light_data = self._collect_light_data(viewport_bounds)
+                self._cached_light_revision = self.revision
+
+            light_data = self._cached_light_data
             light_count = min(
                 len(light_data) // 12, self.MAX_LIGHTS
             )  # 12 floats per light
@@ -297,16 +319,28 @@ class GPULightingSystem(LightingSystem):
                     f"limiting to {self.MAX_LIGHTS}"
                 )
 
-            # Create framebuffer for rendering
-            assert self.mgl_context is not None
-            fbo = self.mgl_context.framebuffer(color_attachments=[self._output_texture])
+            # Get or create cached framebuffer for rendering
+            assert self._resource_manager is not None
+            assert self._output_texture is not None
+
+            # Use resource manager to get cached FBO for our texture
+            fbo = self._resource_manager.get_or_create_fbo_for_texture(
+                self._output_texture
+            )
 
             # Set up rendering state
             fbo.use()
             fbo.clear(0.0, 0.0, 0.0, 1.0)
 
-            # Set uniforms
-            self._set_lighting_uniforms(light_data, light_count, viewport_bounds)
+            # Smart uniform updates - only update when lights change
+            light_data_hash = hash((tuple(light_data[: light_count * 12]), self._time))
+            if self._last_light_data_hash != light_data_hash:
+                self._set_lighting_uniforms(light_data, light_count, viewport_bounds)
+                self._last_light_data_hash = light_data_hash
+            else:
+                # Still need to update time uniform for dynamic effects
+                assert self._fragment_program is not None
+                self._fragment_program["u_time"].value = self._time
 
             # Render full-screen quad
             self._fullscreen_vao.render()
@@ -502,3 +536,7 @@ class GPULightingSystem(LightingSystem):
             self._output_buffer.release()
         if self._fullscreen_vao is not None:
             self._fullscreen_vao.release()
+
+        # Clear cached data
+        self._cached_light_data = None
+        self._last_light_data_hash = None
