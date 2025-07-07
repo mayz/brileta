@@ -89,6 +89,10 @@ class GPULightingSystem(LightingSystem):
         self._cached_light_data: list[float] | None = None
         self._cached_light_revision: int = -1
 
+        # Cache for shadow casters
+        self._cached_shadow_casters: list[float] | None = None
+        self._cached_shadow_revision: int = -1
+
         # Initialize GPU resources
         if not self._initialize_gpu_resources():
             pass  # Will use fallback system if available
@@ -319,6 +323,19 @@ class GPULightingSystem(LightingSystem):
                     f"limiting to {self.MAX_LIGHTS}"
                 )
 
+            # Collect shadow casters (use caching like light data)
+            if (
+                self._cached_shadow_revision != self.revision
+                or self._cached_shadow_casters is None
+            ):
+                self._cached_shadow_casters = self._collect_shadow_casters(
+                    viewport_bounds
+                )
+                self._cached_shadow_revision = self.revision
+
+            shadow_casters = self._cached_shadow_casters
+            shadow_caster_count = len(shadow_casters) // 2  # 2 floats per caster
+
             # Get or create cached framebuffer for rendering
             assert self._resource_manager is not None
             assert self._output_texture is not None
@@ -332,10 +349,19 @@ class GPULightingSystem(LightingSystem):
             fbo.use()
             fbo.clear(0.0, 0.0, 0.0, 1.0)
 
-            # Smart uniform updates - only update when lights change
-            light_data_hash = hash((tuple(light_data[: light_count * 12]), self._time))
+            # Smart uniform updates - only update when lights or shadow casters change
+            light_data_hash = hash(
+                (
+                    tuple(light_data[: light_count * 12]),
+                    tuple(shadow_casters),
+                    self._time,
+                )
+            )
             if self._last_light_data_hash != light_data_hash:
                 self._set_lighting_uniforms(light_data, light_count, viewport_bounds)
+                self._set_shadow_uniforms(
+                    shadow_casters, shadow_caster_count, viewport_bounds
+                )
                 self._last_light_data_hash = light_data_hash
             else:
                 # Still need to update time uniform for dynamic effects
@@ -425,6 +451,35 @@ class GPULightingSystem(LightingSystem):
             viewport_bounds.height,
         )
 
+    def _set_shadow_uniforms(
+        self,
+        shadow_casters: list[float],
+        shadow_caster_count: int,
+        viewport_bounds: Rect,
+    ) -> None:
+        """Set shadow caster uniforms for the fragment shader."""
+        from catley.config import SHADOW_FALLOFF, SHADOW_INTENSITY, SHADOW_MAX_LENGTH
+
+        # Maximum number of shadow casters we can handle
+        MAX_SHADOW_CASTERS = 64
+
+        # Prepare shadow caster position arrays (pad to MAX_SHADOW_CASTERS)
+        shadow_positions = [0.0] * (MAX_SHADOW_CASTERS * 2)
+
+        # Fill in actual shadow caster data
+        actual_count = min(shadow_caster_count, MAX_SHADOW_CASTERS)
+        for i in range(actual_count):
+            shadow_positions[i * 2] = shadow_casters[i * 2]  # x
+            shadow_positions[i * 2 + 1] = shadow_casters[i * 2 + 1]  # y
+
+        # Set shadow uniforms
+        assert self._fragment_program is not None
+        self._fragment_program["u_shadow_caster_count"].value = actual_count
+        self._fragment_program["u_shadow_caster_positions"].value = shadow_positions
+        self._fragment_program["u_shadow_intensity"].value = SHADOW_INTENSITY
+        self._fragment_program["u_shadow_max_length"].value = SHADOW_MAX_LENGTH
+        self._fragment_program["u_shadow_falloff_enabled"].value = SHADOW_FALLOFF
+
     def _collect_light_data(self, viewport_bounds: Rect) -> list[float]:
         """Collect light data from the game world and format for GPU uniforms.
 
@@ -496,6 +551,62 @@ class GPULightingSystem(LightingSystem):
 
         return light_data
 
+    def _collect_shadow_casters(self, viewport_bounds: Rect) -> list[float]:
+        """Collect shadow casting objects from the game world.
+
+        Returns:
+            Flat list of floats representing shadow caster data (2 floats per caster)
+            Format: position.xy for each shadow caster
+        """
+        from catley.config import SHADOWS_ENABLED
+
+        if not SHADOWS_ENABLED:
+            return []
+
+        shadow_casters = []
+
+        # Get shadow-casting actors
+        if self.game_world.actor_spatial_index:
+            # Get all actors in expanded viewport (including shadow range)
+            margin = 10  # Extra margin for shadow casting range
+            actors = self.game_world.actor_spatial_index.get_in_bounds(
+                viewport_bounds.x1 - margin,
+                viewport_bounds.y1 - margin,
+                viewport_bounds.x1 + viewport_bounds.width + margin,
+                viewport_bounds.y1 + viewport_bounds.height + margin,
+            )
+
+            for actor in actors:
+                if hasattr(actor, "blocks_movement") and actor.blocks_movement:
+                    shadow_casters.extend([float(actor.x), float(actor.y)])
+
+        # Get shadow-casting tiles
+        if self.game_world.game_map:
+            from catley.environment import tile_types
+
+            game_map = self.game_world.game_map
+            margin = 10  # Extra margin for shadow casting range
+
+            for x in range(
+                max(0, viewport_bounds.x1 - margin),
+                min(
+                    game_map.width, viewport_bounds.x1 + viewport_bounds.width + margin
+                ),
+            ):
+                for y in range(
+                    max(0, viewport_bounds.y1 - margin),
+                    min(
+                        game_map.height,
+                        viewport_bounds.y1 + viewport_bounds.height + margin,
+                    ),
+                ):
+                    tile_id = game_map.tiles[x, y]
+                    tile_data = tile_types.get_tile_type_data_by_id(int(tile_id))
+                    if tile_data["casts_shadows"]:
+                        shadow_casters.extend([float(x), float(y)])
+
+        return shadow_casters
+
     def on_light_added(self, light: LightSource) -> None:
         """Notification that a light has been added."""
         # GPU system doesn't need caching invalidation like CPU system
@@ -539,4 +650,5 @@ class GPULightingSystem(LightingSystem):
 
         # Clear cached data
         self._cached_light_data = None
+        self._cached_shadow_casters = None
         self._last_light_data_hash = None

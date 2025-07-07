@@ -24,6 +24,13 @@ uniform float u_ambient_light;
 uniform float u_time;
 uniform bool u_tile_aligned;
 
+// Shadow casting uniforms
+uniform int u_shadow_caster_count;
+uniform float u_shadow_caster_positions[128]; // xy pairs, up to 64 shadow casters
+uniform float u_shadow_intensity;
+uniform int u_shadow_max_length;
+uniform bool u_shadow_falloff_enabled;
+
 // Noise function for flicker effects
 float noise2d(vec2 coord) {
     vec2 c = floor(coord);
@@ -43,12 +50,95 @@ float noise2d(vec2 coord) {
     return mix(mix(a, b, u.x), mix(c_val, d, u.x), u.y) * 2.0 - 1.0;  // Range [-1, 1]
 }
 
+// Calculate shadow attenuation from shadow casters matching CPU algorithm
+float calculateShadowAttenuation(vec2 world_pos, vec2 light_pos) {
+    float shadow_factor = 1.0;  // No shadow by default
+    
+    // Check each shadow caster
+    for (int i = 0; i < u_shadow_caster_count && i < 64; i++) {
+        vec2 caster_pos = vec2(u_shadow_caster_positions[i * 2], u_shadow_caster_positions[i * 2 + 1]);
+        
+        // Calculate displacement from light to caster (CPU algorithm)
+        vec2 light_to_caster = caster_pos - light_pos;
+        float dx = light_to_caster.x;
+        float dy = light_to_caster.y;
+        
+        // Use Chebyshev distance like CPU (max of absolute values)
+        float caster_distance = max(abs(dx), abs(dy));
+        if (caster_distance < 0.1) {
+            continue;  // Skip if too close
+        }
+        
+        // Calculate shadow direction using step function like CPU
+        float shadow_dx = dx > 0.0 ? 1.0 : (dx < 0.0 ? -1.0 : 0.0);
+        float shadow_dy = dy > 0.0 ? 1.0 : (dy < 0.0 ? -1.0 : 0.0);
+        
+        // Check if world_pos is in the shadow path from caster
+        float max_shadow_length = float(u_shadow_max_length);
+        bool in_shadow = false;
+        float shadow_intensity = 0.0;
+        
+        // Check each shadow position (matching CPU loop)
+        for (int j = 1; j <= int(max_shadow_length) && j <= 3; j++) {
+            vec2 shadow_pos = caster_pos + vec2(shadow_dx * float(j), shadow_dy * float(j));
+            
+            // Check if world_pos matches this shadow position (core shadow)
+            if (abs(world_pos.x - shadow_pos.x) < 0.1 && abs(world_pos.y - shadow_pos.y) < 0.1) {
+                // Calculate falloff like CPU
+                float distance_falloff = 1.0;
+                if (u_shadow_falloff_enabled) {
+                    distance_falloff = 1.0 - (float(j - 1) / max_shadow_length);
+                }
+                shadow_intensity = max(shadow_intensity, u_shadow_intensity * distance_falloff);
+                in_shadow = true;
+            }
+            
+            // Check soft edges for first 2 shadow tiles (like CPU)
+            if (j <= 2) {
+                float edge_intensity = u_shadow_intensity * 0.4; // 40% like CPU
+                if (u_shadow_falloff_enabled) {
+                    float distance_falloff = 1.0 - (float(j - 1) / max_shadow_length);
+                    edge_intensity *= distance_falloff;
+                }
+                
+                // Check 8 adjacent/diagonal positions around core shadow
+                vec2 edge_offsets[8] = vec2[8](
+                    vec2(0.0, 1.0), vec2(0.0, -1.0), vec2(1.0, 0.0), vec2(-1.0, 0.0),  // Adjacent
+                    vec2(1.0, 1.0), vec2(1.0, -1.0), vec2(-1.0, 1.0), vec2(-1.0, -1.0)   // Diagonal
+                );
+                
+                for (int k = 0; k < 8; k++) {
+                    vec2 edge_pos = shadow_pos + edge_offsets[k];
+                    if (abs(world_pos.x - edge_pos.x) < 0.1 && abs(world_pos.y - edge_pos.y) < 0.1) {
+                        // Don't add edge if it's in the core shadow direction
+                        if (!(abs(edge_offsets[k].x - shadow_dx) < 0.1 && abs(edge_offsets[k].y - shadow_dy) < 0.1)) {
+                            shadow_intensity = max(shadow_intensity, edge_intensity);
+                            in_shadow = true;
+                        }
+                    }
+                }
+            }
+        }
+        
+        if (in_shadow) {
+            shadow_factor *= (1.0 - shadow_intensity);
+        }
+    }
+    
+    return shadow_factor;
+}
+
 void main() {
     vec2 world_pos = v_world_pos;
     
-    // For tile-aligned mode, sample at tile centers
+    // For lighting calculations, use integer tile coordinates to match CPU
+    // The CPU calculates distance from light to integer tile positions
+    vec2 tile_pos = floor(world_pos);
+    
+    // For tile-aligned mode, we still need to determine which tile we're in
     if (u_tile_aligned) {
-        world_pos = floor(world_pos) + vec2(0.5, 0.5);
+        // Use the tile position for distance calculations (matching CPU)
+        world_pos = tile_pos;
     }
     
     // Start with ambient lighting
@@ -88,6 +178,10 @@ void main() {
         
         // Calculate light contribution
         vec3 light_contribution = light_color * attenuation;
+        
+        // Apply shadow attenuation using tile position for consistency
+        float shadow_attenuation = calculateShadowAttenuation(tile_pos, light_pos);
+        light_contribution *= shadow_attenuation;
         
         // Use brightest-wins blending to match CPU np.maximum behavior
         final_color = max(final_color, light_contribution);

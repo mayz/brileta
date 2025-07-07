@@ -1,25 +1,30 @@
 # GPU Lighting System Implementation Plan
 
-## 🎯 CURRENT STATUS - PHASE 1.4: SHADOW IMPLEMENTATION
+## 🎯 CURRENT STATUS - PHASE 1.4: SHADOW IMPLEMENTATION COMPLETED
 
-**CURRENT FOCUS**: Adding tile-based shadow casting to GPU system
+**CURRENT FOCUS**: Shadow performance optimization and directional lighting
 
 **WHAT'S WORKING**:
 - ✅ Point light rendering with proper attenuation
 - ✅ Flicker effects with deterministic noise
 - ✅ Color blending (brightest-wins)
 - ✅ Optimized GPU performance (framebuffer caching, smart uniform updates, light data caching)
+- ✅ Tile-based shadows from actors (player movement creates shadows)
+- ✅ Shadows from terrain/walls (shadow-casting tiles)
+- ✅ Shadow intensity and directionality matching CPU implementation
+- ✅ Visual parity achieved with CPU lighting system
 - ✅ All 492 tests passing
 
-**WHAT'S MISSING**:
-- ❌ Tile-based shadows from actors (player movement)
-- ❌ Shadows from terrain/walls
-- ❌ Shadow intensity and directionality
-
-**NEXT PRIORITIES**:
-- Phase 1.4 - Add shadow casting to match CPU system behavior (current focus)
+**WHAT'S NEXT**:
+- Phase 1.5 - Shadow performance optimization (spatial culling, texture pre-computation)
 - Phase 2.1 - Directional lighting (sunlight) implementation
 - Phase 2.2 - Static/dynamic light separation optimization
+- Phase 3 - Performance benchmarking program
+
+**NEXT PRIORITIES**:
+- Phase 1.5 - Shadow Performance Optimization (current focus)
+- Phase 2.1 - Directional lighting (sunlight) implementation
+- Phase 2.2 - Enhanced static/dynamic light separation with shadow caching
 - Phase 3 - Performance benchmarking program (after full feature parity)
 
 **SHADER ASSETS LOCATION**: All shaders are organized in `assets/shaders/` with subdirectories:
@@ -34,21 +39,42 @@
 
 ### Phase 1: Foundation & Integration (High Priority)
 
-### 🚧 Phase 1.4: Shadow Implementation (High Priority - CURRENT)
+### ✅ Phase 1.4: Shadow Implementation (COMPLETED)
 - **Goal**: Add tile-based shadow casting to GPU system matching CPU behavior
-- **Status**: NOT STARTED 🚧
+- **Status**: COMPLETED ✅
 - **Priority**: 9/10 - Critical for visual parity with CPU system
-- **Current Gap**: GPU system renders lights but no shadows cast by actors/terrain
-- **Deliverables**:
-  - Shadow casting from actors (player movement creates shadows)
-  - Shadow casting from shadow-casting tiles
-  - Directional shadows from light sources
-  - Shadow intensity and blending matching CPU implementation
-  - Configurable shadow quality settings
+- **Achievements**:
+  - ✅ Shadow casting from actors (player movement creates shadows)
+  - ✅ Shadow casting from shadow-casting tiles
+  - ✅ Directional shadows from light sources  
+  - ✅ Shadow intensity and blending matching CPU implementation
+  - ✅ Visual parity achieved with CPU lighting system
+  - ✅ All coordinate alignment issues resolved
+  - ✅ Clean, natural-looking shadows with soft edges
+- **Technical Implementation**:
+  - Added shadow data collection system (`_collect_shadow_casters()`)
+  - Implemented CPU-matching shadow algorithm in fragment shader
+  - Integrated shadow computation with existing lighting pipeline
+  - Used Chebyshev distance and discrete step directions
+  - Added soft edge support with 8-tile adjacent/diagonal shadows
+
+### 🚧 Phase 1.5: Shadow Performance Optimization (Medium Priority - NEXT)
+- **Goal**: Optimize shadow rendering performance while maintaining visual quality
+- **Status**: NOT STARTED 🚧
+- **Priority**: 7/10 - Significant performance gains for shadow-heavy scenes
+- **Sub-phases**:
+  - **1.5a: Spatial Culling** (1 day, 2-3x performance gain)
+    - Filter shadow casters by light radius per-light
+    - Reduce redundant shadow checks
+    - Low risk, high impact optimization
+  - **1.5b: Shadow Texture Pre-computation** (2-3 days, 3-5x performance gain)
+    - Pre-render shadow maps to textures
+    - Sample shadows instead of computing per-pixel
+    - Foundation for static/dynamic light separation
 - **Technical Approach**:
-  - Add shadow data collection similar to light data collection
-  - Implement shadow ray casting in fragment shader or separate pass
-  - Integrate shadow computation with existing lighting pipeline
+  - Modify shadow caster collection to be per-light
+  - Add shadow texture rendering pass
+  - Update fragment shader to sample pre-computed shadows
 
 ### Phase 2: Feature Parity (High Priority)
 
@@ -60,13 +86,16 @@
   - Day/night cycle support
 - Priority: 8/10 - Core environmental lighting functionality
 
-#### 2.2 Static vs Dynamic Light Separation
-- Goal: Implement caching system for optimal performance
+#### 2.2 Enhanced Static vs Dynamic Light Separation
+- Goal: Implement caching system for optimal performance with shadow support
 - Deliverables:
   - Static light pre-computation and caching
   - Dynamic light per-frame updates
   - Cache invalidation on light changes
+  - Shadow texture caching for static lights (builds on Phase 1.5b)
+  - Per-frame shadow updates only for dynamic elements
 - Priority: 7/10 - Performance optimization for scenes with many static lights
+- Dependencies: Phase 1.5b (Shadow Texture Pre-computation) recommended
 
 ### Phase 3: Performance Benchmarking (High Priority)
 - **Goal**: Create comprehensive benchmarking program to compare GPU vs CPU performance
