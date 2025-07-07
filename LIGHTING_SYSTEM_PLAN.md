@@ -25,24 +25,6 @@ This plan outlines the implementation of a GPU-based lighting system to replace 
 
 ### Phase 1: Foundation & Integration (High Priority)
 
-#### 1.1 Merge wip-sunlight Branch (CURRENT)
-- **Goal**: Integrate cleaned-up DirectionalLight support into main branch
-- **Priority**: 9/10 - Unblocks GPU development
-- **Deliverables**:
-  - DirectionalLight class available in lighting system
-  - Sun/moonlight capability in CPU system
-  - Stable, simplified lighting code in main branch
-- **Status**: Ready to execute - CPU cleanup completed
-
-#### 1.2 GPU Infrastructure Setup
-- Goal: Create core GPU lighting architecture
-- Deliverables:
-  - `catley/view/render/lighting/gpu.py` - GPULightingSystem class
-  - Basic compute shader programs
-  - GPU buffer management for light data
-  - Integration with ModernGLGraphicsContext
-- Priority: 10/10 - Enables all future GPU lighting work
-
 #### 1.3 Tile-based Point Light Rendering
 - Goal: GPU-accelerated point lights with identical visual output to CPU system
 - Deliverables:
@@ -418,4 +400,30 @@ This plan provides a clear path to significantly improved lighting performance w
 
 The focus on high-impact phases ensures maximum return on implementation effort, while the comprehensive risk mitigation strategies minimize the chance of integration issues or performance regressions.
 
-**Current Status**: Phase 1.0 CPU cleanup is complete and stable. Ready to proceed with Phase 1.1 (merge to main) and Phase 1.2 (GPU infrastructure setup).
+### ✅ Phase 1.1: Merge wip-sunlight Branch (COMPLETED)
+- **Goal**: Integrate cleaned-up DirectionalLight support into main branch
+- **Priority**: 9/10 - Unblocks GPU development
+- **Status**: COMPLETED ✅
+- **Deliverables**:
+  - DirectionalLight class available in lighting system
+  - Sun/moonlight capability in CPU system
+  - Stable, simplified lighting code in main branch
+
+### ✅ Phase 1.2: GPU Infrastructure Setup (COMPLETED - Jan 2025)
+- **Goal**: Create core GPU lighting architecture
+- **Status**: COMPLETED ✅
+- **Deliverables**:
+  - `catley/view/render/lighting/gpu.py` - GPULightingSystem class ✅
+  - Basic compute shader programs ✅
+  - GPU buffer management for light data ✅
+  - Integration with ModernGLGraphicsContext ✅
+  - Comprehensive unit test suite (21 test cases) ✅
+- **Priority**: 10/10 - Enables all future GPU lighting work
+- **Key Features**:
+  - Hardware detection and graceful fallback to CPU system
+  - GLSL 4.3 compute shaders with 8x8 work groups
+  - Resource management with proper cleanup
+  - Interface-compatible drop-in replacement for CPU system
+  - Handles up to 256 lights with overflow protection
+
+**Current Status**: Phase 1.0, 1.1, and 1.2 complete. Ready to proceed with Phase 1.3 (tile-based point light rendering).
