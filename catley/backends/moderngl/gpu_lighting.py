@@ -323,12 +323,12 @@ class GPULightingSystem(LightingSystem):
                     f"limiting to {self.MAX_LIGHTS}"
                 )
 
-            # Collect shadow casters (use caching like light data)
+            # Collect shadow casters globally (more efficient than per-light collection)
             if (
                 self._cached_shadow_revision != self.revision
                 or self._cached_shadow_casters is None
             ):
-                self._cached_shadow_casters = self._collect_shadow_casters(
+                self._cached_shadow_casters = self._collect_shadow_casters_global(
                     viewport_bounds
                 )
                 self._cached_shadow_revision = self.revision
@@ -551,55 +551,63 @@ class GPULightingSystem(LightingSystem):
 
         return light_data
 
-    def _collect_shadow_casters(self, viewport_bounds: Rect) -> list[float]:
-        """Collect shadow casting objects from the game world.
+    def _collect_shadow_casters_global(self, viewport_bounds: Rect) -> list[float]:
+        """Collect all shadow casters in the viewport globally.
+
+        This method replaces the inefficient per-light approach with a single
+        global collection, letting the GPU shader handle per-light relevance.
+
+        Performance: O(N) vs O(N²) from per-light collection approach.
+
+        Args:
+            viewport_bounds: The viewport bounds for rendering
 
         Returns:
             Flat list of floats representing shadow caster data (2 floats per caster)
-            Format: position.xy for each shadow caster
+            Format: position.xy for each shadow caster in viewport
         """
-        from catley.config import SHADOWS_ENABLED
+        from catley.config import SHADOW_MAX_LENGTH, SHADOWS_ENABLED
 
         if not SHADOWS_ENABLED:
             return []
 
         shadow_casters = []
 
-        # Get shadow-casting actors
+        # Expand viewport bounds to include potential shadow influence
+        expanded_bounds = Rect.from_bounds(
+            x1=viewport_bounds.x1 - SHADOW_MAX_LENGTH,
+            y1=viewport_bounds.y1 - SHADOW_MAX_LENGTH,
+            x2=viewport_bounds.x2 + SHADOW_MAX_LENGTH,
+            y2=viewport_bounds.y2 + SHADOW_MAX_LENGTH,
+        )
+
+        # Get shadow-casting actors in expanded viewport
         if self.game_world.actor_spatial_index:
-            # Get all actors in expanded viewport (including shadow range)
-            margin = 10  # Extra margin for shadow casting range
             actors = self.game_world.actor_spatial_index.get_in_bounds(
-                viewport_bounds.x1 - margin,
-                viewport_bounds.y1 - margin,
-                viewport_bounds.x1 + viewport_bounds.width + margin,
-                viewport_bounds.y1 + viewport_bounds.height + margin,
+                int(expanded_bounds.x1),
+                int(expanded_bounds.y1),
+                int(expanded_bounds.x2),
+                int(expanded_bounds.y2),
             )
 
             for actor in actors:
                 if hasattr(actor, "blocks_movement") and actor.blocks_movement:
                     shadow_casters.extend([float(actor.x), float(actor.y)])
 
-        # Get shadow-casting tiles
+        # Get shadow-casting tiles in expanded viewport
         if self.game_world.game_map:
             from catley.environment import tile_types
 
             game_map = self.game_world.game_map
-            margin = 10  # Extra margin for shadow casting range
 
-            for x in range(
-                max(0, viewport_bounds.x1 - margin),
-                min(
-                    game_map.width, viewport_bounds.x1 + viewport_bounds.width + margin
-                ),
-            ):
-                for y in range(
-                    max(0, viewport_bounds.y1 - margin),
-                    min(
-                        game_map.height,
-                        viewport_bounds.y1 + viewport_bounds.height + margin,
-                    ),
-                ):
+            # Calculate tile bounds within expanded viewport
+            min_x = max(0, int(expanded_bounds.x1))
+            max_x = min(game_map.width, int(expanded_bounds.x2) + 1)
+            min_y = max(0, int(expanded_bounds.y1))
+            max_y = min(game_map.height, int(expanded_bounds.y2) + 1)
+
+            for x in range(min_x, max_x):
+                for y in range(min_y, max_y):
                     tile_id = game_map.tiles[x, y]
                     tile_data = tile_types.get_tile_type_data_by_id(int(tile_id))
                     if tile_data["casts_shadows"]:

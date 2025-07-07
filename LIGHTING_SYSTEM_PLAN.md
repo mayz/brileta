@@ -39,42 +39,68 @@
 
 ### Phase 1: Foundation & Integration (High Priority)
 
-### ✅ Phase 1.4: Shadow Implementation (COMPLETED)
-- **Goal**: Add tile-based shadow casting to GPU system matching CPU behavior
-- **Status**: COMPLETED ✅
-- **Priority**: 9/10 - Critical for visual parity with CPU system
-- **Achievements**:
-  - ✅ Shadow casting from actors (player movement creates shadows)
-  - ✅ Shadow casting from shadow-casting tiles
-  - ✅ Directional shadows from light sources  
-  - ✅ Shadow intensity and blending matching CPU implementation
-  - ✅ Visual parity achieved with CPU lighting system
-  - ✅ All coordinate alignment issues resolved
-  - ✅ Clean, natural-looking shadows with soft edges
-- **Technical Implementation**:
-  - Added shadow data collection system (`_collect_shadow_casters()`)
-  - Implemented CPU-matching shadow algorithm in fragment shader
-  - Integrated shadow computation with existing lighting pipeline
-  - Used Chebyshev distance and discrete step directions
-  - Added soft edge support with 8-tile adjacent/diagonal shadows
-
-### 🚧 Phase 1.5: Shadow Performance Optimization (Medium Priority - NEXT)
+### 🚧 Phase 1.5: Shadow Performance Optimization (Medium Priority - CURRENT)
 - **Goal**: Optimize shadow rendering performance while maintaining visual quality
-- **Status**: NOT STARTED 🚧
+- **Status**: IN PROGRESS 🚧
 - **Priority**: 7/10 - Significant performance gains for shadow-heavy scenes
+
+#### **CRITICAL LESSON LEARNED**: 
+**Always identify the actual bottleneck before optimizing**. The real performance issue is in the fragment shader's nested loops (`O(pixels × lights × shadow_casters)`), not CPU-side data collection.
+
 - **Sub-phases**:
-  - **1.5a: Spatial Culling** (1 day, 2-3x performance gain)
-    - Filter shadow casters by light radius per-light
-    - Reduce redundant shadow checks
-    - Low risk, high impact optimization
-  - **1.5b: Shadow Texture Pre-computation** (2-3 days, 3-5x performance gain)
-    - Pre-render shadow maps to textures
-    - Sample shadows instead of computing per-pixel
-    - Foundation for static/dynamic light separation
-- **Technical Approach**:
-  - Modify shadow caster collection to be per-light
-  - Add shadow texture rendering pass
-  - Update fragment shader to sample pre-computed shadows
+  - **1.5.0: Remove Inefficient CPU Spatial Culling** (30 minutes, correctness fix)
+    - **Status**: NEEDED - Remove the per-light shadow collection that actually makes performance worse
+    - **Problem**: Current implementation does `O(N²)` work (N queries per N lights) vs original `O(N)` approach
+    - **Solution**: Revert to global shadow collection, focus on GPU-side optimizations
+    - **Files to modify**: `/catley/backends/moderngl/gpu_lighting.py`
+  
+  - **1.5.1: GPU-side Spatial Culling** (30 minutes, 2-3x performance gain)
+    - **Target**: Fragment shader bottleneck in nested loops (lines 148-188 in `point_light.frag`)
+    - **Approach**: Add distance-based early exit in fragment shader before expensive shadow computations
+    - **Implementation**: 
+      ```glsl
+      // Before shadow computation loop:
+      if (distance(world_pos, light_pos) > light_radius + SHADOW_MAX_LENGTH) {
+          continue; // Skip shadow checks for this light entirely
+      }
+      ```
+    - **Expected gain**: 2-3x improvement by eliminating irrelevant shadow computations
+    - **Risk**: Very low - simple distance check, maintains visual accuracy
+  
+  - **1.5.2: Shadow Texture Pre-computation** (2-3 days, 5-10x performance gain)
+    - **Target**: Eliminate expensive per-pixel shadow ray casting in fragment shader
+    - **Approach**: Pre-render shadow maps to textures once per frame, sample in lighting pass
+    - **Technical details**:
+      - Create shadow texture render pass before lighting pass
+      - One shadow texture per light (or combined atlas for multiple lights)
+      - Fragment shader samples pre-computed shadows instead of ray-casting
+      - Reduces complexity from `O(pixels × lights × shadow_casters)` to `O(pixels × lights)`
+    - **Foundation**: Enables static/dynamic light separation for Phase 2.2
+    - **Expected gain**: 5-10x improvement in shadow-heavy scenes
+    - **Risk**: Medium - requires new rendering pass and texture management
+  
+  - **1.5.3: Light-space Shadow Mapping** (1-2 weeks, quality + performance)
+    - **Target**: Industry standard shadow mapping with highest quality
+    - **Approach**: Per-light shadow textures with proper depth testing
+    - **Benefits**: Best possible shadow quality, eliminates tile-based limitations
+    - **Dependency**: Builds on shadow texture infrastructure from 1.5.2
+    - **Priority**: Lower - polish phase after core optimizations working
+
+- **Technical Approach (Corrected)**:
+  1. **Remove inefficient CPU collection** (revert per-light approach)
+  2. **Add GPU distance culling** in fragment shader (quick win)
+  3. **Implement shadow texture pipeline** (major performance gain)
+  4. **Upgrade to light-space mapping** (quality enhancement)
+
+- **Performance Analysis**:
+  - **Current bottleneck**: Fragment shader nested loops `for lights { for shadow_casters { /* expensive ray casting */ } }`
+  - **Why CPU optimization failed**: Optimized data collection (fast) instead of shadow computation (slow)
+  - **Correct approach**: Target the actual bottleneck in GPU shader processing
+
+- **Expected Total Gains**: 
+  - GPU culling: 2-3x improvement (quick win)
+  - Shadow textures: Additional 3-5x improvement on top (major win)
+  - Combined: 6-15x improvement in shadow-heavy scenes
 
 ### Phase 2: Feature Parity (High Priority)
 
@@ -400,6 +426,25 @@ struct LightData {
 - Test coverage of new functionality
 
 ## Completed Phases
+
+### ✅ Phase 1.4: Shadow Implementation (COMPLETED)
+- **Goal**: Add tile-based shadow casting to GPU system matching CPU behavior
+- **Status**: COMPLETED ✅
+- **Priority**: 9/10 - Critical for visual parity with CPU system
+- **Achievements**:
+  - ✅ Shadow casting from actors (player movement creates shadows)
+  - ✅ Shadow casting from shadow-casting tiles
+  - ✅ Directional shadows from light sources  
+  - ✅ Shadow intensity and blending matching CPU implementation
+  - ✅ Visual parity achieved with CPU lighting system
+  - ✅ All coordinate alignment issues resolved
+  - ✅ Clean, natural-looking shadows with soft edges
+- **Technical Implementation**:
+  - Added shadow data collection system (`_collect_shadow_casters()`)
+  - Implemented CPU-matching shadow algorithm in fragment shader
+  - Integrated shadow computation with existing lighting pipeline
+  - Used Chebyshev distance and discrete step directions
+  - Added soft edge support with 8-tile adjacent/diagonal shadows
 
 ### ✅ Phase 1.0: CPU Code Cleanup & Stabilization (COMPLETED)
 - **Goal**: Remove complex spillover code and stabilize for merge

@@ -51,8 +51,16 @@ float noise2d(vec2 coord) {
 }
 
 // Calculate shadow attenuation from shadow casters matching CPU algorithm
-float calculateShadowAttenuation(vec2 world_pos, vec2 light_pos) {
+float calculateShadowAttenuation(vec2 world_pos, vec2 light_pos, float light_radius) {
     float shadow_factor = 1.0;  // No shadow by default
+    
+    // Early exit: Skip shadow computation if pixel is too far from light
+    // This eliminates expensive shadow computations for irrelevant lights
+    float distance_to_light = distance(world_pos, light_pos);
+    float max_shadow_influence = light_radius + float(u_shadow_max_length);
+    if (distance_to_light > max_shadow_influence) {
+        return 1.0; // No shadow influence
+    }
     
     // Check each shadow caster
     for (int i = 0; i < u_shadow_caster_count && i < 64; i++) {
@@ -180,7 +188,7 @@ void main() {
         vec3 light_contribution = light_color * attenuation;
         
         // Apply shadow attenuation using tile position for consistency
-        float shadow_attenuation = calculateShadowAttenuation(tile_pos, light_pos);
+        float shadow_attenuation = calculateShadowAttenuation(tile_pos, light_pos, light_radius);
         light_contribution *= shadow_attenuation;
         
         // Use brightest-wins blending to match CPU np.maximum behavior
