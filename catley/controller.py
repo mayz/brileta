@@ -33,6 +33,7 @@ from .view.animation import AnimationManager
 from .view.frame_manager import FrameManager
 from .view.render.graphics import GraphicsContext
 from .view.render.lighting.cpu import CPULightingSystem
+from .view.render.lighting.gpu import GPULightingSystem
 from .view.ui.overlays import OverlaySystem
 
 
@@ -69,7 +70,12 @@ class Controller:
     def __init__(self, app: App, graphics: GraphicsContext) -> None:
         self.app = app
         self.gw = GameWorld(config.MAP_WIDTH, config.MAP_HEIGHT)
-        self.gw.lighting_system = CPULightingSystem(self.gw)
+
+        if config.GPU_LIGHTING_ENABLED:
+            cpu_fallback = CPULightingSystem(self.gw)
+            self.gw.lighting_system = GPULightingSystem(self.gw, graphics, cpu_fallback)
+        else:
+            self.gw.lighting_system = CPULightingSystem(self.gw)
 
         self.graphics = graphics
         self.coordinate_converter = graphics.coordinate_converter

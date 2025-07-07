@@ -7,6 +7,8 @@ from catley.util.caching import ResourceCache
 from catley.util.glyph_buffer import GlyphBuffer
 from catley.util.tilesets import unicode_to_cp437
 
+from .shader_manager import ShaderManager
+
 # Vertex structure for rendering
 VERTEX_DTYPE = np.dtype(
     [
@@ -48,6 +50,7 @@ class TextureRenderer:
         self.atlas_texture = atlas_texture
         self.tile_dimensions = tile_dimensions
         self.uv_map = uv_map
+        self.shader_manager = ShaderManager(mgl_context)
         self.SOLID_BLOCK_CHAR = 9608  # Unicode █ character
 
         # Pre-compute unicode_to_cp437 mapping for common characters (0-255)
@@ -97,51 +100,8 @@ class TextureRenderer:
         This shader normalizes coordinates to the texture's own size and does NOT
         flip the Y-axis.
         """
-        vertex_shader = """
-            #version 330
-            in vec2 in_vert;
-            in vec2 in_uv;
-            in vec4 in_fg_color;
-            in vec4 in_bg_color;
-
-            out vec2 v_uv;
-            out vec4 v_fg_color;
-            out vec4 v_bg_color;
-
-            uniform vec2 u_texture_size;
-
-            void main() {
-                v_uv = in_uv;
-                v_fg_color = in_fg_color;
-                v_bg_color = in_bg_color;
-
-                float x = (in_vert.x / u_texture_size.x) * 2.0 - 1.0;
-                float y = (in_vert.y / u_texture_size.y) * 2.0 - 1.0;
-                gl_Position = vec4(x, y, 0.0, 1.0);
-            }
-        """
-        fragment_shader = """
-            #version 330
-            uniform sampler2D u_atlas;
-
-            in vec2 v_uv;
-            in vec4 v_fg_color;
-            in vec4 v_bg_color;
-
-            out vec4 f_color;
-
-            void main() {
-                // Sample the character tile from the atlas
-                float char_alpha = texture(u_atlas, v_uv).a;
-
-                // Mix foreground and background colors based on texture alpha.
-                // If char_alpha is 1.0 (opaque pixel), the result is v_fg_color.
-                // If char_alpha is 0.0 (transparent pixel), the result is v_bg_color.
-                f_color = mix(v_bg_color, v_fg_color, char_alpha);
-            }
-        """
-        program = self.mgl_context.program(
-            vertex_shader=vertex_shader, fragment_shader=fragment_shader
+        program = self.shader_manager.create_program(
+            "glyph/render.vert", "glyph/render.frag", "texture_renderer"
         )
         program["u_atlas"].value = 0
         return program

@@ -16,7 +16,7 @@ All GPU resources (textures, framebuffers, VBOs, VAOs) are created once and reus
 - VBO/VAO pairs: Persistent vertex buffers for batched rendering
 - Gradient textures: Pre-computed environmental effect textures
 
-**Implementation:** 
+**Implementation:**
 - `ModernGLGraphicsContext` manages the FBO cache via `_get_or_create_render_target()`
 - Resources are only recreated when dimensions change
 - Proper cleanup handled during shutdown
@@ -94,6 +94,12 @@ Batched renderer for pre-rendered UI textures.
 - Single GPU upload per frame
 
 ### Shader Pipeline
+
+**Shader Assets Location:** All shaders are stored in `assets/shaders/` with organized subdirectories:
+- `glyph/` - Character rendering shaders
+- `lighting/` - GPU lighting system shaders
+- `screen/` - Main screen rendering shaders
+- `ui/` - User interface rendering shaders
 
 #### Screen Vertex Shader
 ```glsl

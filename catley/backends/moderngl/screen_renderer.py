@@ -1,6 +1,8 @@
 import moderngl
 import numpy as np
 
+from .shader_manager import ShaderManager
+
 # Maximum number of quads (2 triangles per quad) to draw per frame.
 MAX_QUADS = 10000
 
@@ -24,6 +26,7 @@ class ScreenRenderer:
     ) -> None:
         self.mgl_context = mgl_context
         self.atlas_texture = atlas_texture
+        self.shader_manager = ShaderManager(mgl_context)
 
         # Create shader program
         self.screen_program = self._create_screen_shader_program()
@@ -47,46 +50,8 @@ class ScreenRenderer:
 
         Note: This shader does NOT flip the Y-axis, consistent with TextureRenderer.
         Coordinates are expected to already be in the correct coordinate system."""
-        vertex_shader = """
-            #version 330
-            // Renders vertices to the screen, normalizing pixel coordinates
-            // to clip space with letterboxing support.
-            in vec2 in_vert;       // Input vertex position in PIXELS
-            in vec2 in_uv;
-            in vec4 in_color;
-
-            out vec2 v_uv;
-            out vec4 v_color;
-
-            uniform vec4 u_letterbox;   // (offset_x, offset_y, scaled_w, scaled_h)
-
-            void main() {
-                v_uv = in_uv;
-                v_color = in_color;
-
-                // Adjust coordinates for letterboxing offset
-                vec2 adjusted_pos = in_vert - u_letterbox.xy;
-
-                // Normalize to letterbox space, then to clip space
-                float x = (adjusted_pos.x / u_letterbox.z) * 2.0 - 1.0;
-                float y = (1.0 - (adjusted_pos.y / u_letterbox.w)) * 2.0 - 1.0;
-
-                gl_Position = vec4(x, y, 0.0, 1.0);
-            }
-        """
-        fragment_shader = """
-            #version 330
-            in vec2 v_uv;
-            in vec4 v_color;
-            out vec4 f_color;
-            uniform sampler2D u_atlas;
-            void main() {
-                vec4 tex_color = texture(u_atlas, v_uv);
-                f_color = tex_color * v_color;
-            }
-        """
-        program = self.mgl_context.program(
-            vertex_shader=vertex_shader, fragment_shader=fragment_shader
+        program = self.shader_manager.create_program(
+            "screen/main.vert", "screen/main.frag", "screen_renderer"
         )
         program["u_atlas"].value = 0
         return program

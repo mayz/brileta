@@ -130,6 +130,9 @@ MAX_NUM_ROOMS = 3
 # LIGHTING SYSTEM
 # =============================================================================
 
+# GPU vs CPU lighting system selection
+GPU_LIGHTING_ENABLED = False  # Use GPU lighting when available, fallback to CPU
+
 # Generic light source defaults
 DEFAULT_LIGHT_COLOR = (255, 255, 255)  # Pure white
 DEFAULT_FLICKER_SPEED = 3.0
