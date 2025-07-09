@@ -1,31 +1,12 @@
 # GPU Lighting System Implementation Plan
 
-## 🎯 CURRENT STATUS - PHASE 1.4: SHADOW IMPLEMENTATION COMPLETED
-
-**CURRENT FOCUS**: Shadow performance optimization and directional lighting
-
-**WHAT'S WORKING**:
-- ✅ Point light rendering with proper attenuation
-- ✅ Flicker effects with deterministic noise
-- ✅ Color blending (brightest-wins)
-- ✅ Optimized GPU performance (framebuffer caching, smart uniform updates, light data caching)
-- ✅ Tile-based shadows from actors (player movement creates shadows)
-- ✅ Shadows from terrain/walls (shadow-casting tiles)
-- ✅ Shadow intensity and directionality matching CPU implementation
-- ✅ Visual parity achieved with CPU lighting system
-- ✅ All 492 tests passing
-
 **WHAT'S NEXT**:
-- Phase 1.5 - Shadow performance optimization (spatial culling, texture pre-computation)
 - Phase 2.1 - Directional lighting (sunlight) implementation
+  - Step 1: Add sun uniforms and sky exposure texture to GPU shader
+  - Step 2: Decide on directional shadow implementation timing
+  - Step 3: Stabilize and ensure GPU/CPU visual parity
 - Phase 2.2 - Static/dynamic light separation optimization
 - Phase 3 - Performance benchmarking program
-
-**NEXT PRIORITIES**:
-- Phase 1.5 - Shadow Performance Optimization (current focus)
-- Phase 2.1 - Directional lighting (sunlight) implementation
-- Phase 2.2 - Enhanced static/dynamic light separation with shadow caching
-- Phase 3 - Performance benchmarking program (after full feature parity)
 
 **SHADER ASSETS LOCATION**: All shaders are organized in `assets/shaders/` with subdirectories:
 - `glyph/` - Character rendering (render.vert, render.frag)
@@ -33,95 +14,86 @@
 - `screen/` - Main screen rendering (main.vert, main.frag)
 - `ui/` - User interface rendering (texture.vert, texture.frag)
 
----
-
 ## Implementation Phases
-
-### Phase 1: Foundation & Integration (High Priority)
-
-### 🚧 Phase 1.5: Shadow Performance Optimization (Medium Priority - CURRENT)
-- **Goal**: Optimize shadow rendering performance while maintaining visual quality
-- **Status**: IN PROGRESS 🚧
-- **Priority**: 7/10 - Significant performance gains for shadow-heavy scenes
-
-#### **CRITICAL LESSON LEARNED**: 
-**Always identify the actual bottleneck before optimizing**. The real performance issue is in the fragment shader's nested loops (`O(pixels × lights × shadow_casters)`), not CPU-side data collection.
-
-- **Sub-phases**:
-  - **1.5.0: Remove Inefficient CPU Spatial Culling** (30 minutes, correctness fix)
-    - **Status**: NEEDED - Remove the per-light shadow collection that actually makes performance worse
-    - **Problem**: Current implementation does `O(N²)` work (N queries per N lights) vs original `O(N)` approach
-    - **Solution**: Revert to global shadow collection, focus on GPU-side optimizations
-    - **Files to modify**: `/catley/backends/moderngl/gpu_lighting.py`
-  
-  - **1.5.1: GPU-side Spatial Culling** (30 minutes, 2-3x performance gain)
-    - **Target**: Fragment shader bottleneck in nested loops (lines 148-188 in `point_light.frag`)
-    - **Approach**: Add distance-based early exit in fragment shader before expensive shadow computations
-    - **Implementation**: 
-      ```glsl
-      // Before shadow computation loop:
-      if (distance(world_pos, light_pos) > light_radius + SHADOW_MAX_LENGTH) {
-          continue; // Skip shadow checks for this light entirely
-      }
-      ```
-    - **Expected gain**: 2-3x improvement by eliminating irrelevant shadow computations
-    - **Risk**: Very low - simple distance check, maintains visual accuracy
-  
-  - **1.5.2: Shadow Texture Pre-computation** (2-3 days, 5-10x performance gain)
-    - **Target**: Eliminate expensive per-pixel shadow ray casting in fragment shader
-    - **Approach**: Pre-render shadow maps to textures once per frame, sample in lighting pass
-    - **Technical details**:
-      - Create shadow texture render pass before lighting pass
-      - One shadow texture per light (or combined atlas for multiple lights)
-      - Fragment shader samples pre-computed shadows instead of ray-casting
-      - Reduces complexity from `O(pixels × lights × shadow_casters)` to `O(pixels × lights)`
-    - **Foundation**: Enables static/dynamic light separation for Phase 2.2
-    - **Expected gain**: 5-10x improvement in shadow-heavy scenes
-    - **Risk**: Medium - requires new rendering pass and texture management
-  
-  - **1.5.3: Light-space Shadow Mapping** (1-2 weeks, quality + performance)
-    - **Target**: Industry standard shadow mapping with highest quality
-    - **Approach**: Per-light shadow textures with proper depth testing
-    - **Benefits**: Best possible shadow quality, eliminates tile-based limitations
-    - **Dependency**: Builds on shadow texture infrastructure from 1.5.2
-    - **Priority**: Lower - polish phase after core optimizations working
-
-- **Technical Approach (Corrected)**:
-  1. **Remove inefficient CPU collection** (revert per-light approach)
-  2. **Add GPU distance culling** in fragment shader (quick win)
-  3. **Implement shadow texture pipeline** (major performance gain)
-  4. **Upgrade to light-space mapping** (quality enhancement)
-
-- **Performance Analysis**:
-  - **Current bottleneck**: Fragment shader nested loops `for lights { for shadow_casters { /* expensive ray casting */ } }`
-  - **Why CPU optimization failed**: Optimized data collection (fast) instead of shadow computation (slow)
-  - **Correct approach**: Target the actual bottleneck in GPU shader processing
-
-- **Expected Total Gains**: 
-  - GPU culling: 2-3x improvement (quick win)
-  - Shadow textures: Additional 3-5x improvement on top (major win)
-  - Combined: 6-15x improvement in shadow-heavy scenes
 
 ### Phase 2: Feature Parity (High Priority)
 
-#### 2.1 Directional Lighting (Sunlight)
-- Goal: GPU implementation of directional lights from wip-sunlight
-- Deliverables:
-  - Directional light fragment shader implementation
-  - Sky exposure calculations
-  - Day/night cycle support
-- Priority: 8/10 - Core environmental lighting functionality
+#### **Phase 2.1: GPU Directional Light (Sunlight)**
+- **Goal**: Implement GPU-accelerated directional lighting (sunlight) with visual parity to the CPU system.
+- **Priority**: 10/10 - Core environmental lighting functionality.
 
-#### 2.2 Enhanced Static vs Dynamic Light Separation
-- Goal: Implement caching system for optimal performance with shadow support
-- Deliverables:
-  - Static light pre-computation and caching
-  - Dynamic light per-frame updates
-  - Cache invalidation on light changes
-  - Shadow texture caching for static lights (builds on Phase 1.5b)
-  - Per-frame shadow updates only for dynamic elements
-- Priority: 7/10 - Performance optimization for scenes with many static lights
-- Dependencies: Phase 1.5b (Shadow Texture Pre-computation) recommended
+##### Step 1: Implement GPU Directional Light Shader Support
+- **Task**: Add support for a single, global directional light to the lighting fragment shader.
+- **Data Flow Clarification**:
+    - Directional lights are global and fundamentally different from point lights. They must **not** be included in the point light data array (`u_light_positions`, etc.).
+    - **Action**: In `GPULightingSystem`, modify the `_collect_light_data()` method to **explicitly filter out and ignore** any `DirectionalLight` instances.
+    - **Action**: In `GPULightingSystem._compute_lightmap_gpu()`, before setting uniforms, add logic to find the active `DirectionalLight` in `self.game_world.lights`. If one is found, set the new global sun uniforms. If not, set them to default "off" values (e.g., intensity 0.0).
+- **Implementation Details**:
+    1. **Add Uniforms to `lighting/point_light.frag`**:
+        - `uniform vec2 u_sun_direction;` - Normalized direction vector from `DirectionalLight`.
+        - `uniform vec3 u_sun_color;` - RGB color in 0.0-1.0 range.
+        - `uniform float u_sun_intensity;` - Base intensity multiplier.
+        - `uniform sampler2D u_sky_exposure_map;` - Texture containing per-tile sky exposure values.
+    2. **Implement Sky Exposure Texture**:
+        - The shader needs per-tile `sky_exposure` data, which is stored per-region on the CPU. This data must be passed to the GPU as a texture.
+        - **Action**: In `GPULightingSystem`, create a new method `_update_sky_exposure_texture()`. This method will:
+            1. Create a NumPy array (`np.float32`) with the same dimensions as the `game_map`.
+            2. Iterate through `game_map.tile_to_region_id` and use `game_map.regions` to populate the array with the correct `sky_exposure` value for each tile. This ensures an exact 1:1 match with the CPU logic.
+            3. Upload this NumPy array to a persistent `moderngl.Texture` (e.g., `self._sky_exposure_texture`). The format should be single-channel float (`'f1'` is suitable).
+        - This texture should only be recreated when `game_map.structural_revision` changes to optimize performance.
+        - **Action**: In `GPULightingSystem._compute_lightmap_gpu()`, bind this texture to the `u_sky_exposure_map` uniform on a free texture unit (e.g., `location = 1`).
+    3. **Shader Logic Updates**:
+        - In `point_light.frag`, after calculating point light contributions, sample the sky exposure for the current fragment: `float sky_exposure = texture(u_sky_exposure_map, v_uv).r;`.
+        - If `sky_exposure > 0`, calculate the sun's contribution: `vec3 sun_contribution = u_sun_color * u_sun_intensity * pow(sky_exposure, SKY_EXPOSURE_POWER);`.
+        - Blend the sun's contribution with the existing light color using a "brightest-wins" approach: `final_color = max(final_color, sun_contribution);`.
+
+##### Step 2: Stabilize and Finalize
+- **Task**: Test thoroughly, remove all debug code, and confirm visual parity with the `CPULightingSystem`.
+- **Testing Protocol**:
+    1.  Toggle `GPU_LIGHTING_ENABLED` between `True` and `False` in `config.py`.
+    2.  Compare screenshots in various scenarios: pure outdoor, pure indoor, and indoor/outdoor transitions.
+    3.  Verify that performance metrics remain stable and no new memory leaks are introduced.
+- **Success Criteria**:
+    -   Visual output is nearly identical between GPU and CPU modes for directional lighting.
+    -   No significant performance regressions.
+    -   Code is clean, documented, and production-ready.
+- **Outcome**: Fully functional GPU directional lighting matching CPU behavior. **This is a major milestone.**
+
+---
+
+#### **Phase 2.2: GPU Directional Shadows**
+- **Goal**: Add support for casting shadows from the directional light source.
+- **Priority**: 8/10 - Critical for realistic outdoor scenes.
+- **Prerequisite**: Phase 2.1 must be complete and stable.
+
+##### Step 1: Port Directional Shadow Algorithm to GPU
+- **Task**: Implement the logic from the CPU's `_apply_directional_shadows()` and `_cast_directional_shadow()` methods in the lighting fragment shader.
+- **Implementation Details**:
+    1.  **Uniforms**: Add shadow-related uniforms to `point_light.frag` if they don't already exist from the point-light shadow implementation (e.g., `u_shadow_intensity`, `u_shadow_max_length`).
+    2.  **Shader Logic**:
+        - The directional shadow algorithm is simpler than point-light shadows. For each fragment, iterate from the shadow caster's position *away* from the sun's direction.
+        - In the shader, after all lighting contributions are calculated, determine if the current fragment is in a shadow cast by any `u_shadow_caster_positions`.
+        - Apply shadows only in areas with `sky_exposure > 0.1` to match CPU behavior.
+        - The final light color should be multiplied by the shadow factor: `final_color *= (1.0 - shadow_intensity);`.
+
+##### Step 2: Testing and Validation
+- **Unit Tests Required** (in a new `TestGPUDirectionalShadows` class):
+    -   Test that shadows are cast in the correct direction based on the sun's angle.
+    -   Verify shadows only appear in outdoor areas.
+    -   Test that shadow intensity and length match the CPU implementation.
+- **Integration Tests Required**: Visually confirm that directional shadows interact correctly with point light shadows and environmental lighting.
+
+---
+
+#### **Phase 2.3: Enhanced Static vs Dynamic Light Separation**
+- **Goal**: Implement a caching system for optimal performance with full shadow support.
+- **Priority**: 7/10 - Performance optimization for scenes with many static lights.
+- **Deliverables**:
+    -   Pre-computation and caching of a static light texture (ambient + static point lights + directional lights).
+    -   Per-frame rendering of a dynamic light texture (moving/flickering lights).
+    -   A final composition pass that blends the static and dynamic textures.
+    -   Cache invalidation on any change to static lights or map structure.
+    -   Shadows from static objects are baked into the static texture; shadows from dynamic objects are rendered per-frame.
 
 ### Phase 3: Performance Benchmarking (High Priority)
 - **Goal**: Create comprehensive benchmarking program to compare GPU vs CPU performance
@@ -434,7 +406,7 @@ struct LightData {
 - **Achievements**:
   - ✅ Shadow casting from actors (player movement creates shadows)
   - ✅ Shadow casting from shadow-casting tiles
-  - ✅ Directional shadows from light sources  
+  - ✅ Directional shadows from light sources
   - ✅ Shadow intensity and blending matching CPU implementation
   - ✅ Visual parity achieved with CPU lighting system
   - ✅ All coordinate alignment issues resolved
