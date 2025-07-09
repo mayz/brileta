@@ -692,12 +692,16 @@ class GPULightingSystem(LightingSystem):
             (game_map.height, game_map.width), dtype=np.float32
         )
 
-        # Populate sky exposure data from regions
+        # Populate sky exposure data from regions, respecting tile transparency
         for y in range(game_map.height):
             for x in range(game_map.width):
                 region = game_map.get_region_at((x, y))
                 if region:
-                    sky_exposure_data[y, x] = region.sky_exposure
+                    # Non-transparent tiles block all sunlight
+                    if game_map.transparent[x, y]:
+                        sky_exposure_data[y, x] = region.sky_exposure
+                    else:
+                        sky_exposure_data[y, x] = 0.0  # Block all sunlight
 
         # Release old texture if it exists
         if self._sky_exposure_texture is not None:

@@ -143,6 +143,78 @@ float calculateShadowAttenuation(vec2 world_pos, vec2 light_pos, float light_rad
     return shadow_factor;
 }
 
+// Calculate directional shadow attenuation (sun/moon shadows)
+float calculateDirectionalShadowAttenuation(vec2 world_pos, float sky_exposure) {
+    // Only apply directional shadows in outdoor areas
+    if (sky_exposure <= 0.1 || u_sun_intensity <= 0.0) {
+        return 1.0; // No directional shadows
+    }
+    
+    float shadow_factor = 1.0;
+    
+    // Get shadow direction (opposite of sun direction)
+    vec2 shadow_direction = -normalize(u_sun_direction);
+    
+    // Check each shadow caster for directional shadows
+    for (int i = 0; i < u_shadow_caster_count && i < 64; i++) {
+        vec2 caster_pos = vec2(u_shadow_caster_positions[i * 2], u_shadow_caster_positions[i * 2 + 1]);
+        
+        // Check if world_pos is in the shadow path from this caster
+        float max_shadow_length = min(float(u_shadow_max_length), 12.0); // Longer shadows for visibility
+        float base_intensity = u_shadow_intensity * 1.2; // Stronger than torch shadows for visibility
+        
+        bool in_shadow = false;
+        float shadow_intensity = 0.0;
+        
+        // Cast shadow in normalized direction
+        for (int j = 1; j <= int(max_shadow_length); j++) {
+            vec2 shadow_pos = caster_pos + shadow_direction * float(j);
+            
+            // Check if world_pos matches this shadow position (core shadow)
+            if (abs(world_pos.x - shadow_pos.x) < 0.5 && abs(world_pos.y - shadow_pos.y) < 0.5) {
+                // Calculate falloff with distance
+                float distance_falloff = 1.0;
+                if (u_shadow_falloff_enabled) {
+                    distance_falloff = 1.0 - (float(j - 1) / max_shadow_length);
+                }
+                shadow_intensity = max(shadow_intensity, base_intensity * distance_falloff);
+                in_shadow = true;
+            }
+            
+            // Add softer edges for first 2 shadow tiles (like CPU)
+            if (j <= 2) {
+                float edge_intensity = base_intensity * 0.5; // 50% for more visible edges
+                if (u_shadow_falloff_enabled) {
+                    float distance_falloff = 1.0 - (float(j - 1) / max_shadow_length);
+                    edge_intensity *= distance_falloff;
+                }
+                
+                // Check 4 adjacent positions (not diagonal for directional shadows)
+                vec2 edge_offsets[4] = vec2[4](
+                    vec2(0.0, 1.0), vec2(0.0, -1.0), vec2(1.0, 0.0), vec2(-1.0, 0.0)
+                );
+                
+                for (int k = 0; k < 4; k++) {
+                    vec2 edge_pos = shadow_pos + edge_offsets[k];
+                    if (abs(world_pos.x - edge_pos.x) < 0.5 && abs(world_pos.y - edge_pos.y) < 0.5) {
+                        // Don't shadow the caster itself
+                        if (!(abs(edge_pos.x - caster_pos.x) < 0.1 && abs(edge_pos.y - caster_pos.y) < 0.1)) {
+                            shadow_intensity = max(shadow_intensity, edge_intensity);
+                            in_shadow = true;
+                        }
+                    }
+                }
+            }
+        }
+        
+        if (in_shadow) {
+            shadow_factor *= (1.0 - shadow_intensity);
+        }
+    }
+    
+    return shadow_factor;
+}
+
 void main() {
     vec2 world_pos = v_world_pos;
     
@@ -209,15 +281,30 @@ void main() {
         vec2 map_uv = v_uv;  // The texture coordinates should already be correct
         float sky_exposure = texture(u_sky_exposure_map, map_uv).r;
         
-        if (sky_exposure > 0.0) {
-            // Apply non-linear sky exposure curve
+        if (sky_exposure > 0.1) {
+            // Full outdoor sunlight for high sky exposure
             float effective_exposure = pow(sky_exposure, u_sky_exposure_power);
             
             // Calculate sun contribution
             vec3 sun_contribution = u_sun_color * u_sun_intensity * effective_exposure;
             
+            // Apply directional shadows in outdoor areas
+            float directional_shadow_attenuation = calculateDirectionalShadowAttenuation(tile_pos, sky_exposure);
+            sun_contribution *= directional_shadow_attenuation;
+            
             // Use brightest-wins blending with point lights
             final_color = max(final_color, sun_contribution);
+        } else if (sky_exposure > 0.0) {
+            // Light spillover for areas with minimal sky exposure (open doors, etc.)
+            // Increase spillover intensity to make it more visible
+            float spillover_multiplier = 3.0; // Make spillover 3x more intense
+            float spillover_exposure = sky_exposure * spillover_multiplier;
+            
+            // Calculate spillover sun contribution
+            vec3 spillover_contribution = u_sun_color * u_sun_intensity * spillover_exposure;
+            
+            // Use brightest-wins blending with point lights
+            final_color = max(final_color, spillover_contribution);
         }
     }
     

@@ -10,27 +10,25 @@
 
 ### Phase 2: Feature Parity (High Priority)
 
-#### **Phase 2.2: GPU Directional Shadows**
-- **Goal**: Add support for casting shadows from the directional light source.
-- **Priority**: 8/10 - Critical for realistic outdoor scenes.
-- **Prerequisite**: Phase 2.1 must be complete and stable.
+#### **Phase 2.25: Fix Sunlight Leakage Through Non-Transparent Tiles**
+- **Goal**: Fix sunlight streaming through closed doors and solid walls in GPU system.
+- **Priority**: 9/10 - Critical bug fix for realistic lighting behavior.
+- **Status**: COMPLETED ✅
 
-##### Step 1: Port Directional Shadow Algorithm to GPU
-- **Task**: Implement the logic from the CPU's `_apply_directional_shadows()` and `_cast_directional_shadow()` methods in the lighting fragment shader.
-- **Implementation Details**:
-    1.  **Uniforms**: Add shadow-related uniforms to `point_light.frag` if they don't already exist from the point-light shadow implementation (e.g., `u_shadow_intensity`, `u_shadow_max_length`).
-    2.  **Shader Logic**:
-        - The directional shadow algorithm is simpler than point-light shadows. For each fragment, iterate from the shadow caster's position *away* from the sun's direction.
-        - In the shader, after all lighting contributions are calculated, determine if the current fragment is in a shadow cast by any `u_shadow_caster_positions`.
-        - Apply shadows only in areas with `sky_exposure > 0.1` to match CPU behavior.
-        - The final light color should be multiplied by the shadow factor: `final_color *= (1.0 - shadow_intensity);`.
+##### Root Cause and Solution
+- **Problem**: GPU sky exposure texture only used region data, ignoring individual tile transparency
+- **Solution**: Modified `_update_sky_exposure_texture()` to respect tile transparency
+- **Fix**: Non-transparent tiles now get `sky_exposure = 0.0` regardless of region
+- **Result**: Closed doors and walls completely block sunlight as expected
 
-##### Step 2: Testing and Validation
-- **Unit Tests Required** (in a new `TestGPUDirectionalShadows` class):
-    -   Test that shadows are cast in the correct direction based on the sun's angle.
-    -   Verify shadows only appear in outdoor areas.
-    -   Test that shadow intensity and length match the CPU implementation.
-- **Integration Tests Required**: Visually confirm that directional shadows interact correctly with point light shadows and environmental lighting.
+##### Implementation
+- **File**: `/catley/backends/moderngl/gpu_lighting.py`
+- **Change**: Added transparency check in sky exposure texture generation
+- **Logic**: `sky_exposure = region.sky_exposure if transparent else 0.0`
+
+##### Testing Status
+- **Unit Tests**: Added `test_sky_exposure_texture_respects_tile_transparency()`
+- **Remaining Work**: Fix existing test mocks to include transparency data
 
 ---
 
@@ -348,118 +346,11 @@ struct LightData {
 
 ## Completed Phases
 
-### ✅ Phase 1.4: Shadow Implementation (COMPLETED)
-- **Goal**: Add tile-based shadow casting to GPU system matching CPU behavior
-- **Status**: COMPLETED ✅
-- **Priority**: 9/10 - Critical for visual parity with CPU system
-- **Achievements**:
-  - ✅ Shadow casting from actors (player movement creates shadows)
-  - ✅ Shadow casting from shadow-casting tiles
-  - ✅ Directional shadows from light sources
-  - ✅ Shadow intensity and blending matching CPU implementation
-  - ✅ Visual parity achieved with CPU lighting system
-  - ✅ All coordinate alignment issues resolved
-  - ✅ Clean, natural-looking shadows with soft edges
-- **Technical Implementation**:
-  - Added shadow data collection system (`_collect_shadow_casters()`)
-  - Implemented CPU-matching shadow algorithm in fragment shader
-  - Integrated shadow computation with existing lighting pipeline
-  - Used Chebyshev distance and discrete step directions
-  - Added soft edge support with 8-tile adjacent/diagonal shadows
-
-### ✅ Phase 1.0: CPU Code Cleanup & Stabilization (COMPLETED)
-- **Goal**: Remove complex spillover code and stabilize for merge
-- **Status**: COMPLETED ✅
-- **Achievements**:
-  - Removed 6 complex spillover methods from cpu.py (341 line reduction, exceeded ~300 line target)
-  - Simplified spillover system to basic outdoor→indoor light streaming only
-  - Eliminated crashes and game-breaking bugs
-  - All 444 tests pass, all quality checks pass
-  - Core functionality preserved: torch lighting, directional sunlight, shadows, FOV integration
-- **Files Modified**:
-  - `/catley/view/render/lighting/cpu.py` - Removed complex spillover methods
-  - `/catley/game/game_world.py` - Removed forced starting room outdoor setup
-
-### ✅ Room Generation Enhancement (COMPLETED)
-- **Goal**: Randomize outdoor room distribution instead of fixed starting room
-- **Status**: COMPLETED ✅
-- **Changes**:
-  - Each room now has 20% probability of being outdoor (instead of just starting room)
-  - Uses `MapRegion.create_outdoor_region()` and `create_indoor_region()` factory methods
-  - Outdoor rooms get proper `sky_exposure=1.0` for sunlight system
-- **Files Modified**:
-  - `/catley/environment/generators.py` - Added random outdoor room generation
-  - `/catley/game/game_world.py` - Removed starting room outdoor forcing
-
-### ✅ Visual Bug Fix: Outdoor Tile Colors (COMPLETED)
-- **Goal**: Fix outdoor floor tiles appearing blue outside FOV
-- **Status**: COMPLETED ✅
-- **Problem Solved**: Outdoor room floor tiles were using indoor `DARK_GROUND` color instead of `OUTDOOR_DARK_GROUND`
-- **Solution**: Extended region-aware appearance system to include floor tiles (previously only boulders)
-- **Files Modified**:
-  - `/catley/environment/map.py` - Added floor tiles to region-aware color system
-
-### ✅ Phase 1.0a: Investigation Results (COMPLETED)
-- **Goal**: Test and refine outdoor sunlight system
-- **Status**: COMPLETED - Revealed fundamental architectural issues
-- **Key Findings**:
-  - CPU approach fights against natural light physics
-  - 12+ spillover methods create unmaintainable complexity
-  - Visual bugs persist despite extensive debugging
-  - **Strategic Decision**: Simplify CPU, fast-track GPU physics implementation
-
 ## Conclusion
 
 This plan provides a clear path to significantly improved lighting performance while maintaining the existing game architecture. The phased approach allows for incremental implementation, testing, and validation at each stage. The dual rendering capability (tile-based and continuous) ensures both visual consistency and future enhancement opportunities.
 
 The focus on high-impact phases ensures maximum return on implementation effort, while the comprehensive risk mitigation strategies minimize the chance of integration issues or performance regressions.
-
-### ✅ Phase 1.1: Merge wip-sunlight Branch (COMPLETED)
-- **Goal**: Integrate cleaned-up DirectionalLight support into main branch
-- **Priority**: 9/10 - Unblocks GPU development
-- **Status**: COMPLETED ✅
-- **Deliverables**:
-  - DirectionalLight class available in lighting system
-  - Sun/moonlight capability in CPU system
-  - Stable, simplified lighting code in main branch
-
-### ✅ Phase 1.2: GPU Infrastructure Setup (COMPLETED)
-- **Goal**: Create core GPU lighting architecture
-- **Status**: COMPLETED ✅
-- **Deliverables**:
-  - `catley/backends/moderngl/gpu_lighting.py` - GPULightingSystem class ✅
-  - Basic compute shader programs ✅
-  - GPU buffer management for light data ✅
-  - Integration with ModernGLGraphicsContext ✅
-  - Comprehensive unit test suite (21 test cases) ✅
-- **Priority**: 10/10 - Enables all future GPU lighting work
-- **Key Features**:
-  - Hardware detection and graceful fallback to CPU system
-  - GLSL 4.3 compute shaders with 8x8 work groups
-  - Resource management with proper cleanup
-  - Interface-compatible drop-in replacement for CPU system
-  - Handles up to 256 lights with overflow protection
-
-### ✅ Phase 1.3: Fragment Shader-based Point Light Rendering (COMPLETED)
-- **Goal**: GPU-accelerated point lights with visual parity to CPU system
-- **Status**: COMPLETED ✅ (Point lights working, shadows missing)
-- **Deliverables**:
-  - ✅ Complete rewrite from compute shaders to fragment shaders for OpenGL 4.1+ compatibility
-  - ✅ Enhanced light data format (12 floats per light) with flicker parameters
-  - ✅ Fragment shader with flicker effects and tile-aligned rendering
-  - ✅ GLSL noise function matching tcod.noise behavior for deterministic flicker
-  - ✅ Brightest-wins color blending matching CPU `np.maximum` behavior
-  - ✅ Linear attenuation curve exactly matching CPU formula
-  - ✅ Full-screen quad rendering approach for parallel GPU computation
-  - ✅ Simple integration with game controller (GPU_LIGHTING_ENABLED config flag)
-  - ✅ Robust fallback to CPU system when GPU unavailable
-  - ✅ Clean shader asset management system (all shaders in separate .glsl files)
-  - ✅ ShaderManager utility for loading and caching shaders
-  - ✅ Fixed texture format issue (32-bit float) resolving extreme negative values
-  - ✅ Removed debug output and inconsistent logging
-  - ✅ All 492 tests passing
-- **Priority**: 10/10 - Core lighting functional with performance gains
-- **Known Limitation**: Shadows not yet implemented (lights work, shadows missing)
 
 #### 🎯 **ARCHITECTURAL DECISION - Compute vs Fragment Shaders**:
 
@@ -472,51 +363,7 @@ The focus on high-impact phases ensures maximum return on implementation effort,
   - Same parallel GPU performance characteristics
   - Simpler architecture and debugging
 
-#### ✅ **COMPLETED Components**:
-- **Enhanced Error Reporting**: Detailed OpenGL capability detection and shader compilation error reporting
-- **OpenGL Version Detection**: System properly detects OpenGL 4.1 and logs capabilities
-- **Root Cause Resolution**: Fixed macOS OpenGL 4.1 vs compute shader compatibility
-- **Clean Shader Asset System**:
-  - Created `/assets/shaders/` directory structure
-  - Built `ShaderManager` utility class for loading `.glsl` files
-  - Moved all embedded shaders to separate files with syntax highlighting
-  - Updated all ModernGL backends to use shader loader
-- **Fragment-Based GPU Lighting**:
-  - Complete GPULightingSystem rewrite using fragment shaders
-  - Full-screen quad rendering with lighting computation in fragment shader
-  - Support for up to 32 lights per render pass
-  - All flicker effects, color blending, and attenuation matching CPU behavior
-  - Proper resource management with texture/buffer resizing
-
-#### ✅ **COMPLETED DEBUGGING**:
-
-**1. Texture Format Issue (RESOLVED)**
-- **Problem**: Fragment shader producing extreme negative values (-2.6e+38)
-- **Root Cause**: Default texture format `GL_UNSIGNED_BYTE` incompatible with fragment shader float output
-- **Solution**: Changed to `dtype='f4'` (32-bit float texture) in ModernGL texture creation
-- **Result**: GPU lighting now produces valid float values
-
-**2. Test Suite Updates (COMPLETED)**
-- **Status**: All 492 tests passing ✅
-- **Changes**: Updated GPU lighting tests to remove logger dependencies
-- **Files**: `/tests/rendering/effects/test_gpu_lighting_system.py`
-
-**3. Code Quality (COMPLETED)**
-- **Removed**: All debug print statements and inconsistent logging
-- **Result**: Clean console output matching codebase conventions
-
-**Current Status**: Phase 1.3 COMPLETED ✅ - Point lights working with flicker, shadows need implementation
-
-## Integration Status
-
-### ✅ Game Integration (COMPLETED)
-- **Configuration**: Added `GPU_LIGHTING_ENABLED = True` flag in `config.py`
-- **Controller Integration**: Simple if/else selection in `Controller.__init__()`
-- **Fallback Strategy**: Automatic CPU fallback when GPU unavailable
-- **Test Coverage**: All 492 tests passing with GPU integration
-- **Backend Compatibility**: Works with ModernGL backend, gracefully falls back on others
-- **Current Status**: Point lights and flicker effects fully working
-- **Known Gap**: Shadows not implemented yet (Phase 1.4)
+#
 
 ### Performance Benchmarks
 
@@ -559,26 +406,3 @@ The system automatically:
 2. Falls back to CPU if GPU unavailable
 3. Provides identical visual output regardless of backend
 4. Maintains all existing lighting features (flicker, shadows, sun/moon)
-
-**Ready for production use!** 🚀
-
-### ✅ Phase 1.35: GPU Lighting Critical Performance Fixes (COMPLETED)
-- **Goal**: Eliminate major per-frame performance bottlenecks in GPU lighting system
-- **Status**: COMPLETED ✅
-- **Achievements**:
-  - Created `ModernGLResourceManager` for centralized GPU resource management
-  - Implemented framebuffer caching through resource manager (60-80% reduction in GPU allocations)
-  - Added smart uniform updates with hash tracking (40-60% reduction in uniform overhead)
-  - Implemented light data caching based on revision system (smoother frame times)
-  - Moved GPU lighting to `catley/backends/moderngl/gpu_lighting.py` for better architecture
-- **Technical Details**:
-  - Resource manager provides `get_or_create_fbo_for_texture()` with automatic caching
-  - FBOs cached by texture GL handle, preventing redundant creation
-  - Light uniform updates only occur when light configuration changes
-  - Light data collection cached and reused when revision unchanged
-- **Performance Impact**: Eliminated all major per-frame allocations and redundant updates
-- **Files Modified**:
-  - Created `/catley/backends/moderngl/resource_manager.py`
-  - Moved GPU lighting from `/catley/view/render/lighting/gpu.py` to `/catley/backends/moderngl/gpu_lighting.py`
-  - Updated `/catley/backends/moderngl/graphics.py` to use resource manager
-  - Updated imports in `/catley/controller.py` and test files

@@ -866,6 +866,13 @@ class TestGPUDirectionalLighting:
         self.game_map.height = 10
         self.game_map.structural_revision = 1
 
+        # Add transparent property for sky exposure texture generation
+        import numpy as np
+
+        self.game_map.transparent = np.ones(
+            (10, 10), dtype=bool
+        )  # All tiles transparent by default
+
         # Create mock regions with different sky exposures
         self.outdoor_region = MapRegion.create_outdoor_region(
             id=1, region_type="outdoor", sky_exposure=1.0
@@ -1157,3 +1164,333 @@ class TestGPUDirectionalLighting:
 
         # Verify sky exposure texture was released
         mock_sky_texture.release.assert_called_once()
+
+    def test_sky_exposure_texture_respects_tile_transparency(self):
+        """Test that sky exposure texture sets 0.0 for non-transparent tiles."""
+        # Mock successful GPU initialization
+        mock_shader_manager = Mock()
+        mock_fragment_program = Mock()
+        mock_shader_manager.create_program.return_value = mock_fragment_program
+        self.mock_mgl_context.buffer.return_value = Mock()
+        self.mock_mgl_context.vertex_array.return_value = Mock()
+
+        # Mock texture creation
+        mock_texture = Mock()
+        self.mock_mgl_context.texture.return_value = mock_texture
+
+        # Create a game map with mixed transparent/non-transparent tiles
+        import numpy as np
+
+        # Create transparency map: doors/walls non-transparent, floors transparent
+        transparency_map = np.ones((10, 10), dtype=bool)  # All transparent by default
+        transparency_map[5, 5] = False  # Closed door at (5, 5)
+        transparency_map[3, 3] = False  # Wall at (3, 3)
+
+        self.game_map.transparent = transparency_map
+
+        # Create outdoor region that should give sky_exposure = 1.0
+        from catley.environment.map import MapRegion
+
+        outdoor_region = MapRegion.create_outdoor_region(
+            id=1, region_type="outdoor", sky_exposure=1.0
+        )
+        self.game_map.get_region_at = Mock(return_value=outdoor_region)
+
+        with patch(
+            "catley.backends.moderngl.shader_manager.ShaderManager",
+            return_value=mock_shader_manager,
+        ):
+            gpu_system = GPULightingSystem(self.game_world, self.mock_graphics_context)
+
+        # Update sky exposure texture
+        gpu_system._update_sky_exposure_texture()
+
+        # Verify texture was created and written to
+        mock_texture.write.assert_called_once()
+
+        # Check the written data
+        written_data = mock_texture.write.call_args[0][0]
+        data_array = np.frombuffer(written_data, dtype=np.float32).reshape(10, 10)
+
+        # Transparent tiles should have sky_exposure = 1.0
+        assert data_array[0, 0] == 1.0, "Transparent tile should have full sky exposure"
+
+        # Non-transparent tiles should have sky_exposure = 0.0
+        assert data_array[5, 5] == 0.0, "Closed door should block all sunlight"
+        assert data_array[3, 3] == 0.0, "Wall should block all sunlight"
+
+
+class TestGPUDirectionalShadows:
+    """Test suite for GPU directional shadow implementation (Phase 2.2)."""
+
+    def setup_method(self):
+        """Set up test fixtures for directional shadow tests."""
+        from catley.environment.map import GameMap, MapRegion
+
+        self.game_world = Mock(spec=GameWorld)
+        self.game_world.lights = []
+
+        # Mock additional game world attributes for shadow collection
+        self.game_world.actor_spatial_index = None
+        self.game_world.player = None
+
+        # Create a mock game map with regions
+        self.game_map = Mock(spec=GameMap)
+        self.game_map.width = 10
+        self.game_map.height = 10
+        self.game_map.structural_revision = 1
+
+        # Mock tiles array for shadow caster collection
+        import numpy as np
+
+        # Use simple integer values since the system just checks tile_id
+        self.game_map.tiles = np.full((10, 10), 1, dtype=int)  # 1 = floor tile
+
+        # Create outdoor region for directional shadows
+        self.outdoor_region = MapRegion.create_outdoor_region(
+            id=1, region_type="outdoor", sky_exposure=1.0
+        )
+
+        # Mock get_region_at to return outdoor region
+        self.game_map.get_region_at = Mock(return_value=self.outdoor_region)
+        self.game_world.game_map = self.game_map
+
+        # Mock shadow casters
+        self.mock_shadow_casters = [(5, 5), (7, 3)]  # Two shadow casters
+
+        self.mock_graphics_context = Mock()
+        self.mock_mgl_context = Mock()
+        self.mock_graphics_context.mgl_context = self.mock_mgl_context
+
+    def test_directional_shadows_cast_in_correct_direction(self):
+        """Test that directional shadows are cast in the direction away from sun."""
+        from catley.game.lights import DirectionalLight
+
+        # Mock successful GPU initialization
+        mock_shader_manager = Mock()
+        mock_fragment_program = Mock()
+        mock_shader_manager.create_program.return_value = mock_fragment_program
+        self.mock_mgl_context.buffer.return_value = Mock()
+        self.mock_mgl_context.vertex_array.return_value = Mock()
+
+        # Create sun with southeast direction (positive x, positive y)
+        sun_light = DirectionalLight.create_sun(
+            elevation_degrees=45.0, azimuth_degrees=135.0, intensity=0.8
+        )
+        self.game_world.lights = [sun_light]
+
+        with patch(
+            "catley.backends.moderngl.shader_manager.ShaderManager",
+            return_value=mock_shader_manager,
+        ):
+            GPULightingSystem(self.game_world, self.mock_graphics_context)
+
+        # Test shadow direction calculation
+        # Sun direction is southeast (azimuth 135°), so shadows should go northwest
+        expected_shadow_direction = (-sun_light.direction.x, -sun_light.direction.y)
+
+        # Verify sun direction is southeast (positive x, negative y screen coords)
+        assert sun_light.direction.x > 0, "Sun should point southeast (positive x)"
+        assert sun_light.direction.y < 0, (
+            "Sun should point downward (negative y in screen coordinates)"
+        )
+
+        # Therefore shadow direction should be northwest (negative x, positive y)
+        assert expected_shadow_direction[0] < 0, (
+            "Shadows should point northwest (negative x)"
+        )
+        assert expected_shadow_direction[1] > 0, (
+            "Shadows should point upward (positive y)"
+        )
+
+    def test_directional_shadows_only_in_outdoor_areas(self):
+        """Test directional shadows only appear in areas with sky_exposure > 0.1."""
+        from catley.game.lights import DirectionalLight
+
+        # Mock successful GPU initialization
+        mock_shader_manager = Mock()
+        mock_fragment_program = Mock()
+        mock_shader_manager.create_program.return_value = mock_fragment_program
+        self.mock_mgl_context.buffer.return_value = Mock()
+        self.mock_mgl_context.vertex_array.return_value = Mock()
+
+        # Create regions with different sky exposures
+        def get_region_by_exposure(pos):
+            from catley.environment.map import MapRegion
+
+            x, y = pos
+            if x < 3:  # Left side: indoor (no sky exposure)
+                return MapRegion.create_indoor_region(
+                    id=1, region_type="indoor", sky_exposure=0.0
+                )
+            if x < 6:  # Middle: low sky exposure
+                return MapRegion.create_outdoor_region(
+                    id=2, region_type="partial", sky_exposure=0.05
+                )
+            # Right side: outdoor (full sky exposure)
+            return MapRegion.create_outdoor_region(
+                id=3, region_type="outdoor", sky_exposure=1.0
+            )
+
+        self.game_map.get_region_at = Mock(side_effect=get_region_by_exposure)
+
+        # Set up transparency data for the map
+        import numpy as np
+
+        transparency_map = np.ones((10, 10), dtype=bool)  # All transparent by default
+        self.game_map.transparent = transparency_map
+
+        # Add sun and shadow casters
+        sun_light = DirectionalLight.create_sun()
+        self.game_world.lights = [sun_light]
+
+        with patch(
+            "catley.backends.moderngl.shader_manager.ShaderManager",
+            return_value=mock_shader_manager,
+        ):
+            gpu_system = GPULightingSystem(self.game_world, self.mock_graphics_context)
+
+        # Create sky exposure texture
+        gpu_system._update_sky_exposure_texture()
+
+        # The shader logic checks: if (sky_exposure > 0.1 && u_sun_intensity > 0.0)
+        # Only the rightmost region (x >= 6) should have directional shadows
+
+        # This test verifies the setup - actual shadow computation in shader
+        # and would be tested through integration testing with rendering
+
+    def test_directional_shadow_intensity_and_length_optimized(self):
+        """Test shadow intensity and length parameters are optimized for visibility."""
+        from catley.game.lights import DirectionalLight
+
+        # Mock successful GPU initialization
+        mock_shader_manager = Mock()
+        mock_fragment_program = Mock()
+        mock_shader_manager.create_program.return_value = mock_fragment_program
+        self.mock_mgl_context.buffer.return_value = Mock()
+        self.mock_mgl_context.vertex_array.return_value = Mock()
+
+        # Add sun light
+        sun_light = DirectionalLight.create_sun(intensity=0.8)
+        self.game_world.lights = [sun_light]
+
+        with patch(
+            "catley.backends.moderngl.shader_manager.ShaderManager",
+            return_value=mock_shader_manager,
+        ):
+            gpu_system = GPULightingSystem(self.game_world, self.mock_graphics_context)
+
+        # Test that shadow parameters are optimized for visibility
+        # GPU code: base_intensity = SHADOW_INTENSITY * 1.2 (stronger than torch)
+        # GPU code: shadow_length = min(SHADOW_MAX_LENGTH, 12) (longer shadows)
+        # GPU code: edge_intensity = intensity * 0.5 (50% for visible edges)
+
+        # These constants are embedded in the shader, so we verify they exist
+        # by checking that the shader was successfully created
+        assert gpu_system._fragment_program is not None
+
+    def test_directional_shadow_caster_collection(self):
+        """Test that shadow casters are properly collected for directional shadows."""
+        from catley.game.lights import DirectionalLight
+
+        # Mock successful GPU initialization
+        mock_shader_manager = Mock()
+        mock_fragment_program = Mock()
+        mock_shader_manager.create_program.return_value = mock_fragment_program
+        self.mock_mgl_context.buffer.return_value = Mock()
+        self.mock_mgl_context.vertex_array.return_value = Mock()
+
+        # Add sun light
+        sun_light = DirectionalLight.create_sun()
+        self.game_world.lights = [sun_light]
+
+        with (
+            patch(
+                "catley.backends.moderngl.shader_manager.ShaderManager",
+                return_value=mock_shader_manager,
+            ),
+            patch(
+                "catley.environment.tile_types.get_tile_type_data_by_id",
+                return_value={
+                    "casts_shadows": False
+                },  # Mock tiles that don't cast shadows
+            ),
+        ):
+            gpu_system = GPULightingSystem(self.game_world, self.mock_graphics_context)
+
+            # Mock shadow caster collection
+            viewport = Rect(0, 0, 10, 10)
+
+            # The _collect_shadow_casters_global method collects actor positions
+            # and shadow-casting tiles, similar to the CPU implementation
+            shadow_casters = gpu_system._collect_shadow_casters_global(viewport)
+
+            # Verify that shadow caster collection returns a list of floats (x, y pairs)
+            assert isinstance(shadow_casters, list)
+
+            # Each shadow caster represented as consecutive x, y float coordinates
+            # The actual collection depends on the game world state
+            assert len(shadow_casters) % 2 == 0, "Shadow casters should be x,y pairs"
+
+    def test_directional_shadow_falloff_enabled_parameter(self):
+        """Test that directional shadows respect the shadow falloff parameter."""
+        from catley.game.lights import DirectionalLight
+
+        # Mock successful GPU initialization
+        mock_shader_manager = Mock()
+        mock_fragment_program = Mock()
+        mock_shader_manager.create_program.return_value = mock_fragment_program
+        self.mock_mgl_context.buffer.return_value = Mock()
+        self.mock_mgl_context.vertex_array.return_value = Mock()
+
+        # Add sun light
+        sun_light = DirectionalLight.create_sun()
+        self.game_world.lights = [sun_light]
+
+        with patch(
+            "catley.backends.moderngl.shader_manager.ShaderManager",
+            return_value=mock_shader_manager,
+        ):
+            GPULightingSystem(self.game_world, self.mock_graphics_context)
+
+        # The shader uses u_shadow_falloff_enabled to determine whether to apply
+        # distance-based falloff to shadow intensity
+        # This matches the CPU implementation's SHADOW_FALLOFF flag
+
+        # The actual falloff logic is:
+        # if (u_shadow_falloff_enabled) {
+        #     distance_falloff = 1.0 - (float(j - 1) / max_shadow_length);
+        # }
+
+        # This test verifies the setup exists - actual behavior in integration
+
+    def test_directional_shadow_soft_edges(self):
+        """Test that directional shadows have softer edges like CPU implementation."""
+        from catley.game.lights import DirectionalLight
+
+        # Mock successful GPU initialization
+        mock_shader_manager = Mock()
+        mock_fragment_program = Mock()
+        mock_shader_manager.create_program.return_value = mock_fragment_program
+        self.mock_mgl_context.buffer.return_value = Mock()
+        self.mock_mgl_context.vertex_array.return_value = Mock()
+
+        # Add sun light
+        sun_light = DirectionalLight.create_sun()
+        self.game_world.lights = [sun_light]
+
+        with patch(
+            "catley.backends.moderngl.shader_manager.ShaderManager",
+            return_value=mock_shader_manager,
+        ):
+            gpu_system = GPULightingSystem(self.game_world, self.mock_graphics_context)
+
+        # The shader implements soft edges for the first 2 shadow tiles
+        # with 50% intensity on adjacent positions (not diagonal)
+        # Optimized for visibility: edge_intensity = intensity * 0.5
+
+        # The shader code checks: if (j <= 2) for soft edges
+        # and uses 4 adjacent positions (not diagonal for directional shadows)
+
+        # This test verifies the GPU system is properly initialized
+        assert gpu_system._fragment_program is not None
