@@ -10,28 +10,6 @@
 
 ### Phase 2: Feature Parity (High Priority)
 
-#### **Phase 2.25: Fix Sunlight Leakage Through Non-Transparent Tiles**
-- **Goal**: Fix sunlight streaming through closed doors and solid walls in GPU system.
-- **Priority**: 9/10 - Critical bug fix for realistic lighting behavior.
-- **Status**: COMPLETED ✅
-
-##### Root Cause and Solution
-- **Problem**: GPU sky exposure texture only used region data, ignoring individual tile transparency
-- **Solution**: Modified `_update_sky_exposure_texture()` to respect tile transparency
-- **Fix**: Non-transparent tiles now get `sky_exposure = 0.0` regardless of region
-- **Result**: Closed doors and walls completely block sunlight as expected
-
-##### Implementation
-- **File**: `/catley/backends/moderngl/gpu_lighting.py`
-- **Change**: Added transparency check in sky exposure texture generation
-- **Logic**: `sky_exposure = region.sky_exposure if transparent else 0.0`
-
-##### Testing Status
-- **Unit Tests**: Added `test_sky_exposure_texture_respects_tile_transparency()`
-- **Remaining Work**: Fix existing test mocks to include transparency data
-
----
-
 #### **Phase 2.3: Enhanced Static vs Dynamic Light Separation**
 - **Goal**: Implement a caching system for optimal performance with full shadow support.
 - **Priority**: 7/10 - Performance optimization for scenes with many static lights.
