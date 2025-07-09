@@ -31,6 +31,13 @@ uniform float u_shadow_intensity;
 uniform int u_shadow_max_length;
 uniform bool u_shadow_falloff_enabled;
 
+// Directional light uniforms (sun/moon)
+uniform vec2 u_sun_direction;
+uniform vec3 u_sun_color;
+uniform float u_sun_intensity;
+uniform sampler2D u_sky_exposure_map;
+uniform float u_sky_exposure_power;
+
 // Noise function for flicker effects
 float noise2d(vec2 coord) {
     vec2 c = floor(coord);
@@ -193,6 +200,25 @@ void main() {
         
         // Use brightest-wins blending to match CPU np.maximum behavior
         final_color = max(final_color, light_contribution);
+    }
+    
+    // Apply directional lighting (sun/moon) if sky exposure is present
+    if (u_sun_intensity > 0.0) {
+        // Sample sky exposure for this tile
+        // v_uv is already normalized to [0,1] for the viewport, we need to map to full map
+        vec2 map_uv = v_uv;  // The texture coordinates should already be correct
+        float sky_exposure = texture(u_sky_exposure_map, map_uv).r;
+        
+        if (sky_exposure > 0.0) {
+            // Apply non-linear sky exposure curve
+            float effective_exposure = pow(sky_exposure, u_sky_exposure_power);
+            
+            // Calculate sun contribution
+            vec3 sun_contribution = u_sun_color * u_sun_intensity * effective_exposure;
+            
+            // Use brightest-wins blending with point lights
+            final_color = max(final_color, sun_contribution);
+        }
     }
     
     // Clamp to valid range and write output

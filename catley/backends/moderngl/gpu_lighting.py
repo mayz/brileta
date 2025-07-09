@@ -93,6 +93,10 @@ class GPULightingSystem(LightingSystem):
         self._cached_shadow_casters: list[float] | None = None
         self._cached_shadow_revision: int = -1
 
+        # Sky exposure texture for directional lighting
+        self._sky_exposure_texture: moderngl.Texture | None = None
+        self._cached_map_revision: int = -1
+
         # Initialize GPU resources
         if not self._initialize_gpu_resources():
             pass  # Will use fallback system if available
@@ -336,6 +340,9 @@ class GPULightingSystem(LightingSystem):
             shadow_casters = self._cached_shadow_casters
             shadow_caster_count = len(shadow_casters) // 2  # 2 floats per caster
 
+            # Update sky exposure texture if needed
+            self._update_sky_exposure_texture()
+
             # Get or create cached framebuffer for rendering
             assert self._resource_manager is not None
             assert self._output_texture is not None
@@ -362,11 +369,17 @@ class GPULightingSystem(LightingSystem):
                 self._set_shadow_uniforms(
                     shadow_casters, shadow_caster_count, viewport_bounds
                 )
+                self._set_directional_light_uniforms()
                 self._last_light_data_hash = light_data_hash
             else:
                 # Still need to update time uniform for dynamic effects
                 assert self._fragment_program is not None
                 self._fragment_program["u_time"].value = self._time
+
+            # Bind sky exposure texture to texture unit 1
+            if self._sky_exposure_texture is not None:
+                self._sky_exposure_texture.use(location=1)
+                self._fragment_program["u_sky_exposure_map"].value = 1
 
             # Render full-screen quad
             self._fullscreen_vao.render()
@@ -480,6 +493,43 @@ class GPULightingSystem(LightingSystem):
         self._fragment_program["u_shadow_max_length"].value = SHADOW_MAX_LENGTH
         self._fragment_program["u_shadow_falloff_enabled"].value = SHADOW_FALLOFF
 
+    def _set_directional_light_uniforms(self) -> None:
+        """Set uniforms for directional lighting (sun/moon)."""
+        from catley.config import SKY_EXPOSURE_POWER
+        from catley.game.lights import DirectionalLight
+
+        # Find active directional light
+        directional_light = None
+        for light in self.game_world.lights:
+            if isinstance(light, DirectionalLight):
+                directional_light = light
+                break
+
+        assert self._fragment_program is not None
+
+        if directional_light:
+            # Set sun uniforms from the directional light
+            self._fragment_program["u_sun_direction"].value = (
+                directional_light.direction.x,
+                directional_light.direction.y,
+            )
+            self._fragment_program["u_sun_color"].value = (
+                directional_light.color[0] / 255.0,
+                directional_light.color[1] / 255.0,
+                directional_light.color[2] / 255.0,
+            )
+            self._fragment_program[
+                "u_sun_intensity"
+            ].value = directional_light.intensity
+        else:
+            # No directional light - set "off" values
+            self._fragment_program["u_sun_direction"].value = (0.0, 0.0)
+            self._fragment_program["u_sun_color"].value = (0.0, 0.0, 0.0)
+            self._fragment_program["u_sun_intensity"].value = 0.0
+
+        # Always set sky exposure power
+        self._fragment_program["u_sky_exposure_power"].value = SKY_EXPOSURE_POWER
+
     def _collect_light_data(self, viewport_bounds: Rect) -> list[float]:
         """Collect light data from the game world and format for GPU uniforms.
 
@@ -491,9 +541,14 @@ class GPULightingSystem(LightingSystem):
             Format: position.xy, radius, base_intensity, color.rgb,
                    flicker_enabled, flicker_speed, min_brightness, max_brightness
         """
+        from catley.game.lights import DirectionalLight
+
         light_data = []
 
         for light in self.game_world.lights:
+            # Skip directional lights - they are handled separately
+            if isinstance(light, DirectionalLight):
+                continue
             lx, ly = light.position
 
             # Simple frustum culling - only include lights that could affect viewport
@@ -615,6 +670,52 @@ class GPULightingSystem(LightingSystem):
 
         return shadow_casters
 
+    def _update_sky_exposure_texture(self) -> None:
+        """Update the sky exposure texture from the game map's region data.
+
+        This creates a texture where each pixel represents a tile's sky exposure value,
+        based on the region it belongs to. Only recreates when map structure changes.
+        """
+        game_map = self.game_world.game_map
+        if game_map is None:
+            return
+
+        # Check if we need to update based on map revision
+        if (
+            self._cached_map_revision == game_map.structural_revision
+            and self._sky_exposure_texture is not None
+        ):
+            return  # No update needed
+
+        # Create float32 array for sky exposure data
+        sky_exposure_data = np.zeros(
+            (game_map.height, game_map.width), dtype=np.float32
+        )
+
+        # Populate sky exposure data from regions
+        for y in range(game_map.height):
+            for x in range(game_map.width):
+                region = game_map.get_region_at((x, y))
+                if region:
+                    sky_exposure_data[y, x] = region.sky_exposure
+
+        # Release old texture if it exists
+        if self._sky_exposure_texture is not None:
+            self._sky_exposure_texture.release()
+
+        # Create new texture with sky exposure data
+        assert self.mgl_context is not None
+        self._sky_exposure_texture = self.mgl_context.texture(
+            (game_map.width, game_map.height),
+            components=1,  # Single channel (R)
+            dtype="f4",  # 32-bit float
+        )
+        assert self._sky_exposure_texture is not None
+        self._sky_exposure_texture.write(sky_exposure_data.tobytes())
+
+        # Update cached revision
+        self._cached_map_revision = game_map.structural_revision
+
     def on_light_added(self, light: LightSource) -> None:
         """Notification that a light has been added."""
         # GPU system doesn't need caching invalidation like CPU system
@@ -655,6 +756,8 @@ class GPULightingSystem(LightingSystem):
             self._output_buffer.release()
         if self._fullscreen_vao is not None:
             self._fullscreen_vao.release()
+        if self._sky_exposure_texture is not None:
+            self._sky_exposure_texture.release()
 
         # Clear cached data
         self._cached_light_data = None

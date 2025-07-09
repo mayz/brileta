@@ -1,13 +1,5 @@
 # GPU Lighting System Implementation Plan
 
-**WHAT'S NEXT**:
-- Phase 2.1 - Directional lighting (sunlight) implementation
-  - Step 1: Add sun uniforms and sky exposure texture to GPU shader
-  - Step 2: Decide on directional shadow implementation timing
-  - Step 3: Stabilize and ensure GPU/CPU visual parity
-- Phase 2.2 - Static/dynamic light separation optimization
-- Phase 3 - Performance benchmarking program
-
 **SHADER ASSETS LOCATION**: All shaders are organized in `assets/shaders/` with subdirectories:
 - `glyph/` - Character rendering (render.vert, render.frag)
 - `lighting/` - GPU lighting system (point_light.vert, point_light.frag)
@@ -17,49 +9,6 @@
 ## Implementation Phases
 
 ### Phase 2: Feature Parity (High Priority)
-
-#### **Phase 2.1: GPU Directional Light (Sunlight)**
-- **Goal**: Implement GPU-accelerated directional lighting (sunlight) with visual parity to the CPU system.
-- **Priority**: 10/10 - Core environmental lighting functionality.
-
-##### Step 1: Implement GPU Directional Light Shader Support
-- **Task**: Add support for a single, global directional light to the lighting fragment shader.
-- **Data Flow Clarification**:
-    - Directional lights are global and fundamentally different from point lights. They must **not** be included in the point light data array (`u_light_positions`, etc.).
-    - **Action**: In `GPULightingSystem`, modify the `_collect_light_data()` method to **explicitly filter out and ignore** any `DirectionalLight` instances.
-    - **Action**: In `GPULightingSystem._compute_lightmap_gpu()`, before setting uniforms, add logic to find the active `DirectionalLight` in `self.game_world.lights`. If one is found, set the new global sun uniforms. If not, set them to default "off" values (e.g., intensity 0.0).
-- **Implementation Details**:
-    1. **Add Uniforms to `lighting/point_light.frag`**:
-        - `uniform vec2 u_sun_direction;` - Normalized direction vector from `DirectionalLight`.
-        - `uniform vec3 u_sun_color;` - RGB color in 0.0-1.0 range.
-        - `uniform float u_sun_intensity;` - Base intensity multiplier.
-        - `uniform sampler2D u_sky_exposure_map;` - Texture containing per-tile sky exposure values.
-    2. **Implement Sky Exposure Texture**:
-        - The shader needs per-tile `sky_exposure` data, which is stored per-region on the CPU. This data must be passed to the GPU as a texture.
-        - **Action**: In `GPULightingSystem`, create a new method `_update_sky_exposure_texture()`. This method will:
-            1. Create a NumPy array (`np.float32`) with the same dimensions as the `game_map`.
-            2. Iterate through `game_map.tile_to_region_id` and use `game_map.regions` to populate the array with the correct `sky_exposure` value for each tile. This ensures an exact 1:1 match with the CPU logic.
-            3. Upload this NumPy array to a persistent `moderngl.Texture` (e.g., `self._sky_exposure_texture`). The format should be single-channel float (`'f1'` is suitable).
-        - This texture should only be recreated when `game_map.structural_revision` changes to optimize performance.
-        - **Action**: In `GPULightingSystem._compute_lightmap_gpu()`, bind this texture to the `u_sky_exposure_map` uniform on a free texture unit (e.g., `location = 1`).
-    3. **Shader Logic Updates**:
-        - In `point_light.frag`, after calculating point light contributions, sample the sky exposure for the current fragment: `float sky_exposure = texture(u_sky_exposure_map, v_uv).r;`.
-        - If `sky_exposure > 0`, calculate the sun's contribution: `vec3 sun_contribution = u_sun_color * u_sun_intensity * pow(sky_exposure, SKY_EXPOSURE_POWER);`.
-        - Blend the sun's contribution with the existing light color using a "brightest-wins" approach: `final_color = max(final_color, sun_contribution);`.
-
-##### Step 2: Stabilize and Finalize
-- **Task**: Test thoroughly, remove all debug code, and confirm visual parity with the `CPULightingSystem`.
-- **Testing Protocol**:
-    1.  Toggle `GPU_LIGHTING_ENABLED` between `True` and `False` in `config.py`.
-    2.  Compare screenshots in various scenarios: pure outdoor, pure indoor, and indoor/outdoor transitions.
-    3.  Verify that performance metrics remain stable and no new memory leaks are introduced.
-- **Success Criteria**:
-    -   Visual output is nearly identical between GPU and CPU modes for directional lighting.
-    -   No significant performance regressions.
-    -   Code is clean, documented, and production-ready.
-- **Outcome**: Fully functional GPU directional lighting matching CPU behavior. **This is a major milestone.**
-
----
 
 #### **Phase 2.2: GPU Directional Shadows**
 - **Goal**: Add support for casting shadows from the directional light source.

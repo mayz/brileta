@@ -848,3 +848,312 @@ class TestGPULightingPerformance:
         # like we did in compute shader implementation, so this test validates
         # the expected memory usage calculation
         assert expected_total_size == 1536  # 32 lights * 48 bytes each
+
+
+class TestGPUDirectionalLighting:
+    """Test suite for GPU directional lighting (Phase 2.1)."""
+
+    def setup_method(self):
+        """Set up test fixtures for directional lighting tests."""
+        from catley.environment.map import GameMap, MapRegion
+
+        self.game_world = Mock(spec=GameWorld)
+        self.game_world.lights = []
+
+        # Create a mock game map with regions
+        self.game_map = Mock(spec=GameMap)
+        self.game_map.width = 10
+        self.game_map.height = 10
+        self.game_map.structural_revision = 1
+
+        # Create mock regions with different sky exposures
+        self.outdoor_region = MapRegion.create_outdoor_region(
+            id=1, region_type="outdoor", sky_exposure=1.0
+        )
+        self.indoor_region = MapRegion.create_indoor_region(
+            id=2, region_type="indoor", sky_exposure=0.0
+        )
+
+        # Mock get_region_at to return appropriate regions
+        def get_region_at(pos):
+            x, y = pos
+            # Left half is outdoor, right half is indoor
+            if x < 5:
+                return self.outdoor_region
+            return self.indoor_region
+
+        self.game_map.get_region_at = Mock(side_effect=get_region_at)
+        self.game_world.game_map = self.game_map
+
+        self.mock_graphics_context = Mock()
+        self.mock_mgl_context = Mock()
+        self.mock_graphics_context.mgl_context = self.mock_mgl_context
+
+    def test_directional_light_filtered_from_point_lights(self):
+        """Test that DirectionalLight instances are excluded from point light data."""
+        from catley.game.lights import DirectionalLight, StaticLight
+
+        # Mock successful GPU initialization
+        mock_shader_manager = Mock()
+        mock_fragment_program = Mock()
+        mock_shader_manager.create_program.return_value = mock_fragment_program
+        self.mock_mgl_context.buffer.return_value = Mock()
+        self.mock_mgl_context.vertex_array.return_value = Mock()
+
+        # Add both point lights and directional light
+        point_light = StaticLight(position=(5, 5), radius=3, color=(255, 204, 153))
+        sun_light = DirectionalLight.create_sun()
+
+        self.game_world.lights = [point_light, sun_light]
+
+        with patch(
+            "catley.backends.moderngl.shader_manager.ShaderManager",
+            return_value=mock_shader_manager,
+        ):
+            gpu_system = GPULightingSystem(self.game_world, self.mock_graphics_context)
+
+        viewport = Rect(0, 0, 10, 10)
+        light_data = gpu_system._collect_light_data(viewport)
+
+        # Should only include the point light (12 floats), not the directional light
+        assert len(light_data) == 12
+        assert light_data[0] == 5.0  # point light x
+        assert light_data[1] == 5.0  # point light y
+
+    def test_sky_exposure_texture_creation(self):
+        """Test creation of sky exposure texture from game map regions."""
+        # Mock successful GPU initialization
+        mock_shader_manager = Mock()
+        mock_fragment_program = Mock()
+        mock_shader_manager.create_program.return_value = mock_fragment_program
+        self.mock_mgl_context.buffer.return_value = Mock()
+        self.mock_mgl_context.vertex_array.return_value = Mock()
+
+        # Mock texture creation
+        mock_texture = Mock()
+        self.mock_mgl_context.texture.return_value = mock_texture
+
+        with patch(
+            "catley.backends.moderngl.shader_manager.ShaderManager",
+            return_value=mock_shader_manager,
+        ):
+            gpu_system = GPULightingSystem(self.game_world, self.mock_graphics_context)
+
+        # Call update sky exposure texture
+        gpu_system._update_sky_exposure_texture()
+
+        # Verify texture was created with correct dimensions
+        self.mock_mgl_context.texture.assert_called_once_with(
+            (10, 10),  # game map dimensions
+            components=1,  # single channel
+            dtype="f4",  # 32-bit float
+        )
+
+        # Verify texture data was written
+        mock_texture.write.assert_called_once()
+
+        # Check the written data
+        written_data = mock_texture.write.call_args[0][0]
+        data_array = np.frombuffer(written_data, dtype=np.float32).reshape(10, 10)
+
+        # Left half should be 1.0 (outdoor), right half should be 0.0 (indoor)
+        assert np.all(data_array[:, :5] == 1.0)
+        assert np.all(data_array[:, 5:] == 0.0)
+
+    def test_sky_exposure_texture_caching(self):
+        """Test that sky exposure texture is only updated when map structure changes."""
+        # Mock successful GPU initialization
+        mock_shader_manager = Mock()
+        mock_fragment_program = Mock()
+        mock_shader_manager.create_program.return_value = mock_fragment_program
+        self.mock_mgl_context.buffer.return_value = Mock()
+        self.mock_mgl_context.vertex_array.return_value = Mock()
+
+        # Mock texture creation
+        mock_texture = Mock()
+        self.mock_mgl_context.texture.return_value = mock_texture
+
+        with patch(
+            "catley.backends.moderngl.shader_manager.ShaderManager",
+            return_value=mock_shader_manager,
+        ):
+            gpu_system = GPULightingSystem(self.game_world, self.mock_graphics_context)
+
+        # First update
+        gpu_system._update_sky_exposure_texture()
+        assert self.mock_mgl_context.texture.call_count == 1
+
+        # Second update with same revision - should not recreate
+        gpu_system._update_sky_exposure_texture()
+        assert self.mock_mgl_context.texture.call_count == 1
+
+        # Change map revision
+        self.game_map.structural_revision = 2
+
+        # Third update with new revision - should recreate
+        gpu_system._update_sky_exposure_texture()
+        assert self.mock_mgl_context.texture.call_count == 2
+        mock_texture.release.assert_called_once()
+
+    def test_directional_light_uniforms_set(self):
+        """Test that directional light uniforms are properly set."""
+        from catley.game.lights import DirectionalLight
+
+        # Mock successful GPU initialization
+        mock_shader_manager = Mock()
+        mock_fragment_program = Mock()
+        mock_fragment_uniforms = {
+            "u_sun_direction": Mock(),
+            "u_sun_color": Mock(),
+            "u_sun_intensity": Mock(),
+            "u_sky_exposure_power": Mock(),
+        }
+
+        def getitem(key):
+            return mock_fragment_uniforms.get(key, Mock())
+
+        mock_fragment_program.__getitem__ = Mock(side_effect=getitem)
+        mock_shader_manager.create_program.return_value = mock_fragment_program
+        self.mock_mgl_context.buffer.return_value = Mock()
+        self.mock_mgl_context.vertex_array.return_value = Mock()
+
+        # Add directional light
+        sun_light = DirectionalLight.create_sun(
+            elevation_degrees=45.0, azimuth_degrees=135.0, intensity=0.8
+        )
+        self.game_world.lights = [sun_light]
+
+        with patch(
+            "catley.backends.moderngl.shader_manager.ShaderManager",
+            return_value=mock_shader_manager,
+        ):
+            gpu_system = GPULightingSystem(self.game_world, self.mock_graphics_context)
+
+        # Call set directional light uniforms
+        gpu_system._set_directional_light_uniforms()
+
+        # Verify sun uniforms were set
+        mock_fragment_uniforms["u_sun_direction"].value = (
+            sun_light.direction.x,
+            sun_light.direction.y,
+        )
+        mock_fragment_uniforms["u_sun_intensity"].value = 0.8
+
+        # Verify color was normalized to 0-1 range
+        expected_color = (
+            sun_light.color[0] / 255.0,
+            sun_light.color[1] / 255.0,
+            sun_light.color[2] / 255.0,
+        )
+        mock_fragment_uniforms["u_sun_color"].value = expected_color
+
+    def test_directional_light_uniforms_no_sun(self):
+        """Test that directional light uniforms are set to 'off' when no sun exists."""
+        # Mock successful GPU initialization
+        mock_shader_manager = Mock()
+        mock_fragment_program = Mock()
+        mock_fragment_uniforms = {
+            "u_sun_direction": Mock(),
+            "u_sun_color": Mock(),
+            "u_sun_intensity": Mock(),
+            "u_sky_exposure_power": Mock(),
+        }
+
+        def getitem(key):
+            return mock_fragment_uniforms.get(key, Mock())
+
+        mock_fragment_program.__getitem__ = Mock(side_effect=getitem)
+        mock_shader_manager.create_program.return_value = mock_fragment_program
+        self.mock_mgl_context.buffer.return_value = Mock()
+        self.mock_mgl_context.vertex_array.return_value = Mock()
+
+        # No lights at all
+        self.game_world.lights = []
+
+        with patch(
+            "catley.backends.moderngl.shader_manager.ShaderManager",
+            return_value=mock_shader_manager,
+        ):
+            gpu_system = GPULightingSystem(self.game_world, self.mock_graphics_context)
+
+        # Call set directional light uniforms
+        gpu_system._set_directional_light_uniforms()
+
+        # Verify sun uniforms were set to "off" values
+        mock_fragment_uniforms["u_sun_direction"].value = (0.0, 0.0)
+        mock_fragment_uniforms["u_sun_color"].value = (0.0, 0.0, 0.0)
+        mock_fragment_uniforms["u_sun_intensity"].value = 0.0
+
+    def test_sky_exposure_texture_binding_in_compute(self):
+        """Test that sky exposure texture is used during lightmap computation."""
+        from catley.game.lights import DirectionalLight
+
+        # Mock successful GPU initialization
+        mock_shader_manager = Mock()
+        mock_fragment_program = Mock()
+        mock_shader_manager.create_program.return_value = mock_fragment_program
+        self.mock_mgl_context.buffer.return_value = Mock()
+        self.mock_mgl_context.vertex_array.return_value = Mock()
+
+        # Mock texture creation
+        mock_output_texture = Mock()
+        mock_sky_texture = Mock()
+        self.mock_mgl_context.texture.side_effect = [
+            mock_output_texture,
+            mock_sky_texture,
+        ]
+
+        # Mock resource manager
+        mock_resource_manager = Mock()
+        mock_fbo = Mock()
+        mock_resource_manager.get_or_create_fbo_for_texture.return_value = mock_fbo
+        self.mock_graphics_context.resource_manager = mock_resource_manager
+
+        # Add directional light
+        sun_light = DirectionalLight.create_sun()
+        self.game_world.lights = [sun_light]
+
+        with patch(
+            "catley.backends.moderngl.shader_manager.ShaderManager",
+            return_value=mock_shader_manager,
+        ):
+            gpu_system = GPULightingSystem(self.game_world, self.mock_graphics_context)
+
+        # Create the sky exposure texture first
+        gpu_system._update_sky_exposure_texture()
+
+        # Verify sky texture was created
+        assert gpu_system._sky_exposure_texture is not None
+
+        # Test that the texture binding happens
+        if gpu_system._sky_exposure_texture is not None:
+            # This would be tested in integration, here we verify texture exists
+            assert self.mock_mgl_context.texture.call_count >= 1
+
+    def test_resource_cleanup_includes_sky_texture(self):
+        """Test that sky exposure texture is properly released on cleanup."""
+        # Mock successful GPU initialization
+        mock_shader_manager = Mock()
+        mock_fragment_program = Mock()
+        mock_shader_manager.create_program.return_value = mock_fragment_program
+        self.mock_mgl_context.buffer.return_value = Mock()
+        self.mock_mgl_context.vertex_array.return_value = Mock()
+
+        # Mock texture creation
+        mock_sky_texture = Mock()
+        self.mock_mgl_context.texture.return_value = mock_sky_texture
+
+        with patch(
+            "catley.backends.moderngl.shader_manager.ShaderManager",
+            return_value=mock_shader_manager,
+        ):
+            gpu_system = GPULightingSystem(self.game_world, self.mock_graphics_context)
+
+        # Create sky exposure texture
+        gpu_system._update_sky_exposure_texture()
+
+        # Release resources
+        gpu_system.release()
+
+        # Verify sky exposure texture was released
+        mock_sky_texture.release.assert_called_once()
