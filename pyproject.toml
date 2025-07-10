@@ -10,6 +10,7 @@ dependencies = [
     "pillow>=11.2.1",
     "pyglet>=2.1.6",
     "tcod>=18.1.0",
+    "wgpu>=0.22.2",
 ]
 
 [tool.setuptools.packages.find]
