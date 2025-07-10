@@ -10,15 +10,109 @@
 
 ### Phase 2: Feature Parity (High Priority)
 
-#### **Phase 2.3: Enhanced Static vs Dynamic Light Separation**
-- **Goal**: Implement a caching system for optimal performance with full shadow support.
-- **Priority**: 7/10 - Performance optimization for scenes with many static lights.
-- **Deliverables**:
-    -   Pre-computation and caching of a static light texture (ambient + static point lights + directional lights).
-    -   Per-frame rendering of a dynamic light texture (moving/flickering lights).
-    -   A final composition pass that blends the static and dynamic textures.
-    -   Cache invalidation on any change to static lights or map structure.
-    -   Shadows from static objects are baked into the static texture; shadows from dynamic objects are rendered per-frame.
+################################################################
+Do this next phase *before* the WebGPU migration.
+################################################################
+
+#### **Phase 2.1: GPU Directional Lighting & Shadow Parity (Immediate Priority)**
+
+*   **Goal**: Achieve full visual and feature parity with the `CPULightingSystem` by implementing directional sunlight and its corresponding parallel shadows in the GPU pipeline. This makes the ModernGL implementation a feature-complete prototype.
+*   **Priority**: 9/10 - This is the final step to stabilize the ModernGL renderer before focusing on gameplay and the eventual WebGPU migration.
+*   **Implementation Approach**: A single-pass fragment shader enhancement that adds directional light calculations on top of the existing point-light logic.
+
+**Key Deliverables**:
+
+1.  **Python-Side Data Pipeline (`GPULightingSystem`)**
+    *   Verify that `_set_directional_light_uniforms()` correctly finds the active `DirectionalLight` and passes its `direction`, `color`, and `intensity` to the shader.
+    *   Verify that `_update_sky_exposure_texture()` correctly creates and binds a texture representing tile-by-tile sky exposure values. This texture is essential for the shader to know which areas are "outdoors".
+
+2.  **Fragment Shader Uniforms (`assets/shaders/lighting/point_light.frag`)**
+    *   Add the necessary uniforms to receive directional light data from the Python backend.
+    ```glsl
+    // Add to the uniform block
+    uniform vec2 u_sun_direction;
+    uniform vec3 u_sun_color;
+    uniform float u_sun_intensity;
+
+    uniform sampler2D u_sky_exposure_map; // For outdoor/indoor detection
+    uniform float u_sky_exposure_power;   // To control light fall-off curve
+    ```
+
+3.  **Sky Exposure and Sunlight Logic (in `point_light.frag`)**
+    *   After the point-light loop, sample the `u_sky_exposure_map` to determine if the current fragment (pixel) is outdoors.
+    *   If `sky_exposure > 0.0`, calculate the sun's contribution. Use `pow(sky_exposure, u_sky_exposure_power)` to create a more natural, non-linear falloff at the edges of outdoor areas.
+    *   Combine the sun's contribution with the point-light color using `max()`, preventing oversaturation and ensuring the brightest light source prevails.
+
+4.  **Directional Shadow Logic (in `point_light.frag`)**
+    *   This is a critical feature for visual parity with the CPU system.
+    *   After the sunlight calculation, add a new loop that iterates through all `u_shadow_caster_positions`.
+    *   For each shadow caster, determine if the current fragment lies in the "shadow path" cast by that caster *away from the sun's direction*. This is different from point-light shadows, which radiate from a central point.
+    *   If the fragment is in a directional shadow path, reduce its final calculated light color by `u_shadow_intensity`.
+    *   The length of the shadow can be controlled by `u_shadow_max_length`.
+
+5.  **Final Blending and Output**
+    *   The final fragment color will be the result of (Point Lights + Directional Light) * Directional Shadows.
+
+6.  **Testing & Validation**
+    *   Perform A/B testing by toggling `config.GPU_LIGHTING_ENABLED`.
+    *   **Success Criteria**: Outdoor areas in GPU mode should be brightly lit by the sun, and both actors and shadow-casting tiles should cast long, parallel shadows away from the sun's direction, matching the visual output of the CPU implementation.
+
+################################################################
+Only do stuff here and below *after* the WebGPU migration.
+################################################################
+
+#### **Phase 2.3: Architectural Blueprint for High-Performance Lighting**
+
+*   **Goal**: Define the architectural principles for an optimal, multi-pass lighting system that separates static and dynamic elements for maximum performance. This design is the target for the final WebGPU implementation.
+*   **Priority**: 5/10 - The design is important, but its full implementation is deferred.
+*   **Implementation Approach**: A multi-pass rendering pipeline that caches expensive, unchanging light and shadow data to a persistent GPU texture.
+
+**Key Architectural Principles**:
+
+1.  **Static Light Texture Caching**
+    *   A persistent **GPU Texture** (the "static lightmap") will cache the combined contribution of all non-moving light sources.
+    *   A dedicated **Framebuffer** will be used to render to this static lightmap.
+    *   This static lightmap includes: ambient light, static point lights, and global directional lights (sun/moon).
+    *   The cache will only be invalidated (re-rendered) when a crucial static element changes:
+        *   Static light positions, colors, or radii.
+        *   Global directional light properties (e.g., time of day).
+        *   Static shadow caster positions (e.g., map structure changes).
+
+2.  **Dynamic Light Rendering**
+    *   A separate, per-frame **GPU Texture** (the "dynamic lightmap") will be used to render all moving and changing lights.
+    *   This includes flickering torches, temporary spell effects, and lights attached to moving actors.
+    *   Shadows from dynamic sources (like actors) will be calculated in this pass every frame.
+
+3.  **Multi-Pass Shader Pipeline**
+    *   **Static Pass Shader**: An optimized shader that calculates the contribution of all static and directional lights. It runs only when the static cache is invalidated.
+    *   **Dynamic Pass Shader**: A shader that calculates the contribution of dynamic lights, including time-based effects like flickering. It runs every frame.
+    *   **Composite Pass Shader**: A simple blending shader that combines the static and dynamic lightmaps (e.g., using `max()`) and applies final color corrections (like gamma) to produce the final lit scene.
+
+4.  **Light and Shadow Collection**
+    *   The system will maintain separate collections for `static_lights`, `dynamic_lights`, `static_shadow_casters`, and `dynamic_shadow_casters`.
+    *   This allows data to be sent to the appropriate shader pass efficiently.
+
+5.  **Intelligent Cache Invalidation**
+    *   A `static_cache_valid` flag, tied to game state revisions (e.g., `game_map.structural_revision`), will control when the expensive static pass is re-run.
+
+6.  **Backend-Agnostic Data Structures**
+    *   Light and shadow data will be packed into uniform buffers or storage buffers for the GPU. The conceptual data structure is universal, even if the shader syntax changes.
+    *   *(Note: The exact syntax will depend on the shader language, e.g., GLSL for OpenGL, WGSL for WebGPU, but the data layout remains the same.)*
+    ```glsl
+    // Example conceptual data layout
+    struct Light {
+        vec2 position;
+        float radius;
+        vec3 color;
+        // ... other properties for flicker, type, etc.
+    };
+    ```
+
+**Migration & Implementation Note:**
+
+This plan describes the target architecture for a highly scalable lighting system. **The full implementation of this multi-pass system should be deferred until the WebGPU migration (Roadmap Step 3.5).**
+
+For the current ModernGL prototype, a simplified single-pass approach that achieves visual parity is sufficient and more efficient from a development standpoint.
 
 ### Phase 3: Performance Benchmarking (High Priority)
 - **Goal**: Create comprehensive benchmarking program to compare GPU vs CPU performance
