@@ -17,8 +17,8 @@ from catley.types import Opacity
 
 PROJECT_ROOT_PATH = Path(__file__).resolve().parent.parent
 
-# RANDOM_SEED = None
-RANDOM_SEED = "burrito 92"
+RANDOM_SEED = None
+# RANDOM_SEED = "burrito 92"
 
 # =============================================================================
 # DISPLAY & RENDERING
