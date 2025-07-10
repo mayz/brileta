@@ -152,26 +152,41 @@ float calculateDirectionalShadowAttenuation(vec2 world_pos, float sky_exposure) 
     
     float shadow_factor = 1.0;
     
-    // Get shadow direction (opposite of sun direction)
-    vec2 shadow_direction = -normalize(u_sun_direction);
+    // Get shadow direction using discrete steps (matching CPU algorithm)
+    // CPU uses sign-based direction, not normalized vectors
+    float shadow_dx = 0.0;
+    float shadow_dy = 0.0;
+    
+    if (u_sun_direction.x > 0.0) {
+        shadow_dx = -1.0;
+    } else if (u_sun_direction.x < 0.0) {
+        shadow_dx = 1.0;
+    }
+    
+    if (u_sun_direction.y > 0.0) {
+        shadow_dy = -1.0;
+    } else if (u_sun_direction.y < 0.0) {
+        shadow_dy = 1.0;
+    }
     
     // Check each shadow caster for directional shadows
     for (int i = 0; i < u_shadow_caster_count && i < 64; i++) {
         vec2 caster_pos = vec2(u_shadow_caster_positions[i * 2], u_shadow_caster_positions[i * 2 + 1]);
         
         // Check if world_pos is in the shadow path from this caster
-        float max_shadow_length = min(float(u_shadow_max_length), 12.0); // Longer shadows for visibility
-        float base_intensity = u_shadow_intensity * 1.2; // Stronger than torch shadows for visibility
+        float max_shadow_length = float(u_shadow_max_length); // Use actual config value
+        float base_intensity = u_shadow_intensity; // Use actual config value, no multiplier
         
         bool in_shadow = false;
         float shadow_intensity = 0.0;
         
-        // Cast shadow in normalized direction
+        // Cast shadow using discrete tile steps (matching CPU)
         for (int j = 1; j <= int(max_shadow_length); j++) {
-            vec2 shadow_pos = caster_pos + shadow_direction * float(j);
+            // Use integer steps like CPU does
+            vec2 shadow_pos = caster_pos + vec2(shadow_dx * float(j), shadow_dy * float(j));
             
             // Check if world_pos matches this shadow position (core shadow)
-            if (abs(world_pos.x - shadow_pos.x) < 0.5 && abs(world_pos.y - shadow_pos.y) < 0.5) {
+            if (abs(world_pos.x - shadow_pos.x) < 0.1 && abs(world_pos.y - shadow_pos.y) < 0.1) {
                 // Calculate falloff with distance
                 float distance_falloff = 1.0;
                 if (u_shadow_falloff_enabled) {
@@ -183,22 +198,23 @@ float calculateDirectionalShadowAttenuation(vec2 world_pos, float sky_exposure) 
             
             // Add softer edges for first 2 shadow tiles (like CPU)
             if (j <= 2) {
-                float edge_intensity = base_intensity * 0.5; // 50% for more visible edges
+                float edge_intensity = base_intensity * 0.4; // 40% like CPU
                 if (u_shadow_falloff_enabled) {
                     float distance_falloff = 1.0 - (float(j - 1) / max_shadow_length);
                     edge_intensity *= distance_falloff;
                 }
                 
-                // Check 4 adjacent positions (not diagonal for directional shadows)
-                vec2 edge_offsets[4] = vec2[4](
-                    vec2(0.0, 1.0), vec2(0.0, -1.0), vec2(1.0, 0.0), vec2(-1.0, 0.0)
+                // Check 8 adjacent/diagonal positions (matching CPU)
+                vec2 edge_offsets[8] = vec2[8](
+                    vec2(0.0, 1.0), vec2(0.0, -1.0), vec2(1.0, 0.0), vec2(-1.0, 0.0),  // Adjacent
+                    vec2(1.0, 1.0), vec2(1.0, -1.0), vec2(-1.0, 1.0), vec2(-1.0, -1.0)   // Diagonal
                 );
                 
-                for (int k = 0; k < 4; k++) {
+                for (int k = 0; k < 8; k++) {
                     vec2 edge_pos = shadow_pos + edge_offsets[k];
-                    if (abs(world_pos.x - edge_pos.x) < 0.5 && abs(world_pos.y - edge_pos.y) < 0.5) {
-                        // Don't shadow the caster itself
-                        if (!(abs(edge_pos.x - caster_pos.x) < 0.1 && abs(edge_pos.y - caster_pos.y) < 0.1)) {
+                    if (abs(world_pos.x - edge_pos.x) < 0.1 && abs(world_pos.y - edge_pos.y) < 0.1) {
+                        // Don't add edge if it's in the core shadow direction
+                        if (!(abs(edge_offsets[k].x - shadow_dx) < 0.1 && abs(edge_offsets[k].y - shadow_dy) < 0.1)) {
                             shadow_intensity = max(shadow_intensity, edge_intensity);
                             in_shadow = true;
                         }

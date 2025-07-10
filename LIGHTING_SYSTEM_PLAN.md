@@ -11,53 +11,6 @@
 ### Phase 2: Feature Parity (High Priority)
 
 ################################################################
-Do this next phase *before* the WebGPU migration.
-################################################################
-
-#### **Phase 2.1: GPU Directional Lighting & Shadow Parity (Immediate Priority)**
-
-*   **Goal**: Achieve full visual and feature parity with the `CPULightingSystem` by implementing directional sunlight and its corresponding parallel shadows in the GPU pipeline. This makes the ModernGL implementation a feature-complete prototype.
-*   **Priority**: 9/10 - This is the final step to stabilize the ModernGL renderer before focusing on gameplay and the eventual WebGPU migration.
-*   **Implementation Approach**: A single-pass fragment shader enhancement that adds directional light calculations on top of the existing point-light logic.
-
-**Key Deliverables**:
-
-1.  **Python-Side Data Pipeline (`GPULightingSystem`)**
-    *   Verify that `_set_directional_light_uniforms()` correctly finds the active `DirectionalLight` and passes its `direction`, `color`, and `intensity` to the shader.
-    *   Verify that `_update_sky_exposure_texture()` correctly creates and binds a texture representing tile-by-tile sky exposure values. This texture is essential for the shader to know which areas are "outdoors".
-
-2.  **Fragment Shader Uniforms (`assets/shaders/lighting/point_light.frag`)**
-    *   Add the necessary uniforms to receive directional light data from the Python backend.
-    ```glsl
-    // Add to the uniform block
-    uniform vec2 u_sun_direction;
-    uniform vec3 u_sun_color;
-    uniform float u_sun_intensity;
-
-    uniform sampler2D u_sky_exposure_map; // For outdoor/indoor detection
-    uniform float u_sky_exposure_power;   // To control light fall-off curve
-    ```
-
-3.  **Sky Exposure and Sunlight Logic (in `point_light.frag`)**
-    *   After the point-light loop, sample the `u_sky_exposure_map` to determine if the current fragment (pixel) is outdoors.
-    *   If `sky_exposure > 0.0`, calculate the sun's contribution. Use `pow(sky_exposure, u_sky_exposure_power)` to create a more natural, non-linear falloff at the edges of outdoor areas.
-    *   Combine the sun's contribution with the point-light color using `max()`, preventing oversaturation and ensuring the brightest light source prevails.
-
-4.  **Directional Shadow Logic (in `point_light.frag`)**
-    *   This is a critical feature for visual parity with the CPU system.
-    *   After the sunlight calculation, add a new loop that iterates through all `u_shadow_caster_positions`.
-    *   For each shadow caster, determine if the current fragment lies in the "shadow path" cast by that caster *away from the sun's direction*. This is different from point-light shadows, which radiate from a central point.
-    *   If the fragment is in a directional shadow path, reduce its final calculated light color by `u_shadow_intensity`.
-    *   The length of the shadow can be controlled by `u_shadow_max_length`.
-
-5.  **Final Blending and Output**
-    *   The final fragment color will be the result of (Point Lights + Directional Light) * Directional Shadows.
-
-6.  **Testing & Validation**
-    *   Perform A/B testing by toggling `config.GPU_LIGHTING_ENABLED`.
-    *   **Success Criteria**: Outdoor areas in GPU mode should be brightly lit by the sun, and both actors and shadow-casting tiles should cast long, parallel shadows away from the sun's direction, matching the visual output of the CPU implementation.
-
-################################################################
 Only do stuff here and below *after* the WebGPU migration.
 ################################################################
 
