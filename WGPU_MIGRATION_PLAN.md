@@ -4,143 +4,39 @@ This document outlines the specific technical steps for migrating Catley from Mo
 
 ## Phase 2: WGPU Implementation (After GLFW Migration)
 
-### Step 2.1: GLFW-WGPU Bridge Implementation
-
-Create a minimal test to validate the GLFW-WGPU bridge:
-
-**Test Script**: `test_glfw_wgpu_bridge.py`
-
-```python
-import glfw
-import wgpu
-from wgpu.gui.glfw import GlfwWgpuCanvas
-
-# Initialize GLFW
-if not glfw.init():
-    raise Exception("Failed to initialize GLFW")
-
-# Create GLFW window
-window = glfw.create_window(800, 600, "WGPU Bridge Test", None, None)
-if not window:
-    glfw.terminate()
-    raise Exception("Failed to create GLFW window")
-
-# Create WGPU canvas
-canvas = GlfwWgpuCanvas(window)
-
-# Get adapter and device
-adapter = wgpu.gpu.request_adapter_sync(power_preference="high-performance")
-device = adapter.request_device_sync()
-
-# Create canvas context
-context = canvas.get_context("wgpu")
-
-# Get preferred format and configure the context
-render_texture_format = context.get_preferred_format(adapter)
-context.configure(device=device, format=render_texture_format)
-
-# Create a simple render pipeline that clears to red
-shader = device.create_shader_module(code='''
-    @vertex
-    fn vs_main(@builtin(vertex_index) vertex_index: u32) -> @builtin(position) vec4<f32> {
-        var pos = array<vec2<f32>, 3>(
-            vec2<f32>(-1.0, -1.0),
-            vec2<f32>( 3.0, -1.0),
-            vec2<f32>(-1.0,  3.0)
-        );
-        return vec4<f32>(pos[vertex_index], 0.0, 1.0);
-    }
-
-    @fragment
-    fn fs_main() -> @location(0) vec4<f32> {
-        return vec4<f32>(1.0, 0.0, 0.0, 1.0);  // Red
-    }
-''')
-
-pipeline_layout = device.create_pipeline_layout(bind_group_layouts=[])
-
-pipeline = device.create_render_pipeline(
-    layout=pipeline_layout,
-    vertex={"module": shader, "entry_point": "vs_main"},
-    fragment={"module": shader, "entry_point": "fs_main", "targets": [{"format": render_texture_format}]},
-    primitive={"topology": wgpu.PrimitiveTopology.triangle_list},
-)
-
-# Render function
-def render():
-    # Get the current texture to render to
-    texture = context.get_current_texture()
-
-    # Create command encoder
-    command_encoder = device.create_command_encoder()
-
-    # Create render pass
-    render_pass = command_encoder.begin_render_pass(
-        color_attachments=[{
-            "view": texture.create_view(),
-            "load_op": wgpu.LoadOp.clear,
-            "clear_value": (1, 0, 0, 1),  # Red
-            "store_op": wgpu.StoreOp.store,
-        }]
-    )
-
-    # Draw fullscreen triangle
-    render_pass.set_pipeline(pipeline)
-    render_pass.draw(3)
-    render_pass.end()
-
-    # Submit commands
-    device.queue.submit([command_encoder.finish()])
-
-    # Present the frame
-    context.present()
-
-# Main loop
-while not glfw.window_should_close(window):
-    glfw.poll_events()
-    render()
-
-print("✅ SUCCESS: WGPU context created and configured!")
-print("✅ Window should display red background")
-print("✅ GLFW-WGPU bridge is working!")
-
-glfw.terminate()
-```
-
-**Success Criteria**:
-1. Window appears and shows red background
-2. No crashes or errors
-3. Can handle window resize/close events
-4. Validates that native window handles are correctly accessed
-
 ### Step 2.2: Backend Scaffolding
 
 **Create directory structure**:
 ```
 catley/backends/wgpu/
 ├── __init__.py
-├── graphics.py          # WGPUGraphicsContext
-├── canvas.py           # WGPUCanvas (uses GlfwWgpuCanvas)
-├── glfw_canvas.py      # GlfwWgpuCanvas implementation
-├── resource_manager.py # WGPU resource management
-└── shader_utils.py     # WGSL shader utilities
+├── graphics.py          # WGPUGraphicsContext (main entry point)
+├── canvas.py           # WGPUCanvas (extends catley.view.render.canvas.Canvas)
+├── resource_manager.py # WGPU resource management (buffers, textures, pipelines)
+├── screen_renderer.py  # WGPU screen rendering (port of ModernGL version)
+├── texture_renderer.py # WGPU texture rendering (port of ModernGL version)
+├── shader_manager.py   # WGSL shader management and compilation
+└── gpu_lighting.py     # WGPU lighting system (port of ModernGL version)
 ```
 
 **Create WGPUGraphicsContext skeleton** using correct WGPU API patterns:
 
 ```python
 class WGPUGraphicsContext(GraphicsContext):
-    def __init__(self, window):
+    def __init__(self, window_size=(800, 600), title="Catley"):
         super().__init__()
-        self.window = window
-        self.canvas = GlfwWgpuCanvas(window)
+        # Let GlfwWgpuCanvas create its own window - don't pass existing GLFW window
+        self.canvas = GlfwWgpuCanvas(size=window_size, title=title)
+        self.window = self.canvas._window  # Access GLFW window after creation
         self.device = None
         self.queue = None
 
     def initialize(self):
         """Initialize WGPU device and queue."""
         # Correct WGPU API usage patterns:
-        adapter = wgpu.gpu.request_adapter_sync(power_preference="high-performance")
+        adapter = wgpu.gpu.request_adapter_sync(
+            power_preference=wgpu.PowerPreference.high_performance  # type: ignore
+        )
         self.device = adapter.request_device_sync()
         self.queue = self.device.queue
 
@@ -156,6 +52,9 @@ class WGPUGraphicsContext(GraphicsContext):
 - Use `canvas.get_context("wgpu")` not `canvas.create_canvas_context()`
 - Use `context.get_preferred_format(adapter)` instead of hardcoded formats
 - `create_render_pipeline()` requires `layout` parameter
+- **CRITICAL**: Use `GlfwWgpuCanvas(size=..., title=...)` - don't pass existing GLFW window
+- **CRITICAL**: Access GLFW window via `canvas._window` after creation
+- **CRITICAL**: Add `# type: ignore` for PowerPreference enum to satisfy type checker
 
 ## Phase 3: Core Rendering Port
 
@@ -310,8 +209,9 @@ Once basic parity is achieved, implement the advanced architecture:
 
 1. ✅ ~~Research Pyglet source for native window handles~~ **COMPLETE - Found incompatibility**
 2. ✅ ~~Create minimal Pyglet+WGPU proof of concept~~ **COMPLETE - Confirmed incompatibility**
-3. 🔄 **NEW PRIORITY**: Implement GLFW migration for ModernGL backend
-4. Validate GLFW+ModernGL works with existing input/event systems
-5. Create minimal GLFW+WGPU proof of concept
-6. Begin shader translation with simple examples
-7. Proceed with full WGPU implementation plan
+3. ✅ ~~Create minimal GLFW+WGPU proof of concept~~ **COMPLETE - Step 2.1 validated**
+4. 🔄 **CURRENT PRIORITY**: Implement GLFW migration for ModernGL backend
+5. Validate GLFW+ModernGL works with existing input/event systems
+6. Begin Step 2.2: Backend Scaffolding (create `catley/backends/wgpu/` structure)
+7. Begin shader translation with simple examples
+8. Proceed with full WGPU implementation plan
