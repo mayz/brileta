@@ -2,60 +2,6 @@
 
 This document outlines the specific technical steps for migrating Catley from ModernGL to wgpu-py.
 
-## Phase 2: WGPU Implementation (After GLFW Migration)
-
-### Step 2.2: Backend Scaffolding
-
-**Create directory structure**:
-```
-catley/backends/wgpu/
-├── __init__.py
-├── graphics.py          # WGPUGraphicsContext (main entry point)
-├── canvas.py           # WGPUCanvas (extends catley.view.render.canvas.Canvas)
-├── resource_manager.py # WGPU resource management (buffers, textures, pipelines)
-├── screen_renderer.py  # WGPU screen rendering (port of ModernGL version)
-├── texture_renderer.py # WGPU texture rendering (port of ModernGL version)
-├── shader_manager.py   # WGSL shader management and compilation
-└── gpu_lighting.py     # WGPU lighting system (port of ModernGL version)
-```
-
-**Create WGPUGraphicsContext skeleton** using correct WGPU API patterns:
-
-```python
-class WGPUGraphicsContext(GraphicsContext):
-    def __init__(self, window_size=(800, 600), title="Catley"):
-        super().__init__()
-        # Let GlfwWgpuCanvas create its own window - don't pass existing GLFW window
-        self.canvas = GlfwWgpuCanvas(size=window_size, title=title)
-        self.window = self.canvas._window  # Access GLFW window after creation
-        self.device = None
-        self.queue = None
-
-    def initialize(self):
-        """Initialize WGPU device and queue."""
-        # Correct WGPU API usage patterns:
-        adapter = wgpu.gpu.request_adapter_sync(
-            power_preference=wgpu.PowerPreference.high_performance  # type: ignore
-        )
-        self.device = adapter.request_device_sync()
-        self.queue = self.device.queue
-
-        # Create and configure canvas context
-        self.context = self.canvas.get_context("wgpu")
-        render_texture_format = self.context.get_preferred_format(adapter)
-        self.context.configure(device=self.device, format=render_texture_format)
-```
-
-**Key API Notes**:
-- Use `wgpu.gpu.request_adapter_sync()` not `wgpu.request_adapter()`
-- Use `adapter.request_device_sync()` not `adapter.request_device()`
-- Use `canvas.get_context("wgpu")` not `canvas.create_canvas_context()`
-- Use `context.get_preferred_format(adapter)` instead of hardcoded formats
-- `create_render_pipeline()` requires `layout` parameter
-- **CRITICAL**: Use `GlfwWgpuCanvas(size=..., title=...)` - don't pass existing GLFW window
-- **CRITICAL**: Access GLFW window via `canvas._window` after creation
-- **CRITICAL**: Add `# type: ignore` for PowerPreference enum to satisfy type checker
-
 ## Phase 3: Core Rendering Port
 
 ### Step 3.1: Performance Baseline
