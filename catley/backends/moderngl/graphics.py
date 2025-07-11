@@ -114,9 +114,9 @@ class ModernGLGraphicsContext(GraphicsContext):
     architecture to correctly handle different rendering contexts.
     """
 
-    def __init__(self, window: GLWindow, context: moderngl.Context) -> None:
+    def __init__(self, window: GLWindow) -> None:
         self.window = window
-        self.mgl_context = context
+        self.mgl_context = moderngl.create_context()
         self.mgl_context.enable(moderngl.BLEND)
         self.mgl_context.blend_func = moderngl.SRC_ALPHA, moderngl.ONE_MINUS_SRC_ALPHA
         self.mgl_context.disable(moderngl.CULL_FACE)

@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 import glfw
-import moderngl
 import tcod
 
 from catley.app import App, AppConfig
-from catley.backends.moderngl.graphics import ModernGLGraphicsContext
+from catley.backends.wgpu.graphics import WGPUGraphicsContext
+from catley.util.misc import SuppressStderr
 
 from .window import GlfwWindow
 
+# GraphicsContextImplClass = ModernGLGraphicsContext
+GraphicsContextImplClass = WGPUGraphicsContext
 
-class GlfwApp(App[ModernGLGraphicsContext]):
+
+class GlfwApp(App[GraphicsContextImplClass]):
     """
     The GLFW implementation of the application driver.
 
@@ -90,12 +93,16 @@ class GlfwApp(App[ModernGLGraphicsContext]):
         self._last_mouse_pos = glfw.get_cursor_pos(self.window)
 
     def _initialize_graphics(self) -> None:
-        """Initialize the ModernGL graphics context."""
-        self.mgl_context = moderngl.create_context()
-        self.glfw_window_wrapper = GlfwWindow(self.window)
-        self.graphics = ModernGLGraphicsContext(
-            self.glfw_window_wrapper, self.mgl_context
-        )
+        """Initialize the graphics context."""
+        self.glfw_window = GlfwWindow(self.window)
+        try:
+            # Try WGPU constructor with vsync parameter
+            self.graphics = GraphicsContextImplClass(
+                self.glfw_window, vsync=self.app_config.vsync
+            )
+        except TypeError:
+            # Fallback for graphics contexts that don't support vsync parameter
+            self.graphics = GraphicsContextImplClass(self.glfw_window)
 
     def _register_callbacks(self) -> None:
         """Register GLFW event callbacks."""
@@ -131,9 +138,15 @@ class GlfwApp(App[ModernGLGraphicsContext]):
                 self.render_frame()
 
         finally:
-            # Restore system cursor when exiting
-            glfw.set_input_mode(self.window, glfw.CURSOR, glfw.CURSOR_NORMAL)
-            glfw.terminate()
+            # Suppress stderr during shutdown to hide harmless CoreAnimation warnings
+            with SuppressStderr():
+                # Clean up WGPU resources before terminating GLFW
+                if hasattr(self.graphics, "cleanup"):
+                    self.graphics.cleanup()
+
+                # Restore system cursor when exiting
+                glfw.set_input_mode(self.window, glfw.CURSOR, glfw.CURSOR_NORMAL)
+                glfw.terminate()
 
     def prepare_for_new_frame(self) -> None:
         """Prepares the backbuffer for a new frame of rendering."""
@@ -143,7 +156,7 @@ class GlfwApp(App[ModernGLGraphicsContext]):
         """Presents the fully rendered backbuffer to the screen."""
         self.graphics.finalize_present()
         # Swap the front and back buffers to display the rendered frame
-        self.glfw_window_wrapper.flip()
+        self.glfw_window.flip()
 
     def toggle_fullscreen(self) -> None:
         """Toggles the display between windowed and fullscreen mode."""

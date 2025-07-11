@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import moderngl
 import pyglet
 import tcod
 from pyglet.window import key, mouse
@@ -63,8 +62,7 @@ class PygletApp(App[ModernGLGraphicsContext]):
             self.window.maximize()
 
     def _initialize_graphics(self) -> None:
-        self.mgl_context = moderngl.create_context()
-        self.graphics = ModernGLGraphicsContext(self.window, self.mgl_context)
+        self.graphics = ModernGLGraphicsContext(self.window)
 
     def run(self) -> None:
         """Starts the main application loop and runs the game."""

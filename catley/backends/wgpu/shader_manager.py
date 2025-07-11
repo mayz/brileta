@@ -124,7 +124,7 @@ class WGPUShaderManager:
         fragment_shader_path: str,
         vertex_layout: list[dict],
         bind_group_layouts: list[wgpu.GPUBindGroupLayout],
-        primitive_topology: str = "triangle-list",
+        primitive_topology=wgpu.PrimitiveTopology.triangle_list,
         targets: list[dict] | None = None,
         cache_key: str | None = None,
     ) -> wgpu.GPURenderPipeline:
@@ -157,16 +157,17 @@ class WGPUShaderManager:
                     "format": "bgra8unorm",  # Common swap chain format
                     "blend": {
                         "color": {
-                            "operation": "add",
-                            "src_factor": "src-alpha",
-                            "dst_factor": "one-minus-src-alpha",
+                            "operation": wgpu.BlendOperation.add,
+                            "src_factor": wgpu.BlendFactor.src_alpha,
+                            "dst_factor": wgpu.BlendFactor.one_minus_src_alpha,
                         },
                         "alpha": {
-                            "operation": "add",
-                            "src_factor": "one",
-                            "dst_factor": "one-minus-src-alpha",
+                            "operation": wgpu.BlendOperation.add,
+                            "src_factor": wgpu.BlendFactor.one,
+                            "dst_factor": wgpu.BlendFactor.one_minus_src_alpha,
                         },
                     },
+                    "write_mask": wgpu.ColorWrite.ALL,
                 }
             ]
 
@@ -196,9 +197,7 @@ class WGPUShaderManager:
                 },
                 primitive={
                     "topology": primitive_topology,
-                    "strip_index_format": None,
-                    "front_face": "ccw",
-                    "cull_mode": "none",
+                    "cull_mode": wgpu.CullMode.none,
                 },
                 multisample={
                     "count": 1,

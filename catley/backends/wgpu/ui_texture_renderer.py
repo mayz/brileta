@@ -1,4 +1,4 @@
-"""WGPU screen rendering - port of ModernGL version."""
+"""WGPU UI texture renderer - handles arbitrary texture rendering."""
 
 from __future__ import annotations
 
@@ -12,8 +12,8 @@ if TYPE_CHECKING:
     from .resource_manager import WGPUResourceManager
     from .shader_manager import WGPUShaderManager
 
-# Maximum number of quads (2 triangles per quad) to draw per frame.
-MAX_QUADS = 10000
+# Maximum number of UI quads per frame
+MAX_UI_QUADS = 500
 
 VERTEX_DTYPE = np.dtype(
     [
@@ -24,61 +24,60 @@ VERTEX_DTYPE = np.dtype(
 )
 
 
-class WGPUScreenRenderer:
-    """WGPU screen renderer - handles background tiles and viewport transformations.
-
-    Specialized class for batch-rendering all game world objects that use the
-    main tileset atlas to the screen.
+class WGPUUITextureRenderer:
     """
+    A batched renderer for textured quads where each quad can have a
+    different source texture. WGPU version of the ModernGL UITextureRenderer.
+    """
+
+    VERTEX_DTYPE = VERTEX_DTYPE
 
     def __init__(
         self,
         resource_manager: WGPUResourceManager,
         shader_manager: WGPUShaderManager,
-        atlas_texture: wgpu.GPUTexture,
         surface_format: str,
     ) -> None:
-        """Initialize WGPU screen renderer.
+        """Initialize WGPU UI texture renderer.
 
         Args:
             resource_manager: WGPU resource manager for buffer/texture caching
             shader_manager: WGPU shader manager for pipeline creation
-            atlas_texture: The main tileset atlas texture
             surface_format: The surface format for render targets
         """
         self.resource_manager = resource_manager
         self.shader_manager = shader_manager
-        self.atlas_texture = atlas_texture
         self.surface_format = surface_format
+        self.render_queue: list[tuple[wgpu.GPUTexture, int]] = []
 
-        # Main Vertex Buffer for Screen Rendering
-        self.cpu_vertex_buffer = np.zeros(MAX_QUADS * 6, dtype=VERTEX_DTYPE)
+        # Create CPU-side buffer to aggregate all vertex data
+        self.cpu_vertex_buffer = np.zeros(MAX_UI_QUADS * 6, dtype=VERTEX_DTYPE)
         self.vertex_count = 0
 
-        # Create vertex buffer
-        buffer_size = MAX_QUADS * 6 * VERTEX_DTYPE.itemsize
+        # Create dynamic vertex buffer large enough for all UI quads
+        buffer_size = MAX_UI_QUADS * 6 * VERTEX_DTYPE.itemsize
         self.vertex_buffer = self.resource_manager.get_or_create_buffer(
             size=buffer_size,
             usage=wgpu.BufferUsage.VERTEX | wgpu.BufferUsage.COPY_DST,
-            label="screen_renderer_vertex_buffer",
+            label="ui_texture_renderer_vertex_buffer",
         )
 
         # Create dedicated uniform buffer for letterbox parameters
         self.uniform_buffer = self.resource_manager.device.create_buffer(
             size=16,  # vec4<f32> = 16 bytes
             usage=wgpu.BufferUsage.UNIFORM | wgpu.BufferUsage.COPY_DST,  # type: ignore
-            label="screen_renderer_uniform_buffer",
+            label="ui_texture_renderer_uniform_buffer",
         )
 
         # Create pipeline and bind groups
         self._create_pipeline()
 
-        # Cache the bind group instead of creating it every frame
-        self._cached_bind_group = None
+        # Cache for texture bind groups
+        self.texture_bind_groups: dict[int, wgpu.GPUBindGroup] = {}
 
     def _create_pipeline(self) -> None:
-        """Create the WGPU render pipeline - COPIED EXACTLY from working UI renderer."""
-        # Create bind group layout - EXACT copy from UI renderer
+        """Create the WGPU render pipeline for UI texture rendering."""
+        # Create bind group layout
         self.bind_group_layout = self.shader_manager.create_bind_group_layout(
             entries=[
                 {
@@ -97,10 +96,10 @@ class WGPUScreenRenderer:
                     "sampler": {"type": "filtering"},
                 },
             ],
-            label="screen_renderer_bind_group_layout",
+            label="ui_texture_renderer_bind_group_layout",
         )
 
-        # Define vertex buffer layout - EXACT copy from UI renderer
+        # Define vertex buffer layout
         vertex_layout = [
             {
                 "array_stride": VERTEX_DTYPE.itemsize,
@@ -125,7 +124,7 @@ class WGPUScreenRenderer:
             }
         ]
 
-        # Create render pipeline - EXACT copy from UI renderer
+        # Create render pipeline with correct surface format
         targets = [
             {
                 "format": self.surface_format,
@@ -145,17 +144,16 @@ class WGPUScreenRenderer:
             }
         ]
 
-        # Use proper screen shader for screen rendering
         self.pipeline = self.shader_manager.create_render_pipeline(
-            vertex_shader_path="wgsl/screen/main.wgsl",
-            fragment_shader_path="wgsl/screen/main.wgsl",  # Same file
+            vertex_shader_path="wgsl/ui/texture.wgsl",
+            fragment_shader_path="wgsl/ui/texture.wgsl",  # Same file
             vertex_layout=vertex_layout,
             bind_group_layouts=[self.bind_group_layout],
             targets=targets,
-            cache_key="screen_renderer_pipeline",
+            cache_key="ui_texture_renderer_pipeline",
         )
 
-        # Create sampler - EXACT copy from UI renderer
+        # Create sampler
         self.sampler = self.resource_manager.device.create_sampler(
             mag_filter=wgpu.FilterMode.nearest,  # type: ignore
             min_filter=wgpu.FilterMode.nearest,  # type: ignore
@@ -165,59 +163,60 @@ class WGPUScreenRenderer:
         )
 
     def begin_frame(self) -> None:
-        """Reset the internal vertex count to zero at the start of a frame."""
+        """Clear the internal queue of textures to be rendered for the new frame."""
+        self.render_queue.clear()
         self.vertex_count = 0
 
-    def add_quad(
-        self,
-        x: float,
-        y: float,
-        w: float,
-        h: float,
-        uv_coords: tuple[float, float, float, float],
-        color_rgba: tuple[float, float, float, float],
-    ) -> None:
-        """Add a quad to the vertex buffer."""
-        if self.vertex_count + 6 > len(self.cpu_vertex_buffer):
-            return
-
-        u1, v1, u2, v2 = uv_coords
-        vertices = np.zeros(6, dtype=VERTEX_DTYPE)
-        vertices[0] = ((x, y), (u1, v1), color_rgba)
-        vertices[1] = ((x + w, y), (u2, v1), color_rgba)
-        vertices[2] = ((x, y + h), (u1, v2), color_rgba)
-        vertices[3] = ((x + w, y), (u2, v1), color_rgba)
-        vertices[4] = ((x, y + h), (u1, v2), color_rgba)
-        vertices[5] = ((x + w, y + h), (u2, v2), color_rgba)
-
+    def add_textured_quad(self, texture: wgpu.GPUTexture, vertices: np.ndarray) -> None:
+        """Add texture and vertex data to the internal render queue."""
+        # Copy vertices into the CPU buffer
         self.cpu_vertex_buffer[self.vertex_count : self.vertex_count + 6] = vertices
         self.vertex_count += 6
 
-    def render_to_screen(
+        # Queue only the texture and vertex count for this quad
+        self.render_queue.append((texture, 6))
+
+    def _get_or_create_bind_group(self, texture: wgpu.GPUTexture) -> wgpu.GPUBindGroup:
+        """Get or create a bind group for the given texture."""
+        texture_id = id(texture)
+        if texture_id not in self.texture_bind_groups:
+            self.texture_bind_groups[texture_id] = (
+                self.shader_manager.create_bind_group(
+                    layout=self.bind_group_layout,
+                    entries=[
+                        {
+                            "binding": 0,
+                            "resource": {"buffer": self.uniform_buffer},
+                        },
+                        {
+                            "binding": 1,
+                            "resource": self.resource_manager.get_texture_view(texture),
+                        },
+                        {
+                            "binding": 2,
+                            "resource": self.sampler,
+                        },
+                    ],
+                    label=f"ui_texture_renderer_bind_group_{texture_id}",
+                )
+            )
+        return self.texture_bind_groups[texture_id]
+
+    def render(
         self,
         render_pass: wgpu.GPURenderPassEncoder,
-        window_size: tuple[int, int],
-        letterbox_geometry: tuple[int, int, int, int] | None = None,
+        letterbox_geometry: tuple[int, int, int, int] | None,
     ) -> None:
-        """Main drawing method that renders all batched vertex data to the screen.
-
-        Args:
-            render_pass: WGPU render pass encoder
-            window_size: Full window dimensions
-            letterbox_geometry: (offset_x, offset_y, scaled_w, scaled_h) for letterbox
-        """
-        if self.vertex_count == 0:
+        """Render all queued textured quads."""
+        if not self.render_queue or self.vertex_count == 0:
             return
 
-        # Determine letterbox parameters
+        # Update uniform buffer with letterbox parameters
         if letterbox_geometry is not None:
             offset_x, offset_y, scaled_w, scaled_h = letterbox_geometry
         else:
-            # No letterboxing - use full screen
-            offset_x, offset_y = 0, 0
-            scaled_w, scaled_h = window_size
+            offset_x, offset_y, scaled_w, scaled_h = 0, 0, 800, 600  # Fallback
 
-        # Update uniform buffer with letterbox parameters (same as UI renderer)
         letterbox_data = struct.pack(
             "4f", float(offset_x), float(offset_y), float(scaled_w), float(scaled_h)
         )
@@ -225,48 +224,25 @@ class WGPUScreenRenderer:
             self.uniform_buffer, 0, memoryview(letterbox_data)
         )  # type: ignore
 
-        # Upload vertex data to GPU
+        # Upload all vertex data to GPU in a single operation
         self.resource_manager.queue.write_buffer(
             self.vertex_buffer,
             0,
             memoryview(self.cpu_vertex_buffer[: self.vertex_count].tobytes()),  # type: ignore
         )
 
-        # Remove viewport setting to match working UI renderer
-        # render_pass.set_viewport(
-        #     0.0, 0.0, float(window_size[0]), float(window_size[1]), 0.0, 1.0
-        # )
-
-        # Get or create cached bind group
-        if self._cached_bind_group is None:
-            self._cached_bind_group = self.shader_manager.create_bind_group(
-                layout=self.bind_group_layout,
-                entries=[
-                    {
-                        "binding": 0,
-                        "resource": {"buffer": self.uniform_buffer},
-                    },
-                    {
-                        "binding": 1,
-                        "resource": self.resource_manager.get_texture_view(
-                            self.atlas_texture
-                        ),
-                    },
-                    {
-                        "binding": 2,
-                        "resource": self.sampler,
-                    },
-                ],
-                label="screen_renderer_cached_bind_group",
-            )
-        bind_group = self._cached_bind_group
-
         # Set up render pass
         render_pass.set_pipeline(self.pipeline)
-        render_pass.set_bind_group(0, bind_group)
         render_pass.set_vertex_buffer(0, self.vertex_buffer)
 
-        # Draw vertices as triangles
-        render_pass.draw(
-            self.vertex_count, 1, 0
-        )  # vertex_count, instance_count, first_vertex
+        # Render each quad with the correct texture binding
+        vertex_offset = 0
+        for texture, vertex_count in self.render_queue:
+            # Get or create bind group for this texture
+            bind_group = self._get_or_create_bind_group(texture)
+            render_pass.set_bind_group(0, bind_group)
+
+            # Render this quad using the correct slice of vertices
+            render_pass.draw(vertex_count, 1, vertex_offset)
+
+            vertex_offset += vertex_count

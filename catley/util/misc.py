@@ -1,6 +1,27 @@
 from __future__ import annotations
 
+import os
+import sys
 from typing import Any
+
+
+class SuppressStderr:
+    """Context manager to suppress stderr output during shutdown."""
+
+    def __init__(self):
+        self.orig_stderr_fileno = sys.stderr.fileno()
+
+    def __enter__(self):
+        self.orig_stderr_dup = os.dup(self.orig_stderr_fileno)
+        # Use built-in open for os.devnull which is a system path, not user file
+        self.devnull = open(os.devnull, "w")  # noqa: PTH123
+        os.dup2(self.devnull.fileno(), self.orig_stderr_fileno)
+
+    def __exit__(self, type, value, traceback):
+        os.close(self.orig_stderr_fileno)
+        os.dup2(self.orig_stderr_dup, self.orig_stderr_fileno)
+        os.close(self.orig_stderr_dup)
+        self.devnull.close()
 
 
 def to_bool(value: Any) -> bool:

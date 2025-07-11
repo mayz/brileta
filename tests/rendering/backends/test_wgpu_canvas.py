@@ -55,7 +55,7 @@ class TestWGPUCanvas:
 
     def test_artifact_type_property(self):
         """Test artifact type property."""
-        assert self.canvas.artifact_type == "wgpu_buffer"
+        assert self.canvas.artifact_type == "glyph_buffer"
 
     def test_get_text_metrics(self):
         """Test text metrics method."""
@@ -67,8 +67,8 @@ class TestWGPUCanvas:
         assert isinstance(height, int)
         assert isinstance(line_height, int)
 
-        # With placeholder implementation: len("Hello") * 10 = 50
-        assert width == 50
+        # With tile-based implementation: len("Hello") * 20 = 100 (tile_width=20)
+        assert width == 100
         assert height == 20
         assert line_height == 20
 
@@ -77,24 +77,28 @@ class TestWGPUCanvas:
         metrics = self.canvas.get_text_metrics("Test", font_size=16)
         assert isinstance(metrics, tuple)
         assert len(metrics) == 3
-        # Font size parameter is currently ignored in placeholder
+        # Font size parameter is currently ignored
         width, height, line_height = metrics
-        assert width == 40  # len("Test") * 10
+        assert width == 80  # len("Test") * 20 (tile_width=20)
 
     def test_wrap_text(self):
         """Test text wrapping method."""
         text = "This is a long line of text"
         wrapped = self.canvas.wrap_text(text, max_width=100)
         assert isinstance(wrapped, list)
-        assert len(wrapped) == 1  # Placeholder doesn't wrap
-        assert wrapped[0] == text
+        # With tile_width=20, max_width=100 allows 5 chars per line
+        # "This is a long line of text" should wrap into multiple lines
+        assert len(wrapped) > 1
+        assert all(len(line) <= 5 for line in wrapped)
 
     def test_wrap_text_with_font_size(self):
         """Test text wrapping with font size parameter."""
         text = "Test text"
         wrapped = self.canvas.wrap_text(text, max_width=50, font_size=14)
         assert isinstance(wrapped, list)
-        assert wrapped[0] == text
+        # With tile_width=20, max_width=50 allows 2 chars per line
+        # "Test text" (9 chars) should wrap
+        assert len(wrapped) > 1
 
     def test_get_effective_line_height(self):
         """Test effective line height method."""
@@ -183,18 +187,38 @@ class TestWGPUCanvas:
         assert op[5] == colors.BLUE  # fg
         assert op[6] == colors.BLACK  # bg
 
-    def test_create_texture_not_implemented(self):
-        """Test that create_texture raises NotImplementedError."""
-        with pytest.raises(
-            NotImplementedError, match="WGPU texture creation.*not yet implemented"
-        ):
-            self.canvas.create_texture(self.mock_renderer, Mock())
+    def test_create_texture_implementation(self):
+        """Test that create_texture works with GlyphBuffer artifacts."""
+        from catley.util.glyph_buffer import GlyphBuffer
+
+        # Mock the renderer's render_glyph_buffer_to_texture method
+        self.mock_renderer.render_glyph_buffer_to_texture = Mock(
+            return_value="mock_texture"
+        )
+
+        # Test with GlyphBuffer artifact
+        glyph_buffer = GlyphBuffer(5, 3)
+        result = self.canvas.create_texture(self.mock_renderer, glyph_buffer)
+        assert result == "mock_texture"
+        self.mock_renderer.render_glyph_buffer_to_texture.assert_called_once_with(
+            glyph_buffer
+        )
+
+        # Test with non-GlyphBuffer artifact
+        result = self.canvas.create_texture(self.mock_renderer, "not_a_glyph_buffer")
+        assert result is None
 
     def test_prepare_for_rendering(self):
         """Test prepare for rendering method."""
-        # Should return True (placeholder implementation)
+        # Should return False when dimensions are 0
+        result = self.canvas._prepare_for_rendering()
+        assert result is False
+
+        # Should return True when dimensions are set
+        self.canvas.configure_dimensions(100, 80)
         result = self.canvas._prepare_for_rendering()
         assert result is True
+        assert self.canvas.private_glyph_buffer is not None
 
     def test_canvas_interface_compliance(self):
         """Test that WGPUCanvas properly implements Canvas interface."""
@@ -253,6 +277,7 @@ def test_canvas_creation_parameters():
 def test_canvas_operation_caching():
     """Test canvas operation caching behavior."""
     mock_renderer = Mock()
+    mock_renderer.tile_dimensions = (20, 20)
     canvas = WGPUCanvas(mock_renderer)  # type: ignore[misc]
 
     # Begin frame and add operations

@@ -74,9 +74,7 @@ class TestModernGLGraphicsContext:
             mock_texture = Mock()
             mock_load_atlas.return_value = mock_texture
 
-            self.graphics_ctx = ModernGLGraphicsContext(
-                self.mock_window, self.gl_context
-            )
+            self.graphics_ctx = ModernGLGraphicsContext(self.mock_window)
 
         yield
 
@@ -86,7 +84,7 @@ class TestModernGLGraphicsContext:
     def test_initialization(self):
         """Test that graphics context initializes correctly."""
         assert self.graphics_ctx.window == self.mock_window
-        assert self.graphics_ctx.mgl_context == self.gl_context
+        assert self.graphics_ctx.mgl_context is not None
         assert self.graphics_ctx.atlas_texture is not None
         assert self.graphics_ctx.program is not None
         assert self.graphics_ctx.uv_map.shape == (256, 4)
@@ -826,9 +824,9 @@ class TestModernGLGraphicsContextEdgeCases:
 
             with patch("numpy.array", return_value=mock_array):
                 mock_open.return_value = mock_img
-                graphics_ctx = ModernGLGraphicsContext(mock_window, context)
+                graphics_ctx = ModernGLGraphicsContext(mock_window)
 
-                assert graphics_ctx.mgl_context == context
+                assert graphics_ctx.mgl_context is not None
 
         context.release()
 
@@ -845,7 +843,7 @@ class TestModernGLGraphicsContextEdgeCases:
 
             with patch("numpy.array", return_value=mock_array):
                 mock_open.return_value = mock_img
-                graphics_ctx = ModernGLGraphicsContext(mock_window, context)
+                graphics_ctx = ModernGLGraphicsContext(mock_window)
 
                 # Change window size
                 mock_window.width = 800

@@ -57,9 +57,7 @@ class TestCoordinateTransformations:
                 mock_load_atlas.return_value = mock_texture
 
                 mock_open.return_value = mock_img
-                self.graphics_ctx = ModernGLGraphicsContext(
-                    self.mock_window, self.gl_context
-                )
+                self.graphics_ctx = ModernGLGraphicsContext(self.mock_window)
 
         yield
 

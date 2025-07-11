@@ -95,11 +95,10 @@ class InputHandler:
             px_x: PixelCoord = px_pos[0]
             px_y: PixelCoord = px_pos[1]
 
-            # Scale coordinates for cursor rendering (cursor renderer expects scaled)
+            # Scale coordinates for cursor rendering to match framebuffer coordinates
             scale_x, scale_y = self.graphics.get_display_scale_factor()
             scaled_px_x: PixelCoord = px_x * scale_x
             scaled_px_y: PixelCoord = px_y * scale_y
-
             self.cursor_manager.update_mouse_position(scaled_px_x, scaled_px_y)
 
         # Try to handle the event with the menu system
@@ -362,11 +361,11 @@ class InputHandler:
         px_x: PixelCoord = px_pos[0]
         px_y: PixelCoord = px_pos[1]
 
-        # Scale coordinates to match cursor position (cursor renders at scaled coords)
+        # Scale coordinates to match framebuffer space
+        # (pixel_to_tile expects framebuffer coords)
         scale_x, scale_y = self.graphics.get_display_scale_factor()
         scaled_px_x: PixelCoord = px_x * scale_x
         scaled_px_y: PixelCoord = px_y * scale_y
-
         root_tile_x, root_tile_y = self.graphics.pixel_to_tile(scaled_px_x, scaled_px_y)
 
         event_copy = copy.copy(event)

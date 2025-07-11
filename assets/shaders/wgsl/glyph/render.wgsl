@@ -36,7 +36,7 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     output.v_bg_color = input.in_bg_color;
     
     let x = (input.in_vert.x / uniforms.u_texture_size.x) * 2.0 - 1.0;
-    let y = (input.in_vert.y / uniforms.u_texture_size.y) * 2.0 - 1.0;
+    let y = (1.0 - (input.in_vert.y / uniforms.u_texture_size.y)) * 2.0 - 1.0;
     output.position = vec4<f32>(x, y, 0.0, 1.0);
     
     return output;

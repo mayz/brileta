@@ -1,5 +1,5 @@
 // Screen renderer shader - handles letterboxing and coordinate transformation
-// Combines vertex and fragment stages in a single WGSL file
+// Corrected version with proper offset subtraction and Y-axis flip.
 
 // Vertex input structure
 struct VertexInput {
@@ -8,7 +8,7 @@ struct VertexInput {
     @location(2) in_color: vec4<f32>,
 }
 
-// Vertex output / Fragment input structure
+// Vertex output structure (to fragment shader)
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) v_uv: vec2<f32>,
@@ -21,25 +21,30 @@ struct Uniforms {
 }
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
-@group(0) @binding(1) var u_atlas: texture_2d<f32>;
+@group(0) @binding(1) var u_texture: texture_2d<f32>;
 @group(0) @binding(2) var u_sampler: sampler;
 
-// Vertex shader stage
+// Vertex shader stage  
 @vertex
 fn vs_main(input: VertexInput) -> VertexOutput {
     var output: VertexOutput;
     
-    output.v_uv = input.in_uv;
-    output.v_color = input.in_color;
+    let letterbox_x = uniforms.u_letterbox.x;
+    let letterbox_y = uniforms.u_letterbox.y;
+    let letterbox_w = uniforms.u_letterbox.z;
+    let letterbox_h = uniforms.u_letterbox.w;
     
-    // Adjust coordinates for letterboxing offset
-    let adjusted_pos = input.in_vert - uniforms.u_letterbox.xy;
+    // Normalize to letterbox coordinates (0.0 to 1.0)
+    let norm_x = (input.in_vert.x - letterbox_x) / letterbox_w;
+    let norm_y = 1.0 - ((input.in_vert.y - letterbox_y) / letterbox_h);
     
-    // Normalize to letterbox space, then to clip space
-    let x = (adjusted_pos.x / uniforms.u_letterbox.z) * 2.0 - 1.0;
-    let y = (1.0 - (adjusted_pos.y / uniforms.u_letterbox.w)) * 2.0 - 1.0;
+    // Convert to clip space (-1.0 to 1.0)
+    let x = norm_x * 2.0 - 1.0;
+    let y = norm_y * 2.0 - 1.0;
     
     output.position = vec4<f32>(x, y, 0.0, 1.0);
+    output.v_uv = input.in_uv;
+    output.v_color = input.in_color;
     
     return output;
 }
@@ -47,6 +52,5 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 // Fragment shader stage
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    let tex_color = textureSample(u_atlas, u_sampler, input.v_uv);
-    return tex_color * input.v_color;
+    return textureSample(u_texture, u_sampler, input.v_uv) * input.v_color;
 }
