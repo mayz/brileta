@@ -1,12 +1,15 @@
 """WGPUGraphicsContext - Main entry point for WGPU rendering."""
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import wgpu
-from wgpu.gui.glfw import GlfwWgpuCanvas
+from PIL import Image as PILImage
 
-from catley import colors
+from catley import colors, config
+from catley.backends.glfw.window import GlfwWindow
 from catley.game.enums import BlendMode
 from catley.types import (
     InterpolationAlpha,
@@ -21,6 +24,10 @@ from catley.util.glyph_buffer import GlyphBuffer
 from catley.view.render.effects.particles import ParticleLayer, SubTileParticleSystem
 from catley.view.render.graphics import GraphicsContext
 
+from .resource_manager import WGPUResourceManager
+from .screen_renderer import WGPUScreenRenderer
+from .shader_manager import WGPUShaderManager
+
 if TYPE_CHECKING:
     from catley.view.ui.cursor_manager import CursorManager
 
@@ -28,40 +35,80 @@ if TYPE_CHECKING:
 class WGPUGraphicsContext(GraphicsContext):
     """WGPU graphics context implementation."""
 
-    def __init__(
-        self, window_size: tuple[int, int] = (800, 600), title: str = "Catley"
-    ) -> None:
+    def __init__(self, window: GlfwWindow) -> None:
         """Initialize WGPU graphics context.
 
         Args:
-            window_size: Window dimensions (width, height)
-            title: Window title
+            window: The GLFW window to render to
         """
         super().__init__()
-        # Let GlfwWgpuCanvas create its own window - don't pass existing GLFW window
-        self.canvas = GlfwWgpuCanvas(size=window_size, title=title)
-        self.window = self.canvas._window  # Access GLFW window after creation
+        self.window = window
+
         self.device: wgpu.GPUDevice | None = None
         self.queue: wgpu.GPUQueue | None = None
-        self.context: Any = None
+        self.surface: wgpu.GPUSurface | None = None
+        self.swap_chain: Any = None
+
+        # Resource managers (initialized after device)
+        self.resource_manager: WGPUResourceManager | None = None
+        self.shader_manager: WGPUShaderManager | None = None
+
+        # Atlas texture and UV mapping
+        self.atlas_texture: wgpu.GPUTexture | None = None
+        self.uv_map: np.ndarray | None = None
+
+        # Screen renderer
+        self.screen_renderer: WGPUScreenRenderer | None = None
+
+        # Letterbox/viewport state
+        self.letterbox_geometry: tuple[int, int, int, int] | None = None
 
         # Initialize coordinate converter placeholder (set up after initialize())
         self._coordinate_converter: CoordinateConverter | None = None
         self._tile_dimensions = (20, 20)  # Default tile size
 
     def initialize(self) -> None:
-        """Initialize WGPU device and queue."""
-        # Correct WGPU API usage patterns:
+        """Initialize WGPU device and surface."""
+
+        # Create WGPU adapter and device
         adapter = wgpu.gpu.request_adapter_sync(
             power_preference=wgpu.PowerPreference.high_performance  # type: ignore
         )
         self.device = adapter.request_device_sync()
         self.queue = self.device.queue
 
-        # Create and configure canvas context
-        self.context = self.canvas.get_context("wgpu")
-        render_texture_format = self.context.get_preferred_format(adapter)
-        self.context.configure(device=self.device, format=render_texture_format)
+        # Create WGPU surface from the GLFW window
+        self.surface = wgpu.create_surface_from_window(self.window.glfw_window)
+
+        if self.surface is None:
+            raise RuntimeError("Failed to create WGPU surface")
+
+        # Configure surface
+        width, height = self.window.get_framebuffer_size()
+        surface_format = self.surface.get_preferred_format(adapter)
+        self.surface.configure(
+            device=self.device,
+            format=surface_format,
+            width=width,
+            height=height,
+            usage=wgpu.TextureUsage.RENDER_ATTACHMENT,
+        )
+
+        # Initialize resource managers
+        self.resource_manager = WGPUResourceManager(self.device, self.queue)
+        self.shader_manager = WGPUShaderManager(self.device)
+
+        # Load atlas texture and prepare UV mapping
+        self.atlas_texture = self._load_atlas_texture()
+        self.uv_map = self._precalculate_uv_map()
+
+        # Initialize screen renderer
+        self.screen_renderer = WGPUScreenRenderer(
+            self.resource_manager, self.shader_manager, self.atlas_texture
+        )
+
+        # Set up coordinate converter with proper dimensions
+        self._setup_coordinate_converter()
 
     @property
     def tile_dimensions(self) -> TileDimensions:
@@ -105,7 +152,7 @@ class WGPUGraphicsContext(GraphicsContext):
         # TODO: Implement proper DPI scaling
         return (1.0, 1.0)
 
-    def draw_mouse_cursor(self, cursor_manager: "CursorManager") -> None:
+    def draw_mouse_cursor(self, cursor_manager: CursorManager) -> None:
         """Draw the mouse cursor."""
         # TODO: Implement WGPU cursor drawing
         raise NotImplementedError("WGPU cursor drawing not yet implemented")
@@ -146,8 +193,111 @@ class WGPUGraphicsContext(GraphicsContext):
 
     def update_dimensions(self) -> None:
         """Update dimensions when window size changes."""
-        # TODO: Update coordinate converter with new dimensions
-        pass
+
+        # Reconfigure surface for new size
+        if self.surface and self.device:
+            width, height = self.window.get_framebuffer_size()
+            adapter = wgpu.gpu.request_adapter_sync()
+            surface_format = self.surface.get_preferred_format(adapter)
+            self.surface.configure(
+                device=self.device,
+                format=surface_format,
+                width=width,
+                height=height,
+                usage=wgpu.TextureUsage.RENDER_ATTACHMENT,
+            )
+
+        # Update coordinate converter
+        self._setup_coordinate_converter()
+
+        # Update letterbox geometry
+        self._calculate_letterbox_geometry()
+
+    def prepare_to_present(self) -> None:
+        """Prepare for presenting the frame."""
+        if self.screen_renderer is None:
+            return
+        self.screen_renderer.begin_frame()
+
+    def finalize_present(self) -> None:
+        """Finalize frame presentation by rendering to screen."""
+
+        if (
+            self.screen_renderer is None
+            or self.surface is None
+            or self.resource_manager is None
+        ):
+            return
+
+        # Get the current surface texture
+        surface_texture = self.surface.get_current_texture()
+
+        # Create command encoder
+        command_encoder = self.resource_manager.device.create_command_encoder()
+
+        # Create render pass
+        render_pass = command_encoder.begin_render_pass(
+            color_attachments=[
+                {
+                    "view": surface_texture.create_view(),
+                    "resolve_target": None,
+                    "clear_value": (0.0, 0.0, 0.0, 1.0),  # Black background
+                    "load_op": "clear",
+                    "store_op": "store",
+                }
+            ]
+        )
+
+        # Render screen content
+        window_size = self.window.get_framebuffer_size()
+        self.screen_renderer.render_to_screen(
+            render_pass, window_size, self.letterbox_geometry
+        )
+
+        # End render pass and submit commands
+        render_pass.end()
+        command_buffer = command_encoder.finish()
+        self.resource_manager.queue.submit([command_buffer])
+
+        # Present the frame
+        surface_texture.present()
+
+    def add_tile_to_screen(
+        self,
+        char_code: int,
+        x_tile: int,
+        y_tile: int,
+        color: colors.Color,
+        bg_color: colors.Color | None = None,
+    ) -> None:
+        """Add a tile to the screen renderer for batched rendering."""
+        if self.screen_renderer is None or self.uv_map is None:
+            return
+
+        # Convert tile position to pixel coordinates
+        px_x, px_y = self.console_to_screen_coords(x_tile, y_tile)
+        tile_w, tile_h = self._tile_dimensions
+
+        # Get UV coordinates for the character
+        uv_coords = tuple(self.uv_map[char_code % 256])
+
+        # Convert color to RGBA tuple
+        color_rgba = (
+            color.r / 255.0,
+            color.g / 255.0,
+            color.b / 255.0,
+            1.0,  # Full opacity
+        )
+
+        # Add quad to screen renderer
+        self.screen_renderer.add_quad(
+            x=px_x,
+            y=px_y,
+            w=tile_w,
+            h=tile_h,
+            uv_coords=uv_coords,
+            color_rgba=color_rgba,
+        )
 
     def console_to_screen_coords(self, console_x: float, console_y: float) -> PixelPos:
         """Convert console coordinates to screen pixel coordinates."""
@@ -175,14 +325,16 @@ class WGPUGraphicsContext(GraphicsContext):
             )
         return self._coordinate_converter.pixel_to_tile(pixel_x, pixel_y)
 
-    def texture_from_numpy(self, pixels: np.ndarray, transparent: bool = True) -> Any:
+    def texture_from_numpy(
+        self, pixels: np.ndarray, transparent: bool = True
+    ) -> wgpu.GPUTexture:
         """Create a WGPU texture from numpy array."""
         # TODO: Implement WGPU texture creation from numpy
         raise NotImplementedError("WGPU texture creation not yet implemented")
 
     def present_texture(
         self,
-        texture: Any,
+        texture: wgpu.GPUTexture,
         x_tile: int,
         y_tile: int,
         width_tiles: int,
@@ -228,3 +380,61 @@ class WGPUGraphicsContext(GraphicsContext):
         """Create a WGPU canvas."""
         # TODO: Implement WGPU canvas creation
         raise NotImplementedError("WGPU canvas creation not yet implemented")
+
+    # --- Atlas Texture Loading Methods ---
+
+    def _load_atlas_texture(self) -> wgpu.GPUTexture:
+        """Loads the tileset PNG and creates a WGPU texture."""
+        if self.resource_manager is None:
+            raise RuntimeError("Resource manager not initialized")
+
+        img = PILImage.open(str(config.TILESET_PATH)).convert("RGBA")
+        pixels = np.array(img, dtype="u1")
+
+        # Handle magenta transparency (same as ModernGL version)
+        magenta_mask = (
+            (pixels[:, :, 0] == 255) & (pixels[:, :, 1] == 0) & (pixels[:, :, 2] == 255)
+        )
+        pixels[magenta_mask, 3] = 0
+
+        # Create WGPU texture using resource manager
+        return self.resource_manager.create_atlas_texture(
+            width=img.size[0],
+            height=img.size[1],
+            data=pixels.tobytes(),
+            format="rgba8unorm",
+        )
+
+    def _precalculate_uv_map(self) -> np.ndarray:
+        """Pre-calculates UV coordinates for all 256 possible characters."""
+        uv_map = np.zeros((256, 4), dtype="f4")
+        for i in range(256):
+            col = i % config.TILESET_COLUMNS
+            row = i // config.TILESET_COLUMNS
+            u1 = col / config.TILESET_COLUMNS
+            v1 = row / config.TILESET_ROWS
+            u2 = (col + 1) / config.TILESET_COLUMNS
+            v2 = (row + 1) / config.TILESET_ROWS
+            uv_map[i] = [u1, v1, u2, v2]
+        return uv_map
+
+    def _setup_coordinate_converter(self) -> None:
+        """Set up the coordinate converter with current window dimensions."""
+
+        width, height = self.window.get_framebuffer_size()
+        self._coordinate_converter = CoordinateConverter(
+            console_width_in_tiles=self.console_width_tiles,
+            console_height_in_tiles=self.console_height_tiles,
+            renderer_scaled_width=width,
+            renderer_scaled_height=height,
+        )
+
+    def _calculate_letterbox_geometry(self) -> None:
+        """Calculate letterbox geometry for the current window size."""
+
+        if self._coordinate_converter is None:
+            return
+
+        # Use full window size for now
+        width, height = self.window.get_framebuffer_size()
+        self.letterbox_geometry = (0, 0, width, height)

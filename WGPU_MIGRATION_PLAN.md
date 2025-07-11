@@ -6,10 +6,18 @@ This document outlines the specific technical steps for migrating Catley from Mo
 
 ### Step 3.3: Implement Basic Tile Rendering
 
-Start with `ScreenRenderer` equivalent that can:
-1. Render background tiles
-2. Handle viewport transformations
-3. Support basic texture atlasing
+**IN PROGRESS** - Need to complete basic tile rendering:
+1. ✅ Create WGSL shaders for tile rendering
+2. ❌ Implement working `add_tile_to_screen()` method
+3. ❌ Test basic tile display without lighting
+4. ❌ Handle viewport transformations correctly
+5. ❌ Support basic texture atlasing
+
+**REMAINING WORK**:
+- Create WGSL shader files in `catley/backends/wgpu/shaders/wgsl/screen/main.wgsl`
+- Complete shader pipeline creation in `WGPUShaderManager`
+- Test that basic tiles can be rendered to screen
+- Ensure coordinate transformations work correctly
 
 ## Phase 4: GPU Lighting System Port
 

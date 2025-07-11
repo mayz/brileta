@@ -52,48 +52,42 @@ class TestWGPUGraphicsContext:
     @pytest.fixture(autouse=True)
     def setup_wgpu_context(self):
         """Create WGPU context for testing."""
-        self.window_size = (800, 600)
-        self.title = "Test Window"
+        # Create mock GLWindow that simulates GlfwWindow
+        from catley.backends.glfw.window import GlfwWindow
+
+        mock_glfw_window_handle = Mock()
+        mock_window = GlfwWindow(mock_glfw_window_handle)
+        mock_window.get_size = Mock(return_value=(800, 600))
+        mock_window.get_framebuffer_size = Mock(return_value=(800, 600))
+        mock_window.flip = Mock()
 
         # Try to create real WGPU context, fall back to mock if unavailable
         try:
             # Attempt real WGPU context creation
-            self.graphics_ctx = WGPUGraphicsContext(self.window_size, self.title)  # type: ignore[misc]
+            self.graphics_ctx = WGPUGraphicsContext(mock_window)  # type: ignore[misc]
             self.real_wgpu = True
         except Exception:
             # Fall back to mocked WGPU for environments without GPU
-            with patch(
-                "catley.backends.wgpu.graphics.GlfwWgpuCanvas"
-            ) as mock_canvas_class:
-                mock_canvas = Mock()
-                mock_window = Mock()
-                mock_canvas._window = mock_window
-                mock_canvas_class.return_value = mock_canvas
+            with patch("wgpu.gpu") as mock_wgpu:
+                mock_adapter = Mock()
+                mock_device = Mock()
+                mock_queue = Mock()
+                mock_surface = Mock()
 
-                self.graphics_ctx = WGPUGraphicsContext(self.window_size, self.title)  # type: ignore[misc]
+                mock_wgpu.request_adapter_sync.return_value = mock_adapter
+                mock_adapter.request_device_sync.return_value = mock_device
+                mock_device.queue = mock_queue
+                mock_wgpu.create_surface_from_window.return_value = mock_surface
+
+                self.graphics_ctx = WGPUGraphicsContext(mock_window)  # type: ignore[misc]
                 self.real_wgpu = False
 
         yield
 
-        # Cleanup - properly clean up WGPU resources
-        if hasattr(self.graphics_ctx, "canvas") and self.graphics_ctx.canvas:
-            try:
-                # Close the GLFW window to prevent segfaults
-                if (
-                    hasattr(self.graphics_ctx.canvas, "_window")
-                    and self.graphics_ctx.canvas._window
-                ):
-                    import glfw
-
-                    if (
-                        glfw.window_should_close(self.graphics_ctx.canvas._window)
-                        == glfw.FALSE
-                    ):
-                        glfw.destroy_window(self.graphics_ctx.canvas._window)
-                        self.graphics_ctx.canvas._window = None
-            except Exception:
-                # Ignore cleanup errors to prevent masking test failures
-                pass
+        # Cleanup WGPU resources to prevent segfaults
+        if hasattr(self, "graphics_ctx") and self.graphics_ctx:
+            # No explicit cleanup needed for mocked contexts
+            pass
 
     def test_initialization(self):
         """Test that graphics context initializes correctly."""
@@ -102,7 +96,7 @@ class TestWGPUGraphicsContext:
             self.graphics_ctx.device is None
         )  # Not initialized until initialize() called
         assert self.graphics_ctx.queue is None
-        assert self.graphics_ctx.context is None
+        assert self.graphics_ctx.surface is None
         assert self.graphics_ctx._coordinate_converter is None
 
     def test_tile_dimensions_property(self):
@@ -172,30 +166,30 @@ class TestWGPUGraphicsContext:
             pytest.skip("Real WGPU not available, using mocks")
 
         # Mock the actual WGPU calls since we don't want to create real windows in tests
-        with patch("wgpu.gpu.request_adapter_sync") as mock_adapter:
+        with (
+            patch("wgpu.gpu.request_adapter_sync") as mock_adapter,
+            patch(
+                "wgpu.create_surface_from_window", create=True
+            ) as mock_create_surface,
+        ):
             mock_device = Mock()
             mock_queue = Mock()
             mock_device.queue = mock_queue
+            mock_surface = Mock()
 
             mock_adapter_instance = Mock()
             mock_adapter_instance.request_device_sync.return_value = mock_device
             mock_adapter.return_value = mock_adapter_instance
+            mock_create_surface.return_value = mock_surface
 
-            with patch.object(
-                self.graphics_ctx.canvas, "get_context"
-            ) as mock_get_context:
-                mock_context = Mock()
-                mock_context.get_preferred_format.return_value = "bgra8unorm"
-                mock_get_context.return_value = mock_context
+            # Test initialization
+            self.graphics_ctx.initialize()
 
-                # Test initialization
-                self.graphics_ctx.initialize()
-
-                # Verify WGPU calls were made
-                mock_adapter.assert_called_once()
-                mock_adapter_instance.request_device_sync.assert_called_once()
-                assert self.graphics_ctx.device is mock_device
-                assert self.graphics_ctx.queue is mock_queue
+            # Verify WGPU calls were made
+            mock_adapter.assert_called_once()
+            mock_adapter_instance.request_device_sync.assert_called_once()
+            assert self.graphics_ctx.device is mock_device
+            assert self.graphics_ctx.queue is mock_queue
 
     def test_not_implemented_methods(self):
         """Test that not-yet-implemented methods raise NotImplementedError."""
@@ -249,33 +243,32 @@ class TestWGPUGraphicsContext:
 @pytest.mark.skipif(not WGPU_AVAILABLE, reason="WGPU not available")
 def test_wgpu_graphics_context_window_parameters():
     """Test WGPUGraphicsContext window parameter handling."""
-    custom_size = (1024, 768)
-    custom_title = "Custom Test Window"
+    from catley.backends.glfw.window import GlfwWindow
 
-    with patch("catley.backends.wgpu.graphics.GlfwWgpuCanvas") as mock_canvas_class:
-        mock_canvas = Mock()
-        mock_window = Mock()
-        mock_canvas._window = mock_window
-        mock_canvas_class.return_value = mock_canvas
+    mock_glfw_window_handle = Mock()
+    mock_window = GlfwWindow(mock_glfw_window_handle)
+    mock_window.get_size = Mock(return_value=(1024, 768))
+    mock_window.get_framebuffer_size = Mock(return_value=(1024, 768))
+    mock_window.flip = Mock()
 
-        ctx = WGPUGraphicsContext(custom_size, custom_title)  # type: ignore[misc]
+    ctx = WGPUGraphicsContext(mock_window)  # type: ignore[misc]
 
-        # Verify canvas was created with correct parameters
-        mock_canvas_class.assert_called_once_with(size=custom_size, title=custom_title)
-        assert ctx.window is mock_window
+    # Verify window is properly stored
+    assert ctx.window is mock_window
 
 
 @pytest.mark.skipif(not WGPU_AVAILABLE, reason="WGPU not available")
 def test_wgpu_graphics_context_default_parameters():
     """Test WGPUGraphicsContext default parameter handling."""
-    with patch("catley.backends.wgpu.graphics.GlfwWgpuCanvas") as mock_canvas_class:
-        mock_canvas = Mock()
-        mock_window = Mock()
-        mock_canvas._window = mock_window
-        mock_canvas_class.return_value = mock_canvas
+    from catley.backends.glfw.window import GlfwWindow
 
-        ctx = WGPUGraphicsContext()  # type: ignore[misc]
+    mock_glfw_window_handle = Mock()
+    mock_window = GlfwWindow(mock_glfw_window_handle)
+    mock_window.get_size = Mock(return_value=(800, 600))
+    mock_window.get_framebuffer_size = Mock(return_value=(800, 600))
+    mock_window.flip = Mock()
 
-        # Verify canvas was created with default parameters
-        mock_canvas_class.assert_called_once_with(size=(800, 600), title="Catley")
-        assert ctx.window is mock_window
+    ctx = WGPUGraphicsContext(mock_window)  # type: ignore[misc]
+
+    # Verify window is properly stored
+    assert ctx.window is mock_window
