@@ -51,7 +51,7 @@ class ScreenRenderer:
         Note: This shader does NOT flip the Y-axis, consistent with TextureRenderer.
         Coordinates are expected to already be in the correct coordinate system."""
         program = self.shader_manager.create_program(
-            "screen/main.vert", "screen/main.frag", "screen_renderer"
+            "glsl/screen/main.vert", "glsl/screen/main.frag", "screen_renderer"
         )
         program["u_atlas"].value = 0
         return program

@@ -170,8 +170,8 @@ class GPULightingSystem(LightingSystem):
 
             # Create fragment shader program
             self._fragment_program = self._shader_manager.create_program(
-                "lighting/point_light.vert",
-                "lighting/point_light.frag",
+                "glsl/lighting/point_light.vert",
+                "glsl/lighting/point_light.frag",
                 "fragment_lighting",
             )
 

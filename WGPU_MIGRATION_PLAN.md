@@ -4,19 +4,6 @@ This document outlines the specific technical steps for migrating Catley from Mo
 
 ## Phase 3: Core Rendering Port
 
-### Step 3.2: Shader Translation (GLSL → WGSL)
-
-**Critical Shaders to Translate**:
-1. `screen/main.vert` + `screen/main.frag` → `screen/main.wgsl`
-2. `ui/texture.vert` + `ui/texture.frag` → `ui/texture.wgsl`
-3. `glyph/render.vert` + `glyph/render.frag` → `glyph/render.wgsl`
-
-**Translation Guidelines**:
-- WGSL uses different syntax for uniforms (use `uniform` blocks)
-- Vertex input/output uses `@location` attributes
-- Fragment outputs use `@location(0)` for color
-- Texture sampling syntax differs
-
 ### Step 3.3: Implement Basic Tile Rendering
 
 Start with `ScreenRenderer` equivalent that can:

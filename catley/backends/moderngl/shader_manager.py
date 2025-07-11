@@ -47,7 +47,8 @@ class ShaderManager:
 
         Args:
             shader_path: Path to shader file relative to assets/shaders/
-                        (e.g., "screen/main.vert", "lighting/point_light.frag")
+                        (e.g., "glsl/screen/main.vert",
+                         "glsl/lighting/point_light.frag")
 
         Returns:
             The shader source code as a string
@@ -83,8 +84,9 @@ class ShaderManager:
         """Create a ModernGL program from vertex and fragment shader files.
 
         Args:
-            vertex_shader_path: Path to vertex shader (e.g., "screen/main.vert")
-            fragment_shader_path: Path to fragment shader (e.g., "screen/main.frag")
+            vertex_shader_path: Path to vertex shader (e.g., "glsl/screen/main.vert")
+            fragment_shader_path: Path to fragment shader
+                (e.g., "glsl/screen/main.frag")
             cache_key: Optional cache key. If None, uses vertex_shader_path
 
         Returns:
@@ -126,7 +128,7 @@ class ShaderManager:
 
         Args:
             fragment_shader_path: Path to fragment shader
-                (e.g., "lighting/point_light.frag")
+                (e.g., "glsl/lighting/point_light.frag")
             cache_key: Optional cache key. If None, uses fragment_shader_path
 
         Returns:

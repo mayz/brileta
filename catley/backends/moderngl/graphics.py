@@ -43,7 +43,7 @@ class UITextureRenderer:
 
         # Create shader program for UI textures
         self.program = self.shader_manager.create_program(
-            "ui/texture.vert", "ui/texture.frag", "ui_texture_renderer"
+            "glsl/ui/texture.vert", "glsl/ui/texture.frag", "ui_texture_renderer"
         )
         self.program["u_texture"].value = 0  # Use texture unit 0
 

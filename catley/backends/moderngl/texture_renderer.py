@@ -101,7 +101,7 @@ class TextureRenderer:
         flip the Y-axis.
         """
         program = self.shader_manager.create_program(
-            "glyph/render.vert", "glyph/render.frag", "texture_renderer"
+            "glsl/glyph/render.vert", "glsl/glyph/render.frag", "texture_renderer"
         )
         program["u_atlas"].value = 0
         return program
