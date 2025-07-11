@@ -15,6 +15,19 @@ class PygletApp(App[ModernGLGraphicsContext]):
 
     Uses Pyglet's event-driven architecture with scheduled callbacks to implement
     the shared fixed timestep game loop pattern.
+
+    ################################################################################
+    # TODO: REMOVE THIS MODULE AFTER WGPU MIGRATION IS COMPLETE
+    #
+    # This PygletApp is incompatible with WGPU and only kept as a temporary fallback
+    # during the GLFW+WGPU migration. Once GlfwApp+WGPU is stable:
+    #
+    # 1. Remove this entire module: catley/backends/pyglet/
+    # 2. Remove pyglet dependency: uv remove pyglet
+    # 3. Remove pyglet imports from __main__.py
+    #
+    # PygletApp exists only for comparison/fallback during development.
+    ################################################################################
     """
 
     def __init__(self, app_config: AppConfig) -> None:

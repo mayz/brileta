@@ -2,25 +2,6 @@
 
 This document outlines the specific technical steps for migrating Catley from ModernGL to wgpu-py.
 
-## Phase 1: GLFW Migration (Prerequisite)
-
-### Step 1.1: Pause WGPU Migration
-**Rationale**: Pyglet is fundamentally incompatible with WGPU due to architectural differences:
-- Pyglet is designed exclusively for OpenGL and assumes complete control of the rendering pipeline
-- WGPU uses Metal on macOS, creating a conflict where both OpenGL (Pyglet) and Metal (WGPU) try to render to the same NSView
-- The Pyglet-WGPU bridge approach is not viable
-
-### Step 1.2: Add GLFW Dependency
-Add `glfw` as a dependency to enable WGPU integration.
-
-### Step 1.3: Implement GlfwApp
-1. **Write new main loop** (`while not glfw.window_should_close()`)
-2. **Write new input handlers** for keyboard, mouse, scroll, etc., translating their events into the tcod.event format your InputHandler expects. Re-implement the logic from your PygletApp
-3. **Get current ModernGL backend working** on top of GlfwApp. This is a critical validation step
-
-### Step 1.4: Validation
-Once GlfwApp is working and stable with ModernGL, resume the WGPU migration.
-
 ## Phase 2: WGPU Implementation (After GLFW Migration)
 
 ### Step 2.1: GLFW-WGPU Bridge Implementation

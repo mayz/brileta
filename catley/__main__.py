@@ -16,15 +16,17 @@ def main() -> None:
         vsync=config.VSYNC,
     )
 
-    if False:
-        from .backends.tcod.app import TCODApp
+    # from .backends.tcod.app import TCODApp
+    # _APP_CLASS = TCODApp
 
-        app: App = TCODApp(app_config)
-    else:
-        from .backends.pyglet.app import PygletApp
+    # from .backends.pyglet.app import PygletApp
+    # _APP_CLASS = PygletApp
 
-        app: App = PygletApp(app_config)
+    from .backends.glfw.app import GlfwApp
 
+    _APP_CLASS = GlfwApp
+
+    app: App = _APP_CLASS(app_config)
     app.run()
 
 
