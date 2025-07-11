@@ -75,10 +75,25 @@ class TestWGPUGraphicsContext:
 
         yield
 
-        # Cleanup - only needed if we created real resources
-        if hasattr(self.graphics_ctx, "device") and self.graphics_ctx.device:
-            # WGPU cleanup would go here if needed
-            pass
+        # Cleanup - properly clean up WGPU resources
+        if hasattr(self.graphics_ctx, "canvas") and self.graphics_ctx.canvas:
+            try:
+                # Close the GLFW window to prevent segfaults
+                if (
+                    hasattr(self.graphics_ctx.canvas, "_window")
+                    and self.graphics_ctx.canvas._window
+                ):
+                    import glfw
+
+                    if (
+                        glfw.window_should_close(self.graphics_ctx.canvas._window)
+                        == glfw.FALSE
+                    ):
+                        glfw.destroy_window(self.graphics_ctx.canvas._window)
+                        self.graphics_ctx.canvas._window = None
+            except Exception:
+                # Ignore cleanup errors to prevent masking test failures
+                pass
 
     def test_initialization(self):
         """Test that graphics context initializes correctly."""

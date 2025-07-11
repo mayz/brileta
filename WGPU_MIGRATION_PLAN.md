@@ -4,14 +4,6 @@ This document outlines the specific technical steps for migrating Catley from Mo
 
 ## Phase 3: Core Rendering Port
 
-### Step 3.1: Performance Baseline
-
-Before any porting work:
-1. Create benchmark script measuring ModernGL performance
-2. Test scenarios: 10, 50, 100, 200 lights with shadows
-3. Measure: FPS, frame time, memory usage
-4. Document baseline metrics
-
 ### Step 3.2: Shader Translation (GLSL → WGSL)
 
 **Critical Shaders to Translate**:
@@ -103,10 +95,17 @@ else:
 
 ### Step 5.3: Performance Validation
 
-1. **Run same benchmarks** as Step 3.1
-2. **Compare WGPU vs ModernGL** performance
-3. **Ensure WGPU meets or exceeds** baseline
-4. **Profile any performance regressions**
+1. **Run WGPU benchmarks** using the realistic performance script:
+   ```bash
+   uv run python scripts/benchmark_realistic_performance.py --verbose --duration 10.0 --export-json benchmarks/wgpu_performance_results.json
+   ```
+2. **Compare against ModernGL baseline** found in `benchmarks/realistic_moderngl_baseline.json`
+3. **Validate performance targets** from `benchmarks/REALISTIC_MODERNGL_BASELINE.md`:
+   - **10-25 lights**: ≥100 FPS average, ≥60 FPS P95
+   - **50 lights**: ≥200 FPS average, ≥80 FPS P95
+   - **Frame drops**: ≤50 per 10-second test
+   - **Memory**: ≤250MB total usage
+4. **Profile any performance regressions** if WGPU fails to meet baseline targets
 
 ## Phase 6: Advanced Multi-Pass Architecture
 
@@ -150,14 +149,3 @@ Once basic parity is achieved, implement the advanced architecture:
 5. **Integration Complexity**:
    - Build minimal proof-of-concept first
    - Test GLFW+WGPU integration before full port
-
-## Next Steps
-
-1. ✅ ~~Research Pyglet source for native window handles~~ **COMPLETE - Found incompatibility**
-2. ✅ ~~Create minimal Pyglet+WGPU proof of concept~~ **COMPLETE - Confirmed incompatibility**
-3. ✅ ~~Create minimal GLFW+WGPU proof of concept~~ **COMPLETE - Step 2.1 validated**
-4. 🔄 **CURRENT PRIORITY**: Implement GLFW migration for ModernGL backend
-5. Validate GLFW+ModernGL works with existing input/event systems
-6. Begin Step 2.2: Backend Scaffolding (create `catley/backends/wgpu/` structure)
-7. Begin shader translation with simple examples
-8. Proceed with full WGPU implementation plan
