@@ -81,6 +81,9 @@ class WGPUGraphicsContext(GraphicsContext):
         self._coordinate_converter: CoordinateConverter | None = None
         self._tile_dimensions = (20, 20)  # Default tile size
 
+        # Character code for solid block used in tile highlighting
+        self.SOLID_BLOCK_CHAR = 219
+
         # Initialize immediately unless deferred for testing
         if not _defer_init:
             self._initialize()
@@ -279,8 +282,13 @@ class WGPUGraphicsContext(GraphicsContext):
         alpha: Opacity,
     ) -> None:
         """Draw a tile highlight."""
-        # TODO: Implement WGPU tile highlighting
-        raise NotImplementedError("WGPU tile highlighting not yet implemented")
+        if self.screen_renderer is None or self.uv_map is None:
+            return
+        px_x, px_y = self.console_to_screen_coords(root_x, root_y)
+        w, h = self.tile_dimensions
+        uv = self.uv_map[self.SOLID_BLOCK_CHAR]
+        color_rgba = (color[0] / 255, color[1] / 255, color[2] / 255, alpha)
+        self.screen_renderer.add_quad(px_x, px_y, w, h, uv, color_rgba)
 
     def render_particles(
         self,
