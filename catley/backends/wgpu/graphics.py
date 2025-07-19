@@ -73,6 +73,8 @@ class WGPUGraphicsContext(GraphicsContext):
 
         # UI texture renderer for arbitrary textures
         self.ui_texture_renderer: WGPUUITextureRenderer | None = None
+        # Background renderer for immediate texture rendering
+        self.background_renderer = None
 
         # Letterbox/viewport state
         self.letterbox_geometry: tuple[int, int, int, int] | None = None
@@ -110,7 +112,9 @@ class WGPUGraphicsContext(GraphicsContext):
         self.wgpu_context = self.window_wrapper.get_context()
 
         # Configure the WGPU context
-        surface_format = self.wgpu_context.get_preferred_format(adapter)
+        # Force linear color format (bgra8unorm) to match ModernGL's linear pipeline
+        # Avoids automatic sRGB conversion that makes colors appear washed out
+        surface_format = wgpu.TextureFormat.bgra8unorm
         self.wgpu_context.configure(
             device=self.device,
             format=surface_format,
@@ -144,6 +148,15 @@ class WGPUGraphicsContext(GraphicsContext):
 
         # Initialize UI texture renderer
         self.ui_texture_renderer = WGPUUITextureRenderer(
+            self.resource_manager,
+            self.shader_manager,
+            surface_format,
+        )
+
+        # Initialize background renderer for immediate rendering
+        from .background_renderer import WGPUBackgroundRenderer
+
+        self.background_renderer = WGPUBackgroundRenderer(
             self.resource_manager,
             self.shader_manager,
             surface_format,
@@ -408,8 +421,8 @@ class WGPUGraphicsContext(GraphicsContext):
 
         # Reconfigure WGPU context for new size
         if self.wgpu_context and self.device:
-            adapter = wgpu.gpu.request_adapter_sync()
-            surface_format = self.wgpu_context.get_preferred_format(adapter)
+            # Use same linear format as in initialization
+            surface_format = wgpu.TextureFormat.bgra8unorm
             self.wgpu_context.configure(
                 device=self.device,
                 format=surface_format,
@@ -450,30 +463,35 @@ class WGPUGraphicsContext(GraphicsContext):
             window_size = self.window.get_framebuffer_size()
             surface_view = surface_texture.create_view()
 
-            # Create a single render pass for all content
+            # Create render pass that preserves existing background content
             render_pass = command_encoder.begin_render_pass(
                 color_attachments=[
                     {
                         "view": surface_view,
                         "resolve_target": None,
-                        "clear_value": (0.0, 0.0, 0.0, 1.0),  # Black background
-                        "load_op": "clear",
+                        "clear_value": (
+                            0.0,
+                            0.0,
+                            0.0,
+                            1.0,
+                        ),  # Black (unused since load_op is "load")
+                        "load_op": "load",  # Preserve existing background content
                         "store_op": "store",
                     }
                 ]
             )
 
-            # First render UI content (map backgrounds, etc.) - this goes UNDER actors
+            # First render screen content (actors, particles, backgrounds)
+            self.screen_renderer.render_to_screen(
+                render_pass, window_size, self.letterbox_geometry
+            )
+
+            # Then render UI content on top (menus, dialogs, etc.)
             if (
                 self.ui_texture_renderer is not None
                 and self.ui_texture_renderer.vertex_count > 0
             ):
                 self.ui_texture_renderer.render(render_pass, self.letterbox_geometry)
-
-            # Then render screen content (actors, particles, etc.) - this goes OVER map
-            self.screen_renderer.render_to_screen(
-                render_pass, window_size, self.letterbox_geometry
-            )
 
             render_pass.end()
 
@@ -650,8 +668,21 @@ class WGPUGraphicsContext(GraphicsContext):
         vertices[4] = ((px_x1, px_y2), (u1, v2), color_rgba)
         vertices[5] = ((px_x2, px_y2), (u2, v2), color_rgba)
 
-        # Draw background using UI texture renderer
-        self.ui_texture_renderer.add_textured_quad(texture, vertices)
+        # Render background immediately like ModernGL does
+        if (
+            self.background_renderer is not None
+            and texture is not None
+            and self.wgpu_context is not None
+        ):
+            surface_texture = self.wgpu_context.get_current_texture()
+
+            # Render background immediately to surface
+            self.background_renderer.render_immediately(
+                surface_texture=surface_texture,
+                texture=texture,
+                vertices=vertices,
+                letterbox_geometry=self.letterbox_geometry,
+            )
 
     def draw_debug_rect(
         self, px_x: int, px_y: int, px_w: int, px_h: int, color: colors.Color
@@ -778,6 +809,7 @@ class WGPUGraphicsContext(GraphicsContext):
         self.screen_renderer = None
         self.texture_renderer = None
         self.ui_texture_renderer = None
+        self.background_renderer = None
         self.atlas_texture = None
         self.shader_manager = None
         self.resource_manager = None

@@ -149,10 +149,19 @@ class WGPUCanvas(Canvas):
 
         # Convert color to RGBA
         fg_color = (color[0], color[1], color[2], 255)
-        bg_color = (0, 0, 0, 0) if self.transparent else (0, 0, 0, 255)
 
-        # Draw the text to the glyph buffer
-        self.private_glyph_buffer.print(tile_x, tile_y, text, fg_color, bg_color)
+        # Draw each character, preserving background like ModernGL
+        for i, char in enumerate(text):
+            x = tile_x + i
+            if (
+                0 <= x < self.private_glyph_buffer.width
+                and 0 <= tile_y < self.private_glyph_buffer.height
+            ):
+                # Preserve existing background color, similar to TCOD behavior
+                current_bg = self.private_glyph_buffer.data[x, tile_y]["bg"]
+                self.private_glyph_buffer.put_char(
+                    x, tile_y, ord(char), fg_color, tuple(current_bg)
+                )
 
     def _render_rect_op(
         self,
@@ -169,24 +178,38 @@ class WGPUCanvas(Canvas):
 
         # Convert pixel coordinates to tile coordinates
         tile_width, tile_height = self.renderer.tile_dimensions
-        tile_x = int((pixel_x + self.drawing_offset_x) // tile_width)
-        tile_y = int((pixel_y + self.drawing_offset_y) // tile_height)
-        tile_w = max(1, int(width // tile_width))
-        tile_h = max(1, int(height // tile_height))
+        if tile_width == 0 or tile_height == 0:
+            return
 
-        # Convert color to RGBA
-        fg_color = (color[0], color[1], color[2], 255)
-        bg_color = fg_color if fill else (0, 0, 0, 0)
+        start_tx = int(pixel_x // tile_width)
+        start_ty = int(pixel_y // tile_height)
+        end_tx = int((pixel_x + width) // tile_width)
+        end_ty = int((pixel_y + height) // tile_height)
 
-        # Draw rectangle using block characters
-        char = ord("█") if fill else ord("□")
+        # Convert color to RGBA if needed
+        rgba_color = (*color, 255) if len(color) == 3 else color
 
-        for y in range(tile_h):
-            for x in range(tile_w):
-                if fill or x == 0 or x == tile_w - 1 or y == 0 or y == tile_h - 1:
+        # Clamp to buffer bounds
+        start_tx = max(0, start_tx)
+        start_ty = max(0, start_ty)
+        end_tx = min(self.private_glyph_buffer.width, end_tx)
+        end_ty = min(self.private_glyph_buffer.height, end_ty)
+
+        for tx in range(start_tx, end_tx):
+            for ty in range(start_ty, end_ty):
+                if fill:
+                    # For filled rectangles, use solid blocks but also set bg color
+                    # This provides the solid block for general rectangle drawing while
+                    # ensuring background color is available for text overlay
                     self.private_glyph_buffer.put_char(
-                        tile_x + x, tile_y + y, char, fg_color, bg_color
+                        tx, ty, 9608, rgba_color, rgba_color
                     )
+                else:
+                    # Border only - draw outline using solid block characters
+                    if tx in (start_tx, end_tx - 1) or ty in (start_ty, end_ty - 1):
+                        self.private_glyph_buffer.put_char(
+                            tx, ty, 9608, rgba_color, rgba_color
+                        )
 
     def _render_frame_op(
         self,
