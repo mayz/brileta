@@ -15,7 +15,7 @@ This document outlines the specific technical steps for migrating Catley from Mo
 #### 1. Excessive Command Buffer Creation (Major Bottleneck)
 - **WGPU Current**: Creates **multiple command encoders per frame**
   - `finalize_present()`: Creates main command encoder in `graphics.py:460`
-  - `background_renderer.render_immediately()`: Creates separate command encoder in `background_renderer.py:152` 
+  - `background_renderer.render_immediately()`: Creates separate command encoder in `background_renderer.py:152`
   - **Each background texture = separate command submission**
 - **ModernGL**: Single draw call sequence, no command buffer overhead
 
@@ -34,22 +34,6 @@ This document outlines the specific technical steps for migrating Catley from Mo
 - **WGPU Current**: Multiple `queue.write_buffer()` calls per frame across renderers
 - **ModernGL**: Single VBO upload per renderer
 
-### Step 3.2: Implement Additional Bind Group Caching
-
-**Priority: HIGH** - Significant performance impact
-
-1. **Extend bind group caching to other renderers** (background renderer already completed):
-   - Cache atlas texture bind group in screen renderer
-   - Cache bind groups in UI texture renderer by texture ID
-   - Pre-create common bind groups during initialization
-
-2. **Optimize bind group creation patterns**:
-   - Cache uniform buffer bind groups where possible
-   - Reduce bind group creation frequency in screen renderer
-
-3. **Implement bind group cleanup**:
-   - Remove cached bind groups when textures are destroyed
-   - Periodic cleanup of unused bind groups
 
 ### Step 3.3: Optimize Buffer Management
 
@@ -85,7 +69,7 @@ This document outlines the specific technical steps for migrating Catley from Mo
 ### Expected Performance Improvements
 
 - **Command buffer consolidation**: ~50-60% render time reduction
-- **Bind group caching**: ~20-30% render time reduction  
+- **Bind group caching**: ~20-30% render time reduction
 - **Buffer optimization**: ~10-15% render time reduction
 - **Combined optimizations**: Should achieve ModernGL parity (~2-3ms render time)
 
@@ -98,8 +82,6 @@ This document outlines the specific technical steps for migrating Catley from Mo
 
 ### Implementation Order
 
-1. **Phase 3.1** (Critical): ✅ **COMPLETED** - Fixed background rendering architecture
-2. **Phase 3.2** (High): Implement additional bind group caching
 3. **Phase 3.3** (Medium): Buffer management optimizations
 4. **Phase 3.4** (Medium): Architecture cleanup and monitoring
 

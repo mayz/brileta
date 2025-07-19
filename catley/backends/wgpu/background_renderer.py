@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import struct
+import weakref
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -62,8 +63,10 @@ class WGPUBackgroundRenderer:
             usage=wgpu.BufferUsage.UNIFORM | wgpu.BufferUsage.COPY_DST,  # type: ignore
         )
 
-        # Cache bind groups by texture ID to avoid per-frame creation
-        self._bind_group_cache: dict[int, wgpu.GPUBindGroup] = {}
+        # Cache bind groups using weak references for automatic cleanup
+        self._bind_group_cache: weakref.WeakKeyDictionary[
+            wgpu.GPUTexture, wgpu.GPUBindGroup
+        ] = weakref.WeakKeyDictionary()
 
         # Create bind group layout
         self.bind_group_layout = self.resource_manager.device.create_bind_group_layout(
@@ -208,10 +211,9 @@ class WGPUBackgroundRenderer:
         vertex_offset = 0
         for texture, vertex_count in self.render_queue:
             # Get or create cached bind group for this texture
-            texture_id = id(texture)
-            if texture_id not in self._bind_group_cache:
-                self._bind_group_cache[texture_id] = self._create_bind_group(texture)
-            bind_group = self._bind_group_cache[texture_id]
+            if texture not in self._bind_group_cache:
+                self._bind_group_cache[texture] = self._create_bind_group(texture)
+            bind_group = self._bind_group_cache[texture]
 
             # Set up render pass and draw this quad
             render_pass.set_pipeline(self.pipeline)
@@ -240,3 +242,5 @@ class WGPUBackgroundRenderer:
                 },
             ],
         )
+
+    # No explicit cleanup needed - WeakKeyDictionary handles it automatically

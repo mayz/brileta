@@ -73,8 +73,8 @@ class WGPUScreenRenderer:
         # Create pipeline and bind groups
         self._create_pipeline()
 
-        # Cache the bind group instead of creating it every frame
-        self._cached_bind_group = None
+        # Pre-create the bind group during initialization for better performance
+        self._cached_bind_group = self._create_bind_group()
 
     def _create_pipeline(self) -> None:
         """Create the WGPU render pipeline - COPIED EXACTLY from working UI renderer."""
@@ -164,6 +164,29 @@ class WGPUScreenRenderer:
             address_mode_v=wgpu.AddressMode.clamp_to_edge,  # type: ignore
         )
 
+    def _create_bind_group(self) -> wgpu.GPUBindGroup:
+        """Create the bind group for atlas texture and uniform buffer."""
+        return self.shader_manager.create_bind_group(
+            layout=self.bind_group_layout,
+            entries=[
+                {
+                    "binding": 0,
+                    "resource": {"buffer": self.uniform_buffer},
+                },
+                {
+                    "binding": 1,
+                    "resource": self.resource_manager.get_texture_view(
+                        self.atlas_texture
+                    ),
+                },
+                {
+                    "binding": 2,
+                    "resource": self.sampler,
+                },
+            ],
+            label="screen_renderer_bind_group",
+        )
+
     def begin_frame(self) -> None:
         """Reset the internal vertex count to zero at the start of a frame."""
         self.vertex_count = 0
@@ -237,28 +260,7 @@ class WGPUScreenRenderer:
         #     0.0, 0.0, float(window_size[0]), float(window_size[1]), 0.0, 1.0
         # )
 
-        # Get or create cached bind group
-        if self._cached_bind_group is None:
-            self._cached_bind_group = self.shader_manager.create_bind_group(
-                layout=self.bind_group_layout,
-                entries=[
-                    {
-                        "binding": 0,
-                        "resource": {"buffer": self.uniform_buffer},
-                    },
-                    {
-                        "binding": 1,
-                        "resource": self.resource_manager.get_texture_view(
-                            self.atlas_texture
-                        ),
-                    },
-                    {
-                        "binding": 2,
-                        "resource": self.sampler,
-                    },
-                ],
-                label="screen_renderer_cached_bind_group",
-            )
+        # Use pre-created bind group (no lazy creation needed)
         bind_group = self._cached_bind_group
 
         # Set up render pass

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import struct
+import weakref
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -72,8 +73,10 @@ class WGPUUITextureRenderer:
         # Create pipeline and bind groups
         self._create_pipeline()
 
-        # Cache for texture bind groups
-        self.texture_bind_groups: dict[int, wgpu.GPUBindGroup] = {}
+        # Cache for texture bind groups using weak references for automatic cleanup
+        self.texture_bind_groups: weakref.WeakKeyDictionary[
+            wgpu.GPUTexture, wgpu.GPUBindGroup
+        ] = weakref.WeakKeyDictionary()
 
     def _create_pipeline(self) -> None:
         """Create the WGPU render pipeline for UI texture rendering."""
@@ -178,29 +181,26 @@ class WGPUUITextureRenderer:
 
     def _get_or_create_bind_group(self, texture: wgpu.GPUTexture) -> wgpu.GPUBindGroup:
         """Get or create a bind group for the given texture."""
-        texture_id = id(texture)
-        if texture_id not in self.texture_bind_groups:
-            self.texture_bind_groups[texture_id] = (
-                self.shader_manager.create_bind_group(
-                    layout=self.bind_group_layout,
-                    entries=[
-                        {
-                            "binding": 0,
-                            "resource": {"buffer": self.uniform_buffer},
-                        },
-                        {
-                            "binding": 1,
-                            "resource": self.resource_manager.get_texture_view(texture),
-                        },
-                        {
-                            "binding": 2,
-                            "resource": self.sampler,
-                        },
-                    ],
-                    label=f"ui_texture_renderer_bind_group_{texture_id}",
-                )
+        if texture not in self.texture_bind_groups:
+            self.texture_bind_groups[texture] = self.shader_manager.create_bind_group(
+                layout=self.bind_group_layout,
+                entries=[
+                    {
+                        "binding": 0,
+                        "resource": {"buffer": self.uniform_buffer},
+                    },
+                    {
+                        "binding": 1,
+                        "resource": self.resource_manager.get_texture_view(texture),
+                    },
+                    {
+                        "binding": 2,
+                        "resource": self.sampler,
+                    },
+                ],
+                label=f"ui_texture_renderer_bind_group_{id(texture)}",
             )
-        return self.texture_bind_groups[texture_id]
+        return self.texture_bind_groups[texture]
 
     def render(
         self,
@@ -246,3 +246,5 @@ class WGPUUITextureRenderer:
             render_pass.draw(vertex_count, 1, vertex_offset)
 
             vertex_offset += vertex_count
+
+    # No explicit cleanup needed - WeakKeyDictionary handles it automatically
