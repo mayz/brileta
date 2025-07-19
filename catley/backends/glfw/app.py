@@ -6,13 +6,13 @@ import glfw
 import tcod
 
 from catley.app import App, AppConfig
+from catley.backends.moderngl.graphics import ModernGLGraphicsContext
 from catley.backends.wgpu.graphics import WGPUGraphicsContext
 from catley.util.misc import SuppressStderr
 
 from .window import GlfwWindow
 
-# GraphicsContextImplClass = ModernGLGraphicsContext
-GraphicsContextImplClass = WGPUGraphicsContext
+GraphicsContextImplClass = ModernGLGraphicsContext if False else WGPUGraphicsContext
 
 
 class GlfwApp(App[GraphicsContextImplClass]):

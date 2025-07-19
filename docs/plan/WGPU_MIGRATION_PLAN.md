@@ -2,6 +2,107 @@
 
 This document outlines the specific technical steps for migrating Catley from ModernGL to wgpu-py.
 
+## Phase 3: WGPU Performance Optimization
+
+**Current Performance Gap**: WGPU renders at ~117-118 FPS (~8.5ms render time) vs ModernGL at ~140-300 FPS (~1.7-2.7ms render time).
+
+**Step 3.1 Completed**: Command buffer multiplexing eliminated - background rendering converted to batched approach with bind group caching. Achieved ~7% performance improvement.
+
+### Root Cause Analysis
+
+**Critical Performance Bottlenecks Identified:**
+
+#### 1. Excessive Command Buffer Creation (Major Bottleneck)
+- **WGPU Current**: Creates **multiple command encoders per frame**
+  - `finalize_present()`: Creates main command encoder in `graphics.py:460`
+  - `background_renderer.render_immediately()`: Creates separate command encoder in `background_renderer.py:152` 
+  - **Each background texture = separate command submission**
+- **ModernGL**: Single draw call sequence, no command buffer overhead
+
+#### 2. Inefficient Background Rendering (Major Bottleneck)
+- **WGPU Current**: `draw_background()` calls `render_immediately()` which:
+  - Creates fresh command encoder per background texture
+  - Creates new bind group per texture (`background_renderer.py:189-205`)
+  - Submits individual command buffer immediately
+- **ModernGL**: Uses persistent VBO/VAO, single draw call with texture binding
+
+#### 3. Bind Group Creation Per Frame
+- **WGPU Current**: Background renderer creates new bind groups every frame
+- **ModernGL**: Reuses shader programs and VAOs
+
+#### 4. Multiple GPU Resource Uploads
+- **WGPU Current**: Multiple `queue.write_buffer()` calls per frame across renderers
+- **ModernGL**: Single VBO upload per renderer
+
+### Step 3.2: Implement Additional Bind Group Caching
+
+**Priority: HIGH** - Significant performance impact
+
+1. **Extend bind group caching to other renderers** (background renderer already completed):
+   - Cache atlas texture bind group in screen renderer
+   - Cache bind groups in UI texture renderer by texture ID
+   - Pre-create common bind groups during initialization
+
+2. **Optimize bind group creation patterns**:
+   - Cache uniform buffer bind groups where possible
+   - Reduce bind group creation frequency in screen renderer
+
+3. **Implement bind group cleanup**:
+   - Remove cached bind groups when textures are destroyed
+   - Periodic cleanup of unused bind groups
+
+### Step 3.3: Optimize Buffer Management
+
+**Priority: MEDIUM** - Incremental improvements
+
+1. **Reduce buffer uploads per frame**:
+   - Batch vertex data updates where possible
+   - Use change detection to avoid unnecessary uploads
+   - Implement dirty flagging for uniform buffers
+
+2. **Use persistent staging buffers**:
+   - Pre-allocate buffers for common sizes
+   - Reuse buffers across similar operations
+
+3. **Minimize `queue.write_buffer` calls**:
+   - Combine multiple small uploads into single larger uploads
+   - Use ring buffering for dynamic content
+
+### Step 3.4: Architecture Alignment with ModernGL
+
+**Priority: MEDIUM** - Long-term maintainability
+
+1. **Standardize rendering patterns**:
+   - Make all renderers follow batched approach
+   - Consistent resource management across components
+   - Unified error handling and cleanup
+
+2. **Performance monitoring integration**:
+   - Add timing measurements to identify regressions
+   - Automated performance testing in CI
+   - Benchmark comparison tools
+
+### Expected Performance Improvements
+
+- **Command buffer consolidation**: ~50-60% render time reduction
+- **Bind group caching**: ~20-30% render time reduction  
+- **Buffer optimization**: ~10-15% render time reduction
+- **Combined optimizations**: Should achieve ModernGL parity (~2-3ms render time)
+
+### Success Metrics
+
+1. **Target Performance**: ≤3ms render time (matching ModernGL baseline)
+2. **Frame Rate**: ≥140 FPS average on same hardware
+3. **Memory Usage**: No significant increase from current WGPU implementation
+4. **Visual Parity**: No rendering artifacts or visual regressions
+
+### Implementation Order
+
+1. **Phase 3.1** (Critical): ✅ **COMPLETED** - Fixed background rendering architecture
+2. **Phase 3.2** (High): Implement additional bind group caching
+3. **Phase 3.3** (Medium): Buffer management optimizations
+4. **Phase 3.4** (Medium): Architecture cleanup and monitoring
+
 ## Phase 4: GPU Lighting System Port
 
 ### Step 4.1: Translate Lighting Shader

@@ -437,10 +437,15 @@ class WGPUGraphicsContext(GraphicsContext):
 
     def prepare_to_present(self) -> None:
         """Prepare for presenting the frame."""
-        if self.screen_renderer is None or self.ui_texture_renderer is None:
+        if (
+            self.screen_renderer is None
+            or self.ui_texture_renderer is None
+            or self.background_renderer is None
+        ):
             return
         self.screen_renderer.begin_frame()
         self.ui_texture_renderer.begin_frame()
+        self.background_renderer.begin_frame()
 
     def finalize_present(self) -> None:
         """Finalize frame presentation by rendering to screen."""
@@ -463,7 +468,7 @@ class WGPUGraphicsContext(GraphicsContext):
             window_size = self.window.get_framebuffer_size()
             surface_view = surface_texture.create_view()
 
-            # Create render pass that preserves existing background content
+            # Create render pass that clears the surface for background rendering
             render_pass = command_encoder.begin_render_pass(
                 color_attachments=[
                     {
@@ -474,19 +479,23 @@ class WGPUGraphicsContext(GraphicsContext):
                             0.0,
                             0.0,
                             1.0,
-                        ),  # Black (unused since load_op is "load")
-                        "load_op": "load",  # Preserve existing background content
+                        ),  # Black background
+                        "load_op": "clear",  # Clear for fresh background
                         "store_op": "store",
                     }
                 ]
             )
 
-            # First render screen content (actors, particles, backgrounds)
+            # First render background textures (lowest layer)
+            if self.background_renderer is not None:
+                self.background_renderer.render(render_pass, self.letterbox_geometry)
+
+            # Then render screen content (actors, particles, tiles)
             self.screen_renderer.render_to_screen(
                 render_pass, window_size, self.letterbox_geometry
             )
 
-            # Then render UI content on top (menus, dialogs, etc.)
+            # Finally render UI content on top (menus, dialogs, etc.)
             if (
                 self.ui_texture_renderer is not None
                 and self.ui_texture_renderer.vertex_count > 0
@@ -646,8 +655,8 @@ class WGPUGraphicsContext(GraphicsContext):
         width_tiles: int,
         height_tiles: int,
     ) -> None:
-        """Draw background texture."""
-        if not isinstance(texture, wgpu.GPUTexture) or self.ui_texture_renderer is None:
+        """Queue background texture for batched rendering."""
+        if not isinstance(texture, wgpu.GPUTexture) or self.background_renderer is None:
             return
 
         # Convert tile coordinates to pixel coordinates
@@ -656,8 +665,10 @@ class WGPUGraphicsContext(GraphicsContext):
             x_tile + width_tiles, y_tile + height_tiles
         )
 
-        # Create vertices for background quad
-        vertices = np.zeros(6, dtype=self.ui_texture_renderer.VERTEX_DTYPE)
+        # Create vertices for background quad using background renderer's VERTEX_DTYPE
+        from .background_renderer import VERTEX_DTYPE
+
+        vertices = np.zeros(6, dtype=VERTEX_DTYPE)
         u1, v1, u2, v2 = 0.0, 0.0, 1.0, 1.0  # Use non-flipped UVs
         color_rgba = (1.0, 1.0, 1.0, 1.0)  # White, no tint
 
@@ -668,21 +679,8 @@ class WGPUGraphicsContext(GraphicsContext):
         vertices[4] = ((px_x1, px_y2), (u1, v2), color_rgba)
         vertices[5] = ((px_x2, px_y2), (u2, v2), color_rgba)
 
-        # Render background immediately like ModernGL does
-        if (
-            self.background_renderer is not None
-            and texture is not None
-            and self.wgpu_context is not None
-        ):
-            surface_texture = self.wgpu_context.get_current_texture()
-
-            # Render background immediately to surface
-            self.background_renderer.render_immediately(
-                surface_texture=surface_texture,
-                texture=texture,
-                vertices=vertices,
-                letterbox_geometry=self.letterbox_geometry,
-            )
+        # Queue the background texture for batched rendering
+        self.background_renderer.add_background_quad(texture, vertices)
 
     def draw_debug_rect(
         self, px_x: int, px_y: int, px_w: int, px_h: int, color: colors.Color

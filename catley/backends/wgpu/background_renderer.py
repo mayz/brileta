@@ -22,11 +22,14 @@ VERTEX_DTYPE = np.dtype(
 
 
 class WGPUBackgroundRenderer:
-    """WGPU background renderer for immediate texture rendering.
+    """WGPU background renderer for batched texture rendering.
 
-    Similar to UI texture renderer but renders immediately to screen
-    instead of batching for later rendering.
+    Queues background textures for rendering in the main render pass
+    instead of immediate rendering to improve performance.
     """
+
+    # Maximum number of background quads per frame
+    MAX_BACKGROUND_QUADS = 100
 
     def __init__(
         self,
@@ -39,9 +42,17 @@ class WGPUBackgroundRenderer:
         self.shader_manager = shader_manager
         self.surface_format = surface_format
 
-        # Create vertex buffer for a single quad
+        # Batched rendering queue and vertex buffer
+        self.render_queue: list[tuple[wgpu.GPUTexture, int]] = []
+        self.cpu_vertex_buffer = np.zeros(
+            self.MAX_BACKGROUND_QUADS * 6, dtype=VERTEX_DTYPE
+        )
+        self.vertex_count = 0
+
+        # Create vertex buffer for batched rendering
+        buffer_size = self.MAX_BACKGROUND_QUADS * 6 * VERTEX_DTYPE.itemsize
         self.vertex_buffer = self.resource_manager.device.create_buffer(
-            size=6 * VERTEX_DTYPE.itemsize,  # 6 vertices per quad
+            size=buffer_size,
             usage=wgpu.BufferUsage.VERTEX | wgpu.BufferUsage.COPY_DST,  # type: ignore
         )
 
@@ -50,6 +61,9 @@ class WGPUBackgroundRenderer:
             size=4 * 4,  # 4 floats: offset_x, offset_y, scaled_w, scaled_h
             usage=wgpu.BufferUsage.UNIFORM | wgpu.BufferUsage.COPY_DST,  # type: ignore
         )
+
+        # Cache bind groups by texture ID to avoid per-frame creation
+        self._bind_group_cache: dict[int, wgpu.GPUBindGroup] = {}
 
         # Create bind group layout
         self.bind_group_layout = self.resource_manager.device.create_bind_group_layout(
@@ -140,32 +154,35 @@ class WGPUBackgroundRenderer:
             cache_key="background_renderer_pipeline",
         )
 
-    def render_immediately(
+    def begin_frame(self) -> None:
+        """Clear the render queue at the start of a new frame."""
+        self.render_queue.clear()
+        self.vertex_count = 0
+
+    def add_background_quad(
         self,
-        surface_texture: wgpu.GPUTexture,
         texture: wgpu.GPUTexture,
         vertices: np.ndarray,
+    ) -> None:
+        """Add a background texture quad to the render queue."""
+        if self.vertex_count + 6 > len(self.cpu_vertex_buffer):
+            return  # Skip if buffer is full
+
+        # Copy vertices into the CPU buffer
+        self.cpu_vertex_buffer[self.vertex_count : self.vertex_count + 6] = vertices
+        self.vertex_count += 6
+
+        # Queue the texture and vertex count for this quad
+        self.render_queue.append((texture, 6))
+
+    def render(
+        self,
+        render_pass: wgpu.GPURenderPassEncoder,
         letterbox_geometry: tuple[int, int, int, int] | None,
     ) -> None:
-        """Render a background texture immediately to the surface."""
-        # Create command encoder
-        command_encoder = self.resource_manager.device.create_command_encoder()
-
-        # Create surface view
-        surface_view = surface_texture.create_view()
-
-        # Create render pass that clears the surface
-        render_pass = command_encoder.begin_render_pass(
-            color_attachments=[
-                {
-                    "view": surface_view,
-                    "resolve_target": None,
-                    "clear_value": (0.0, 0.0, 0.0, 1.0),  # Black background
-                    "load_op": "clear",
-                    "store_op": "store",
-                }
-            ]
-        )
+        """Render all queued background textures in the current render pass."""
+        if not self.render_queue or self.vertex_count == 0:
+            return
 
         # Update uniform buffer with letterbox parameters
         if letterbox_geometry is not None:
@@ -180,13 +197,33 @@ class WGPUBackgroundRenderer:
             self.uniform_buffer, 0, memoryview(letterbox_data)
         )
 
-        # Upload vertex data
+        # Upload all vertex data to GPU in a single operation
         self.resource_manager.queue.write_buffer(
-            self.vertex_buffer, 0, memoryview(vertices.tobytes())
+            self.vertex_buffer,
+            0,
+            memoryview(self.cpu_vertex_buffer[: self.vertex_count].tobytes()),
         )
 
-        # Create bind group for this texture
-        bind_group = self.shader_manager.create_bind_group(
+        # Render each quad with the correct texture binding
+        vertex_offset = 0
+        for texture, vertex_count in self.render_queue:
+            # Get or create cached bind group for this texture
+            texture_id = id(texture)
+            if texture_id not in self._bind_group_cache:
+                self._bind_group_cache[texture_id] = self._create_bind_group(texture)
+            bind_group = self._bind_group_cache[texture_id]
+
+            # Set up render pass and draw this quad
+            render_pass.set_pipeline(self.pipeline)
+            render_pass.set_bind_group(0, bind_group)
+            render_pass.set_vertex_buffer(0, self.vertex_buffer)
+            render_pass.draw(vertex_count, 1, vertex_offset)
+
+            vertex_offset += vertex_count
+
+    def _create_bind_group(self, texture: wgpu.GPUTexture) -> wgpu.GPUBindGroup:
+        """Create a bind group for the given texture."""
+        return self.shader_manager.create_bind_group(
             layout=self.bind_group_layout,
             entries=[
                 {
@@ -203,15 +240,3 @@ class WGPUBackgroundRenderer:
                 },
             ],
         )
-
-        # Set up render pass and draw
-        render_pass.set_pipeline(self.pipeline)
-        render_pass.set_bind_group(0, bind_group)
-        render_pass.set_vertex_buffer(0, self.vertex_buffer)
-        render_pass.draw(6, 1, 0)  # 6 vertices, 1 instance, starting at vertex 0
-
-        render_pass.end()
-
-        # Submit commands
-        command_buffer = command_encoder.finish()
-        self.resource_manager.queue.submit([command_buffer])

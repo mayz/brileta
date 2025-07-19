@@ -17,8 +17,18 @@ from catley.types import Opacity
 
 PROJECT_ROOT_PATH = Path(__file__).resolve().parent.parent
 
-RANDOM_SEED = None
-# RANDOM_SEED = "burrito 92"
+## ModernGL stats
+# FPS: ~140-300
+# render_ms: ~1.7-2.7
+# total_frame_ms: ~2.7-4.25
+
+## WGPU stats
+# FPS: ~80-110
+# render_ms: ~8.7
+# total_frame_ms: ~9.2
+
+# RANDOM_SEED = None
+RANDOM_SEED = "burrito1"
 
 # =============================================================================
 # DISPLAY & RENDERING
@@ -65,7 +75,7 @@ FPS_SAMPLE_SIZE = 256  # Number of frame time samples to track
 # These are independent flags to control debugging features.
 
 # Set to True for uncapped FPS to identify performance bottlenecks.
-PERFORMANCE_PROFILING = False
+PERFORMANCE_PROFILING = True
 
 # Set to True to print metrics about the "tap vs. hold" input system.
 # This measures the real-world time between player-perceived moves, which is
