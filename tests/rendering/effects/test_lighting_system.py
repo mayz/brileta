@@ -187,7 +187,9 @@ def test_directional_light_southeast_default() -> None:
 # Sky Exposure and Region Tests
 def test_map_region_outdoor_factory() -> None:
     """Test MapRegion.create_outdoor_region() factory method."""
-    outdoor_region = MapRegion.create_outdoor_region(id=1, region_type="clearing")
+    outdoor_region = MapRegion.create_outdoor_region(
+        map_region_id=1, region_type="clearing"
+    )
 
     assert outdoor_region.id == 1
     assert outdoor_region.region_type == "clearing"
@@ -196,7 +198,9 @@ def test_map_region_outdoor_factory() -> None:
 
 def test_map_region_indoor_factory() -> None:
     """Test MapRegion.create_indoor_region() factory method."""
-    indoor_region = MapRegion.create_indoor_region(id=2, region_type="dungeon")
+    indoor_region = MapRegion.create_indoor_region(
+        map_region_id=2, region_type="dungeon"
+    )
 
     assert indoor_region.id == 2
     assert indoor_region.region_type == "dungeon"
@@ -206,17 +210,17 @@ def test_map_region_indoor_factory() -> None:
 def test_map_region_custom_sky_exposure() -> None:
     """Test MapRegion creation with custom sky exposure values."""
     # Test partial sky exposure (e.g., covered outdoor area)
-    covered_area = MapRegion.create_outdoor_region(id=3, sky_exposure=0.5)
+    covered_area = MapRegion.create_outdoor_region(map_region_id=3, sky_exposure=0.5)
     assert covered_area.sky_exposure == 0.5
 
     # Test underground with minimal light shaft
-    underground = MapRegion.create_indoor_region(id=4, sky_exposure=0.1)
+    underground = MapRegion.create_indoor_region(map_region_id=4, sky_exposure=0.1)
     assert underground.sky_exposure == 0.1
 
 
 def test_map_region_default_values() -> None:
     """Test MapRegion default values for bounds and connections."""
-    region = MapRegion.create_outdoor_region(id=5)
+    region = MapRegion.create_outdoor_region(map_region_id=5)
 
     assert region.bounds == []
     assert region.connections == {}
@@ -305,8 +309,8 @@ def test_directional_light_with_sky_exposure() -> None:
     lighting_system = CPULightingSystem(gw)
 
     # Create outdoor and indoor regions
-    outdoor_region = MapRegion.create_outdoor_region(id=1, sky_exposure=1.0)
-    indoor_region = MapRegion.create_indoor_region(id=2, sky_exposure=0.0)
+    outdoor_region = MapRegion.create_outdoor_region(map_region_id=1, sky_exposure=1.0)
+    indoor_region = MapRegion.create_indoor_region(map_region_id=2, sky_exposure=0.0)
 
     # Add regions to map (basic setup)
     gw.game_map.regions = {1: outdoor_region, 2: indoor_region}

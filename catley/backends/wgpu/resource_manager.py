@@ -50,7 +50,7 @@ class WGPUResourceManager:
         self,
         width: int,
         height: int,
-        format: str = "rgba8unorm",
+        texture_format: str = "rgba8unorm",
         usage: int = wgpu.TextureUsage.RENDER_ATTACHMENT
         | wgpu.TextureUsage.TEXTURE_BINDING,
     ) -> wgpu.GPUTexture:
@@ -68,7 +68,7 @@ class WGPUResourceManager:
         Returns:
             WGPU texture for rendering
         """
-        cache_key = (width, height, format)
+        cache_key = (width, height, texture_format)
 
         # Check if we have a cached texture for these dimensions
         if cache_key in self._texture_cache:
@@ -77,7 +77,7 @@ class WGPUResourceManager:
         # Create new texture
         texture = self.device.create_texture(
             size=(width, height, 1),
-            format=format,  # type: ignore
+            format=texture_format,  # type: ignore
             usage=usage,  # type: ignore
         )
 
@@ -115,7 +115,7 @@ class WGPUResourceManager:
         return buffer
 
     def get_texture_view(
-        self, texture: wgpu.GPUTexture, format: str | None = None
+        self, texture: wgpu.GPUTexture, texture_format: str | None = None
     ) -> wgpu.GPUTextureView:
         """Get or create a cached texture view for a texture.
 
@@ -133,12 +133,15 @@ class WGPUResourceManager:
             return self._texture_view_cache[texture_id]
 
         # Create new texture view
-        view = texture.create_view(format=format) if format else texture.create_view()  # type: ignore
+        if texture_format:
+            view = texture.create_view(format=texture_format)  # type: ignore
+        else:
+            view = texture.create_view()
         self._texture_view_cache[texture_id] = view
         return view
 
     def create_atlas_texture(
-        self, width: int, height: int, data: bytes, format: str = "rgba8unorm"
+        self, width: int, height: int, data: bytes, texture_format: str = "rgba8unorm"
     ) -> wgpu.GPUTexture:
         """Create a texture from raw image data (typically for atlas textures).
 
@@ -153,7 +156,7 @@ class WGPUResourceManager:
         """
         texture = self.device.create_texture(
             size=(width, height, 1),
-            format=format,  # type: ignore
+            format=texture_format,  # type: ignore
             usage=wgpu.TextureUsage.TEXTURE_BINDING | wgpu.TextureUsage.COPY_DST,  # type: ignore
         )
 

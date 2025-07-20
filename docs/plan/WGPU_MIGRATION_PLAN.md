@@ -6,35 +6,6 @@ This document outlines the specific technical steps for migrating Catley from Mo
 
 **Current Performance Gap**: WGPU renders at ~117-118 FPS (~8.5ms render time) vs ModernGL at ~140-300 FPS (~1.7-2.7ms render time).
 
-**Step 3.1 Completed**: Command buffer multiplexing eliminated - background rendering converted to batched approach with bind group caching. Achieved ~7% performance improvement.
-
-### Root Cause Analysis
-
-**Critical Performance Bottlenecks Identified:**
-
-#### 1. Excessive Command Buffer Creation (Major Bottleneck)
-- **WGPU Current**: Creates **multiple command encoders per frame**
-  - `finalize_present()`: Creates main command encoder in `graphics.py:460`
-  - `background_renderer.render_immediately()`: Creates separate command encoder in `background_renderer.py:152`
-  - **Each background texture = separate command submission**
-- **ModernGL**: Single draw call sequence, no command buffer overhead
-
-#### 2. Inefficient Background Rendering (Major Bottleneck)
-- **WGPU Current**: `draw_background()` calls `render_immediately()` which:
-  - Creates fresh command encoder per background texture
-  - Creates new bind group per texture (`background_renderer.py:189-205`)
-  - Submits individual command buffer immediately
-- **ModernGL**: Uses persistent VBO/VAO, single draw call with texture binding
-
-#### 3. Bind Group Creation Per Frame
-- **WGPU Current**: Background renderer creates new bind groups every frame
-- **ModernGL**: Reuses shader programs and VAOs
-
-#### 4. Multiple GPU Resource Uploads
-- **WGPU Current**: Multiple `queue.write_buffer()` calls per frame across renderers
-- **ModernGL**: Single VBO upload per renderer
-
-
 ### Step 3.3: Optimize Buffer Management
 
 **Priority: MEDIUM** - Incremental improvements

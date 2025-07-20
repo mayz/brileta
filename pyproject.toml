@@ -28,6 +28,7 @@ filterwarnings = [
 
 [tool.ruff.lint]
 select = [
+    "A",        # detect shadowed builtins
     "F",        # Pyflakes rules
     "W",        # PyCodeStyle warnings
     "E",        # PyCodeStyle errors
@@ -43,6 +44,10 @@ select = [
     "PTH",      # Use pathlib instead of os.path
     "PERF",     # Performance anti-patterns
     "RUF",      # Ruff-specific rules
+    "NPY",      # Some numpy-specific things
+    "Q",        # Linting rules for quites
+    "PYI",      # Linting rules for type annotations.
+    "LOG",      # Checks for issues using the standard library logging module.
 ]
 
 [tool.pyright]

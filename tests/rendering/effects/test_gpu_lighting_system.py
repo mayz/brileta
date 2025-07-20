@@ -297,7 +297,8 @@ class TestGPULightingSystem:
         )
 
         viewport = Rect(0, 0, 10, 10)
-        expected_result = np.random.rand(10, 10, 3).astype(np.float32)
+        rng = np.random.default_rng()
+        expected_result = rng.random((10, 10, 3)).astype(np.float32)
         self.mock_fallback.compute_lightmap.return_value = expected_result
 
         result = gpu_system.compute_lightmap(viewport)
@@ -327,7 +328,8 @@ class TestGPULightingSystem:
             )
 
         viewport = Rect(0, 0, 10, 10)
-        expected_result = np.random.rand(10, 10, 3).astype(np.float32)
+        rng = np.random.default_rng()
+        expected_result = rng.random((10, 10, 3)).astype(np.float32)
         self.mock_fallback.compute_lightmap.return_value = expected_result
 
         result = gpu_system.compute_lightmap(viewport)
@@ -875,10 +877,10 @@ class TestGPUDirectionalLighting:
 
         # Create mock regions with different sky exposures
         self.outdoor_region = MapRegion.create_outdoor_region(
-            id=1, region_type="outdoor", sky_exposure=1.0
+            map_region_id=1, region_type="outdoor", sky_exposure=1.0
         )
         self.indoor_region = MapRegion.create_indoor_region(
-            id=2, region_type="indoor", sky_exposure=0.0
+            map_region_id=2, region_type="indoor", sky_exposure=0.0
         )
 
         # Mock get_region_at to return appropriate regions
@@ -1192,7 +1194,7 @@ class TestGPUDirectionalLighting:
         from catley.environment.map import MapRegion
 
         outdoor_region = MapRegion.create_outdoor_region(
-            id=1, region_type="outdoor", sky_exposure=1.0
+            map_region_id=1, region_type="outdoor", sky_exposure=1.0
         )
         self.game_map.get_region_at = Mock(return_value=outdoor_region)
 
@@ -1248,7 +1250,7 @@ class TestGPUDirectionalShadows:
 
         # Create outdoor region for directional shadows
         self.outdoor_region = MapRegion.create_outdoor_region(
-            id=1, region_type="outdoor", sky_exposure=1.0
+            map_region_id=1, region_type="outdoor", sky_exposure=1.0
         )
 
         # Mock get_region_at to return outdoor region
@@ -1321,15 +1323,15 @@ class TestGPUDirectionalShadows:
             x, y = pos
             if x < 3:  # Left side: indoor (no sky exposure)
                 return MapRegion.create_indoor_region(
-                    id=1, region_type="indoor", sky_exposure=0.0
+                    map_region_id=1, region_type="indoor", sky_exposure=0.0
                 )
             if x < 6:  # Middle: low sky exposure
                 return MapRegion.create_outdoor_region(
-                    id=2, region_type="partial", sky_exposure=0.05
+                    map_region_id=2, region_type="partial", sky_exposure=0.05
                 )
             # Right side: outdoor (full sky exposure)
             return MapRegion.create_outdoor_region(
-                id=3, region_type="outdoor", sky_exposure=1.0
+                map_region_id=3, region_type="outdoor", sky_exposure=1.0
             )
 
         self.game_map.get_region_at = Mock(side_effect=get_region_by_exposure)

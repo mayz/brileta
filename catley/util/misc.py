@@ -17,7 +17,7 @@ class SuppressStderr:
         self.devnull = open(os.devnull, "w")  # noqa: PTH123
         os.dup2(self.devnull.fileno(), self.orig_stderr_fileno)
 
-    def __exit__(self, type, value, traceback):
+    def __exit__(self, exc_type, value, traceback):
         os.close(self.orig_stderr_fileno)
         os.dup2(self.orig_stderr_dup, self.orig_stderr_fileno)
         os.close(self.orig_stderr_dup)

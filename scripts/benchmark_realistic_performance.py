@@ -120,11 +120,14 @@ class RealisticPerformanceBenchmark:
         player_x, player_y = self.controller.gw.player.x, self.controller.gw.player.y
         view_radius = 25  # Lights within view
 
+        # Create random number generator
+        rng = np.random.default_rng()
+
         lights_added = 0
         for _ in range(light_count):
             # Place lights around the player (realistic scenario)
-            angle = np.random.uniform(0, 2 * np.pi)
-            distance = np.random.uniform(3, view_radius)
+            angle = rng.uniform(0, 2 * np.pi)
+            distance = rng.uniform(3, view_radius)
             x = int(player_x + distance * np.cos(angle))
             y = int(player_y + distance * np.sin(angle))
 

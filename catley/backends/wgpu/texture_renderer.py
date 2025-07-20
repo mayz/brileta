@@ -214,7 +214,7 @@ class WGPUTextureRenderer:
         render_texture = self.resource_manager.get_or_create_render_texture(
             width=texture_width,
             height=texture_height,
-            format="rgba8unorm",
+            texture_format="rgba8unorm",
         )
 
         # Reset vertex count for this render

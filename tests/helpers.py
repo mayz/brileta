@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Self
 from unittest.mock import patch
 
 import numpy as np
@@ -250,7 +250,7 @@ def get_controller_with_player_and_map() -> Controller:
             self.sdl_renderer = SimpleNamespace()
             self.sdl_atlas = DummyAtlas()
 
-        def __enter__(self) -> DummyContext:  # pragma: no cover - context stub
+        def __enter__(self) -> Self:  # pragma: no cover - context stub
             return self
 
         def __exit__(self, exc_type, exc_val, exc_tb) -> None:  # pragma: no cover

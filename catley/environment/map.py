@@ -28,17 +28,35 @@ class MapRegion:
 
     @classmethod
     def create_outdoor_region(
-        cls, id: int, region_type: str = "outdoor", sky_exposure: float = 1.0, **kwargs
+        cls,
+        map_region_id: int,
+        region_type: str = "outdoor",
+        sky_exposure: float = 1.0,
+        **kwargs,
     ) -> MapRegion:
         """Factory for outdoor regions with full sky exposure."""
-        return cls(id=id, region_type=region_type, sky_exposure=sky_exposure, **kwargs)
+        return cls(
+            id=map_region_id,
+            region_type=region_type,
+            sky_exposure=sky_exposure,
+            **kwargs,
+        )
 
     @classmethod
     def create_indoor_region(
-        cls, id: int, region_type: str = "indoor", sky_exposure: float = 0.0, **kwargs
+        cls,
+        map_region_id: int,
+        region_type: str = "indoor",
+        sky_exposure: float = 0.0,
+        **kwargs,
     ) -> MapRegion:
         """Factory for indoor regions with no sky exposure."""
-        return cls(id=id, region_type=region_type, sky_exposure=sky_exposure, **kwargs)
+        return cls(
+            id=map_region_id,
+            region_type=region_type,
+            sky_exposure=sky_exposure,
+            **kwargs,
+        )
 
 
 class GameMap:

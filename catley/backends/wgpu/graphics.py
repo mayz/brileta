@@ -729,7 +729,7 @@ class WGPUGraphicsContext(GraphicsContext):
             width=img.size[0],
             height=img.size[1],
             data=pixels.tobytes(),
-            format="rgba8unorm",
+            texture_format="rgba8unorm",
         )
 
     def _precalculate_uv_map(self) -> np.ndarray:

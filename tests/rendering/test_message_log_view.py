@@ -32,7 +32,7 @@ class DummyRenderer:
     def present(self) -> None:
         pass
 
-    def read_pixels(self, format: str = "RGBA"):
+    def read_pixels(self, format: str = "RGBA"):  # noqa: A002
         import numpy as np
 
         return np.ones((10, 10, 4), dtype=np.uint8)

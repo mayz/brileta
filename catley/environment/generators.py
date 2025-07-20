@@ -157,11 +157,11 @@ class RoomsAndCorridorsGenerator(BaseMapGenerator):
             # 20% chance for each room to be outdoor
             if random.random() < 0.2:
                 room_region = MapRegion.create_outdoor_region(
-                    id=next_region_id, region_type="room", bounds=[new_room]
+                    map_region_id=next_region_id, region_type="room", bounds=[new_room]
                 )
             else:
                 room_region = MapRegion.create_indoor_region(
-                    id=next_region_id, region_type="room", bounds=[new_room]
+                    map_region_id=next_region_id, region_type="room", bounds=[new_room]
                 )
             regions[next_region_id] = room_region
             tile_to_region_id[
