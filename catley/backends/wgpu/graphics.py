@@ -186,14 +186,14 @@ class WGPUGraphicsContext(GraphicsContext):
         return config.SCREEN_HEIGHT
 
     def render_glyph_buffer_to_texture(
-        self, glyph_buffer: GlyphBuffer
+        self, glyph_buffer: GlyphBuffer, canvas_vbo: wgpu.GPUBuffer | None = None
     ) -> wgpu.GPUTexture:
         """Render GlyphBuffer to a WGPU texture."""
         if self.texture_renderer is None:
             raise RuntimeError("Texture renderer not initialized")
 
-        # Use the texture renderer to create an off-screen texture
-        return self.texture_renderer.render(glyph_buffer)
+        # Pass the canvas's vertex buffer to the renderer
+        return self.texture_renderer.render(glyph_buffer, buffer_override=canvas_vbo)
 
     def draw_actor_smooth(
         self,
@@ -706,7 +706,9 @@ class WGPUGraphicsContext(GraphicsContext):
         """Create a WGPU canvas."""
         from catley.backends.wgpu.canvas import WGPUCanvas
 
-        return WGPUCanvas(self, transparent)
+        # Pass the resource_manager to the canvas constructor
+        assert self.resource_manager is not None
+        return WGPUCanvas(self, self.resource_manager, transparent)
 
     # --- Atlas Texture Loading Methods ---
 

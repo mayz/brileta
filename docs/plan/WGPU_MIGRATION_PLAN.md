@@ -2,59 +2,58 @@
 
 This document outlines the specific technical steps for migrating Catley from ModernGL to wgpu-py.
 
+**Important**: Maintain implementation parity between backends to prevent subtle bugs. Unintentional divergences can cause hard-to-debug visual artifacts. For example, the introduction of dirty-tile optimization initially caused visual artifacts (ghosting of previously lit tiles). Root cause: the WGPU implementation had diverged from ModernGL by adding a transparent tile optimization that skipped generating vertices for fully transparent tiles. This caused stale vertex data to persist in the VBO. The fix was to remove this optimization and ensure WGPU matches ModernGL's behavior of always generating vertices for all tiles.
+
 ## Phase 3: WGPU Performance Optimization
 
-**Current Performance Gap**: WGPU renders at ~117-118 FPS (~8.5ms render time) vs ModernGL at ~140-300 FPS (~1.7-2.7ms render time).
+**Current Performance Gap**: WGPU renders at ~180-240 FPS (~3.7-4.4ms render time) vs ModernGL at ~140-300 FPS (~1.7-2.7ms render time).
 
-### Step 3.3: Optimize Buffer Management
+Analysis of the existing ModernGL and WGPU backends reveals that the performance gap is not due to a fundamental limitation of WGPU, but rather a specific, critical optimization present in the ModernGL backend that is currently missing from the WGPU implementation. The following plan prioritizes closing this gap first, followed by broader architectural improvements.
 
-**Priority: MEDIUM** - Incremental improvements
+### Step 3.2: Standardize All Rendering on a Batched Model (HIGH)
 
-1. **Reduce buffer uploads per frame**:
-   - Batch vertex data updates where possible
-   - Use change detection to avoid unnecessary uploads
-   - Implement dirty flagging for uniform buffers
+**Priority: HIGH** - Ensures architectural consistency and reduces draw call overhead.
 
-2. **Use persistent staging buffers**:
-   - Pre-allocate buffers for common sizes
-   - Reuse buffers across similar operations
+1.  **Observation**: The WGPU backend has already made positive steps by batching background draws in `WGPUBackgroundRenderer`. However, the ModernGL backend's `apply_environmental_effect` uses an immediate-mode style draw (`_draw_environmental_effect_immediately`), a pattern that should be avoided in WGPU.
+2.  **Problem**: Mixing batched and immediate-mode rendering complicates the render loop and can lead to inefficient use of the GPU.
+3.  **Action**: Ensure that all rendering components follow a consistent batched pattern. When implementing `apply_environmental_effect` for WGPU, create a dedicated `WGPUEnvironmentalEffectRenderer` that queues effect quads, similar to how the `ScreenRenderer` and `UITextureRenderer` work. This will consolidate all drawing into a single, predictable render pass.
 
-3. **Minimize `queue.write_buffer` calls**:
-   - Combine multiple small uploads into single larger uploads
-   - Use ring buffering for dynamic content
+### Step 3.3: Consolidate Command Encoder Usage (MEDIUM)
 
-### Step 3.4: Architecture Alignment with ModernGL
+**Priority: MEDIUM** - Reduces driver overhead.
 
-**Priority: MEDIUM** - Long-term maintainability
+1.  **Observation**: The main render loop in `WGPUGraphicsContext.finalize_present` correctly uses a single `command_encoder`. However, the `WGPUTextureRenderer.render` method creates its own `command_encoder` for every render-to-texture operation.
+2.  **Problem**: Creating multiple command encoders per frame introduces unnecessary overhead, especially if several UI elements need to be redrawn simultaneously.
+3.  **Action**: Refactor the rendering logic to allow multiple render-to-texture passes to be recorded into a single command buffer, which is then submitted once at the end of all UI drawing.
 
-1. **Standardize rendering patterns**:
-   - Make all renderers follow batched approach
-   - Consistent resource management across components
-   - Unified error handling and cleanup
+### Step 3.4: Integrate Performance Monitoring (MEDIUM)
 
-2. **Performance monitoring integration**:
-   - Add timing measurements to identify regressions
-   - Automated performance testing in CI
-   - Benchmark comparison tools
+**Priority: MEDIUM** - Long-term maintainability.
+
+1.  **Action**: This step remains the same as the original plan.
+    *   Integrate timing measurements around key rendering stages in the WGPU backend to identify regressions and bottlenecks.
+    *   Establish automated performance testing in CI to ensure performance does not degrade over time.
+    *   Use benchmarking tools to validate that performance targets are being met after optimizations.
 
 ### Expected Performance Improvements
 
-- **Command buffer consolidation**: ~50-60% render time reduction
-- **Bind group caching**: ~20-30% render time reduction
-- **Buffer optimization**: ~10-15% render time reduction
-- **Combined optimizations**: Should achieve ModernGL parity (~2-3ms render time)
+-   **Dirty-Tile Optimization**: **~70-80% reduction** in total render time when UI elements are present and mostly static. This single change is expected to close most of the performance gap.
+-   **Batched Rendering & Encoder Consolidation**: **~10-20% additional reduction** by minimizing state changes and reducing CPU-side driver overhead.
+-   **Combined Optimizations**: Should achieve or exceed ModernGL parity, targeting a **~2-3ms** render time.
 
 ### Success Metrics
 
-1. **Target Performance**: ≤3ms render time (matching ModernGL baseline)
-2. **Frame Rate**: ≥140 FPS average on same hardware
-3. **Memory Usage**: No significant increase from current WGPU implementation
-4. **Visual Parity**: No rendering artifacts or visual regressions
+1.  **Target Performance**: ≤3ms render time (matching ModernGL baseline).
+2.  **Frame Rate**: ≥140 FPS average on the same hardware.
+3.  **Memory Usage**: No significant increase from the current WGPU implementation.
+4.  **Visual Parity**: No rendering artifacts or visual regressions compared to the ModernGL backend.
 
 ### Implementation Order
 
-3. **Phase 3.3** (Medium): Buffer management optimizations
-4. **Phase 3.4** (Medium): Architecture cleanup and monitoring
+1.  **Phase 3.1 (Critical)**: Implement dirty-tile optimization in `WGPUTextureRenderer`.
+2.  **Phase 3.2 (High)**: Standardize all renderers on the batched model, starting with `apply_environmental_effect`.
+3.  **Phase 3.3 (Medium)**: Consolidate command encoder usage.
+4.  **Phase 3.4 (Medium)**: Integrate performance monitoring tools.
 
 ## Phase 4: GPU Lighting System Port
 

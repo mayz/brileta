@@ -83,6 +83,10 @@ class TestWGPUGraphicsContext:
                 self.graphics_ctx = WGPUGraphicsContext(mock_window, _defer_init=True)  # type: ignore[misc]
                 self.real_wgpu = False
 
+        # Add mock resource manager for testing
+        mock_resource_manager = Mock()
+        self.graphics_ctx.resource_manager = mock_resource_manager
+
         yield
 
         # Cleanup WGPU resources to prevent segfaults
@@ -271,10 +275,19 @@ class TestWGPUGraphicsContext:
             self.graphics_ctx.texture_from_numpy(invalid_array)
 
         # Test that method fails gracefully when resource manager is not initialized
-        with pytest.raises(AssertionError, match="Resource manager not initialized"):
-            # Valid RGBA array
-            valid_array = np.ones((10, 10, 4), dtype=np.uint8)
-            self.graphics_ctx.texture_from_numpy(valid_array)
+        # Temporarily set resource manager to None to test the error case
+        original_resource_manager = self.graphics_ctx.resource_manager
+        self.graphics_ctx.resource_manager = None
+        try:
+            with pytest.raises(
+                AssertionError, match="Resource manager not initialized"
+            ):
+                # Valid RGBA array
+                valid_array = np.ones((10, 10, 4), dtype=np.uint8)
+                self.graphics_ctx.texture_from_numpy(valid_array)
+        finally:
+            # Restore the mock resource manager
+            self.graphics_ctx.resource_manager = original_resource_manager
 
     def test_interpolation_alpha_default_handling(self):
         """Test that draw_actor_smooth handles None interpolation_alpha correctly."""
@@ -310,8 +323,10 @@ class TestWGPUGraphicsContext:
         result = self.graphics_ctx.render_glyph_buffer_to_texture(glyph_buffer)
         assert result is mock_texture
 
-        # Verify that the texture renderer was called with the glyph buffer
-        mock_texture_renderer.render.assert_called_once_with(glyph_buffer)
+        # Verify that the texture renderer was called with expected parameters
+        mock_texture_renderer.render.assert_called_once_with(
+            glyph_buffer, buffer_override=None
+        )
 
     def test_add_tile_to_screen(self):
         """Test adding tiles to the screen renderer."""

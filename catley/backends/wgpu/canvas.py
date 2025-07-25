@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+import wgpu
+
 from catley import colors
 from catley.util.coordinates import PixelCoord, TileCoord
 from catley.util.glyph_buffer import GlyphBuffer
@@ -12,20 +14,30 @@ from catley.view.render.canvas import Canvas
 if TYPE_CHECKING:
     from catley.view.render.graphics import GraphicsContext
 
+    from .resource_manager import WGPUResourceManager
+
 
 class WGPUCanvas(Canvas):
     """WGPU canvas implementation extending base Canvas."""
 
-    def __init__(self, renderer: GraphicsContext, transparent: bool = True) -> None:
+    def __init__(
+        self,
+        renderer: GraphicsContext,
+        resource_manager: WGPUResourceManager,
+        transparent: bool = True,
+    ) -> None:
         """Initialize WGPU canvas.
 
         Args:
             renderer: Graphics context (WGPUGraphicsContext)
+            resource_manager: The WGPU resource manager for creating buffers
             transparent: Whether the canvas should support transparency
         """
         super().__init__(transparent)
         self.renderer = renderer
+        self.resource_manager = resource_manager
         self.private_glyph_buffer: GlyphBuffer | None = None
+        self.vertex_buffer: wgpu.GPUBuffer | None = None
 
         # Configure scaling based on renderer tile dimensions
         self.configure_scaling(renderer.tile_dimensions[1])
@@ -87,8 +99,8 @@ class WGPUCanvas(Canvas):
         if not isinstance(artifact, GlyphBuffer):
             return None
 
-        # Use the renderer's render_glyph_buffer_to_texture method
-        return renderer.render_glyph_buffer_to_texture(artifact)
+        # Use the renderer's method, but pass this canvas's OWN vertex buffer
+        return renderer.render_glyph_buffer_to_texture(artifact, self.vertex_buffer)
 
     def _update_scaling_internal(self, tile_height: int) -> None:
         """Backend-specific scaling logic."""
@@ -129,6 +141,38 @@ class WGPUCanvas(Canvas):
             )
 
         return True
+
+    def configure_dimensions(self, width: PixelCoord, height: PixelCoord) -> None:
+        """Create or resize the canvas's private glyph buffer and GPU vertex buffer."""
+        from catley.backends.wgpu.texture_renderer import TEXTURE_VERTEX_DTYPE
+
+        super().configure_dimensions(width, height)
+
+        # Recreate the GPU vertex buffer if dimensions change
+        tile_w, tile_h = self.renderer.tile_dimensions
+        if not tile_w or not tile_h:
+            return
+
+        width_tiles = int(width // tile_w)
+        height_tiles = int(height // tile_h)
+        max_vertices = width_tiles * height_tiles * 6
+
+        if (
+            self.vertex_buffer is None
+            or self.vertex_buffer.size < max_vertices * TEXTURE_VERTEX_DTYPE.itemsize
+        ):
+            if self.vertex_buffer:
+                self.vertex_buffer.destroy()
+
+            buffer_size = max_vertices * TEXTURE_VERTEX_DTYPE.itemsize
+            if buffer_size > 0:
+                self.vertex_buffer = self.resource_manager.device.create_buffer(
+                    size=buffer_size,
+                    usage=wgpu.BufferUsage.VERTEX | wgpu.BufferUsage.COPY_DST,  # type: ignore
+                    label=f"canvas_vbo_{id(self)}",
+                )
+            else:
+                self.vertex_buffer = None
 
     def _render_text_op(
         self,

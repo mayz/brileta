@@ -49,8 +49,21 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     return output;
 }
 
+// Color temperature adjustment to match ModernGL's warmer appearance
+fn warm_color_correction(color: vec3<f32>) -> vec3<f32> {
+    // Subtle warm adjustment: slightly boost red/orange, reduce blue
+    // These values are tuned to match ModernGL's implicit gamma warmth
+    return vec3<f32>(
+        color.r * 1.05,  // Slightly boost red
+        color.g * 1.02,  // Slightly boost green
+        color.b * 0.98   // Slightly reduce blue
+    );
+}
+
 // Fragment shader stage
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    return textureSample(u_texture, u_sampler, input.v_uv) * input.v_color;
+    let sampled_color = textureSample(u_texture, u_sampler, input.v_uv) * input.v_color;
+    let corrected_rgb = warm_color_correction(sampled_color.rgb);
+    return vec4<f32>(corrected_rgb, sampled_color.a);
 }

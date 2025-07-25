@@ -38,8 +38,13 @@ class TestWGPUCanvas:
         self.mock_renderer.tile_dimensions = (20, 20)
 
         # Create canvas instances for testing
-        self.canvas = WGPUCanvas(self.mock_renderer, transparent=True)  # type: ignore[misc]
-        self.opaque_canvas = WGPUCanvas(self.mock_renderer, transparent=False)  # type: ignore[misc]
+        self.mock_resource_manager = Mock()
+        self.canvas = WGPUCanvas(
+            self.mock_renderer, self.mock_resource_manager, transparent=True
+        )  # type: ignore[misc]
+        self.opaque_canvas = WGPUCanvas(
+            self.mock_renderer, self.mock_resource_manager, transparent=False
+        )  # type: ignore[misc]
 
     def test_initialization(self):
         """Test canvas initialization."""
@@ -201,7 +206,7 @@ class TestWGPUCanvas:
         result = self.canvas.create_texture(self.mock_renderer, glyph_buffer)
         assert result == "mock_texture"
         self.mock_renderer.render_glyph_buffer_to_texture.assert_called_once_with(
-            glyph_buffer
+            glyph_buffer, None
         )
 
         # Test with non-GlyphBuffer artifact
@@ -261,14 +266,15 @@ def test_canvas_creation_parameters():
     """Test canvas creation with different parameters."""
     mock_renderer = Mock()
     mock_renderer.tile_dimensions = (16, 16)
+    mock_resource_manager = Mock()
 
     # Test transparent canvas (default)
-    transparent_canvas = WGPUCanvas(mock_renderer)  # type: ignore[misc]
+    transparent_canvas = WGPUCanvas(mock_renderer, mock_resource_manager)  # type: ignore[misc]
     assert transparent_canvas.transparent is True
     assert transparent_canvas.renderer is mock_renderer
 
     # Test opaque canvas
-    opaque_canvas = WGPUCanvas(mock_renderer, transparent=False)  # type: ignore[misc]
+    opaque_canvas = WGPUCanvas(mock_renderer, mock_resource_manager, transparent=False)  # type: ignore[misc]
     assert opaque_canvas.transparent is False
     assert opaque_canvas.renderer is mock_renderer
 
@@ -278,7 +284,8 @@ def test_canvas_operation_caching():
     """Test canvas operation caching behavior."""
     mock_renderer = Mock()
     mock_renderer.tile_dimensions = (20, 20)
-    canvas = WGPUCanvas(mock_renderer)  # type: ignore[misc]
+    mock_resource_manager = Mock()
+    canvas = WGPUCanvas(mock_renderer, mock_resource_manager)  # type: ignore[misc]
 
     # Begin frame and add operations
     canvas.begin_frame()
