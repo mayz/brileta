@@ -10,13 +10,37 @@ This document outlines the specific technical steps for migrating Catley from Mo
 
 Analysis of the existing ModernGL and WGPU backends reveals that the performance gap is not due to a fundamental limitation of WGPU, but rather a specific, critical optimization present in the ModernGL backend that is currently missing from the WGPU implementation. The following plan prioritizes closing this gap first, followed by broader architectural improvements.
 
-### Step 3.3: Consolidate Command Encoder Usage (MEDIUM)
+### **Step 3.3: Consolidate Command Encoder and Isolate Canvas Resources**
 
-**Priority: MEDIUM** - Reduces driver overhead.
+**Priority: HIGH** - Fixes a performance bottleneck and prevents a critical rendering bug.
 
-1.  **Observation**: The main render loop in `WGPUGraphicsContext.finalize_present` correctly uses a single `command_encoder`. However, the `WGPUTextureRenderer.render` method creates its own `command_encoder` for every render-to-texture operation.
-2.  **Problem**: Creating multiple command encoders per frame introduces unnecessary overhead, especially if several UI elements need to be redrawn simultaneously.
-3.  **Action**: Refactor the rendering logic to allow multiple render-to-texture passes to be recorded into a single command buffer, which is then submitted once at the end of all UI drawing.
+1.  **Observation:** The main render loop in `WGPUGraphicsContext.finalize_present` correctly uses a single `command_encoder` for the final scene. However, the `WGPUTextureRenderer.render` method creates its own `command_encoder` and submits it to the GPU for *every single* render-to-texture operation (e.g., for each UI element).
+
+2.  **Problem (Compound Issue):**
+    *   **Primary Performance Issue:** Creating and submitting many command buffers per frame is a major performance anti-pattern in modern graphics APIs like WebGPU. It introduces significant driver overhead and prevents the GPU from efficiently scheduling work, leading to lower performance compared to the ModernGL backend where the driver handles batching implicitly.
+    *   **Latent Correctness Bug:** A critical secondary problem exists that will be exposed by fixing the primary issue. The `WGPUTextureRenderer` uses a single, shared CPU-side vertex buffer. When command recording is deferred (as it will be with a single encoder), all UI views will write their vertex data to this shared buffer sequentially. By the time the GPU finally executes the commands at the end of the frame, the buffer will only contain the data from the *last* view that was drawn. This will cause all UI elements to render with the same incorrect content, creating severe visual artifacts.
+
+3.  **Action (Combined Solution):** We must fix both problems at once. The solution is to refactor the rendering logic to use a single command buffer per frame **AND** simultaneously ensure that each UI canvas has its own isolated resources, preventing the data race. This will mirror the correct and performant architecture already present in the ModernGL backend.
+
+    *   **Part A: Make the Renderer Stateless.** The `WGPUTextureRenderer` must be refactored to be a stateless service.
+        *   **A.1:** In `catley/backends/wgpu/texture_renderer.py`, remove the `self.cpu_vertex_buffer`, `self.vertex_count`, and `self.vertex_buffer` instance variables from its `__init__` method. The renderer should no longer own any per-draw state.
+        *   **A.2:** Modify the `render()` method signature in `WGPUTextureRenderer` to accept all necessary resources as arguments: a `command_encoder`, a `cpu_buffer_override`, and a `buffer_override` (the GPU buffer).
+        *   **A.3:** The `render()` method's logic will now be to:
+            1.  Populate the provided `cpu_buffer_override` with vertex data.
+            2.  Record a `write_buffer` command into the provided `command_encoder` to copy data from the `cpu_buffer_override` to the `buffer_override`.
+            3.  Record a render pass into the `command_encoder` that draws using the `buffer_override`.
+            4.  It must **not** `finish()` or `submit()` the encoder.
+
+    *   **Part B: Make the Canvas Stateful.** Each `WGPUCanvas` instance must own its own resources.
+        *   **B.1:** In `catley/backends/wgpu/canvas.py`, ensure the `WGPUCanvas` class has its own instance variables: `self.cpu_vertex_buffer` (a NumPy array) and `self.vertex_buffer` (a `wgpu.GPUBuffer`).
+        *   **B.2:** In the `configure_dimensions` method of `WGPUCanvas`, create or resize these two buffers. This ensures they are pre-allocated and reused, avoiding per-frame allocation overhead.
+        *   **B.3:** Update `WGPUCanvas.create_texture` to pass its unique `self.cpu_vertex_buffer` and `self.vertex_buffer` to the graphics context's `render_glyph_buffer_to_texture` method.
+
+    *   **Part C: Orchestrate the New Flow in the Graphics Context.**
+        *   **C.1:** In `catley/backends/wgpu/graphics.py`, add a `self._frame_command_encoder` instance variable to `WGPUGraphicsContext`.
+        *   **C.2:** In `prepare_to_present()`, create and store a single `GPUCommandEncoder` in `self._frame_command_encoder`.
+        *   **C.3:** Update the `render_glyph_buffer_to_texture` method to accept the per-canvas CPU and GPU buffers (from Part B.3) and pass them, along with the shared `self._frame_command_encoder`, to the stateless renderer's `render` method (from Part A.2).
+        *   **C.4:** In `finalize_present()`, use the single `self._frame_command_encoder` for the final on-screen render pass, then call `finish()` on it once, and `submit()` the resulting command buffer to the queue once. Clear `self._frame_command_encoder` to `None` at the end of the method.
 
 -   **Combined Optimizations**: Should achieve or exceed ModernGL parity, targeting a **~2-3ms** render time.
 
