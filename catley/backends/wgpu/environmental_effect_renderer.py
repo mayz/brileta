@@ -228,11 +228,17 @@ class WGPUEnvironmentalEffectRenderer:
     def render(
         self,
         render_pass: wgpu.GPURenderPassEncoder,
+        window_size: tuple[int, int],
         letterbox_geometry: tuple[int, int, int, int] | None,
     ) -> None:
         """Render all queued environmental effect textures in the render pass."""
         if not self.render_queue or self.vertex_count == 0:
             return
+
+        # Set the viewport to ensure effects render correctly after a resize.
+        render_pass.set_viewport(
+            0.0, 0.0, float(window_size[0]), float(window_size[1]), 0.0, 1.0
+        )
 
         # Update uniform buffer with letterbox parameters
         if letterbox_geometry is not None:

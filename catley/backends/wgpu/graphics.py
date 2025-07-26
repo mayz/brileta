@@ -94,8 +94,6 @@ class WGPUGraphicsContext(GraphicsContext):
 
     def _initialize(self) -> None:
         """Initialize WGPU device and context."""
-        from .window_wrapper import WGPUWindowWrapper
-
         # Create WGPU adapter and device first (required before getting context)
         adapter = wgpu.gpu.request_adapter_sync(
             power_preference=wgpu.PowerPreference.high_performance  # type: ignore
@@ -107,25 +105,18 @@ class WGPUGraphicsContext(GraphicsContext):
         )
         self.queue = self.device.queue
 
-        # Create WGPU window wrapper from our existing GLFW window
-        self.window_wrapper = WGPUWindowWrapper(self.window)
+        # Create the initial rendering surface and context.
+        if not self._recreate_surface_and_context():
+            # This can happen if the window starts minimized.
+            # The first call to update_dimensions will fix it.
+            print("Warning: Window started with zero size. Deferring surface creation.")
 
-        # Get WGPU context from the window wrapper (now that backend is selected)
-        self.wgpu_context = self.window_wrapper.get_context()
-
-        # Configure the WGPU context
-        # Force linear color format (bgra8unorm) to match ModernGL's linear pipeline
-        # Avoids automatic sRGB conversion that makes colors appear washed out
-        surface_format = wgpu.TextureFormat.bgra8unorm
-        self.wgpu_context.configure(
-            device=self.device,
-            format=surface_format,
-            usage=wgpu.TextureUsage.RENDER_ATTACHMENT,  # type: ignore
-        )
-
-        # Initialize resource managers
+        # Initialize resource managers (these only need to be created once)
         self.resource_manager = WGPUResourceManager(self.device, self.queue)
         self.shader_manager = WGPUShaderManager(self.device)
+
+        # Define surface format for renderer initialization
+        surface_format = wgpu.TextureFormat.bgra8unorm
 
         # Load atlas texture and prepare UV mapping
         self.atlas_texture = self._load_atlas_texture()
@@ -180,6 +171,38 @@ class WGPUGraphicsContext(GraphicsContext):
         import glfw
 
         glfw.swap_interval(1 if self.vsync else 0)
+
+    def _recreate_surface_and_context(self) -> bool:
+        """
+        Creates (or recreates) the WGPU surface and rendering context.
+        This is the core fix for the resize bug, ensuring a fresh surface
+        is used instead of trying to reconfigure a stale one.
+
+        Returns:
+            bool: True if the surface was created successfully, False otherwise.
+        """
+        from .window_wrapper import WGPUWindowWrapper
+
+        # CRITICAL: Prevent configuring a zero-size surface, which is an error.
+        # This happens when the window is minimized.
+        width, height = self.window.get_framebuffer_size()
+        if width == 0 or height == 0:
+            return False  # Skip creation/recreation until we have a valid size
+
+        # Create WGPU window wrapper from our existing GLFW window
+        self.window_wrapper = WGPUWindowWrapper(self.window)
+
+        # Get WGPU context (GPUSurface) from the window wrapper
+        self.wgpu_context = self.window_wrapper.get_context()
+
+        # Configure the WGPU context
+        surface_format = wgpu.TextureFormat.bgra8unorm
+        self.wgpu_context.configure(
+            device=self.device,
+            format=surface_format,
+            usage=wgpu.TextureUsage.RENDER_ATTACHMENT,  # type: ignore
+        )
+        return True
 
     @property
     def tile_dimensions(self) -> TileDimensions:
@@ -454,15 +477,9 @@ class WGPUGraphicsContext(GraphicsContext):
     def update_dimensions(self) -> None:
         """Update dimensions when window size changes."""
 
-        # Reconfigure WGPU context for new size
-        if self.wgpu_context and self.device:
-            # Use same linear format as in initialization
-            surface_format = wgpu.TextureFormat.bgra8unorm
-            self.wgpu_context.configure(
-                device=self.device,
-                format=surface_format,
-                usage=wgpu.TextureUsage.RENDER_ATTACHMENT,  # type: ignore
-            )
+        # Recreate the WGPU surface and context to match the new window size.
+        if self.device:
+            self._recreate_surface_and_context()
 
         # Update coordinate converter
         self._setup_coordinate_converter()
@@ -525,7 +542,9 @@ class WGPUGraphicsContext(GraphicsContext):
 
             # First render background textures (lowest layer)
             if self.background_renderer is not None:
-                self.background_renderer.render(render_pass, self.letterbox_geometry)
+                self.background_renderer.render(
+                    render_pass, window_size, self.letterbox_geometry
+                )
 
             # Then render screen content (actors, particles, tiles)
             self.screen_renderer.render_to_screen(
@@ -538,7 +557,7 @@ class WGPUGraphicsContext(GraphicsContext):
                 and self.environmental_effect_renderer.vertex_count > 0
             ):
                 self.environmental_effect_renderer.render(
-                    render_pass, self.letterbox_geometry
+                    render_pass, window_size, self.letterbox_geometry
                 )
 
             # Finally render UI content on top (menus, dialogs, etc.)
@@ -546,7 +565,9 @@ class WGPUGraphicsContext(GraphicsContext):
                 self.ui_texture_renderer is not None
                 and self.ui_texture_renderer.vertex_count > 0
             ):
-                self.ui_texture_renderer.render(render_pass, self.letterbox_geometry)
+                self.ui_texture_renderer.render(
+                    render_pass, window_size, self.letterbox_geometry
+                )
 
             render_pass.end()
 

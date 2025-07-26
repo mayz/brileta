@@ -18,15 +18,6 @@ Analysis of the existing ModernGL and WGPU backends reveals that the performance
 2.  **Problem**: Creating multiple command encoders per frame introduces unnecessary overhead, especially if several UI elements need to be redrawn simultaneously.
 3.  **Action**: Refactor the rendering logic to allow multiple render-to-texture passes to be recorded into a single command buffer, which is then submitted once at the end of all UI drawing.
 
-### Step 3.4: Integrate Performance Monitoring (MEDIUM)
-
-**Priority: MEDIUM** - Long-term maintainability.
-
-1.  **Action**: This step remains the same as the original plan.
-    *   Integrate timing measurements around key rendering stages in the WGPU backend to identify regressions and bottlenecks.
-    *   Establish automated performance testing in CI to ensure performance does not degrade over time.
-    *   Use benchmarking tools to validate that performance targets are being met after optimizations.
-
 -   **Combined Optimizations**: Should achieve or exceed ModernGL parity, targeting a **~2-3ms** render time.
 
 ### Success Metrics

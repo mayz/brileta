@@ -255,10 +255,11 @@ class WGPUScreenRenderer:
             memoryview(self.cpu_vertex_buffer[: self.vertex_count].tobytes()),  # type: ignore
         )
 
-        # Remove viewport setting to match working UI renderer
-        # render_pass.set_viewport(
-        #     0.0, 0.0, float(window_size[0]), float(window_size[1]), 0.0, 1.0
-        # )
+        # Set the viewport to the full size of the window to ensure rendering
+        # is not clipped after a resize.
+        render_pass.set_viewport(
+            0.0, 0.0, float(window_size[0]), float(window_size[1]), 0.0, 1.0
+        )
 
         # Use pre-created bind group (no lazy creation needed)
         bind_group = self._cached_bind_group
