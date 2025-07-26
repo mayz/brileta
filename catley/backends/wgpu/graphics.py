@@ -75,6 +75,8 @@ class WGPUGraphicsContext(GraphicsContext):
         self.ui_texture_renderer: WGPUUITextureRenderer | None = None
         # Background renderer for immediate texture rendering
         self.background_renderer = None
+        # Environmental effect renderer for batched effect rendering
+        self.environmental_effect_renderer = None
 
         # Letterbox/viewport state
         self.letterbox_geometry: tuple[int, int, int, int] | None = None
@@ -157,6 +159,15 @@ class WGPUGraphicsContext(GraphicsContext):
         from .background_renderer import WGPUBackgroundRenderer
 
         self.background_renderer = WGPUBackgroundRenderer(
+            self.resource_manager,
+            self.shader_manager,
+            surface_format,
+        )
+
+        # Initialize environmental effect renderer for batched effect rendering
+        from .environmental_effect_renderer import WGPUEnvironmentalEffectRenderer
+
+        self.environmental_effect_renderer = WGPUEnvironmentalEffectRenderer(
             self.resource_manager,
             self.shader_manager,
             surface_format,
@@ -412,9 +423,33 @@ class WGPUGraphicsContext(GraphicsContext):
         intensity: float,
         blend_mode: BlendMode,
     ) -> None:
-        """Apply environmental effect."""
-        # TODO: Implement WGPU environmental effects
-        raise NotImplementedError("WGPU environmental effects not yet implemented")
+        """Apply a circular environmental effect like lighting or fog."""
+        if radius <= 0 or intensity <= 0 or self.environmental_effect_renderer is None:
+            return
+
+        # Convert tile coordinates to screen coordinates
+        screen_x, screen_y = self.console_to_screen_coords(*position)
+
+        # Calculate pixel radius based on tile dimensions
+        px_radius = max(1, int(radius * self.tile_dimensions[0]))
+        size = px_radius * 2
+
+        # Calculate final color with intensity
+        final_color = (
+            tint_color[0] / 255.0 * intensity,
+            tint_color[1] / 255.0 * intensity,
+            tint_color[2] / 255.0 * intensity,
+            intensity,
+        )
+
+        # Position the effect centered on the given position
+        dest_x = screen_x - px_radius
+        dest_y = screen_y - px_radius
+
+        # Add to the batched environmental effect renderer
+        self.environmental_effect_renderer.add_effect_quad(
+            dest_x, dest_y, size, size, final_color
+        )
 
     def update_dimensions(self) -> None:
         """Update dimensions when window size changes."""
@@ -441,11 +476,13 @@ class WGPUGraphicsContext(GraphicsContext):
             self.screen_renderer is None
             or self.ui_texture_renderer is None
             or self.background_renderer is None
+            or self.environmental_effect_renderer is None
         ):
             return
         self.screen_renderer.begin_frame()
         self.ui_texture_renderer.begin_frame()
         self.background_renderer.begin_frame()
+        self.environmental_effect_renderer.begin_frame()
 
     def finalize_present(self) -> None:
         """Finalize frame presentation by rendering to screen."""
@@ -494,6 +531,15 @@ class WGPUGraphicsContext(GraphicsContext):
             self.screen_renderer.render_to_screen(
                 render_pass, window_size, self.letterbox_geometry
             )
+
+            # Then render environmental effects (atmospheric overlays)
+            if (
+                self.environmental_effect_renderer is not None
+                and self.environmental_effect_renderer.vertex_count > 0
+            ):
+                self.environmental_effect_renderer.render(
+                    render_pass, self.letterbox_geometry
+                )
 
             # Finally render UI content on top (menus, dialogs, etc.)
             if (
@@ -810,6 +856,7 @@ class WGPUGraphicsContext(GraphicsContext):
         self.texture_renderer = None
         self.ui_texture_renderer = None
         self.background_renderer = None
+        self.environmental_effect_renderer = None
         self.atlas_texture = None
         self.shader_manager = None
         self.resource_manager = None

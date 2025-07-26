@@ -10,14 +10,6 @@ This document outlines the specific technical steps for migrating Catley from Mo
 
 Analysis of the existing ModernGL and WGPU backends reveals that the performance gap is not due to a fundamental limitation of WGPU, but rather a specific, critical optimization present in the ModernGL backend that is currently missing from the WGPU implementation. The following plan prioritizes closing this gap first, followed by broader architectural improvements.
 
-### Step 3.2: Standardize All Rendering on a Batched Model (HIGH)
-
-**Priority: HIGH** - Ensures architectural consistency and reduces draw call overhead.
-
-1.  **Observation**: The WGPU backend has already made positive steps by batching background draws in `WGPUBackgroundRenderer`. However, the ModernGL backend's `apply_environmental_effect` uses an immediate-mode style draw (`_draw_environmental_effect_immediately`), a pattern that should be avoided in WGPU.
-2.  **Problem**: Mixing batched and immediate-mode rendering complicates the render loop and can lead to inefficient use of the GPU.
-3.  **Action**: Ensure that all rendering components follow a consistent batched pattern. When implementing `apply_environmental_effect` for WGPU, create a dedicated `WGPUEnvironmentalEffectRenderer` that queues effect quads, similar to how the `ScreenRenderer` and `UITextureRenderer` work. This will consolidate all drawing into a single, predictable render pass.
-
 ### Step 3.3: Consolidate Command Encoder Usage (MEDIUM)
 
 **Priority: MEDIUM** - Reduces driver overhead.
@@ -35,10 +27,6 @@ Analysis of the existing ModernGL and WGPU backends reveals that the performance
     *   Establish automated performance testing in CI to ensure performance does not degrade over time.
     *   Use benchmarking tools to validate that performance targets are being met after optimizations.
 
-### Expected Performance Improvements
-
--   **Dirty-Tile Optimization**: **~70-80% reduction** in total render time when UI elements are present and mostly static. This single change is expected to close most of the performance gap.
--   **Batched Rendering & Encoder Consolidation**: **~10-20% additional reduction** by minimizing state changes and reducing CPU-side driver overhead.
 -   **Combined Optimizations**: Should achieve or exceed ModernGL parity, targeting a **~2-3ms** render time.
 
 ### Success Metrics
@@ -47,13 +35,6 @@ Analysis of the existing ModernGL and WGPU backends reveals that the performance
 2.  **Frame Rate**: ≥140 FPS average on the same hardware.
 3.  **Memory Usage**: No significant increase from the current WGPU implementation.
 4.  **Visual Parity**: No rendering artifacts or visual regressions compared to the ModernGL backend.
-
-### Implementation Order
-
-1.  **Phase 3.1 (Critical)**: Implement dirty-tile optimization in `WGPUTextureRenderer`.
-2.  **Phase 3.2 (High)**: Standardize all renderers on the batched model, starting with `apply_environmental_effect`.
-3.  **Phase 3.3 (Medium)**: Consolidate command encoder usage.
-4.  **Phase 3.4 (Medium)**: Integrate performance monitoring tools.
 
 ## Phase 4: GPU Lighting System Port
 

@@ -239,17 +239,16 @@ class TestWGPUGraphicsContext:
         # render_particles should handle None screen_renderer gracefully
         self.graphics_ctx.render_particles(Mock(), Mock(), Mock(), Mock())
 
-        # These methods still raise NotImplementedError
-
-        with pytest.raises(NotImplementedError, match="WGPU.*not yet implemented"):
-            self.graphics_ctx.apply_environmental_effect(
-                (10.0, 10.0), 5.0, colors.BLUE, 0.8, BlendMode.TINT
-            )
+        # apply_environmental_effect is now implemented
+        self.graphics_ctx.apply_environmental_effect(
+            (10.0, 10.0), 5.0, colors.BLUE, 0.8, BlendMode.TINT
+        )
 
         # present_texture and draw_background are now implemented
         self.graphics_ctx.present_texture(Mock(), 0, 0, 10, 10)
         self.graphics_ctx.draw_background(Mock(), 0, 0, 10, 10)
 
+        # These methods still raise NotImplementedError
         with pytest.raises(NotImplementedError, match="WGPU.*not yet implemented"):
             self.graphics_ctx.draw_debug_rect(0, 0, 100, 100, colors.GREEN)
 
