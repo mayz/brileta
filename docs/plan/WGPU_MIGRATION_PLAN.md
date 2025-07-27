@@ -1,19 +1,30 @@
 # WGPU Migration Plan for Catley
 
+### Migration Status: Paused (July 2025)
+
+**Decision:** The WGPU migration is being put on hold to prioritize development of the core game. The existing ModernGL backend is fully functional and exceeds performance baselines.
+
+**Justification:**
+- **Performance Regression:** The WGPU lighting system implementation currently performs at ~25 FPS, a significant regression from the 200+ FPS of its ModernGL counterpart. This could very well be a simple bug.
+- **Development Overhead:** Resolving these low-level backend issues requires a disproportionate amount of time and effort compared to working on gameplay features.
+- **Low Immediate Need:** While OpenGL is deprecated on macOS, the ModernGL backend remains fully supported and functional. There is no immediate risk that requires a mandatory migration.
+
+**Next Steps:**
+- The WGPU implementation will be kept in the `main` branch but will be disabled via a feature toggle.
+- All new development will target the stable ModernGL backend.
+- This plan and the existing WGPU code will serve as a starting point if/when the migration is resumed.
+
+---
+
 This document outlines the specific technical steps for migrating Catley from ModernGL to wgpu-py.
 
 **Important**: Maintain implementation parity between backends to prevent subtle bugs. Unintentional divergences can cause hard-to-debug visual artifacts. For example, the introduction of dirty-tile optimization initially caused visual artifacts (ghosting of previously lit tiles). Root cause: the WGPU implementation had diverged from ModernGL by adding a transparent tile optimization that skipped generating vertices for fully transparent tiles. This caused stale vertex data to persist in the VBO. The fix was to remove this optimization and ensure WGPU matches ModernGL's behavior of always generating vertices for all tiles.
 
 ## Phase 4: GPU Lighting System Port
 
-### Step 4.2: Port GPULightingSystem
+### Step 4.2: Port GPULightingSystem to WGPU
 
-**Create `catley/backends/wgpu/gpu_lighting.py`** with these key methods:
-- `_collect_light_data()` - Should be nearly identical
-- `_set_lighting_uniforms()` - Adapt for WGPU uniform buffer updates
-- `_set_directional_light_uniforms()` - Preserve all calculations
-- `_update_sky_exposure_texture()` - Texture creation syntax differs
-- `_compute_lightmap_gpu()` - Main rendering logic
+This is implemented, but there's currently a major performance regression in the WGPU version.
 
 ### Step 4.3: Uniform Buffer Management
 

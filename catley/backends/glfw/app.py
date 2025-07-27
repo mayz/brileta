@@ -12,7 +12,7 @@ from catley.util.misc import SuppressStderr
 
 from .window import GlfwWindow
 
-GraphicsContextImplClass = ModernGLGraphicsContext if False else WGPUGraphicsContext
+GraphicsContextImplClass = ModernGLGraphicsContext if True else WGPUGraphicsContext
 
 
 class GlfwApp(App[GraphicsContextImplClass]):
@@ -95,14 +95,7 @@ class GlfwApp(App[GraphicsContextImplClass]):
     def _initialize_graphics(self) -> None:
         """Initialize the graphics context."""
         self.glfw_window = GlfwWindow(self.window)
-        try:
-            # Try WGPU constructor with vsync parameter
-            self.graphics = GraphicsContextImplClass(
-                self.glfw_window, vsync=self.app_config.vsync
-            )
-        except TypeError:
-            # Fallback for graphics contexts that don't support vsync parameter
-            self.graphics = GraphicsContextImplClass(self.glfw_window)
+        self.graphics = GraphicsContextImplClass(self.glfw_window)
 
     def _register_callbacks(self) -> None:
         """Register GLFW event callbacks."""

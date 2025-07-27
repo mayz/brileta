@@ -37,19 +37,16 @@ if TYPE_CHECKING:
 class WGPUGraphicsContext(GraphicsContext):
     """WGPU graphics context implementation."""
 
-    def __init__(
-        self, window: GlfwWindow, *, _defer_init: bool = False, vsync: bool = True
-    ) -> None:
+    def __init__(self, window: GlfwWindow, *, _defer_init: bool = False) -> None:
         """Initialize WGPU graphics context.
 
         Args:
             window: The GLFW window to render to
             _defer_init: Internal parameter to defer initialization for testing
-            vsync: Whether to enable vertical sync
         """
         super().__init__()
         self.window = window
-        self.vsync = vsync
+        self.vsync = config.VSYNC
 
         self.device: wgpu.GPUDevice | None = None
         self.queue: wgpu.GPUQueue | None = None

@@ -11,7 +11,8 @@ if TYPE_CHECKING:
     from catley.game.actions.discovery import CombatIntentCache
 
 from . import colors, config
-from .backends.moderngl.gpu_lighting import GPULightingSystem
+from .backends.moderngl.gpu_lighting import GPULightingSystem as MGLLightingSystem
+from .backends.wgpu.gpu_lighting import GPULightingSystem as WGPULightingSystem
 from .events import MessageEvent, publish_event
 from .game.actions.base import GameIntent
 from .game.actions.types import AnimationType
@@ -35,6 +36,8 @@ from .view.frame_manager import FrameManager
 from .view.render.graphics import GraphicsContext
 from .view.render.lighting.cpu import CPULightingSystem
 from .view.ui.overlays import OverlaySystem
+
+GPULightingSystem = MGLLightingSystem if True else WGPULightingSystem
 
 
 class Controller:
