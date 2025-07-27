@@ -206,7 +206,7 @@ class TestWGPUCanvas:
         result = self.canvas.create_texture(self.mock_renderer, glyph_buffer)
         assert result == "mock_texture"
         self.mock_renderer.render_glyph_buffer_to_texture.assert_called_once_with(
-            glyph_buffer, None
+            glyph_buffer, None, None
         )
 
         # Test with non-GlyphBuffer artifact

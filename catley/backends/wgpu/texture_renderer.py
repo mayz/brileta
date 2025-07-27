@@ -218,7 +218,10 @@ class WGPUTextureRenderer:
         )
 
     def render(
-        self, glyph_buffer: GlyphBuffer, buffer_override: wgpu.GPUBuffer | None = None
+        self,
+        glyph_buffer: GlyphBuffer,
+        buffer_override: wgpu.GPUBuffer | None = None,
+        cpu_buffer_override: np.ndarray | None = None,
     ) -> wgpu.GPUTexture:
         """Render a GlyphBuffer to a WGPU texture.
 
@@ -227,6 +230,7 @@ class WGPUTextureRenderer:
         Args:
             glyph_buffer: The glyph buffer to render
             buffer_override: An isolated vertex buffer provided by the canvas
+            cpu_buffer_override: An isolated CPU vertex buffer provided by the canvas
 
         Returns:
             WGPU texture containing the rendered glyph buffer
@@ -285,19 +289,26 @@ class WGPUTextureRenderer:
 
         if needs_full_update:
             # Full update: rebuild entire vertex buffer
-            self._update_complete_vbo(glyph_buffer)
+            self._update_complete_vbo(glyph_buffer, cpu_buffer_override)
 
             # Upload entire vertex buffer to GPU
             if self.vertex_count > 0:
+                cpu_buffer = (
+                    cpu_buffer_override
+                    if cpu_buffer_override is not None
+                    else self.cpu_vertex_buffer
+                )
                 self.resource_manager.queue.write_buffer(
                     vbo_to_use,
                     0,
-                    memoryview(self.cpu_vertex_buffer[: self.vertex_count].tobytes()),
+                    memoryview(cpu_buffer[: self.vertex_count].tobytes()),
                 )
         else:
             # Partial update: only update dirty tiles
             assert dirty_tiles is not None
-            self._update_dirty_tiles_in_vbo(glyph_buffer, dirty_tiles, vbo_to_use)
+            self._update_dirty_tiles_in_vbo(
+                glyph_buffer, dirty_tiles, vbo_to_use, cpu_buffer_override
+            )
             # Set vertex count for existing buffer
             self.vertex_count = glyph_buffer.width * glyph_buffer.height * 6
 
@@ -342,7 +353,9 @@ class WGPUTextureRenderer:
 
         return render_texture
 
-    def _build_glyph_vertices(self, glyph_buffer: GlyphBuffer) -> None:
+    def _build_glyph_vertices(
+        self, glyph_buffer: GlyphBuffer, cpu_buffer_override: np.ndarray | None = None
+    ) -> None:
         """Build vertex data from a glyph buffer."""
         tile_w, tile_h = self.tile_dimensions
 
@@ -388,7 +401,14 @@ class WGPUTextureRenderer:
 
                 # Add quad for this glyph
                 self._add_glyph_quad(
-                    px_x, px_y, tile_w, tile_h, uv_coords, fg_color, bg_color
+                    px_x,
+                    px_y,
+                    tile_w,
+                    tile_h,
+                    uv_coords,
+                    fg_color,
+                    bg_color,
+                    cpu_buffer_override,
                 )
 
     def _add_glyph_quad(
@@ -400,9 +420,15 @@ class WGPUTextureRenderer:
         uv_coords: tuple[float, float, float, float],
         fg_color: tuple[float, float, float, float],
         bg_color: tuple[float, float, float, float],
+        cpu_buffer_override: np.ndarray | None = None,
     ) -> None:
         """Add a glyph quad to the vertex buffer."""
-        if self.vertex_count + 6 > len(self.cpu_vertex_buffer):
+        cpu_buffer = (
+            cpu_buffer_override
+            if cpu_buffer_override is not None
+            else self.cpu_vertex_buffer
+        )
+        if self.vertex_count + 6 > len(cpu_buffer):
             return
 
         u1, v1, u2, v2 = uv_coords
@@ -413,7 +439,7 @@ class WGPUTextureRenderer:
         vertices[3] = ((x + w, y), (u2, v1), fg_color, bg_color)
         vertices[4] = ((x, y + h), (u1, v2), fg_color, bg_color)
         vertices[5] = ((x + w, y + h), (u2, v2), fg_color, bg_color)
-        self.cpu_vertex_buffer[self.vertex_count : self.vertex_count + 6] = vertices
+        cpu_buffer[self.vertex_count : self.vertex_count + 6] = vertices
         self.vertex_count += 6
 
     def _find_dirty_tiles(
@@ -531,23 +557,28 @@ class WGPUTextureRenderer:
 
         return vertices
 
-    def _update_complete_vbo(self, glyph_buffer: GlyphBuffer) -> None:
+    def _update_complete_vbo(
+        self, glyph_buffer: GlyphBuffer, cpu_buffer_override: np.ndarray | None = None
+    ) -> None:
         """Update the entire VBO with data from the complete buffer.
 
         Used for first render or when buffer dimensions change.
 
         Args:
             glyph_buffer: The GlyphBuffer to encode completely
+            cpu_buffer_override: Optional CPU buffer override instead of
+                self.cpu_vertex_buffer
         """
         # Reset vertex count and build all vertices
         self.vertex_count = 0
-        self._build_glyph_vertices(glyph_buffer)
+        self._build_glyph_vertices(glyph_buffer, cpu_buffer_override)
 
     def _update_dirty_tiles_in_vbo(
         self,
         glyph_buffer: GlyphBuffer,
         dirty_tiles: list[tuple[int, int]],
         vbo: wgpu.GPUBuffer,
+        cpu_buffer_override: np.ndarray | None = None,
     ) -> None:
         """Update only the dirty tiles in the VBO - the real TCOD optimization.
 
@@ -558,6 +589,7 @@ class WGPUTextureRenderer:
             glyph_buffer: The current GlyphBuffer
             dirty_tiles: List of (x, y) coordinates of tiles that changed
             vbo: The VBO to update
+            cpu_buffer_override: Optional CPU buffer override to also update
         """
         for x, y in dirty_tiles:
             # Generate vertices for just this one tile
@@ -569,6 +601,15 @@ class WGPUTextureRenderer:
             # Each tile uses 6 vertices
             tile_index = (y * glyph_buffer.width) + x
             vbo_offset = tile_index * 6 * TEXTURE_VERTEX_DTYPE.itemsize
+            vertex_offset = tile_index * 6
+
+            # Update CPU buffer if override is provided
+            if cpu_buffer_override is not None:
+                cpu_buffer_override[vertex_offset : vertex_offset + 6] = tile_vertices
+            elif self.cpu_vertex_buffer is not None:
+                self.cpu_vertex_buffer[vertex_offset : vertex_offset + 6] = (
+                    tile_vertices
+                )
 
             # Update only this tile's section of the VBO
             self.resource_manager.queue.write_buffer(

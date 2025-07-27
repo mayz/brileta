@@ -220,14 +220,21 @@ class WGPUGraphicsContext(GraphicsContext):
         return config.SCREEN_HEIGHT
 
     def render_glyph_buffer_to_texture(
-        self, glyph_buffer: GlyphBuffer, canvas_vbo: wgpu.GPUBuffer | None = None
+        self,
+        glyph_buffer: GlyphBuffer,
+        canvas_vbo: wgpu.GPUBuffer | None = None,
+        cpu_buffer_override: np.ndarray | None = None,
     ) -> wgpu.GPUTexture:
         """Render GlyphBuffer to a WGPU texture."""
         if self.texture_renderer is None:
             raise RuntimeError("Texture renderer not initialized")
 
-        # Pass the canvas's vertex buffer to the renderer
-        return self.texture_renderer.render(glyph_buffer, buffer_override=canvas_vbo)
+        # Pass the canvas's vertex buffers to the renderer
+        return self.texture_renderer.render(
+            glyph_buffer,
+            buffer_override=canvas_vbo,
+            cpu_buffer_override=cpu_buffer_override,
+        )
 
     def draw_actor_smooth(
         self,

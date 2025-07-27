@@ -324,7 +324,7 @@ class TestWGPUGraphicsContext:
 
         # Verify that the texture renderer was called with expected parameters
         mock_texture_renderer.render.assert_called_once_with(
-            glyph_buffer, buffer_override=None
+            glyph_buffer, buffer_override=None, cpu_buffer_override=None
         )
 
     def test_add_tile_to_screen(self):

@@ -10,37 +10,50 @@ This document outlines the specific technical steps for migrating Catley from Mo
 
 Analysis of the existing ModernGL and WGPU backends reveals that the performance gap is not due to a fundamental limitation of WGPU, but rather a specific, critical optimization present in the ModernGL backend that is currently missing from the WGPU implementation. The following plan prioritizes closing this gap first, followed by broader architectural improvements.
 
-### **Step 3.3: Consolidate Command Encoder and Isolate Canvas Resources**
+### Step 3.3: A Verifiable, Five-Step Refactor to a Single Command Encoder
 
-**Priority: HIGH** - Fixes a performance bottleneck and prevents a critical rendering bug.
+Preamble: This plan is designed to be executed as five distinct, atomic steps. After each step, the application will be in a fully working, testable state. The ultimate goal is to fix the WGPU performance bottleneck by ensuring only one command encoder is used per frame. To achieve this safely, we must first refactor the rendering architecture to be compatible with this model. This plan explicitly accounts for the fact that WorldView manages its own GlyphBuffer directly, while other UI views use a Canvas object.
 
-1.  **Observation:** The main render loop in `WGPUGraphicsContext.finalize_present` correctly uses a single `command_encoder` for the final scene. However, the `WGPUTextureRenderer.render` method creates its own `command_encoder` and submits it to the GPU for *every single* render-to-texture operation (e.g., for each UI element).
+#### **Step 3.3.1: Isolate CPU-Side Resources in UI Canvases**
+**This has been implemented and committed.**
 
-2.  **Problem (Compound Issue):**
-    *   **Primary Performance Issue:** Creating and submitting many command buffers per frame is a major performance anti-pattern in modern graphics APIs like WebGPU. It introduces significant driver overhead and prevents the GPU from efficiently scheduling work, leading to lower performance compared to the ModernGL backend where the driver handles batching implicitly.
-    *   **Latent Correctness Bug:** A critical secondary problem exists that will be exposed by fixing the primary issue. The `WGPUTextureRenderer` uses a single, shared CPU-side vertex buffer. When command recording is deferred (as it will be with a single encoder), all UI views will write their vertex data to this shared buffer sequentially. By the time the GPU finally executes the commands at the end of the frame, the buffer will only contain the data from the *last* view that was drawn. This will cause all UI elements to render with the same incorrect content, creating severe visual artifacts.
+#### **Step 3.3.2: Prepare the Rendering Pipeline for New Information**
 
-3.  **Action (Combined Solution):** We must fix both problems at once. The solution is to refactor the rendering logic to use a single command buffer per frame **AND** simultaneously ensure that each UI canvas has its own isolated resources, preventing the data race. This will mirror the correct and performant architecture already present in the ModernGL backend.
+*   **Goal:** To make the rendering pipeline aware of the newly isolated CPU buffers from Step 1, without actually changing the core rendering logic yet.
 
-    *   **Part A: Make the Renderer Stateless.** The `WGPUTextureRenderer` must be refactored to be a stateless service.
-        *   **A.1:** In `catley/backends/wgpu/texture_renderer.py`, remove the `self.cpu_vertex_buffer`, `self.vertex_count`, and `self.vertex_buffer` instance variables from its `__init__` method. The renderer should no longer own any per-draw state.
-        *   **A.2:** Modify the `render()` method signature in `WGPUTextureRenderer` to accept all necessary resources as arguments: a `command_encoder`, a `cpu_buffer_override`, and a `buffer_override` (the GPU buffer).
-        *   **A.3:** The `render()` method's logic will now be to:
-            1.  Populate the provided `cpu_buffer_override` with vertex data.
-            2.  Record a `write_buffer` command into the provided `command_encoder` to copy data from the `cpu_buffer_override` to the `buffer_override`.
-            3.  Record a render pass into the `command_encoder` that draws using the `buffer_override`.
-            4.  It must **not** `finish()` or `submit()` the encoder.
+*   **Conceptual Action:** Update the method signatures along the data pipeline. When a `WGPUCanvas` creates its texture, it will now pass both its GPU buffer *and* its new CPU buffer to `WGPUGraphicsContext`. The graphics context will, in turn, update its own internal method to accept this new CPU buffer and pass it along to the `WGPUTextureRenderer`. For this step, the texture renderer will accept the new CPU buffer but will continue to ignore it and use its old, internal logic.
 
-    *   **Part B: Make the Canvas Stateful.** Each `WGPUCanvas` instance must own its own resources.
-        *   **B.1:** In `catley/backends/wgpu/canvas.py`, ensure the `WGPUCanvas` class has its own instance variables: `self.cpu_vertex_buffer` (a NumPy array) and `self.vertex_buffer` (a `wgpu.GPUBuffer`).
-        *   **B.2:** In the `configure_dimensions` method of `WGPUCanvas`, create or resize these two buffers. This ensures they are pre-allocated and reused, avoiding per-frame allocation overhead.
-        *   **B.3:** Update `WGPUCanvas.create_texture` to pass its unique `self.cpu_vertex_buffer` and `self.vertex_buffer` to the graphics context's `render_glyph_buffer_to_texture` method.
+*   **Verification:** The game compiles and runs. There will be **no visual or performance changes**. The application remains in a stable, working state. We have successfully prepared the system for the next change without altering its behavior.
 
-    *   **Part C: Orchestrate the New Flow in the Graphics Context.**
-        *   **C.1:** In `catley/backends/wgpu/graphics.py`, add a `self._frame_command_encoder` instance variable to `WGPUGraphicsContext`.
-        *   **C.2:** In `prepare_to_present()`, create and store a single `GPUCommandEncoder` in `self._frame_command_encoder`.
-        *   **C.3:** Update the `render_glyph_buffer_to_texture` method to accept the per-canvas CPU and GPU buffers (from Part B.3) and pass them, along with the shared `self._frame_command_encoder`, to the stateless renderer's `render` method (from Part A.2).
-        *   **C.4:** In `finalize_present()`, use the single `self._frame_command_encoder` for the final on-screen render pass, then call `finish()` on it once, and `submit()` the resulting command buffer to the queue once. Clear `self._frame_command_encoder` to `None` at the end of the method.
+---
+
+#### **Step 3.3.3: Activate CPU Buffer Isolation and Make the Renderer Stateless**
+
+*   **Goal:** To make the `WGPUTextureRenderer` fully stateless, using the dedicated resources provided by each canvas and eliminating the last part of the CPU performance bug.
+
+*   **Conceptual Action:** Modify the `WGPUTextureRenderer`. It will now be a pure service. Remove its internal, shared CPU buffer entirely. Its rendering method will now use the specific CPU buffer provided by each `WGPUCanvas` for its vertex calculations. It no longer owns any per-draw state.
+
+*   **Verification:** The game compiles and runs. It is **visually identical** to the previous step. Performance should be the same as, or slightly better than, Step 1. The application is stable, and the resource management for all views is now correct and robust.
+
+---
+
+#### **Step 3.3.4: Implement and Test the High-Performance Render Path Safely**
+
+*   **Goal:** To build and verify the new, high-performance, single-encoder rendering loop without breaking the existing, stable loop.
+
+*   **Conceptual Action:** Create a "sidetrack" for testing. In `WGPUGraphicsContext`, create a *new, separate method* called `finalize_present_single_pass`. This new method will contain the ideal rendering logic: it creates one command encoder, orchestrates all `draw` and `present` calls for every view and overlay (recording all their commands into that single encoder), and then submits it once to the GPU. In the main application loop (`GlfwApp`), add a temporary boolean flag. Based on this flag, the app will call either the old, slow `finalize_present` or the new, fast `finalize_present_single_pass`.
+
+*   **Verification:** You can now toggle the flag to switch between rendering paths. With the flag `False`, the game runs exactly as it did in Step 3. With the flag `True`, the game is **visually identical**, but the `dev.fps` counter is **significantly higher**. You have now verifiably achieved the performance goal in a safe, controlled, and directly comparable manner.
+
+---
+
+#### **Step 3.3.5: Decommission the Old Render Path and Finalize the Architecture**
+
+*   **Goal:** To clean up the code by making the new, fast rendering path the only path, completing the refactor.
+
+*   **Conceptual Action:** The high-speed path has been proven correct and performant. Now, we remove the old infrastructure. Delete the temporary boolean flag in `GlfwApp`. In `WGPUGraphicsContext`, delete the old `finalize_present` method and rename `finalize_present_single_pass` to `finalize_present`. The `FrameManager`'s rendering logic can now be simplified, as the graphics context is fully in control.
+
+*   **Verification:** The game compiles and runs. It performs identically to the high-speed path in Step 4. The refactor is complete, and the code is now both correct and performant.
 
 -   **Combined Optimizations**: Should achieve or exceed ModernGL parity, targeting a **~2-3ms** render time.
 

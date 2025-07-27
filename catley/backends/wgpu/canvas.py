@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
 import wgpu
 
 from catley import colors
@@ -38,6 +39,7 @@ class WGPUCanvas(Canvas):
         self.resource_manager = resource_manager
         self.private_glyph_buffer: GlyphBuffer | None = None
         self.vertex_buffer: wgpu.GPUBuffer | None = None
+        self.cpu_vertex_buffer: np.ndarray | None = None
 
         # Configure scaling based on renderer tile dimensions
         self.configure_scaling(renderer.tile_dimensions[1])
@@ -99,8 +101,10 @@ class WGPUCanvas(Canvas):
         if not isinstance(artifact, GlyphBuffer):
             return None
 
-        # Use the renderer's method, but pass this canvas's OWN vertex buffer
-        return renderer.render_glyph_buffer_to_texture(artifact, self.vertex_buffer)
+        # Use the renderer's method, but pass this canvas's OWN vertex buffers
+        return renderer.render_glyph_buffer_to_texture(
+            artifact, self.vertex_buffer, self.cpu_vertex_buffer
+        )
 
     def _update_scaling_internal(self, tile_height: int) -> None:
         """Backend-specific scaling logic."""
@@ -157,6 +161,7 @@ class WGPUCanvas(Canvas):
         height_tiles = int(height // tile_h)
         max_vertices = width_tiles * height_tiles * 6
 
+        # Create or resize GPU vertex buffer
         if (
             self.vertex_buffer is None
             or self.vertex_buffer.size < max_vertices * TEXTURE_VERTEX_DTYPE.itemsize
@@ -173,6 +178,15 @@ class WGPUCanvas(Canvas):
                 )
             else:
                 self.vertex_buffer = None
+
+        # Create or resize CPU vertex buffer to match GPU buffer
+        if self.cpu_vertex_buffer is None or len(self.cpu_vertex_buffer) < max_vertices:
+            if max_vertices > 0:
+                self.cpu_vertex_buffer = np.zeros(
+                    max_vertices, dtype=TEXTURE_VERTEX_DTYPE
+                )
+            else:
+                self.cpu_vertex_buffer = None
 
     def _render_text_op(
         self,
