@@ -5,14 +5,25 @@ from __future__ import annotations
 import glfw
 import tcod
 
+from catley import config
 from catley.app import App, AppConfig
-from catley.backends.moderngl.graphics import ModernGLGraphicsContext
-from catley.backends.wgpu.graphics import WGPUGraphicsContext
 from catley.util.misc import SuppressStderr
 
 from .window import GlfwWindow
 
-GraphicsContextImplClass = ModernGLGraphicsContext if True else WGPUGraphicsContext
+match config.GRAPHICS_BACKEND:
+    case "wgpu":
+        from catley.backends.wgpu.graphics import WGPUGraphicsContext
+
+        GraphicsContextImplClass = WGPUGraphicsContext
+    case "moderngl":
+        from catley.backends.moderngl.graphics import ModernGLGraphicsContext
+
+        GraphicsContextImplClass = ModernGLGraphicsContext
+    case _:
+        raise ValueError(
+            f"Can't choose graphics backend {config.GRAPHICS_BACKEND!r} for GLFW"
+        )
 
 
 class GlfwApp(App[GraphicsContextImplClass]):
@@ -243,7 +254,7 @@ class GlfwApp(App[GraphicsContextImplClass]):
 
     def _on_cursor_pos(self, window, x, y):
         """Handle mouse motion."""
-        # Calculate motion delta in GLFW's coordinate system (same as Pyglet)
+        # Calculate motion delta in GLFW's coordinate system
         dx = x - self._last_mouse_pos[0]
         dy = y - self._last_mouse_pos[1]
         self._last_mouse_pos = (x, y)

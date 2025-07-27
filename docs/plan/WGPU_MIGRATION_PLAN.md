@@ -100,12 +100,9 @@ Once basic parity is achieved, implement the advanced architecture:
 
 ## Critical Success Factors
 
-1. **GLFW Migration**: Must successfully migrate from Pyglet to GLFW with ModernGL first
-2. **Native Window Handle Access**: Must successfully get GLFW window handles for WGPU
 3. **Shader Translation Accuracy**: Shadows must behave identically
 4. **Performance Parity**: No regression from ModernGL
 5. **Visual Parity**: Screenshots must match
-6. **GLFW Integration**: Event loop and window management must work seamlessly
 
 ## Risk Mitigation
 

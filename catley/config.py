@@ -6,6 +6,7 @@ Organized by functional area for easy maintenance.
 """
 
 from pathlib import Path
+from typing import Literal
 
 import tcod.constants
 
@@ -66,6 +67,19 @@ SCREEN_SHAKE_ENABLED = True
 SCREEN_SHAKE_INTENSITY_MULTIPLIER = 0.2
 
 # =============================================================================
+# BACKEND CONFIGURATION
+# =============================================================================
+
+# Application backend selection
+APP_BACKEND: Literal["tcod", "glfw"] = "glfw"
+
+# Graphics context selection
+GRAPHICS_BACKEND: Literal["tcod", "moderngl", "wgpu"] = "moderngl"
+
+# Lighting system selection (independent of graphics backend)
+LIGHTING_BACKEND: Literal["cpu", "moderngl", "wgpu"] = "moderngl"
+
+# ============================================================================tcod
 # PERFORMANCE CONFIGURATION
 # =============================================================================
 
@@ -140,8 +154,6 @@ MAX_NUM_ROOMS = 3
 # LIGHTING SYSTEM
 # =============================================================================
 
-# GPU vs CPU lighting system selection
-GPU_LIGHTING_ENABLED = True  # Use GPU lighting when available, fallback to CPU
 
 # Generic light source defaults
 DEFAULT_LIGHT_COLOR = (255, 255, 255)  # Pure white

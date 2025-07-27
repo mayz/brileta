@@ -11,8 +11,6 @@ if TYPE_CHECKING:
     from catley.game.actions.discovery import CombatIntentCache
 
 from . import colors, config
-from .backends.moderngl.gpu_lighting import GPULightingSystem as MGLLightingSystem
-from .backends.wgpu.gpu_lighting import GPULightingSystem as WGPULightingSystem
 from .events import MessageEvent, publish_event
 from .game.actions.base import GameIntent
 from .game.actions.types import AnimationType
@@ -36,8 +34,6 @@ from .view.frame_manager import FrameManager
 from .view.render.graphics import GraphicsContext
 from .view.render.lighting.cpu import CPULightingSystem
 from .view.ui.overlays import OverlaySystem
-
-GPULightingSystem = MGLLightingSystem if True else WGPULightingSystem
 
 
 class Controller:
@@ -74,11 +70,25 @@ class Controller:
         self.app = app
         self.gw = GameWorld(config.MAP_WIDTH, config.MAP_HEIGHT)
 
-        if config.GPU_LIGHTING_ENABLED:
-            cpu_fallback = CPULightingSystem(self.gw)
-            self.gw.lighting_system = GPULightingSystem(self.gw, graphics, cpu_fallback)
-        else:
-            self.gw.lighting_system = CPULightingSystem(self.gw)
+        match config.LIGHTING_BACKEND:
+            case "cpu":
+                self.gw.lighting_system = CPULightingSystem(self.gw)
+            case "moderngl":
+                cpu_fallback = CPULightingSystem(self.gw)
+                from .backends.moderngl.gpu_lighting import GPULightingSystem
+
+                self.gw.lighting_system = GPULightingSystem(
+                    self.gw, graphics, cpu_fallback
+                )
+            case "wgpu":
+                cpu_fallback = CPULightingSystem(self.gw)
+                from .backends.wgpu.gpu_lighting import GPULightingSystem
+
+                self.gw.lighting_system = GPULightingSystem(
+                    self.gw, graphics, cpu_fallback
+                )
+            case _:
+                raise ValueError(f"Unknown lighting backend: {config.LIGHTING_BACKEND}")
 
         self.graphics = graphics
         self.coordinate_converter = graphics.coordinate_converter

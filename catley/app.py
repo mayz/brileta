@@ -33,7 +33,7 @@ class App[TGraphics: GraphicsContext](ABC):
 
     An App is the top-level component responsible for bridging the abstract game
     logic with a concrete windowing and event-handling backend (e.g., TCOD,
-    Pyglet, SDL). It owns the main loop and drives the entire application.
+    GLFW). It owns the main loop and drives the entire application.
 
     This class implements the fixed timestep with interpolation pattern that
     ensures a deterministic simulation and smooth visuals across all backends.
@@ -144,16 +144,20 @@ class App[TGraphics: GraphicsContext](ABC):
         """
         Execute exactly one logic step at fixed 60Hz timing.
 
-        This method is called by both timing strategies:
-        - TCOD: 0-N times per visual frame (accumulator catches up to maintain 60Hz)
-        - Pyglet: exactly once per 1/60 second (scheduler guarantees 60Hz)
+        This method is called by timing strategies:
+        - Accumulator-based (TCOD, GLFW):
+            0-N times per visual frame (accumulator catches up to maintain 60Hz)
+        - Event-driven:
+            exactly once per 1/60 second (scheduler guarantees 60Hz)
 
         Shared execution ensures identical game logic across all backends.
         """
         assert self.controller is not None
         # Note: process_player_input() is handled differently by each backend
-        # TCOD: calls it once per visual frame in update_game_logic()
-        # Pyglet: will call it in its own timing
+        # Accumulator-based (TCOD, GLFW):
+        #   calls it once per visual frame in update_game_logic()
+        # Event-driven:
+        #   will call it in its own timing
         self.controller.update_logic_step()
 
     def render_frame(self) -> None:
@@ -182,9 +186,9 @@ class App[TGraphics: GraphicsContext](ABC):
         """
         Renders a visual frame with explicit interpolation alpha.
 
-        This method is called by both rendering strategies:
-        - TCOD: via render_frame() with accumulator-calculated alpha
-        - Pyglet: directly with manually-calculated alpha
+        This method is called by rendering strategies:
+        - Accumulator-based (TCOD, GLFW): via render_frame() with calculated alpha
+        - Event-driven: directly with manually-calculated alpha
 
         Shared rendering ensures identical visual output across all backends.
         """

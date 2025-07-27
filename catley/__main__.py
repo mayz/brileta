@@ -16,15 +16,17 @@ def main() -> None:
         vsync=config.VSYNC,
     )
 
-    # from .backends.tcod.app import TCODApp
-    # _APP_CLASS = TCODApp
+    match config.APP_BACKEND:
+        case "tcod":
+            from catley.backends.tcod.app import TCODApp
 
-    # from .backends.pyglet.app import PygletApp
-    # _APP_CLASS = PygletApp
+            _APP_CLASS = TCODApp
+        case "glfw":
+            from catley.backends.glfw.app import GlfwApp
 
-    from .backends.glfw.app import GlfwApp
-
-    _APP_CLASS = GlfwApp
+            _APP_CLASS = GlfwApp
+        case _:
+            raise ValueError(f"Unknown app backend: {config.APP_BACKEND}")
 
     app: App = _APP_CLASS(app_config)
     app.run()

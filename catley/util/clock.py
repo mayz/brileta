@@ -21,7 +21,7 @@ class Clock:
         """
         Measures the time since the last tick, updates FPS, and returns the delta.
 
-        This method is for event-driven loops (like Pyglet) that handle their own
+        This method is for event-driven loops that handle their own
         timing and do not need the clock to enforce an FPS cap by sleeping.
         """
         current_time = time.perf_counter()
