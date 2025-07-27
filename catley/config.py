@@ -18,16 +18,6 @@ from catley.types import Opacity
 
 PROJECT_ROOT_PATH = Path(__file__).resolve().parent.parent
 
-## ModernGL stats
-# FPS: ~140-300
-# render_ms: ~1.7-2.7
-# total_frame_ms: ~2.7-4.25
-
-## WGPU stats
-# FPS: ~80-110
-# render_ms: ~8.7
-# total_frame_ms: ~9.2
-
 # RANDOM_SEED = None
 RANDOM_SEED = "burrito1"
 
