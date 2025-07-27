@@ -6,24 +6,6 @@ This document outlines the specific technical steps for migrating Catley from Mo
 
 ## Phase 4: GPU Lighting System Port
 
-### Step 4.1: Translate Lighting Shader
-
-**Critical sections to preserve exactly**:
-1. **Directional Shadow Algorithm**: The discrete tile-based stepping must be preserved exactly
-2. **Shadow Direction Calculation**: Sign-based (not normalized) direction vectors
-3. **Sky Exposure Sampling**: Texture coordinate mapping for indoor/outdoor detection
-
-**GLSL to WGSL translation example**:
-```glsl
-// GLSL (current)
-float shadow_dx = u_sun_direction.x > 0.0 ? -1.0 : (u_sun_direction.x < 0.0 ? 1.0 : 0.0);
-float shadow_dy = u_sun_direction.y > 0.0 ? -1.0 : (u_sun_direction.y < 0.0 ? 1.0 : 0.0);
-
-// WGSL (translate to)
-let shadow_dx = select(select(0.0, 1.0, u_sun_direction.x < 0.0), -1.0, u_sun_direction.x > 0.0);
-let shadow_dy = select(select(0.0, 1.0, u_sun_direction.y < 0.0), -1.0, u_sun_direction.y > 0.0);
-```
-
 ### Step 4.2: Port GPULightingSystem
 
 **Create `catley/backends/wgpu/gpu_lighting.py`** with these key methods:
