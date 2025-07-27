@@ -1,13 +1,14 @@
 """Unit tests for GPU lighting system using fragment shaders.
 
 Tests the core functionality of the GPU-based lighting implementation,
-including hardware detection, fallback behavior, light data collection,
+including hardware detection, explicit failure behavior, light data collection,
 and fragment shader functionality.
 """
 
 from unittest.mock import Mock, patch
 
 import numpy as np
+import pytest
 
 from catley.backends.moderngl.gpu_lighting import GPULightingSystem
 from catley.game.game_world import GameWorld
@@ -31,10 +32,6 @@ class TestGPULightingSystem:
         self.mock_mgl_context = Mock()
         self.mock_graphics_context.mgl_context = self.mock_mgl_context
 
-        # Create a mock fallback system
-        self.mock_fallback = Mock(spec=LightingSystem)
-        self.mock_fallback.revision = 0
-
     def test_initialization_success(self):
         """Test successful initialization with fragment shader support."""
         # Mock ShaderManager and fragment program creation
@@ -48,13 +45,11 @@ class TestGPULightingSystem:
             "catley.backends.moderngl.shader_manager.ShaderManager",
             return_value=mock_shader_manager,
         ):
-            gpu_system = GPULightingSystem(
-                self.game_world, self.mock_graphics_context, self.mock_fallback
-            )
+            gpu_system = GPULightingSystem(self.game_world, self.mock_graphics_context)
 
         assert gpu_system.game_world == self.game_world
         assert gpu_system.graphics_context == self.mock_graphics_context
-        assert gpu_system.fallback_system == self.mock_fallback
+        # Fallback system no longer exists - GPU system fails explicitly
         assert gpu_system._time == 0.0
         assert gpu_system.revision == 0
 
@@ -67,13 +62,11 @@ class TestGPULightingSystem:
         # Mock missing ModernGL context
         self.mock_graphics_context.mgl_context = None
 
-        gpu_system = GPULightingSystem(
-            self.game_world, self.mock_graphics_context, self.mock_fallback
-        )
-
-        # Should still initialize but without GPU resources
-        assert gpu_system._fragment_program is None
-        assert gpu_system.fallback_system == self.mock_fallback
+        # Should raise RuntimeError when GPU unavailable
+        with pytest.raises(
+            RuntimeError, match="Failed to initialize ModernGL GPU lighting system"
+        ):
+            GPULightingSystem(self.game_world, self.mock_graphics_context)
 
     def test_initialization_fragment_shader_creation_fails(self):
         """Test initialization when fragment shader creation fails."""
@@ -83,19 +76,20 @@ class TestGPULightingSystem:
             "Shader compilation failed"
         )
 
-        with patch(
-            "catley.backends.moderngl.shader_manager.ShaderManager",
-            return_value=mock_shader_manager,
+        # Should raise RuntimeError when shader creation fails
+        with (
+            patch(
+                "catley.backends.moderngl.shader_manager.ShaderManager",
+                return_value=mock_shader_manager,
+            ),
+            pytest.raises(
+                RuntimeError, match="Failed to initialize ModernGL GPU lighting system"
+            ),
         ):
-            gpu_system = GPULightingSystem(
-                self.game_world, self.mock_graphics_context, self.mock_fallback
-            )
+            GPULightingSystem(self.game_world, self.mock_graphics_context)
 
-        # Should handle gracefully and set up for fallback
-        assert gpu_system._fragment_program is None
-
-    def test_update_with_fallback(self):
-        """Test update method forwards to fallback system."""
+    def test_update_with_successful_gpu(self):
+        """Test update method with successful GPU initialization."""
         # Mock successful fragment shader initialization
         mock_shader_manager = Mock()
         mock_fragment_program = Mock()
@@ -107,9 +101,7 @@ class TestGPULightingSystem:
             "catley.backends.moderngl.shader_manager.ShaderManager",
             return_value=mock_shader_manager,
         ):
-            gpu_system = GPULightingSystem(
-                self.game_world, self.mock_graphics_context, self.mock_fallback
-            )
+            gpu_system = GPULightingSystem(self.game_world, self.mock_graphics_context)
 
         timestep = FixedTimestep(1.0 / 60.0)
         gpu_system.update(timestep)
@@ -117,11 +109,10 @@ class TestGPULightingSystem:
         # Should update internal time
         assert gpu_system._time == timestep
 
-        # Should forward to fallback
-        self.mock_fallback.update.assert_called_once_with(timestep)
+        # Update only affects internal time state
 
-    def test_update_without_fallback(self):
-        """Test update method when no fallback system is provided."""
+    def test_update_without_gpu(self):
+        """Test update method when GPU is not available."""
         # Mock successful fragment shader initialization
         mock_shader_manager = Mock()
         mock_fragment_program = Mock()
@@ -133,9 +124,7 @@ class TestGPULightingSystem:
             "catley.backends.moderngl.shader_manager.ShaderManager",
             return_value=mock_shader_manager,
         ):
-            gpu_system = GPULightingSystem(
-                self.game_world, self.mock_graphics_context, fallback_system=None
-            )
+            gpu_system = GPULightingSystem(self.game_world, self.mock_graphics_context)
 
         timestep = FixedTimestep(1.0 / 60.0)
         gpu_system.update(timestep)
@@ -156,9 +145,7 @@ class TestGPULightingSystem:
             "catley.backends.moderngl.shader_manager.ShaderManager",
             return_value=mock_shader_manager,
         ):
-            gpu_system = GPULightingSystem(
-                self.game_world, self.mock_graphics_context, self.mock_fallback
-            )
+            gpu_system = GPULightingSystem(self.game_world, self.mock_graphics_context)
 
         viewport = Rect(0, 0, 10, 10)
         light_data = gpu_system._collect_light_data(viewport)
@@ -202,9 +189,7 @@ class TestGPULightingSystem:
             "catley.backends.moderngl.shader_manager.ShaderManager",
             return_value=mock_shader_manager,
         ):
-            gpu_system = GPULightingSystem(
-                self.game_world, self.mock_graphics_context, self.mock_fallback
-            )
+            gpu_system = GPULightingSystem(self.game_world, self.mock_graphics_context)
 
         viewport = Rect(0, 0, 20, 15)
         light_data = gpu_system._collect_light_data(viewport)
@@ -273,9 +258,7 @@ class TestGPULightingSystem:
             "catley.backends.moderngl.shader_manager.ShaderManager",
             return_value=mock_shader_manager,
         ):
-            gpu_system = GPULightingSystem(
-                self.game_world, self.mock_graphics_context, self.mock_fallback
-            )
+            gpu_system = GPULightingSystem(self.game_world, self.mock_graphics_context)
 
         viewport = Rect(0, 0, 15, 15)
         light_data = gpu_system._collect_light_data(viewport)
@@ -287,32 +270,23 @@ class TestGPULightingSystem:
         expected_lights = 2
         assert len(light_data) == expected_lights * 12
 
-    def test_compute_lightmap_fallback_when_no_gpu(self):
-        """Test compute_lightmap falls back to CPU when GPU unavailable."""
+    def test_compute_lightmap_when_no_gpu(self):
+        """Test compute_lightmap raises error when GPU unavailable."""
         # Mock failed GPU initialization by removing mgl_context
         self.mock_graphics_context.mgl_context = None
 
-        gpu_system = GPULightingSystem(
-            self.game_world, self.mock_graphics_context, self.mock_fallback
-        )
+        # Should raise RuntimeError when GPU unavailable
+        with pytest.raises(
+            RuntimeError, match="Failed to initialize ModernGL GPU lighting system"
+        ):
+            GPULightingSystem(self.game_world, self.mock_graphics_context)
 
-        viewport = Rect(0, 0, 10, 10)
-        rng = np.random.default_rng()
-        expected_result = rng.random((10, 10, 3)).astype(np.float32)
-        self.mock_fallback.compute_lightmap.return_value = expected_result
-
-        result = gpu_system.compute_lightmap(viewport)
-
-        # Should use fallback
-        self.mock_fallback.compute_lightmap.assert_called_once_with(viewport)
-        np.testing.assert_array_equal(result, expected_result)
-
-    def test_compute_lightmap_fallback_when_gpu_fails(self):
-        """Test compute_lightmap falls back when GPU computation fails."""
+    def test_compute_lightmap_when_gpu_fails(self):
+        """Test compute_lightmap returns None when GPU computation fails."""
         # Mock successful initialization but failed computation
         mock_shader_manager = Mock()
         mock_fragment_program = Mock()
-        # Make texture creation fail to trigger fallback
+        # Make texture creation fail to trigger GPU failure
         mock_shader_manager.create_program.return_value = mock_fragment_program
         self.mock_mgl_context.buffer.return_value = Mock()
         self.mock_mgl_context.vertex_array.return_value = Mock()
@@ -323,34 +297,24 @@ class TestGPULightingSystem:
             "catley.backends.moderngl.shader_manager.ShaderManager",
             return_value=mock_shader_manager,
         ):
-            gpu_system = GPULightingSystem(
-                self.game_world, self.mock_graphics_context, self.mock_fallback
-            )
+            gpu_system = GPULightingSystem(self.game_world, self.mock_graphics_context)
 
         viewport = Rect(0, 0, 10, 10)
-        rng = np.random.default_rng()
-        expected_result = rng.random((10, 10, 3)).astype(np.float32)
-        self.mock_fallback.compute_lightmap.return_value = expected_result
-
         result = gpu_system.compute_lightmap(viewport)
 
-        # Should fall back to CPU system
-        self.mock_fallback.compute_lightmap.assert_called_once_with(viewport)
-        np.testing.assert_array_equal(result, expected_result)
+        # Should return None when GPU computation fails
+        assert result is None
 
-    def test_compute_lightmap_no_fallback_available(self):
-        """Test compute_lightmap returns None when no fallback and GPU fails."""
-        # Mock failed GPU initialization with no fallback
+    def test_compute_lightmap_no_gpu_available(self):
+        """Test compute_lightmap raises error when GPU fails."""
+        # Mock failed GPU initialization
         self.mock_graphics_context.mgl_context = None
 
-        gpu_system = GPULightingSystem(
-            self.game_world, self.mock_graphics_context, fallback_system=None
-        )
-
-        viewport = Rect(0, 0, 10, 10)
-        result = gpu_system.compute_lightmap(viewport)
-
-        assert result is None
+        # Should raise RuntimeError when GPU unavailable
+        with pytest.raises(
+            RuntimeError, match="Failed to initialize ModernGL GPU lighting system"
+        ):
+            GPULightingSystem(self.game_world, self.mock_graphics_context)
 
     def test_light_notifications_increment_revision(self):
         """Test that light change notifications increment revision counter."""
@@ -365,9 +329,7 @@ class TestGPULightingSystem:
             "catley.backends.moderngl.shader_manager.ShaderManager",
             return_value=mock_shader_manager,
         ):
-            gpu_system = GPULightingSystem(
-                self.game_world, self.mock_graphics_context, self.mock_fallback
-            )
+            gpu_system = GPULightingSystem(self.game_world, self.mock_graphics_context)
 
         initial_revision = gpu_system.revision
 
@@ -388,8 +350,8 @@ class TestGPULightingSystem:
         gpu_system.on_global_light_changed()
         assert gpu_system.revision == initial_revision + 4
 
-    def test_light_notifications_forward_to_fallback(self):
-        """Test that light notifications are forwarded to fallback system."""
+    def test_light_notifications_update_revision_only(self):
+        """Test that light notifications only update revision counter."""
         # Mock successful fragment shader initialization
         mock_shader_manager = Mock()
         mock_fragment_program = Mock()
@@ -401,24 +363,16 @@ class TestGPULightingSystem:
             "catley.backends.moderngl.shader_manager.ShaderManager",
             return_value=mock_shader_manager,
         ):
-            gpu_system = GPULightingSystem(
-                self.game_world, self.mock_graphics_context, self.mock_fallback
-            )
+            gpu_system = GPULightingSystem(self.game_world, self.mock_graphics_context)
 
         mock_light = Mock(spec=StaticLight)
 
-        # Test all notification methods forward to fallback
+        # Test notification methods only update revision counter
         gpu_system.on_light_added(mock_light)
-        self.mock_fallback.on_light_added.assert_called_once_with(mock_light)
-
         gpu_system.on_light_removed(mock_light)
-        self.mock_fallback.on_light_removed.assert_called_once_with(mock_light)
-
         gpu_system.on_light_moved(mock_light)
-        self.mock_fallback.on_light_moved.assert_called_once_with(mock_light)
-
         gpu_system.on_global_light_changed()
-        self.mock_fallback.on_global_light_changed.assert_called_once()
+        # No fallback calls since fallback system was removed
 
     def test_max_lights_limit(self):
         """Test that light count is limited to MAX_LIGHTS in GPU computation."""
@@ -444,9 +398,7 @@ class TestGPULightingSystem:
             "catley.backends.moderngl.shader_manager.ShaderManager",
             return_value=mock_shader_manager,
         ):
-            gpu_system = GPULightingSystem(
-                self.game_world, self.mock_graphics_context, self.mock_fallback
-            )
+            gpu_system = GPULightingSystem(self.game_world, self.mock_graphics_context)
 
         viewport = Rect(0, 0, 100, 100)  # Large viewport to include many lights
         light_data = gpu_system._collect_light_data(viewport)
@@ -481,9 +433,7 @@ class TestGPULightingSystem:
             "catley.backends.moderngl.shader_manager.ShaderManager",
             return_value=mock_shader_manager,
         ):
-            gpu_system = GPULightingSystem(
-                self.game_world, self.mock_graphics_context, self.mock_fallback
-            )
+            gpu_system = GPULightingSystem(self.game_world, self.mock_graphics_context)
 
         # Set up some resources manually to test cleanup
         gpu_system._fragment_program = mock_fragment_program
@@ -502,9 +452,7 @@ class TestGPULightingSystem:
 
     def test_resource_cleanup_with_none_resources(self):
         """Test that resource cleanup handles None resources gracefully."""
-        gpu_system = GPULightingSystem(
-            self.game_world, self.mock_graphics_context, self.mock_fallback
-        )
+        gpu_system = GPULightingSystem(self.game_world, self.mock_graphics_context)
 
         # Ensure all resources are None
         gpu_system._fragment_program = None
@@ -546,15 +494,16 @@ class TestGPULightingSystemIntegration:
         # Should have a valid fragment program after successful initialization
         assert gpu_system._fragment_program is not None
 
-    def test_hardware_detection_failure_fallback(self):
-        """Test that hardware detection gracefully handles missing ModernGL context."""
+    def test_hardware_detection_failure_explicit(self):
+        """Test hardware detection fails explicitly when ModernGL context missing."""
         mock_graphics_context = Mock()
         mock_graphics_context.mgl_context = None
 
-        gpu_system = GPULightingSystem(self.game_world, mock_graphics_context)
-
-        # Should not have a fragment program if initialization failed
-        assert gpu_system._fragment_program is None
+        # Should raise RuntimeError when GPU unavailable
+        with pytest.raises(
+            RuntimeError, match="Failed to initialize ModernGL GPU lighting system"
+        ):
+            GPULightingSystem(self.game_world, mock_graphics_context)
 
     def test_interface_compliance(self):
         """Test that GPULightingSystem properly implements LightingSystem interface."""

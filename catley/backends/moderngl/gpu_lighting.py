@@ -40,7 +40,6 @@ class GPULightingSystem(LightingSystem):
     - Hardware accelerated distance calculations
     - Compatible with existing LightingSystem interface
     - Works on OpenGL 3.3+ (including macOS OpenGL 4.1)
-    - Automatic fallback to CPU system if GPU unavailable
     """
 
     # Maximum number of lights we can handle in a single render pass
@@ -50,14 +49,12 @@ class GPULightingSystem(LightingSystem):
         self,
         game_world: GameWorld,
         graphics_context: GraphicsContext,
-        fallback_system: LightingSystem | None = None,
     ) -> None:
         """Initialize the GPU lighting system.
 
         Args:
             game_world: The game world to query for lighting data
-            graphics_context: Graphics context (ModernGL preferred for GPU operations)
-            fallback_system: Optional CPU fallback if GPU unavailable
+            graphics_context: Graphics context (ModernGL required for GPU operations)
         """
         super().__init__(game_world)
 
@@ -68,7 +65,6 @@ class GPULightingSystem(LightingSystem):
         else:
             # Test/dummy graphics context, will fail initialization and use fallback
             self.mgl_context = None
-        self.fallback_system = fallback_system
 
         # GPU resources
         self._fragment_program: moderngl.Program | None = None
@@ -99,7 +95,7 @@ class GPULightingSystem(LightingSystem):
 
         # Initialize GPU resources
         if not self._initialize_gpu_resources():
-            pass  # Will use fallback system if available
+            raise RuntimeError("Failed to initialize ModernGL GPU lighting system")
 
     def _initialize_gpu_resources(self) -> bool:
         """Initialize GPU fragment shader-based lighting.
@@ -263,10 +259,6 @@ class GPULightingSystem(LightingSystem):
         """Update internal time-based state for dynamic effects."""
         self._time += fixed_timestep
 
-        # Update fallback system if available
-        if self.fallback_system is not None:
-            self.fallback_system.update(fixed_timestep)
-
     def compute_lightmap(self, viewport_bounds: Rect) -> np.ndarray | None:
         """Compute the final lightmap using GPU fragment shaders.
 
@@ -279,21 +271,14 @@ class GPULightingSystem(LightingSystem):
         """
         # Check if GPU is available
         if self._fragment_program is None:
-            if self.fallback_system is not None:
-                return self.fallback_system.compute_lightmap(viewport_bounds)
             return None
 
-        # Try GPU computation first
+        # Perform GPU computation
         gpu_result = self._compute_lightmap_gpu(viewport_bounds)
         if gpu_result is not None:
             self.revision += 1
             return gpu_result
 
-        # Fall back to CPU system if available
-        if self.fallback_system is not None:
-            return self.fallback_system.compute_lightmap(viewport_bounds)
-
-        # No fallback available
         return None
 
     def _compute_lightmap_gpu(self, viewport_bounds: Rect) -> np.ndarray | None:
@@ -726,29 +711,17 @@ class GPULightingSystem(LightingSystem):
         # but we update revision to trigger view refresh
         self.revision += 1
 
-        if self.fallback_system is not None:
-            self.fallback_system.on_light_added(light)
-
     def on_light_removed(self, light: LightSource) -> None:
         """Notification that a light has been removed."""
         self.revision += 1
-
-        if self.fallback_system is not None:
-            self.fallback_system.on_light_removed(light)
 
     def on_light_moved(self, light: LightSource) -> None:
         """Notification that a light has moved."""
         self.revision += 1
 
-        if self.fallback_system is not None:
-            self.fallback_system.on_light_moved(light)
-
     def on_global_light_changed(self) -> None:
         """Notification that global lighting has changed."""
         self.revision += 1
-
-        if self.fallback_system is not None:
-            self.fallback_system.on_global_light_changed()
 
     def release(self) -> None:
         """Release GPU resources."""

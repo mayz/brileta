@@ -41,7 +41,6 @@ class GPULightingSystem(LightingSystem):
     - Hardware accelerated distance calculations
     - Compatible with existing LightingSystem interface
     - Works with WGPU on modern graphics APIs
-    - Automatic fallback to CPU system if GPU unavailable
     """
 
     # Maximum number of lights we can handle in a single render pass
@@ -51,14 +50,12 @@ class GPULightingSystem(LightingSystem):
         self,
         game_world: GameWorld,
         graphics_context: GraphicsContext,
-        fallback_system: LightingSystem | None = None,
     ) -> None:
         """Initialize the WGPU GPU lighting system.
 
         Args:
             game_world: The game world to query for lighting data
             graphics_context: Graphics context (WGPU required for GPU operations)
-            fallback_system: Optional CPU fallback if GPU unavailable
         """
         super().__init__(game_world)
 
@@ -71,7 +68,6 @@ class GPULightingSystem(LightingSystem):
             # Test/dummy graphics context, will fail initialization and use fallback
             self.device = None
             self.queue = None
-        self.fallback_system = fallback_system
 
         # WGPU resources
         self._render_pipeline: wgpu.GPURenderPipeline | None = None
@@ -105,7 +101,7 @@ class GPULightingSystem(LightingSystem):
 
         # Initialize GPU resources
         if not self._initialize_gpu_resources():
-            pass  # Will use fallback system if available
+            raise RuntimeError("Failed to initialize WGPU GPU lighting system")
 
     def _initialize_gpu_resources(self) -> bool:
         """Initialize WGPU fragment shader-based lighting.
@@ -799,10 +795,6 @@ class GPULightingSystem(LightingSystem):
         """Update internal time-based state for dynamic effects."""
         self._time += fixed_timestep
 
-        # Update fallback system if available
-        if self.fallback_system is not None:
-            self.fallback_system.update(fixed_timestep)
-
     def compute_lightmap(self, viewport_bounds: Rect) -> np.ndarray | None:
         """Compute the final lightmap using WGPU fragment shaders.
 
@@ -815,21 +807,14 @@ class GPULightingSystem(LightingSystem):
         """
         # Check if GPU is available
         if self._render_pipeline is None:
-            if self.fallback_system is not None:
-                return self.fallback_system.compute_lightmap(viewport_bounds)
             return None
 
-        # Try GPU computation first
+        # Perform GPU computation
         gpu_result = self._compute_lightmap_gpu(viewport_bounds)
         if gpu_result is not None:
             self.revision += 1
             return gpu_result
 
-        # Fall back to CPU system if available
-        if self.fallback_system is not None:
-            return self.fallback_system.compute_lightmap(viewport_bounds)
-
-        # No fallback available
         return None
 
     def _ensure_resources_for_viewport(self, viewport_bounds: Rect) -> bool:
@@ -1096,26 +1081,18 @@ class GPULightingSystem(LightingSystem):
     def on_light_added(self, light: LightSource) -> None:
         """Notification that a light has been added."""
         self.revision += 1
-        if self.fallback_system is not None:
-            self.fallback_system.on_light_added(light)
 
     def on_light_removed(self, light: LightSource) -> None:
         """Notification that a light has been removed."""
         self.revision += 1
-        if self.fallback_system is not None:
-            self.fallback_system.on_light_removed(light)
 
     def on_light_moved(self, light: LightSource) -> None:
         """Notification that a light has moved."""
         self.revision += 1
-        if self.fallback_system is not None:
-            self.fallback_system.on_light_moved(light)
 
     def on_global_light_changed(self) -> None:
         """Notification that global lighting has changed."""
         self.revision += 1
-        if self.fallback_system is not None:
-            self.fallback_system.on_global_light_changed()
 
     def release(self) -> None:
         """Release GPU resources."""
