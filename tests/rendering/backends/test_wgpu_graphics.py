@@ -323,9 +323,13 @@ class TestWGPUGraphicsContext:
         assert result is mock_texture
 
         # Verify that the texture renderer was called with expected parameters
-        mock_texture_renderer.render.assert_called_once_with(
-            glyph_buffer, buffer_override=None, cpu_buffer_override=None
-        )
+        # Note: cpu_buffer_override will be created as a temporary buffer
+        call_args = mock_texture_renderer.render.call_args
+        assert call_args[0][0] is glyph_buffer  # First arg is glyph_buffer
+        assert (
+            call_args[0][1] is not None
+        )  # Second arg is cpu_buffer_override (created)
+        assert call_args[1]["buffer_override"] is None  # buffer_override is None
 
     def test_add_tile_to_screen(self):
         """Test adding tiles to the screen renderer."""

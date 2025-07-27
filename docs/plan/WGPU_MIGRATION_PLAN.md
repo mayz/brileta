@@ -18,24 +18,10 @@ Preamble: This plan is designed to be executed as five distinct, atomic steps. A
 **This has been implemented and committed.**
 
 #### **Step 3.3.2: Prepare the Rendering Pipeline for New Information**
-
-*   **Goal:** To make the rendering pipeline aware of the newly isolated CPU buffers from Step 1, without actually changing the core rendering logic yet.
-
-*   **Conceptual Action:** Update the method signatures along the data pipeline. When a `WGPUCanvas` creates its texture, it will now pass both its GPU buffer *and* its new CPU buffer to `WGPUGraphicsContext`. The graphics context will, in turn, update its own internal method to accept this new CPU buffer and pass it along to the `WGPUTextureRenderer`. For this step, the texture renderer will accept the new CPU buffer but will continue to ignore it and use its old, internal logic.
-
-*   **Verification:** The game compiles and runs. There will be **no visual or performance changes**. The application remains in a stable, working state. We have successfully prepared the system for the next change without altering its behavior.
-
----
+**This has been implemented and committed.**
 
 #### **Step 3.3.3: Activate CPU Buffer Isolation and Make the Renderer Stateless**
-
-*   **Goal:** To make the `WGPUTextureRenderer` fully stateless, using the dedicated resources provided by each canvas and eliminating the last part of the CPU performance bug.
-
-*   **Conceptual Action:** Modify the `WGPUTextureRenderer`. It will now be a pure service. Remove its internal, shared CPU buffer entirely. Its rendering method will now use the specific CPU buffer provided by each `WGPUCanvas` for its vertex calculations. It no longer owns any per-draw state.
-
-*   **Verification:** The game compiles and runs. It is **visually identical** to the previous step. Performance should be the same as, or slightly better than, Step 1. The application is stable, and the resource management for all views is now correct and robust.
-
----
+**This has been implemented and committed.**
 
 #### **Step 3.3.4: Implement and Test the High-Performance Render Path Safely**
 

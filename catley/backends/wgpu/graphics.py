@@ -88,6 +88,9 @@ class WGPUGraphicsContext(GraphicsContext):
         # Character code for solid block used in tile highlighting
         self.SOLID_BLOCK_CHAR = 219
 
+        # Reusable CPU buffer for WorldView (to avoid per-frame allocations)
+        self._world_view_cpu_buffer: np.ndarray | None = None
+
         # Initialize immediately unless deferred for testing
         if not _defer_init:
             self._initialize()
@@ -229,11 +232,32 @@ class WGPUGraphicsContext(GraphicsContext):
         if self.texture_renderer is None:
             raise RuntimeError("Texture renderer not initialized")
 
-        # Pass the canvas's vertex buffers to the renderer
+        # Handle case where no CPU buffer is provided (e.g., WorldView)
+        if cpu_buffer_override is None:
+            # This is the WorldView case. Reuse our internal buffer.
+            from .texture_renderer import TEXTURE_VERTEX_DTYPE
+
+            max_vertices = glyph_buffer.width * glyph_buffer.height * 6
+
+            # Check if our cached buffer is big enough, if not, recreate it.
+            if (
+                self._world_view_cpu_buffer is None
+                or len(self._world_view_cpu_buffer) < max_vertices
+            ):
+                self._world_view_cpu_buffer = np.zeros(
+                    max_vertices, dtype=TEXTURE_VERTEX_DTYPE
+                )
+
+            cpu_buffer_to_use = self._world_view_cpu_buffer
+        else:
+            # This is a UI Canvas case. Use the buffer it provided.
+            cpu_buffer_to_use = cpu_buffer_override
+
+        # Pass the chosen buffer to the renderer
         return self.texture_renderer.render(
             glyph_buffer,
+            cpu_buffer_to_use,
             buffer_override=canvas_vbo,
-            cpu_buffer_override=cpu_buffer_override,
         )
 
     def draw_actor_smooth(
@@ -888,6 +912,7 @@ class WGPUGraphicsContext(GraphicsContext):
         self.atlas_texture = None
         self.shader_manager = None
         self.resource_manager = None
+        self._world_view_cpu_buffer = None
 
         # Let WGPU context cleanup happen naturally
         self.wgpu_context = None

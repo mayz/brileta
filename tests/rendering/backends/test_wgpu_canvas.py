@@ -39,6 +39,9 @@ class TestWGPUCanvas:
 
         # Create canvas instances for testing
         self.mock_resource_manager = Mock()
+        self.mock_device = Mock()
+        self.mock_resource_manager.device = self.mock_device
+
         self.canvas = WGPUCanvas(
             self.mock_renderer, self.mock_resource_manager, transparent=True
         )  # type: ignore[misc]
@@ -203,11 +206,22 @@ class TestWGPUCanvas:
 
         # Test with GlyphBuffer artifact
         glyph_buffer = GlyphBuffer(5, 3)
+
+        # Configure canvas dimensions so it has a CPU buffer
+        self.canvas.configure_dimensions(100, 60)  # 5*20 x 3*20
+
         result = self.canvas.create_texture(self.mock_renderer, glyph_buffer)
         assert result == "mock_texture"
-        self.mock_renderer.render_glyph_buffer_to_texture.assert_called_once_with(
-            glyph_buffer, None, None
-        )
+
+        # Verify the call - should pass glyph_buffer with named parameters for buffers
+        call_args = self.mock_renderer.render_glyph_buffer_to_texture.call_args
+        assert call_args[0][0] is glyph_buffer  # glyph_buffer (positional)
+        assert (
+            call_args[1]["canvas_vbo"] is self.canvas.vertex_buffer
+        )  # GPU buffer (keyword)
+        assert (
+            call_args[1]["cpu_buffer_override"] is self.canvas.cpu_vertex_buffer
+        )  # CPU buffer (keyword)
 
         # Test with non-GlyphBuffer artifact
         result = self.canvas.create_texture(self.mock_renderer, "not_a_glyph_buffer")

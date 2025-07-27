@@ -103,7 +103,9 @@ class WGPUCanvas(Canvas):
 
         # Use the renderer's method, but pass this canvas's OWN vertex buffers
         return renderer.render_glyph_buffer_to_texture(
-            artifact, self.vertex_buffer, self.cpu_vertex_buffer
+            artifact,
+            canvas_vbo=self.vertex_buffer,
+            cpu_buffer_override=self.cpu_vertex_buffer,
         )
 
     def _update_scaling_internal(self, tile_height: int) -> None:
