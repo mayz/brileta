@@ -4,52 +4,6 @@ This document outlines the specific technical steps for migrating Catley from Mo
 
 **Important**: Maintain implementation parity between backends to prevent subtle bugs. Unintentional divergences can cause hard-to-debug visual artifacts. For example, the introduction of dirty-tile optimization initially caused visual artifacts (ghosting of previously lit tiles). Root cause: the WGPU implementation had diverged from ModernGL by adding a transparent tile optimization that skipped generating vertices for fully transparent tiles. This caused stale vertex data to persist in the VBO. The fix was to remove this optimization and ensure WGPU matches ModernGL's behavior of always generating vertices for all tiles.
 
-## Phase 3: WGPU Performance Optimization
-
-**Current Performance Gap**: WGPU renders at ~180-240 FPS (~3.7-4.4ms render time) vs ModernGL at ~140-300 FPS (~1.7-2.7ms render time).
-
-Analysis of the existing ModernGL and WGPU backends reveals that the performance gap is not due to a fundamental limitation of WGPU, but rather a specific, critical optimization present in the ModernGL backend that is currently missing from the WGPU implementation. The following plan prioritizes closing this gap first, followed by broader architectural improvements.
-
-### Step 3.3: A Verifiable, Five-Step Refactor to a Single Command Encoder
-
-Preamble: This plan is designed to be executed as five distinct, atomic steps. After each step, the application will be in a fully working, testable state. The ultimate goal is to fix the WGPU performance bottleneck by ensuring only one command encoder is used per frame. To achieve this safely, we must first refactor the rendering architecture to be compatible with this model. This plan explicitly accounts for the fact that WorldView manages its own GlyphBuffer directly, while other UI views use a Canvas object.
-
-#### **Step 3.3.1: Isolate CPU-Side Resources in UI Canvases**
-**This has been implemented and committed.**
-
-#### **Step 3.3.2: Prepare the Rendering Pipeline for New Information**
-**This has been implemented and committed.**
-
-#### **Step 3.3.3: Activate CPU Buffer Isolation and Make the Renderer Stateless**
-**This has been implemented and committed.**
-
-#### **Step 3.3.4: Implement and Test the High-Performance Render Path Safely**
-
-*   **Goal:** To build and verify the new, high-performance, single-encoder rendering loop without breaking the existing, stable loop.
-
-*   **Conceptual Action:** Create a "sidetrack" for testing. In `WGPUGraphicsContext`, create a *new, separate method* called `finalize_present_single_pass`. This new method will contain the ideal rendering logic: it creates one command encoder, orchestrates all `draw` and `present` calls for every view and overlay (recording all their commands into that single encoder), and then submits it once to the GPU. In the main application loop (`GlfwApp`), add a temporary boolean flag. Based on this flag, the app will call either the old, slow `finalize_present` or the new, fast `finalize_present_single_pass`.
-
-*   **Verification:** You can now toggle the flag to switch between rendering paths. With the flag `False`, the game runs exactly as it did in Step 3. With the flag `True`, the game is **visually identical**, but the `dev.fps` counter is **significantly higher**. You have now verifiably achieved the performance goal in a safe, controlled, and directly comparable manner.
-
----
-
-#### **Step 3.3.5: Decommission the Old Render Path and Finalize the Architecture**
-
-*   **Goal:** To clean up the code by making the new, fast rendering path the only path, completing the refactor.
-
-*   **Conceptual Action:** The high-speed path has been proven correct and performant. Now, we remove the old infrastructure. Delete the temporary boolean flag in `GlfwApp`. In `WGPUGraphicsContext`, delete the old `finalize_present` method and rename `finalize_present_single_pass` to `finalize_present`. The `FrameManager`'s rendering logic can now be simplified, as the graphics context is fully in control.
-
-*   **Verification:** The game compiles and runs. It performs identically to the high-speed path in Step 4. The refactor is complete, and the code is now both correct and performant.
-
--   **Combined Optimizations**: Should achieve or exceed ModernGL parity, targeting a **~2-3ms** render time.
-
-### Success Metrics
-
-1.  **Target Performance**: ≤3ms render time (matching ModernGL baseline).
-2.  **Frame Rate**: ≥140 FPS average on the same hardware.
-3.  **Memory Usage**: No significant increase from the current WGPU implementation.
-4.  **Visual Parity**: No rendering artifacts or visual regressions compared to the ModernGL backend.
-
 ## Phase 4: GPU Lighting System Port
 
 ### Step 4.1: Translate Lighting Shader
@@ -132,6 +86,13 @@ else:
    - **Frame drops**: ≤50 per 10-second test
    - **Memory**: ≤250MB total usage
 4. **Profile any performance regressions** if WGPU fails to meet baseline targets
+
+## Postponed WGPU Performance Optimization
+
+**Current Performance Gap**: WGPU renders at ~180-240 FPS (~3.7-4.4ms render time) vs ModernGL at ~140-300 FPS (~1.7-2.7ms render time).
+
+Single-Encoder Performance Optimization: An attempt was made to refactor the WGPU backend to use a single command encoder per frame. While theoretically correct for performance, this led to persistent and difficult-to-debug visual artifacts (flickering, incorrect composition). The issue appears to be a subtle race condition or architectural conflict between the FrameManager's two-pass draw/present loop and WGPU's explicit command submission model. Decision: Postponing this optimization to maintain development momentum. The current WGPU backend is functional but slower than ModernGL. This can be revisited after the rest of the WGPU migration (e.g., the lighting system) is complete.
+
 
 ## Phase 6: Advanced Multi-Pass Architecture
 
