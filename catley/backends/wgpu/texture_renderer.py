@@ -220,6 +220,7 @@ class WGPUTextureRenderer:
         glyph_buffer: GlyphBuffer,
         cpu_buffer_override: np.ndarray,
         buffer_override: wgpu.GPUBuffer | None = None,
+        cache_key_suffix: str = "",
     ) -> wgpu.GPUTexture:
         """Render a GlyphBuffer to a WGPU texture.
 
@@ -240,7 +241,10 @@ class WGPUTextureRenderer:
         if texture_width == 0 or texture_height == 0:
             # Return empty texture for zero-sized buffers
             return self.resource_manager.get_or_create_render_texture(
-                width=1, height=1, texture_format="rgba8unorm"
+                width=1,
+                height=1,
+                texture_format="rgba8unorm",
+                cache_key_suffix=cache_key_suffix,
             )
 
         buffer_id = id(glyph_buffer)
@@ -268,6 +272,7 @@ class WGPUTextureRenderer:
             width=texture_width,
             height=texture_height,
             texture_format="rgba8unorm",
+            cache_key_suffix=cache_key_suffix,
         )
 
         # Determine which VBO to use

@@ -85,6 +85,8 @@ class TextOverlay(Overlay):
             if self.controller.graphics
             else (0, 0)
         )
+        # Unique cache key for this overlay instance to prevent texture sharing
+        self._cache_key = str(id(self))
 
     @abc.abstractmethod
     def _get_backend(self) -> Canvas:
@@ -118,7 +120,13 @@ class TextOverlay(Overlay):
         self.draw_content()
         artifact = self.canvas.end_frame()
         if artifact is not None:
-            texture = self.canvas.create_texture(self.controller.graphics, artifact)
+            # Use cache key for unique texture caching per overlay
+            if hasattr(self.canvas, "create_texture_with_cache_key"):
+                texture = self.canvas.create_texture_with_cache_key(
+                    self.controller.graphics, artifact, self._cache_key
+                )
+            else:
+                texture = self.canvas.create_texture(self.controller.graphics, artifact)
             self._cached_texture = texture
 
     def present(self) -> None:
@@ -195,6 +203,11 @@ class OverlaySystem:
 
     def draw_overlays(self) -> None:
         """Draw all active overlays to their internal textures/surfaces."""
+        # Remove any overlays that have been hidden
+        self.active_overlays = [
+            overlay for overlay in self.active_overlays if overlay.is_active
+        ]
+
         for overlay in self.active_overlays:
             overlay.draw()
 

@@ -41,6 +41,9 @@ class WGPUCanvas(Canvas):
         self.vertex_buffer: wgpu.GPUBuffer | None = None
         self.cpu_vertex_buffer: np.ndarray | None = None
 
+        # Unique cache key for this canvas instance to prevent texture sharing
+        self._cache_key = str(id(self))
+
         # Configure scaling based on renderer tile dimensions
         self.configure_scaling(renderer.tile_dimensions[1])
 
@@ -106,6 +109,21 @@ class WGPUCanvas(Canvas):
             artifact,
             canvas_vbo=self.vertex_buffer,
             cpu_buffer_override=self.cpu_vertex_buffer,
+        )
+
+    def create_texture_with_cache_key(
+        self, renderer: GraphicsContext, artifact: Any, cache_key: str
+    ) -> Any:
+        """Creates a backend-specific texture with cache key for unique caching."""
+        if not isinstance(artifact, GlyphBuffer):
+            return None
+
+        # Pass cache key for unique caching per overlay
+        return renderer.render_glyph_buffer_to_texture(
+            artifact,
+            canvas_vbo=self.vertex_buffer,
+            cpu_buffer_override=self.cpu_vertex_buffer,
+            cache_key_suffix=cache_key,
         )
 
     def _update_scaling_internal(self, tile_height: int) -> None:

@@ -67,7 +67,27 @@ class ModernGLCanvas(Canvas):
 
         # Pass THIS canvas's VBO and VAO to the renderer for isolation
         return moderngl_renderer.render_glyph_buffer_to_texture(
-            artifact, self.vbo, self.vao
+            artifact,
+            vbo_override=self.vbo,
+            vao_override=self.vao,
+        )
+
+    def create_texture_with_cache_key(
+        self, renderer: GraphicsContext, artifact: Any, cache_key: str
+    ) -> Any:
+        """Creates a backend-specific texture with cache key for unique caching."""
+        # This import is here to avoid a circular dependency.
+        from catley.backends.moderngl.graphics import ModernGLGraphicsContext
+
+        # We need to cast the renderer to access its ModernGL-specific method.
+        moderngl_renderer = cast(ModernGLGraphicsContext, renderer)
+
+        # Pass cache key for unique caching per overlay
+        return moderngl_renderer.render_glyph_buffer_to_texture(
+            artifact,
+            vbo_override=self.vbo,
+            vao_override=self.vao,
+            cache_key_suffix=cache_key,
         )
 
     def get_text_metrics(

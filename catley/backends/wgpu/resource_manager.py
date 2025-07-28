@@ -34,8 +34,8 @@ class WGPUResourceManager:
         self.device = device
         self.queue = queue
 
-        # Cache for render target textures keyed by (width, height, format)
-        self._texture_cache: dict[tuple[int, int, str], wgpu.GPUTexture] = {}
+        # Cache for render target textures keyed by (width, height, format, suffix)
+        self._texture_cache: dict[tuple[int, int, str, str], wgpu.GPUTexture] = {}
 
         # Track custom cache keys for specialized textures
         self._custom_texture_cache: dict[Hashable, wgpu.GPUTexture] = {}
@@ -51,6 +51,7 @@ class WGPUResourceManager:
         width: int,
         height: int,
         texture_format: str = "rgba8unorm",
+        cache_key_suffix: str = "",
         usage: int = wgpu.TextureUsage.RENDER_ATTACHMENT
         | wgpu.TextureUsage.TEXTURE_BINDING,
     ) -> wgpu.GPUTexture:
@@ -62,13 +63,14 @@ class WGPUResourceManager:
         Args:
             width: Width of the texture in pixels
             height: Height of the texture in pixels
-            format: Texture format (default: "rgba8unorm")
+            texture_format: Texture format (default: "rgba8unorm")
+            cache_key_suffix: Additional suffix for unique caching (e.g., overlay ID)
             usage: Texture usage flags
 
         Returns:
             WGPU texture for rendering
         """
-        cache_key = (width, height, texture_format)
+        cache_key = (width, height, texture_format, cache_key_suffix)
 
         # Check if we have a cached texture for these dimensions
         if cache_key in self._texture_cache:

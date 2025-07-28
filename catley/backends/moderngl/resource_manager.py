@@ -36,9 +36,9 @@ class ModernGLResourceManager:
         """
         self.mgl_context = mgl_context
 
-        # Cache for framebuffer objects keyed by (width, height)
+        # Cache for framebuffer objects keyed by (width, height, cache_key_suffix)
         self._fbo_cache: dict[
-            tuple[int, int], tuple[moderngl.Framebuffer, moderngl.Texture]
+            tuple[int, int, str], tuple[moderngl.Framebuffer, moderngl.Texture]
         ] = {}
 
         # Track custom cache keys for specialized framebuffers
@@ -81,7 +81,7 @@ class ModernGLResourceManager:
         return fbo, texture
 
     def get_or_create_simple_fbo(
-        self, width: int, height: int
+        self, width: int, height: int, cache_key_suffix: str = ""
     ) -> tuple[moderngl.Framebuffer, moderngl.Texture]:
         """Get or create a simple RGBA8 framebuffer (backward compatibility).
 
@@ -91,11 +91,12 @@ class ModernGLResourceManager:
         Args:
             width: Width of the framebuffer in pixels
             height: Height of the framebuffer in pixels
+            cache_key_suffix: Additional suffix for unique caching (e.g., overlay ID)
 
         Returns:
             Tuple of (framebuffer, texture) for rendering
         """
-        cache_key = (width, height)
+        cache_key = (width, height, cache_key_suffix)
 
         if cache_key in self._fbo_cache:
             return self._fbo_cache[cache_key]
@@ -131,14 +132,15 @@ class ModernGLResourceManager:
             fbo.release()
         self._texture_fbo_cache.clear()
 
-    def release_fbo(self, width: int, height: int) -> None:
+    def release_fbo(self, width: int, height: int, cache_key_suffix: str = "") -> None:
         """Release a specific cached framebuffer.
 
         Args:
             width: Width of the framebuffer to release
             height: Height of the framebuffer to release
+            cache_key_suffix: Cache key suffix to match the specific framebuffer
         """
-        cache_key = (width, height)
+        cache_key = (width, height, cache_key_suffix)
         if cache_key in self._fbo_cache:
             fbo, texture = self._fbo_cache[cache_key]
             fbo.release()

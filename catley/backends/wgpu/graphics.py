@@ -224,6 +224,7 @@ class WGPUGraphicsContext(GraphicsContext):
         glyph_buffer: GlyphBuffer,
         canvas_vbo: wgpu.GPUBuffer | None = None,
         cpu_buffer_override: np.ndarray | None = None,
+        cache_key_suffix: str = "",
     ) -> wgpu.GPUTexture:
         """Render GlyphBuffer to a WGPU texture."""
         if self.texture_renderer is None:
@@ -250,11 +251,12 @@ class WGPUGraphicsContext(GraphicsContext):
             # This is a UI Canvas case. Use the buffer it provided.
             cpu_buffer_to_use = cpu_buffer_override
 
-        # Pass the chosen buffer to the renderer
+        # Pass the chosen buffer and cache key to the renderer
         return self.texture_renderer.render(
             glyph_buffer,
             cpu_buffer_to_use,
             buffer_override=canvas_vbo,
+            cache_key_suffix=cache_key_suffix,
         )
 
     def draw_actor_smooth(

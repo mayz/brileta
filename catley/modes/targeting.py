@@ -39,7 +39,9 @@ class TargetingMode(Mode):
         # Subscribe to actor death events only while targeting
         subscribe_to_event(ActorDeathEvent, self._handle_actor_death_event)
 
-        self.cursor_manager.set_active_cursor_type("crosshair")
+        # FIXME: Set the "crosshair" cursor once we have a suitable image.
+        # self.cursor_manager.set_active_cursor_type("crosshair")
+
         self.controller.overlay_system.show_overlay(self.targeting_indicator_overlay)
 
         # Build initial candidate list

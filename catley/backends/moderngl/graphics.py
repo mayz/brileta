@@ -228,13 +228,15 @@ class ModernGLGraphicsContext(GraphicsContext):
         return uv_map
 
     def _get_or_create_render_target(
-        self, width: int, height: int
+        self, width: int, height: int, cache_key_suffix: str = ""
     ) -> tuple[moderngl.Framebuffer, moderngl.Texture]:
         """
         Get or create a cached FBO and texture for the given dimensions.
         This prevents per-frame GPU resource creation/destruction.
         """
-        return self.resource_manager.get_or_create_simple_fbo(width, height)
+        return self.resource_manager.get_or_create_simple_fbo(
+            width, height, cache_key_suffix
+        )
 
     def _create_radial_gradient_texture(self, resolution: int) -> moderngl.Texture:
         """
@@ -328,6 +330,8 @@ class ModernGLGraphicsContext(GraphicsContext):
         # NEW: Optional overrides from the canvas
         vbo_override: moderngl.Buffer | None = None,
         vao_override: moderngl.VertexArray | None = None,
+        # Cache key suffix for unique caching per overlay
+        cache_key_suffix: str = "",
     ) -> Any:
         """Renders a GlyphBuffer to a cached, correctly oriented texture."""
         # Calculate the pixel dimensions of the output texture
@@ -341,7 +345,7 @@ class ModernGLGraphicsContext(GraphicsContext):
 
         # Get or create cached render target
         target_fbo, target_texture = self._get_or_create_render_target(
-            width_px, height_px
+            width_px, height_px, cache_key_suffix
         )
 
         # Render into the cached FBO
