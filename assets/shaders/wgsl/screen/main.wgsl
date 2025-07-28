@@ -24,28 +24,28 @@ struct Uniforms {
 @group(0) @binding(1) var u_texture: texture_2d<f32>;
 @group(0) @binding(2) var u_sampler: sampler;
 
-// Vertex shader stage  
+// Vertex shader stage
 @vertex
 fn vs_main(input: VertexInput) -> VertexOutput {
     var output: VertexOutput;
-    
+
     let letterbox_x = uniforms.u_letterbox.x;
     let letterbox_y = uniforms.u_letterbox.y;
     let letterbox_w = uniforms.u_letterbox.z;
     let letterbox_h = uniforms.u_letterbox.w;
-    
+
     // Normalize to letterbox coordinates (0.0 to 1.0)
     let norm_x = (input.in_vert.x - letterbox_x) / letterbox_w;
     let norm_y = 1.0 - ((input.in_vert.y - letterbox_y) / letterbox_h);
-    
+
     // Convert to clip space (-1.0 to 1.0)
     let x = norm_x * 2.0 - 1.0;
     let y = norm_y * 2.0 - 1.0;
-    
+
     output.position = vec4<f32>(x, y, 0.0, 1.0);
     output.v_uv = input.in_uv;
     output.v_color = input.in_color;
-    
+
     return output;
 }
 
@@ -54,9 +54,9 @@ fn warm_color_correction(color: vec3<f32>) -> vec3<f32> {
     // Subtle warm adjustment: slightly boost red/orange, reduce blue
     // These values are tuned to match ModernGL's implicit gamma warmth
     return vec3<f32>(
-        color.r * 1.05,  // Slightly boost red
-        color.g * 1.02,  // Slightly boost green
-        color.b * 0.98   // Slightly reduce blue
+        color.r * 1.15,  // Slightly boost red
+        color.g * 1.05,  // Slightly boost green
+        color.b * 0.95   // Slightly reduce blue
     );
 }
 

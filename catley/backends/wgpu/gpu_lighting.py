@@ -91,6 +91,9 @@ class GPULightingSystem(LightingSystem):
         self._cached_light_data: list[float] | None = None
         self._cached_light_revision: int = -1
 
+        # Track first frame to force uniform update
+        self._first_frame = True
+
         # Cache for shadow casters
         self._cached_shadow_casters: list[float] | None = None
         self._cached_shadow_revision: int = -1
@@ -527,9 +530,7 @@ class GPULightingSystem(LightingSystem):
         shadow_caster_count: int,
         viewport_bounds: Rect,
     ) -> bytes:
-        """Pack uniform data into simplified struct with vec4f alignment."""
-        import struct
-
+        """Pack uniform data into a byte buffer matching the WGSL struct layout."""
         from catley.config import (
             SHADOW_FALLOFF,
             SHADOW_INTENSITY,
@@ -538,144 +539,128 @@ class GPULightingSystem(LightingSystem):
         )
         from catley.game.lights import DirectionalLight
 
-        # Find active directional light
-        directional_light = None
-        for light in self.game_world.lights:
-            if isinstance(light, DirectionalLight):
-                directional_light = light
-                break
+        buffer = bytearray()
 
-        struct_data = []
-
-        # viewport_data: vec4i (16 bytes)
-        struct_data.extend(
-            [
-                viewport_bounds.x1,
-                viewport_bounds.y1,
-                viewport_bounds.width,
-                viewport_bounds.height,
-            ]
+        # viewport_data: vec4f
+        buffer.extend(
+            struct.pack(
+                "4f",
+                float(viewport_bounds.x1),
+                float(viewport_bounds.y1),
+                float(viewport_bounds.width),
+                float(viewport_bounds.height),
+            )
         )
 
-        # light_count + ambient_light + time + tile_aligned (16 bytes)
-        struct_data.extend(
-            [
-                light_count,
-                AMBIENT_LIGHT_LEVEL,
-                self._time,
-                1.0,  # tile_aligned = True
-            ]
-        )
+        # light_count: i32, ambient_light: f32, time: f32, tile_aligned: u32
+        buffer.extend(
+            struct.pack("ifff", light_count, AMBIENT_LIGHT_LEVEL, self._time, 1.0)
+        )  # tile_aligned = true
 
-        # light_positions: array<vec4f, 32> (32 * 16 = 512 bytes)
-        for i in range(self.MAX_LIGHTS):
-            if i < light_count:
-                base_idx = i * 12
-                x = light_data[base_idx]
-                y = light_data[base_idx + 1]
-                struct_data.extend([x, y, 0.0, 0.0])  # vec4f: xy used, zw padding
-            else:
-                struct_data.extend([0.0, 0.0, 0.0, 0.0])  # empty light
-
-        # light_radii: array<vec4f, 32> (32 * 16 = 512 bytes)
-        for i in range(self.MAX_LIGHTS):
-            if i < light_count:
-                base_idx = i * 12
-                radius = light_data[base_idx + 2]
-                struct_data.extend(
-                    [radius, 0.0, 0.0, 0.0]
-                )  # vec4f: x used, yzw padding
-            else:
-                struct_data.extend([0.0, 0.0, 0.0, 0.0])
-
-        # light_intensities: array<vec4f, 32> (32 * 16 = 512 bytes)
-        for i in range(self.MAX_LIGHTS):
-            if i < light_count:
-                base_idx = i * 12
-                intensity = light_data[base_idx + 3]
-                struct_data.extend(
-                    [intensity, 0.0, 0.0, 0.0]
-                )  # vec4f: x used, yzw padding
-            else:
-                struct_data.extend([0.0, 0.0, 0.0, 0.0])
-
-        # light_colors: array<vec4f, 32> (32 * 16 = 512 bytes)
-        for i in range(self.MAX_LIGHTS):
-            if i < light_count:
-                base_idx = i * 12
-                r = light_data[base_idx + 4]
-                g = light_data[base_idx + 5]
-                b = light_data[base_idx + 6]
-                struct_data.extend([r, g, b, 0.0])  # vec4f: rgb used, w padding
-            else:
-                struct_data.extend([0.0, 0.0, 0.0, 0.0])
-
-        # Flicker arrays: each array<vec4f, 32> (32 * 16 = 512 bytes each)
-        flicker_arrays = [7, 8, 9, 10]  # indices in light_data
-        for array_idx in flicker_arrays:
+        # --- Light Arrays ---
+        def pack_light_array(base_idx, data_idx, components):
+            arr_buffer = bytearray()
             for i in range(self.MAX_LIGHTS):
                 if i < light_count:
-                    base_idx = i * 12
-                    value = light_data[base_idx + array_idx]
-                    struct_data.extend(
-                        [value, 0.0, 0.0, 0.0]
-                    )  # vec4f: x used, yzw padding
+                    val = light_data[i * 12 + data_idx]
+                    if components == 1:
+                        arr_buffer.extend(struct.pack("f", val))
+                    elif components == 2:
+                        arr_buffer.extend(
+                            struct.pack(
+                                "2f",
+                                light_data[i * 12 + data_idx],
+                                light_data[i * 12 + data_idx + 1],
+                            )
+                        )
+                    elif components == 3:
+                        arr_buffer.extend(
+                            struct.pack(
+                                "3f",
+                                light_data[i * 12 + data_idx],
+                                light_data[i * 12 + data_idx + 1],
+                                light_data[i * 12 + data_idx + 2],
+                            )
+                        )
+                    arr_buffer.extend(
+                        b"\x00" * (16 - components * 4)
+                    )  # Padding to vec4f
                 else:
-                    struct_data.extend([0.0, 0.0, 0.0, 0.0])
+                    arr_buffer.extend(struct.pack("4f", 0.0, 0.0, 0.0, 0.0))
+            return arr_buffer
 
-        # Shadow uniforms (16 bytes)
-        struct_data.extend(
-            [
+        buffer.extend(pack_light_array(0, 0, 2))  # light_positions
+        buffer.extend(pack_light_array(0, 2, 1))  # light_radii
+        buffer.extend(pack_light_array(0, 3, 1))  # light_intensities
+        buffer.extend(pack_light_array(0, 4, 3))  # light_colors
+        buffer.extend(pack_light_array(0, 7, 1))  # light_flicker_enabled
+        buffer.extend(pack_light_array(0, 8, 1))  # light_flicker_speed
+        buffer.extend(pack_light_array(0, 9, 1))  # light_min_brightness
+        buffer.extend(pack_light_array(0, 10, 1))  # light_max_brightness
+
+        # --- Shadow Uniforms ---
+        buffer.extend(
+            struct.pack(
+                "ifif",
                 shadow_caster_count,
                 SHADOW_INTENSITY,
                 SHADOW_MAX_LENGTH,
                 1.0 if SHADOW_FALLOFF else 0.0,
-            ]
+            )
         )
 
-        # shadow_caster_positions: array<vec4f, 64> (64 * 16 = 1024 bytes)
         MAX_SHADOW_CASTERS = 64
-        actual_count = min(shadow_caster_count, MAX_SHADOW_CASTERS)
         for i in range(MAX_SHADOW_CASTERS):
-            if i < actual_count:
-                x = shadow_casters[i * 2]
-                y = shadow_casters[i * 2 + 1]
-                struct_data.extend([x, y, 0.0, 0.0])  # vec4f: xy used, zw padding
+            if i < shadow_caster_count:
+                buffer.extend(
+                    struct.pack(
+                        "2f2f",
+                        shadow_casters[i * 2],
+                        shadow_casters[i * 2 + 1],
+                        0.0,
+                        0.0,
+                    )
+                )  # xy, zw padding
             else:
-                struct_data.extend([0.0, 0.0, 0.0, 0.0])
+                buffer.extend(struct.pack("4f", 0.0, 0.0, 0.0, 0.0))
 
-        # Directional light uniforms (16 bytes)
+        # --- Directional Light Uniforms ---
+        directional_light = next(
+            (
+                light
+                for light in self.game_world.lights
+                if isinstance(light, DirectionalLight)
+            ),
+            None,
+        )
         if directional_light:
-            sun_dir_x = directional_light.direction.x
-            sun_dir_y = directional_light.direction.y
-            sun_color_r = directional_light.color[0] / 255.0
-            sun_color_g = directional_light.color[1] / 255.0
-            sun_color_b = directional_light.color[2] / 255.0
+            sun_dir_x, sun_dir_y = (
+                directional_light.direction.x,
+                directional_light.direction.y,
+            )
+            sun_r, sun_g, sun_b = [c / 255.0 for c in directional_light.color]
             sun_intensity = directional_light.intensity
         else:
-            sun_dir_x = sun_dir_y = 0.0
-            sun_color_r = sun_color_g = sun_color_b = 0.0
-            sun_intensity = 0.0
+            sun_dir_x, sun_dir_y, sun_r, sun_g, sun_b, sun_intensity = (
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+            )
 
-        struct_data.extend(
-            [
-                sun_dir_x,
-                sun_dir_y,  # sun_direction: vec2f (8 bytes)
-                sun_color_r,
-                sun_color_g,  # first part of sun_color: vec3f (partial)
-            ]
-        )
-        struct_data.extend(
-            [
-                sun_color_b,
-                sun_intensity,  # rest of sun_color + sun_intensity (8 bytes)
-                SKY_EXPOSURE_POWER,
-                0.0,  # sky_exposure_power + padding (8 bytes)
-            ]
-        )
+        buffer.extend(
+            struct.pack("2f2f", sun_dir_x, sun_dir_y, 0.0, 0.0)
+        )  # sun_direction + padding
+        buffer.extend(
+            struct.pack("3ff", sun_r, sun_g, sun_b, sun_intensity)
+        )  # sun_color + sun_intensity
+        buffer.extend(
+            struct.pack("f3f", SKY_EXPOSURE_POWER, 0.0, 0.0, 0.0)
+        )  # sky_exposure_power + padding
 
-        # Pack as all floats (let WGSL handle int conversion)
-        return struct.pack(f"{len(struct_data)}f", *struct_data)
+        return bytes(buffer)
 
     def _update_uniform_buffer(
         self,
@@ -700,25 +685,6 @@ class GPULightingSystem(LightingSystem):
 
         # Write to GPU buffer
         self.queue.write_buffer(self._uniform_buffer, 0, uniform_bytes)
-
-    def _update_time_uniform(self) -> None:
-        """Update only the time uniform for better performance."""
-        if self._uniform_buffer is None or self.queue is None:
-            return
-
-        # Calculate offset to time field in uniform buffer
-        # Time is the second field in the global uniforms section
-        # This is a more robust calculation based on the exact shader structure
-        time_offset = (
-            16  # viewport_offset: vec2i + viewport_size: vec2i
-            + 16  # light_count: i32 + _padding1: vec3i
-            + (8 * 512)  # 8 light arrays: each array<vec4f, 32> = 512 bytes
-            + 4  # ambient_light: f32 (4 bytes) - time comes after this
-        )
-
-        # Write just the time value (4 bytes)
-        time_data = struct.pack("f", self._time)
-        self.queue.write_buffer(self._uniform_buffer, time_offset, time_data)
 
     def update(self, fixed_timestep: FixedTimestep) -> None:
         """Update internal time-based state for dynamic effects."""
@@ -852,11 +818,10 @@ class GPULightingSystem(LightingSystem):
                 (
                     tuple(light_data[: light_count * 12]),
                     tuple(shadow_casters),
-                    # Note: time is excluded from hash for performance -
-                    # updated separately
+                    # Note: time is excluded from hash for performance
                 )
             )
-            if self._last_light_data_hash != light_data_hash:
+            if self._last_light_data_hash != light_data_hash or self._first_frame:
                 self._update_uniform_buffer(
                     light_data,
                     light_count,
@@ -865,9 +830,17 @@ class GPULightingSystem(LightingSystem):
                     viewport_bounds,
                 )
                 self._last_light_data_hash = light_data_hash
+                if self._first_frame:
+                    self._first_frame = False  # Unset the flag after the first update
             else:
-                # Lights haven't changed, only update time for dynamic effects
-                self._update_time_uniform()
+                # Time changes every frame, so we still need to update the buffer
+                self._update_uniform_buffer(
+                    light_data,
+                    light_count,
+                    shadow_casters,
+                    shadow_caster_count,
+                    viewport_bounds,
+                )
 
             # Create bind group with current resources (only if needed)
             if self._bind_group is None:

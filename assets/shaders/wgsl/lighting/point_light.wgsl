@@ -43,10 +43,11 @@ struct LightingUniforms {
     
     // Directional light uniforms (sun/moon)
     sun_direction: vec2f,
+    _padding1: vec2f, // Padding for alignment
     sun_color: vec3f,
     sun_intensity: f32,
     sky_exposure_power: f32,
-    _padding: vec3f,  // Ensure 16-byte alignment
+    _padding2: vec3f,  // Ensure 16-byte alignment
 }
 
 @group(0) @binding(0) var<uniform> uniforms: LightingUniforms;
@@ -268,35 +269,67 @@ fn calculateDirectionalShadowAttenuation(world_pos: vec2f, sky_exposure: f32) ->
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4f {
     var world_pos = input.world_pos;
-    
-    // For lighting calculations, use integer tile coordinates to match CPU
-    // The CPU calculates distance from light to integer tile positions
     let tile_pos = floor(world_pos);
     
-    // For tile-aligned mode, we still need to determine which tile we're in
-    if (uniforms.tile_aligned != 0) {
-        // Use the tile position for distance calculations (matching CPU)
+    if (uniforms.tile_aligned != 0u) {
         world_pos = tile_pos;
     }
     
-    // Start with ambient lighting
     var final_color = vec3f(uniforms.ambient_light);
     
-    // Basic additive lighting - no shadows, no complex blending
-    if (uniforms.light_count > 0) {
-        let light_pos = uniforms.light_positions[0].xy;
-        let light_radius = uniforms.light_radii[0].x;
+    // Point Lights
+    for (var i = 0; i < uniforms.light_count && i < 32; i++) {
+        let light_pos = uniforms.light_positions[i].xy;
+        let light_radius = uniforms.light_radii[i].x;
+        let base_intensity = uniforms.light_intensities[i].x;
+        let light_color = uniforms.light_colors[i].xyz;
         
         let distance = length(world_pos - light_pos);
+        if (distance > light_radius) {
+            continue;
+        }
         
-        if (distance <= light_radius) {
-            let brightness = 1.0 - (distance / light_radius);
-            final_color += vec3f(brightness * 0.5);  // Add light, don't replace
+        var attenuation = max(0.0, 1.0 - (distance / light_radius));
+        var intensity = base_intensity;
+        
+        if (uniforms.light_flicker_enabled[i].x > 0.5) {
+            let flicker_noise = noise2d(vec2f(uniforms.time * uniforms.light_flicker_speed[i].x, 0.0));
+            let min_brightness = uniforms.light_min_brightness[i].x;
+            let max_brightness = uniforms.light_max_brightness[i].x;
+            let flicker_multiplier = min_brightness + ((flicker_noise + 1.0) * 0.5 * (max_brightness - min_brightness));
+            intensity *= flicker_multiplier;
+        }
+        
+        attenuation *= intensity;
+        
+        var light_contribution = light_color * attenuation;
+        
+        let shadow_attenuation = calculateShadowAttenuation(tile_pos, light_pos, light_radius);
+        light_contribution *= shadow_attenuation;
+        
+        final_color = max(final_color, light_contribution);
+    }
+    
+    // Directional Light (Sun/Moon)
+    if (uniforms.sun_intensity > 0.0) {
+        let sky_exposure = textureSample(sky_exposure_map, texture_sampler, input.uv).r;
+        
+        if (sky_exposure > 0.1) {
+            let effective_exposure = pow(sky_exposure, uniforms.sky_exposure_power);
+            var sun_contribution = uniforms.sun_color * uniforms.sun_intensity * effective_exposure;
+            
+            let directional_shadow_attenuation = calculateDirectionalShadowAttenuation(tile_pos, sky_exposure);
+            sun_contribution *= directional_shadow_attenuation;
+            
+            final_color = max(final_color, sun_contribution);
+        } else if (sky_exposure > 0.0) {
+            let spillover_multiplier = 3.0;
+            let spillover_exposure = sky_exposure * spillover_multiplier;
+            let spillover_contribution = uniforms.sun_color * uniforms.sun_intensity * spillover_exposure;
+            final_color = max(final_color, spillover_contribution);
         }
     }
     
-    // Clamp final color to valid range
     final_color = clamp(final_color, vec3f(0.0), vec3f(1.0));
-    
     return vec4f(final_color, 1.0);
 }
