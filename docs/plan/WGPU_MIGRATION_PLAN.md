@@ -10,21 +10,6 @@ This document outlines the specific technical steps for migrating Catley from Mo
 
 This is still in progress and exhibiting a slight performance regression compared to the ModernGL lighting backend.
 
-### Step 4.3: Uniform Buffer Management
-
-**WGPU uses explicit uniform buffers** instead of individual uniform setters:
-
-```python
-# Create uniform buffer for light data
-light_buffer = self.device.create_buffer(
-    size=light_data_size,
-    usage=wgpu.BufferUsage.UNIFORM | wgpu.BufferUsage.COPY_DST
-)
-
-# Update uniform buffer
-self.queue.write_buffer(light_buffer, 0, light_data_bytes)
-```
-
 ## Phase 5: Integration and Validation
 
 ### Step 5.1: Visual Parity Testing
