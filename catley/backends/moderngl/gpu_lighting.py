@@ -63,8 +63,10 @@ class GPULightingSystem(LightingSystem):
         if hasattr(graphics_context, "mgl_context"):
             self.mgl_context = graphics_context.mgl_context
         else:
-            # Test/dummy graphics context, will fail initialization and use fallback
-            self.mgl_context = None
+            # Create a standalone context for lighting calculations
+            import moderngl
+
+            self.mgl_context = moderngl.create_context(standalone=True)
 
         # GPU resources
         self._fragment_program: moderngl.Program | None = None
@@ -114,7 +116,11 @@ class GPULightingSystem(LightingSystem):
             # Initialize fragment-based lighting
             return self._initialize_fragment_lighting()
 
-        except Exception:
+        except Exception as e:
+            print(f"Failed to initialize GPU resources: {e}")
+            import traceback
+
+            traceback.print_exc()
             return False
 
     def _log_opengl_capabilities(self) -> None:
@@ -158,10 +164,13 @@ class GPULightingSystem(LightingSystem):
             assert self.mgl_context is not None
             self._shader_manager = ShaderManager(self.mgl_context)
 
-            # Initialize resource manager - use shared one if available
-            if hasattr(self.graphics_context, "resource_manager"):
+            # Initialize resource manager - use shared one if available AND ModernGL
+            if hasattr(self.graphics_context, "resource_manager") and hasattr(
+                self.graphics_context, "mgl_context"
+            ):
                 self._resource_manager = self.graphics_context.resource_manager
             else:
+                # Create our own ModernGL resource manager for standalone context
                 self._resource_manager = ModernGLResourceManager(self.mgl_context)
 
             # Create fragment shader program
@@ -178,6 +187,9 @@ class GPULightingSystem(LightingSystem):
 
         except Exception as e:
             print(f"Failed to initialize fragment-based lighting: {e}")
+            import traceback
+
+            traceback.print_exc()
             return False
 
     def _create_fullscreen_quad(self) -> None:
@@ -390,7 +402,11 @@ class GPULightingSystem(LightingSystem):
             # Transpose to match expected (width, height, 3) format
             return np.transpose(rgb_result, (1, 0, 2))
 
-        except Exception:
+        except Exception as e:
+            print(f"Error in GPU lightmap computation: {e}")
+            import traceback
+
+            traceback.print_exc()
             return None
 
     def _set_lighting_uniforms(

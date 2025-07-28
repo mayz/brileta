@@ -117,7 +117,11 @@ class GPULightingSystem(LightingSystem):
             # Initialize fragment-based lighting
             return self._initialize_fragment_lighting()
 
-        except Exception:
+        except Exception as e:
+            print(f"Failed to initialize WGPU GPU resources: {e}")
+            import traceback
+
+            traceback.print_exc()
             return False
 
     def _initialize_fragment_lighting(self) -> bool:
@@ -247,58 +251,15 @@ class GPULightingSystem(LightingSystem):
         """Create the uniform buffer for lighting data."""
         assert self.device is not None
 
-        # Calculate uniform buffer size based on WGSL LightingUniforms struct
-        # Must match the struct layout exactly with proper alignment
-        uniform_size = (
-            # viewport_offset: vec2i + viewport_size: vec2i = 16 bytes
-            16
-            +
-            # light_count: i32 + _padding1: vec3i = 16 bytes
-            16
-            +
-            # light_positions: array<vec4f, 32> = 32 * 16 = 512 bytes
-            512
-            +
-            # light_radii: array<vec4f, 32> = 32 * 16 = 512 bytes
-            512
-            +
-            # light_intensities: array<vec4f, 32> = 32 * 16 = 512 bytes
-            512
-            +
-            # light_colors: array<vec4f, 32> = 32 * 16 = 512 bytes
-            512
-            +
-            # light_flicker_enabled: array<vec4f, 32> = 32 * 16 = 512 bytes
-            512
-            +
-            # light_flicker_speed: array<vec4f, 32> = 32 * 16 = 512 bytes
-            512
-            +
-            # light_min_brightness: array<vec4f, 32> = 32 * 16 = 512 bytes
-            512
-            +
-            # light_max_brightness: array<vec4f, 32> = 32 * 16 = 512 bytes
-            512
-            +
-            # ambient_light + time + tile_aligned + _padding2 = 16 bytes
-            16
-            +
-            # shadow uniforms: count + intensity + max_length + falloff = 16 bytes
-            16
-            +
-            # shadow_caster_positions: array<vec4f, 64> = 64 * 16 = 1024 bytes
-            1024
-            +
-            # sun_direction: vec2f + sun_color: vec3f + sun_intensity: f32 = 24 bytes,
-            # rounded to 32
-            32
-            +
-            # sky_exposure_power: f32 + _padding3: vec3f = 16 bytes
-            16
+        # Use a more robust approach: create an oversized buffer and let WGPU validate
+        # This avoids the brittle manual size calculation
+        # The actual size will be validated by the bind group layout
+        estimated_size = (
+            6000  # Conservative estimate, let WGPU validate the actual requirements
         )
 
         self._uniform_buffer = self.device.create_buffer(
-            size=uniform_size,
+            size=estimated_size,
             usage=wgpu.BufferUsage.UNIFORM | wgpu.BufferUsage.COPY_DST,
         )
 
@@ -498,9 +459,9 @@ class GPULightingSystem(LightingSystem):
         ):
             return  # No update needed
 
-        # Create float32 array for sky exposure data
+        # Create RGBA8 array for sky exposure data (use red channel for exposure)
         sky_exposure_data = np.zeros(
-            (game_map.height, game_map.width), dtype=np.float32
+            (game_map.height, game_map.width, 4), dtype=np.uint8
         )
 
         # Populate sky exposure data from regions, respecting tile transparency
@@ -510,9 +471,12 @@ class GPULightingSystem(LightingSystem):
                 if region:
                     # Non-transparent tiles block all sunlight
                     if game_map.transparent[x, y]:
-                        sky_exposure_data[y, x] = region.sky_exposure
+                        # Convert float [0,1] to uint8 [0,255] and store in red channel
+                        sky_exposure_data[y, x, 0] = int(region.sky_exposure * 255)
                     else:
-                        sky_exposure_data[y, x] = 0.0  # Block all sunlight
+                        sky_exposure_data[y, x, 0] = 0  # Block all sunlight
+                # Set alpha to 255 for valid pixels
+                sky_exposure_data[y, x, 3] = 255
 
         # Release old texture if it exists
         if self._sky_exposure_texture is not None:
@@ -526,7 +490,7 @@ class GPULightingSystem(LightingSystem):
 
         self._sky_exposure_texture = self.device.create_texture(
             size=(game_map.width, game_map.height, 1),
-            format=wgpu.TextureFormat.r32float,  # Single channel 32-bit float
+            format=wgpu.TextureFormat.rgba8unorm,  # RGBA 8-bit normalized (filterable)
             usage=wgpu.TextureUsage.TEXTURE_BINDING | wgpu.TextureUsage.COPY_DST,
         )
 
@@ -700,28 +664,32 @@ class GPULightingSystem(LightingSystem):
             sun_color_r = sun_color_g = sun_color_b = 0.0
             sun_intensity = 0.0
 
-        # sun_direction: vec2f + sun_color: vec3f + sun_intensity: f32 = 24 bytes,
-        # pad to 32
+        # sun_direction: vec2f + sun_color: vec3f + sun_intensity: f32
+        # + sky_exposure_power: f32 + _padding3: vec3f = 40 bytes
+        # Add extra padding to account for WGPU alignment requirements
         struct_data.extend(
             [
                 sun_dir_x,
-                sun_dir_y,  # sun_direction
+                sun_dir_y,  # sun_direction: vec2f (8 bytes)
                 sun_color_r,
                 sun_color_g,
-                sun_color_b,  # sun_color
-                sun_intensity,  # sun_intensity
-                0.0,
-                0.0,  # padding to 32 bytes
-            ]
-        )
-
-        # sky_exposure_power: f32 + _padding3: vec3f = 16 bytes
-        struct_data.extend(
-            [
-                SKY_EXPOSURE_POWER,
+                sun_color_b,  # sun_color: vec3f (12 bytes)
+                sun_intensity,  # sun_intensity: f32 (4 bytes)
+                SKY_EXPOSURE_POWER,  # sky_exposure_power: f32 (4 bytes)
                 0.0,
                 0.0,
-                0.0,  # padding
+                0.0,  # _padding3: vec3f (12 bytes)
+                # Extra padding to account for WGPU alignment
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
             ]
         )
 
@@ -768,23 +736,13 @@ class GPULightingSystem(LightingSystem):
             return
 
         # Calculate offset to time field in uniform buffer
-        # Time is at: all previous fields + ambient_light (4 bytes)
+        # Time is the second field in the global uniforms section
+        # This is a more robust calculation based on the exact shader structure
         time_offset = (
-            16  # viewport_offset + viewport_size
-            + 16  # light_count + padding
-            + 512  # light_positions
-            + 512  # light_radii
-            + 512  # light_intensities
-            + 512  # light_colors
-            + 512  # light_flicker_enabled
-            + 512  # light_flicker_speed
-            + 512  # light_min_brightness
-            + 512  # light_max_brightness
-            + 16  # shadow uniforms
-            + 1024  # shadow_caster_positions
-            + 32  # sun data
-            + 16  # sky_exposure_power + padding
-            + 4  # ambient_light (f32, 4 bytes) - time comes after this
+            16  # viewport_offset: vec2i + viewport_size: vec2i
+            + 16  # light_count: i32 + _padding1: vec3i
+            + (8 * 512)  # 8 light arrays: each array<vec4f, 32> = 512 bytes
+            + 4  # ambient_light: f32 (4 bytes) - time comes after this
         )
 
         # Write just the time value (4 bytes)
@@ -862,7 +820,11 @@ class GPULightingSystem(LightingSystem):
 
                 self._current_viewport = viewport_bounds
 
-            except Exception:
+            except Exception as e:
+                print(f"Failed to ensure WGPU resources for viewport: {e}")
+                import traceback
+
+                traceback.print_exc()
                 return False
 
         return True
@@ -989,12 +951,23 @@ class GPULightingSystem(LightingSystem):
             assert self.queue is not None
             self.queue.submit([command_encoder.finish()])
 
-            # Map buffer for reading (without explicit sync)
+            # Map buffer for reading with proper error handling
             assert self._output_buffer is not None
-            mapped_data = self._output_buffer.map_sync(wgpu.MapMode.READ)  # type: ignore
-            assert mapped_data is not None
-            result_data = np.frombuffer(mapped_data, dtype=np.float32)
-            self._output_buffer.unmap()
+            try:
+                # Map the buffer (this waits for GPU operations to complete)
+                self._output_buffer.map_sync(wgpu.MapMode.READ)  # type: ignore
+                # Read the mapped data
+                mapped_data = self._output_buffer.read_mapped()
+                if mapped_data is None:
+                    print("Failed to read mapped buffer data")
+                    return None
+                result_data = np.frombuffer(mapped_data, dtype=np.float32)
+            finally:
+                # Always unmap the buffer, even if mapping failed
+                try:
+                    self._output_buffer.unmap()
+                except Exception as e:
+                    print(f"Error unmapping buffer: {e}")
 
             # Reshape to (width, height, 4) and extract RGB
             result_image = result_data.reshape(
@@ -1013,7 +986,11 @@ class GPULightingSystem(LightingSystem):
             # Transpose to match expected (width, height, 3) format
             return np.transpose(rgb_result, (1, 0, 2))
 
-        except Exception:
+        except Exception as e:
+            print(f"Error in WGPU lightmap computation: {e}")
+            import traceback
+
+            traceback.print_exc()
             return None
 
     def _create_bind_group(self) -> None:
@@ -1055,13 +1032,13 @@ class GPULightingSystem(LightingSystem):
         # Create 1x1 texture with 0.0 sky exposure
         self._sky_exposure_texture = self.device.create_texture(
             size=(1, 1, 1),
-            format=wgpu.TextureFormat.r32float,
+            format=wgpu.TextureFormat.rgba8unorm,
             usage=wgpu.TextureUsage.TEXTURE_BINDING | wgpu.TextureUsage.COPY_DST,
         )
         self._bind_group = None  # Invalidate bind group when texture is created
 
-        # Write zero sky exposure
-        sky_data = np.array([0.0], dtype=np.float32)
+        # Write zero sky exposure (RGBA8 format)
+        sky_data = np.array([0, 0, 0, 255], dtype=np.uint8)  # [R, G, B, A]
         self.queue.write_texture(
             {
                 "texture": self._sky_exposure_texture,
@@ -1071,7 +1048,7 @@ class GPULightingSystem(LightingSystem):
             sky_data.tobytes(),
             {
                 "offset": 0,
-                "bytes_per_row": 4,  # 1 pixel * 4 bytes
+                "bytes_per_row": 4,  # 1 pixel * 4 bytes (RGBA8)
                 "rows_per_image": 1,
             },
             (1, 1, 1),
