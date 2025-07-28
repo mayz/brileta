@@ -11,49 +11,47 @@ struct VertexOutput {
     @location(1) world_pos: vec2f,
 }
 
+// Simplified struct approach - use vec4f arrays for proper alignment
 struct LightingUniforms {
-    // Viewport uniforms for coordinate calculation
-    viewport_offset: vec2i,
-    viewport_size: vec2i,
+    // Viewport uniforms
+    viewport_data: vec4f,              // offset_x, offset_y, size_x, size_y
     
-    // Light data
+    // Light metadata  
     light_count: i32,
-    _padding1: vec3i,               // Pad to 16-byte alignment
-    light_positions: array<vec4f, 32>,       // Light positions in world space (xy used, zw padding)
-    light_radii: array<vec4f, 32>,          // x used, yzw padding
-    light_intensities: array<vec4f, 32>,    // x used, yzw padding
-    light_colors: array<vec4f, 32>, // Changed from vec3f to vec4f for alignment
-    
-    // Flicker data
-    light_flicker_enabled: array<vec4f, 32>,   // x used, yzw padding
-    light_flicker_speed: array<vec4f, 32>,     // x used, yzw padding
-    light_min_brightness: array<vec4f, 32>,    // x used, yzw padding
-    light_max_brightness: array<vec4f, 32>,    // x used, yzw padding
-    
-    // Global uniforms
     ambient_light: f32,
     time: f32,
     tile_aligned: u32,
-    _padding2: u32,
+    
+    // Light data arrays (all vec4f for 16-byte alignment)
+    light_positions: array<vec4f, 32>,     // xy in .xy, zw unused
+    light_radii: array<vec4f, 32>,         // radius in .x, yzw unused  
+    light_intensities: array<vec4f, 32>,   // intensity in .x, yzw unused
+    light_colors: array<vec4f, 32>,        // rgb in .xyz, w unused
+    
+    // Flicker data
+    light_flicker_enabled: array<vec4f, 32>,   // enabled in .x, yzw unused
+    light_flicker_speed: array<vec4f, 32>,     // speed in .x, yzw unused
+    light_min_brightness: array<vec4f, 32>,    // brightness in .x, yzw unused
+    light_max_brightness: array<vec4f, 32>,    // brightness in .x, yzw unused
     
     // Shadow casting uniforms
     shadow_caster_count: i32,
     shadow_intensity: f32,
     shadow_max_length: i32,
     shadow_falloff_enabled: u32,
-    shadow_caster_positions: array<vec4f, 64>, // Shadow caster positions (xy used, zw padding)
+    shadow_caster_positions: array<vec4f, 64>, // xy in .xy, zw unused
     
     // Directional light uniforms (sun/moon)
     sun_direction: vec2f,
     sun_color: vec3f,
     sun_intensity: f32,
     sky_exposure_power: f32,
-    _padding3: vec3f,               // Pad to 16-byte alignment
+    _padding: vec3f,  // Ensure 16-byte alignment
 }
 
 @group(0) @binding(0) var<uniform> uniforms: LightingUniforms;
-@group(0) @binding(1) var sky_exposure_map: texture_2d<f32>;
-@group(0) @binding(2) var texture_sampler: sampler;
+@group(0) @binding(22) var sky_exposure_map: texture_2d<f32>;
+@group(0) @binding(23) var texture_sampler: sampler;
 
 @vertex
 fn vs_main(input: VertexInput) -> VertexOutput {
@@ -67,8 +65,12 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     
     // Calculate world position for this fragment
     // UV (0,0) = top-left, UV (1,1) = bottom-right
-    let pixel_in_viewport = output.uv * vec2f(uniforms.viewport_size);
-    output.world_pos = vec2f(uniforms.viewport_offset) + pixel_in_viewport;
+    // But game world has (0,0) at bottom-left, so we need to flip Y
+    let pixel_in_viewport = vec2f(
+        output.uv.x * uniforms.viewport_data.z,
+        (1.0 - output.uv.y) * uniforms.viewport_data.w  // Flip Y coordinate
+    );
+    output.world_pos = vec2f(uniforms.viewport_data.x, uniforms.viewport_data.y) + pixel_in_viewport;
     
     return output;
 }
@@ -280,84 +282,21 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4f {
     // Start with ambient lighting
     var final_color = vec3f(uniforms.ambient_light);
     
-    // Add contribution from each point light
-    for (var i = 0; i < uniforms.light_count && i < 32; i++) {
-        let light_pos = uniforms.light_positions[i].xy;
-        let light_radius = uniforms.light_radii[i].x;
-        let base_intensity = uniforms.light_intensities[i].x;
-        let light_color = uniforms.light_colors[i].xyz;
+    // Basic additive lighting - no shadows, no complex blending
+    if (uniforms.light_count > 0) {
+        let light_pos = uniforms.light_positions[0].xy;
+        let light_radius = uniforms.light_radii[0].x;
         
-        // Calculate distance from light
-        let light_vec = world_pos - light_pos;
-        let distance = length(light_vec);
+        let distance = length(world_pos - light_pos);
         
-        // Skip if outside light radius
-        if (distance > light_radius) {
-            continue;
-        }
-        
-        // Calculate base attenuation (linear falloff to match CPU)
-        var attenuation = max(0.0, 1.0 - (distance / light_radius));
-        
-        // Apply flicker if enabled
-        var intensity = base_intensity;
-        if (uniforms.light_flicker_enabled[i].x > 0.5) {
-            // Create flicker using noise - similar to CPU implementation
-            let flicker_noise = noise2d(vec2f(uniforms.time * uniforms.light_flicker_speed[i].x, 0.0));
-            // Convert from [-1, 1] to [min_brightness, max_brightness]
-            let flicker_multiplier = uniforms.light_min_brightness[i].x +
-                ((flicker_noise + 1.0) * 0.5 * (uniforms.light_max_brightness[i].x - uniforms.light_min_brightness[i].x));
-            intensity *= flicker_multiplier;
-        }
-        
-        attenuation *= intensity;
-        
-        // Calculate light contribution
-        var light_contribution = light_color * attenuation;
-        
-        // Apply shadow attenuation using tile position for consistency
-        let shadow_attenuation = calculateShadowAttenuation(tile_pos, light_pos, light_radius);
-        light_contribution *= shadow_attenuation;
-        
-        // Use brightest-wins blending to match CPU np.maximum behavior
-        final_color = max(final_color, light_contribution);
-    }
-    
-    // Apply directional lighting (sun/moon) if sky exposure is present
-    if (uniforms.sun_intensity > 0.0) {
-        // Sample sky exposure for this tile - CRITICAL: Sky exposure sampling preserved exactly
-        // v_uv is already normalized to [0,1] for the viewport, we need to map to full map
-        let map_uv = input.uv;  // The texture coordinates should already be correct
-        let sky_exposure = textureSample(sky_exposure_map, texture_sampler, map_uv).r;
-        
-        if (sky_exposure > 0.1) {
-            // Full outdoor sunlight for high sky exposure
-            let effective_exposure = pow(sky_exposure, uniforms.sky_exposure_power);
-            
-            // Calculate sun contribution
-            var sun_contribution = uniforms.sun_color * uniforms.sun_intensity * effective_exposure;
-            
-            // Apply directional shadows in outdoor areas
-            let directional_shadow_attenuation = calculateDirectionalShadowAttenuation(tile_pos, sky_exposure);
-            sun_contribution *= directional_shadow_attenuation;
-            
-            // Use brightest-wins blending with point lights
-            final_color = max(final_color, sun_contribution);
-        } else if (sky_exposure > 0.0) {
-            // Light spillover for areas with minimal sky exposure (open doors, etc.)
-            // Increase spillover intensity to make it more visible
-            let spillover_multiplier = 3.0; // Make spillover 3x more intense
-            let spillover_exposure = sky_exposure * spillover_multiplier;
-            
-            // Calculate spillover sun contribution
-            let spillover_contribution = uniforms.sun_color * uniforms.sun_intensity * spillover_exposure;
-            
-            // Use brightest-wins blending with point lights
-            final_color = max(final_color, spillover_contribution);
+        if (distance <= light_radius) {
+            let brightness = 1.0 - (distance / light_radius);
+            final_color += vec3f(brightness * 0.5);  // Add light, don't replace
         }
     }
     
-    // Clamp to valid range and write output
+    // Clamp final color to valid range
     final_color = clamp(final_color, vec3f(0.0), vec3f(1.0));
+    
     return vec4f(final_color, 1.0);
 }

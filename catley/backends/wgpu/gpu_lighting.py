@@ -73,6 +73,7 @@ class GPULightingSystem(LightingSystem):
         self._render_pipeline: wgpu.GPURenderPipeline | None = None
         self._shader_manager: WGPUShaderManager | None = None
         self._resource_manager: WGPUResourceManager | None = None
+        # Single uniform buffer for simplified struct (with proper vec4f alignment)
         self._uniform_buffer: wgpu.GPUBuffer | None = None
         self._bind_group: wgpu.GPUBindGroup | None = None
         self._output_texture: wgpu.GPUTexture | None = None
@@ -183,15 +184,15 @@ class GPULightingSystem(LightingSystem):
                     "visibility": wgpu.ShaderStage.VERTEX | wgpu.ShaderStage.FRAGMENT,
                     "buffer": {"type": wgpu.BufferBindingType.uniform},
                 },
-                # Sky exposure texture (binding 1)
+                # Sky exposure texture (binding 22)
                 {
-                    "binding": 1,
+                    "binding": 22,
                     "visibility": wgpu.ShaderStage.FRAGMENT,
                     "texture": {"sample_type": wgpu.TextureSampleType.float},
                 },
-                # Texture sampler (binding 2)
+                # Texture sampler (binding 23)
                 {
-                    "binding": 2,
+                    "binding": 23,
                     "visibility": wgpu.ShaderStage.FRAGMENT,
                     "sampler": {},
                 },
@@ -248,14 +249,19 @@ class GPULightingSystem(LightingSystem):
         )
 
     def _create_uniform_buffer(self) -> None:
-        """Create the uniform buffer for lighting data."""
+        """Create uniform buffer for simplified struct."""
         assert self.device is not None
 
-        # Use a more robust approach: create an oversized buffer and let WGPU validate
-        # This avoids the brittle manual size calculation
-        # The actual size will be validated by the bind group layout
+        # Estimate size for simplified struct with vec4f alignment
+        # Each vec4f array element takes 16 bytes regardless of actual usage
         estimated_size = (
-            6000  # Conservative estimate, let WGPU validate the actual requirements
+            16  # viewport_data: vec4i (16 bytes)
+            + 16  # light_count + ambient_light + time + tile_aligned (16 bytes)
+            + 32 * 16 * 8  # 8 light arrays * 32 lights * 16 bytes each
+            + 16  # shadow uniforms (16 bytes)
+            + 64 * 16  # shadow positions: 64 * 16 bytes
+            + 16  # sun uniforms (16 bytes)
+            + 64  # extra padding
         )
 
         self._uniform_buffer = self.device.create_buffer(
@@ -521,12 +527,9 @@ class GPULightingSystem(LightingSystem):
         shadow_caster_count: int,
         viewport_bounds: Rect,
     ) -> bytes:
-        """Pack all uniform data into a single buffer matching WGSL LightingUniforms
-        struct.
+        """Pack uniform data into simplified struct with vec4f alignment."""
+        import struct
 
-        This replaces ModernGL's individual uniform setters with WGPU's structured
-        approach.
-        """
         from catley.config import (
             SHADOW_FALLOFF,
             SHADOW_INTENSITY,
@@ -542,25 +545,29 @@ class GPULightingSystem(LightingSystem):
                 directional_light = light
                 break
 
-        # Start building the struct data using Python's struct module
-        # Must match WGSL LightingUniforms layout exactly
         struct_data = []
 
-        # viewport_offset: vec2i + viewport_size: vec2i = 16 bytes
+        # viewport_data: vec4i (16 bytes)
         struct_data.extend(
             [
                 viewport_bounds.x1,
-                viewport_bounds.y1,  # viewport_offset
+                viewport_bounds.y1,
                 viewport_bounds.width,
-                viewport_bounds.height,  # viewport_size
+                viewport_bounds.height,
             ]
         )
 
-        # light_count: i32 + _padding1: vec3i = 16 bytes (4 i32s)
-        struct_data.extend([light_count, 0, 0, 0])  # padding to 16 bytes
+        # light_count + ambient_light + time + tile_aligned (16 bytes)
+        struct_data.extend(
+            [
+                light_count,
+                AMBIENT_LIGHT_LEVEL,
+                self._time,
+                1.0,  # tile_aligned = True
+            ]
+        )
 
-        # Prepare light data arrays (pad to MAX_LIGHTS with vec4f alignment)
-        # light_positions: array<vec4f, 32> = 32 * 16 = 512 bytes
+        # light_positions: array<vec4f, 32> (32 * 16 = 512 bytes)
         for i in range(self.MAX_LIGHTS):
             if i < light_count:
                 base_idx = i * 12
@@ -568,9 +575,9 @@ class GPULightingSystem(LightingSystem):
                 y = light_data[base_idx + 1]
                 struct_data.extend([x, y, 0.0, 0.0])  # vec4f: xy used, zw padding
             else:
-                struct_data.extend([0.0, 0.0, 0.0, 0.0])  # Empty light
+                struct_data.extend([0.0, 0.0, 0.0, 0.0])  # empty light
 
-        # light_radii: array<vec4f, 32> = 32 * 16 = 512 bytes
+        # light_radii: array<vec4f, 32> (32 * 16 = 512 bytes)
         for i in range(self.MAX_LIGHTS):
             if i < light_count:
                 base_idx = i * 12
@@ -581,7 +588,7 @@ class GPULightingSystem(LightingSystem):
             else:
                 struct_data.extend([0.0, 0.0, 0.0, 0.0])
 
-        # light_intensities: array<vec4f, 32> = 32 * 16 = 512 bytes
+        # light_intensities: array<vec4f, 32> (32 * 16 = 512 bytes)
         for i in range(self.MAX_LIGHTS):
             if i < light_count:
                 base_idx = i * 12
@@ -592,7 +599,7 @@ class GPULightingSystem(LightingSystem):
             else:
                 struct_data.extend([0.0, 0.0, 0.0, 0.0])
 
-        # light_colors: array<vec4f, 32> = 32 * 16 = 512 bytes
+        # light_colors: array<vec4f, 32> (32 * 16 = 512 bytes)
         for i in range(self.MAX_LIGHTS):
             if i < light_count:
                 base_idx = i * 12
@@ -603,9 +610,7 @@ class GPULightingSystem(LightingSystem):
             else:
                 struct_data.extend([0.0, 0.0, 0.0, 0.0])
 
-        # Flicker arrays: light_flicker_enabled, light_flicker_speed,
-        # light_min_brightness, light_max_brightness
-        # Each is array<vec4f, 32> = 32 * 16 = 512 bytes
+        # Flicker arrays: each array<vec4f, 32> (32 * 16 = 512 bytes each)
         flicker_arrays = [7, 8, 9, 10]  # indices in light_data
         for array_idx in flicker_arrays:
             for i in range(self.MAX_LIGHTS):
@@ -618,18 +623,7 @@ class GPULightingSystem(LightingSystem):
                 else:
                     struct_data.extend([0.0, 0.0, 0.0, 0.0])
 
-        # Global uniforms: ambient_light + time + tile_aligned + _padding2 = 16 bytes
-        struct_data.extend(
-            [
-                AMBIENT_LIGHT_LEVEL,
-                self._time,
-                1.0,  # tile_aligned (always True)
-                0.0,  # padding
-            ]
-        )
-
-        # Shadow uniforms: shadow_caster_count + shadow_intensity +
-        # shadow_max_length + shadow_falloff_enabled = 16 bytes
+        # Shadow uniforms (16 bytes)
         struct_data.extend(
             [
                 shadow_caster_count,
@@ -639,7 +633,7 @@ class GPULightingSystem(LightingSystem):
             ]
         )
 
-        # shadow_caster_positions: array<vec4f, 64> = 64 * 16 = 1024 bytes
+        # shadow_caster_positions: array<vec4f, 64> (64 * 16 = 1024 bytes)
         MAX_SHADOW_CASTERS = 64
         actual_count = min(shadow_caster_count, MAX_SHADOW_CASTERS)
         for i in range(MAX_SHADOW_CASTERS):
@@ -650,8 +644,7 @@ class GPULightingSystem(LightingSystem):
             else:
                 struct_data.extend([0.0, 0.0, 0.0, 0.0])
 
-        # Directional light uniforms: sun_direction + sun_color +
-        # sun_intensity + sky_exposure_power + padding
+        # Directional light uniforms (16 bytes)
         if directional_light:
             sun_dir_x = directional_light.direction.x
             sun_dir_y = directional_light.direction.y
@@ -664,47 +657,25 @@ class GPULightingSystem(LightingSystem):
             sun_color_r = sun_color_g = sun_color_b = 0.0
             sun_intensity = 0.0
 
-        # sun_direction: vec2f + sun_color: vec3f + sun_intensity: f32
-        # + sky_exposure_power: f32 + _padding3: vec3f = 40 bytes
-        # Add extra padding to account for WGPU alignment requirements
         struct_data.extend(
             [
                 sun_dir_x,
                 sun_dir_y,  # sun_direction: vec2f (8 bytes)
                 sun_color_r,
-                sun_color_g,
-                sun_color_b,  # sun_color: vec3f (12 bytes)
-                sun_intensity,  # sun_intensity: f32 (4 bytes)
-                SKY_EXPOSURE_POWER,  # sky_exposure_power: f32 (4 bytes)
-                0.0,
-                0.0,
-                0.0,  # _padding3: vec3f (12 bytes)
-                # Extra padding to account for WGPU alignment
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
+                sun_color_g,  # first part of sun_color: vec3f (partial)
+            ]
+        )
+        struct_data.extend(
+            [
+                sun_color_b,
+                sun_intensity,  # rest of sun_color + sun_intensity (8 bytes)
+                SKY_EXPOSURE_POWER,
+                0.0,  # sky_exposure_power + padding (8 bytes)
             ]
         )
 
-        # Convert to bytes using struct.pack
-        # Use appropriate format for each data type (i=int32, f=float32)
-        # First 8 values are integers (viewport + light_count + padding)
-        format_parts = ["i"] * 8 + ["f"] * (len(struct_data) - 8)
-        format_string = "".join(format_parts)
-
-        # Convert first 8 values to integers
-        int_data = [int(x) for x in struct_data[:8]]
-        float_data = struct_data[8:]
-        all_data = int_data + float_data
-
-        return struct.pack(format_string, *all_data)
+        # Pack as all floats (let WGSL handle int conversion)
+        return struct.pack(f"{len(struct_data)}f", *struct_data)
 
     def _update_uniform_buffer(
         self,
@@ -718,7 +689,7 @@ class GPULightingSystem(LightingSystem):
         assert self._uniform_buffer is not None
         assert self.queue is not None
 
-        # Pack all uniform data into structured format
+        # Pack uniform data into bytes
         uniform_bytes = self._pack_uniform_data(
             light_data,
             light_count,
@@ -727,7 +698,7 @@ class GPULightingSystem(LightingSystem):
             viewport_bounds,
         )
 
-        # Write to uniform buffer
+        # Write to GPU buffer
         self.queue.write_buffer(self._uniform_buffer, 0, uniform_bytes)
 
     def _update_time_uniform(self) -> None:
@@ -1014,11 +985,11 @@ class GPULightingSystem(LightingSystem):
                     "resource": {"buffer": self._uniform_buffer},
                 },
                 {
-                    "binding": 1,
+                    "binding": 22,
                     "resource": self._sky_exposure_texture.create_view(),
                 },
                 {
-                    "binding": 2,
+                    "binding": 23,
                     "resource": self._sky_exposure_sampler,
                 },
             ],

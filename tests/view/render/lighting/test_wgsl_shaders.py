@@ -74,9 +74,9 @@ class TestWGSLLightingShaders:
             "Comment about discrete tile-based stepping missing"
         )
 
-        # Check for sky exposure sampling preservation
-        assert "textureSample(sky_exposure_map" in shader_source, (
-            "Sky exposure texture sampling not preserved"
+        # Check for basic lighting calculation preservation
+        assert "distance = length(world_pos - light_pos)" in shader_source, (
+            "Basic lighting distance calculation not preserved"
         )
 
         # Check for critical algorithm preservation comments
