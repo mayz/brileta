@@ -9,6 +9,7 @@ from catley.game.actions.base import GameIntent
 from catley.game.actors.components import VisualEffectsComponent
 from catley.game.actors.core import Actor
 from catley.game.lights import DynamicLight
+from catley.view.render.effects.effects import FireEffect
 
 if TYPE_CHECKING:
     from catley.controller import Controller
@@ -53,9 +54,8 @@ class ContainedFire(Actor):
             light_color: Color of the emitted light
             damage_per_turn: Damage dealt to actors on the same tile
         """
-        # Create visual effects component with fire particle emission
+        # Create visual effects component
         visual_effects = VisualEffectsComponent()
-        visual_effects.add_fire_emitter()
 
         super().__init__(
             x=x,
@@ -69,6 +69,11 @@ class ContainedFire(Actor):
         )
 
         self.damage_per_turn = damage_per_turn
+
+        # Add the fire effect
+        self.fire_effect = FireEffect()
+        if self.visual_effects is not None:
+            self.visual_effects.add_continuous_effect(self.fire_effect)
 
         # Create dynamic light for this fire
         if game_world:

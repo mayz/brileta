@@ -36,12 +36,11 @@ Note:
 
 from __future__ import annotations
 
-import random
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from catley.view.render.effects.particles import SubTileParticleSystem
+    from catley.view.render.effects.effects import ContinuousEffect
 
     from .core import Actor
     from .status_effects import StatusEffect
@@ -49,9 +48,8 @@ if TYPE_CHECKING:
 from catley import colors
 from catley.config import DEFAULT_ACTOR_SPEED, DEFAULT_MAX_ARMOR
 from catley.constants.movement import MovementConstants
-from catley.game.enums import BlendMode, ItemSize
+from catley.game.enums import ItemSize
 from catley.game.items.item_core import Item
-from catley.view.render.effects.particles import ParticleLayer
 
 from .conditions import Condition, Exhaustion
 from .status_effects import EncumberedEffect, StatusEffect
@@ -520,43 +518,16 @@ class InventoryComponent:
         return attacks
 
 
-@dataclass
-class ParticleEmitterPattern:
-    """Configuration for a continuous particle emission pattern."""
-
-    emission_type: str  # "directional_cone", "radial_burst", "background_tint"
-    count: int
-    colors_and_chars: list[tuple[colors.Color, str]]
-    # Directional cone parameters
-    direction_x: float = 0.0
-    direction_y: float = -1.0  # Default upward
-    cone_spread: float = 0.3
-    # Speed and lifetime
-    speed_range: tuple[float, float] = (1.0, 2.0)
-    lifetime_range: tuple[float, float] = (0.1, 0.3)
-    # Background tint parameters
-    tint_color: colors.Color = (100, 100, 100)
-    blend_mode: BlendMode = BlendMode.TINT
-    upward_drift: float = -0.3
-    # Other parameters
-    gravity: float = 0.0
-    layer: ParticleLayer = ParticleLayer.OVER_ACTORS
-    # Emission control
-    emission_probability: float = 1.0  # 0.0-1.0, chance to emit this pattern
-
-
 class VisualEffectsComponent:
-    """Handles visual feedback effects like flashing, particle emission, etc."""
+    """Handles visual feedback effects like flashing and continuous effects."""
 
     def __init__(self) -> None:
         # Flash effect state
         self._flash_color: colors.Color | None = None
         self._flash_duration_frames: int = 0
 
-        # Particle emission state
-        self.particle_emitters: list[ParticleEmitterPattern] = []
-        self.emission_timer: float = 0.0
-        self.emission_interval: float = 0.1  # Emit particles every 0.1 seconds
+        # Active continuous effects (from the effect library)
+        self.continuous_effects: list[ContinuousEffect] = []
 
     def flash(self, color: colors.Color, duration_frames: int = 5) -> None:
         """Start a flash effect with the given color and duration.
@@ -568,57 +539,11 @@ class VisualEffectsComponent:
         self._flash_color = color
         self._flash_duration_frames = duration_frames
 
-    def add_fire_emitter(self) -> None:
-        """Add fire particle emission patterns (flames, smoke, sparks)."""
-        # Main flame particles - directional cone pointing up
-        flame_pattern = ParticleEmitterPattern(
-            emission_type="directional_cone",
-            count=3,
-            colors_and_chars=[
-                ((255, 200, 0), "*"),  # Bright yellow
-                ((255, 150, 0), "+"),  # Orange
-                ((255, 100, 0), "^"),  # Dark orange
-                ((200, 50, 0), "."),  # Red
-            ],
-            direction_x=0.0,
-            direction_y=-1.0,  # Upward
-            cone_spread=0.3,
-            speed_range=(1.0, 2.0),
-            lifetime_range=(0.1, 0.3),
-            layer=ParticleLayer.OVER_ACTORS,
-            emission_probability=1.0,
-        )
-        self.particle_emitters.append(flame_pattern)
+    def add_continuous_effect(self, effect: ContinuousEffect) -> None:
+        """Add a continuous effect (like fire, aura, etc) to this component."""
+        self.continuous_effects.append(effect)
 
-        # Smoke particles - background tint with slow drift
-        smoke_pattern = ParticleEmitterPattern(
-            emission_type="background_tint",
-            count=1,
-            colors_and_chars=[((80, 80, 80), ".")],  # Not used for background tint
-            speed_range=(0.2, 0.5),
-            lifetime_range=(1.0, 2.0),
-            tint_color=(80, 80, 80),  # Will be varied in emission
-            blend_mode=BlendMode.TINT,
-            upward_drift=-0.3,  # Negative is upward
-            layer=ParticleLayer.OVER_ACTORS,
-            emission_probability=0.3,  # 30% chance per emission
-        )
-        self.particle_emitters.append(smoke_pattern)
-
-        # Occasional sparks - radial burst
-        spark_pattern = ParticleEmitterPattern(
-            emission_type="radial_burst",
-            count=2,
-            colors_and_chars=[((255, 255, 200), "*")],  # Bright white-yellow
-            speed_range=(2.0, 3.0),
-            lifetime_range=(0.05, 0.15),
-            gravity=2.0,  # Sparks fall
-            layer=ParticleLayer.OVER_ACTORS,
-            emission_probability=0.1,  # 10% chance
-        )
-        self.particle_emitters.append(spark_pattern)
-
-    def update(self) -> None:
+    def update(self, delta_time: float = 0.016) -> None:
         """Update visual effects. Call this each frame."""
         # Update flash effect
         if self._flash_duration_frames > 0:
@@ -626,77 +551,25 @@ class VisualEffectsComponent:
             if self._flash_duration_frames == 0:
                 self._flash_color = None
 
-        # Update particle emission timer
-        self.emission_timer += 0.016  # Approximate frame time (~60 FPS)
-
-    def should_emit_particles(self) -> bool:
-        """Check if it's time to emit particles."""
-        if self.emission_timer >= self.emission_interval:
-            self.emission_timer = 0.0
-            return True
-        return False
-
-    def emit_particles(
-        self, particle_system: SubTileParticleSystem, actor_x: int, actor_y: int
-    ) -> None:
-        """Emit particles for this actor using the configured patterns."""
-        for pattern in self.particle_emitters:
-            # Check emission probability
-            if random.random() > pattern.emission_probability:
-                continue
-
-            if pattern.emission_type == "directional_cone":
-                particle_system.emit_directional_cone(
-                    tile_x=float(actor_x),
-                    tile_y=float(actor_y),
-                    direction_x=pattern.direction_x,
-                    direction_y=pattern.direction_y,
-                    count=pattern.count,
-                    cone_spread=pattern.cone_spread,
-                    speed_range=pattern.speed_range,
-                    lifetime_range=pattern.lifetime_range,
-                    colors_and_chars=pattern.colors_and_chars,
-                    gravity=pattern.gravity,
-                    layer=pattern.layer,
-                )
-            elif pattern.emission_type == "background_tint":
-                # Vary the smoke color slightly for natural effect
-                base_gray = pattern.tint_color[0]
-                smoke_gray = base_gray + random.randint(-20, 20)
-                smoke_gray = max(0, min(255, smoke_gray))
-                varied_tint = (smoke_gray, smoke_gray, smoke_gray)
-
-                particle_system.emit_background_tint(
-                    tile_x=float(actor_x),
-                    tile_y=float(actor_y),
-                    count=pattern.count,
-                    drift_speed=pattern.speed_range,
-                    lifetime_range=pattern.lifetime_range,
-                    tint_color=varied_tint,
-                    blend_mode=pattern.blend_mode,
-                    chars=[".", ",", " "],
-                    upward_drift=pattern.upward_drift,
-                    layer=pattern.layer,
-                )
-            elif pattern.emission_type == "radial_burst":
-                particle_system.emit_radial_burst(
-                    tile_x=float(actor_x),
-                    tile_y=float(actor_y),
-                    count=pattern.count,
-                    speed_range=pattern.speed_range,
-                    lifetime_range=pattern.lifetime_range,
-                    colors_and_chars=pattern.colors_and_chars,
-                    gravity=pattern.gravity,
-                    layer=pattern.layer,
-                )
+        # Update all continuous effects
+        for effect in self.continuous_effects:
+            if hasattr(effect, "update"):
+                effect.update(delta_time)
 
     def get_flash_color(self) -> colors.Color | None:
         """Get the current flash color for rendering, or None if no flash."""
         return self._flash_color if self._flash_duration_frames > 0 else None
 
-    def has_particle_emitters(self) -> bool:
-        """Check if this component has any particle emitters configured."""
-        return len(self.particle_emitters) > 0
+    def has_continuous_effects(self) -> bool:
+        """Check if this component has any continuous effects active."""
+        return len(self.continuous_effects) > 0
+
+    def remove_continuous_effect(self, effect: ContinuousEffect) -> None:
+        """Remove a continuous effect from this component."""
+        if effect in self.continuous_effects:
+            if hasattr(effect, "stop"):
+                effect.stop()
+            self.continuous_effects.remove(effect)
 
 
 class ModifiersComponent:

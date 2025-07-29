@@ -443,13 +443,21 @@ class WorldView(View):
         # Get all actors and check for particle emitters
         for actor in gw.actors:
             visual_effects = actor.visual_effects
-            if (
-                visual_effects is not None
-                and visual_effects.has_particle_emitters()
-                and visual_effects.should_emit_particles()
-            ):
-                # Emit particles at the actor's world position
-                visual_effects.emit_particles(self.particle_system, actor.x, actor.y)
+            if visual_effects is not None and visual_effects.has_continuous_effects():
+                # Create an effect context for this actor
+                from catley.view.render.effects.effects import EffectContext
+
+                context = EffectContext(
+                    particle_system=self.particle_system,
+                    environmental_system=self.environmental_system,
+                    x=actor.x,
+                    y=actor.y,
+                )
+
+                # Execute all continuous effects that are ready to emit
+                for effect in visual_effects.continuous_effects:
+                    if effect.should_emit():
+                        effect.execute(context)
 
     def _get_actor_display_color(self, actor: Actor) -> tuple:
         """Get actor's final display color with visual effects."""

@@ -56,6 +56,36 @@ from .particles import ParticleLayer, SubTileParticleSystem
 
 
 @dataclass
+class ContinuousEmissionPattern:
+    """Configuration for a continuous particle emission pattern.
+
+    Defines how particles should be emitted over time, including their
+    appearance, movement, and probability. These patterns can be composed
+    to create complex continuous effects like fire, waterfalls, or auras.
+    """
+
+    emission_type: str  # "directional_cone", "radial_burst", "background_tint"
+    count: int
+    colors_and_chars: list[tuple[colors.Color, str]]
+    # Directional cone parameters
+    direction_x: float = 0.0
+    direction_y: float = -1.0  # Default upward
+    cone_spread: float = 0.3
+    # Speed and lifetime
+    speed_range: tuple[float, float] = (1.0, 2.0)
+    lifetime_range: tuple[float, float] = (0.1, 0.3)
+    # Background tint parameters
+    tint_color: colors.Color = (100, 100, 100)
+    blend_mode: BlendMode = BlendMode.TINT
+    upward_drift: float = -0.3
+    # Other parameters
+    gravity: float = 0.0
+    layer: ParticleLayer = ParticleLayer.OVER_ACTORS
+    # Emission control
+    emission_probability: float = 1.0  # 0.0-1.0, chance to emit this pattern
+
+
+@dataclass
 class EffectContext:
     """
     Provides access to all systems and parameters that effects might need.
@@ -111,6 +141,102 @@ class Effect(abc.ABC):
             context: EffectContext containing systems and parameters
         """
         pass
+
+
+class ContinuousEffect(Effect):
+    """
+    Base class for effects that emit particles continuously over time.
+
+    Unlike one-shot effects (explosions, blood splatter), continuous effects
+    keep emitting particles as long as they're active. Examples include fire,
+    smoke sources, magical auras, etc.
+
+    This class handles the timing and emission logic, while subclasses define
+    the specific particle patterns.
+    """
+
+    def __init__(self) -> None:
+        """Initialize the continuous effect."""
+        self.emission_patterns: list[ContinuousEmissionPattern] = []
+        self.emission_timer: float = 0.0
+        self.emission_interval: float = 0.1  # Emit every 0.1 seconds
+        self.is_active: bool = True
+
+    def execute(self, context: EffectContext) -> None:
+        """Execute one emission cycle of this continuous effect."""
+        if not self.is_active:
+            return
+
+        for pattern in self.emission_patterns:
+            # Check emission probability
+            if random.random() > pattern.emission_probability:
+                continue
+
+            self._emit_pattern(pattern, context)
+
+    def _emit_pattern(
+        self, pattern: ContinuousEmissionPattern, context: EffectContext
+    ) -> None:
+        """Emit particles for a specific pattern."""
+        if pattern.emission_type == "directional_cone":
+            context.particle_system.emit_directional_cone(
+                tile_x=float(context.x),
+                tile_y=float(context.y),
+                direction_x=pattern.direction_x,
+                direction_y=pattern.direction_y,
+                count=pattern.count,
+                cone_spread=pattern.cone_spread,
+                speed_range=pattern.speed_range,
+                lifetime_range=pattern.lifetime_range,
+                colors_and_chars=pattern.colors_and_chars,
+                gravity=pattern.gravity,
+                layer=pattern.layer,
+            )
+        elif pattern.emission_type == "background_tint":
+            # Vary the smoke color slightly for natural effect
+            base_gray = pattern.tint_color[0]
+            smoke_gray = base_gray + random.randint(-20, 20)
+            smoke_gray = max(0, min(255, smoke_gray))
+            varied_tint = (smoke_gray, smoke_gray, smoke_gray)
+
+            context.particle_system.emit_background_tint(
+                tile_x=float(context.x),
+                tile_y=float(context.y),
+                count=pattern.count,
+                drift_speed=pattern.speed_range,
+                lifetime_range=pattern.lifetime_range,
+                tint_color=varied_tint,
+                blend_mode=pattern.blend_mode,
+                chars=[".", ",", " "],
+                upward_drift=pattern.upward_drift,
+                layer=pattern.layer,
+            )
+        elif pattern.emission_type == "radial_burst":
+            context.particle_system.emit_radial_burst(
+                tile_x=float(context.x),
+                tile_y=float(context.y),
+                count=pattern.count,
+                speed_range=pattern.speed_range,
+                lifetime_range=pattern.lifetime_range,
+                colors_and_chars=pattern.colors_and_chars,
+                gravity=pattern.gravity,
+                layer=pattern.layer,
+            )
+
+    def update(self, delta_time: float) -> None:
+        """Update the effect's timer."""
+        self.emission_timer += delta_time
+
+    def should_emit(self) -> bool:
+        """Check if it's time to emit particles."""
+        if self.emission_timer >= self.emission_interval:
+            self.emission_timer = 0.0
+            return True
+        return False
+
+    def stop(self) -> None:
+        """Stop this continuous effect."""
+        self.is_active = False
 
 
 # =============================================================================
@@ -377,6 +503,78 @@ class PoisonGasEffect(Effect):
 
 
 # =============================================================================
+# CONTINUOUS ENVIRONMENTAL EFFECTS
+# =============================================================================
+# Effects that emit particles continuously: fire, waterfalls, magical auras, etc.
+
+
+class FireEffect(ContinuousEffect):
+    """
+    Creates a continuous fire effect with flames, smoke, and occasional sparks.
+
+    This effect simulates a burning fire by combining multiple particle patterns:
+    - Upward-moving flame particles in warm colors
+    - Drifting smoke with background tinting
+    - Occasional spark bursts
+
+    The effect runs continuously until stopped, making it perfect for torches,
+    campfires, and other persistent fire sources.
+    """
+
+    def __init__(self) -> None:
+        """Initialize the fire effect with its emission patterns."""
+        super().__init__()
+
+        # Main flame particles - directional cone pointing up
+        flame_pattern = ContinuousEmissionPattern(
+            emission_type="directional_cone",
+            count=3,
+            colors_and_chars=[
+                ((255, 200, 0), "*"),  # Bright yellow
+                ((255, 150, 0), "+"),  # Orange
+                ((255, 100, 0), "^"),  # Dark orange
+                ((200, 50, 0), "."),  # Red
+            ],
+            direction_x=0.0,
+            direction_y=-1.0,  # Upward
+            cone_spread=0.3,
+            speed_range=(1.0, 2.0),
+            lifetime_range=(0.1, 0.3),
+            layer=ParticleLayer.OVER_ACTORS,
+            emission_probability=1.0,
+        )
+        self.emission_patterns.append(flame_pattern)
+
+        # Smoke particles - background tint with slow drift
+        smoke_pattern = ContinuousEmissionPattern(
+            emission_type="background_tint",
+            count=1,
+            colors_and_chars=[((80, 80, 80), ".")],  # Not used for background tint
+            speed_range=(0.2, 0.5),
+            lifetime_range=(1.0, 2.0),
+            tint_color=(80, 80, 80),  # Will be varied in emission
+            blend_mode=BlendMode.TINT,
+            upward_drift=-0.3,  # Negative is upward
+            layer=ParticleLayer.OVER_ACTORS,
+            emission_probability=0.3,  # 30% chance per emission
+        )
+        self.emission_patterns.append(smoke_pattern)
+
+        # Occasional sparks - radial burst
+        spark_pattern = ContinuousEmissionPattern(
+            emission_type="radial_burst",
+            count=2,
+            colors_and_chars=[((255, 255, 200), "*")],  # Bright white-yellow
+            speed_range=(2.0, 3.0),
+            lifetime_range=(0.05, 0.15),
+            gravity=2.0,  # Sparks fall
+            layer=ParticleLayer.OVER_ACTORS,
+            emission_probability=0.1,  # 10% chance
+        )
+        self.emission_patterns.append(spark_pattern)
+
+
+# =============================================================================
 # EFFECT REGISTRY AND MANAGEMENT
 # =============================================================================
 # Central system for registering, organizing, and triggering effects.
@@ -384,14 +582,16 @@ class PoisonGasEffect(Effect):
 
 class EffectLibrary:
     """
-    Central registry and manager for all game effects.
+    Central registry and manager for one-shot game effects.
 
-    This class provides a unified interface for triggering effects by name,
-    making it easy to create effects from anywhere in the game code without
-    needing to know the specific implementation details.
+    This class provides a unified interface for triggering stateless effects
+    by name, making it easy to create effects from anywhere in the game code
+    without needing to know the specific implementation details.
 
-    The library comes pre-loaded with standard effects but can be extended
-    with custom effects for specific game needs.
+    The library is designed for effects that execute immediately and don't
+    maintain state (explosions, blood splatter, muzzle flash, etc). For
+    continuous effects that need to maintain state and update over time
+    (fire, auras, etc), instantiate them directly instead.
 
     Benefits:
         - Consistent API: All effects use effect_library.trigger()
@@ -492,10 +692,13 @@ class EffectLibrary:
         self.effects["smoke_cloud"] = SmokeCloudEffect()
         self.effects["poison_gas"] = PoisonGasEffect()
 
+        # Note: Continuous effects like FireEffect are not registered here.
+        # They are stateful and need unique instances per actor, so they
+        # are instantiated directly where needed (e.g., in ContainedFire).
+
         # Future effects to add:
         # self.effects["sparks"] = SparksEffect()  # For electrical damage
         # self.effects["frost"] = FrostEffect()    # For cold damage
-        # self.effects["fire"] = FireEffect()      # For burning
         # self.effects["dust"] = DustEffect()      # For movement/impacts
 
 

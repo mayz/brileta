@@ -172,10 +172,43 @@ class WGPUGraphicsContext(GraphicsContext):
         # Set up dimensions and coordinate converter
         self.update_dimensions()
 
+        # Pre-compile shaders to avoid runtime compilation stutters
+        self._precompile_shaders()
+
         # Apply vsync setting after WGPU initialization
         import glfw
 
         glfw.swap_interval(1 if self.vsync else 0)
+
+    def _precompile_shaders(self) -> None:
+        """Pre-compile commonly used shaders to avoid runtime compilation stutters.
+
+        This ensures that shaders are compiled during initialization rather than
+        on first use, preventing frame drops when particles/effects first appear.
+        """
+        if self.shader_manager is None:
+            return
+
+        # Pre-load commonly used shaders
+        shaders_to_precompile = [
+            "wgsl/screen/main.wgsl",  # Main screen rendering (particles, actors)
+            "wgsl/glyph/render.wgsl",  # Glyph buffer rendering
+            "wgsl/ui/texture.wgsl",  # UI texture rendering
+        ]
+
+        for shader_path in shaders_to_precompile:
+            try:
+                # Loading the shader source triggers caching
+                self.shader_manager.load_shader_source(shader_path)
+                # Create shader module to trigger compilation
+                self.shader_manager.create_shader_module(shader_path, shader_path)
+            except Exception as e:
+                # Log but don't fail initialization if a shader can't be pre-compiled
+                import logging
+
+                logging.getLogger(__name__).warning(
+                    f"Failed to pre-compile shader {shader_path}: {e}"
+                )
 
     def _recreate_surface_and_context(self) -> bool:
         """
