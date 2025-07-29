@@ -361,7 +361,30 @@ def test_environment_options_include_door_actions() -> None:
     assert "Open Door" in names
     open_door_option = next(o for o in opts if o.name == "Open Door")
     assert open_door_option.action_class is OpenDoorIntent
+    # With a single door, it should not require tile selection
+    assert open_door_option.requirements == []
+    assert open_door_option.static_params == {"x": 1, "y": 0}
+
+
+def test_environment_options_multiple_doors_require_selection() -> None:
+    gw = DummyGameWorld()
+    # Place two closed doors adjacent to the player
+    gw.game_map.tiles[1, 0] = tile_types.TILE_TYPE_ID_DOOR_CLOSED  # type: ignore[attr-defined]
+    gw.game_map.tiles[0, 1] = tile_types.TILE_TYPE_ID_DOOR_CLOSED  # type: ignore[attr-defined]
+    player = Character(0, 0, "@", colors.WHITE, "P", game_world=cast(GameWorld, gw))
+    gw.player = player
+    gw.add_actor(player)
+    controller = DummyController(gw=gw)
+    disc = ActionDiscovery()
+    ctx = disc._build_context(cast(Controller, controller), player)
+    opts = disc._get_environment_options(cast(Controller, controller), player, ctx)
+    names = {o.name for o in opts}
+    assert "Open Door" in names
+    open_door_option = next(o for o in opts if o.name == "Open Door")
+    assert open_door_option.action_class is OpenDoorIntent
+    # With multiple doors, it should require tile selection
     assert open_door_option.requirements == [ActionRequirement.TARGET_TILE]
+    assert open_door_option.static_params == {}
 
 
 def test_probability_descriptor_mapping() -> None:

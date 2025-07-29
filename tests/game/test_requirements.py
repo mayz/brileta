@@ -64,7 +64,9 @@ def test_attack_requirement_handoff() -> None:
 
 def test_environment_target_tile_requirement() -> None:
     gw = DummyGameWorld()
+    # Place two doors to test the tile selection requirement
     gw.game_map.tiles[1, 0] = tile_types.TILE_TYPE_ID_DOOR_CLOSED  # type: ignore[attr-defined]
+    gw.game_map.tiles[0, 1] = tile_types.TILE_TYPE_ID_DOOR_CLOSED  # type: ignore[attr-defined]
     player = Character(0, 0, "@", colors.WHITE, "P", game_world=cast(GameWorld, gw))
     gw.player = player
     gw.add_actor(player)

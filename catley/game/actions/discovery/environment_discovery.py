@@ -47,8 +47,8 @@ class EnvironmentActionDiscovery:
 
         options: list[ActionOption] = []
         gm = controller.gw.game_map
-        has_closed_door = False
-        has_open_door = False
+        closed_doors: list[tuple[int, int]] = []
+        open_doors: list[tuple[int, int]] = []
 
         for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
             tx = actor.x + dx
@@ -57,11 +57,27 @@ class EnvironmentActionDiscovery:
                 continue
             tile_id = gm.tiles[tx, ty]
             if tile_id == tile_types.TILE_TYPE_ID_DOOR_CLOSED:  # type: ignore[attr-defined]
-                has_closed_door = True
+                closed_doors.append((tx, ty))
             elif tile_id == tile_types.TILE_TYPE_ID_DOOR_OPEN:  # type: ignore[attr-defined]
-                has_open_door = True
+                open_doors.append((tx, ty))
 
-        if has_closed_door:
+        # Handle closed doors
+        if len(closed_doors) == 1:
+            # Single door - create direct action
+            door_x, door_y = closed_doors[0]
+            options.append(
+                ActionOption(
+                    id="open-door-direct",
+                    name="Open Door",
+                    description="Open the adjacent door",
+                    category=ActionCategory.ENVIRONMENT,
+                    action_class=OpenDoorIntent,
+                    requirements=[],
+                    static_params={"x": door_x, "y": door_y},
+                )
+            )
+        elif len(closed_doors) > 1:
+            # Multiple doors - require selection
             options.append(
                 ActionOption(
                     id="open-door",
@@ -74,7 +90,23 @@ class EnvironmentActionDiscovery:
                 )
             )
 
-        if has_open_door:
+        # Handle open doors
+        if len(open_doors) == 1:
+            # Single door - create direct action
+            door_x, door_y = open_doors[0]
+            options.append(
+                ActionOption(
+                    id="close-door-direct",
+                    name="Close Door",
+                    description="Close the adjacent door",
+                    category=ActionCategory.ENVIRONMENT,
+                    action_class=CloseDoorIntent,
+                    requirements=[],
+                    static_params={"x": door_x, "y": door_y},
+                )
+            )
+        elif len(open_doors) > 1:
+            # Multiple doors - require selection
             options.append(
                 ActionOption(
                     id="close-door",
