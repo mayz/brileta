@@ -15,10 +15,15 @@ from catley.types import (
     RootConsoleTilePos,
     TileDimensions,
 )
-from catley.util.coordinates import CoordinateConverter, Rect
+from catley.util.coordinates import (
+    CoordinateConverter,
+    Rect,
+    convert_particle_to_screen_coords,
+)
 from catley.util.glyph_buffer import GlyphBuffer
 from catley.view.render.effects.particles import ParticleLayer, SubTileParticleSystem
 from catley.view.render.graphics import GraphicsContext
+from catley.view.render.viewport import ViewportSystem
 
 from .resource_manager import ModernGLResourceManager
 from .screen_renderer import VERTEX_DTYPE, ScreenRenderer
@@ -428,6 +433,7 @@ class ModernGLGraphicsContext(GraphicsContext):
         layer: ParticleLayer,
         viewport_bounds: Rect,
         view_offset: RootConsoleTilePos,
+        viewport_system: ViewportSystem | None = None,
     ) -> None:
         """Render particles by adding each one to the vertex buffer."""
         # Loop through active particles, same logic as TCOD implementation
@@ -435,8 +441,8 @@ class ModernGLGraphicsContext(GraphicsContext):
             if particle_system.layers[i] != layer.value:
                 continue
 
-            coords = self._convert_particle_to_screen_coords(
-                particle_system, i, viewport_bounds, view_offset
+            coords = convert_particle_to_screen_coords(
+                particle_system, i, viewport_bounds, view_offset, self, viewport_system
             )
             if coords is None:
                 continue
@@ -457,40 +463,6 @@ class ModernGLGraphicsContext(GraphicsContext):
                 screen_y,
                 alpha,
             )
-
-    def _convert_particle_to_screen_coords(
-        self,
-        particle_system: SubTileParticleSystem,
-        particle_index: int,
-        viewport_bounds: Rect,
-        view_offset: RootConsoleTilePos,
-    ) -> tuple[float, float] | None:
-        """Convert particle index to screen coordinates, or None if off-screen."""
-        if not (0 <= particle_index < particle_system.active_count):
-            return None
-
-        # Access data directly from the particle_system object
-        sub_x, sub_y = particle_system.positions[particle_index]
-
-        # Convert particle's sub-tile coordinates to viewport's tile coordinates
-        vp_x = sub_x / particle_system.subdivision
-        vp_y = sub_y / particle_system.subdivision
-
-        # Cull particles outside the viewport bounds
-        if (
-            vp_x < viewport_bounds.x1
-            or vp_x > viewport_bounds.x2
-            or vp_y < viewport_bounds.y1
-            or vp_y > viewport_bounds.y2
-        ):
-            return None
-
-        # Convert viewport tile coordinates to root console tile coordinates
-        root_x = view_offset[0] + vp_x
-        root_y = view_offset[1] + vp_y
-
-        # Use the renderer's own converter to get final pixel coordinates
-        return self.console_to_screen_coords(root_x, root_y)
 
     def _draw_particle_to_buffer(
         self,

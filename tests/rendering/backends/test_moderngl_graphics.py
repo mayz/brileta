@@ -496,6 +496,8 @@ class TestModernGLGraphicsContext:
 
     def test_convert_particle_to_screen_coords(self):
         """Test particle coordinate conversion."""
+        from catley.util.coordinates import convert_particle_to_screen_coords
+
         particle_system = Mock()
         particle_system.active_count = 2
         particle_system.positions = np.array([[16.0, 32.0], [48.0, 64.0]])
@@ -505,16 +507,16 @@ class TestModernGLGraphicsContext:
         view_offset = (0, 0)
 
         # Test valid particle
-        coords = self.graphics_ctx._convert_particle_to_screen_coords(
-            particle_system, 0, viewport_bounds, view_offset
+        coords = convert_particle_to_screen_coords(
+            particle_system, 0, viewport_bounds, view_offset, self.graphics_ctx
         )
         assert coords is not None
         assert isinstance(coords, tuple)
         assert len(coords) == 2
 
         # Test invalid particle index
-        coords = self.graphics_ctx._convert_particle_to_screen_coords(
-            particle_system, 5, viewport_bounds, view_offset
+        coords = convert_particle_to_screen_coords(
+            particle_system, 5, viewport_bounds, view_offset, self.graphics_ctx
         )
         assert coords is None
 

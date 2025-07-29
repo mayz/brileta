@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from catley.types import (
     PixelCoord,
     PixelPos,
@@ -7,6 +9,11 @@ from catley.types import (
     TileCoord,
     WorldTilePos,
 )
+
+if TYPE_CHECKING:
+    from catley.view.render.effects.particles import SubTileParticleSystem
+    from catley.view.render.graphics import GraphicsContext
+    from catley.view.render.viewport import ViewportSystem
 
 """Conversion functions for dealing with coordinate systems."""
 
@@ -116,3 +123,73 @@ class CoordinateConverter:
         tile_y = max(0, min(tile_y, self.console_height_in_tiles - 1))
 
         return (tile_x, tile_y)
+
+
+# =============================================================================
+# PARTICLE COORDINATE CONVERSION
+# =============================================================================
+
+
+def convert_particle_to_screen_coords(
+    particle_system: SubTileParticleSystem,
+    particle_index: int,
+    viewport_bounds: Rect,
+    view_offset: RootConsoleTilePos,
+    graphics: GraphicsContext,
+    viewport_system: ViewportSystem | None = None,
+) -> tuple[float, float] | None:
+    """Convert particle index to screen coordinates, or None if off-screen.
+
+    This shared function consolidates the particle coordinate conversion logic
+    that was previously duplicated across all graphics backends.
+
+    Args:
+        particle_system: The particle system containing the particle
+        particle_index: Index of the particle to convert
+        viewport_bounds: Viewport bounds for culling
+        view_offset: Root console tile position offset
+        graphics: Graphics context for final coordinate conversion
+        viewport_system: Optional viewport system for world-to-viewport conversion
+
+    Returns:
+        Screen pixel coordinates (x, y) or None if particle is off-screen
+    """
+    if not (0 <= particle_index < particle_system.active_count):
+        return None
+
+    # Access data directly from the particle_system object
+    sub_x, sub_y = particle_system.positions[particle_index]
+
+    # Convert particle's sub-tile coordinates to world coordinates
+    world_x = sub_x / particle_system.subdivision
+    world_y = sub_y / particle_system.subdivision
+
+    # Use viewport system to convert world coordinates to viewport coordinates
+    if viewport_system is not None:
+        # Check if the world position is visible (tile containing particle)
+        tile_x = int(world_x) if world_x >= 0 else int(world_x) - 1
+        tile_y = int(world_y) if world_y >= 0 else int(world_y) - 1
+        if not viewport_system.is_visible(tile_x, tile_y):
+            return None
+
+        # Convert tile coordinates to viewport coordinates (like actors do)
+        vp_x, vp_y = viewport_system.world_to_screen(tile_x, tile_y)
+    else:
+        # Fallback to old behavior if no viewport system provided
+        vp_x, vp_y = world_x, world_y
+
+    # Cull particles outside the viewport bounds (viewport coordinates)
+    if (
+        vp_x < viewport_bounds.x1
+        or vp_x > viewport_bounds.x2
+        or vp_y < viewport_bounds.y1
+        or vp_y > viewport_bounds.y2
+    ):
+        return None
+
+    # Convert viewport tile coordinates to root console tile coordinates
+    root_x = view_offset[0] + vp_x
+    root_y = view_offset[1] + vp_y
+
+    # Use the graphics context's own converter to get final pixel coordinates
+    return graphics.console_to_screen_coords(root_x, root_y)

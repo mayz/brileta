@@ -209,6 +209,9 @@ class WorldView(View):
         self.particle_system.update(delta_time)
         self.environmental_system.update(delta_time)
 
+        # Emit particles from actors with particle emitters
+        self._update_actor_particles()
+
     def present(self, graphics: GraphicsContext, alpha: InterpolationAlpha) -> None:
         """Composite final frame layers in proper order."""
         if not self.visible:
@@ -243,6 +246,7 @@ class WorldView(View):
                 ParticleLayer.UNDER_ACTORS,
                 viewport_bounds,
                 view_offset,
+                self.viewport_system,
             )
 
         if config.SMOOTH_ACTOR_RENDERING_ENABLED:
@@ -263,6 +267,7 @@ class WorldView(View):
                 ParticleLayer.OVER_ACTORS,
                 viewport_bounds,
                 view_offset,
+                self.viewport_system,
             )
 
         if config.ENVIRONMENTAL_EFFECTS_ENABLED:
@@ -430,6 +435,21 @@ class WorldView(View):
             return tuple(self.current_light_intensity[light_x, light_y])
 
         return (1.0, 1.0, 1.0)
+
+    def _update_actor_particles(self) -> None:
+        """Emit particles from actors with particle emitters."""
+        gw = self.controller.gw
+
+        # Get all actors and check for particle emitters
+        for actor in gw.actors:
+            visual_effects = actor.visual_effects
+            if (
+                visual_effects is not None
+                and visual_effects.has_particle_emitters()
+                and visual_effects.should_emit_particles()
+            ):
+                # Emit particles at the actor's world position
+                visual_effects.emit_particles(self.particle_system, actor.x, actor.y)
 
     def _get_actor_display_color(self, actor: Actor) -> tuple:
         """Get actor's final display color with visual effects."""

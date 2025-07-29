@@ -366,8 +366,8 @@ class FrameManager:
         context = EffectContext(
             particle_system=self.world_view.particle_system,
             environmental_system=self.world_view.environmental_system,
-            x=vp_x,
-            y=vp_y,
+            x=x,
+            y=y,
             intensity=intensity,
             direction_x=direction_x,
             direction_y=direction_y,

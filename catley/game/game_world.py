@@ -56,6 +56,11 @@ class GameWorld:
         # Note: Rooms now have random 20% chance of being outdoor (set in generator)
 
         self._populate_npcs(rooms)
+        # Only add test fire if not running tests
+        import sys
+
+        if "pytest" not in sys.modules:
+            self._add_test_fire(rooms)
 
     def add_actor(self, actor: Actor) -> None:
         """Adds an actor to the world and registers it with the spatial index."""
@@ -463,3 +468,22 @@ class GameWorld:
             if not placed:
                 # NPC could not be placed after several attempts; skip it
                 pass
+
+    def _add_test_fire(self, rooms: list) -> None:
+        """Add a test fire to demonstrate the fire system."""
+        from catley.game.actors.environmental import ContainedFire
+
+        # Pick the first room to add a campfire
+        if rooms:
+            room = rooms[0]
+            # Find a good spot for the fire (offset from center to avoid player)
+            fire_x = room.x1 + 2  # Near left wall but not on it
+            fire_y = room.y1 + 2  # Near top wall but not on it
+
+            # Make sure the spot is walkable and free
+            if (
+                self.game_map.walkable[fire_x, fire_y]
+                and self.get_actor_at_location(fire_x, fire_y) is None
+            ):
+                campfire = ContainedFire.create_campfire(fire_x, fire_y, self)
+                self.add_actor(campfire)

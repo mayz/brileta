@@ -37,6 +37,7 @@ from catley.types import (
 from catley.util.coordinates import CoordinateConverter, Rect
 from catley.util.glyph_buffer import GlyphBuffer
 from catley.view.render.effects.particles import ParticleLayer, SubTileParticleSystem
+from catley.view.render.viewport import ViewportSystem
 
 if TYPE_CHECKING:
     from catley.view.ui.cursor_manager import CursorManager
@@ -133,6 +134,7 @@ class GraphicsContext(abc.ABC):
         layer: ParticleLayer,
         viewport_bounds: Rect,
         view_offset: RootConsoleTilePos,
+        viewport_system: ViewportSystem | None = None,
     ) -> None:
         """
         Renders all particles from a SubTileParticleSystem for a specific layer.
