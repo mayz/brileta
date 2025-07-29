@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from catley.environment import tile_types
+from catley.types import WorldTilePos
 from catley.util.coordinates import Rect, TileCoord
 
 if TYPE_CHECKING:
@@ -22,7 +23,7 @@ class MapRegion:
     region_type: str  # e.g., "room", "hallway"
     bounds: list[Rect] = field(default_factory=list)
     # Mapping of neighbor_region_id -> (x, y) door tile connecting them
-    connections: dict[int, tuple[int, int]] = field(default_factory=dict)
+    connections: dict[int, WorldTilePos] = field(default_factory=dict)
     # Sky exposure for global lighting (0.0 = no sky, 1.0 = full sky exposure)
     sky_exposure: float = 0.0
 
@@ -201,7 +202,7 @@ class GameMap:
             return colors.OUTDOOR_LIGHT_WALL if is_light else colors.OUTDOOR_DARK_WALL
         return colors.LIGHT_WALL if is_light else colors.DARK_WALL
 
-    def get_region_at(self, world_pos: tuple[int, int]) -> MapRegion | None:
+    def get_region_at(self, world_pos: WorldTilePos) -> MapRegion | None:
         """Get the MapRegion at the given world position, if any."""
         x, y = world_pos
         if not (0 <= x < self.width and 0 <= y < self.height):

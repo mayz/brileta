@@ -1,5 +1,7 @@
 from typing import Protocol
 
+from catley.types import PixelPos
+
 
 class GLWindow(Protocol):
     """
@@ -10,12 +12,12 @@ class GLWindow(Protocol):
     to attach to.
     """
 
-    def get_size(self) -> tuple[int, int]:
+    def get_size(self) -> PixelPos:
         """Returns the current pixel dimensions (width, height)
         of the window's drawable area."""
         ...
 
-    def get_framebuffer_size(self) -> tuple[int, int]:
+    def get_framebuffer_size(self) -> PixelPos:
         """Returns the framebuffer dimensions (can be different on high DPI/Retina)."""
         ...
 

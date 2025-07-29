@@ -3,6 +3,7 @@
 import moderngl
 import numpy as np
 
+from catley.types import ViewportTilePos
 from catley.util.caching import ResourceCache
 from catley.util.glyph_buffer import GlyphBuffer
 from catley.util.tilesets import unicode_to_cp437
@@ -259,7 +260,7 @@ class TextureRenderer:
 
     def _find_dirty_tiles(
         self, glyph_buffer: GlyphBuffer, cache_buffer: GlyphBuffer | None
-    ) -> list[tuple[int, int]]:
+    ) -> list[ViewportTilePos]:
         """
         Find tiles that have changed since the last frame using vectorized comparison.
 
@@ -322,7 +323,7 @@ class TextureRenderer:
     def _update_dirty_tiles_in_vbo(
         self,
         glyph_buffer: GlyphBuffer,
-        dirty_tiles: list[tuple[int, int]],
+        dirty_tiles: list[ViewportTilePos],
         vbo: moderngl.Buffer,
     ) -> None:
         """

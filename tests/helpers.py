@@ -18,6 +18,7 @@ from catley.environment.map import GameMap, MapRegion
 from catley.game.actors import Actor, Character
 from catley.game.item_spawner import ItemSpawner
 from catley.game.items.item_core import Item
+from catley.types import WorldTileCoord
 from catley.util.spatial import SpatialHashGrid
 
 
@@ -82,11 +83,15 @@ class DummyGameWorld(GameWorld):
         except ValueError:
             pass
 
-    def get_pickable_items_at_location(self, x: int, y: int) -> list:
+    def get_pickable_items_at_location(
+        self, x: WorldTileCoord, y: WorldTileCoord
+    ) -> list:
         """Return items stored at ``(x, y)``."""
         return self.items.get((x, y), [])
 
-    def get_actor_at_location(self, x: int, y: int) -> Actor | None:
+    def get_actor_at_location(
+        self, x: WorldTileCoord, y: WorldTileCoord
+    ) -> Actor | None:
         """Return an actor at a location, prioritizing blockers."""
         actors_at_point = self.actor_spatial_index.get_at_point(x, y)
         if not actors_at_point:
@@ -96,10 +101,14 @@ class DummyGameWorld(GameWorld):
                 return actor
         return actors_at_point[0]
 
-    def spawn_ground_item(self, item: Item, x: int, y: int, **kwargs) -> Actor:
+    def spawn_ground_item(
+        self, item: Item, x: WorldTileCoord, y: WorldTileCoord, **kwargs
+    ) -> Actor:
         return self.item_spawner.spawn_item(item, x, y, **kwargs)
 
-    def spawn_ground_items(self, items: list[Item], x: int, y: int) -> Actor:
+    def spawn_ground_items(
+        self, items: list[Item], x: WorldTileCoord, y: WorldTileCoord
+    ) -> Actor:
         return self.item_spawner.spawn_multiple(items, x, y)
 
     def add_light(self, light) -> None:

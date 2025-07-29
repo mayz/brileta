@@ -1,6 +1,8 @@
 import moderngl
 import numpy as np
 
+from catley.types import PixelPos
+
 from .shader_manager import ShaderManager
 
 # Maximum number of quads (2 triangles per quad) to draw per frame.
@@ -86,7 +88,7 @@ class ScreenRenderer:
 
     def render_to_screen(
         self,
-        window_size: tuple[int, int],
+        window_size: PixelPos,
         letterbox_geometry: tuple[int, int, int, int] | None = None,
     ) -> None:
         """Main drawing method that renders all batched vertex data to the screen.
@@ -106,8 +108,8 @@ class ScreenRenderer:
             self.screen_program["u_letterbox"].value = (
                 0,
                 0,
-                window_size[0],
-                window_size[1],
+                int(window_size[0]),
+                int(window_size[1]),
             )
 
         self.atlas_texture.use(location=0)

@@ -873,7 +873,7 @@ class WGPUGraphicsContext(GraphicsContext):
 
     def _calculate_letterbox_geometry(self) -> None:
         """Calculate letterbox geometry for the current window size."""
-        window_width, window_height = self.window.get_framebuffer_size()
+        window_width, window_height = map(int, self.window.get_framebuffer_size())
         console_width, console_height = (
             self.console_width_tiles,
             self.console_height_tiles,

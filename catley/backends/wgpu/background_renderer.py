@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 import wgpu
 
+from catley.types import PixelPos
+
 if TYPE_CHECKING:
     from .resource_manager import WGPUResourceManager
     from .shader_manager import WGPUShaderManager
@@ -181,7 +183,7 @@ class WGPUBackgroundRenderer:
     def render(
         self,
         render_pass: wgpu.GPURenderPassEncoder,
-        window_size: tuple[int, int],
+        window_size: PixelPos,
         letterbox_geometry: tuple[int, int, int, int] | None,
     ) -> None:
         """Render all queued background textures in the current render pass."""

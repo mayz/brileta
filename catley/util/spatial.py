@@ -92,7 +92,7 @@ class SpatialHashGrid(SpatialIndex[T]):
         self._obj_to_cell: dict[int, Coord] = {}
         self._id_to_obj: dict[int, T] = {}
 
-    def _hash(self, x: int, y: int) -> Coord:
+    def _hash(self, x: WorldTileCoord, y: WorldTileCoord) -> Coord:
         """Converts world coordinates to grid cell coordinates."""
         return x // self.cell_size, y // self.cell_size
 
@@ -148,14 +148,20 @@ class SpatialHashGrid(SpatialIndex[T]):
         self._obj_to_cell[obj_id] = new_cell_xy
         self._id_to_obj[obj_id] = obj
 
-    def get_at_point(self, x: int, y: int) -> list[T]:
+    def get_at_point(self, x: WorldTileCoord, y: WorldTileCoord) -> list[T]:
         """Get all objects at a specific tile (x, y)."""
         cell_xy = self._hash(x, y)
         cell_contents = self.grid.get(cell_xy, {})
         # Filter by exact coordinates because a cell covers a larger region.
         return [obj for obj in cell_contents.values() if obj.x == x and obj.y == y]
 
-    def get_in_bounds(self, x1: int, y1: int, x2: int, y2: int) -> list[T]:
+    def get_in_bounds(
+        self,
+        x1: WorldTileCoord,
+        y1: WorldTileCoord,
+        x2: WorldTileCoord,
+        y2: WorldTileCoord,
+    ) -> list[T]:
         """Get all objects within a rectangular bounding box."""
         # Ensure the coordinates are ordered correctly. This makes the function
         # more robust and prevents range() from returning nothing unexpectedly.
@@ -167,7 +173,9 @@ class SpatialHashGrid(SpatialIndex[T]):
         # Delegate the core query logic to the internal helper method.
         return self._query_bounds(x1, y1, x2, y2)
 
-    def get_in_radius(self, x: int, y: int, radius: int) -> list[T]:
+    def get_in_radius(
+        self, x: WorldTileCoord, y: WorldTileCoord, radius: int
+    ) -> list[T]:
         """Get all objects within a certain Chebyshev distance (square radius)."""
         # For Chebyshev distance, the query area IS a square bounding box.
         # We calculate the bounds and delegate to the internal helper method.

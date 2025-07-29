@@ -2,6 +2,8 @@
 
 import glfw
 
+from catley.types import PixelPos
+
 
 class GlfwWindow:
     """
@@ -20,7 +22,7 @@ class GlfwWindow:
         """
         self.glfw_window = glfw_window
 
-    def get_size(self) -> tuple[int, int]:
+    def get_size(self) -> PixelPos:
         """
         Returns the current pixel dimensions (width, height) of the
         window's drawable area.
@@ -30,7 +32,7 @@ class GlfwWindow:
         """
         return glfw.get_window_size(self.glfw_window)
 
-    def get_framebuffer_size(self) -> tuple[int, int]:
+    def get_framebuffer_size(self) -> PixelPos:
         """
         Returns the framebuffer dimensions (can be different on high DPI/Retina).
 

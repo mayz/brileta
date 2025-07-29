@@ -12,12 +12,13 @@ from catley.game.actors import Character
 from catley.game.enums import AreaType
 from catley.game.items.capabilities import AreaEffect, RangedAttack
 from catley.game.items.properties import TacticalProperty, WeaponProperty
+from catley.types import WorldTilePos
 
 if TYPE_CHECKING:
     from catley.game.actions.area_effects import AreaEffectIntent
 
 # Convenience type aliases for area-effect calculations
-Coord = tuple[int, int]
+Coord = WorldTilePos
 # Maps an (x, y) tile coordinate to the distance from the effect's origin.
 DistanceByTile = dict[Coord, int]
 
@@ -85,7 +86,7 @@ class WeaponAreaEffectExecutor(ActionExecutor):
         self, intent: AreaEffectIntent, effect: AreaEffect
     ) -> DistanceByTile:
         game_map = intent.controller.gw.game_map
-        tiles: dict[tuple[int, int], int] = {}
+        tiles: dict[WorldTilePos, int] = {}
         for dx in range(-effect.size, effect.size + 1):
             for dy in range(-effect.size, effect.size + 1):
                 tx = intent.target_x + dx
@@ -112,7 +113,7 @@ class WeaponAreaEffectExecutor(ActionExecutor):
         self, intent: AreaEffectIntent, effect: AreaEffect
     ) -> DistanceByTile:
         game_map = intent.controller.gw.game_map
-        tiles: dict[tuple[int, int], int] = {}
+        tiles: dict[WorldTilePos, int] = {}
         line = ranges.get_line(
             intent.attacker.x,
             intent.attacker.y,
@@ -139,7 +140,7 @@ class WeaponAreaEffectExecutor(ActionExecutor):
         self, intent: AreaEffectIntent, effect: AreaEffect
     ) -> DistanceByTile:
         game_map = intent.controller.gw.game_map
-        tiles: dict[tuple[int, int], int] = {}
+        tiles: dict[WorldTilePos, int] = {}
 
         dir_x = intent.target_x - intent.attacker.x
         dir_y = intent.target_y - intent.attacker.y

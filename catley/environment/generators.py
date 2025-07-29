@@ -10,6 +10,7 @@ import numpy as np
 
 from catley.environment import tile_types
 from catley.environment.map import MapRegion
+from catley.types import WorldTileCoord
 from catley.util.coordinates import Rect
 
 if TYPE_CHECKING:
@@ -67,7 +68,9 @@ class RoomsAndCorridorsGenerator(BaseMapGenerator):
         v_slice = slice(min(y1, y2), max(y1, y2) + 1)
         tiles[x, v_slice] = tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[attr-defined]
 
-    def _place_door(self, tiles: np.ndarray, x: int, y: int) -> None:
+    def _place_door(
+        self, tiles: np.ndarray, x: WorldTileCoord, y: WorldTileCoord
+    ) -> None:
         if (
             0 <= x < self.map_width
             and 0 <= y < self.map_height

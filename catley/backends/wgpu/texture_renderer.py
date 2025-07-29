@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import wgpu
 
+from catley.types import ViewportTilePos
 from catley.util.caching import ResourceCache
 from catley.util.glyph_buffer import GlyphBuffer
 from catley.util.tilesets import unicode_to_cp437
@@ -452,7 +453,7 @@ class WGPUTextureRenderer:
 
     def _find_dirty_tiles(
         self, glyph_buffer: GlyphBuffer, cache_buffer: GlyphBuffer | None
-    ) -> list[tuple[int, int]]:
+    ) -> list[ViewportTilePos]:
         """Find tiles that have changed since the last frame.
 
         Args:
@@ -585,7 +586,7 @@ class WGPUTextureRenderer:
     def _update_dirty_tiles_in_vbo(
         self,
         glyph_buffer: GlyphBuffer,
-        dirty_tiles: list[tuple[int, int]],
+        dirty_tiles: list[ViewportTilePos],
         vbo: wgpu.GPUBuffer,
         cpu_buffer_override: np.ndarray,
     ) -> None:

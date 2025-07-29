@@ -8,6 +8,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 import wgpu
 
+from catley.types import PixelPos
+
 if TYPE_CHECKING:
     from .resource_manager import WGPUResourceManager
     from .shader_manager import WGPUShaderManager
@@ -219,7 +221,7 @@ class WGPUScreenRenderer:
     def render_to_screen(
         self,
         render_pass: wgpu.GPURenderPassEncoder,
-        window_size: tuple[int, int],
+        window_size: PixelPos,
         letterbox_geometry: tuple[int, int, int, int] | None = None,
     ) -> None:
         """Main drawing method that renders all batched vertex data to the screen.
@@ -238,7 +240,7 @@ class WGPUScreenRenderer:
         else:
             # No letterboxing - use full screen
             offset_x, offset_y = 0, 0
-            scaled_w, scaled_h = window_size
+            scaled_w, scaled_h = map(int, window_size)
 
         # Update uniform buffer with letterbox parameters (same as UI renderer)
         letterbox_data = struct.pack(

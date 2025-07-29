@@ -140,7 +140,7 @@ class ModernGLGraphicsContext(GraphicsContext):
         self.screen_renderer = ScreenRenderer(self.mgl_context, self.atlas_texture)
 
         # Set initial viewport and update dimensions (this will set _tile_dimensions)
-        window_width, window_height = self.window.get_framebuffer_size()
+        window_width, window_height = map(int, self.window.get_framebuffer_size())
         self.mgl_context.viewport = (0, 0, window_width, window_height)
         self.update_dimensions()
 
@@ -493,7 +493,7 @@ class ModernGLGraphicsContext(GraphicsContext):
 
     def update_dimensions(self) -> None:
         """Recalculates letterboxing and updates the coordinate converter."""
-        window_width, window_height = self.window.get_framebuffer_size()
+        window_width, window_height = map(int, self.window.get_framebuffer_size())
         console_width, console_height = (
             self.console_width_tiles,
             self.console_height_tiles,

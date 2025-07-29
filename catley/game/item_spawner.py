@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, TypeGuard, cast
 from catley import colors
 from catley.game.actors import Actor, Character, components
 from catley.game.items.item_core import Item
+from catley.types import WorldTileCoord, WorldTilePos
 
 if TYPE_CHECKING:
     from catley.game.game_world import GameWorld
@@ -19,7 +20,12 @@ class ItemSpawner:
         self.game_world = game_world
 
     def spawn_item(
-        self, item: Item, x: int, y: int, *, consolidate: bool = True
+        self,
+        item: Item,
+        x: WorldTileCoord,
+        y: WorldTileCoord,
+        *,
+        consolidate: bool = True,
     ) -> Actor:
         """Spawn an item on the ground, optionally consolidating with existing piles."""
         # Handle consolidation if requested
@@ -85,7 +91,9 @@ class ItemSpawner:
         self.game_world.add_actor(ground_actor)
         return ground_actor
 
-    def _find_valid_spawn_location(self, x: int, y: int) -> tuple[int, int]:
+    def _find_valid_spawn_location(
+        self, x: WorldTileCoord, y: WorldTileCoord
+    ) -> WorldTilePos:
         """Find a valid location to spawn items, preferring the target location."""
         game_map = self.game_world.game_map
 

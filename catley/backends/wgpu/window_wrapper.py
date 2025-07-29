@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 import wgpu.gui.base
 import wgpu.gui.glfw
 
+from catley.types import PixelPos
+
 if TYPE_CHECKING:
     from catley.backends.glfw.window import GlfwWindow
 
@@ -53,7 +55,7 @@ class WGPUWindowWrapper(wgpu.gui.base.WgpuCanvasBase):
         # Use WGPU's built-in GLFW present method detection
         return wgpu.gui.glfw.get_glfw_present_methods(self.glfw_window.glfw_window)
 
-    def get_physical_size(self) -> tuple[int, int]:
+    def get_physical_size(self) -> PixelPos:
         """Get the physical size of the window in pixels.
 
         Returns:
@@ -62,7 +64,7 @@ class WGPUWindowWrapper(wgpu.gui.base.WgpuCanvasBase):
         self._physical_size = self.glfw_window.get_framebuffer_size()
         return self._physical_size
 
-    def get_logical_size(self) -> tuple[int, int]:
+    def get_logical_size(self) -> PixelPos:
         """Get the logical size of the window.
 
         Returns:

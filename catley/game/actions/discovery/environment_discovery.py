@@ -9,6 +9,7 @@ from catley.game.actions.recovery import (
     SleepIntent,
 )
 from catley.game.actors import Character
+from catley.types import WorldTilePos
 
 from .action_context import ActionContext
 from .action_factory import ActionFactory
@@ -47,8 +48,8 @@ class EnvironmentActionDiscovery:
 
         options: list[ActionOption] = []
         gm = controller.gw.game_map
-        closed_doors: list[tuple[int, int]] = []
-        open_doors: list[tuple[int, int]] = []
+        closed_doors: list[WorldTilePos] = []
+        open_doors: list[WorldTilePos] = []
 
         for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
             tx = actor.x + dx

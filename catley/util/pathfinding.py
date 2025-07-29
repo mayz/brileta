@@ -8,8 +8,9 @@ import tcod.path
 if TYPE_CHECKING:
     from catley.environment.map import GameMap
     from catley.game.actors import Actor
-    from catley.util.coordinates import WorldTilePos
     from catley.util.spatial import SpatialIndex
+
+from catley.types import WorldTilePos
 
 
 def find_path(
@@ -61,7 +62,7 @@ def find_path(
 
     astar = tcod.path.AStar(cost=cost, diagonal=1)
 
-    path: list[tuple[int, int]] = astar.get_path(
+    path: list[WorldTilePos] = astar.get_path(
         start_pos[0], start_pos[1], end_pos[0], end_pos[1]
     )
 
