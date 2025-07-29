@@ -7,6 +7,7 @@ import tcod.map
 
 from catley.app import App
 from catley.game.resolution.base import ResolutionSystem
+from catley.sound import SoundSystem
 
 if TYPE_CHECKING:
     from catley.game.actions.discovery import CombatIntentCache
@@ -118,6 +119,9 @@ class Controller:
 
         # Animation manager for handling movement and effects
         self.animation_manager = AnimationManager()
+
+        # Sound system for managing audio playback
+        self.sound_system = SoundSystem()
 
         self.combat_intent_cache: CombatIntentCache | None = None
 
@@ -234,6 +238,15 @@ class Controller:
 
             if self.gw.lighting_system is not None:
                 self.gw.lighting_system.update(self.fixed_timestep)
+
+            # Update sound system with player position
+            if self.gw.player:
+                self.sound_system.update(
+                    self.gw.player.x,
+                    self.gw.player.y,
+                    self.gw.actors,
+                    self.fixed_timestep,
+                )
 
             with record_time_live_variable("cpu.action_processing_ms"):
                 # GAME LOGIC: Process all NPC actions for this step

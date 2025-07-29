@@ -37,6 +37,7 @@ from catley.game.actors import conditions
 from catley.game.enums import Disposition, InjuryLocation
 from catley.game.items.item_core import Item
 from catley.game.pathfinding_goal import PathfindingGoal
+from catley.sound.emitter import SoundEmitter
 from catley.types import TileCoord, WorldTileCoord
 from catley.util.pathfinding import find_path
 
@@ -160,6 +161,7 @@ class Actor:
         # === Behavioral/Optional Components ===
         self.ai = ai
         self.visual_effects = visual_effects
+        self.sound_emitters: list[SoundEmitter] | None = None
 
         # === Animation Control ===
         # Flag to indicate if this actor is under animation control
@@ -266,6 +268,16 @@ class Actor:
                 # If this actor was selected, deselect it.
                 if self.gw and self.gw.selected_actor == self:
                     self.gw.selected_actor = None
+
+    def add_sound_emitter(self, emitter: SoundEmitter) -> None:
+        """Add a sound emitter to this actor.
+
+        Args:
+            emitter: The SoundEmitter to add
+        """
+        if self.sound_emitters is None:
+            self.sound_emitters = []
+        self.sound_emitters.append(emitter)
 
     def update_turn(self, controller: Controller) -> None:
         """Advance ongoing status effects for this actor.

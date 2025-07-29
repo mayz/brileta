@@ -9,6 +9,7 @@ from catley.game.actions.environmental import EnvironmentalDamageIntent
 from catley.game.actors.components import VisualEffectsComponent
 from catley.game.actors.core import Actor
 from catley.game.lights import DynamicLight
+from catley.sound.emitter import SoundEmitter
 from catley.types import WorldTileCoord
 from catley.view.render.effects.effects import FireEffect
 
@@ -82,6 +83,9 @@ class ContainedFire(Actor):
                 owner=self,
             )
             game_world.add_light(self.light_source)
+
+        # Add fire crackling sound
+        self.add_sound_emitter(SoundEmitter("fire_ambient"))
 
     def get_next_action(
         self, controller: Controller

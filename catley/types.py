@@ -70,3 +70,10 @@ FixedTimestep = NewType("FixedTimestep", float)
 # It is a value between 0.0 (fully transparent) and 1.0 (fully opaque),
 # used for transparency effects like highlights, overlays, and particle alpha.
 Opacity = NewType("Opacity", float)
+
+# =============================================================================
+# GAME-RELATED TYPES
+# =============================================================================
+
+# Unique identifier for sound definitions (e.g., "fire_ambient", "waterfall_ambient")
+SoundId = str
