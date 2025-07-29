@@ -1,6 +1,6 @@
 from .area_effects import WeaponAreaEffectExecutor
 from .base import ActionExecutor
-from .environment import CloseDoorExecutor, OpenDoorExecutor
+from .doors import CloseDoorExecutor, OpenDoorExecutor
 from .environmental import EnvironmentalDamageExecutor
 from .misc import PickupExecutor, SwitchWeaponExecutor
 from .movement import MoveExecutor

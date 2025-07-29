@@ -5,7 +5,7 @@ from catley import colors
 from catley.controller import Controller
 from catley.environment import tile_types
 from catley.game.actions.environment import CloseDoorIntent, OpenDoorIntent
-from catley.game.actions.executors.environment import (
+from catley.game.actions.executors.doors import (
     CloseDoorExecutor,
     OpenDoorExecutor,
 )

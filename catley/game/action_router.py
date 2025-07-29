@@ -17,7 +17,7 @@ from catley.game.actions.environmental import EnvironmentalDamageIntent
 from catley.game.actions.executors.area_effects import WeaponAreaEffectExecutor
 from catley.game.actions.executors.base import ActionExecutor
 from catley.game.actions.executors.combat import AttackExecutor, ReloadExecutor
-from catley.game.actions.executors.environment import (
+from catley.game.actions.executors.doors import (
     CloseDoorExecutor,
     OpenDoorExecutor,
 )
