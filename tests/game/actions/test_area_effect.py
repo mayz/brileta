@@ -19,7 +19,7 @@ from catley.events import (
     subscribe_to_event,
 )
 from catley.game.actions.area_effects import AreaEffectIntent
-from catley.game.actions.executors.area_effects import AreaEffectExecutor
+from catley.game.actions.executors.area_effects import WeaponAreaEffectExecutor
 from catley.game.actors import Character
 from catley.game.game_world import GameWorld
 from catley.game.items.item_types import GRENADE_TYPE
@@ -91,7 +91,7 @@ def make_world() -> tuple[
     Character,
     Character,
     AreaEffectIntent,
-    AreaEffectExecutor,
+    WeaponAreaEffectExecutor,
     GameMap,
 ]:
     game_map = DummyMap(10, 10)
@@ -110,7 +110,7 @@ def make_world() -> tuple[
     controller = DummyController(cast(GameWorld, gw))
     grenade = GRENADE_TYPE.create()
     intent = AreaEffectIntent(controller, attacker, 5, 5, grenade)
-    executor = AreaEffectExecutor()
+    executor = WeaponAreaEffectExecutor()
     return controller, attacker, target, intent, executor, game_map
 
 

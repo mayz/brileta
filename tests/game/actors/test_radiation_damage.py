@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 from catley.events import reset_event_bus_for_testing
 from catley.game.actions.area_effects import AreaEffectIntent
 from catley.game.actions.combat import AttackIntent
-from catley.game.actions.executors.area_effects import AreaEffectExecutor
+from catley.game.actions.executors.area_effects import WeaponAreaEffectExecutor
 from catley.game.actions.executors.combat import AttackExecutor
 from catley.game.actors import Character, conditions
 from catley.game.enums import OutcomeTier
@@ -95,7 +95,7 @@ def make_bomb_world():
     )
     bomb = DIRTY_BOMB_TYPE.create()
     intent = AreaEffectIntent(controller, attacker, 5, 5, bomb)
-    executor = AreaEffectExecutor()
+    executor = WeaponAreaEffectExecutor()
     return controller, attacker, target, intent, executor
 
 

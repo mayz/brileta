@@ -12,7 +12,7 @@ from catley.events import (
 from catley.game import ranges
 from catley.game.actions.area_effects import AreaEffectIntent
 from catley.game.actions.combat import AttackIntent
-from catley.game.actions.executors.area_effects import AreaEffectExecutor
+from catley.game.actions.executors.area_effects import WeaponAreaEffectExecutor
 from catley.game.actions.executors.combat import AttackExecutor
 from catley.game.actors import Character
 from catley.game.enums import OutcomeTier
@@ -104,7 +104,7 @@ def test_automatic_weapon_ammo_consumption() -> None:
     controller, attacker, defender, weapon = _make_world("smg")
     ranged = weapon.ranged_attack
     assert ranged is not None
-    executor = AreaEffectExecutor()
+    executor = WeaponAreaEffectExecutor()
     # Directly test the ammo consumption helper
     ranged.current_ammo = 5
     executor._consume_ammo(ranged)
@@ -126,7 +126,7 @@ def test_explosive_visual_effect() -> None:
     controller, attacker, defender, weapon = _make_world("grenade")
     effect = weapon.area_effect
     assert effect is not None
-    executor = AreaEffectExecutor()
+    executor = WeaponAreaEffectExecutor()
     intent = AreaEffectIntent(controller, attacker, 5, 5, weapon)
     executor._trigger_visual_effect(intent, effect)
     assert effects == ["explosion"]
@@ -151,7 +151,7 @@ def test_smoke_visual_effect() -> None:
     effects: list[str] = []
     subscribe_to_event(EffectEvent, lambda e: effects.append(e.effect_name))
     controller, attacker, defender, _ = _make_world("grenade")
-    executor = AreaEffectExecutor()
+    executor = WeaponAreaEffectExecutor()
     intent = AreaEffectIntent(controller, attacker, 2, 2, weapon)
     effect = weapon.area_effect
     assert effect is not None

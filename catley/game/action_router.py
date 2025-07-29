@@ -13,13 +13,15 @@ from catley.game.actions.area_effects import AreaEffectIntent
 from catley.game.actions.base import GameActionResult, GameIntent
 from catley.game.actions.combat import AttackIntent, ReloadIntent
 from catley.game.actions.environment import CloseDoorIntent, OpenDoorIntent
-from catley.game.actions.executors.area_effects import AreaEffectExecutor
+from catley.game.actions.environmental import EnvironmentalDamageIntent
+from catley.game.actions.executors.area_effects import WeaponAreaEffectExecutor
 from catley.game.actions.executors.base import ActionExecutor
 from catley.game.actions.executors.combat import AttackExecutor, ReloadExecutor
 from catley.game.actions.executors.environment import (
     CloseDoorExecutor,
     OpenDoorExecutor,
 )
+from catley.game.actions.executors.environmental import EnvironmentalDamageExecutor
 from catley.game.actions.executors.misc import PickupExecutor, SwitchWeaponExecutor
 from catley.game.actions.executors.movement import MoveExecutor
 from catley.game.actions.executors.recovery import (
@@ -75,7 +77,8 @@ class ActionRouter:
             RestIntent: RestExecutor(),
             SleepIntent: SleepExecutor(),
             ComfortableSleepIntent: ComfortableSleepExecutor(),
-            AreaEffectIntent: AreaEffectExecutor(),
+            AreaEffectIntent: WeaponAreaEffectExecutor(),
+            EnvironmentalDamageIntent: EnvironmentalDamageExecutor(),
         }
 
     def execute_intent(self, intent: GameIntent) -> None:

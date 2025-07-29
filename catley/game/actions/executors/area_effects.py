@@ -22,11 +22,16 @@ Coord = tuple[int, int]
 DistanceByTile = dict[Coord, int]
 
 
-class AreaEffectExecutor(ActionExecutor):
-    """Executes area effect intents."""
+class WeaponAreaEffectExecutor(ActionExecutor):
+    """Executes weapon-based area effect intents like grenades and flamethrowers.
+
+    This executor handles area-of-effect attacks that originate from weapons,
+    including ammo consumption, range validation, and weapon-specific effects.
+    For environmental damage (fire, radiation zones), use EnvironmentalDamageExecutor.
+    """
 
     def __init__(self) -> None:
-        """Create an AreaEffectExecutor without requiring a controller."""
+        """Create a WeaponAreaEffectExecutor without requiring a controller."""
         pass
 
     def execute(self, intent: AreaEffectIntent) -> GameActionResult | None:  # type: ignore[override]

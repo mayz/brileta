@@ -5,22 +5,16 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from catley import colors
-from catley.game.actions.base import GameIntent
+from catley.game.actions.environmental import EnvironmentalDamageIntent
 from catley.game.actors.components import VisualEffectsComponent
 from catley.game.actors.core import Actor
 from catley.game.lights import DynamicLight
+from catley.types import WorldTileCoord
 from catley.view.render.effects.effects import FireEffect
 
 if TYPE_CHECKING:
     from catley.controller import Controller
     from catley.game.game_world import GameWorld
-
-
-class FireTickIntent(GameIntent):
-    """A no-op intent that allows fires to participate in the turn system for damage."""
-
-    def __init__(self, controller: Controller, actor: Actor) -> None:
-        super().__init__(controller, actor)
 
 
 class ContainedFire(Actor):
@@ -32,8 +26,8 @@ class ContainedFire(Actor):
 
     def __init__(
         self,
-        x: int,
-        y: int,
+        x: WorldTileCoord,
+        y: WorldTileCoord,
         ch: str,
         color: colors.Color,
         name: str = "Fire",
@@ -89,20 +83,22 @@ class ContainedFire(Actor):
             )
             game_world.add_light(self.light_source)
 
-    def get_next_action(self, controller: Controller) -> FireTickIntent | None:
-        """Return a no-op action to allow fire to participate in turn system."""
-        return FireTickIntent(controller, self)
+    def get_next_action(
+        self, controller: Controller
+    ) -> EnvironmentalDamageIntent | None:
+        """Return environmental damage intent to deal fire damage."""
+        return EnvironmentalDamageIntent(
+            controller=controller,
+            source_actor=self,
+            damage_amount=self.damage_per_turn,
+            damage_type="fire",
+            affected_coords=[(self.x, self.y)],
+            source_description=self.name.lower(),
+        )
 
     def update_turn(self, controller: Controller) -> None:
-        """Update the fire each turn - damage actors on the same tile."""
+        """Update the fire each turn."""
         super().update_turn(controller)
-
-        # Damage actors on the same tile
-        if self.gw:
-            actors_here = self.gw.actor_spatial_index.get_at_point(self.x, self.y)
-            for actor in actors_here:
-                if actor is not self and hasattr(actor, "take_damage"):
-                    actor.take_damage(self.damage_per_turn, damage_type="fire")
 
     @staticmethod
     def create_campfire(
