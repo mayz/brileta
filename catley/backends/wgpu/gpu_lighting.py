@@ -65,9 +65,21 @@ class GPULightingSystem(LightingSystem):
             self.device = graphics_context.device
             self.queue = graphics_context.queue
         else:
-            # Test/dummy graphics context, will fail initialization and use fallback
-            self.device = None
-            self.queue = None
+            # Create a standalone WGPU context for lighting calculations
+            try:
+                adapter = wgpu.gpu.request_adapter_sync(
+                    power_preference=wgpu.PowerPreference.high_performance  # type: ignore
+                )
+                self.device = adapter.request_device_sync(
+                    required_features=[],
+                    required_limits={},
+                    label="catley_lighting_device",
+                )
+                self.queue = self.device.queue
+            except Exception as e:
+                print(f"Failed to create standalone WGPU context: {e}")
+                self.device = None
+                self.queue = None
 
         # WGPU resources
         self._render_pipeline: wgpu.GPURenderPipeline | None = None
@@ -269,7 +281,7 @@ class GPULightingSystem(LightingSystem):
 
         self._uniform_buffer = self.device.create_buffer(
             size=estimated_size,
-            usage=wgpu.BufferUsage.UNIFORM | wgpu.BufferUsage.COPY_DST,
+            usage=wgpu.BufferUsage.UNIFORM | wgpu.BufferUsage.COPY_DST,  # type: ignore
         )
 
     def _create_fullscreen_quad(self) -> None:
@@ -295,7 +307,8 @@ class GPULightingSystem(LightingSystem):
 
         assert self.device is not None
         self._vertex_buffer = self.device.create_buffer_with_data(
-            data=quad_vertices.tobytes(), usage=wgpu.BufferUsage.VERTEX
+            data=quad_vertices.tobytes(),
+            usage=wgpu.BufferUsage.VERTEX,  # type: ignore
         )
 
     def _create_sampler(self) -> None:
@@ -303,12 +316,12 @@ class GPULightingSystem(LightingSystem):
         assert self.device is not None
 
         self._sky_exposure_sampler = self.device.create_sampler(
-            address_mode_u=wgpu.AddressMode.clamp_to_edge,
-            address_mode_v=wgpu.AddressMode.clamp_to_edge,
-            address_mode_w=wgpu.AddressMode.clamp_to_edge,
-            mag_filter=wgpu.FilterMode.linear,
-            min_filter=wgpu.FilterMode.linear,
-            mipmap_filter=wgpu.FilterMode.nearest,
+            address_mode_u=wgpu.AddressMode.clamp_to_edge,  # type: ignore
+            address_mode_v=wgpu.AddressMode.clamp_to_edge,  # type: ignore
+            address_mode_w=wgpu.AddressMode.clamp_to_edge,  # type: ignore
+            mag_filter=wgpu.FilterMode.linear,  # type: ignore
+            min_filter=wgpu.FilterMode.linear,  # type: ignore
+            mipmap_filter=wgpu.FilterMode.nearest,  # type: ignore
         )
 
     def _collect_light_data(self, viewport_bounds: Rect) -> list[float]:
@@ -499,8 +512,8 @@ class GPULightingSystem(LightingSystem):
 
         self._sky_exposure_texture = self.device.create_texture(
             size=(game_map.width, game_map.height, 1),
-            format=wgpu.TextureFormat.rgba8unorm,  # RGBA 8-bit normalized (filterable)
-            usage=wgpu.TextureUsage.TEXTURE_BINDING | wgpu.TextureUsage.COPY_DST,
+            format=wgpu.TextureFormat.rgba8unorm,  # type: ignore
+            usage=wgpu.TextureUsage.TEXTURE_BINDING | wgpu.TextureUsage.COPY_DST,  # type: ignore
         )
 
         # Write sky exposure data to texture - WGPU syntax
@@ -510,7 +523,7 @@ class GPULightingSystem(LightingSystem):
                 "mip_level": 0,
                 "origin": (0, 0, 0),
             },
-            sky_exposure_data.tobytes(),
+            memoryview(sky_exposure_data.tobytes()),  # type: ignore
             {
                 "offset": 0,
                 "bytes_per_row": game_map.width * 4,  # 4 bytes per float32
@@ -684,7 +697,7 @@ class GPULightingSystem(LightingSystem):
         )
 
         # Write to GPU buffer
-        self.queue.write_buffer(self._uniform_buffer, 0, uniform_bytes)
+        self.queue.write_buffer(self._uniform_buffer, 0, memoryview(uniform_bytes))  # type: ignore
 
     def update(self, fixed_timestep: FixedTimestep) -> None:
         """Update internal time-based state for dynamic effects."""
@@ -740,10 +753,10 @@ class GPULightingSystem(LightingSystem):
                 assert self.device is not None
                 self._output_texture = self.device.create_texture(
                     size=(viewport_bounds.width, viewport_bounds.height, 1),
-                    format=wgpu.TextureFormat.rgba32float,  # RGBA 32-bit float
+                    format=wgpu.TextureFormat.rgba32float,  # type: ignore
                     # to handle shader output
                     usage=wgpu.TextureUsage.RENDER_ATTACHMENT
-                    | wgpu.TextureUsage.COPY_SRC,
+                    | wgpu.TextureUsage.COPY_SRC,  # type: ignore
                 )
 
                 # Create buffer for reading back results
@@ -752,7 +765,7 @@ class GPULightingSystem(LightingSystem):
                     * viewport_bounds.height
                     * 4
                     * 4,  # 4 components * 4 bytes each
-                    usage=wgpu.BufferUsage.COPY_DST | wgpu.BufferUsage.MAP_READ,
+                    usage=wgpu.BufferUsage.COPY_DST | wgpu.BufferUsage.MAP_READ,  # type: ignore
                 )
 
                 self._current_viewport = viewport_bounds
@@ -976,8 +989,8 @@ class GPULightingSystem(LightingSystem):
         # Create 1x1 texture with 0.0 sky exposure
         self._sky_exposure_texture = self.device.create_texture(
             size=(1, 1, 1),
-            format=wgpu.TextureFormat.rgba8unorm,
-            usage=wgpu.TextureUsage.TEXTURE_BINDING | wgpu.TextureUsage.COPY_DST,
+            format=wgpu.TextureFormat.rgba8unorm,  # type: ignore
+            usage=wgpu.TextureUsage.TEXTURE_BINDING | wgpu.TextureUsage.COPY_DST,  # type: ignore
         )
         self._bind_group = None  # Invalidate bind group when texture is created
 
@@ -989,7 +1002,7 @@ class GPULightingSystem(LightingSystem):
                 "mip_level": 0,
                 "origin": (0, 0, 0),
             },
-            sky_data.tobytes(),
+            memoryview(sky_data.tobytes()),  # type: ignore
             {
                 "offset": 0,
                 "bytes_per_row": 4,  # 1 pixel * 4 bytes (RGBA8)

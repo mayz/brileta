@@ -69,6 +69,18 @@ GRAPHICS_BACKEND: Literal["tcod", "moderngl", "wgpu"] = "moderngl"
 # Lighting system selection (independent of graphics backend)
 LIGHTING_BACKEND: Literal["cpu", "moderngl", "wgpu"] = "moderngl"
 
+# These are the valid combinations of
+# APP_BACKEND, GRAPHICS_BACKEND, and LIGHTING_BACKEND.
+VALID_BACKEND_CONFIG_COMBINATIONS = [
+    ("tcod", "tcod", "cpu"),
+    ("tcod", "tcod", "moderngl"),
+    ("tcod", "tcod", "wgpu"),
+    ("glfw", "moderngl", "cpu"),
+    ("glfw", "moderngl", "moderngl"),
+    ("glfw", "wgpu", "cpu"),
+    ("glfw", "wgpu", "wgpu"),
+]
+
 # ============================================================================tcod
 # PERFORMANCE CONFIGURATION
 # =============================================================================
@@ -240,3 +252,27 @@ PROBABILITY_DESCRIPTORS_MILITARY = [
 
 SHOW_MESSAGE_SEQUENCE_NUMBERS = False
 PRINT_MESSAGES_TO_CONSOLE = False
+
+# =============================================================================
+# Supporting functions
+# =============================================================================
+
+
+def validate_backend_configuration() -> None:
+    """Validate the backend configuration.
+
+    Raises:
+        ValueError: If the backend combination is not valid.
+    """
+    if (
+        APP_BACKEND,
+        GRAPHICS_BACKEND,
+        LIGHTING_BACKEND,
+    ) not in VALID_BACKEND_CONFIG_COMBINATIONS:
+        valid_combos = "\n  ".join(str(c) for c in VALID_BACKEND_CONFIG_COMBINATIONS)
+        raise ValueError(
+            f"Invalid backend configuration: "
+            f"APP_BACKEND={APP_BACKEND}, GRAPHICS_BACKEND={GRAPHICS_BACKEND}, "
+            f"LIGHTING_BACKEND={LIGHTING_BACKEND}.\n"
+            f"Valid combinations are:\n  {valid_combos}"
+        )

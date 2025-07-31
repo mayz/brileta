@@ -7,6 +7,8 @@ from .app import App, AppConfig
 
 
 def main() -> None:
+    config.validate_backend_configuration()
+
     random.seed(config.RANDOM_SEED)
 
     app_config = AppConfig(
