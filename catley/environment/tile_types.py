@@ -207,7 +207,7 @@ _boulder_data = make_tile_type_data(
     cover_bonus=2,
     casts_shadows=True,
     dark=(ord("#"), colors.DARK_GREY, colors.DARK_GROUND),
-    light=(ord("#"), colors.MEDIUM_GREY, colors.LIGHT_GROUND),
+    light=(ord("#"), colors.LIGHT_GREY, colors.LIGHT_GROUND),
 )
 register_tile_type("BOULDER", _boulder_data)
 

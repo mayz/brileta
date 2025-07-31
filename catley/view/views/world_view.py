@@ -678,12 +678,13 @@ class WorldView(View):
                     exp_x[valid_mask], exp_y[valid_mask]
                 ]
 
-                # light_app_slice['fg'] is (N, 3) RGB. Convert to (N, 4) RGBA.
+                # light_app_slice['fg'] is (N, 3) RGB. Apply lighting, convert to RGBA.
                 light_fg_rgb = light_app_slice["fg"][
                     exp_x[valid_mask], exp_y[valid_mask]
                 ]
-                alpha_channel = np.full((len(light_fg_rgb), 1), 255, dtype=np.uint8)
-                light_fg_rgba = np.hstack((light_fg_rgb, alpha_channel))
+                dark_fg_rgb = gw.game_map.dark_appearance_map[world_slice]["fg"][
+                    exp_x[valid_mask], exp_y[valid_mask]
+                ]
 
                 light_bg_rgb = light_app_slice["bg"][
                     exp_x[valid_mask], exp_y[valid_mask]
@@ -696,6 +697,15 @@ class WorldView(View):
                 light_intensity_valid = explored_light_intensities[
                     exp_x[valid_mask], exp_y[valid_mask]
                 ]  # shape (N,3)
+
+                # Apply the same lighting blend to foreground as we do to background
+                scaled_fg_rgb = (
+                    light_fg_rgb.astype(np.float32) * light_intensity_valid
+                    + dark_fg_rgb.astype(np.float32) * (1.0 - light_intensity_valid)
+                ).astype(np.uint8)
+
+                alpha_channel = np.full((len(scaled_fg_rgb), 1), 255, dtype=np.uint8)
+                light_fg_rgba = np.hstack((scaled_fg_rgb, alpha_channel))
 
                 # --- exact CPU blend to match pre-refactor appearance ---
                 # light_intensity_valid shape: (N, 3) already carries warm torch colours

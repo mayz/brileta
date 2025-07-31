@@ -229,9 +229,13 @@ class TestModernGLGraphicsContext:
             )
 
             # Additional check: ensure the RGB values are correctly calculated
-            expected_r = (100 / 255.0) * 0.8  # color[0] / 255.0 * light_intensity[0]
-            expected_g = (150 / 255.0) * 0.9  # color[1] / 255.0 * light_intensity[1]
-            expected_b = (200 / 255.0) * 1.0  # color[2] / 255.0 * light_intensity[2]
+            # New formula: min(1.0, base_color * light * 0.7 + light * 0.3)
+            base_r, base_g, base_b = 100 / 255.0, 150 / 255.0, 200 / 255.0
+            light_r, light_g, light_b = 0.8, 0.9, 1.0
+
+            expected_r = min(1.0, base_r * light_r * 0.7 + light_r * 0.3)
+            expected_g = min(1.0, base_g * light_g * 0.7 + light_g * 0.3)
+            expected_b = min(1.0, base_b * light_b * 0.7 + light_b * 0.3)
 
             assert abs(final_color_tuple[0] - expected_r) < 0.001
             assert abs(final_color_tuple[1] - expected_g) < 0.001

@@ -312,11 +312,22 @@ class WGPUGraphicsContext(GraphicsContext):
         if self.screen_renderer is None or self.uv_map is None:
             return
 
-        # Convert color to 0-1 range and apply light intensity
+        # Convert color to 0-1 range
+        base_color = (color[0] / 255.0, color[1] / 255.0, color[2] / 255.0)
+
+        # Apply colored lighting using a blend that preserves actor color and light tint
+        # This approach ensures actors are visibly tinted by colored lights
+        # We use a mix of multiplication (for shading) and addition (for color tint)
         final_color = (
-            color[0] / 255.0 * light_intensity[0],
-            color[1] / 255.0 * light_intensity[1],
-            color[2] / 255.0 * light_intensity[2],
+            min(
+                1.0, base_color[0] * light_intensity[0] * 0.7 + light_intensity[0] * 0.3
+            ),
+            min(
+                1.0, base_color[1] * light_intensity[1] * 0.7 + light_intensity[1] * 0.3
+            ),
+            min(
+                1.0, base_color[2] * light_intensity[2] * 0.7 + light_intensity[2] * 0.3
+            ),
             1.0,  # Always fully opaque
         )
         uv_coords = self.uv_map[ord(char)]

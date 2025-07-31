@@ -235,11 +235,41 @@ class TCODGraphicsContext(GraphicsContext):
 
         texture = self._actor_texture_cache[char_code]
 
-        # Apply lighting and color
+        # Apply colored lighting using a blend that preserves actor color and light tint
+        # This approach ensures actors are visibly tinted by colored lights
+        # We use a mix of multiplication (for shading) and addition (for color tint)
+        base_color = (color[0] / 255.0, color[1] / 255.0, color[2] / 255.0)
         final_color = (
-            int(color[0] * light_intensity[0]),
-            int(color[1] * light_intensity[1]),
-            int(color[2] * light_intensity[2]),
+            int(
+                min(
+                    255,
+                    (
+                        base_color[0] * light_intensity[0] * 0.7
+                        + light_intensity[0] * 0.3
+                    )
+                    * 255,
+                )
+            ),
+            int(
+                min(
+                    255,
+                    (
+                        base_color[1] * light_intensity[1] * 0.7
+                        + light_intensity[1] * 0.3
+                    )
+                    * 255,
+                )
+            ),
+            int(
+                min(
+                    255,
+                    (
+                        base_color[2] * light_intensity[2] * 0.7
+                        + light_intensity[2] * 0.3
+                    )
+                    * 255,
+                )
+            ),
         )
         texture.color_mod = final_color
 

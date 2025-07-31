@@ -67,7 +67,7 @@ APP_BACKEND: Literal["tcod", "glfw"] = "glfw"
 GRAPHICS_BACKEND: Literal["tcod", "moderngl", "wgpu"] = "wgpu"
 
 # Lighting system selection (independent of graphics backend)
-LIGHTING_BACKEND: Literal["cpu", "moderngl", "wgpu"] = "moderngl"
+LIGHTING_BACKEND: Literal["cpu", "moderngl", "wgpu"] = "wgpu"
 
 # ============================================================================tcod
 # PERFORMANCE CONFIGURATION
