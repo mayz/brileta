@@ -56,10 +56,8 @@ class GameWorld:
         # Note: Rooms now have random 20% chance of being outdoor (set in generator)
 
         self._populate_npcs(rooms)
-        # Only add test fire if not running tests
-        import sys
 
-        if "pytest" not in sys.modules:
+        if not config.IS_TEST_ENVIRONMENT:
             self._add_test_fire(rooms)
 
     def add_actor(self, actor: Actor) -> None:

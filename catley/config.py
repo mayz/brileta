@@ -5,6 +5,7 @@ Centralizes all magic numbers and configuration values used throughout the codeb
 Organized by functional area for easy maintenance.
 """
 
+import sys
 from pathlib import Path
 from typing import Literal
 
@@ -20,6 +21,9 @@ PROJECT_ROOT_PATH = Path(__file__).resolve().parent.parent
 
 # RANDOM_SEED = None
 RANDOM_SEED = "burrito1"
+
+# Test environment detection
+IS_TEST_ENVIRONMENT = "pytest" in sys.modules
 
 # =============================================================================
 # DISPLAY & RENDERING

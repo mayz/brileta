@@ -2,18 +2,23 @@
 
 from __future__ import annotations
 
+import logging
 import math
 import random
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from catley.types import WorldTileCoord
 
+from .audio_backend import AudioBackend, AudioChannel, LoadedSound
 from .definitions import SoundDefinition, SoundLayer, get_sound_definition
 
 if TYPE_CHECKING:
     from catley.game.actors.core import Actor
     from catley.sound.emitter import SoundEmitter
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -22,8 +27,9 @@ class PlayingSound:
 
     emitter: SoundEmitter
     layer: SoundLayer
-    channel: object | None = None  # Audio backend channel/handle
+    channel: AudioChannel | None = None  # Audio backend channel
     next_trigger_time: float = 0.0  # For interval-based sounds
+    loaded_sound: LoadedSound | None = None  # Cached sound data
 
 
 class SoundSystem:
@@ -44,8 +50,10 @@ class SoundSystem:
         """
         self.max_concurrent_sounds = max_concurrent_sounds
         self.playing_sounds: list[PlayingSound] = []
-        self.audio_backend: object | None = None  # TODO: Add pygame/other audio backend
+        self.audio_backend: AudioBackend | None = None
         self.current_time: float = 0.0
+        self._sound_cache: dict[str, LoadedSound] = {}  # Cache loaded sounds
+        self._assets_path: Path | None = None
 
     def update(
         self,
@@ -75,6 +83,12 @@ class SoundSystem:
                     if emitter.active
                 )
 
+        if active_emitters and self.audio_backend:
+            logger.debug(
+                f"SoundSystem update: {len(active_emitters)} active emitters, "
+                f"listener at ({listener_x}, {listener_y})"
+            )
+
         # Keep track of which emitters are being processed
         processed_emitters = set()
 
@@ -83,6 +97,7 @@ class SoundSystem:
             processed_emitters.add(emitter)
             sound_def = get_sound_definition(emitter.sound_id)
             if not sound_def:
+                logger.warning(f"No sound definition for: {emitter.sound_id}")
                 continue
 
             # Calculate distance-based volume
@@ -96,6 +111,11 @@ class SoundSystem:
             )
 
             if volume > 0.0:
+                logger.debug(
+                    f"Sound {emitter.sound_id} at ({emitter_x}, {emitter_y}), "
+                    f"distance from player ({listener_x}, {listener_y}), "
+                    f"volume: {volume:.3f}"
+                )
                 self._ensure_sound_playing(emitter, sound_def, volume)
             else:
                 self._stop_sound_if_playing(emitter)
@@ -110,8 +130,39 @@ class SoundSystem:
             if emitter not in processed_emitters and emitter.playing_instances:
                 self._stop_sound_if_playing(emitter)
 
+        # Update audio backend volume for all playing sounds
+        if self.audio_backend:
+            for playing in self.playing_sounds:
+                if playing.channel and playing.channel.is_playing():
+                    # Find current volume for this emitter
+                    emitter_x = emitter_y = 0
+                    for actor in actors:
+                        if (
+                            hasattr(actor, "sound_emitters")
+                            and actor.sound_emitters
+                            and playing.emitter in actor.sound_emitters
+                        ):
+                            emitter_x, emitter_y = actor.x, actor.y
+                            break
+
+                    sound_def = get_sound_definition(playing.emitter.sound_id)
+                    if sound_def:
+                        volume = self._calculate_volume(
+                            emitter_x,
+                            emitter_y,
+                            listener_x,
+                            listener_y,
+                            sound_def,
+                            playing.emitter.volume_multiplier,
+                        )
+                        playing.channel.set_volume(volume * playing.layer.volume)
+
         # Clean up finished sounds
         self._cleanup_finished_sounds()
+
+        # Update audio backend
+        if self.audio_backend:
+            self.audio_backend.update()
 
     def _calculate_volume(
         self,
@@ -181,15 +232,29 @@ class SoundSystem:
                 # Looping sounds should always have an instance
                 if not playing:
                     playing = PlayingSound(emitter=emitter, layer=layer)
+
+                    # Start playing through audio backend
+                    if self.audio_backend:
+                        loaded_sound = self._load_sound(layer.file)
+                        if loaded_sound:
+                            channel = self.audio_backend.play_sound(
+                                loaded_sound, volume=volume * layer.volume, loop=True
+                            )
+                            if channel:
+                                playing.channel = channel
+                                playing.loaded_sound = loaded_sound
+                                logger.debug(
+                                    f"Started loop: {sound_def.sound_id} - "
+                                    f"{layer.file} at volume "
+                                    f"{volume * layer.volume:.2f}"
+                                )
+                            else:
+                                logger.warning(
+                                    f"No channels available for: {layer.file}"
+                                )
+
                     emitter.playing_instances.append(playing)
                     self.playing_sounds.append(playing)
-                    # TODO: Start playing through audio backend
-                    # DEBUG: Log when sound would start
-                    if __debug__:
-                        print(
-                            f"[SOUND] Starting loop: {sound_def.sound_id} - "
-                            f"{layer.file} at volume {volume:.2f}"
-                        )
             else:
                 # Interval-based sounds
                 if layer.interval:
@@ -206,13 +271,33 @@ class SoundSystem:
                         playing.next_trigger_time = self.current_time + random.uniform(
                             *layer.interval
                         )
-                        # TODO: Play one-shot through audio backend
-                        # DEBUG: Log when sound would trigger
-                        if __debug__:
-                            print(
-                                f"[SOUND] Triggering one-shot: {sound_def.sound_id} - "
-                                f"{layer.file} at volume {volume:.2f}"
+
+                        # Play one-shot through audio backend
+                        if self.audio_backend:
+                            loaded_sound = playing.loaded_sound or self._load_sound(
+                                layer.file
                             )
+                            if loaded_sound:
+                                # Add volume randomization for more natural variation
+                                # Vary volume by ±20% for more organic sound
+                                volume_variation = random.uniform(0.8, 1.2)
+                                final_volume = volume * layer.volume * volume_variation
+
+                                channel = self.audio_backend.play_sound(
+                                    loaded_sound,
+                                    volume=final_volume,
+                                    loop=False,
+                                )
+                                if channel:
+                                    # Store the channel for volume updates
+                                    playing.channel = channel
+                                    logger.debug(
+                                        f"Triggered one-shot: "
+                                        f"{sound_def.sound_id} - "
+                                        f"{layer.file} at volume "
+                                        f"{final_volume:.2f}"
+                                    )
+                                playing.loaded_sound = loaded_sound
 
     def _stop_sound_if_playing(self, emitter: SoundEmitter) -> None:
         """Stop all sounds for the given emitter.
@@ -221,15 +306,108 @@ class SoundSystem:
             emitter: The sound emitter to stop
         """
         for playing in emitter.playing_instances[:]:
-            # TODO: Stop through audio backend
-            # DEBUG: Log when sound would stop
-            if __debug__:
-                print(f"[SOUND] Stopping: {playing.layer.file}")
+            # Stop through audio backend
+            if playing.channel:
+                playing.channel.stop()
+                logger.debug(f"Stopped: {playing.layer.file}")
+
             emitter.playing_instances.remove(playing)
             if playing in self.playing_sounds:
                 self.playing_sounds.remove(playing)
 
     def _cleanup_finished_sounds(self) -> None:
         """Remove finished one-shot sounds from tracking."""
-        # TODO: Implement when audio backend is added
-        pass
+        if not self.audio_backend:
+            return
+
+        # Remove sounds that are no longer playing
+        finished = [
+            playing
+            for playing in self.playing_sounds
+            if (
+                playing.channel
+                and not playing.channel.is_playing()
+                and not playing.layer.loop
+            )
+        ]
+
+        for playing in finished:
+            if playing in playing.emitter.playing_instances:
+                playing.emitter.playing_instances.remove(playing)
+            if playing in self.playing_sounds:
+                self.playing_sounds.remove(playing)
+            logger.debug(f"Cleaned up finished sound: {playing.layer.file}")
+
+    def _load_sound(self, file_name: str) -> LoadedSound | None:
+        """Load a sound file, using cache if available.
+
+        Args:
+            file_name: Name of the sound file
+
+        Returns:
+            LoadedSound object or None if loading fails
+        """
+        if not self.audio_backend:
+            return None
+
+        # Check cache first
+        if file_name in self._sound_cache:
+            return self._sound_cache[file_name]
+
+        # Determine full path
+        if self._assets_path:
+            file_path = self._assets_path / "sounds" / file_name
+        else:
+            file_path = Path("assets/sounds") / file_name
+
+        try:
+            loaded_sound = self.audio_backend.load_sound(file_path)
+            self._sound_cache[file_name] = loaded_sound
+            logger.info(f"Loaded sound: {file_name}")
+            return loaded_sound
+        except Exception as e:
+            logger.error(f"Failed to load sound {file_name}: {e}")
+            return None
+
+    def set_audio_backend(self, backend: AudioBackend | None) -> None:
+        """Set the audio backend for sound playback.
+
+        Args:
+            backend: The audio backend to use, or None to disable audio
+        """
+        # Stop all sounds if changing backend
+        if self.audio_backend:
+            for playing in self.playing_sounds:
+                if playing.channel:
+                    playing.channel.stop()
+
+        self.audio_backend = backend
+        self.playing_sounds.clear()
+        self._sound_cache.clear()
+
+        # Clear playing instances from all emitters
+        # This will be repopulated on next update
+        for playing in self.playing_sounds:
+            playing.emitter.playing_instances.clear()
+
+        logger.info(
+            f"Audio backend set: {type(backend).__name__ if backend else 'None'}"
+        )
+
+    def set_assets_path(self, assets_path: Path) -> None:
+        """Set the base path for audio assets.
+
+        Args:
+            assets_path: Base path for assets
+        """
+        self._assets_path = assets_path
+        logger.debug(f"Assets path set: {assets_path}")
+
+    def set_master_volume(self, volume: float) -> None:
+        """Set the master volume for all audio.
+
+        Args:
+            volume: Master volume level (0.0 to 1.0)
+        """
+        if self.audio_backend:
+            self.audio_backend.set_master_volume(volume)

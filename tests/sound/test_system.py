@@ -397,7 +397,11 @@ class TestSoundSystemIntegration:
         positions_and_expected_volumes = [
             (0, 0, 0.7),  # At origin, within falloff_start, should get base_volume
             (1, 1, 0.7),  # Still within falloff_start
-            (3, 4, 0.7 * (1.0 / (1.0 + (5.0 - 2.0) ** 2))),  # Beyond falloff_start
+            (
+                3,
+                4,
+                0.7 * (1.0 / (1.0 + (5.0 - 2.8) ** 2)),
+            ),
         ]
 
         for x, y, expected_volume in positions_and_expected_volumes:

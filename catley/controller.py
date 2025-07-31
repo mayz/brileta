@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from typing import TYPE_CHECKING
 
 import tcod.map
@@ -76,7 +75,7 @@ class Controller:
         # with dummy graphics contexts. This preserves explicit GPU failure behavior
         # in production while allowing tests to run.
         lighting_backend = config.LIGHTING_BACKEND
-        if "pytest" in sys.modules:
+        if config.IS_TEST_ENVIRONMENT:
             lighting_backend = "cpu"
 
         match lighting_backend:
@@ -120,8 +119,8 @@ class Controller:
         # Animation manager for handling movement and effects
         self.animation_manager = AnimationManager()
 
-        # Sound system for managing audio playback
-        self.sound_system = SoundSystem()
+        # Initialize sound system
+        self._initialize_sound_system()
 
         self.combat_intent_cache: CombatIntentCache | None = None
 
@@ -416,3 +415,32 @@ class Controller:
         """Immediately cancel ``actor``'s active pathfinding goal."""
 
         actor.pathfinding_goal = None
+
+    def _initialize_sound_system(self) -> None:
+        """Initialize the sound system and audio backend."""
+        # Sound system for managing audio playback
+        self.sound_system = SoundSystem()
+
+        # Initialize audio backend if not in test environment
+        if not config.IS_TEST_ENVIRONMENT:
+            try:
+                from pathlib import Path
+
+                from catley.backends.tcod.audio import TCODAudioBackend
+
+                audio_backend = TCODAudioBackend()
+                audio_backend.initialize()
+                self.sound_system.set_audio_backend(audio_backend)
+
+                # Set assets path for loading sounds
+                assets_path = Path(__file__).parent.parent / "assets"
+                self.sound_system.set_assets_path(assets_path)
+            except Exception as e:
+                # Log error but continue without audio
+                print(f"Warning: Failed to initialize audio backend: {e}")
+
+    def cleanup(self) -> None:
+        """Clean up resources when the controller is being shut down."""
+        # Shutdown audio backend if it exists
+        if self.sound_system.audio_backend:
+            self.sound_system.audio_backend.shutdown()

@@ -221,4 +221,6 @@ class App[TGraphics: GraphicsContext](ABC):
 
     def quit(self) -> None:
         """Initiates the application shutdown process."""
+        if self.controller:
+            self.controller.cleanup()
         self._exit_backend()

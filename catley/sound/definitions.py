@@ -42,20 +42,39 @@ class SoundDefinition:
 # Built-in sound definitions
 # In a real implementation, these would be loaded from a data file
 SOUND_DEFINITIONS = {
+    # FIXME: Replace placeholder fire sounds with proper audio
+    # Current sounds are synthetic brown noise - need real fire recordings
+    # Recommended specs:
+    #   - fire_crackle_loop.ogg: 3-5 second seamless loop of fire crackling
+    #   - fire_pops.ogg: 0.5-1.0 second individual pop/snap sound
+    # Sources: freesound.org, zapsplat.com, or AI generation (ElevenLabs, Stable Audio)
     "fire_ambient": SoundDefinition(
         sound_id="fire_ambient",
         layers=[
             SoundLayer(file="fire_crackle_loop.ogg", volume=1.0, loop=True),
+            # Multiple pop layers for more organic randomness
             SoundLayer(
                 file="fire_pops.ogg",
-                volume=0.3,
+                volume=0.4,
                 loop=False,
-                interval=(2.0, 8.0),  # Random pops every 2-8 seconds
+                interval=(1.5, 6.0),  # Primary pops
+            ),
+            SoundLayer(
+                file="fire_pops.ogg",
+                volume=0.2,
+                loop=False,
+                interval=(3.0, 12.0),  # Secondary pops (quieter, less frequent)
+            ),
+            SoundLayer(
+                file="fire_pops.ogg",
+                volume=0.15,
+                loop=False,
+                interval=(0.8, 4.0),  # Tertiary pops (very quiet, more frequent)
             ),
         ],
         base_volume=0.7,
-        falloff_start=2.0,
-        max_distance=12.0,
+        falloff_start=2.8,
+        max_distance=17.0,
         priority=6,
     ),
     "waterfall_ambient": SoundDefinition(

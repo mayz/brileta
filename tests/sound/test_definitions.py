@@ -142,10 +142,10 @@ class TestBuiltInSoundDefinitions:
         fire_def = SOUND_DEFINITIONS["fire_ambient"]
 
         assert fire_def.sound_id == "fire_ambient"
-        assert len(fire_def.layers) == 2  # Loop + interval layers
+        assert len(fire_def.layers) == 4  # Loop + 3 interval layers for variation
         assert fire_def.base_volume == 0.7
-        assert fire_def.falloff_start == 2.0
-        assert fire_def.max_distance == 12.0
+        assert fire_def.falloff_start == 2.8
+        assert fire_def.max_distance == 17.0
         assert fire_def.priority == 6
 
         # Check layers
@@ -153,10 +153,21 @@ class TestBuiltInSoundDefinitions:
         assert loop_layer.file == "fire_crackle_loop.ogg"
         assert loop_layer.loop is True
 
+        # Test the primary pop layer
         interval_layer = fire_def.layers[1]
         assert interval_layer.file == "fire_pops.ogg"
         assert interval_layer.loop is False
-        assert interval_layer.interval == (2.0, 8.0)
+        assert interval_layer.interval == (1.5, 6.0)
+
+        # Test that we have multiple pop layers with different intervals
+        pop_layers = [layer for layer in fire_def.layers if not layer.loop]
+        assert len(pop_layers) == 3  # Three different pop layers
+
+        # Verify they all use the same file but have different properties
+        for layer in pop_layers:
+            assert layer.file == "fire_pops.ogg"
+            assert layer.loop is False
+            assert layer.interval is not None
 
     def test_all_definitions_have_consistent_sound_ids(self) -> None:
         """Test that all definitions have sound_id matching their dictionary key."""
