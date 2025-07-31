@@ -64,10 +64,10 @@ SCREEN_SHAKE_INTENSITY_MULTIPLIER = 0.2
 APP_BACKEND: Literal["tcod", "glfw"] = "glfw"
 
 # Graphics context selection
-GRAPHICS_BACKEND: Literal["tcod", "moderngl", "wgpu"] = "wgpu"
+GRAPHICS_BACKEND: Literal["tcod", "moderngl", "wgpu"] = "moderngl"
 
 # Lighting system selection (independent of graphics backend)
-LIGHTING_BACKEND: Literal["cpu", "moderngl", "wgpu"] = "wgpu"
+LIGHTING_BACKEND: Literal["cpu", "moderngl", "wgpu"] = "moderngl"
 
 # ============================================================================tcod
 # PERFORMANCE CONFIGURATION
