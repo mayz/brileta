@@ -21,6 +21,9 @@ class SoundLayer:
     interval: tuple[float, float] | None = (
         None  # Random interval for non-looping sounds
     )
+    pitch_variation: tuple[float, float] | None = (
+        None  # Random pitch variation range (e.g., (0.9, 1.1) for ±10%)
+    )
 
 
 @dataclass
@@ -45,7 +48,7 @@ SOUND_DEFINITIONS = {
     # FIXME: Replace placeholder fire sounds with proper audio
     # Current sounds are synthetic brown noise - need real fire recordings
     # Recommended specs:
-    #   - fire_crackle_loop.ogg: 3-5 second seamless loop of fire crackling
+    #   - fire_crackle_loop.ogg: 8 second seamless loop of fire crackling
     #   - fire_pops.ogg: 0.5-1.0 second individual pop/snap sound
     # Sources: freesound.org, zapsplat.com, or AI generation (ElevenLabs, Stable Audio)
     "fire_ambient": SoundDefinition(
@@ -58,18 +61,21 @@ SOUND_DEFINITIONS = {
                 volume=0.4,
                 loop=False,
                 interval=(1.5, 6.0),  # Primary pops
+                pitch_variation=(0.8, 1.6),  # -20% to +60% pitch variation
             ),
             SoundLayer(
                 file="fire_pops.ogg",
                 volume=0.2,
                 loop=False,
                 interval=(3.0, 12.0),  # Secondary pops (quieter, less frequent)
+                pitch_variation=(0.85, 1.3),  # -15% to +30% pitch variation
             ),
             SoundLayer(
                 file="fire_pops.ogg",
                 volume=0.15,
                 loop=False,
                 interval=(0.8, 4.0),  # Tertiary pops (very quiet, more frequent)
+                pitch_variation=(0.9, 1.2),  # -10% to +20% for most variety
             ),
         ],
         base_volume=0.7,

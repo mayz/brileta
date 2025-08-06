@@ -13,6 +13,7 @@ from catley.types import WorldTileCoord
 
 from .audio_backend import AudioBackend, AudioChannel, LoadedSound
 from .definitions import SoundDefinition, SoundLayer, get_sound_definition
+from .loader import AudioLoader
 
 if TYPE_CHECKING:
     from catley.game.actors.core import Actor
@@ -354,8 +355,18 @@ class SoundSystem:
                                 volume_variation = random.uniform(0.8, 1.2)
                                 final_volume = volume * layer.volume * volume_variation
 
+                                # Apply pitch variation if specified
+                                sound_to_play = loaded_sound
+                                if layer.pitch_variation:
+                                    pitch_factor = random.uniform(
+                                        *layer.pitch_variation
+                                    )
+                                    sound_to_play = AudioLoader.pitch_shift(
+                                        loaded_sound, pitch_factor
+                                    )
+
                                 channel = self.audio_backend.play_sound(
-                                    loaded_sound,
+                                    sound_to_play,
                                     volume=final_volume,
                                     loop=False,
                                 )

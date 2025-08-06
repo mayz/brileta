@@ -190,3 +190,50 @@ class AudioLoader:
             sample_rate=target_sample_rate,
             channels=sound.channels,
         )
+
+    @staticmethod
+    def pitch_shift(sound: LoadedSound, pitch_factor: float) -> LoadedSound:
+        """Shift the pitch of audio by resampling.
+
+        This changes the pitch by playing the audio faster or slower. A pitch_factor
+        of 1.0 means no change, 0.5 means one octave down, 2.0 means one octave up.
+
+        Args:
+            sound: The sound to pitch shift
+            pitch_factor: Pitch multiplier (e.g., 1.1 for 10% higher pitch)
+
+        Returns:
+            New LoadedSound object with pitch-shifted audio
+        """
+        if pitch_factor == 1.0:
+            return sound
+
+        # To shift pitch, we resample the audio to play it faster/slower
+        # but keep the original sample rate in the metadata
+        # This makes the audio play back at a different speed/pitch
+
+        # Calculate new length (inverse of pitch factor)
+        if sound.data.ndim == 1:
+            old_length = len(sound.data)
+            new_length = int(old_length / pitch_factor)
+            # Stretch or compress the audio
+            old_indices = np.linspace(0, old_length - 1, new_length)
+            new_data = np.interp(old_indices, np.arange(old_length), sound.data).astype(
+                np.float32
+            )
+        else:
+            old_length = sound.data.shape[0]
+            new_length = int(old_length / pitch_factor)
+            # Resample each channel separately
+            new_data = np.zeros((new_length, sound.channels), dtype=np.float32)
+            for ch in range(sound.channels):
+                old_indices = np.linspace(0, old_length - 1, new_length)
+                new_data[:, ch] = np.interp(
+                    old_indices, np.arange(old_length), sound.data[:, ch]
+                ).astype(np.float32)
+
+        return LoadedSound(
+            data=new_data,
+            sample_rate=sound.sample_rate,  # Keep original sample rate
+            channels=sound.channels,
+        )
