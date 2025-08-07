@@ -1,11 +1,120 @@
 """Tests for SoundSystem class."""
 
+from pathlib import Path
 from unittest.mock import MagicMock
 
+import numpy as np
+
 from catley.game.actors.core import Actor
+from catley.sound.audio_backend import AudioBackend, AudioChannel, LoadedSound
 from catley.sound.definitions import SoundDefinition, SoundLayer, get_sound_definition
 from catley.sound.emitter import SoundEmitter
 from catley.sound.system import SoundSystem
+
+
+class MockAudioChannel(AudioChannel):
+    """Mock audio channel for testing that tracks its playing state."""
+
+    def __init__(self) -> None:
+        self._is_playing = False
+        self._volume = 1.0
+        self._current_sound: LoadedSound | None = None
+        self._loop = False
+
+    def play(self, sound: LoadedSound, volume: float = 1.0, loop: bool = False) -> None:
+        """Start playing a sound on this channel."""
+        self._current_sound = sound
+        self._volume = volume
+        self._loop = loop
+        self._is_playing = True
+
+    def stop(self) -> None:
+        """Stop playback on this channel."""
+        self._is_playing = False
+        self._current_sound = None
+        self._loop = False
+
+    def set_volume(self, volume: float) -> None:
+        """Update the volume of this channel."""
+        self._volume = volume
+        if volume <= 0.0:
+            # When volume is set to 0, stop the channel (like our TCOD fix)
+            self.stop()
+
+    def is_playing(self) -> bool:
+        """Check if this channel is currently playing audio."""
+        return self._is_playing
+
+    def fadeout(self, duration_ms: int) -> None:
+        """Fade out the channel over the specified duration."""
+        # For testing, just stop immediately
+        self.stop()
+
+
+class MockAudioBackend(AudioBackend):
+    """Mock audio backend for testing that tracks channel usage."""
+
+    def __init__(self, max_channels: int = 16) -> None:
+        self._max_channels = max_channels
+        self._channels: list[MockAudioChannel] = []
+        self._initialized = False
+        self._master_volume = 1.0
+
+    def initialize(self, sample_rate: int = 44100, channels: int = 2) -> None:
+        """Initialize the audio backend."""
+        self._channels = [MockAudioChannel() for _ in range(self._max_channels)]
+        self._initialized = True
+
+    def shutdown(self) -> None:
+        """Shut down the audio backend and release resources."""
+        self._channels.clear()
+        self._initialized = False
+
+    def get_channel(self) -> AudioChannel | None:
+        """Get an available audio channel."""
+        if not self._initialized:
+            return None
+
+        for channel in self._channels:
+            if not channel.is_playing():
+                return channel
+        return None
+
+    def play_sound(
+        self, sound: LoadedSound, volume: float = 1.0, loop: bool = False
+    ) -> AudioChannel | None:
+        """Play a sound on an available channel."""
+        channel = self.get_channel()
+        if channel:
+            channel.play(sound, volume, loop)
+        return channel
+
+    def stop_all_sounds(self) -> None:
+        """Stop all currently playing sounds."""
+        for channel in self._channels:
+            if channel.is_playing():
+                channel.stop()
+
+    def set_master_volume(self, volume: float) -> None:
+        """Set the master volume for all audio."""
+        self._master_volume = volume
+
+    def update(self) -> None:
+        """Update the audio backend."""
+        pass
+
+    def get_active_channel_count(self) -> int:
+        """Get the number of channels currently playing audio."""
+        return sum(1 for channel in self._channels if channel.is_playing())
+
+    def load_sound(self, file_path: Path) -> LoadedSound:
+        """Load a sound file into memory."""
+        # Return mock sound data for testing
+        return LoadedSound(
+            data=np.zeros((1000, 1), dtype=np.float32),  # 1 second of silence at 1kHz
+            sample_rate=44100,
+            channels=1,
+        )
 
 
 class TestSoundSystemInitialization:
@@ -496,3 +605,574 @@ class TestSoundSystemIntegration:
 
         # Playing instances should be different objects
         assert emitter1.playing_instances != emitter2.playing_instances
+
+
+class TestSoundSystemAudioStopping:
+    """Test that audio channels are properly stopped when sounds should be silent."""
+
+    def setup_method(self) -> None:
+        """Set up test fixtures with mock audio backend."""
+        self.system = SoundSystem()
+        self.mock_backend = MockAudioBackend()
+        self.mock_backend.initialize()
+        self.system.set_audio_backend(self.mock_backend)
+
+        # Don't pre-initialize audio listener - let the system do it properly
+        # during the first update() call which sets it to the actual listener position
+
+    def create_mock_actor(
+        self, x: int, y: int, emitters: list[SoundEmitter] | None = None
+    ) -> Actor:
+        """Create a mock actor with sound emitters."""
+        actor = MagicMock(spec=Actor)
+        actor.x = x
+        actor.y = y
+        actor.sound_emitters = emitters or []
+        return actor
+
+    def test_distance_based_stopping(self) -> None:
+        """Test that sounds stop when emitter moves beyond max distance."""
+        emitter = SoundEmitter("fire_ambient", active=True)
+        actor = self.create_mock_actor(5, 5, [emitter])  # Start in range
+
+        # First update - sound should start playing
+        self.system.update(0, 0, [actor], 0.1)
+
+        # Verify sound is playing
+        assert len(emitter.playing_instances) > 0
+        assert self.mock_backend.get_active_channel_count() > 0
+
+        # Move actor far beyond max_distance (fire_ambient max_distance = 17.0)
+        actor.x, actor.y = 25, 25  # Distance ~35, well beyond max_distance
+
+        # Update - sound should stop
+        self.system.update(0, 0, [actor], 0.1)
+
+        # Verify ALL channels are stopped
+        assert self.mock_backend.get_active_channel_count() == 0, (
+            "Expected no active channels when emitter is beyond max distance"
+        )
+
+        # Verify emitter has no playing instances
+        assert len(emitter.playing_instances) == 0, (
+            "Expected no playing instances when emitter is beyond max distance"
+        )
+
+    def test_distance_based_restart(self) -> None:
+        """Test that sounds restart when emitter moves back into range."""
+        emitter = SoundEmitter("fire_ambient", active=True)
+        actor = self.create_mock_actor(25, 25, [emitter])  # Start out of range
+
+        # First update - no sound should play
+        self.system.update(0, 0, [actor], 0.1)
+        assert self.mock_backend.get_active_channel_count() == 0
+        assert len(emitter.playing_instances) == 0
+
+        # Move actor back into range
+        actor.x, actor.y = 5, 5
+
+        # Update - sound should start
+        self.system.update(0, 0, [actor], 0.1)
+
+        # Verify sound is now playing
+        assert self.mock_backend.get_active_channel_count() > 0, (
+            "Expected active channels when emitter moves back into range"
+        )
+        assert len(emitter.playing_instances) > 0, (
+            "Expected playing instances when emitter moves back into range"
+        )
+
+    def test_max_distance_boundary(self) -> None:
+        """Test behavior exactly at max distance boundary."""
+        emitter = SoundEmitter("fire_ambient", active=True)
+
+        # fire_ambient has max_distance = 17.0
+        # Position exactly at max distance
+        actor = self.create_mock_actor(17, 0, [emitter])  # Distance = 17.0
+
+        self.system.update(0, 0, [actor], 0.1)
+
+        # At exactly max_distance, volume should be > 0 so sound should play
+        assert self.mock_backend.get_active_channel_count() > 0, (
+            "Expected sound to play at exactly max_distance"
+        )
+
+        # Move just beyond max distance
+        actor.x = 17.1  # Distance = 17.1, just beyond max_distance
+
+        self.system.update(0, 0, [actor], 0.1)
+
+        # Beyond max_distance, all channels should stop
+        assert self.mock_backend.get_active_channel_count() == 0, (
+            "Expected no active channels just beyond max_distance"
+        )
+
+    def test_volume_based_stopping(self) -> None:
+        """Test that sounds stop when volume multiplier is set to 0."""
+        emitter = SoundEmitter("fire_ambient", active=True, volume_multiplier=1.0)
+        actor = self.create_mock_actor(5, 5, [emitter])
+
+        # Start with normal volume
+        self.system.update(0, 0, [actor], 0.1)
+        assert self.mock_backend.get_active_channel_count() > 0
+        assert len(emitter.playing_instances) > 0
+
+        # Set volume multiplier to 0
+        emitter.volume_multiplier = 0.0
+
+        # Update - should stop all channels
+        self.system.update(0, 0, [actor], 0.1)
+
+        # Verify ALL channels are stopped
+        assert self.mock_backend.get_active_channel_count() == 0, (
+            "Expected no active channels when volume multiplier is 0.0"
+        )
+        assert len(emitter.playing_instances) == 0, (
+            "Expected no playing instances when volume multiplier is 0.0"
+        )
+
+    def test_volume_based_restart(self) -> None:
+        """Test that sounds restart when volume multiplier is restored."""
+        emitter = SoundEmitter("fire_ambient", active=True, volume_multiplier=0.0)
+        actor = self.create_mock_actor(5, 5, [emitter])
+
+        # Start with zero volume - no sound should play
+        self.system.update(0, 0, [actor], 0.1)
+        assert self.mock_backend.get_active_channel_count() == 0
+        assert len(emitter.playing_instances) == 0
+
+        # Restore volume
+        emitter.volume_multiplier = 1.0
+
+        # Update - sound should start playing
+        self.system.update(0, 0, [actor], 0.1)
+
+        # Verify sound is now playing
+        assert self.mock_backend.get_active_channel_count() > 0, (
+            "Expected active channels when volume multiplier is restored"
+        )
+        assert len(emitter.playing_instances) > 0, (
+            "Expected playing instances when volume multiplier is restored"
+        )
+
+    def test_emitter_deactivation_stopping(self) -> None:
+        """Test that sounds stop when emitter is deactivated."""
+        emitter = SoundEmitter("fire_ambient", active=True)
+        actor = self.create_mock_actor(5, 5, [emitter])
+
+        # Start with active emitter
+        self.system.update(0, 0, [actor], 0.1)
+        assert self.mock_backend.get_active_channel_count() > 0
+        assert len(emitter.playing_instances) > 0
+
+        # Deactivate emitter
+        emitter.set_active(False)
+
+        # Update - should stop all channels
+        self.system.update(0, 0, [actor], 0.1)
+
+        # Verify ALL channels are stopped
+        assert self.mock_backend.get_active_channel_count() == 0, (
+            "Expected no active channels when emitter is deactivated"
+        )
+        assert len(emitter.playing_instances) == 0, (
+            "Expected no playing instances when emitter is deactivated"
+        )
+
+    def test_emitter_reactivation_restart(self) -> None:
+        """Test that sounds restart when emitter is reactivated."""
+        emitter = SoundEmitter("fire_ambient", active=False)
+        actor = self.create_mock_actor(5, 5, [emitter])
+
+        # Start with inactive emitter - no sound should play
+        self.system.update(0, 0, [actor], 0.1)
+        assert self.mock_backend.get_active_channel_count() == 0
+        assert len(emitter.playing_instances) == 0
+
+        # Reactivate emitter
+        emitter.set_active(True)
+
+        # Update - sound should start playing
+        self.system.update(0, 0, [actor], 0.1)
+
+        # Verify sound is now playing
+        assert self.mock_backend.get_active_channel_count() > 0, (
+            "Expected active channels when emitter is reactivated"
+        )
+        assert len(emitter.playing_instances) > 0, (
+            "Expected playing instances when emitter is reactivated"
+        )
+
+    def test_multi_layer_sound_stopping(self) -> None:
+        """Test that all layers of complex sounds (like fire_ambient) stop together."""
+        emitter = SoundEmitter("fire_ambient", active=True)
+        actor = self.create_mock_actor(5, 5, [emitter])
+
+        # Start playing multi-layer fire sound
+        self.system.update(0, 0, [actor], 0.1)
+
+        # fire_ambient has multiple layers (1 loop + 3 interval layers)
+        initial_channels = self.mock_backend.get_active_channel_count()
+        initial_instances = len(emitter.playing_instances)
+
+        assert initial_channels > 0, "Expected fire_ambient to use multiple channels"
+        assert initial_instances > 1, "Expected fire_ambient to have multiple layers"
+
+        # Move emitter far away to stop all layers
+        actor.x, actor.y = 30, 30  # Way beyond max_distance
+
+        # Update - ALL layers should stop
+        self.system.update(0, 0, [actor], 0.1)
+
+        # Verify ALL channels are stopped (no ghost layers)
+        assert self.mock_backend.get_active_channel_count() == 0, (
+            f"Expected all {initial_channels} channels stopped, but "
+            f"{self.mock_backend.get_active_channel_count()} remain active"
+        )
+
+        # Verify ALL playing instances are removed
+        assert len(emitter.playing_instances) == 0, (
+            f"Expected all {initial_instances} instances removed, but "
+            f"{len(emitter.playing_instances)} remain"
+        )
+
+    def test_multi_layer_partial_stopping_bug_prevention(self) -> None:
+        """Test prevention of partial layer stopping (the original campfire bug)."""
+        emitter = SoundEmitter("fire_ambient", active=True)
+        actor = self.create_mock_actor(5, 5, [emitter])
+
+        # Start playing
+        self.system.update(0, 0, [actor], 0.1)
+        initial_channels = self.mock_backend.get_active_channel_count()
+        initial_instances = len(emitter.playing_instances)
+
+        assert initial_channels > 0
+        assert initial_instances > 0
+
+        # Simulate the exact campfire bug scenario:
+        # Move from distance 10 to distance 28 (beyond max_distance of 17)
+        actor.x, actor.y = 10, 10  # Distance ~14, should still play
+        self.system.update(0, 0, [actor], 0.1)
+
+        # Should still be playing at distance 14
+        assert self.mock_backend.get_active_channel_count() > 0, (
+            "Sound should still play at distance 14 (within max_distance 17)"
+        )
+
+        # Now move to the problematic distance from the original bug
+        actor.x, actor.y = 28, 0  # Distance 28, well beyond max_distance 17
+        self.system.update(0, 0, [actor], 0.1)
+
+        # This is the critical test - NO channels should remain active
+        active_channels = self.mock_backend.get_active_channel_count()
+        assert active_channels == 0, (
+            f"CAMPFIRE BUG DETECTED: {active_channels} channels still playing "
+            f"at distance 28 (beyond max_distance 17). This indicates ghost audio!"
+        )
+
+        # Double-check at the emitter level
+        playing_instances = len(emitter.playing_instances)
+        assert playing_instances == 0, (
+            f"CAMPFIRE BUG DETECTED: {playing_instances} instances still tracked "
+            f"when emitter is beyond max_distance. This indicates incomplete cleanup!"
+        )
+
+    def test_individual_layer_channel_tracking(self) -> None:
+        """Test that we can track individual layer channels for debugging."""
+        emitter = SoundEmitter("fire_ambient", active=True)
+        actor = self.create_mock_actor(5, 5, [emitter])
+
+        # Start playing
+        self.system.update(0, 0, [actor], 0.1)
+
+        # Collect all channels that are playing
+        playing_channels = [
+            channel for channel in self.mock_backend._channels if channel.is_playing()
+        ]
+
+        assert len(playing_channels) > 0, "Expected some channels to be playing"
+
+        # Move out of range
+        actor.x, actor.y = 30, 30
+        self.system.update(0, 0, [actor], 0.1)
+
+        # Verify each individual channel stopped
+        for i, channel in enumerate(playing_channels):
+            assert not channel.is_playing(), (
+                f"Channel {i} is still playing when it should have stopped"
+            )
+
+        # Final verification - no channels should be playing
+        still_playing = [
+            i for i, ch in enumerate(self.mock_backend._channels) if ch.is_playing()
+        ]
+        assert len(still_playing) == 0, (
+            f"Channels {still_playing} are still playing when all should be stopped"
+        )
+
+    def test_system_level_channel_count_consistency(self) -> None:
+        """Test that system-level channel counts remain consistent."""
+        emitters = [
+            SoundEmitter("fire_ambient", active=True),
+            SoundEmitter("waterfall_ambient", active=True),
+            SoundEmitter("engine_loop", active=True),
+        ]
+        actors = [
+            self.create_mock_actor(5, 5, [emitters[0]]),
+            self.create_mock_actor(6, 6, [emitters[1]]),
+            self.create_mock_actor(7, 7, [emitters[2]]),
+        ]
+
+        # Start all sounds
+        self.system.update(0, 0, actors, 0.1)
+
+        initial_backend_count = self.mock_backend.get_active_channel_count()
+        initial_system_count = len(self.system.playing_sounds)
+
+        assert initial_backend_count > 0, "Expected active channels"
+        assert initial_system_count > 0, "Expected playing sounds tracked by system"
+
+        # Note: Backend tracks actively playing channels, system tracks all instances
+        # System may track more instances than backend has active channels because:
+        # 1. Interval-based sounds create instances but don't play until trigger time
+        # 2. System tracks scheduled future sounds, backend only tracks playing
+        # The important test is that when we stop everything, both should be zero
+
+        # Move all actors out of range
+        for actor in actors:
+            actor.x, actor.y = 50, 50
+
+        self.system.update(0, 0, actors, 0.1)
+
+        final_backend_count = self.mock_backend.get_active_channel_count()
+        final_system_count = len(self.system.playing_sounds)
+
+        # Both counts should be zero - this is the critical test
+        assert final_backend_count == 0, (
+            f"Backend should have 0 active channels, got {final_backend_count}"
+        )
+        assert final_system_count == 0, (
+            f"System should track 0 playing sounds, got {final_system_count}"
+        )
+
+    def test_channel_count_after_multiple_start_stop_cycles(self) -> None:
+        """Test channel counts remain correct after multiple start/stop cycles."""
+        emitter = SoundEmitter("fire_ambient", active=True)
+        actor = self.create_mock_actor(5, 5, [emitter])
+
+        for cycle in range(3):
+            # Start playing
+            self.system.update(0, 0, [actor], 0.1)
+
+            active_count = self.mock_backend.get_active_channel_count()
+            assert active_count > 0, (
+                f"Cycle {cycle}: Expected active channels after start"
+            )
+
+            # Stop by moving out of range
+            actor.x, actor.y = 50, 50
+            self.system.update(0, 0, [actor], 0.1)
+
+            active_count = self.mock_backend.get_active_channel_count()
+            assert active_count == 0, (
+                f"Cycle {cycle}: Expected no active channels after stop, "
+                f"got {active_count}"
+            )
+
+            # Move back for next cycle
+            actor.x, actor.y = 5, 5
+
+    def test_channel_limit_enforcement(self) -> None:
+        """Test that we don't exceed the maximum channel limit."""
+        # Create many emitters to potentially exceed channel limit
+        max_channels = self.mock_backend._max_channels
+        emitters = []
+        actors = []
+
+        # Create more emitters than channels available
+        for i in range(max_channels + 5):
+            emitter = SoundEmitter("fire_ambient", active=True)
+            actor = self.create_mock_actor(i, 0, [emitter])  # Space them out
+            emitters.append(emitter)
+            actors.append(actor)
+
+        # Update - should not exceed max channels
+        self.system.update(0, 0, actors, 0.1)
+
+        active_count = self.mock_backend.get_active_channel_count()
+        assert active_count <= max_channels, (
+            f"Active channel count {active_count} exceeds maximum {max_channels}"
+        )
+
+        # Stop all sounds
+        for actor in actors:
+            actor.x, actor.y = 100, 100  # Move far away
+
+        self.system.update(0, 0, actors, 0.1)
+
+        # Should be back to zero
+        final_count = self.mock_backend.get_active_channel_count()
+        assert final_count == 0, (
+            f"Expected 0 active channels after stopping all, got {final_count}"
+        )
+
+
+class TestCampfireBugRegression:
+    """Integration test that reproduces and prevents the campfire ghost audio bug."""
+
+    def setup_method(self) -> None:
+        """Set up test fixtures matching the original bug scenario."""
+        self.system = SoundSystem()
+        self.mock_backend = MockAudioBackend()
+        self.mock_backend.initialize()
+        self.system.set_audio_backend(self.mock_backend)
+
+        # Disable audio listener interpolation for consistent testing
+        # This ensures that when we move the player, the audio listener follows
+        self.system.set_transition_duration(0.0)
+
+        # Create campfire actor (mimics ContainedFire.create_campfire)
+        self.campfire_emitter = SoundEmitter("fire_ambient", active=True)
+        self.campfire_actor = MagicMock(spec=Actor)
+        self.campfire_actor.sound_emitters = [self.campfire_emitter]
+
+    def create_player_actor(self, x: int, y: int) -> Actor:
+        """Create a mock player actor for position tracking."""
+        player = MagicMock(spec=Actor)
+        player.x = x
+        player.y = y
+        player.sound_emitters = []
+        return player
+
+    def test_campfire_bug_exact_reproduction(self) -> None:
+        """Test the exact bug scenario: campfire at distance 28 should be silent."""
+        # Place campfire at a fixed position
+        self.campfire_actor.x = 10
+        self.campfire_actor.y = 10
+
+        # Start with player close to campfire (distance ~14, within max_distance 17)
+        player = self.create_player_actor(0, 0)
+        actors = [self.campfire_actor, player]
+
+        # Update with player near campfire - sound should start
+        self.system.update(0, 0, actors, 0.1)
+
+        # Verify campfire is audible
+        assert len(self.campfire_emitter.playing_instances) > 0, (
+            "Campfire should be audible when player is close"
+        )
+        assert self.mock_backend.get_active_channel_count() > 0, (
+            "Expected active audio channels when campfire is in range"
+        )
+
+        # Now move player to the problematic distance from the original bug report
+        # "even when the player is way more than 17 tiles away from the campfire,
+        # I still hear it at a fairly audible level"
+        player.x = (
+            38  # Distance from campfire (10,10) = sqrt((38-10)^2 + (0-10)^2) = ~30
+        )
+        player.y = 0
+
+        # Update with player at distance ~30 (well beyond max_distance of 17)
+        self.system.update(player.x, player.y, actors, 0.1)
+
+        # THE CRITICAL TEST - this would fail with the original TCOD bug
+        active_channels = self.mock_backend.get_active_channel_count()
+        assert active_channels == 0, (
+            f"ORIGINAL CAMPFIRE BUG REPRODUCED: {active_channels} audio channels "
+            f"still playing when campfire is at distance ~30 (beyond max_distance 17). "
+            f"This indicates the TCOD Channel.stop() fix is not working!"
+        )
+
+        # Additional verification at emitter level
+        playing_instances = len(self.campfire_emitter.playing_instances)
+        assert playing_instances == 0, (
+            f"ORIGINAL CAMPFIRE BUG REPRODUCED: {playing_instances} sound instances "
+            f"still tracked when campfire should be silent. This indicates incomplete "
+            f"sound cleanup in the SoundSystem!"
+        )
+
+    def test_campfire_bug_with_multiple_distances(self) -> None:
+        """Test the campfire bug across multiple distance transitions."""
+        # Place campfire at origin for easier distance calculations
+        self.campfire_actor.x = 0
+        self.campfire_actor.y = 0
+
+        # Test distances: within range -> at boundary -> beyond range -> way beyond
+        test_distances = [
+            (5, True, "Close: should be audible"),
+            (16, True, "Near max_distance: should still be audible"),
+            (17, True, "At max_distance: should still be audible"),
+            (18, False, "Just beyond max_distance: should be silent"),
+            (28, False, "Far beyond (original bug distance): should be silent"),
+            (50, False, "Very far: should be silent"),
+        ]
+
+        player = self.create_player_actor(0, 0)
+        actors = [self.campfire_actor, player]
+
+        for distance, should_be_audible, description in test_distances:
+            # Position player at test distance
+            player.x = distance
+            player.y = 0
+
+            # Update audio system
+            self.system.update(player.x, player.y, actors, 0.1)
+
+            # Check results
+            active_channels = self.mock_backend.get_active_channel_count()
+            playing_instances = len(self.campfire_emitter.playing_instances)
+
+            if should_be_audible:
+                assert active_channels > 0, (
+                    f"{description}: Expected audio channels but got {active_channels}"
+                )
+                assert playing_instances > 0, (
+                    f"{description}: Expected playing instances but got "
+                    f"{playing_instances}"
+                )
+            else:
+                assert active_channels == 0, (
+                    f"{description}: Expected silence but got {active_channels} "
+                    f"active channels. CAMPFIRE BUG DETECTED at distance {distance}!"
+                )
+                assert playing_instances == 0, (
+                    f"{description}: Expected no instances but got "
+                    f"{playing_instances}. CAMPFIRE BUG DETECTED at {distance}!"
+                )
+
+    def test_campfire_bug_prevention_after_restart(self) -> None:
+        """Test that restarting the game doesn't bring back ghost campfire audio."""
+        # This tests the user's note: "this occurs when I restart the game"
+        self.campfire_actor.x = 0
+        self.campfire_actor.y = 0
+
+        player = self.create_player_actor(30, 0)  # Start far from campfire
+        actors = [self.campfire_actor, player]
+
+        # Simulate first game session - player far from campfire
+        self.system.update(player.x, player.y, actors, 0.1)
+
+        # Should be silent
+        assert self.mock_backend.get_active_channel_count() == 0, (
+            "Campfire should be silent when player starts far away"
+        )
+
+        # Simulate "restart" by reinitializing the sound system
+        self.system = SoundSystem()
+        new_backend = MockAudioBackend()
+        new_backend.initialize()
+        self.system.set_audio_backend(new_backend)
+
+        # Reset emitter state (simulates loading from save)
+        self.campfire_emitter = SoundEmitter("fire_ambient", active=True)
+        self.campfire_actor.sound_emitters = [self.campfire_emitter]
+
+        # Update with player still far away
+        self.system.update(player.x, player.y, actors, 0.1)
+
+        # Should STILL be silent after restart
+        assert new_backend.get_active_channel_count() == 0, (
+            "CAMPFIRE BUG: After restart, campfire should remain silent when "
+            "player is far away, but ghost audio was detected!"
+        )

@@ -64,13 +64,23 @@ class TCODChannel(AudioChannel):
 
     def stop(self) -> None:
         """Stop playback on this channel."""
-        self._channel.stop()
+        # TCOD's stop() method is broken
+        # It uses fadeout(0.0005) which keeps the channel busy
+        # Directly clear the sound queue for immediate stop
+        with self._channel._lock:
+            self._channel.sound_queue.clear()
+            self._channel.on_end_callback = None
+
         self._current_sound = None
         self._is_looping = False
 
     def set_volume(self, volume: float) -> None:
         """Update the volume of this channel."""
-        self._channel.volume = volume * self._backend._master_volume
+        if volume <= 0.0:
+            # Stop the channel completely when volume is 0 to ensure silence
+            self.stop()
+        else:
+            self._channel.volume = volume * self._backend._master_volume
 
     def is_playing(self) -> bool:
         """Check if this channel is currently playing audio."""

@@ -199,6 +199,7 @@ class SoundSystem:
                             sound_def,
                             playing.emitter.volume_multiplier,
                         )
+
                         playing.channel.set_volume(volume * playing.layer.volume)
 
         # Clean up finished sounds
