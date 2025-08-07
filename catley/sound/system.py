@@ -145,8 +145,6 @@ class SoundSystem:
                 continue
 
             # Calculate distance-based volume
-            # Use interpolated listener for continuous sounds, actual for one-off
-            use_interpolated = self._sound_has_continuous_layers(sound_def)
             volume = self._calculate_volume(
                 emitter_x,
                 emitter_y,
@@ -154,7 +152,6 @@ class SoundSystem:
                 listener_y,
                 sound_def,
                 emitter.volume_multiplier,
-                use_interpolated_listener=use_interpolated,
             )
 
             if volume > 0.0:
@@ -194,8 +191,6 @@ class SoundSystem:
 
                     sound_def = get_sound_definition(playing.emitter.sound_id)
                     if sound_def:
-                        # Use interpolated listener for looping sounds, actual for one
-                        use_interpolated = playing.layer.loop
                         volume = self._calculate_volume(
                             emitter_x,
                             emitter_y,
@@ -203,7 +198,6 @@ class SoundSystem:
                             listener_y,
                             sound_def,
                             playing.emitter.volume_multiplier,
-                            use_interpolated_listener=use_interpolated,
                         )
                         playing.channel.set_volume(volume * playing.layer.volume)
 
@@ -222,7 +216,6 @@ class SoundSystem:
         listener_y: WorldTileCoord,
         sound_def: SoundDefinition,
         volume_multiplier: float,
-        use_interpolated_listener: bool = True,
     ) -> float:
         """Calculate volume based on distance using inverse square law.
 
@@ -233,19 +226,13 @@ class SoundSystem:
             listener_y: Y position of the listener (actual player position)
             sound_def: Sound definition with falloff parameters
             volume_multiplier: Emitter-specific volume adjustment
-            use_interpolated_listener: If True, use interpolated audio listener position
-                                     If False, use actual listener position
 
         Returns:
             Final volume (0.0 to 1.0)
         """
-        # Use appropriate listener position based on flag
-        if use_interpolated_listener:
-            effective_listener_x = self.audio_listener_x
-            effective_listener_y = self.audio_listener_y
-        else:
-            effective_listener_x = listener_x
-            effective_listener_y = listener_y
+        # Always use interpolated listener position for smooth audio transitions
+        effective_listener_x = self.audio_listener_x
+        effective_listener_y = self.audio_listener_y
 
         # Calculate Euclidean distance
         dx = emitter_x - effective_listener_x
@@ -266,17 +253,6 @@ class SoundSystem:
         volume_factor = 1.0 / (1.0 + falloff_distance**2)
 
         return sound_def.base_volume * volume_multiplier * volume_factor
-
-    def _sound_has_continuous_layers(self, sound_def: SoundDefinition) -> bool:
-        """Check if a sound definition has any continuous (looping) layers.
-
-        Args:
-            sound_def: The sound definition to check
-
-        Returns:
-            True if the sound has looping layers, False otherwise
-        """
-        return any(layer.loop for layer in sound_def.layers)
 
     def _ensure_sound_playing(
         self, emitter: SoundEmitter, sound_def: SoundDefinition, volume: float
