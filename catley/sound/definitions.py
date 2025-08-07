@@ -40,6 +40,9 @@ class SoundDefinition:
     falloff_start: float = 2.0  # Distance at which volume starts to fall off
     max_distance: float = 10.0  # Maximum distance at which sound is audible
     priority: int = 5  # Priority for sound culling (1-10, higher = more important)
+    rolloff_factor: float = (
+        1.0  # How quickly sound attenuates with distance (0=none, 2=sharp)
+    )
 
 
 # Built-in sound definitions
@@ -82,6 +85,7 @@ SOUND_DEFINITIONS = {
         falloff_start=2.8,
         max_distance=17.0,
         priority=6,
+        rolloff_factor=0.7,  # Gentle falloff for ambient sounds
     ),
     "waterfall_ambient": SoundDefinition(
         sound_id="waterfall_ambient",
@@ -90,6 +94,7 @@ SOUND_DEFINITIONS = {
         falloff_start=3.0,
         max_distance=15.0,
         priority=5,
+        rolloff_factor=0.6,  # Even gentler falloff for water sounds
     ),
     "engine_loop": SoundDefinition(
         sound_id="engine_loop",
@@ -98,6 +103,7 @@ SOUND_DEFINITIONS = {
         falloff_start=1.0,
         max_distance=8.0,
         priority=4,
+        rolloff_factor=1.2,  # Sharper falloff for mechanical sounds
     ),
     "steam_hiss": SoundDefinition(
         sound_id="steam_hiss",
@@ -106,6 +112,7 @@ SOUND_DEFINITIONS = {
         falloff_start=1.5,
         max_distance=6.0,
         priority=3,
+        rolloff_factor=1.5,  # Sharp falloff for hissing sounds
     ),
 }
 

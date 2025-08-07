@@ -247,10 +247,23 @@ class SoundSystem:
         if distance <= sound_def.falloff_start:
             return sound_def.base_volume * volume_multiplier
 
-        # Apply inverse square law for falloff
+        # Apply industry-standard distance attenuation model
         falloff_distance = distance - sound_def.falloff_start
-        # Add small constant to prevent division by zero and extreme volume near source
-        volume_factor = 1.0 / (1.0 + falloff_distance**2)
+        reference_distance = sound_def.falloff_start
+        rolloff_factor = sound_def.rolloff_factor
+
+        # Industry-standard rolloff formula used by Unity, Unreal, FMOD, Wwise
+        # This provides predictable, tunable falloff that designers understand
+        if falloff_distance <= 0:
+            volume_factor = 1.0
+        else:
+            # Defensive check: ensure we don't divide by zero
+            # This should never happen with valid sound definitions, but better safe
+            denominator = reference_distance + rolloff_factor * falloff_distance
+            if denominator <= 0:
+                volume_factor = 0.0  # Fallback to silence if invalid configuration
+            else:
+                volume_factor = reference_distance / denominator
 
         return sound_def.base_volume * volume_multiplier * volume_factor
 
