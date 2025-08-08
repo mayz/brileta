@@ -3,45 +3,6 @@
 ## Overview
 This document outlines critical issues and improvements needed for the Catley audio/sound system, prioritized by importance and impact. Each item includes specific implementation details to guide development.
 
-## Priority 1: Critical Fixes
-
-### 3. Improve Listener Interpolation
-**Problem:** Fixed-duration interpolation (1 second) creates unnatural movement, especially during teleportation.
-
-**Current Code:** `catley/sound/system.py:83-117`
-
-**Fix:**
-```python
-class SoundSystem:
-    def __init__(self):
-        # Add velocity-based smoothing parameters
-        self.listener_smoothing_factor = 0.15  # 0-1, higher = less smoothing
-        self.teleport_threshold = 10.0  # Distance to consider as teleportation
-        self.previous_listener_x = 0.0
-        self.previous_listener_y = 0.0
-
-    def update(self, listener_x, listener_y, actors, delta_time):
-        # Detect teleportation
-        if self._listener_initialized:
-            movement_distance = math.sqrt(
-                (listener_x - self.previous_listener_x) ** 2 +
-                (listener_y - self.previous_listener_y) ** 2
-            )
-
-            if movement_distance > self.teleport_threshold:
-                # Instant update for teleportation
-                self.audio_listener_x = listener_x
-                self.audio_listener_y = listener_y
-            else:
-                # Smooth interpolation using exponential smoothing
-                alpha = 1.0 - math.exp(-delta_time * 5.0)  # 5.0 = smoothing speed
-                self.audio_listener_x += (listener_x - self.audio_listener_x) * alpha
-                self.audio_listener_y += (listener_y - self.audio_listener_y) * alpha
-
-        self.previous_listener_x = listener_x
-        self.previous_listener_y = listener_y
-```
-
 ## Priority 2: Architecture Improvements
 
 ### 4. Separate Positional Audio Processing

@@ -1017,6 +1017,187 @@ class TestSoundSystemAudioStopping:
         )
 
 
+class TestListenerInterpolation:
+    """Test the improved listener interpolation system."""
+
+    def setup_method(self) -> None:
+        """Set up test fixtures."""
+        self.system = SoundSystem()
+        self.mock_backend = MockAudioBackend()
+        self.mock_backend.initialize()
+        self.system.set_audio_backend(self.mock_backend)
+
+        # Create test emitter
+        self.emitter = SoundEmitter("fire_ambient", active=True)
+        self.actor = MagicMock(spec=Actor)
+        self.actor.x = 5
+        self.actor.y = 5
+        self.actor.sound_emitters = [self.emitter]
+
+    def test_teleportation_detection(self) -> None:
+        """Test that teleportation is detected and causes instant listener update."""
+        # Initialize listener at origin
+        self.system.update(0, 0, [self.actor], 0.1)
+
+        assert self.system.audio_listener_x == 0.0
+        assert self.system.audio_listener_y == 0.0
+
+        # Teleport beyond threshold (default 10.0)
+        new_x, new_y = 20, 20  # Distance ~28, beyond threshold
+        self.system.update(new_x, new_y, [self.actor], 0.1)
+
+        # Should instantly update to new position
+        assert self.system.audio_listener_x == new_x
+        assert self.system.audio_listener_y == new_y
+
+    def test_smooth_interpolation_normal_movement(self) -> None:
+        """Test smooth interpolation for normal movement."""
+        # Initialize listener at origin
+        self.system.update(0, 0, [self.actor], 0.1)
+
+        # Move within teleport threshold
+        target_x, target_y = 3, 4  # Distance 5, within threshold of 10
+        self.system.update(target_x, target_y, [self.actor], 0.1)
+
+        # Should not instantly reach target (interpolating)
+        assert self.system.audio_listener_x != target_x
+        assert self.system.audio_listener_y != target_y
+
+        # But should have moved toward target
+        assert self.system.audio_listener_x > 0.0
+        assert self.system.audio_listener_y > 0.0
+
+        # After multiple updates, should converge to target
+        for _ in range(10):
+            self.system.update(target_x, target_y, [self.actor], 0.1)
+
+        # Should be very close to target now
+        assert abs(self.system.audio_listener_x - target_x) < 0.02
+        assert abs(self.system.audio_listener_y - target_y) < 0.02
+
+    def test_interpolation_speed_based_on_delta_time(self) -> None:
+        """Test that interpolation speed adapts to frame rate."""
+        # Initialize listener
+        self.system.update(0, 0, [self.actor], 0.1)
+
+        # Test with small delta_time (high frame rate)
+        target_x, target_y = 5, 0
+        self.system.update(target_x, target_y, [self.actor], 0.016)  # ~60 FPS
+
+        movement_small_dt = self.system.audio_listener_x
+
+        # Reset
+        self.system.audio_listener_x = 0.0
+        self.system.audio_listener_y = 0.0
+        self.system.previous_listener_x = 0.0
+        self.system.previous_listener_y = 0.0
+
+        # Test with larger delta_time (low frame rate)
+        self.system.update(target_x, target_y, [self.actor], 0.1)  # ~10 FPS
+
+        movement_large_dt = self.system.audio_listener_x
+
+        # Larger delta_time should result in more movement
+        assert movement_large_dt > movement_small_dt
+
+    def test_teleport_threshold_boundary(self) -> None:
+        """Test behavior exactly at teleport threshold."""
+        # Initialize listener
+        self.system.update(0, 0, [self.actor], 0.1)
+
+        # Move exactly at threshold distance (10.0)
+        target_x = 10
+        target_y = 0
+        self.system.update(target_x, target_y, [self.actor], 0.1)
+
+        # At exactly threshold, should still interpolate (not teleport)
+        assert self.system.audio_listener_x != target_x
+
+        # Reset
+        self.system.audio_listener_x = 0.0
+        self.system.audio_listener_y = 0.0
+        self.system.previous_listener_x = 0.0
+        self.system.previous_listener_y = 0.0
+
+        # Move just beyond threshold
+        target_x = 11  # Changed from 10.1 to int
+        self.system.update(target_x, target_y, [self.actor], 0.1)
+
+        # Should instantly teleport
+        assert self.system.audio_listener_x == target_x
+
+    def test_previous_position_tracking(self) -> None:
+        """Test that previous position is correctly tracked."""
+        # Initialize
+        self.system.update(5, 5, [self.actor], 0.1)
+
+        assert self.system.previous_listener_x == 5.0
+        assert self.system.previous_listener_y == 5.0
+
+        # Update to new position
+        self.system.update(7, 8, [self.actor], 0.1)
+
+        assert self.system.previous_listener_x == 7.0
+        assert self.system.previous_listener_y == 8.0
+
+    def test_interpolation_convergence(self) -> None:
+        """Test that interpolation eventually converges to target."""
+        # Initialize
+        self.system.update(0, 0, [self.actor], 0.1)
+
+        # Set target
+        target_x, target_y = 2, 2
+
+        # Update many times with same target
+        for _ in range(50):
+            self.system.update(target_x, target_y, [self.actor], 0.1)
+
+        # Should have converged very close to target
+        assert abs(self.system.audio_listener_x - target_x) < 0.001
+        assert abs(self.system.audio_listener_y - target_y) < 0.001
+
+    def test_diagonal_teleportation(self) -> None:
+        """Test teleportation detection with diagonal movement."""
+        # Initialize
+        self.system.update(0, 0, [self.actor], 0.1)
+
+        # Diagonal teleport beyond threshold
+        # Distance = sqrt(8^2 + 8^2) = ~11.3, beyond threshold of 10
+        target_x, target_y = 8, 8
+        self.system.update(target_x, target_y, [self.actor], 0.1)
+
+        # Should instantly teleport
+        assert self.system.audio_listener_x == target_x
+        assert self.system.audio_listener_y == target_y
+
+    def test_rapid_direction_changes(self) -> None:
+        """Test interpolation with rapid direction changes."""
+        # Initialize
+        self.system.update(0, 0, [self.actor], 0.1)
+
+        # Move right
+        self.system.update(2, 0, [self.actor], 0.1)
+        x_after_right = self.system.audio_listener_x
+
+        # Immediately move left
+        self.system.update(-2, 0, [self.actor], 0.1)
+
+        # Should start moving back toward left
+        assert self.system.audio_listener_x < x_after_right
+
+    def test_zero_delta_time(self) -> None:
+        """Test that zero delta_time doesn't cause issues."""
+        # Initialize
+        self.system.update(0, 0, [self.actor], 0.1)
+
+        # Update with zero delta_time
+        self.system.update(5, 5, [self.actor], 0.0)
+
+        # Should not move (or move very little)
+        assert self.system.audio_listener_x < 0.1
+        assert self.system.audio_listener_y < 0.1
+
+
 class TestCampfireBugRegression:
     """Integration test that reproduces and prevents the campfire ghost audio bug."""
 

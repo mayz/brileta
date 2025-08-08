@@ -62,6 +62,12 @@ class SoundSystem:
         self.transition_duration: float = 1.0  # seconds for transition
         self._listener_initialized: bool = False
 
+        # Velocity-based smoothing parameters
+        self.listener_smoothing_factor: float = 0.15  # 0-1, higher = less smoothing
+        self.teleport_threshold: float = 10.0  # Distance to consider as teleportation
+        self.previous_listener_x: WorldTileCoord = 0.0
+        self.previous_listener_y: WorldTileCoord = 0.0
+
     def update(
         self,
         listener_x: WorldTileCoord,
@@ -84,37 +90,29 @@ class SoundSystem:
             # First update - set audio listener to actual player position
             self.audio_listener_x = listener_x
             self.audio_listener_y = listener_y
+            self.previous_listener_x = listener_x
+            self.previous_listener_y = listener_y
             self._listener_initialized = True
         else:
-            # Interpolate audio listener toward actual player position
-            if self.transition_duration > 0:
-                # Calculate distance to target
-                dx = listener_x - self.audio_listener_x
-                dy = listener_y - self.audio_listener_y
-                distance = math.sqrt(dx * dx + dy * dy)
+            # Detect teleportation
+            movement_distance = math.sqrt(
+                (listener_x - self.previous_listener_x) ** 2
+                + (listener_y - self.previous_listener_y) ** 2
+            )
 
-                if distance > 0.01:  # Small threshold to avoid division by zero
-                    # Calculate speed needed to complete transition in fixed duration
-                    required_speed = distance / self.transition_duration
-                    max_movement = required_speed * delta_time
-
-                    if distance > max_movement:
-                        # Move toward target at calculated speed
-                        ratio = max_movement / distance
-                        self.audio_listener_x += dx * ratio
-                        self.audio_listener_y += dy * ratio
-                    else:
-                        # Close enough - snap to target
-                        self.audio_listener_x = listener_x
-                        self.audio_listener_y = listener_y
-                else:
-                    # Already at target
-                    self.audio_listener_x = listener_x
-                    self.audio_listener_y = listener_y
-            else:
-                # No transition - instant movement
+            if movement_distance > self.teleport_threshold:
+                # Instant update for teleportation
                 self.audio_listener_x = listener_x
                 self.audio_listener_y = listener_y
+            else:
+                # Smooth interpolation using exponential smoothing
+                alpha = 1.0 - math.exp(-delta_time * 5.0)  # 5.0 = smoothing speed
+                self.audio_listener_x += (listener_x - self.audio_listener_x) * alpha
+                self.audio_listener_y += (listener_y - self.audio_listener_y) * alpha
+
+            # Update previous position for next frame
+            self.previous_listener_x = listener_x
+            self.previous_listener_y = listener_y
 
         # Collect all active emitters with their positions
         active_emitters: list[tuple[SoundEmitter, WorldTileCoord, WorldTileCoord]] = []
