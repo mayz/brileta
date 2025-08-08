@@ -3,9 +3,88 @@
 ## Overview
 This document outlines critical issues and improvements needed for the Catley audio/sound system, prioritized by importance and impact. Each item includes specific implementation details to guide development.
 
-## Priority 2: Architecture Improvements
+## Priority 2: Performance & Architecture Improvements
 
-### 4. Separate Positional Audio Processing
+### 4. Add Spatial Partitioning for Audio
+**Problem:** System iterates through ALL actors regardless of distance, causing unnecessary processing overhead.
+
+**Current Code:** `catley/sound/system.py:119` - iterates `for actor in actors`
+
+**Fix:**
+Leverage the existing `SpatialHashGrid` from `catley/util/spatial.py`:
+
+```python
+# catley/sound/system.py
+class SoundSystem:
+    def __init__(self, max_concurrent_sounds: int = 16):
+        # ... existing init code ...
+        self._max_audio_distance: float | None = None
+        
+    def _calculate_max_audio_distance(self) -> float:
+        """Calculate the maximum audible distance across all sound definitions."""
+        if self._max_audio_distance is not None:
+            return self._max_audio_distance
+            
+        max_dist = 0.0
+        from .definitions import SOUND_DEFINITIONS
+        for sound_def in SOUND_DEFINITIONS.values():
+            max_dist = max(max_dist, sound_def.max_distance)
+        
+        # Add buffer for smooth transitions (currently max is 17.0 for campfire)
+        self._max_audio_distance = max_dist + 5.0  # ~22.0 tiles
+        return self._max_audio_distance
+
+    def update(
+        self,
+        listener_x: WorldTileCoord,
+        listener_y: WorldTileCoord,
+        actor_spatial_index: SpatialIndex[Actor],  # NEW PARAMETER
+        delta_time: float,
+    ) -> None:
+        # ... existing listener interpolation code ...
+        
+        # Query only actors within maximum audio distance
+        audio_cull_distance = self._calculate_max_audio_distance()
+        nearby_actors = actor_spatial_index.get_in_radius(
+            int(self.audio_listener_x),  # Use interpolated position
+            int(self.audio_listener_y),
+            radius=int(audio_cull_distance)
+        )
+        
+        # Collect active emitters from nearby actors only
+        active_emitters: list[tuple[SoundEmitter, WorldTileCoord, WorldTileCoord]] = []
+        for actor in nearby_actors:
+            if hasattr(actor, "sound_emitters") and actor.sound_emitters:
+                # Additional distance check with actual Euclidean distance
+                dx = actor.x - self.audio_listener_x
+                dy = actor.y - self.audio_listener_y
+                if dx * dx + dy * dy <= audio_cull_distance * audio_cull_distance:
+                    active_emitters.extend(
+                        (emitter, actor.x, actor.y)
+                        for emitter in actor.sound_emitters
+                        if emitter.active
+                    )
+```
+
+**Controller Update:**
+```python
+# catley/controller.py:243
+self.sound_system.update(
+    self.gw.player.x,
+    self.gw.player.y,
+    self.gw.actor_spatial_index,  # Pass spatial index
+    self.fixed_timestep,
+)
+```
+
+**Benefits:**
+- O(1) spatial hash lookups instead of O(n) iteration over all actors
+- Only processes actors within ~22 tiles (vs potentially 100s-1000s)
+- Reuses existing, tested `SpatialHashGrid` infrastructure
+- Minimal code changes required
+- Note: `get_in_radius` uses Chebyshev distance (square), so we add Euclidean check for accuracy
+
+### 5. Separate Positional Audio Processing
 **Problem:** Distance calculations and volume updates are intertwined with emitter management.
 
 **Fix:**
@@ -26,7 +105,7 @@ class PositionalAudioProcessor:
         pass
 ```
 
-### 5. Implement Audio Channel Prioritization
+### 6. Implement Audio Channel Prioritization
 **Problem:** No voice stealing or priority system when channels are exhausted.
 
 **Current Code:** `catley/backends/tcod/audio.py:196-209`
@@ -55,7 +134,7 @@ class TCODAudioBackend:
         return None
 ```
 
-### 6. Add Audio Occlusion System
+### 7. Add Audio Occlusion System
 **Problem:** Sounds play through walls without any muffling or obstruction.
 
 **Implementation:**
@@ -75,7 +154,7 @@ def check_audio_occlusion(self, emitter_x, emitter_y, listener_x, listener_y):
 
 ## Priority 3: Data & Configuration
 
-### 7. Move to Data-Driven Sound Definitions
+### 8. Move to Data-Driven Sound Definitions
 **Problem:** Sound definitions are hardcoded in Python.
 
 **Current:** `catley/sound/definitions.py:47-110`
@@ -108,26 +187,7 @@ Create `assets/sounds/definitions.json`:
 }
 ```
 
-## Priority 4: Performance Optimizations
-
-### 8. Add Spatial Partitioning
-**Problem:** System checks all actors/emitters regardless of distance.
-
-**Fix:**
-```python
-class SoundSystem:
-    def __init__(self):
-        self.audio_cull_distance = 50.0  # Don't process sounds beyond this
-
-    def update(self, listener_x, listener_y, actors, delta_time):
-        # Early culling based on distance
-        nearby_actors = [
-            actor for actor in actors
-            if abs(actor.x - listener_x) <= self.audio_cull_distance
-            and abs(actor.y - listener_y) <= self.audio_cull_distance
-        ]
-        # Process only nearby_actors...
-```
+## Priority 4: Additional Optimizations
 
 ### 9. Implement Audio LOD System
 **Problem:** All sounds are processed with same fidelity regardless of distance.
