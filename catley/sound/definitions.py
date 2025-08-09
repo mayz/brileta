@@ -46,14 +46,8 @@ class SoundDefinition:
 
 
 # Built-in sound definitions
-# In a real implementation, these would be loaded from a data file
+# These should eventually be loaded from a data file
 SOUND_DEFINITIONS = {
-    # FIXME: Replace placeholder fire sounds with proper audio
-    # Current sounds are synthetic brown noise - need real fire recordings
-    # Recommended specs:
-    #   - fire_crackle_loop.ogg: 8 second seamless loop of fire crackling
-    #   - fire_pops.ogg: 0.5-1.0 second individual pop/snap sound
-    # Sources: freesound.org, zapsplat.com, or AI generation (ElevenLabs, Stable Audio)
     "fire_ambient": SoundDefinition(
         sound_id="fire_ambient",
         layers=[

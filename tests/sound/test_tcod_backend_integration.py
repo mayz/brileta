@@ -15,6 +15,15 @@ from catley.game.actors.core import Actor
 from catley.sound.audio_backend import LoadedSound
 from catley.sound.emitter import SoundEmitter
 from catley.sound.system import SoundSystem
+from catley.util.spatial import SpatialHashGrid, SpatialIndex
+
+
+def create_spatial_index(actors: list[Actor]) -> SpatialIndex[Actor]:
+    """Create a spatial index from a list of actors for testing."""
+    spatial_index = SpatialHashGrid[Actor](cell_size=16)
+    for actor in actors:
+        spatial_index.add(actor)
+    return spatial_index
 
 
 class TestTCODAudioBackendBugDetection:
@@ -122,7 +131,9 @@ class TestTCODAudioBackendBugDetection:
 
         # Start with player close to campfire (within max_distance=17)
         actors = cast(list[Actor], [campfire_actor])
-        sound_system.update(5, 5, actors, 0.1)  # Player at distance ~7
+        sound_system.update(
+            5, 5, create_spatial_index(actors), 0.1
+        )  # Player at distance ~7
 
         # Verify sound is playing
         initial_channels = self.backend.get_active_channel_count()
@@ -130,7 +141,7 @@ class TestTCODAudioBackendBugDetection:
 
         # Move player far beyond max_distance (the original bug scenario)
         sound_system.update(
-            30, 30, actors, 0.1
+            30, 30, create_spatial_index(actors), 0.1
         )  # Player at distance ~42, way beyond max_distance=17
 
         # THE CRITICAL TEST - no channels should be active

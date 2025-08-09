@@ -243,7 +243,7 @@ class Controller:
                 self.sound_system.update(
                     self.gw.player.x,
                     self.gw.player.y,
-                    self.gw.actors,
+                    self.gw.actor_spatial_index,
                     self.fixed_timestep,
                 )
 

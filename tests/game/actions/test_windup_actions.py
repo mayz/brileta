@@ -45,12 +45,16 @@ class DummyLighting:
 
 class DummyGameWorld:
     def __init__(self, w: int, h: int) -> None:
+        from catley.util.spatial import SpatialHashGrid
+
         self.player = DummyPlayer()
         self.lighting = DummyLighting()
         self.actors = [self.player]
         self.game_map = SimpleNamespace(transparent=[], visible=[], explored=[])
         self.lights = []
         self.lighting_system = None
+        self.actor_spatial_index = SpatialHashGrid(cell_size=16)
+        self.actor_spatial_index.add(self.player)
 
     def add_light(self, light) -> None:
         """Add a light source to the world."""

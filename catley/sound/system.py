@@ -10,9 +10,15 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from catley.types import WorldTileCoord
+from catley.util.spatial import SpatialIndex
 
 from .audio_backend import AudioBackend, AudioChannel, LoadedSound
-from .definitions import SoundDefinition, SoundLayer, get_sound_definition
+from .definitions import (
+    SOUND_DEFINITIONS,
+    SoundDefinition,
+    SoundLayer,
+    get_sound_definition,
+)
 from .loader import AudioLoader
 
 if TYPE_CHECKING:
@@ -55,6 +61,7 @@ class SoundSystem:
         self.current_time: float = 0.0
         self._sound_cache: dict[str, LoadedSound] = {}  # Cache loaded sounds
         self._assets_path: Path | None = None
+        self._max_audio_distance: float | None = None  # Cached maximum audio distance
 
         # Audio listener interpolation for smooth volume transitions
         self.audio_listener_x: WorldTileCoord = 0.0
@@ -68,11 +75,28 @@ class SoundSystem:
         self.previous_listener_x: WorldTileCoord = 0.0
         self.previous_listener_y: WorldTileCoord = 0.0
 
+    def _calculate_max_audio_distance(self) -> float:
+        """Calculate the maximum audible distance across all sound definitions.
+
+        Returns:
+            Maximum distance at which any sound can be heard, plus a buffer.
+        """
+        if self._max_audio_distance is not None:
+            return self._max_audio_distance
+
+        max_dist = 0.0
+        for sound_def in SOUND_DEFINITIONS.values():
+            max_dist = max(max_dist, sound_def.max_distance)
+
+        # Add buffer for smooth transitions (currently max is 17.0 for campfire)
+        self._max_audio_distance = max_dist + 5.0  # ~22.0 tiles
+        return self._max_audio_distance
+
     def update(
         self,
         listener_x: WorldTileCoord,
         listener_y: WorldTileCoord,
-        actors: list[Actor],
+        actor_spatial_index: SpatialIndex[Actor],
         delta_time: float,
     ) -> None:
         """Update all sounds based on listener position and active emitters.
@@ -80,7 +104,7 @@ class SoundSystem:
         Args:
             listener_x: X position of the listener (usually the player)
             listener_y: Y position of the listener
-            actors: All actors in the game world
+            actor_spatial_index: Spatial index of all actors in the game world
             delta_time: Time elapsed since last update in seconds
         """
         self.current_time += delta_time
@@ -114,16 +138,27 @@ class SoundSystem:
             self.previous_listener_x = listener_x
             self.previous_listener_y = listener_y
 
-        # Collect all active emitters with their positions
+        # Query only actors within maximum audio distance
+        audio_cull_distance = self._calculate_max_audio_distance()
+        nearby_actors = actor_spatial_index.get_in_radius(
+            int(self.audio_listener_x),  # Use interpolated position
+            int(self.audio_listener_y),
+            radius=int(audio_cull_distance),
+        )
+
+        # Collect active emitters from nearby actors only
         active_emitters: list[tuple[SoundEmitter, WorldTileCoord, WorldTileCoord]] = []
-        for actor in actors:
-            # Handle actors without sound_emitters attribute (e.g., test actors)
+        for actor in nearby_actors:
             if hasattr(actor, "sound_emitters") and actor.sound_emitters:
-                active_emitters.extend(
-                    (emitter, actor.x, actor.y)
-                    for emitter in actor.sound_emitters
-                    if emitter.active
-                )
+                # Additional distance check with actual Euclidean distance
+                dx = actor.x - self.audio_listener_x
+                dy = actor.y - self.audio_listener_y
+                if dx * dx + dy * dy <= audio_cull_distance * audio_cull_distance:
+                    active_emitters.extend(
+                        (emitter, actor.x, actor.y)
+                        for emitter in actor.sound_emitters
+                        if emitter.active
+                    )
 
         if active_emitters and self.audio_backend:
             logger.debug(
@@ -163,14 +198,14 @@ class SoundSystem:
                 self._stop_sound_if_playing(emitter)
 
         # Stop sounds for any emitters that are no longer active or out of range
-        all_emitters = []
-        for actor in actors:
-            if hasattr(actor, "sound_emitters") and actor.sound_emitters:
-                all_emitters.extend(actor.sound_emitters)
-
-        for emitter in all_emitters:
-            if emitter not in processed_emitters and emitter.playing_instances:
-                self._stop_sound_if_playing(emitter)
+        # Check all playing sounds and stop those whose emitters were not processed
+        # (either because they're out of range or inactive)
+        for playing in self.playing_sounds[
+            :
+        ]:  # Use slice to avoid modification during iteration
+            if playing.emitter not in processed_emitters:
+                # This emitter is either out of range or inactive
+                self._stop_sound_if_playing(playing.emitter)
 
         # Update audio backend volume for all playing sounds
         if self.audio_backend:
@@ -178,7 +213,7 @@ class SoundSystem:
                 if playing.channel and playing.channel.is_playing():
                     # Find current volume for this emitter
                     emitter_x = emitter_y = 0
-                    for actor in actors:
+                    for actor in nearby_actors:
                         if (
                             hasattr(actor, "sound_emitters")
                             and actor.sound_emitters

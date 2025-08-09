@@ -10,6 +10,15 @@ from catley.sound.audio_backend import AudioBackend, AudioChannel, LoadedSound
 from catley.sound.definitions import SoundDefinition, SoundLayer, get_sound_definition
 from catley.sound.emitter import SoundEmitter
 from catley.sound.system import SoundSystem
+from catley.util.spatial import SpatialHashGrid, SpatialIndex
+
+
+def create_spatial_index(actors: list[Actor]) -> SpatialIndex[Actor]:
+    """Create a spatial index from a list of actors for testing."""
+    spatial_index = SpatialHashGrid[Actor](cell_size=16)
+    for actor in actors:
+        spatial_index.add(actor)
+    return spatial_index
 
 
 class MockAudioChannel(AudioChannel):
@@ -308,7 +317,7 @@ class TestSoundSystemActorProcessing:
 
     def test_update_with_no_actors(self) -> None:
         """Test update with no actors."""
-        self.system.update(0, 0, [], 0.1)
+        self.system.update(0, 0, create_spatial_index([]), 0.1)
 
         assert self.system.current_time == 0.1
         assert len(self.system.playing_sounds) == 0
@@ -320,7 +329,7 @@ class TestSoundSystemActorProcessing:
             self.create_mock_actor(10, 10, []),
         ]
 
-        self.system.update(0, 0, actors, 0.1)
+        self.system.update(0, 0, create_spatial_index(actors), 0.1)
 
         assert self.system.current_time == 0.1
         assert len(self.system.playing_sounds) == 0
@@ -335,7 +344,7 @@ class TestSoundSystemActorProcessing:
         if hasattr(actor, "sound_emitters"):
             delattr(actor, "sound_emitters")
 
-        self.system.update(0, 0, [actor], 0.1)
+        self.system.update(0, 0, create_spatial_index([actor]), 0.1)
 
         assert self.system.current_time == 0.1
         assert len(self.system.playing_sounds) == 0
@@ -345,7 +354,7 @@ class TestSoundSystemActorProcessing:
         inactive_emitter = SoundEmitter("fire_ambient", active=False)
         actors = [self.create_mock_actor(5, 5, [inactive_emitter])]
 
-        self.system.update(0, 0, actors, 0.1)
+        self.system.update(0, 0, create_spatial_index(actors), 0.1)
 
         assert self.system.current_time == 0.1
         assert len(self.system.playing_sounds) == 0
@@ -357,7 +366,7 @@ class TestSoundSystemActorProcessing:
             self.create_mock_actor(2, 2, [active_emitter])
         ]  # Distance ~2.8 from origin
 
-        self.system.update(0, 0, actors, 0.1)
+        self.system.update(0, 0, create_spatial_index(actors), 0.1)
 
         assert self.system.current_time == 0.1
         # Should have created a playing sound for the looping layer
@@ -370,7 +379,7 @@ class TestSoundSystemActorProcessing:
             self.create_mock_actor(50, 50, [distant_emitter])
         ]  # Far beyond max_distance
 
-        self.system.update(0, 0, actors, 0.1)
+        self.system.update(0, 0, create_spatial_index(actors), 0.1)
 
         assert self.system.current_time == 0.1
         assert len(distant_emitter.playing_instances) == 0
@@ -389,7 +398,7 @@ class TestSoundSystemActorProcessing:
             ),  # Out of range
         ]
 
-        self.system.update(0, 0, actors, 0.1)
+        self.system.update(0, 0, create_spatial_index(actors), 0.1)
 
         # Should process emitter1 and emitter2, but not emitter3 (inactive)
         # or distant emitter
@@ -399,13 +408,13 @@ class TestSoundSystemActorProcessing:
 
     def test_update_time_tracking(self) -> None:
         """Test that update correctly tracks time."""
-        self.system.update(0, 0, [], 0.1)
+        self.system.update(0, 0, create_spatial_index([]), 0.1)
         assert self.system.current_time == 0.1
 
-        self.system.update(0, 0, [], 0.05)
+        self.system.update(0, 0, create_spatial_index([]), 0.05)
         assert abs(self.system.current_time - 0.15) < 1e-10
 
-        self.system.update(0, 0, [], 1.0)
+        self.system.update(0, 0, create_spatial_index([]), 1.0)
         assert abs(self.system.current_time - 1.15) < 1e-10
 
 
@@ -517,7 +526,7 @@ class TestSoundSystemIntegration:
         ]
 
         # First update - sounds should start
-        self.system.update(0, 0, actors, 0.1)
+        self.system.update(0, 0, create_spatial_index(actors), 0.1)
 
         assert len(close_emitter.playing_instances) > 0
         assert len(distant_emitter.playing_instances) == 0  # Out of range
@@ -527,7 +536,7 @@ class TestSoundSystemIntegration:
         actors[1].x, actors[1].y = 3, 3
 
         # Second update - distant actor should now have sounds
-        self.system.update(0, 0, actors, 0.1)
+        self.system.update(0, 0, create_spatial_index(actors), 0.1)
 
         assert len(close_emitter.playing_instances) > 0
         assert len(distant_emitter.playing_instances) > 0  # Now in range
@@ -539,17 +548,17 @@ class TestSoundSystemIntegration:
         actors = [self.create_mock_actor(2, 2, [emitter])]
 
         # Start with active emitter
-        self.system.update(0, 0, actors, 0.1)
+        self.system.update(0, 0, create_spatial_index(actors), 0.1)
         assert len(emitter.playing_instances) > 0
 
         # Deactivate emitter
         emitter.set_active(False)
-        self.system.update(0, 0, actors, 0.1)
+        self.system.update(0, 0, create_spatial_index(actors), 0.1)
         assert len(emitter.playing_instances) == 0
 
         # Reactivate emitter
         emitter.set_active(True)
-        self.system.update(0, 0, actors, 0.1)
+        self.system.update(0, 0, create_spatial_index(actors), 0.1)
         assert len(emitter.playing_instances) > 0
 
     def test_volume_changes_with_distance(self) -> None:
@@ -597,7 +606,7 @@ class TestSoundSystemIntegration:
             self.create_mock_actor(3, 3, [emitter2]),
         ]
 
-        self.system.update(0, 0, actors, 0.1)
+        self.system.update(0, 0, create_spatial_index(actors), 0.1)
 
         # Both emitters should have their own playing instances
         assert len(emitter1.playing_instances) > 0
@@ -636,7 +645,7 @@ class TestSoundSystemAudioStopping:
         actor = self.create_mock_actor(5, 5, [emitter])  # Start in range
 
         # First update - sound should start playing
-        self.system.update(0, 0, [actor], 0.1)
+        self.system.update(0, 0, create_spatial_index([actor]), 0.1)
 
         # Verify sound is playing
         assert len(emitter.playing_instances) > 0
@@ -646,7 +655,7 @@ class TestSoundSystemAudioStopping:
         actor.x, actor.y = 25, 25  # Distance ~35, well beyond max_distance
 
         # Update - sound should stop
-        self.system.update(0, 0, [actor], 0.1)
+        self.system.update(0, 0, create_spatial_index([actor]), 0.1)
 
         # Verify ALL channels are stopped
         assert self.mock_backend.get_active_channel_count() == 0, (
@@ -664,7 +673,7 @@ class TestSoundSystemAudioStopping:
         actor = self.create_mock_actor(25, 25, [emitter])  # Start out of range
 
         # First update - no sound should play
-        self.system.update(0, 0, [actor], 0.1)
+        self.system.update(0, 0, create_spatial_index([actor]), 0.1)
         assert self.mock_backend.get_active_channel_count() == 0
         assert len(emitter.playing_instances) == 0
 
@@ -672,7 +681,7 @@ class TestSoundSystemAudioStopping:
         actor.x, actor.y = 5, 5
 
         # Update - sound should start
-        self.system.update(0, 0, [actor], 0.1)
+        self.system.update(0, 0, create_spatial_index([actor]), 0.1)
 
         # Verify sound is now playing
         assert self.mock_backend.get_active_channel_count() > 0, (
@@ -690,7 +699,7 @@ class TestSoundSystemAudioStopping:
         # Position exactly at max distance
         actor = self.create_mock_actor(17, 0, [emitter])  # Distance = 17.0
 
-        self.system.update(0, 0, [actor], 0.1)
+        self.system.update(0, 0, create_spatial_index([actor]), 0.1)
 
         # At exactly max_distance, volume should be > 0 so sound should play
         assert self.mock_backend.get_active_channel_count() > 0, (
@@ -700,7 +709,7 @@ class TestSoundSystemAudioStopping:
         # Move just beyond max distance
         actor.x = 17.1  # Distance = 17.1, just beyond max_distance
 
-        self.system.update(0, 0, [actor], 0.1)
+        self.system.update(0, 0, create_spatial_index([actor]), 0.1)
 
         # Beyond max_distance, all channels should stop
         assert self.mock_backend.get_active_channel_count() == 0, (
@@ -713,7 +722,7 @@ class TestSoundSystemAudioStopping:
         actor = self.create_mock_actor(5, 5, [emitter])
 
         # Start with normal volume
-        self.system.update(0, 0, [actor], 0.1)
+        self.system.update(0, 0, create_spatial_index([actor]), 0.1)
         assert self.mock_backend.get_active_channel_count() > 0
         assert len(emitter.playing_instances) > 0
 
@@ -721,7 +730,7 @@ class TestSoundSystemAudioStopping:
         emitter.volume_multiplier = 0.0
 
         # Update - should stop all channels
-        self.system.update(0, 0, [actor], 0.1)
+        self.system.update(0, 0, create_spatial_index([actor]), 0.1)
 
         # Verify ALL channels are stopped
         assert self.mock_backend.get_active_channel_count() == 0, (
@@ -737,7 +746,7 @@ class TestSoundSystemAudioStopping:
         actor = self.create_mock_actor(5, 5, [emitter])
 
         # Start with zero volume - no sound should play
-        self.system.update(0, 0, [actor], 0.1)
+        self.system.update(0, 0, create_spatial_index([actor]), 0.1)
         assert self.mock_backend.get_active_channel_count() == 0
         assert len(emitter.playing_instances) == 0
 
@@ -745,7 +754,7 @@ class TestSoundSystemAudioStopping:
         emitter.volume_multiplier = 1.0
 
         # Update - sound should start playing
-        self.system.update(0, 0, [actor], 0.1)
+        self.system.update(0, 0, create_spatial_index([actor]), 0.1)
 
         # Verify sound is now playing
         assert self.mock_backend.get_active_channel_count() > 0, (
@@ -761,7 +770,7 @@ class TestSoundSystemAudioStopping:
         actor = self.create_mock_actor(5, 5, [emitter])
 
         # Start with active emitter
-        self.system.update(0, 0, [actor], 0.1)
+        self.system.update(0, 0, create_spatial_index([actor]), 0.1)
         assert self.mock_backend.get_active_channel_count() > 0
         assert len(emitter.playing_instances) > 0
 
@@ -769,7 +778,7 @@ class TestSoundSystemAudioStopping:
         emitter.set_active(False)
 
         # Update - should stop all channels
-        self.system.update(0, 0, [actor], 0.1)
+        self.system.update(0, 0, create_spatial_index([actor]), 0.1)
 
         # Verify ALL channels are stopped
         assert self.mock_backend.get_active_channel_count() == 0, (
@@ -785,7 +794,7 @@ class TestSoundSystemAudioStopping:
         actor = self.create_mock_actor(5, 5, [emitter])
 
         # Start with inactive emitter - no sound should play
-        self.system.update(0, 0, [actor], 0.1)
+        self.system.update(0, 0, create_spatial_index([actor]), 0.1)
         assert self.mock_backend.get_active_channel_count() == 0
         assert len(emitter.playing_instances) == 0
 
@@ -793,7 +802,7 @@ class TestSoundSystemAudioStopping:
         emitter.set_active(True)
 
         # Update - sound should start playing
-        self.system.update(0, 0, [actor], 0.1)
+        self.system.update(0, 0, create_spatial_index([actor]), 0.1)
 
         # Verify sound is now playing
         assert self.mock_backend.get_active_channel_count() > 0, (
@@ -809,7 +818,7 @@ class TestSoundSystemAudioStopping:
         actor = self.create_mock_actor(5, 5, [emitter])
 
         # Start playing multi-layer fire sound
-        self.system.update(0, 0, [actor], 0.1)
+        self.system.update(0, 0, create_spatial_index([actor]), 0.1)
 
         # fire_ambient has multiple layers (1 loop + 3 interval layers)
         initial_channels = self.mock_backend.get_active_channel_count()
@@ -822,7 +831,7 @@ class TestSoundSystemAudioStopping:
         actor.x, actor.y = 30, 30  # Way beyond max_distance
 
         # Update - ALL layers should stop
-        self.system.update(0, 0, [actor], 0.1)
+        self.system.update(0, 0, create_spatial_index([actor]), 0.1)
 
         # Verify ALL channels are stopped (no ghost layers)
         assert self.mock_backend.get_active_channel_count() == 0, (
@@ -842,7 +851,7 @@ class TestSoundSystemAudioStopping:
         actor = self.create_mock_actor(5, 5, [emitter])
 
         # Start playing
-        self.system.update(0, 0, [actor], 0.1)
+        self.system.update(0, 0, create_spatial_index([actor]), 0.1)
         initial_channels = self.mock_backend.get_active_channel_count()
         initial_instances = len(emitter.playing_instances)
 
@@ -852,7 +861,7 @@ class TestSoundSystemAudioStopping:
         # Simulate the exact campfire bug scenario:
         # Move from distance 10 to distance 28 (beyond max_distance of 17)
         actor.x, actor.y = 10, 10  # Distance ~14, should still play
-        self.system.update(0, 0, [actor], 0.1)
+        self.system.update(0, 0, create_spatial_index([actor]), 0.1)
 
         # Should still be playing at distance 14
         assert self.mock_backend.get_active_channel_count() > 0, (
@@ -861,7 +870,7 @@ class TestSoundSystemAudioStopping:
 
         # Now move to the problematic distance from the original bug
         actor.x, actor.y = 28, 0  # Distance 28, well beyond max_distance 17
-        self.system.update(0, 0, [actor], 0.1)
+        self.system.update(0, 0, create_spatial_index([actor]), 0.1)
 
         # This is the critical test - NO channels should remain active
         active_channels = self.mock_backend.get_active_channel_count()
@@ -883,7 +892,7 @@ class TestSoundSystemAudioStopping:
         actor = self.create_mock_actor(5, 5, [emitter])
 
         # Start playing
-        self.system.update(0, 0, [actor], 0.1)
+        self.system.update(0, 0, create_spatial_index([actor]), 0.1)
 
         # Collect all channels that are playing
         playing_channels = [
@@ -894,7 +903,7 @@ class TestSoundSystemAudioStopping:
 
         # Move out of range
         actor.x, actor.y = 30, 30
-        self.system.update(0, 0, [actor], 0.1)
+        self.system.update(0, 0, create_spatial_index([actor]), 0.1)
 
         # Verify each individual channel stopped
         for i, channel in enumerate(playing_channels):
@@ -924,7 +933,7 @@ class TestSoundSystemAudioStopping:
         ]
 
         # Start all sounds
-        self.system.update(0, 0, actors, 0.1)
+        self.system.update(0, 0, create_spatial_index(actors), 0.1)
 
         initial_backend_count = self.mock_backend.get_active_channel_count()
         initial_system_count = len(self.system.playing_sounds)
@@ -942,7 +951,7 @@ class TestSoundSystemAudioStopping:
         for actor in actors:
             actor.x, actor.y = 50, 50
 
-        self.system.update(0, 0, actors, 0.1)
+        self.system.update(0, 0, create_spatial_index(actors), 0.1)
 
         final_backend_count = self.mock_backend.get_active_channel_count()
         final_system_count = len(self.system.playing_sounds)
@@ -962,7 +971,7 @@ class TestSoundSystemAudioStopping:
 
         for cycle in range(3):
             # Start playing
-            self.system.update(0, 0, [actor], 0.1)
+            self.system.update(0, 0, create_spatial_index([actor]), 0.1)
 
             active_count = self.mock_backend.get_active_channel_count()
             assert active_count > 0, (
@@ -971,7 +980,7 @@ class TestSoundSystemAudioStopping:
 
             # Stop by moving out of range
             actor.x, actor.y = 50, 50
-            self.system.update(0, 0, [actor], 0.1)
+            self.system.update(0, 0, create_spatial_index([actor]), 0.1)
 
             active_count = self.mock_backend.get_active_channel_count()
             assert active_count == 0, (
@@ -997,7 +1006,7 @@ class TestSoundSystemAudioStopping:
             actors.append(actor)
 
         # Update - should not exceed max channels
-        self.system.update(0, 0, actors, 0.1)
+        self.system.update(0, 0, create_spatial_index(actors), 0.1)
 
         active_count = self.mock_backend.get_active_channel_count()
         assert active_count <= max_channels, (
@@ -1008,7 +1017,7 @@ class TestSoundSystemAudioStopping:
         for actor in actors:
             actor.x, actor.y = 100, 100  # Move far away
 
-        self.system.update(0, 0, actors, 0.1)
+        self.system.update(0, 0, create_spatial_index(actors), 0.1)
 
         # Should be back to zero
         final_count = self.mock_backend.get_active_channel_count()
@@ -1037,14 +1046,14 @@ class TestListenerInterpolation:
     def test_teleportation_detection(self) -> None:
         """Test that teleportation is detected and causes instant listener update."""
         # Initialize listener at origin
-        self.system.update(0, 0, [self.actor], 0.1)
+        self.system.update(0, 0, create_spatial_index([self.actor]), 0.1)
 
         assert self.system.audio_listener_x == 0.0
         assert self.system.audio_listener_y == 0.0
 
         # Teleport beyond threshold (default 10.0)
         new_x, new_y = 20, 20  # Distance ~28, beyond threshold
-        self.system.update(new_x, new_y, [self.actor], 0.1)
+        self.system.update(new_x, new_y, create_spatial_index([self.actor]), 0.1)
 
         # Should instantly update to new position
         assert self.system.audio_listener_x == new_x
@@ -1053,11 +1062,11 @@ class TestListenerInterpolation:
     def test_smooth_interpolation_normal_movement(self) -> None:
         """Test smooth interpolation for normal movement."""
         # Initialize listener at origin
-        self.system.update(0, 0, [self.actor], 0.1)
+        self.system.update(0, 0, create_spatial_index([self.actor]), 0.1)
 
         # Move within teleport threshold
         target_x, target_y = 3, 4  # Distance 5, within threshold of 10
-        self.system.update(target_x, target_y, [self.actor], 0.1)
+        self.system.update(target_x, target_y, create_spatial_index([self.actor]), 0.1)
 
         # Should not instantly reach target (interpolating)
         assert self.system.audio_listener_x != target_x
@@ -1069,7 +1078,9 @@ class TestListenerInterpolation:
 
         # After multiple updates, should converge to target
         for _ in range(10):
-            self.system.update(target_x, target_y, [self.actor], 0.1)
+            self.system.update(
+                target_x, target_y, create_spatial_index([self.actor]), 0.1
+            )
 
         # Should be very close to target now
         assert abs(self.system.audio_listener_x - target_x) < 0.02
@@ -1078,11 +1089,13 @@ class TestListenerInterpolation:
     def test_interpolation_speed_based_on_delta_time(self) -> None:
         """Test that interpolation speed adapts to frame rate."""
         # Initialize listener
-        self.system.update(0, 0, [self.actor], 0.1)
+        self.system.update(0, 0, create_spatial_index([self.actor]), 0.1)
 
         # Test with small delta_time (high frame rate)
         target_x, target_y = 5, 0
-        self.system.update(target_x, target_y, [self.actor], 0.016)  # ~60 FPS
+        self.system.update(
+            target_x, target_y, create_spatial_index([self.actor]), 0.016
+        )  # ~60 FPS
 
         movement_small_dt = self.system.audio_listener_x
 
@@ -1093,7 +1106,9 @@ class TestListenerInterpolation:
         self.system.previous_listener_y = 0.0
 
         # Test with larger delta_time (low frame rate)
-        self.system.update(target_x, target_y, [self.actor], 0.1)  # ~10 FPS
+        self.system.update(
+            target_x, target_y, create_spatial_index([self.actor]), 0.1
+        )  # ~10 FPS
 
         movement_large_dt = self.system.audio_listener_x
 
@@ -1103,12 +1118,12 @@ class TestListenerInterpolation:
     def test_teleport_threshold_boundary(self) -> None:
         """Test behavior exactly at teleport threshold."""
         # Initialize listener
-        self.system.update(0, 0, [self.actor], 0.1)
+        self.system.update(0, 0, create_spatial_index([self.actor]), 0.1)
 
         # Move exactly at threshold distance (10.0)
         target_x = 10
         target_y = 0
-        self.system.update(target_x, target_y, [self.actor], 0.1)
+        self.system.update(target_x, target_y, create_spatial_index([self.actor]), 0.1)
 
         # At exactly threshold, should still interpolate (not teleport)
         assert self.system.audio_listener_x != target_x
@@ -1121,7 +1136,7 @@ class TestListenerInterpolation:
 
         # Move just beyond threshold
         target_x = 11  # Changed from 10.1 to int
-        self.system.update(target_x, target_y, [self.actor], 0.1)
+        self.system.update(target_x, target_y, create_spatial_index([self.actor]), 0.1)
 
         # Should instantly teleport
         assert self.system.audio_listener_x == target_x
@@ -1129,13 +1144,13 @@ class TestListenerInterpolation:
     def test_previous_position_tracking(self) -> None:
         """Test that previous position is correctly tracked."""
         # Initialize
-        self.system.update(5, 5, [self.actor], 0.1)
+        self.system.update(5, 5, create_spatial_index([self.actor]), 0.1)
 
         assert self.system.previous_listener_x == 5.0
         assert self.system.previous_listener_y == 5.0
 
         # Update to new position
-        self.system.update(7, 8, [self.actor], 0.1)
+        self.system.update(7, 8, create_spatial_index([self.actor]), 0.1)
 
         assert self.system.previous_listener_x == 7.0
         assert self.system.previous_listener_y == 8.0
@@ -1143,14 +1158,16 @@ class TestListenerInterpolation:
     def test_interpolation_convergence(self) -> None:
         """Test that interpolation eventually converges to target."""
         # Initialize
-        self.system.update(0, 0, [self.actor], 0.1)
+        self.system.update(0, 0, create_spatial_index([self.actor]), 0.1)
 
         # Set target
         target_x, target_y = 2, 2
 
         # Update many times with same target
         for _ in range(50):
-            self.system.update(target_x, target_y, [self.actor], 0.1)
+            self.system.update(
+                target_x, target_y, create_spatial_index([self.actor]), 0.1
+            )
 
         # Should have converged very close to target
         assert abs(self.system.audio_listener_x - target_x) < 0.001
@@ -1159,12 +1176,12 @@ class TestListenerInterpolation:
     def test_diagonal_teleportation(self) -> None:
         """Test teleportation detection with diagonal movement."""
         # Initialize
-        self.system.update(0, 0, [self.actor], 0.1)
+        self.system.update(0, 0, create_spatial_index([self.actor]), 0.1)
 
         # Diagonal teleport beyond threshold
         # Distance = sqrt(8^2 + 8^2) = ~11.3, beyond threshold of 10
         target_x, target_y = 8, 8
-        self.system.update(target_x, target_y, [self.actor], 0.1)
+        self.system.update(target_x, target_y, create_spatial_index([self.actor]), 0.1)
 
         # Should instantly teleport
         assert self.system.audio_listener_x == target_x
@@ -1173,14 +1190,14 @@ class TestListenerInterpolation:
     def test_rapid_direction_changes(self) -> None:
         """Test interpolation with rapid direction changes."""
         # Initialize
-        self.system.update(0, 0, [self.actor], 0.1)
+        self.system.update(0, 0, create_spatial_index([self.actor]), 0.1)
 
         # Move right
-        self.system.update(2, 0, [self.actor], 0.1)
+        self.system.update(2, 0, create_spatial_index([self.actor]), 0.1)
         x_after_right = self.system.audio_listener_x
 
         # Immediately move left
-        self.system.update(-2, 0, [self.actor], 0.1)
+        self.system.update(-2, 0, create_spatial_index([self.actor]), 0.1)
 
         # Should start moving back toward left
         assert self.system.audio_listener_x < x_after_right
@@ -1188,10 +1205,10 @@ class TestListenerInterpolation:
     def test_zero_delta_time(self) -> None:
         """Test that zero delta_time doesn't cause issues."""
         # Initialize
-        self.system.update(0, 0, [self.actor], 0.1)
+        self.system.update(0, 0, create_spatial_index([self.actor]), 0.1)
 
         # Update with zero delta_time
-        self.system.update(5, 5, [self.actor], 0.0)
+        self.system.update(5, 5, create_spatial_index([self.actor]), 0.0)
 
         # Should not move (or move very little)
         assert self.system.audio_listener_x < 0.1
@@ -1236,7 +1253,7 @@ class TestCampfireBugRegression:
         actors = [self.campfire_actor, player]
 
         # Update with player near campfire - sound should start
-        self.system.update(0, 0, actors, 0.1)
+        self.system.update(0, 0, create_spatial_index(actors), 0.1)
 
         # Verify campfire is audible
         assert len(self.campfire_emitter.playing_instances) > 0, (
@@ -1255,7 +1272,7 @@ class TestCampfireBugRegression:
         player.y = 0
 
         # Update with player at distance ~30 (well beyond max_distance of 17)
-        self.system.update(player.x, player.y, actors, 0.1)
+        self.system.update(player.x, player.y, create_spatial_index(actors), 0.1)
 
         # THE CRITICAL TEST - this would fail with the original TCOD bug
         active_channels = self.mock_backend.get_active_channel_count()
@@ -1298,7 +1315,7 @@ class TestCampfireBugRegression:
             player.y = 0
 
             # Update audio system
-            self.system.update(player.x, player.y, actors, 0.1)
+            self.system.update(player.x, player.y, create_spatial_index(actors), 0.1)
 
             # Check results
             active_channels = self.mock_backend.get_active_channel_count()
@@ -1332,7 +1349,7 @@ class TestCampfireBugRegression:
         actors = [self.campfire_actor, player]
 
         # Simulate first game session - player far from campfire
-        self.system.update(player.x, player.y, actors, 0.1)
+        self.system.update(player.x, player.y, create_spatial_index(actors), 0.1)
 
         # Should be silent
         assert self.mock_backend.get_active_channel_count() == 0, (
@@ -1350,7 +1367,7 @@ class TestCampfireBugRegression:
         self.campfire_actor.sound_emitters = [self.campfire_emitter]
 
         # Update with player still far away
-        self.system.update(player.x, player.y, actors, 0.1)
+        self.system.update(player.x, player.y, create_spatial_index(actors), 0.1)
 
         # Should STILL be silent after restart
         assert new_backend.get_active_channel_count() == 0, (
