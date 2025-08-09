@@ -38,9 +38,28 @@ class TCODChannel(AudioChannel):
         self._backend = backend
         self._current_sound: LoadedSound | None = None
         self._is_looping = False
+        self._current_priority = 0
 
-    def play(self, sound: LoadedSound, volume: float = 1.0, loop: bool = False) -> None:
-        """Start playing a sound on this channel."""
+    @property
+    def current_priority(self) -> int:
+        """Get the priority of the currently playing sound."""
+        return self._current_priority if self.is_playing() else 0
+
+    def play(
+        self,
+        sound: LoadedSound,
+        volume: float = 1.0,
+        loop: bool = False,
+        priority: int = 5,
+    ) -> None:
+        """Start playing a sound on this channel.
+
+        Args:
+            sound: The loaded sound data to play
+            volume: Volume level (0.0 to 1.0)
+            loop: Whether to loop the sound continuously
+            priority: Sound priority (higher numbers = higher priority)
+        """
         # Convert sound data to TCOD format if needed
         audio_data = self._prepare_audio_data(sound)
 
@@ -55,6 +74,7 @@ class TCODChannel(AudioChannel):
 
         self._current_sound = sound
         self._is_looping = loop
+        self._current_priority = priority
 
         volume_val = volume * self._backend._master_volume
         logger.debug(
@@ -73,6 +93,7 @@ class TCODChannel(AudioChannel):
 
         self._current_sound = None
         self._is_looping = False
+        self._current_priority = 0
 
     def set_volume(self, volume: float) -> None:
         """Update the volume of this channel."""
@@ -203,28 +224,66 @@ class TCODAudioBackend(AudioBackend):
         except Exception as e:
             logger.error(f"Error during audio shutdown: {e}")
 
-    def get_channel(self) -> AudioChannel | None:
-        """Get an available audio channel."""
+    def get_channel(self, priority: int = 5) -> AudioChannel | None:
+        """Get an available audio channel.
+
+        Args:
+            priority: Sound priority for voice stealing (higher = higher priority)
+
+        Returns:
+            An available AudioChannel, or None if all channels are in use and
+            no lower-priority channels can be stolen
+        """
         if not self._initialized:
             logger.warning("Audio backend not initialized")
             return None
 
-        # Find an idle channel
+        # First try to find idle channel
         for channel in self._channels:
             if not channel.is_playing():
                 return channel
 
-        # No idle channels available
-        logger.debug("No audio channels available")
+        # Voice stealing: find lowest priority channel
+        lowest_priority = priority
+        steal_candidate = None
+        for channel in self._channels:
+            if channel.current_priority < lowest_priority:
+                lowest_priority = channel.current_priority
+                steal_candidate = channel
+
+        if steal_candidate:
+            logger.debug(
+                f"Voice stealing: priority {priority} taking channel "
+                f"with priority {lowest_priority}"
+            )
+            steal_candidate.stop()
+            return steal_candidate
+
+        # No channels available and none can be stolen
+        logger.debug(f"No audio channels available for priority {priority}")
         return None
 
     def play_sound(
-        self, sound: LoadedSound, volume: float = 1.0, loop: bool = False
+        self,
+        sound: LoadedSound,
+        volume: float = 1.0,
+        loop: bool = False,
+        priority: int = 5,
     ) -> AudioChannel | None:
-        """Play a sound on an available channel."""
-        channel = self.get_channel()
+        """Play a sound on an available channel.
+
+        Args:
+            sound: The loaded sound data to play
+            volume: Volume level (0.0 to 1.0)
+            loop: Whether to loop the sound continuously
+            priority: Sound priority (higher numbers = higher priority)
+
+        Returns:
+            The AudioChannel playing the sound, or None if no channels available
+        """
+        channel = self.get_channel(priority)
         if channel:
-            channel.play(sound, volume, loop)
+            channel.play(sound, volume, loop, priority)
         return channel
 
     def stop_all_sounds(self) -> None:

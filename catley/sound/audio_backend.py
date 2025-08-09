@@ -33,14 +33,31 @@ class AudioChannel(abc.ABC):
     volume, playback position, and loop settings.
     """
 
+    @property
     @abc.abstractmethod
-    def play(self, sound: LoadedSound, volume: float = 1.0, loop: bool = False) -> None:
+    def current_priority(self) -> int:
+        """Get the priority of the currently playing sound.
+
+        Returns:
+            Priority value (higher numbers = higher priority), or 0 if not playing
+        """
+        ...
+
+    @abc.abstractmethod
+    def play(
+        self,
+        sound: LoadedSound,
+        volume: float = 1.0,
+        loop: bool = False,
+        priority: int = 5,
+    ) -> None:
         """Start playing a sound on this channel.
 
         Args:
             sound: The loaded sound data to play
             volume: Volume level (0.0 to 1.0)
             loop: Whether to loop the sound continuously
+            priority: Sound priority (higher numbers = higher priority)
         """
         ...
 
@@ -101,17 +118,25 @@ class AudioBackend(abc.ABC):
         ...
 
     @abc.abstractmethod
-    def get_channel(self) -> AudioChannel | None:
+    def get_channel(self, priority: int = 5) -> AudioChannel | None:
         """Get an available audio channel.
 
+        Args:
+            priority: Sound priority for voice stealing (higher = higher priority)
+
         Returns:
-            An available AudioChannel, or None if all channels are in use
+            An available AudioChannel, or None if all channels are in use and
+            no lower-priority channels can be stolen
         """
         ...
 
     @abc.abstractmethod
     def play_sound(
-        self, sound: LoadedSound, volume: float = 1.0, loop: bool = False
+        self,
+        sound: LoadedSound,
+        volume: float = 1.0,
+        loop: bool = False,
+        priority: int = 5,
     ) -> AudioChannel | None:
         """Play a sound on an available channel.
 
@@ -122,6 +147,7 @@ class AudioBackend(abc.ABC):
             sound: The loaded sound data to play
             volume: Volume level (0.0 to 1.0)
             loop: Whether to loop the sound continuously
+            priority: Sound priority (higher numbers = higher priority)
 
         Returns:
             The AudioChannel playing the sound, or None if no channels available

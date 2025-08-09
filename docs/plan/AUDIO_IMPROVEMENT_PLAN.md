@@ -5,35 +5,6 @@ This document outlines critical issues and improvements needed for the Catley au
 
 ## Priority 1: Critical Gameplay Features
 
-### 1. Implement Audio Channel Prioritization
-**Problem:** No voice stealing or priority system when channels are exhausted.
-
-**Current Code:** `catley/backends/tcod/audio.py:196-209`
-
-**Fix:**
-```python
-class TCODAudioBackend:
-    def get_channel(self, priority=5):
-        # First try to find idle channel
-        for channel in self._channels:
-            if not channel.is_playing():
-                return channel
-
-        # Voice stealing: find lowest priority channel
-        lowest_priority = priority
-        steal_candidate = None
-        for channel in self._channels:
-            if channel.current_priority < lowest_priority:
-                lowest_priority = channel.current_priority
-                steal_candidate = channel
-
-        if steal_candidate:
-            steal_candidate.stop()
-            return steal_candidate
-
-        return None
-```
-
 ### 2. Environmental Audio System (Reverb/Echo)
 **Problem:** No reverb or echo modeling - sounds play identically in small rooms, large halls, and outdoors.
 
@@ -45,19 +16,19 @@ class EnvironmentalAudio:
     def get_acoustic_environment(self, x, y, game_map):
         """Determine acoustic environment using existing region data"""
         region = game_map.get_region_at((x, y))
-        
+
         if not region:
             return AudioEnvironment.OUTDOOR
-        
+
         # Use sky_exposure to determine indoor/outdoor
         if region.sky_exposure > 0.5:
             return AudioEnvironment.OUTDOOR
         elif region.sky_exposure > 0.0:
             return AudioEnvironment.SEMI_OUTDOOR  # Ruins, covered markets
-        
+
         # For indoor, use region type and size
         room_size = sum(rect.width * rect.height for rect in region.bounds)
-        
+
         if region.region_type == "hallway":
             return AudioEnvironment.CORRIDOR  # Long, narrow reverb
         elif room_size < 20:
@@ -66,7 +37,7 @@ class EnvironmentalAudio:
             return AudioEnvironment.MEDIUM_ROOM  # Medium reverb
         else:
             return AudioEnvironment.LARGE_HALL  # Cathedral reverb
-    
+
     def apply_environmental_audio(self, sound, source_env, listener_env):
         """Apply reverb based on source and listener environments"""
         if source_env == listener_env:

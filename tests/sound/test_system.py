@@ -29,12 +29,25 @@ class MockAudioChannel(AudioChannel):
         self._volume = 1.0
         self._current_sound: LoadedSound | None = None
         self._loop = False
+        self._current_priority = 0
 
-    def play(self, sound: LoadedSound, volume: float = 1.0, loop: bool = False) -> None:
+    @property
+    def current_priority(self) -> int:
+        """Get the priority of the currently playing sound."""
+        return self._current_priority if self.is_playing() else 0
+
+    def play(
+        self,
+        sound: LoadedSound,
+        volume: float = 1.0,
+        loop: bool = False,
+        priority: int = 5,
+    ) -> None:
         """Start playing a sound on this channel."""
         self._current_sound = sound
         self._volume = volume
         self._loop = loop
+        self._current_priority = priority
         self._is_playing = True
 
     def stop(self) -> None:
@@ -42,6 +55,7 @@ class MockAudioChannel(AudioChannel):
         self._is_playing = False
         self._current_sound = None
         self._loop = False
+        self._current_priority = 0
 
     def set_volume(self, volume: float) -> None:
         """Update the volume of this channel."""
@@ -79,7 +93,7 @@ class MockAudioBackend(AudioBackend):
         self._channels.clear()
         self._initialized = False
 
-    def get_channel(self) -> AudioChannel | None:
+    def get_channel(self, priority: int = 5) -> AudioChannel | None:
         """Get an available audio channel."""
         if not self._initialized:
             return None
@@ -90,12 +104,16 @@ class MockAudioBackend(AudioBackend):
         return None
 
     def play_sound(
-        self, sound: LoadedSound, volume: float = 1.0, loop: bool = False
+        self,
+        sound: LoadedSound,
+        volume: float = 1.0,
+        loop: bool = False,
+        priority: int = 5,
     ) -> AudioChannel | None:
         """Play a sound on an available channel."""
-        channel = self.get_channel()
+        channel = self.get_channel(priority)
         if channel:
-            channel.play(sound, volume, loop)
+            channel.play(sound, volume, loop, priority)
         return channel
 
     def stop_all_sounds(self) -> None:
