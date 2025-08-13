@@ -799,8 +799,24 @@ class WGPUGraphicsContext(GraphicsContext):
         self, px_x: int, px_y: int, px_w: int, px_h: int, color: colors.Color
     ) -> None:
         """Draw debug rectangle."""
-        # TODO: Implement WGPU debug rectangle drawing
-        raise NotImplementedError("WGPU debug rectangle drawing not yet implemented")
+        if self.screen_renderer is None or self.uv_map is None:
+            return
+
+        color_rgba = (color[0] / 255.0, color[1] / 255.0, color[2] / 255.0, 1.0)
+        uv_coords = self.uv_map[self.SOLID_BLOCK_CHAR]
+
+        # Top edge
+        self.screen_renderer.add_quad(px_x, px_y, px_w, 1, uv_coords, color_rgba)
+        # Bottom edge
+        self.screen_renderer.add_quad(
+            px_x, px_y + px_h - 1, px_w, 1, uv_coords, color_rgba
+        )
+        # Left edge
+        self.screen_renderer.add_quad(px_x, px_y, 1, px_h, uv_coords, color_rgba)
+        # Right edge
+        self.screen_renderer.add_quad(
+            px_x + px_w - 1, px_y, 1, px_h, uv_coords, color_rgba
+        )
 
     @property
     def coordinate_converter(self) -> CoordinateConverter:

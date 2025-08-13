@@ -248,9 +248,7 @@ class TestWGPUGraphicsContext:
         self.graphics_ctx.present_texture(Mock(), 0, 0, 10, 10)
         self.graphics_ctx.draw_background(Mock(), 0, 0, 10, 10)
 
-        # These methods still raise NotImplementedError
-        with pytest.raises(NotImplementedError, match="WGPU.*not yet implemented"):
-            self.graphics_ctx.draw_debug_rect(0, 0, 100, 100, colors.GREEN)
+        self.graphics_ctx.draw_debug_rect(0, 0, 100, 100, colors.GREEN)
 
         # create_canvas should now work and return a WGPUCanvas
         canvas = self.graphics_ctx.create_canvas()
