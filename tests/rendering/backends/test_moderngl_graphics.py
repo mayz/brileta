@@ -87,6 +87,7 @@ class TestModernGLGraphicsContext:
         assert self.graphics_ctx.mgl_context is not None
         assert self.graphics_ctx.atlas_texture is not None
         assert self.graphics_ctx.program is not None
+        assert self.graphics_ctx.uv_map is not None
         assert self.graphics_ctx.uv_map.shape == (256, 4)
         assert self.graphics_ctx.screen_renderer.vertex_count == 0
 
@@ -155,6 +156,7 @@ class TestModernGLGraphicsContext:
     def test_uv_map_precalculation(self):
         """Test UV coordinate map generation."""
         uv_map = self.graphics_ctx.uv_map
+        assert uv_map is not None
 
         # Should have UV coords for all 256 characters
         assert uv_map.shape == (256, 4)
@@ -629,6 +631,7 @@ class TestModernGLGraphicsContext:
 
         # All UV coordinates for this character should use the same UV mapping
         # Get expected UV coordinates for 'A' from the UV map
+        assert self.graphics_ctx.uv_map is not None
         expected_uv = self.graphics_ctx.uv_map[ord("A")]
         u1, v1, u2, v2 = expected_uv
 
@@ -721,6 +724,7 @@ class TestModernGLGraphicsContext:
 
         # Expected UV coordinates for foreground character (single quad approach)
         # Note: We no longer use background UV coordinates
+        assert self.graphics_ctx.uv_map is not None
         expected_fg_uv = self.graphics_ctx.uv_map[ord("A")]  # character 'A'
 
         # Expected normalized colors

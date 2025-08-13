@@ -9,21 +9,12 @@ from catley.backends.gl_window import GLWindow
 from catley.game.enums import BlendMode
 from catley.types import (
     InterpolationAlpha,
-    Opacity,
-    PixelCoord,
-    PixelPos,
-    RootConsoleTilePos,
-    TileDimensions,
 )
 from catley.util.coordinates import (
     CoordinateConverter,
-    Rect,
-    convert_particle_to_screen_coords,
 )
 from catley.util.glyph_buffer import GlyphBuffer
-from catley.view.render.effects.particles import ParticleLayer, SubTileParticleSystem
-from catley.view.render.graphics import GraphicsContext
-from catley.view.render.viewport import ViewportSystem
+from catley.view.render.base_graphics import BaseGraphicsContext
 
 from .resource_manager import ModernGLResourceManager
 from .screen_renderer import VERTEX_DTYPE, ScreenRenderer
@@ -113,13 +104,14 @@ class UITextureRenderer:
         self.program.release()
 
 
-class ModernGLGraphicsContext(GraphicsContext):
+class ModernGLGraphicsContext(BaseGraphicsContext):
     """
     A high-performance GraphicsContext that uses ModernGL. It uses a two-shader
     architecture to correctly handle different rendering contexts.
     """
 
     def __init__(self, window: GLWindow) -> None:
+        super().__init__()
         self.window = window
         self.mgl_context = moderngl.create_context()
         self.mgl_context.enable(moderngl.BLEND)
@@ -154,8 +146,6 @@ class ModernGLGraphicsContext(GraphicsContext):
 
         # --- Persistent VBO/VAO for Immediate Rendering (after renderers created) ---
         self._create_immediate_render_resources()
-
-        self.SOLID_BLOCK_CHAR = 219
 
     def _draw_single_texture_immediately(
         self, texture: moderngl.Texture, vertices: np.ndarray
@@ -218,19 +208,6 @@ class ModernGLGraphicsContext(GraphicsContext):
         texture = self.mgl_context.texture(img.size, 4, pixels.tobytes())
         texture.filter = (moderngl.NEAREST, moderngl.NEAREST)
         return texture
-
-    def _precalculate_uv_map(self) -> np.ndarray:
-        """Pre-calculates UV coordinates for all 256 possible characters."""
-        uv_map = np.zeros((256, 4), dtype="f4")
-        for i in range(256):
-            col = i % config.TILESET_COLUMNS
-            row = i // config.TILESET_COLUMNS
-            u1 = col / config.TILESET_COLUMNS
-            v1 = row / config.TILESET_ROWS
-            u2 = (col + 1) / config.TILESET_COLUMNS
-            v2 = (row + 1) / config.TILESET_ROWS
-            uv_map[i] = [u1, v1, u2, v2]
-        return uv_map
 
     def _get_or_create_render_target(
         self, width: int, height: int, cache_key_suffix: str = ""
@@ -304,25 +281,10 @@ class ModernGLGraphicsContext(GraphicsContext):
             self.window.get_framebuffer_size(),
             letterbox_geometry=self.letterbox_geometry,
         )
-        self.ui_texture_renderer.render(self.letterbox_geometry)
+        if self.letterbox_geometry is not None:
+            self.ui_texture_renderer.render(self.letterbox_geometry)
 
     # --- GraphicsContext ABC Implementation ---
-
-    @property
-    def tile_dimensions(self) -> TileDimensions:
-        return self._tile_dimensions
-
-    @property
-    def console_width_tiles(self) -> int:
-        return config.SCREEN_WIDTH
-
-    @property
-    def console_height_tiles(self) -> int:
-        return config.SCREEN_HEIGHT
-
-    @property
-    def coordinate_converter(self) -> CoordinateConverter:
-        return self._coordinate_converter
 
     @property
     def program(self) -> moderngl.Program:
@@ -430,6 +392,7 @@ class ModernGLGraphicsContext(GraphicsContext):
             ),
             1.0,  # Always fully opaque - interpolation_alpha is NOT used for color
         )
+        assert self.uv_map is not None
         uv_coords = self.uv_map[ord(char)]
 
         # Use integer tile dimensions like TCOD backend for consistent positioning
@@ -439,92 +402,16 @@ class ModernGLGraphicsContext(GraphicsContext):
             screen_x, screen_y, tile_w, tile_h, uv_coords, final_color
         )
 
-    def render_particles(
-        self,
-        particle_system: SubTileParticleSystem,
-        layer: ParticleLayer,
-        viewport_bounds: Rect,
-        view_offset: RootConsoleTilePos,
-        viewport_system: ViewportSystem | None = None,
-    ) -> None:
-        """Render particles by adding each one to the vertex buffer."""
-        # Loop through active particles, same logic as TCOD implementation
-        for i in range(particle_system.active_count):
-            if particle_system.layers[i] != layer.value:
-                continue
-
-            coords = convert_particle_to_screen_coords(
-                particle_system, i, viewport_bounds, view_offset, self, viewport_system
-            )
-            if coords is None:
-                continue
-
-            screen_x, screen_y = coords
-
-            # Calculate alpha based on lifetime or flash intensity
-            if not np.isnan(particle_system.flash_intensity[i]):
-                alpha = particle_system.flash_intensity[i]
-            else:
-                alpha = particle_system.lifetimes[i] / particle_system.max_lifetimes[i]
-
-            # Render this particle using the same approach as draw_actor_smooth
-            self._draw_particle_to_buffer(
-                particle_system.chars[i],
-                tuple(particle_system.colors[i]),
-                screen_x,
-                screen_y,
-                alpha,
-            )
-
-    def _draw_particle_to_buffer(
-        self,
-        char: str,
-        color: colors.Color,
-        screen_x: float,
-        screen_y: float,
-        alpha: float,
-    ) -> None:
-        """Draw a single particle by adding its quad to the vertex buffer."""
-        # Convert color to 0-1 range and apply alpha
-        final_color = (
-            color[0] / 255.0,
-            color[1] / 255.0,
-            color[2] / 255.0,
-            max(0.0, min(1.0, alpha)),  # Clamp alpha to valid range
-        )
-
-        # Get UV coordinates for the particle character
-        char_code = ord(char) if char else ord(" ")
-        uv_coords = self.uv_map[char_code]
-        w, h = self.tile_dimensions
-
-        # Add the particle quad to the vertex buffer
-        self.screen_renderer.add_quad(screen_x, screen_y, w, h, uv_coords, final_color)
-
     # --- Coordinate and Dimension Management ---
 
     def update_dimensions(self) -> None:
         """Recalculates letterboxing and updates the coordinate converter."""
         window_width, window_height = map(int, self.window.get_framebuffer_size())
-        console_width, console_height = (
-            self.console_width_tiles,
-            self.console_height_tiles,
+
+        # Use base class method to calculate letterbox geometry
+        self.letterbox_geometry = self._calculate_letterbox_geometry(
+            window_width, window_height
         )
-        console_aspect = console_width / console_height
-        window_aspect = window_width / window_height
-
-        if console_aspect > window_aspect:
-            scaled_w = window_width
-            scaled_h = int(window_width / console_aspect)
-            offset_x = 0
-            offset_y = (window_height - scaled_h) // 2
-        else:
-            scaled_h = window_height
-            scaled_w = int(window_height * console_aspect)
-            offset_x = (window_width - scaled_w) // 2
-            offset_y = 0
-
-        self.letterbox_geometry = (offset_x, offset_y, scaled_w, scaled_h)
 
         # Calculate dynamic tile dimensions like TCOD backend for consistent positioning
         tile_width = max(1, window_width // self.console_width_tiles)
@@ -536,40 +423,11 @@ class ModernGLGraphicsContext(GraphicsContext):
         # Set OpenGL viewport to full framebuffer size
         self.mgl_context.viewport = (0, 0, window_width, window_height)
 
-    def console_to_screen_coords(self, console_x: float, console_y: float) -> PixelPos:
-        """Converts root console coordinates to final screen pixel coordinates."""
-        self._ensure_coord_cache_valid()
-        offset_x, offset_y, scaled_w, scaled_h = self.letterbox_geometry
-        screen_x = offset_x + console_x * (scaled_w / self.console_width_tiles)
-        screen_y = offset_y + console_y * (scaled_h / self.console_height_tiles)
-        return (screen_x, screen_y)
-
-    def _ensure_coord_cache_valid(self):
-        # This can be removed or simplified if update_dimensions is called on
-        # every resize
-        pass
-
-    def pixel_to_tile(
-        self, pixel_x: PixelCoord, pixel_y: PixelCoord
-    ) -> RootConsoleTilePos:
-        """Converts final screen pixel coordinates to root console tile coordinates."""
-        # Adjust for letterboxing offsets before passing to the converter
-        offset_x, offset_y, _, _ = self.letterbox_geometry
-        adjusted_pixel_x = pixel_x - offset_x
-        adjusted_pixel_y = pixel_y - offset_y
-
-        return self.coordinate_converter.pixel_to_tile(
-            adjusted_pixel_x, adjusted_pixel_y
-        )
-
     def _create_coordinate_converter(self) -> CoordinateConverter:
-        _, _, scaled_w, scaled_h = self.letterbox_geometry
-        return CoordinateConverter(
-            console_width_in_tiles=self.console_width_tiles,
-            console_height_in_tiles=self.console_height_tiles,
-            renderer_scaled_width=scaled_w,
-            renderer_scaled_height=scaled_h,
-        )
+        # Call base class method to set up converter
+        self._setup_coordinate_converter()
+        assert self._coordinate_converter is not None
+        return self._coordinate_converter
 
     # --- Internal Helpers ---
 
@@ -617,15 +475,6 @@ class ModernGLGraphicsContext(GraphicsContext):
 
         # Queue the cursor for batched rendering
         self.ui_texture_renderer.add_textured_quad(texture, vertices)
-
-    def draw_tile_highlight(
-        self, root_x: int, root_y: int, color: colors.Color, alpha: Opacity
-    ) -> None:
-        px_x, px_y = self.console_to_screen_coords(root_x, root_y)
-        w, h = self.tile_dimensions
-        uv = self.uv_map[self.SOLID_BLOCK_CHAR]
-        color_rgba = (color[0] / 255, color[1] / 255, color[2] / 255, alpha)
-        self.screen_renderer.add_quad(px_x, px_y, w, h, uv, color_rgba)
 
     def apply_environmental_effect(
         self,
@@ -699,26 +548,6 @@ class ModernGLGraphicsContext(GraphicsContext):
         # Restore atlas texture for normal rendering
         self.atlas_texture.use(location=0)
 
-    def draw_debug_rect(
-        self, px_x: int, px_y: int, px_w: int, px_h: int, color: colors.Color
-    ) -> None:
-        """Draws a raw, unfilled rectangle outline for debugging."""
-        color_rgba = (color[0] / 255.0, color[1] / 255.0, color[2] / 255.0, 1.0)
-        uv_coords = self.uv_map[self.SOLID_BLOCK_CHAR]
-
-        # Top edge
-        self.screen_renderer.add_quad(px_x, px_y, px_w, 1, uv_coords, color_rgba)
-        # Bottom edge
-        self.screen_renderer.add_quad(
-            px_x, px_y + px_h - 1, px_w, 1, uv_coords, color_rgba
-        )
-        # Left edge
-        self.screen_renderer.add_quad(px_x, px_y, 1, px_h, uv_coords, color_rgba)
-        # Right edge
-        self.screen_renderer.add_quad(
-            px_x + px_w - 1, px_y, 1, px_h, uv_coords, color_rgba
-        )
-
     def get_display_scale_factor(self) -> tuple[float, float]:
         """Get the (x_scale, y_scale) factor for high-DPI displays."""
         # Get logical window size (what the OS reports)
@@ -733,18 +562,10 @@ class ModernGLGraphicsContext(GraphicsContext):
 
     def texture_from_numpy(self, pixels: np.ndarray, transparent: bool = True) -> Any:
         """Creates a backend-specific texture from a raw NumPy RGBA pixel array."""
-        if pixels.ndim != 3 or pixels.shape[2] not in (3, 4):
-            raise ValueError("Expected RGBA or RGB image array")
+        # Use base class helper to preprocess pixels
+        pixels = self._preprocess_pixels_for_texture(pixels, transparent)
 
         height, width = pixels.shape[:2]
-        components = pixels.shape[2]
-
-        # Ensure we have RGBA data
-        if components == 3:
-            rgba_pixels = np.zeros((height, width, 4), dtype=pixels.dtype)
-            rgba_pixels[:, :, :3] = pixels
-            rgba_pixels[:, :, 3] = 255 if not transparent else 0
-            pixels = rgba_pixels
 
         texture = self.mgl_context.texture((width, height), 4, pixels.tobytes())
         texture.filter = (moderngl.NEAREST, moderngl.NEAREST)
