@@ -43,6 +43,7 @@ from .ui.cursor_manager import CursorManager
 from .ui.debug_stats_overlay import DebugStatsOverlay
 from .ui.dev_console_overlay import DevConsoleOverlay
 from .views.base import View
+from .views.description_view import DescriptionView
 from .views.equipment_view import EquipmentView
 from .views.health_view import HealthView
 from .views.help_text_view import HelpTextView
@@ -99,6 +100,7 @@ class FrameManager:
 
         self.health_view = HealthView(self.controller, self.graphics)
         self.status_view = StatusView(self.controller)
+        self.description_view = DescriptionView(self.controller)
 
         self.views: list[View] = [
             self.help_text_view,
@@ -107,6 +109,7 @@ class FrameManager:
             self.status_view,
             self.equipment_view,
             self.message_log_view,
+            self.description_view,
         ]
 
         # Set view boundaries using layout
@@ -167,9 +170,15 @@ class FrameManager:
             screen_width_tiles - 20, 0, screen_width_tiles, self.help_height
         )
 
+        # Put description view in the bottom center
+        self.description_view.tile_dimensions = tile_dimensions
+        self.description_view.set_bounds(
+            status_x1, bottom_ui_y, status_x2, bottom_ui_y + 2
+        )
+
         self.status_view.tile_dimensions = tile_dimensions
         self.status_view.set_bounds(
-            status_x1, bottom_ui_y, status_x2, screen_height_tiles
+            status_x1, bottom_ui_y + 2, status_x2, screen_height_tiles
         )
 
         self.equipment_view.tile_dimensions = tile_dimensions

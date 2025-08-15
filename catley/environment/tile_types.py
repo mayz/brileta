@@ -41,6 +41,7 @@ TileTypeData = np.dtype(
         ("transparent", bool),  # FOV/line-of-sight (exploration & targeting)
         ("cover_bonus", np.int8),  # Defensive bonus from using this tile as cover
         ("casts_shadows", bool),  # Light occlusion (visual shadows)
+        ("display_name", "U32"),  # Human-readable name (Unicode string, max 32 chars)
         # Appearance when explored but not in FOV
         ("dark", TileTypeAppearance),
         # Appearance when in FOV (before dynamic lighting)
@@ -103,6 +104,7 @@ def make_tile_type_data(
     *,  # Forces keyword arguments - prevents bugs from wrong parameter order
     walkable: bool,
     transparent: bool,
+    display_name: str,
     cover_bonus: int = 0,
     casts_shadows: bool = False,
     dark: tuple[int, colors.Color, colors.Color],  # (char_code, fg_color, bg_color)
@@ -114,6 +116,7 @@ def make_tile_type_data(
     Args:
         walkable: Can actors walk through this type of tile?
         transparent: Is this tile see-through for FOV/targeting?
+        display_name: Human-readable name for UI display (e.g., "Wall", "Closed Door")
         cover_bonus: Defensive bonus granted when using this tile as cover.
         casts_shadows: Does this tile block light for shadow casting?
         dark:  A (char_code, fg_color, bg_color) tuple defining
@@ -139,6 +142,7 @@ def make_tile_type_data(
             transparent,
             cover_bonus,
             casts_shadows,
+            display_name,
             dark_appearance,
             light_appearance,
         ),
@@ -155,6 +159,7 @@ def make_tile_type_data(
 _wall_data = make_tile_type_data(
     walkable=False,
     transparent=False,
+    display_name="Wall",
     dark=(ord(" "), colors.DARK_GREY, colors.DARK_WALL),
     light=(ord(" "), colors.LIGHT_GREY, colors.LIGHT_WALL),
 )
@@ -163,6 +168,7 @@ register_tile_type("WALL", _wall_data)
 _floor_data = make_tile_type_data(
     walkable=True,
     transparent=True,
+    display_name="Floor",
     dark=(ord(" "), colors.DARK_GREY, colors.DARK_GROUND),
     light=(ord(" "), colors.LIGHT_GREY, colors.LIGHT_GROUND),
 )
@@ -171,6 +177,7 @@ register_tile_type("FLOOR", _floor_data)
 _outdoor_floor_data = make_tile_type_data(
     walkable=True,
     transparent=True,
+    display_name="Ground",
     dark=(ord(" "), colors.DARK_GREY, colors.OUTDOOR_DARK_GROUND),
     light=(ord(" "), colors.LIGHT_GREY, colors.OUTDOOR_LIGHT_GROUND),
 )
@@ -179,6 +186,7 @@ register_tile_type("OUTDOOR_FLOOR", _outdoor_floor_data)
 _outdoor_wall_data = make_tile_type_data(
     walkable=False,
     transparent=False,
+    display_name="Rock Wall",
     casts_shadows=True,
     dark=(ord("#"), colors.LIGHT_GREY, colors.OUTDOOR_DARK_WALL),
     light=(ord("#"), colors.LIGHT_GREY, colors.OUTDOOR_LIGHT_WALL),
@@ -188,6 +196,7 @@ register_tile_type("OUTDOOR_WALL", _outdoor_wall_data)
 _door_closed_data = make_tile_type_data(
     walkable=False,
     transparent=False,
+    display_name="Closed Door",
     dark=(ord("+"), colors.ORANGE, colors.DARK_WALL),
     light=(ord("+"), colors.LIGHT_ORANGE, colors.LIGHT_WALL),
 )
@@ -196,6 +205,7 @@ register_tile_type("DOOR_CLOSED", _door_closed_data)
 _door_open_data = make_tile_type_data(
     walkable=True,
     transparent=True,
+    display_name="Open Door",
     dark=(ord("'"), colors.ORANGE, colors.DARK_GROUND),
     light=(ord("'"), colors.LIGHT_ORANGE, colors.LIGHT_GROUND),
 )
@@ -204,6 +214,7 @@ register_tile_type("DOOR_OPEN", _door_open_data)
 _boulder_data = make_tile_type_data(
     walkable=False,
     transparent=True,
+    display_name="Boulder",
     cover_bonus=2,
     casts_shadows=True,
     dark=(ord("#"), colors.DARK_GREY, colors.DARK_GROUND),
@@ -230,6 +241,9 @@ _tile_type_properties_dark_appearance = np.array(
 )
 _tile_type_properties_light_appearance = np.array(
     [t["light"] for t in _registered_tile_type_data_list], dtype=TileTypeAppearance
+)
+_tile_type_properties_display_name = np.array(
+    [t["display_name"] for t in _registered_tile_type_data_list], dtype="U32"
 )
 
 # --- Public Helper Functions for Accessing Tile Properties ---
@@ -280,3 +294,18 @@ def get_tile_type_data_by_id(tile_type_id: int) -> np.ndarray:  # Returns TileTy
         f"Invalid TileTypeID: {tile_type_id}. "
         f"Registered IDs are 0 to {len(_registered_tile_type_data_list) - 1}."
     )
+
+
+def get_tile_type_name_by_id(tile_type_id: int) -> str:
+    """
+    Get the human-readable name of a tile type by its ID.
+
+    Args:
+        tile_type_id: The ID of the tile type
+
+    Returns:
+        The name of the tile type in a human-readable format (e.g., "Wall", "Floor")
+    """
+    if 0 <= tile_type_id < len(_tile_type_properties_display_name):
+        return str(_tile_type_properties_display_name[tile_type_id])
+    return f"Unknown Tile (ID: {tile_type_id})"

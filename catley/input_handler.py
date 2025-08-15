@@ -34,7 +34,6 @@ from .view.ui.commands import (
     OpenMenuUICommand,
     OpenPickupMenuUICommand,
     QuitUICommand,
-    SelectOrDeselectActorUICommand,
     ToggleFullscreenUICommand,
     UICommand,
 )
@@ -319,18 +318,8 @@ class InputHandler:
         if event.button != tcod.event.MouseButton.LEFT:
             return None
 
-        if not world_tile_pos:
-            # Clicked outside the map area (e.g., on UI views).
-            return SelectOrDeselectActorUICommand(self.controller, None)
-
-        world_x, world_y = world_tile_pos
-        actor_at_click = self.gw.get_actor_at_location(world_x, world_y)
-
-        if self.gw.selected_actor == actor_at_click:
-            # If the clicked actor is already selected, deselect it.
-            return SelectOrDeselectActorUICommand(self.controller, None)
-
-        return SelectOrDeselectActorUICommand(self.controller, actor_at_click)
+        # Left click does nothing - no tile/actor selection
+        return None
 
     def _has_available_actions(self, target: Actor | WorldTilePos) -> bool:
         """Quickly check if any actions are available for a target."""
