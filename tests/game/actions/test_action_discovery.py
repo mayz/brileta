@@ -490,12 +490,16 @@ def test_tile_specific_door_actions() -> None:
     close_action = open_door_actions[0]
     assert "close" in close_action.name.lower()
 
-    # Test 4: Non-door tile (should return no door actions)
+    # Test 4: Non-door tile (should return "Go here" action for walkable tiles)
     gw.game_map.tiles[1, 0] = tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[attr-defined]
 
     floor_actions = disc.environment_discovery.discover_environment_actions_for_tile(
         cast(Controller, controller), player, ctx, 1, 0
     )
 
-    # Should find no actions for a regular floor tile
-    assert len(floor_actions) == 0
+    # Should find "Go here" action for a regular floor tile at distance > 0
+    assert len(floor_actions) == 1
+    go_action = floor_actions[0]
+    assert go_action.name == "Go here"
+    assert go_action.description == "Walk to this location"
+    assert go_action.execute is not None  # Uses pathfinding

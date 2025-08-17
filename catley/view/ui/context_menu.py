@@ -157,7 +157,7 @@ class ContextMenu(Menu):
                         self.add_option(
                             MenuOption(
                                 key=None,
-                                text=f"Go to ({x}, {y})",
+                                text="Go here",
                                 action=lambda d=(
                                     x,
                                     y,

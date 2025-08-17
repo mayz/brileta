@@ -294,6 +294,41 @@ class EnvironmentActionDiscovery:
                         execute=create_pathfind_and_close(tile_x, tile_y),
                     )
                 )
+        else:
+            # Check if it's a walkable floor tile (not a door, not a wall)
+            if distance > 0 and gm.walkable[tile_x, tile_y]:
+                # Create "Go here" action for walkable tiles
+                def create_pathfind_to_tile(tx: int, ty: int):
+                    def pathfind_to_tile():
+                        from catley.util.pathfinding import find_path
+
+                        gm = controller.gw.game_map
+                        path = find_path(
+                            gm,
+                            controller.gw.actor_spatial_index,
+                            actor,
+                            (actor.x, actor.y),
+                            (tx, ty),
+                        )
+                        if path:
+                            controller.start_actor_pathfinding(actor, (tx, ty))
+                            return True
+                        return False
+
+                    return pathfind_to_tile
+
+                options.append(
+                    ActionOption(
+                        id="go-here",
+                        name="Go here",
+                        description="Walk to this location",
+                        category=ActionCategory.ENVIRONMENT,
+                        action_class=None,  # type: ignore[arg-type]
+                        requirements=[],
+                        static_params={},
+                        execute=create_pathfind_to_tile(tile_x, tile_y),
+                    )
+                )
 
         return options
 
