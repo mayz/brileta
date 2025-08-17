@@ -12,6 +12,7 @@ from catley.game.actors import Character
 from catley.types import InterpolationAlpha
 from catley.util.caching import ResourceCache
 from catley.view.render.graphics import GraphicsContext
+from catley.view.ui.drawing_utils import draw_keycap
 
 from .base import TextView
 
@@ -39,6 +40,35 @@ class ActionPanelView(TextView):
         self._texture_cache = ResourceCache[tuple, Any](
             name=f"{self.__class__.__name__}Render", max_size=1
         )
+
+    def _draw_keycap_with_label(self, x: int, y: int, key: str, label: str) -> int:
+        """Draw a keycap with label text. Returns the total width consumed."""
+        current_x = x
+
+        # Draw keycap
+        keycap_width = draw_keycap(
+            canvas=self.canvas,
+            pixel_x=current_x,
+            pixel_y=y,
+            key=key,
+            bg_color=colors.DARK_GREY,
+            border_color=colors.GREY,
+            text_color=colors.WHITE,
+        )
+        current_x += keycap_width
+
+        # Draw label
+        self.canvas.draw_text(
+            pixel_x=current_x,
+            pixel_y=y,
+            text=label,
+            color=colors.WHITE,
+        )
+
+        # Calculate actual text width to return total consumed width
+        label_width, _, _ = self.canvas.get_text_metrics(label)
+
+        return keycap_width + label_width  # Total width consumed
 
     def get_cache_key(self) -> tuple:
         """Cache key based on mouse position and view dimensions."""
@@ -83,8 +113,8 @@ class ActionPanelView(TextView):
         line_height = ascent + descent
 
         # Start rendering from top with some padding
-        y_pixel = ascent + 5  # 5px top padding
-        x_padding = 5  # 5px left padding
+        y_pixel = ascent + 5
+        x_padding = 8
 
         # Target name section
         if self._cached_target_name:
@@ -163,20 +193,51 @@ class ActionPanelView(TextView):
                             f" {self._cached_target_name} ", " "
                         )
 
-                    hotkey_str = f"[{action.hotkey}]" if action.hotkey else "[ ]"
-                    action_text = f"{hotkey_str} {action_name}"
+                    # Use helper method to draw keycap with action name
+                    if action.hotkey:
+                        action_width = self._draw_keycap_with_label(
+                            x=x_padding + 20,
+                            y=y_pixel - ascent,
+                            key=action.hotkey,
+                            label=action_name,
+                        )
+                    else:
+                        # Draw empty keycap placeholder
+                        current_x = x_padding + 20
+                        keycap_width = draw_keycap(
+                            canvas=self.canvas,
+                            pixel_x=current_x,
+                            pixel_y=y_pixel - ascent,
+                            key=" ",
+                            bg_color=colors.BLACK,
+                            border_color=colors.DARK_GREY,
+                            text_color=colors.DARK_GREY,
+                        )
+                        current_x += keycap_width
+                        self.canvas.draw_text(
+                            pixel_x=current_x,
+                            pixel_y=y_pixel - ascent,
+                            text=action_name,
+                            color=colors.WHITE,
+                        )
+                        action_width = (
+                            current_x + len(action_name) * 8
+                        )  # Rough estimate
 
-                    # Add success probability if available
+                    # Draw success probability in grey if available
                     if action.success_probability is not None:
                         prob_percent = int(action.success_probability * 100)
-                        action_text += f" ({prob_percent}%)"
+                        prob_text = f" ({prob_percent}%)"
 
-                    self.canvas.draw_text(
-                        pixel_x=x_padding,
-                        pixel_y=y_pixel - ascent,
-                        text=action_text,
-                        color=colors.WHITE,
-                    )
+                        # Position probability after the keycap + action text
+                        prob_x = x_padding + 20 + action_width
+                        self.canvas.draw_text(
+                            pixel_x=prob_x,
+                            pixel_y=y_pixel - ascent,
+                            text=prob_text,
+                            color=colors.GREY,
+                        )
+
                     y_pixel += line_height
 
                 y_pixel += line_height // 2  # Small spacing between categories
@@ -205,25 +266,30 @@ class ActionPanelView(TextView):
                 color=colors.GREY,
             )
             y_pixel += line_height
-            self.canvas.draw_text(
-                pixel_x=x_padding,
-                pixel_y=y_pixel - ascent,
-                text="[Space] Action menu",
-                color=colors.DARK_GREY,
+            # [Space] Action menu - use helper method
+            self._draw_keycap_with_label(
+                x=x_padding + 20,
+                y=y_pixel - ascent,
+                key="Space",
+                label="Action menu",
             )
             y_pixel += line_height
-            self.canvas.draw_text(
-                pixel_x=x_padding,
-                pixel_y=y_pixel - ascent,
-                text="[Right-click] Context",
-                color=colors.DARK_GREY,
+
+            # [Right-click] Context - use helper method
+            self._draw_keycap_with_label(
+                x=x_padding + 20,
+                y=y_pixel - ascent,
+                key="R-Click",
+                label="Context",
             )
             y_pixel += line_height
-            self.canvas.draw_text(
-                pixel_x=x_padding,
-                pixel_y=y_pixel - ascent,
-                text="[?] Help",
-                color=colors.DARK_GREY,
+
+            # [?] Help - use helper method
+            self._draw_keycap_with_label(
+                x=x_padding + 20,
+                y=y_pixel - ascent,
+                key="?",
+                label="Help",
             )
 
     def _update_cached_data(self) -> None:
