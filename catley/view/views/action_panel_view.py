@@ -73,11 +73,16 @@ class ActionPanelView(TextView):
     def get_cache_key(self) -> tuple:
         """Cache key based on mouse position and view dimensions."""
         mouse_pos = str(self.controller.gw.mouse_tile_location_on_map)
-        player_pos = f"{self.controller.gw.player.x},{self.controller.gw.player.y}"
+        player = self.controller.gw.player
+        player_pos = f"{player.x},{player.y}"
+        has_items_at_feet = self.controller.gw.has_pickable_items_at_location(
+            player.x, player.y
+        )
         current_tile_dimensions = self.controller.graphics.tile_dimensions
         return (
             mouse_pos,
             player_pos,
+            has_items_at_feet,
             current_tile_dimensions,
             self.view_width_px,
             self.view_height_px,
@@ -243,21 +248,67 @@ class ActionPanelView(TextView):
                 y_pixel += line_height // 2  # Small spacing between categories
 
         elif self._cached_target_name is None:
-            # Empty state - show helpful hints
-            self.canvas.draw_text(
-                pixel_x=x_padding,
-                pixel_y=y_pixel - ascent,
-                text="Hover over targets",
-                color=colors.DARK_GREY,
+            # Check if player is standing on items
+            player = self.controller.gw.player
+            items_here = self.controller.gw.get_pickable_items_at_location(
+                player.x, player.y
             )
-            y_pixel += line_height
-            self.canvas.draw_text(
-                pixel_x=x_padding,
-                pixel_y=y_pixel - ascent,
-                text="to see actions",
-                color=colors.DARK_GREY,
-            )
-            y_pixel += line_height * 2
+
+            if items_here:
+                # Show items at player's feet prominently
+                self.canvas.draw_text(
+                    pixel_x=x_padding,
+                    pixel_y=y_pixel - ascent,
+                    text="Items at your feet:",
+                    color=colors.YELLOW,
+                )
+                y_pixel += line_height
+
+                # List items (up to 3)
+                for item in items_here[:3]:
+                    self.canvas.draw_text(
+                        pixel_x=x_padding + 10,
+                        pixel_y=y_pixel - ascent,
+                        text=f"• {item.name}",
+                        color=colors.WHITE,
+                    )
+                    y_pixel += line_height
+
+                if len(items_here) > 3:
+                    self.canvas.draw_text(
+                        pixel_x=x_padding + 10,
+                        pixel_y=y_pixel - ascent,
+                        text=f"• ...and {len(items_here) - 3} more",
+                        color=colors.GREY,
+                    )
+                    y_pixel += line_height
+
+                y_pixel += line_height // 2
+
+                # Show pickup prompt
+                self._draw_keycap_with_label(
+                    x=x_padding,
+                    y=y_pixel - ascent,
+                    key="G",
+                    label="Pick up items",
+                )
+                y_pixel += line_height * 2
+            else:
+                # Empty state - show helpful hints
+                self.canvas.draw_text(
+                    pixel_x=x_padding,
+                    pixel_y=y_pixel - ascent,
+                    text="Hover over targets",
+                    color=colors.DARK_GREY,
+                )
+                y_pixel += line_height
+                self.canvas.draw_text(
+                    pixel_x=x_padding,
+                    pixel_y=y_pixel - ascent,
+                    text="to see actions",
+                    color=colors.DARK_GREY,
+                )
+                y_pixel += line_height * 2
 
             self.canvas.draw_text(
                 pixel_x=x_padding,
@@ -272,6 +323,15 @@ class ActionPanelView(TextView):
                 y=y_pixel - ascent,
                 key="Space",
                 label="Action menu",
+            )
+            y_pixel += line_height
+
+            # [I] Inventory - use helper method
+            self._draw_keycap_with_label(
+                x=x_padding + 20,
+                y=y_pixel - ascent,
+                key="I",
+                label="Inventory",
             )
             y_pixel += line_height
 
@@ -334,8 +394,66 @@ class ActionPanelView(TextView):
                 else:
                     self._cached_target_name = f"{len(items)} items"
                     self._cached_target_description = "Multiple items here"
-                # No actions for items yet (would need item-specific actions)
-                self._cached_actions = []
+
+                # Get item-specific actions from discovery system
+                context = self.discovery.context_builder.build_context(
+                    self.controller, gw.player
+                )
+                # Create item pickup actions based on distance
+                distance = max(abs(x - gw.player.x), abs(y - gw.player.y))
+
+                if distance == 0:
+                    # Player is standing on items - G key works
+                    self._cached_actions = []
+                else:
+                    # Player needs to move - create "Walk to" action
+                    from catley.game.actions.discovery import (
+                        ActionCategory,
+                        ActionOption,
+                    )
+
+                    def create_pathfind_and_pickup(item_x: int, item_y: int):
+                        def pathfind_and_pickup():
+                            from catley.game.actions.misc import (
+                                PickupItemsAtLocationIntent,
+                            )
+                            from catley.util.pathfinding import find_path
+
+                            gm = self.controller.gw.game_map
+                            # Find path directly to the item location
+                            path = find_path(
+                                gm,
+                                self.controller.gw.actor_spatial_index,
+                                gw.player,
+                                (gw.player.x, gw.player.y),
+                                (item_x, item_y),
+                            )
+                            if path:
+                                # Create intent to pickup items when we arrive
+                                pickup_intent = PickupItemsAtLocationIntent(
+                                    self.controller, gw.player
+                                )
+                                self.controller.start_actor_pathfinding(
+                                    gw.player,
+                                    (item_x, item_y),
+                                    final_intent=pickup_intent,
+                                )
+                                return True
+                            return False
+
+                        return pathfind_and_pickup
+
+                    pickup_action = ActionOption(
+                        id="walk-and-pickup",
+                        name="Walk to and pick up",
+                        description="Move to the items and pick them up",
+                        category=ActionCategory.ITEMS,
+                        action_class=None,  # type: ignore[arg-type]
+                        requirements=[],
+                        static_params={},
+                        execute=create_pathfind_and_pickup(x, y),
+                    )
+                    self._cached_actions = [pickup_action]
                 return
 
         # Use non-blocking actor if no items

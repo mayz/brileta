@@ -19,9 +19,6 @@ import time
 from typing import TYPE_CHECKING
 
 from catley import config
-from catley.config import (
-    HELP_HEIGHT,
-)
 from catley.events import (
     EffectEvent,
     ScreenShakeEvent,
@@ -46,7 +43,6 @@ from .views.action_panel_view import ActionPanelView
 from .views.base import View
 from .views.equipment_view import EquipmentView
 from .views.health_view import HealthView
-from .views.help_text_view import HelpTextView
 from .views.message_log_view import MessageLogView
 from .views.status_view import StatusView
 from .views.world_view import WorldView
@@ -67,8 +63,6 @@ class FrameManager:
 
         # Global effect systems
         self.screen_shake = ScreenShake()
-        # Layout constants
-        self.help_height = HELP_HEIGHT
 
         # Subscribe to visual effect events
         subscribe_to_event(EffectEvent, self._handle_effect_event)
@@ -82,8 +76,6 @@ class FrameManager:
         assert self.controller.overlay_system is not None
 
         # Create views (dimensions will be set via resize() calls below)
-        self.help_text_view = HelpTextView(self.controller)
-
         self.world_view = WorldView(
             self.controller,
             self.screen_shake,
@@ -103,7 +95,6 @@ class FrameManager:
         self.action_panel_view = ActionPanelView(self.controller)
 
         self.views: list[View] = [
-            self.help_text_view,
             self.world_view,
             self.health_view,
             self.status_view,
@@ -148,7 +139,7 @@ class FrameManager:
         message_log_y = screen_height_tiles - message_log_height
 
         # Action panel takes rest of left sidebar
-        action_panel_y = self.help_height
+        action_panel_y = 0
 
         # Bottom bar dimensions (only status and equipment now)
         bottom_ui_height = 10
@@ -166,18 +157,11 @@ class FrameManager:
         status_x2 = equipment_x1 - 1
 
         # Set view bounds
-        self.help_text_view.tile_dimensions = tile_dimensions
-        self.help_text_view.set_bounds(0, 0, screen_width_tiles, self.help_height)
-
         self.world_view.tile_dimensions = tile_dimensions
-        self.world_view.set_bounds(
-            world_view_x, self.help_height, screen_width_tiles, bottom_ui_y
-        )
+        self.world_view.set_bounds(world_view_x, 0, screen_width_tiles, bottom_ui_y)
 
         self.health_view.tile_dimensions = tile_dimensions
-        self.health_view.set_bounds(
-            screen_width_tiles - 20, 0, screen_width_tiles, self.help_height
-        )
+        self.health_view.set_bounds(screen_width_tiles - 20, 0, screen_width_tiles, 1)
 
         # Action panel in left sidebar (top portion)
         self.action_panel_view.tile_dimensions = tile_dimensions

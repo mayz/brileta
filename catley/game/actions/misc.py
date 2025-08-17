@@ -17,6 +17,13 @@ class PickupIntent(GameIntent):
         self.items = items
 
 
+class PickupItemsAtLocationIntent(GameIntent):
+    """Intent for picking up all items at the actor's current location."""
+
+    def __init__(self, controller: Controller, actor: Character) -> None:
+        super().__init__(controller, actor)
+
+
 class SwitchWeaponIntent(GameIntent):
     """Intent for switching the actor's active weapon slot."""
 
