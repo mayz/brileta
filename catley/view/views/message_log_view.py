@@ -65,6 +65,9 @@ class MessageLogView(TextView):
             0, 0, self.view_width_px, self.view_height_px, colors.BLACK, fill=True
         )
 
+        # Draw a subtle top border to separate from action panel
+        self.canvas.draw_rect(0, 0, self.view_width_px, 1, colors.DARK_GREY, fill=True)
+
         ascent, descent = self.canvas.get_font_metrics()
         line_height = ascent + descent
         y_baseline = self.view_height_px - descent

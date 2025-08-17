@@ -174,6 +174,48 @@ class InputHandler:
 
         assert self.controller.overlay_system is not None
 
+        # Check action panel hotkeys first (for immediate action execution)
+        if isinstance(event, tcod.event.KeyDown) and hasattr(
+            self.fm, "action_panel_view"
+        ):
+            # Get the character from the key symbol
+            key_char = None
+            if 97 <= event.sym <= 122:  # a-z
+                key_char = chr(event.sym)
+            elif 65 <= event.sym <= 90:  # A-Z
+                key_char = chr(event.sym).lower()
+
+            if key_char:
+                hotkeys = self.fm.action_panel_view.get_hotkeys()
+                if key_char in hotkeys:
+                    action_option = hotkeys[key_char]
+                    # Execute the action using the same pattern as context menu
+                    action_executed = False
+                    if hasattr(action_option, "execute") and action_option.execute:
+                        result = action_option.execute()
+                        if isinstance(result, GameIntent):
+                            self.controller.queue_action(result)
+                            action_executed = True
+                    elif action_option.action_class:
+                        # Create action instance with static params
+                        action_instance = action_option.action_class(
+                            self.controller,
+                            self.controller.gw.player,
+                            **action_option.static_params,
+                        )
+                        self.controller.queue_action(action_instance)
+                        action_executed = True
+
+                    # If action was executed, check if it affects the hovered tile
+                    if action_executed and self._action_affects_hovered_tile(
+                        action_option
+                    ):
+                        # Invalidate action panel cache to refresh on next frame
+                        self.fm.action_panel_view.invalidate_cache()
+
+                    if action_executed:
+                        return None  # Action handled
+
         match event:
             case tcod.event.Quit():
                 return QuitUICommand(self.app)
@@ -360,3 +402,27 @@ class InputHandler:
         event_copy = copy.copy(event)
         event_copy.position = tcod.event.Point(root_tile_x, root_tile_y)
         return event_copy
+
+    def _action_affects_hovered_tile(self, action_option) -> bool:
+        """Check if an action affects the currently hovered tile."""
+        from catley.game.actions.environment import CloseDoorIntent, OpenDoorIntent
+
+        # Get current mouse position
+        mouse_pos = self.controller.gw.mouse_tile_location_on_map
+        if mouse_pos is None:
+            return False
+
+        mouse_x, mouse_y = mouse_pos
+
+        # Check if it's a door action (either direct or pathfinding)
+        # Direct actions have action_class set
+        if action_option.action_class in (OpenDoorIntent, CloseDoorIntent):
+            action_x = action_option.static_params.get("x")
+            action_y = action_option.static_params.get("y")
+            if action_x is not None and action_y is not None:
+                # Check if this action affects the hovered tile
+                return action_x == mouse_x and action_y == mouse_y
+
+        # Don't invalidate for pathfinding actions (they use execute function)
+        # Cache will be invalidated when the action actually completes
+        return False

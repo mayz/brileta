@@ -24,6 +24,14 @@ class OpenDoorExecutor(ActionExecutor):
         ):
             game_map.tiles[intent.x, intent.y] = tile_types.TILE_TYPE_ID_DOOR_OPEN  # type: ignore[attr-defined]
             game_map.invalidate_property_caches()
+
+            # Notify action panel that door action completed
+            frame_manager = intent.controller.frame_manager
+            if frame_manager and hasattr(frame_manager, "action_panel_view"):
+                frame_manager.action_panel_view.on_door_action_completed(
+                    intent.x, intent.y
+                )
+
             return GameActionResult(should_update_fov=True)
         return GameActionResult()
 
@@ -42,5 +50,13 @@ class CloseDoorExecutor(ActionExecutor):
         ):
             game_map.tiles[intent.x, intent.y] = tile_types.TILE_TYPE_ID_DOOR_CLOSED  # type: ignore[attr-defined]
             game_map.invalidate_property_caches()
+
+            # Notify action panel that door action completed
+            frame_manager = intent.controller.frame_manager
+            if frame_manager and hasattr(frame_manager, "action_panel_view"):
+                frame_manager.action_panel_view.on_door_action_completed(
+                    intent.x, intent.y
+                )
+
             return GameActionResult(should_update_fov=True)
         return GameActionResult()

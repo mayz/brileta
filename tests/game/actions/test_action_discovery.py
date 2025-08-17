@@ -430,3 +430,72 @@ def test_combat_options_exclude_self_targeting() -> None:
         cast(Controller, controller), player, melee_target, ctx
     )
     assert len(other_opts) > 0
+
+
+def test_tile_specific_door_actions() -> None:
+    """Test that door actions are discovered for specific door tiles."""
+    # Set up a game world with a door
+    controller, player, _, _, _ = _make_combat_world()
+    gw = controller.gw
+    disc = ActionDiscovery()
+
+    # Player is at (0, 0) by default
+    assert player.x == 0
+    assert player.y == 0
+
+    # Build context for action discovery
+    ctx = disc.context_builder.build_context(cast(Controller, controller), player)
+
+    # Test 1: Adjacent door (player at 0,0, door at 1,0 - distance 1)
+    gw.game_map.tiles[1, 0] = tile_types.TILE_TYPE_ID_DOOR_CLOSED  # type: ignore[attr-defined]
+
+    adjacent_actions = disc.environment_discovery.discover_environment_actions_for_tile(
+        cast(Controller, controller), player, ctx, 1, 0
+    )
+
+    # Should find direct door action for adjacent door
+    assert len(adjacent_actions) == 1
+    adjacent_action = adjacent_actions[0]
+    assert "go to and" not in adjacent_action.name.lower()  # No movement required
+    assert adjacent_action.name == "Open Door"
+    assert adjacent_action.action_class == OpenDoorIntent  # Direct action
+    assert adjacent_action.execute is None  # No custom execute function
+
+    # Test 2: Distant door (player at 0,0, door at 3,3 - distance 3)
+    gw.game_map.tiles[3, 3] = tile_types.TILE_TYPE_ID_DOOR_CLOSED  # type: ignore[attr-defined]
+
+    distant_actions = disc.environment_discovery.discover_environment_actions_for_tile(
+        cast(Controller, controller), player, ctx, 3, 3
+    )
+
+    # Should find movement-required door action for distant door
+    assert len(distant_actions) == 1
+    distant_action = distant_actions[0]
+    assert "go to and" in distant_action.name.lower()  # Movement required
+    assert distant_action.name == "Go to and Open Door"
+    assert distant_action.execute is not None  # Uses pathfinding execute function
+    assert distant_action.action_class is None  # No direct action class
+
+    # Test 3: Open door behavior
+    gw.game_map.tiles[1, 0] = tile_types.TILE_TYPE_ID_DOOR_OPEN  # type: ignore[attr-defined]
+
+    open_door_actions = (
+        disc.environment_discovery.discover_environment_actions_for_tile(
+            cast(Controller, controller), player, ctx, 1, 0
+        )
+    )
+
+    # Should find close door action
+    assert len(open_door_actions) == 1
+    close_action = open_door_actions[0]
+    assert "close" in close_action.name.lower()
+
+    # Test 4: Non-door tile (should return no door actions)
+    gw.game_map.tiles[1, 0] = tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[attr-defined]
+
+    floor_actions = disc.environment_discovery.discover_environment_actions_for_tile(
+        cast(Controller, controller), player, ctx, 1, 0
+    )
+
+    # Should find no actions for a regular floor tile
+    assert len(floor_actions) == 0

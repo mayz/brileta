@@ -42,8 +42,8 @@ from .render.graphics import GraphicsContext
 from .ui.cursor_manager import CursorManager
 from .ui.debug_stats_overlay import DebugStatsOverlay
 from .ui.dev_console_overlay import DevConsoleOverlay
+from .views.action_panel_view import ActionPanelView
 from .views.base import View
-from .views.description_view import DescriptionView
 from .views.equipment_view import EquipmentView
 from .views.health_view import HealthView
 from .views.help_text_view import HelpTextView
@@ -100,7 +100,7 @@ class FrameManager:
 
         self.health_view = HealthView(self.controller, self.graphics)
         self.status_view = StatusView(self.controller)
-        self.description_view = DescriptionView(self.controller)
+        self.action_panel_view = ActionPanelView(self.controller)
 
         self.views: list[View] = [
             self.help_text_view,
@@ -109,7 +109,7 @@ class FrameManager:
             self.status_view,
             self.equipment_view,
             self.message_log_view,
-            self.description_view,
+            self.action_panel_view,
         ]
 
         # Set view boundaries using layout
@@ -139,56 +139,68 @@ class FrameManager:
         screen_height_tiles = config.SCREEN_HEIGHT
         tile_dimensions = self.graphics.tile_dimensions
 
-        # Consolidated bottom bar dimensions
+        # Left sidebar dimensions
+        left_sidebar_width = 20
+        left_sidebar_x = 0
+
+        # Message log at bottom of left sidebar
+        message_log_height = 10
+        message_log_y = screen_height_tiles - message_log_height
+
+        # Action panel takes rest of left sidebar
+        action_panel_y = self.help_height
+
+        # Bottom bar dimensions (only status and equipment now)
         bottom_ui_height = 10
         bottom_ui_y = screen_height_tiles - bottom_ui_height
 
-        # World view is everything between the top bar and bottom bar
-        game_world_y = self.help_height
+        # World view starts after left sidebar
+        world_view_x = left_sidebar_width
 
-        # Fixed widths for bottom bar components
-        message_log_width = 30
+        # Bottom bar components
         equipment_width = 25
-
-        message_log_x1 = 1
-        message_log_x2 = message_log_x1 + message_log_width
-
         equipment_x1 = screen_width_tiles - equipment_width - 1
         equipment_x2 = equipment_x1 + equipment_width
 
-        status_x1 = message_log_x2 + 1
+        status_x1 = left_sidebar_width + 1
         status_x2 = equipment_x1 - 1
 
+        # Set view bounds
         self.help_text_view.tile_dimensions = tile_dimensions
         self.help_text_view.set_bounds(0, 0, screen_width_tiles, self.help_height)
 
         self.world_view.tile_dimensions = tile_dimensions
-        self.world_view.set_bounds(0, game_world_y, screen_width_tiles, bottom_ui_y)
+        self.world_view.set_bounds(
+            world_view_x, self.help_height, screen_width_tiles, bottom_ui_y
+        )
 
         self.health_view.tile_dimensions = tile_dimensions
         self.health_view.set_bounds(
             screen_width_tiles - 20, 0, screen_width_tiles, self.help_height
         )
 
-        # Put description view in the bottom center
-        self.description_view.tile_dimensions = tile_dimensions
-        self.description_view.set_bounds(
-            status_x1, bottom_ui_y, status_x2, bottom_ui_y + 2
+        # Action panel in left sidebar (top portion)
+        self.action_panel_view.tile_dimensions = tile_dimensions
+        self.action_panel_view.set_bounds(
+            left_sidebar_x, action_panel_y, left_sidebar_width, message_log_y
         )
 
+        # Message log in left sidebar (bottom portion)
+        self.message_log_view.tile_dimensions = tile_dimensions
+        self.message_log_view.set_bounds(
+            left_sidebar_x, message_log_y, left_sidebar_width, screen_height_tiles
+        )
+
+        # Status view in bottom center
         self.status_view.tile_dimensions = tile_dimensions
         self.status_view.set_bounds(
-            status_x1, bottom_ui_y + 2, status_x2, screen_height_tiles
+            status_x1, bottom_ui_y, status_x2, screen_height_tiles
         )
 
+        # Equipment view in bottom right
         self.equipment_view.tile_dimensions = tile_dimensions
         self.equipment_view.set_bounds(
             equipment_x1, bottom_ui_y, equipment_x2, screen_height_tiles
-        )
-
-        self.message_log_view.tile_dimensions = tile_dimensions
-        self.message_log_view.set_bounds(
-            message_log_x1, bottom_ui_y, message_log_x2, screen_height_tiles
         )
 
     def register_metrics(self) -> None:

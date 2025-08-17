@@ -78,12 +78,48 @@ class Camera:
     world_x: float = 0.0  # Camera center in world coordinates
     world_y: float = 0.0
 
+    # Dead zone parameters - player can move within this area without camera movement
+    dead_zone_width: float = 20.0  # Width of dead zone in tiles (1/3 of viewport)
+    dead_zone_height: float = 12.0  # Height of dead zone in tiles (1/3 of viewport)
+
     def follow_actor(self, actor: Actor, smoothing: float = 0.15) -> None:
-        """Smoothly follow an actor with camera lag to reduce jitter."""
+        """Follow an actor with dead zone to reduce jarring camera movement."""
         target_x = float(actor.x)
         target_y = float(actor.y)
-        self.world_x += (target_x - self.world_x) * smoothing
-        self.world_y += (target_y - self.world_y) * smoothing
+
+        # Calculate distance from camera center to player
+        dx = target_x - self.world_x
+        dy = target_y - self.world_y
+
+        # Dead zone boundaries (half-width/height from center)
+        dead_zone_half_w = self.dead_zone_width / 2.0
+        dead_zone_half_h = self.dead_zone_height / 2.0
+
+        # Only move camera if player is outside the dead zone
+        new_camera_x = self.world_x
+        new_camera_y = self.world_y
+
+        if abs(dx) > dead_zone_half_w:
+            # Player is outside dead zone horizontally
+            if dx > 0:
+                # Player is to the right, move camera right
+                new_camera_x = target_x - dead_zone_half_w
+            else:
+                # Player is to the left, move camera left
+                new_camera_x = target_x + dead_zone_half_w
+
+        if abs(dy) > dead_zone_half_h:
+            # Player is outside dead zone vertically
+            if dy > 0:
+                # Player is below, move camera down
+                new_camera_y = target_y - dead_zone_half_h
+            else:
+                # Player is above, move camera up
+                new_camera_y = target_y + dead_zone_half_h
+
+        # Apply smooth movement to new camera position
+        self.world_x += (new_camera_x - self.world_x) * smoothing
+        self.world_y += (new_camera_y - self.world_y) * smoothing
 
     def set_position(self, world_x: float, world_y: float) -> None:
         """Instantly move camera to a specific world position."""
