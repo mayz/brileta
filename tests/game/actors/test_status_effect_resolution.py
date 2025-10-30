@@ -85,7 +85,7 @@ def make_combat_world() -> tuple[
 
 
 def test_offbalance_gives_disadvantage() -> None:
-    controller, attacker, defender, intent, executor = make_combat_world()
+    _controller, attacker, _defender, intent, executor = make_combat_world()
     weapon = cast(Item, intent.weapon)
     attack = cast(Attack, weapon.melee_attack)
     attacker.status_effects.apply_status_effect(status_effects.OffBalanceEffect())
@@ -99,7 +99,7 @@ def test_offbalance_gives_disadvantage() -> None:
 
 
 def test_focused_gives_advantage() -> None:
-    controller, attacker, defender, intent, executor = make_combat_world()
+    _controller, attacker, _defender, intent, executor = make_combat_world()
     weapon = cast(Item, intent.weapon)
     attack = cast(Attack, weapon.melee_attack)
     attacker.status_effects.apply_status_effect(status_effects.FocusedEffect())
@@ -113,7 +113,7 @@ def test_focused_gives_advantage() -> None:
 
 
 def test_modifier_combination_cancels() -> None:
-    controller, attacker, defender, intent, executor = make_combat_world()
+    _controller, attacker, _defender, intent, executor = make_combat_world()
     weapon = cast(Item, intent.weapon)
     attack = cast(Attack, weapon.melee_attack)
     attacker.status_effects.apply_status_effect(status_effects.FocusedEffect())
@@ -133,7 +133,7 @@ def test_modifier_combination_cancels() -> None:
 
 
 def test_strength_boost_applies_to_roll() -> None:
-    controller, attacker, defender, intent, executor = make_combat_world()
+    _controller, attacker, _defender, intent, executor = make_combat_world()
     weapon = cast(Item, intent.weapon)
     attack = cast(Attack, weapon.melee_attack)
     attacker.status_effects.apply_status_effect(

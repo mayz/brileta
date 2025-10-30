@@ -138,7 +138,7 @@ def test_npc_bumping_player_triggers_attack() -> None:
 
 
 def test_npc_bumping_npc_does_nothing() -> None:
-    controller, player = _make_world()
+    controller, _player = _make_world()
     npc1 = Character(
         1,
         0,

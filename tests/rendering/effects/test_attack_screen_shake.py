@@ -136,7 +136,7 @@ def test_screen_shake_uses_damage_once() -> None:
     reset_event_bus_for_testing()
     intensities: list[float] = []
     subscribe_to_event(ScreenShakeEvent, lambda e: intensities.append(e.intensity))
-    controller, attacker, defender, intent, executor = make_world()
+    _controller, attacker, defender, intent, executor = make_world()
     weapon = intent.weapon
     assert weapon and weapon.melee_attack
     attack = weapon.melee_attack
@@ -155,7 +155,7 @@ def test_screen_shake_ranged_attack_intensity() -> None:
     reset_event_bus_for_testing()
     intensities: list[float] = []
     subscribe_to_event(ScreenShakeEvent, lambda e: intensities.append(e.intensity))
-    controller, attacker, defender, intent, executor = make_world_ranged()
+    _controller, attacker, defender, intent, executor = make_world_ranged()
     weapon = intent.weapon
     assert weapon and weapon.ranged_attack
     attack = weapon.ranged_attack

@@ -187,7 +187,7 @@ def test_process_unified_round_handles_autopilot() -> None:
 
 
 def test_npc_autopilot_waits_without_player_turn() -> None:
-    controller, player, npc = make_world()
+    controller, _player, npc = make_world()
     tm = controller.turn_manager
     # Hostile NPC sets a goal toward the player
     npc.ai.get_action(cast(Controller, controller), npc)

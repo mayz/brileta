@@ -70,7 +70,7 @@ def make_combat_world() -> tuple[
 
 
 def test_rads_melee_attack_disadvantage() -> None:
-    controller, attacker, defender, intent, executor = make_combat_world()
+    _controller, attacker, _defender, intent, executor = make_combat_world()
     attacker.conditions.add_condition(conditions.Rads())
     weapon = cast(Item, intent.weapon)
     attack = cast(Attack, weapon.melee_attack)

@@ -72,8 +72,8 @@ class TestCoordinateTransformations:
         assert screen_y >= 0.0  # Should be at the top in screen space
 
         # Test that coordinates increase properly
-        screen_x1, screen_y1 = self.graphics_ctx.console_to_screen_coords(1, 0)
-        screen_x2, screen_y2 = self.graphics_ctx.console_to_screen_coords(0, 1)
+        screen_x1, _screen_y1 = self.graphics_ctx.console_to_screen_coords(1, 0)
+        _screen_x2, screen_y2 = self.graphics_ctx.console_to_screen_coords(0, 1)
 
         assert screen_x1 > screen_x
         assert screen_y2 > screen_y
@@ -160,7 +160,7 @@ class TestCoordinateTransformations:
         glyph_buffer = GlyphBuffer(width=1, height=1)
         glyph_buffer.put_char(0, 0, ord("A"), (255, 255, 255, 255), (0, 0, 0, 255))
 
-        vertex_data, vertex_count = (
+        vertex_data, _vertex_count = (
             self.graphics_ctx.texture_renderer._encode_glyph_buffer_to_vertices(
                 glyph_buffer
             )
@@ -186,13 +186,13 @@ class TestCoordinateTransformations:
         glyph_buffer.put_char(1, 0, ord("R"), (0, 255, 0, 255), (0, 0, 0, 255))  # Right
 
         # Encode to vertices
-        vertex_data, vertex_count = (
+        vertex_data, _vertex_count = (
             self.graphics_ctx.texture_renderer._encode_glyph_buffer_to_vertices(
                 glyph_buffer
             )
         )
 
-        tile_w, tile_h = self.graphics_ctx.tile_dimensions
+        tile_w, _tile_h = self.graphics_ctx.tile_dimensions
 
         # Left character (L) should be at x=0
         left_vertex = vertex_data[0]  # First vertex of first cell
@@ -217,13 +217,13 @@ class TestCoordinateTransformations:
             0, 2, ord("B"), (0, 0, 255, 255), (0, 0, 0, 255)
         )  # Bottom
 
-        vertex_data, vertex_count = (
+        vertex_data, _vertex_count = (
             self.graphics_ctx.texture_renderer._encode_glyph_buffer_to_vertices(
                 glyph_buffer
             )
         )
 
-        tile_w, tile_h = self.graphics_ctx.tile_dimensions
+        _tile_w, tile_h = self.graphics_ctx.tile_dimensions
 
         # In the glyph buffer: y=0 is top, y=2 is bottom
         # In the vertex data: smaller Y values correspond to smaller Y in buffer

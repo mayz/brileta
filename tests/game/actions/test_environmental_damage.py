@@ -120,7 +120,7 @@ def make_environmental_world() -> tuple[
 def test_basic_environmental_damage() -> None:
     """Test basic environmental damage application."""
     reset_event_bus_for_testing()
-    controller, fire, target1, target2, intent, executor = make_environmental_world()
+    _controller, fire, target1, target2, intent, executor = make_environmental_world()
 
     # Set up targets without armor to ensure damage affects HP
     target1.health.ap = 0
@@ -144,7 +144,7 @@ def test_basic_environmental_damage() -> None:
 def test_environmental_damage_message_logging() -> None:
     """Test that environmental damage generates proper message log entries."""
     reset_event_bus_for_testing()
-    controller, fire, target1, target2, intent, executor = make_environmental_world()
+    controller, _fire, target1, target2, intent, executor = make_environmental_world()
 
     # Remove armor so damage affects HP and generates messages
     target1.health.ap = 0
@@ -162,7 +162,7 @@ def test_environmental_damage_message_logging() -> None:
 def test_environmental_damage_with_different_damage_types() -> None:
     """Test environmental damage with different damage types."""
     reset_event_bus_for_testing()
-    controller, fire, target1, target2, _, executor = make_environmental_world()
+    controller, fire, target1, _target2, _, executor = make_environmental_world()
 
     # Test radiation damage
     radiation_intent = EnvironmentalDamageIntent(
@@ -186,7 +186,7 @@ def test_environmental_damage_with_different_damage_types() -> None:
 def test_environmental_damage_normal_type() -> None:
     """Test environmental damage with normal damage type (no type descriptor)."""
     reset_event_bus_for_testing()
-    controller, fire, target1, target2, _, executor = make_environmental_world()
+    controller, fire, _target1, _target2, _, executor = make_environmental_world()
 
     # Test normal damage (should not show damage type in message)
     normal_intent = EnvironmentalDamageIntent(
@@ -250,7 +250,7 @@ def test_environmental_damage_multiple_coordinates() -> None:
 def test_environmental_damage_zero_damage() -> None:
     """Test environmental damage with zero damage amount."""
     reset_event_bus_for_testing()
-    controller, fire, target1, target2, _, executor = make_environmental_world()
+    controller, fire, _target1, _target2, _, executor = make_environmental_world()
 
     zero_damage_intent = EnvironmentalDamageIntent(
         controller=controller,
@@ -274,7 +274,7 @@ def test_environmental_damage_zero_damage() -> None:
 def test_environmental_damage_negative_damage() -> None:
     """Test environmental damage with negative damage amount."""
     reset_event_bus_for_testing()
-    controller, fire, target1, target2, _, executor = make_environmental_world()
+    controller, fire, _target1, _target2, _, executor = make_environmental_world()
 
     negative_damage_intent = EnvironmentalDamageIntent(
         controller=controller,
@@ -330,7 +330,7 @@ def test_environmental_damage_no_valid_targets() -> None:
 def test_environmental_damage_death_handling() -> None:
     """Test environmental damage handling actor death."""
     reset_event_bus_for_testing()
-    controller, fire, target1, target2, intent, executor = make_environmental_world()
+    controller, _fire, target1, target2, intent, executor = make_environmental_world()
 
     death_events: list[ActorDeathEvent] = []
     subscribe_to_event(ActorDeathEvent, lambda e: death_events.append(e))

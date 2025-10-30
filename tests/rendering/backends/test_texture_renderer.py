@@ -294,7 +294,7 @@ class TestTextureRenderer:
         assert vertex_data.dtype == VERTEX_DTYPE
 
         # Test Y-coordinate handling (no pre-flipping)
-        tile_w, tile_h = self.tile_dimensions
+        _tile_w, _tile_h = self.tile_dimensions
 
         # For a 2-tile high buffer with no Y-flipping:
         # y_console=0 should map to screen_y = 0 * tile_h = 0

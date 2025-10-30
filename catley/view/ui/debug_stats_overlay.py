@@ -58,7 +58,7 @@ class DebugStatsOverlay(TextOverlay):
         watched = live_variable_registry.get_watched_variables()
         assert self.canvas is not None
 
-        tile_width, tile_height = self.tile_dimensions
+        _tile_width, tile_height = self.tile_dimensions
         for y_offset, var in enumerate(watched):
             raw_value = var.get_value()
             display_value = (

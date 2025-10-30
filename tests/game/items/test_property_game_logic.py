@@ -101,7 +101,7 @@ def test_awkward_weapon_ranged_miss_no_effect() -> None:
 
 
 def test_automatic_weapon_ammo_consumption() -> None:
-    controller, attacker, defender, weapon = _make_world("smg")
+    _controller, _attacker, _defender, weapon = _make_world("smg")
     ranged = weapon.ranged_attack
     assert ranged is not None
     executor = WeaponAreaEffectExecutor()
@@ -112,7 +112,7 @@ def test_automatic_weapon_ammo_consumption() -> None:
 
 
 def test_scoped_weapon_range_modifier() -> None:
-    controller, attacker, defender, weapon = _make_world("sniper")
+    _controller, _attacker, _defender, weapon = _make_world("sniper")
     ranged = weapon.ranged_attack
     assert ranged is not None
     mod = ranges.get_range_modifier(weapon, "far")
@@ -123,7 +123,7 @@ def test_explosive_visual_effect() -> None:
     reset_event_bus_for_testing()
     effects: list[str] = []
     subscribe_to_event(EffectEvent, lambda e: effects.append(e.effect_name))
-    controller, attacker, defender, weapon = _make_world("grenade")
+    controller, attacker, _defender, weapon = _make_world("grenade")
     effect = weapon.area_effect
     assert effect is not None
     executor = WeaponAreaEffectExecutor()
@@ -150,7 +150,7 @@ def test_smoke_visual_effect() -> None:
     reset_event_bus_for_testing()
     effects: list[str] = []
     subscribe_to_event(EffectEvent, lambda e: effects.append(e.effect_name))
-    controller, attacker, defender, _ = _make_world("grenade")
+    controller, attacker, _defender, _ = _make_world("grenade")
     executor = WeaponAreaEffectExecutor()
     intent = AreaEffectIntent(controller, attacker, 2, 2, weapon)
     effect = weapon.area_effect

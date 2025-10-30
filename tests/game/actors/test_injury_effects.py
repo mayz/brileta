@@ -76,7 +76,7 @@ def test_head_injury_disadvantage_on_intelligence() -> None:
 
 
 def test_arm_injury_gives_attack_disadvantage() -> None:
-    controller, attacker, defender, intent, executor = make_combat_world()
+    _controller, attacker, _defender, intent, executor = make_combat_world()
     weapon = cast(Item, intent.weapon)
     attack = cast(Attack, weapon.melee_attack)
     assert attack is not None
@@ -117,7 +117,7 @@ def test_multiple_leg_injuries_stack() -> None:
 
 
 def test_random_injury_location_assigned() -> None:
-    controller, attacker, defender, intent, executor = make_combat_world()
+    _controller, attacker, defender, intent, _executor = make_combat_world()
     weapon = cast(Item, intent.weapon)
     attack = cast(Attack, weapon.melee_attack)
     assert attack is not None

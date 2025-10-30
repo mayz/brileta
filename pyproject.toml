@@ -8,7 +8,7 @@ dependencies = [
     "glfw>=2.9.0",
     "moderngl>=5.12.0",
     "numpy>=2.3.2",
-    "pillow>=11.3.0",
+    "pillow>=12.0.0",
     "soundfile>=0.13.1",
     "tcod>=18.1.0",
     "wgpu>=0.23.0",
@@ -58,5 +58,5 @@ dev = [
     "py-spy>=0.4.0",
     "pyright>=1.1.402",
     "pytest>=8.4.0",
-    "ruff>=0.11.12",
+    "ruff>=0.14.2",
 ]

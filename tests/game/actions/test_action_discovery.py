@@ -141,7 +141,7 @@ def _make_combat_world():
 
 
 def test_get_combat_options_melee_ranged_and_reload() -> None:
-    controller, player, melee_target, ranged_target, pistol = _make_combat_world()
+    controller, player, melee_target, _ranged_target, pistol = _make_combat_world()
     disc = ActionDiscovery()
     ctx = disc._build_context(cast(Controller, controller), player)
 
@@ -185,7 +185,7 @@ def test_get_combat_options_melee_ranged_and_reload() -> None:
 
 
 def test_get_combat_options_for_target_filters() -> None:
-    controller, player, melee_target, ranged_target, pistol = _make_combat_world()
+    controller, player, melee_target, ranged_target, _pistol = _make_combat_world()
     disc = ActionDiscovery()
     ctx = disc._build_context(cast(Controller, controller), player)
 
@@ -220,7 +220,7 @@ def test_combat_options_ignore_dead_and_unseen() -> None:
 
 
 def test_combat_option_probabilities_reflect_status_effects() -> None:
-    controller, player, melee_target, ranged_target, pistol = _make_combat_world()
+    controller, player, melee_target, _ranged_target, pistol = _make_combat_world()
     player.status_effects.apply_status_effect(status_effects.OffBalanceEffect())
     disc = ActionDiscovery()
     ctx = disc._build_context(cast(Controller, controller), player)
@@ -289,7 +289,7 @@ def test_sort_by_relevance_orders_actions() -> None:
 
 
 def test_inventory_options_hide_weapon_switching_when_in_combat() -> None:
-    controller, player, hostile, friend, _ = _make_context_world()
+    controller, player, hostile, _friend, _ = _make_context_world()
     pistol = PISTOL_TYPE.create()
     knife = COMBAT_KNIFE_TYPE.create()
     player.inventory.equip_to_slot(pistol, 0)
@@ -395,7 +395,7 @@ def test_probability_descriptor_mapping() -> None:
 
 def test_terminal_combat_actions_available_out_of_combat() -> None:
     """`_get_all_terminal_combat_actions` should work outside of combat."""
-    controller, player, melee_target, ranged_target, _ = _make_combat_world()
+    controller, player, _melee_target, _ranged_target, _ = _make_combat_world()
     disc = ActionDiscovery()
 
     # No actor starts hostile so the player is technically out of combat.
@@ -413,7 +413,7 @@ def test_terminal_combat_actions_available_out_of_combat() -> None:
 
 def test_combat_options_exclude_self_targeting() -> None:
     """Combat options should not be available when targeting yourself."""
-    controller, player, melee_target, ranged_target, pistol = _make_combat_world()
+    controller, player, melee_target, _ranged_target, _pistol = _make_combat_world()
     disc = ActionDiscovery()
     ctx = disc._build_context(cast(Controller, controller), player)
 

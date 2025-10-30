@@ -115,7 +115,7 @@ def make_world() -> tuple[
 
 
 def test_grenade_circle_tiles() -> None:
-    controller, attacker, target, intent, executor, _ = make_world()
+    _controller, _attacker, _target, intent, executor, _ = make_world()
     effect = intent.weapon.area_effect
     assert effect is not None
     tiles = executor._circle_tiles(intent, effect)
@@ -125,7 +125,7 @@ def test_grenade_circle_tiles() -> None:
 
 
 def test_grenade_damage_calculation() -> None:
-    controller, attacker, target, intent, executor, _ = make_world()
+    _controller, _attacker, target, intent, executor, _ = make_world()
     effect = intent.weapon.area_effect
     assert effect is not None
     tiles = executor._circle_tiles(intent, effect)
@@ -143,7 +143,7 @@ def test_grenade_action_execution() -> None:
     reset_event_bus_for_testing()
     effects: list[str] = []
     subscribe_to_event(EffectEvent, lambda e: effects.append(e.effect_name))
-    controller, attacker, target, intent, executor, _ = make_world()
+    controller, _attacker, target, intent, executor, _ = make_world()
 
     def fixed_randint(_a: int, _b: int) -> int:
         return 6

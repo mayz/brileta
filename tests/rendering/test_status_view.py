@@ -32,13 +32,13 @@ def make_world() -> tuple[DummyController, Character, StatusView]:
 
 
 def test_no_conditions_or_effects() -> None:
-    controller, actor, view = make_world()
+    _controller, actor, view = make_world()
     assert view._get_condition_lines(actor) == []
     assert view._get_status_effect_lines(actor) == []
 
 
 def test_condition_grouping_and_colors() -> None:
-    controller, actor, view = make_world()
+    _controller, actor, view = make_world()
     actor.conditions.add_condition(conditions.Exhaustion())
     actor.conditions.add_condition(conditions.Exhaustion())
     injury = conditions.Injury(InjuryLocation.LEFT_LEG, "Sprained Ankle")
@@ -50,7 +50,7 @@ def test_condition_grouping_and_colors() -> None:
 
 
 def test_status_effect_duration_format() -> None:
-    controller, actor, view = make_world()
+    _controller, actor, view = make_world()
     effect = status_effects.OffBalanceEffect()
     effect.duration = 1
     actor.status_effects.apply_status_effect(effect)

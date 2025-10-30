@@ -367,7 +367,7 @@ class FrameManager:
         vs = self.world_view.viewport_system
         if not vs.is_visible(x, y):
             return
-        vp_x, vp_y = vs.world_to_screen(x, y)
+        _vp_x, _vp_y = vs.world_to_screen(x, y)
         context = EffectContext(
             particle_system=self.world_view.particle_system,
             environmental_system=self.world_view.environmental_system,

@@ -91,7 +91,7 @@ def test_pickup_menu_removes_empty_container() -> None:
 
 
 def test_pickup_from_dead_actor_clears_slot() -> None:
-    controller, player = make_world()
+    controller, _player = make_world()
     npc = Character(
         2,
         1,

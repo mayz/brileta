@@ -99,7 +99,7 @@ class PickupMenu(Menu):
                 break
 
         # Add to player inventory
-        success, message, dropped_items = player.inventory.add_to_inventory(item)
+        _success, _message, dropped_items = player.inventory.add_to_inventory(item)
         publish_event(MessageEvent(f"You pick up {item.name}.", colors.WHITE))
         for dropped in dropped_items:
             self.controller.gw.spawn_ground_item(dropped, player.x, player.y)

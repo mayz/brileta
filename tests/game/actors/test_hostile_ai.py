@@ -55,7 +55,7 @@ def test_hostile_ai_sets_pathfinding_goal() -> None:
 
 
 def test_hostile_ai_attacks_when_adjacent() -> None:
-    controller, player, npc = make_world()
+    controller, _player, npc = make_world()
     npc.x = 1
     npc.y = 0
     action = npc.ai.get_action(controller, npc)

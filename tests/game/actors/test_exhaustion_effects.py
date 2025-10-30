@@ -37,7 +37,7 @@ def make_world() -> tuple[DummyController, Character]:
 
 
 def test_single_exhaustion_energy_reduction() -> None:
-    controller, actor = make_world()
+    _controller, actor = make_world()
     actor.energy.accumulated_energy = 0
     actor.conditions.add_condition(conditions.Exhaustion())
     expected = int(actor.energy.speed * actor.modifiers.get_movement_speed_multiplier())
@@ -84,7 +84,7 @@ def test_movement_stumble_with_high_exhaustion() -> None:
 
 
 def test_exhaustion_removal_restores_effects() -> None:
-    controller, actor = make_world()
+    _controller, actor = make_world()
     actor.conditions.add_condition(conditions.Exhaustion())
     actor.conditions.add_condition(conditions.Exhaustion())
     # Remove one stack
@@ -99,7 +99,7 @@ def test_exhaustion_removal_restores_effects() -> None:
 
 
 def test_injury_and_exhaustion_stack() -> None:
-    controller, actor = make_world()
+    _controller, actor = make_world()
     actor.conditions.add_condition(conditions.Injury(InjuryLocation.LEFT_LEG, "Bruise"))
     actor.conditions.add_condition(conditions.Exhaustion())
     expected_speed = int(

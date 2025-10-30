@@ -211,7 +211,7 @@ class TextBackendBenchmarkSuite:
 
                 if not tracemalloc.is_tracing():
                     tracemalloc.start()
-                current, peak = tracemalloc.get_traced_memory()
+                current, _peak = tracemalloc.get_traced_memory()
                 return current / 1024 / 1024  # Bytes to MB
             except ImportError:
                 # If all else fails, return 0

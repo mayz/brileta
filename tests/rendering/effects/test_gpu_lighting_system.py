@@ -834,7 +834,7 @@ class TestGPUDirectionalLighting:
 
         # Mock get_region_at to return appropriate regions
         def get_region_at(pos):
-            x, y = pos
+            x, _y = pos
             # Left half is outdoor, right half is indoor
             if x < 5:
                 return self.outdoor_region
@@ -1269,7 +1269,7 @@ class TestGPUDirectionalShadows:
         def get_region_by_exposure(pos):
             from catley.environment.map import MapRegion
 
-            x, y = pos
+            x, _y = pos
             if x < 3:  # Left side: indoor (no sky exposure)
                 return MapRegion.create_indoor_region(
                     map_region_id=1, region_type="indoor", sky_exposure=0.0

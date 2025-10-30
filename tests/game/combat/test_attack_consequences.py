@@ -70,7 +70,7 @@ def make_world() -> tuple[
 
 
 def test_weapon_drop_and_noise_alert() -> None:
-    controller, attacker, defender, bystander, intent = make_world()
+    controller, attacker, _defender, bystander, intent = make_world()
     executor = AttackExecutor()
 
     with (

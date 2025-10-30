@@ -86,7 +86,7 @@ class TestWGPUCanvas:
         assert isinstance(metrics, tuple)
         assert len(metrics) == 3
         # Font size parameter is currently ignored
-        width, height, line_height = metrics
+        width, _height, _line_height = metrics
         assert width == 80  # len("Test") * 20 (tile_width=20)
 
     def test_wrap_text(self):

@@ -9,7 +9,7 @@ from tests.rendering.backends.test_canvases import _make_renderer
 
 
 def test_continue_option_shown_when_target_dead() -> None:
-    controller, player, melee_target, ranged_target, pistol = _make_combat_world()
+    controller, _player, melee_target, _ranged_target, pistol = _make_combat_world()
 
     # Provide required dependencies for the menu.
     controller.graphics = _make_renderer()  # type: ignore[attr-defined]

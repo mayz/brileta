@@ -162,7 +162,7 @@ class DevConsoleOverlay(TextOverlay):
             True,
         )
 
-        tile_w, tile_h = self.tile_dimensions
+        _tile_w, tile_h = self.tile_dimensions
         prompt_y = (self.height - 1) * tile_h
 
         # History lines (most recent at bottom)
@@ -177,7 +177,7 @@ class DevConsoleOverlay(TextOverlay):
         self.canvas.draw_text(0, prompt_y, prompt, colors.YELLOW)
         if self._cursor_visible:
             cursor_x, _, _ = self.canvas.get_text_metrics(prompt)
-            ascent, _ = self.canvas.get_font_metrics()
+            _ascent, _ = self.canvas.get_font_metrics()
             self.canvas.draw_text(cursor_x, prompt_y, "|", colors.WHITE)
 
     # ------------------------------------------------------------------

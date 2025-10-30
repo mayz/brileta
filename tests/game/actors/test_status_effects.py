@@ -125,7 +125,7 @@ def test_offbalance_persists_until_next_round() -> None:
 
 
 def test_condition_management_methods() -> None:
-    controller, actor = make_world()
+    _controller, actor = make_world()
     injury = conditions.Injury(InjuryLocation.LEFT_ARM, "Test")
     assert actor.conditions.add_condition(injury)[0]
     assert actor.conditions.has_condition(conditions.Injury)

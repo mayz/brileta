@@ -128,7 +128,7 @@ def test_radiation_weapon_attack() -> None:
 
 def test_dirty_bomb_area_effect() -> None:
     reset_event_bus_for_testing()
-    controller, attacker, target, intent, executor = make_bomb_world()
+    _controller, _attacker, target, intent, executor = make_bomb_world()
     effect = intent.weapon.area_effect
     assert effect is not None
     tiles = executor._circle_tiles(intent, effect)
