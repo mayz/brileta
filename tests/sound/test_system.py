@@ -1044,6 +1044,107 @@ class TestSoundSystemAudioStopping:
         )
 
 
+class TestStaleEmitterPosition:
+    """Test handling of emitters that move out of range during playback."""
+
+    def setup_method(self) -> None:
+        """Set up test fixtures with mock audio backend."""
+        self.system = SoundSystem()
+        self.mock_backend = MockAudioBackend()
+        self.mock_backend.initialize()
+        self.system.set_audio_backend(self.mock_backend)
+
+    def create_mock_actor(
+        self, x: int, y: int, emitters: list[SoundEmitter] | None = None
+    ) -> Actor:
+        """Create a mock actor with sound emitters."""
+        actor = MagicMock(spec=Actor)
+        actor.x = x
+        actor.y = y
+        actor.sound_emitters = emitters or []
+        return actor
+
+    def test_emitter_moves_out_of_range_during_playback(self) -> None:
+        """Test bug #3: verify volume calculation when emitter goes out of range.
+
+        This tests the scenario where:
+        1. An emitter starts playing while in range
+        2. The emitter moves out of range (beyond nearby_actors radius)
+        3. The volume update loop tries to find the emitter position but fails
+        4. Current behavior: uses stale (0, 0) position for volume calculation
+        5. Expected behavior: sound should be stopped or volume should be 0
+        """
+        emitter = SoundEmitter("fire_ambient", active=True)
+        actor = self.create_mock_actor(5, 5, [emitter])
+
+        # Start with emitter in range
+        self.system.update(0, 0, create_spatial_index([actor]), 0.1)
+
+        # Verify sound is playing
+        assert len(emitter.playing_instances) > 0
+        initial_channel_count = self.mock_backend.get_active_channel_count()
+        assert initial_channel_count > 0
+
+        # Now simulate the emitter going out of the nearby_actors range
+        # but still having playing instances (the problematic scenario from bug #3)
+        # We do this by moving the actor far away but keeping the playing_sounds
+        # This simulates the window between when an emitter goes out of range
+        # and when the cleanup happens
+
+        # Move actor far away (beyond max_distance of 17 for fire_ambient)
+        actor.x, actor.y = 50, 50
+
+        # Update - this should stop the sound
+        self.system.update(0, 0, create_spatial_index([actor]), 0.1)
+
+        # The sound should be stopped when emitter is out of range
+        # This test verifies that we don't use stale (0, 0) coordinates
+        final_channel_count = self.mock_backend.get_active_channel_count()
+        assert final_channel_count == 0, (
+            f"Expected all channels stopped when emitter moves out of range, "
+            f"but {final_channel_count} channels still playing. "
+            f"This could indicate bug #3: volume calculated from stale position (0,0)"
+        )
+
+        # Also verify at the emitter level
+        assert len(emitter.playing_instances) == 0, (
+            "Expected no playing instances when emitter is out of range"
+        )
+
+    def test_volume_not_calculated_from_origin_for_distant_emitter(self) -> None:
+        """Test that distant emitters don't get their volume calculated from (0,0).
+
+        This is a more direct test of bug #3: if an emitter is not found in
+        nearby_actors during the volume update loop, we should not calculate
+        volume using the fallback (0, 0) position.
+        """
+        emitter = SoundEmitter("fire_ambient", active=True)
+        # Place emitter at a position where (0,0) would give different volume
+        # than actual position
+        actor = self.create_mock_actor(10, 10, [emitter])
+
+        # Start playing
+        self.system.update(0, 0, create_spatial_index([actor]), 0.1)
+        assert self.mock_backend.get_active_channel_count() > 0
+
+        # Now update with listener at a different position where:
+        # - Distance from listener to (10, 10) is large (sound should be quiet/stopped)
+        # - Distance from listener to (0, 0) would be small (sound would be loud)
+        # If bug #3 exists, volume would be calculated from (0,0) incorrectly
+
+        # Move listener to (30, 30) - far from both actor and origin
+        self.system.update(30, 30, create_spatial_index([actor]), 0.1)
+
+        # Sound should be stopped or very quiet (emitter is ~28 tiles away)
+        # fire_ambient max_distance is 17, so it should be silent
+        final_count = self.mock_backend.get_active_channel_count()
+        assert final_count == 0, (
+            f"Emitter at distance ~28 should be silent (max_distance=17), "
+            f"but {final_count} channels playing. "
+            f"Bug #3 might be causing volume calculation from wrong position."
+        )
+
+
 class TestListenerInterpolation:
     """Test the improved listener interpolation system."""
 

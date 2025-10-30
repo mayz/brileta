@@ -486,14 +486,14 @@ class SoundSystem:
                 if playing.channel:
                     playing.channel.stop()
 
-        self.audio_backend = backend
-        self.playing_sounds.clear()
-        self._sound_cache.clear()
-
         # Clear playing instances from all emitters
         # This will be repopulated on next update
         for playing in self.playing_sounds:
             playing.emitter.playing_instances.clear()
+
+        self.audio_backend = backend
+        self.playing_sounds.clear()
+        self._sound_cache.clear()
 
         logger.info(
             f"Audio backend set: {type(backend).__name__ if backend else 'None'}"

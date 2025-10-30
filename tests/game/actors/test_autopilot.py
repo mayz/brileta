@@ -81,3 +81,32 @@ def test_start_actor_pathfinding_handles_door() -> None:
     assert success
     assert player.pathfinding_goal is not None
     assert player.pathfinding_goal.target_pos == (2, 0)
+
+
+def test_get_next_action_handles_empty_cached_path() -> None:
+    """Test that get_next_action handles the case where _cached_path becomes empty.
+
+    This is a regression test confirming that the code correctly handles empty
+    _cached_path by recalculating the path. The check at line 418
+    (if goal._cached_path:) catches the empty list case and triggers path
+    recalculation at line 431.
+
+    This test confirms bug #2 is NOT actually a bug - the code handles it.
+    """
+    controller, player = make_world()
+
+    # Set up a pathfinding goal with an empty path to simulate the edge case
+    player.pathfinding_goal = PathfindingGoal(
+        target_pos=(5, 5),
+        final_intent=None,
+        _cached_path=[],  # Empty path - will trigger recalculation
+    )
+
+    # The code should recalculate the path and return a valid action
+    action = player.get_next_action(controller)
+
+    # Should get a valid MoveIntent (path was recalculated)
+    assert isinstance(action, MoveIntent)
+    assert player.pathfinding_goal is not None
+    assert player.pathfinding_goal._cached_path is not None
+    assert len(player.pathfinding_goal._cached_path) > 0  # Path was recalculated
