@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from catley.events import SoundEvent, subscribe_to_event
 from catley.types import WorldTileCoord
 from catley.util.spatial import SpatialIndex
 
@@ -73,7 +74,11 @@ class SoundSystem:
         self.listener_smoothing_factor: float = 0.15  # 0-1, higher = less smoothing
         self.teleport_threshold: float = 10.0  # Distance to consider as teleportation
         self.previous_listener_x: WorldTileCoord = 0.0
+        self.previous_listener_x: WorldTileCoord = 0.0
         self.previous_listener_y: WorldTileCoord = 0.0
+
+        # Subscribe to sound events
+        subscribe_to_event(SoundEvent, self.handle_sound_event)
 
     def _calculate_max_audio_distance(self) -> float:
         """Calculate the maximum audible distance across all sound definitions.
@@ -525,3 +530,105 @@ class SoundSystem:
         """
         if self.audio_backend:
             self.audio_backend.set_master_volume(volume)
+
+    def handle_sound_event(self, event: SoundEvent) -> None:
+        """Handle a sound event from the event bus.
+
+        Args:
+            event: The sound event to handle
+        """
+        self.play_one_shot(
+            sound_id=event.sound_id,
+            x=event.x,
+            y=event.y,
+            layer_index=event.layer,
+            volume_jitter=event.volume_jitter,
+            pitch_jitter=event.pitch_jitter,
+        )
+
+    def play_one_shot(
+        self,
+        sound_id: str,
+        x: int,
+        y: int,
+        layer_index: int | None = None,
+        volume_jitter: tuple[float, float] | None = None,
+        pitch_jitter: tuple[float, float] | None = None,
+    ) -> None:
+        """Play a one-shot sound effect at a specific location.
+
+        Args:
+            sound_id: ID of the sound to play
+            x: X position of the sound
+            y: Y position of the sound
+            layer_index: Optional index of specific layer to play
+            volume_jitter: Optional volume variation (min, max)
+            pitch_jitter: Optional pitch variation (min, max)
+        """
+        if not self.audio_backend:
+            return
+
+        sound_def = get_sound_definition(sound_id)
+        if not sound_def:
+            logger.warning(f"No sound definition for one-shot: {sound_id}")
+            return
+
+        # Calculate volume based on distance
+        volume = self._calculate_volume(
+            x,
+            y,
+            self.audio_listener_x,
+            self.audio_listener_y,
+            sound_def,
+            volume_multiplier=1.0,
+        )
+
+        if volume <= 0.0:
+            return
+
+        # Determine which layers to play
+        layers_to_play = []
+        if layer_index is not None:
+            if 0 <= layer_index < len(sound_def.layers):
+                layers_to_play.append(sound_def.layers[layer_index])
+        else:
+            layers_to_play = sound_def.layers
+
+        for layer in layers_to_play:
+            # Determine which file to play (handle variants)
+            file_to_play = layer.file
+            if layer.variants:
+                file_to_play = random.choice(layer.variants)
+
+            loaded_sound = self._load_sound(file_to_play)
+            if not loaded_sound:
+                continue
+
+            # Calculate final volume with jitter
+            layer_volume = volume * layer.volume
+            if volume_jitter:
+                layer_volume *= random.uniform(*volume_jitter)
+
+            # Apply pitch variation
+            sound_to_play = loaded_sound
+
+            # Combine layer pitch variation with event pitch jitter
+            pitch_factor = 1.0
+            if layer.pitch_variation:
+                pitch_factor *= random.uniform(*layer.pitch_variation)
+            if pitch_jitter:
+                pitch_factor *= random.uniform(*pitch_jitter)
+
+            if pitch_factor != 1.0:
+                sound_to_play = AudioLoader.pitch_shift(loaded_sound, pitch_factor)
+
+            self.audio_backend.play_sound(
+                sound_to_play,
+                volume=layer_volume,
+                loop=False,
+            )
+
+            logger.debug(
+                f"Played one-shot: {sound_id} ({file_to_play}) at ({x}, {y}), "
+                f"vol={layer_volume:.2f}, pitch={pitch_factor:.2f}"
+            )

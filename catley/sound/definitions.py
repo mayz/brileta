@@ -24,6 +24,7 @@ class SoundLayer:
     pitch_variation: tuple[float, float] | None = (
         None  # Random pitch variation range (e.g., (0.9, 1.1) for ±10%)
     )
+    variants: list[str] | None = None  # List of alternative files for random variation
 
 
 @dataclass

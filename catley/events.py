@@ -74,6 +74,18 @@ class ScreenShakeEvent(GameEvent):
     duration: DeltaTime
 
 
+@dataclass
+class SoundEvent(GameEvent):
+    """Event for triggering a one-shot sound effect."""
+
+    sound_id: str
+    x: int
+    y: int
+    layer: int | None = None
+    volume_jitter: tuple[float, float] | None = None
+    pitch_jitter: tuple[float, float] | None = None
+
+
 class EventBus:
     """Simple event bus for publish/subscribe pattern."""
 
