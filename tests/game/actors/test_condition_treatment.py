@@ -6,7 +6,7 @@ from catley.controller import Controller
 from catley.game.actors import Character, conditions
 from catley.game.enums import ConsumableEffectType, InjuryLocation
 from catley.game.game_world import GameWorld
-from catley.game.items.capabilities import ConsumableEffect, ConsumableEffectSpec
+from catley.game.items.capabilities import ConsumableEffectSpec
 from catley.game.items.item_core import ItemType
 from catley.game.items.item_types import ItemSize
 from tests.helpers import DummyGameWorld
