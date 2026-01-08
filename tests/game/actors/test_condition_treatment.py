@@ -58,8 +58,7 @@ def test_consumable_effect_batch_removal() -> None:
     item = item_type.create()
 
     assert item.consumable_effect is not None
-    effect = cast("ConsumableEffect", item.consumable_effect)
-    effect.consume(actor, controller)
+    item.consumable_effect.consume(actor, controller)
 
     assert actor.health.hp == actor.health.max_hp
     assert not actor.conditions.get_conditions_by_type(conditions.Exhaustion)

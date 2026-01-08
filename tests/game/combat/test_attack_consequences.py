@@ -105,5 +105,4 @@ def test_weapon_drop_and_noise_alert() -> None:
         it.name == cast(Item, intent.weapon).name for it in ground_actor.inventory
     )
     assert isinstance(bystander.ai, ai.DispositionBasedAI)
-    b_ai = cast(ai.DispositionBasedAI, bystander.ai)
-    assert b_ai.disposition == Disposition.HOSTILE
+    assert bystander.ai.disposition == Disposition.HOSTILE

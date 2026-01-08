@@ -53,6 +53,17 @@ select = [
 [tool.pyright]
 reportAttributeAccessIssue = "none"
 
+[tool.ty.rules]
+# ty bugs/limitations (remove as ty matures)
+invalid-base = "ignore"            # Protocol inheritance false positive
+invalid-context-manager = "ignore" # nullcontext false positive
+
+[[tool.ty.overrides]]
+include = ["tests/**"]
+
+[tool.ty.overrides.rules]
+invalid-assignment = "ignore"  # Mock assignments in tests
+
 [dependency-groups]
 dev = [
     "py-spy>=0.4.0",

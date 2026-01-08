@@ -126,5 +126,4 @@ def test_random_injury_location_assigned() -> None:
         res = D20ResolutionResult(outcome_tier=OutcomeTier.CRITICAL_SUCCESS)
         outcome = determine_outcome(res, attacker, defender, weapon)
     assert outcome.injury_inflicted is not None
-    injury = cast(conditions.Injury, outcome.injury_inflicted)
-    assert injury.injury_location == InjuryLocation.TORSO
+    assert outcome.injury_inflicted.injury_location == InjuryLocation.TORSO
