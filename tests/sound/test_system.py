@@ -200,13 +200,13 @@ class TestSoundSystemVolumeCalculation:
         # At distance 0 (same position)
         self.system.audio_listener_x = 5.0
         self.system.audio_listener_y = 5.0
-        volume = self.system._calculate_volume(5, 5, 5, 5, self.test_sound_def, 1.0)
+        volume = self.system._calculate_volume(5, 5, self.test_sound_def, 1.0)
         assert volume == 0.8  # base_volume
 
         # At distance 2 (within falloff_start of 3)
         self.system.audio_listener_x = 7.0
         self.system.audio_listener_y = 5.0
-        volume = self.system._calculate_volume(5, 5, 7, 5, self.test_sound_def, 1.0)
+        volume = self.system._calculate_volume(5, 5, self.test_sound_def, 1.0)
         assert volume == 0.8  # base_volume
 
     def test_calculate_volume_at_falloff_start(self) -> None:
@@ -214,7 +214,7 @@ class TestSoundSystemVolumeCalculation:
         # At distance 3 (exactly at falloff_start)
         self.system.audio_listener_x = 8.0
         self.system.audio_listener_y = 5.0
-        volume = self.system._calculate_volume(5, 5, 8, 5, self.test_sound_def, 1.0)
+        volume = self.system._calculate_volume(5, 5, self.test_sound_def, 1.0)
         assert volume == 0.8  # base_volume
 
     def test_calculate_volume_beyond_falloff_start(self) -> None:
@@ -222,7 +222,7 @@ class TestSoundSystemVolumeCalculation:
         # At distance 4 (1 unit beyond falloff_start of 3)
         self.system.audio_listener_x = 9.0
         self.system.audio_listener_y = 5.0
-        volume = self.system._calculate_volume(5, 5, 9, 5, self.test_sound_def, 1.0)
+        volume = self.system._calculate_volume(5, 5, self.test_sound_def, 1.0)
         # Industry rolloff: reference / (reference + rolloff * falloff_distance)
         falloff_distance = 1.0  # distance(4) - falloff_start(3)
         reference_distance = 3.0  # falloff_start
@@ -238,7 +238,7 @@ class TestSoundSystemVolumeCalculation:
         # At distance 15 (beyond max_distance of 10)
         self.system.audio_listener_x = 20.0
         self.system.audio_listener_y = 5.0
-        volume = self.system._calculate_volume(5, 5, 20, 5, self.test_sound_def, 1.0)
+        volume = self.system._calculate_volume(5, 5, self.test_sound_def, 1.0)
         assert volume == 0.0
 
     def test_calculate_volume_at_max_distance(self) -> None:
@@ -246,7 +246,7 @@ class TestSoundSystemVolumeCalculation:
         # At distance 10 (exactly at max_distance)
         self.system.audio_listener_x = 15.0
         self.system.audio_listener_y = 5.0
-        volume = self.system._calculate_volume(5, 5, 15, 5, self.test_sound_def, 1.0)
+        volume = self.system._calculate_volume(5, 5, self.test_sound_def, 1.0)
         falloff_distance = 10.0 - 3.0  # distance - falloff_start
         reference_distance = 3.0  # falloff_start
         rolloff_factor = 1.0
@@ -261,13 +261,13 @@ class TestSoundSystemVolumeCalculation:
         # Within falloff start with multiplier
         self.system.audio_listener_x = 5.0
         self.system.audio_listener_y = 5.0
-        volume = self.system._calculate_volume(5, 5, 5, 5, self.test_sound_def, 0.5)
+        volume = self.system._calculate_volume(5, 5, self.test_sound_def, 0.5)
         assert volume == 0.4  # base_volume * multiplier
 
         # Beyond falloff start with multiplier
         self.system.audio_listener_x = 9.0
         self.system.audio_listener_y = 5.0
-        volume = self.system._calculate_volume(5, 5, 9, 5, self.test_sound_def, 0.5)
+        volume = self.system._calculate_volume(5, 5, self.test_sound_def, 0.5)
         # Industry-standard rolloff with multiplier
         falloff_distance = 1.0  # distance(4) - falloff_start(3)
         reference_distance = 3.0  # falloff_start
@@ -283,7 +283,7 @@ class TestSoundSystemVolumeCalculation:
         # Distance sqrt(3^2 + 4^2) = 5
         self.system.audio_listener_x = 3.0
         self.system.audio_listener_y = 4.0
-        volume = self.system._calculate_volume(0, 0, 3, 4, self.test_sound_def, 1.0)
+        volume = self.system._calculate_volume(0, 0, self.test_sound_def, 1.0)
         falloff_distance = 5.0 - 3.0  # distance - falloff_start
         reference_distance = 3.0  # falloff_start
         rolloff_factor = 1.0
@@ -298,13 +298,13 @@ class TestSoundSystemVolumeCalculation:
         # Zero volume multiplier
         self.system.audio_listener_x = 5.0
         self.system.audio_listener_y = 5.0
-        volume = self.system._calculate_volume(5, 5, 5, 5, self.test_sound_def, 0.0)
+        volume = self.system._calculate_volume(5, 5, self.test_sound_def, 0.0)
         assert volume == 0.0
 
         # Very small distance beyond falloff_start
         self.system.audio_listener_x = 9.0
         self.system.audio_listener_y = 5.0
-        volume = self.system._calculate_volume(5, 5, 9, 5, self.test_sound_def, 1.0)
+        volume = self.system._calculate_volume(5, 5, self.test_sound_def, 1.0)
         falloff_distance = 4.0 - 3.0  # distance(4) - falloff_start(3)
         reference_distance = 3.0  # falloff_start
         rolloff_factor = 1.0
@@ -609,7 +609,7 @@ class TestSoundSystemIntegration:
             self.system.audio_listener_x = 0.0
             self.system.audio_listener_y = 0.0
             calculated_volume = self.system._calculate_volume(
-                x, y, 0, 0, fire_def, emitter.volume_multiplier
+                x, y, fire_def, emitter.volume_multiplier
             )
 
             assert abs(calculated_volume - expected_volume) < 1e-10

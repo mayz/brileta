@@ -64,18 +64,18 @@ class SoundSystem:
         self._assets_path: Path | None = None
         self._max_audio_distance: float | None = None  # Cached maximum audio distance
 
-        # Audio listener interpolation for smooth volume transitions
-        self.audio_listener_x: WorldTileCoord = 0.0
-        self.audio_listener_y: WorldTileCoord = 0.0
+        # Audio listener position (interpolated world coordinates for smooth volume
+        # transitions - floats rather than WorldTileCoord since they're smoothed)
+        self.audio_listener_x: float = 0.0
+        self.audio_listener_y: float = 0.0
         self.transition_duration: float = 1.0  # seconds for transition
         self._listener_initialized: bool = False
 
         # Velocity-based smoothing parameters
         self.listener_smoothing_factor: float = 0.15  # 0-1, higher = less smoothing
         self.teleport_threshold: float = 10.0  # Distance to consider as teleportation
-        self.previous_listener_x: WorldTileCoord = 0.0
-        self.previous_listener_x: WorldTileCoord = 0.0
-        self.previous_listener_y: WorldTileCoord = 0.0
+        self.previous_listener_x: float = 0.0
+        self.previous_listener_y: float = 0.0
 
         # Subscribe to sound events
         subscribe_to_event(SoundEvent, self.handle_sound_event)
@@ -186,8 +186,6 @@ class SoundSystem:
             volume = self._calculate_volume(
                 emitter_x,
                 emitter_y,
-                listener_x,
-                listener_y,
                 sound_def,
                 emitter.volume_multiplier,
             )
@@ -232,8 +230,6 @@ class SoundSystem:
                         volume = self._calculate_volume(
                             emitter_x,
                             emitter_y,
-                            listener_x,
-                            listener_y,
                             sound_def,
                             playing.emitter.volume_multiplier,
                         )
@@ -251,8 +247,6 @@ class SoundSystem:
         self,
         emitter_x: WorldTileCoord,
         emitter_y: WorldTileCoord,
-        listener_x: WorldTileCoord,
-        listener_y: WorldTileCoord,
         sound_def: SoundDefinition,
         volume_multiplier: float,
     ) -> float:
@@ -261,8 +255,6 @@ class SoundSystem:
         Args:
             emitter_x: X position of the sound source
             emitter_y: Y position of the sound source
-            listener_x: X position of the listener (actual player position)
-            listener_y: Y position of the listener (actual player position)
             sound_def: Sound definition with falloff parameters
             volume_multiplier: Emitter-specific volume adjustment
 
@@ -577,8 +569,6 @@ class SoundSystem:
         volume = self._calculate_volume(
             x,
             y,
-            self.audio_listener_x,
-            self.audio_listener_y,
             sound_def,
             volume_multiplier=1.0,
         )
