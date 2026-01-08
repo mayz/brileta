@@ -424,7 +424,7 @@ class Character(Actor):
                 (self.x, self.y),
                 next_pos,
             )
-            if len(validation) == 2:
+            if validation:
                 path_is_valid = True
 
         if not path_is_valid:

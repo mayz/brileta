@@ -152,18 +152,21 @@ class SoundSystem:
         )
 
         # Collect active emitters from nearby actors only
+        # Also build a position lookup dict for volume updates later
         active_emitters: list[tuple[SoundEmitter, WorldTileCoord, WorldTileCoord]] = []
+        emitter_positions: dict[
+            SoundEmitter, tuple[WorldTileCoord, WorldTileCoord]
+        ] = {}
         for actor in nearby_actors:
             if hasattr(actor, "sound_emitters") and actor.sound_emitters:
                 # Additional distance check with actual Euclidean distance
                 dx = actor.x - self.audio_listener_x
                 dy = actor.y - self.audio_listener_y
                 if dx * dx + dy * dy <= audio_cull_distance * audio_cull_distance:
-                    active_emitters.extend(
-                        (emitter, actor.x, actor.y)
-                        for emitter in actor.sound_emitters
-                        if emitter.active
-                    )
+                    for emitter in actor.sound_emitters:
+                        if emitter.active:
+                            active_emitters.append((emitter, actor.x, actor.y))
+                            emitter_positions[emitter] = (actor.x, actor.y)
 
         if active_emitters and self.audio_backend:
             logger.debug(
@@ -214,17 +217,15 @@ class SoundSystem:
         if self.audio_backend:
             for playing in self.playing_sounds:
                 if playing.channel and playing.channel.is_playing():
-                    # Find current volume for this emitter
-                    emitter_x = emitter_y = 0
-                    for actor in nearby_actors:
-                        if (
-                            hasattr(actor, "sound_emitters")
-                            and actor.sound_emitters
-                            and playing.emitter in actor.sound_emitters
-                        ):
-                            emitter_x, emitter_y = actor.x, actor.y
-                            break
+                    # Look up emitter position from the dict we built earlier
+                    # Skip volume update if emitter is out of range (not in dict)
+                    position = emitter_positions.get(playing.emitter)
+                    if position is None:
+                        # Emitter's actor is out of range - skip update.
+                        # Sound will be stopped by processed_emitters check.
+                        continue
 
+                    emitter_x, emitter_y = position
                     sound_def = get_sound_definition(playing.emitter.sound_id)
                     if sound_def:
                         volume = self._calculate_volume(
@@ -495,6 +496,36 @@ class SoundSystem:
         logger.info(
             f"Audio backend set: {type(backend).__name__ if backend else 'None'}"
         )
+
+    def reset(self) -> None:
+        """Reset the sound system state for a new game or save load.
+
+        This clears cached sounds and playing instances without changing
+        the audio backend. Call this when starting a new game or loading
+        a save to prevent stale audio data from accumulating.
+        """
+        # Stop all currently playing sounds
+        for playing in self.playing_sounds:
+            if playing.channel:
+                playing.channel.stop()
+
+        # Clear playing instances from all emitters
+        for playing in self.playing_sounds:
+            playing.emitter.playing_instances.clear()
+
+        # Reset state
+        self.playing_sounds.clear()
+        self._sound_cache.clear()
+        self.current_time = 0.0
+
+        # Reset listener position so it re-initializes on next update
+        self._listener_initialized = False
+        self.audio_listener_x = 0.0
+        self.audio_listener_y = 0.0
+        self.previous_listener_x = 0.0
+        self.previous_listener_y = 0.0
+
+        logger.info("Sound system reset")
 
     def set_assets_path(self, assets_path: Path) -> None:
         """Set the base path for audio assets.

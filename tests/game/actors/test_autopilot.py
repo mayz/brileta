@@ -110,3 +110,54 @@ def test_get_next_action_handles_empty_cached_path() -> None:
     assert player.pathfinding_goal is not None
     assert player.pathfinding_goal._cached_path is not None
     assert len(player.pathfinding_goal._cached_path) > 0  # Path was recalculated
+
+
+def test_pathfinding_validation_accepts_single_step_paths() -> None:
+    """Test that pathfinding validation accepts 1-step paths (Bug 3.1 fix).
+
+    Previously, the code checked `if len(validation) == 2:` which incorrectly
+    rejected valid 1-step paths. Since find_path() doesn't include the start
+    position, a direct adjacent move returns a path of length 1, not 2.
+
+    The fix changed this to `if validation:` to accept any non-empty path.
+    """
+    controller, player = make_world()
+
+    # Set up a pathfinding goal to an adjacent tile (1 step away)
+    player.pathfinding_goal = PathfindingGoal(
+        target_pos=(1, 0),
+        final_intent=None,
+        _cached_path=[(1, 0)],  # Single-step path
+    )
+
+    # The validation should accept this 1-step path without recalculating
+    action = player.get_next_action(controller)
+
+    # Should get a valid MoveIntent
+    assert isinstance(action, MoveIntent)
+    assert (action.dx, action.dy) == (1, 0)
+
+
+def test_pathfinding_validation_recalculates_when_path_blocked() -> None:
+    """Test that pathfinding recalculates when the cached path is blocked."""
+    controller, player = make_world()
+
+    # Set up a goal with a cached path that goes through a blocked tile
+    # First, block tile (1, 0)
+    gm = controller.gw.game_map
+    gm.walkable[1, 0] = False
+
+    player.pathfinding_goal = PathfindingGoal(
+        target_pos=(2, 0),
+        final_intent=None,
+        _cached_path=[(1, 0), (2, 0)],  # Path goes through blocked tile
+    )
+
+    # Should recalculate and find alternate path (or return None if unreachable)
+    action = player.get_next_action(controller)
+
+    # Either finds alternate path or clears goal if unreachable
+    if action is not None:
+        assert isinstance(action, MoveIntent)
+        # Should not try to move to blocked tile
+        assert (action.dx, action.dy) != (1, 0)

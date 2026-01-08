@@ -1144,6 +1144,47 @@ class TestStaleEmitterPosition:
             f"Bug #3 might be causing volume calculation from wrong position."
         )
 
+    def test_emitter_position_lookup_uses_dict_not_origin_fallback(self) -> None:
+        """Test that emitter positions are looked up from dict, not defaulting to (0,0).
+
+        Previously, the volume update loop would default to (0, 0) if an emitter's
+        actor wasn't found in nearby_actors. The fix stores emitter positions in
+        a dict during collection and looks them up from there.
+
+        This test verifies that when an emitter goes out of range, we don't
+        incorrectly calculate volume from (0, 0).
+        """
+        emitter = SoundEmitter("fire_ambient", active=True)
+        # Place emitter at (15, 0) - within range of listener at origin
+        actor = self.create_mock_actor(15, 0, [emitter])
+
+        # Start with listener at origin - emitter is 15 tiles away (within max 17)
+        self.system.update(0, 0, create_spatial_index([actor]), 0.1)
+        assert self.mock_backend.get_active_channel_count() > 0, (
+            "Sound should be playing when emitter is within range"
+        )
+
+        # Move emitter to (50, 0) - way out of range
+        actor.x = 50
+
+        # Previously, the volume update would:
+        # 1. Fail to find emitter in nearby_actors
+        # 2. Default to emitter_x, emitter_y = 0, 0
+        # 3. Calculate volume from origin (distance 0 = full volume)
+        # 4. Sound would continue playing loudly despite emitter being far away
+
+        # With the fix, the emitter position is looked up from a dict
+        # If not found (emitter out of range), volume update is skipped
+        self.system.update(0, 0, create_spatial_index([actor]), 0.1)
+
+        # Sound should be stopped (emitter at distance 50, beyond max 17)
+        final_count = self.mock_backend.get_active_channel_count()
+        assert final_count == 0, (
+            f"Sound position fallback regression: emitter at distance 50 should be "
+            f"silent, but {final_count} channels still playing. Volume may have been "
+            f"calculated from fallback position (0, 0) instead of actual position."
+        )
+
 
 class TestListenerInterpolation:
     """Test the improved listener interpolation system."""
