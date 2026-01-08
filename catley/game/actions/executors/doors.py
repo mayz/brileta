@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from catley.environment import tile_types
+from catley.environment.tile_types import TileTypeID
 from catley.game.actions.base import GameActionResult
 from catley.game.actions.executors.base import ActionExecutor
 
@@ -19,10 +19,8 @@ class OpenDoorExecutor(ActionExecutor):
 
     def execute(self, intent: OpenDoorIntent) -> GameActionResult | None:  # type: ignore[override]
         game_map = intent.controller.gw.game_map
-        if (
-            game_map.tiles[intent.x, intent.y] == tile_types.TILE_TYPE_ID_DOOR_CLOSED  # type: ignore[attr-defined]
-        ):
-            game_map.tiles[intent.x, intent.y] = tile_types.TILE_TYPE_ID_DOOR_OPEN  # type: ignore[attr-defined]
+        if game_map.tiles[intent.x, intent.y] == TileTypeID.DOOR_CLOSED:
+            game_map.tiles[intent.x, intent.y] = TileTypeID.DOOR_OPEN
             game_map.invalidate_property_caches()
 
             # Notify action panel that door action completed
@@ -45,10 +43,8 @@ class CloseDoorExecutor(ActionExecutor):
 
     def execute(self, intent: CloseDoorIntent) -> GameActionResult | None:  # type: ignore[override]
         game_map = intent.controller.gw.game_map
-        if (
-            game_map.tiles[intent.x, intent.y] == tile_types.TILE_TYPE_ID_DOOR_OPEN  # type: ignore[attr-defined]
-        ):
-            game_map.tiles[intent.x, intent.y] = tile_types.TILE_TYPE_ID_DOOR_CLOSED  # type: ignore[attr-defined]
+        if game_map.tiles[intent.x, intent.y] == TileTypeID.DOOR_OPEN:
+            game_map.tiles[intent.x, intent.y] = TileTypeID.DOOR_CLOSED
             game_map.invalidate_property_caches()
 
             # Notify action panel that door action completed

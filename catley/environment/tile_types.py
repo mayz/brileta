@@ -5,18 +5,35 @@ This module defines:
 - `TileTypeAppearance`: What a tile type looks like (character, fg/bg colors).
 - `TileTypeData`: The intrinsic properties of a *type* of tile (walkable, transparent,
   and its dark/light appearances). These are the flyweight objects.
-- An automated registration system for `TileTypeData` instances. Each registered
-  tile type is assigned a unique integer ID (`TileTypeID`). `GameMap` will store a
-  NumPy array of these `TileTypeID`s, significantly reducing memory usage compared
-  to storing full `TileTypeData` for every tile cell.
+- `TileTypeID`: An IntEnum of all tile type IDs. To add a new tile type, add it to
+  this enum first, then register its data.
 - Helper functions to efficiently get maps of specific properties (e.g., a boolean
   map of all walkable tiles) from a `TileTypeID` map. These are crucial for
   systems like FOV calculation and rendering.
 """
 
+from enum import IntEnum, auto
+
 import numpy as np
 
 from catley import colors
+
+
+class TileTypeID(IntEnum):
+    """
+    All tile type IDs. To add a new tile type:
+    1. Add it to this enum
+    2. Register its data with register_tile_type() below
+    """
+
+    WALL = 0
+    FLOOR = auto()
+    OUTDOOR_FLOOR = auto()
+    OUTDOOR_WALL = auto()
+    DOOR_CLOSED = auto()
+    DOOR_OPEN = auto()
+    BOULDER = auto()
+
 
 # Defines the structure for the visual appearance of a tile type.
 # Used within TileTypeData for 'dark' and 'light' states.
@@ -49,55 +66,32 @@ TileTypeData = np.dtype(
     ]
 )
 
-# --- Automated Tile Type Registration System ---
+# --- Tile Type Registration System ---
 
-# Internal list to store all registered TileTypeData instances.
-# The index of a tile type in this list becomes its TileTypeID.
-_registered_tile_type_data_list: list[np.ndarray] = []  # Stores TileTypeData instances
-
-# Dictionary to map symbolic names (e.g., "WALL") to their assigned TileTypeID.
-# Useful for debugging or potentially loading maps from definitions using names.
-_tile_type_name_to_id_map: dict[str, int] = {}
+# Dictionary to store registered TileTypeData instances, keyed by TileTypeID.
+_tile_type_definitions: dict[TileTypeID, np.ndarray] = {}
 
 
-def register_tile_type(name: str, tile_type_data_instance: np.ndarray) -> int:
+def register_tile_type(
+    tile_id: TileTypeID, tile_type_data_instance: np.ndarray
+) -> None:
     """
-    Registers a new tile type, assigns it a unique ID, and stores it.
-    It also dynamically creates a global constant for this ID in the format
-    TILE_TYPE_ID_{NAME} (e.g., TILE_TYPE_ID_WALL).
+    Register tile type data for a TileTypeID.
 
     Args:
-        name: A symbolic, unique string name for this tile type (e.g., "WALL", "FLOOR").
-              Case-insensitive for registration checking and constant creation.
+        tile_id: The TileTypeID enum value for this tile type.
         tile_type_data_instance: The numpy array (structured with TileTypeData dtype)
                                  containing the properties of this tile type.
 
-    Returns:
-        The automatically assigned unique integer ID for this tile type.
-
     Raises:
-        ValueError: If the name (case-insensitive) is already registered.
+        ValueError: If the tile_id is already registered.
     """
-    # Use uppercase for consistent checking and constant naming
-    normalized_name = name.upper()
-    if normalized_name in _tile_type_name_to_id_map:
-        raise ValueError(
-            f"Tile type name '{name}' (as '{normalized_name}') is already registered."
-        )
-
-    # The ID is simply the next available index in our list.
-    tile_type_id = len(_registered_tile_type_data_list)
-    _registered_tile_type_data_list.append(tile_type_data_instance)
-    _tile_type_name_to_id_map[normalized_name] = tile_type_id
-
-    # Dynamically create a global constant for this ID (e.g., TILE_TYPE_ID_WALL = 0).
-    # This makes using IDs in code more readable and less prone to magic numbers.
-    globals()[f"TILE_TYPE_ID_{normalized_name}"] = tile_type_id
-
-    return tile_type_id
+    if tile_id in _tile_type_definitions:
+        raise ValueError(f"Tile type {tile_id.name} is already registered.")
+    _tile_type_definitions[tile_id] = tile_type_data_instance
 
 
-# --- End Automated Tile Type Registration System ---
+# --- End Tile Type Registration System ---
 
 
 def make_tile_type_data(
@@ -150,85 +144,102 @@ def make_tile_type_data(
     )
 
 
-# --- Define and Register Core Tile Types ---
-# The act of defining these automatically registers them and creates their ID constants.
-# For example, after the WALL line, TILE_TYPE_ID_WALL will exist and be 0.
+# --- Register Core Tile Types ---
+# Each TileTypeID enum value must have its data registered here.
+# WALL is registered first (ID 0) as it's the default fill value in map creation.
 
-# It's good practice to register the most common/default tile type first (often WALL
-# or VOID) if its ID (e.g., 0) is used as a default fill value in map creation.
-_wall_data = make_tile_type_data(
-    walkable=False,
-    transparent=False,
-    display_name="Wall",
-    dark=(ord(" "), colors.DARK_GREY, colors.DARK_WALL),
-    light=(ord(" "), colors.LIGHT_GREY, colors.LIGHT_WALL),
+register_tile_type(
+    TileTypeID.WALL,
+    make_tile_type_data(
+        walkable=False,
+        transparent=False,
+        display_name="Wall",
+        dark=(ord(" "), colors.DARK_GREY, colors.DARK_WALL),
+        light=(ord(" "), colors.LIGHT_GREY, colors.LIGHT_WALL),
+    ),
 )
-register_tile_type("WALL", _wall_data)
 
-_floor_data = make_tile_type_data(
-    walkable=True,
-    transparent=True,
-    display_name="Floor",
-    dark=(ord(" "), colors.DARK_GREY, colors.DARK_GROUND),
-    light=(ord(" "), colors.LIGHT_GREY, colors.LIGHT_GROUND),
+register_tile_type(
+    TileTypeID.FLOOR,
+    make_tile_type_data(
+        walkable=True,
+        transparent=True,
+        display_name="Floor",
+        dark=(ord(" "), colors.DARK_GREY, colors.DARK_GROUND),
+        light=(ord(" "), colors.LIGHT_GREY, colors.LIGHT_GROUND),
+    ),
 )
-register_tile_type("FLOOR", _floor_data)
 
-_outdoor_floor_data = make_tile_type_data(
-    walkable=True,
-    transparent=True,
-    display_name="Ground",
-    dark=(ord(" "), colors.DARK_GREY, colors.OUTDOOR_DARK_GROUND),
-    light=(ord(" "), colors.LIGHT_GREY, colors.OUTDOOR_LIGHT_GROUND),
+register_tile_type(
+    TileTypeID.OUTDOOR_FLOOR,
+    make_tile_type_data(
+        walkable=True,
+        transparent=True,
+        display_name="Ground",
+        dark=(ord(" "), colors.DARK_GREY, colors.OUTDOOR_DARK_GROUND),
+        light=(ord(" "), colors.LIGHT_GREY, colors.OUTDOOR_LIGHT_GROUND),
+    ),
 )
-register_tile_type("OUTDOOR_FLOOR", _outdoor_floor_data)
 
-_outdoor_wall_data = make_tile_type_data(
-    walkable=False,
-    transparent=False,
-    display_name="Rock Wall",
-    casts_shadows=True,
-    dark=(ord("#"), colors.LIGHT_GREY, colors.OUTDOOR_DARK_WALL),
-    light=(ord("#"), colors.LIGHT_GREY, colors.OUTDOOR_LIGHT_WALL),
+register_tile_type(
+    TileTypeID.OUTDOOR_WALL,
+    make_tile_type_data(
+        walkable=False,
+        transparent=False,
+        display_name="Rock Wall",
+        casts_shadows=True,
+        dark=(ord("#"), colors.LIGHT_GREY, colors.OUTDOOR_DARK_WALL),
+        light=(ord("#"), colors.LIGHT_GREY, colors.OUTDOOR_LIGHT_WALL),
+    ),
 )
-register_tile_type("OUTDOOR_WALL", _outdoor_wall_data)
 
-_door_closed_data = make_tile_type_data(
-    walkable=False,
-    transparent=False,
-    display_name="Closed Door",
-    dark=(ord("+"), colors.ORANGE, colors.DARK_WALL),
-    light=(ord("+"), colors.LIGHT_ORANGE, colors.LIGHT_WALL),
+register_tile_type(
+    TileTypeID.DOOR_CLOSED,
+    make_tile_type_data(
+        walkable=False,
+        transparent=False,
+        display_name="Closed Door",
+        dark=(ord("+"), colors.ORANGE, colors.DARK_WALL),
+        light=(ord("+"), colors.LIGHT_ORANGE, colors.LIGHT_WALL),
+    ),
 )
-register_tile_type("DOOR_CLOSED", _door_closed_data)
 
-_door_open_data = make_tile_type_data(
-    walkable=True,
-    transparent=True,
-    display_name="Open Door",
-    dark=(ord("'"), colors.ORANGE, colors.DARK_GROUND),
-    light=(ord("'"), colors.LIGHT_ORANGE, colors.LIGHT_GROUND),
+register_tile_type(
+    TileTypeID.DOOR_OPEN,
+    make_tile_type_data(
+        walkable=True,
+        transparent=True,
+        display_name="Open Door",
+        dark=(ord("'"), colors.ORANGE, colors.DARK_GROUND),
+        light=(ord("'"), colors.LIGHT_ORANGE, colors.LIGHT_GROUND),
+    ),
 )
-register_tile_type("DOOR_OPEN", _door_open_data)
 
-_boulder_data = make_tile_type_data(
-    walkable=False,
-    transparent=True,
-    display_name="Boulder",
-    cover_bonus=2,
-    casts_shadows=True,
-    dark=(ord("#"), colors.DARK_GREY, colors.DARK_GROUND),
-    light=(ord("#"), colors.LIGHT_GREY, colors.LIGHT_GROUND),
+register_tile_type(
+    TileTypeID.BOULDER,
+    make_tile_type_data(
+        walkable=False,
+        transparent=True,
+        display_name="Boulder",
+        cover_bonus=2,
+        casts_shadows=True,
+        dark=(ord("#"), colors.DARK_GREY, colors.DARK_GROUND),
+        light=(ord("#"), colors.LIGHT_GREY, colors.LIGHT_GROUND),
+    ),
 )
-register_tile_type("BOULDER", _boulder_data)
 
 
 # --- Pre-calculated Property Arrays for Efficient Lookups ---
 # These arrays are built *after* all tile types have been registered.
 # They allow for fast, vectorized conversion from a map of TileTypeIDs
 # to a map of a specific property (e.g., walkability).
-# This is safe because Python executes modules top-to-bottom, so by this point,
-# _registered_tile_type_data_list is fully populated by the register_tile_type calls.
+# The list is built in enum order so TileTypeID values can be used as indices directly.
+
+# Build indexed list from enum order for numpy array indexing
+_registered_tile_type_data_list = [_tile_type_definitions[tid] for tid in TileTypeID]
+
+# Also maintain name-to-id map for backwards compatibility with string lookups
+_tile_type_name_to_id_map = {tid.name: tid.value for tid in TileTypeID}
 
 _tile_type_properties_walkable = np.array(
     [t["walkable"] for t in _registered_tile_type_data_list], dtype=bool

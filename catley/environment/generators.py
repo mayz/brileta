@@ -8,8 +8,8 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from catley.environment import tile_types
 from catley.environment.map import MapRegion
+from catley.environment.tile_types import TileTypeID
 from catley.types import WorldTileCoord
 from catley.util.coordinates import Rect
 
@@ -56,17 +56,15 @@ class RoomsAndCorridorsGenerator(BaseMapGenerator):
         self.max_room_size = max_room_size
 
     def _carve_room(self, tiles: np.ndarray, room: Rect) -> None:
-        tiles[room.x1 + 1 : room.x2, room.y1 + 1 : room.y2] = (
-            tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[attr-defined]
-        )
+        tiles[room.x1 + 1 : room.x2, room.y1 + 1 : room.y2] = TileTypeID.FLOOR
 
     def _carve_h_tunnel(self, tiles: np.ndarray, x1: int, x2: int, y: int) -> None:
         h_slice = slice(min(x1, x2), max(x1, x2) + 1)
-        tiles[h_slice, y] = tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[attr-defined]
+        tiles[h_slice, y] = TileTypeID.FLOOR
 
     def _carve_v_tunnel(self, tiles: np.ndarray, y1: int, y2: int, x: int) -> None:
         v_slice = slice(min(y1, y2), max(y1, y2) + 1)
-        tiles[x, v_slice] = tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[attr-defined]
+        tiles[x, v_slice] = TileTypeID.FLOOR
 
     def _place_door(
         self, tiles: np.ndarray, x: WorldTileCoord, y: WorldTileCoord
@@ -74,9 +72,9 @@ class RoomsAndCorridorsGenerator(BaseMapGenerator):
         if (
             0 <= x < self.map_width
             and 0 <= y < self.map_height
-            and tiles[x, y] == tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[attr-defined]
+            and tiles[x, y] == TileTypeID.FLOOR
         ):
-            tiles[x, y] = tile_types.TILE_TYPE_ID_DOOR_CLOSED  # type: ignore[attr-defined]
+            tiles[x, y] = TileTypeID.DOOR_CLOSED
 
     def _place_doors_at_room_entrances(
         self, tiles: np.ndarray, rooms: list[Rect]
@@ -86,17 +84,17 @@ class RoomsAndCorridorsGenerator(BaseMapGenerator):
                 y = room.y1
                 if (
                     y - 1 >= 0
-                    and tiles[x, y] == tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[attr-defined]
-                    and tiles[x, y - 1] == tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[attr-defined]
-                    and tiles[x, y + 1] == tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[attr-defined]
+                    and tiles[x, y] == TileTypeID.FLOOR
+                    and tiles[x, y - 1] == TileTypeID.FLOOR
+                    and tiles[x, y + 1] == TileTypeID.FLOOR
                 ):
                     self._place_door(tiles, x, y)
                 y = room.y2
                 if (
                     y + 1 < self.map_height
-                    and tiles[x, y] == tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[attr-defined]
-                    and tiles[x, y + 1] == tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[attr-defined]
-                    and tiles[x, y - 1] == tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[attr-defined]
+                    and tiles[x, y] == TileTypeID.FLOOR
+                    and tiles[x, y + 1] == TileTypeID.FLOOR
+                    and tiles[x, y - 1] == TileTypeID.FLOOR
                 ):
                     self._place_door(tiles, x, y)
 
@@ -104,17 +102,17 @@ class RoomsAndCorridorsGenerator(BaseMapGenerator):
                 x = room.x1
                 if (
                     x - 1 >= 0
-                    and tiles[x, y] == tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[attr-defined]
-                    and tiles[x - 1, y] == tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[attr-defined]
-                    and tiles[x + 1, y] == tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[attr-defined]
+                    and tiles[x, y] == TileTypeID.FLOOR
+                    and tiles[x - 1, y] == TileTypeID.FLOOR
+                    and tiles[x + 1, y] == TileTypeID.FLOOR
                 ):
                     self._place_door(tiles, x, y)
                 x = room.x2
                 if (
                     x + 1 < self.map_width
-                    and tiles[x, y] == tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[attr-defined]
-                    and tiles[x + 1, y] == tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[attr-defined]
-                    and tiles[x - 1, y] == tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[attr-defined]
+                    and tiles[x, y] == TileTypeID.FLOOR
+                    and tiles[x + 1, y] == TileTypeID.FLOOR
+                    and tiles[x - 1, y] == TileTypeID.FLOOR
                 ):
                     self._place_door(tiles, x, y)
 
@@ -122,13 +120,13 @@ class RoomsAndCorridorsGenerator(BaseMapGenerator):
         if random.random() < 0.4:
             x = random.randint(room.x1 + 1, room.x2 - 2)
             y = random.randint(room.y1 + 1, room.y2 - 2)
-            if tiles[x, y] == tile_types.TILE_TYPE_ID_FLOOR:  # type: ignore[attr-defined]
-                tiles[x, y] = tile_types.TILE_TYPE_ID_BOULDER  # type: ignore[attr-defined]
+            if tiles[x, y] == TileTypeID.FLOOR:
+                tiles[x, y] = TileTypeID.BOULDER
 
     def generate(self) -> GeneratedMapData:
         tiles = np.full(
             (self.map_width, self.map_height),
-            fill_value=tile_types.TILE_TYPE_ID_WALL,  # type: ignore[attr-defined]
+            fill_value=TileTypeID.WALL,
             dtype=np.uint8,
             order="F",
         )
@@ -200,7 +198,7 @@ class RoomsAndCorridorsGenerator(BaseMapGenerator):
         for x in range(self.map_width):
             for y in range(self.map_height):
                 if (
-                    tiles[x, y] == tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[attr-defined]
+                    tiles[x, y] == TileTypeID.FLOOR
                     and tile_to_region_id[x, y] == -1
                     and not visited[x, y]
                 ):
@@ -216,7 +214,7 @@ class RoomsAndCorridorsGenerator(BaseMapGenerator):
                                 0 <= nx < self.map_width
                                 and 0 <= ny < self.map_height
                                 and not visited[nx, ny]
-                                and tiles[nx, ny] == tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[attr-defined]
+                                and tiles[nx, ny] == TileTypeID.FLOOR
                                 and tile_to_region_id[nx, ny] == -1
                             ):
                                 visited[nx, ny] = True
@@ -243,7 +241,7 @@ class RoomsAndCorridorsGenerator(BaseMapGenerator):
         # Determine connections via doors
         for x in range(self.map_width):
             for y in range(self.map_height):
-                if tiles[x, y] == tile_types.TILE_TYPE_ID_DOOR_CLOSED:  # type: ignore[attr-defined]
+                if tiles[x, y] == TileTypeID.DOOR_CLOSED:
                     adjacent_ids = set()
                     for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
                         nx, ny = x + dx, y + dy

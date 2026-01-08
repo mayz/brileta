@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 import tcod.event
 
 from catley import colors
-from catley.environment import tile_types
+from catley.environment.tile_types import TileTypeID
 from catley.game import ranges
 from catley.game.actions.base import GameIntent
 from catley.game.actions.combat import AttackIntent
@@ -111,7 +111,7 @@ class ContextMenu(Menu):
                 return best
 
             if distance > 1:
-                if tile == tile_types.TILE_TYPE_ID_DOOR_CLOSED:  # type: ignore[attr-defined]
+                if tile == TileTypeID.DOOR_CLOSED:
                     dest = _reachable_adjacent((x, y))
                     if dest is not None:
                         door_intent = OpenDoorIntent(self.controller, player, x, y)
@@ -128,7 +128,7 @@ class ContextMenu(Menu):
                                 ),
                             )
                         )
-                elif tile == tile_types.TILE_TYPE_ID_DOOR_OPEN:  # type: ignore[attr-defined]
+                elif tile == TileTypeID.DOOR_OPEN:
                     dest = _reachable_adjacent((x, y))
                     if dest is not None:
                         door_intent = CloseDoorIntent(self.controller, player, x, y)
@@ -168,7 +168,7 @@ class ContextMenu(Menu):
                             )
                         )
             else:
-                if tile == tile_types.TILE_TYPE_ID_DOOR_CLOSED:  # type: ignore[attr-defined]
+                if tile == TileTypeID.DOOR_CLOSED:
                     action_options.append(
                         ActionOption(
                             id="open-door-specific",
@@ -180,7 +180,7 @@ class ContextMenu(Menu):
                             static_params={"x": x, "y": y},
                         )
                     )
-                elif tile == tile_types.TILE_TYPE_ID_DOOR_OPEN:  # type: ignore[attr-defined]
+                elif tile == TileTypeID.DOOR_OPEN:
                     action_options.append(
                         ActionOption(
                             id="close-door-specific",

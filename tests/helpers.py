@@ -12,9 +12,9 @@ from tcod.console import Console
 from catley import config
 from catley.app import App
 from catley.controller import Controller, GameWorld
-from catley.environment import tile_types
 from catley.environment.generators import GeneratedMapData
 from catley.environment.map import GameMap, MapRegion
+from catley.environment.tile_types import TileTypeID
 from catley.game.actors import Actor, Character
 from catley.game.item_spawner import ItemSpawner
 from catley.game.items.item_core import Item
@@ -37,7 +37,7 @@ class DummyGameWorld(GameWorld):
         if game_map is None:
             tiles = np.full(
                 (width, height),
-                tile_types.TILE_TYPE_ID_FLOOR,  # type: ignore[attr-defined]
+                TileTypeID.FLOOR,
                 dtype=np.uint8,
                 order="F",
             )

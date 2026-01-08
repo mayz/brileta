@@ -3,7 +3,7 @@ from typing import cast
 
 from catley import colors
 from catley.controller import Controller
-from catley.environment import tile_types
+from catley.environment.tile_types import TileTypeID
 from catley.game.actions.executors.movement import MoveExecutor
 from catley.game.actions.movement import MoveIntent
 from catley.game.actors import Character
@@ -58,7 +58,7 @@ def test_move_checks_walkable_tiles() -> None:
     player.x = 2
     player.y = 2
     # Make tile to the right a wall
-    gw.game_map.tiles[3, 2] = tile_types.TILE_TYPE_ID_WALL  # type: ignore[attr-defined]
+    gw.game_map.tiles[3, 2] = TileTypeID.WALL
     intent = MoveIntent(cast(Controller, controller), player, dx=1, dy=0)
     result = MoveExecutor().execute(intent)
     assert result is not None
@@ -77,7 +77,7 @@ def test_move_checks_walkable_tiles() -> None:
 def test_move_checks_closed_door() -> None:
     controller, player = make_world()
     gw = controller.gw
-    gw.game_map.tiles[1, 0] = tile_types.TILE_TYPE_ID_DOOR_CLOSED  # type: ignore[attr-defined]
+    gw.game_map.tiles[1, 0] = TileTypeID.DOOR_CLOSED
     intent = MoveIntent(cast(Controller, controller), player, dx=1, dy=0)
     result = MoveExecutor().execute(intent)
     assert result is not None
@@ -111,7 +111,7 @@ def test_queued_moves_use_updated_position() -> None:
     # Setup: open north and east but place a wall to the northeast.
     player.x = 1
     player.y = 1
-    gw.game_map.tiles[2, 0] = tile_types.TILE_TYPE_ID_WALL  # type: ignore[attr-defined]
+    gw.game_map.tiles[2, 0] = TileTypeID.WALL
     gw.game_map.invalidate_property_caches()
 
     move_up = MoveIntent(cast(Controller, controller), player, 0, -1)

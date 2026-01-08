@@ -3,7 +3,7 @@ from typing import cast
 
 from catley import colors
 from catley.controller import Controller
-from catley.environment import tile_types
+from catley.environment.tile_types import TileTypeID
 from catley.game.actions.base import GameIntent
 from catley.game.actions.environment import OpenDoorIntent
 from catley.game.actions.executors.movement import MoveExecutor
@@ -70,7 +70,7 @@ def test_autopilot_moves_and_triggers_final_intent() -> None:
 def test_start_actor_pathfinding_handles_door() -> None:
     controller, player = make_world()
     gm = controller.gw.game_map
-    gm.tiles[3, 0] = tile_types.TILE_TYPE_ID_DOOR_CLOSED  # type: ignore[attr-defined]
+    gm.tiles[3, 0] = TileTypeID.DOOR_CLOSED
     gm.invalidate_property_caches()
 
     success = controller.start_actor_pathfinding(

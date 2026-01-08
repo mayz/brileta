@@ -1,8 +1,8 @@
 import random
 
-from catley.environment import tile_types
 from catley.environment.generators import RoomsAndCorridorsGenerator
 from catley.environment.map import GameMap
+from catley.environment.tile_types import TileTypeID
 
 
 def test_make_map_places_doors() -> None:
@@ -12,5 +12,5 @@ def test_make_map_places_doors() -> None:
     )
     map_data = generator.generate()
     gm = GameMap(40, 30, map_data)
-    num_doors = int((gm.tiles == tile_types.TILE_TYPE_ID_DOOR_CLOSED).sum())  # type: ignore[attr-defined]
+    num_doors = int((gm.tiles == TileTypeID.DOOR_CLOSED).sum())
     assert num_doors > 0

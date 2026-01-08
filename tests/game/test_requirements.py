@@ -5,7 +5,7 @@ from typing import cast
 
 from catley import colors
 from catley.controller import Controller
-from catley.environment import tile_types
+from catley.environment.tile_types import TileTypeID
 from catley.game.actions.base import GameIntent
 from catley.game.actions.combat import AttackIntent
 from catley.game.actions.discovery import ActionDiscovery
@@ -65,8 +65,8 @@ def test_attack_requirement_handoff() -> None:
 def test_environment_target_tile_requirement() -> None:
     gw = DummyGameWorld()
     # Place two doors to test the tile selection requirement
-    gw.game_map.tiles[1, 0] = tile_types.TILE_TYPE_ID_DOOR_CLOSED  # type: ignore[attr-defined]
-    gw.game_map.tiles[0, 1] = tile_types.TILE_TYPE_ID_DOOR_CLOSED  # type: ignore[attr-defined]
+    gw.game_map.tiles[1, 0] = TileTypeID.DOOR_CLOSED
+    gw.game_map.tiles[0, 1] = TileTypeID.DOOR_CLOSED
     player = Character(0, 0, "@", colors.WHITE, "P", game_world=cast(GameWorld, gw))
     gw.player = player
     gw.add_actor(player)

@@ -278,7 +278,7 @@ class GameWorld:
 
     def _convert_region_to_outdoor_tiles(self, region: MapRegion) -> None:
         """TEMPORARY: Convert indoor floor tiles to outdoor tiles in a region."""
-        from catley.environment import tile_types
+        from catley.environment.tile_types import TileTypeID
 
         if not self.game_map:
             return
@@ -289,12 +289,10 @@ class GameWorld:
                 if self.game_map.tile_to_region_id[x, y] == region.id:
                     current_tile_id = self.game_map.tiles[x, y]
                     # Convert indoor tiles to outdoor variants
-                    if current_tile_id == tile_types.TILE_TYPE_ID_FLOOR:
-                        self.game_map.tiles[x, y] = (
-                            tile_types.TILE_TYPE_ID_OUTDOOR_FLOOR
-                        )
-                    elif current_tile_id == tile_types.TILE_TYPE_ID_WALL:
-                        self.game_map.tiles[x, y] = tile_types.TILE_TYPE_ID_OUTDOOR_WALL
+                    if current_tile_id == TileTypeID.FLOOR:
+                        self.game_map.tiles[x, y] = TileTypeID.OUTDOOR_FLOOR
+                    elif current_tile_id == TileTypeID.WALL:
+                        self.game_map.tiles[x, y] = TileTypeID.OUTDOOR_WALL
 
     def _position_player(self, room: Rect) -> None:
         """Place the player in the center of ``room``."""

@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 from catley import colors
 from catley.controller import Controller
-from catley.environment import tile_types
+from catley.environment.tile_types import TileTypeID
 from catley.game.action_router import ActionRouter
 from catley.game.actions.base import GameActionResult
 from catley.game.actions.combat import AttackIntent
@@ -46,13 +46,13 @@ def _make_world() -> tuple[DummyController, Character]:
 def test_router_opens_door_on_bump() -> None:
     controller, player = _make_world()
     gm = controller.gw.game_map
-    gm.tiles[1, 0] = tile_types.TILE_TYPE_ID_DOOR_CLOSED  # type: ignore[attr-defined]
+    gm.tiles[1, 0] = TileTypeID.DOOR_CLOSED
 
     router = ActionRouter(cast(Controller, controller))
     intent = MoveIntent(cast(Controller, controller), player, 1, 0)
     router.execute_intent(intent)
 
-    assert gm.tiles[1, 0] == tile_types.TILE_TYPE_ID_DOOR_OPEN  # type: ignore[attr-defined]
+    assert gm.tiles[1, 0] == TileTypeID.DOOR_OPEN
     assert controller.update_fov_called
 
 

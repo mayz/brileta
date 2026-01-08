@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 from catley import colors
 from catley.constants.movement import MovementConstants
-from catley.environment import tile_types
+from catley.environment.tile_types import TileTypeID
 from catley.events import MessageEvent, publish_event
 from catley.game.actions.base import GameActionResult
 from catley.game.actions.executors.base import ActionExecutor
@@ -33,7 +33,7 @@ class MoveExecutor(ActionExecutor):
 
         # Check for doors
         tile_id = game_map.tiles[intent.newx, intent.newy]
-        if tile_id == tile_types.TILE_TYPE_ID_DOOR_CLOSED:  # type: ignore[attr-defined]
+        if tile_id == TileTypeID.DOOR_CLOSED:
             return GameActionResult(
                 succeeded=False,
                 blocked_by=(intent.newx, intent.newy),

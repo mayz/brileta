@@ -4,8 +4,8 @@ import random
 
 import numpy as np
 
-from catley.environment import tile_types
 from catley.environment.generators import RoomsAndCorridorsGenerator
+from catley.environment.tile_types import TileTypeID
 
 
 def test_room_region_creation() -> None:
@@ -69,7 +69,7 @@ def test_no_unassigned_walkable_tiles() -> None:
         for y in range(data.tiles.shape[1]):
             tile = data.tiles[x, y]
             if tile in (
-                tile_types.TILE_TYPE_ID_FLOOR,  # type: ignore[attr-defined]
-                tile_types.TILE_TYPE_ID_DOOR_OPEN,  # type: ignore[attr-defined]
+                TileTypeID.FLOOR,
+                TileTypeID.DOOR_OPEN,
             ):
                 assert data.tile_to_region_id[x, y] != -1

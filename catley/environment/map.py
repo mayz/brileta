@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from catley.environment import tile_types
+from catley.environment.tile_types import TileTypeID
 from catley.types import WorldTilePos
 from catley.util.coordinates import Rect, TileCoord
 
@@ -154,8 +155,8 @@ class GameMap:
                 # Modify boulders and floor tiles - inherit regional ground colors
                 # Doors should use their standard tile colors to match surrounding walls
                 if tile_id in (
-                    tile_types.TILE_TYPE_ID_BOULDER,
-                    tile_types.TILE_TYPE_ID_FLOOR,
+                    TileTypeID.BOULDER,
+                    TileTypeID.FLOOR,
                 ):
                     region = self.get_region_at((x, y))
                     if region:

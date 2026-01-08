@@ -6,9 +6,9 @@ from typing import TYPE_CHECKING, cast
 import numpy as np
 import pytest
 
-from catley.environment import tile_types
 from catley.environment.generators import GeneratedMapData
 from catley.environment.map import GameMap
+from catley.environment.tile_types import TileTypeID
 
 if TYPE_CHECKING:
     from catley.environment.map import MapRegion
@@ -26,7 +26,7 @@ class DummyActor:
 
 @pytest.fixture
 def basic_setup() -> tuple[GameMap, SpatialHashGrid[DummyActor]]:
-    tiles = np.full((10, 10), tile_types.TILE_TYPE_ID_FLOOR, dtype=np.uint8, order="F")  # type: ignore[attr-defined]
+    tiles = np.full((10, 10), TileTypeID.FLOOR, dtype=np.uint8, order="F")
     regions: dict[int, MapRegion] = {}
     map_data = GeneratedMapData(
         tiles=tiles,
@@ -69,7 +69,7 @@ def test_find_path_no_path_exists(
         for dy in (-1, 0, 1):
             if dx == 0 and dy == 0:
                 continue
-            gm.tiles[5 + dx, 5 + dy] = tile_types.TILE_TYPE_ID_WALL  # type: ignore[attr-defined]
+            gm.tiles[5 + dx, 5 + dy] = TileTypeID.WALL
     gm.invalidate_property_caches()
     actor = DummyActor(1, 1)
     path = find_path(
@@ -82,7 +82,7 @@ def test_find_path_avoids_static_wall(
     basic_setup: tuple[GameMap, SpatialHashGrid[DummyActor]],
 ) -> None:
     gm, index = basic_setup
-    gm.tiles[1, 3] = tile_types.TILE_TYPE_ID_WALL  # type: ignore[attr-defined]
+    gm.tiles[1, 3] = TileTypeID.WALL
     gm.invalidate_property_caches()
     actor = DummyActor(1, 1)
     path = find_path(
@@ -144,7 +144,7 @@ def test_find_path_target_is_impassable(
     basic_setup: tuple[GameMap, SpatialHashGrid[DummyActor]],
 ) -> None:
     gm, index = basic_setup
-    gm.tiles[1, 5] = tile_types.TILE_TYPE_ID_WALL  # type: ignore[attr-defined]
+    gm.tiles[1, 5] = TileTypeID.WALL
     gm.invalidate_property_caches()
     actor = DummyActor(1, 1)
     path = find_path(

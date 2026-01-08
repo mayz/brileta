@@ -8,9 +8,9 @@ import numpy as np
 
 from catley import colors
 from catley.controller import Controller
-from catley.environment import tile_types
 from catley.environment.generators import GeneratedMapData
 from catley.environment.map import GameMap
+from catley.environment.tile_types import TileTypeID
 
 if TYPE_CHECKING:
     from catley.environment.map import MapRegion
@@ -48,7 +48,7 @@ class DummyController:
 
 def _make_context_world():
     gw = DummyGameWorld()
-    tiles = np.full((30, 30), tile_types.TILE_TYPE_ID_FLOOR, dtype=np.uint8, order="F")  # type: ignore[attr-defined]
+    tiles = np.full((30, 30), TileTypeID.FLOOR, dtype=np.uint8, order="F")
     regions: dict[int, MapRegion] = {}
     map_data = GeneratedMapData(
         tiles=tiles,
@@ -207,7 +207,7 @@ def test_combat_options_ignore_dead_and_unseen() -> None:
     controller, player, melee_target, ranged_target, pistol = _make_combat_world()
     melee_target.health.hp = 0
     controller.gw.game_map.visible[ranged_target.x, ranged_target.y] = False
-    controller.gw.game_map.tiles[2, 0] = tile_types.TILE_TYPE_ID_WALL  # type: ignore[attr-defined]
+    controller.gw.game_map.tiles[2, 0] = TileTypeID.WALL
 
     disc = ActionDiscovery()
     ctx = disc._build_context(cast(Controller, controller), player)
@@ -349,7 +349,7 @@ def test_target_specific_option_probabilities_reflect_status_effects() -> None:
 
 def test_environment_options_include_door_actions() -> None:
     gw = DummyGameWorld()
-    gw.game_map.tiles[1, 0] = tile_types.TILE_TYPE_ID_DOOR_CLOSED  # type: ignore[attr-defined]
+    gw.game_map.tiles[1, 0] = TileTypeID.DOOR_CLOSED
     player = Character(0, 0, "@", colors.WHITE, "P", game_world=cast(GameWorld, gw))
     gw.player = player
     gw.add_actor(player)
@@ -369,8 +369,8 @@ def test_environment_options_include_door_actions() -> None:
 def test_environment_options_multiple_doors_require_selection() -> None:
     gw = DummyGameWorld()
     # Place two closed doors adjacent to the player
-    gw.game_map.tiles[1, 0] = tile_types.TILE_TYPE_ID_DOOR_CLOSED  # type: ignore[attr-defined]
-    gw.game_map.tiles[0, 1] = tile_types.TILE_TYPE_ID_DOOR_CLOSED  # type: ignore[attr-defined]
+    gw.game_map.tiles[1, 0] = TileTypeID.DOOR_CLOSED
+    gw.game_map.tiles[0, 1] = TileTypeID.DOOR_CLOSED
     player = Character(0, 0, "@", colors.WHITE, "P", game_world=cast(GameWorld, gw))
     gw.player = player
     gw.add_actor(player)
@@ -447,7 +447,7 @@ def test_tile_specific_door_actions() -> None:
     ctx = disc.context_builder.build_context(cast(Controller, controller), player)
 
     # Test 1: Adjacent door (player at 0,0, door at 1,0 - distance 1)
-    gw.game_map.tiles[1, 0] = tile_types.TILE_TYPE_ID_DOOR_CLOSED  # type: ignore[attr-defined]
+    gw.game_map.tiles[1, 0] = TileTypeID.DOOR_CLOSED
 
     adjacent_actions = disc.environment_discovery.discover_environment_actions_for_tile(
         cast(Controller, controller), player, ctx, 1, 0
@@ -462,7 +462,7 @@ def test_tile_specific_door_actions() -> None:
     assert adjacent_action.execute is None  # No custom execute function
 
     # Test 2: Distant door (player at 0,0, door at 3,3 - distance 3)
-    gw.game_map.tiles[3, 3] = tile_types.TILE_TYPE_ID_DOOR_CLOSED  # type: ignore[attr-defined]
+    gw.game_map.tiles[3, 3] = TileTypeID.DOOR_CLOSED
 
     distant_actions = disc.environment_discovery.discover_environment_actions_for_tile(
         cast(Controller, controller), player, ctx, 3, 3
@@ -477,7 +477,7 @@ def test_tile_specific_door_actions() -> None:
     assert distant_action.action_class is None  # No direct action class
 
     # Test 3: Open door behavior
-    gw.game_map.tiles[1, 0] = tile_types.TILE_TYPE_ID_DOOR_OPEN  # type: ignore[attr-defined]
+    gw.game_map.tiles[1, 0] = TileTypeID.DOOR_OPEN
 
     open_door_actions = (
         disc.environment_discovery.discover_environment_actions_for_tile(
@@ -491,7 +491,7 @@ def test_tile_specific_door_actions() -> None:
     assert "close" in close_action.name.lower()
 
     # Test 4: Non-door tile (should return "Go here" action for walkable tiles)
-    gw.game_map.tiles[1, 0] = tile_types.TILE_TYPE_ID_FLOOR  # type: ignore[attr-defined]
+    gw.game_map.tiles[1, 0] = TileTypeID.FLOOR
 
     floor_actions = disc.environment_discovery.discover_environment_actions_for_tile(
         cast(Controller, controller), player, ctx, 1, 0

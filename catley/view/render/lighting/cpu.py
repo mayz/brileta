@@ -719,13 +719,13 @@ class CPULightingSystem(LightingSystem):
                     continue  # Skip outdoor areas
 
                 # Skip walls - they should block light, not transmit it
-                from catley.environment import tile_types
+                from catley.environment.tile_types import TileTypeID
 
                 tile_id = game_map.tiles[world_x, world_y]
                 if tile_id in (
-                    tile_types.TILE_TYPE_ID_DOOR_CLOSED,
-                    tile_types.TILE_TYPE_ID_WALL,
-                    tile_types.TILE_TYPE_ID_OUTDOOR_WALL,
+                    TileTypeID.DOOR_CLOSED,
+                    TileTypeID.WALL,
+                    TileTypeID.OUTDOOR_WALL,
                 ):
                     continue
 

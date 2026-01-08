@@ -7,7 +7,7 @@ import tcod.event
 from catley import colors
 from catley.backends.tcod.graphics import TCODGraphicsContext
 from catley.controller import Controller
-from catley.environment import tile_types
+from catley.environment.tile_types import TileTypeID
 from catley.game.actors import Character
 from catley.game.game_world import GameWorld
 from catley.game.turn_manager import TurnManager
@@ -46,13 +46,13 @@ def _make_controller_with_door(reachable: bool) -> tuple[Controller, tuple[int, 
     controller = _make_controller()
     gm = controller.gw.game_map
     door_pos = (3, 0)
-    gm.tiles[door_pos] = tile_types.TILE_TYPE_ID_DOOR_CLOSED  # type: ignore[attr-defined]
+    gm.tiles[door_pos] = TileTypeID.DOOR_CLOSED
     if not reachable:
-        gm.tiles[2, 0] = tile_types.TILE_TYPE_ID_WALL  # type: ignore[attr-defined]
-        gm.tiles[3, 1] = tile_types.TILE_TYPE_ID_WALL  # type: ignore[attr-defined]
-        gm.tiles[4, 0] = tile_types.TILE_TYPE_ID_WALL  # type: ignore[attr-defined]
-        gm.tiles[2, 1] = tile_types.TILE_TYPE_ID_WALL  # type: ignore[attr-defined]
-        gm.tiles[4, 1] = tile_types.TILE_TYPE_ID_WALL  # type: ignore[attr-defined]
+        gm.tiles[2, 0] = TileTypeID.WALL
+        gm.tiles[3, 1] = TileTypeID.WALL
+        gm.tiles[4, 0] = TileTypeID.WALL
+        gm.tiles[2, 1] = TileTypeID.WALL
+        gm.tiles[4, 1] = TileTypeID.WALL
     gm.invalidate_property_caches()
     return controller, door_pos
 

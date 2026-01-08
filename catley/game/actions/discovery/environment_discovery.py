@@ -60,7 +60,7 @@ class EnvironmentActionDiscovery:
     def _get_environment_options(
         self, controller: Controller, actor: Character, context: ActionContext
     ) -> list[ActionOption]:
-        from catley.environment import tile_types
+        from catley.environment.tile_types import TileTypeID
 
         options: list[ActionOption] = []
         gm = controller.gw.game_map
@@ -73,9 +73,9 @@ class EnvironmentActionDiscovery:
             if not (0 <= tx < gm.width and 0 <= ty < gm.height):
                 continue
             tile_id = gm.tiles[tx, ty]
-            if tile_id == tile_types.TILE_TYPE_ID_DOOR_CLOSED:  # type: ignore[attr-defined]
+            if tile_id == TileTypeID.DOOR_CLOSED:
                 closed_doors.append((tx, ty))
-            elif tile_id == tile_types.TILE_TYPE_ID_DOOR_OPEN:  # type: ignore[attr-defined]
+            elif tile_id == TileTypeID.DOOR_OPEN:
                 open_doors.append((tx, ty))
 
         # Handle closed doors
@@ -147,7 +147,7 @@ class EnvironmentActionDiscovery:
         tile_y: int,
     ) -> list[ActionOption]:
         """Get actions specific to a target tile (door actions, etc.)."""
-        from catley.environment import tile_types
+        from catley.environment.tile_types import TileTypeID
 
         options: list[ActionOption] = []
         gm = controller.gw.game_map
@@ -166,7 +166,7 @@ class EnvironmentActionDiscovery:
         distance = max(abs(tile_x - actor.x), abs(tile_y - actor.y))
 
         # Check if it's a door
-        if tile_id == tile_types.TILE_TYPE_ID_DOOR_CLOSED:  # type: ignore[attr-defined]
+        if tile_id == TileTypeID.DOOR_CLOSED:
             if distance <= 1:
                 # Adjacent - direct action
                 options.append(
@@ -193,8 +193,7 @@ class EnvironmentActionDiscovery:
                             if (
                                 0 <= adj_x < gm.width
                                 and 0 <= adj_y < gm.height
-                                and gm.tiles[adj_x, adj_y]
-                                != tile_types.TILE_TYPE_ID_WALL  # type: ignore[attr-defined]
+                                and gm.tiles[adj_x, adj_y] != TileTypeID.WALL
                                 and not controller.gw.get_actor_at_location(
                                     adj_x, adj_y
                                 )
@@ -230,7 +229,7 @@ class EnvironmentActionDiscovery:
                         execute=create_pathfind_and_open(tile_x, tile_y),
                     )
                 )
-        elif tile_id == tile_types.TILE_TYPE_ID_DOOR_OPEN:  # type: ignore[attr-defined]
+        elif tile_id == TileTypeID.DOOR_OPEN:
             if distance <= 1:
                 # Adjacent - direct action
                 options.append(
@@ -257,8 +256,7 @@ class EnvironmentActionDiscovery:
                             if (
                                 0 <= adj_x < gm.width
                                 and 0 <= adj_y < gm.height
-                                and gm.tiles[adj_x, adj_y]
-                                != tile_types.TILE_TYPE_ID_WALL  # type: ignore[attr-defined]
+                                and gm.tiles[adj_x, adj_y] != TileTypeID.WALL
                                 and not controller.gw.get_actor_at_location(
                                     adj_x, adj_y
                                 )
