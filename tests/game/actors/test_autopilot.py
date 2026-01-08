@@ -161,3 +161,38 @@ def test_pathfinding_validation_recalculates_when_path_blocked() -> None:
         assert isinstance(action, MoveIntent)
         # Should not try to move to blocked tile
         assert (action.dx, action.dy) != (1, 0)
+
+
+def test_get_next_action_returns_none_when_no_path_possible() -> None:
+    """Test that get_next_action returns None when target is completely unreachable.
+
+    This tests the defensive check added to handle the case where pathfinding
+    recalculation fails to find any valid path.
+    """
+    controller, player = make_world()
+
+    # Surround the target position with walls to make it unreachable
+    gm = controller.gw.game_map
+    target = (5, 5)
+
+    # Block all tiles around and including the target
+    for dx in (-1, 0, 1):
+        for dy in (-1, 0, 1):
+            tx, ty = target[0] + dx, target[1] + dy
+            if 0 <= tx < gm.width and 0 <= ty < gm.height:
+                gm.tiles[tx, ty] = TileTypeID.WALL
+    gm.invalidate_property_caches()
+
+    # Set up a pathfinding goal with an empty path (simulating stale state)
+    player.pathfinding_goal = PathfindingGoal(
+        target_pos=target,
+        final_intent=None,
+        _cached_path=[],  # Empty - will trigger recalculation
+    )
+
+    # Should return None since no path can be found
+    action = player.get_next_action(controller)
+
+    assert action is None
+    # Goal should be cleared when no path is possible
+    assert player.pathfinding_goal is None

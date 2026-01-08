@@ -48,6 +48,11 @@ class GameWorld:
         self._init_actor_storage()
         self.game_map, rooms = self._generate_map(map_width, map_height)
 
+        if not rooms:
+            raise RuntimeError(
+                "Map generation produced no rooms - check generator parameters"
+            )
+
         self.player = self._create_player()
         self.add_actor(self.player)
         self._position_player(rooms[0])

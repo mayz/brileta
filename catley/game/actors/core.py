@@ -434,7 +434,11 @@ class Character(Actor):
             if not recalculated:
                 return None
 
-        assert self.pathfinding_goal and self.pathfinding_goal._cached_path
+        # Defensive check: path may be empty if recalculation found no valid route
+        if not self.pathfinding_goal or not self.pathfinding_goal._cached_path:
+            self.pathfinding_goal = None
+            return None
+
         next_pos = self.pathfinding_goal._cached_path.pop(0)
         dx, dy = next_pos[0] - self.x, next_pos[1] - self.y
         from catley.game.actions.movement import MoveIntent

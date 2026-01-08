@@ -22,6 +22,7 @@ or confirmations. All handlers execute immediately (synchronously). If you need 
 return value or confirmation, use direct method calls.
 """
 
+import logging
 from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass
@@ -29,6 +30,8 @@ from typing import Any
 
 from catley import colors
 from catley.types import DeltaTime
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -111,8 +114,8 @@ class EventBus:
             for handler in self._handlers[event_type]:
                 try:
                     handler(event)
-                except Exception as e:
-                    print(f"Error handling event {event_type.__name__}: {e}")
+                except Exception:
+                    logger.exception(f"Error handling event {event_type.__name__}")
 
 
 # Global event bus instance
