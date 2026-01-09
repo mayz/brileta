@@ -32,6 +32,7 @@ from .util.message_log import MessageLog
 from .util.pathfinding import find_local_path, find_region_path
 from .view.animation import AnimationManager
 from .view.frame_manager import FrameManager
+from .view.presentation import PresentationManager
 from .view.render.graphics import GraphicsContext
 from .view.render.lighting.cpu import CPULightingSystem
 from .view.ui.overlays import OverlaySystem
@@ -118,6 +119,9 @@ class Controller:
 
         # Animation manager for handling movement and effects
         self.animation_manager = AnimationManager()
+
+        # Presentation manager for staggered combat feedback
+        self.presentation_manager = PresentationManager()
 
         # Initialize sound system
         self._initialize_sound_system()
@@ -246,6 +250,9 @@ class Controller:
                     self.gw.actor_spatial_index,
                     self.fixed_timestep,
                 )
+
+            # Update presentation manager (dispatches staggered combat feedback)
+            self.presentation_manager.update(self.fixed_timestep)
 
             with record_time_live_variable("cpu.action_processing_ms"):
                 # GAME LOGIC: Process all NPC actions for this step

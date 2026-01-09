@@ -29,6 +29,7 @@ from catley.game.resolution import combat_arbiter
 from catley.game.resolution.base import ResolutionResult
 from catley.game.resolution.outcomes import CombatOutcome
 from catley.types import DeltaTime
+from catley.view.presentation import PresentationEvent
 
 if TYPE_CHECKING:
     from catley.game.actions.combat import AttackIntent, ReloadIntent
@@ -333,17 +334,26 @@ class AttackExecutor(ActionExecutor):
         return attack_result
 
     def _emit_muzzle_flash(self, intent: AttackIntent) -> None:
-        """Emit muzzle flash particle effect."""
+        """Emit muzzle flash particle effect via presentation layer."""
         direction_x = intent.defender.x - intent.attacker.x
         direction_y = intent.defender.y - intent.attacker.y
 
+        # Use presentation layer for staggered combat feedback
+        is_player = intent.attacker == intent.controller.gw.player
         publish_event(
-            EffectEvent(
-                "muzzle_flash",
-                intent.attacker.x,
-                intent.attacker.y,
-                direction_x=direction_x,
-                direction_y=direction_y,
+            PresentationEvent(
+                effect_events=[
+                    EffectEvent(
+                        "muzzle_flash",
+                        intent.attacker.x,
+                        intent.attacker.y,
+                        direction_x=direction_x,
+                        direction_y=direction_y,
+                    )
+                ],
+                source_x=intent.attacker.x,
+                source_y=intent.attacker.y,
+                is_player_action=is_player,
             )
         )
 
@@ -376,12 +386,21 @@ class AttackExecutor(ActionExecutor):
 
             if damage > 0:
                 intent.defender.take_damage(damage, damage_type=damage_type)
+                # Use presentation layer for staggered combat feedback
+                is_player = intent.attacker == intent.controller.gw.player
                 publish_event(
-                    EffectEvent(
-                        "blood_splatter",
-                        intent.defender.x,
-                        intent.defender.y,
-                        intensity=damage / 20.0,
+                    PresentationEvent(
+                        effect_events=[
+                            EffectEvent(
+                                "blood_splatter",
+                                intent.defender.x,
+                                intent.defender.y,
+                                intensity=damage / 20.0,
+                            )
+                        ],
+                        source_x=intent.defender.x,
+                        source_y=intent.defender.y,
+                        is_player_action=is_player,
                     )
                 )
                 self._log_hit_message(intent, attack_result, weapon, damage)
