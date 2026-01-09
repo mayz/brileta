@@ -36,6 +36,8 @@ Note:
 
 from __future__ import annotations
 
+import math
+import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -43,6 +45,7 @@ if TYPE_CHECKING:
     from catley.view.render.effects.effects import ContinuousEffect
 
     from .core import Actor
+    from .idle_animation import IdleAnimationProfile
     from .status_effects import StatusEffect
 
 from catley import colors
@@ -519,15 +522,108 @@ class InventoryComponent:
 
 
 class VisualEffectsComponent:
-    """Handles visual feedback effects like flashing and continuous effects."""
+    """Handles visual feedback effects like flashing, continuous effects, and idle.
 
-    def __init__(self) -> None:
+    Idle animations make characters feel alive between turns through:
+    - Sub-tile drift: Gentle positional movement within the tile
+    - Breathing pulse: Subtle brightness variation synchronized with breathing rate
+    - Ambient particles: Optional breath vapor and dust effects
+
+    All idle animation parameters are configured via an IdleAnimationProfile.
+    """
+
+    def __init__(self, idle_profile: IdleAnimationProfile | None = None) -> None:
+        """Initialize the visual effects component.
+
+        Args:
+            idle_profile: Configuration for idle animations. If None, a default
+                profile for medium-sized creatures is created on first access.
+        """
         # Flash effect state
         self._flash_color: colors.Color | None = None
         self._flash_duration_frames: int = 0
 
         # Active continuous effects (from the effect library)
         self.continuous_effects: list[ContinuousEffect] = []
+
+        # Idle animation state - uses real clock time for consistent animation speed
+        self._idle_profile: IdleAnimationProfile | None = idle_profile
+        self._creation_time: float = time.perf_counter()
+
+        # Use id(self) as seed for visual randomness - doesn't affect game random state
+        # This ensures actors are desynchronized without consuming global random numbers
+        visual_seed = id(self) % 100000
+        self._idle_timer_offset: float = (visual_seed % 1000) / 100.0  # 0-10 range
+
+        # Weight-shifting direction state
+        # The oscillation happens along a randomly chosen axis that changes periodically
+        self._shift_direction_angle: float = (visual_seed % 628) / 100.0  # 0 to ~2pi
+        self._last_direction_change: float = self._creation_time
+        # Direction changes every 1-2 minutes (60-120 seconds)
+        self._shift_direction_duration: float = 60.0 + (visual_seed % 6000) / 100.0
+
+        # Per-actor speed variation (±20%) so not everyone sways at the same tempo
+        # Range: 0.8 to 1.2
+        self._speed_multiplier: float = 0.8 + ((visual_seed % 400) / 1000.0)
+
+    @property
+    def idle_profile(self) -> IdleAnimationProfile:
+        """Get the idle animation profile, creating a default if needed."""
+        if self._idle_profile is None:
+            # Lazy import to avoid circular dependency
+            from .idle_animation import IdleAnimationProfile
+
+            self._idle_profile = IdleAnimationProfile()
+        return self._idle_profile
+
+    def set_idle_profile(self, profile: IdleAnimationProfile) -> None:
+        """Change the idle animation profile.
+
+        Args:
+            profile: The new profile to use for idle animations.
+        """
+        self._idle_profile = profile
+
+    def get_idle_drift_offset(self) -> tuple[float, float]:
+        """Get the current positional drift offset for rendering.
+
+        Returns the weight-shifting offset that makes characters subtly sway.
+        The result should be added to the actor's rendered position.
+
+        Uses real clock time for consistent animation speed regardless of
+        frame rate or how often this method is called.
+
+        Returns:
+            Tuple of (x_offset, y_offset) in tile fractions.
+        """
+        profile = self.idle_profile
+        x_offset = 0.0
+        y_offset = 0.0
+
+        # Use real time since creation for consistent speed
+        current_time = time.perf_counter()
+        elapsed = current_time - self._creation_time + self._idle_timer_offset
+
+        # Weight-shifting drift - oscillates along a direction that changes periodically
+        if profile.drift_enabled:
+            # Check if it's time to change direction (every 1-2 minutes)
+            time_since_direction_change = current_time - self._last_direction_change
+            if time_since_direction_change >= self._shift_direction_duration:
+                self._last_direction_change = current_time
+                # Use time-based pseudo-random to pick new direction
+                pseudo_seed = int(current_time * 1000) % 100000
+                self._shift_direction_angle = (pseudo_seed % 628) / 100.0
+                self._shift_direction_duration = 60.0 + (pseudo_seed % 6000) / 100.0
+
+            # Oscillate back and forth (sine wave)
+            # Apply per-actor speed variation so not everyone sways at the same tempo
+            t = elapsed * profile.drift_speed * self._speed_multiplier
+            oscillation = math.sin(t * 2 * math.pi) * profile.drift_amplitude
+            # Apply oscillation along the current shift direction
+            x_offset += oscillation * math.cos(self._shift_direction_angle)
+            y_offset += oscillation * math.sin(self._shift_direction_angle)
+
+        return (x_offset, y_offset)
 
     def flash(self, color: colors.Color, duration_frames: int = 5) -> None:
         """Start a flash effect with the given color and duration.
@@ -544,14 +640,24 @@ class VisualEffectsComponent:
         self.continuous_effects.append(effect)
 
     def update(self, delta_time: float = 0.016) -> None:
-        """Update visual effects. Call this each frame."""
+        """Update visual effects. Call this each frame.
+
+        Args:
+            delta_time: Time elapsed since last update in seconds.
+
+        Note:
+            Idle animations (drift, breathing) use real clock time via
+            time.perf_counter() for consistent speed regardless of frame rate,
+            so they don't need updating here. Direction changes for weight-
+            shifting are handled lazily in get_idle_drift_offset().
+        """
         # Update flash effect
         if self._flash_duration_frames > 0:
             self._flash_duration_frames -= 1
             if self._flash_duration_frames == 0:
                 self._flash_color = None
 
-        # Update all continuous effects
+        # Update all continuous effects (particles, etc.)
         for effect in self.continuous_effects:
             if hasattr(effect, "update"):
                 effect.update(delta_time)

@@ -34,7 +34,7 @@ from typing import TYPE_CHECKING
 from catley import colors
 from catley.config import DEFAULT_ACTOR_SPEED
 from catley.game.actors import conditions
-from catley.game.enums import Disposition, InjuryLocation
+from catley.game.enums import CreatureSize, Disposition, InjuryLocation
 from catley.game.items.item_core import Item
 from catley.game.pathfinding_goal import PathfindingGoal
 from catley.sound.emitter import SoundEmitter
@@ -53,6 +53,7 @@ from .components import (
     VisualEffectsComponent,
 )
 from .conditions import Injury
+from .idle_animation import IdleAnimationProfile, create_profile_for_size
 
 if TYPE_CHECKING:
     from catley.controller import Controller
@@ -330,6 +331,8 @@ class Character(Actor):
         starting_weapon: Item | None = None,
         num_attack_slots: int = 2,
         speed: int = DEFAULT_ACTOR_SPEED,
+        creature_size: CreatureSize = CreatureSize.MEDIUM,
+        idle_profile: IdleAnimationProfile | None = None,
         **kwargs,
     ) -> None:
         """
@@ -347,6 +350,8 @@ class Character(Actor):
             starting_weapon: Initial equipped weapon
             num_attack_slots: The number of attack slots this character should have
             speed: Action speed (higher = more frequent actions)
+            creature_size: Size category for idle animation defaults
+            idle_profile: Custom idle animation profile (overrides creature_size)
             **kwargs: Additional Actor parameters
         """
         stats = StatsComponent(
@@ -359,6 +364,10 @@ class Character(Actor):
             weirdness=weirdness,
         )
 
+        # Create idle animation profile from size if not explicitly provided
+        profile = idle_profile or create_profile_for_size(creature_size)
+        visual_effects = VisualEffectsComponent(idle_profile=profile)
+
         super().__init__(
             x=x,
             y=y,
@@ -369,7 +378,7 @@ class Character(Actor):
             stats=stats,
             health=HealthComponent(stats),
             inventory=InventoryComponent(stats, num_attack_slots, actor=self),
-            visual_effects=VisualEffectsComponent(),
+            visual_effects=visual_effects,
             ai=ai,
             speed=speed,
             **kwargs,

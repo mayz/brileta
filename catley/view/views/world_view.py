@@ -397,6 +397,17 @@ class WorldView(View):
             actor.prev_y * (1.0 - interpolation_alpha) + actor.y * interpolation_alpha
         )
 
+        # Apply idle animation drift offset (subtle sub-tile movement)
+        # Only for living actors - corpses and objects don't shift weight
+        if (
+            actor.visual_effects is not None
+            and actor.health is not None
+            and actor.health.is_alive()
+        ):
+            drift_x, drift_y = actor.visual_effects.get_idle_drift_offset()
+            interpolated_x += drift_x
+            interpolated_y += drift_y
+
         vp_x, vp_y = vs.world_to_screen_float(interpolated_x, interpolated_y)
 
         # Root console position where this viewport pixel ends up
@@ -460,16 +471,21 @@ class WorldView(View):
                         effect.execute(context)
 
     def _get_actor_display_color(self, actor: Actor) -> tuple:
-        """Get actor's final display color with visual effects."""
+        """Get actor's final display color with visual effects.
+
+        This applies flash effects (from damage, etc.) when active.
+        """
         base_color = actor.color
 
-        # Apply visual effects if present (existing logic)
+        # Apply visual effects if present
         visual_effects = actor.visual_effects
         if visual_effects is not None:
             visual_effects.update()
+
+            # Flash effect overrides base color (e.g., damage flash)
             flash_color = visual_effects.get_flash_color()
             if flash_color:
-                base_color = flash_color
+                return flash_color
 
         return base_color
 

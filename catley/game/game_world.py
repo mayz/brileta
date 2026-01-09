@@ -9,6 +9,7 @@ from catley.game.actors import (
     Character,
     conditions,
 )
+from catley.game.enums import CreatureSize
 from catley.game.item_spawner import ItemSpawner
 from catley.game.items.item_core import Item
 from catley.game.items.item_types import (
@@ -430,8 +431,9 @@ class GameWorld:
                     self.game_map.walkable[npc_x, npc_y]
                     and self.get_actor_at_location(npc_x, npc_y) is None
                 ):
-                    # Place the NPC
-                    if False:
+                    # Place the NPC - alternate between Trogs and Hackadoos
+                    if npc_index % 2 == 0:
+                        # Trog: hulking mutant with melee weapon
                         npc = NPC(
                             x=npc_x,
                             y=npc_y,
@@ -445,23 +447,25 @@ class GameWorld:
                             toughness=3,
                             intelligence=-3,
                             speed=80,
+                            creature_size=CreatureSize.LARGE,
                             starting_weapon=SLEDGEHAMMER_TYPE.create(),
                         )
-                        self.add_actor(npc)
-                    npc = NPC(
-                        x=npc_x,
-                        y=npc_y,
-                        ch="H",
-                        name=f"Hackadoo {npc_index + 1}"
-                        if npc_index > 0
-                        else "Hackadoo",
-                        color=colors.DARK_GREY,
-                        game_world=self,
-                        blocks_movement=True,
-                        weirdness=1,
-                        intelligence=2,
-                        starting_weapon=REVOLVER_TYPE.create(),
-                    )
+                    else:
+                        # Hackadoo: standard ranged enemy
+                        npc = NPC(
+                            x=npc_x,
+                            y=npc_y,
+                            ch="H",
+                            name=f"Hackadoo {npc_index + 1}"
+                            if npc_index > 0
+                            else "Hackadoo",
+                            color=colors.DARK_GREY,
+                            game_world=self,
+                            blocks_movement=True,
+                            weirdness=1,
+                            intelligence=2,
+                            starting_weapon=REVOLVER_TYPE.create(),
+                        )
                     self.add_actor(npc)
                     placed = True
                     break

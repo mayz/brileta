@@ -10,6 +10,20 @@ class ItemSize(Enum):
     HUGE = auto()
 
 
+class CreatureSize(Enum):
+    """Creature size categories.
+
+    Size affects animation parameters and may influence combat, movement,
+    and detection mechanics.
+    """
+
+    TINY = auto()  # Insects, rats
+    SMALL = auto()  # Dogs, children
+    MEDIUM = auto()  # Humans - baseline
+    LARGE = auto()  # Bears, mutants
+    HUGE = auto()  # Giants, vehicles
+
+
 class Disposition(Enum):
     HOSTILE = auto()  # Will attack/flee.
     UNFRIENDLY = auto()
