@@ -367,12 +367,12 @@ class ModernGLGraphicsContext(BaseGraphicsContext):
         screen_y: float,
         light_intensity: tuple[float, float, float] = (1.0, 1.0, 1.0),
         interpolation_alpha: InterpolationAlpha = InterpolationAlpha(1.0),  # noqa: B008
+        visual_scale: float = 1.0,
     ) -> None:
         """Draws a single character by adding its quad to the vertex buffer.
 
         Note: interpolation_alpha is for position interpolation only, NOT for color
-        transparency.
-        The color alpha is always 1.0 (fully opaque).
+        transparency. The color alpha is always 1.0 (fully opaque).
         """
         # Convert color to 0-1 range
         base_color = (color[0] / 255.0, color[1] / 255.0, color[2] / 255.0)
@@ -398,8 +398,19 @@ class ModernGLGraphicsContext(BaseGraphicsContext):
         # Use integer tile dimensions like TCOD backend for consistent positioning
         tile_w, tile_h = self.tile_dimensions
 
+        # Apply visual_scale: scale dimensions and center on tile
+        scaled_w = tile_w * visual_scale
+        scaled_h = tile_h * visual_scale
+        offset_x = (tile_w - scaled_w) / 2
+        offset_y = (tile_h - scaled_h) / 2
+
         self.screen_renderer.add_quad(
-            screen_x, screen_y, tile_w, tile_h, uv_coords, final_color
+            screen_x + offset_x,
+            screen_y + offset_y,
+            scaled_w,
+            scaled_h,
+            uv_coords,
+            final_color,
         )
 
     # --- Coordinate and Dimension Management ---

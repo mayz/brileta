@@ -344,11 +344,13 @@ class WorldView(View):
             world_left, world_top, world_right, world_bottom
         )
 
-        # Sort for proper z-order (existing logic)
+        # Sort for proper z-order: Y-position primary (painter's algorithm),
+        # visual_scale secondary (larger actors on top at same Y), player on top
         sorted_actors = sorted(
             actors_in_viewport,
             key=lambda a: (
-                getattr(a, "blocks_movement", False),
+                a.y,
+                getattr(a, "visual_scale", 1.0),
                 a == gw.player,
             ),
         )
@@ -421,7 +423,7 @@ class WorldView(View):
         # Get actor color with visual effects (reuse existing logic)
         final_color = self._get_actor_display_color(actor)
 
-        # Render using the enhanced renderer
+        # Render using the enhanced renderer with visual_scale
         graphics.draw_actor_smooth(
             actor.ch,
             final_color,
@@ -429,6 +431,7 @@ class WorldView(View):
             screen_pixel_y,
             light_rgb,
             interpolation_alpha,
+            visual_scale=getattr(actor, "visual_scale", 1.0),
         )
 
     def _get_actor_lighting_intensity(self, actor: Actor, bounds: Rect) -> tuple:
@@ -504,14 +507,16 @@ class WorldView(View):
             bounds.y2,
         )
         # Get only actors within the viewport using the spatial index, then sort
-        # them so the player appears on top of other blocking actors.
+        # for proper z-order: Y-position primary (painter's algorithm),
+        # visual_scale secondary (larger actors on top at same Y), player on top
         actors_in_viewport = gw.actor_spatial_index.get_in_bounds(
             world_left, world_top, world_right, world_bottom
         )
         sorted_actors = sorted(
             actors_in_viewport,
             key=lambda a: (
-                getattr(a, "blocks_movement", False),
+                a.y,
+                getattr(a, "visual_scale", 1.0),
                 a == gw.player,
             ),
         )
@@ -545,7 +550,7 @@ class WorldView(View):
                         base_actor_color, actor.color
                     )
 
-                # Render using the renderer's smooth drawing function
+                # Render using the renderer's smooth drawing function with visual_scale
                 graphics.draw_actor_smooth(
                     actor.ch,
                     final_fg_color,
@@ -553,6 +558,7 @@ class WorldView(View):
                     screen_pixel_y,
                     light_rgb,
                     alpha,
+                    visual_scale=getattr(actor, "visual_scale", 1.0),
                 )
 
     @record_time_live_variable("cpu.render.selected_actor_highlight_ms")

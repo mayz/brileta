@@ -274,6 +274,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         screen_y: float,
         light_intensity: tuple[float, float, float] = (1.0, 1.0, 1.0),
         interpolation_alpha: InterpolationAlpha | None = None,
+        visual_scale: float = 1.0,
     ) -> None:
         """Draw an actor character at sub-pixel screen coordinates."""
         if interpolation_alpha is None:
@@ -304,9 +305,19 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         # Use integer tile dimensions like TCOD backend for consistent positioning
         tile_w, tile_h = self.tile_dimensions
 
-        # Screen renderer should now work correctly!
+        # Apply visual_scale: scale dimensions and center on tile
+        scaled_w = tile_w * visual_scale
+        scaled_h = tile_h * visual_scale
+        offset_x = (tile_w - scaled_w) / 2
+        offset_y = (tile_h - scaled_h) / 2
+
         self.screen_renderer.add_quad(
-            screen_x, screen_y, tile_w, tile_h, uv_coords, final_color
+            screen_x + offset_x,
+            screen_y + offset_y,
+            scaled_w,
+            scaled_h,
+            uv_coords,
+            final_color,
         )
 
     def get_display_scale_factor(self) -> tuple[float, float]:

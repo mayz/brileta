@@ -53,7 +53,11 @@ from .components import (
     VisualEffectsComponent,
 )
 from .conditions import Injury
-from .idle_animation import IdleAnimationProfile, create_profile_for_size
+from .idle_animation import (
+    IdleAnimationProfile,
+    create_profile_for_size,
+    scale_for_size,
+)
 
 if TYPE_CHECKING:
     from catley.controller import Controller
@@ -125,6 +129,7 @@ class Actor:
         game_world: GameWorld | None = None,
         blocks_movement: bool = True,
         speed: int = DEFAULT_ACTOR_SPEED,
+        visual_scale: float = 1.0,
     ) -> None:
         # === Core Identity & World Presence ===
         self.x: WorldTileCoord = x
@@ -142,6 +147,7 @@ class Actor:
         self.ch = ch
         self.color = color
         self.name = name
+        self.visual_scale = visual_scale
         self.gw = game_world
         self.blocks_movement = blocks_movement
         # Light source removed - handled by new lighting system
@@ -333,6 +339,7 @@ class Character(Actor):
         speed: int = DEFAULT_ACTOR_SPEED,
         creature_size: CreatureSize = CreatureSize.MEDIUM,
         idle_profile: IdleAnimationProfile | None = None,
+        visual_scale: float | None = None,
         **kwargs,
     ) -> None:
         """
@@ -346,12 +353,13 @@ class Character(Actor):
             game_world: World to exist in
             strength, toughness, etc.: Ability scores
             ai: AI component for autonomous behavior (None for player)
-            light_source: Optional light source
             starting_weapon: Initial equipped weapon
             num_attack_slots: The number of attack slots this character should have
             speed: Action speed (higher = more frequent actions)
-            creature_size: Size category for idle animation defaults
+            creature_size: Size category for idle animation and visual_scale defaults
             idle_profile: Custom idle animation profile (overrides creature_size)
+            visual_scale: Rendering scale factor (overrides size-based default).
+                If None, derived from creature_size via scale_for_size().
             **kwargs: Additional Actor parameters
         """
         stats = StatsComponent(
@@ -366,7 +374,12 @@ class Character(Actor):
 
         # Create idle animation profile from size if not explicitly provided
         profile = idle_profile or create_profile_for_size(creature_size)
-        visual_effects = VisualEffectsComponent(idle_profile=profile)
+        visual_effects_component = VisualEffectsComponent(idle_profile=profile)
+
+        # Derive visual_scale from creature_size if not explicitly provided
+        effective_visual_scale = (
+            visual_scale if visual_scale is not None else scale_for_size(creature_size)
+        )
 
         super().__init__(
             x=x,
@@ -378,9 +391,10 @@ class Character(Actor):
             stats=stats,
             health=HealthComponent(stats),
             inventory=InventoryComponent(stats, num_attack_slots, actor=self),
-            visual_effects=visual_effects,
+            visual_effects=visual_effects_component,
             ai=ai,
             speed=speed,
+            visual_scale=effective_visual_scale,
             **kwargs,
         )
 

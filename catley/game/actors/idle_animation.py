@@ -92,6 +92,41 @@ def create_profile_for_size(size: CreatureSize) -> IdleAnimationProfile:
             )
 
 
+def scale_for_size(size: CreatureSize) -> float:
+    """Map CreatureSize to a visual_scale factor for rendering.
+
+    This controls how large the actor's glyph appears on screen, relative
+    to the standard tile size. Values are relative to MEDIUM (1.0).
+
+    Collision and pathfinding remain tile-based at 1x1 regardless of
+    visual_scale. This function only affects rendering.
+
+    Args:
+        size: The creature's size category.
+
+    Returns:
+        A float scale factor for rendering (0.6 to 1.3 range).
+
+    Raises:
+        NotImplementedError: If size is HUGE, which requires multi-tile
+            collision (future tile_footprint feature).
+    """
+    match size:
+        case CreatureSize.TINY:
+            return 0.6  # Small, compact (insects, rats)
+        case CreatureSize.SMALL:
+            return 0.8  # Noticeably smaller (dogs, children)
+        case CreatureSize.MEDIUM:
+            return 1.0  # Human baseline
+        case CreatureSize.LARGE:
+            return 1.3  # Clearly larger (bears, mutants)
+        case CreatureSize.HUGE:
+            raise NotImplementedError(
+                "CreatureSize.HUGE requires multi-tile collision (tile_footprint). "
+                "Use LARGE for the largest single-tile creatures."
+            )
+
+
 # =============================================================================
 # Preset Profiles for Special Cases
 # =============================================================================

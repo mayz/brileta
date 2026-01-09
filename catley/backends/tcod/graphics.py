@@ -199,6 +199,7 @@ class TCODGraphicsContext(GraphicsContext):
         screen_y: float,
         light_intensity: tuple[float, float, float] = (1.0, 1.0, 1.0),
         interpolation_alpha: InterpolationAlpha = InterpolationAlpha(1.0),  # noqa: B008
+        visual_scale: float = 1.0,
     ) -> None:
         """Draw an actor character at sub-pixel screen coordinates with interpolation.
 
@@ -208,7 +209,9 @@ class TCODGraphicsContext(GraphicsContext):
             screen_x: Screen X coordinate in pixels (can be fractional)
             screen_y: Screen Y coordinate in pixels (can be fractional)
             light_intensity: RGB lighting multipliers in 0.0-1.0 range
-            alpha: Interpolation factor (0.0 = previous state, 1.0 = current state)
+            interpolation_alpha: Interpolation factor (0.0 = previous, 1.0 = current)
+            visual_scale: Rendering scale factor (1.0 = normal size). The glyph
+                is scaled and centered on the tile position.
         """
         if not self._tileset:
             return
@@ -278,13 +281,23 @@ class TCODGraphicsContext(GraphicsContext):
         texture_h = shape[0]
         texture_w = shape[1]
 
-        # Scale texture proportionally to current tile size
+        # Scale texture proportionally to current tile size, then apply visual_scale
         tile_w, tile_h = self.tile_dimensions
-        scale = min(tile_w / texture_w, tile_h / texture_h)
-        scaled_w = int(texture_w * scale)
-        scaled_h = int(texture_h * scale)
+        base_scale = min(tile_w / texture_w, tile_h / texture_h)
+        final_scale = base_scale * visual_scale
+        scaled_w = int(texture_w * final_scale)
+        scaled_h = int(texture_h * final_scale)
 
-        dest_rect = (int(screen_x), int(screen_y), scaled_w, scaled_h)
+        # Center the scaled glyph on the tile position
+        offset_x = (tile_w - scaled_w) / 2
+        offset_y = (tile_h - scaled_h) / 2
+
+        dest_rect = (
+            int(screen_x + offset_x),
+            int(screen_y + offset_y),
+            scaled_w,
+            scaled_h,
+        )
         self.sdl_renderer.copy(texture, dest=dest_rect)
 
         # Reset for next use
