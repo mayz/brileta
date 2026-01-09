@@ -29,7 +29,7 @@ from .util.clock import Clock
 from .util.coordinates import WorldTilePos
 from .util.live_vars import live_variable_registry, record_time_live_variable
 from .util.message_log import MessageLog
-from .util.pathfinding import find_path
+from .util.pathfinding import find_local_path, find_region_path
 from .view.animation import AnimationManager
 from .view.frame_manager import FrameManager
 from .view.render.graphics import GraphicsContext
@@ -359,19 +359,37 @@ class Controller:
     ) -> bool:
         """Calculate a path and assign a :class:`PathfindingGoal` to ``actor``.
 
-        If the direct destination is blocked, the search falls back to any
-        adjacent walkable tile.  ``False`` is returned if no path can be found.
-        """
+        Uses hierarchical pathfinding (HPA*) when crossing regions. For paths
+        within a single region, uses direct A*. If the direct destination is
+        blocked, the search falls back to any adjacent walkable tile.
 
+        Returns ``False`` if no path can be found.
+        """
         gm = self.gw.game_map
         asi = self.gw.actor_spatial_index
+        start_pos: WorldTilePos = (actor.x, actor.y)
 
-        def _best_path(dest: WorldTilePos) -> list[WorldTilePos] | None:
-            return find_path(gm, asi, actor, (actor.x, actor.y), dest)
+        def _local_path(start: WorldTilePos, dest: WorldTilePos) -> list[WorldTilePos]:
+            return find_local_path(gm, asi, actor, start, dest)
 
-        path = _best_path(target_pos)
+        # Try hierarchical pathfinding if regions are set up
+        result = self._try_hierarchical_path(actor, start_pos, target_pos)
+        if result is not None:
+            path, high_level_path, dest = result
+            if path:
+                actor.pathfinding_goal = PathfindingGoal(
+                    target_pos=dest,
+                    final_intent=final_intent,
+                    high_level_path=high_level_path,
+                    _cached_path=path,
+                )
+                return True
+
+        # Fall back to direct A* (same region or no region info)
+        path = _local_path(start_pos, target_pos)
         dest = target_pos
 
+        # If direct path fails, try adjacent tiles
         if not path:
             best_path: list[WorldTilePos] | None = None
             best_dest: WorldTilePos | None = None
@@ -388,7 +406,7 @@ class Controller:
                     blocker = self.gw.get_actor_at_location(tx, ty)
                     if blocker and blocker.blocks_movement and blocker is not actor:
                         continue
-                    candidate = _best_path((tx, ty))
+                    candidate = _local_path(start_pos, (tx, ty))
                     if candidate and (
                         best_path is None or len(candidate) < len(best_path)
                     ):
@@ -410,6 +428,62 @@ class Controller:
         if actor is self.gw.player:
             publish_event(MessageEvent("Path is blocked.", colors.YELLOW))
         return False
+
+    def _try_hierarchical_path(
+        self,
+        actor: Character,
+        start_pos: WorldTilePos,
+        target_pos: WorldTilePos,
+    ) -> tuple[list[WorldTilePos], list[int] | None, WorldTilePos] | None:
+        """Attempt hierarchical pathfinding across regions.
+
+        Returns (local_path, high_level_path, effective_dest) if cross-region
+        path is found, or None if regions aren't set up or positions are in
+        the same region.
+        """
+        gm = self.gw.game_map
+        asi = self.gw.actor_spatial_index
+
+        # Check if regions are set up
+        if not gm.regions:
+            return None
+
+        # Get region IDs for start and end positions
+        start_region_id = gm.tile_to_region_id[start_pos[0], start_pos[1]]
+        end_region_id = gm.tile_to_region_id[target_pos[0], target_pos[1]]
+
+        # If either position isn't in a region, or same region, use direct path
+        if start_region_id < 0 or end_region_id < 0:
+            return None
+        if start_region_id == end_region_id:
+            return None
+
+        # Find path through region graph
+        region_path = find_region_path(gm, start_region_id, end_region_id)
+        if region_path is None or len(region_path) < 2:
+            return None
+
+        # Get the next region we need to enter (index 1, since 0 is current)
+        next_region_id = region_path[1]
+
+        # Get the connection point to the next region
+        current_region = gm.regions.get(start_region_id)
+        if current_region is None:
+            return None
+
+        connection_point = current_region.connections.get(next_region_id)
+        if connection_point is None:
+            return None
+
+        # Compute local path to the connection point
+        local_path = find_local_path(gm, asi, actor, start_pos, connection_point)
+        if not local_path:
+            return None
+
+        # Store remaining regions to traverse (excluding current region)
+        high_level_path = region_path[1:]
+
+        return (local_path, high_level_path, target_pos)
 
     def stop_actor_pathfinding(self, actor: Character) -> None:
         """Immediately cancel ``actor``'s active pathfinding goal."""

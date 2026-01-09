@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import deque
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -13,7 +14,66 @@ if TYPE_CHECKING:
 from catley.types import WorldTilePos
 
 
-def find_path(
+def find_region_path(
+    game_map: GameMap,
+    start_region_id: int,
+    end_region_id: int,
+) -> list[int] | None:
+    """
+    Find a path through the region graph using BFS.
+
+    This is the high-level component of hierarchical pathfinding (HPA*).
+    It finds a sequence of regions to traverse to get from the start region
+    to the end region.
+
+    Args:
+        game_map: The GameMap instance containing the regions graph.
+        start_region_id: The ID of the starting region.
+        end_region_id: The ID of the destination region.
+
+    Returns:
+        A list of region IDs representing the path from start to end,
+        including both the start and end regions. Returns None if no
+        path exists (regions are not connected).
+    """
+    if start_region_id == end_region_id:
+        return [start_region_id]
+
+    if start_region_id not in game_map.regions:
+        return None
+    if end_region_id not in game_map.regions:
+        return None
+
+    # BFS on the region graph
+    queue: deque[int] = deque([start_region_id])
+    came_from: dict[int, int] = {start_region_id: -1}
+
+    while queue:
+        current = queue.popleft()
+
+        if current == end_region_id:
+            # Reconstruct path
+            path: list[int] = []
+            node = current
+            while node != -1:
+                path.append(node)
+                node = came_from[node]
+            path.reverse()
+            return path
+
+        current_region = game_map.regions.get(current)
+        if current_region is None:
+            continue
+
+        for neighbor_id in current_region.connections:
+            if neighbor_id not in came_from:
+                came_from[neighbor_id] = current
+                queue.append(neighbor_id)
+
+    return None  # No path found
+
+
+def find_local_path(
     game_map: GameMap,
     actor_spatial_index: SpatialIndex[Actor],
     pathing_actor: Actor,
@@ -21,13 +81,12 @@ def find_path(
     end_pos: WorldTilePos,
 ) -> list[WorldTilePos]:
     """
-    Calculates a path from a start to an end position using A*.
+    Calculate a path from a start to an end position using A*.
 
-    ################################################################################
-    TODO: This implementation has scaling limitations for large maps.
-          A more robust hierarchical pathfinding (HPA*) system is planned.
-          See the "Pathfinding Scaling Strategy - Catley" note for the full spec.
-    ################################################################################
+    This is the low-level (local) component of the pathfinding system.
+    For cross-region paths, use find_region_path() to get the high-level
+    region sequence, then use find_local_path() to pathfind within or between
+    adjacent regions.
 
     This pathfinder is aware of both static, unwalkable map tiles and
     dynamic, blocking actors. It generates a temporary cost map for each

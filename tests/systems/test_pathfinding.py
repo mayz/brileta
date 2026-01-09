@@ -13,7 +13,7 @@ from catley.environment.tile_types import TileTypeID
 if TYPE_CHECKING:
     from catley.environment.map import MapRegion
 from catley.game.actors import Actor
-from catley.util.pathfinding import find_path
+from catley.util.pathfinding import find_local_path
 from catley.util.spatial import SpatialHashGrid, SpatialIndex
 
 
@@ -44,7 +44,7 @@ def test_find_path_simple_straight_line(
 ) -> None:
     gm, index = basic_setup
     actor = DummyActor(1, 1)
-    path = find_path(
+    path = find_local_path(
         gm, cast(SpatialIndex[Actor], index), cast(Actor, actor), (1, 1), (1, 5)
     )
     assert path == [(1, 2), (1, 3), (1, 4), (1, 5)]
@@ -55,7 +55,7 @@ def test_find_path_simple_diagonal_line(
 ) -> None:
     gm, index = basic_setup
     actor = DummyActor(1, 1)
-    path = find_path(
+    path = find_local_path(
         gm, cast(SpatialIndex[Actor], index), cast(Actor, actor), (1, 1), (4, 4)
     )
     assert path == [(2, 2), (3, 3), (4, 4)]
@@ -72,7 +72,7 @@ def test_find_path_no_path_exists(
             gm.tiles[5 + dx, 5 + dy] = TileTypeID.WALL
     gm.invalidate_property_caches()
     actor = DummyActor(1, 1)
-    path = find_path(
+    path = find_local_path(
         gm, cast(SpatialIndex[Actor], index), cast(Actor, actor), (1, 1), (5, 5)
     )
     assert path == []
@@ -85,7 +85,7 @@ def test_find_path_avoids_static_wall(
     gm.tiles[1, 3] = TileTypeID.WALL
     gm.invalidate_property_caches()
     actor = DummyActor(1, 1)
-    path = find_path(
+    path = find_local_path(
         gm, cast(SpatialIndex[Actor], index), cast(Actor, actor), (1, 1), (1, 5)
     )
     assert path
@@ -100,7 +100,7 @@ def test_find_path_avoids_blocking_actor(
     pathing = DummyActor(1, 1)
     actor = DummyActor(1, 3, True)
     index.add(actor)
-    path = find_path(
+    path = find_local_path(
         gm,
         cast(SpatialIndex[Actor], index),
         cast(Actor, pathing),
@@ -119,7 +119,7 @@ def test_find_path_ignores_non_blocking_actor(
     pathing = DummyActor(1, 1)
     actor = DummyActor(1, 3, False)
     index.add(actor)
-    path = find_path(
+    path = find_local_path(
         gm,
         cast(SpatialIndex[Actor], index),
         cast(Actor, pathing),
@@ -134,7 +134,7 @@ def test_find_path_start_and_end_are_same(
 ) -> None:
     gm, index = basic_setup
     actor = DummyActor(3, 3)
-    path = find_path(
+    path = find_local_path(
         gm, cast(SpatialIndex[Actor], index), cast(Actor, actor), (3, 3), (3, 3)
     )
     assert path == []
@@ -147,7 +147,7 @@ def test_find_path_target_is_impassable(
     gm.tiles[1, 5] = TileTypeID.WALL
     gm.invalidate_property_caches()
     actor = DummyActor(1, 1)
-    path = find_path(
+    path = find_local_path(
         gm, cast(SpatialIndex[Actor], index), cast(Actor, actor), (1, 1), (1, 5)
     )
     assert path == []
@@ -160,7 +160,7 @@ def test_distant_blocking_actor_ignored(
     pathing = DummyActor(1, 1)
     distant = DummyActor(8, 8)
     index.add(distant)
-    path = find_path(
+    path = find_local_path(
         gm,
         cast(SpatialIndex[Actor], index),
         cast(Actor, pathing),
@@ -178,7 +178,7 @@ def test_pathing_actor_is_ignored(
     other = DummyActor(1, 3)
     index.add(pathing)
     index.add(other)
-    path = find_path(
+    path = find_local_path(
         gm,
         cast(SpatialIndex[Actor], index),
         cast(Actor, pathing),

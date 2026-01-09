@@ -417,11 +417,11 @@ class ActionPanelView(TextView):
                             from catley.game.actions.misc import (
                                 PickupItemsAtLocationIntent,
                             )
-                            from catley.util.pathfinding import find_path
+                            from catley.util.pathfinding import find_local_path
 
                             gm = self.controller.gw.game_map
                             # Find path directly to the item location
-                            path = find_path(
+                            path = find_local_path(
                                 gm,
                                 self.controller.gw.actor_spatial_index,
                                 gw.player,

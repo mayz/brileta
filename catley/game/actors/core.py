@@ -39,7 +39,7 @@ from catley.game.items.item_core import Item
 from catley.game.pathfinding_goal import PathfindingGoal
 from catley.sound.emitter import SoundEmitter
 from catley.types import TileCoord, WorldTileCoord
-from catley.util.pathfinding import find_path
+from catley.util.pathfinding import find_local_path
 
 from .ai import AIComponent, DispositionBasedAI
 from .components import (
@@ -428,11 +428,14 @@ class Character(Actor):
     def get_next_action(self, controller: Controller) -> GameIntent | None:
         """Return a MoveIntent following this character's PathfindingGoal.
 
+        For hierarchical paths (crossing regions), this method manages both the
+        local path within the current region and the high-level region sequence.
+        When the local path is exhausted, it computes the next segment.
+
         The autopilot revalidates the next step each turn. If the cached path is
         blocked, a new path is calculated. When no path can be found the goal is
         cleared and ``None`` is returned.
         """
-
         goal = self.pathfinding_goal
         if goal is None:
             return None
@@ -440,7 +443,7 @@ class Character(Actor):
         path_is_valid = False
         if goal._cached_path:
             next_pos = goal._cached_path[0]
-            validation = find_path(
+            validation = find_local_path(
                 controller.gw.game_map,
                 controller.gw.actor_spatial_index,
                 self,
@@ -464,9 +467,69 @@ class Character(Actor):
 
         next_pos = self.pathfinding_goal._cached_path.pop(0)
         dx, dy = next_pos[0] - self.x, next_pos[1] - self.y
+
+        # After popping, check if we need to compute the next path segment
+        self._advance_hierarchical_path(controller)
+
         from catley.game.actions.movement import MoveIntent
 
         return MoveIntent(controller, self, dx, dy)
+
+    def _advance_hierarchical_path(self, controller: Controller) -> None:
+        """Compute next path segment when current local path is exhausted.
+
+        For hierarchical (cross-region) paths, when _cached_path becomes empty
+        but high_level_path still has regions to traverse, this computes the
+        local path to the next connection point (or to target_pos if we're in
+        the final region).
+        """
+        goal = self.pathfinding_goal
+        if goal is None:
+            return
+
+        # Only act if local path is exhausted and we have more regions to go
+        if goal._cached_path:
+            return
+        if not goal.high_level_path:
+            return
+
+        gm = controller.gw.game_map
+        asi = controller.gw.actor_spatial_index
+
+        # Pop the region we just entered
+        current_region_id = goal.high_level_path.pop(0)
+
+        if goal.high_level_path:
+            # More regions to traverse - path to next connection point
+            next_region_id = goal.high_level_path[0]
+            current_region = gm.regions.get(current_region_id)
+            if current_region is None:
+                self.pathfinding_goal = None
+                return
+
+            connection_point = current_region.connections.get(next_region_id)
+            if connection_point is None:
+                self.pathfinding_goal = None
+                return
+
+            # Compute local path to connection point
+            # Note: We'll be at next_pos after moving, but we compute from current
+            # position since the move hasn't happened yet. The path will be
+            # validated on next turn anyway.
+            new_path = find_local_path(
+                gm, asi, self, (self.x, self.y), connection_point
+            )
+            if new_path:
+                goal._cached_path = new_path
+            else:
+                # Can't reach connection - clear goal
+                self.pathfinding_goal = None
+        else:
+            # We're in the final region - path to target
+            new_path = find_local_path(gm, asi, self, (self.x, self.y), goal.target_pos)
+            if new_path:
+                goal._cached_path = new_path
+            # If no path, leave _cached_path empty - goal will be cleared on next turn
 
 
 class PC(Character):

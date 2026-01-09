@@ -80,6 +80,11 @@ class DummyController:
             cast(Controller, self), *args, **kwargs
         )
 
+    def _try_hierarchical_path(self, *args, **kwargs):
+        return Controller._try_hierarchical_path(
+            cast(Controller, self), *args, **kwargs
+        )
+
     def stop_actor_pathfinding(self, *args, **kwargs):
         return Controller.stop_actor_pathfinding(
             cast(Controller, self), *args, **kwargs

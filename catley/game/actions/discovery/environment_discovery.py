@@ -184,7 +184,7 @@ class EnvironmentActionDiscovery:
                 # Not adjacent - require movement (use pathfinding)
                 def create_pathfind_and_open(tx: int, ty: int):
                     def pathfind_and_open():
-                        from catley.util.pathfinding import find_path
+                        from catley.util.pathfinding import find_local_path
 
                         gm = controller.gw.game_map
                         # Find reachable adjacent position to the door
@@ -198,7 +198,7 @@ class EnvironmentActionDiscovery:
                                     adj_x, adj_y
                                 )
                             ):
-                                path = find_path(
+                                path = find_local_path(
                                     gm,
                                     controller.gw.actor_spatial_index,
                                     actor,
@@ -247,7 +247,7 @@ class EnvironmentActionDiscovery:
                 # Not adjacent - require movement (use pathfinding)
                 def create_pathfind_and_close(tx: int, ty: int):
                     def pathfind_and_close():
-                        from catley.util.pathfinding import find_path
+                        from catley.util.pathfinding import find_local_path
 
                         gm = controller.gw.game_map
                         # Find reachable adjacent position to the door
@@ -261,7 +261,7 @@ class EnvironmentActionDiscovery:
                                     adj_x, adj_y
                                 )
                             ):
-                                path = find_path(
+                                path = find_local_path(
                                     gm,
                                     controller.gw.actor_spatial_index,
                                     actor,
@@ -298,10 +298,10 @@ class EnvironmentActionDiscovery:
                 # Create "Go here" action for walkable tiles
                 def create_pathfind_to_tile(tx: int, ty: int):
                     def pathfind_to_tile():
-                        from catley.util.pathfinding import find_path
+                        from catley.util.pathfinding import find_local_path
 
                         gm = controller.gw.game_map
-                        path = find_path(
+                        path = find_local_path(
                             gm,
                             controller.gw.actor_spatial_index,
                             actor,

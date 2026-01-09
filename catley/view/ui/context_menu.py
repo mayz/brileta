@@ -26,7 +26,7 @@ from catley.util.coordinates import (
     RootConsoleTilePos,
     WorldTilePos,
 )
-from catley.util.pathfinding import find_path
+from catley.util.pathfinding import find_local_path
 from catley.view.ui.overlays import Menu, MenuOption
 
 if TYPE_CHECKING:  # pragma: no cover - only for type checking
@@ -98,7 +98,7 @@ class ContextMenu(Menu):
                             and blocker is not player
                         ):
                             continue
-                        path = find_path(
+                        path = find_local_path(
                             gm,
                             self.controller.gw.actor_spatial_index,
                             player,
@@ -146,7 +146,7 @@ class ContextMenu(Menu):
                             )
                         )
                 else:
-                    path = find_path(
+                    path = find_local_path(
                         gm,
                         self.controller.gw.actor_spatial_index,
                         player,
