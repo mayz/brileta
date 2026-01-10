@@ -46,6 +46,17 @@ class AttackExecutor(ActionExecutor):
         pass
 
     def execute(self, intent: AttackIntent) -> GameActionResult | None:  # type: ignore[override]
+        # Check for tile shot (no defender, but target coordinates set)
+        if (
+            intent.defender is None
+            and intent.target_x is not None
+            and intent.target_y is not None
+        ):
+            return self._execute_tile_shot(intent)
+
+        # For actor attacks, defender must be set
+        assert intent.defender is not None, "Actor attack requires a defender"
+
         # 1. Determine what attack method to use
         attack, weapon = self._determine_attack_method(intent)
         if not attack:
@@ -99,10 +110,105 @@ class AttackExecutor(ActionExecutor):
 
         return GameActionResult(consequences=consequences)
 
+    def _execute_tile_shot(self, intent: AttackIntent) -> GameActionResult:
+        """Execute a shot at an environmental tile (wall, door, etc.).
+
+        Reuses muzzle flash and ammo consumption logic, then plays impact sound
+        at the target tile based on its material.
+        """
+        weapon = intent.weapon
+        if weapon is None:
+            publish_event(MessageEvent("No weapon selected!", colors.RED))
+            return GameActionResult(succeeded=False)
+
+        ranged_attack = weapon.ranged_attack
+        if not ranged_attack or ranged_attack.current_ammo <= 0:
+            publish_event(MessageEvent(f"{weapon.name} is empty!", colors.RED))
+            return GameActionResult(succeeded=False)
+
+        # Consume ammo
+        ranged_attack.current_ammo -= 1
+
+        # Get target tile info
+        game_map = intent.controller.gw.game_map
+        target_x = intent.target_x
+        target_y = intent.target_y
+        assert target_x is not None and target_y is not None  # Type narrowing
+
+        tile_type_id = int(game_map.tiles[target_x, target_y])
+        tile_name = tile_types.get_tile_type_name_by_id(tile_type_id)
+
+        # Direction for muzzle flash
+        direction_x = target_x - intent.attacker.x
+        direction_y = target_y - intent.attacker.y
+
+        # Build gunfire sound event
+        sound_events: list[SoundEvent] = []
+        sound_id = get_weapon_sound_id(ranged_attack.ammo_type)
+        if sound_id:
+            sound_events.append(
+                SoundEvent(
+                    sound_id=sound_id,
+                    x=intent.attacker.x,
+                    y=intent.attacker.y,
+                    pitch_jitter=(0.95, 1.05),
+                )
+            )
+
+        # Emit muzzle flash and gunfire sound
+        is_player = intent.attacker == intent.controller.gw.player
+        publish_event(
+            PresentationEvent(
+                effect_events=[
+                    EffectEvent(
+                        "muzzle_flash",
+                        intent.attacker.x,
+                        intent.attacker.y,
+                        direction_x=direction_x,
+                        direction_y=direction_y,
+                    )
+                ],
+                sound_events=sound_events,
+                source_x=intent.attacker.x,
+                source_y=intent.attacker.y,
+                is_player_action=is_player,
+            )
+        )
+
+        # Emit impact sound at target tile
+        material = AudioMaterialResolver.resolve_tile_material(tile_type_id)
+        impact_sound_id = get_impact_sound_id(material)
+        publish_event(
+            PresentationEvent(
+                sound_events=[
+                    SoundEvent(
+                        sound_id=impact_sound_id,
+                        x=target_x,
+                        y=target_y,
+                        pitch_jitter=(0.92, 1.08),
+                    )
+                ],
+                source_x=target_x,
+                source_y=target_y,
+                is_player_action=is_player,
+            )
+        )
+
+        # Log message
+        publish_event(
+            MessageEvent(
+                f"{intent.attacker.name} shoots at the {tile_name.lower()}.",
+                colors.LIGHT_GREY,
+            )
+        )
+
+        return GameActionResult()
+
     def _determine_attack_method(
         self, intent: AttackIntent
     ) -> tuple[Attack | None, Item]:
         """Determine which attack method and weapon to use."""
+        assert intent.defender is not None  # Tile shots handled separately
         weapon = intent.weapon or self._select_appropriate_weapon(
             intent.attacker,
             force_melee=intent.attack_mode == "melee",
@@ -207,6 +313,7 @@ class AttackExecutor(ActionExecutor):
         self, intent: AttackIntent, attack: Attack, weapon: Item
     ) -> dict | None:
         """Validate the attack can be performed and return range modifiers."""
+        assert intent.defender is not None  # Tile shots handled separately
         if attack is None:
             publish_event(
                 MessageEvent(f"{weapon.name} cannot perform this attack!", colors.RED)
@@ -265,6 +372,7 @@ class AttackExecutor(ActionExecutor):
 
     def _adjacent_cover_bonus(self, intent: AttackIntent) -> int:
         """Return the highest cover bonus adjacent to the defender."""
+        assert intent.defender is not None  # Tile shots handled separately
         game_map = intent.controller.gw.game_map
         max_bonus = 0
         x, y = intent.defender.x, intent.defender.y
@@ -289,6 +397,7 @@ class AttackExecutor(ActionExecutor):
         self, intent: AttackIntent, attack: Attack, weapon: Item, range_modifiers: dict
     ) -> ResolutionResult | None:
         """Perform the attack roll and handle immediate effects like ammo use."""
+        assert intent.defender is not None  # Tile shots handled separately
         stat_name = attack.stat_name
         attacker_score = getattr(intent.attacker.stats, stat_name)
         defender_score = intent.defender.stats.agility + self._adjacent_cover_bonus(
@@ -342,6 +451,7 @@ class AttackExecutor(ActionExecutor):
 
     def _emit_muzzle_flash(self, intent: AttackIntent, weapon: Item) -> None:
         """Emit muzzle flash and gunfire sound via presentation layer."""
+        assert intent.defender is not None  # Tile shots handled separately
         direction_x = intent.defender.x - intent.attacker.x
         direction_y = intent.defender.y - intent.attacker.y
 
@@ -410,6 +520,7 @@ class AttackExecutor(ActionExecutor):
         weapon: Item,
     ) -> int:
         """Apply the combat outcome and return the damage dealt."""
+        assert intent.defender is not None  # Tile shots handled separately
         if attack_result.outcome_tier in (
             OutcomeTier.SUCCESS,
             OutcomeTier.CRITICAL_SUCCESS,
@@ -482,6 +593,7 @@ class AttackExecutor(ActionExecutor):
         weapon: Item,
     ) -> None:
         """Handle an attack miss - messages and weapon property effects."""
+        assert intent.defender is not None  # Tile shots handled separately
         # Miss
         if attack_result.outcome_tier == OutcomeTier.CRITICAL_FAILURE:
             # "Crits favoring defense cause the attacker's weapon to break,
@@ -540,6 +652,7 @@ class AttackExecutor(ActionExecutor):
         it hits an environmental surface. This method traces that trajectory
         and plays the appropriate material impact sound at the collision point.
         """
+        assert intent.defender is not None  # Tile shots handled separately
         game_map = intent.controller.gw.game_map
 
         # Calculate direction from attacker through defender
@@ -599,6 +712,7 @@ class AttackExecutor(ActionExecutor):
         damage: int,
     ) -> None:
         """Log appropriate hit message based on critical status."""
+        assert intent.defender is not None  # Tile shots handled separately
         if attack_result.outcome_tier == OutcomeTier.CRITICAL_SUCCESS:
             hit_color = colors.YELLOW
             message = (
@@ -625,6 +739,7 @@ class AttackExecutor(ActionExecutor):
         damage: int,
     ) -> None:
         """Handle post-attack effects like screen shake and AI disposition changes."""
+        assert intent.defender is not None  # Tile shots handled separately
         # Screen shake only when PLAYER gets hit
         if (
             attack_result.outcome_tier
@@ -684,6 +799,7 @@ class AttackExecutor(ActionExecutor):
 
     def _update_ai_disposition(self, intent: AttackIntent) -> None:
         """Update AI disposition if player attacked an NPC."""
+        assert intent.defender is not None  # Tile shots handled separately
         if (
             intent.attacker == intent.controller.gw.player
             and intent.defender != intent.controller.gw.player

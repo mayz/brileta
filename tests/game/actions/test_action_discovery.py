@@ -457,11 +457,12 @@ def test_tile_specific_door_actions() -> None:
         cast(Controller, controller), player, ctx, 1, 0
     )
 
-    # Should find direct door action for adjacent door
-    assert len(adjacent_actions) == 1
-    adjacent_action = adjacent_actions[0]
+    # Should find direct door action for adjacent door (plus shoot action if armed)
+    assert len(adjacent_actions) >= 1
+    door_actions = [a for a in adjacent_actions if a.name == "Open Door"]
+    assert len(door_actions) == 1
+    adjacent_action = door_actions[0]
     assert "go to and" not in adjacent_action.name.lower()  # No movement required
-    assert adjacent_action.name == "Open Door"
     assert adjacent_action.action_class == OpenDoorIntent  # Direct action
     assert adjacent_action.execute is None  # No custom execute function
 
@@ -473,10 +474,12 @@ def test_tile_specific_door_actions() -> None:
     )
 
     # Should find movement-required door action for distant door
-    assert len(distant_actions) == 1
-    distant_action = distant_actions[0]
+    # (plus shoot action if player is armed)
+    assert len(distant_actions) >= 1
+    go_door_actions = [a for a in distant_actions if a.name == "Go to and Open Door"]
+    assert len(go_door_actions) == 1
+    distant_action = go_door_actions[0]
     assert "go to and" in distant_action.name.lower()  # Movement required
-    assert distant_action.name == "Go to and Open Door"
     assert distant_action.execute is not None  # Uses pathfinding execute function
     assert distant_action.action_class is None  # No direct action class
 
@@ -489,19 +492,23 @@ def test_tile_specific_door_actions() -> None:
         )
     )
 
-    # Should find close door action
-    assert len(open_door_actions) == 1
-    close_action = open_door_actions[0]
+    # Should find close door action (plus shoot action if armed)
+    assert len(open_door_actions) >= 1
+    close_actions = [a for a in open_door_actions if "close" in a.name.lower()]
+    assert len(close_actions) == 1
+    close_action = close_actions[0]
     assert "close" in close_action.name.lower()
 
     # Test 4: Non-door tile (should return "Go here" action for walkable tiles)
     gw.game_map.tiles[1, 0] = TileTypeID.FLOOR
+    gw.game_map.walkable[1, 0] = True  # Floor is walkable
 
     floor_actions = disc.environment_discovery.discover_environment_actions_for_tile(
         cast(Controller, controller), player, ctx, 1, 0
     )
 
     # Should find "Go here" action for a regular floor tile at distance > 0
+    # (no shoot action since floor is walkable)
     assert len(floor_actions) == 1
     go_action = floor_actions[0]
     assert go_action.name == "Go here"

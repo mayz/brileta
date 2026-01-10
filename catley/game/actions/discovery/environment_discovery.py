@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from catley.game.actions.combat import AttackIntent
 from catley.game.actions.environment import CloseDoorIntent, OpenDoorIntent
 from catley.game.actions.recovery import (
     ComfortableSleepIntent,
@@ -327,6 +328,92 @@ class EnvironmentActionDiscovery:
                         execute=create_pathfind_to_tile(tile_x, tile_y),
                     )
                 )
+
+        # Add shoot-at-tile actions for non-walkable tiles
+        options.extend(
+            self._get_shoot_tile_actions(controller, actor, tile_x, tile_y, tile_id)
+        )
+
+        return options
+
+    def _get_shoot_tile_actions(
+        self,
+        controller: Controller,
+        actor: Character,
+        tile_x: int,
+        tile_y: int,
+        tile_id: int,
+    ) -> list[ActionOption]:
+        """Get shoot-at-tile actions for non-walkable visible tiles."""
+        from catley.environment.tile_types import TileTypeID, get_tile_type_name_by_id
+
+        options: list[ActionOption] = []
+        gm = controller.gw.game_map
+
+        # Only offer shoot actions for non-walkable tiles (walls, closed doors, etc.)
+        if gm.walkable[tile_x, tile_y]:
+            return options
+
+        # Check if actor has a ranged weapon with ammo
+        equipped_weapons = [w for w in actor.inventory.attack_slots if w is not None]
+        ranged_weapons_with_ammo = [
+            w
+            for w in equipped_weapons
+            if w.ranged_attack and w.ranged_attack.current_ammo > 0
+        ]
+
+        if not ranged_weapons_with_ammo:
+            return options
+
+        # Note: We don't check line of sight here because the caller already
+        # verified visibility (gm.visible[tile_x, tile_y]). The strict Bresenham
+        # LOS check is meant for projectiles traveling through space to a target
+        # behind it, but for shooting at a visible surface, visibility suffices.
+
+        # Determine contextual action name based on tile type
+        if tile_id == TileTypeID.WALL:
+            target_name = "wall"
+        elif tile_id in (TileTypeID.DOOR_CLOSED, TileTypeID.DOOR_OPEN):
+            target_name = "door"
+        else:
+            # Fallback to tile's display name
+            target_name = get_tile_type_name_by_id(tile_id).lower()
+
+        # Create shoot action for each ranged weapon with ammo
+        for weapon in ranged_weapons_with_ammo:
+            # Create a closure to capture the weapon
+            def create_shoot_action(w, tx: int, ty: int):
+                def shoot_tile():
+                    intent = AttackIntent(
+                        controller,
+                        actor,
+                        defender=None,
+                        weapon=w,
+                        attack_mode="ranged",
+                        target_x=tx,
+                        target_y=ty,
+                    )
+                    controller.turn_manager.queue_action(intent)
+                    return True
+
+                return shoot_tile
+
+            action_name = f"Shoot at {target_name}"
+            if len(ranged_weapons_with_ammo) > 1:
+                action_name = f"Shoot at {target_name} ({weapon.name})"
+
+            options.append(
+                ActionOption(
+                    id=f"shoot-tile-{weapon.name}",
+                    name=action_name,
+                    description=f"Fire {weapon.name} at the {target_name}",
+                    category=ActionCategory.COMBAT,
+                    action_class=None,  # type: ignore[arg-type]
+                    requirements=[],
+                    static_params={},
+                    execute=create_shoot_action(weapon, tile_x, tile_y),
+                )
+            )
 
         return options
 
