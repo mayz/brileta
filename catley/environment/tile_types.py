@@ -17,6 +17,7 @@ from enum import IntEnum, auto
 import numpy as np
 
 from catley import colors
+from catley.game.enums import ImpactMaterial
 
 
 class TileTypeID(IntEnum):
@@ -58,6 +59,7 @@ TileTypeData = np.dtype(
         ("transparent", bool),  # FOV/line-of-sight (exploration & targeting)
         ("cover_bonus", np.int8),  # Defensive bonus from using this tile as cover
         ("casts_shadows", bool),  # Light occlusion (visual shadows)
+        ("material", np.int8),  # ImpactMaterial enum value for impact sounds
         ("display_name", "U32"),  # Human-readable name (Unicode string, max 32 chars)
         # Appearance when explored but not in FOV
         ("dark", TileTypeAppearance),
@@ -99,6 +101,7 @@ def make_tile_type_data(
     walkable: bool,
     transparent: bool,
     display_name: str,
+    material: ImpactMaterial = ImpactMaterial.STONE,
     cover_bonus: int = 0,
     casts_shadows: bool = False,
     dark: tuple[int, colors.Color, colors.Color],  # (char_code, fg_color, bg_color)
@@ -111,6 +114,7 @@ def make_tile_type_data(
         walkable: Can actors walk through this type of tile?
         transparent: Is this tile see-through for FOV/targeting?
         display_name: Human-readable name for UI display (e.g., "Wall", "Closed Door")
+        material: Impact material for sound effects (default: STONE).
         cover_bonus: Defensive bonus granted when using this tile as cover.
         casts_shadows: Does this tile block light for shadow casting?
         dark:  A (char_code, fg_color, bg_color) tuple defining
@@ -136,6 +140,7 @@ def make_tile_type_data(
             transparent,
             cover_bonus,
             casts_shadows,
+            material.value,
             display_name,
             dark_appearance,
             light_appearance,
@@ -154,6 +159,7 @@ register_tile_type(
         walkable=False,
         transparent=False,
         display_name="Wall",
+        material=ImpactMaterial.STONE,
         dark=(ord(" "), colors.DARK_GREY, colors.DARK_WALL),
         light=(ord(" "), colors.LIGHT_GREY, colors.LIGHT_WALL),
     ),
@@ -165,6 +171,7 @@ register_tile_type(
         walkable=True,
         transparent=True,
         display_name="Floor",
+        material=ImpactMaterial.STONE,
         dark=(ord(" "), colors.DARK_GREY, colors.DARK_GROUND),
         light=(ord(" "), colors.LIGHT_GREY, colors.LIGHT_GROUND),
     ),
@@ -176,6 +183,7 @@ register_tile_type(
         walkable=True,
         transparent=True,
         display_name="Ground",
+        material=ImpactMaterial.STONE,
         dark=(ord(" "), colors.DARK_GREY, colors.OUTDOOR_DARK_GROUND),
         light=(ord(" "), colors.LIGHT_GREY, colors.OUTDOOR_LIGHT_GROUND),
     ),
@@ -187,6 +195,7 @@ register_tile_type(
         walkable=False,
         transparent=False,
         display_name="Rock Wall",
+        material=ImpactMaterial.STONE,
         casts_shadows=True,
         dark=(ord("#"), colors.LIGHT_GREY, colors.OUTDOOR_DARK_WALL),
         light=(ord("#"), colors.LIGHT_GREY, colors.OUTDOOR_LIGHT_WALL),
@@ -199,6 +208,7 @@ register_tile_type(
         walkable=False,
         transparent=False,
         display_name="Closed Door",
+        material=ImpactMaterial.WOOD,
         dark=(ord("+"), colors.ORANGE, colors.DARK_WALL),
         light=(ord("+"), colors.LIGHT_ORANGE, colors.LIGHT_WALL),
     ),
@@ -210,6 +220,7 @@ register_tile_type(
         walkable=True,
         transparent=True,
         display_name="Open Door",
+        material=ImpactMaterial.WOOD,
         dark=(ord("'"), colors.ORANGE, colors.DARK_GROUND),
         light=(ord("'"), colors.LIGHT_ORANGE, colors.LIGHT_GROUND),
     ),
@@ -221,6 +232,7 @@ register_tile_type(
         walkable=False,
         transparent=True,
         display_name="Boulder",
+        material=ImpactMaterial.STONE,
         cover_bonus=2,
         casts_shadows=True,
         dark=(ord("#"), colors.DARK_GREY, colors.DARK_GROUND),
@@ -320,3 +332,23 @@ def get_tile_type_name_by_id(tile_type_id: int) -> str:
     if 0 <= tile_type_id < len(_tile_type_properties_display_name):
         return str(_tile_type_properties_display_name[tile_type_id])
     return f"Unknown Tile (ID: {tile_type_id})"
+
+
+def get_tile_material(tile_type_id: int) -> ImpactMaterial:
+    """
+    Get the impact material for a tile type.
+
+    Used by the audio system to play appropriate impact sounds when
+    projectiles hit environmental surfaces.
+
+    Args:
+        tile_type_id: The ID of the tile type
+
+    Returns:
+        The ImpactMaterial enum value for this tile type.
+        Defaults to STONE for unknown tile IDs.
+    """
+    if 0 <= tile_type_id < len(_registered_tile_type_data_list):
+        material_value = int(_registered_tile_type_data_list[tile_type_id]["material"])
+        return ImpactMaterial(material_value)
+    return ImpactMaterial.STONE

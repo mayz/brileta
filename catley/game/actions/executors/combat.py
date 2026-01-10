@@ -29,6 +29,7 @@ from catley.game.items.properties import TacticalProperty, WeaponProperty
 from catley.game.resolution import combat_arbiter
 from catley.game.resolution.base import ResolutionResult
 from catley.game.resolution.outcomes import CombatOutcome
+from catley.sound.materials import AudioMaterialResolver, get_impact_sound_id
 from catley.sound.weapon_sounds import get_reload_sound_id, get_weapon_sound_id
 from catley.types import DeltaTime
 from catley.view.presentation import PresentationEvent
@@ -431,6 +432,11 @@ class AttackExecutor(ActionExecutor):
                 intent.defender.take_damage(damage, damage_type=damage_type)
                 # Use presentation layer for staggered combat feedback
                 is_player = intent.attacker == intent.controller.gw.player
+
+                # Resolve impact material and get corresponding sound
+                material = AudioMaterialResolver.resolve_actor_material(intent.defender)
+                impact_sound_id = get_impact_sound_id(material)
+
                 publish_event(
                     PresentationEvent(
                         effect_events=[
@@ -439,6 +445,14 @@ class AttackExecutor(ActionExecutor):
                                 intent.defender.x,
                                 intent.defender.y,
                                 intensity=damage / 20.0,
+                            )
+                        ],
+                        sound_events=[
+                            SoundEvent(
+                                sound_id=impact_sound_id,
+                                x=intent.defender.x,
+                                y=intent.defender.y,
+                                pitch_jitter=(0.95, 1.05),
                             )
                         ],
                         source_x=intent.defender.x,
@@ -513,6 +527,68 @@ class AttackExecutor(ActionExecutor):
             )
             intent.attacker.status_effects.apply_status_effect(
                 status_effects.OffBalanceEffect()
+            )
+
+        # For ranged misses, trace bullet to find environmental impact
+        if attack == weapon.ranged_attack and weapon.ranged_attack is not None:
+            self._emit_ranged_miss_impact(intent)
+
+    def _emit_ranged_miss_impact(self, intent: AttackIntent) -> None:
+        """Trace missed bullet trajectory and play impact sound at first blocking tile.
+
+        When a ranged attack misses, the bullet continues past the target until
+        it hits an environmental surface. This method traces that trajectory
+        and plays the appropriate material impact sound at the collision point.
+        """
+        game_map = intent.controller.gw.game_map
+
+        # Calculate direction from attacker through defender
+        dx = intent.defender.x - intent.attacker.x
+        dy = intent.defender.y - intent.attacker.y
+
+        # Extend the line past the defender to find what the bullet hits
+        # Use 10 tiles as a reasonable extension distance
+        extend_distance = 10
+        divisor = max(abs(dx), abs(dy), 1)
+        end_x = intent.defender.x + (dx * extend_distance // divisor)
+        end_y = intent.defender.y + (dy * extend_distance // divisor)
+
+        # Clamp to map bounds
+        end_x = max(0, min(game_map.width - 1, end_x))
+        end_y = max(0, min(game_map.height - 1, end_y))
+
+        # Trace line and find first non-transparent tile
+        line = ranges.get_line(intent.attacker.x, intent.attacker.y, end_x, end_y)
+
+        impact_x, impact_y = None, None
+        for x, y in line[1:]:  # Skip attacker's tile
+            if not (0 <= x < game_map.width and 0 <= y < game_map.height):
+                break
+            if not game_map.transparent[x, y]:
+                impact_x, impact_y = x, y
+                break
+
+        # If we found an impact point, play the tile material sound
+        if impact_x is not None and impact_y is not None:
+            tile_type_id = int(game_map.tiles[impact_x, impact_y])
+            material = AudioMaterialResolver.resolve_tile_material(tile_type_id)
+            impact_sound_id = get_impact_sound_id(material)
+
+            is_player = intent.attacker == intent.controller.gw.player
+            publish_event(
+                PresentationEvent(
+                    sound_events=[
+                        SoundEvent(
+                            sound_id=impact_sound_id,
+                            x=impact_x,
+                            y=impact_y,
+                            pitch_jitter=(0.92, 1.08),
+                        )
+                    ],
+                    source_x=impact_x,
+                    source_y=impact_y,
+                    is_player_action=is_player,
+                )
             )
 
     def _log_hit_message(

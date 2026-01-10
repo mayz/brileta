@@ -92,3 +92,16 @@ class InjuryLocation(Enum):
     RIGHT_ARM = auto()
     LEFT_LEG = auto()
     RIGHT_LEG = auto()
+
+
+class ImpactMaterial(Enum):
+    """Material types for impact sound selection.
+
+    Used by the audio system to play appropriate impact sounds when
+    projectiles or melee attacks hit actors or environmental surfaces.
+    """
+
+    FLESH = auto()  # Biological targets (humans, animals, mutants)
+    METAL = auto()  # Metallic armor, robots, metal surfaces
+    STONE = auto()  # Walls, boulders, concrete, rocky ground
+    WOOD = auto()  # Doors, wooden structures, furniture

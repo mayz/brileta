@@ -270,6 +270,77 @@ SOUND_DEFINITIONS = {
         priority=7,
         rolloff_factor=1.0,
     ),
+    # --- Impact sounds ---
+    # Played when projectiles or melee attacks hit actors or environmental surfaces.
+    # Material type determines which sound plays.
+    "impact_flesh": SoundDefinition(
+        sound_id="impact_flesh",
+        layers=[
+            SoundLayer(
+                file="impact_flesh_01.ogg",
+                variants=["impact_flesh_02.ogg", "impact_flesh_03.ogg"],
+                volume=1.0,
+                loop=False,
+                pitch_variation=(0.90, 1.10),
+            ),
+        ],
+        base_volume=0.15,
+        falloff_start=2.0,
+        max_distance=8.0,
+        priority=5,
+        rolloff_factor=1.0,
+    ),
+    "impact_metal": SoundDefinition(
+        sound_id="impact_metal",
+        layers=[
+            SoundLayer(
+                file="impact_metal_01.ogg",
+                variants=["impact_metal_02.ogg", "impact_metal_03.ogg"],
+                volume=1.0,
+                loop=False,
+                pitch_variation=(0.85, 1.15),
+            ),
+        ],
+        base_volume=0.15,
+        falloff_start=2.5,
+        max_distance=10.0,
+        priority=5,
+        rolloff_factor=0.9,
+    ),
+    "impact_stone": SoundDefinition(
+        sound_id="impact_stone",
+        layers=[
+            SoundLayer(
+                file="impact_stone_01.ogg",
+                variants=["impact_stone_02.ogg", "impact_stone_03.ogg"],
+                volume=1.0,
+                loop=False,
+                pitch_variation=(0.88, 1.12),
+            ),
+        ],
+        base_volume=0.15,
+        falloff_start=2.0,
+        max_distance=8.0,
+        priority=4,
+        rolloff_factor=1.0,
+    ),
+    "impact_wood": SoundDefinition(
+        sound_id="impact_wood",
+        layers=[
+            SoundLayer(
+                file="impact_wood_01.ogg",
+                variants=["impact_wood_02.ogg", "impact_wood_03.ogg"],
+                volume=1.0,
+                loop=False,
+                pitch_variation=(0.90, 1.10),
+            ),
+        ],
+        base_volume=0.15,
+        falloff_start=2.0,
+        max_distance=7.0,
+        priority=4,
+        rolloff_factor=1.0,
+    ),
 }
 
 
