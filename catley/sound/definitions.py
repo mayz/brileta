@@ -187,6 +187,70 @@ SOUND_DEFINITIONS = {
         priority=7,
         rolloff_factor=1.0,
     ),
+    # Shotgun reload - 5 shell inserts followed by pump rack
+    # FIXME: This always plays 5 shell inserts regardless of how many shells are
+    # actually being loaded (e.g., reloading 1 shell still plays 5 insert sounds).
+    # To fix: generate sounds dynamically in ReloadExecutor based on
+    # (max_ammo - current_ammo) shells needed.
+    #
+    # Important: when implementing dynamic reload sounds, the shell inserts can
+    # have pitch variation, but the final pump rack sound must NOT have pitch
+    # variation (it sounds unrealistic). Ensure the rack sound is emitted without
+    # pitch_jitter - see system.py where delayed layers intentionally don't
+    # inherit event pitch_jitter for this reason.
+    "gun_reload_shotgun": SoundDefinition(
+        sound_id="gun_reload_shotgun",
+        layers=[
+            # Shell inserts (5 shells, 400ms apart, subtle pitch variation)
+            SoundLayer(
+                file="shotgun_shell_insert.ogg",
+                volume=0.9,
+                loop=False,
+                delay=0.0,
+                pitch_variation=(0.97, 1.03),
+            ),
+            SoundLayer(
+                file="shotgun_shell_insert.ogg",
+                volume=0.9,
+                loop=False,
+                delay=0.4,
+                pitch_variation=(0.97, 1.03),
+            ),
+            SoundLayer(
+                file="shotgun_shell_insert.ogg",
+                volume=0.9,
+                loop=False,
+                delay=0.8,
+                pitch_variation=(0.97, 1.03),
+            ),
+            SoundLayer(
+                file="shotgun_shell_insert.ogg",
+                volume=0.9,
+                loop=False,
+                delay=1.2,
+                pitch_variation=(0.97, 1.03),
+            ),
+            SoundLayer(
+                file="shotgun_shell_insert.ogg",
+                volume=0.9,
+                loop=False,
+                delay=1.6,
+                pitch_variation=(0.97, 1.03),
+            ),
+            # Pump rack at the end (no pitch variation)
+            SoundLayer(
+                file="gunfire_shotgun_rack.ogg",
+                volume=0.9,
+                loop=False,
+                delay=2.1,
+            ),
+        ],
+        base_volume=0.8,
+        falloff_start=2.0,
+        max_distance=12.0,
+        priority=7,
+        rolloff_factor=1.0,
+    ),
 }
 
 

@@ -668,7 +668,7 @@ class SoundSystem:
                     y=y,
                     layer=idx,
                     volume_jitter=volume_jitter,
-                    pitch_jitter=pitch_jitter,
+                    pitch_jitter=None,  # Delayed layers use their own pitch_variation
                     delay=0.0,  # No additional delay when processed
                 )
                 self._delayed_sounds.append((play_at, delayed_event))

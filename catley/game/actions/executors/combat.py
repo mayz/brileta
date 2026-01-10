@@ -29,7 +29,7 @@ from catley.game.items.properties import TacticalProperty, WeaponProperty
 from catley.game.resolution import combat_arbiter
 from catley.game.resolution.base import ResolutionResult
 from catley.game.resolution.outcomes import CombatOutcome
-from catley.sound.weapon_sounds import get_weapon_sound_id
+from catley.sound.weapon_sounds import get_reload_sound_id, get_weapon_sound_id
 from catley.types import DeltaTime
 from catley.view.presentation import PresentationEvent
 
@@ -652,6 +652,18 @@ class ReloadExecutor(ActionExecutor):
             intent.actor.inventory.remove_from_inventory(ammo_item)
             ranged_attack.current_ammo = ranged_attack.max_ammo
             intent.actor.inventory._increment_revision()
+
+            # Play reload sound if one exists for this ammo type
+            reload_sound_id = get_reload_sound_id(ranged_attack.ammo_type)
+            if reload_sound_id:
+                publish_event(
+                    SoundEvent(
+                        sound_id=reload_sound_id,
+                        x=intent.actor.x,
+                        y=intent.actor.y,
+                    )
+                )
+
             publish_event(
                 MessageEvent(
                     f"{intent.actor.name} reloaded {intent.weapon.name}.",
