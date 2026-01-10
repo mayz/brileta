@@ -174,6 +174,13 @@ class InputHandler:
 
         assert self.controller.overlay_system is not None
 
+        # Handle quit command early - this should always work, even when dead
+        match event:
+            case tcod.event.Quit():
+                return QuitUICommand(self.app)
+            case tcod.event.KeyDown(sym=Keys.KEY_Q):
+                return QuitUICommand(self.app)
+
         # Check action panel hotkeys first (for immediate action execution)
         if isinstance(event, tcod.event.KeyDown) and hasattr(
             self.fm, "action_panel_view"
@@ -221,11 +228,6 @@ class InputHandler:
                         return None  # Action handled
 
         match event:
-            case tcod.event.Quit():
-                return QuitUICommand(self.app)
-            case tcod.event.KeyDown(sym=Keys.KEY_Q):
-                return QuitUICommand(self.app)
-
             case tcod.event.KeyDown(sym=Keys.KEY_I):
                 return OpenMenuUICommand(self.controller, InventoryMenu)
 
