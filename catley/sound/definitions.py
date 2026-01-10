@@ -25,6 +25,7 @@ class SoundLayer:
         None  # Random pitch variation range (e.g., (0.9, 1.1) for ±10%)
     )
     variants: list[str] | None = None  # List of alternative files for random variation
+    delay: float = 0.0  # Delay in seconds before playing this layer
 
 
 @dataclass
@@ -153,6 +154,14 @@ SOUND_DEFINITIONS = {
                 volume=1.0,
                 loop=False,
                 pitch_variation=(0.85, 1.0),
+                delay=0.0,  # Blast plays immediately
+            ),
+            SoundLayer(
+                file="gunfire_shotgun_rack.ogg",
+                volume=0.9,  # Slightly quieter than blast
+                loop=False,
+                pitch_variation=None,  # No pitch modulation on rack
+                delay=0.5,  # Rack plays 500ms after blast starts
             ),
         ],
         base_volume=0.95,

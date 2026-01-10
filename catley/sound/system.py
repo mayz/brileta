@@ -649,14 +649,34 @@ class SoundSystem:
             return
 
         # Determine which layers to play
-        layers_to_play = []
+        layers_to_play: list[tuple[int, SoundLayer]] = []
         if layer_index is not None:
             if 0 <= layer_index < len(sound_def.layers):
-                layers_to_play.append(sound_def.layers[layer_index])
+                layers_to_play.append((layer_index, sound_def.layers[layer_index]))
         else:
-            layers_to_play = sound_def.layers
+            layers_to_play = list(enumerate(sound_def.layers))
 
-        for layer in layers_to_play:
+        for idx, layer in layers_to_play:
+            # Handle delayed layers by scheduling them for later playback
+            if layer.delay > 0 and layer_index is None:
+                # Schedule this layer to play after delay (only when not already
+                # playing a specific layer to avoid infinite scheduling)
+                play_at = self.current_time + layer.delay
+                delayed_event = SoundEvent(
+                    sound_id=sound_id,
+                    x=x,
+                    y=y,
+                    layer=idx,
+                    volume_jitter=volume_jitter,
+                    pitch_jitter=pitch_jitter,
+                    delay=0.0,  # No additional delay when processed
+                )
+                self._delayed_sounds.append((play_at, delayed_event))
+                logger.debug(
+                    f"Scheduled delayed layer {idx} of {sound_id} "
+                    f"to play at {play_at:.2f}s (delay: {layer.delay:.2f}s)"
+                )
+                continue
             # Determine which file to play (handle variants)
             # Build pool of all available files (main + variants)
             all_files = [layer.file]
