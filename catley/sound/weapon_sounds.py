@@ -18,7 +18,8 @@ AMMO_TO_SOUND_FAMILY: dict[str, str] = {
 # Maps ammo type to reload sound definition ID.
 AMMO_TO_RELOAD_SOUND: dict[str, str] = {
     "shotgun": "gun_reload_shotgun",
-    # pistol and rifle reload sounds will be added when those sounds exist
+    "pistol": "gun_reload_magazine",
+    "rifle": "gun_reload_magazine",
 }
 
 

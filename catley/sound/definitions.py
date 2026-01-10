@@ -235,6 +235,41 @@ SOUND_DEFINITIONS = {
         priority=7,
         rolloff_factor=1.0,
     ),
+    # Magazine reload - used by pistols and rifles
+    # Sequence: mag release -> mag insert -> slide rack
+    # No pitch variation since each sound plays only once per reload
+    # Delays are absolute times based on sound durations:
+    #   mag_release: 0.3s, mag_insert: 0.3s, slide_rack: 0.57s
+    "gun_reload_magazine": SoundDefinition(
+        sound_id="gun_reload_magazine",
+        layers=[
+            # Layer 0: Magazine release click (plays immediately)
+            SoundLayer(
+                file="mag_release.ogg",
+                volume=0.9,
+                loop=False,
+            ),
+            # Layer 1: Magazine insert snap (after release finishes + gap)
+            SoundLayer(
+                file="mag_insert.ogg",
+                volume=0.9,
+                loop=False,
+                delay=0.6,  # 0.3s (mag_release duration) + 0.3s gap
+            ),
+            # Layer 2: Slide rack (after insert finishes + gap)
+            SoundLayer(
+                file="slide_rack.ogg",
+                volume=0.85,
+                loop=False,
+                delay=1.1,  # 0.6s (insert start) + 0.3s (insert duration) + 0.2s gap
+            ),
+        ],
+        base_volume=0.8,
+        falloff_start=2.0,
+        max_distance=12.0,
+        priority=7,
+        rolloff_factor=1.0,
+    ),
 }
 
 
