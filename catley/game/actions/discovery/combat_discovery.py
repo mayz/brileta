@@ -168,7 +168,7 @@ class CombatActionDiscovery:
                 melee = cast("MeleeAttack", weapon.melee_attack)
                 verb = melee._spec.verb
                 display_text = f"{verb.title()} {target.name} with {weapon.name}"
-                action_id = f"melee-{verb.title()}-{target.name}"
+                action_id = f"melee-{weapon.name}-{target.name}"
 
                 options.append(
                     ActionOption(
@@ -194,7 +194,7 @@ class CombatActionDiscovery:
                 if range_mods is None:
                     ranged_cap = cast("RangedAttack", weapon.ranged_attack)
                     verb = ranged_cap._spec.verb
-                    action_id = f"ranged-{verb.title()}-{target.name}"
+                    action_id = f"ranged-{weapon.name}-{target.name}"
                     out_of_range = (
                         self.formatter.get_attack_display_name(
                             weapon, "ranged", target.name
@@ -239,7 +239,7 @@ class CombatActionDiscovery:
                     ammo_warning = " (Low Ammo)"
 
                 display_name += ammo_warning
-                action_id = f"ranged-{verb.title()}-{target.name}"
+                action_id = f"ranged-{weapon.name}-{target.name}"
 
                 options.append(
                     ActionOption(

@@ -29,7 +29,11 @@ from catley.game.actors import Character, status_effects
 from catley.game.enums import Disposition
 from catley.game.game_world import GameWorld
 from catley.game.items.capabilities import RangedAttack
-from catley.game.items.item_types import COMBAT_KNIFE_TYPE, PISTOL_TYPE
+from catley.game.items.item_types import (
+    COMBAT_KNIFE_TYPE,
+    HUNTING_SHOTGUN_TYPE,
+    PISTOL_TYPE,
+)
 from tests.helpers import DummyGameWorld
 
 
@@ -503,3 +507,83 @@ def test_tile_specific_door_actions() -> None:
     assert go_action.name == "Go here"
     assert go_action.description == "Walk to this location"
     assert go_action.execute is not None  # Uses pathfinding
+
+
+def test_multiple_weapons_have_unique_action_ids() -> None:
+    """Regression test: weapons with same verb must have unique action IDs.
+
+    Previously, action IDs were generated as f"ranged-{verb}-{target}" which
+    caused ID collisions when multiple weapons used the same verb (e.g., "Shoot").
+    This broke the sticky hotkey system since it uses action IDs as dict keys.
+
+    Fix: Action IDs now include the weapon name to ensure uniqueness.
+    """
+    # Set up player with two ranged weapons that both use "Shoot" verb
+    gw = DummyGameWorld()
+    player = Character(
+        0,
+        0,
+        "@",
+        colors.WHITE,
+        "Player",
+        game_world=cast(GameWorld, gw),
+        strength=5,
+        observation=5,
+    )
+
+    # Create and equip both weapons
+    pistol = PISTOL_TYPE.create()
+    shotgun = HUNTING_SHOTGUN_TYPE.create()
+
+    # Give both weapons ammo
+    pistol_ranged = cast(RangedAttack, pistol.ranged_attack)
+    pistol_ranged.current_ammo = 6
+    shotgun_ranged = cast(RangedAttack, shotgun.ranged_attack)
+    shotgun_ranged.current_ammo = 2
+
+    player.inventory.equip_to_slot(pistol, 0)
+    player.inventory.equip_to_slot(shotgun, 1)
+
+    # Create a target at ranged distance
+    target = Character(
+        4,
+        0,
+        "T",
+        colors.RED,
+        "Target",
+        game_world=cast(GameWorld, gw),
+        agility=3,
+    )
+
+    gw.add_actor(player)
+    gw.add_actor(target)
+    gw.player = player
+
+    controller = DummyController(gw=gw)
+    disc = ActionDiscovery()
+    ctx = disc._build_context(cast(Controller, controller), player)
+
+    # Get combat options for this specific target
+    opts = disc._get_combat_options_for_target(
+        cast(Controller, controller), player, target, ctx
+    )
+
+    # Filter to ranged attacks only
+    ranged_opts = [o for o in opts if "ranged" in o.id.lower()]
+
+    # Should have two ranged options (one per weapon)
+    assert len(ranged_opts) == 2, f"Expected 2 ranged options, got {len(ranged_opts)}"
+
+    # Critical: action IDs must be unique
+    action_ids = [o.id for o in ranged_opts]
+    assert len(action_ids) == len(set(action_ids)), (
+        f"Action IDs must be unique but got duplicates: {action_ids}"
+    )
+
+    # Verify IDs contain weapon names (not just verb)
+    assert any(pistol.name in aid for aid in action_ids), (
+        f"Expected pistol name '{pistol.name}' in one of the action IDs: {action_ids}"
+    )
+    assert any(shotgun.name in aid for aid in action_ids), (
+        f"Expected shotgun name '{shotgun.name}' in one of the action IDs: {action_ids}"
+    )
