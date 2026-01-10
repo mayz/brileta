@@ -649,6 +649,9 @@ class ReloadExecutor(ActionExecutor):
                 break
 
         if ammo_item:
+            # Calculate shells to load BEFORE updating current_ammo
+            shells_to_load = ranged_attack.max_ammo - ranged_attack.current_ammo
+
             intent.actor.inventory.remove_from_inventory(ammo_item)
             ranged_attack.current_ammo = ranged_attack.max_ammo
             intent.actor.inventory._increment_revision()
@@ -661,6 +664,7 @@ class ReloadExecutor(ActionExecutor):
                         sound_id=reload_sound_id,
                         x=intent.actor.x,
                         y=intent.actor.y,
+                        params={"shell_count": shells_to_load},
                     )
                 )
 

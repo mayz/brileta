@@ -13,6 +13,16 @@ class SoundLayer:
 
     Represents one audio file that can be played as part of a sound effect.
     Multiple layers can be combined to create complex sounds.
+
+    Repeat configuration:
+        repeat_count: Fixed number of times to play this layer. None means play once.
+        repeat_count_param: Parameter name to read repeat count from SoundEvent.params.
+            Takes precedence over repeat_count if both are set.
+        repeat_delay: Delay in seconds between each repetition.
+
+    Relative timing:
+        after_layer: If set, this layer's delay is relative to the completion of
+            the specified layer index. Completion = (repeat_count - 1) * repeat_delay.
     """
 
     file: str  # Path to the sound file relative to assets/sounds/
@@ -26,6 +36,14 @@ class SoundLayer:
     )
     variants: list[str] | None = None  # List of alternative files for random variation
     delay: float = 0.0  # Delay in seconds before playing this layer
+
+    # Repeat configuration
+    repeat_count: int | None = None  # Fixed repeat count (None = play once)
+    repeat_count_param: str | None = None  # Parameter name for dynamic repeat count
+    repeat_delay: float = 0.0  # Delay in seconds between repetitions
+
+    # Relative timing
+    after_layer: int | None = None  # Layer index to wait for before playing
 
 
 @dataclass
@@ -187,62 +205,28 @@ SOUND_DEFINITIONS = {
         priority=7,
         rolloff_factor=1.0,
     ),
-    # Shotgun reload - 5 shell inserts followed by pump rack
-    # FIXME: This always plays 5 shell inserts regardless of how many shells are
-    # actually being loaded (e.g., reloading 1 shell still plays 5 insert sounds).
-    # To fix: generate sounds dynamically in ReloadExecutor based on
-    # (max_ammo - current_ammo) shells needed.
-    #
-    # Important: when implementing dynamic reload sounds, the shell inserts can
-    # have pitch variation, but the final pump rack sound must NOT have pitch
-    # variation (it sounds unrealistic). Ensure the rack sound is emitted without
-    # pitch_jitter - see system.py where delayed layers intentionally don't
-    # inherit event pitch_jitter for this reason.
+    # Shotgun reload - dynamic shell inserts followed by pump rack
+    # Shell count is determined at runtime via params["shell_count"]
     "gun_reload_shotgun": SoundDefinition(
         sound_id="gun_reload_shotgun",
         layers=[
-            # Shell inserts (5 shells, 400ms apart, subtle pitch variation)
+            # Shell inserts - repeat count from params, 400ms apart
             SoundLayer(
                 file="shotgun_shell_insert.ogg",
                 volume=0.9,
                 loop=False,
-                delay=0.0,
                 pitch_variation=(0.97, 1.03),
+                repeat_count_param="shell_count",
+                repeat_count=5,  # Fallback if param not provided
+                repeat_delay=0.4,
             ),
-            SoundLayer(
-                file="shotgun_shell_insert.ogg",
-                volume=0.9,
-                loop=False,
-                delay=0.4,
-                pitch_variation=(0.97, 1.03),
-            ),
-            SoundLayer(
-                file="shotgun_shell_insert.ogg",
-                volume=0.9,
-                loop=False,
-                delay=0.8,
-                pitch_variation=(0.97, 1.03),
-            ),
-            SoundLayer(
-                file="shotgun_shell_insert.ogg",
-                volume=0.9,
-                loop=False,
-                delay=1.2,
-                pitch_variation=(0.97, 1.03),
-            ),
-            SoundLayer(
-                file="shotgun_shell_insert.ogg",
-                volume=0.9,
-                loop=False,
-                delay=1.6,
-                pitch_variation=(0.97, 1.03),
-            ),
-            # Pump rack at the end (no pitch variation)
+            # Pump rack after shell inserts complete (no pitch variation)
             SoundLayer(
                 file="gunfire_shotgun_rack.ogg",
                 volume=0.9,
                 loop=False,
-                delay=2.1,
+                delay=0.45,  # Gap after last shell insert finishes
+                after_layer=0,  # Wait for layer 0 (shells) to complete
             ),
         ],
         base_volume=0.8,

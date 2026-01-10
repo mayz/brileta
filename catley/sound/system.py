@@ -473,6 +473,7 @@ class SoundSystem:
                 layer_index=event.layer,
                 volume_jitter=event.volume_jitter,
                 pitch_jitter=event.pitch_jitter,
+                params=event.params,
             )
 
     def _load_sound(self, file_name: str) -> LoadedSound | None:
@@ -608,7 +609,106 @@ class SoundSystem:
                 layer_index=event.layer,
                 volume_jitter=event.volume_jitter,
                 pitch_jitter=event.pitch_jitter,
+                params=event.params,
             )
+
+    def _get_repeat_count(
+        self,
+        layer: SoundLayer,
+        params: dict[str, int | float] | None,
+    ) -> int:
+        """Get the effective repeat count for a layer.
+
+        Args:
+            layer: The sound layer to get repeat count for.
+            params: Runtime parameters from the SoundEvent.
+
+        Returns:
+            Number of times to play this layer (minimum 1).
+        """
+        # Parameter takes precedence if set and available
+        if layer.repeat_count_param and params:
+            param_value = params.get(layer.repeat_count_param)
+            if param_value is not None:
+                return max(1, int(param_value))
+            logger.warning(
+                f"Sound param '{layer.repeat_count_param}' not found, "
+                f"falling back to repeat_count={layer.repeat_count}"
+            )
+
+        # Fall back to static repeat_count, or 1 if not set
+        if layer.repeat_count is not None:
+            return max(1, layer.repeat_count)
+
+        return 1
+
+    def _play_layer_instance(
+        self,
+        layer: SoundLayer,
+        sound_id: str,
+        volume: float,
+        volume_jitter: tuple[float, float] | None,
+        pitch_jitter: tuple[float, float] | None,
+    ) -> None:
+        """Play a single instance of a sound layer.
+
+        Args:
+            layer: The sound layer to play.
+            sound_id: ID of the parent sound (for variant tracking).
+            volume: Base volume after distance calculation.
+            volume_jitter: Optional volume variation (min, max).
+            pitch_jitter: Optional pitch variation (min, max).
+        """
+        if not self.audio_backend:
+            return
+
+        # Determine which file to play (handle variants)
+        all_files = [layer.file]
+        if layer.variants:
+            all_files.extend(layer.variants)
+
+        # Avoid playing the same variant twice in a row
+        last_played = self._last_played_variant.get(sound_id)
+        if last_played in all_files and len(all_files) > 1:
+            available_files = [f for f in all_files if f != last_played]
+        else:
+            available_files = all_files
+
+        file_to_play = random.choice(available_files)
+        self._last_played_variant[sound_id] = file_to_play
+
+        loaded_sound = self._load_sound(file_to_play)
+        if not loaded_sound:
+            return
+
+        # Calculate final volume with jitter
+        layer_volume = volume * layer.volume
+        if volume_jitter:
+            layer_volume *= random.uniform(*volume_jitter)
+
+        # Apply pitch variation
+        sound_to_play = loaded_sound
+
+        # Combine layer pitch variation with event pitch jitter
+        pitch_factor = 1.0
+        if layer.pitch_variation:
+            pitch_factor *= random.uniform(*layer.pitch_variation)
+        if pitch_jitter:
+            pitch_factor *= random.uniform(*pitch_jitter)
+
+        if pitch_factor != 1.0:
+            sound_to_play = AudioLoader.pitch_shift(loaded_sound, pitch_factor)
+
+        self.audio_backend.play_sound(
+            sound_to_play,
+            volume=layer_volume,
+            loop=False,
+        )
+
+        logger.debug(
+            f"Played one-shot: {sound_id} ({file_to_play}), "
+            f"vol={layer_volume:.2f}, pitch={pitch_factor:.2f}"
+        )
 
     def play_one_shot(
         self,
@@ -618,16 +718,19 @@ class SoundSystem:
         layer_index: int | None = None,
         volume_jitter: tuple[float, float] | None = None,
         pitch_jitter: tuple[float, float] | None = None,
+        params: dict[str, int | float] | None = None,
     ) -> None:
         """Play a one-shot sound effect at a specific location.
 
         Args:
-            sound_id: ID of the sound to play
-            x: X position of the sound
-            y: Y position of the sound
-            layer_index: Optional index of specific layer to play
-            volume_jitter: Optional volume variation (min, max)
-            pitch_jitter: Optional pitch variation (min, max)
+            sound_id: ID of the sound to play.
+            x: X position of the sound.
+            y: Y position of the sound.
+            layer_index: Optional index of specific layer to play. If None, plays
+                all layers with repeat and timing logic applied.
+            volume_jitter: Optional volume variation (min, max).
+            pitch_jitter: Optional pitch variation (min, max).
+            params: Runtime parameters for parameterized sounds.
         """
         if not self.audio_backend:
             return
@@ -648,80 +751,67 @@ class SoundSystem:
         if volume <= 0.0:
             return
 
-        # Determine which layers to play
-        layers_to_play: list[tuple[int, SoundLayer]] = []
+        # If playing a specific layer (from delayed scheduling), just play it directly
         if layer_index is not None:
             if 0 <= layer_index < len(sound_def.layers):
-                layers_to_play.append((layer_index, sound_def.layers[layer_index]))
-        else:
-            layers_to_play = list(enumerate(sound_def.layers))
-
-        for idx, layer in layers_to_play:
-            # Handle delayed layers by scheduling them for later playback
-            if layer.delay > 0 and layer_index is None:
-                # Schedule this layer to play after delay (only when not already
-                # playing a specific layer to avoid infinite scheduling)
-                play_at = self.current_time + layer.delay
-                delayed_event = SoundEvent(
-                    sound_id=sound_id,
-                    x=x,
-                    y=y,
-                    layer=idx,
-                    volume_jitter=volume_jitter,
-                    pitch_jitter=None,  # Delayed layers use their own pitch_variation
-                    delay=0.0,  # No additional delay when processed
+                layer = sound_def.layers[layer_index]
+                self._play_layer_instance(
+                    layer, sound_id, volume, volume_jitter, pitch_jitter
                 )
-                self._delayed_sounds.append((play_at, delayed_event))
-                logger.debug(
-                    f"Scheduled delayed layer {idx} of {sound_id} "
-                    f"to play at {play_at:.2f}s (delay: {layer.delay:.2f}s)"
-                )
-                continue
-            # Determine which file to play (handle variants)
-            # Build pool of all available files (main + variants)
-            all_files = [layer.file]
-            if layer.variants:
-                all_files.extend(layer.variants)
+            return
 
-            # Avoid playing the same variant twice in a row
-            last_played = self._last_played_variant.get(sound_id)
-            if last_played in all_files and len(all_files) > 1:
-                available_files = [f for f in all_files if f != last_played]
-            else:
-                available_files = all_files
+        # Playing all layers - handle repeats and after_layer dependencies
+        layers = sound_def.layers
 
-            file_to_play = random.choice(available_files)
-            self._last_played_variant[sound_id] = file_to_play
+        # First pass: calculate completion times for each layer (for after_layer)
+        # Completion time = time when the last repeat of this layer plays
+        layer_completion_times: dict[int, float] = {}
+        for idx, layer in enumerate(layers):
+            repeat_count = self._get_repeat_count(layer, params)
+            # Last repeat plays at (repeat_count - 1) * repeat_delay from layer start
+            completion = (repeat_count - 1) * layer.repeat_delay
+            layer_completion_times[idx] = completion
 
-            loaded_sound = self._load_sound(file_to_play)
-            if not loaded_sound:
-                continue
+        # Second pass: schedule all layer instances
+        for idx, layer in enumerate(layers):
+            # Calculate base delay for this layer
+            base_delay = layer.delay
 
-            # Calculate final volume with jitter
-            layer_volume = volume * layer.volume
-            if volume_jitter:
-                layer_volume *= random.uniform(*volume_jitter)
+            # Add completion time of referenced layer if using after_layer
+            if layer.after_layer is not None:
+                if layer.after_layer in layer_completion_times:
+                    base_delay += layer_completion_times[layer.after_layer]
+                else:
+                    logger.warning(
+                        f"Layer {idx} references invalid after_layer="
+                        f"{layer.after_layer}"
+                    )
 
-            # Apply pitch variation
-            sound_to_play = loaded_sound
+            repeat_count = self._get_repeat_count(layer, params)
 
-            # Combine layer pitch variation with event pitch jitter
-            pitch_factor = 1.0
-            if layer.pitch_variation:
-                pitch_factor *= random.uniform(*layer.pitch_variation)
-            if pitch_jitter:
-                pitch_factor *= random.uniform(*pitch_jitter)
+            for i in range(repeat_count):
+                instance_delay = base_delay + (i * layer.repeat_delay)
 
-            if pitch_factor != 1.0:
-                sound_to_play = AudioLoader.pitch_shift(loaded_sound, pitch_factor)
-
-            self.audio_backend.play_sound(
-                sound_to_play,
-                volume=layer_volume,
-                loop=False,
-            )
-
-            logger.debug(
-                f"Played one-shot: {sound_id} ({file_to_play}) at ({x}, {y}), "
-                f"vol={layer_volume:.2f}, pitch={pitch_factor:.2f}"
-            )
+                if instance_delay > 0:
+                    # Schedule for later playback
+                    play_at = self.current_time + instance_delay
+                    delayed_event = SoundEvent(
+                        sound_id=sound_id,
+                        x=x,
+                        y=y,
+                        layer=idx,
+                        volume_jitter=volume_jitter,
+                        pitch_jitter=None,  # Delayed layers use own pitch_variation
+                        delay=0.0,
+                        params=params,
+                    )
+                    self._delayed_sounds.append((play_at, delayed_event))
+                    logger.debug(
+                        f"Scheduled layer {idx} repeat {i + 1}/{repeat_count} of "
+                        f"{sound_id} at {play_at:.2f}s (delay: {instance_delay:.2f}s)"
+                    )
+                else:
+                    # Play immediately
+                    self._play_layer_instance(
+                        layer, sound_id, volume, volume_jitter, pitch_jitter
+                    )

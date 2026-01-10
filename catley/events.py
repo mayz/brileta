@@ -79,7 +79,18 @@ class ScreenShakeEvent(GameEvent):
 
 @dataclass
 class SoundEvent(GameEvent):
-    """Event for triggering a one-shot sound effect."""
+    """Event for triggering a one-shot sound effect.
+
+    Attributes:
+        sound_id: ID of the sound definition to play.
+        x, y: World position of the sound source.
+        layer: Optional specific layer index to play (None = all layers).
+        volume_jitter: Optional (min, max) volume multiplier range.
+        pitch_jitter: Optional (min, max) pitch multiplier range.
+        delay: Delay in seconds before playing.
+        params: Runtime parameters for parameterized sounds. Used by layers with
+            repeat_count_param to determine dynamic repeat counts.
+    """
 
     sound_id: str
     x: int
@@ -87,7 +98,8 @@ class SoundEvent(GameEvent):
     layer: int | None = None
     volume_jitter: tuple[float, float] | None = None
     pitch_jitter: tuple[float, float] | None = None
-    delay: float = 0.0  # Delay in seconds before playing
+    delay: float = 0.0
+    params: dict[str, int | float] | None = None
 
 
 class EventBus:

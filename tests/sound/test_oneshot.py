@@ -136,5 +136,176 @@ class TestOneShotSounds(unittest.TestCase):
             self.assertIn("var1.ogg", str(args[0]))
 
 
+class TestParameterizedSounds(unittest.TestCase):
+    """Tests for parameterized sound playback (repeat counts, after_layer, etc.)."""
+
+    def setUp(self):
+        reset_event_bus_for_testing()
+        self.sound_system = SoundSystem()
+        self.mock_backend = MagicMock()
+        self.sound_system.set_audio_backend(self.mock_backend)
+
+        # Set listener at origin
+        self.sound_system.update(0, 0, MagicMock(), 0.1)
+
+        # Create a parameterized sound definition (like shotgun reload)
+        self.param_sound_id = "test_reload"
+        self.param_sound_def = SoundDefinition(
+            sound_id=self.param_sound_id,
+            layers=[
+                # Shell insert layer - repeat based on params
+                SoundLayer(
+                    file="shell_insert.ogg",
+                    volume=0.9,
+                    loop=False,
+                    repeat_count_param="shell_count",
+                    repeat_count=5,  # Fallback
+                    repeat_delay=0.4,
+                ),
+                # Rack layer - plays after shells complete
+                SoundLayer(
+                    file="rack.ogg",
+                    volume=0.9,
+                    loop=False,
+                    delay=0.1,
+                    after_layer=0,
+                ),
+            ],
+            base_volume=1.0,
+            max_distance=10.0,
+        )
+
+        # Save and patch definitions
+        self.original_defs = SOUND_DEFINITIONS.copy()
+        SOUND_DEFINITIONS[self.param_sound_id] = self.param_sound_def
+
+    def tearDown(self):
+        SOUND_DEFINITIONS.clear()
+        SOUND_DEFINITIONS.update(self.original_defs)
+
+    def test_repeat_count_from_params(self):
+        """Test that repeat count is read from params."""
+        # Play with 3 shells
+        self.sound_system.play_one_shot(
+            self.param_sound_id, 0, 0, params={"shell_count": 3}
+        )
+
+        # First layer should be played immediately (delay=0)
+        self.assertEqual(self.mock_backend.play_sound.call_count, 1)
+
+        # Remaining 2 shell inserts + rack should be scheduled as delayed sounds
+        # 3 shells total: 1 immediate + 2 delayed = 3 shell sounds
+        # Plus 1 rack sound = 4 total scheduled events
+        # Check delayed sounds queue
+        delayed_count = len(self.sound_system._delayed_sounds)
+        # 2 more shell inserts (at 0.4, 0.8) + 1 rack (at 0.8 + 0.1 = 0.9)
+        self.assertEqual(delayed_count, 3)
+
+    def test_repeat_count_fallback_when_param_missing(self):
+        """Test fallback to repeat_count when param is missing."""
+        # Play without params - should use repeat_count=5
+        self.sound_system.play_one_shot(self.param_sound_id, 0, 0, params=None)
+
+        # 1 immediate play + 4 delayed shell inserts + 1 delayed rack = 5 delayed
+        delayed_count = len(self.sound_system._delayed_sounds)
+        self.assertEqual(delayed_count, 5)  # 4 shells + 1 rack
+
+    def test_after_layer_timing(self):
+        """Test that after_layer calculates correct delay based on repeat count."""
+        # With 3 shells:
+        # - Shell 1 at 0.0, Shell 2 at 0.4, Shell 3 at 0.8
+        # - Layer 0 completion time = (3-1) * 0.4 = 0.8
+        # - Rack delay = layer_0_completion + 0.1 = 0.9
+        self.sound_system.play_one_shot(
+            self.param_sound_id, 0, 0, params={"shell_count": 3}
+        )
+
+        # Find the rack sound in delayed queue
+        rack_events = [
+            (t, e)
+            for t, e in self.sound_system._delayed_sounds
+            if e.layer == 1  # Rack is layer 1
+        ]
+
+        self.assertEqual(len(rack_events), 1)
+        play_time, _ = rack_events[0]
+
+        # Should be scheduled at current_time + 0.9
+        expected_time = self.sound_system.current_time + 0.9
+        self.assertAlmostEqual(play_time, expected_time, places=5)
+
+    def test_single_shell_timing(self):
+        """Test timing with a single shell (edge case)."""
+        self.sound_system.play_one_shot(
+            self.param_sound_id, 0, 0, params={"shell_count": 1}
+        )
+
+        # 1 shell plays immediately, rack is delayed
+        self.assertEqual(self.mock_backend.play_sound.call_count, 1)
+
+        # Only rack should be in delayed queue
+        # Layer 0 completion = (1-1) * 0.4 = 0.0
+        # Rack delay = 0.0 + 0.1 = 0.1
+        delayed_count = len(self.sound_system._delayed_sounds)
+        self.assertEqual(delayed_count, 1)
+
+        rack_time, _ = self.sound_system._delayed_sounds[0]
+        expected_time = self.sound_system.current_time + 0.1
+        self.assertAlmostEqual(rack_time, expected_time, places=5)
+
+    def test_params_passed_via_sound_event(self):
+        """Test that params work when triggered via SoundEvent."""
+        event = SoundEvent(
+            sound_id=self.param_sound_id, x=0, y=0, params={"shell_count": 2}
+        )
+        publish_event(event)
+
+        # 1 immediate + 1 delayed shell + 1 delayed rack = 2 delayed
+        delayed_count = len(self.sound_system._delayed_sounds)
+        self.assertEqual(delayed_count, 2)
+
+    def test_zero_repeat_count_floors_to_one(self):
+        """Test that repeat count of 0 is treated as 1."""
+        self.sound_system.play_one_shot(
+            self.param_sound_id, 0, 0, params={"shell_count": 0}
+        )
+
+        # Should play at least once (minimum 1)
+        self.assertEqual(self.mock_backend.play_sound.call_count, 1)
+
+    def test_delayed_sounds_process_correctly(self):
+        """Test that delayed repeat sounds are processed correctly."""
+        # current_time is 0.1 after setUp (from the update call)
+        start_time = self.sound_system.current_time
+
+        self.sound_system.play_one_shot(
+            self.param_sound_id, 0, 0, params={"shell_count": 2}
+        )
+
+        # Initial: 1 immediate play (shell 1 at delay=0)
+        initial_plays = self.mock_backend.play_sound.call_count
+        self.assertEqual(initial_plays, 1)
+
+        # With 2 shells:
+        # - Shell 1: delay=0.0 (immediate)
+        # - Shell 2: delay=0.4, scheduled at start_time + 0.4
+        # - Rack: after_layer=0, delay=0.1, so delay = 0.4 + 0.1 = 0.5
+        #         scheduled at start_time + 0.5
+
+        # Advance time past shell 2 (at 0.4) but before rack (at 0.5)
+        self.sound_system.current_time = start_time + 0.45
+        self.sound_system._process_delayed_sounds()
+
+        # Should have played only the second shell insert (not rack yet)
+        self.assertEqual(self.mock_backend.play_sound.call_count, 2)
+
+        # Advance time past rack sound (at 0.5 from start)
+        self.sound_system.current_time = start_time + 0.6
+        self.sound_system._process_delayed_sounds()
+
+        # Should have played the rack
+        self.assertEqual(self.mock_backend.play_sound.call_count, 3)
+
+
 if __name__ == "__main__":
     unittest.main()
