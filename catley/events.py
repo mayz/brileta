@@ -87,6 +87,7 @@ class SoundEvent(GameEvent):
     layer: int | None = None
     volume_jitter: tuple[float, float] | None = None
     pitch_jitter: tuple[float, float] | None = None
+    delay: float = 0.0  # Delay in seconds before playing
 
 
 class EventBus:

@@ -113,6 +113,23 @@ SNIPER_RIFLE_TYPE = ItemType(
     ),
 )
 
+HUNTING_SHOTGUN_TYPE = ItemType(
+    name="Hunting Shotgun",
+    description="Powerful at close range",
+    size=ItemSize.BIG,
+    ranged_attack=RangedAttackSpec(
+        damage_die="d8",
+        ammo_type="shotgun",
+        max_ammo=5,
+        optimal_range=5,
+        max_range=10,
+        properties={WeaponProperty.PREFERRED},
+    ),
+    melee_attack=MeleeAttackSpec(
+        "d6", {WeaponProperty.TWO_HANDED, WeaponProperty.AWKWARD}
+    ),
+)
+
 SUBMACHINE_GUN_TYPE = ItemType(
     name="Submachine Gun",
     description="Full-auto weapon effective at close range",
@@ -225,6 +242,13 @@ RIFLE_MAGAZINE_TYPE = ItemType(
     description="Rifle ammo magazine",
     size=ItemSize.TINY,
     ammo=AmmoSpec("rifle", 5),
+)
+
+SHOTGUN_SHELLS_TYPE = ItemType(
+    name="Shotgun Shells",
+    description="12 gauge shotgun shells",
+    size=ItemSize.TINY,
+    ammo=AmmoSpec("shotgun", 5),
 )
 
 # Various items to test.

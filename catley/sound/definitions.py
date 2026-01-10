@@ -109,6 +109,75 @@ SOUND_DEFINITIONS = {
         priority=3,
         rolloff_factor=1.5,  # Sharp falloff for hissing sounds
     ),
+    # Gunfire sounds - one per weapon type (Fallout 1/2 style)
+    "gun_fire_pistol": SoundDefinition(
+        sound_id="gun_fire_pistol",
+        layers=[
+            SoundLayer(
+                file="gunfire_pistol_01.ogg",
+                variants=["gunfire_pistol_02.ogg", "gunfire_pistol_03.ogg"],
+                volume=1.0,
+                loop=False,
+                pitch_variation=(0.92, 1.08),
+            ),
+        ],
+        base_volume=0.8,
+        falloff_start=3.0,
+        max_distance=18.0,
+        priority=8,
+        rolloff_factor=0.8,
+    ),
+    "gun_fire_rifle": SoundDefinition(
+        sound_id="gun_fire_rifle",
+        layers=[
+            SoundLayer(
+                file="gunfire_rifle_01.ogg",
+                variants=["gunfire_rifle_02.ogg", "gunfire_rifle_03.ogg"],
+                volume=1.0,
+                loop=False,
+                pitch_variation=(0.88, 1.05),
+            ),
+        ],
+        base_volume=0.9,
+        falloff_start=4.0,
+        max_distance=25.0,
+        priority=9,
+        rolloff_factor=0.7,
+    ),
+    "gun_fire_shotgun": SoundDefinition(
+        sound_id="gun_fire_shotgun",
+        layers=[
+            SoundLayer(
+                file="gunfire_shotgun_01.ogg",
+                variants=["gunfire_shotgun_02.ogg", "gunfire_shotgun_03.ogg"],
+                volume=1.0,
+                loop=False,
+                pitch_variation=(0.85, 1.0),
+            ),
+        ],
+        base_volume=0.95,
+        falloff_start=3.5,
+        max_distance=22.0,
+        priority=9,
+        rolloff_factor=0.75,
+    ),
+    # Dry fire click - universal for all weapons
+    "gun_dry_fire": SoundDefinition(
+        sound_id="gun_dry_fire",
+        layers=[
+            SoundLayer(
+                file="gunfire_dry_fire.ogg",
+                volume=1.0,
+                loop=False,
+                pitch_variation=(0.95, 1.05),
+            ),
+        ],
+        base_volume=0.6,
+        falloff_start=1.5,
+        max_distance=8.0,
+        priority=7,
+        rolloff_factor=1.0,
+    ),
 }
 
 

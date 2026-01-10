@@ -10,6 +10,7 @@ from catley.events import (
     EffectEvent,
     MessageEvent,
     ScreenShakeEvent,
+    SoundEvent,
     publish_event,
 )
 from catley.game import ranges
@@ -28,6 +29,7 @@ from catley.game.items.properties import TacticalProperty, WeaponProperty
 from catley.game.resolution import combat_arbiter
 from catley.game.resolution.base import ResolutionResult
 from catley.game.resolution.outcomes import CombatOutcome
+from catley.sound.weapon_sounds import get_weapon_sound_id
 from catley.types import DeltaTime
 from catley.view.presentation import PresentationEvent
 
@@ -327,16 +329,34 @@ class AttackExecutor(ActionExecutor):
                     MessageEvent(f"No ammo left in {weapon.name}!", colors.RED)
                 )
 
-        # Emit muzzle flash for ranged attacks
-        if attack == weapon.ranged_attack:
-            self._emit_muzzle_flash(intent)
+        # Emit muzzle flash and gunfire sound for ranged attacks
+        if attack == weapon.ranged_attack and weapon.ranged_attack is not None:
+            self._emit_muzzle_flash(intent, weapon)
+
+            # Emit dry fire click if weapon is now empty
+            if weapon.ranged_attack.current_ammo == 0:
+                self._emit_dry_fire(intent)
 
         return attack_result
 
-    def _emit_muzzle_flash(self, intent: AttackIntent) -> None:
-        """Emit muzzle flash particle effect via presentation layer."""
+    def _emit_muzzle_flash(self, intent: AttackIntent, weapon: Item) -> None:
+        """Emit muzzle flash and gunfire sound via presentation layer."""
         direction_x = intent.defender.x - intent.attacker.x
         direction_y = intent.defender.y - intent.attacker.y
+
+        # Build sound list based on weapon's ammo type
+        sound_events: list[SoundEvent] = []
+        if weapon.ranged_attack:
+            sound_id = get_weapon_sound_id(weapon.ranged_attack.ammo_type)
+            if sound_id:
+                sound_events.append(
+                    SoundEvent(
+                        sound_id=sound_id,
+                        x=intent.attacker.x,
+                        y=intent.attacker.y,
+                        pitch_jitter=(0.95, 1.05),
+                    )
+                )
 
         # Use presentation layer for staggered combat feedback
         is_player = intent.attacker == intent.controller.gw.player
@@ -349,6 +369,29 @@ class AttackExecutor(ActionExecutor):
                         intent.attacker.y,
                         direction_x=direction_x,
                         direction_y=direction_y,
+                    )
+                ],
+                sound_events=sound_events,
+                source_x=intent.attacker.x,
+                source_y=intent.attacker.y,
+                is_player_action=is_player,
+            )
+        )
+
+    def _emit_dry_fire(self, intent: AttackIntent) -> None:
+        """Emit dry fire click sound when weapon empties.
+
+        Uses a 150ms delay so the click plays after the gunshot finishes.
+        """
+        is_player = intent.attacker == intent.controller.gw.player
+        publish_event(
+            PresentationEvent(
+                sound_events=[
+                    SoundEvent(
+                        sound_id="gun_dry_fire",
+                        x=intent.attacker.x,
+                        y=intent.attacker.y,
+                        delay=0.15,  # 150ms after gunshot
                     )
                 ],
                 source_x=intent.attacker.x,

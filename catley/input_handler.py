@@ -186,6 +186,10 @@ class InputHandler:
                 key_char = chr(event.sym).lower()
 
             if key_char:
+                # Don't process hotkey actions if player is dead
+                if not self.p.health.is_alive():
+                    return None
+
                 hotkeys = self.fm.action_panel_view.get_hotkeys()
                 if key_char in hotkeys:
                     action_option = hotkeys[key_char]

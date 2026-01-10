@@ -135,12 +135,14 @@ class TestVisualEffectsIdleAnimation:
 
     def test_actors_desynchronized(self):
         """Different components should have different phases."""
-        comp1 = VisualEffectsComponent()
-        comp2 = VisualEffectsComponent()
+        # Create multiple components and verify we get variety in offsets.
+        # With 10 components and 1000 possible offset values, getting all
+        # identical values is astronomically unlikely (1 in 10^27).
+        components = [VisualEffectsComponent() for _ in range(10)]
+        unique_offsets = {c._idle_timer_offset for c in components}
 
-        # Random offsets mean they shouldn't be in sync
-        # (This test may occasionally fail due to randomness, but very unlikely)
-        assert comp1._idle_timer_offset != comp2._idle_timer_offset
+        # We should have at least 2 different offsets among 10 components
+        assert len(unique_offsets) >= 2, "Expected variety in timer offsets"
 
     def test_set_idle_profile_changes_behavior(self):
         """Changing profile should affect animation behavior."""

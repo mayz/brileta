@@ -15,11 +15,11 @@ from catley.game.items.item_core import Item
 from catley.game.items.item_types import (
     COMBAT_KNIFE_TYPE,
     FOOD_TYPE,
+    HUNTING_SHOTGUN_TYPE,
     PISTOL_MAGAZINE_TYPE,
     PISTOL_TYPE,
     REVOLVER_TYPE,
-    RIFLE_MAGAZINE_TYPE,
-    SNIPER_RIFLE_TYPE,
+    SHOTGUN_SHELLS_TYPE,
 )
 from catley.game.lights import DynamicLight, GlobalLight, LightSource
 from catley.types import TileCoord, WorldTileCoord, WorldTilePos
@@ -223,13 +223,13 @@ class GameWorld:
 
     def _setup_player_inventory(self, player: Character) -> None:
         """Equip the player's initial gear and ammunition."""
-        player.inventory.equip_to_slot(SNIPER_RIFLE_TYPE.create(), 1)
+        player.inventory.equip_to_slot(HUNTING_SHOTGUN_TYPE.create(), 1)
         player.inventory.add_to_inventory(COMBAT_KNIFE_TYPE.create())
 
         player.inventory.add_to_inventory(PISTOL_MAGAZINE_TYPE.create())
         player.inventory.add_to_inventory(PISTOL_MAGAZINE_TYPE.create())
-        player.inventory.add_to_inventory(RIFLE_MAGAZINE_TYPE.create())
-        player.inventory.add_to_inventory(RIFLE_MAGAZINE_TYPE.create())
+        player.inventory.add_to_inventory(SHOTGUN_SHELLS_TYPE.create())
+        player.inventory.add_to_inventory(SHOTGUN_SHELLS_TYPE.create())
 
         player.inventory.add_to_inventory(FOOD_TYPE.create())
 

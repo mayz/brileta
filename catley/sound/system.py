@@ -77,6 +77,12 @@ class SoundSystem:
         self.previous_listener_x: float = 0.0
         self.previous_listener_y: float = 0.0
 
+        # Track last played variant per sound_id to avoid repeats
+        self._last_played_variant: dict[str, str] = {}
+
+        # Track delayed sounds as (play_at_time, event) tuples
+        self._delayed_sounds: list[tuple[float, SoundEvent]] = []
+
         # Subscribe to sound events
         subscribe_to_event(SoundEvent, self.handle_sound_event)
 
@@ -239,6 +245,9 @@ class SoundSystem:
 
         # Clean up finished sounds
         self._cleanup_finished_sounds()
+
+        # Process any delayed sounds that are now due
+        self._process_delayed_sounds()
 
         # Update audio backend
         if self.audio_backend:
@@ -441,6 +450,31 @@ class SoundSystem:
                 self.playing_sounds.remove(playing)
             logger.debug(f"Cleaned up finished sound: {playing.layer.file}")
 
+    def _process_delayed_sounds(self) -> None:
+        """Process delayed sounds that are due to play.
+
+        Checks all scheduled sounds and plays any whose delay has expired.
+        """
+        if not self._delayed_sounds:
+            return
+
+        # Separate sounds that are due from those still waiting
+        due_sounds = [(t, e) for t, e in self._delayed_sounds if t <= self.current_time]
+        self._delayed_sounds = [
+            (t, e) for t, e in self._delayed_sounds if t > self.current_time
+        ]
+
+        # Play each due sound
+        for _, event in due_sounds:
+            self.play_one_shot(
+                sound_id=event.sound_id,
+                x=event.x,
+                y=event.y,
+                layer_index=event.layer,
+                volume_jitter=event.volume_jitter,
+                pitch_jitter=event.pitch_jitter,
+            )
+
     def _load_sound(self, file_name: str) -> LoadedSound | None:
         """Load a sound file, using cache if available.
 
@@ -516,6 +550,8 @@ class SoundSystem:
         # Reset state
         self.playing_sounds.clear()
         self._sound_cache.clear()
+        self._last_played_variant.clear()
+        self._delayed_sounds.clear()
         self.current_time = 0.0
 
         # Reset listener position so it re-initializes on next update
@@ -560,14 +596,19 @@ class SoundSystem:
         Args:
             event: The sound event to handle
         """
-        self.play_one_shot(
-            sound_id=event.sound_id,
-            x=event.x,
-            y=event.y,
-            layer_index=event.layer,
-            volume_jitter=event.volume_jitter,
-            pitch_jitter=event.pitch_jitter,
-        )
+        if event.delay > 0:
+            # Schedule sound to play after delay
+            play_at = self.current_time + event.delay
+            self._delayed_sounds.append((play_at, event))
+        else:
+            self.play_one_shot(
+                sound_id=event.sound_id,
+                x=event.x,
+                y=event.y,
+                layer_index=event.layer,
+                volume_jitter=event.volume_jitter,
+                pitch_jitter=event.pitch_jitter,
+            )
 
     def play_one_shot(
         self,
@@ -617,9 +658,20 @@ class SoundSystem:
 
         for layer in layers_to_play:
             # Determine which file to play (handle variants)
-            file_to_play = layer.file
+            # Build pool of all available files (main + variants)
+            all_files = [layer.file]
             if layer.variants:
-                file_to_play = random.choice(layer.variants)
+                all_files.extend(layer.variants)
+
+            # Avoid playing the same variant twice in a row
+            last_played = self._last_played_variant.get(sound_id)
+            if last_played in all_files and len(all_files) > 1:
+                available_files = [f for f in all_files if f != last_played]
+            else:
+                available_files = all_files
+
+            file_to_play = random.choice(available_files)
+            self._last_played_variant[sound_id] = file_to_play
 
             loaded_sound = self._load_sound(file_to_play)
             if not loaded_sound:

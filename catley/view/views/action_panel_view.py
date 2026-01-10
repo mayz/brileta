@@ -9,6 +9,7 @@ from catley.backends.pillow.canvas import PillowImageCanvas
 from catley.environment import tile_types
 from catley.game.actions.discovery import ActionCategory, ActionDiscovery, ActionOption
 from catley.game.actors import Character
+from catley.game.items.properties import WeaponProperty
 from catley.types import InterpolationAlpha
 from catley.util.caching import ResourceCache
 from catley.view.render.graphics import GraphicsContext
@@ -31,6 +32,9 @@ class ActionPanelView(TextView):
         self._cached_actions: list[ActionOption] = []
         self._cached_target_name: str | None = None
         self._cached_target_description: str | None = None
+
+        # Sticky hotkeys: track action id -> hotkey for continuity
+        self._previous_hotkeys: dict[str, str] = {}
 
         # View pixel dimensions will be calculated when resize() is called
         self.view_width_px = 0
@@ -69,6 +73,82 @@ class ActionPanelView(TextView):
         label_width, _, _ = self.canvas.get_text_metrics(label)
 
         return keycap_width + label_width  # Total width consumed
+
+    def _get_action_priority(self, action: ActionOption) -> int:
+        """Get sort priority for an action. Lower values sort first.
+
+        Priority order:
+        - 0: PREFERRED attacks (weapon's intended use)
+        - 1: Regular attacks (no special property)
+        - 2: IMPROVISED attacks (not designed as weapon)
+        """
+        weapon = action.static_params.get("weapon")
+        attack_mode = action.static_params.get("attack_mode")
+
+        if weapon is None or attack_mode is None:
+            return 1  # Non-combat actions get middle priority
+
+        # Get the attack spec based on mode
+        attack = None
+        if attack_mode == "melee" and weapon.melee_attack:
+            attack = weapon.melee_attack
+        elif attack_mode == "ranged" and weapon.ranged_attack:
+            attack = weapon.ranged_attack
+
+        if attack is None:
+            return 1
+
+        # Check properties
+        properties = attack.properties
+        if WeaponProperty.PREFERRED in properties:
+            return 0  # Highest priority
+        if WeaponProperty.IMPROVISED in properties:
+            return 2  # Lowest priority
+        return 1  # Middle priority
+
+    def _assign_hotkeys(self, actions: list[ActionOption]) -> None:
+        """Assign hotkeys to actions with priority sorting and sticky persistence.
+
+        Actions are first sorted by priority (PREFERRED first, IMPROVISED last),
+        then hotkeys are assigned with preference for previous assignments.
+        """
+        if not actions:
+            self._previous_hotkeys.clear()
+            return
+
+        # Sort actions by priority within each category
+        actions.sort(key=lambda a: (a.category.value, self._get_action_priority(a)))
+
+        # Build new hotkey assignments
+        hotkey_chars = "abcdefghijklmnopqrstuvwxyz"
+        used_hotkeys: set[str] = set()
+        new_hotkeys: dict[str, str] = {}
+
+        # First pass: try to preserve previous hotkey assignments
+        for action in actions:
+            if action.id in self._previous_hotkeys:
+                prev_key = self._previous_hotkeys[action.id]
+                if prev_key not in used_hotkeys and prev_key in hotkey_chars:
+                    action.hotkey = prev_key
+                    used_hotkeys.add(prev_key)
+                    new_hotkeys[action.id] = prev_key
+
+        # Second pass: assign new hotkeys to actions that don't have one
+        hotkey_index = 0
+        for action in actions:
+            if action.hotkey is None:
+                # Find next available hotkey
+                while hotkey_index < len(hotkey_chars):
+                    candidate = hotkey_chars[hotkey_index]
+                    hotkey_index += 1
+                    if candidate not in used_hotkeys:
+                        action.hotkey = candidate
+                        used_hotkeys.add(candidate)
+                        new_hotkeys[action.id] = candidate
+                        break
+
+        # Update previous hotkeys for next frame
+        self._previous_hotkeys = new_hotkeys
 
     def get_cache_key(self) -> tuple:
         """Cache key based on mouse position and view dimensions."""
@@ -151,13 +231,8 @@ class ActionPanelView(TextView):
 
         # Actions section
         if self._cached_actions:
-            # Assign hotkeys to actions that don't have them
-            hotkey_chars = "abcdefghijklmnopqrstuvwxyz"
-            hotkey_index = 0
-            for action in self._cached_actions:
-                if not action.hotkey and hotkey_index < len(hotkey_chars):
-                    action.hotkey = hotkey_chars[hotkey_index]
-                    hotkey_index += 1
+            # Sort by priority and assign hotkeys with sticky persistence
+            self._assign_hotkeys(self._cached_actions)
 
             # Group actions by category
             actions_by_category: dict[ActionCategory, list[ActionOption]] = {}
