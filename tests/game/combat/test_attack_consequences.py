@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import random
 from dataclasses import dataclass
 from typing import cast
 from unittest.mock import patch
@@ -10,6 +11,7 @@ from catley.events import MessageEvent, reset_event_bus_for_testing, subscribe_t
 from catley.game.actions.combat import AttackIntent
 from catley.game.actions.executors.combat import AttackExecutor
 from catley.game.actors import Character, ai
+from catley.game.actors.status_effects import OffBalanceEffect
 from catley.game.enums import Disposition, OutcomeTier
 from catley.game.game_world import GameWorld
 from catley.game.items.item_core import Item
@@ -73,6 +75,7 @@ def test_weapon_drop_and_noise_alert() -> None:
     controller, attacker, _defender, bystander, intent = make_world()
     executor = AttackExecutor()
 
+    # Force random to select weapon_drop (roll < 0.40)
     with (
         patch.object(AttackExecutor, "_validate_attack", return_value={}),
         patch.object(
@@ -89,6 +92,7 @@ def test_weapon_drop_and_noise_alert() -> None:
             AttackExecutor,
             "_handle_post_attack_effects",
         ),
+        patch.object(random, "random", return_value=0.20),  # Selects weapon_drop
     ):
         result = executor.execute(intent)
 
@@ -106,3 +110,104 @@ def test_weapon_drop_and_noise_alert() -> None:
     )
     assert isinstance(bystander.ai, ai.DispositionBasedAI)
     assert bystander.ai.disposition == Disposition.HOSTILE
+
+
+def test_self_injury_consequence() -> None:
+    """Test that self_injury consequence deals damage to attacker."""
+    _controller, attacker, _defender, _bystander, intent = make_world()
+    executor = AttackExecutor()
+
+    initial_hp = attacker.health.hp if attacker.health else 0
+
+    # Force random to select self_injury (0.40 <= roll < 0.75)
+    with (
+        patch.object(AttackExecutor, "_validate_attack", return_value={}),
+        patch.object(
+            AttackExecutor,
+            "_execute_attack_roll",
+            return_value=D20ResolutionResult(outcome_tier=OutcomeTier.CRITICAL_FAILURE),
+        ),
+        patch.object(
+            AttackExecutor,
+            "_apply_combat_outcome",
+            return_value=0,
+        ),
+        patch.object(
+            AttackExecutor,
+            "_handle_post_attack_effects",
+        ),
+        patch.object(random, "random", return_value=0.50),  # Selects self_injury
+    ):
+        result = executor.execute(intent)
+
+    assert result is not None
+    assert any(c.type == "self_injury" for c in result.consequences)
+    # Attacker should have taken some damage (at least 1, since dice min is 1)
+    assert attacker.health is not None
+    assert attacker.health.hp < initial_hp
+
+
+def test_off_balance_consequence() -> None:
+    """Test that off_balance consequence applies OffBalanceEffect to attacker."""
+    _controller, attacker, _defender, _bystander, intent = make_world()
+    executor = AttackExecutor()
+
+    # Ensure attacker doesn't have OffBalanceEffect initially
+    assert not attacker.status_effects.has_status_effect(OffBalanceEffect)
+
+    # Force random to select off_balance (roll >= 0.75)
+    with (
+        patch.object(AttackExecutor, "_validate_attack", return_value={}),
+        patch.object(
+            AttackExecutor,
+            "_execute_attack_roll",
+            return_value=D20ResolutionResult(outcome_tier=OutcomeTier.CRITICAL_FAILURE),
+        ),
+        patch.object(
+            AttackExecutor,
+            "_apply_combat_outcome",
+            return_value=0,
+        ),
+        patch.object(
+            AttackExecutor,
+            "_handle_post_attack_effects",
+        ),
+        patch.object(random, "random", return_value=0.80),  # Selects off_balance
+    ):
+        result = executor.execute(intent)
+
+    assert result is not None
+    assert any(c.type == "off_balance" for c in result.consequences)
+    # Attacker should now have OffBalanceEffect
+    assert attacker.status_effects.has_status_effect(OffBalanceEffect)
+
+
+def test_weapon_drop_consequence_still_works() -> None:
+    """Test that weapon_drop consequence still works with new random selection."""
+    _controller, attacker, _defender, _bystander, intent = make_world()
+    executor = AttackExecutor()
+
+    # Force random to select weapon_drop (roll < 0.40)
+    with (
+        patch.object(AttackExecutor, "_validate_attack", return_value={}),
+        patch.object(
+            AttackExecutor,
+            "_execute_attack_roll",
+            return_value=D20ResolutionResult(outcome_tier=OutcomeTier.CRITICAL_FAILURE),
+        ),
+        patch.object(
+            AttackExecutor,
+            "_apply_combat_outcome",
+            return_value=0,
+        ),
+        patch.object(
+            AttackExecutor,
+            "_handle_post_attack_effects",
+        ),
+        patch.object(random, "random", return_value=0.20),  # Selects weapon_drop
+    ):
+        result = executor.execute(intent)
+
+    assert result is not None
+    assert any(c.type == "weapon_drop" for c in result.consequences)
+    assert attacker.inventory.get_active_weapon() is None

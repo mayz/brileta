@@ -7,7 +7,6 @@ from catley.environment.map import GameMap, MapRegion
 from catley.game.actors import (
     Actor,
     Character,
-    conditions,
 )
 from catley.game.enums import CreatureSize
 from catley.game.item_spawner import ItemSpawner
@@ -57,7 +56,6 @@ class GameWorld:
         self.player = self._create_player()
         self.add_actor(self.player)
         self._position_player(rooms[0])
-        self._add_starting_injury()
 
         # Note: Rooms now have random 20% chance of being outdoor (set in generator)
 
@@ -304,16 +302,6 @@ class GameWorld:
         """Place the player in the center of ``room``."""
         # Use teleport() to sync logical and visual positions instantly
         self.player.teleport(*room.center())
-
-    def _add_starting_injury(self) -> None:
-        """Give the player their initial injury and drop any overflow items."""
-        sprained_ankle = conditions.Injury(
-            conditions.InjuryLocation.LEFT_LEG,
-            "Sprained Ankle",
-        )
-        _, _, dropped_items = self.player.inventory.add_to_inventory(sprained_ankle)
-        if dropped_items:
-            self.spawn_ground_items(dropped_items, self.player.x, self.player.y)
 
     def spawn_ground_item(
         self, item: Item, x: WorldTileCoord, y: WorldTileCoord, **kwargs
