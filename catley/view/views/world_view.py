@@ -75,6 +75,8 @@ class WorldView(View):
         )
         self._active_background_texture: Any | None = None
         self._light_overlay_texture: Any | None = None
+        # Screen shake offset in tiles for sub-tile rendering
+        self._shake_offset: tuple[float, float] = (0.0, 0.0)
 
     def set_bounds(self, x1: int, y1: int, x2: int, y2: int) -> None:
         """Override set_bounds to update viewport and console dimensions."""
@@ -165,12 +167,10 @@ class WorldView(View):
         if vs.camera.world_x != old_cam_x or vs.camera.world_y != old_cam_y:
             self._update_mouse_tile_location()
 
-        # Apply screen shake by temporarily offsetting the camera position.
+        # Get screen shake offset for this frame. We apply it as a pixel offset
+        # in present() rather than modifying camera position, to avoid cache thrashing.
         shake_x, shake_y = self.screen_shake.update(delta_time)
-        original_cam_x = vs.camera.world_x
-        original_cam_y = vs.camera.world_y
-        vs.camera.world_x += shake_x
-        vs.camera.world_y += shake_y
+        self._shake_offset = (shake_x, shake_y)
 
         # --- Cache lookup and management ---
         cache_key = self._get_background_cache_key()
@@ -196,9 +196,6 @@ class WorldView(View):
         else:
             self._light_overlay_texture = None
 
-        # Restore the original camera position so subsequent frames start clean.
-        self.viewport_system.camera.set_position(original_cam_x, original_cam_y)
-
         # Update dynamic systems that need to process every frame.
         # actor.update_render_position is a legacy call from the old rendering
         # system and is no longer needed with fixed-timestep interpolation.
@@ -217,7 +214,17 @@ class WorldView(View):
         if not self.visible:
             return
 
-        # 1. Present the cached unlit background
+        # Convert shake offset from tiles to pixels for background rendering
+        shake_tile_x, shake_tile_y = self._shake_offset
+        # Get pixel offset by computing the difference in screen coords
+        base_px_x, base_px_y = graphics.console_to_screen_coords(0.0, 0.0)
+        shake_px_x, shake_px_y = graphics.console_to_screen_coords(
+            shake_tile_x, shake_tile_y
+        )
+        offset_x_pixels = shake_px_x - base_px_x
+        offset_y_pixels = shake_px_y - base_px_y
+
+        # 1. Present the cached unlit background with shake offset
         if self._active_background_texture:
             with record_time_live_variable("cpu.render.present_background_ms"):
                 graphics.draw_background(
@@ -226,17 +233,30 @@ class WorldView(View):
                     self.y,
                     self.width,
                     self.height,
+                    offset_x_pixels,
+                    offset_y_pixels,
                 )
 
         # 2. Present the dynamic light overlay on top of the background
-        # The light overlay should also be drawn immediately after the background.
         if self._light_overlay_texture:
             with record_time_live_variable("cpu.render.present_light_overlay_ms"):
-                graphics.draw_background(  # We can reuse draw_background for this
-                    self._light_overlay_texture, self.x, self.y, self.width, self.height
+                graphics.draw_background(
+                    self._light_overlay_texture,
+                    self.x,
+                    self.y,
+                    self.width,
+                    self.height,
+                    offset_x_pixels,
+                    offset_y_pixels,
                 )
 
-        # 3. Continue with the rest of the rendering
+        # 3. Apply shake to camera for actor/particle rendering
+        vs = self.viewport_system
+        original_cam_x = vs.camera.world_x
+        original_cam_y = vs.camera.world_y
+        vs.camera.world_x += shake_tile_x
+        vs.camera.world_y += shake_tile_y
+
         viewport_bounds = Rect.from_bounds(0, 0, self.width - 1, self.height - 1)
         view_offset = (self.x, self.y)
 
@@ -277,6 +297,9 @@ class WorldView(View):
                     viewport_bounds,
                     view_offset,
                 )
+
+        # Restore camera position after rendering
+        vs.camera.set_position(original_cam_x, original_cam_y)
 
     # ------------------------------------------------------------------
     # Internal rendering helpers

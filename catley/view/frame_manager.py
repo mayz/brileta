@@ -343,16 +343,17 @@ class FrameManager:
         return None
 
     def trigger_screen_shake(self, intensity: float, duration: DeltaTime) -> None:
-        """Trigger screen shake effect. Call this from combat actions."""
-        from catley.config import (
-            SCREEN_SHAKE_ENABLED,
-            SCREEN_SHAKE_INTENSITY_MULTIPLIER,
-        )
+        """Trigger screen shake effect.
+
+        Args:
+            intensity: Amplitude of shake in tiles (0.0-0.3 typical).
+            duration: Duration of the shake in seconds.
+        """
+        from catley.config import SCREEN_SHAKE_ENABLED
 
         if not SCREEN_SHAKE_ENABLED:
             return
-        scaled_intensity = intensity * SCREEN_SHAKE_INTENSITY_MULTIPLIER
-        self.screen_shake.trigger(scaled_intensity, duration)
+        self.screen_shake.trigger(intensity, duration)
 
     def create_effect(
         self,

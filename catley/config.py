@@ -57,9 +57,6 @@ LUMINANCE_THRESHOLD = 127.5  # For determining light vs dark colors
 # Set to False to disable screen shake
 SCREEN_SHAKE_ENABLED = True
 
-# Scale all shake intensity (0.5 = half strength, 2.0 = double)
-SCREEN_SHAKE_INTENSITY_MULTIPLIER = 0.2
-
 # =============================================================================
 # BACKEND CONFIGURATION
 # =============================================================================

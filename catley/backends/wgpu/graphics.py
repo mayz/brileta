@@ -612,6 +612,8 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         y_tile: int,
         width_tiles: int,
         height_tiles: int,
+        offset_x_pixels: float = 0.0,
+        offset_y_pixels: float = 0.0,
     ) -> None:
         """Queue background texture for batched rendering."""
         if not isinstance(texture, wgpu.GPUTexture) or self.background_renderer is None:
@@ -622,6 +624,12 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         px_x2, px_y2 = self.console_to_screen_coords(
             x_tile + width_tiles, y_tile + height_tiles
         )
+
+        # Apply screen shake pixel offset
+        px_x1 += offset_x_pixels
+        px_x2 += offset_x_pixels
+        px_y1 += offset_y_pixels
+        px_y2 += offset_y_pixels
 
         # Create vertices for background quad using background renderer's VERTEX_DTYPE
         from .background_renderer import VERTEX_DTYPE

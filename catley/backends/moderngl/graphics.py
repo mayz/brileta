@@ -171,6 +171,8 @@ class ModernGLGraphicsContext(BaseGraphicsContext):
         y_tile: int,
         width_tiles: int,
         height_tiles: int,
+        offset_x_pixels: float = 0.0,
+        offset_y_pixels: float = 0.0,
     ) -> None:
         """Draws the main world background texture. This is an immediate draw call
         that should happen before other rendering."""
@@ -181,6 +183,12 @@ class ModernGLGraphicsContext(BaseGraphicsContext):
         px_x2, px_y2 = self.console_to_screen_coords(
             x_tile + width_tiles, y_tile + height_tiles
         )
+
+        # Apply screen shake pixel offset
+        px_x1 += offset_x_pixels
+        px_x2 += offset_x_pixels
+        px_y1 += offset_y_pixels
+        px_y2 += offset_y_pixels
 
         vertices = np.zeros(6, dtype=VERTEX_DTYPE)
         u1, v1, u2, v2 = 0.0, 0.0, 1.0, 1.0  # Use non-flipped UVs

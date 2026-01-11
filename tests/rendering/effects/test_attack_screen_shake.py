@@ -148,7 +148,8 @@ def test_screen_shake_uses_damage_once() -> None:
 
     # Damage dice should have been rolled only once
     assert attack.damage_dice.roll.call_count == 1
-    assert intensities and intensities[0] == 0.6
+    # 4 damage * 0.125 = 0.5 tiles amplitude
+    assert intensities and intensities[0] == 0.5
 
 
 def test_screen_shake_ranged_attack_intensity() -> None:
@@ -165,4 +166,5 @@ def test_screen_shake_ranged_attack_intensity() -> None:
     damage = executor._apply_combat_outcome(intent, check, outcome, attack, weapon)
     executor._handle_post_attack_effects(intent, check, attack, weapon, damage)
 
-    assert intensities and intensities[0] == 0.32
+    # 4 damage * 0.1 = 0.4 tiles amplitude
+    assert intensities and intensities[0] == 0.4

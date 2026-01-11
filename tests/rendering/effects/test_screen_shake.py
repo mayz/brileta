@@ -1,5 +1,5 @@
 from typing import Any, cast
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import numpy as np
 
@@ -27,18 +27,19 @@ class DummyActor:
 
 def test_screen_shake_update_and_completion() -> None:
     shake = ScreenShake()
-    shake.trigger(intensity=1.0, duration=DeltaTime(1.0))
+    shake.trigger(intensity=0.2, duration=DeltaTime(1.0))
 
-    with (
-        patch("random.random", return_value=0.0),
-        patch("random.choice", side_effect=lambda seq: seq[0]),
-    ):
-        offset = shake.update(DeltaTime(0.5))
-    assert offset == (-1, -1)
+    # First update - should return float offsets
+    offset = shake.update(DeltaTime(0.5))
+    assert isinstance(offset[0], float)
+    assert isinstance(offset[1], float)
+    # With amplitude 0.2 and some fade, offsets should be non-zero
+    assert offset != (0.0, 0.0)
     assert shake.is_active()
 
+    # After duration expires
     offset = shake.update(DeltaTime(0.6))
-    assert offset == (0, 0)
+    assert offset == (0.0, 0.0)
     assert not shake.is_active()
 
 
@@ -49,6 +50,22 @@ def test_screen_shake_trigger_overwrite() -> None:
     assert shake.intensity == 0.8
     assert shake.duration == 1.0
     assert shake.time_remaining == 1.0
+
+
+def test_screen_shake_amplitude_bounds() -> None:
+    """Verify shake amplitude stays within expected bounds."""
+    shake = ScreenShake()
+    shake.trigger(intensity=0.3, duration=DeltaTime(1.0))
+
+    # Sample multiple frames
+    max_offset = 0.0
+    for _ in range(100):
+        x, y = shake.update(DeltaTime(0.01))
+        max_offset = max(max_offset, abs(x), abs(y))
+
+    # Offset should never exceed intensity (amplitude)
+    # The sine wave sum has max value of 1.0, so offset <= intensity
+    assert max_offset <= 0.3 + 0.01  # Small epsilon for float precision
 
 
 class DummyGameMap:
@@ -120,32 +137,28 @@ class DummyController:
 
 
 def test_world_view_applies_screen_shake_before_render(monkeypatch) -> None:
+    """Test that shake offset is stored in draw() and applied in present()."""
     from catley.view.views.world_view import WorldView
 
     controller = DummyController()
     shake = ScreenShake()
-    shake.update = lambda dt: (1, 0)  # type: ignore[assignment]
+    # Use a float offset (0.15 tiles) to test sub-tile shake
+    shake.update = lambda dt: (0.15, 0.0)  # type: ignore[assignment]
     view = WorldView(cast("Controller", controller), shake)
     view.set_bounds(0, 0, 10, 10)
-
-    captured = {}
-    original_render_map = view._render_map_unlit
-
-    def wrapped_render_map() -> None:
-        captured["cam_pos"] = (
-            view.viewport_system.camera.world_x,
-            view.viewport_system.camera.world_y,
-        )
-        original_render_map()
-
-    view._render_map_unlit = wrapped_render_map  # type: ignore[assignment]
 
     # Mock the light overlay rendering to avoid mocking game_map.visible
     view._render_light_overlay = lambda renderer: None  # type: ignore[assignment]
 
     view.draw(cast(GraphicsContext, controller.graphics), InterpolationAlpha(0.0))
 
-    assert captured["cam_pos"] == (5.5, 4.5)
+    # Verify shake offset is stored after draw()
+    assert view._shake_offset == (0.15, 0.0)
+
+    # Camera should NOT be modified in draw() - shake is applied in present()
+    base_cam_pos = (4.5, 4.5)  # Default camera position for 10x10 map
+    assert view.viewport_system.camera.world_x == base_cam_pos[0]
+    assert view.viewport_system.camera.world_y == base_cam_pos[1]
 
 
 def test_world_view_screen_shake_does_not_overflow(monkeypatch) -> None:
@@ -154,7 +167,8 @@ def test_world_view_screen_shake_does_not_overflow(monkeypatch) -> None:
 
     controller = DummyController()
     shake = ScreenShake()
-    shake.update = lambda dt: (1, 0)  # type: ignore[assignment]
+    # Use a larger float offset to test bounds checking
+    shake.update = lambda dt: (0.5, 0.0)  # type: ignore[assignment]
     view = WorldView(cast("Controller", controller), shake)
     view.set_bounds(0, 0, 10, 10)
 
@@ -195,7 +209,7 @@ def test_small_map_actor_alignment(monkeypatch) -> None:
     controller.gw.game_map.explored[:] = True  # All tiles are explored
 
     shake = ScreenShake()
-    shake.update = lambda dt: (0, 0)  # type: ignore[assignment]
+    shake.update = lambda dt: (0.0, 0.0)  # type: ignore[assignment]
     view = WorldView(cast("Controller", controller), shake)
     view.set_bounds(0, 0, 10, 8)
 

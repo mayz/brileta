@@ -229,9 +229,21 @@ class GraphicsContext(abc.ABC):
         y_tile: int,
         width_tiles: int,
         height_tiles: int,
+        offset_x_pixels: float = 0.0,
+        offset_y_pixels: float = 0.0,
     ) -> None:
         """Draws the main world background texture. This is an immediate draw call
-        that should happen before other rendering."""
+        that should happen before other rendering.
+
+        Args:
+            texture: The texture to draw.
+            x_tile: X position in tiles.
+            y_tile: Y position in tiles.
+            width_tiles: Width in tiles.
+            height_tiles: Height in tiles.
+            offset_x_pixels: Optional sub-pixel X offset for screen shake.
+            offset_y_pixels: Optional sub-pixel Y offset for screen shake.
+        """
         pass
 
     @abc.abstractmethod

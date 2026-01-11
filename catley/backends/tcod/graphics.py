@@ -620,11 +620,26 @@ class TCODGraphicsContext(GraphicsContext):
         y_tile: int,
         width_tiles: int,
         height_tiles: int,
+        offset_x_pixels: float = 0.0,
+        offset_y_pixels: float = 0.0,
     ) -> None:
         """Draws the main world background texture. This is an immediate draw call
         that should happen before other rendering."""
-        # For TCOD, draw_background is just an alias for present_texture
-        self.present_texture(texture, x_tile, y_tile, width_tiles, height_tiles)
+        left, top = self.console_to_screen_coords(x_tile, y_tile)
+        right, bottom = self.console_to_screen_coords(
+            x_tile + width_tiles, y_tile + height_tiles
+        )
+
+        # Apply screen shake pixel offset
+        left += offset_x_pixels
+        right += offset_x_pixels
+        top += offset_y_pixels
+        bottom += offset_y_pixels
+
+        dest_width = right - left
+        dest_height = bottom - top
+        dest_rect = (int(left), int(top), int(dest_width), int(dest_height))
+        self.sdl_renderer.copy(texture, dest=dest_rect)
 
     def draw_debug_rect(
         self, px_x: int, px_y: int, px_w: int, px_h: int, color: colors.Color
