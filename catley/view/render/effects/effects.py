@@ -46,11 +46,13 @@ import abc
 import math
 import random
 from dataclasses import dataclass
+from typing import ClassVar
 
 from catley import colors
 from catley.constants.view import ViewConstants as View
 from catley.game.enums import BlendMode
 
+from .decals import DecalSystem
 from .environmental import EnvironmentalEffect, EnvironmentalEffectSystem
 from .particles import ParticleLayer, SubTileParticleSystem
 
@@ -105,7 +107,6 @@ class EffectContext:
         direction_y: Y component of direction vector for directional effects
 
     Future attributes to add:
-        decal_system: For persistent visual effects on tiles
         sound_system: For audio feedback
         screen_shake: For impact feedback
         lighting_system: For temporary lighting effects
@@ -118,6 +119,8 @@ class EffectContext:
     intensity: float = 1.0
     direction_x: float = 0.0  # For directional effects like muzzle flash
     direction_y: float = 0.0
+    decal_system: "DecalSystem | None" = None  # For persistent floor decals
+    ray_count: int | None = None  # For blood splatter: controls number of decal rays
 
 
 class Effect(abc.ABC):
@@ -249,9 +252,9 @@ class BloodSplatterEffect(Effect):
     """
     Creates a blood splatter effect when something takes damage.
 
-    Uses a radial burst pattern to simulate blood flying in all directions
-    from the impact point. The number of particles and their properties
-    scale with the intensity parameter.
+    Combines ephemeral particles with persistent decals:
+    - Particles: Radial burst that fades quickly (immediate visual feedback)
+    - Decals: Cone pattern on floor behind target (persistent atmosphere)
 
     Visual Characteristics:
         - Dark red particles with slight color variation
@@ -259,10 +262,19 @@ class BloodSplatterEffect(Effect):
         - Medium speed with no gravity (blood droplets)
         - Short to medium lifetime (0.3-0.8 seconds)
         - Mix of characters for varied visual texture
+        - Persistent floor decals when direction is provided
     """
 
+    # Blood decal colors and characters for persistent floor marks
+    DECAL_COLORS_CHARS: ClassVar[list[tuple[colors.Color, str]]] = [
+        ((120, 0, 0), "*"),  # Bright red asterisk
+        ((100, 0, 0), "."),  # Medium red dot
+        ((80, 0, 0), ","),  # Dark red comma
+        ((60, 0, 0), "'"),  # Very dark red apostrophe
+    ]
+
     def execute(self, context: EffectContext) -> None:
-        """Create blood splatter particles at the impact location."""
+        """Create blood splatter particles and decals at the impact location."""
 
         # Define blood color variations - darker reds with some randomness
         # Each tuple is (color, character) for visual variety
@@ -276,7 +288,7 @@ class BloodSplatterEffect(Effect):
         # Minimum of 5 particles even for low damage to ensure visibility
         count = max(5, int(15 * context.intensity))
 
-        # Create the radial burst of blood particles
+        # Create the radial burst of blood particles (ephemeral)
         context.particle_system.emit_radial_burst(
             context.x,
             context.y,
@@ -292,6 +304,35 @@ class BloodSplatterEffect(Effect):
             colors_and_chars=blood_colors_chars,
             layer=ParticleLayer.OVER_ACTORS,
         )
+
+        # Create persistent decal splatter if we have a decal system and direction
+        if context.decal_system is not None:
+            if context.direction_x != 0.0 or context.direction_y != 0.0:
+                # Direction provided: create ray-based splatter for sub-tile precision
+                # ray_count: 1 for pistol/rifle, 3 for shotgun, etc.
+                ray_count = context.ray_count if context.ray_count is not None else 1
+                context.decal_system.add_splatter_rays(
+                    float(context.x),
+                    float(context.y),
+                    context.direction_x,
+                    context.direction_y,
+                    context.intensity,
+                    self.DECAL_COLORS_CHARS,
+                    ray_count=ray_count,
+                )
+            else:
+                # No direction: just add a few decals at the target tile center
+                for _ in range(int(1 + context.intensity * 2)):
+                    color, char = random.choice(self.DECAL_COLORS_CHARS)
+                    # Center the decal on the tile with slight offset
+                    offset_x = random.uniform(-0.3, 0.3)
+                    offset_y = random.uniform(-0.3, 0.3)
+                    context.decal_system.add_decal(
+                        context.x + 0.5 + offset_x,
+                        context.y + 0.5 + offset_y,
+                        char,
+                        color,
+                    )
 
 
 class MuzzleFlashEffect(Effect):
@@ -716,6 +757,7 @@ def create_combat_effect_context(
     target_x: int,
     target_y: int,
     damage: int,
+    decal_system: "DecalSystem | None" = None,
 ) -> EffectContext:
     """
     Create an EffectContext configured for combat effects.
@@ -725,11 +767,13 @@ def create_combat_effect_context(
 
     Args:
         particle_system: The particle system for rendering
+        environmental_system: The environmental effect system
         attacker_x: X position of the attacker
         attacker_y: Y position of the attacker
         target_x: X position of the target
         target_y: Y position of the target
         damage: Amount of damage dealt (for intensity calculation)
+        decal_system: Optional decal system for persistent floor marks
 
     Returns:
         EffectContext: Configured context ready for combat effects
@@ -770,6 +814,7 @@ def create_combat_effect_context(
         intensity=intensity,
         direction_x=direction_x,
         direction_y=direction_y,
+        decal_system=decal_system,
     )
 
 
@@ -779,6 +824,7 @@ def create_environmental_effect_context(
     x: int,
     y: int,
     intensity: float = 1.0,
+    decal_system: "DecalSystem | None" = None,
 ) -> EffectContext:
     """
     Create an EffectContext for environmental effects.
@@ -788,9 +834,11 @@ def create_environmental_effect_context(
 
     Args:
         particle_system: The particle system for rendering
+        environmental_system: The environmental effect system
         x: X position for the effect
         y: Y position for the effect
         intensity: Effect intensity (0.0 to 1.0+)
+        decal_system: Optional decal system for persistent floor marks
 
     Returns:
         EffectContext: Configured context for environmental effects
@@ -810,4 +858,5 @@ def create_environmental_effect_context(
         intensity=intensity,
         direction_x=0.0,  # No direction for environmental effects
         direction_y=0.0,
+        decal_system=decal_system,
     )

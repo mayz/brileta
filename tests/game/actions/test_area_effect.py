@@ -74,6 +74,7 @@ class DummyFrameManager(FrameManager):
         intensity: float = 1.0,
         direction_x: float = 0.0,
         direction_y: float = 0.0,
+        ray_count: int | None = None,
     ) -> None:
         pass
 

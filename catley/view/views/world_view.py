@@ -21,6 +21,7 @@ from catley.util.coordinates import (
 )
 from catley.util.glyph_buffer import GlyphBuffer
 from catley.util.live_vars import record_time_live_variable
+from catley.view.render.effects.decals import DecalSystem
 from catley.view.render.effects.effects import EffectLibrary
 from catley.view.render.effects.environmental import EnvironmentalEffectSystem
 from catley.view.render.effects.particles import (
@@ -68,6 +69,7 @@ class WorldView(View):
             config.DEFAULT_VIEWPORT_WIDTH, config.DEFAULT_VIEWPORT_HEIGHT
         )
         self.environmental_system = EnvironmentalEffectSystem()
+        self.decal_system = DecalSystem()
         self.effect_library = EffectLibrary()
         self.current_light_intensity: np.ndarray | None = None
         self._texture_cache = ResourceCache[tuple, Any](
@@ -77,6 +79,8 @@ class WorldView(View):
         self._light_overlay_texture: Any | None = None
         # Screen shake offset in tiles for sub-tile rendering
         self._shake_offset: tuple[float, float] = (0.0, 0.0)
+        # Cumulative game time for decal age tracking
+        self._game_time: float = 0.0
 
     def set_bounds(self, x1: int, y1: int, x2: int, y2: int) -> None:
         """Override set_bounds to update viewport and console dimensions."""
@@ -88,6 +92,7 @@ class WorldView(View):
             self.map_glyph_buffer = GlyphBuffer(self.width, self.height)
             self.particle_system = SubTileParticleSystem(self.width, self.height)
             self.environmental_system = EnvironmentalEffectSystem()
+            self.decal_system = DecalSystem()
 
     # ------------------------------------------------------------------
     # Public API
@@ -205,6 +210,9 @@ class WorldView(View):
         # logic timestep or the interpolation alpha.
         self.particle_system.update(delta_time)
         self.environmental_system.update(delta_time)
+        # Update decals for age-based cleanup
+        self._game_time += delta_time
+        self.decal_system.update(delta_time, self._game_time)
 
         # Emit particles from actors with particle emitters
         self._update_actor_particles()
@@ -259,6 +267,16 @@ class WorldView(View):
 
         viewport_bounds = Rect.from_bounds(0, 0, self.width - 1, self.height - 1)
         view_offset = (self.x, self.y)
+
+        # Render persistent decals (blood splatters, etc.) on the floor
+        with record_time_live_variable("cpu.render.decals_ms"):
+            graphics.render_decals(
+                self.decal_system,
+                viewport_bounds,
+                view_offset,
+                self.viewport_system,
+                self._game_time,
+            )
 
         with record_time_live_variable("cpu.render.particles_under_actors_ms"):
             graphics.render_particles(

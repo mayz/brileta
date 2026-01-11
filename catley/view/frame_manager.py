@@ -363,6 +363,7 @@ class FrameManager:
         intensity: float = 1.0,
         direction_x: float = 0.0,
         direction_y: float = 0.0,
+        ray_count: int | None = None,
     ) -> None:
         """Create a visual effect if the world position is visible."""
         vs = self.world_view.viewport_system
@@ -377,6 +378,8 @@ class FrameManager:
             intensity=intensity,
             direction_x=direction_x,
             direction_y=direction_y,
+            decal_system=self.world_view.decal_system,
+            ray_count=ray_count,
         )
         self.world_view.effect_library.trigger(effect_name, context)
 
@@ -389,6 +392,7 @@ class FrameManager:
             event.intensity,
             event.direction_x,
             event.direction_y,
+            event.ray_count,
         )
 
     def _handle_screen_shake_event(self, event: ScreenShakeEvent) -> None:

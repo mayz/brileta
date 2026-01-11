@@ -36,6 +36,7 @@ from catley.types import (
 )
 from catley.util.coordinates import CoordinateConverter, Rect
 from catley.util.glyph_buffer import GlyphBuffer
+from catley.view.render.effects.decals import DecalSystem
 from catley.view.render.effects.particles import ParticleLayer, SubTileParticleSystem
 from catley.view.render.viewport import ViewportSystem
 
@@ -155,6 +156,31 @@ class GraphicsContext(abc.ABC):
                              (e.g., world_view.width x world_view.height).
             view_offset: The offset of the viewport in root console coordinates,
                          used for calculating final screen positions.
+        """
+        pass
+
+    @abc.abstractmethod
+    def render_decals(
+        self,
+        decal_system: DecalSystem,
+        viewport_bounds: Rect,
+        view_offset: RootConsoleTilePos,
+        viewport_system: ViewportSystem,
+        game_time: float,
+    ) -> None:
+        """
+        Renders all visible decals from a DecalSystem.
+
+        Decals are persistent tile-based visual marks (like blood splatters)
+        that should be rendered after the background but before actors and
+        particles.
+
+        Args:
+            decal_system: The data source containing all decal states.
+            viewport_bounds: The currently visible area in tile coordinates.
+            view_offset: The offset of the viewport in root console coordinates.
+            viewport_system: The viewport system for coordinate conversion.
+            game_time: Current game time for calculating decal alpha (fade-out).
         """
         pass
 

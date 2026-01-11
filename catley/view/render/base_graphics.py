@@ -19,6 +19,7 @@ from catley.util.coordinates import (
     Rect,
     convert_particle_to_screen_coords,
 )
+from catley.view.render.effects.decals import DecalSystem
 from catley.view.render.effects.particles import ParticleLayer, SubTileParticleSystem
 from catley.view.render.graphics import GraphicsContext
 from catley.view.render.viewport import ViewportSystem
@@ -170,6 +171,62 @@ class BaseGraphicsContext(GraphicsContext):
                 screen_y,
                 alpha,
             )
+
+    def render_decals(
+        self,
+        decal_system: DecalSystem,
+        viewport_bounds: Rect,
+        view_offset: RootConsoleTilePos,
+        viewport_system: ViewportSystem,
+        game_time: float,
+    ) -> None:
+        """Render visible decals from the decal system with sub-tile precision.
+
+        Decals have sub-tile float coordinates and are rendered at precise
+        pixel positions, similar to particles.
+        """
+        if not hasattr(self, "screen_renderer") or self.screen_renderer is None:
+            return
+        if self.uv_map is None:
+            return
+
+        # Iterate through all tiles with decals
+        for (tile_x, tile_y), decals in decal_system.decals.items():
+            # Convert tile position to screen position for culling
+            screen_tile_x, screen_tile_y = viewport_system.world_to_screen(
+                tile_x, tile_y
+            )
+
+            # Cull tiles outside the viewport (with 1-tile margin for sub-tile overflow)
+            if not (
+                -1 <= screen_tile_x < viewport_bounds.width + 1
+                and -1 <= screen_tile_y < viewport_bounds.height + 1
+            ):
+                continue
+
+            # Draw each decal at its sub-tile position
+            for decal in decals:
+                alpha = decal_system.get_alpha(decal, game_time)
+                if alpha <= 0:
+                    continue
+
+                # Convert world sub-tile position to screen position (float coords)
+                world_screen_x, world_screen_y = viewport_system.world_to_screen_float(
+                    decal.x, decal.y
+                )
+
+                # Convert to final screen pixel coordinates
+                console_x = view_offset[0] + world_screen_x
+                console_y = view_offset[1] + world_screen_y
+                pixel_x, pixel_y = self.console_to_screen_coords(console_x, console_y)
+
+                self._draw_particle_to_buffer(
+                    decal.char,
+                    decal.color,
+                    pixel_x,
+                    pixel_y,
+                    alpha,
+                )
 
     def _draw_particle_to_buffer(
         self,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING, Any
 
 from catley import colors
@@ -548,6 +549,23 @@ class AttackExecutor(ActionExecutor):
                 material = AudioMaterialResolver.resolve_actor_material(intent.defender)
                 impact_sound_id = get_impact_sound_id(material)
 
+                # Calculate direction from attacker to defender for blood splatter cone
+                dx = intent.defender.x - intent.attacker.x
+                dy = intent.defender.y - intent.attacker.y
+                dist = math.sqrt(dx * dx + dy * dy) or 1.0
+                dir_x = dx / dist
+                dir_y = dy / dist
+
+                # Determine ray count based on weapon type
+                # Shotgun: 3 rays (pellet spread), everything else: 1 ray
+                ray_count = 1
+                if (
+                    weapon
+                    and weapon.ranged_attack
+                    and weapon.ranged_attack.ammo_type == "shotgun"
+                ):
+                    ray_count = 3
+
                 publish_event(
                     PresentationEvent(
                         effect_events=[
@@ -556,6 +574,9 @@ class AttackExecutor(ActionExecutor):
                                 intent.defender.x,
                                 intent.defender.y,
                                 intensity=damage / 20.0,
+                                direction_x=dir_x,
+                                direction_y=dir_y,
+                                ray_count=ray_count,
                             )
                         ],
                         sound_events=[
