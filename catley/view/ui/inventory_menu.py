@@ -5,6 +5,8 @@ import string
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
+import tcod.event
+
 from catley import colors
 from catley.events import MessageEvent, publish_event
 from catley.game.actors import Condition
@@ -22,6 +24,7 @@ class InventoryMenu(Menu):
     def __init__(self, controller: Controller) -> None:
         super().__init__("Inventory", controller)
         self.inventory = controller.gw.player.inventory
+        self.drop_mode = False  # True when Shift is held for dropping items
 
     def populate_options(self) -> None:
         """Populate inventory options."""
@@ -114,6 +117,8 @@ class InventoryMenu(Menu):
                 option_color = colors.RED
                 is_enabled = False
 
+            # Store entity reference in data field for drop functionality
+            # (Items can be dropped; Conditions cannot - handle_input filters by type)
             display_lines.append(
                 MenuOption(
                     key=current_key,
@@ -122,6 +127,7 @@ class InventoryMenu(Menu):
                     enabled=is_enabled,
                     color=option_color,
                     force_color=force_color,
+                    data=entity_in_slot,
                 )
             )
 
@@ -163,10 +169,58 @@ class InventoryMenu(Menu):
                     MessageEvent(f"{item.name} cannot be used", colors.YELLOW)
                 )
 
+    def _drop_item(self, item: Item) -> None:
+        """Drop an item from inventory to the ground."""
+        from catley.game.actions.misc import DropItemIntent
+
+        player = self.controller.gw.player
+        intent = DropItemIntent(self.controller, player, item)
+        self.controller.queue_action(intent)
+
+    def handle_input(self, event: tcod.event.Event) -> bool:
+        """Handle input events, including Shift modifier for drop mode."""
+        if not self.is_active:
+            return False
+
+        # Track Shift key state for drop mode visual feedback
+        match event:
+            case tcod.event.KeyUp(
+                sym=tcod.event.KeySym.LSHIFT | tcod.event.KeySym.RSHIFT
+            ):
+                self.drop_mode = False
+                return True
+
+            case tcod.event.KeyDown() as key_event:
+                # Update drop mode based on Shift state
+                shift_held = bool(key_event.mod & tcod.event.Modifier.SHIFT)
+                self.drop_mode = shift_held
+
+                # If Shift is held, handle letter key as drop action
+                if shift_held:
+                    key_char = (
+                        chr(key_event.sym).lower() if 32 <= key_event.sym <= 126 else ""
+                    )
+                    for option in self.options:
+                        if (
+                            option.key is not None
+                            and option.key.lower() == key_char
+                            and option.enabled
+                            and isinstance(option.data, Item)
+                        ):
+                            self._drop_item(option.data)
+                            self.hide()
+                            return True
+                    # Consume the event even if no match (Shift+key pressed)
+                    return True
+
+        # Fall back to base menu handling for non-Shift actions
+        return super().handle_input(event)
+
     def draw_content(self) -> None:
-        """Draw the base menu, then overlay the inventory usage bar."""
+        """Draw the base menu, then overlay the inventory usage bar and hint."""
         super().draw_content()
         self.render_title()
+        self.render_hint()
 
     def render_title(self) -> None:
         """Render the inventory header with prefix, bar, and suffix."""
@@ -181,12 +235,19 @@ class InventoryMenu(Menu):
         current_x_tile = 1  # Start drawing one tile in for padding
         title_y_tile = 0
 
-        prefix_text = f"{self.title}:"
+        # Change title text and color based on drop mode
+        if self.drop_mode:
+            prefix_text = "DROP MODE:"
+            title_color = colors.RED
+        else:
+            prefix_text = f"{self.title}:"
+            title_color = colors.YELLOW
+
         self.canvas.draw_text(
             pixel_x=current_x_tile * tile_w,
             pixel_y=title_y_tile * tile_h,
             text=prefix_text,
-            color=colors.YELLOW,
+            color=title_color,
         )
         current_x_tile += len(prefix_text) + 1  # Space after prefix
 
@@ -226,3 +287,27 @@ class InventoryMenu(Menu):
                 text=text_to_draw,
                 color=colors.YELLOW,
             )
+
+    def render_hint(self) -> None:
+        """Render a hint at the bottom of the menu for drop mode."""
+        assert self.canvas is not None
+
+        tile_w, tile_h = self.tile_dimensions
+
+        # Position hint at the bottom row of the menu (inside the frame)
+        hint_y_tile = self.height - 1
+        hint_x_tile = 1
+
+        if self.drop_mode:
+            hint_text = "Press letter to drop item"
+            hint_color = colors.RED
+        else:
+            hint_text = "Hold [Shift] to drop item"
+            hint_color = colors.GREY
+
+        self.canvas.draw_text(
+            pixel_x=hint_x_tile * tile_w,
+            pixel_y=hint_y_tile * tile_h,
+            text=hint_text,
+            color=hint_color,
+        )

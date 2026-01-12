@@ -11,6 +11,7 @@ from catley.game.items.item_core import Item
 
 if TYPE_CHECKING:
     from catley.game.actions.misc import (
+        DropItemIntent,
         PickupIntent,
         PickupItemsAtLocationIntent,
         SwitchWeaponIntent,
@@ -148,4 +149,42 @@ class SwitchWeaponExecutor(ActionExecutor):
         inventory = getattr(intent.actor, "inventory", None)
         if inventory:
             inventory.switch_to_weapon_slot(intent.slot)
+        return GameActionResult()
+
+
+class DropItemExecutor(ActionExecutor):
+    """Executes drop item intents.
+
+    Removes items from inventory and places them on the ground.
+    """
+
+    def __init__(self) -> None:
+        """Create a DropItemExecutor without requiring a controller."""
+        pass
+
+    def execute(self, intent: DropItemIntent) -> GameActionResult | None:  # type: ignore[override]
+        """Drop an item from inventory to the ground at actor's location."""
+        inventory = getattr(intent.actor, "inventory", None)
+        if inventory is None:
+            return GameActionResult(succeeded=False)
+
+        item = intent.item
+        removed = False
+
+        # Check if item is equipped in an attack slot and unequip it
+        for i, slot_item in enumerate(inventory.attack_slots):
+            if slot_item is item:
+                inventory.attack_slots[i] = None
+                removed = True
+                break
+
+        # If not equipped, remove from stored inventory
+        if not removed and not inventory.remove_from_inventory(item):
+            publish_event(MessageEvent("Item not found in inventory.", colors.RED))
+            return GameActionResult(succeeded=False)
+
+        # Spawn the item on the ground at actor's location
+        intent.controller.gw.spawn_ground_item(item, intent.actor.x, intent.actor.y)
+        publish_event(MessageEvent(f"You drop {item.name}.", colors.WHITE))
+
         return GameActionResult()

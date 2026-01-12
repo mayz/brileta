@@ -203,7 +203,26 @@ class AttackExecutor(ActionExecutor):
             )
         )
 
-        return GameActionResult()
+        # Generate consequences (fumbles can happen even when shooting at walls)
+        # Simple d20 roll: 1 = critical failure, otherwise success
+        from catley.util.dice import roll_d
+
+        fumble_roll = roll_d(20)
+        outcome_tier = (
+            OutcomeTier.CRITICAL_FAILURE if fumble_roll == 1 else OutcomeTier.SUCCESS
+        )
+
+        generator = AttackConsequenceGenerator()
+        consequences = generator.generate(
+            attacker=intent.attacker,
+            weapon=weapon,
+            outcome_tier=outcome_tier,
+        )
+        handler = ConsequenceHandler()
+        for consequence in consequences:
+            handler.apply_consequence(consequence)
+
+        return GameActionResult(consequences=consequences)
 
     def _determine_attack_method(
         self, intent: AttackIntent

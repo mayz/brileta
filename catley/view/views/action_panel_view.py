@@ -229,7 +229,53 @@ class ActionPanelView(TextView):
 
             y_pixel += line_height // 2  # Add spacing
 
-        # Actions section
+        # ALWAYS check for items at player's feet (regardless of mouse hover)
+        player = self.controller.gw.player
+        items_here = self.controller.gw.get_pickable_items_at_location(
+            player.x, player.y
+        )
+
+        if items_here:
+            # Show items at player's feet prominently
+            self.canvas.draw_text(
+                pixel_x=x_padding,
+                pixel_y=y_pixel - ascent,
+                text="Items at your feet:",
+                color=colors.YELLOW,
+            )
+            y_pixel += line_height
+
+            # List items (up to 3)
+            for item in items_here[:3]:
+                self.canvas.draw_text(
+                    pixel_x=x_padding + 10,
+                    pixel_y=y_pixel - ascent,
+                    text=f"• {item.name}",
+                    color=colors.WHITE,
+                )
+                y_pixel += line_height
+
+            if len(items_here) > 3:
+                self.canvas.draw_text(
+                    pixel_x=x_padding + 10,
+                    pixel_y=y_pixel - ascent,
+                    text=f"• ...and {len(items_here) - 3} more",
+                    color=colors.GREY,
+                )
+                y_pixel += line_height
+
+            y_pixel += line_height // 2
+
+            # Show pickup prompt
+            self._draw_keycap_with_label(
+                x=x_padding,
+                y=y_pixel - ascent,
+                key="G",
+                label="Pick up items",
+            )
+            y_pixel += line_height * 2
+
+        # Actions section (contextual actions based on mouse hover)
         if self._cached_actions:
             # Sort by priority and assign hotkeys with sticky persistence
             self._assign_hotkeys(self._cached_actions)
@@ -323,53 +369,8 @@ class ActionPanelView(TextView):
                 y_pixel += line_height // 2  # Small spacing between categories
 
         elif self._cached_target_name is None:
-            # Check if player is standing on items
-            player = self.controller.gw.player
-            items_here = self.controller.gw.get_pickable_items_at_location(
-                player.x, player.y
-            )
-
-            if items_here:
-                # Show items at player's feet prominently
-                self.canvas.draw_text(
-                    pixel_x=x_padding,
-                    pixel_y=y_pixel - ascent,
-                    text="Items at your feet:",
-                    color=colors.YELLOW,
-                )
-                y_pixel += line_height
-
-                # List items (up to 3)
-                for item in items_here[:3]:
-                    self.canvas.draw_text(
-                        pixel_x=x_padding + 10,
-                        pixel_y=y_pixel - ascent,
-                        text=f"• {item.name}",
-                        color=colors.WHITE,
-                    )
-                    y_pixel += line_height
-
-                if len(items_here) > 3:
-                    self.canvas.draw_text(
-                        pixel_x=x_padding + 10,
-                        pixel_y=y_pixel - ascent,
-                        text=f"• ...and {len(items_here) - 3} more",
-                        color=colors.GREY,
-                    )
-                    y_pixel += line_height
-
-                y_pixel += line_height // 2
-
-                # Show pickup prompt
-                self._draw_keycap_with_label(
-                    x=x_padding,
-                    y=y_pixel - ascent,
-                    key="G",
-                    label="Pick up items",
-                )
-                y_pixel += line_height * 2
-            else:
-                # Empty state - show helpful hints
+            # Show helpful hints only when no items at feet and no mouse target
+            if not items_here:
                 self.canvas.draw_text(
                     pixel_x=x_padding,
                     pixel_y=y_pixel - ascent,

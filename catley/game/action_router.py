@@ -23,6 +23,7 @@ from catley.game.actions.executors.doors import (
 )
 from catley.game.actions.executors.environmental import EnvironmentalDamageExecutor
 from catley.game.actions.executors.misc import (
+    DropItemExecutor,
     PickupExecutor,
     PickupItemsAtLocationExecutor,
     SwitchWeaponExecutor,
@@ -35,6 +36,7 @@ from catley.game.actions.executors.recovery import (
     UseConsumableExecutor,
 )
 from catley.game.actions.misc import (
+    DropItemIntent,
     PickupIntent,
     PickupItemsAtLocationIntent,
     SwitchWeaponIntent,
@@ -80,6 +82,7 @@ class ActionRouter:
             PickupIntent: PickupExecutor(),
             PickupItemsAtLocationIntent: PickupItemsAtLocationExecutor(),
             SwitchWeaponIntent: SwitchWeaponExecutor(),
+            DropItemIntent: DropItemExecutor(),
             OpenDoorIntent: OpenDoorExecutor(),
             CloseDoorIntent: CloseDoorExecutor(),
             UseConsumableIntent: UseConsumableExecutor(),

@@ -7,6 +7,7 @@ from .base import GameIntent
 if TYPE_CHECKING:
     from catley.controller import Controller
     from catley.game.actors import Character
+    from catley.game.items.item_core import Item
 
 
 class PickupIntent(GameIntent):
@@ -30,3 +31,11 @@ class SwitchWeaponIntent(GameIntent):
     def __init__(self, controller: Controller, actor: Character, slot: int) -> None:
         super().__init__(controller, actor)
         self.slot = slot
+
+
+class DropItemIntent(GameIntent):
+    """Intent for dropping an item from inventory to the ground."""
+
+    def __init__(self, controller: Controller, actor: Character, item: Item) -> None:
+        super().__init__(controller, actor)
+        self.item = item
