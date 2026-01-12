@@ -14,3 +14,8 @@ wheels/
 
 # Generated LLM text bundle
 llm_bundle*.txt
+
+# PyInstaller
+dist/
+build/
+*.spec
