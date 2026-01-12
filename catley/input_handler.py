@@ -366,7 +366,45 @@ class InputHandler:
         if event.button != tcod.event.MouseButton.LEFT:
             return None
 
+        # Check if click is on the status view (conditions display)
+        status_view_command = self._check_status_view_click(root_tile_pos)
+        if status_view_command:
+            return status_view_command
+
         # Left click does nothing - no tile/actor selection
+        return None
+
+    def _check_status_view_click(
+        self, root_tile_pos: RootConsoleTilePos
+    ) -> UICommand | None:
+        """Check if click is on a condition row in status view, open inventory.
+
+        Only condition rows are clickable (not status effect rows or empty rows).
+        Status effects are informational only; conditions can be managed in inventory.
+        """
+        status_view = self.fm.status_view
+        tile_x, tile_y = root_tile_pos
+
+        # Check within status view horizontal bounds
+        if not (status_view.x <= tile_x < status_view.x + status_view.width):
+            return None
+
+        # Calculate which row was clicked (relative to view)
+        clicked_row = tile_y - status_view.y
+        if clicked_row < 0:
+            return None
+
+        # Only clickable if clicking on a condition row (after status effects)
+        num_effects = status_view._num_status_effects_displayed
+        num_conditions = status_view._num_conditions_displayed
+
+        # Conditions start after status effects
+        condition_start_row = num_effects
+        condition_end_row = num_effects + num_conditions
+
+        if condition_start_row <= clicked_row < condition_end_row:
+            return OpenMenuUICommand(self.controller, InventoryMenu)
+
         return None
 
     def _has_available_actions(self, target: Actor | WorldTilePos) -> bool:

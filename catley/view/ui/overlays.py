@@ -353,6 +353,18 @@ class Menu(TextOverlay):
 
         return None
 
+    def _is_point_inside_menu(
+        self, global_px_x: PixelCoord, global_px_y: PixelCoord
+    ) -> bool:
+        """Check if a global pixel position is inside the menu bounds."""
+        relative_px_x, relative_px_y = self._convert_global_mouse_to_menu_relative(
+            global_px_x, global_px_y
+        )
+        return (
+            0 <= relative_px_x < self.pixel_width
+            and 0 <= relative_px_y < self.pixel_height
+        )
+
     def _update_mouse_state(
         self, global_px_x: PixelCoord, global_px_y: PixelCoord
     ) -> None:
@@ -382,6 +394,11 @@ class Menu(TextOverlay):
                 mouse_px_x: PixelCoord = mouse_pixel_pos[0]
                 mouse_px_y: PixelCoord = mouse_pixel_pos[1]
                 self._update_mouse_state(mouse_px_x, mouse_px_y)
+
+                # Close menu if clicking outside its bounds
+                if not self._is_point_inside_menu(mouse_px_x, mouse_px_y):
+                    self.hide()
+                    return True
 
                 if (
                     self.hovered_option_index is not None

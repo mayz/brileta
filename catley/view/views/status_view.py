@@ -16,12 +16,20 @@ if TYPE_CHECKING:
 
 
 class StatusView(TextView):
-    """View that displays active conditions and status effects."""
+    """View that displays active conditions and status effects.
+
+    Layout: Vertical, one item per line.
+    Order: Status effects first (temporary), then conditions (persistent).
+    Click behavior: Only condition rows are clickable (opens inventory).
+    """
 
     def __init__(self, controller: Controller) -> None:
         super().__init__()
         self.controller = controller
         self.canvas = self.controller.graphics.create_canvas()
+        # Track displayed counts for click detection
+        self._num_status_effects_displayed = 0
+        self._num_conditions_displayed = 0
 
     def get_cache_key(self) -> int:
         """The key is the modifiers' revision number."""
@@ -30,35 +38,49 @@ class StatusView(TextView):
     def draw_content(
         self, graphics: GraphicsContext, alpha: InterpolationAlpha
     ) -> None:
-        """Render the status view if player has active effects."""
-
+        """Render status effects and conditions vertically, one per line."""
         tile_w, tile_h = self.tile_dimensions
         pixel_width = self.width * tile_w
         pixel_height = self.height * tile_h
         self.canvas.draw_rect(0, 0, pixel_width, pixel_height, colors.BLACK, fill=True)
 
         player = self.controller.gw.player
-        all_effects = player.modifiers.get_all_active_effects()
-        if not all_effects:
+
+        # Gather items: status effects first, then conditions
+        status_effects = self._get_status_effect_lines(player)
+        conditions = self._get_condition_lines(player)
+
+        if not status_effects and not conditions:
+            self._num_status_effects_displayed = 0
+            self._num_conditions_displayed = 0
             return
 
-        current_x_tile = 0
-        conditions = self._get_condition_lines(player)
-        status_effects = self._get_status_effect_lines(player)
+        # Build display list: (text, color, is_condition)
+        # Status effects first (no brackets), then conditions (with brackets)
+        display_items: list[tuple[str, colors.Color, bool]] = [
+            (text, colors.LIGHT_GREY, False) for text in status_effects
+        ]
+        display_items.extend((f"[{text}]", color, True) for text, color in conditions)
 
-        for text, color in conditions:
-            token = f"[{text}]"
-            if current_x_tile + len(token) > self.width:
-                break
-            self.canvas.draw_text(current_x_tile * tile_w, 0, token, color)
-            current_x_tile += len(token) + 1
+        # Reset counts
+        self._num_status_effects_displayed = 0
+        self._num_conditions_displayed = 0
 
-        for text in status_effects:
-            token = f"[{text}]"
-            if current_x_tile + len(token) > self.width:
+        # Draw vertically, one per line
+        max_lines = self.height
+        for i, (text, color, is_condition) in enumerate(display_items[:max_lines]):
+            # Show overflow indicator on last line if needed
+            if i == max_lines - 1 and len(display_items) > max_lines:
+                remaining = len(display_items) - max_lines + 1
+                overflow_text = f"+{remaining} more"
+                self.canvas.draw_text(0, i * tile_h, overflow_text, colors.YELLOW)
                 break
-            self.canvas.draw_text(current_x_tile * tile_w, 0, token, colors.LIGHT_GREY)
-            current_x_tile += len(token) + 1
+
+            self.canvas.draw_text(0, i * tile_h, text, color)
+            if is_condition:
+                self._num_conditions_displayed += 1
+            else:
+                self._num_status_effects_displayed += 1
 
     def _get_condition_lines(self, player: Character) -> list[tuple[str, colors.Color]]:
         """Get formatted display lines for conditions."""
