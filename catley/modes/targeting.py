@@ -39,8 +39,8 @@ class TargetingMode(Mode):
         # Subscribe to actor death events only while targeting
         subscribe_to_event(ActorDeathEvent, self._handle_actor_death_event)
 
-        # FIXME: Set the "crosshair" cursor once we have a suitable image.
-        # self.cursor_manager.set_active_cursor_type("crosshair")
+        # Set the crosshair cursor to indicate targeting mode
+        self.cursor_manager.set_active_cursor_type("crosshair")
 
         self.controller.overlay_system.show_overlay(self.targeting_indicator_overlay)
 
@@ -114,6 +114,17 @@ class TargetingMode(Mode):
                         )
                         self.controller.queue_action(attack_action)
                 return True
+
+            case tcod.event.MouseButtonDown(button=tcod.event.MouseButton.LEFT):
+                # Click-to-attack: find actor at click position and attack if valid
+                clicked_actor = self._get_actor_at_mouse_position(event)
+                if clicked_actor and clicked_actor in self.candidates:
+                    attack_action = AttackIntent(
+                        self.controller, self.controller.gw.player, clicked_actor
+                    )
+                    self.controller.queue_action(attack_action)
+                    return True
+                return True  # Consume click even if no valid target
 
         return False
 
@@ -225,3 +236,42 @@ class TargetingMode(Mode):
         return ranges.calculate_distance(
             self.controller.gw.player.x, self.controller.gw.player.y, actor.x, actor.y
         )
+
+    def _get_actor_at_mouse_position(
+        self, event: tcod.event.MouseButtonDown
+    ) -> Character | None:
+        """Convert mouse click position to world coordinates and find actor there."""
+        assert self.controller.frame_manager is not None
+
+        # Convert pixel coordinates to root console tile coordinates
+        graphics = self.controller.graphics
+        scale_x, scale_y = graphics.get_display_scale_factor()
+        scaled_px_x = event.position.x * scale_x
+        scaled_px_y = event.position.y * scale_y
+        root_tile_x, root_tile_y = graphics.pixel_to_tile(scaled_px_x, scaled_px_y)
+
+        # Convert root tile to world tile coordinates
+        root_tile_pos = (int(root_tile_x), int(root_tile_y))
+        world_tile_pos = (
+            self.controller.frame_manager.get_world_coords_from_root_tile_coords(
+                root_tile_pos
+            )
+        )
+
+        if world_tile_pos is None:
+            return None
+
+        world_x, world_y = world_tile_pos
+        gw = self.controller.gw
+
+        # Check bounds and visibility
+        if not (0 <= world_x < gw.game_map.width and 0 <= world_y < gw.game_map.height):
+            return None
+        if not gw.game_map.visible[world_x, world_y]:
+            return None
+
+        # Find actor at this position
+        actor = gw.get_actor_at_location(world_x, world_y)
+        if isinstance(actor, Character) and actor.health.is_alive():
+            return actor
+        return None

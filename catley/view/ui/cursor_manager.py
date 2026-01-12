@@ -120,7 +120,6 @@ class CursorManager:
 
     def _load_default_cursors(self) -> None:
         self._load_cursor(cursor_name="arrow", filename="arrow1.png", hotspot=(6, 3))
-        # self._load_cursor(
-        # cursor_name="crosshair",
-        # filename="crosshair1.png",
-        # hotspot=(15, q5))
+        self._load_cursor(
+            cursor_name="crosshair", filename="crosshair1.png", hotspot=(15, 15)
+        )
