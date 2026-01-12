@@ -50,3 +50,11 @@ Individual commands are available as `make lint`, `make format`, `make typecheck
 - When implementing new code or fixing bugs, if the functionality isn't already covered by unit testing, implement one or more unit tests to test it as you see fit.
 
 - As you make changes, add docstrings and line comments to clarify to a human reader *what* the code is doing and, if needed, *why* it's doing it that way.
+
+## Design Discussions
+
+When discussing game design, architecture, or implementation trade-offs:
+- Present the landscape of options before recommending one
+- Argue from first principles, not just pattern-matching to what I seem to want
+- Make clear recommendations with explicit reasoning
+- Push back on assumptions that don't hold up
