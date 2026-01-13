@@ -21,9 +21,8 @@ class HelpMenu(Menu):
             ("Movement", "Arrow keys or numpad"),
             ("Select Actor", "Left-click to select"),
             ("Target Menu", "T - Full targeting options for selected actor"),
-            ("Inventory", "I - Open inventory menu"),
+            ("Inventory", "I - Open inventory (pick up items when on ground)"),
             ("Dev Console", "` - Open developer console"),
-            ("Get Items", "G - Pick up items from ground/corpses"),
             ("Quit", "Q - Quit game"),
             ("Help", "? - Show this help menu"),
         ]

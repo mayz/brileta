@@ -24,6 +24,19 @@ class WeaponProperty(Enum):
     UNARMED = auto()  # Bare hands, fists, natural weapons
 
 
+# Player-facing descriptions for weapon properties.
+# Only properties with meaningful info for the player are included.
+# Internal markers (PREFERRED, IMPROVISED, UNARMED) and properties that
+# don't communicate useful info (AUTOMATIC, CONTINUOUS, THROWN) are omitted.
+WEAPON_PROPERTY_DESCRIPTIONS: dict[WeaponProperty, str] = {
+    WeaponProperty.SCOPED: "Advantage at long range",
+    WeaponProperty.AWKWARD: "Lose balance on miss",
+    WeaponProperty.ARMOR_PIERCING: "Ignores armor",
+    WeaponProperty.SILENT: "Doesn't alert enemies",
+    WeaponProperty.TWO_HANDED: "Requires both hands",
+}
+
+
 class StatusProperty(Enum):
     """Properties that apply status effects to targets."""
 

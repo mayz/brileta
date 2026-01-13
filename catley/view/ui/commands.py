@@ -28,7 +28,6 @@ from typing import TYPE_CHECKING
 
 from catley.game.actors import Actor
 from catley.view.ui.overlays import Menu
-from catley.view.ui.pickup_menu import PickupMenu
 
 if TYPE_CHECKING:
     from catley.app import App
@@ -97,23 +96,6 @@ class OpenMenuUICommand(UICommand):
         assert self.controller.overlay_system is not None
         menu = self.menu_class(self.controller)
         self.controller.overlay_system.show_menu(menu)
-
-
-class OpenPickupMenuUICommand(OpenMenuUICommand):
-    """Command to open the pickup menu for items at the player's location."""
-
-    def __init__(self, controller: Controller) -> None:
-        self.controller = controller
-        self.player = controller.gw.player
-
-    def execute(self) -> None:
-        # Check if there are items to pick up, otherwise do nothing.
-        if self.controller.gw.has_pickable_items_at_location(
-            self.player.x, self.player.y
-        ):
-            assert self.controller.overlay_system is not None
-            menu = PickupMenu(self.controller, (self.player.x, self.player.y))
-            self.controller.overlay_system.show_menu(menu)
 
 
 class OpenExistingMenuUICommand(UICommand):

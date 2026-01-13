@@ -18,8 +18,8 @@ from catley.types import (
 )
 from catley.view.ui.action_browser_menu import ActionBrowserMenu
 from catley.view.ui.context_menu import ContextMenu
+from catley.view.ui.dual_pane_menu import DualPaneMenu, ExternalInventory
 from catley.view.ui.help_menu import HelpMenu
-from catley.view.ui.inventory_menu import InventoryMenu
 
 from .game.actions.base import GameIntent
 
@@ -32,7 +32,6 @@ from typing import Final
 from .view.ui.commands import (
     OpenExistingMenuUICommand,
     OpenMenuUICommand,
-    OpenPickupMenuUICommand,
     QuitUICommand,
     ToggleFullscreenUICommand,
     UICommand,
@@ -50,7 +49,6 @@ class Keys:
     KEY_L: Final = tcod.event.KeySym(ord("l"))
     KEY_Q: Final = tcod.event.KeySym(ord("q"))
     KEY_I: Final = tcod.event.KeySym(ord("i"))
-    KEY_G: Final = tcod.event.KeySym(ord("g"))
     KEY_T: Final = tcod.event.KeySym(ord("t"))
     KEY_R: Final = tcod.event.KeySym(ord("r"))
 
@@ -229,7 +227,15 @@ class InputHandler:
 
         match event:
             case tcod.event.KeyDown(sym=Keys.KEY_I):
-                return OpenMenuUICommand(self.controller, InventoryMenu)
+                # Open inventory (loot mode if standing on items)
+                player = self.controller.gw.player
+                if self.controller.gw.has_pickable_items_at_location(
+                    player.x, player.y
+                ):
+                    source = ExternalInventory((player.x, player.y), "On the ground")
+                    menu = DualPaneMenu(self.controller, source=source)
+                    return OpenExistingMenuUICommand(self.controller, menu)
+                return OpenMenuUICommand(self.controller, DualPaneMenu)
 
             case tcod.event.KeyDown(sym=tcod.event.KeySym.BACKQUOTE):
                 if self.dev_console_overlay is not None:
@@ -249,9 +255,6 @@ class InputHandler:
 
             case tcod.event.KeyDown(sym=tcod.event.KeySym.SPACE):
                 return OpenMenuUICommand(self.controller, ActionBrowserMenu)
-
-            case tcod.event.KeyDown(sym=Keys.KEY_G):
-                return OpenPickupMenuUICommand(self.controller)
 
             case tcod.event.KeyDown(sym=Keys.KEY_T):
                 # Toggle targeting mode
@@ -403,7 +406,7 @@ class InputHandler:
         condition_end_row = num_effects + num_conditions
 
         if condition_start_row <= clicked_row < condition_end_row:
-            return OpenMenuUICommand(self.controller, InventoryMenu)
+            return OpenMenuUICommand(self.controller, DualPaneMenu)
 
         return None
 

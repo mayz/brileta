@@ -5,11 +5,12 @@ from catley.controller import Controller
 from catley.game.actors import components
 from catley.game.items.item_types import COMBAT_KNIFE_TYPE, PISTOL_TYPE
 from catley.util.message_log import MessageLog
-from catley.view.ui.inventory_menu import InventoryMenu
+from catley.view.ui.dual_pane_menu import DualPaneMenu
 from tests.rendering.backends.test_canvases import _make_renderer
 
 
-def test_inventory_menu_equips_to_active_slot() -> None:
+def test_dual_pane_menu_equips_to_active_slot() -> None:
+    """Test that DualPaneMenu._use_item equips to the active weapon slot."""
     stats = components.StatsComponent(strength=0)
     inv = components.InventoryComponent(stats)
     pistol = PISTOL_TYPE.create()
@@ -29,7 +30,7 @@ def test_inventory_menu_equips_to_active_slot() -> None:
         ),
     )
 
-    menu = InventoryMenu(controller)
+    menu = DualPaneMenu(controller)
     menu._use_item(knife)
 
     assert inv.attack_slots[1] == knife

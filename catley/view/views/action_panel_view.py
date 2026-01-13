@@ -270,7 +270,7 @@ class ActionPanelView(TextView):
             self._draw_keycap_with_label(
                 x=x_padding,
                 y=y_pixel - ascent,
-                key="G",
+                key="I",
                 label="Pick up items",
             )
             y_pixel += line_height * 2

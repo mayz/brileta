@@ -9,7 +9,7 @@ from catley.game.consequences import ConsequenceHandler
 from catley.game.game_world import GameWorld
 from catley.game.items.item_types import FISTS_TYPE, PISTOL_TYPE
 from catley.view.render.graphics import GraphicsContext
-from catley.view.ui.pickup_menu import PickupMenu
+from catley.view.ui.dual_pane_menu import DualPaneMenu, ExternalInventory
 from tests.helpers import DummyGameWorld
 from tests.rendering.backends.test_canvases import _make_renderer
 
@@ -66,7 +66,8 @@ def test_unarmed_weapon_drop_creates_no_actor() -> None:
     assert gw_actor_count(controller.gw) == 1
 
 
-def test_pickup_menu_removes_empty_container() -> None:
+def test_dual_pane_menu_removes_empty_container() -> None:
+    """Test that DualPaneMenu removes empty ground containers after pickup."""
     controller, actor = make_world()
     # Equip and drop a pistol
     pistol = PISTOL_TYPE.create()
@@ -83,14 +84,16 @@ def test_pickup_menu_removes_empty_container() -> None:
     assert ground_actor.inventory is not None
     assert pistol in ground_actor.inventory
 
-    menu = PickupMenu(cast(Controller, controller), (actor.x, actor.y))
-    menu._pickup_item(pistol)
+    source = ExternalInventory((actor.x, actor.y), "On the ground")
+    menu = DualPaneMenu(cast(Controller, controller), source=source)
+    menu._transfer_to_inventory(pistol)
 
     # Dropped container should be removed from world after pickup
     assert gw_actor_count(controller.gw) == 1
 
 
-def test_pickup_from_dead_actor_clears_slot() -> None:
+def test_dual_pane_pickup_from_dead_actor_clears_slot() -> None:
+    """Test that picking up from dead actors clears their equipment slots."""
     controller, _player = make_world()
     npc = Character(
         2,
@@ -107,8 +110,9 @@ def test_pickup_from_dead_actor_clears_slot() -> None:
     pistol = npc.inventory.attack_slots[0]
     assert pistol is not None
 
-    menu = PickupMenu(cast(Controller, controller), (npc.x, npc.y))
-    menu._pickup_item(pistol)
+    source = ExternalInventory((npc.x, npc.y), "Dead NPC")
+    menu = DualPaneMenu(cast(Controller, controller), source=source)
+    menu._transfer_to_inventory(pistol)
 
     assert controller.gw.get_pickable_items_at_location(npc.x, npc.y) == []
     assert all(slot is None for slot in npc.inventory.attack_slots)
