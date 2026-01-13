@@ -29,7 +29,7 @@ class WeaponProperty(Enum):
 # Internal markers (PREFERRED, IMPROVISED, UNARMED) and properties that
 # don't communicate useful info (AUTOMATIC, CONTINUOUS, THROWN) are omitted.
 WEAPON_PROPERTY_DESCRIPTIONS: dict[WeaponProperty, str] = {
-    WeaponProperty.SCOPED: "Advantage at long range",
+    WeaponProperty.SCOPED: "Awkward up close, steady at distance",
     WeaponProperty.AWKWARD: "Lose balance on miss",
     WeaponProperty.ARMOR_PIERCING: "Ignores armor",
     WeaponProperty.SILENT: "Doesn't alert enemies",

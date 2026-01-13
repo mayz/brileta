@@ -54,12 +54,16 @@ def test_get_range_category():
 
 
 def test_get_range_modifier_scoped():
+    """Scoped weapons are awkward up close but steady at distance."""
     attack = DummyRangedAttack(
         optimal_range=3, max_range=5, properties={WeaponProperty.SCOPED}
     )
     item = DummyItem(ranged_attack=cast(RangedAttack, attack))
-    mod = ranges.get_range_modifier(item, "far")
-    assert mod == {"has_advantage": True}
+    # Scoped weapons have disadvantage at close range
+    assert ranges.get_range_modifier(item, "adjacent") == {"has_disadvantage": True}
+    assert ranges.get_range_modifier(item, "close") == {"has_disadvantage": True}
+    # Scoped weapons have no modifier at far range (scope compensates for distance)
+    assert ranges.get_range_modifier(item, "far") == {}
 
 
 def test_has_line_of_sight():

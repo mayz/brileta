@@ -9,6 +9,7 @@ from catley.events import MessageEvent, publish_event
 from catley.game.actors import Actor, Character, ai
 from catley.game.actors.status_effects import OffBalanceEffect
 from catley.game.enums import Disposition, OutcomeTier
+from catley.game.items.properties import WeaponProperty
 from catley.util.dice import Dice, roll_d
 
 if TYPE_CHECKING:
@@ -36,13 +37,16 @@ class AttackConsequenceGenerator:
         weapon: Item,
         outcome_tier: OutcomeTier,
     ) -> list[Consequence]:
-        consequences = [
-            # Any attack generates a noise that alerts NPCs within 5 tiles.
-            Consequence(
-                type="noise_alert",
-                data={"source": attacker, "radius": 5},
+        consequences: list[Consequence] = []
+
+        # Silent weapons don't generate noise alerts
+        if not self._is_silent_weapon(weapon):
+            consequences.append(
+                Consequence(
+                    type="noise_alert",
+                    data={"source": attacker, "radius": 5},
+                )
             )
-        ]
 
         if outcome_tier == OutcomeTier.CRITICAL_FAILURE:
             # On critical failure, randomly select among possible consequences:
@@ -66,6 +70,10 @@ class AttackConsequenceGenerator:
                 consequences.append(Consequence(type="off_balance", target=attacker))
 
         return consequences
+
+    def _is_silent_weapon(self, weapon: Item) -> bool:
+        """Check if weapon has SILENT property (doesn't alert nearby enemies)."""
+        return WeaponProperty.SILENT in weapon.get_weapon_properties()
 
 
 class ConsequenceHandler:

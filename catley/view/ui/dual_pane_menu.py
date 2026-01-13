@@ -333,6 +333,16 @@ class DualPaneMenu(Menu):
 
         # Add to player inventory
         _success, _message, dropped_items = player.inventory.add_to_inventory(item)
+
+        # Reset ammo for thrown weapons so they can be used again
+        from catley.game.items.properties import WeaponProperty
+
+        if (
+            item.ranged_attack
+            and WeaponProperty.THROWN in item.ranged_attack.properties
+        ):
+            item.ranged_attack.current_ammo = item.ranged_attack.max_ammo
+
         publish_event(MessageEvent(f"You pick up {item.name}.", colors.WHITE))
 
         # Handle overflow drops
@@ -663,12 +673,16 @@ class DualPaneMenu(Menu):
         if chosen_attack:
             label, attack = chosen_attack
             if label == "Ranged":
-                ammo_str = (
-                    f"{attack.current_ammo}/{attack.max_ammo}"
-                    if attack.max_ammo
-                    else "N/A"
-                )
-                lines.append(f"Ranged: {attack.damage_dice} [{ammo_str}]")
+                # Skip ammo display for THROWN weapons (single-use items)
+                if WeaponProperty.THROWN in attack.properties:
+                    lines.append(f"Ranged: {attack.damage_dice}")
+                else:
+                    ammo_str = (
+                        f"{attack.current_ammo}/{attack.max_ammo}"
+                        if attack.max_ammo
+                        else "N/A"
+                    )
+                    lines.append(f"Ranged: {attack.damage_dice} [{ammo_str}]")
             else:
                 lines.append(f"{label}: {attack.damage_dice}")
 

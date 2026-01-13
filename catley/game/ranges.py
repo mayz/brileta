@@ -33,10 +33,12 @@ def get_range_modifier(weapon: Item, range_category: str) -> dict | None:
         "out_of_range": None,  # Impossible
     }
 
-    # Special weapon properties can modify this
+    # Scoped weapons are awkward at close range ("closer than distant")
+    # but the scope compensates for distance at far range
     if WeaponProperty.SCOPED in ranged_attack.properties:
-        # Scoped weapons get advantage at far range instead of disadvantage
-        modifiers["far"] = {"has_advantage": True}
+        modifiers["adjacent"] = {"has_disadvantage": True}
+        modifiers["close"] = {"has_disadvantage": True}
+        modifiers["far"] = {}  # Neutral instead of disadvantage
 
     return modifiers.get(range_category)
 

@@ -100,14 +100,14 @@ class HealthComponent:
         return self.stats.max_hp
 
     def take_damage(self, amount: int, damage_type: str = "normal") -> None:
-        """Handle damage to the actor, reducing AP first unless radiation.
+        """Handle damage to the actor, reducing AP first unless bypassing armor.
 
         Args:
             amount: Amount of damage to take
-            damage_type: "normal" or "radiation"
+            damage_type: "normal", "radiation", or "armor_piercing"
         """
-        if damage_type == "radiation":
-            # Radiation bypasses armor entirely
+        if damage_type in ("radiation", "armor_piercing"):
+            # These damage types bypass armor entirely
             self.hp = max(0, self.hp - amount)
             return
 

@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 from catley import colors
 from catley.constants.view import ViewConstants as View
+from catley.game.items.properties import WeaponProperty
 from catley.types import InterpolationAlpha
 from catley.view.render.graphics import GraphicsContext
 
@@ -41,10 +42,12 @@ class EquipmentView(TextView):
         self.canvas.draw_text(0, 0, hint_text, colors.GREY)
 
         # Check for reload hint and display on separate line
+        # (skip for THROWN weapons - they don't have reloadable ammo)
         active_weapon = player.inventory.get_active_weapon()
         if (
             active_weapon
             and active_weapon.ranged_attack
+            and WeaponProperty.THROWN not in active_weapon.ranged_attack.properties
             and active_weapon.ranged_attack.current_ammo
             < active_weapon.ranged_attack.max_ammo
         ):
@@ -63,7 +66,11 @@ class EquipmentView(TextView):
             slot_name = f"{active_marker}{i + 1}"
             if item:
                 item_text = f"{slot_name}: {item.name}"
-                if item.ranged_attack:
+                # Show ammo for ranged weapons, but not for THROWN (single-use items)
+                if (
+                    item.ranged_attack
+                    and WeaponProperty.THROWN not in item.ranged_attack.properties
+                ):
                     ammo = (
                         f"[{item.ranged_attack.current_ammo}/"
                         f"{item.ranged_attack.max_ammo}]"

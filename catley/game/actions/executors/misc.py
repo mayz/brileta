@@ -8,6 +8,7 @@ from catley.game.actions.base import GameActionResult
 from catley.game.actions.executors.base import ActionExecutor
 from catley.game.actors import Character
 from catley.game.items.item_core import Item
+from catley.game.items.properties import WeaponProperty
 
 if TYPE_CHECKING:
     from catley.game.actions.misc import (
@@ -49,6 +50,12 @@ class PickupExecutor(ActionExecutor):
             success, _message, dropped_items = actor_inv.add_to_inventory(item)
             if success:
                 picked_up.append(item.name)
+                # Reset ammo for thrown weapons so they can be used again
+                if (
+                    item.ranged_attack
+                    and WeaponProperty.THROWN in item.ranged_attack.properties
+                ):
+                    item.ranged_attack.current_ammo = item.ranged_attack.max_ammo
                 # Spawn any dropped items at actor's location
                 for dropped in dropped_items:
                     intent.controller.gw.spawn_ground_item(
@@ -123,16 +130,21 @@ class PickupItemsAtLocationExecutor(ActionExecutor):
         pass
 
     def execute(self, intent: PickupItemsAtLocationIntent) -> GameActionResult | None:  # type: ignore[override]
-        # Open the pickup menu UI for items at the actor's location
-        from catley.view.ui.commands import OpenPickupMenuUICommand
+        """Open the pickup menu UI for items at the actor's location."""
+        from catley.view.ui.commands import OpenExistingMenuUICommand
+        from catley.view.ui.dual_pane_menu import DualPaneMenu, ExternalInventory
 
         # Check if there are items at the actor's location
         items = intent.controller.gw.get_pickable_items_at_location(
             intent.actor.x, intent.actor.y
         )
         if items:
-            # Open the pickup menu
-            pickup_cmd = OpenPickupMenuUICommand(intent.controller)
+            # Open the pickup menu with ground items as the source
+            source = ExternalInventory(
+                (intent.actor.x, intent.actor.y), "On the ground"
+            )
+            menu = DualPaneMenu(intent.controller, source=source)
+            pickup_cmd = OpenExistingMenuUICommand(intent.controller, menu)
             pickup_cmd.execute()
         return GameActionResult()
 

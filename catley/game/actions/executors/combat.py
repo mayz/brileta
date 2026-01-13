@@ -467,6 +467,30 @@ class AttackExecutor(ActionExecutor):
             if weapon.ranged_attack.current_ammo == 0:
                 self._emit_dry_fire(intent)
 
+                # Thrown items are consumed after use - remove from inventory
+                # and spawn at target location for potential retrieval.
+                # Skip if critical failure - weapon_drop consequence handles that case.
+                if (
+                    WeaponProperty.THROWN in weapon.ranged_attack.properties
+                    and attack_result.outcome_tier != OutcomeTier.CRITICAL_FAILURE
+                ):
+                    inv = intent.attacker.inventory
+                    # Unequip from attack slot
+                    for slot_idx, equipped in enumerate(inv.attack_slots):
+                        if equipped is weapon:
+                            inv.unequip_slot(slot_idx)
+                            break
+                    # Also remove from stored inventory (in case it's there too)
+                    inv.remove_from_inventory(weapon)
+
+                    # Spawn at target location for potential retrieval
+                    if weapon.can_materialize and intent.defender:
+                        gw = intent.attacker.gw
+                        if gw:
+                            gw.spawn_ground_item(
+                                weapon, intent.defender.x, intent.defender.y
+                            )
+
         return attack_result
 
     def _emit_muzzle_flash(self, intent: AttackIntent, weapon: Item) -> None:
@@ -554,10 +578,14 @@ class AttackExecutor(ActionExecutor):
             if outcome.injury_inflicted is not None:
                 intent.defender.inventory.add_to_inventory(outcome.injury_inflicted)
 
-            # Check if this is radiation damage
+            # Check if damage bypasses armor (radiation or armor-piercing)
             damage_type = "normal"
-            if weapon and TacticalProperty.RADIATION in weapon.get_weapon_properties():
-                damage_type = "radiation"
+            if weapon:
+                props = weapon.get_weapon_properties()
+                if TacticalProperty.RADIATION in props:
+                    damage_type = "radiation"
+                elif WeaponProperty.ARMOR_PIERCING in props:
+                    damage_type = "armor_piercing"
 
             if damage > 0:
                 intent.defender.take_damage(damage, damage_type=damage_type)
