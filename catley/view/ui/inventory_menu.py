@@ -10,7 +10,6 @@ import tcod.event
 from catley import colors
 from catley.events import MessageEvent, publish_event
 from catley.game.actors import Condition
-from catley.game.enums import ItemSize
 from catley.game.items.item_core import Item
 from catley.view.ui.overlays import Menu, MenuOption
 
@@ -42,11 +41,10 @@ class InventoryMenu(Menu):
         stored_items = self.inventory._stored_items
         all_items_to_display = [(item, "stored") for item in stored_items]
 
-        # Add all equipped items
+        # Add all equipped items with their slot index
         for slot_index, equipped_item in enumerate(self.inventory.attack_slots):
             if equipped_item:
-                slot_name = self.inventory.get_slot_display_name(slot_index)
-                all_items_to_display.append((equipped_item, f"equipped in {slot_name}"))
+                all_items_to_display.append((equipped_item, f"slot:{slot_index}"))
 
         if not all_items_to_display:
             display_lines.append(
@@ -79,25 +77,19 @@ class InventoryMenu(Menu):
             if isinstance(entity_in_slot, Item):
                 item: Item = entity_in_slot
 
-                if item_status.startswith("equipped"):
-                    equipped_marker = f" ({item_status})"
-                else:
-                    equipped_marker = ""
+                # Parse equipped slot number for prefix display
+                # Use fixed width (5 chars) for alignment: "[1]  " or "     "
+                equipped_prefix = "     "  # 5 spaces for non-equipped
+                equipped_prefix_color: colors.Color | None = None
+                if item_status.startswith("slot:"):
+                    slot_num = (
+                        int(item_status.split(":")[1]) + 1
+                    )  # 0-indexed to 1-indexed
+                    equipped_prefix = f"[{slot_num}]  "  # 5 chars: [n] + 2 spaces
+                    equipped_prefix_color = colors.YELLOW
 
-                size_display = ""
-                item_display_color = colors.WHITE
-
-                if item.size == ItemSize.TINY:
-                    size_display = " (Tiny)"
-                elif item.size == ItemSize.NORMAL:
-                    size_display = " █"
-                elif item.size == ItemSize.BIG:
-                    size_display = " █ █"
-                elif item.size == ItemSize.HUGE:
-                    size_display = " █ █ █ █"
-
-                text_to_display = f"{item.name}{size_display}{equipped_marker}"
-                option_color = item_display_color
+                text_to_display = item.name
+                option_color = colors.WHITE
                 is_enabled = True
 
                 if letter_idx < len(letters):
@@ -112,10 +104,14 @@ class InventoryMenu(Menu):
                 force_color = True
                 is_enabled = False
                 action_to_take = None
+                equipped_prefix = "     "  # 5 spaces for alignment
+                equipped_prefix_color = None
             else:
                 text_to_display = f"Unknown: {entity_in_slot}"
                 option_color = colors.RED
                 is_enabled = False
+                equipped_prefix = "     "  # 5 spaces for alignment
+                equipped_prefix_color = None
 
             # Store entity reference in data field for drop functionality
             # (Items can be dropped; Conditions cannot - handle_input filters by type)
@@ -128,6 +124,8 @@ class InventoryMenu(Menu):
                     color=option_color,
                     force_color=force_color,
                     data=entity_in_slot,
+                    prefix=equipped_prefix,
+                    prefix_color=equipped_prefix_color,
                 )
             )
 

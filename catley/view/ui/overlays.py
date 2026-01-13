@@ -255,6 +255,10 @@ class MenuOption:
         force_color: bool = False,
         data: Any | None = None,
         is_primary_action: bool = True,
+        prefix: str = "",
+        prefix_color: colors.Color | None = None,
+        suffix: str = "",
+        suffix_color: colors.Color | None = None,
     ) -> None:
         self.key = key
         self.text = text
@@ -264,6 +268,10 @@ class MenuOption:
         self.color = color if enabled or force_color else colors.GREY
         self.data = data
         self.is_primary_action = is_primary_action
+        self.prefix = prefix
+        self.prefix_color = prefix_color if prefix_color else self.color
+        self.suffix = suffix
+        self.suffix_color = suffix_color if suffix_color else self.color
 
 
 class Menu(TextOverlay):
@@ -549,15 +557,53 @@ class Menu(TextOverlay):
                     min(255, b + 40),
                 )
 
-            text_px_x: PixelCoord = self.tile_dimensions[0] * 2
+            base_px_x: PixelCoord = self.tile_dimensions[0] * 2
             text_px_y: PixelCoord = self.tile_dimensions[1] * y_offset_tiles
+            current_px_x = base_px_x
+
+            # Draw prefix in its own color if present
+            if option.prefix:
+                prefix_color = option.prefix_color
+                if is_hovered:
+                    r, g, b = prefix_color
+                    prefix_color = (
+                        min(255, r + 40),
+                        min(255, g + 40),
+                        min(255, b + 40),
+                    )
+                self.canvas.draw_text(
+                    pixel_x=current_px_x,
+                    pixel_y=text_px_y,
+                    text=option.prefix,
+                    color=prefix_color,
+                )
+                current_px_x += len(option.prefix) * self.tile_dimensions[0]
 
             self.canvas.draw_text(
-                pixel_x=text_px_x,
+                pixel_x=current_px_x,
                 pixel_y=text_px_y,
                 text=option_text,
                 color=text_color,
             )
+            current_px_x += len(option_text) * self.tile_dimensions[0]
+
+            # Draw suffix in its own color if present
+            if option.suffix:
+                suffix_color = option.suffix_color
+                if is_hovered:
+                    r, g, b = suffix_color
+                    suffix_color = (
+                        min(255, r + 40),
+                        min(255, g + 40),
+                        min(255, b + 40),
+                    )
+                self.canvas.draw_text(
+                    pixel_x=current_px_x,
+                    pixel_y=text_px_y,
+                    text=option.suffix,
+                    color=suffix_color,
+                )
+
             y_offset_tiles += 1
 
     def render_title(self) -> None:
