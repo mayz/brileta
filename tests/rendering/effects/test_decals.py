@@ -1,6 +1,7 @@
 """Unit tests for the DecalSystem."""
 
 import math
+import random
 from unittest.mock import patch
 
 import pytest
@@ -349,6 +350,9 @@ class TestSplatterRays:
 
     def test_splatter_rays_intensity_affects_count(self) -> None:
         """Higher intensity should create more rays and thus more decals."""
+        # Seed RNG for deterministic test behavior
+        random.seed(42)
+
         ds_low = DecalSystem()
         ds_high = DecalSystem()
         colors_chars = [((100, 0, 0), "*")]

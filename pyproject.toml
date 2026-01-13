@@ -21,7 +21,7 @@ where = ["catley"]
 pythonpath = "."
 testpaths = ["tests"]
 python_files = ["test_*.py"]
-addopts = "-ra"
+addopts = "-ra -n auto"
 filterwarnings = [
     "ignore:There is no current event loop:DeprecationWarning:wgpu.gui.glfw",
 ]
@@ -70,5 +70,6 @@ dev = [
     "pyinstaller>=6.17.0",
     "pyright>=1.1.402",
     "pytest>=8.4.0",
+    "pytest-xdist>=3.8.0",
     "ruff>=0.14.2",
 ]
