@@ -174,7 +174,7 @@ class DropItemExecutor(ActionExecutor):
         # Check if item is equipped in an attack slot and unequip it
         for i, slot_item in enumerate(inventory.attack_slots):
             if slot_item is item:
-                inventory.attack_slots[i] = None
+                inventory.unequip_slot(i)
                 removed = True
                 break
 

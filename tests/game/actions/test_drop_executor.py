@@ -244,3 +244,26 @@ class TestDropItemExecutorEdgeCases:
         # Inventory should have one less item
         final_count = len(list(player.inventory))
         assert final_count == initial_count - 1
+
+    def test_drop_equipped_item_increments_revision(self) -> None:
+        """Test that dropping an equipped item increments the inventory revision.
+
+        The revision counter is used by the view caching system to detect changes.
+        If not incremented, the UI won't update to show the slot as empty.
+        """
+        controller, player, item = make_player_with_item()
+
+        # Move item from stored inventory to equipped slot
+        player.inventory.remove_from_inventory(item)
+        player.inventory.equip_to_slot(item, 0)
+
+        # Record revision before drop
+        revision_before = player.inventory.revision
+
+        # Execute drop
+        intent = DropItemIntent(cast(Controller, controller), player, item)
+        executor = DropItemExecutor()
+        executor.execute(intent)
+
+        # Revision should have incremented so views know to redraw
+        assert player.inventory.revision > revision_before
