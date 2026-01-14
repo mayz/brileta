@@ -82,7 +82,7 @@ VALID_BACKEND_CONFIG_COMBINATIONS = [
     ("glfw", "wgpu", "wgpu"),
 ]
 
-# ============================================================================tcod
+# ============================================================================
 # PERFORMANCE CONFIGURATION
 # =============================================================================
 
@@ -92,7 +92,7 @@ FPS_SAMPLE_SIZE = 256  # Number of frame time samples to track
 # These are independent flags to control debugging features.
 
 # Set to True for uncapped FPS to identify performance bottlenecks.
-PERFORMANCE_PROFILING = True
+PERFORMANCE_PROFILING = False
 
 # Set to True to print metrics about the "tap vs. hold" input system.
 # This measures the real-world time between player-perceived moves, which is
@@ -102,23 +102,23 @@ SHOW_ACTION_PROCESSING_METRICS = False
 
 # Set to True to initially watch the ``dev.fps`` variable, causing
 # the FPS counter to appear in the debug stats overlay at startup.
-SHOW_FPS = True
+# This setting is independent of PERFORMANCE_PROFILING.
+SHOW_FPS = False
 
 # Set to True to draw colored outlines around each View for debugging layouts.
 DEBUG_DRAW_VIEW_OUTLINES = False
 
-# --- Engine Settings (Derived from flags above) - DO NOT CHANGE DIRECTLY ---
-if PERFORMANCE_PROFILING:
-    # Shows true uncapped performance for bottleneck identification
-    TARGET_FPS = None
-    VSYNC = False
-    # Profiling almost always means you want to see the FPS counter.
-    SHOW_FPS = True
-else:
-    # Release Build & Daily Development
-    # TARGET_FPS = 120  # Target framerate for smooth gameplay
-    TARGET_FPS = 60  # Battery friendly mode
-    VSYNC = True
+# --- Begin Engine Settings (Derived from flags above) - DO NOT CHANGE DIRECTLY ---
+
+# Let VSYNC (or lack thereof) control frame timing.
+# Set TARGET_FPS = 60 for battery-friendly mode on laptops
+# (sacrifices smoothness on >60Hz displays).
+TARGET_FPS = None
+
+# VSYNC off for profiling (uncapped FPS), on otherwise (sync to monitor refresh rate).
+VSYNC = not PERFORMANCE_PROFILING
+
+# --- End Engine Settings ---
 
 # =============================================================================
 # GAMEPLAY MECHANICS
