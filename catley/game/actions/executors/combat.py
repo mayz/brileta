@@ -42,10 +42,6 @@ if TYPE_CHECKING:
 class AttackExecutor(ActionExecutor):
     """Executes attack intents by applying all combat logic."""
 
-    def __init__(self) -> None:
-        """Create an AttackExecutor without requiring a controller."""
-        pass
-
     def execute(self, intent: AttackIntent) -> GameActionResult | None:  # type: ignore[override]
         # Check for tile shot (no defender, but target coordinates set)
         if (
@@ -882,10 +878,6 @@ class AttackExecutor(ActionExecutor):
 
 class ReloadExecutor(ActionExecutor):
     """Executes reload intents."""
-
-    def __init__(self) -> None:
-        """Create a ReloadExecutor without requiring a controller."""
-        pass
 
     def execute(self, intent: ReloadIntent) -> GameActionResult | None:  # type: ignore[override]
         ranged_attack = intent.weapon.ranged_attack

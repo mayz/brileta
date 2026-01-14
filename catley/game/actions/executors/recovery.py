@@ -20,10 +20,6 @@ if TYPE_CHECKING:
 class UseConsumableExecutor(ActionExecutor):
     """Executes consumable item usage intents."""
 
-    def __init__(self) -> None:
-        """Create a UseConsumableExecutor without requiring a controller."""
-        pass
-
     def execute(self, intent: UseConsumableIntent) -> GameActionResult | None:  # type: ignore[override]
         if not intent.item.consumable_effect:
             publish_event(
@@ -50,10 +46,6 @@ class UseConsumableExecutor(ActionExecutor):
 
 class RestExecutor(ActionExecutor):
     """Executes rest intents for armor point recovery."""
-
-    def __init__(self) -> None:
-        """Create a RestExecutor without requiring a controller."""
-        pass
 
     def execute(self, intent: RestIntent) -> GameActionResult | None:  # type: ignore[override]
         from catley.game.actions.recovery import is_safe_location
@@ -86,10 +78,6 @@ class RestExecutor(ActionExecutor):
 class SleepExecutor(ActionExecutor):
     """Executes sleep intents for HP restoration and exhaustion removal."""
 
-    def __init__(self) -> None:
-        """Create a SleepExecutor without requiring a controller."""
-        pass
-
     def execute(self, intent: SleepIntent) -> GameActionResult | None:  # type: ignore[override]
         from catley.game.actions.recovery import is_safe_location
 
@@ -116,10 +104,6 @@ class SleepExecutor(ActionExecutor):
 
 class ComfortableSleepExecutor(ActionExecutor):
     """Executes comfortable sleep intents for full exhaustion removal."""
-
-    def __init__(self) -> None:
-        """Create a ComfortableSleepExecutor without requiring a controller."""
-        pass
 
     def execute(self, intent: ComfortableSleepIntent) -> GameActionResult | None:  # type: ignore[override]
         from catley.game.actions.recovery import is_safe_location

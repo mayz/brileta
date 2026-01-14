@@ -18,10 +18,6 @@ if TYPE_CHECKING:
 class MoveExecutor(ActionExecutor):
     """Executes movement intents by reporting movement results and collisions."""
 
-    def __init__(self) -> None:
-        """Create a MoveExecutor without requiring a controller."""
-        pass
-
     def execute(self, intent: MoveIntent) -> GameActionResult | None:  # type: ignore[override]
         game_map = intent.controller.gw.game_map
 

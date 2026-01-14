@@ -22,10 +22,6 @@ if TYPE_CHECKING:
 class PickupExecutor(ActionExecutor):
     """Executes pickup intents by adding items to actor inventory."""
 
-    def __init__(self) -> None:
-        """Create a PickupExecutor without requiring a controller."""
-        pass
-
     def execute(self, intent: PickupIntent) -> GameActionResult | None:  # type: ignore[override]
         """Pick up items from the ground, removing them from source actors."""
         actor_inv = getattr(intent.actor, "inventory", None)
@@ -112,10 +108,6 @@ class PickupExecutor(ActionExecutor):
 class PickupItemsAtLocationExecutor(ActionExecutor):
     """Executes pickup at location intents by opening the pickup menu."""
 
-    def __init__(self) -> None:
-        """Create a PickupItemsAtLocationExecutor without requiring a controller."""
-        pass
-
     def execute(self, intent: PickupItemsAtLocationIntent) -> GameActionResult | None:  # type: ignore[override]
         """Open the pickup menu UI for items at the actor's location."""
         from catley.view.ui.commands import OpenExistingMenuUICommand
@@ -139,10 +131,6 @@ class PickupItemsAtLocationExecutor(ActionExecutor):
 class SwitchWeaponExecutor(ActionExecutor):
     """Executes weapon switching intents."""
 
-    def __init__(self) -> None:
-        """Create a SwitchWeaponExecutor without requiring a controller."""
-        pass
-
     def execute(self, intent: SwitchWeaponIntent) -> GameActionResult | None:  # type: ignore[override]
         # Move logic from old SwitchWeaponAction.execute()
         inventory = getattr(intent.actor, "inventory", None)
@@ -156,10 +144,6 @@ class DropItemExecutor(ActionExecutor):
 
     Removes items from inventory and places them on the ground.
     """
-
-    def __init__(self) -> None:
-        """Create a DropItemExecutor without requiring a controller."""
-        pass
 
     def execute(self, intent: DropItemIntent) -> GameActionResult | None:  # type: ignore[override]
         """Drop an item from inventory to the ground at actor's location."""

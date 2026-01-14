@@ -31,10 +31,6 @@ class WeaponAreaEffectExecutor(ActionExecutor):
     For environmental damage (fire, radiation zones), use EnvironmentalDamageExecutor.
     """
 
-    def __init__(self) -> None:
-        """Create a WeaponAreaEffectExecutor without requiring a controller."""
-        pass
-
     def execute(self, intent: AreaEffectIntent) -> GameActionResult | None:  # type: ignore[override]
         effect = intent.weapon.area_effect
         if effect is None:

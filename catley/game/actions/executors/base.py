@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING
 from catley.game.actions.base import GameActionResult
 
 if TYPE_CHECKING:
-    from catley.controller import Controller
     from catley.game.actions.base import GameIntent
 
 
@@ -19,13 +18,14 @@ class ActionExecutor(abc.ABC):
     all the high-level coordination logic for an action, using various
     low-level systems to apply the final results to the GameWorld.
 
+    Executors are stateless workers - they access the Controller through
+    ``intent.controller`` rather than storing a reference. This keeps
+    executors decoupled from specific game instances.
+
     Executors are the "private implementation" of an action's logic and should
-    only ever be called by the `ActionRouter`. They should never be called
+    only ever be called by the ``ActionRouter``. They should never be called
     directly from UI or AI code.
     """
-
-    def __init__(self, controller: Controller) -> None:
-        self.controller = controller
 
     @abc.abstractmethod
     def execute(self, intent: GameIntent) -> GameActionResult | None:

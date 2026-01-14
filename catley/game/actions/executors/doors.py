@@ -13,10 +13,6 @@ if TYPE_CHECKING:
 class OpenDoorExecutor(ActionExecutor):
     """Executes door opening intents."""
 
-    def __init__(self) -> None:
-        """Create an OpenDoorExecutor without requiring a controller."""
-        pass
-
     def execute(self, intent: OpenDoorIntent) -> GameActionResult | None:  # type: ignore[override]
         game_map = intent.controller.gw.game_map
         if game_map.tiles[intent.x, intent.y] == TileTypeID.DOOR_CLOSED:
@@ -36,10 +32,6 @@ class OpenDoorExecutor(ActionExecutor):
 
 class CloseDoorExecutor(ActionExecutor):
     """Executes door closing intents."""
-
-    def __init__(self) -> None:
-        """Create a CloseDoorExecutor without requiring a controller."""
-        pass
 
     def execute(self, intent: CloseDoorIntent) -> GameActionResult | None:  # type: ignore[override]
         game_map = intent.controller.gw.game_map

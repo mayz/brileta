@@ -23,10 +23,6 @@ class EnvironmentalDamageExecutor(ActionExecutor):
     falling damage. For weapon-based area effects, use WeaponAreaEffectExecutor.
     """
 
-    def __init__(self) -> None:
-        """Create an EnvironmentalDamageExecutor without requiring a controller."""
-        pass
-
     def execute(self, intent: EnvironmentalDamageIntent) -> GameActionResult | None:  # type: ignore[override]
         """Execute environmental damage by finding actors at coordinates."""
         if intent.damage_amount <= 0:
