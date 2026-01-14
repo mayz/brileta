@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import cast
 
-from catley.game.enums import ItemSize
+from catley.game.enums import ItemCategory, ItemSize
 from catley.game.items.capabilities import (
     Ammo,
     AmmoSpec,
@@ -30,6 +30,7 @@ class ItemType:
     name: str
     description: str
     size: ItemSize
+    category: ItemCategory = ItemCategory.MISC
 
     # References to spec objects
     melee_attack: MeleeAttackSpec | None = None

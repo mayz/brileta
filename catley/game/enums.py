@@ -10,6 +10,21 @@ class ItemSize(Enum):
     HUGE = auto()
 
 
+class ItemCategory(Enum):
+    """Item categories for UI display and game mechanics.
+
+    Used for inventory display (colored prefixes like [W], [J]) and
+    for mechanics that care about item type (e.g., repair uses junk).
+    """
+
+    WEAPON = auto()  # [W] - Melee and ranged weapons
+    ARMOR = auto()  # [A] - Protective equipment
+    CONSUMABLE = auto()  # [C] - Food, medicine, chems
+    JUNK = auto()  # [J] - Scavenged parts for repair/crafting
+    MUNITIONS = auto()  # [M] - Ammo, magazines, batteries
+    MISC = auto()  # Uncategorized items
+
+
 class CreatureSize(Enum):
     """Creature size categories.
 
