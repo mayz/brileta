@@ -360,6 +360,27 @@ class InventoryComponent:
             return True
         return False
 
+    def try_remove_item(self, item: Item) -> bool:
+        """Remove an item from either equipped slots or stored inventory.
+
+        Checks equipped attack slots first, then stored inventory.
+        Stops after finding and removing the item from one location.
+
+        Args:
+            item: The exact item instance to remove.
+
+        Returns:
+            True if the item was found and removed, False otherwise.
+        """
+        # Check equipped attack slots first
+        for slot_idx, equipped in enumerate(self.attack_slots):
+            if equipped is item:
+                self.unequip_slot(slot_idx)
+                return True
+
+        # Check stored inventory
+        return self.remove_from_inventory(item)
+
     def get_inventory_slot_colors(self) -> list[colors.Color]:
         """Get colors representing filled inventory slots."""
         slot_colors: list[colors.Color] = []

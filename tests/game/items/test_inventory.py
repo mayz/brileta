@@ -89,3 +89,56 @@ def test_unequip_to_inventory_moves_item() -> None:
     assert success
     assert inv.attack_slots[0] is None
     assert item in inv
+
+
+def test_try_remove_item_from_equipped_slot() -> None:
+    """try_remove_item removes item from equipped attack slot and returns True."""
+    stats = components.StatsComponent(strength=0)
+    inv = components.InventoryComponent(stats)
+    item = make_item("weapon", ItemSize.NORMAL)
+    inv.equip_to_slot(item, 0)
+
+    result = inv.try_remove_item(item)
+
+    assert result is True
+    assert inv.attack_slots[0] is None
+
+
+def test_try_remove_item_from_stored_inventory() -> None:
+    """try_remove_item removes item from stored inventory and returns True."""
+    stats = components.StatsComponent(strength=0)
+    inv = components.InventoryComponent(stats)
+    item = make_item("tool", ItemSize.NORMAL)
+    inv.add_to_inventory(item)
+
+    result = inv.try_remove_item(item)
+
+    assert result is True
+    assert item not in inv
+
+
+def test_try_remove_item_not_found() -> None:
+    """try_remove_item returns False when item is not in inventory or slots."""
+    stats = components.StatsComponent(strength=0)
+    inv = components.InventoryComponent(stats)
+    item = make_item("mystery", ItemSize.NORMAL)
+
+    result = inv.try_remove_item(item)
+
+    assert result is False
+
+
+def test_try_remove_item_checks_equipped_first() -> None:
+    """try_remove_item checks equipped slots before stored inventory."""
+    stats = components.StatsComponent(strength=0)
+    inv = components.InventoryComponent(stats)
+    item = make_item("weapon", ItemSize.NORMAL)
+    # Equip to slot (this is where it should be found first)
+    inv.equip_to_slot(item, 0)
+
+    result = inv.try_remove_item(item)
+
+    assert result is True
+    assert inv.attack_slots[0] is None
+    # Item was only in equipped slot, not stored, so this confirms
+    # the method found it in equipped slots

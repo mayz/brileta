@@ -475,13 +475,7 @@ class AttackExecutor(ActionExecutor):
                     and attack_result.outcome_tier != OutcomeTier.CRITICAL_FAILURE
                 ):
                     inv = intent.attacker.inventory
-                    # Unequip from attack slot
-                    for slot_idx, equipped in enumerate(inv.attack_slots):
-                        if equipped is weapon:
-                            inv.unequip_slot(slot_idx)
-                            break
-                    # Also remove from stored inventory (in case it's there too)
-                    inv.remove_from_inventory(weapon)
+                    inv.try_remove_item(weapon)
 
                     # Spawn at target location for potential retrieval
                     if weapon.can_materialize and intent.defender:

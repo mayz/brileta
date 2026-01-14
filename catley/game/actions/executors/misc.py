@@ -94,20 +94,7 @@ class PickupExecutor(ActionExecutor):
             if inv is None:
                 continue
 
-            removed = False
-
-            # Check stored inventory
-            if item in inv:
-                inv.remove_from_inventory(item)
-                removed = True
-
-            # Check equipped slots
-            if not removed:
-                for i, equipped_item in enumerate(inv.attack_slots):
-                    if equipped_item == item:
-                        inv.unequip_slot(i)
-                        removed = True
-                        break
+            removed = inv.try_remove_item(item)
 
             if removed:
                 # Remove empty ground containers (non-Character actors)
@@ -181,17 +168,7 @@ class DropItemExecutor(ActionExecutor):
             return GameActionResult(succeeded=False)
 
         item = intent.item
-        removed = False
-
-        # Check if item is equipped in an attack slot and unequip it
-        for i, slot_item in enumerate(inventory.attack_slots):
-            if slot_item is item:
-                inventory.unequip_slot(i)
-                removed = True
-                break
-
-        # If not equipped, remove from stored inventory
-        if not removed and not inventory.remove_from_inventory(item):
+        if not inventory.try_remove_item(item):
             publish_event(MessageEvent("Item not found in inventory.", colors.RED))
             return GameActionResult(succeeded=False)
 
