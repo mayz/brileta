@@ -48,11 +48,8 @@ def test_message_log_view_ttf_rendering_visible(monkeypatch: Any) -> None:
     )
 
     window = tcod.sdl.video.new_window(160, 80)
-    renderer = tcod.sdl.render.new_renderer(
-        window,
-        software=True,  # pyright: ignore[reportCallIssue]
-        target_textures=True,  # pyright: ignore[reportCallIssue]
-    )
+    # SDL3 removed software and target_textures parameters from new_renderer
+    renderer = tcod.sdl.render.new_renderer(window)
 
     log = MessageLog()
     log.add_message("Hello", fg=colors.WHITE)
@@ -81,11 +78,8 @@ def test_message_log_view_font_scales_on_resize(monkeypatch: Any) -> None:
     )
 
     window = tcod.sdl.video.new_window(160, 80)
-    renderer = tcod.sdl.render.new_renderer(
-        window,
-        software=True,  # pyright: ignore[reportCallIssue]
-        target_textures=True,  # pyright: ignore[reportCallIssue]
-    )
+    # SDL3 removed software and target_textures parameters from new_renderer
+    renderer = tcod.sdl.render.new_renderer(window)
 
     log = MessageLog()
     log.add_message("Hello", fg=colors.WHITE)

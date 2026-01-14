@@ -502,8 +502,8 @@ class Controller:
         # Sound system for managing audio playback
         self.sound_system = SoundSystem()
 
-        # Initialize audio backend if not in test environment
-        if not config.IS_TEST_ENVIRONMENT:
+        # Initialize audio backend if enabled and not in test environment
+        if config.AUDIO_ENABLED and not config.IS_TEST_ENVIRONMENT:
             try:
                 from pathlib import Path
 

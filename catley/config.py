@@ -57,6 +57,10 @@ LUMINANCE_THRESHOLD = 127.5  # For determining light vs dark colors
 # Set to False to disable screen shake
 SCREEN_SHAKE_ENABLED = True
 
+# Audio
+# Set to False to disable audio entirely
+AUDIO_ENABLED = True
+
 # =============================================================================
 # BACKEND CONFIGURATION
 # =============================================================================

@@ -1,7 +1,10 @@
-"""Integration tests for TCOD audio backend that detect real bugs.
+"""Integration tests for TCOD audio backend.
 
-These tests use the actual TCODAudioBackend with TCOD's BasicMixer to verify
-that our fixes work with the real TCOD library, not just our mock implementation.
+These tests use the actual TCODAudioBackend with SDL3 AudioStream to verify
+that our audio implementation works correctly with the real TCOD library.
+
+Note: These tests must run serially (not in parallel) due to SDL3 audio
+device initialization not being thread-safe across multiple test workers.
 """
 
 from typing import cast
@@ -16,6 +19,10 @@ from catley.sound.audio_backend import LoadedSound
 from catley.sound.emitter import SoundEmitter
 from catley.sound.system import SoundSystem
 from catley.util.spatial import SpatialHashGrid, SpatialIndex
+
+# Mark all tests in this module to run serially (not distributed to workers)
+# SDL3 audio device initialization is not thread-safe across pytest-xdist workers
+pytestmark = pytest.mark.xdist_group("audio")
 
 
 def create_spatial_index(actors: list[Actor]) -> SpatialIndex[Actor]:
@@ -86,29 +93,32 @@ class TestTCODAudioBackendBugDetection:
         )
 
     def test_tcod_channel_busy_state_after_stop(self) -> None:
-        """Test that TCOD channel.busy becomes False after stop().
+        """Test that channel reports not playing after stop().
 
-        The original bug was that TCOD's stop() calls fadeout(0.0005) which
-        keeps channel.busy=True even though the sound should be stopped.
+        With SDL3 AudioStream, we track playing state internally rather than
+        relying on stream.queued_samples, as SDL3's flush() behavior is async.
         """
         channel = self.backend.get_channel()
         assert channel is not None
 
         channel.play(self.test_sound, volume=1.0, loop=True)
 
-        # Access the underlying TCOD channel to check its busy state
-        tcod_channel = channel._channel
-        assert tcod_channel.busy, "TCOD channel should be busy when playing"
+        # Verify channel is playing
+        assert channel.is_playing(), "Channel should report playing after play()"
 
         # Stop the channel
         channel.stop()
 
-        # THE CRITICAL TEST - the underlying TCOD channel should not be busy
-        assert not tcod_channel.busy, (
-            "TCOD CHANNEL BUSY BUG DETECTED: TCOD channel.busy=True after stop(). "
-            "This indicates TCOD's fadeout(0.0005) implementation is keeping the "
-            "channel busy. Our fix should directly clear the sound queue to make "
-            "busy=False immediately."
+        # THE CRITICAL TEST - channel should report not playing
+        assert not channel.is_playing(), (
+            "Channel should report not playing after stop(). "
+            "Our internal state tracking should reflect this."
+        )
+
+        # Also verify the stream is silenced (gain = 0)
+        stream = channel._stream
+        assert stream.gain == 0.0, (
+            "Stream gain should be 0 after stop to prevent any audio output."
         )
 
     def test_tcod_backend_campfire_bug_reproduction(self) -> None:

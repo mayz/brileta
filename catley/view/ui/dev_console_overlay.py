@@ -188,7 +188,7 @@ class DevConsoleOverlay(TextOverlay):
         match event:
             case tcod.event.KeyDown(sym=sym) if sym in (
                 tcod.event.KeySym.ESCAPE,
-                tcod.event.KeySym.BACKQUOTE,
+                tcod.event.KeySym.GRAVE,
             ):
                 self.hide()
                 self._reset_input_state()

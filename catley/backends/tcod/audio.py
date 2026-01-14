@@ -1,14 +1,14 @@
-"""TCOD audio backend implementation.
+"""TCOD audio backend implementation using SDL3 AudioStream.
 
 This module provides a concrete implementation of the AudioBackend interface
-using TCOD's SDL2-based audio system.
+using TCOD's SDL3-based audio system with AudioStream for audio playback.
 """
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import numpy as np
 import tcod.sdl.audio
@@ -16,34 +16,38 @@ import tcod.sdl.audio
 from catley.sound.audio_backend import AudioBackend, AudioChannel, LoadedSound
 from catley.sound.loader import AudioLoader
 
-if TYPE_CHECKING:
-    pass
-
 logger = logging.getLogger(__name__)
 
 
-class TCODChannel(AudioChannel):
-    """TCOD implementation of an audio channel."""
+class SDL3AudioChannel(AudioChannel):
+    """SDL3 AudioStream-based implementation of an audio channel.
+
+    Each channel wraps an AudioStream and manages playback state.
+    We track playing state internally to avoid querying the stream,
+    which can crash if the stream is in an invalid state.
+    """
 
     def __init__(
-        self, channel: tcod.sdl.audio.Channel, backend: TCODAudioBackend
+        self, stream: tcod.sdl.audio.AudioStream, backend: TCODAudioBackend
     ) -> None:
-        """Initialize a TCOD audio channel wrapper.
+        """Initialize an SDL3 audio channel.
 
         Args:
-            channel: The underlying TCOD channel
-            backend: Reference to the audio backend
+            stream: The underlying SDL3 AudioStream
+            backend: Reference to the audio backend for master volume
         """
-        self._channel = channel
+        self._stream = stream
         self._backend = backend
         self._current_sound: LoadedSound | None = None
         self._is_looping = False
         self._current_priority = 0
+        self._base_volume = 1.0
+        self._playing = False  # Track playing state internally
 
     @property
     def current_priority(self) -> int:
         """Get the priority of the currently playing sound."""
-        return self._current_priority if self.is_playing() else 0
+        return self._current_priority if self._playing else 0
 
     def play(
         self,
@@ -60,92 +64,116 @@ class TCODChannel(AudioChannel):
             loop: Whether to loop the sound continuously
             priority: Sound priority (higher numbers = higher priority)
         """
-        # Convert sound data to TCOD format if needed
+        # Stop any current playback first
+        self.stop()
+
+        # Prepare audio data
         audio_data = self._prepare_audio_data(sound)
 
-        # Set volume
-        self._channel.volume = volume * self._backend._master_volume
+        try:
+            # Set volume via gain
+            self._base_volume = volume
+            self._stream.gain = volume * self._backend._master_volume
 
-        # Play the sound
-        if loop:
-            self._channel.play(audio_data, loops=-1)  # -1 means infinite loops
-        else:
-            self._channel.play(audio_data, loops=0)  # 0 means play once
+            # Queue the audio data
+            self._stream.queue_audio(audio_data)
 
-        self._current_sound = sound
-        self._is_looping = loop
-        self._current_priority = priority
+            self._current_sound = sound
+            self._is_looping = loop
+            self._current_priority = priority
+            self._playing = True
 
-        volume_val = volume * self._backend._master_volume
-        logger.debug(
-            f"Playing sound on channel: volume={volume_val:.2f}, "
-            f"loop={loop}, shape={audio_data.shape}"
-        )
+            effective_volume = volume * self._backend._master_volume
+            logger.debug(
+                f"Playing sound on channel: volume={effective_volume:.2f}, "
+                f"loop={loop}, shape={audio_data.shape}"
+            )
+        except Exception as e:
+            logger.warning(f"Failed to play sound on channel: {e}")
+            self._playing = False
 
     def stop(self) -> None:
         """Stop playback on this channel."""
-        # TCOD's stop() method is broken
-        # It uses fadeout(0.0005) which keeps the channel busy
-        # Directly clear the sound queue for immediate stop
-        with self._channel._lock:
-            self._channel.sound_queue.clear()
-            self._channel.on_end_callback = None
+        # First set gain to 0 to silence immediately
+        with contextlib.suppress(Exception):
+            self._stream.gain = 0.0
+
+        # Clear all queued audio data
+        with contextlib.suppress(Exception):
+            self._stream.flush()
 
         self._current_sound = None
         self._is_looping = False
         self._current_priority = 0
+        self._playing = False
 
     def set_volume(self, volume: float) -> None:
         """Update the volume of this channel."""
         if volume <= 0.0:
-            # Stop the channel completely when volume is 0 to ensure silence
             self.stop()
         else:
-            self._channel.volume = volume * self._backend._master_volume
+            self._base_volume = volume
+            with contextlib.suppress(Exception):
+                self._stream.gain = volume * self._backend._master_volume
 
     def is_playing(self) -> bool:
         """Check if this channel is currently playing audio."""
-        return bool(self._channel.busy)
+        return self._playing
 
     def fadeout(self, duration_ms: int) -> None:
         """Fade out the channel over the specified duration."""
-        # TCOD doesn't have built-in fadeout, so we'll stop immediately for now
-        # TODO: Implement manual fadeout using volume ramping
+        # AudioStream doesn't have built-in fadeout, stop immediately
         logger.debug(f"Fadeout requested for {duration_ms}ms (stopping immediately)")
         self.stop()
 
+    def update(self) -> None:
+        """Update the channel state, handling looping if needed."""
+        if not self._playing or self._current_sound is None:
+            return
+
+        # Check if we need to re-queue audio for looping
+        if self._is_looping:
+            try:
+                queued = self._stream.queued_samples
+                if queued < self._current_sound.sample_rate // 4:
+                    audio_data = self._prepare_audio_data(self._current_sound)
+                    self._stream.queue_audio(audio_data)
+            except Exception:
+                # Stream became invalid, mark as not playing
+                self._playing = False
+        else:
+            # For non-looping sounds, check if playback is done
+            try:
+                if self._stream.queued_samples == 0:
+                    self._playing = False
+            except Exception:
+                self._playing = False
+
     def _prepare_audio_data(self, sound: LoadedSound) -> np.ndarray:
-        """Prepare audio data for TCOD playback.
+        """Prepare audio data for playback.
 
         Args:
             sound: The sound to prepare
 
         Returns:
-            Audio data in TCOD-compatible format
+            Audio data as float32 numpy array
         """
-        # TCOD expects audio data as float32 numpy array
-        # If stereo, it should be shape (frames, 2)
-        # If mono, it should be shape (frames,) or (frames, 1)
+        # Ensure float32 format
+        if sound.data.dtype != np.float32:
+            data = sound.data.astype(np.float32)
+        else:
+            data = sound.data
 
-        if sound.channels == 1 and sound.data.ndim == 1:
-            # Mono audio with shape (frames,) - TCOD can handle this
-            return sound.data
-        if sound.channels == 2 and sound.data.ndim == 2:
-            # Stereo audio with shape (frames, 2) - TCOD can handle this
-            return sound.data
-        # Need to reshape or convert
-        if sound.channels == 1 and sound.data.ndim == 2:
+        # Handle mono vs stereo
+        if sound.channels == 1 and data.ndim == 2:
             # Mono with shape (frames, 1) - flatten it
-            return sound.data.flatten()
-        logger.warning(
-            f"Unexpected audio format: channels={sound.channels}, "
-            f"shape={sound.data.shape}"
-        )
-        return sound.data
+            return data.flatten()
+
+        return data
 
 
 class TCODAudioBackend(AudioBackend):
-    """TCOD implementation of the audio backend using SDL2 audio."""
+    """TCOD audio backend using SDL3 AudioStream API."""
 
     def __init__(self, max_channels: int = 16) -> None:
         """Initialize the TCOD audio backend.
@@ -154,50 +182,55 @@ class TCODAudioBackend(AudioBackend):
             max_channels: Maximum number of simultaneous audio channels
         """
         self._max_channels = max_channels
-        self._mixer: tcod.sdl.audio.BasicMixer | None = None
-        self._channels: list[TCODChannel] = []
+        self._device: tcod.sdl.audio.AudioDevice | None = None
+        self._channels: list[SDL3AudioChannel] = []
         self._master_volume = 1.0
         self._audio_loader = AudioLoader()
         self._initialized = False
+        self._sample_rate = 44100
+        self._num_channels = 2
 
     def initialize(self, sample_rate: int = 44100, channels: int = 2) -> None:
-        """Initialize the audio backend."""
+        """Initialize the audio backend.
+
+        Args:
+            sample_rate: Audio sample rate in Hz
+            channels: Number of audio channels (1=mono, 2=stereo)
+        """
         if self._initialized:
             logger.warning("Audio backend already initialized")
             return
 
+        self._sample_rate = sample_rate
+        self._num_channels = channels
+
         try:
-            # Open SDL2 audio device with specified parameters
-            device = tcod.sdl.audio.open(
-                frequency=sample_rate,
-                format=np.float32,  # 32-bit float as NumPy dtype
+            # SDL3 audio API: get default playback device and open it
+            self._device = tcod.sdl.audio.get_default_playback().open(
+                format=np.float32,
                 channels=channels,
-                samples=2048,  # Buffer size
-                callback=None,  # Use push mode, not callback mode
+                frequency=sample_rate,
             )
 
-            # Create the mixer
-            self._mixer = tcod.sdl.audio.BasicMixer(device)
-
-            # Start the mixer thread if not already started
-            if not self._mixer.is_alive():
-                self._mixer.start()
-
-            # Create channel wrappers
+            # Create audio streams as channels
             self._channels = []
-            for i in range(self._max_channels):
-                # Get a channel with a unique integer key
-                tcod_channel = self._mixer.get_channel(i)
-                self._channels.append(TCODChannel(tcod_channel, self))
+            for _ in range(self._max_channels):
+                # Create a new stream bound to the device
+                stream = self._device.new_stream(
+                    format=np.float32,
+                    channels=channels,
+                    frequency=sample_rate,
+                )
+                self._channels.append(SDL3AudioChannel(stream, self))
 
             self._initialized = True
             logger.info(
-                f"TCOD audio initialized: {sample_rate}Hz, {channels} channels, "
-                f"{self._max_channels} mixer channels"
+                f"SDL3 audio initialized: {sample_rate}Hz, {channels} channels, "
+                f"{self._max_channels} streams"
             )
 
         except Exception as e:
-            logger.error(f"Failed to initialize TCOD audio: {e}")
+            logger.error(f"Failed to initialize SDL3 audio: {e}")
             raise
 
     def shutdown(self) -> None:
@@ -209,17 +242,19 @@ class TCODAudioBackend(AudioBackend):
             # Stop all sounds
             self.stop_all_sounds()
 
-            # Clear channels
+            # Close all streams
+            for channel in self._channels:
+                with contextlib.suppress(Exception):
+                    channel._stream.close()
             self._channels.clear()
 
-            # Close the mixer (this should close the device too)
-            if self._mixer:
-                # Stop the mixer thread and close
-                self._mixer.close()
-                self._mixer = None
+            # Close the device
+            if self._device:
+                self._device.close()
+                self._device = None
 
             self._initialized = False
-            logger.info("TCOD audio shut down")
+            logger.info("SDL3 audio shut down")
 
         except Exception as e:
             logger.error(f"Error during audio shutdown: {e}")
@@ -238,12 +273,12 @@ class TCODAudioBackend(AudioBackend):
             logger.warning("Audio backend not initialized")
             return None
 
-        # First try to find idle channel
+        # First try to find an idle channel
         for channel in self._channels:
             if not channel.is_playing():
                 return channel
 
-        # Voice stealing: find lowest priority channel
+        # Voice stealing: find the lowest priority channel we can steal
         lowest_priority = priority
         steal_candidate = None
         for channel in self._channels:
@@ -293,28 +328,25 @@ class TCODAudioBackend(AudioBackend):
                 channel.stop()
 
     def set_master_volume(self, volume: float) -> None:
-        """Set the master volume for all audio."""
+        """Set the master volume for all audio.
+
+        Args:
+            volume: Master volume level (0.0 to 1.0)
+        """
         self._master_volume = max(0.0, min(1.0, volume))
 
-        # Update volume on all active channels
+        # Update gain on all active channels
         for channel in self._channels:
             if channel.is_playing():
-                # Get current channel volume (might be float or tuple)
-                current_vol = channel._channel.volume
-                if isinstance(current_vol, tuple):
-                    # Stereo volume - use first channel
-                    current_vol = current_vol[0]
-                # Re-apply volume to account for master volume change
-                base_volume = (
-                    current_vol / self._master_volume if self._master_volume > 0 else 0
-                )
-                channel.set_volume(base_volume)
+                channel._stream.gain = channel._base_volume * self._master_volume
 
     def update(self) -> None:
-        """Update the audio backend."""
-        # TCOD's audio system runs on a separate thread and doesn't need
-        # explicit updates in the main loop
-        pass
+        """Update the audio backend.
+
+        This should be called each frame to handle looping sounds.
+        """
+        for channel in self._channels:
+            channel.update()
 
     def get_active_channel_count(self) -> int:
         """Get the number of channels currently playing audio."""

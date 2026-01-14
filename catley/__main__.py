@@ -1,5 +1,6 @@
 """Main entry point for the game."""
 
+import logging
 import random
 
 from . import config
@@ -7,6 +8,9 @@ from .app import App, AppConfig
 
 
 def main() -> None:
+    # Suppress SDL3 startup info messages from tcod
+    logging.getLogger("tcod.sdl").setLevel(logging.ERROR)
+
     config.validate_backend_configuration()
 
     random.seed(config.RANDOM_SEED)

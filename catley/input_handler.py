@@ -41,7 +41,10 @@ from .view.ui.commands import (
 
 
 class Keys:
-    """Container for letter KeySym constants used in pattern matching."""
+    """Container for letter KeySym constants used in pattern matching.
+
+    Note: SDL3/tcod 19 uses lowercase KeySym values for letter keys.
+    """
 
     KEY_H: Final = tcod.event.KeySym(ord("h"))
     KEY_J: Final = tcod.event.KeySym(ord("j"))
@@ -121,9 +124,13 @@ class InputHandler:
         if not menu_consumed:
             action = self.handle_event(event)
             if action:
-                self.controller.queue_action(action)
+                # UICommands should be executed immediately, not queued
+                if isinstance(action, UICommand):
+                    action.execute()
+                else:
+                    self.controller.queue_action(action)
 
-    def handle_event(self, event: tcod.event.Event) -> GameIntent | None:
+    def handle_event(self, event: tcod.event.Event) -> GameIntent | UICommand | None:
         assert self.controller.overlay_system is not None
         assert self.fm is not None
 
@@ -237,7 +244,7 @@ class InputHandler:
                     return OpenExistingMenuUICommand(self.controller, menu)
                 return OpenMenuUICommand(self.controller, DualPaneMenu)
 
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.BACKQUOTE):
+            case tcod.event.KeyDown(sym=tcod.event.KeySym.GRAVE):
                 if self.dev_console_overlay is not None:
                     self.controller.overlay_system.toggle_overlay(
                         self.dev_console_overlay

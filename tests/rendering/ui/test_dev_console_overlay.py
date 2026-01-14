@@ -190,9 +190,7 @@ def test_handle_input_typing_and_submit(monkeypatch) -> None:
     assert ov.input_buffer == ""
 
 
-@pytest.mark.parametrize(
-    "key_sym", [tcod.event.KeySym.ESCAPE, tcod.event.KeySym.BACKQUOTE]
-)
+@pytest.mark.parametrize("key_sym", [tcod.event.KeySym.ESCAPE, tcod.event.KeySym.GRAVE])
 def test_handle_input_escape_and_backquote_hide_console(
     key_sym: tcod.event.KeySym,
 ) -> None:

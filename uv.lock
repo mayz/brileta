@@ -42,7 +42,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.3.2" },
     { name = "pillow", specifier = ">=12.0.0" },
     { name = "soundfile", specifier = ">=0.13.1" },
-    { name = "tcod", specifier = ">=18.1.0" },
+    { name = "tcod", specifier = ">=19.6.3" },
     { name = "wgpu", specifier = ">=0.23.0" },
 ]
 
@@ -536,20 +536,20 @@ wheels = [
 
 [[package]]
 name = "tcod"
-version = "18.1.0"
+version = "19.6.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cffi" },
     { name = "numpy", marker = "implementation_name != 'pypy'" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/5d/02/cff80d7bc3ba5c8fc833639a5bbe117a295847f4c22a8b5de9c7ef70aca2/tcod-18.1.0.tar.gz", hash = "sha256:52f6e41a539ac4d7abe966ab6fa380954f3883068a4aa7fed89662cdc79f0ecf", size = 774686, upload-time = "2025-05-05T01:16:51.517Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ec/1c/7bf7ce6010bbec0102ce49976577d34b6d7ec94d1fb285980444ba75842d/tcod-19.6.3.tar.gz", hash = "sha256:2031a41ccddf42a1ab4d874fa5d5b2c23c75171efe2c38368fe642bcf1e2d263", size = 849561, upload-time = "2026-01-12T01:33:17.494Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/93/2b/9bf5fc6cf1b673c3d199eae656bbf8047d161e953b1cead0614d2a6c0358/tcod-18.1.0-cp38-abi3-macosx_10_11_universal2.whl", hash = "sha256:a1d8ae452bb10175839a959caee40e12b36e2e10821bdd1f781923ec48a07d80", size = 3048564, upload-time = "2025-05-05T01:16:32.669Z" },
-    { url = "https://files.pythonhosted.org/packages/c0/07/87a8696f48cfc2901a4053b23734d66771ae6a41efed3a8c555ac6b0eeed/tcod-18.1.0-cp38-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:c939370228122d177dfd28eb8192f4baea2764ab7d9d5867092443d10a65f5c4", size = 3223957, upload-time = "2025-05-05T01:16:35.336Z" },
-    { url = "https://files.pythonhosted.org/packages/a3/5d/1e32f5b75bd5bba89e90219c27533e7095518be52ddc01ee46e4162888dc/tcod-18.1.0-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:96d41292e0f61d11838e466a9f787f87e28aab5b6aced8d525d4078a57f1c048", size = 3473736, upload-time = "2025-05-05T01:16:37.327Z" },
-    { url = "https://files.pythonhosted.org/packages/19/4a/4a3cae79b05eed23c1eede408fac907a3123ed32b921105707d162d08ba5/tcod-18.1.0-cp38-abi3-win32.whl", hash = "sha256:58ad3bc309386223c57f68a65fe5920a621f18b8a166dfd04f1c53db4dc4e9e6", size = 1332506, upload-time = "2025-05-05T01:16:39.508Z" },
-    { url = "https://files.pythonhosted.org/packages/fa/aa/7022db9314febc860b669b577003216f3a3815c5268e41a0cf15612378f5/tcod-18.1.0-cp38-abi3-win_amd64.whl", hash = "sha256:acb9798687cc404e15ebdc07a9d474b9a7edaec9e43eb6dfa5227c015d364e23", size = 1559434, upload-time = "2025-05-05T01:16:41.268Z" },
+    { url = "https://files.pythonhosted.org/packages/4e/e5/7538d94eaffdc163f85b9921212999e4f40203888afff09e47e050fd2cf0/tcod-19.6.3-cp310-abi3-macosx_10_13_universal2.whl", hash = "sha256:6ed9737488f948c52cb316b716ad3064c2fe3ea25081f54382f9e370e906ca90", size = 3849820, upload-time = "2026-01-12T01:32:58.078Z" },
+    { url = "https://files.pythonhosted.org/packages/c9/b3/cabd19053ca6f21ef8817dabe27ad6e0f60d13c07e4a485f5e73455cf8ac/tcod-19.6.3-cp310-abi3-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:f4245438469014b4337224a08e5af9a5705c99c101e77656ee37bdcb77aaade8", size = 8235676, upload-time = "2026-01-12T01:33:00.909Z" },
+    { url = "https://files.pythonhosted.org/packages/cc/fb/b4bf7003596b008f15ba1311b5131bd8a26771a98b9d45e46031978b274a/tcod-19.6.3-cp310-abi3-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:c040ab219b28e0ba2301162665a6ca41b6bbf9ec25619a04b2fd52b8a75678a0", size = 8572984, upload-time = "2026-01-12T01:33:03.225Z" },
+    { url = "https://files.pythonhosted.org/packages/9d/a1/cf6b8236da329857498dbba240de3d88e2d3a5fe02adfaf899bf04b8e98d/tcod-19.6.3-cp310-abi3-win32.whl", hash = "sha256:e4c05f9e13315611e1009d78806367d04e085d7e1e148afb343d2d1a04ad3fa9", size = 1598671, upload-time = "2026-01-12T01:33:05.334Z" },
+    { url = "https://files.pythonhosted.org/packages/0f/00/d8cae52a58990cedcea44f77388285184328497163b5b74aa07b4f2659fa/tcod-19.6.3-cp310-abi3-win_amd64.whl", hash = "sha256:6cba76f91158d162967216b17db6bb654df2a378650221f1260eb3104b424565", size = 1889556, upload-time = "2026-01-12T01:33:07.501Z" },
 ]
 
 [[package]]

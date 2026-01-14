@@ -285,29 +285,29 @@ class GlfwApp(App[GraphicsContextImplClass]):
         if self.controller and self.controller.frame_manager:
             self.controller.frame_manager.on_window_resized()
 
-    def _glfw_key_to_tcod(self, key: int) -> int:
+    def _glfw_key_to_tcod(self, key: int) -> tcod.event.KeySym:
         """Converts a GLFW key code to a tcod keysym."""
         # Handle ASCII letters A-Z
         if glfw.KEY_A <= key <= glfw.KEY_Z:
-            # GLFW uses uppercase ASCII values for letter keys
-            return ord("a") + (key - glfw.KEY_A)
+            # SDL3/tcod 19 uses lowercase KeySym values for letter keys
+            return tcod.event.KeySym(ord("a") + (key - glfw.KEY_A))
 
         # Handle number keys 0-9
         if glfw.KEY_0 <= key <= glfw.KEY_9:
-            return ord("0") + (key - glfw.KEY_0)
+            return tcod.event.KeySym(ord("0") + (key - glfw.KEY_0))
 
         # Handle numpad keys
         if glfw.KEY_KP_0 <= key <= glfw.KEY_KP_9:
-            return tcod.event.KeySym.KP_0 + (key - glfw.KEY_KP_0)
+            return tcod.event.KeySym(tcod.event.KeySym.KP_0 + (key - glfw.KEY_KP_0))
 
         # Handle function keys F1-F12
         if glfw.KEY_F1 <= key <= glfw.KEY_F12:
-            return tcod.event.KeySym.F1 + (key - glfw.KEY_F1)
+            return tcod.event.KeySym(tcod.event.KeySym.F1 + (key - glfw.KEY_F1))
 
         # Map individual keys
         return {
             glfw.KEY_SPACE: tcod.event.KeySym.SPACE,
-            glfw.KEY_APOSTROPHE: tcod.event.KeySym.QUOTE,
+            glfw.KEY_APOSTROPHE: tcod.event.KeySym.APOSTROPHE,
             glfw.KEY_COMMA: tcod.event.KeySym.COMMA,
             glfw.KEY_MINUS: tcod.event.KeySym.MINUS,
             glfw.KEY_PERIOD: tcod.event.KeySym.PERIOD,
@@ -317,7 +317,7 @@ class GlfwApp(App[GraphicsContextImplClass]):
             glfw.KEY_LEFT_BRACKET: tcod.event.KeySym.LEFTBRACKET,
             glfw.KEY_BACKSLASH: tcod.event.KeySym.BACKSLASH,
             glfw.KEY_RIGHT_BRACKET: tcod.event.KeySym.RIGHTBRACKET,
-            glfw.KEY_GRAVE_ACCENT: tcod.event.KeySym.BACKQUOTE,
+            glfw.KEY_GRAVE_ACCENT: tcod.event.KeySym.GRAVE,
             # Navigation keys
             glfw.KEY_ESCAPE: tcod.event.KeySym.ESCAPE,
             glfw.KEY_ENTER: tcod.event.KeySym.RETURN,
