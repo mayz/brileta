@@ -487,6 +487,32 @@ class GameWorld:
                 campfire = ContainedFire.create_campfire(fire_x, fire_y, self)
                 self.add_actor(campfire)
 
+            # Add a small acid pool nearby for testing hazardous terrain
+            self._add_test_acid_pool(room)
+
+    def _add_test_acid_pool(self, room) -> None:  # type: ignore[no-untyped-def]
+        """Add a small acid pool to demonstrate hazardous terrain.
+
+        Creates a 2x2 acid pool in the given room for testing purposes.
+        """
+        from catley.environment.tile_types import TileTypeID
+
+        # Place acid pool offset from the fire
+        pool_x = room.x1 + 4
+        pool_y = room.y1 + 2
+
+        # Create a small 2x2 acid pool
+        for dx in range(2):
+            for dy in range(2):
+                x, y = pool_x + dx, pool_y + dy
+                # Only place on walkable tiles that are within bounds
+                if (
+                    0 <= x < self.game_map.width
+                    and 0 <= y < self.game_map.height
+                    and self.game_map.walkable[x, y]
+                ):
+                    self.game_map.tiles[x, y] = TileTypeID.ACID_POOL
+
     def _place_containers(
         self, rooms: list, num_containers: int = 5, max_attempts: int = 10
     ) -> None:

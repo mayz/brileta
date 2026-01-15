@@ -34,6 +34,9 @@ class TileTypeID(IntEnum):
     DOOR_CLOSED = auto()
     DOOR_OPEN = auto()
     BOULDER = auto()
+    # Hazardous terrain types
+    ACID_POOL = auto()
+    HOT_COALS = auto()
 
 
 # Defines the structure for the visual appearance of a tile type.
@@ -60,6 +63,8 @@ TileTypeData = np.dtype(
         ("cover_bonus", np.int8),  # Defensive bonus from using this tile as cover
         ("casts_shadows", bool),  # Light occlusion (visual shadows)
         ("material", np.int8),  # ImpactMaterial enum value for impact sounds
+        ("hazard_damage", "U8"),  # Dice string for damage (e.g., "1d4"), empty = safe
+        ("hazard_damage_type", "U16"),  # Damage type: "acid", "fire", "electric", etc.
         ("display_name", "U32"),  # Human-readable name (Unicode string, max 32 chars)
         # Appearance when explored but not in FOV
         ("dark", TileTypeAppearance),
@@ -104,6 +109,8 @@ def make_tile_type_data(
     material: ImpactMaterial = ImpactMaterial.STONE,
     cover_bonus: int = 0,
     casts_shadows: bool = False,
+    hazard_damage: str = "",
+    hazard_damage_type: str = "",
     dark: tuple[int, colors.Color, colors.Color],  # (char_code, fg_color, bg_color)
     light: tuple[int, colors.Color, colors.Color] | None = None,
 ) -> np.ndarray:  # Returns an instance of TileTypeData
@@ -117,6 +124,8 @@ def make_tile_type_data(
         material: Impact material for sound effects (default: STONE).
         cover_bonus: Defensive bonus granted when using this tile as cover.
         casts_shadows: Does this tile block light for shadow casting?
+        hazard_damage: Dice string for damage (e.g., "1d4"). Empty string = safe.
+        hazard_damage_type: Type of damage (e.g., "acid", "fire"). Empty string if safe.
         dark:  A (char_code, fg_color, bg_color) tuple defining
                the 'dark' TileTypeAppearance.
         light: A (char_code, fg_color, bg_color) tuple defining
@@ -141,6 +150,8 @@ def make_tile_type_data(
             cover_bonus,
             casts_shadows,
             material.value,
+            hazard_damage,
+            hazard_damage_type,
             display_name,
             dark_appearance,
             light_appearance,
@@ -240,6 +251,37 @@ register_tile_type(
     ),
 )
 
+# --- Hazardous Terrain Types ---
+# These tiles deal damage to actors who end their turn standing on them.
+
+register_tile_type(
+    TileTypeID.ACID_POOL,
+    make_tile_type_data(
+        walkable=True,
+        transparent=True,
+        display_name="Acid Pool",
+        material=ImpactMaterial.FLESH,  # Splashy sound on impact
+        hazard_damage="1d4",
+        hazard_damage_type="acid",
+        dark=(ord("~"), (0, 80, 0), (20, 40, 20)),
+        light=(ord("~"), (100, 255, 100), (30, 60, 30)),
+    ),
+)
+
+register_tile_type(
+    TileTypeID.HOT_COALS,
+    make_tile_type_data(
+        walkable=True,
+        transparent=True,
+        display_name="Hot Coals",
+        material=ImpactMaterial.STONE,
+        hazard_damage="1d6",
+        hazard_damage_type="fire",
+        dark=(ord("."), (80, 20, 0), (40, 10, 0)),
+        light=(ord("."), (255, 100, 50), (100, 30, 10)),
+    ),
+)
+
 
 # --- Pre-calculated Property Arrays for Efficient Lookups ---
 # These arrays are built *after* all tile types have been registered.
@@ -267,6 +309,12 @@ _tile_type_properties_light_appearance = np.array(
 )
 _tile_type_properties_display_name = np.array(
     [t["display_name"] for t in _registered_tile_type_data_list], dtype="U32"
+)
+_tile_type_properties_hazard_damage = np.array(
+    [t["hazard_damage"] for t in _registered_tile_type_data_list], dtype="U8"
+)
+_tile_type_properties_hazard_damage_type = np.array(
+    [t["hazard_damage_type"] for t in _registered_tile_type_data_list], dtype="U16"
 )
 
 # --- Public Helper Functions for Accessing Tile Properties ---
@@ -352,3 +400,24 @@ def get_tile_material(tile_type_id: int) -> ImpactMaterial:
         material_value = int(_registered_tile_type_data_list[tile_type_id]["material"])
         return ImpactMaterial(material_value)
     return ImpactMaterial.STONE
+
+
+def get_tile_hazard_info(tile_type_id: int) -> tuple[str, str]:
+    """
+    Get the hazard damage dice and type for a tile type.
+
+    Used by the turn manager to apply environmental damage to actors
+    who end their turn on hazardous terrain.
+
+    Args:
+        tile_type_id: The ID of the tile type
+
+    Returns:
+        A tuple of (damage_dice, damage_type). Returns ("", "") for safe tiles.
+        damage_dice is a dice string like "1d4" or "2d6+1".
+    """
+    if 0 <= tile_type_id < len(_tile_type_properties_hazard_damage):
+        damage_dice = str(_tile_type_properties_hazard_damage[tile_type_id])
+        damage_type = str(_tile_type_properties_hazard_damage_type[tile_type_id])
+        return (damage_dice, damage_type)
+    return ("", "")

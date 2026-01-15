@@ -118,6 +118,46 @@ class TurnManager:
                     self.execute_intent(action)
                     if hasattr(actor, "energy"):
                         actor.energy.spend(config.ACTION_COST)
+                    # Check for terrain hazard damage after NPC completes their action
+                    self._apply_terrain_hazard(actor)
+
+    def _apply_terrain_hazard(self, actor: Actor) -> None:
+        """Check if actor is on hazardous terrain and apply damage if so.
+
+        Called after an actor completes their turn. If they're standing on
+        hazardous terrain (acid pools, hot coals, etc.), they take damage.
+
+        Args:
+            actor: The actor to check for terrain hazard damage.
+        """
+        from catley.environment.tile_types import (
+            get_tile_hazard_info,
+            get_tile_type_name_by_id,
+        )
+        from catley.game.actions.environmental import EnvironmentalDamageIntent
+        from catley.util.dice import Dice
+
+        # Skip actors without a game world reference
+        if not hasattr(actor, "gw") or actor.gw is None:
+            return
+
+        # Get the tile the actor is standing on
+        tile_id = int(actor.gw.game_map.tiles[actor.x, actor.y])
+        damage_dice, damage_type = get_tile_hazard_info(tile_id)
+
+        # Apply damage if this tile is hazardous (non-empty dice string)
+        if damage_dice:
+            damage = Dice(damage_dice).roll()
+            tile_name = get_tile_type_name_by_id(tile_id)
+            intent = EnvironmentalDamageIntent(
+                controller=self.controller,
+                source_actor=None,  # Terrain hazard has no actor source
+                damage_amount=damage,
+                damage_type=damage_type,
+                affected_coords=[(actor.x, actor.y)],
+                source_description=tile_name,
+            )
+            self.execute_intent(intent)
 
     def execute_intent(self, intent: GameIntent) -> None:
         """Execute a single GameIntent by routing it to the ActionRouter.

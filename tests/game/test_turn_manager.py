@@ -3,6 +3,8 @@ from typing import cast
 
 from catley import colors
 from catley.controller import Controller
+from catley.environment.tile_types import TileTypeID
+from catley.events import reset_event_bus_for_testing
 from catley.game.action_router import ActionRouter
 from catley.game.actions.movement import MoveIntent
 from catley.game.actors import NPC, Character
@@ -202,3 +204,108 @@ def test_npc_autopilot_waits_without_player_turn() -> None:
     controller.run_one_turn()
     # No movement should occur without player action
     assert (npc.x, npc.y) == (3, 0)
+
+
+# --- Terrain Hazard Tests ---
+
+
+def test_apply_terrain_hazard_damages_actor_on_hazardous_tile() -> None:
+    """Actor standing on a hazardous tile should take damage."""
+    reset_event_bus_for_testing()
+    gw = DummyGameWorld()
+    player = Character(
+        2, 2, "@", colors.WHITE, "Player", game_world=cast(GameWorld, gw)
+    )
+    gw.player = player
+    gw.add_actor(player)
+
+    # Place an acid pool under the player
+    gw.game_map.tiles[2, 2] = TileTypeID.ACID_POOL
+
+    controller = DummyController(gw=gw)
+
+    # Remove armor so damage affects HP directly
+    player.health.ap = 0
+    initial_hp = player.health.hp
+
+    # Apply terrain hazard
+    controller.turn_manager._apply_terrain_hazard(player)
+
+    # Player should have taken 1d4 acid damage (1-4 HP lost)
+    damage_taken = initial_hp - player.health.hp
+    assert 1 <= damage_taken <= 4
+
+
+def test_apply_terrain_hazard_no_damage_on_safe_tile() -> None:
+    """Actor standing on a safe tile should take no damage."""
+    reset_event_bus_for_testing()
+    gw = DummyGameWorld()
+    player = Character(
+        2, 2, "@", colors.WHITE, "Player", game_world=cast(GameWorld, gw)
+    )
+    gw.player = player
+    gw.add_actor(player)
+
+    # Ensure player is on a normal floor tile
+    gw.game_map.tiles[2, 2] = TileTypeID.FLOOR
+
+    controller = DummyController(gw=gw)
+
+    player.health.ap = 0
+    initial_hp = player.health.hp
+
+    # Apply terrain hazard
+    controller.turn_manager._apply_terrain_hazard(player)
+
+    # Player should not have taken any damage
+    assert player.health.hp == initial_hp
+
+
+def test_apply_terrain_hazard_hot_coals() -> None:
+    """Hot coals should deal fire damage."""
+    reset_event_bus_for_testing()
+    gw = DummyGameWorld()
+    player = Character(
+        3, 3, "@", colors.WHITE, "Player", game_world=cast(GameWorld, gw)
+    )
+    gw.player = player
+    gw.add_actor(player)
+
+    # Place hot coals under the player
+    gw.game_map.tiles[3, 3] = TileTypeID.HOT_COALS
+
+    controller = DummyController(gw=gw)
+
+    player.health.ap = 0
+    initial_hp = player.health.hp
+
+    # Apply terrain hazard
+    controller.turn_manager._apply_terrain_hazard(player)
+
+    # Player should have taken 1d6 fire damage (1-6 HP lost)
+    damage_taken = initial_hp - player.health.hp
+    assert 1 <= damage_taken <= 6
+
+
+def test_apply_terrain_hazard_skips_actor_without_game_world() -> None:
+    """Actors without a game world reference should be skipped."""
+    reset_event_bus_for_testing()
+    gw = DummyGameWorld()
+    player = Character(
+        0, 0, "@", colors.WHITE, "Player", game_world=cast(GameWorld, gw)
+    )
+    gw.player = player
+    gw.add_actor(player)
+
+    controller = DummyController(gw=gw)
+
+    # Remove game world reference from player
+    player.gw = None  # type: ignore[assignment]
+
+    initial_hp = player.health.hp
+
+    # Apply terrain hazard - should not crash, just skip
+    controller.turn_manager._apply_terrain_hazard(player)
+
+    # No damage should be applied
+    assert player.health.hp == initial_hp

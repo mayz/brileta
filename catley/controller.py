@@ -291,6 +291,9 @@ class Controller:
         self.turn_manager.execute_intent(action)
         self.gw.player.energy.spend(config.ACTION_COST)
 
+        # Check for terrain hazard damage after the player completes their action
+        self.turn_manager._apply_terrain_hazard(self.gw.player)
+
         # Update FOV after player action (important for movement)
         self.update_fov()
 

@@ -2,7 +2,11 @@ import numpy as np
 import pytest
 
 from catley.environment import tile_types
-from catley.environment.tile_types import TileTypeID, get_tile_material
+from catley.environment.tile_types import (
+    TileTypeID,
+    get_tile_hazard_info,
+    get_tile_material,
+)
 from catley.game.enums import ImpactMaterial
 
 
@@ -68,3 +72,63 @@ def test_all_tiles_have_valid_material() -> None:
         assert isinstance(material, ImpactMaterial), (
             f"Tile {tile_id.name} has invalid material"
         )
+
+
+# --- Hazardous Terrain Tests ---
+
+
+def test_get_tile_hazard_info_safe_tiles() -> None:
+    """Safe tiles should return empty dice string."""
+    damage_dice, damage_type = get_tile_hazard_info(TileTypeID.FLOOR)
+    assert damage_dice == ""
+    assert damage_type == ""
+
+    damage_dice, damage_type = get_tile_hazard_info(TileTypeID.WALL)
+    assert damage_dice == ""
+    assert damage_type == ""
+
+
+def test_get_tile_hazard_info_acid_pool() -> None:
+    """Acid pool should deal acid damage with dice roll."""
+    damage_dice, damage_type = get_tile_hazard_info(TileTypeID.ACID_POOL)
+    assert damage_dice == "1d4"
+    assert damage_type == "acid"
+
+
+def test_get_tile_hazard_info_hot_coals() -> None:
+    """Hot coals should deal fire damage with dice roll."""
+    damage_dice, damage_type = get_tile_hazard_info(TileTypeID.HOT_COALS)
+    assert damage_dice == "1d6"
+    assert damage_type == "fire"
+
+
+def test_get_tile_hazard_info_invalid_id() -> None:
+    """Invalid tile IDs should return safe values."""
+    damage_dice, damage_type = get_tile_hazard_info(999)
+    assert damage_dice == ""
+    assert damage_type == ""
+
+
+def test_hazardous_tile_properties() -> None:
+    """Hazardous tiles should be walkable and transparent."""
+    acid = tile_types.get_tile_type_data_by_id(TileTypeID.ACID_POOL)
+    assert acid["walkable"]
+    assert acid["transparent"]
+    assert acid["hazard_damage"] == "1d4"
+    assert acid["hazard_damage_type"] == "acid"
+
+    coals = tile_types.get_tile_type_data_by_id(TileTypeID.HOT_COALS)
+    assert coals["walkable"]
+    assert coals["transparent"]
+    assert coals["hazard_damage"] == "1d6"
+    assert coals["hazard_damage_type"] == "fire"
+
+
+def test_all_tiles_have_hazard_fields() -> None:
+    """Ensure every tile type has hazard fields (even if zero)."""
+    for tile_id in TileTypeID:
+        data = tile_types.get_tile_type_data_by_id(tile_id)
+        field_names = data.dtype.names
+        assert field_names is not None
+        assert "hazard_damage" in field_names
+        assert "hazard_damage_type" in field_names

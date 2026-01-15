@@ -137,6 +137,10 @@ class DummyTurnManager:
         """Dummy implementation of RAF V2 process_all_npc_reactions method."""
         pass
 
+    def _apply_terrain_hazard(self, actor: Any) -> None:
+        """Dummy implementation for terrain hazard checks."""
+        pass
+
 
 class DummyOverlaySystem:
     def __init__(self, controller: Controller) -> None:
