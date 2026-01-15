@@ -6,9 +6,16 @@ and state of game actors.
 # Export the submodules themselves for access to concrete implementations.
 # Expose the core actor classes and base classes directly.
 # These form the main, stable API of the package.
-from . import ai, components, conditions, status_effects
+from . import ai, components, conditions, container, status_effects
 from .ai import AIComponent
 from .conditions import Condition
+from .container import (
+    Container,
+    create_barrel,
+    create_crate,
+    create_footlocker,
+    create_locker,
+)
 from .core import NPC, PC, Actor, Character
 from .status_effects import StatusEffect
 
@@ -21,6 +28,12 @@ __all__ = [
     "Character",
     "PC",
     "NPC",
+    "Container",
+    # Factory Functions
+    "create_barrel",
+    "create_crate",
+    "create_footlocker",
+    "create_locker",
     # Base/Interface Classes
     "AIComponent",
     "Condition",
@@ -29,5 +42,6 @@ __all__ = [
     "ai",
     "components",
     "conditions",
+    "container",
     "status_effects",
 ]

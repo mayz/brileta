@@ -7,6 +7,10 @@ from catley.environment.map import GameMap, MapRegion
 from catley.game.actors import (
     Actor,
     Character,
+    create_barrel,
+    create_crate,
+    create_footlocker,
+    create_locker,
 )
 from catley.game.enums import CreatureSize
 from catley.game.item_spawner import ItemSpawner
@@ -60,6 +64,7 @@ class GameWorld:
         # Note: Rooms now have random 20% chance of being outdoor (set in generator)
 
         self._populate_npcs(rooms)
+        self._place_containers(rooms)
 
         if not config.IS_TEST_ENVIRONMENT:
             self._add_test_fire(rooms)
@@ -480,3 +485,67 @@ class GameWorld:
             ):
                 campfire = ContainedFire.create_campfire(fire_x, fire_y, self)
                 self.add_actor(campfire)
+
+    def _place_containers(
+        self, rooms: list, num_containers: int = 5, max_attempts: int = 10
+    ) -> None:
+        """Place containers with random loot in rooms.
+
+        Spawns a variety of container types (crates, lockers, barrels, footlockers)
+        throughout the dungeon, each containing random junk items.
+
+        Args:
+            rooms: List of Rect objects representing rooms
+            num_containers: Number of containers to place
+            max_attempts: Maximum attempts to find a valid spot for each container
+        """
+        from catley.game.items.junk_item_types import get_random_junk_type
+
+        # Container factory functions with their relative weights
+        container_factories = [
+            (create_crate, 4),  # Most common
+            (create_locker, 2),
+            (create_barrel, 2),
+            (create_footlocker, 1),  # Rarest
+        ]
+
+        # Build weighted choice list
+        weighted_factories = []
+        for factory, weight in container_factories:
+            weighted_factories.extend([factory] * weight)
+
+        for _ in range(num_containers):
+            placed = False
+
+            for _ in range(max_attempts):
+                # Pick a random room (skip the first room where player spawns)
+                room = rooms[0] if len(rooms) <= 1 else random.choice(rooms[1:])
+
+                # Pick a random position within the room
+                container_x = random.randint(room.x1 + 1, room.x2 - 2)
+                container_y = random.randint(room.y1 + 1, room.y2 - 2)
+
+                # Check if location is valid
+                if (
+                    self.game_map.walkable[container_x, container_y]
+                    and self.get_actor_at_location(container_x, container_y) is None
+                ):
+                    # Generate random items for the container
+                    num_items = random.randint(1, 4)
+                    items = [get_random_junk_type().create() for _ in range(num_items)]
+
+                    # Pick a random container type
+                    factory = random.choice(weighted_factories)
+                    container = factory(
+                        x=container_x,
+                        y=container_y,
+                        items=items,
+                        game_world=self,
+                    )
+                    self.add_actor(container)
+                    placed = True
+                    break
+
+            if not placed:
+                # Container could not be placed; skip it
+                pass

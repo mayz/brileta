@@ -12,7 +12,7 @@ from catley.controller import Controller
 from catley.game.actions.executors.misc import PickupExecutor
 from catley.game.actions.misc import PickupIntent
 from catley.game.actors import Actor, Character
-from catley.game.actors.components import InventoryComponent, StatsComponent
+from catley.game.actors.components import CharacterInventory, StatsComponent
 from catley.game.enums import ItemSize
 from catley.game.game_world import GameWorld
 from catley.game.items.item_core import Item, ItemType
@@ -59,7 +59,7 @@ def make_world_with_ground_item() -> tuple[DummyController, Character, Item, Act
 
     # Create dead actor holding the item at player's location
     stats = StatsComponent(strength=5)
-    inventory = InventoryComponent(stats)
+    inventory = CharacterInventory(stats)
     dead_actor = Actor(
         x=0,
         y=0,
@@ -310,7 +310,7 @@ class TestPickupExecutorEdgeCases:
 
         # Create a non-Character ground container (like a dropped item pile)
         stats = StatsComponent(strength=5)
-        inventory = InventoryComponent(stats)
+        inventory = CharacterInventory(stats)
         ground_container = Actor(
             x=0,
             y=0,

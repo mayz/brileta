@@ -16,7 +16,7 @@ import tcod.event
 
 from catley import colors
 from catley.events import MessageEvent, publish_event
-from catley.game.actors import Character, Condition
+from catley.game.actors import Actor, Character, Condition
 from catley.game.enums import ItemCategory, ItemSize
 from catley.game.items.item_core import Item
 from catley.util.coordinates import WorldTilePos
@@ -72,13 +72,32 @@ class _MenuKeys:
 
 @dataclass
 class ExternalInventory:
-    """Describes the source of items in the right pane.
+    """Describes position-based source of items in the right pane.
 
-    Examples: ground items, container, corpse inventory.
+    Used for ground items at a specific world location.
     """
 
     position: WorldTilePos
-    label: str  # e.g., "On the ground", "Dead trog", "Chest"
+    label: str  # e.g., "On the ground"
+
+
+@dataclass
+class ActorInventorySource:
+    """Source items from an actor's inventory (container, corpse, etc.).
+
+    This allows the DualPaneMenu to display and transfer items from
+    any actor with an inventory, including:
+    - Containers (crates, lockers, etc.)
+    - Dead characters (corpse looting)
+    - Any other actor with an inventory component
+    """
+
+    actor: Actor
+    label: str  # e.g., "Wooden Crate", "Dead Raider"
+
+
+# Type alias for external sources
+ExternalSource = ExternalInventory | ActorInventorySource | None
 
 
 class PaneId(Enum):
@@ -111,14 +130,16 @@ class DualPaneMenu(Menu):
     def __init__(
         self,
         controller: Controller,
-        source: ExternalInventory | None = None,
+        source: ExternalSource = None,
     ) -> None:
         """Initialize the dual-pane menu.
 
         Args:
             controller: Game controller.
-            source: External inventory to interact with, or None for
-                inventory-only mode.
+            source: External source to interact with - can be:
+                - ExternalInventory: Position-based ground items
+                - ActorInventorySource: Items from an actor (container/corpse)
+                - None: Inventory-only mode (no right pane)
         """
         title = "Inventory" if source is None else "Loot"
         super().__init__(
@@ -270,6 +291,14 @@ class DualPaneMenu(Menu):
         if self.source is None:
             return []
 
+        if isinstance(self.source, ActorInventorySource):
+            # Get items from actor's inventory
+            inv = self.source.actor.inventory
+            if inv is None:
+                return []
+            return inv.get_items()
+
+        # ExternalInventory - position-based ground items
         world_x, world_y = self.source.position
         return self.controller.gw.get_pickable_items_at_location(world_x, world_y)
 
@@ -340,8 +369,14 @@ class DualPaneMenu(Menu):
             publish_event(MessageEvent("Your inventory is full!", colors.RED))
             return False
 
-        # Remove item from source (same logic as PickupMenu)
-        if self.source is not None:
+        # Remove item from source
+        if isinstance(self.source, ActorInventorySource):
+            # Remove from actor's inventory directly
+            inv = self.source.actor.inventory
+            if inv is not None:
+                inv.remove_item(item)
+        elif self.source is not None:
+            # ExternalInventory - position-based ground items
             world_x, world_y = self.source.position
             actors_here = [
                 a
@@ -413,6 +448,13 @@ class DualPaneMenu(Menu):
 
         player = self.controller.gw.player
 
+        # Check if container can accept the item (for ActorInventorySource)
+        if isinstance(self.source, ActorInventorySource):
+            inv = self.source.actor.inventory
+            if inv is not None and len(inv) >= inv.capacity:
+                publish_event(MessageEvent("Container is full!", colors.RED))
+                return False
+
         # Unequip if equipped
         for i, equipped_item in enumerate(player.inventory.attack_slots):
             if equipped_item == item:
@@ -422,11 +464,21 @@ class DualPaneMenu(Menu):
         # Remove from inventory
         player.inventory.remove_from_inventory(item)
 
-        # Spawn as ground item at source location
-        world_x, world_y = self.source.position
-        self.controller.gw.spawn_ground_item(item, world_x, world_y)
-
-        publish_event(MessageEvent(f"You put down {item.name}.", colors.WHITE))
+        # Add to container or spawn on ground
+        if isinstance(self.source, ActorInventorySource):
+            inv = self.source.actor.inventory
+            if inv is not None:
+                inv.add_item(item)
+            publish_event(
+                MessageEvent(
+                    f"You put {item.name} in {self.source.label}.", colors.WHITE
+                )
+            )
+        else:
+            # ExternalInventory - spawn as ground item at source location
+            world_x, world_y = self.source.position
+            self.controller.gw.spawn_ground_item(item, world_x, world_y)
+            publish_event(MessageEvent(f"You put down {item.name}.", colors.WHITE))
 
         # Refresh both panes
         self._populate_left_pane()

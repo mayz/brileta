@@ -135,13 +135,134 @@ class HealthComponent:
 
 
 class InventoryComponent:
-    """Manages an actor's stored items and equipped gear.
+    """Base class for item storage.
 
-    Stored items are tracked in inventory slots and can be items
-    but can also be things like injuries or conditions.
+    Provides a common interface for item storage that both character inventories
+    (with stats-based capacity, equipment slots, conditions) and simple container
+    storage (fixed capacity, items only) can implement.
 
-    Equipped gear is stuff that the actor is holding or wearing. It may
-    confer some mechanical advantage (like armor points).
+    Subclasses:
+        CharacterInventory: Stats-backed inventory with equipment slots and conditions
+        ContainerStorage: Fixed-capacity simple item storage for containers
+    """
+
+    def __init__(self, actor: Actor | None = None) -> None:
+        self.actor = actor  # Back-reference for status effects
+        self.revision = 0  # Revision counter for UI caching
+
+    def _increment_revision(self) -> None:
+        """Bump the revision to signal a state change."""
+        self.revision += 1
+
+    @property
+    def capacity(self) -> int:
+        """Get the maximum capacity of this inventory. Subclasses must implement."""
+        raise NotImplementedError
+
+    def get_items(self) -> list[Item]:
+        """Get a copy of all items in this inventory. Subclasses must implement."""
+        raise NotImplementedError
+
+    def add_item(self, item: Item) -> tuple[bool, str]:
+        """Add an item to this inventory. Subclasses must implement."""
+        raise NotImplementedError
+
+    def remove_item(self, item: Item) -> bool:
+        """Remove an item from this inventory. Subclasses must implement."""
+        raise NotImplementedError
+
+    def has_item(self, item: Item) -> bool:
+        """Check if this inventory contains the given item."""
+        return item in self.get_items()
+
+    def __iter__(self):
+        """Allow iteration over items. Subclasses must implement."""
+        raise NotImplementedError
+
+    def __len__(self) -> int:
+        """Return number of stored items. Subclasses must implement."""
+        raise NotImplementedError
+
+    def __contains__(self, item: object) -> bool:
+        """Check if item is in this inventory. Subclasses must implement."""
+        raise NotImplementedError
+
+
+class ContainerStorage(InventoryComponent):
+    """Fixed-capacity storage for containers.
+
+    A simple item storage implementation for containers like crates, chests,
+    lockers, etc. Unlike CharacterInventory, this class:
+    - Has a fixed capacity (not stats-based)
+    - Stores only items (not conditions)
+    - Has no equipment slots
+    - Has no encumbrance mechanics
+    """
+
+    def __init__(
+        self,
+        capacity: int = 10,
+        actor: Actor | None = None,
+    ) -> None:
+        super().__init__(actor)
+        self._capacity = capacity
+        self._items: list[Item] = []
+
+    @property
+    def capacity(self) -> int:
+        """Get the fixed capacity of this container."""
+        return self._capacity
+
+    def get_items(self) -> list[Item]:
+        """Get a copy of all items in this container."""
+        return self._items.copy()
+
+    def add_item(self, item: Item) -> tuple[bool, str]:
+        """Add an item to this container if space allows."""
+        if len(self._items) >= self._capacity:
+            return False, f"Cannot add {item.name} - container full!"
+        self._items.append(item)
+        self._increment_revision()
+        return True, f"Added {item.name}."
+
+    def remove_item(self, item: Item) -> bool:
+        """Remove an item from this container."""
+        if item in self._items:
+            self._items.remove(item)
+            self._increment_revision()
+            return True
+        return False
+
+    def is_empty(self) -> bool:
+        """Return True if no items are stored."""
+        return len(self._items) == 0
+
+    def has_items(self) -> bool:
+        """Return True if there are stored items."""
+        return len(self._items) > 0
+
+    def __iter__(self):
+        """Allow iteration over items."""
+        return iter(self._items)
+
+    def __len__(self) -> int:
+        """Return number of items."""
+        return len(self._items)
+
+    def __contains__(self, item: object) -> bool:
+        """Check if item is in this container."""
+        return item in self._items
+
+
+class CharacterInventory(InventoryComponent):
+    """Stats-backed inventory with equipment slots for characters.
+
+    This is the full-featured inventory used by player characters and NPCs.
+    It includes:
+    - Stats-based capacity (derived from strength)
+    - Equipment/attack slots for weapons
+    - Support for conditions (injuries, status effects that take inventory space)
+    - Encumbrance mechanics
     """
 
     def __init__(
@@ -150,19 +271,29 @@ class InventoryComponent:
         num_attack_slots: int = 2,
         actor: Actor | None = None,
     ) -> None:
+        super().__init__(actor)
         self.stats = stats_component
-        self.actor = actor  # Back-reference for status effects
         self._stored_items: list[Item | Condition] = []
-
-        # Revision counter for UI caching
-        self.revision = 0
 
         self.attack_slots: list[Item | None] = [None] * num_attack_slots
         self.active_weapon_slot: int = 0
 
-    def _increment_revision(self) -> None:
-        """Bump the revision to signal a state change."""
-        self.revision += 1
+    @property
+    def capacity(self) -> int:
+        """Get capacity from stats component."""
+        return self.stats.inventory_slots
+
+    def get_items(self) -> list[Item]:
+        """Get a copy of all items (excluding conditions) in this inventory."""
+        return [item for item in self._stored_items if isinstance(item, Item)]
+
+    def add_item(self, item: Item) -> tuple[bool, str]:
+        """Add an item to this inventory (alias for add_voluntary_item)."""
+        return self.add_voluntary_item(item)
+
+    def remove_item(self, item: Item) -> bool:
+        """Remove an item from this inventory (alias for remove_from_inventory)."""
+        return self.remove_from_inventory(item)
 
     def __iter__(self):
         """Allow iteration over stored items."""
@@ -172,7 +303,7 @@ class InventoryComponent:
         """Return number of stored items."""
         return len(self._stored_items)
 
-    def __contains__(self, item: Item | Condition) -> bool:
+    def __contains__(self, item: object) -> bool:
         """Check if item is in stored items."""
         return item in self._stored_items
 

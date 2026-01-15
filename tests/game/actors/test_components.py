@@ -21,10 +21,10 @@ from catley.config import DEFAULT_ACTOR_SPEED, DEFAULT_MAX_ARMOR
 from catley.constants.movement import MovementConstants
 from catley.game.actors import conditions
 from catley.game.actors.components import (
+    CharacterInventory,
     ConditionsComponent,
     EnergyComponent,
     HealthComponent,
-    InventoryComponent,
     ModifiersComponent,
     StatsComponent,
     StatusEffectsComponent,
@@ -87,7 +87,7 @@ def make_mock_actor(
     actor.stats = stats
 
     if with_inventory:
-        inventory = InventoryComponent(stats, actor=actor)
+        inventory = CharacterInventory(stats, actor=actor)
         actor.inventory = inventory
         actor.conditions = ConditionsComponent(inventory)
     else:
@@ -310,7 +310,7 @@ class TestHealthComponent:
 
 
 class TestInventoryComponentGaps:
-    """Tests for InventoryComponent behaviors not covered in test_inventory.py.
+    """Tests for CharacterInventory behaviors not covered in test_inventory.py.
 
     Existing coverage in test_inventory.py:
     - get_used_inventory_slots() with various sizes
@@ -322,7 +322,7 @@ class TestInventoryComponentGaps:
     def test_add_condition_force_drops_items_when_full(self) -> None:
         """Adding a condition should force-drop items if capacity is full."""
         stats = make_stats(strength=0)  # 5 slots
-        inv = InventoryComponent(stats)
+        inv = CharacterInventory(stats)
 
         # Fill inventory with items
         for i in range(5):
@@ -340,7 +340,7 @@ class TestInventoryComponentGaps:
     def test_add_condition_drops_multiple_items_if_needed(self) -> None:
         """Adding a condition to a full inventory drops the necessary item."""
         stats = make_stats(strength=0)  # 5 slots
-        inv = InventoryComponent(stats)
+        inv = CharacterInventory(stats)
 
         # Fill with 5 items
         for i in range(5):
@@ -357,7 +357,7 @@ class TestInventoryComponentGaps:
         """Becoming encumbered should add EncumberedEffect to the actor."""
         actor = make_mock_actor()
         stats = actor.stats
-        inv = InventoryComponent(stats, actor=actor)
+        inv = CharacterInventory(stats, actor=actor)
         actor.inventory = inv
 
         # Fill beyond capacity
@@ -373,7 +373,7 @@ class TestInventoryComponentGaps:
         """Dropping below encumbrance threshold removes EncumberedEffect."""
         actor = make_mock_actor()
         stats = actor.stats
-        inv = InventoryComponent(stats, actor=actor)
+        inv = CharacterInventory(stats, actor=actor)
         actor.inventory = inv
 
         # Start encumbered
@@ -395,7 +395,7 @@ class TestInventoryComponentGaps:
     def test_get_inventory_slot_colors_reflects_item_sizes(self) -> None:
         """Slot colors should have one entry per used slot."""
         stats = make_stats(strength=5)
-        inv = InventoryComponent(stats)
+        inv = CharacterInventory(stats)
 
         inv.add_voluntary_item(make_item("normal", ItemSize.NORMAL))
         inv.add_voluntary_item(make_item("big", ItemSize.BIG))
@@ -421,7 +421,7 @@ class TestInventoryComponentGaps:
     def test_get_available_attacks_returns_all_slots(self) -> None:
         """get_available_attacks() should return all attack slots."""
         stats = make_stats()
-        inv = InventoryComponent(stats, num_attack_slots=3)
+        inv = CharacterInventory(stats, num_attack_slots=3)
 
         weapon = make_item("sword")
         inv.equip_to_slot(weapon, 1)
@@ -436,7 +436,7 @@ class TestInventoryComponentGaps:
     def test_revision_counter_increments_on_add(self) -> None:
         """Revision counter should increment when items are added."""
         stats = make_stats()
-        inv = InventoryComponent(stats)
+        inv = CharacterInventory(stats)
         initial_revision = inv.revision
 
         inv.add_voluntary_item(make_item("item"))
@@ -446,7 +446,7 @@ class TestInventoryComponentGaps:
     def test_revision_counter_increments_on_remove(self) -> None:
         """Revision counter should increment when items are removed."""
         stats = make_stats()
-        inv = InventoryComponent(stats)
+        inv = CharacterInventory(stats)
         item = make_item("item")
         inv.add_voluntary_item(item)
         initial_revision = inv.revision
@@ -458,7 +458,7 @@ class TestInventoryComponentGaps:
     def test_revision_counter_increments_on_equip(self) -> None:
         """Revision counter should increment on equipment changes."""
         stats = make_stats()
-        inv = InventoryComponent(stats)
+        inv = CharacterInventory(stats)
         initial_revision = inv.revision
 
         inv.equip_to_slot(make_item("weapon"), 0)

@@ -82,9 +82,9 @@ class ItemSpawner:
             name=name,
             game_world=self.game_world,
             blocks_movement=False,
-            inventory=components.InventoryComponent(components.StatsComponent()),
+            inventory=components.CharacterInventory(components.StatsComponent()),
         )
-        inv = cast(components.InventoryComponent, ground_actor.inventory)
+        inv = cast(components.CharacterInventory, ground_actor.inventory)
         for item in items:
             inv.add_to_inventory(item)
 

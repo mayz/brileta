@@ -419,7 +419,7 @@ class TestItemOperations:
             name="Pile",
             game_world=cast(GameWorld, gw),
             blocks_movement=False,
-            inventory=components.InventoryComponent(components.StatsComponent()),
+            inventory=components.CharacterInventory(components.StatsComponent()),
         )
         item = make_test_item("Loot")
         assert pile_actor.inventory is not None

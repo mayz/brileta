@@ -1,5 +1,6 @@
 from .area_effects import WeaponAreaEffectExecutor
 from .base import ActionExecutor
+from .containers import SearchContainerExecutor
 from .doors import CloseDoorExecutor, OpenDoorExecutor
 from .environmental import EnvironmentalDamageExecutor
 from .misc import PickupExecutor, PickupItemsAtLocationExecutor, SwitchWeaponExecutor
@@ -21,6 +22,7 @@ __all__ = [
     "PickupExecutor",
     "PickupItemsAtLocationExecutor",
     "RestExecutor",
+    "SearchContainerExecutor",
     "SleepExecutor",
     "SwitchWeaponExecutor",
     "UseConsumableExecutor",

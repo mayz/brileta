@@ -43,6 +43,7 @@ from catley.util.pathfinding import find_local_path
 
 from .ai import AIComponent, DispositionBasedAI
 from .components import (
+    CharacterInventory,
     ConditionsComponent,
     EnergyComponent,
     HealthComponent,
@@ -390,7 +391,7 @@ class Character(Actor):
             game_world=game_world,
             stats=stats,
             health=HealthComponent(stats),
-            inventory=InventoryComponent(stats, num_attack_slots, actor=self),
+            inventory=CharacterInventory(stats, num_attack_slots, actor=self),
             visual_effects=visual_effects_component,
             ai=ai,
             speed=speed,
@@ -403,7 +404,7 @@ class Character(Actor):
         # Type narrowing - these are guaranteed to exist.
         self.stats: StatsComponent
         self.health: HealthComponent
-        self.inventory: InventoryComponent
+        self.inventory: CharacterInventory
         self.visual_effects: VisualEffectsComponent
         self.modifiers: ModifiersComponent
         self.conditions: ConditionsComponent

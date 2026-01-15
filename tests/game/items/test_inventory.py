@@ -9,7 +9,7 @@ def make_item(name: str, size: ItemSize) -> Item:
 
 def test_get_used_inventory_slots_and_tiny_sharing():
     stats = components.StatsComponent(strength=0)
-    inv = components.InventoryComponent(stats)
+    inv = components.CharacterInventory(stats)
     tiny1 = make_item("t1", ItemSize.TINY)
     tiny2 = make_item("t2", ItemSize.TINY)
     normal = make_item("n1", ItemSize.NORMAL)
@@ -30,7 +30,7 @@ def test_get_used_inventory_slots_and_tiny_sharing():
 
 def test_can_add_to_inventory_capacity_and_tiny():
     stats = components.StatsComponent(strength=0)
-    inv = components.InventoryComponent(stats)
+    inv = components.CharacterInventory(stats)
     normal_items = [make_item(f"n{i}", ItemSize.NORMAL) for i in range(5)]
     for item in normal_items[:4]:
         success, _, _ = inv.add_to_inventory(item)
@@ -47,7 +47,7 @@ def test_can_add_to_inventory_capacity_and_tiny():
 
 def test_equip_from_inventory_swaps_and_removes_item() -> None:
     stats = components.StatsComponent(strength=0)
-    inv = components.InventoryComponent(stats)
+    inv = components.CharacterInventory(stats)
     stored = make_item("stored", ItemSize.NORMAL)
     equipped = make_item("equipped", ItemSize.NORMAL)
 
@@ -64,7 +64,7 @@ def test_equip_from_inventory_swaps_and_removes_item() -> None:
 
 def test_equip_from_inventory_fails_when_full() -> None:
     stats = components.StatsComponent(strength=0)
-    inv = components.InventoryComponent(stats)
+    inv = components.CharacterInventory(stats)
     items = [make_item(str(i), ItemSize.NORMAL) for i in range(5)]
     for item in items:
         inv.add_to_inventory(item)
@@ -80,7 +80,7 @@ def test_equip_from_inventory_fails_when_full() -> None:
 
 def test_unequip_to_inventory_moves_item() -> None:
     stats = components.StatsComponent(strength=0)
-    inv = components.InventoryComponent(stats)
+    inv = components.CharacterInventory(stats)
     item = make_item("tool", ItemSize.NORMAL)
     inv.equip_to_slot(item, 0)
 
@@ -94,7 +94,7 @@ def test_unequip_to_inventory_moves_item() -> None:
 def test_try_remove_item_from_equipped_slot() -> None:
     """try_remove_item removes item from equipped attack slot and returns True."""
     stats = components.StatsComponent(strength=0)
-    inv = components.InventoryComponent(stats)
+    inv = components.CharacterInventory(stats)
     item = make_item("weapon", ItemSize.NORMAL)
     inv.equip_to_slot(item, 0)
 
@@ -107,7 +107,7 @@ def test_try_remove_item_from_equipped_slot() -> None:
 def test_try_remove_item_from_stored_inventory() -> None:
     """try_remove_item removes item from stored inventory and returns True."""
     stats = components.StatsComponent(strength=0)
-    inv = components.InventoryComponent(stats)
+    inv = components.CharacterInventory(stats)
     item = make_item("tool", ItemSize.NORMAL)
     inv.add_to_inventory(item)
 
@@ -120,7 +120,7 @@ def test_try_remove_item_from_stored_inventory() -> None:
 def test_try_remove_item_not_found() -> None:
     """try_remove_item returns False when item is not in inventory or slots."""
     stats = components.StatsComponent(strength=0)
-    inv = components.InventoryComponent(stats)
+    inv = components.CharacterInventory(stats)
     item = make_item("mystery", ItemSize.NORMAL)
 
     result = inv.try_remove_item(item)
@@ -131,7 +131,7 @@ def test_try_remove_item_not_found() -> None:
 def test_try_remove_item_checks_equipped_first() -> None:
     """try_remove_item checks equipped slots before stored inventory."""
     stats = components.StatsComponent(strength=0)
-    inv = components.InventoryComponent(stats)
+    inv = components.CharacterInventory(stats)
     item = make_item("weapon", ItemSize.NORMAL)
     # Equip to slot (this is where it should be found first)
     inv.equip_to_slot(item, 0)
