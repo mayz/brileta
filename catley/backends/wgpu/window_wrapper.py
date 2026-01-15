@@ -24,14 +24,15 @@ class WGPUWindowWrapper(wgpu.gui.base.WgpuCanvasBase):
     Catley's "canvas" (render target).
     """
 
-    def __init__(self, glfw_window: GlfwWindow) -> None:
+    def __init__(self, glfw_window: GlfwWindow, vsync: bool = True) -> None:
         """Initialize the WGPU window wrapper.
 
         Args:
             glfw_window: Catley's GLFW window wrapper
+            vsync: Whether to enable vsync (controls WGPU present mode)
         """
-        # Disable WGPU's internal frame limiting (max_fps=999999 effectively uncaps it)
-        super().__init__(max_fps=1000_000, vsync=False)
+        # Disable WGPU's internal frame limiting; vsync controls the present mode
+        super().__init__(max_fps=1000_000, vsync=vsync)
         self.glfw_window = glfw_window
 
         # Cache window properties

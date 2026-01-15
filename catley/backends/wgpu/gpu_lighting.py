@@ -29,6 +29,16 @@ if TYPE_CHECKING:
     from catley.view.render.graphics import GraphicsContext
 
 
+# WGPU requires bytes_per_row to be a multiple of 256 when copying textures to buffers
+WGPU_COPY_BYTES_PER_ROW_ALIGNMENT = 256
+
+
+def _align_to_copy_row_alignment(size: int) -> int:
+    """Round up to the next multiple of WGPU's copy row alignment (256 bytes)."""
+    alignment = WGPU_COPY_BYTES_PER_ROW_ALIGNMENT
+    return (size + alignment - 1) & ~(alignment - 1)
+
+
 class GPULightingSystem(LightingSystem):
     """WGPU-accelerated implementation of the lighting system using fragment shaders.
 
@@ -97,6 +107,9 @@ class GPULightingSystem(LightingSystem):
 
         # Current viewport for resource sizing
         self._current_viewport: Rect | None = None
+        # Row stride for buffer readback (WGPU requires 256-byte alignment)
+        self._padded_bytes_per_row: int = 0
+        self._unpadded_bytes_per_row: int = 0
 
         # Performance optimization: Track light configuration changes
         self._last_light_data_hash: int | None = None
@@ -760,13 +773,16 @@ class GPULightingSystem(LightingSystem):
                 )
 
                 # Create buffer for reading back results
+                # WGPU requires bytes_per_row to be aligned to 256 bytes
+                bytes_per_row = viewport_bounds.width * 4 * 4  # 4 components * 4 bytes
+                padded_bytes_per_row = _align_to_copy_row_alignment(bytes_per_row)
                 self._output_buffer = self.device.create_buffer(
-                    size=viewport_bounds.width
-                    * viewport_bounds.height
-                    * 4
-                    * 4,  # 4 components * 4 bytes each
+                    size=padded_bytes_per_row * viewport_bounds.height,
                     usage=wgpu.BufferUsage.COPY_DST | wgpu.BufferUsage.MAP_READ,  # type: ignore
                 )
+                # Store padded row size for readback
+                self._padded_bytes_per_row = padded_bytes_per_row
+                self._unpadded_bytes_per_row = bytes_per_row
 
                 self._current_viewport = viewport_bounds
 
@@ -886,7 +902,7 @@ class GPULightingSystem(LightingSystem):
 
             render_pass.end()
 
-            # Copy render target to readback buffer
+            # Copy render target to readback buffer (using aligned bytes_per_row)
             command_encoder.copy_texture_to_buffer(
                 {
                     "texture": self._output_texture,
@@ -896,9 +912,7 @@ class GPULightingSystem(LightingSystem):
                 {
                     "buffer": self._output_buffer,
                     "offset": 0,
-                    "bytes_per_row": viewport_bounds.width
-                    * 4
-                    * 4,  # 4 components * 4 bytes
+                    "bytes_per_row": self._padded_bytes_per_row,
                     "rows_per_image": viewport_bounds.height,
                 },
                 (viewport_bounds.width, viewport_bounds.height, 1),
@@ -926,8 +940,17 @@ class GPULightingSystem(LightingSystem):
                 except Exception as e:
                     print(f"Error unmapping buffer: {e}")
 
-            # Reshape to (width, height, 4) and extract RGB
-            result_image = result_data.reshape(
+            # Handle row padding: buffer has padded rows for WGPU alignment.
+            # Each row has padded_bytes_per_row bytes; only width*4*4 are valid.
+            padded_floats_per_row = self._padded_bytes_per_row // 4
+            valid_floats_per_row = viewport_bounds.width * 4  # 4 components
+
+            # Reshape to (height, padded_floats_per_row) and extract valid columns
+            padded_image = result_data.reshape(
+                (viewport_bounds.height, padded_floats_per_row)
+            )
+            # Slice to get only valid data, then reshape to (height, width, 4)
+            result_image = padded_image[:, :valid_floats_per_row].reshape(
                 (viewport_bounds.height, viewport_bounds.width, 4)
             )
             rgb_result = result_image[:, :, :3]  # Extract RGB channels

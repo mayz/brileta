@@ -159,11 +159,6 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         # Pre-compile shaders to avoid runtime compilation stutters
         self._precompile_shaders()
 
-        # Apply vsync setting after WGPU initialization
-        import glfw
-
-        glfw.swap_interval(1 if self.vsync else 0)
-
     def _precompile_shaders(self) -> None:
         """Pre-compile commonly used shaders to avoid runtime compilation stutters.
 
@@ -212,7 +207,8 @@ class WGPUGraphicsContext(BaseGraphicsContext):
             return False  # Skip creation/recreation until we have a valid size
 
         # Create WGPU window wrapper from our existing GLFW window
-        self.window_wrapper = WGPUWindowWrapper(self.window)
+        # Pass vsync setting so WGPU uses the correct present mode (fifo vs immediate)
+        self.window_wrapper = WGPUWindowWrapper(self.window, vsync=self.vsync)
 
         # Get WGPU context (GPUSurface) from the window wrapper
         self.wgpu_context = self.window_wrapper.get_context()
