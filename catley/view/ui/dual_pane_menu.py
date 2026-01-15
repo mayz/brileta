@@ -17,13 +17,43 @@ import tcod.event
 from catley import colors
 from catley.events import MessageEvent, publish_event
 from catley.game.actors import Character, Condition
-from catley.game.enums import ItemSize
+from catley.game.enums import ItemCategory, ItemSize
 from catley.game.items.item_core import Item
 from catley.util.coordinates import WorldTilePos
 from catley.view.ui.overlays import Menu, MenuOption
 
 if TYPE_CHECKING:
     from catley.controller import Controller
+
+
+def _get_category_prefix(item: Item) -> tuple[str, colors.Color | None]:
+    """Return the category prefix symbol and color for an item.
+
+    Returns a tuple of (prefix_string, color) where prefix_string is
+    a colored dot indicator. Returns ("", None) for MISC category items.
+    """
+    category_info: dict[ItemCategory, tuple[str, colors.Color]] = {
+        ItemCategory.WEAPON: ("\u2022 ", colors.CATEGORY_WEAPON),
+        ItemCategory.ARMOR: ("\u2022 ", colors.CATEGORY_ARMOR),
+        ItemCategory.CONSUMABLE: ("\u2022 ", colors.CATEGORY_CONSUMABLE),
+        ItemCategory.JUNK: ("\u2022 ", colors.CATEGORY_JUNK),
+        ItemCategory.MUNITIONS: ("\u2022 ", colors.CATEGORY_MUNITIONS),
+    }
+
+    return category_info.get(item.category, ("", None))
+
+
+def _get_category_name(category: ItemCategory) -> str:
+    """Return the display name for an item category."""
+    names: dict[ItemCategory, str] = {
+        ItemCategory.WEAPON: "Weapon",
+        ItemCategory.ARMOR: "Armor",
+        ItemCategory.CONSUMABLE: "Consumable",
+        ItemCategory.JUNK: "Junk",
+        ItemCategory.MUNITIONS: "Munition",
+        ItemCategory.MISC: "Misc",
+    }
+    return names.get(category, "")
 
 
 class _MenuKeys:
@@ -147,17 +177,24 @@ class DualPaneMenu(Menu):
             return
 
         for entity, item_status in all_items_to_display:
-            prefix = "     "  # 5 spaces for alignment
-            prefix_color: colors.Color | None = None
-
             if isinstance(entity, Item):
                 item = entity
+
+                # Build prefix segments: slot indicator (if equipped) + category
+                prefix_segments: list[tuple[str, colors.Color]] = []
 
                 # Parse equipped slot number for prefix
                 if item_status.startswith("slot:"):
                     slot_num = int(item_status.split(":")[1]) + 1
-                    prefix = f"[{slot_num}]  "
-                    prefix_color = colors.YELLOW
+                    prefix_segments.append((f"[{slot_num}]  ", colors.YELLOW))
+                else:
+                    # Add alignment spaces to match equipped items
+                    prefix_segments.append(("     ", colors.WHITE))
+
+                # Add category prefix
+                cat_prefix, cat_color = _get_category_prefix(item)
+                if cat_prefix and cat_color:
+                    prefix_segments.append((cat_prefix, cat_color))
 
                 self.left_options.append(
                     MenuOption(
@@ -167,13 +204,13 @@ class DualPaneMenu(Menu):
                         enabled=True,
                         color=colors.WHITE,
                         data=item,
-                        prefix=prefix,
-                        prefix_color=prefix_color,
+                        prefix_segments=prefix_segments,
                     )
                 )
 
             elif isinstance(entity, Condition):
                 condition = entity
+                # Conditions have no category, just alignment spaces
                 self.left_options.append(
                     MenuOption(
                         key=None,
@@ -183,8 +220,7 @@ class DualPaneMenu(Menu):
                         color=condition.display_color,
                         force_color=True,
                         data=condition,
-                        prefix=prefix,
-                        prefix_color=None,
+                        prefix_segments=[("     ", colors.WHITE)],  # Alignment only
                     )
                 )
 
@@ -211,6 +247,12 @@ class DualPaneMenu(Menu):
             return
 
         for item in items:
+            # Build prefix segments with category prefix
+            prefix_segments: list[tuple[str, colors.Color]] = []
+            cat_prefix, cat_color = _get_category_prefix(item)
+            if cat_prefix and cat_color:
+                prefix_segments.append((cat_prefix, cat_color))
+
             self.right_options.append(
                 MenuOption(
                     key=None,
@@ -219,6 +261,7 @@ class DualPaneMenu(Menu):
                     enabled=True,
                     color=colors.WHITE,
                     data=item,
+                    prefix_segments=prefix_segments if prefix_segments else None,
                 )
             )
 
@@ -614,7 +657,11 @@ class DualPaneMenu(Menu):
         return True
 
     def _generate_item_detail(self, entity: Item | Condition) -> list[str]:
-        """Generate detail lines for the selected item/condition."""
+        """Generate detail lines for the selected item/condition.
+
+        For items, the first line is the category name (rendered in category
+        color by _draw_detail_panel). Remaining lines are white.
+        """
         lines: list[str] = []
 
         if isinstance(entity, Condition):
@@ -624,6 +671,11 @@ class DualPaneMenu(Menu):
             return lines
 
         item: Item = entity
+
+        # First line: category name (will be rendered in category color)
+        category_name = _get_category_name(item.category)
+        if category_name:
+            lines.append(category_name)
 
         # Size with slot cost explanation
         size_text = {
@@ -838,9 +890,19 @@ class DualPaneMenu(Menu):
                         fill=True,
                     )
 
-            # Draw prefix (equipped slot indicator)
+            # Draw prefix segments (slot indicator + category prefix)
             x = 1
-            if option.prefix:
+            if option.prefix_segments:
+                for segment_text, segment_color in option.prefix_segments:
+                    draw_color = segment_color
+                    if is_selected and option.enabled:
+                        draw_color = self._brighten_color(draw_color)
+                    self.canvas.draw_text(
+                        x * tile_w, y * tile_h, segment_text, draw_color
+                    )
+                    x += len(segment_text)
+            elif option.prefix:
+                # Fallback to legacy prefix/prefix_color
                 prefix_color = option.prefix_color or option.color
                 if is_selected and option.enabled:
                     prefix_color = self._brighten_color(prefix_color)
@@ -933,6 +995,17 @@ class DualPaneMenu(Menu):
 
             x = right_start
 
+            # Draw prefix segments (category prefix)
+            if option.prefix_segments:
+                for segment_text, segment_color in option.prefix_segments:
+                    draw_color = segment_color
+                    if is_selected and option.enabled:
+                        draw_color = self._brighten_color(draw_color)
+                    self.canvas.draw_text(
+                        x * tile_w, y * tile_h, segment_text, draw_color
+                    )
+                    x += len(segment_text)
+
             # Draw key hint
             if option.key:
                 key_text = f"({option.key}) "
@@ -984,13 +1057,23 @@ class DualPaneMenu(Menu):
 
         # Generate and draw detail lines
         detail_lines = self._generate_item_detail(self.detail_item)
+
+        # Determine if first line should be colored (item category)
+        first_line_color = colors.WHITE
+        if isinstance(self.detail_item, Item):
+            _, cat_color = _get_category_prefix(self.detail_item)
+            if cat_color:
+                first_line_color = cat_color
+
         for i, line in enumerate(detail_lines[: self.DETAIL_HEIGHT - 1]):
             truncated = line[: self.width - 4]
+            # First line (category) uses category color, rest are white
+            line_color = first_line_color if i == 0 else colors.WHITE
             self.canvas.draw_text(
                 2 * tile_w,
                 (detail_start_y + i) * tile_h,
                 truncated,
-                colors.WHITE,
+                line_color,
             )
 
     def _get_hint_lines(self) -> list[str]:

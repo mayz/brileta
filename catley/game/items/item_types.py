@@ -1,7 +1,7 @@
 import copy
 
 from catley.game.actors import conditions
-from catley.game.enums import AreaType, ConsumableEffectType, ItemSize
+from catley.game.enums import AreaType, ConsumableEffectType, ItemCategory, ItemSize
 from catley.game.items.capabilities import (
     AmmoSpec,
     AreaEffectSpec,
@@ -24,6 +24,7 @@ FISTS_TYPE = ItemType(
     name="Fists",
     description="Your bare hands. Better than nothing, but not by much.",
     size=ItemSize.TINY,
+    category=ItemCategory.WEAPON,
     melee_attack=MeleeAttackSpec("d4", {WeaponProperty.UNARMED}),
     can_materialize=False,
 )
@@ -32,6 +33,7 @@ SLEDGEHAMMER_TYPE = ItemType(
     name="Sledgehammer",
     description="Heavy two-handed weapon",
     size=ItemSize.BIG,
+    category=ItemCategory.WEAPON,
     melee_attack=MeleeAttackSpec("d8", {WeaponProperty.TWO_HANDED}, verb="bludgeon"),
 )
 
@@ -39,6 +41,7 @@ COMBAT_KNIFE_TYPE = ItemType(
     name="Combat Knife",
     description="Sharp and deadly, can be thrown",
     size=ItemSize.NORMAL,
+    category=ItemCategory.WEAPON,
     melee_attack=MeleeAttackSpec(
         "d6", properties={WeaponProperty.PREFERRED}, verb="stab"
     ),
@@ -57,6 +60,7 @@ PISTOL_TYPE = ItemType(
     name="Pistol",
     description="Reliable sidearm",
     size=ItemSize.NORMAL,
+    category=ItemCategory.WEAPON,
     ranged_attack=RangedAttackSpec(
         damage_die="d6",
         ammo_type="pistol",
@@ -79,6 +83,7 @@ HUNTING_RIFLE_TYPE = ItemType(
     name="Hunting Rifle",
     description="Accurate long-range weapon",
     size=ItemSize.BIG,
+    category=ItemCategory.WEAPON,
     ranged_attack=RangedAttackSpec(
         damage_die="d8",
         ammo_type="rifle",
@@ -96,6 +101,7 @@ SNIPER_RIFLE_TYPE = ItemType(
     name="Sniper Rifle",
     description="Lethal from afar",
     size=ItemSize.BIG,
+    category=ItemCategory.WEAPON,
     ranged_attack=RangedAttackSpec(
         damage_die="d12",
         ammo_type="rifle",
@@ -117,6 +123,7 @@ HUNTING_SHOTGUN_TYPE = ItemType(
     name="Hunting Shotgun",
     description="Powerful at close range",
     size=ItemSize.BIG,
+    category=ItemCategory.WEAPON,
     ranged_attack=RangedAttackSpec(
         damage_die="d8",
         ammo_type="shotgun",
@@ -134,6 +141,7 @@ SUBMACHINE_GUN_TYPE = ItemType(
     name="Submachine Gun",
     description="Full-auto weapon effective at close range",
     size=ItemSize.NORMAL,
+    category=ItemCategory.WEAPON,
     ranged_attack=RangedAttackSpec(
         damage_die="d6",
         ammo_type="pistol",
@@ -158,6 +166,7 @@ POISON_DART_GUN_TYPE = ItemType(
     name="Poison Dart Gun",
     description="Silent weapon that applies poison",
     size=ItemSize.NORMAL,
+    category=ItemCategory.WEAPON,
     ranged_attack=RangedAttackSpec(
         damage_die="d4",
         ammo_type="dart",
@@ -172,6 +181,7 @@ GRENADE_TYPE = ItemType(
     name="Grenade",
     description="Explosive device with wide blast radius",
     size=ItemSize.TINY,
+    category=ItemCategory.WEAPON,
     area_effect=AreaEffectSpec(
         damage_die="d6",
         area_type=AreaType.CIRCLE,
@@ -188,6 +198,7 @@ FLAMETHROWER_TYPE = ItemType(
     name="Flamethrower",
     description="Sprays burning fuel in a line",
     size=ItemSize.BIG,
+    category=ItemCategory.WEAPON,
     area_effect=AreaEffectSpec(
         damage_die="d8",
         area_type=AreaType.LINE,
@@ -204,6 +215,7 @@ RADIUM_GUN_TYPE = ItemType(
     name="Radium Gun",
     description="Weapon that fires radioactive projectiles",
     size=ItemSize.BIG,
+    category=ItemCategory.WEAPON,
     ranged_attack=RangedAttackSpec(
         damage_die="d8",
         ammo_type="radium",
@@ -218,6 +230,7 @@ DIRTY_BOMB_TYPE = ItemType(
     name="Dirty Bomb",
     description="Explosive device that spreads radiation",
     size=ItemSize.TINY,
+    category=ItemCategory.WEAPON,
     area_effect=AreaEffectSpec(
         damage_die="d6",
         area_type=AreaType.CIRCLE,
@@ -234,6 +247,7 @@ PISTOL_MAGAZINE_TYPE = ItemType(
     name="Pistol Ammo",
     description="Pistol ammo magazine",
     size=ItemSize.TINY,
+    category=ItemCategory.MUNITIONS,
     ammo=AmmoSpec("pistol", 6),
 )
 
@@ -241,6 +255,7 @@ RIFLE_MAGAZINE_TYPE = ItemType(
     name="Rifle Ammo",
     description="Rifle ammo magazine",
     size=ItemSize.TINY,
+    category=ItemCategory.MUNITIONS,
     ammo=AmmoSpec("rifle", 5),
 )
 
@@ -248,6 +263,7 @@ SHOTGUN_SHELLS_TYPE = ItemType(
     name="Shotgun Shells",
     description="12 gauge shotgun shells",
     size=ItemSize.TINY,
+    category=ItemCategory.MUNITIONS,
     ammo=AmmoSpec("shotgun", 5),
 )
 
@@ -257,6 +273,7 @@ ROCK_TYPE = ItemType(
     name="Rock",
     description="A rough chunk of stone. Good for throwing or bashing.",
     size=ItemSize.TINY,
+    # MISC (default) - improvised item, not a purpose-built weapon or junk
     ranged_attack=RangedAttackSpec(
         damage_die="d4",
         ammo_type="thrown",
@@ -274,6 +291,7 @@ ALARM_CLOCK_TYPE = ItemType(
         "Heavy metal timepiece. Makes a satisfying thunk when it hits something."
     ),
     size=ItemSize.NORMAL,
+    # MISC (default) - improvised item, not a purpose-built weapon or junk
     ranged_attack=RangedAttackSpec(
         damage_die="d6",
         ammo_type="thrown",
@@ -289,6 +307,7 @@ BLEACH_TYPE = ItemType(
     name="Bleach",
     description="Household disinfectant. Caustic and dangerous if misused.",
     size=ItemSize.NORMAL,
+    # MISC (default) - improvised item, not a purpose-built weapon or junk
     consumable_effect=ConsumableEffectSpec(
         effect_type=ConsumableEffectType.POISON,
         effect_value=-15,  # Toxic if consumed
@@ -312,6 +331,7 @@ RUBBER_CHICKEN_TYPE = ItemType(
     name="Rubber Chicken",
     description="A squeaky novelty toy. Utterly ridiculous but surprisingly durable.",
     size=ItemSize.NORMAL,
+    # MISC (default) - improvised item, not a purpose-built weapon or junk
     ranged_attack=RangedAttackSpec(
         damage_die="d2",
         ammo_type="thrown",
@@ -328,6 +348,7 @@ CURE_ALL_TYPE = ItemType(
     name="Cure-All",
     description="Powerful remedy that cures sickness and radiation",
     size=ItemSize.NORMAL,
+    category=ItemCategory.CONSUMABLE,
     consumable_effect=ConsumableEffectSpec(
         effect_type=ConsumableEffectType.CURE_ALL_CONDITIONS,
         effect_value=0,
@@ -339,6 +360,7 @@ MEGATONIC_TYPE = ItemType(
     name="Megatonic",
     description="Revitalizing tonic that heals fully and removes exhaustion",
     size=ItemSize.NORMAL,
+    category=ItemCategory.CONSUMABLE,
     consumable_effect=ConsumableEffectSpec(
         effect_type=ConsumableEffectType.HEAL_HP,
         effect_value=0,
@@ -350,6 +372,7 @@ STIM_TYPE = ItemType(
     name="Stimpack",
     description="Instantly restores all health",
     size=ItemSize.TINY,
+    category=ItemCategory.CONSUMABLE,
     consumable_effect=ConsumableEffectSpec(
         effect_type=ConsumableEffectType.HEAL_HP,
         effect_value=0,
@@ -360,6 +383,7 @@ BANDAGES_TYPE = ItemType(
     name="Bandages",
     description="Clean dressings for treating wounds",
     size=ItemSize.TINY,
+    category=ItemCategory.CONSUMABLE,
     consumable_effect=ConsumableEffectSpec(
         effect_type=ConsumableEffectType.CURE_INJURIES,
         effect_value=0,
@@ -371,6 +395,7 @@ FOOD_TYPE = ItemType(
     name="Rations",
     description="Basic food that restores all health",
     size=ItemSize.NORMAL,
+    category=ItemCategory.CONSUMABLE,
     consumable_effect=ConsumableEffectSpec(
         effect_type=ConsumableEffectType.HEAL_HP,
         effect_value=0,
@@ -381,6 +406,7 @@ DRINK_TYPE = ItemType(
     name="Water Flask",
     description="Clean water that restores all health",
     size=ItemSize.NORMAL,
+    category=ItemCategory.CONSUMABLE,
     consumable_effect=ConsumableEffectSpec(
         effect_type=ConsumableEffectType.HEAL_HP,
         effect_value=0,

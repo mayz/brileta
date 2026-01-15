@@ -259,6 +259,7 @@ class MenuOption:
         prefix_color: colors.Color | None = None,
         suffix: str = "",
         suffix_color: colors.Color | None = None,
+        prefix_segments: list[tuple[str, colors.Color]] | None = None,
     ) -> None:
         self.key = key
         self.text = text
@@ -272,6 +273,10 @@ class MenuOption:
         self.prefix_color = prefix_color if prefix_color else self.color
         self.suffix = suffix
         self.suffix_color = suffix_color if suffix_color else self.color
+        # Multi-segment prefix support for different colored segments.
+        # If provided, takes precedence over prefix/prefix_color.
+        # Format: [("[1]  ", YELLOW), ("[W] ", RED)]
+        self.prefix_segments = prefix_segments
 
 
 class Menu(TextOverlay):

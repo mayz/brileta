@@ -10,8 +10,15 @@ from catley import colors
 from catley.backends.tcod.graphics import TCODGraphicsContext
 from catley.controller import Controller
 from catley.game.actors import Character
+from catley.game.enums import ItemCategory
 from catley.game.game_world import GameWorld
-from catley.game.items.item_types import COMBAT_KNIFE_TYPE, PISTOL_TYPE, STIM_TYPE
+from catley.game.items.item_types import (
+    COMBAT_KNIFE_TYPE,
+    PISTOL_MAGAZINE_TYPE,
+    PISTOL_TYPE,
+    STIM_TYPE,
+)
+from catley.game.items.junk_item_types import JUNK_ITEM_TYPES
 from catley.game.turn_manager import TurnManager
 from catley.view.ui.dual_pane_menu import DualPaneMenu, ExternalInventory, PaneId
 from tests.helpers import DummyGameWorld
@@ -409,7 +416,7 @@ def test_generate_item_detail_includes_size() -> None:
 
 
 def test_equipped_items_show_slot_prefix() -> None:
-    """Equipped items should display slot number prefix."""
+    """Equipped items should display slot number in prefix_segments."""
     controller = _make_controller()
     player = controller.gw.player
 
@@ -422,7 +429,11 @@ def test_equipped_items_show_slot_prefix() -> None:
     # Find the pistol option
     pistol_option = next((opt for opt in menu.left_options if opt.data == pistol), None)
     assert pistol_option is not None
-    assert "[1]" in pistol_option.prefix
+
+    # Check prefix_segments contains slot indicator
+    assert pistol_option.prefix_segments is not None
+    combined_prefix = "".join(seg[0] for seg in pistol_option.prefix_segments)
+    assert "[1]" in combined_prefix
 
 
 # -----------------------------------------------------------------------------
@@ -534,3 +545,177 @@ def test_get_hint_lines_loot_mode_different_text() -> None:
     # Loot mode should mention Tab for pane switching
     assert "Tab" in combined
     assert "Transfer" in combined
+
+
+# -----------------------------------------------------------------------------
+# Category Prefix Tests
+# -----------------------------------------------------------------------------
+
+
+def test_weapon_items_show_category_prefix() -> None:
+    """Weapon items should display colored dot category indicator."""
+    controller = _make_controller()
+    player = controller.gw.player
+
+    pistol = PISTOL_TYPE.create()
+    player.inventory.add_to_inventory(pistol)
+
+    menu = DualPaneMenu(controller)
+    menu.show()
+
+    # Find the pistol option
+    pistol_option = next((opt for opt in menu.left_options if opt.data == pistol), None)
+    assert pistol_option is not None
+
+    # Check prefix_segments contains category dot indicator
+    assert pistol_option.prefix_segments is not None
+    combined_prefix = "".join(seg[0] for seg in pistol_option.prefix_segments)
+    assert "\u2022" in combined_prefix
+
+
+def test_consumable_items_show_category_prefix() -> None:
+    """Consumable items should display colored dot category indicator."""
+    controller = _make_controller()
+    player = controller.gw.player
+
+    stim = STIM_TYPE.create()
+    player.inventory.add_to_inventory(stim)
+
+    menu = DualPaneMenu(controller)
+    menu.show()
+
+    # Find the stim option
+    stim_option = next((opt for opt in menu.left_options if opt.data == stim), None)
+    assert stim_option is not None
+
+    # Check prefix_segments contains category dot indicator
+    assert stim_option.prefix_segments is not None
+    combined_prefix = "".join(seg[0] for seg in stim_option.prefix_segments)
+    assert "\u2022" in combined_prefix
+
+
+def test_junk_items_show_category_prefix() -> None:
+    """Junk items should display colored dot category indicator."""
+    controller = _make_controller()
+    player = controller.gw.player
+
+    junk = JUNK_ITEM_TYPES[0].create()
+    player.inventory.add_to_inventory(junk)
+
+    menu = DualPaneMenu(controller)
+    menu.show()
+
+    # Find the junk option
+    junk_option = next((opt for opt in menu.left_options if opt.data == junk), None)
+    assert junk_option is not None
+
+    # Check prefix_segments contains category dot indicator
+    assert junk_option.prefix_segments is not None
+    combined_prefix = "".join(seg[0] for seg in junk_option.prefix_segments)
+    assert "\u2022" in combined_prefix
+
+
+def test_munitions_items_show_category_prefix() -> None:
+    """Munitions items should display colored dot category indicator."""
+    controller = _make_controller()
+    player = controller.gw.player
+
+    ammo = PISTOL_MAGAZINE_TYPE.create()
+    player.inventory.add_to_inventory(ammo)
+
+    menu = DualPaneMenu(controller)
+    menu.show()
+
+    # Find the ammo option
+    ammo_option = next((opt for opt in menu.left_options if opt.data == ammo), None)
+    assert ammo_option is not None
+
+    # Check prefix_segments contains category dot indicator
+    assert ammo_option.prefix_segments is not None
+    combined_prefix = "".join(seg[0] for seg in ammo_option.prefix_segments)
+    assert "\u2022" in combined_prefix
+
+
+def test_category_prefix_has_correct_color() -> None:
+    """Category dot indicators should use the correct category color."""
+    controller = _make_controller()
+    player = controller.gw.player
+
+    pistol = PISTOL_TYPE.create()
+    player.inventory.add_to_inventory(pistol)
+
+    menu = DualPaneMenu(controller)
+    menu.show()
+
+    # Find the pistol option
+    pistol_option = next((opt for opt in menu.left_options if opt.data == pistol), None)
+    assert pistol_option is not None
+    assert pistol_option.prefix_segments is not None
+
+    # Find the segment with the dot indicator
+    category_segment = next(
+        (seg for seg in pistol_option.prefix_segments if "\u2022" in seg[0]), None
+    )
+    assert category_segment is not None
+    assert category_segment[1] == colors.CATEGORY_WEAPON
+
+
+def test_equipped_item_shows_both_slot_and_category() -> None:
+    """Equipped items should show both slot number and category dot."""
+    controller = _make_controller()
+    player = controller.gw.player
+
+    pistol = PISTOL_TYPE.create()
+    player.inventory.equip_to_slot(pistol, 0)
+
+    menu = DualPaneMenu(controller)
+    menu.show()
+
+    # Find the pistol option
+    pistol_option = next((opt for opt in menu.left_options if opt.data == pistol), None)
+    assert pistol_option is not None
+    assert pistol_option.prefix_segments is not None
+
+    # Check both slot and category dot are present
+    combined_prefix = "".join(seg[0] for seg in pistol_option.prefix_segments)
+    assert "[1]" in combined_prefix
+    assert "\u2022" in combined_prefix
+
+    # Slot should come before category dot
+    assert combined_prefix.index("[1]") < combined_prefix.index("\u2022")
+
+
+def test_right_pane_items_show_category_prefix() -> None:
+    """Items in the right pane (loot) should show category dot indicator."""
+    controller = _make_controller_with_ground_items()
+    player = controller.gw.player
+    location = (player.x, player.y)
+
+    menu = DualPaneMenu(controller, source=ExternalInventory(location, "On ground"))
+    menu.show()
+
+    # Find the stim option in right pane
+    stim_option = next(
+        (opt for opt in menu.right_options if opt.text == "Stimpack"), None
+    )
+    assert stim_option is not None
+
+    # Check prefix_segments contains category dot indicator
+    assert stim_option.prefix_segments is not None
+    combined_prefix = "".join(seg[0] for seg in stim_option.prefix_segments)
+    assert "\u2022" in combined_prefix
+
+
+def test_item_category_property() -> None:
+    """Items should expose category through the category property."""
+    pistol = PISTOL_TYPE.create()
+    assert pistol.category == ItemCategory.WEAPON
+
+    stim = STIM_TYPE.create()
+    assert stim.category == ItemCategory.CONSUMABLE
+
+    ammo = PISTOL_MAGAZINE_TYPE.create()
+    assert ammo.category == ItemCategory.MUNITIONS
+
+    junk = JUNK_ITEM_TYPES[0].create()
+    assert junk.category == ItemCategory.JUNK
