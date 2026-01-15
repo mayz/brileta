@@ -237,7 +237,10 @@ class TextureRenderer:
 
         # --- If we are here, something has changed and we need to draw ---
         target_fbo.use()
-        target_fbo.clear()  # ALWAYS clear the destination texture to prevent artifacts.
+        # Clear to transparent black (0, 0, 0, 0) so alpha blending works correctly
+        # for overlay textures. Default clear color is opaque black which prevents
+        # transparent cells from being truly transparent.
+        target_fbo.clear(0.0, 0.0, 0.0, 0.0)
 
         if needs_full_update:
             # A new buffer is being rendered, or dimensions changed.

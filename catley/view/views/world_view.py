@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import random
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -214,6 +215,9 @@ class WorldView(View):
         # Update decals for age-based cleanup
         self._game_time += delta_time
         self.decal_system.update(delta_time, self._game_time)
+
+        # Update tile animations (color oscillation, glyph flicker)
+        self._update_tile_animations()
 
         # Emit particles from actors with particle emitters
         self._update_actor_particles()
@@ -578,6 +582,79 @@ class WorldView(View):
                     if effect.should_emit():
                         effect.execute(context)
 
+    def _update_tile_animations(self, percent_of_cells: int = 3) -> None:
+        """Update animation state for a percentage of visible animated tiles.
+
+        Uses a random walk algorithm: each updated tile's RGB modulation values
+        are adjusted by a random offset, then clamped to [0, 1000]. This creates
+        organic color oscillation.
+
+        Args:
+            percent_of_cells: Percentage of visible animated tiles to update
+                              each frame (default 3%). At 60 FPS, this means
+                              each tile updates roughly every 0.5 seconds.
+        """
+        gw = self.controller.gw
+        vs = self.viewport_system
+        game_map = gw.game_map
+
+        # Get viewport bounds
+        bounds = vs.get_visible_bounds()
+        world_left = max(0, bounds.x1)
+        world_top = max(0, bounds.y1)
+        world_right = min(game_map.width - 1, bounds.x2)
+        world_bottom = min(game_map.height - 1, bounds.y2)
+
+        # Get animation params and state
+        animation_params = game_map.animation_params
+        animation_state = game_map.animation_state
+
+        # Find all visible animated tiles in the viewport
+        animated_tiles = [
+            (world_x, world_y)
+            for world_x in range(world_left, world_right + 1)
+            for world_y in range(world_top, world_bottom + 1)
+            if (
+                game_map.visible[world_x, world_y]
+                and animation_params[world_x, world_y]["animates"]
+            )
+        ]
+
+        if not animated_tiles:
+            return
+
+        # Select a random subset of tiles to update (percent_of_cells %)
+        num_to_update = max(1, len(animated_tiles) * percent_of_cells // 100)
+        tiles_to_update = random.sample(
+            animated_tiles, min(num_to_update, len(animated_tiles))
+        )
+
+        # Update each selected tile using random walk
+        # Use small step size for subtle, organic color drift
+        step_size = 80
+
+        for world_x, world_y in tiles_to_update:
+            state = animation_state[world_x, world_y]
+
+            # Random walk for foreground RGB values
+            for i in range(3):
+                offset = random.randint(-step_size, step_size)
+                new_val = int(state["fg_values"][i]) + offset
+                state["fg_values"][i] = max(0, min(1000, new_val))
+
+            # Random walk for background RGB values
+            for i in range(3):
+                offset = random.randint(-step_size, step_size)
+                new_val = int(state["bg_values"][i]) + offset
+                state["bg_values"][i] = max(0, min(1000, new_val))
+
+            # Glyph is always visible - the "flicker" effect comes naturally
+            # when fg and bg colors drift close together, making the glyph
+            # blend into the background.
+
+            # Write back the updated state
+            animation_state[world_x, world_y] = state
+
     def _get_actor_display_color(self, actor: Actor) -> tuple:
         """Get actor's final display color with visual effects.
 
@@ -835,6 +912,64 @@ class WorldView(View):
                 dark_bg_rgb = gw.game_map.dark_appearance_map[world_slice]["bg"][
                     exp_x[valid_mask], exp_y[valid_mask]
                 ]
+
+                # Apply animated colors for tiles that have animation enabled.
+                # This modifies light_fg_rgb, light_bg_rgb, and light_chars in place
+                # for animated tiles, using the current animation state.
+                animation_params = gw.game_map.animation_params[world_slice]
+                animation_state = gw.game_map.animation_state[world_slice]
+                valid_exp_x = exp_x[valid_mask]
+                valid_exp_y = exp_y[valid_mask]
+
+                for i in range(len(valid_exp_x)):
+                    rel_x, rel_y = valid_exp_x[i], valid_exp_y[i]
+                    params = animation_params[rel_x, rel_y]
+
+                    if params["animates"]:
+                        state = animation_state[rel_x, rel_y]
+                        fg_var = params["fg_variation"]
+                        bg_var = params["bg_variation"]
+                        fg_vals = state["fg_values"]
+                        bg_vals = state["bg_values"]
+
+                        # Compute animated foreground color
+                        # Cast to int to avoid overflow in numpy small int types
+                        base_fg = light_fg_rgb[i]
+                        anim_fg = np.array(
+                            [
+                                max(
+                                    0,
+                                    min(
+                                        255,
+                                        int(base_fg[c])
+                                        + int(fg_var[c]) * int(fg_vals[c]) // 1000
+                                        - int(fg_var[c]) // 2,
+                                    ),
+                                )
+                                for c in range(3)
+                            ],
+                            dtype=np.uint8,
+                        )
+                        light_fg_rgb[i] = anim_fg
+
+                        # Compute animated background color
+                        base_bg = light_bg_rgb[i]
+                        anim_bg = np.array(
+                            [
+                                max(
+                                    0,
+                                    min(
+                                        255,
+                                        int(base_bg[c])
+                                        + int(bg_var[c]) * int(bg_vals[c]) // 1000
+                                        - int(bg_var[c]) // 2,
+                                    ),
+                                )
+                                for c in range(3)
+                            ],
+                            dtype=np.uint8,
+                        )
+                        light_bg_rgb[i] = anim_bg
 
                 # Per-channel scaling: warm colours stay warm
                 light_intensity_valid = explored_light_intensities[

@@ -71,6 +71,7 @@ def test_screen_shake_amplitude_bounds() -> None:
 class DummyGameMap:
     def __init__(self, width: int, height: int) -> None:
         from catley.environment import tile_types
+        from catley.environment.map import TileAnimationState
 
         self.width = width
         self.height = height
@@ -84,6 +85,11 @@ class DummyGameMap:
         )
         self.explored = np.zeros((width, height), dtype=bool)
         self.visible = np.zeros((width, height), dtype=bool)
+        # Animation properties for animated tile rendering
+        self.animation_params = np.zeros(
+            (width, height), dtype=tile_types.TileAnimationParams
+        )
+        self.animation_state = np.zeros((width, height), dtype=TileAnimationState)
 
 
 class DummyGW:
@@ -149,6 +155,7 @@ def test_world_view_applies_screen_shake_before_render(monkeypatch) -> None:
 
     # Mock the light overlay rendering to avoid mocking game_map.visible
     view._render_light_overlay = lambda renderer: None  # type: ignore[assignment]
+    view._update_tile_animations = lambda: None  # type: ignore[assignment]
 
     view.draw(cast(GraphicsContext, controller.graphics), InterpolationAlpha(0.0))
 
@@ -192,6 +199,7 @@ def test_world_view_screen_shake_does_not_overflow(monkeypatch) -> None:
 
     # Mock the light overlay rendering to avoid mocking game_map.visible
     view._render_light_overlay = lambda renderer: None  # type: ignore[assignment]
+    view._update_tile_animations = lambda: None  # type: ignore[assignment]
 
     view.draw(cast(GraphicsContext, controller.graphics), InterpolationAlpha(0.0))
 
@@ -215,6 +223,7 @@ def test_small_map_actor_alignment(monkeypatch) -> None:
 
     # Mock the light overlay rendering to avoid mocking game_map.visible
     view._render_light_overlay = lambda renderer: None  # type: ignore[assignment]
+    view._update_tile_animations = lambda: None  # type: ignore[assignment]
 
     view.draw(cast(GraphicsContext, controller.graphics), InterpolationAlpha(0.0))
 

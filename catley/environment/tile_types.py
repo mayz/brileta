@@ -53,6 +53,17 @@ TileTypeAppearance = np.dtype(
     ]
 )
 
+# Animation parameters for tiles that have dynamic color/glyph effects.
+# Colors oscillate via random walk, creating organic shimmer effects.
+TileAnimationParams = np.dtype(
+    [
+        ("animates", np.bool_),  # Does this tile animate?
+        ("fg_variation", "3B"),  # RGB variation range for foreground glyph color
+        ("bg_variation", "3B"),  # RGB variation range for background color
+        ("glyph_flicker_chance", np.float32),  # Probability of hiding glyph (0.0-1.0)
+    ]
+)
+
 # Defines the intrinsic data for a *type* of tile (flyweight).
 # This includes its game logic properties (walkable, transparent)
 # and its visual appearances under different lighting conditions.
@@ -70,6 +81,8 @@ TileTypeData = np.dtype(
         ("dark", TileTypeAppearance),
         # Appearance when in FOV (before dynamic lighting)
         ("light", TileTypeAppearance),
+        # Animation parameters (color oscillation, glyph flicker)
+        ("animation", TileAnimationParams),
     ]
 )
 
@@ -113,6 +126,8 @@ def make_tile_type_data(
     hazard_damage_type: str = "",
     dark: tuple[int, colors.Color, colors.Color],  # (char_code, fg_color, bg_color)
     light: tuple[int, colors.Color, colors.Color] | None = None,
+    animation: tuple[tuple[int, int, int], tuple[int, int, int], float]
+    | None = None,  # (fg_variation, bg_variation, glyph_flicker_chance)
 ) -> np.ndarray:  # Returns an instance of TileTypeData
     """
     Helper function to create a TileTypeData instance.
@@ -131,17 +146,35 @@ def make_tile_type_data(
         light: A (char_code, fg_color, bg_color) tuple defining
                the 'light' TileTypeAppearance. If None, use the same
                tuple as 'dark'.
+        animation: Optional animation parameters as a tuple of
+                   (fg_variation, bg_variation, glyph_flicker_chance).
+                   fg_variation and bg_variation are RGB tuples specifying
+                   the range of color oscillation. glyph_flicker_chance is
+                   the probability (0.0-1.0) of hiding the glyph per frame.
+                   If None, the tile does not animate.
 
     Returns:
         A numpy array structured with the TileTypeData dtype.
     """
     if light is None:
         light = dark
+
     # Create the TileTypeAppearance structs for dark and light
     dark_appearance = np.array((dark[0], dark[1], dark[2]), dtype=TileTypeAppearance)
     light_appearance = np.array(
         (light[0], light[1], light[2]), dtype=TileTypeAppearance
     )
+
+    # Create animation params (defaults to no animation)
+    if animation is None:
+        animation_params = np.array(
+            (False, (0, 0, 0), (0, 0, 0), 0.0), dtype=TileAnimationParams
+        )
+    else:
+        fg_var, bg_var, flicker = animation
+        animation_params = np.array(
+            (True, fg_var, bg_var, flicker), dtype=TileAnimationParams
+        )
 
     return np.array(
         (
@@ -155,6 +188,7 @@ def make_tile_type_data(
             display_name,
             dark_appearance,
             light_appearance,
+            animation_params,
         ),
         dtype=TileTypeData,
     )
@@ -263,8 +297,9 @@ register_tile_type(
         material=ImpactMaterial.FLESH,  # Splashy sound on impact
         hazard_damage="1d4",
         hazard_damage_type="acid",
-        dark=(ord("~"), (0, 80, 0), (20, 40, 20)),
-        light=(ord("~"), (100, 255, 100), (30, 60, 30)),
+        dark=(ord("~"), (0, 40, 0), (0, 40, 0)),
+        light=(ord("~"), (50, 140, 50), (50, 140, 50)),
+        animation=((60, 100, 60), (60, 100, 60), 0.0),
     ),
 )
 
@@ -277,8 +312,9 @@ register_tile_type(
         material=ImpactMaterial.STONE,
         hazard_damage="1d6",
         hazard_damage_type="fire",
-        dark=(ord("."), (80, 20, 0), (40, 10, 0)),
-        light=(ord("."), (255, 100, 50), (100, 30, 10)),
+        dark=(ord("."), (40, 10, 0), (40, 10, 0)),
+        light=(ord("."), (200, 100, 40), (200, 100, 40)),
+        animation=((100, 100, 60), (100, 100, 60), 0.0),
     ),
 )
 
@@ -315,6 +351,9 @@ _tile_type_properties_hazard_damage = np.array(
 )
 _tile_type_properties_hazard_damage_type = np.array(
     [t["hazard_damage_type"] for t in _registered_tile_type_data_list], dtype="U16"
+)
+_tile_type_properties_animation = np.array(
+    [t["animation"] for t in _registered_tile_type_data_list], dtype=TileAnimationParams
 )
 
 # --- Public Helper Functions for Accessing Tile Properties ---
@@ -421,3 +460,19 @@ def get_tile_hazard_info(tile_type_id: int) -> tuple[str, str]:
         damage_type = str(_tile_type_properties_hazard_damage_type[tile_type_id])
         return (damage_dice, damage_type)
     return ("", "")
+
+
+def get_animation_map(tile_type_ids_map: np.ndarray) -> np.ndarray:
+    """
+    Converts a map of TileTypeIDs into a map of TileAnimationParams structs.
+
+    Used by the rendering system to determine which tiles animate and
+    how their colors should oscillate.
+
+    Args:
+        tile_type_ids_map: A 2D numpy array of TileTypeID values.
+
+    Returns:
+        A 2D numpy array of TileAnimationParams structs matching the input shape.
+    """
+    return _tile_type_properties_animation[tile_type_ids_map]

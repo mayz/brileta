@@ -490,6 +490,9 @@ class GameWorld:
             # Add a small acid pool nearby for testing hazardous terrain
             self._add_test_acid_pool(room)
 
+            # Add hot coals nearby for testing animated tiles
+            self._add_test_hot_coals(room)
+
     def _add_test_acid_pool(self, room) -> None:  # type: ignore[no-untyped-def]
         """Add a small acid pool to demonstrate hazardous terrain.
 
@@ -512,6 +515,30 @@ class GameWorld:
                     and self.game_map.walkable[x, y]
                 ):
                     self.game_map.tiles[x, y] = TileTypeID.ACID_POOL
+
+    def _add_test_hot_coals(self, room) -> None:  # type: ignore[no-untyped-def]
+        """Add a small patch of hot coals to demonstrate animated terrain.
+
+        Creates a 2x2 hot coals area in the given room for testing animated
+        tile rendering (color oscillation effects).
+        """
+        from catley.environment.tile_types import TileTypeID
+
+        # Place hot coals offset from the acid pool
+        coals_x = room.x1 + 7
+        coals_y = room.y1 + 2
+
+        # Create a small 2x2 hot coals area
+        for dx in range(2):
+            for dy in range(2):
+                x, y = coals_x + dx, coals_y + dy
+                # Only place on walkable tiles that are within bounds
+                if (
+                    0 <= x < self.game_map.width
+                    and 0 <= y < self.game_map.height
+                    and self.game_map.walkable[x, y]
+                ):
+                    self.game_map.tiles[x, y] = TileTypeID.HOT_COALS
 
     def _place_containers(
         self, rooms: list, num_containers: int = 5, max_attempts: int = 10

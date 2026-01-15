@@ -15,6 +15,16 @@ if TYPE_CHECKING:
 
     from .generators import GeneratedMapData
 
+# Per-cell animation state for tiles with dynamic color/glyph effects.
+# Values range from 0-1000 and are used to modulate tile colors via random walk.
+TileAnimationState = np.dtype(
+    [
+        ("fg_values", "3h"),  # RGB modulation values for foreground (0-1000)
+        ("bg_values", "3h"),  # RGB modulation values for background (0-1000)
+        ("show_glyph", np.bool_),  # Whether to show the glyph this frame
+    ]
+)
+
 
 @dataclass
 class MapRegion:
@@ -94,6 +104,10 @@ class GameMap:
         self._transparent_map_cache: np.ndarray | None = None
         self._dark_appearance_map_cache: np.ndarray | None = None
         self._light_appearance_map_cache: np.ndarray | None = None
+        self._animation_params_cache: np.ndarray | None = None
+
+        # Per-cell animation state for tiles that animate (color oscillation, flicker)
+        self.animation_state = self._init_animation_state()
 
     def invalidate_property_caches(self) -> None:
         """Call this whenever `self.tiles` changes to clear cached property maps."""
@@ -101,6 +115,7 @@ class GameMap:
         self._transparent_map_cache = None
         self._dark_appearance_map_cache = None
         self._light_appearance_map_cache = None
+        self._animation_params_cache = None
         self.structural_revision += 1
 
     @property
@@ -220,3 +235,26 @@ class GameMap:
         """Invalidate appearance caches when regions change."""
         self._dark_appearance_map_cache = None
         self._light_appearance_map_cache = None
+
+    @property
+    def animation_params(self) -> np.ndarray:
+        """A map of TileAnimationParams structs derived from self.tiles."""
+        if self._animation_params_cache is None:
+            self._animation_params_cache = tile_types.get_animation_map(self.tiles)
+        return self._animation_params_cache
+
+    def _init_animation_state(self) -> np.ndarray:
+        """Initialize animation state array with random values.
+
+        Each cell gets random RGB modulation values (0-1000) for both
+        foreground and background, and glyph visibility starts as True.
+        """
+        state = np.zeros((self.width, self.height), dtype=TileAnimationState, order="F")
+
+        # Initialize with random values in the 0-1000 range
+        rng = np.random.default_rng()
+        state["fg_values"] = rng.integers(0, 1001, size=(self.width, self.height, 3))
+        state["bg_values"] = rng.integers(0, 1001, size=(self.width, self.height, 3))
+        state["show_glyph"] = True  # Start with all glyphs visible
+
+        return state
