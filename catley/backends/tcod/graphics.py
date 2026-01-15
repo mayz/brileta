@@ -200,7 +200,8 @@ class TCODGraphicsContext(GraphicsContext):
         screen_y: float,
         light_intensity: tuple[float, float, float] = (1.0, 1.0, 1.0),
         interpolation_alpha: InterpolationAlpha = InterpolationAlpha(1.0),  # noqa: B008
-        visual_scale: float = 1.0,
+        scale_x: float = 1.0,
+        scale_y: float = 1.0,
     ) -> None:
         """Draw an actor character at sub-pixel screen coordinates with interpolation.
 
@@ -211,8 +212,8 @@ class TCODGraphicsContext(GraphicsContext):
             screen_y: Screen Y coordinate in pixels (can be fractional)
             light_intensity: RGB lighting multipliers in 0.0-1.0 range
             interpolation_alpha: Interpolation factor (0.0 = previous, 1.0 = current)
-            visual_scale: Rendering scale factor (1.0 = normal size). The glyph
-                is scaled and centered on the tile position.
+            scale_x: Horizontal scale factor (1.0 = normal width).
+            scale_y: Vertical scale factor (1.0 = normal height).
         """
         if not self._tileset:
             return
@@ -282,12 +283,11 @@ class TCODGraphicsContext(GraphicsContext):
         texture_h = shape[0]
         texture_w = shape[1]
 
-        # Scale texture proportionally to current tile size, then apply visual_scale
+        # Scale texture to tile size, then apply non-uniform scaling
         tile_w, tile_h = self.tile_dimensions
         base_scale = min(tile_w / texture_w, tile_h / texture_h)
-        final_scale = base_scale * visual_scale
-        scaled_w = int(texture_w * final_scale)
-        scaled_h = int(texture_h * final_scale)
+        scaled_w = int(texture_w * base_scale * scale_x)
+        scaled_h = int(texture_h * base_scale * scale_y)
 
         # Center the scaled glyph on the tile position
         offset_x = (tile_w - scaled_w) / 2

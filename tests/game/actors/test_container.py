@@ -3,7 +3,9 @@
 This module tests the container system including:
 - ContainerStorage: Fixed-capacity item storage for containers
 - Container: Actor class for searchable containers in the game world
-- Factory functions for creating different container types
+- Bookcase factory function
+
+Note: CharacterLayer tests are in test_character_layers.py
 """
 
 from __future__ import annotations
@@ -11,10 +13,7 @@ from __future__ import annotations
 from catley.game.actors.components import CharacterInventory, ContainerStorage
 from catley.game.actors.container import (
     Container,
-    create_barrel,
-    create_crate,
-    create_footlocker,
-    create_locker,
+    create_bookcase,
 )
 from catley.game.enums import ItemSize
 from catley.game.items.item_core import Item, ItemType
@@ -237,62 +236,40 @@ class TestContainer:
 
 
 class TestContainerFactories:
-    """Tests for container factory functions."""
+    """Tests for container factory functions.
 
-    def test_create_crate_returns_container(self) -> None:
-        """create_crate should return a Container with appropriate properties."""
-        crate = create_crate(x=5, y=10)
+    Note: More detailed bookcase tests (character layers, etc.) are in
+    test_character_layers.py.
+    """
 
-        assert isinstance(crate, Container)
-        assert crate.name == "Wooden Crate"
-        assert crate.blocks_movement is True
-        assert crate.x == 5
-        assert crate.y == 10
+    def test_create_bookcase_returns_container(self) -> None:
+        """create_bookcase should return a Container with appropriate properties."""
+        bookcase = create_bookcase(x=5, y=10)
 
-    def test_create_crate_with_items(self) -> None:
-        """create_crate should accept initial items."""
+        assert isinstance(bookcase, Container)
+        assert bookcase.name == "Bookcase"
+        assert bookcase.blocks_movement is True
+        assert bookcase.x == 5
+        assert bookcase.y == 10
+
+    def test_create_bookcase_with_items(self) -> None:
+        """create_bookcase should accept initial items."""
         items = [make_item("Loot")]
-        crate = create_crate(x=0, y=0, items=items)
+        bookcase = create_bookcase(x=0, y=0, items=items)
 
-        assert len(crate.inventory) == 1
+        assert len(bookcase.inventory) == 1
 
-    def test_create_locker_returns_container(self) -> None:
-        """create_locker should return a Container with appropriate properties."""
-        locker = create_locker(x=3, y=7)
+    def test_create_bookcase_default_capacity(self) -> None:
+        """create_bookcase should have default capacity of 12."""
+        bookcase = create_bookcase(x=0, y=0)
 
-        assert isinstance(locker, Container)
-        assert locker.name == "Metal Locker"
-        assert locker.x == 3
-        assert locker.y == 7
+        assert bookcase.inventory.capacity == 12
 
-    def test_create_locker_has_higher_capacity(self) -> None:
-        """create_locker should have higher default capacity than crates."""
-        crate = create_crate(x=0, y=0)
-        locker = create_locker(x=0, y=0)
+    def test_create_bookcase_custom_capacity(self) -> None:
+        """create_bookcase should accept custom capacity."""
+        bookcase = create_bookcase(x=0, y=0, capacity=20)
 
-        assert locker.inventory.capacity > crate.inventory.capacity
-
-    def test_create_barrel_returns_container(self) -> None:
-        """create_barrel should return a Container with appropriate properties."""
-        barrel = create_barrel(x=2, y=4)
-
-        assert isinstance(barrel, Container)
-        assert barrel.name == "Barrel"
-        assert barrel.x == 2
-        assert barrel.y == 4
-
-    def test_create_footlocker_returns_container(self) -> None:
-        """create_footlocker should return a Container with appropriate properties."""
-        footlocker = create_footlocker(x=1, y=1)
-
-        assert isinstance(footlocker, Container)
-        assert footlocker.name == "Footlocker"
-
-    def test_create_footlocker_does_not_block_movement(self) -> None:
-        """create_footlocker should not block movement (can step over)."""
-        footlocker = create_footlocker(x=0, y=0)
-
-        assert footlocker.blocks_movement is False
+        assert bookcase.inventory.capacity == 20
 
 
 # =============================================================================

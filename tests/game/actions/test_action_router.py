@@ -11,7 +11,7 @@ from catley.game.actions.combat import AttackIntent
 from catley.game.actions.environment import SearchContainerIntent
 from catley.game.actions.movement import MoveIntent
 from catley.game.actors import Character
-from catley.game.actors.container import create_crate
+from catley.game.actors.container import create_bookcase
 from catley.game.game_world import GameWorld
 from tests.helpers import DummyGameWorld
 
@@ -202,7 +202,7 @@ def test_router_searches_container_on_bump() -> None:
     controller, player = _make_world()
 
     # Create a blocking container (crate blocks_movement=True by default)
-    crate = create_crate(x=1, y=0, game_world=cast(GameWorld, controller.gw))
+    crate = create_bookcase(x=1, y=0, game_world=cast(GameWorld, controller.gw))
     controller.gw.add_actor(crate)
 
     with patch(
@@ -227,7 +227,7 @@ def test_bump_into_container_opens_search_menu() -> None:
     controller, player = _make_world()
 
     # Create a blocking container with items
-    crate = create_crate(x=1, y=0, game_world=cast(GameWorld, controller.gw))
+    crate = create_bookcase(x=1, y=0, game_world=cast(GameWorld, controller.gw))
     # Add an item so the search doesn't fail with "Nothing to loot"
     from catley.game.items.item_types import ROCK_TYPE
 

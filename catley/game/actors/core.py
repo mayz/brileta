@@ -29,6 +29,7 @@ maintaining flexibility through optional components.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from catley import colors
@@ -64,6 +65,31 @@ if TYPE_CHECKING:
     from catley.controller import Controller
     from catley.game.actions.base import GameIntent
     from catley.game.game_world import GameWorld
+
+
+@dataclass
+class CharacterLayer:
+    """A single character in a multi-character visual composition.
+
+    Used to create rich visual representations of actors by layering multiple
+    ASCII characters at sub-tile offsets. Similar to how decals and blood
+    splatters use sub-tile positioning for visual richness.
+
+    Attributes:
+        char: The ASCII character to display.
+        color: RGB color tuple for the character.
+        offset_x: Sub-tile horizontal offset (-0.5 to 0.5, 0 = center).
+        offset_y: Sub-tile vertical offset (-0.5 to 0.5, 0 = center).
+        scale_x: Horizontal scale factor, multiplied with actor's visual_scale.
+        scale_y: Vertical scale factor, multiplied with actor's visual_scale.
+    """
+
+    char: str
+    color: colors.Color
+    offset_x: float = 0.0
+    offset_y: float = 0.0
+    scale_x: float = 1.0
+    scale_y: float = 1.0
 
 
 class Actor:
@@ -131,6 +157,7 @@ class Actor:
         blocks_movement: bool = True,
         speed: int = DEFAULT_ACTOR_SPEED,
         visual_scale: float = 1.0,
+        character_layers: list[CharacterLayer] | None = None,
     ) -> None:
         # === Core Identity & World Presence ===
         self.x: WorldTileCoord = x
@@ -149,6 +176,7 @@ class Actor:
         self.color = color
         self.name = name
         self.visual_scale = visual_scale
+        self.character_layers = character_layers  # Multi-char visual composition
         self.gw = game_world
         self.blocks_movement = blocks_movement
         # Light source removed - handled by new lighting system

@@ -11,10 +11,7 @@ from .ai import AIComponent
 from .conditions import Condition
 from .container import (
     Container,
-    create_barrel,
-    create_crate,
-    create_footlocker,
-    create_locker,
+    create_bookcase,
 )
 from .core import NPC, PC, Actor, Character
 from .status_effects import StatusEffect
@@ -30,10 +27,7 @@ __all__ = [
     "NPC",
     "Container",
     # Factory Functions
-    "create_barrel",
-    "create_crate",
-    "create_footlocker",
-    "create_locker",
+    "create_bookcase",
     # Base/Interface Classes
     "AIComponent",
     "Condition",

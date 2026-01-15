@@ -26,7 +26,7 @@ from catley.game.actions.discovery import (
 )
 from catley.game.actions.environment import OpenDoorIntent, SearchContainerIntent
 from catley.game.actors import Character, status_effects
-from catley.game.actors.container import create_crate, create_locker
+from catley.game.actors.container import create_bookcase
 from catley.game.enums import Disposition
 from catley.game.game_world import GameWorld
 from catley.game.items.capabilities import RangedAttack
@@ -605,7 +605,7 @@ def test_environment_options_include_container_search() -> None:
     gw.add_actor(player)
 
     # Create a crate adjacent to the player
-    crate = create_crate(x=1, y=0, game_world=cast(GameWorld, gw))
+    crate = create_bookcase(x=1, y=0, game_world=cast(GameWorld, gw))
     gw.add_actor(crate)
 
     controller = DummyController(gw=gw)
@@ -616,7 +616,7 @@ def test_environment_options_include_container_search() -> None:
     # Should find search action for adjacent container
     search_options = [o for o in opts if "Search" in o.name]
     assert len(search_options) == 1
-    assert "Wooden Crate" in search_options[0].name
+    assert "Bookcase" in search_options[0].name
     assert search_options[0].action_class is SearchContainerIntent
     assert search_options[0].requirements == []
     assert search_options[0].static_params == {"target": crate}
@@ -630,10 +630,10 @@ def test_multiple_adjacent_containers_creates_multiple_options() -> None:
     gw.add_actor(player)
 
     # Create containers on two sides of the player
-    crate = create_crate(x=1, y=0, game_world=cast(GameWorld, gw))
-    locker = create_locker(x=0, y=1, game_world=cast(GameWorld, gw))
-    gw.add_actor(crate)
-    gw.add_actor(locker)
+    bookcase1 = create_bookcase(x=1, y=0, game_world=cast(GameWorld, gw))
+    bookcase2 = create_bookcase(x=0, y=1, game_world=cast(GameWorld, gw))
+    gw.add_actor(bookcase1)
+    gw.add_actor(bookcase2)
 
     controller = DummyController(gw=gw)
     disc = ActionDiscovery()
@@ -642,9 +642,9 @@ def test_multiple_adjacent_containers_creates_multiple_options() -> None:
 
     search_options = [o for o in opts if "Search" in o.name]
     assert len(search_options) == 2
-    names = {o.name for o in search_options}
-    assert "Search Wooden Crate" in names
-    assert "Search Metal Locker" in names
+    # Both bookcases should have the same display name
+    for opt in search_options:
+        assert "Search Bookcase" in opt.name
 
 
 def test_tile_specific_container_search_action() -> None:
@@ -655,7 +655,7 @@ def test_tile_specific_container_search_action() -> None:
     gw.add_actor(player)
 
     # Create a crate adjacent to the player
-    crate = create_crate(x=1, y=0, game_world=cast(GameWorld, gw))
+    crate = create_bookcase(x=1, y=0, game_world=cast(GameWorld, gw))
     gw.add_actor(crate)
 
     controller = DummyController(gw=gw)
@@ -668,7 +668,7 @@ def test_tile_specific_container_search_action() -> None:
 
     search_options = [o for o in opts if "Search" in o.name]
     assert len(search_options) == 1
-    assert "Wooden Crate" in search_options[0].name
+    assert "Bookcase" in search_options[0].name
     assert search_options[0].action_class is SearchContainerIntent
 
 
@@ -680,7 +680,7 @@ def test_distant_container_offers_go_and_search() -> None:
     gw.add_actor(player)
 
     # Create a crate far from the player
-    crate = create_crate(x=5, y=5, game_world=cast(GameWorld, gw))
+    crate = create_bookcase(x=5, y=5, game_world=cast(GameWorld, gw))
     gw.add_actor(crate)
 
     controller = DummyController(gw=gw)

@@ -12,7 +12,7 @@ from catley import colors
 from catley.types import WorldTileCoord
 
 from .components import ContainerStorage
-from .core import Actor
+from .core import Actor, CharacterLayer
 
 if TYPE_CHECKING:
     from catley.game.game_world import GameWorld
@@ -44,19 +44,23 @@ class Container(Actor):
         items: list[Item] | None = None,
         game_world: GameWorld | None = None,
         blocks_movement: bool = True,
+        character_layers: list[CharacterLayer] | None = None,
+        visual_scale: float = 1.0,
     ) -> None:
         """Create a container actor.
 
         Args:
             x: X coordinate in world tiles
             y: Y coordinate in world tiles
-            ch: Display character for the container
-            color: Display color
+            ch: Display character for the container (fallback if no layers)
+            color: Display color (fallback if no layers)
             name: Name shown when examining/searching
             capacity: Maximum number of items this container can hold
             items: Initial items to place in the container
             game_world: Reference to the game world
             blocks_movement: Whether this container blocks movement
+            character_layers: Optional multi-character visual composition
+            visual_scale: Scale factor for rendering (1.0 = normal size)
         """
         # Create storage first (without actor reference)
         storage = ContainerStorage(capacity=capacity, actor=None)
@@ -70,6 +74,8 @@ class Container(Actor):
             inventory=storage,
             game_world=game_world,
             blocks_movement=blocks_movement,
+            character_layers=character_layers,
+            visual_scale=visual_scale,
         )
 
         # Set back-reference now that self exists
@@ -87,101 +93,57 @@ class Container(Actor):
 # === Factory Functions ===
 
 
-def create_crate(
-    x: WorldTileCoord,
-    y: WorldTileCoord,
-    items: list[Item] | None = None,
-    game_world: GameWorld | None = None,
-    capacity: int = 8,
-) -> Container:
-    """Create a wooden crate container.
-
-    Wooden crates are common storage containers found throughout the wasteland.
-    They typically contain junk, supplies, or occasional useful items.
-    """
-    return Container(
-        x=x,
-        y=y,
-        ch="=",  # Stacked planks appearance
-        color=(139, 90, 43),  # Wood brown
-        name="Wooden Crate",
-        capacity=capacity,
-        items=items,
-        game_world=game_world,
-        blocks_movement=True,
-    )
-
-
-def create_locker(
+def create_bookcase(
     x: WorldTileCoord,
     y: WorldTileCoord,
     items: list[Item] | None = None,
     game_world: GameWorld | None = None,
     capacity: int = 12,
 ) -> Container:
-    """Create a metal locker container.
+    """Create a bookcase container with a clean visual composition.
 
-    Metal lockers are sturdy storage containers often found in facilities,
-    bunkers, and offices. They have higher capacity than crates.
+    Uses a full-size shelf frame with small scaled book glyphs for a
+    recognizable silhouette. Bookcases are commonly found in libraries,
+    offices, and living quarters.
     """
+    # Wood frame color (dark brown)
+    frame_color: colors.Color = (70, 45, 25)
+
+    # Book spine colors - high contrast for visibility at small scale
+    book_colors: list[colors.Color] = [
+        (180, 50, 50),  # Bright red
+        (50, 70, 160),  # Deep blue
+        (220, 200, 150),  # Cream/parchment
+    ]
+
+    # Build the character layers for the bookcase composition.
+    # Uses left and right brackets to create a full frame, with books inside.
+    layers: list[CharacterLayer] = [
+        # Left and right brackets form the bookcase frame
+        CharacterLayer("[", frame_color, offset_x=-0.2, offset_y=0.0),
+        CharacterLayer("]", frame_color, offset_x=0.2, offset_y=0.0),
+        # Book spines - uniform height, varied widths
+        CharacterLayer(
+            "|", book_colors[0], offset_x=-0.1, offset_y=0.0, scale_x=0.8, scale_y=0.85
+        ),
+        CharacterLayer(
+            "|", book_colors[1], offset_x=0.0, offset_y=0.0, scale_x=0.6, scale_y=0.85
+        ),
+        CharacterLayer(
+            "|", book_colors[2], offset_x=0.1, offset_y=0.0, scale_x=0.75, scale_y=0.85
+        ),
+    ]
+
     return Container(
         x=x,
         y=y,
-        ch="L",  # L for Locker
-        color=(128, 128, 140),  # Metal grey-blue
-        name="Metal Locker",
+        ch="[",  # Fallback glyph if layers not rendered
+        color=frame_color,
+        name="Bookcase",
         capacity=capacity,
         items=items,
         game_world=game_world,
         blocks_movement=True,
-    )
-
-
-def create_barrel(
-    x: WorldTileCoord,
-    y: WorldTileCoord,
-    items: list[Item] | None = None,
-    game_world: GameWorld | None = None,
-    capacity: int = 6,
-) -> Container:
-    """Create a barrel container.
-
-    Barrels are cylindrical containers that can hold a modest number of items.
-    Common in industrial areas and storage facilities.
-    """
-    return Container(
-        x=x,
-        y=y,
-        ch="O",
-        color=(100, 70, 40),  # Dark wood/metal
-        name="Barrel",
-        capacity=capacity,
-        items=items,
-        game_world=game_world,
-        blocks_movement=True,
-    )
-
-
-def create_footlocker(
-    x: WorldTileCoord,
-    y: WorldTileCoord,
-    items: list[Item] | None = None,
-    game_world: GameWorld | None = None,
-    capacity: int = 10,
-) -> Container:
-    """Create a footlocker container.
-
-    Footlockers are personal storage chests often found in barracks,
-    bedrooms, and living quarters.
-    """
-    return Container(
-        x=x,
-        y=y,
-        ch="+",  # Chest-like appearance
-        color=(80, 60, 40),  # Dark leather/wood
-        name="Footlocker",
-        capacity=capacity,
-        items=items,
-        game_world=game_world,
-        blocks_movement=False,  # Can step over footlockers
+        character_layers=layers,
+        visual_scale=1.2,  # Slight scale up for presence
     )

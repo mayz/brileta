@@ -7,10 +7,7 @@ from catley.environment.map import GameMap, MapRegion
 from catley.game.actors import (
     Actor,
     Character,
-    create_barrel,
-    create_crate,
-    create_footlocker,
-    create_locker,
+    create_bookcase,
 )
 from catley.game.enums import CreatureSize
 from catley.game.item_spawner import ItemSpawner
@@ -366,9 +363,13 @@ class GameWorld:
                 items_found.extend(
                     item for item in list(actor.inventory) if isinstance(item, Item)
                 )
-                items_found.extend(
-                    item for item in actor.inventory.attack_slots if item is not None
-                )
+                # Only check attack_slots for CharacterInventory, not ContainerStorage
+                if hasattr(actor.inventory, "attack_slots"):
+                    items_found.extend(
+                        item
+                        for item in actor.inventory.attack_slots
+                        if item is not None
+                    )
 
         # Future: Add items directly on the ground if we implement that
         # e.g., items_found.extend(self.game_map.get_items_on_ground(x,y))
@@ -489,30 +490,17 @@ class GameWorld:
     def _place_containers(
         self, rooms: list, num_containers: int = 5, max_attempts: int = 10
     ) -> None:
-        """Place containers with random loot in rooms.
+        """Place bookcases with random loot in rooms.
 
-        Spawns a variety of container types (crates, lockers, barrels, footlockers)
-        throughout the dungeon, each containing random junk items.
+        Spawns bookcases throughout the dungeon, each containing random junk items.
+        Bookcases use multi-character composition for a rich visual appearance.
 
         Args:
             rooms: List of Rect objects representing rooms
-            num_containers: Number of containers to place
-            max_attempts: Maximum attempts to find a valid spot for each container
+            num_containers: Number of bookcases to place
+            max_attempts: Maximum attempts to find a valid spot for each bookcase
         """
         from catley.game.items.junk_item_types import get_random_junk_type
-
-        # Container factory functions with their relative weights
-        container_factories = [
-            (create_crate, 4),  # Most common
-            (create_locker, 2),
-            (create_barrel, 2),
-            (create_footlocker, 1),  # Rarest
-        ]
-
-        # Build weighted choice list
-        weighted_factories = []
-        for factory, weight in container_factories:
-            weighted_factories.extend([factory] * weight)
 
         for _ in range(num_containers):
             placed = False
@@ -534,9 +522,8 @@ class GameWorld:
                     num_items = random.randint(1, 4)
                     items = [get_random_junk_type().create() for _ in range(num_items)]
 
-                    # Pick a random container type
-                    factory = random.choice(weighted_factories)
-                    container = factory(
+                    # Create a bookcase
+                    container = create_bookcase(
                         x=container_x,
                         y=container_y,
                         items=items,

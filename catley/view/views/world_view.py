@@ -38,6 +38,7 @@ from .base import View
 if TYPE_CHECKING:
     from catley.controller import Controller, FrameManager
     from catley.game.actors import Actor
+    from catley.game.actors.core import CharacterLayer
 
 
 class WorldView(View):
@@ -463,17 +464,80 @@ class WorldView(View):
 
         # Get actor color with visual effects (reuse existing logic)
         final_color = self._get_actor_display_color(actor)
+        visual_scale = getattr(actor, "visual_scale", 1.0)
 
-        # Render using the enhanced renderer with visual_scale
-        graphics.draw_actor_smooth(
-            actor.ch,
-            final_color,
-            screen_pixel_x,
-            screen_pixel_y,
-            light_rgb,
-            interpolation_alpha,
-            visual_scale=getattr(actor, "visual_scale", 1.0),
-        )
+        # Check for multi-character composition (character_layers)
+        if actor.character_layers:
+            # Render each layer at its sub-tile offset
+            self._render_character_layers(
+                actor.character_layers,
+                root_x,
+                root_y,
+                graphics,
+                light_rgb,
+                interpolation_alpha,
+                visual_scale,
+            )
+        else:
+            # Render single character (existing behavior) - uniform scaling
+            graphics.draw_actor_smooth(
+                actor.ch,
+                final_color,
+                screen_pixel_x,
+                screen_pixel_y,
+                light_rgb,
+                interpolation_alpha,
+                scale_x=visual_scale,
+                scale_y=visual_scale,
+            )
+
+    def _render_character_layers(
+        self,
+        layers: list[CharacterLayer],
+        root_x: float,
+        root_y: float,
+        graphics: GraphicsContext,
+        light_rgb: tuple,
+        interpolation_alpha: InterpolationAlpha,
+        visual_scale: float,
+    ) -> None:
+        """Render multiple character layers at sub-tile offsets.
+
+        Each layer is rendered at its offset position relative to the actor's
+        center, creating a rich visual composition from multiple ASCII characters.
+
+        Args:
+            layers: List of CharacterLayer defining the composition.
+            root_x: Base X position in root console coordinates.
+            root_y: Base Y position in root console coordinates.
+            graphics: Graphics context for rendering.
+            light_rgb: Lighting intensity tuple.
+            interpolation_alpha: Interpolation factor for smooth rendering.
+            visual_scale: Base scale factor for the actor.
+        """
+        for layer in layers:
+            # Calculate this layer's position by adding its offset to the base position
+            layer_x = root_x + layer.offset_x
+            layer_y = root_y + layer.offset_y
+
+            # Convert to screen pixel coordinates
+            pixel_x, pixel_y = graphics.console_to_screen_coords(layer_x, layer_y)
+
+            # Combine actor scale with per-layer scale (non-uniform)
+            combined_scale_x = visual_scale * layer.scale_x
+            combined_scale_y = visual_scale * layer.scale_y
+
+            # Render this layer
+            graphics.draw_actor_smooth(
+                layer.char,
+                layer.color,
+                pixel_x,
+                pixel_y,
+                light_rgb,
+                interpolation_alpha,
+                scale_x=combined_scale_x,
+                scale_y=combined_scale_y,
+            )
 
     def _get_actor_lighting_intensity(self, actor: Actor, bounds: Rect) -> tuple:
         """Get lighting intensity for actor (extracted from existing code)."""
@@ -591,16 +655,32 @@ class WorldView(View):
                         base_actor_color, actor.color
                     )
 
-                # Render using the renderer's smooth drawing function with visual_scale
-                graphics.draw_actor_smooth(
-                    actor.ch,
-                    final_fg_color,
-                    screen_pixel_x,
-                    screen_pixel_y,
-                    light_rgb,
-                    alpha,
-                    visual_scale=getattr(actor, "visual_scale", 1.0),
-                )
+                visual_scale = getattr(actor, "visual_scale", 1.0)
+
+                # Check for multi-character composition (character_layers)
+                if actor.character_layers:
+                    # Render each layer at its sub-tile offset
+                    self._render_character_layers(
+                        actor.character_layers,
+                        float(root_x),
+                        float(root_y),
+                        graphics,
+                        light_rgb,
+                        alpha,
+                        visual_scale,
+                    )
+                else:
+                    # Render using the renderer's smooth drawing function
+                    graphics.draw_actor_smooth(
+                        actor.ch,
+                        final_fg_color,
+                        screen_pixel_x,
+                        screen_pixel_y,
+                        light_rgb,
+                        alpha,
+                        scale_x=visual_scale,
+                        scale_y=visual_scale,
+                    )
 
     @record_time_live_variable("cpu.render.selected_actor_highlight_ms")
     def _render_selected_actor_highlight(self) -> None:

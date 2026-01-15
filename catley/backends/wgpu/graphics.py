@@ -274,7 +274,8 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         screen_y: float,
         light_intensity: tuple[float, float, float] = (1.0, 1.0, 1.0),
         interpolation_alpha: InterpolationAlpha | None = None,
-        visual_scale: float = 1.0,
+        scale_x: float = 1.0,
+        scale_y: float = 1.0,
     ) -> None:
         """Draw an actor character at sub-pixel screen coordinates."""
         if interpolation_alpha is None:
@@ -305,9 +306,9 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         # Use integer tile dimensions like TCOD backend for consistent positioning
         tile_w, tile_h = self.tile_dimensions
 
-        # Apply visual_scale: scale dimensions and center on tile
-        scaled_w = tile_w * visual_scale
-        scaled_h = tile_h * visual_scale
+        # Apply non-uniform scaling: scale dimensions and center on tile
+        scaled_w = tile_w * scale_x
+        scaled_h = tile_h * scale_y
         offset_x = (tile_w - scaled_w) / 2
         offset_y = (tile_h - scaled_h) / 2
 

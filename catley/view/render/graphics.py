@@ -87,7 +87,8 @@ class GraphicsContext(abc.ABC):
         screen_y: float,
         light_intensity: tuple[float, float, float] = (1.0, 1.0, 1.0),
         interpolation_alpha: InterpolationAlpha = InterpolationAlpha(1.0),  # noqa: B008
-        visual_scale: float = 1.0,
+        scale_x: float = 1.0,
+        scale_y: float = 1.0,
     ) -> None:
         """Draw an actor character at sub-pixel screen coordinates.
 
@@ -99,9 +100,8 @@ class GraphicsContext(abc.ABC):
             light_intensity: RGB lighting multipliers in 0.0-1.0 range
             interpolation_alpha: Interpolation factor between previous and current
                 state (0.0-1.0). Used for smooth movement between updates.
-            visual_scale: Rendering scale factor (1.0 = normal size). The glyph
-                is scaled and centered on the tile position. Used to make creatures
-                appear larger or smaller while maintaining tile-based collision.
+            scale_x: Horizontal scale factor (1.0 = normal width).
+            scale_y: Vertical scale factor (1.0 = normal height).
         """
         pass
 
