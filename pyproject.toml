@@ -11,6 +11,9 @@ dependencies = [
     "pillow>=12.0.0",
     "soundfile>=0.13.1",
     "tcod>=19.6.3",
+    # wgpu is future-proofing for Apple dropping OpenGL.
+    # Not actively upgrading - later versions have breaking API changes.
+    # See docs/plan/WGPU_MIGRATION_PLAN.md for details.
     "wgpu>=0.23.0",
 ]
 

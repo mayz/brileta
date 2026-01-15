@@ -2,6 +2,12 @@
 
 This document outlines the specific technical steps for migrating Catley from ModernGL to wgpu-py.
 
+## Current Status
+
+**Active backend:** ModernGL (works, is the default)
+
+**wgpu backend:** Exists but not actively maintained. The wgpu-py package releases frequently with breaking API changes. We're intentionally staying on 0.23.x until there's a reason to migrate (e.g., Apple actually removes OpenGL support). When `uv sync -U` shows wgpu updates available, ignore them unless you're ready to fix breakage in `catley/backends/wgpu/`.
+
 **Important**: Maintain implementation parity between backends to prevent subtle bugs. Unintentional divergences can cause hard-to-debug visual artifacts. For example, the introduction of dirty-tile optimization initially caused visual artifacts (ghosting of previously lit tiles). Root cause: the WGPU implementation had diverged from ModernGL by adding a transparent tile optimization that skipped generating vertices for fully transparent tiles. This caused stale vertex data to persist in the VBO. The fix was to remove this optimization and ensure WGPU matches ModernGL's behavior of always generating vertices for all tiles.
 
 ## Phase 4: GPU Lighting System Port
