@@ -3,13 +3,18 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from catley.game.actions.combat import AttackIntent
-from catley.game.actions.environment import CloseDoorIntent, OpenDoorIntent
+from catley.game.actions.environment import (
+    CloseDoorIntent,
+    OpenDoorIntent,
+    SearchContainerIntent,
+)
 from catley.game.actions.recovery import (
     ComfortableSleepIntent,
     RestIntent,
     SleepIntent,
 )
 from catley.game.actors import Character
+from catley.game.actors.container import Container
 from catley.types import WorldTilePos
 
 from .action_context import ActionContext
@@ -136,6 +141,49 @@ class EnvironmentActionDiscovery:
                     static_params={},
                 )
             )
+
+        # === Container Discovery ===
+        # Find adjacent containers using the spatial index
+        adjacent_containers: list[Container] = []
+        for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            tx = actor.x + dx
+            ty = actor.y + dy
+            if not (0 <= tx < gm.width and 0 <= ty < gm.height):
+                continue
+            actors_at_tile = controller.gw.actor_spatial_index.get_at_point(tx, ty)
+            adjacent_containers.extend(
+                a for a in actors_at_tile if isinstance(a, Container)
+            )
+
+        # Handle containers
+        if len(adjacent_containers) == 1:
+            # Single container - create direct action
+            container = adjacent_containers[0]
+            options.append(
+                ActionOption(
+                    id="search-container-direct",
+                    name=f"Search {container.name}",
+                    description=f"Search the {container.name} for items",
+                    category=ActionCategory.ENVIRONMENT,
+                    action_class=SearchContainerIntent,
+                    requirements=[],
+                    static_params={"target": container},
+                )
+            )
+        elif len(adjacent_containers) > 1:
+            # Multiple containers - create options for each
+            for i, container in enumerate(adjacent_containers):
+                options.append(
+                    ActionOption(
+                        id=f"search-container-{i}",
+                        name=f"Search {container.name}",
+                        description=f"Search the {container.name} for items",
+                        category=ActionCategory.ENVIRONMENT,
+                        action_class=SearchContainerIntent,
+                        requirements=[],
+                        static_params={"target": container},
+                    )
+                )
 
         return options
 
@@ -328,6 +376,79 @@ class EnvironmentActionDiscovery:
                         execute=create_pathfind_to_tile(tile_x, tile_y),
                     )
                 )
+
+        # === Container at Tile ===
+        # Check for container actors at this tile
+        actors_at_tile = controller.gw.actor_spatial_index.get_at_point(tile_x, tile_y)
+        for tile_actor in actors_at_tile:
+            if isinstance(tile_actor, Container):
+                container = tile_actor
+                if distance <= 1:
+                    # Adjacent - direct search action
+                    options.append(
+                        ActionOption(
+                            id="search-container-adjacent",
+                            name=f"Search {container.name}",
+                            description=f"Search the {container.name} for items",
+                            category=ActionCategory.ENVIRONMENT,
+                            action_class=SearchContainerIntent,
+                            requirements=[],
+                            static_params={"target": container},
+                        )
+                    )
+                else:
+                    # Not adjacent - require movement (use pathfinding)
+                    def create_pathfind_and_search(c: Container):
+                        def pathfind_and_search():
+                            from catley.util.pathfinding import find_local_path
+
+                            gm = controller.gw.game_map
+                            # Find reachable adjacent position to the container
+                            for ddx, ddy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                                adj_x, adj_y = c.x + ddx, c.y + ddy
+                                if (
+                                    0 <= adj_x < gm.width
+                                    and 0 <= adj_y < gm.height
+                                    and gm.walkable[adj_x, adj_y]
+                                    and not controller.gw.get_actor_at_location(
+                                        adj_x, adj_y
+                                    )
+                                ):
+                                    path = find_local_path(
+                                        gm,
+                                        controller.gw.actor_spatial_index,
+                                        actor,
+                                        (actor.x, actor.y),
+                                        (adj_x, adj_y),
+                                    )
+                                    if path:
+                                        search_intent = SearchContainerIntent(
+                                            controller, actor, c
+                                        )
+                                        controller.start_actor_pathfinding(
+                                            actor,
+                                            (adj_x, adj_y),
+                                            final_intent=search_intent,
+                                        )
+                                        return True
+                            return False
+
+                        return pathfind_and_search
+
+                    options.append(
+                        ActionOption(
+                            id="go-and-search-container",
+                            name=f"Go to and Search {container.name}",
+                            description=f"Move to and search the {container.name}",
+                            category=ActionCategory.ENVIRONMENT,
+                            action_class=None,  # type: ignore[arg-type]
+                            requirements=[],
+                            static_params={},
+                            execute=create_pathfind_and_search(container),
+                        )
+                    )
+                # Only handle the first container at this tile
+                break
 
         # Add shoot-at-tile actions for non-walkable tiles
         options.extend(

@@ -24,8 +24,9 @@ from catley.game.actions.discovery import (
     ActionRequirement,
     CombatIntentCache,
 )
-from catley.game.actions.environment import OpenDoorIntent
+from catley.game.actions.environment import OpenDoorIntent, SearchContainerIntent
 from catley.game.actors import Character, status_effects
+from catley.game.actors.container import create_crate, create_locker
 from catley.game.enums import Disposition
 from catley.game.game_world import GameWorld
 from catley.game.items.capabilities import RangedAttack
@@ -594,3 +595,103 @@ def test_multiple_weapons_have_unique_action_ids() -> None:
     assert any(shotgun.name in aid for aid in action_ids), (
         f"Expected shotgun name '{shotgun.name}' in one of the action IDs: {action_ids}"
     )
+
+
+def test_environment_options_include_container_search() -> None:
+    """Test that search actions appear when player is adjacent to a container."""
+    gw = DummyGameWorld()
+    player = Character(0, 0, "@", colors.WHITE, "P", game_world=cast(GameWorld, gw))
+    gw.player = player
+    gw.add_actor(player)
+
+    # Create a crate adjacent to the player
+    crate = create_crate(x=1, y=0, game_world=cast(GameWorld, gw))
+    gw.add_actor(crate)
+
+    controller = DummyController(gw=gw)
+    disc = ActionDiscovery()
+    ctx = disc._build_context(cast(Controller, controller), player)
+    opts = disc._get_environment_options(cast(Controller, controller), player, ctx)
+
+    # Should find search action for adjacent container
+    search_options = [o for o in opts if "Search" in o.name]
+    assert len(search_options) == 1
+    assert "Wooden Crate" in search_options[0].name
+    assert search_options[0].action_class is SearchContainerIntent
+    assert search_options[0].requirements == []
+    assert search_options[0].static_params == {"target": crate}
+
+
+def test_multiple_adjacent_containers_creates_multiple_options() -> None:
+    """Test that multiple adjacent containers create separate search options."""
+    gw = DummyGameWorld()
+    player = Character(0, 0, "@", colors.WHITE, "P", game_world=cast(GameWorld, gw))
+    gw.player = player
+    gw.add_actor(player)
+
+    # Create containers on two sides of the player
+    crate = create_crate(x=1, y=0, game_world=cast(GameWorld, gw))
+    locker = create_locker(x=0, y=1, game_world=cast(GameWorld, gw))
+    gw.add_actor(crate)
+    gw.add_actor(locker)
+
+    controller = DummyController(gw=gw)
+    disc = ActionDiscovery()
+    ctx = disc._build_context(cast(Controller, controller), player)
+    opts = disc._get_environment_options(cast(Controller, controller), player, ctx)
+
+    search_options = [o for o in opts if "Search" in o.name]
+    assert len(search_options) == 2
+    names = {o.name for o in search_options}
+    assert "Search Wooden Crate" in names
+    assert "Search Metal Locker" in names
+
+
+def test_tile_specific_container_search_action() -> None:
+    """Test that clicking on a container tile shows search action."""
+    gw = DummyGameWorld()
+    player = Character(0, 0, "@", colors.WHITE, "P", game_world=cast(GameWorld, gw))
+    gw.player = player
+    gw.add_actor(player)
+
+    # Create a crate adjacent to the player
+    crate = create_crate(x=1, y=0, game_world=cast(GameWorld, gw))
+    gw.add_actor(crate)
+
+    controller = DummyController(gw=gw)
+    disc = ActionDiscovery()
+    ctx = disc._build_context(cast(Controller, controller), player)
+
+    opts = disc.environment_discovery.discover_environment_actions_for_tile(
+        cast(Controller, controller), player, ctx, 1, 0
+    )
+
+    search_options = [o for o in opts if "Search" in o.name]
+    assert len(search_options) == 1
+    assert "Wooden Crate" in search_options[0].name
+    assert search_options[0].action_class is SearchContainerIntent
+
+
+def test_distant_container_offers_go_and_search() -> None:
+    """Test that distant containers show 'Go to and Search' action."""
+    gw = DummyGameWorld()
+    player = Character(0, 0, "@", colors.WHITE, "P", game_world=cast(GameWorld, gw))
+    gw.player = player
+    gw.add_actor(player)
+
+    # Create a crate far from the player
+    crate = create_crate(x=5, y=5, game_world=cast(GameWorld, gw))
+    gw.add_actor(crate)
+
+    controller = DummyController(gw=gw)
+    disc = ActionDiscovery()
+    ctx = disc._build_context(cast(Controller, controller), player)
+
+    opts = disc.environment_discovery.discover_environment_actions_for_tile(
+        cast(Controller, controller), player, ctx, 5, 5
+    )
+
+    search_options = [o for o in opts if "Search" in o.name]
+    assert len(search_options) == 1
+    assert "Go to and Search" in search_options[0].name
+    assert search_options[0].execute is not None  # Uses pathfinding

@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 from typing import cast
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from catley import colors
 from catley.controller import Controller
@@ -8,8 +8,10 @@ from catley.environment.tile_types import TileTypeID
 from catley.game.action_router import ActionRouter
 from catley.game.actions.base import GameActionResult
 from catley.game.actions.combat import AttackIntent
+from catley.game.actions.environment import SearchContainerIntent
 from catley.game.actions.movement import MoveIntent
 from catley.game.actors import Character
+from catley.game.actors.container import create_crate
 from catley.game.game_world import GameWorld
 from tests.helpers import DummyGameWorld
 
@@ -193,3 +195,59 @@ def test_actor_bumping_dead_actor_does_nothing() -> None:
         router.execute_intent(intent)
 
         assert not mock_execute.called
+
+
+def test_router_searches_container_on_bump() -> None:
+    """Test that bumping into a blocking container triggers search."""
+    controller, player = _make_world()
+
+    # Create a blocking container (crate blocks_movement=True by default)
+    crate = create_crate(x=1, y=0, game_world=cast(GameWorld, controller.gw))
+    controller.gw.add_actor(crate)
+
+    with patch(
+        "catley.game.actions.executors.containers.SearchContainerExecutor.execute",
+        return_value=GameActionResult(),
+    ) as mock_execute:
+        router = ActionRouter(cast(Controller, controller))
+        intent = MoveIntent(cast(Controller, controller), player, 1, 0)
+        router.execute_intent(intent)
+
+        assert mock_execute.called
+        call_args = mock_execute.call_args[0][0]
+        assert isinstance(call_args, SearchContainerIntent)
+        assert call_args.actor is player
+        assert call_args.target is crate
+        # Player should not have moved
+        assert (player.x, player.y) == (0, 0)
+
+
+def test_bump_into_container_opens_search_menu() -> None:
+    """Integration test: bumping container calls show_overlay (not show)."""
+    controller, player = _make_world()
+
+    # Create a blocking container with items
+    crate = create_crate(x=1, y=0, game_world=cast(GameWorld, controller.gw))
+    # Add an item so the search doesn't fail with "Nothing to loot"
+    from catley.game.items.item_types import ROCK_TYPE
+
+    crate.inventory.add_item(ROCK_TYPE.create())
+    controller.gw.add_actor(crate)
+
+    # Mock the overlay_system.show_overlay to verify it's called
+    mock_overlay = MagicMock()
+    controller.overlay_system = mock_overlay
+
+    # Patch DualPaneMenu so it doesn't need full controller setup
+    with patch("catley.view.ui.dual_pane_menu.DualPaneMenu") as mock_menu_class:
+        mock_menu_instance = MagicMock()
+        mock_menu_class.return_value = mock_menu_instance
+
+        router = ActionRouter(cast(Controller, controller))
+        intent = MoveIntent(cast(Controller, controller), player, 1, 0)
+        router.execute_intent(intent)
+
+        # Verify DualPaneMenu was created
+        assert mock_menu_class.called
+        # Verify show_overlay was called with the menu (not show)
+        mock_overlay.show_overlay.assert_called_once_with(mock_menu_instance)

@@ -54,6 +54,7 @@ from catley.game.actions.recovery import (
     UseConsumableIntent,
 )
 from catley.game.actors import Character
+from catley.game.actors.container import Container
 
 if TYPE_CHECKING:
     from catley.controller import Controller
@@ -180,4 +181,10 @@ class ActionRouter:
             new_intent = OpenDoorIntent(
                 self.controller, intent.actor, door_pos[0], door_pos[1]
             )
+            self.execute_intent(new_intent)  # Recursive call
+
+        elif result.block_reason == "container" and result.blocked_by:
+            # Rule: Bumping into a container means you try to search it.
+            container = cast(Container, result.blocked_by)
+            new_intent = SearchContainerIntent(self.controller, intent.actor, container)
             self.execute_intent(new_intent)  # Recursive call

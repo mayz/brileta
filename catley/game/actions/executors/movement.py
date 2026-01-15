@@ -10,6 +10,7 @@ from catley.events import MessageEvent, publish_event
 from catley.game.actions.base import GameActionResult
 from catley.game.actions.executors.base import ActionExecutor
 from catley.game.actors import Character
+from catley.game.actors.container import Container
 
 if TYPE_CHECKING:
     from catley.game.actions.movement import MoveIntent
@@ -45,6 +46,11 @@ class MoveExecutor(ActionExecutor):
             intent.newx, intent.newy
         )
         if blocking_actor and blocking_actor.blocks_movement:
+            # Distinguish containers from other blocking actors
+            if isinstance(blocking_actor, Container):
+                return GameActionResult(
+                    succeeded=False, blocked_by=blocking_actor, block_reason="container"
+                )
             return GameActionResult(
                 succeeded=False, blocked_by=blocking_actor, block_reason="actor"
             )

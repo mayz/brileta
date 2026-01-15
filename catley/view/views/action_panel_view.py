@@ -9,6 +9,7 @@ from catley.backends.pillow.canvas import PillowImageCanvas
 from catley.environment import tile_types
 from catley.game.actions.discovery import ActionCategory, ActionDiscovery, ActionOption
 from catley.game.actors import Character
+from catley.game.actors.container import Container
 from catley.game.items.properties import WeaponProperty
 from catley.types import InterpolationAlpha
 from catley.util.caching import ResourceCache
@@ -557,6 +558,22 @@ class ActionPanelView(TextView):
                     )
                 else:
                     self._cached_actions = []
+            elif isinstance(target_actor, Container):
+                # Container - show search action via environment discovery
+                self._cached_target_description = None
+                context = self.discovery.context_builder.build_context(
+                    self.controller, gw.player
+                )
+                env_discovery = self.discovery.environment_discovery
+                self._cached_actions = (
+                    env_discovery.discover_environment_actions_for_tile(
+                        self.controller,
+                        gw.player,
+                        context,
+                        target_actor.x,
+                        target_actor.y,
+                    )
+                )
             else:
                 self._cached_target_description = None
                 self._cached_actions = []

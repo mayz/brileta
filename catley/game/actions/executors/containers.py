@@ -46,6 +46,6 @@ class SearchContainerExecutor(ActionExecutor):
 
         # Open the dual-pane loot menu
         menu = DualPaneMenu(intent.controller, source=source)
-        intent.controller.overlay_system.show(menu)
+        intent.controller.overlay_system.show_overlay(menu)
 
         return GameActionResult(succeeded=True)
