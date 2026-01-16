@@ -17,7 +17,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from catley import colors
-from catley.config import DEFAULT_ACTOR_SPEED, DEFAULT_MAX_ARMOR
+from catley.config import DEFAULT_ACTOR_SPEED
 from catley.constants.movement import MovementConstants
 from catley.game.actors import conditions
 from catley.game.actors.components import (
@@ -182,78 +182,25 @@ class TestHealthComponent:
         assert health.hp == 15  # toughness + 5
         assert health.max_hp == 15
 
-    def test_initialization_with_custom_max_armor(self) -> None:
-        """AP should be initialized to the specified max_ap."""
-        stats = make_stats()
-        health = HealthComponent(stats, max_ap=5)
+    def test_take_damage_reduces_hp(self) -> None:
+        """take_damage() should reduce HP by the specified amount.
 
-        assert health.ap == 5
-        assert health.max_ap == 5
-
-    def test_initialization_with_default_max_armor(self) -> None:
-        """AP should default to DEFAULT_MAX_ARMOR from config."""
-        stats = make_stats()
+        Note: Armor protection is now handled by the outfit system (outfit.py).
+        This test only verifies HP reduction.
+        """
+        stats = make_stats(toughness=10)
         health = HealthComponent(stats)
 
-        assert health.ap == DEFAULT_MAX_ARMOR
-        assert health.max_ap == DEFAULT_MAX_ARMOR
+        health.take_damage(3)
 
-    def test_take_damage_normal_reduces_armor_first(self) -> None:
-        """Normal damage should reduce AP before HP."""
-        stats = make_stats(toughness=10)
-        health = HealthComponent(stats, max_ap=3)
-
-        health.take_damage(2, "normal")
-
-        assert health.ap == 1
-        assert health.hp == 15
-
-    def test_take_damage_normal_overflow_to_hp(self) -> None:
-        """Normal damage exceeding AP should overflow to HP."""
-        stats = make_stats(toughness=10)
-        health = HealthComponent(stats, max_ap=2)
-
-        health.take_damage(5, "normal")
-
-        assert health.ap == 0
-        assert health.hp == 12  # 15 - (5 - 2) = 12
-
-    def test_take_damage_normal_with_no_armor(self) -> None:
-        """Normal damage with zero AP should go directly to HP."""
-        stats = make_stats(toughness=10)
-        health = HealthComponent(stats, max_ap=0)
-
-        health.take_damage(3, "normal")
-
-        assert health.ap == 0
-        assert health.hp == 12
-
-    def test_take_damage_radiation_bypasses_armor(self) -> None:
-        """Radiation damage should bypass armor entirely."""
-        stats = make_stats(toughness=10)
-        health = HealthComponent(stats, max_ap=3)
-
-        health.take_damage(4, "radiation")
-
-        assert health.ap == 3  # Unchanged
-        assert health.hp == 11
-
-    def test_take_damage_armor_piercing_bypasses_armor(self) -> None:
-        """Armor-piercing damage should bypass armor entirely."""
-        stats = make_stats(toughness=10)
-        health = HealthComponent(stats, max_ap=3)
-
-        health.take_damage(4, "armor_piercing")
-
-        assert health.ap == 3  # Unchanged
-        assert health.hp == 11
+        assert health.hp == 12  # 15 - 3 = 12
 
     def test_take_damage_hp_cannot_go_below_zero(self) -> None:
         """HP should be clamped to zero, never negative."""
         stats = make_stats(toughness=5)  # max_hp = 10
-        health = HealthComponent(stats, max_ap=0)
+        health = HealthComponent(stats)
 
-        health.take_damage(100, "normal")
+        health.take_damage(100)
 
         assert health.hp == 0
 

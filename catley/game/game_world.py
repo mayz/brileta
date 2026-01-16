@@ -22,6 +22,7 @@ from catley.game.items.item_types import (
     SHOTGUN_SHELLS_TYPE,
 )
 from catley.game.lights import DynamicLight, GlobalLight, LightSource
+from catley.game.outfit import LEATHER_ARMOR_TYPE
 from catley.types import TileCoord, WorldTileCoord, WorldTilePos
 from catley.util.coordinates import Rect
 from catley.util.spatial import SpatialHashGrid, SpatialIndex
@@ -234,6 +235,10 @@ class GameWorld:
         player.inventory.add_to_inventory(SHOTGUN_SHELLS_TYPE.create())
 
         player.inventory.add_to_inventory(FOOD_TYPE.create())
+
+        # Equip starting armor
+        armor_item = LEATHER_ARMOR_TYPE.create()
+        player.inventory.set_starting_outfit(armor_item)
 
     def _generate_map(
         self, map_width: int, map_height: int

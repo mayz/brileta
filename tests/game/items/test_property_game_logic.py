@@ -179,9 +179,13 @@ def test_armor_piercing_bypasses_armor() -> None:
     gw.add_actor(defender)
 
     # Give defender armor
+    from catley.game.outfit import LEATHER_ARMOR_TYPE
+
     assert defender.health is not None
-    defender.health.ap = 10
-    initial_ap = defender.health.ap
+    armor_item = LEATHER_ARMOR_TYPE.create()
+    defender.inventory.set_starting_outfit(armor_item)
+    assert armor_item.outfit_capability is not None
+    initial_ap = armor_item.outfit_capability.ap
     initial_hp = defender.health.hp
 
     # Sniper rifle has ARMOR_PIERCING property
@@ -189,12 +193,15 @@ def test_armor_piercing_bypasses_armor() -> None:
     assert weapon.ranged_attack is not None
     assert WeaponProperty.ARMOR_PIERCING in weapon.ranged_attack.properties
 
-    # Test that armor_piercing damage type bypasses armor
-    defender.health.take_damage(5, damage_type="armor_piercing")
+    # Test that armor_piercing damage bypasses armor (handled in combat_arbiter)
+    # Here we just test that take_damage applies damage to HP
+    defender.health.take_damage(5)
 
-    # Armor should be unchanged, HP should be reduced
-    assert defender.health.ap == initial_ap  # Armor unchanged
+    # HP should be reduced
     assert defender.health.hp == initial_hp - 5  # HP reduced directly
+    # Note: Armor bypass is handled in combat_arbiter, not take_damage
+    # Armor AP unchanged since take_damage doesn't know about armor
+    assert armor_item.outfit_capability.ap == initial_ap
 
 
 # --- SILENT Tests ---

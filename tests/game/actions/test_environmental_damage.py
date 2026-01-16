@@ -122,10 +122,7 @@ def test_basic_environmental_damage() -> None:
     reset_event_bus_for_testing()
     _controller, fire, target1, target2, intent, executor = make_environmental_world()
 
-    # Set up targets without armor to ensure damage affects HP
-    target1.health.ap = 0
-    target2.health.ap = 0
-
+    # No default armor - damage goes directly to HP
     initial_hp1 = target1.health.hp
     initial_hp2 = target2.health.hp
 
@@ -144,12 +141,9 @@ def test_basic_environmental_damage() -> None:
 def test_environmental_damage_message_logging() -> None:
     """Test that environmental damage generates proper message log entries."""
     reset_event_bus_for_testing()
-    controller, _fire, target1, target2, intent, executor = make_environmental_world()
+    controller, _fire, _target1, _target2, intent, executor = make_environmental_world()
 
-    # Remove armor so damage affects HP and generates messages
-    target1.health.ap = 0
-    target2.health.ap = 0
-
+    # No default armor - damage generates messages directly
     executor.execute(intent)
 
     messages = controller.message_log.messages
@@ -217,10 +211,7 @@ def test_environmental_damage_multiple_coordinates() -> None:
     )
     controller.gw.add_actor(target3)
 
-    # Remove armor so damage affects HP
-    target1.health.ap = 0
-    target2.health.ap = 0
-    target3.health.ap = 0
+    # No default armor - damage goes directly to HP
 
     # Create intent affecting multiple coordinates
     multi_coord_intent = EnvironmentalDamageIntent(
@@ -335,9 +326,7 @@ def test_environmental_damage_death_handling() -> None:
     death_events: list[ActorDeathEvent] = []
     subscribe_to_event(ActorDeathEvent, lambda e: death_events.append(e))
 
-    # Remove armor and reduce target health to make them die from environmental damage
-    target1.health.ap = 0
-    target2.health.ap = 0
+    # Reduce target health to make them die from environmental damage
     target1.health.hp = 2  # Will die from 3 damage
     target2.health.hp = 10  # Will survive
 

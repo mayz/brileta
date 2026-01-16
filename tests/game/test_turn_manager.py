@@ -224,8 +224,7 @@ def test_apply_terrain_hazard_damages_actor_on_hazardous_tile() -> None:
 
     controller = DummyController(gw=gw)
 
-    # Remove armor so damage affects HP directly
-    player.health.ap = 0
+    # No default armor - damage goes directly to HP
     initial_hp = player.health.hp
 
     # Apply terrain hazard
@@ -251,7 +250,6 @@ def test_apply_terrain_hazard_no_damage_on_safe_tile() -> None:
 
     controller = DummyController(gw=gw)
 
-    player.health.ap = 0
     initial_hp = player.health.hp
 
     # Apply terrain hazard
@@ -276,7 +274,7 @@ def test_apply_terrain_hazard_hot_coals() -> None:
 
     controller = DummyController(gw=gw)
 
-    player.health.ap = 0
+    # No default armor - damage goes directly to HP
     initial_hp = player.health.hp
 
     # Apply terrain hazard

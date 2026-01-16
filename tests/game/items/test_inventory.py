@@ -142,3 +142,26 @@ def test_try_remove_item_checks_equipped_first() -> None:
     assert inv.attack_slots[0] is None
     # Item was only in equipped slot, not stored, so this confirms
     # the method found it in equipped slots
+
+
+def test_try_remove_item_from_equipped_outfit() -> None:
+    """try_remove_item removes equipped outfit and returns True.
+
+    This ensures dropping an equipped outfit works without needing to
+    unequip first - consistent with how weapons behave.
+    """
+    from catley.game.outfit import LEATHER_ARMOR_TYPE
+
+    stats = components.StatsComponent(strength=0)
+    inv = components.CharacterInventory(stats)
+    armor_item = LEATHER_ARMOR_TYPE.create()
+    inv.set_starting_outfit(armor_item)
+
+    # Verify outfit is equipped
+    assert inv.equipped_outfit is not None
+    assert inv.equipped_outfit[0] is armor_item
+
+    result = inv.try_remove_item(armor_item)
+
+    assert result is True
+    assert inv.equipped_outfit is None

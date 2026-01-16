@@ -117,11 +117,12 @@ def test_multiple_leg_injuries_stack() -> None:
 
 
 def test_random_injury_location_assigned() -> None:
+    """Critical hit on unarmored target assigns random injury location."""
     _controller, attacker, defender, intent, _executor = make_combat_world()
     weapon = cast(Item, intent.weapon)
     attack = cast(Attack, weapon.melee_attack)
     assert attack is not None
-    defender.health.ap = 0
+    # No armor equipped - critical hit will inflict injury
     with patch("random.random", return_value=0.8):
         res = D20ResolutionResult(outcome_tier=OutcomeTier.CRITICAL_SUCCESS)
         outcome = determine_outcome(res, attacker, defender, weapon)

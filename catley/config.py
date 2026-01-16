@@ -150,7 +150,6 @@ FOV_ALGORITHM = tcod.constants.FOV_SYMMETRIC_SHADOWCAST
 FOV_LIGHT_WALLS = True
 
 # Combat & health
-DEFAULT_MAX_ARMOR = 3  # Default maximum armor points
 PLAYER_BASE_STRENGTH = 3
 PLAYER_BASE_TOUGHNESS = 30  # Player's starting toughness score
 

@@ -17,7 +17,7 @@ def test_poisoned_turn_damage_and_disadvantage() -> None:
     actor = make_actor()
     poison = conditions.Sickness(sickness_type="Poisoned")
     actor.inventory.add_to_inventory(poison)
-    actor.health.ap = 0
+    # No default armor - damage goes directly to HP
     starting_hp = actor.health.hp
     poison.apply_turn_effect(actor)
     assert actor.health.hp == starting_hp - 1
@@ -31,7 +31,7 @@ def test_venom_damage_and_agility_penalty() -> None:
     actor = make_actor()
     venom = conditions.Sickness(sickness_type="Venom")
     actor.inventory.add_to_inventory(venom)
-    actor.health.ap = 0
+    # No default armor - damage goes directly to HP
     starting_hp = actor.health.hp
     venom.apply_turn_effect(actor)
     assert actor.health.hp == starting_hp - 2
@@ -51,13 +51,11 @@ def test_disease_physical_disadvantage() -> None:
         assert result["has_disadvantage"]
 
 
-def test_radiation_sickness_bypasses_armor() -> None:
+def test_radiation_sickness_damages_hp() -> None:
+    """Radiation sickness deals damage to HP (armor is now handled by outfit system)."""
     actor = make_actor()
     rad = conditions.Sickness(sickness_type="Radiation Sickness")
     actor.inventory.add_to_inventory(rad)
-    actor.health.ap = 5
     starting_hp = actor.health.hp
-    starting_ap = actor.health.ap
     rad.apply_turn_effect(actor)
     assert actor.health.hp == starting_hp - 1
-    assert actor.health.ap == starting_ap

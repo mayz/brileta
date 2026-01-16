@@ -553,7 +553,11 @@ class AttackExecutor(ActionExecutor):
         attack: Attack,
         weapon: Item,
     ) -> int:
-        """Apply the combat outcome and return the damage dealt."""
+        """Apply the combat outcome and return the damage dealt.
+
+        Note: Armor penetration and AP loss are handled in combat_arbiter.
+        The outcome.damage_dealt is already the final damage after armor reduction.
+        """
         assert intent.defender is not None  # Tile shots handled separately
         if attack_result.outcome_tier in (
             OutcomeTier.SUCCESS,
@@ -561,21 +565,17 @@ class AttackExecutor(ActionExecutor):
             OutcomeTier.PARTIAL_SUCCESS,
         ):
             damage = outcome.damage_dealt
-            if outcome.armor_damage > 0:
-                intent.defender.health.ap = max(
-                    0, intent.defender.health.ap - outcome.armor_damage
-                )
             if outcome.injury_inflicted is not None:
                 intent.defender.inventory.add_to_inventory(outcome.injury_inflicted)
 
-            # Check if damage bypasses armor (radiation or armor-piercing)
+            # Note: Armor reduction is handled in combat_arbiter.
+            # outcome.damage_dealt is already the final damage after armor reduction.
+            # Radiation damage type is still needed to add Rads conditions.
             damage_type = "normal"
             if weapon:
                 props = weapon.get_weapon_properties()
                 if TacticalProperty.RADIATION in props:
                     damage_type = "radiation"
-                elif WeaponProperty.ARMOR_PIERCING in props:
-                    damage_type = "armor_piercing"
 
             if damage > 0:
                 intent.defender.take_damage(damage, damage_type=damage_type)

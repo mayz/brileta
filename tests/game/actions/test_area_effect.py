@@ -105,7 +105,7 @@ def make_world() -> tuple[
     target = Character(
         5, 4, "T", colors.YELLOW, "Target", game_world=cast(GameWorld, gw)
     )
-    target.health.ap = 0
+    # No default armor - damage goes directly to HP
     gw.add_actor(attacker)
     gw.add_actor(target)
     controller = DummyController(cast(GameWorld, gw))

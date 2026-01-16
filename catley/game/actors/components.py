@@ -42,6 +42,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from catley.game.outfit import OutfitCapability
     from catley.view.render.effects.effects import ContinuousEffect
 
     from .core import Actor
@@ -49,7 +50,7 @@ if TYPE_CHECKING:
     from .status_effects import StatusEffect
 
 from catley import colors
-from catley.config import DEFAULT_ACTOR_SPEED, DEFAULT_MAX_ARMOR
+from catley.config import DEFAULT_ACTOR_SPEED
 from catley.constants.movement import MovementConstants
 from catley.game.enums import ItemSize
 from catley.game.items.item_core import Item
@@ -83,16 +84,18 @@ class StatsComponent:
 
 @dataclass(slots=True)
 class HealthComponent:
-    """Handles physical integrity - HP, armor, damage from any source, healing."""
+    """Handles physical integrity - HP, damage from any source, healing.
+
+    Note: Armor protection is now handled by the outfit system (catley.game.outfit).
+    This component only tracks HP. Damage reduction from armor happens in the
+    combat system before calling take_damage().
+    """
 
     stats: StatsComponent
-    max_ap: int = DEFAULT_MAX_ARMOR
     hp: int = field(init=False)
-    ap: int = field(init=False)
 
     def __post_init__(self) -> None:
         self.hp = self.stats.max_hp
-        self.ap = self.max_ap
 
     @property
     def max_hp(self) -> int:
@@ -100,24 +103,18 @@ class HealthComponent:
         return self.stats.max_hp
 
     def take_damage(self, amount: int, damage_type: str = "normal") -> None:
-        """Handle damage to the actor, reducing AP first unless bypassing armor.
+        """Handle damage to the actor.
+
+        Note: Armor protection is applied before this method is called.
+        The outfit system (catley.game.outfit) handles damage reduction.
+        This method only applies the final damage amount to HP.
 
         Args:
-            amount: Amount of damage to take
+            amount: Amount of damage to take (after armor reduction)
             damage_type: "normal", "radiation", or "armor_piercing"
+                (damage_type is kept for interface compatibility but no longer
+                affects armor - armor-piercing is handled by the outfit system)
         """
-        if damage_type in ("radiation", "armor_piercing"):
-            # These damage types bypass armor entirely
-            self.hp = max(0, self.hp - amount)
-            return
-
-        # First reduce AP if any
-        if self.ap > 0:
-            ap_damage = min(amount, self.ap)
-            self.ap -= ap_damage
-            amount -= ap_damage
-
-        # Apply remaining damage to HP
         if amount > 0:
             self.hp = max(0, self.hp - amount)
 
@@ -261,6 +258,7 @@ class CharacterInventory(InventoryComponent):
     It includes:
     - Stats-based capacity (derived from strength)
     - Equipment/attack slots for weapons
+    - Outfit slot for armor/clothing
     - Support for conditions (injuries, status effects that take inventory space)
     - Encumbrance mechanics
     """
@@ -277,6 +275,9 @@ class CharacterInventory(InventoryComponent):
 
         self.attack_slots: list[Item | None] = [None] * num_attack_slots
         self.active_weapon_slot: int = 0
+
+        # Outfit slot (armor/clothing) - stores tuple of (Item, OutfitCapability)
+        self._equipped_outfit: tuple[Item, OutfitCapability] | None = None
 
     @property
     def capacity(self) -> int:
@@ -342,7 +343,7 @@ class CharacterInventory(InventoryComponent):
             elif isinstance(entity_in_slot, Condition):
                 used_space += 1
 
-        # Count equipped items
+        # Count equipped weapons
         for equipped_item in self.attack_slots:
             if equipped_item:
                 if equipped_item.size == ItemSize.TINY:
@@ -353,6 +354,18 @@ class CharacterInventory(InventoryComponent):
                     used_space += 2
                 elif equipped_item.size == ItemSize.HUGE:
                     used_space += 4
+
+        # Count equipped outfit
+        if self._equipped_outfit is not None:
+            outfit_item, _ = self._equipped_outfit
+            if outfit_item.size == ItemSize.TINY:
+                has_tiny_items = True
+            elif outfit_item.size == ItemSize.NORMAL:
+                used_space += 1
+            elif outfit_item.size == ItemSize.BIG:
+                used_space += 2
+            elif outfit_item.size == ItemSize.HUGE:
+                used_space += 4
 
         if has_tiny_items:
             used_space += 1
@@ -483,8 +496,8 @@ class CharacterInventory(InventoryComponent):
     def try_remove_item(self, item: Item) -> bool:
         """Remove an item from either equipped slots or stored inventory.
 
-        Checks equipped attack slots first, then stored inventory.
-        Stops after finding and removing the item from one location.
+        Checks equipped attack slots first, then equipped outfit, then stored
+        inventory. Stops after finding and removing the item from one location.
 
         Args:
             item: The exact item instance to remove.
@@ -496,6 +509,15 @@ class CharacterInventory(InventoryComponent):
         for slot_idx, equipped in enumerate(self.attack_slots):
             if equipped is item:
                 self.unequip_slot(slot_idx)
+                return True
+
+        # Check equipped outfit
+        if self._equipped_outfit is not None:
+            outfit_item, _ = self._equipped_outfit
+            if outfit_item is item:
+                self._equipped_outfit = None
+                self._update_encumbrance_status()
+                self._increment_revision()
                 return True
 
         # Check stored inventory
@@ -525,7 +547,7 @@ class CharacterInventory(InventoryComponent):
             elif isinstance(entity_in_slot, Condition):
                 slot_colors.append(entity_in_slot.display_color)
 
-        # Process equipped items
+        # Process equipped weapons
         for equipped_item in self.attack_slots:
             if equipped_item:
                 item_bar_color = colors.WHITE
@@ -540,6 +562,23 @@ class CharacterInventory(InventoryComponent):
                     slot_colors.extend([item_bar_color] * 2)
                 elif equipped_item.size == ItemSize.HUGE:
                     slot_colors.extend([item_bar_color] * 4)
+
+        # Process equipped outfit
+        if self._equipped_outfit is not None:
+            outfit_item, _ = self._equipped_outfit
+            # Use a distinct color for armor slots
+            armor_color = colors.CATEGORY_ARMOR
+
+            if outfit_item.size == ItemSize.TINY:
+                if not has_processed_tiny_slot:
+                    slot_colors.append(armor_color)
+                    has_processed_tiny_slot = True
+            elif outfit_item.size == ItemSize.NORMAL:
+                slot_colors.append(armor_color)
+            elif outfit_item.size == ItemSize.BIG:
+                slot_colors.extend([armor_color] * 2)
+            elif outfit_item.size == ItemSize.HUGE:
+                slot_colors.extend([armor_color] * 4)
 
         return slot_colors
 
@@ -660,6 +699,117 @@ class CharacterInventory(InventoryComponent):
             display_name = self.get_slot_display_name(i)
             attacks.append((item, i, display_name))
         return attacks
+
+    # === Outfit Management ===
+
+    @property
+    def equipped_outfit(self) -> tuple[Item, OutfitCapability] | None:
+        """Get the currently equipped outfit (item and capability tuple).
+
+        Returns:
+            Tuple of (Item, OutfitCapability) if an outfit is equipped, None otherwise.
+        """
+        return self._equipped_outfit
+
+    @property
+    def outfit_capability(self) -> OutfitCapability | None:
+        """Get the outfit capability for the equipped outfit.
+
+        Returns:
+            The OutfitCapability if an outfit is equipped, None otherwise.
+        """
+        if self._equipped_outfit is None:
+            return None
+        return self._equipped_outfit[1]
+
+    def equip_outfit(self, item: Item) -> tuple[bool, str]:
+        """Equip an outfit from stored inventory.
+
+        The item must be in _stored_items and be a valid outfit type.
+        If an outfit is already equipped, it will be returned to inventory first.
+
+        Uses the item's existing outfit_capability (created when the item was
+        instantiated) so damage state persists across equip/unequip cycles.
+
+        Args:
+            item: The outfit item to equip.
+
+        Returns:
+            Tuple of (success, message).
+        """
+        from catley.game.outfit import get_outfit_spec
+
+        # Check if item is in inventory
+        if item not in self._stored_items:
+            return False, f"{item.name} is not in inventory"
+
+        # Check if item is an outfit (has a spec)
+        spec = get_outfit_spec(item.item_type)
+        if spec is None:
+            return False, f"{item.name} is not an outfit"
+
+        # Check that item has an outfit capability (should always exist for outfits)
+        if item.outfit_capability is None:
+            return False, f"{item.name} has no outfit capability"
+
+        # Unequip current outfit first if any
+        if self._equipped_outfit is not None:
+            old_item, _ = self._equipped_outfit
+            # Check if we can store the old outfit (item taking its place)
+            # Since we're removing one item and adding another of potentially
+            # different size, we need to check capacity
+            if not self.can_add_voluntary_item(old_item):
+                return False, f"No room to unequip {old_item.name}"
+            self._stored_items.append(old_item)
+            self._equipped_outfit = None
+
+        # Remove from stored items and equip using item's existing capability
+        self._stored_items.remove(item)
+        self._equipped_outfit = (item, item.outfit_capability)
+
+        self._update_encumbrance_status()
+        self._increment_revision()
+
+        return True, f"Equipped {item.name}."
+
+    def unequip_outfit(self) -> tuple[bool, str]:
+        """Unequip the current outfit and store it in inventory.
+
+        Returns:
+            Tuple of (success, message).
+        """
+        if self._equipped_outfit is None:
+            return False, "No outfit equipped"
+
+        item, _ = self._equipped_outfit
+
+        if not self.can_add_voluntary_item(item):
+            return False, f"No room to store {item.name}"
+
+        self._stored_items.append(item)
+        self._equipped_outfit = None
+
+        self._update_encumbrance_status()
+        self._increment_revision()
+
+        return True, f"Unequipped {item.name}."
+
+    def set_starting_outfit(self, item: Item) -> None:
+        """Set the starting outfit for a character (doesn't come from inventory).
+
+        Used for character creation / spawning where the outfit doesn't need
+        to be removed from inventory first. Uses the item's existing capability.
+
+        Args:
+            item: The outfit item with outfit_capability set.
+
+        Raises:
+            ValueError: If the item has no outfit_capability.
+        """
+        if item.outfit_capability is None:
+            raise ValueError(f"{item.name} has no outfit capability")
+        self._equipped_outfit = (item, item.outfit_capability)
+        self._increment_revision()
 
 
 class VisualEffectsComponent:

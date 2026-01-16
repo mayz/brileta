@@ -1,5 +1,7 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from catley.game.enums import ItemCategory, ItemSize
 from catley.game.items.capabilities import (
@@ -11,9 +13,14 @@ from catley.game.items.capabilities import (
     ConsumableEffectSpec,
     MeleeAttack,
     MeleeAttackSpec,
+    OutfitSpec,
     RangedAttack,
     RangedAttackSpec,
 )
+
+if TYPE_CHECKING:
+    from catley.game.outfit import OutfitCapability
+
 from catley.game.items.properties import (
     StatusProperty,
     TacticalProperty,
@@ -38,6 +45,7 @@ class ItemType:
     area_effect: AreaEffectSpec | None = None
     consumable_effect: ConsumableEffectSpec | None = None
     ammo: AmmoSpec | None = None
+    outfit: OutfitSpec | None = None
 
     # Whether this item can exist as a physical object in the world.
     # Unarmed attack placeholders like Fists should not be materialized
@@ -47,7 +55,7 @@ class ItemType:
     def __hash__(self) -> int:  # pragma: no cover - simple identity hash
         return id(self)
 
-    def create(self) -> "Item":
+    def create(self) -> Item:
         """Create a new Item instance of this type."""
         return Item(self)
 
@@ -86,6 +94,15 @@ class Item:
         if item_type.ammo:
             spec = cast("AmmoSpec", item_type.ammo)
             self.ammo = Ammo(spec=spec)
+
+        # Outfit capability (armor/clothing) - persists damage state on the item
+        self.outfit_capability: OutfitCapability | None = None
+        if item_type.outfit:
+            # Runtime import to avoid circular dependency (outfit.py imports Item)
+            from catley.game.outfit import OutfitCapability as OutfitCap
+
+            outfit_spec = cast("OutfitSpec", item_type.outfit)
+            self.outfit_capability = OutfitCap(outfit_spec)
 
     def get_preferred_attack_mode(self, distance: int) -> AttackHandler | None:
         """

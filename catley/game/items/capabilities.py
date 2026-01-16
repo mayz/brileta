@@ -494,3 +494,20 @@ class Ammo:
     @property
     def capacity(self) -> int:
         return self._spec.capacity
+
+
+# === Outfit Capability ===
+class OutfitSpec:
+    """Defines the protection stats for an outfit (armor/clothing).
+
+    This is the template that defines an outfit's stats. Similar to how
+    MeleeAttackSpec/RangedAttackSpec work for weapons.
+
+    Attributes:
+        protection: Flat damage reduction (PR). 0 for regular clothes.
+        max_ap: Maximum armor points. 0 for no-protection outfits.
+    """
+
+    def __init__(self, protection: int = 0, max_ap: int = 0) -> None:
+        self.protection = protection
+        self.max_ap = max_ap

@@ -45,9 +45,18 @@ class UseConsumableExecutor(ActionExecutor):
 
 
 class RestExecutor(ActionExecutor):
-    """Executes rest intents for armor point recovery."""
+    """Executes rest intents for outfit AP recovery.
+
+    Rest recovers 1 AP if:
+    - Character has an outfit with AP
+    - The outfit was damaged since last rest
+    - The outfit is not broken (AP > 0)
+
+    Broken armor requires repair, not rest.
+    """
 
     def execute(self, intent: RestIntent) -> GameActionResult | None:  # type: ignore[override]
+        from catley.game import outfit
         from catley.game.actions.recovery import is_safe_location
 
         assert isinstance(intent.actor, Character)
@@ -56,21 +65,37 @@ class RestExecutor(ActionExecutor):
             publish_event(MessageEvent(f"Cannot rest: {reason}", colors.RED))
             return GameActionResult(succeeded=False)
 
-        if not intent.actor.health:
+        # Get equipped outfit capability
+        outfit_cap = intent.actor.inventory.outfit_capability
+
+        if outfit_cap is None:
+            publish_event(MessageEvent("Nothing to recover.", colors.YELLOW))
             return GameActionResult(succeeded=False)
 
-        if intent.actor.health.ap == 0:
+        # Check if outfit is broken (requires repair, not rest)
+        if outfit_cap.is_broken:
+            equipped_outfit = intent.actor.inventory.equipped_outfit
+            outfit_name = equipped_outfit[0].name if equipped_outfit else "Armor"
             publish_event(
                 MessageEvent(
-                    f"{intent.actor.name}'s armor is broken and cannot be restored.",
+                    f"{outfit_name} is broken and requires repair.",
                     colors.YELLOW,
                 )
             )
             return GameActionResult(succeeded=False)
 
-        if intent.actor.health.ap < intent.actor.health.max_ap:
-            intent.actor.health.ap = intent.actor.health.max_ap
-            publish_event(MessageEvent("Recovered all AP", colors.GREEN))
+        # Try to recover AP
+        if outfit.rest_recovery(outfit_cap):
+            equipped_outfit = intent.actor.inventory.equipped_outfit
+            outfit_name = equipped_outfit[0].name if equipped_outfit else "Armor"
+            publish_event(
+                MessageEvent(
+                    f"Recovered 1 AP on {outfit_name}.",
+                    colors.GREEN,
+                )
+            )
+        else:
+            publish_event(MessageEvent("Nothing to recover.", colors.YELLOW))
 
         return GameActionResult()
 

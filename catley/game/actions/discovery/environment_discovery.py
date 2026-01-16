@@ -552,12 +552,21 @@ class EnvironmentActionDiscovery:
         options: list[ActionOption] = []
         safe, _ = is_safe_location(actor)
 
-        if actor.health.ap < actor.health.max_ap and safe:
+        # Check if outfit has recoverable AP damage
+        outfit_cap = actor.inventory.outfit_capability
+        outfit_needs_rest = (
+            outfit_cap is not None
+            and outfit_cap.damaged_since_rest
+            and not outfit_cap.is_broken
+            and outfit_cap.ap < outfit_cap.max_ap
+        )
+
+        if outfit_needs_rest and safe:
             options.append(
                 ActionOption(
                     id="rest",
                     name="Rest",
-                    description="Recover armor points",
+                    description="Recover AP",
                     category=ActionCategory.ENVIRONMENT,
                     action_class=RestIntent,
                     requirements=[],

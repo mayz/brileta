@@ -161,7 +161,7 @@ class FrameManager:
         self.world_view.set_bounds(world_view_x, 0, screen_width_tiles, bottom_ui_y)
 
         self.health_view.tile_dimensions = tile_dimensions
-        self.health_view.set_bounds(screen_width_tiles - 20, 0, screen_width_tiles, 1)
+        self.health_view.set_bounds(screen_width_tiles - 40, 0, screen_width_tiles, 1)
 
         # Action panel in left sidebar (top portion)
         self.action_panel_view.tile_dimensions = tile_dimensions

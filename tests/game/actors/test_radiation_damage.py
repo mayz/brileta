@@ -100,19 +100,20 @@ def make_bomb_world():
 
 
 def test_radiation_damage_direct() -> None:
+    """Radiation damage is applied directly to HP (armor bypass handled in combat)."""
     gw = DummyGameWorld()
     actor = Character(0, 0, "T", colors.WHITE, "Target", game_world=cast(GameWorld, gw))
     gw.add_actor(actor)
-    actor.health.ap = 5
+    # No default armor - damage goes directly to HP
     actor.take_damage(3, damage_type="radiation")
     assert actor.health.hp == actor.health.max_hp - 3
-    assert actor.health.ap == 5
     assert len(actor.conditions.get_conditions_by_type(conditions.Rads)) == 3
 
 
 def test_radiation_weapon_attack() -> None:
+    """Radiation weapon attack applies damage to HP and adds rads."""
     controller, attacker, defender, weapon = make_weapon_world()
-    defender.health.ap = 4
+    # No default armor - radiation bypasses armor anyway (handled in combat_arbiter)
     attack = weapon.ranged_attack
     assert attack is not None
     result = D20ResolutionResult(outcome_tier=OutcomeTier.SUCCESS)
@@ -122,7 +123,6 @@ def test_radiation_weapon_attack() -> None:
     damage = executor._apply_combat_outcome(intent, result, outcome, attack, weapon)
     assert damage == 2
     assert defender.health.hp == defender.health.max_hp - 2
-    assert defender.health.ap == 4
     assert len(defender.conditions.get_conditions_by_type(conditions.Rads)) == 2
 
 

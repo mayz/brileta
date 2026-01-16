@@ -174,16 +174,21 @@ class DualPaneMenu(Menu):
         """Populate left pane with player inventory items."""
         self.left_options.clear()
 
-        # Collect all items: stored + equipped
+        # Collect all items: stored + equipped weapons + equipped outfit
         stored_items = self.inventory._stored_items
         all_items_to_display: list[tuple[Item | Condition, str]] = [
             (item, "stored") for item in stored_items
         ]
 
-        # Add equipped items with their slot index
+        # Add equipped weapons with their slot index
         for slot_index, equipped_item in enumerate(self.inventory.attack_slots):
             if equipped_item:
                 all_items_to_display.append((equipped_item, f"slot:{slot_index}"))
+
+        # Add equipped outfit
+        if self.inventory.equipped_outfit is not None:
+            outfit_item, _ = self.inventory.equipped_outfit
+            all_items_to_display.append((outfit_item, "outfit"))
 
         if not all_items_to_display:
             self.left_options.append(
@@ -208,6 +213,9 @@ class DualPaneMenu(Menu):
                 if item_status.startswith("slot:"):
                     slot_num = int(item_status.split(":")[1]) + 1
                     prefix_segments.append((f"[{slot_num}]  ", colors.YELLOW))
+                elif item_status == "outfit":
+                    # Show [A] for equipped armor/outfit
+                    prefix_segments.append(("[A]  ", colors.CATEGORY_ARMOR))
                 else:
                     # Add alignment spaces to match equipped items
                     prefix_segments.append(("     ", colors.WHITE))
@@ -321,10 +329,26 @@ class DualPaneMenu(Menu):
 
         Returns False to keep menu open.
         """
+        from catley.game.outfit import is_outfit_type
+
         player = self.controller.gw.player
 
-        if item.equippable:
-            # Check if item is already equipped
+        # Check if item is an outfit
+        if is_outfit_type(item.item_type):
+            # Check if this outfit is already equipped
+            equipped = player.inventory.equipped_outfit
+            if equipped is not None and equipped[0] is item:
+                # Unequip it
+                success, message = player.inventory.unequip_outfit()
+                color = colors.WHITE if success else colors.YELLOW
+                publish_event(MessageEvent(message, color))
+            else:
+                # Equip it (will auto-unequip current outfit if any)
+                success, message = player.inventory.equip_outfit(item)
+                color = colors.GREEN if success else colors.YELLOW
+                publish_event(MessageEvent(message, color))
+        elif item.equippable:
+            # Check if item is already equipped (weapon)
             currently_equipped_slot = None
             for i, equipped_item in enumerate(player.inventory.attack_slots):
                 if equipped_item == item:
@@ -745,6 +769,35 @@ class DualPaneMenu(Menu):
             if len(desc) > 70:
                 desc = desc[:67] + "..."
             lines.append(desc)
+
+        # Check if this is an outfit item - capability is now stored on the item
+        from catley.game.outfit import get_outfit_spec
+
+        outfit_spec = get_outfit_spec(item.item_type)
+        if outfit_spec is not None:
+            # Get capability from item (persists damage state across equip/unequip)
+            outfit_cap = item.outfit_capability
+
+            if outfit_spec.protection > 0:
+                if outfit_cap is not None:
+                    if outfit_cap.is_broken:
+                        lines.append(
+                            f"Protection: {outfit_spec.protection}  AP: BROKEN"
+                        )
+                    else:
+                        lines.append(
+                            f"Protection: {outfit_spec.protection}  "
+                            f"AP: {outfit_cap.ap}/{outfit_cap.max_ap}"
+                        )
+                else:
+                    # Fallback (shouldn't happen for outfit items)
+                    lines.append(
+                        f"Protection: {outfit_spec.protection}  "
+                        f"AP: {outfit_spec.max_ap}"
+                    )
+            else:
+                lines.append("No protection (clothing only)")
+            return lines
 
         # Find the attack to display: prefer one with PREFERRED, else first available
         from catley.game.items.properties import (
