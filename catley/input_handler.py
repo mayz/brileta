@@ -289,27 +289,11 @@ class InputHandler:
                 return None
 
             case tcod.event.KeyDown(sym=tcod.event.KeySym.N1):
-                # Switch to weapon slot 1
-                if self.p.inventory.switch_to_weapon_slot(0):
-                    weapon = self.p.inventory.get_active_weapon()
-                    weapon_name = weapon.name if weapon else "Empty"
-                    publish_event(
-                        MessageEvent(
-                            f"Switched to primary weapon: {weapon_name}", colors.GREEN
-                        )
-                    )
+                self.fm.equipment_view.switch_to_slot(0)
                 return None
 
             case tcod.event.KeyDown(sym=tcod.event.KeySym.N2):
-                # Switch to weapon slot 2
-                if self.p.inventory.switch_to_weapon_slot(1):
-                    weapon = self.p.inventory.get_active_weapon()
-                    weapon_name = weapon.name if weapon else "Empty"
-                    publish_event(
-                        MessageEvent(
-                            f"Switched to secondary weapon: {weapon_name}", colors.GREEN
-                        )
-                    )
+                self.fm.equipment_view.switch_to_slot(1)
                 return None
 
             case tcod.event.KeyDown(sym=tcod.event.KeySym.RETURN, mod=mod) if (
@@ -381,6 +365,10 @@ class InputHandler:
         if status_view_command:
             return status_view_command
 
+        # Check if click is on the equipment view (weapon slots)
+        if self._check_equipment_view_click(root_tile_pos):
+            return None  # Click handled, no UICommand needed
+
         # Left click does nothing - no tile/actor selection
         return None
 
@@ -416,6 +404,25 @@ class InputHandler:
             return OpenMenuUICommand(self.controller, DualPaneMenu)
 
         return None
+
+    def _check_equipment_view_click(self, root_tile_pos: RootConsoleTilePos) -> bool:
+        """Check if click is within equipment view bounds and delegate to view.
+
+        Returns True if the click was handled, False otherwise.
+        """
+        equipment_view = self.fm.equipment_view
+        tile_x, tile_y = root_tile_pos
+
+        # Check within equipment view bounds
+        if not (equipment_view.x <= tile_x < equipment_view.x + equipment_view.width):
+            return False
+
+        clicked_row = tile_y - equipment_view.y
+        if clicked_row < 0 or clicked_row >= equipment_view.height:
+            return False
+
+        # Delegate to view - it knows its own layout
+        return equipment_view.handle_click(clicked_row)
 
     def _has_available_actions(self, target: Actor | WorldTilePos) -> bool:
         """Quickly check if any actions are available for a target."""

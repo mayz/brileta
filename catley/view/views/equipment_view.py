@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 from catley import colors
 from catley.constants.view import ViewConstants as View
+from catley.events import MessageEvent, publish_event
 from catley.game.items.properties import WeaponProperty
 from catley.types import InterpolationAlpha
 from catley.view.render.graphics import GraphicsContext
@@ -90,3 +91,43 @@ class EquipmentView(TextView):
                 text=item_text,
                 color=color,
             )
+
+    def switch_to_slot(self, slot_index: int) -> None:
+        """Switch to the specified weapon slot and publish a message.
+
+        Args:
+            slot_index: The weapon slot to switch to (0 = primary, 1 = secondary).
+        """
+        player = self.controller.gw.player
+        if player.inventory.switch_to_weapon_slot(slot_index):
+            weapon = player.inventory.get_active_weapon()
+            weapon_name = weapon.name if weapon else "Empty"
+            slot_names = {0: "primary", 1: "secondary"}
+            slot_label = slot_names.get(slot_index, "weapon")
+            publish_event(
+                MessageEvent(
+                    f"Switched to {slot_label} weapon: {weapon_name}",
+                    colors.GREEN,
+                )
+            )
+
+    def handle_click(self, view_relative_row: int) -> bool:
+        """Handle a click on this view at the given row.
+
+        Args:
+            view_relative_row: The row within this view that was clicked (0-indexed).
+
+        Returns:
+            True if the click was handled (clicked a weapon slot), False otherwise.
+        """
+        # Weapon slots start at row 1 (row 0 is hint text)
+        # Row 1 = slot 0 (primary), Row 2 = slot 1 (secondary)
+        weapon_slot_start_row = 1
+        weapon_slot_end_row = weapon_slot_start_row + View.EQUIPMENT_MAX_SLOTS
+
+        if weapon_slot_start_row <= view_relative_row < weapon_slot_end_row:
+            slot_index = view_relative_row - weapon_slot_start_row
+            self.switch_to_slot(slot_index)
+            return True
+
+        return False
