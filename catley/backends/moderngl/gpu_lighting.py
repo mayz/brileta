@@ -385,7 +385,13 @@ class GPULightingSystem(LightingSystem):
             # Render full-screen quad
             self._fullscreen_vao.render()
 
-            # Read back results
+            # Read back results from GPU to CPU.
+            # PERF: This GPU→CPU transfer is the main lighting bottleneck (~20% of
+            # frame time when profiled). The lightmap must come back to CPU because
+            # visibility masking, animation effects, and tile appearance blending
+            # currently happen in Python. A future optimization would move those
+            # operations to GPU shaders, keeping the lightmap on-GPU and only
+            # reading back the final composited frame for display.
             self._output_texture.read_into(self._output_buffer)
             result_data = np.frombuffer(self._output_buffer.read(), dtype=np.float32)
 

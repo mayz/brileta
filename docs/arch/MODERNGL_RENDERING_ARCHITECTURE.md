@@ -221,6 +221,20 @@ The ModernGL backend implements the abstract `GraphicsContext` interface, ensuri
 
 ## Future Considerations
 
+### Deferred: GPU Lightmap Retention
+
+**Current state:** The GPU lighting system renders a lightmap on the GPU, then transfers it back to CPU for visibility masking, animation effects, and tile appearance blending. This GPU→CPU transfer (`Texture.read_into`) consumes ~20% of frame time when profiled.
+
+**Future optimization:** Move visibility/animation/blending to GPU shaders. The lightmap would stay on-GPU, with only the final composited frame read back for display. This is standard practice in commercial games.
+
+**Implementation would require:**
+1. FOV and explored-state uploaded as GPU textures
+2. Visibility masking in fragment shader
+3. Animation effects (pulsation, etc.) calculated in shader
+4. Final tile-appearance compositing on GPU
+
+**See also:** `PERF:` comment in `gpu_lighting.py` at the `read_into` call.
+
 ### Extensibility Points
 
 The architecture supports future enhancements:
