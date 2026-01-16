@@ -12,6 +12,13 @@ from catley.view.render.lighting.cpu import CPULightingSystem
 
 def test_cpu_lighting_system_basic() -> None:
     """Test that CPULightingSystem can be created and compute a basic lightmap."""
+    import random
+
+    # Seed RNG for deterministic map generation - avoids intermittent failures
+    # when the light happens to land in an outdoor room (20% chance), which
+    # reduces light intensity via sky_exposure calculations
+    random.seed(42)
+
     gw = GameWorld(50, 50)
     lighting_system = CPULightingSystem(gw)
 
