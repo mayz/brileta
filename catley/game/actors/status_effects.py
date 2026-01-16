@@ -188,7 +188,13 @@ class StrengthBoostEffect(StatusEffect):
 
 
 class EncumberedEffect(StatusEffect):
-    """Actor has disadvantage on movement and defense due to carrying too much.
+    """Actor has reduced speed and disadvantage on agility due to carrying too much.
+
+    Speed is reduced by 15% per slot over capacity (0.85^slots_over):
+    - 1 over: 85% speed
+    - 2 over: 72% speed
+    - 3 over: 61% speed
+    - 4 over: 52% speed
 
     This status persists until the actor's carried weight drops below the
     encumbrance threshold. ``duration=-1`` marks it as indefinite so the base
@@ -200,7 +206,7 @@ class EncumberedEffect(StatusEffect):
         super().__init__(
             name="Encumbered",
             duration=-1,
-            description="Disadvantage on movement and defense from carrying too much",
+            description="Reduced speed and agility disadvantage from excess weight",
             can_stack=False,
         )
 

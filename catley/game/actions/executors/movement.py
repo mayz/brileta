@@ -1,12 +1,8 @@
 from __future__ import annotations
 
-import random
 from typing import TYPE_CHECKING
 
-from catley import colors
-from catley.constants.movement import MovementConstants
 from catley.environment.tile_types import TileTypeID
-from catley.events import MessageEvent, publish_event
 from catley.game.actions.base import GameActionResult
 from catley.game.actions.executors.base import ActionExecutor
 from catley.game.actors import Character
@@ -54,22 +50,6 @@ class MoveExecutor(ActionExecutor):
             return GameActionResult(
                 succeeded=False, blocked_by=blocking_actor, block_reason="actor"
             )
-
-        # Check for stumbling from exhaustion
-        if isinstance(intent.actor, Character):
-            speed_multiplier = intent.actor.modifiers.get_movement_speed_multiplier()
-            if speed_multiplier < MovementConstants.EXHAUSTION_STUMBLE_THRESHOLD:
-                stumble_chance = (
-                    1.0 - speed_multiplier
-                ) * MovementConstants.EXHAUSTION_STUMBLE_MULTIPLIER
-                if random.random() < stumble_chance:
-                    publish_event(
-                        MessageEvent(
-                            f"{intent.actor.name} stumbles from exhaustion!",
-                            colors.YELLOW,
-                        )
-                    )
-                    return GameActionResult(succeeded=False, block_reason="stumble")
 
         # Success! Move the actor (this automatically creates animation)
         intent.actor.move(intent.dx, intent.dy, intent.controller)

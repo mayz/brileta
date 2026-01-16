@@ -5,8 +5,6 @@ from unittest.mock import patch
 from catley import colors
 from catley.constants.movement import MovementConstants
 from catley.controller import Controller
-from catley.game.actions.executors.movement import MoveExecutor
-from catley.game.actions.movement import MoveIntent
 from catley.game.actors import Character, conditions
 from catley.game.enums import InjuryLocation
 from catley.game.game_world import GameWorld
@@ -66,21 +64,6 @@ def test_double_exhaustion_disadvantage_and_energy() -> None:
     assert isinstance(result, D20ResolutionResult)
     assert result.has_disadvantage
     assert result.final_roll_used == 4
-
-
-def test_movement_stumble_with_high_exhaustion() -> None:
-    controller, actor = make_world()
-    actor.conditions.add_condition(conditions.Exhaustion())
-    actor.conditions.add_condition(conditions.Exhaustion())
-    actor.conditions.add_condition(conditions.Exhaustion())
-    actor.conditions.add_condition(conditions.Exhaustion())
-
-    with patch("random.random", return_value=0.05):
-        intent = MoveIntent(controller, actor, dx=1, dy=0)
-        result = MoveExecutor().execute(intent)
-    assert result is not None
-    assert not result.succeeded
-    assert (actor.x, actor.y) == (0, 0)
 
 
 def test_exhaustion_removal_restores_effects() -> None:

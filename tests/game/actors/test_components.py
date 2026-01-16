@@ -319,39 +319,60 @@ class TestInventoryComponentGaps:
     - try_remove_item() from equipped and stored
     """
 
-    def test_add_condition_force_drops_items_when_full(self) -> None:
-        """Adding a condition should force-drop items if capacity is full."""
-        stats = make_stats(strength=0)  # 5 slots
-        inv = CharacterInventory(stats)
+    def test_add_condition_to_full_inventory_causes_encumbrance(self) -> None:
+        """Adding a condition to full inventory causes encumbrance, not item drops.
 
-        # Fill inventory with items
+        This verifies the intended design: injuries push you over capacity rather
+        than silently dropping items. Players must manually decide what to drop.
+        """
+        stats = make_stats(strength=0)  # 5 slots
+        actor = make_mock_actor(stats=stats)
+        inv = CharacterInventory(stats, actor=actor)
+        actor.inventory = inv
+
+        # Fill inventory to capacity
         for i in range(5):
             inv.add_voluntary_item(make_item(f"item{i}"))
+        assert inv.get_used_inventory_slots() == 5
+        assert not inv.is_encumbered()
 
-        # Add a condition - should drop most recent item
+        # Add a condition - should NOT drop any items
         injury = conditions.Injury(InjuryLocation.HEAD, "Wound")
-        dropped, message = inv.add_condition(injury)
+        with patch("catley.events.publish_event"):
+            dropped, message = inv.add_condition(injury)
 
-        assert len(dropped) == 1
-        assert dropped[0].name == "item4"
+        # Verify no items were dropped
+        assert len(dropped) == 0
+        assert "Dropped" not in message
+
+        # Verify condition was added and inventory is over capacity
         assert injury in inv
-        assert "Dropped" in message
+        assert inv.get_used_inventory_slots() == 6  # 5 items + 1 condition
 
-    def test_add_condition_drops_multiple_items_if_needed(self) -> None:
-        """Adding a condition to a full inventory drops the necessary item."""
+        # Verify player is now encumbered
+        assert inv.is_encumbered()
+        assert "encumbered" in message.lower()
+
+    def test_add_condition_preserves_all_items(self) -> None:
+        """All items remain in inventory when a condition is added."""
         stats = make_stats(strength=0)  # 5 slots
         inv = CharacterInventory(stats)
 
-        # Fill with 5 items
-        for i in range(5):
-            inv.add_voluntary_item(make_item(f"item{i}"))
+        # Fill with 5 named items
+        item_names = [f"item{i}" for i in range(5)]
+        for name in item_names:
+            inv.add_voluntary_item(make_item(name))
 
         injury = conditions.Injury(InjuryLocation.HEAD, "Wound")
         dropped, _ = inv.add_condition(injury)
 
-        # Should drop exactly 1 item to make room for condition
-        assert len(dropped) == 1
-        assert inv.get_used_inventory_slots() == 5
+        # All original items should still be present
+        assert len(dropped) == 0
+        stored_names = [
+            item.name for item in inv._stored_items if hasattr(item, "name")
+        ]
+        for name in item_names:
+            assert name in stored_names
 
     def test_update_encumbrance_status_adds_effect(self) -> None:
         """Becoming encumbered should add EncumberedEffect to the actor."""
@@ -464,6 +485,58 @@ class TestInventoryComponentGaps:
         inv.equip_to_slot(make_item("weapon"), 0)
 
         assert inv.revision == initial_revision + 1
+
+    def test_get_slots_over_capacity_zero_when_under(self) -> None:
+        """get_slots_over_capacity() returns 0 when under capacity."""
+        stats = make_stats(strength=5)  # 10 slots
+        inv = CharacterInventory(stats)
+
+        # Add fewer items than capacity
+        for i in range(5):
+            inv.add_voluntary_item(make_item(f"item{i}"))
+
+        assert inv.get_slots_over_capacity() == 0
+
+    def test_get_slots_over_capacity_zero_when_at_capacity(self) -> None:
+        """get_slots_over_capacity() returns 0 when exactly at capacity."""
+        stats = make_stats(strength=0)  # 5 slots
+        inv = CharacterInventory(stats)
+
+        # Fill to exactly capacity
+        for i in range(5):
+            inv._stored_items.append(make_item(f"item{i}"))
+
+        assert inv.get_slots_over_capacity() == 0
+
+    def test_get_slots_over_capacity_correct_when_over(self) -> None:
+        """get_slots_over_capacity() returns correct count when over capacity."""
+        stats = make_stats(strength=0)  # 5 slots
+        inv = CharacterInventory(stats)
+
+        # Fill to 3 over capacity (8 items in 5 slots)
+        for i in range(8):
+            inv._stored_items.append(make_item(f"item{i}"))
+
+        assert inv.get_slots_over_capacity() == 3
+
+    def test_get_slots_over_capacity_with_big_items(self) -> None:
+        """get_slots_over_capacity() accounts for item sizes correctly."""
+        stats = make_stats(strength=0)  # 5 slots
+        inv = CharacterInventory(stats)
+
+        # Add 2 BIG items (2 slots each = 4 slots)
+        inv._stored_items.append(make_item("big1", ItemSize.BIG))
+        inv._stored_items.append(make_item("big2", ItemSize.BIG))
+
+        assert inv.get_slots_over_capacity() == 0
+
+        # Add 1 more NORMAL item = 5 slots total, still at capacity
+        inv._stored_items.append(make_item("normal"))
+        assert inv.get_slots_over_capacity() == 0
+
+        # Add 1 more NORMAL item = 6 slots total, 1 over
+        inv._stored_items.append(make_item("normal2"))
+        assert inv.get_slots_over_capacity() == 1
 
 
 # =============================================================================
@@ -729,6 +802,90 @@ class TestModifiersComponent:
         expected = MovementConstants.EXHAUSTION_ENERGY_REDUCTION_PER_STACK**2
 
         assert multiplier == pytest.approx(expected)
+
+    def test_get_movement_speed_multiplier_with_encumbrance_1_over(self) -> None:
+        """Encumbrance reduces speed by 0.85^1 when 1 slot over capacity."""
+        actor = make_mock_actor()
+        stats = actor.stats
+        inv = actor.inventory
+
+        # Fill to exactly 1 slot over capacity
+        for i in range(stats.inventory_slots + 1):
+            inv._stored_items.append(make_item(f"item{i}"))
+
+        multiplier = actor.modifiers.get_movement_speed_multiplier()
+        expected = MovementConstants.ENCUMBRANCE_SPEED_BASE**1
+
+        assert multiplier == pytest.approx(expected)
+
+    def test_get_movement_speed_multiplier_with_encumbrance_2_over(self) -> None:
+        """Encumbrance reduces speed by 0.85^2 when 2 slots over capacity."""
+        actor = make_mock_actor()
+        stats = actor.stats
+        inv = actor.inventory
+
+        # Fill to exactly 2 slots over capacity
+        for i in range(stats.inventory_slots + 2):
+            inv._stored_items.append(make_item(f"item{i}"))
+
+        multiplier = actor.modifiers.get_movement_speed_multiplier()
+        expected = MovementConstants.ENCUMBRANCE_SPEED_BASE**2
+
+        assert multiplier == pytest.approx(expected)
+
+    def test_get_movement_speed_multiplier_with_encumbrance_4_over(self) -> None:
+        """Encumbrance reduces speed by 0.85^4 when 4 slots over capacity."""
+        actor = make_mock_actor()
+        stats = actor.stats
+        inv = actor.inventory
+
+        # Fill to exactly 4 slots over capacity
+        for i in range(stats.inventory_slots + 4):
+            inv._stored_items.append(make_item(f"item{i}"))
+
+        multiplier = actor.modifiers.get_movement_speed_multiplier()
+        expected = MovementConstants.ENCUMBRANCE_SPEED_BASE**4
+
+        assert multiplier == pytest.approx(expected)
+
+    def test_get_movement_speed_multiplier_encumbrance_stacks_with_leg_injury(
+        self,
+    ) -> None:
+        """Encumbrance and leg injury penalties stack multiplicatively."""
+        actor = make_mock_actor()
+        stats = actor.stats
+        inv = actor.inventory
+
+        # Add leg injury (0.75x) - also takes 1 inventory slot
+        injury = conditions.Injury(InjuryLocation.LEFT_LEG, "Wound")
+        actor.conditions.add_condition(injury)
+
+        # Fill to 2 slots over capacity total. Injury takes 1 slot, so adding
+        # (capacity + 1) items gives us (capacity + 1) + 1 = capacity + 2 slots.
+        for i in range(stats.inventory_slots + 1):
+            inv._stored_items.append(make_item(f"item{i}"))
+
+        multiplier = actor.modifiers.get_movement_speed_multiplier()
+        # 0.75 (leg injury) * 0.85^2 (2 slots over) = 0.75 * 0.7225 = 0.541875
+        expected = 0.75 * (MovementConstants.ENCUMBRANCE_SPEED_BASE**2)
+
+        assert multiplier == pytest.approx(expected)
+
+    def test_get_movement_speed_multiplier_no_encumbrance_penalty_at_capacity(
+        self,
+    ) -> None:
+        """No encumbrance penalty when exactly at capacity."""
+        actor = make_mock_actor()
+        stats = actor.stats
+        inv = actor.inventory
+
+        # Fill to exactly capacity (not over)
+        for i in range(stats.inventory_slots):
+            inv._stored_items.append(make_item(f"item{i}"))
+
+        multiplier = actor.modifiers.get_movement_speed_multiplier()
+
+        assert multiplier == 1.0
 
 
 # =============================================================================

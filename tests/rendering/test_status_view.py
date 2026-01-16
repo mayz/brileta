@@ -57,7 +57,8 @@ def test_status_effect_duration_format() -> None:
     actor.status_effects.apply_status_effect(effect)
 
     lines = view._get_status_effect_lines(actor)
-    assert lines == ["Off Balance (1 turn)"]
+    # Returns (text, color) tuples; OffBalanceEffect uses LIGHT_GREY
+    assert lines == [("Off Balance (1 turn)", colors.LIGHT_GREY)]
 
 
 def test_displayed_counts_initialized() -> None:
@@ -80,13 +81,13 @@ def test_status_effects_displayed_before_conditions() -> None:
     injury = conditions.Injury(InjuryLocation.LEFT_LEG, "Sprained Ankle")
     actor.conditions.add_condition(injury)
 
-    # Get the display lists
+    # Get the display lists (both return (text, color) tuples)
     status_effect_lines = view._get_status_effect_lines(actor)
     condition_lines = view._get_condition_lines(actor)
 
     # Status effects come first in the combined display
     assert len(status_effect_lines) == 1
-    assert "Off Balance" in status_effect_lines[0]
+    assert "Off Balance" in status_effect_lines[0][0]  # text is first element of tuple
     assert len(condition_lines) == 1
     assert condition_lines[0][0] == "Sprained Ankle"
 

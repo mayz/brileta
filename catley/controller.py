@@ -200,11 +200,21 @@ class Controller:
         # Check for player-initiated actions (movement or queued)
         move_intent = None
         if not self.overlay_system.has_interactive_overlays():
-            move_intent = self.movement_handler.generate_intent(
+            # Check if player is trying to move
+            potential_move = self.movement_handler.generate_intent(
                 self.input_handler.movement_keys
             )
-            if move_intent:
-                self._execute_player_action_immediately(move_intent)
+            if potential_move:
+                # Energy gate: player must afford the action for speed penalties
+                # to be perceptible. If they can't afford it, time still passes
+                # (energy regenerates) but they don't move.
+                if self.gw.player.energy.can_afford(config.ACTION_COST):
+                    move_intent = potential_move
+                    self._execute_player_action_immediately(move_intent)
+                else:
+                    # Player tried to move but can't afford it - time passes anyway.
+                    # This prevents deadlock where low energy = no regen = stuck.
+                    self.turn_manager.on_player_action()
 
         # Check for other queued player actions
         if self.turn_manager.has_pending_actions():
@@ -220,7 +230,12 @@ class Controller:
         ):
             autopilot_action = self.gw.player.get_next_action(self)
             if autopilot_action:
-                self._execute_player_action_immediately(autopilot_action)
+                # Energy gate autopilot same as manual movement
+                if self.gw.player.energy.can_afford(config.ACTION_COST):
+                    self._execute_player_action_immediately(autopilot_action)
+                else:
+                    # Can't afford action - time passes but no movement
+                    self.turn_manager.on_player_action()
 
     def update_logic_step(self) -> None:
         """

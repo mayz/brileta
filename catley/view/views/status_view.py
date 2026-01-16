@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from catley import colors
 from catley.game.actors import Character, Condition, StatusEffect
+from catley.game.actors.status_effects import EncumberedEffect
 from catley.types import InterpolationAlpha
 from catley.view.render.graphics import GraphicsContext
 
@@ -58,7 +59,7 @@ class StatusView(TextView):
         # Build display list: (text, color, is_condition)
         # Status effects first (no brackets), then conditions (with brackets)
         display_items: list[tuple[str, colors.Color, bool]] = [
-            (text, colors.LIGHT_GREY, False) for text in status_effects
+            (text, color, False) for text, color in status_effects
         ]
         display_items.extend((f"[{text}]", color, True) for text, color in conditions)
 
@@ -105,8 +106,17 @@ class StatusView(TextView):
 
         return lines
 
-    def _get_status_effect_lines(self, player: Character) -> list[str]:
-        """Get formatted display lines for status effects."""
+    def _get_status_effect_lines(
+        self, player: Character
+    ) -> list[tuple[str, colors.Color]]:
+        """Get formatted display lines and colors for status effects.
+
+        Most status effects use LIGHT_GREY. EncumberedEffect uses severity-based
+        coloring that matches the inventory capacity display:
+        - Yellow: at/under capacity (shouldn't happen - effect removed)
+        - Orange: 1-2 slots over capacity
+        - Red: 3+ slots over capacity
+        """
         effects = [
             effect
             for effect in player.modifiers.get_all_active_effects()
@@ -115,11 +125,27 @@ class StatusView(TextView):
         if not effects:
             return []
 
-        lines = []
+        lines: list[tuple[str, colors.Color]] = []
         for effect in effects:
+            # Format the text with duration if applicable
             if effect.duration > 0:
                 suffix = "turn" if effect.duration == 1 else "turns"
-                lines.append(f"{effect.name} ({effect.duration} {suffix})")
+                text = f"{effect.name} ({effect.duration} {suffix})"
             else:
-                lines.append(effect.name)
+                text = effect.name
+
+            # Determine color - EncumberedEffect uses severity-based coloring
+            if isinstance(effect, EncumberedEffect):
+                slots_over = player.inventory.get_slots_over_capacity()
+                if slots_over >= 3:
+                    color = colors.RED
+                elif slots_over >= 1:
+                    color = colors.ORANGE
+                else:
+                    # Shouldn't happen - effect should be removed when not encumbered
+                    color = colors.YELLOW
+            else:
+                color = colors.LIGHT_GREY
+
+            lines.append((text, color))
         return lines

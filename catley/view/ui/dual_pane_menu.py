@@ -871,6 +871,16 @@ class DualPaneMenu(Menu):
         player = self.controller.gw.player
         used_space = player.inventory.get_used_inventory_slots()
         total_slots = player.inventory.total_inventory_slots
+        slots_over = player.inventory.get_slots_over_capacity()
+
+        # Determine capacity text color based on encumbrance severity
+        # Yellow = at/under capacity, Orange = 1-2 over, Red = 3+ over
+        if slots_over >= 3:
+            capacity_color = colors.RED
+        elif slots_over >= 1:
+            capacity_color = colors.ORANGE
+        else:
+            capacity_color = colors.YELLOW
 
         # Left pane header
         current_x = 1
@@ -901,10 +911,10 @@ class DualPaneMenu(Menu):
             )
             current_x += 1
 
-        # Usage text
+        # Usage text with severity-based color
         usage_text = f" {used_space}/{total_slots}"
         self.canvas.draw_text(
-            current_x * tile_w, header_y * tile_h, usage_text, colors.YELLOW
+            current_x * tile_w, header_y * tile_h, usage_text, capacity_color
         )
 
         # Right pane header (only in loot mode)

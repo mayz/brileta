@@ -29,7 +29,11 @@ class DummyPlayer:
         self.x = 0
         self.y = 0
         self.health = SimpleNamespace(is_alive=lambda: True)
-        self.energy = SimpleNamespace(spend=lambda cost: None, regenerate=lambda: None)
+        self.energy = SimpleNamespace(
+            spend=lambda cost: None,
+            regenerate=lambda: None,
+            can_afford=lambda cost: True,
+        )
 
     def get_next_action(self, controller: Controller) -> None:
         return None
@@ -372,3 +376,105 @@ def test_instant_action_processed_immediately() -> None:
         # Run one logic step to trigger StopIteration
         with pytest.raises(StopIteration):
             controller.update_logic_step()
+
+
+# =============================================================================
+# ENERGY GATE TESTS
+# =============================================================================
+
+
+def test_energy_gate_blocks_movement_when_insufficient_energy() -> None:
+    """Player cannot move when they don't have enough energy."""
+    with patched_controller(stop_after=1) as controller:
+        # Make can_afford return False
+        controller.gw.player.energy.can_afford = lambda cost: False  # type: ignore
+
+        # Make movement handler return a move intent
+        move_intent = GameIntent(controller, controller.gw.player)
+        controller.movement_handler.generate_intent = lambda keys: move_intent  # type: ignore
+
+        # Simulate movement keys pressed
+        controller.input_handler.movement_keys = {"UP"}
+
+        # Process input - should NOT execute the move
+        controller.process_player_input()
+
+        # Move should not have been processed
+        assert move_intent not in controller.turn_manager.processed  # type: ignore
+
+
+def test_energy_gate_allows_movement_when_sufficient_energy() -> None:
+    """Player can move when they have enough energy."""
+    with patched_controller(stop_after=1) as controller:
+        # can_afford already returns True by default in DummyPlayer
+
+        # Make movement handler return a move intent
+        move_intent = GameIntent(controller, controller.gw.player)
+        move_intent.animation_type = AnimationType.INSTANT
+        controller.movement_handler.generate_intent = lambda keys: move_intent  # type: ignore
+
+        # Simulate movement keys pressed
+        controller.input_handler.movement_keys = {"UP"}
+
+        # Process input - should execute the move
+        controller.process_player_input()
+
+        # Move should have been processed
+        assert move_intent in controller.turn_manager.processed  # type: ignore
+
+
+def test_energy_gate_regenerates_energy_when_blocked() -> None:
+    """Time passes (on_player_action called) when player tries to move but can't."""
+    with patched_controller(stop_after=1) as controller:
+        # Track whether on_player_action was called
+        on_player_action_called = False
+
+        def track_on_player_action() -> None:
+            nonlocal on_player_action_called
+            on_player_action_called = True
+
+        controller.turn_manager.on_player_action = track_on_player_action  # type: ignore
+
+        # Make can_afford return False
+        controller.gw.player.energy.can_afford = lambda cost: False  # type: ignore
+
+        # Make movement handler return a move intent
+        move_intent = GameIntent(controller, controller.gw.player)
+        controller.movement_handler.generate_intent = lambda keys: move_intent  # type: ignore
+
+        # Simulate movement keys pressed
+        controller.input_handler.movement_keys = {"UP"}
+
+        # Process input - move blocked, but time should pass
+        controller.process_player_input()
+
+        # on_player_action should have been called (time passes)
+        assert on_player_action_called
+
+
+def test_energy_gate_no_regen_when_no_movement_attempted() -> None:
+    """No energy regeneration when player isn't trying to move."""
+    with patched_controller(stop_after=1) as controller:
+        # Track whether on_player_action was called
+        on_player_action_called = False
+
+        def track_on_player_action() -> None:
+            nonlocal on_player_action_called
+            on_player_action_called = True
+
+        controller.turn_manager.on_player_action = track_on_player_action  # type: ignore
+
+        # Make can_afford return False
+        controller.gw.player.energy.can_afford = lambda cost: False  # type: ignore
+
+        # Movement handler returns None (no movement attempt)
+        # This is the default behavior
+
+        # No movement keys pressed
+        controller.input_handler.movement_keys = set()
+
+        # Process input
+        controller.process_player_input()
+
+        # on_player_action should NOT have been called
+        assert not on_player_action_called

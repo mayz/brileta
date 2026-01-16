@@ -363,6 +363,15 @@ class CharacterInventory(InventoryComponent):
         """Return True if carrying more than base capacity."""
         return self.get_used_inventory_slots() > self.stats.inventory_slots
 
+    def get_slots_over_capacity(self) -> int:
+        """Return the number of slots over base capacity, or 0 if not encumbered.
+
+        Used for graduated encumbrance penalties - the more over capacity,
+        the greater the speed penalty.
+        """
+        over = self.get_used_inventory_slots() - self.stats.inventory_slots
+        return max(0, over)
+
     def can_add_voluntary_item(self, item: Item) -> bool:
         """Check if a voluntary item can be added within base capacity."""
         current_used = self.get_used_inventory_slots()
@@ -391,13 +400,6 @@ class CharacterInventory(InventoryComponent):
             return 1
         return 1
 
-    def _find_droppable_item(self) -> Item | None:
-        """Find the most recently added voluntary item to drop (LIFO)."""
-        for item in reversed(self._stored_items):
-            if isinstance(item, Item):
-                return item
-        return None
-
     def add_voluntary_item(self, item: Item) -> tuple[bool, str]:
         """Add a voluntary item if space allows."""
         if self.can_add_voluntary_item(item):
@@ -408,39 +410,26 @@ class CharacterInventory(InventoryComponent):
         return False, f"Cannot carry {item.name} - inventory full!"
 
     def add_condition(self, condition: Condition) -> tuple[list[Item], str]:
-        dropped_items: list[Item] = []
-        base_capacity = self.stats.inventory_slots
+        """Add a condition to inventory. May cause encumbrance if over capacity.
 
-        # Keep dropping until we fit
-        while True:
-            current_used = self.get_used_inventory_slots()
-            space_needed = self._calculate_space_needed(condition)
+        Conditions (injuries, sickness, etc.) are involuntary - they're always added.
+        If this pushes the player over capacity, they become encumbered and must
+        manually decide what to drop. This creates meaningful risk/reward tension:
+        carrying more loot means risking encumbrance if injured.
 
-            if current_used + space_needed <= base_capacity:
-                break  # We fit!
-
-            droppable_item = self._find_droppable_item()
-            if not droppable_item:
-                break  # Nothing left to drop
-
-            self._stored_items.remove(droppable_item)
-            dropped_items.append(droppable_item)
-            self._increment_revision()
-
+        Returns:
+            A tuple of (dropped_items, message). dropped_items is always empty
+            since conditions don't auto-drop items anymore.
+        """
         self._stored_items.append(condition)
         self._update_encumbrance_status()
         self._increment_revision()
 
-        message_parts = [f"Added {condition.name}."]
-
-        if dropped_items:
-            dropped_names = [item.name for item in dropped_items]
-            message_parts.append(f"Dropped: {', '.join(dropped_names)}.")
-
+        message = f"Added {condition.name}."
         if self.is_encumbered():
-            message_parts.append("You are now encumbered!")
+            message += " You are now encumbered!"
 
-        return dropped_items, " ".join(message_parts)
+        return [], message
 
     def _update_encumbrance_status(self) -> None:
         """Add or remove encumbrance status effect based on current load."""
@@ -908,20 +897,35 @@ class ModifiersComponent:
     def get_movement_speed_multiplier(self) -> float:
         """Calculates the cumulative speed multiplier from all conditions.
 
+        Includes penalties from:
+        - Conditions (e.g., leg injury: 0.75x)
+        - Exhaustion stacks (0.9x per stack)
+        - Encumbrance (0.85^slots_over when carrying more than capacity)
+
         Returns:
             A float representing the final speed multiplier (e.g., 0.75 for a
             -25% penalty). A value of 1.0 means no modification.
         """
         multiplier = 1.0
-        # Iterate through all conditions that can affect movement.
+
+        # Apply condition-based modifiers (e.g., leg injury)
         for condition in self.get_all_conditions():
             multiplier *= condition.get_movement_cost_modifier()
 
+        # Apply exhaustion penalty: 0.9x per stack
         exhaustion_count = self.get_exhaustion_count()
         if exhaustion_count:
             multiplier *= (
                 MovementConstants.EXHAUSTION_SPEED_REDUCTION_PER_STACK**exhaustion_count
             )
+
+        # Apply graduated encumbrance penalty: 0.85^slots_over
+        # Only CharacterInventory has get_slots_over_capacity()
+        inventory = self.actor.inventory
+        if inventory is not None and hasattr(inventory, "get_slots_over_capacity"):
+            slots_over = inventory.get_slots_over_capacity()
+            if slots_over > 0:
+                multiplier *= MovementConstants.ENCUMBRANCE_SPEED_BASE**slots_over
 
         return multiplier
 
