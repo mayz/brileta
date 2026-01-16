@@ -47,6 +47,7 @@ class GameWorld:
         self.lighting_system: LightingSystem | None = None
 
         self._init_actor_storage()
+
         self.game_map, rooms = self._generate_map(map_width, map_height)
 
         if not rooms:
@@ -61,6 +62,7 @@ class GameWorld:
         # Note: Rooms now have random 20% chance of being outdoor (set in generator)
 
         self._populate_npcs(rooms)
+
         self._place_containers(rooms)
 
         if not config.IS_TEST_ENVIRONMENT:

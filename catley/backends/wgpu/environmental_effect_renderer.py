@@ -68,38 +68,14 @@ class WGPUEnvironmentalEffectRenderer:
             wgpu.GPUTexture, wgpu.GPUBindGroup
         ] = weakref.WeakKeyDictionary()
 
-        # Create bind group layout
-        self.bind_group_layout = self.resource_manager.device.create_bind_group_layout(
-            entries=[
-                {
-                    "binding": 0,
-                    "visibility": wgpu.ShaderStage.VERTEX | wgpu.ShaderStage.FRAGMENT,
-                    "buffer": {"type": wgpu.BufferBindingType.uniform},
-                },
-                {
-                    "binding": 1,
-                    "visibility": wgpu.ShaderStage.FRAGMENT,
-                    "texture": {"sample_type": wgpu.TextureSampleType.float},
-                },
-                {
-                    "binding": 2,
-                    "visibility": wgpu.ShaderStage.FRAGMENT,
-                    "sampler": {"type": wgpu.SamplerBindingType.filtering},
-                },
-            ]
-        )
+        # Use shared bind group layout from resource manager
+        self.bind_group_layout = self.resource_manager.standard_bind_group_layout
 
         # Create render pipeline
         self._create_pipeline()
 
-        # Create sampler
-        self.sampler = self.resource_manager.device.create_sampler(
-            mag_filter=wgpu.FilterMode.linear,  # type: ignore
-            min_filter=wgpu.FilterMode.linear,  # type: ignore
-            mipmap_filter=wgpu.MipmapFilterMode.linear,  # type: ignore
-            address_mode_u=wgpu.AddressMode.clamp_to_edge,  # type: ignore
-            address_mode_v=wgpu.AddressMode.clamp_to_edge,  # type: ignore
-        )
+        # Use shared linear sampler from resource manager (for smooth gradients)
+        self.sampler = self.resource_manager.linear_sampler
 
         # Create reusable radial gradient texture for environmental effects
         self.radial_gradient_texture = self._create_radial_gradient_texture(256)

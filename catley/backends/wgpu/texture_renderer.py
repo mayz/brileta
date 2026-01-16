@@ -104,29 +104,10 @@ class WGPUTextureRenderer:
 
     def _create_pipeline(self) -> None:
         """Create the WGPU render pipeline for texture rendering."""
-        # Create bind group layout
-        bind_group_layout = self.shader_manager.create_bind_group_layout(
-            entries=[
-                {
-                    "binding": 0,
-                    "visibility": wgpu.ShaderStage.VERTEX | wgpu.ShaderStage.FRAGMENT,
-                    "buffer": {"type": "uniform"},
-                },
-                {
-                    "binding": 1,
-                    "visibility": wgpu.ShaderStage.FRAGMENT,
-                    "texture": {"sample_type": "float", "view_dimension": "2d"},
-                },
-                {
-                    "binding": 2,
-                    "visibility": wgpu.ShaderStage.FRAGMENT,
-                    "sampler": {"type": "filtering"},
-                },
-            ],
-            label="texture_renderer_bind_group_layout",
-        )
+        # Use shared bind group layout from resource manager
+        bind_group_layout = self.resource_manager.standard_bind_group_layout
 
-        # Define vertex buffer layout
+        # Define vertex buffer layout (texture renderer has extra bg_color attribute)
         vertex_layout = [
             {
                 "array_stride": TEXTURE_VERTEX_DTYPE.itemsize,
@@ -185,16 +166,7 @@ class WGPUTextureRenderer:
             cache_key="texture_renderer_pipeline",
         )
 
-        # Create sampler
-        sampler = self.resource_manager.device.create_sampler(
-            mag_filter=wgpu.FilterMode.nearest,  # type: ignore
-            min_filter=wgpu.FilterMode.nearest,  # type: ignore
-            mipmap_filter=wgpu.MipmapFilterMode.nearest,  # type: ignore
-            address_mode_u=wgpu.AddressMode.clamp_to_edge,  # type: ignore
-            address_mode_v=wgpu.AddressMode.clamp_to_edge,  # type: ignore
-        )
-
-        # Create bind group
+        # Create bind group using shared sampler
         self.bind_group = self.shader_manager.create_bind_group(
             layout=bind_group_layout,
             entries=[
@@ -210,7 +182,7 @@ class WGPUTextureRenderer:
                 },
                 {
                     "binding": 2,
-                    "resource": sampler,
+                    "resource": self.resource_manager.nearest_sampler,
                 },
             ],
             label="texture_renderer_bind_group",

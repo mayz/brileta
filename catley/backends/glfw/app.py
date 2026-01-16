@@ -36,7 +36,6 @@ class GlfwApp(App[GraphicsContextImplClass]):
 
     def __init__(self, app_config: AppConfig) -> None:
         super().__init__(app_config)
-
         self._initialize_window(app_config)
         self._initialize_graphics()
         self._initialize_controller()

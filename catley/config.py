@@ -69,10 +69,22 @@ AUDIO_ENABLED = True
 APP_BACKEND: Literal["tcod", "glfw"] = "glfw"
 
 # Graphics context selection
-GRAPHICS_BACKEND: Literal["tcod", "moderngl", "wgpu"] = "wgpu"
+# - "moderngl":
+#   Fast startup (~350ms). Recommended for now.
+# - "wgpu":
+#   Ready to go and future-proof (WebGPU/Vulkan/Metal).
+#   BUT: slow startup (~1200ms) due to pipeline state object creation overhead.
+#   The first pipeline creation triggers Metal shader compiler init (~165ms) and
+#   adapter/device enumeration (~290ms). wgpu-py doesn't yet support Apple's
+#   Metal Binary Archives for caching compiled pipelines.
+#
+#   When switching to "wgpu" as a default, consider implementing a loading screen
+#   to mask the ~1.2s init time, or just accept the startup cost.
+GRAPHICS_BACKEND: Literal["tcod", "moderngl", "wgpu"] = "moderngl"
 
 # Lighting system selection (independent of graphics backend)
-LIGHTING_BACKEND: Literal["cpu", "moderngl", "wgpu"] = "wgpu"
+# Same tradeoffs as GRAPHICS_BACKEND above.
+LIGHTING_BACKEND: Literal["cpu", "moderngl", "wgpu"] = "moderngl"
 
 # These are the valid combinations of
 # APP_BACKEND, GRAPHICS_BACKEND, and LIGHTING_BACKEND.

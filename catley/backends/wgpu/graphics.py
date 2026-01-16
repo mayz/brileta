@@ -84,6 +84,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
     def _initialize(self) -> None:
         """Initialize WGPU device and context."""
         # Create WGPU adapter and device first (required before getting context)
+        # Note: This takes ~290ms due to GPU enumeration - unavoidable with WGPU.
         adapter = wgpu.gpu.request_adapter_sync(
             power_preference=wgpu.PowerPreference.high_performance  # type: ignore
         )
@@ -111,7 +112,9 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         self.atlas_texture = self._load_atlas_texture()
         self.uv_map = self._precalculate_uv_map()
 
-        # Initialize screen renderer with the correct surface format
+        # Initialize all renderers
+        # Note: First pipeline creation pays ~165ms for Metal shader compiler init.
+        # This is unavoidable with current wgpu-py (no Metal Binary Archive support).
         self.screen_renderer = WGPUScreenRenderer(
             self.resource_manager,
             self.shader_manager,
@@ -119,7 +122,6 @@ class WGPUGraphicsContext(BaseGraphicsContext):
             surface_format,
         )
 
-        # Initialize texture renderer for off-screen rendering
         self.texture_renderer = WGPUTextureRenderer(
             self.resource_manager,
             self.shader_manager,
@@ -128,14 +130,12 @@ class WGPUGraphicsContext(BaseGraphicsContext):
             self.uv_map,
         )
 
-        # Initialize UI texture renderer
         self.ui_texture_renderer = WGPUUITextureRenderer(
             self.resource_manager,
             self.shader_manager,
             surface_format,
         )
 
-        # Initialize background renderer for immediate rendering
         from .background_renderer import WGPUBackgroundRenderer
 
         self.background_renderer = WGPUBackgroundRenderer(
@@ -144,7 +144,6 @@ class WGPUGraphicsContext(BaseGraphicsContext):
             surface_format,
         )
 
-        # Initialize environmental effect renderer for batched effect rendering
         from .environmental_effect_renderer import WGPUEnvironmentalEffectRenderer
 
         self.environmental_effect_renderer = WGPUEnvironmentalEffectRenderer(
@@ -156,8 +155,10 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         # Set up dimensions and coordinate converter
         self.update_dimensions()
 
-        # Pre-compile shaders to avoid runtime compilation stutters
-        self._precompile_shaders()
+        # Note: Shader precompilation is not needed here because all renderers
+        # compile their shaders during pipeline creation above. The shader manager
+        # caches compiled modules, so calling _precompile_shaders() would just
+        # do redundant cache lookups.
 
     def _precompile_shaders(self) -> None:
         """Pre-compile commonly used shaders to avoid runtime compilation stutters.

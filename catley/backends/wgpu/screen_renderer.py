@@ -79,30 +79,11 @@ class WGPUScreenRenderer:
         self._cached_bind_group = self._create_bind_group()
 
     def _create_pipeline(self) -> None:
-        """Create the WGPU render pipeline - COPIED EXACTLY from working UI renderer."""
-        # Create bind group layout - EXACT copy from UI renderer
-        self.bind_group_layout = self.shader_manager.create_bind_group_layout(
-            entries=[
-                {
-                    "binding": 0,
-                    "visibility": wgpu.ShaderStage.VERTEX | wgpu.ShaderStage.FRAGMENT,
-                    "buffer": {"type": "uniform"},
-                },
-                {
-                    "binding": 1,
-                    "visibility": wgpu.ShaderStage.FRAGMENT,
-                    "texture": {"sample_type": "float", "view_dimension": "2d"},
-                },
-                {
-                    "binding": 2,
-                    "visibility": wgpu.ShaderStage.FRAGMENT,
-                    "sampler": {"type": "filtering"},
-                },
-            ],
-            label="screen_renderer_bind_group_layout",
-        )
+        """Create the WGPU render pipeline for screen rendering."""
+        # Use shared bind group layout from resource manager
+        self.bind_group_layout = self.resource_manager.standard_bind_group_layout
 
-        # Define vertex buffer layout - EXACT copy from UI renderer
+        # Define vertex buffer layout
         vertex_layout = [
             {
                 "array_stride": VERTEX_DTYPE.itemsize,
@@ -127,7 +108,7 @@ class WGPUScreenRenderer:
             }
         ]
 
-        # Create render pipeline - EXACT copy from UI renderer
+        # Create render pipeline
         targets = [
             {
                 "format": self.surface_format,
@@ -157,14 +138,8 @@ class WGPUScreenRenderer:
             cache_key="screen_renderer_pipeline",
         )
 
-        # Create sampler - EXACT copy from UI renderer
-        self.sampler = self.resource_manager.device.create_sampler(
-            mag_filter=wgpu.FilterMode.nearest,  # type: ignore
-            min_filter=wgpu.FilterMode.nearest,  # type: ignore
-            mipmap_filter=wgpu.MipmapFilterMode.nearest,  # type: ignore
-            address_mode_u=wgpu.AddressMode.clamp_to_edge,  # type: ignore
-            address_mode_v=wgpu.AddressMode.clamp_to_edge,  # type: ignore
-        )
+        # Use shared nearest sampler from resource manager
+        self.sampler = self.resource_manager.nearest_sampler
 
     def _create_bind_group(self) -> wgpu.GPUBindGroup:
         """Create the bind group for atlas texture and uniform buffer."""

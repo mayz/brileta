@@ -19,6 +19,7 @@ class WGPUResourceManager:
     - Buffer caching for vertex/index data
     - Render pass attachment management
     - Resource cleanup and lifecycle management
+    - Shared bind group layouts and samplers for renderer initialization
 
     The resource manager is designed to be shared between different WGPU
     components like WGPUGraphicsContext and WGPUScreenRenderer.
@@ -45,6 +46,84 @@ class WGPUResourceManager:
 
         # Track texture views for render targets
         self._texture_view_cache: dict[int, wgpu.GPUTextureView] = {}
+
+        # Shared bind group layouts and samplers (created lazily)
+        self._standard_bind_group_layout: wgpu.GPUBindGroupLayout | None = None
+        self._nearest_sampler: wgpu.GPUSampler | None = None
+        self._linear_sampler: wgpu.GPUSampler | None = None
+
+    @property
+    def standard_bind_group_layout(self) -> wgpu.GPUBindGroupLayout:
+        """Get the shared standard bind group layout for texture rendering.
+
+        This layout is used by most renderers and includes:
+        - binding 0: uniform buffer (vertex + fragment)
+        - binding 1: 2d texture (fragment)
+        - binding 2: filtering sampler (fragment)
+
+        Creating this once and sharing it across renderers saves GPU calls
+        during initialization.
+        """
+        if self._standard_bind_group_layout is None:
+            self._standard_bind_group_layout = self.device.create_bind_group_layout(
+                entries=[
+                    {
+                        "binding": 0,
+                        "visibility": wgpu.ShaderStage.VERTEX
+                        | wgpu.ShaderStage.FRAGMENT,
+                        "buffer": {"type": wgpu.BufferBindingType.uniform},
+                    },
+                    {
+                        "binding": 1,
+                        "visibility": wgpu.ShaderStage.FRAGMENT,
+                        "texture": {
+                            "sample_type": wgpu.TextureSampleType.float,
+                            "view_dimension": "2d",
+                        },
+                    },
+                    {
+                        "binding": 2,
+                        "visibility": wgpu.ShaderStage.FRAGMENT,
+                        "sampler": {"type": wgpu.SamplerBindingType.filtering},
+                    },
+                ],
+                label="shared_standard_bind_group_layout",
+            )
+        return self._standard_bind_group_layout
+
+    @property
+    def nearest_sampler(self) -> wgpu.GPUSampler:
+        """Get the shared nearest-neighbor sampler.
+
+        Used by most renderers for pixel-perfect rendering of sprites and tiles.
+        """
+        if self._nearest_sampler is None:
+            self._nearest_sampler = self.device.create_sampler(
+                mag_filter=wgpu.FilterMode.nearest,  # type: ignore
+                min_filter=wgpu.FilterMode.nearest,  # type: ignore
+                mipmap_filter=wgpu.MipmapFilterMode.nearest,  # type: ignore
+                address_mode_u=wgpu.AddressMode.clamp_to_edge,  # type: ignore
+                address_mode_v=wgpu.AddressMode.clamp_to_edge,  # type: ignore
+                label="shared_nearest_sampler",
+            )
+        return self._nearest_sampler
+
+    @property
+    def linear_sampler(self) -> wgpu.GPUSampler:
+        """Get the shared linear filtering sampler.
+
+        Used for smooth gradients and environmental effects.
+        """
+        if self._linear_sampler is None:
+            self._linear_sampler = self.device.create_sampler(
+                mag_filter=wgpu.FilterMode.linear,  # type: ignore
+                min_filter=wgpu.FilterMode.linear,  # type: ignore
+                mipmap_filter=wgpu.MipmapFilterMode.linear,  # type: ignore
+                address_mode_u=wgpu.AddressMode.clamp_to_edge,  # type: ignore
+                address_mode_v=wgpu.AddressMode.clamp_to_edge,  # type: ignore
+                label="shared_linear_sampler",
+            )
+        return self._linear_sampler
 
     def get_or_create_render_texture(
         self,
@@ -203,6 +282,12 @@ class WGPUResourceManager:
 
         # Clear texture view cache (views don't need explicit cleanup)
         self._texture_view_cache.clear()
+
+        # Clear shared resources (bind group layouts and samplers don't need
+        # explicit cleanup in WGPU, just clear references)
+        self._standard_bind_group_layout = None
+        self._nearest_sampler = None
+        self._linear_sampler = None
 
     def get_cache_info(self) -> dict[str, int]:
         """Get information about cached resources.
