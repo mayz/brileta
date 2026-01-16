@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, ClassVar, cast
 
 from catley import colors
 
@@ -25,11 +25,19 @@ class ActionFormatter:
 
         return ("Unknown", "white")
 
+    # Verbs where the weapon is the direct object (e.g., "Throw Knife at Target")
+    # rather than the instrument (e.g., "Shoot Target with Pistol")
+    THROWN_VERBS: ClassVar[set[str]] = {"throw", "hurl", "fling", "toss", "lob"}
+
     @staticmethod
     def get_attack_display_name(
         weapon: Item, attack_mode: str, target_name: str
     ) -> str:
-        """Generate attack display name using the weapon's verb."""
+        """Generate attack display name using the weapon's verb.
+
+        Most weapons use instrument phrasing: "Verb Target with Weapon"
+        Thrown weapons use direct object phrasing: "Verb Weapon at Target"
+        """
         if attack_mode == "melee" and weapon.melee_attack:
             melee = cast("MeleeAttack", weapon.melee_attack)
             verb = melee._spec.verb
@@ -37,6 +45,9 @@ class ActionFormatter:
         if attack_mode == "ranged" and weapon.ranged_attack:
             ranged = cast("RangedAttack", weapon.ranged_attack)
             verb = ranged._spec.verb
+            # Thrown weapons use different grammar: "Throw Knife at Target"
+            if verb.lower() in ActionFormatter.THROWN_VERBS:
+                return f"{verb.title()} {weapon.name} at {target_name}"
             return f"{verb.title()} {target_name} with {weapon.name}"
         return f"Attack {target_name} with {weapon.name}"
 

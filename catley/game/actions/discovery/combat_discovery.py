@@ -39,9 +39,14 @@ class CombatActionDiscovery:
     def get_all_combat_actions(
         self, controller: Controller, actor: Character, context: ActionContext
     ) -> list[ActionOption]:
-        """Discover all combat actions without any UI presentation logic."""
+        """Discover all combat actions without any UI presentation logic.
+
+        Only shows actions for the currently active weapon, not all equipped weapons.
+        This keeps the action panel focused and less overwhelming.
+        """
         options: list[ActionOption] = []
-        equipped_weapons = [w for w in actor.inventory.attack_slots if w is not None]
+        active_weapon = actor.inventory.get_active_weapon()
+        equipped_weapons = [active_weapon] if active_weapon else []
 
         if not equipped_weapons:
             from catley.game.items.item_types import FISTS_TYPE
@@ -135,10 +140,13 @@ class CombatActionDiscovery:
     ) -> list[ActionOption]:
         """Get combat options specifically for a given target.
 
+        Only shows actions for the currently active weapon, not all equipped weapons.
+
         DEPRECATED: used by the old state machine, will be removed in Task 3.
         """
         options: list[ActionOption] = []
-        equipped_weapons = [w for w in actor.inventory.attack_slots if w is not None]
+        active_weapon = actor.inventory.get_active_weapon()
+        equipped_weapons = [active_weapon] if active_weapon else []
 
         if not equipped_weapons:
             from catley.game.items.item_types import FISTS_TYPE
@@ -231,14 +239,6 @@ class CombatActionDiscovery:
                 display_name = self.formatter.get_attack_display_name(
                     weapon, "ranged", target.name
                 )
-                ammo_warning = ""
-                current_ammo = weapon.ranged_attack.current_ammo
-                if current_ammo == 1:
-                    ammo_warning = " (LAST SHOT!)"
-                elif current_ammo <= 3:
-                    ammo_warning = " (Low Ammo)"
-
-                display_name += ammo_warning
                 action_id = f"ranged-{weapon.name}-{target.name}"
 
                 options.append(
@@ -267,12 +267,17 @@ class CombatActionDiscovery:
     ) -> list[ActionOption]:
         """Generate a flat list of every possible end combat action.
 
+        Only shows actions for the currently active weapon, not all equipped weapons.
+
         DEPRECATED: used by the old state machine, will be removed in Task 3.
         """
         context = self.context_builder.build_context(controller, actor)
 
         options: list[ActionOption] = []
-        equipped_weapons = [w for w in actor.inventory.attack_slots if w is not None]
+        # Note: The weapon filtering is handled by get_combat_options_for_target(),
+        # but we keep this check for the empty fallback case.
+        active_weapon = actor.inventory.get_active_weapon()
+        equipped_weapons = [active_weapon] if active_weapon else []
 
         if not equipped_weapons:
             from catley.game.items.item_types import FISTS_TYPE

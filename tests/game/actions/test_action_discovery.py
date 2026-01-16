@@ -517,16 +517,14 @@ def test_tile_specific_door_actions() -> None:
     assert go_action.execute is not None  # Uses pathfinding
 
 
-def test_multiple_weapons_have_unique_action_ids() -> None:
-    """Regression test: weapons with same verb must have unique action IDs.
+def test_combat_actions_show_only_active_weapon() -> None:
+    """Combat actions should only show the currently active weapon's attacks.
 
-    Previously, action IDs were generated as f"ranged-{verb}-{target}" which
-    caused ID collisions when multiple weapons used the same verb (e.g., "Shoot").
-    This broke the sticky hotkey system since it uses action IDs as dict keys.
-
-    Fix: Action IDs now include the weapon name to ensure uniqueness.
+    The action panel shows actions for the active weapon only (not all equipped
+    weapons) to reduce clutter and match Fallout 1 & 2's design. Players switch
+    weapons explicitly to see different options.
     """
-    # Set up player with two ranged weapons that both use "Shoot" verb
+    # Set up player with two ranged weapons
     gw = DummyGameWorld()
     player = Character(
         0,
@@ -571,29 +569,33 @@ def test_multiple_weapons_have_unique_action_ids() -> None:
     disc = ActionDiscovery()
     ctx = disc._build_context(cast(Controller, controller), player)
 
-    # Get combat options for this specific target
+    # With pistol active (slot 0, the default), should only see pistol actions
+    assert player.inventory.active_weapon_slot == 0
     opts = disc._get_combat_options_for_target(
         cast(Controller, controller), player, target, ctx
     )
-
-    # Filter to ranged attacks only
     ranged_opts = [o for o in opts if "ranged" in o.id.lower()]
 
-    # Should have two ranged options (one per weapon)
-    assert len(ranged_opts) == 2, f"Expected 2 ranged options, got {len(ranged_opts)}"
-
-    # Critical: action IDs must be unique
-    action_ids = [o.id for o in ranged_opts]
-    assert len(action_ids) == len(set(action_ids)), (
-        f"Action IDs must be unique but got duplicates: {action_ids}"
+    # Should have exactly ONE ranged option (for active weapon only)
+    assert len(ranged_opts) == 1, f"Expected 1 ranged option, got {len(ranged_opts)}"
+    assert pistol.name in ranged_opts[0].id, (
+        f"Expected pistol name '{pistol.name}' in action ID: {ranged_opts[0].id}"
     )
 
-    # Verify IDs contain weapon names (not just verb)
-    assert any(pistol.name in aid for aid in action_ids), (
-        f"Expected pistol name '{pistol.name}' in one of the action IDs: {action_ids}"
+    # Switch to shotgun (slot 1) and verify actions change
+    player.inventory.switch_to_weapon_slot(1)
+    assert player.inventory.active_weapon_slot == 1
+
+    ctx = disc._build_context(cast(Controller, controller), player)
+    opts = disc._get_combat_options_for_target(
+        cast(Controller, controller), player, target, ctx
     )
-    assert any(shotgun.name in aid for aid in action_ids), (
-        f"Expected shotgun name '{shotgun.name}' in one of the action IDs: {action_ids}"
+    ranged_opts = [o for o in opts if "ranged" in o.id.lower()]
+
+    # Should now show shotgun actions instead
+    assert len(ranged_opts) == 1, f"Expected 1 ranged option, got {len(ranged_opts)}"
+    assert shotgun.name in ranged_opts[0].id, (
+        f"Expected shotgun name '{shotgun.name}' in action ID: {ranged_opts[0].id}"
     )
 
 

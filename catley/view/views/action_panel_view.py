@@ -152,7 +152,7 @@ class ActionPanelView(TextView):
         self._previous_hotkeys = new_hotkeys
 
     def get_cache_key(self) -> tuple:
-        """Cache key based on mouse position and view dimensions."""
+        """Cache key based on mouse position, weapon state, and view dimensions."""
         mouse_pos = str(self.controller.gw.mouse_tile_location_on_map)
         player = self.controller.gw.player
         player_pos = f"{player.x},{player.y}"
@@ -160,6 +160,9 @@ class ActionPanelView(TextView):
             player.x, player.y
         )
         current_tile_dimensions = self.controller.graphics.tile_dimensions
+        # Include inventory revision to detect weapon switches and inventory changes,
+        # ensuring the panel re-renders immediately when the player switches weapons.
+        inventory_revision = player.inventory.revision
         return (
             mouse_pos,
             player_pos,
@@ -167,6 +170,7 @@ class ActionPanelView(TextView):
             current_tile_dimensions,
             self.view_width_px,
             self.view_height_px,
+            inventory_revision,
         )
 
     def set_bounds(self, x1: int, y1: int, x2: int, y2: int) -> None:
@@ -314,6 +318,11 @@ class ActionPanelView(TextView):
                     if self._cached_target_name and isinstance(
                         self._cached_target_name, str
                     ):
+                        # Handle thrown weapons first: "Throw Weapon at TargetName"
+                        # to just "Throw Weapon" (must be before the generic replace)
+                        action_name = action_name.replace(
+                            f" at {self._cached_target_name}", ""
+                        )
                         # Remove patterns like "Verb TargetName with Weapon"
                         # to just "Verb with Weapon"
                         action_name = action_name.replace(
