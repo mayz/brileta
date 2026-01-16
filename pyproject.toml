@@ -11,10 +11,8 @@ dependencies = [
     "pillow>=12.0.0",
     "soundfile>=0.13.1",
     "tcod>=19.6.3",
-    # wgpu is future-proofing for Apple dropping OpenGL.
-    # Not actively upgrading - later versions have breaking API changes.
-    # See docs/plan/WGPU_MIGRATION_PLAN.md for details.
-    "wgpu>=0.23.0",
+    "wgpu>=0.29.0",
+    "rendercanvas>=2.4.0",
 ]
 
 [tool.setuptools.packages.find]
@@ -25,9 +23,7 @@ pythonpath = "."
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = "-ra -n auto"
-filterwarnings = [
-    "ignore:There is no current event loop:DeprecationWarning:wgpu.gui.glfw",
-]
+filterwarnings = []
 
 [tool.ruff.lint]
 select = [

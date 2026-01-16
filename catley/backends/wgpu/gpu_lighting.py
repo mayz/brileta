@@ -874,6 +874,7 @@ class GPULightingSystem(LightingSystem):
             # Create bind group with current resources (only if needed)
             if self._bind_group is None:
                 self._create_bind_group()
+            assert self._bind_group is not None  # Set by _create_bind_group()
 
             # Create command encoder and render pass
             assert self.device is not None
@@ -932,7 +933,8 @@ class GPULightingSystem(LightingSystem):
                 if mapped_data is None:
                     print("Failed to read mapped buffer data")
                     return None
-                result_data = np.frombuffer(mapped_data, dtype=np.float32)
+                # wgpu returns memoryview but types it as ArrayLike
+                result_data = np.frombuffer(mapped_data, dtype=np.float32)  # type: ignore[arg-type]
             finally:
                 # Always unmap the buffer, even if mapping failed
                 try:

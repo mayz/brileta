@@ -211,7 +211,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         self.window_wrapper = WGPUWindowWrapper(self.window, vsync=self.vsync)
 
         # Get WGPU context (GPUSurface) from the window wrapper
-        self.wgpu_context = self.window_wrapper.get_context()
+        self.wgpu_context = self.window_wrapper.get_context("wgpu")
 
         # Configure the WGPU context
         surface_format = wgpu.TextureFormat.bgra8unorm
@@ -514,8 +514,10 @@ class WGPUGraphicsContext(BaseGraphicsContext):
             self.resource_manager.queue.submit([command_buffer])
 
         finally:
-            # Always present the frame, even if rendering failed
-            self.wgpu_context.present()
+            # Always present the frame, even if rendering failed.
+            # rendercanvas wraps wgpu's GPUCanvasContext - access the underlying
+            # context to call present() since we manage our own render loop.
+            self.wgpu_context._wgpu_context.present()  # type: ignore[attr-defined]
 
     def add_tile_to_screen(
         self,

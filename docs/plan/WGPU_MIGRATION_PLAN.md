@@ -4,9 +4,11 @@ This document outlines the specific technical steps for migrating Catley from Mo
 
 ## Current Status
 
-**Active backend:** ModernGL (works, is the default)
+**Active backend:** WGPU (default since January 2026)
 
-**wgpu backend:** Exists but not actively maintained. The wgpu-py package releases frequently with breaking API changes. We're intentionally staying on 0.23.x until there's a reason to migrate (e.g., Apple actually removes OpenGL support). When `uv sync -U` shows wgpu updates available, ignore them unless you're ready to fix breakage in `catley/backends/wgpu/`.
+**ModernGL backend:** Available as fallback. Useful during WGPU upgrades or if platform-specific issues arise.
+
+**Upgrade strategy:** Keep wgpu-py reasonably current (within 2-3 versions) to avoid accumulating breaking changes. The canvas/GUI APIs have stabilized with the `rendercanvas` split.
 
 **Important**: Maintain implementation parity between backends to prevent subtle bugs. Unintentional divergences can cause hard-to-debug visual artifacts. For example, the introduction of dirty-tile optimization initially caused visual artifacts (ghosting of previously lit tiles). Root cause: the WGPU implementation had diverged from ModernGL by adding a transparent tile optimization that skipped generating vertices for fully transparent tiles. This caused stale vertex data to persist in the VBO. The fix was to remove this optimization and ensure WGPU matches ModernGL's behavior of always generating vertices for all tiles.
 

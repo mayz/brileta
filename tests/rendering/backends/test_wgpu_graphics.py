@@ -183,7 +183,9 @@ class TestWGPUGraphicsContext:
             # Mock the actual WGPU calls since we don't want to create real windows
             with (
                 patch("wgpu.gpu.request_adapter_sync") as mock_adapter,
-                patch("wgpu.gui.glfw.get_glfw_present_methods") as mock_present_methods,
+                patch(
+                    "catley.backends.wgpu.window_wrapper.get_glfw_present_methods"
+                ) as mock_present_methods,
                 patch(
                     "catley.backends.wgpu.window_wrapper.WGPUWindowWrapper.get_context"
                 ) as mock_get_context,
