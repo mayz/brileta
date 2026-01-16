@@ -132,3 +132,71 @@ def test_all_tiles_have_hazard_fields() -> None:
         assert field_names is not None
         assert "hazard_damage" in field_names
         assert "hazard_damage_type" in field_names
+
+
+# --- Shadow Casting Tests ---
+
+
+def test_get_casts_shadows_map_basic() -> None:
+    """Test vectorized shadow-casting lookup for basic tile types."""
+    # Create a 2D array of tile IDs
+    ids = np.array(
+        [
+            [TileTypeID.FLOOR, TileTypeID.WALL],
+            [TileTypeID.BOULDER, TileTypeID.OUTDOOR_WALL],
+        ]
+    )
+    shadows = tile_types.get_casts_shadows_map(ids)
+
+    # Floor and Wall don't cast shadows, Boulder and Outdoor Wall do
+    assert shadows.shape == ids.shape
+    assert shadows[0, 0] is np.False_  # FLOOR
+    assert shadows[0, 1] is np.False_  # WALL
+    assert shadows[1, 0] is np.True_  # BOULDER
+    assert shadows[1, 1] is np.True_  # OUTDOOR_WALL
+
+
+def test_get_casts_shadows_map_all_tiles() -> None:
+    """Ensure get_casts_shadows_map works for all tile types."""
+    all_ids = np.array([list(TileTypeID)])
+    shadows = tile_types.get_casts_shadows_map(all_ids)
+
+    # Verify each result matches the individual lookup
+    for i, tile_id in enumerate(TileTypeID):
+        data = tile_types.get_tile_type_data_by_id(tile_id)
+        assert shadows[0, i] == data["casts_shadows"], (
+            f"Mismatch for {tile_id.name}: vectorized={shadows[0, i]}, "
+            f"individual={data['casts_shadows']}"
+        )
+
+
+def test_get_casts_shadows_map_empty_array() -> None:
+    """Empty arrays should return empty results."""
+    ids = np.array([], dtype=np.uint8).reshape(0, 0)
+    shadows = tile_types.get_casts_shadows_map(ids)
+    assert shadows.shape == (0, 0)
+
+
+def test_shadow_casting_tiles_are_correct() -> None:
+    """Verify which tiles are expected to cast shadows."""
+    # These tiles should cast shadows (from tile_types.py definitions)
+    shadow_casters = [TileTypeID.OUTDOOR_WALL, TileTypeID.BOULDER]
+
+    # These tiles should NOT cast shadows
+    non_shadow_casters = [
+        TileTypeID.FLOOR,
+        TileTypeID.WALL,
+        TileTypeID.OUTDOOR_FLOOR,
+        TileTypeID.DOOR_CLOSED,
+        TileTypeID.DOOR_OPEN,
+        TileTypeID.ACID_POOL,
+        TileTypeID.HOT_COALS,
+    ]
+
+    for tile_id in shadow_casters:
+        data = tile_types.get_tile_type_data_by_id(tile_id)
+        assert data["casts_shadows"], f"{tile_id.name} should cast shadows"
+
+    for tile_id in non_shadow_casters:
+        data = tile_types.get_tile_type_data_by_id(tile_id)
+        assert not data["casts_shadows"], f"{tile_id.name} should not cast shadows"

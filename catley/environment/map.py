@@ -105,6 +105,7 @@ class GameMap:
         self._dark_appearance_map_cache: np.ndarray | None = None
         self._light_appearance_map_cache: np.ndarray | None = None
         self._animation_params_cache: np.ndarray | None = None
+        self._casts_shadows_map_cache: np.ndarray | None = None
 
         # Per-cell animation state for tiles that animate (color oscillation, flicker)
         self.animation_state = self._init_animation_state()
@@ -116,6 +117,7 @@ class GameMap:
         self._dark_appearance_map_cache = None
         self._light_appearance_map_cache = None
         self._animation_params_cache = None
+        self._casts_shadows_map_cache = None
         self.structural_revision += 1
 
     @property
@@ -242,6 +244,18 @@ class GameMap:
         if self._animation_params_cache is None:
             self._animation_params_cache = tile_types.get_animation_map(self.tiles)
         return self._animation_params_cache
+
+    @property
+    def casts_shadows(self) -> np.ndarray:
+        """Boolean array of shape (width, height) where True means tile casts shadows.
+
+        Used by the lighting system to determine which tiles should block light
+        and cast shadows. This cached property avoids per-tile lookups during
+        shadow collection, reducing 23M calls to a single vectorized operation.
+        """
+        if self._casts_shadows_map_cache is None:
+            self._casts_shadows_map_cache = tile_types.get_casts_shadows_map(self.tiles)
+        return self._casts_shadows_map_cache
 
     def _init_animation_state(self) -> np.ndarray:
         """Initialize animation state array with random values.

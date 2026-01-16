@@ -1197,6 +1197,10 @@ class TestGPUDirectionalShadows:
         # Use simple integer values since the system just checks tile_id
         self.game_map.tiles = np.full((10, 10), 1, dtype=int)  # 1 = floor tile
 
+        # Mock casts_shadows property for vectorized shadow collection
+        # Floor tiles don't cast shadows, so all False
+        self.game_map.casts_shadows = np.full((10, 10), False, dtype=bool)
+
         # Create outdoor region for directional shadows
         self.outdoor_region = MapRegion.create_outdoor_region(
             map_region_id=1, region_type="outdoor", sky_exposure=1.0

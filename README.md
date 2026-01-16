@@ -4,7 +4,7 @@ A post-apocalyptic roguelike.
 
 ## Getting Started
 
-1. Install **Python 3.13**.
+1. Install **Python 3.14**.
 2. Run `uv sync` to create a virtual environment and install dependencies from `uv.lock`.
 3. Run `make`.
 4. Run the game with `make run`.

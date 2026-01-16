@@ -302,6 +302,9 @@ class GameWorld:
                     elif current_tile_id == TileTypeID.WALL:
                         self.game_map.tiles[x, y] = TileTypeID.OUTDOOR_WALL
 
+        # Invalidate cached property maps since tile types changed
+        self.game_map.invalidate_property_caches()
+
     def _position_player(self, room: Rect) -> None:
         """Place the player in the center of ``room``."""
         # Use teleport() to sync logical and visual positions instantly

@@ -4,7 +4,7 @@ This is an in-progress post-apocalyptic roguelike CRPG inspired by Fallout 1 & 2
 
 ## Dev Environment
 
-My local Python version is 3.13.
+My local Python version is 3.14.
 
 The Python code is set up as a Python package that was set up with `uv`.
 

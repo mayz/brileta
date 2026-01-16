@@ -355,6 +355,9 @@ _tile_type_properties_hazard_damage_type = np.array(
 _tile_type_properties_animation = np.array(
     [t["animation"] for t in _registered_tile_type_data_list], dtype=TileAnimationParams
 )
+_tile_type_properties_casts_shadows = np.array(
+    [t["casts_shadows"] for t in _registered_tile_type_data_list], dtype=bool
+)
 
 # --- Public Helper Functions for Accessing Tile Properties ---
 
@@ -476,3 +479,22 @@ def get_animation_map(tile_type_ids_map: np.ndarray) -> np.ndarray:
         A 2D numpy array of TileAnimationParams structs matching the input shape.
     """
     return _tile_type_properties_animation[tile_type_ids_map]
+
+
+def get_casts_shadows_map(tile_type_ids_map: np.ndarray) -> np.ndarray:
+    """
+    Vectorized lookup for shadow-casting tiles.
+
+    Converts a map of TileTypeIDs into a boolean map where True means
+    the tile at that position casts shadows for lighting calculations.
+
+    This is a performance optimization that replaces per-tile lookups
+    in the shadow collection loop with a single vectorized operation.
+
+    Args:
+        tile_type_ids_map: A 2D numpy array of TileTypeID values.
+
+    Returns:
+        A 2D boolean numpy array matching the input shape.
+    """
+    return _tile_type_properties_casts_shadows[tile_type_ids_map]
