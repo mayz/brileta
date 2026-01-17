@@ -1,3 +1,5 @@
+For design discussions, read README.md for project context and design principles.
+
 ## Dev Environment
 
 My local Python version is 3.14.
