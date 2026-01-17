@@ -261,6 +261,7 @@ class ActionBrowserMenu(Menu):
             ActionCategory.ITEMS: colors.GREEN,
             ActionCategory.ENVIRONMENT: colors.ORANGE,
             ActionCategory.SOCIAL: colors.MAGENTA,
+            ActionCategory.STUNT: colors.YELLOW,
         }
         return color_map.get(category, colors.WHITE)
 

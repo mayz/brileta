@@ -40,6 +40,7 @@ from catley.game.actions.executors.recovery import (
     SleepExecutor,
     UseConsumableExecutor,
 )
+from catley.game.actions.executors.stunts import PushExecutor
 from catley.game.actions.misc import (
     DropItemIntent,
     PickupIntent,
@@ -53,6 +54,7 @@ from catley.game.actions.recovery import (
     SleepIntent,
     UseConsumableIntent,
 )
+from catley.game.actions.stunts import PushIntent
 from catley.game.actors import Character
 from catley.game.actors.container import Container
 
@@ -98,6 +100,7 @@ class ActionRouter:
             ComfortableSleepIntent: ComfortableSleepExecutor(),
             AreaEffectIntent: WeaponAreaEffectExecutor(),
             EnvironmentalDamageIntent: EnvironmentalDamageExecutor(),
+            PushIntent: PushExecutor(),
         }
 
     def execute_intent(self, intent: GameIntent) -> None:

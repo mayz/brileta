@@ -19,6 +19,7 @@ class ActionDiscovery:
 
     TOP_LEVEL_CATEGORIES: ClassVar[dict[str, list[ActionCategory]]] = {
         "Attack...": [ActionCategory.COMBAT],
+        "Stunts...": [ActionCategory.STUNT],
         "Interact with Environment...": [ActionCategory.ENVIRONMENT],
         "Use Item...": [ActionCategory.ITEMS],
         "Social Actions...": [ActionCategory.SOCIAL],
@@ -56,6 +57,9 @@ class ActionDiscovery:
             self.combat_discovery.discover_combat_actions(controller, actor, context)
         )
         all_actions.extend(
+            self.combat_discovery.discover_stunt_actions(controller, actor, context)
+        )
+        all_actions.extend(
             self.item_discovery.discover_item_actions(controller, actor, context)
         )
         all_actions.extend(
@@ -75,6 +79,9 @@ class ActionDiscovery:
         all_actions: list[ActionOption] = []
         all_actions.extend(
             self.combat_discovery.discover_combat_actions(controller, actor, context)
+        )
+        all_actions.extend(
+            self.combat_discovery.discover_stunt_actions(controller, actor, context)
         )
         all_actions.extend(
             self.item_discovery.discover_item_actions(controller, actor, context)
@@ -97,10 +104,19 @@ class ActionDiscovery:
     ) -> list[ActionOption]:
         context = self.context_builder.build_context(controller, actor)
         options: list[ActionOption] = []
+        # Combat actions (weapon attacks)
         options.extend(
             self.combat_discovery.get_combat_options_for_target(
                 controller, actor, target, context
             )
+        )
+        # Stunt actions (Push, etc.) - filter to only this target
+        options.extend(
+            stunt
+            for stunt in self.combat_discovery.discover_stunt_actions(
+                controller, actor, context
+            )
+            if stunt.static_params.get("defender") == target
         )
         return options
 
@@ -109,7 +125,10 @@ class ActionDiscovery:
     ) -> list[ActionOption]:
         def relevance_score(option: ActionOption) -> int:
             score = 0
-            if context.in_combat and option.category == ActionCategory.COMBAT:
+            if context.in_combat and option.category in (
+                ActionCategory.COMBAT,
+                ActionCategory.STUNT,
+            ):
                 score += 100
             success_prob = option.success_probability
             if success_prob is not None:

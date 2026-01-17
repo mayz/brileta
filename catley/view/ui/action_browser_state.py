@@ -64,6 +64,8 @@ class ActionBrowserStateMachine:
                 return self._get_environment_category_options(controller, actor)
             case "social":
                 return self._get_social_category_options(controller, actor)
+            case "stunt":
+                return self._get_stunt_category_options(controller, actor)
             case _:
                 self.ui_state = "main"
                 return self._get_main_menu_options(controller, actor)
@@ -181,6 +183,18 @@ class ActionBrowserStateMachine:
         options.extend(
             self.action_discovery.get_options_for_category(
                 controller, actor, ActionCategory.SOCIAL
+            )
+        )
+        return options
+
+    def _get_stunt_category_options(
+        self, controller: Controller, actor: Character
+    ) -> list[ActionOption]:
+        """Get available stunt actions (Push, Trip, etc.)."""
+        options = [self._get_back_option()]
+        options.extend(
+            self.action_discovery.get_options_for_category(
+                controller, actor, ActionCategory.STUNT
             )
         )
         return options
@@ -716,7 +730,7 @@ class ActionBrowserStateMachine:
         elif self.current_action_option is not None:
             self.current_action_option = None
             self.fulfilled_requirements = {}
-        elif self.ui_state in ["items", "environment", "social", "combat"]:
+        elif self.ui_state in ["items", "environment", "social", "combat", "stunt"]:
             self.ui_state = "main"
             self.selected_target = None
             self.selected_weapon = None

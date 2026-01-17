@@ -88,11 +88,14 @@ class TurnManager:
         self._cache_dirty = True
 
     def on_player_action(self) -> None:
-        """Update energy for all actors when player acts (V2 - energy only).
+        """Handle per-turn updates when player acts.
 
-        This method now ONLY handles energy accumulation. Action processing
-        is handled separately by process_all_npc_reactions() to eliminate
-        the timing asymmetry that allowed players to outrun equal-speed NPCs.
+        This method is called once per player action and handles:
+        1. Energy accumulation for all actors
+        2. Terrain hazard damage for all NPCs
+
+        Action processing is handled separately by process_all_npc_reactions()
+        which runs every tick to check if NPCs can afford actions.
         """
         # Update cache if needed for performance
         self._update_energy_actors_cache()
@@ -102,9 +105,20 @@ class TurnManager:
             energy_amount = actor.energy.get_speed_based_energy_amount()
             actor.energy.accumulate_energy(energy_amount)
 
+        # Apply terrain hazard damage to all NPCs once per player action.
+        # This ensures NPCs on hot coals take damage each turn, not each tick.
+        for actor in self._energy_actors_cache:
+            if actor is self.player:
+                continue
+            self._apply_terrain_hazard(actor)
+
     def process_all_npc_reactions(self) -> None:
-        """Process all NPCs who can currently afford actions immediately."""
-        # Collect all potential NPC actions
+        """Process all NPCs who can currently afford actions immediately.
+
+        Note: This method is called every game tick to check if NPCs can act.
+        Hazard damage is NOT applied here - it's applied once per player action
+        in on_player_action() to avoid damage being applied every tick.
+        """
         for actor in self._energy_actors_cache:
             if actor is self.player:
                 continue
@@ -118,8 +132,6 @@ class TurnManager:
                     self.execute_intent(action)
                     if hasattr(actor, "energy"):
                         actor.energy.spend(config.ACTION_COST)
-                    # Check for terrain hazard damage after NPC completes their action
-                    self._apply_terrain_hazard(actor)
 
     def _apply_terrain_hazard(self, actor: Actor) -> None:
         """Check if actor is on hazardous terrain and apply damage if so.

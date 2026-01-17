@@ -163,6 +163,9 @@ class ActionPanelView(TextView):
         # Include inventory revision to detect weapon switches and inventory changes,
         # ensuring the panel re-renders immediately when the player switches weapons.
         inventory_revision = player.inventory.revision
+        # Include modifier revision to detect status effect changes (off-balance, etc.),
+        # ensuring probabilities update immediately when player state changes.
+        modifier_revision = player.modifiers.revision
         return (
             mouse_pos,
             player_pos,
@@ -171,6 +174,7 @@ class ActionPanelView(TextView):
             self.view_width_px,
             self.view_height_px,
             inventory_revision,
+            modifier_revision,
         )
 
     def set_bounds(self, x1: int, y1: int, x2: int, y2: int) -> None:
@@ -298,6 +302,7 @@ class ActionPanelView(TextView):
                 ActionCategory.ENVIRONMENT: "Environment",
                 ActionCategory.ITEMS: "Items",
                 ActionCategory.SOCIAL: "Social",
+                ActionCategory.STUNT: "Stunts",
             }
 
             for category, actions in actions_by_category.items():

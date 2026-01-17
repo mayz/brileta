@@ -307,3 +307,63 @@ def test_apply_terrain_hazard_skips_actor_without_game_world() -> None:
 
     # No damage should be applied
     assert player.health.hp == initial_hp
+
+
+def test_npc_on_hazard_takes_damage_once_per_player_action() -> None:
+    """NPC on hazardous tile takes damage once per player action, not per tick.
+
+    Regression test: Hazard damage was being applied every tick when
+    process_all_npc_reactions() was called repeatedly, instead of once
+    per player action cycle.
+    """
+    reset_event_bus_for_testing()
+    gw = DummyGameWorld()
+    player = Character(
+        2, 2, "@", colors.WHITE, "Player", game_world=cast(GameWorld, gw)
+    )
+    gw.player = player
+    gw.add_actor(player)
+
+    # Create an NPC with high toughness to survive multiple hits from hot coals
+    # (1d6 damage each) and speed=0 so they never accumulate enough energy to act
+    npc = NPC(
+        3,
+        3,
+        "r",
+        colors.RED,
+        "Raider",
+        game_world=cast(GameWorld, gw),
+        disposition=Disposition.HOSTILE,
+        toughness=20,  # max_hp = 25, survives several 1d6 hits
+        speed=0,  # No energy accumulation, so NPC can never afford an action
+    )
+    gw.add_actor(npc)
+
+    # Place hot coals under the NPC
+    gw.game_map.tiles[3, 3] = TileTypeID.HOT_COALS
+
+    controller = DummyController(gw=gw)
+    initial_hp = npc.health.hp
+
+    # Simulate one player action - NPC should take hazard damage once
+    controller.turn_manager.on_player_action()
+
+    first_damage = initial_hp - npc.health.hp
+    assert first_damage >= 1, "NPC should take damage from hot coals"
+
+    hp_after_first = npc.health.hp
+
+    # Simulate multiple ticks calling process_all_npc_reactions()
+    # This should NOT apply additional hazard damage
+    for _ in range(5):
+        controller.turn_manager.process_all_npc_reactions()
+
+    assert npc.health.hp == hp_after_first, (
+        "process_all_npc_reactions() should not apply hazard damage - "
+        "only on_player_action() should"
+    )
+
+    # Another player action should apply damage again
+    controller.turn_manager.on_player_action()
+    second_damage = hp_after_first - npc.health.hp
+    assert second_damage >= 1, "NPC should take damage again on next player action"

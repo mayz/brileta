@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, cast
 
 from catley.game import ranges
 from catley.game.actions.combat import AttackIntent
+from catley.game.actions.stunts import PushIntent
 from catley.game.actors import Character
 
 from .action_context import ActionContext, ActionContextBuilder
@@ -35,6 +36,83 @@ class CombatActionDiscovery:
     ) -> list[ActionOption]:
         """Return all combat options available to the actor."""
         return self.get_all_combat_actions(controller, actor, context)
+
+    def discover_stunt_actions(
+        self, controller: Controller, actor: Character, context: ActionContext
+    ) -> list[ActionOption]:
+        """Discover stunt actions (Push, Trip, etc.) available to the actor.
+
+        Stunts are physical maneuvers that require adjacency and use opposed
+        stat checks rather than weapon attacks.
+        """
+        options: list[ActionOption] = []
+
+        # Find adjacent enemies for stunt targeting
+        for target in context.nearby_actors:
+            if (
+                target == actor
+                or not isinstance(target, Character)
+                or not target.health
+                or not target.health.is_alive()
+            ):
+                continue
+
+            distance = ranges.calculate_distance(actor.x, actor.y, target.x, target.y)
+
+            # Push requires adjacency (distance == 1)
+            if distance == 1:
+                push_prob = self._calculate_opposed_probability(
+                    controller, actor, target, "strength", "strength"
+                )
+                options.append(
+                    ActionOption(
+                        id=f"push-{target.name}-{target.x}-{target.y}",
+                        name=f"Push {target.name}",
+                        description="Shove target 1 tile away. Strength vs Strength.",
+                        category=ActionCategory.STUNT,
+                        action_class=PushIntent,
+                        requirements=[],  # Target already specified
+                        static_params={"defender": target},
+                        success_probability=push_prob,
+                    )
+                )
+
+        return options
+
+    def _calculate_opposed_probability(
+        self,
+        controller: Controller,
+        actor: Character,
+        target: Character,
+        attacker_stat: str,
+        defender_stat: str,
+    ) -> float:
+        """Calculate success probability for an opposed stat check.
+
+        Args:
+            controller: Game controller for creating resolver.
+            actor: The character attempting the action.
+            target: The target character.
+            attacker_stat: Stat name for the attacker (e.g., "strength").
+            defender_stat: Stat name for the defender (e.g., "strength").
+
+        Returns:
+            Probability of success as a float in [0.0, 1.0].
+        """
+        resolution_modifiers = actor.modifiers.get_resolution_modifiers(attacker_stat)
+        has_advantage = resolution_modifiers.get("has_advantage", False)
+        has_disadvantage = resolution_modifiers.get("has_disadvantage", False)
+
+        attacker_score = getattr(actor.stats, attacker_stat)
+        defender_score = getattr(target.stats, defender_stat)
+
+        resolver = controller.create_resolver(
+            ability_score=attacker_score,
+            roll_to_exceed=defender_score + 10,
+            has_advantage=has_advantage,
+            has_disadvantage=has_disadvantage,
+        )
+        return resolver.calculate_success_probability()
 
     def get_all_combat_actions(
         self, controller: Controller, actor: Character, context: ActionContext

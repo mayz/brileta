@@ -24,6 +24,7 @@ class CombatIntentCache:
 
 class ActionCategory(Enum):
     COMBAT = auto()
+    STUNT = auto()  # Physical maneuvers like Push, Trip, Disarm
     MOVEMENT = auto()
     ITEMS = auto()
     ENVIRONMENT = auto()
