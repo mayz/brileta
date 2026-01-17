@@ -150,8 +150,12 @@ class HostileAI(AIComponent):
             ):
                 return None
 
+        # Find the best adjacent-to-player tile to path toward.
+        # Prefer tiles that are closer to the actor AND non-hazardous.
+        from catley.environment.tile_types import HAZARD_BASE_COST, get_hazard_cost
+
         best_dest: tuple[int, int] | None = None
-        best_dist = float("inf")
+        best_score = float("inf")
         for dx in (-1, 0, 1):
             for dy in (-1, 0, 1):
                 if dx == 0 and dy == 0:
@@ -165,12 +169,33 @@ class HostileAI(AIComponent):
                     continue
                 if not controller.gw.game_map.walkable[tx, ty]:
                     continue
-                blocker = controller.gw.get_actor_at_location(tx, ty)
-                if blocker and blocker.blocks_movement and blocker is not actor:
+                actor_at_tile = controller.gw.get_actor_at_location(tx, ty)
+                if (
+                    actor_at_tile
+                    and actor_at_tile.blocks_movement
+                    and actor_at_tile is not actor
+                ):
                     continue
-                d = ranges.calculate_distance(actor.x, actor.y, tx, ty)
-                if d < best_dist:
-                    best_dist = d
+
+                # Score combines distance and hazard cost so AI prefers
+                # non-hazardous tiles but will use them if no better option
+                dist = ranges.calculate_distance(actor.x, actor.y, tx, ty)
+                tile_id = int(controller.gw.game_map.tiles[tx, ty])
+                hazard_cost = get_hazard_cost(tile_id)
+
+                # Also check for fire actors (campfires, etc.) at this position
+                if (
+                    actor_at_tile
+                    and hasattr(actor_at_tile, "damage_per_turn")
+                    and actor_at_tile.damage_per_turn > 0
+                ):
+                    fire_cost = HAZARD_BASE_COST + actor_at_tile.damage_per_turn
+                    hazard_cost = max(hazard_cost, fire_cost)
+
+                score = dist + hazard_cost
+
+                if score < best_score:
+                    best_score = score
                     best_dest = (tx, ty)
 
         if best_dest and controller.start_actor_pathfinding(actor, best_dest):

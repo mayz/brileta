@@ -188,3 +188,123 @@ def test_pathing_actor_is_ignored(
     assert path
     assert (1, 3) not in path
     assert path[-1] == (1, 5)
+
+
+# --- Hazard Avoidance Tests ---
+
+
+def test_find_path_avoids_acid_pool(
+    basic_setup: tuple[GameMap, SpatialHashGrid[DummyActor]],
+) -> None:
+    """AI prefers paths that avoid acid pools when alternatives exist."""
+    gm, index = basic_setup
+    # Place acid pool on direct path
+    gm.tiles[1, 3] = TileTypeID.ACID_POOL
+    gm.invalidate_property_caches()
+
+    actor = DummyActor(1, 1)
+    path = find_local_path(
+        gm, cast(SpatialIndex[Actor], index), cast(Actor, actor), (1, 1), (1, 5)
+    )
+
+    assert path
+    assert path[-1] == (1, 5)
+    assert (1, 3) not in path  # Avoided the acid
+
+
+def test_find_path_avoids_hot_coals(
+    basic_setup: tuple[GameMap, SpatialHashGrid[DummyActor]],
+) -> None:
+    """AI prefers paths that avoid hot coals when alternatives exist."""
+    gm, index = basic_setup
+    # Place hot coals on direct path
+    gm.tiles[1, 3] = TileTypeID.HOT_COALS
+    gm.invalidate_property_caches()
+
+    actor = DummyActor(1, 1)
+    path = find_local_path(
+        gm, cast(SpatialIndex[Actor], index), cast(Actor, actor), (1, 1), (1, 5)
+    )
+
+    assert path
+    assert path[-1] == (1, 5)
+    assert (1, 3) not in path  # Avoided the coals
+
+
+def test_find_path_through_hazard_when_no_alternative(
+    basic_setup: tuple[GameMap, SpatialHashGrid[DummyActor]],
+) -> None:
+    """AI walks through hazard when it's the only path."""
+    gm, index = basic_setup
+    # Create a corridor with acid in the middle (no way around)
+    # Block all adjacent columns to force through the hazard
+    for x in range(10):
+        if x != 1:
+            gm.tiles[x, 3] = TileTypeID.WALL
+    gm.tiles[1, 3] = TileTypeID.ACID_POOL
+    gm.invalidate_property_caches()
+
+    actor = DummyActor(1, 1)
+    path = find_local_path(
+        gm, cast(SpatialIndex[Actor], index), cast(Actor, actor), (1, 1), (1, 5)
+    )
+
+    assert path
+    assert (1, 3) in path  # Had to go through acid
+    assert path[-1] == (1, 5)
+
+
+@dataclass
+class DummyFire:
+    """A mock fire actor for testing hazard avoidance."""
+
+    x: int
+    y: int
+    blocks_movement: bool = False
+    damage_per_turn: int = 5
+
+
+def test_find_path_avoids_fire_actor(
+    basic_setup: tuple[GameMap, SpatialHashGrid[DummyActor]],
+) -> None:
+    """AI avoids fire actors (campfires, etc.)."""
+    gm, _index = basic_setup
+
+    fire = DummyFire(1, 3)
+    # Use a fresh index that can hold DummyFire
+    fire_index: SpatialHashGrid[DummyFire] = SpatialHashGrid(cell_size=16)
+    fire_index.add(fire)
+
+    actor = DummyActor(1, 1)
+    path = find_local_path(
+        gm, cast(SpatialIndex[Actor], fire_index), cast(Actor, actor), (1, 1), (1, 5)
+    )
+
+    assert path
+    assert path[-1] == (1, 5)
+    assert (1, 3) not in path  # Avoided the fire
+
+
+def test_find_path_through_fire_when_no_alternative(
+    basic_setup: tuple[GameMap, SpatialHashGrid[DummyActor]],
+) -> None:
+    """AI walks through fire when it's the only path."""
+    gm, _index = basic_setup
+    # Create a corridor with fire in the middle
+    for x in range(10):
+        if x != 1:
+            gm.tiles[x, 3] = TileTypeID.WALL
+    gm.invalidate_property_caches()
+
+    fire = DummyFire(1, 3)
+    fire_index: SpatialHashGrid[DummyFire] = SpatialHashGrid(cell_size=16)
+    fire_index.add(fire)
+
+    actor = DummyActor(1, 1)
+    path = find_local_path(
+        gm, cast(SpatialIndex[Actor], fire_index), cast(Actor, actor), (1, 1), (1, 5)
+    )
+
+    assert path
+    assert (1, 3) in path  # Had to go through fire
+    assert path[-1] == (1, 5)

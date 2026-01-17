@@ -134,6 +134,43 @@ def test_all_tiles_have_hazard_fields() -> None:
         assert "hazard_damage_type" in field_names
 
 
+def test_get_hazard_cost_safe_tiles() -> None:
+    """Safe tiles should return cost of 1."""
+    assert tile_types.get_hazard_cost(TileTypeID.FLOOR) == 1
+    assert tile_types.get_hazard_cost(TileTypeID.WALL) == 1
+
+
+def test_get_hazard_cost_hazardous_tiles() -> None:
+    """Hazardous tiles should return cost > 1 based on damage."""
+    # ACID_POOL does 1d4 (avg 2.5), cost = 5 + 2.5*2 = 10
+    assert tile_types.get_hazard_cost(TileTypeID.ACID_POOL) == 10
+
+    # HOT_COALS does 1d6 (avg 3.5), cost = 5 + 3.5*2 = 12
+    assert tile_types.get_hazard_cost(TileTypeID.HOT_COALS) == 12
+
+
+def test_get_hazard_cost_invalid_id() -> None:
+    """Invalid tile IDs should return safe cost of 1."""
+    assert tile_types.get_hazard_cost(999) == 1
+
+
+def test_get_hazard_cost_map_vectorized() -> None:
+    """Test vectorized hazard cost lookup."""
+    ids = np.array(
+        [
+            [TileTypeID.FLOOR, TileTypeID.ACID_POOL],
+            [TileTypeID.WALL, TileTypeID.HOT_COALS],
+        ]
+    )
+    costs = tile_types.get_hazard_cost_map(ids)
+
+    assert costs.shape == ids.shape
+    assert costs[0, 0] == 1  # FLOOR
+    assert costs[0, 1] == 10  # ACID_POOL
+    assert costs[1, 0] == 1  # WALL
+    assert costs[1, 1] == 12  # HOT_COALS
+
+
 # --- Shadow Casting Tests ---
 
 

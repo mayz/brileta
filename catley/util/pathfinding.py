@@ -88,9 +88,14 @@ def find_local_path(
     region sequence, then use find_local_path() to pathfind within or between
     adjacent regions.
 
-    This pathfinder is aware of both static, unwalkable map tiles and
-    dynamic, blocking actors. It generates a temporary cost map for each
-    request to ensure the path is valid for the current game state.
+    This pathfinder is aware of both static, unwalkable map tiles,
+    dynamic blocking actors, and environmental hazards. It generates a
+    temporary cost map for each request to ensure the path is valid for
+    the current game state.
+
+    Hazardous tiles (acid pools, hot coals, fire actors) are assigned higher
+    costs so the pathfinder prefers to route around them when alternatives
+    exist, but will still traverse them if no other path is available.
 
     Args:
         game_map: The GameMap instance, used for static terrain checks.
@@ -105,9 +110,15 @@ def find_local_path(
         The list does not include the start point. Returns an empty list
         if no path is found.
     """
+    from catley.environment.tile_types import HAZARD_BASE_COST, get_hazard_cost_map
 
-    cost = np.array(game_map.walkable, dtype=np.int8)
+    # Build cost array: start with hazard costs for all tiles, then mask
+    # non-walkable tiles to 0. This ensures hazards anywhere on the map
+    # are considered, not just within the start-end bounding box.
+    hazard_costs = get_hazard_cost_map(game_map.tiles)
+    cost = np.where(game_map.walkable, hazard_costs, 0).astype(np.int8)
 
+    # Bounding box for spatial index queries (actors near the path)
     x1 = max(0, min(start_pos[0], end_pos[0]))
     y1 = max(0, min(start_pos[1], end_pos[1]))
     x2 = min(game_map.width - 1, max(start_pos[0], end_pos[0]))
@@ -117,7 +128,16 @@ def find_local_path(
 
     for actor in nearby_actors:
         if actor.blocks_movement and actor is not pathing_actor:
+            # Blocking actors are impassable
             cost[actor.x, actor.y] = 0
+        elif (
+            hasattr(actor, "damage_per_turn")
+            and actor.damage_per_turn > 0
+            and cost[actor.x, actor.y] > 0
+        ):
+            # Fire hazards (campfires, barrel fires, torches) are high-cost
+            fire_cost = HAZARD_BASE_COST + actor.damage_per_turn
+            cost[actor.x, actor.y] = max(cost[actor.x, actor.y], fire_cost)
 
     astar = tcod.path.AStar(cost=cost, diagonal=1)
 

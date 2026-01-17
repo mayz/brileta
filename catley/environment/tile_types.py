@@ -19,6 +19,12 @@ import numpy as np
 from catley import colors
 from catley.game.enums import ImpactMaterial
 
+# --- Hazard Cost Constants ---
+# Used by pathfinding to make AI avoid hazardous tiles.
+# Cost formula: HAZARD_BASE_COST + (avg_damage * HAZARD_DAMAGE_SCALING)
+HAZARD_BASE_COST = 5
+HAZARD_DAMAGE_SCALING = 2
+
 
 class TileTypeID(IntEnum):
     """
@@ -395,6 +401,29 @@ _tile_type_properties_emission = np.array(
     [t["emission"] for t in _registered_tile_type_data_list], dtype=TileEmissionParams
 )
 
+
+def _compute_hazard_cost(damage_dice: str) -> int:
+    """Compute pathfinding cost from a hazard damage dice string.
+
+    Returns 1 for safe tiles (empty dice string), higher values for hazards.
+    """
+    if not damage_dice:
+        return 1
+
+    from catley.util.dice import Dice
+
+    avg_damage = Dice(damage_dice).average()
+    return int(HAZARD_BASE_COST + avg_damage * HAZARD_DAMAGE_SCALING)
+
+
+_tile_type_properties_hazard_cost = np.array(
+    [
+        _compute_hazard_cost(str(t["hazard_damage"]))
+        for t in _registered_tile_type_data_list
+    ],
+    dtype=np.int8,
+)
+
 # --- Public Helper Functions for Accessing Tile Properties ---
 
 
@@ -428,6 +457,19 @@ def get_light_appearance_map(tile_type_ids_map: np.ndarray) -> np.ndarray:
     Used as the base for rendering tiles currently in FOV, before dynamic lighting.
     """
     return _tile_type_properties_light_appearance[tile_type_ids_map]
+
+
+def get_hazard_cost_map(tile_type_ids_map: np.ndarray) -> np.ndarray:
+    """
+    Converts a map of TileTypeIDs into a map of pathfinding hazard costs.
+
+    Returns an int8 array where:
+    - 1 = safe tile (normal movement cost)
+    - >1 = hazardous tile (higher cost to discourage pathfinding through it)
+
+    Used by the pathfinding system to make AI avoid hazardous terrain.
+    """
+    return _tile_type_properties_hazard_cost[tile_type_ids_map]
 
 
 def get_tile_type_data_by_id(tile_type_id: int) -> np.ndarray:  # Returns TileTypeData
@@ -499,6 +541,25 @@ def get_tile_hazard_info(tile_type_id: int) -> tuple[str, str]:
         damage_type = str(_tile_type_properties_hazard_damage_type[tile_type_id])
         return (damage_dice, damage_type)
     return ("", "")
+
+
+def get_hazard_cost(tile_type_id: int) -> int:
+    """
+    Get the pathfinding cost for a tile based on its hazard level.
+
+    Used by the pathfinding system to make AI avoid hazardous tiles when
+    possible. Safe tiles return 1 (normal cost), while hazardous tiles
+    return higher values proportional to their danger level.
+
+    Args:
+        tile_type_id: The ID of the tile type.
+
+    Returns:
+        An integer cost value: 1 for safe tiles, higher for hazards.
+    """
+    if 0 <= tile_type_id < len(_tile_type_properties_hazard_cost):
+        return int(_tile_type_properties_hazard_cost[tile_type_id])
+    return 1
 
 
 def get_animation_map(tile_type_ids_map: np.ndarray) -> np.ndarray:

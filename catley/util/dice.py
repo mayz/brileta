@@ -98,6 +98,21 @@ class Dice:
         # Apply multiplier and modifier
         return (self.multiplier * result) + self.modifier
 
+    def average(self) -> float:
+        """Calculate the expected average value of the dice roll.
+
+        Returns:
+            The statistical mean of all possible outcomes.
+        """
+        # Handle fixed values
+        if self.num_dice == 0:
+            return float(self.sides + self.modifier)
+
+        # Average of a single die is (1 + sides) / 2
+        # For NdM: N * (M+1)/2, then apply multiplier and modifier
+        single_die_avg = (1 + self.sides) / 2
+        return (self.multiplier * self.num_dice * single_die_avg) + self.modifier
+
     def __str__(self) -> str:
         """Return the string representation of the dice."""
         return self.dice_str
