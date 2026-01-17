@@ -64,6 +64,17 @@ TileAnimationParams = np.dtype(
     ]
 )
 
+# Light emission parameters for tiles that glow (e.g., lava, acid pools, hot coals).
+# These tiles contribute light to the lightmap, illuminating surrounding tiles.
+TileEmissionParams = np.dtype(
+    [
+        ("emits_light", np.bool_),  # Does this tile emit light?
+        ("light_color", "3B"),  # RGB emission color (0-255 each)
+        ("light_radius", np.uint8),  # Light radius in tiles (typically 2-4)
+        ("light_intensity", np.float32),  # Emission strength (0.0-1.0)
+    ]
+)
+
 # Defines the intrinsic data for a *type* of tile (flyweight).
 # This includes its game logic properties (walkable, transparent)
 # and its visual appearances under different lighting conditions.
@@ -83,6 +94,8 @@ TileTypeData = np.dtype(
         ("light", TileTypeAppearance),
         # Animation parameters (color oscillation, glyph flicker)
         ("animation", TileAnimationParams),
+        # Light emission parameters (glowing tiles like lava, acid, coals)
+        ("emission", TileEmissionParams),
     ]
 )
 
@@ -128,6 +141,8 @@ def make_tile_type_data(
     light: tuple[int, colors.Color, colors.Color] | None = None,
     animation: tuple[tuple[int, int, int], tuple[int, int, int], float]
     | None = None,  # (fg_variation, bg_variation, glyph_flicker_chance)
+    emission: tuple[colors.Color, int, float]
+    | None = None,  # (light_color, light_radius, light_intensity)
 ) -> np.ndarray:  # Returns an instance of TileTypeData
     """
     Helper function to create a TileTypeData instance.
@@ -152,6 +167,12 @@ def make_tile_type_data(
                    the range of color oscillation. glyph_flicker_chance is
                    the probability (0.0-1.0) of hiding the glyph per frame.
                    If None, the tile does not animate.
+        emission: Optional light emission parameters as a tuple of
+                  (light_color, light_radius, light_intensity).
+                  light_color is an RGB tuple for the emitted light color.
+                  light_radius is the radius in tiles (typically 2-4).
+                  light_intensity is the emission strength (0.0-1.0).
+                  If None, the tile does not emit light.
 
     Returns:
         A numpy array structured with the TileTypeData dtype.
@@ -176,6 +197,15 @@ def make_tile_type_data(
             (True, fg_var, bg_var, flicker), dtype=TileAnimationParams
         )
 
+    # Create emission params (defaults to no emission)
+    if emission is None:
+        emission_params = np.array((False, (0, 0, 0), 0, 0.0), dtype=TileEmissionParams)
+    else:
+        light_color, light_radius, light_intensity = emission
+        emission_params = np.array(
+            (True, light_color, light_radius, light_intensity), dtype=TileEmissionParams
+        )
+
     return np.array(
         (
             walkable,
@@ -189,6 +219,7 @@ def make_tile_type_data(
             dark_appearance,
             light_appearance,
             animation_params,
+            emission_params,
         ),
         dtype=TileTypeData,
     )
@@ -300,6 +331,7 @@ register_tile_type(
         dark=(ord("~"), (0, 40, 0), (0, 40, 0)),
         light=(ord("~"), (50, 140, 50), (50, 140, 50)),
         animation=((60, 100, 60), (60, 100, 60), 0.0),
+        emission=((80, 180, 80), 2, 0.5),  # Green glow, radius 2
     ),
 )
 
@@ -312,9 +344,10 @@ register_tile_type(
         material=ImpactMaterial.STONE,
         hazard_damage="1d6",
         hazard_damage_type="fire",
-        dark=(ord("."), (40, 10, 0), (40, 10, 0)),
-        light=(ord("."), (200, 100, 40), (200, 100, 40)),
-        animation=((100, 100, 60), (100, 100, 60), 0.0),
+        dark=(ord("."), (30, 8, 0), (30, 8, 0)),
+        light=(ord("."), (150, 75, 30), (150, 75, 30)),
+        animation=((80, 60, 40), (80, 60, 40), 0.0),
+        emission=((180, 100, 40), 2, 0.5),  # Orange/red glow, radius 2
     ),
 )
 
@@ -357,6 +390,9 @@ _tile_type_properties_animation = np.array(
 )
 _tile_type_properties_casts_shadows = np.array(
     [t["casts_shadows"] for t in _registered_tile_type_data_list], dtype=bool
+)
+_tile_type_properties_emission = np.array(
+    [t["emission"] for t in _registered_tile_type_data_list], dtype=TileEmissionParams
 )
 
 # --- Public Helper Functions for Accessing Tile Properties ---
@@ -498,3 +534,19 @@ def get_casts_shadows_map(tile_type_ids_map: np.ndarray) -> np.ndarray:
         A 2D boolean numpy array matching the input shape.
     """
     return _tile_type_properties_casts_shadows[tile_type_ids_map]
+
+
+def get_emission_map(tile_type_ids_map: np.ndarray) -> np.ndarray:
+    """
+    Converts a map of TileTypeIDs into a map of TileEmissionParams structs.
+
+    Used by the lighting system to determine which tiles emit light and
+    how they should contribute to the lightmap.
+
+    Args:
+        tile_type_ids_map: A 2D numpy array of TileTypeID values.
+
+    Returns:
+        A 2D numpy array of TileEmissionParams structs matching the input shape.
+    """
+    return _tile_type_properties_emission[tile_type_ids_map]

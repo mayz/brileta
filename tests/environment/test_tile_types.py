@@ -200,3 +200,69 @@ def test_shadow_casting_tiles_are_correct() -> None:
     for tile_id in non_shadow_casters:
         data = tile_types.get_tile_type_data_by_id(tile_id)
         assert not data["casts_shadows"], f"{tile_id.name} should not cast shadows"
+
+
+# --- Tile Light Emission Tests ---
+
+
+def test_get_emission_map_basic() -> None:
+    """Test vectorized emission lookup for basic tile types."""
+    ids = np.array([[TileTypeID.FLOOR, TileTypeID.ACID_POOL]])
+    emissions = tile_types.get_emission_map(ids)
+
+    assert not emissions[0, 0]["emits_light"]  # FLOOR doesn't emit
+    assert emissions[0, 1]["emits_light"]  # ACID_POOL does emit
+    assert emissions[0, 1]["light_radius"] == 2
+    assert emissions[0, 1]["light_intensity"] == 0.5
+
+
+def test_emission_properties_acid_pool() -> None:
+    """Acid pool should emit green light."""
+    data = tile_types.get_tile_type_data_by_id(TileTypeID.ACID_POOL)
+    emission = data["emission"]
+    assert emission["emits_light"]
+    assert tuple(emission["light_color"]) == (80, 180, 80)  # Green
+    assert emission["light_radius"] == 2
+    assert emission["light_intensity"] == 0.5
+
+
+def test_emission_properties_hot_coals() -> None:
+    """Hot coals should emit orange/red light."""
+    data = tile_types.get_tile_type_data_by_id(TileTypeID.HOT_COALS)
+    emission = data["emission"]
+    assert emission["emits_light"]
+    assert tuple(emission["light_color"]) == (180, 100, 40)  # Orange
+    assert emission["light_radius"] == 2
+    assert emission["light_intensity"] == 0.5
+
+
+def test_non_emitting_tiles() -> None:
+    """Most tiles should not emit light."""
+    non_emitters = [TileTypeID.FLOOR, TileTypeID.WALL, TileTypeID.DOOR_CLOSED]
+    for tile_id in non_emitters:
+        data = tile_types.get_tile_type_data_by_id(tile_id)
+        assert not data["emission"]["emits_light"], (
+            f"{tile_id.name} should not emit light"
+        )
+
+
+def test_all_tiles_have_emission_field() -> None:
+    """Ensure every tile type has emission field (even if not emitting)."""
+    for tile_id in TileTypeID:
+        data = tile_types.get_tile_type_data_by_id(tile_id)
+        field_names = data.dtype.names
+        assert field_names is not None
+        assert "emission" in field_names
+
+
+def test_get_emission_map_all_tiles() -> None:
+    """Ensure get_emission_map works for all tile types."""
+    all_ids = np.array([list(TileTypeID)])
+    emissions = tile_types.get_emission_map(all_ids)
+
+    # Verify each result matches the individual lookup
+    for i, tile_id in enumerate(TileTypeID):
+        data = tile_types.get_tile_type_data_by_id(tile_id)
+        assert emissions[0, i]["emits_light"] == data["emission"]["emits_light"], (
+            f"Mismatch for {tile_id.name}"
+        )

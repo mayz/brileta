@@ -497,22 +497,20 @@ class GameWorld:
                 campfire = ContainedFire.create_campfire(fire_x, fire_y, self)
                 self.add_actor(campfire)
 
-            # Add a small acid pool nearby for testing hazardous terrain
+            # Add both hazards for side-by-side comparison
             self._add_test_acid_pool(room)
-
-            # Add hot coals nearby for testing animated tiles
             self._add_test_hot_coals(room)
 
     def _add_test_acid_pool(self, room) -> None:  # type: ignore[no-untyped-def]
         """Add a small acid pool to demonstrate hazardous terrain.
 
-        Creates a 2x2 acid pool in the given room for testing purposes.
+        Creates a 2x2 acid pool in the bottom-right corner of the room.
         """
         from catley.environment.tile_types import TileTypeID
 
-        # Place acid pool offset from the fire
-        pool_x = room.x1 + 4
-        pool_y = room.y1 + 2
+        # Place acid pool in bottom-right corner (away from campfire)
+        pool_x = room.x2 - 3  # 3 tiles from right wall
+        pool_y = room.y2 - 3  # 3 tiles from bottom wall
 
         # Create a small 2x2 acid pool
         for dx in range(2):
@@ -529,14 +527,13 @@ class GameWorld:
     def _add_test_hot_coals(self, room) -> None:  # type: ignore[no-untyped-def]
         """Add a small patch of hot coals to demonstrate animated terrain.
 
-        Creates a 2x2 hot coals area in the given room for testing animated
-        tile rendering (color oscillation effects).
+        Creates a 2x2 hot coals area in the bottom-right corner of the room.
         """
         from catley.environment.tile_types import TileTypeID
 
-        # Place hot coals offset from the acid pool
-        coals_x = room.x1 + 7
-        coals_y = room.y1 + 2
+        # Place hot coals in bottom-left corner (opposite acid pool)
+        coals_x = room.x1 + 2  # 2 tiles from left wall
+        coals_y = room.y2 - 3  # 3 tiles from bottom wall
 
         # Create a small 2x2 hot coals area
         for dx in range(2):

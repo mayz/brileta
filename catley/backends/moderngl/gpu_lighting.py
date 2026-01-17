@@ -95,6 +95,9 @@ class GPULightingSystem(LightingSystem):
         self._sky_exposure_texture: moderngl.Texture | None = None
         self._cached_map_revision: int = -1
 
+        # Emission texture for light-emitting tiles (acid pools, hot coals, etc.)
+        self._emission_texture: moderngl.Texture | None = None
+
         # Initialize GPU resources
         if not self._initialize_gpu_resources():
             raise RuntimeError("Failed to initialize ModernGL GPU lighting system")
@@ -344,6 +347,9 @@ class GPULightingSystem(LightingSystem):
             # Update sky exposure texture if needed
             self._update_sky_exposure_texture()
 
+            # Update emission texture for light-emitting tiles
+            self._update_emission_texture(viewport_bounds)
+
             # Get or create cached framebuffer for rendering
             assert self._resource_manager is not None
             assert self._output_texture is not None
@@ -381,6 +387,11 @@ class GPULightingSystem(LightingSystem):
             if self._sky_exposure_texture is not None:
                 self._sky_exposure_texture.use(location=1)
                 self._fragment_program["u_sky_exposure_map"].value = 1
+
+            # Bind emission texture to texture unit 2
+            if self._emission_texture is not None:
+                self._emission_texture.use(location=2)
+                self._fragment_program["u_emission_map"].value = 2
 
             # Render full-screen quad
             self._fullscreen_vao.render()
@@ -731,6 +742,124 @@ class GPULightingSystem(LightingSystem):
         # Update cached revision
         self._cached_map_revision = game_map.structural_revision
 
+    def _update_emission_texture(self, viewport_bounds: Rect) -> None:
+        """Update the emission texture with light-emitting tile data.
+
+        Creates a texture where each texel represents a tile's emission properties:
+        - RGB: emission color (0-1, pre-multiplied by intensity)
+        - A: light radius (for falloff calculation in shader)
+
+        Uses vectorized numpy operations for performance - avoids Python loops
+        over every tile in the viewport.
+
+        Args:
+            viewport_bounds: The viewport area being rendered
+        """
+        from catley.config import TILE_EMISSION_ENABLED
+        from catley.environment.tile_types import get_emission_map
+
+        game_map = self.game_world.game_map
+        if game_map is None:
+            return
+
+        # Early exit if emission is disabled - still need a zeroed texture
+        if not TILE_EMISSION_ENABLED:
+            if self._emission_texture is None:
+                assert self.mgl_context is not None
+                self._emission_texture = self.mgl_context.texture(
+                    (viewport_bounds.width, viewport_bounds.height),
+                    components=4,
+                    dtype="f4",
+                )
+                # Write zeros once
+                zeros = np.zeros(
+                    (viewport_bounds.height, viewport_bounds.width, 4), dtype=np.float32
+                )
+                self._emission_texture.write(zeros.tobytes())
+            return
+
+        # Ensure emission texture matches viewport size
+        if self._emission_texture is None or self._emission_texture.size != (
+            viewport_bounds.width,
+            viewport_bounds.height,
+        ):
+            # Release old texture if it exists
+            if self._emission_texture is not None:
+                self._emission_texture.release()
+
+            # Create new emission texture
+            assert self.mgl_context is not None
+            self._emission_texture = self.mgl_context.texture(
+                (viewport_bounds.width, viewport_bounds.height),
+                components=4,  # RGBA
+                dtype="f4",  # 32-bit float for precision
+            )
+
+        # Create emission data array for the viewport
+        emission_data = np.zeros(
+            (viewport_bounds.height, viewport_bounds.width, 4), dtype=np.float32
+        )
+
+        # Calculate tile bounds within viewport (clamped to map bounds)
+        min_x = max(0, viewport_bounds.x1)
+        max_x = min(game_map.width, viewport_bounds.x2)
+        min_y = max(0, viewport_bounds.y1)
+        max_y = min(game_map.height, viewport_bounds.y2)
+
+        # Get emission map for the viewport region
+        tile_slice = game_map.tiles[min_x:max_x, min_y:max_y]
+        emission_map = get_emission_map(tile_slice)
+
+        # Vectorized emission data population
+        # Find all tiles that emit light using boolean mask
+        emits_mask = emission_map["emits_light"]
+
+        # Only process if there are any emitting tiles
+        if np.any(emits_mask):
+            # Get coordinates of emitting tiles (x, y indices due to array shape)
+            emitting_coords = np.argwhere(emits_mask)
+
+            # Calculate viewport-relative coordinates for emitting tiles
+            # emitting_coords are (local_x, local_y) pairs
+            vp_x = min_x + emitting_coords[:, 0] - viewport_bounds.x1
+            vp_y = min_y + emitting_coords[:, 1] - viewport_bounds.y1
+
+            # Filter to valid viewport bounds
+            valid_mask = (
+                (vp_x >= 0)
+                & (vp_x < viewport_bounds.width)
+                & (vp_y >= 0)
+                & (vp_y < viewport_bounds.height)
+            )
+
+            if np.any(valid_mask):
+                valid_coords = emitting_coords[valid_mask]
+                valid_vp_x = vp_x[valid_mask]
+                valid_vp_y = vp_y[valid_mask]
+
+                # Extract emission parameters for valid tiles
+                valid_emissions = emission_map[valid_coords[:, 0], valid_coords[:, 1]]
+
+                # Get color, intensity, and radius arrays
+                colors = valid_emissions["light_color"]  # Shape: (N, 3)
+                intensities = valid_emissions["light_intensity"]  # Shape: (N,)
+                radii = valid_emissions["light_radius"]  # Shape: (N,)
+
+                # Calculate pre-multiplied RGB values
+                # colors is uint8, convert to float and multiply by intensity
+                rgb = (colors / 255.0) * intensities[:, np.newaxis]
+
+                # Write to emission_data using advanced indexing
+                # Note: emission_data is (height, width, channels) = (y, x, c)
+                emission_data[valid_vp_y, valid_vp_x, 0] = rgb[:, 0]
+                emission_data[valid_vp_y, valid_vp_x, 1] = rgb[:, 1]
+                emission_data[valid_vp_y, valid_vp_x, 2] = rgb[:, 2]
+                emission_data[valid_vp_y, valid_vp_x, 3] = radii.astype(np.float32)
+
+        # Upload emission data to texture
+        assert self._emission_texture is not None
+        self._emission_texture.write(emission_data.tobytes())
+
     def on_light_added(self, light: LightSource) -> None:
         """Notification that a light has been added."""
         # GPU system doesn't need caching invalidation like CPU system
@@ -761,6 +890,8 @@ class GPULightingSystem(LightingSystem):
             self._fullscreen_vao.release()
         if self._sky_exposure_texture is not None:
             self._sky_exposure_texture.release()
+        if self._emission_texture is not None:
+            self._emission_texture.release()
 
         # Clear cached data
         self._cached_light_data = None

@@ -53,6 +53,7 @@ struct LightingUniforms {
 @group(0) @binding(0) var<uniform> uniforms: LightingUniforms;
 @group(0) @binding(22) var sky_exposure_map: texture_2d<f32>;
 @group(0) @binding(23) var texture_sampler: sampler;
+@group(0) @binding(24) var emission_map: texture_2d<f32>;
 
 @vertex
 fn vs_main(input: VertexInput) -> VertexOutput {
@@ -266,6 +267,67 @@ fn calculateDirectionalShadowAttenuation(world_pos: vec2f, sky_exposure: f32) ->
     return shadow_factor;
 }
 
+// Calculate emission contribution from nearby light-emitting tiles
+fn calculateEmissionContribution(uv: vec2f) -> vec3f {
+    var emission_total = vec3f(0.0);
+
+    // Maximum radius to check (must match max light_radius in tile data)
+    let MAX_EMISSION_RADIUS = 4;
+
+    // Get texture dimensions and current pixel coordinates
+    // The vertex shader computes world_pos.y = viewport.y1 + (1.0 - uv.y) * height
+    // This means UV y=0 corresponds to the TOP of the viewport (max world Y)
+    // The emission texture has row 0 = vp_y=0 = bottom of viewport (min world Y)
+    // So we need: pixel_y = (1.0 - uv.y) * height to match world Y to texture row
+    let tex_dims = textureDimensions(emission_map);
+    let pixel_coord = vec2i(
+        i32(uv.x * f32(tex_dims.x)),
+        min(i32((1.0 - uv.y) * f32(tex_dims.y)), i32(tex_dims.y) - 1)  // Flip Y, clamp to bounds
+    );
+
+    // Sample nearby tiles for emission using textureLoad (no filtering needed)
+    for (var dy = -MAX_EMISSION_RADIUS; dy <= MAX_EMISSION_RADIUS; dy++) {
+        for (var dx = -MAX_EMISSION_RADIUS; dx <= MAX_EMISSION_RADIUS; dx++) {
+            // Calculate pixel coordinate of neighboring tile
+            // Since base pixel_coord is already Y-flipped to match world coords to texture rows,
+            // dy in world space (positive = higher world Y = higher vp_y = higher pixel y)
+            // maps directly to +dy in pixel space
+            let neighbor_coord = pixel_coord + vec2i(dx, dy);
+
+            // Skip if outside texture bounds
+            if (neighbor_coord.x < 0 || neighbor_coord.x >= i32(tex_dims.x) ||
+                neighbor_coord.y < 0 || neighbor_coord.y >= i32(tex_dims.y)) {
+                continue;
+            }
+
+            // Load emission texture (no sampler needed)
+            let emission = textureLoad(emission_map, neighbor_coord, 0);
+
+            // Check if this tile emits light (radius > 0)
+            let radius = emission.a;
+            if (radius <= 0.0) {
+                continue;
+            }
+
+            // Calculate distance to emitting tile (in world space, using original dx/dy)
+            let dist = length(vec2f(f32(dx), f32(dy)));
+
+            // Skip if outside emission radius
+            if (dist > radius) {
+                continue;
+            }
+
+            // Calculate falloff (linear, matching point lights)
+            let falloff = max(0.0, 1.0 - dist / radius);
+
+            // Add emission contribution (RGB is pre-multiplied by intensity)
+            emission_total += emission.rgb * falloff;
+        }
+    }
+
+    return emission_total;
+}
+
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4f {
     var world_pos = input.world_pos;
@@ -306,10 +368,14 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4f {
         
         let shadow_attenuation = calculateShadowAttenuation(tile_pos, light_pos, light_radius);
         light_contribution *= shadow_attenuation;
-        
+
         final_color = max(final_color, light_contribution);
     }
-    
+
+    // Add emission contribution from glowing tiles (acid pools, hot coals, etc.)
+    let emission_contribution = calculateEmissionContribution(input.uv);
+    final_color = max(final_color, emission_contribution);
+
     // Directional Light (Sun/Moon)
     if (uniforms.sun_intensity > 0.0) {
         let sky_exposure = textureSample(sky_exposure_map, texture_sampler, input.uv).r;

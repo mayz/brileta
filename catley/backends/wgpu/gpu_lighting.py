@@ -128,6 +128,9 @@ class GPULightingSystem(LightingSystem):
         self._sky_exposure_sampler: wgpu.GPUSampler | None = None
         self._cached_map_revision: int = -1
 
+        # Emission texture for light-emitting tiles (acid pools, hot coals, etc.)
+        self._emission_texture: wgpu.GPUTexture | None = None
+
         # Initialize GPU resources
         if not self._initialize_gpu_resources():
             raise RuntimeError("Failed to initialize WGPU GPU lighting system")
@@ -180,8 +183,8 @@ class GPULightingSystem(LightingSystem):
             # Create fullscreen quad vertex buffer
             self._create_fullscreen_quad()
 
-            # Create sampler for sky exposure texture
-            self._create_sampler()
+            # Create samplers for textures
+            self._create_samplers()
 
             return True
 
@@ -223,6 +226,14 @@ class GPULightingSystem(LightingSystem):
                     "binding": 23,
                     "visibility": wgpu.ShaderStage.FRAGMENT,
                     "sampler": {},
+                },
+                # Emission texture (binding 24) - unfilterable since rgba32float
+                {
+                    "binding": 24,
+                    "visibility": wgpu.ShaderStage.FRAGMENT,
+                    "texture": {
+                        "sample_type": wgpu.TextureSampleType.unfilterable_float
+                    },
                 },
             ]
         )
@@ -324,8 +335,8 @@ class GPULightingSystem(LightingSystem):
             usage=wgpu.BufferUsage.VERTEX,  # type: ignore
         )
 
-    def _create_sampler(self) -> None:
-        """Create sampler for sky exposure texture."""
+    def _create_samplers(self) -> None:
+        """Create sampler for the sky exposure texture."""
         assert self.device is not None
 
         self._sky_exposure_sampler = self.device.create_sampler(
@@ -547,6 +558,157 @@ class GPULightingSystem(LightingSystem):
 
         # Update cached revision
         self._cached_map_revision = game_map.structural_revision
+
+    def _update_emission_texture(self, viewport_bounds: Rect) -> None:
+        """Update the emission texture with light-emitting tile data.
+
+        Creates a texture where each texel represents a tile's emission properties:
+        - RGB: emission color (0-1, pre-multiplied by intensity)
+        - A: light radius (for falloff calculation in shader)
+
+        Uses vectorized numpy operations for performance - avoids Python loops
+        over every tile in the viewport.
+
+        Args:
+            viewport_bounds: The viewport area being rendered
+        """
+        from catley.config import TILE_EMISSION_ENABLED
+        from catley.environment.tile_types import get_emission_map
+
+        game_map = self.game_world.game_map
+        if game_map is None:
+            return
+
+        # Early exit if emission is disabled - still need a zeroed texture
+        if not TILE_EMISSION_ENABLED:
+            if self._emission_texture is None:
+                assert self.device is not None
+                self._emission_texture = self.device.create_texture(
+                    size=(viewport_bounds.width, viewport_bounds.height, 1),
+                    format=wgpu.TextureFormat.rgba32float,  # type: ignore
+                    usage=wgpu.TextureUsage.TEXTURE_BINDING
+                    | wgpu.TextureUsage.COPY_DST,  # type: ignore
+                )
+                self._bind_group = None
+                # Write zeros once
+                zeros = np.zeros(
+                    (viewport_bounds.height, viewport_bounds.width, 4), dtype=np.float32
+                )
+                assert self.queue is not None
+                self.queue.write_texture(
+                    {
+                        "texture": self._emission_texture,
+                        "mip_level": 0,
+                        "origin": (0, 0, 0),
+                    },
+                    memoryview(zeros.tobytes()),  # type: ignore
+                    {
+                        "offset": 0,
+                        "bytes_per_row": viewport_bounds.width * 16,
+                        "rows_per_image": viewport_bounds.height,
+                    },
+                    (viewport_bounds.width, viewport_bounds.height, 1),
+                )
+            return
+
+        # Ensure emission texture matches viewport size
+        if self._emission_texture is None or self._emission_texture.size != (
+            viewport_bounds.width,
+            viewport_bounds.height,
+            1,
+        ):
+            # Release old texture
+            self._emission_texture = None
+            self._bind_group = None  # Invalidate bind group when texture changes
+
+            # Create new emission texture (RGBA32float for precision)
+            assert self.device is not None
+            self._emission_texture = self.device.create_texture(
+                size=(viewport_bounds.width, viewport_bounds.height, 1),
+                format=wgpu.TextureFormat.rgba32float,  # type: ignore
+                usage=wgpu.TextureUsage.TEXTURE_BINDING | wgpu.TextureUsage.COPY_DST,  # type: ignore
+            )
+
+        # Create emission data array for the viewport
+        emission_data = np.zeros(
+            (viewport_bounds.height, viewport_bounds.width, 4), dtype=np.float32
+        )
+
+        # Calculate tile bounds within viewport (clamped to map bounds)
+        min_x = max(0, viewport_bounds.x1)
+        max_x = min(game_map.width, viewport_bounds.x2)
+        min_y = max(0, viewport_bounds.y1)
+        max_y = min(game_map.height, viewport_bounds.y2)
+
+        # Get emission map for the viewport region
+        tile_slice = game_map.tiles[min_x:max_x, min_y:max_y]
+        emission_map = get_emission_map(tile_slice)
+
+        # Vectorized emission data population
+        # Find all tiles that emit light using boolean mask
+        emits_mask = emission_map["emits_light"]
+
+        # Only process if there are any emitting tiles
+        if np.any(emits_mask):
+            # Get coordinates of emitting tiles (x, y indices due to array shape)
+            emitting_coords = np.argwhere(emits_mask)
+
+            # Calculate viewport-relative coordinates for emitting tiles
+            # emitting_coords are (local_x, local_y) pairs
+            vp_x = min_x + emitting_coords[:, 0] - viewport_bounds.x1
+            vp_y = min_y + emitting_coords[:, 1] - viewport_bounds.y1
+
+            # Filter to valid viewport bounds
+            valid_mask = (
+                (vp_x >= 0)
+                & (vp_x < viewport_bounds.width)
+                & (vp_y >= 0)
+                & (vp_y < viewport_bounds.height)
+            )
+
+            if np.any(valid_mask):
+                valid_coords = emitting_coords[valid_mask]
+                valid_vp_x = vp_x[valid_mask]
+                valid_vp_y = vp_y[valid_mask]
+
+                # Extract emission parameters for valid tiles
+                valid_emissions = emission_map[valid_coords[:, 0], valid_coords[:, 1]]
+
+                # Get color, intensity, and radius arrays
+                colors = valid_emissions["light_color"]  # Shape: (N, 3)
+                intensities = valid_emissions["light_intensity"]  # Shape: (N,)
+                radii = valid_emissions["light_radius"]  # Shape: (N,)
+
+                # Calculate pre-multiplied RGB values
+                # colors is uint8, convert to float and multiply by intensity
+                rgb = (colors / 255.0) * intensities[:, np.newaxis]
+
+                # Write to emission_data using advanced indexing
+                # Note: emission_data is (height, width, channels) = (y, x, c)
+                emission_data[valid_vp_y, valid_vp_x, 0] = rgb[:, 0]
+                emission_data[valid_vp_y, valid_vp_x, 1] = rgb[:, 1]
+                emission_data[valid_vp_y, valid_vp_x, 2] = rgb[:, 2]
+                emission_data[valid_vp_y, valid_vp_x, 3] = radii.astype(np.float32)
+
+        # Upload emission data to texture
+        assert self.queue is not None
+        assert self._emission_texture is not None
+        self.queue.write_texture(
+            {
+                "texture": self._emission_texture,
+                "mip_level": 0,
+                "origin": (0, 0, 0),
+            },
+            memoryview(emission_data.tobytes()),  # type: ignore
+            {
+                "offset": 0,
+                "bytes_per_row": viewport_bounds.width
+                * 4
+                * 4,  # 4 components * 4 bytes
+                "rows_per_image": viewport_bounds.height,
+            },
+            (viewport_bounds.width, viewport_bounds.height, 1),
+        )
 
     def _pack_uniform_data(
         self,
@@ -846,6 +1008,9 @@ class GPULightingSystem(LightingSystem):
             # Update sky exposure texture if needed
             self._update_sky_exposure_texture()
 
+            # Update emission texture for light-emitting tiles
+            self._update_emission_texture(viewport_bounds)
+
             # Smart uniform updates - only update when lights or shadow casters change
             light_data_hash = hash(
                 (
@@ -986,16 +1151,19 @@ class GPULightingSystem(LightingSystem):
             return None
 
     def _create_bind_group(self) -> None:
-        """Create bind group with current uniform buffer and sky exposure texture."""
+        """Create bind group with uniform buffer and all textures."""
         assert self.device is not None
         assert self._uniform_buffer is not None
         assert self._sky_exposure_sampler is not None
 
-        # Create a default sky exposure texture if none exists
+        # Create default textures if none exist
         if self._sky_exposure_texture is None:
             self._create_default_sky_exposure_texture()
+        if self._emission_texture is None:
+            self._create_default_emission_texture()
 
         assert self._sky_exposure_texture is not None
+        assert self._emission_texture is not None
 
         assert self._render_pipeline is not None
         self._bind_group = self.device.create_bind_group(
@@ -1012,6 +1180,10 @@ class GPULightingSystem(LightingSystem):
                 {
                     "binding": 23,
                     "resource": self._sky_exposure_sampler,
+                },
+                {
+                    "binding": 24,
+                    "resource": self._emission_texture.create_view(),
                 },
             ],
         )
@@ -1046,6 +1218,36 @@ class GPULightingSystem(LightingSystem):
             (1, 1, 1),
         )
 
+    def _create_default_emission_texture(self) -> None:
+        """Create a default 1x1 emission texture for when no map is available."""
+        assert self.device is not None
+        assert self.queue is not None
+
+        # Create 1x1 texture with zero emission (RGBA32float format)
+        self._emission_texture = self.device.create_texture(
+            size=(1, 1, 1),
+            format=wgpu.TextureFormat.rgba32float,  # type: ignore
+            usage=wgpu.TextureUsage.TEXTURE_BINDING | wgpu.TextureUsage.COPY_DST,  # type: ignore
+        )
+        self._bind_group = None  # Invalidate bind group when texture is created
+
+        # Write zero emission (RGBA32float format - 16 bytes per pixel)
+        emission_data = np.array([0.0, 0.0, 0.0, 0.0], dtype=np.float32)
+        self.queue.write_texture(
+            {
+                "texture": self._emission_texture,
+                "mip_level": 0,
+                "origin": (0, 0, 0),
+            },
+            memoryview(emission_data.tobytes()),  # type: ignore
+            {
+                "offset": 0,
+                "bytes_per_row": 16,  # 1 pixel * 4 components * 4 bytes
+                "rows_per_image": 1,
+            },
+            (1, 1, 1),
+        )
+
     # LightingSystem event handlers
     def on_light_added(self, light: LightSource) -> None:
         """Notification that a light has been added."""
@@ -1075,6 +1277,7 @@ class GPULightingSystem(LightingSystem):
         self._vertex_buffer = None
         self._sky_exposure_texture = None
         self._sky_exposure_sampler = None
+        self._emission_texture = None
 
         # Clear cached data
         self._cached_light_data = None

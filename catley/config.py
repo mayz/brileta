@@ -203,6 +203,9 @@ SHADOW_INTENSITY = 0.17  # How dark shadows are (0.0 = no shadow, 1.0 = complete
 SHADOW_MAX_LENGTH = 3  # Maximum shadow length in tiles
 SHADOW_FALLOFF = True  # Shadows get lighter with distance
 
+# Tile emission (glowing hazard tiles like acid pools, hot coals)
+TILE_EMISSION_ENABLED = True
+
 # =============================================================================
 # INPUT & CONTROLS
 # =============================================================================

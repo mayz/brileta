@@ -38,6 +38,11 @@ uniform float u_sun_intensity;
 uniform sampler2D u_sky_exposure_map;
 uniform float u_sky_exposure_power;
 
+// Tile emission uniforms (for glowing tiles like acid pools, hot coals)
+// Emission texture: RGB = emission color * intensity, A = light radius
+uniform sampler2D u_emission_map;
+uniform ivec2 u_viewport_size;
+
 // Noise function for flicker effects
 float noise2d(vec2 coord) {
     vec2 c = floor(coord);
@@ -141,6 +146,56 @@ float calculateShadowAttenuation(vec2 world_pos, vec2 light_pos, float light_rad
     }
     
     return shadow_factor;
+}
+
+// Calculate emission contribution from nearby light-emitting tiles
+vec3 calculateEmissionContribution(vec2 uv, vec2 tile_pos) {
+    vec3 emission_total = vec3(0.0);
+
+    // Maximum radius to check (must match max light_radius in tile data)
+    const int MAX_EMISSION_RADIUS = 4;
+
+    // Size of one texel in UV space
+    vec2 texel_size = 1.0 / vec2(u_viewport_size);
+
+    // Sample nearby tiles for emission
+    for (int dy = -MAX_EMISSION_RADIUS; dy <= MAX_EMISSION_RADIUS; dy++) {
+        for (int dx = -MAX_EMISSION_RADIUS; dx <= MAX_EMISSION_RADIUS; dx++) {
+            // Calculate UV of neighboring tile
+            vec2 neighbor_uv = uv + vec2(float(dx), float(dy)) * texel_size;
+
+            // Skip if outside texture bounds
+            if (neighbor_uv.x < 0.0 || neighbor_uv.x > 1.0 ||
+                neighbor_uv.y < 0.0 || neighbor_uv.y > 1.0) {
+                continue;
+            }
+
+            // Sample emission texture
+            vec4 emission = texture(u_emission_map, neighbor_uv);
+
+            // Check if this tile emits light (radius > 0)
+            float radius = emission.a;
+            if (radius <= 0.0) {
+                continue;
+            }
+
+            // Calculate distance to emitting tile
+            float dist = length(vec2(float(dx), float(dy)));
+
+            // Skip if outside emission radius
+            if (dist > radius) {
+                continue;
+            }
+
+            // Calculate falloff (linear, matching point lights)
+            float falloff = max(0.0, 1.0 - dist / radius);
+
+            // Add emission contribution (RGB is pre-multiplied by intensity)
+            emission_total += emission.rgb * falloff;
+        }
+    }
+
+    return emission_total;
 }
 
 // Calculate directional shadow attenuation (sun/moon shadows)
@@ -289,7 +344,11 @@ void main() {
         // Use brightest-wins blending to match CPU np.maximum behavior
         final_color = max(final_color, light_contribution);
     }
-    
+
+    // Add emission contribution from glowing tiles (acid pools, hot coals, etc.)
+    vec3 emission_contribution = calculateEmissionContribution(v_uv, tile_pos);
+    final_color = max(final_color, emission_contribution);
+
     // Apply directional lighting (sun/moon) if sky exposure is present
     if (u_sun_intensity > 0.0) {
         // Sample sky exposure for this tile
