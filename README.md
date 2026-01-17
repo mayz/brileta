@@ -1,6 +1,32 @@
 # Catley
 
-A post-apocalyptic roguelike.
+Catley is an experimental post-apocalyptic game. The goal is to build interesting systems - environmental, social, tactical - and see what emerges from their interactions.
+
+The project prioritizes:
+- **Mechanical experimentation** over genre purity
+- **Feel and atmosphere** over feature completeness
+- **Emergent gameplay** from systemic interactions
+
+## Inspirations
+
+**Tone & Setting:**
+- *Fallout 1*, *Fallout 2*, and *Fallout Tactics*
+- Late 90s isometric RPGs
+- *Disco Elysium*
+
+**Mechanics:**
+- Jason Tocci's TTRPG *Wastoid*
+- *Brogue*
+
+## Design Principles
+
+**Systemic over scripted:** Prefer mechanics that emerge from system interactions over hand-authored special cases.
+
+**Feel first:** Visual and audio feedback matter as much as mechanical correctness. Uncertain outcomes deserve dramatic presentation.
+
+**Depth through interaction:** Interesting gameplay comes from systems interacting, not from adding more systems in isolation.
+
+**Respect the Intent/Executor pattern:** All world-changing actions go through intents and executors. This architecture enables future extensibility.
 
 ## Getting Started
 
