@@ -1,6 +1,6 @@
 """ExploreMode - Default gameplay mode for exploration and interaction.
 
-ExploreMode is the base layer that the game starts in. Other modes (TargetingMode,
+ExploreMode is the base layer that the game starts in. Other modes (CombatMode,
 future LockpickingMode, etc.) layer on top by falling back to ExploreMode for
 common functionality like movement, inventory, and weapon switching.
 
@@ -150,7 +150,7 @@ class ExploreMode(Mode):
                 return True
 
             case tcod.event.KeyDown(sym=Keys.KEY_T):
-                self.controller.enter_targeting_mode()
+                self.controller.enter_combat_mode()
                 return True
 
             case tcod.event.KeyDown(sym=Keys.KEY_R):

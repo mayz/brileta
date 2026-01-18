@@ -58,31 +58,12 @@ def test_router_opens_door_on_bump() -> None:
     assert controller.update_fov_called
 
 
-def test_router_attacks_actor_on_bump() -> None:
-    controller, player = _make_world()
-    enemy = Character(
-        1,
-        0,
-        "E",
-        colors.WHITE,
-        "Enemy",
-        game_world=cast(GameWorld, controller.gw),
-    )
-    controller.gw.add_actor(enemy)
+def test_player_bumping_npc_does_not_attack() -> None:
+    """Player bumping into an NPC stays adjacent without attacking.
 
-    with patch(
-        "catley.game.actions.executors.combat.AttackExecutor.execute",
-        return_value=GameActionResult(),
-    ) as mock_execute:
-        router = ActionRouter(cast(Controller, controller))
-        intent = MoveIntent(cast(Controller, controller), player, 1, 0)
-        router.execute_intent(intent)
-        assert mock_execute.called
-        assert (player.x, player.y) == (0, 0)
-        assert not controller.update_fov_called
-
-
-def test_player_bumping_npc_triggers_attack() -> None:
+    This shifts the game away from combat-by-default. The player sees
+    options in the ActionPanel and chooses deliberately.
+    """
     controller, player = _make_world()
     npc = Character(
         1,
@@ -102,11 +83,11 @@ def test_player_bumping_npc_triggers_attack() -> None:
         intent = MoveIntent(cast(Controller, controller), player, 1, 0)
         router.execute_intent(intent)
 
-        assert mock_execute.called
-        call_args = mock_execute.call_args[0][0]
-        assert isinstance(call_args, AttackIntent)
-        assert call_args.attacker is player
-        assert call_args.defender is npc
+        # Player should NOT attack - they stay adjacent and can choose an action
+        assert not mock_execute.called
+        # Player remains at original position (blocked by NPC)
+        assert (player.x, player.y) == (0, 0)
+        assert not controller.update_fov_called
 
 
 def test_npc_bumping_player_triggers_attack() -> None:

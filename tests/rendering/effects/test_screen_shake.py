@@ -139,7 +139,7 @@ class DummyController:
         )
         self.clock = SimpleNamespace(last_delta_time=0.016)
         self.active_mode = None
-        self.is_targeting_mode = lambda: False
+        self.is_combat_mode = lambda: False
 
 
 def test_world_view_applies_screen_shake_before_render(monkeypatch) -> None:

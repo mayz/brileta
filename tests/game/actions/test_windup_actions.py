@@ -200,7 +200,7 @@ class DummyOverlaySystem:
         return False
 
 
-class DummyTargetingMode:
+class DummyCombatMode:
     def __init__(self, controller: Controller) -> None:
         self.controller = controller
         self.active = False
@@ -232,9 +232,7 @@ def patched_controller(stop_after: int):
             patch("catley.controller.OverlaySystem", DummyOverlaySystem)
         )
         stack.enter_context(patch("catley.controller.ExploreMode", DummyExploreMode))
-        stack.enter_context(
-            patch("catley.controller.TargetingMode", DummyTargetingMode)
-        )
+        stack.enter_context(patch("catley.controller.CombatMode", DummyCombatMode))
         stack.enter_context(patch("catley.controller.Clock", DummyClock))
         stack.enter_context(patch("catley.controller.TurnManager", DummyTurnManager))
         stack.enter_context(patch.object(Controller, "update_fov", lambda self: None))

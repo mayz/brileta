@@ -724,7 +724,7 @@ class WorldView(View):
                 if (
                     self.controller.gw.selected_actor == actor
                     and self.controller.gw.game_map.visible[actor.x, actor.y]
-                    and not self.controller.is_targeting_mode()
+                    and not self.controller.is_combat_mode()
                 ):
                     final_fg_color = self._apply_pulsating_effect(
                         base_actor_color, actor.color
@@ -759,7 +759,7 @@ class WorldView(View):
 
     @record_time_live_variable("cpu.render.selected_actor_highlight_ms")
     def _render_selected_actor_highlight(self) -> None:
-        if self.controller.is_targeting_mode():
+        if self.controller.is_combat_mode():
             return
         actor = self.controller.gw.selected_actor
         if actor and self.controller.gw.game_map.visible[actor.x, actor.y]:

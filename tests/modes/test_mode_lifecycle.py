@@ -31,62 +31,62 @@ def test_explore_mode_is_active_on_init() -> None:
     assert controller.explore_mode.active is True
 
 
-def test_targeting_mode_is_inactive_on_init() -> None:
-    """TargetingMode's active flag is False after controller initialization."""
+def test_combat_mode_is_inactive_on_init() -> None:
+    """CombatMode's active flag is False after controller initialization."""
     controller = get_controller_with_player_and_map()
-    assert controller.targeting_mode.active is False
+    assert controller.combat_mode.active is False
 
 
 def test_mode_transition_calls_exit_and_enter() -> None:
     """Mode transitions properly call _exit() and enter().
 
-    When transitioning from ExploreMode to TargetingMode:
+    When transitioning from ExploreMode to CombatMode:
     - ExploreMode's active should become False
-    - TargetingMode's active should become True
-    - active_mode should point to TargetingMode
+    - CombatMode's active should become True
+    - active_mode should point to CombatMode
     """
     controller = get_controller_with_player_and_map()
 
     # Verify initial state
     assert controller.explore_mode.active is True
-    assert controller.targeting_mode.active is False
+    assert controller.combat_mode.active is False
     assert controller.active_mode is controller.explore_mode
 
-    # Transition to targeting mode
-    controller.enter_targeting_mode()
+    # Transition to combat mode
+    controller.enter_combat_mode()
 
     # Verify new state
     assert controller.explore_mode.active is False
-    assert controller.targeting_mode.active is True
-    assert controller.active_mode is controller.targeting_mode
+    assert controller.combat_mode.active is True
+    assert controller.active_mode is controller.combat_mode
 
 
-def test_exit_targeting_mode_returns_to_explore() -> None:
-    """Exiting targeting mode returns to explore mode."""
+def test_exit_combat_mode_returns_to_explore() -> None:
+    """Exiting combat mode returns to explore mode."""
     controller = get_controller_with_player_and_map()
 
-    # Enter and exit targeting mode
-    controller.enter_targeting_mode()
-    controller.exit_targeting_mode()
+    # Enter and exit combat mode
+    controller.enter_combat_mode()
+    controller.exit_combat_mode()
 
     # Should be back in explore mode
     assert controller.explore_mode.active is True
-    assert controller.targeting_mode.active is False
+    assert controller.combat_mode.active is False
     assert controller.active_mode is controller.explore_mode
 
 
-def test_reenter_targeting_mode() -> None:
-    """Can enter targeting mode again after exiting."""
+def test_reenter_combat_mode() -> None:
+    """Can enter combat mode again after exiting."""
     controller = get_controller_with_player_and_map()
 
     # First round
-    controller.enter_targeting_mode()
-    controller.exit_targeting_mode()
+    controller.enter_combat_mode()
+    controller.exit_combat_mode()
 
     # Second round
-    controller.enter_targeting_mode()
-    assert controller.targeting_mode.active is True
-    assert controller.active_mode is controller.targeting_mode
+    controller.enter_combat_mode()
+    assert controller.combat_mode.active is True
+    assert controller.active_mode is controller.combat_mode
 
 
 def test_transition_to_same_mode_is_noop() -> None:
@@ -116,18 +116,18 @@ def test_transition_to_same_mode_is_noop() -> None:
     assert test_key in controller.explore_mode.movement_keys
 
 
-def test_transition_to_same_targeting_mode_is_noop() -> None:
-    """Transitioning to targeting mode when already there is a no-op."""
+def test_transition_to_same_combat_mode_is_noop() -> None:
+    """Transitioning to combat mode when already there is a no-op."""
     controller = get_controller_with_player_and_map()
 
-    # Enter targeting mode
-    controller.enter_targeting_mode()
-    assert controller.active_mode is controller.targeting_mode
+    # Enter combat mode
+    controller.enter_combat_mode()
+    assert controller.active_mode is controller.combat_mode
 
     # Try to enter again via transition_to_mode
-    controller.transition_to_mode(controller.targeting_mode)
+    controller.transition_to_mode(controller.combat_mode)
 
-    # Should still be in targeting mode, explore should still be inactive
-    assert controller.active_mode is controller.targeting_mode
-    assert controller.targeting_mode.active is True
+    # Should still be in combat mode, explore should still be inactive
+    assert controller.active_mode is controller.combat_mode
+    assert controller.combat_mode.active is True
     assert controller.explore_mode.active is False

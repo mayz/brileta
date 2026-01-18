@@ -111,10 +111,10 @@ class TargetingIndicatorOverlay(TextOverlay):
         return "[ TARGETING ]"
 
     def _get_current_target(self) -> Character | None:
-        """Get the currently selected target from targeting mode."""
-        targeting_mode = self.controller.targeting_mode
-        if targeting_mode.active:
-            return targeting_mode._get_current_target()
+        """Get the currently selected target from combat mode."""
+        combat_mode = self.controller.combat_mode
+        if combat_mode.active:
+            return combat_mode._get_current_target()
         return None
 
     def draw_content(self) -> None:

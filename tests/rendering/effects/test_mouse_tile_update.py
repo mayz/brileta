@@ -58,7 +58,7 @@ class DummyController:
     graphics: object
     clock: object
     active_mode: object | None
-    is_targeting_mode: object
+    is_combat_mode: object
     coordinate_converter: object
     frame_manager: DummyFrameManager
 
@@ -78,7 +78,7 @@ def make_controller(root_tile: RootConsoleTilePos = (5, 5)) -> DummyController:
         graphics=renderer,
         clock=clock,
         active_mode=None,
-        is_targeting_mode=lambda: False,
+        is_combat_mode=lambda: False,
         coordinate_converter=coordinate_converter,
         frame_manager=frame_manager,
     )

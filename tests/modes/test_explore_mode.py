@@ -79,7 +79,7 @@ def make_explore_mode() -> tuple[ExploreMode, Any, DummyGameWorld]:
         frame_manager=frame_manager,
         overlay_system=overlay_system,
         app=dummy_app,
-        enter_targeting_mode=lambda: None,
+        enter_combat_mode=lambda: None,
         queue_action=lambda a: None,
         start_actor_pathfinding=lambda *a: True,
         last_input_time=0.0,

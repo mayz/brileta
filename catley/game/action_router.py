@@ -148,16 +148,10 @@ class ActionRouter:
                 return
 
             # --- WORLD INTERACTION RULE ---
-            # Player ramming an NPC should always trigger an attack.
+            # Player bumping an NPC does NOT trigger attack. The player stays
+            # adjacent and can choose an action from the ActionPanel. This shifts
+            # the game away from combat-by-default toward deliberate interaction.
             if bumper is self.controller.gw.player:
-                new_intent = AttackIntent(
-                    self.controller,
-                    bumper,
-                    bumpee,
-                    weapon=None,
-                    attack_mode="melee",
-                )
-                self.execute_intent(new_intent)
                 return
 
             # An NPC ramming another actor should ONLY trigger an attack

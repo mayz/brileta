@@ -1,6 +1,6 @@
 """Tests for mode layering behavior.
 
-TargetingMode layers on top of ExploreMode, falling back to ExploreMode
+CombatMode layers on top of ExploreMode, falling back to ExploreMode
 for common functionality like inventory access and movement.
 """
 
@@ -12,75 +12,75 @@ from catley.input_handler import Keys
 from tests.helpers import get_controller_with_player_and_map
 
 
-def test_targeting_mode_falls_back_to_explore_for_inventory() -> None:
-    """I key opens inventory while in targeting mode via fallback.
+def test_combat_mode_falls_back_to_explore_for_inventory() -> None:
+    """I key opens inventory while in combat mode via fallback.
 
-    TargetingMode doesn't handle I key directly, so it falls back to
+    CombatMode doesn't handle I key directly, so it falls back to
     ExploreMode which handles the inventory command.
     """
     controller = get_controller_with_player_and_map()
-    controller.enter_targeting_mode()
+    controller.enter_combat_mode()
 
     event = tcod.event.KeyDown(0, Keys.KEY_I, 0)
-    result = controller.targeting_mode.handle_input(event)
+    result = controller.combat_mode.handle_input(event)
 
     # Event should be handled via ExploreMode fallback
     assert result is True
 
 
-def test_targeting_mode_handles_escape_directly() -> None:
-    """Escape key exits targeting mode (handled by TargetingMode, not fallback)."""
+def test_combat_mode_handles_escape_directly() -> None:
+    """Escape key exits combat mode (handled by CombatMode, not fallback)."""
     controller = get_controller_with_player_and_map()
-    controller.enter_targeting_mode()
+    controller.enter_combat_mode()
 
     event = tcod.event.KeyDown(0, tcod.event.KeySym.ESCAPE, 0)
-    result = controller.targeting_mode.handle_input(event)
+    result = controller.combat_mode.handle_input(event)
 
-    # Event handled by TargetingMode directly
+    # Event handled by CombatMode directly
     assert result is True
-    # Should have exited targeting mode
+    # Should have exited combat mode
     assert controller.active_mode is controller.explore_mode
 
 
-def test_targeting_mode_handles_tab_directly() -> None:
-    """Tab key cycles targets (handled by TargetingMode, not fallback)."""
+def test_combat_mode_handles_tab_directly() -> None:
+    """Tab key cycles targets (handled by CombatMode, not fallback)."""
     controller = get_controller_with_player_and_map()
-    controller.enter_targeting_mode()
+    controller.enter_combat_mode()
 
     event = tcod.event.KeyDown(0, tcod.event.KeySym.TAB, 0)
-    result = controller.targeting_mode.handle_input(event)
+    result = controller.combat_mode.handle_input(event)
 
-    # Event handled by TargetingMode directly (even without valid targets)
+    # Event handled by CombatMode directly (even without valid targets)
     assert result is True
 
 
-def test_targeting_mode_forwards_update_for_movement() -> None:
-    """TargetingMode.update() forwards to ExploreMode for movement.
+def test_combat_mode_forwards_update_for_movement() -> None:
+    """CombatMode.update() forwards to ExploreMode for movement.
 
-    This allows players to move while in targeting mode.
+    This allows players to move while in combat mode.
     """
     controller = get_controller_with_player_and_map()
-    controller.enter_targeting_mode()
+    controller.enter_combat_mode()
 
     # Add a movement key to explore mode's tracking
     controller.explore_mode.movement_keys.add(tcod.event.KeySym.UP)
 
-    # Call targeting mode's update - should forward to explore mode
+    # Call combat mode's update - should forward to explore mode
     # and not raise any errors
-    controller.targeting_mode.update()
+    controller.combat_mode.update()
 
     # Verify explore mode received the update (timing state changed)
     assert controller.explore_mode.move_generator.is_first_move_of_burst is False
 
 
-def test_targeting_mode_tracks_movement_via_fallback() -> None:
+def test_combat_mode_tracks_movement_via_fallback() -> None:
     """Movement key events are handled by ExploreMode via fallback."""
     controller = get_controller_with_player_and_map()
-    controller.enter_targeting_mode()
+    controller.enter_combat_mode()
 
-    # Press movement key while in targeting mode
+    # Press movement key while in combat mode
     event = tcod.event.KeyDown(0, tcod.event.KeySym.UP, 0)
-    result = controller.targeting_mode.handle_input(event)
+    result = controller.combat_mode.handle_input(event)
 
     # Should be handled via ExploreMode fallback
     assert result is True
@@ -88,17 +88,17 @@ def test_targeting_mode_tracks_movement_via_fallback() -> None:
     assert tcod.event.KeySym.UP in controller.explore_mode.movement_keys
 
 
-def test_targeting_mode_releases_movement_via_fallback() -> None:
+def test_combat_mode_releases_movement_via_fallback() -> None:
     """Movement key releases are handled by ExploreMode via fallback."""
     controller = get_controller_with_player_and_map()
-    controller.enter_targeting_mode()
+    controller.enter_combat_mode()
 
     # First press the key
     controller.explore_mode.movement_keys.add(tcod.event.KeySym.UP)
 
     # Release it
     event = tcod.event.KeyUp(0, tcod.event.KeySym.UP, 0)
-    result = controller.targeting_mode.handle_input(event)
+    result = controller.combat_mode.handle_input(event)
 
     # Should be handled via ExploreMode fallback
     assert result is True
@@ -110,7 +110,7 @@ def test_overlay_consumes_escape_before_mode() -> None:
     """When overlay is active, it handles Escape before mode sees it.
 
     This tests the fix for the bug where pressing Escape with a menu open
-    would exit TargetingMode instead of closing the menu.
+    would exit CombatMode instead of closing the menu.
     """
     from unittest.mock import MagicMock
 
@@ -124,14 +124,14 @@ def test_overlay_consumes_escape_before_mode() -> None:
     input_handler = InputHandler(mock_app, controller)
     controller.input_handler = input_handler
 
-    controller.enter_targeting_mode()
+    controller.enter_combat_mode()
 
     # Track what each handler received
     overlay_received_escape: list[bool] = []
     mode_received_escape: list[bool] = []
 
     original_overlay_handle = controller.overlay_system.handle_input
-    original_mode_handle = controller.targeting_mode.handle_input
+    original_mode_handle = controller.combat_mode.handle_input
 
     def mock_overlay_handle(event: tcod.event.Event) -> bool:
         if (
@@ -151,7 +151,7 @@ def test_overlay_consumes_escape_before_mode() -> None:
         return original_mode_handle(event)
 
     controller.overlay_system.handle_input = mock_overlay_handle  # type: ignore[method-assign]
-    controller.targeting_mode.handle_input = mock_mode_handle  # type: ignore[method-assign]
+    controller.combat_mode.handle_input = mock_mode_handle  # type: ignore[method-assign]
 
     # Dispatch Escape through InputHandler
     escape_event = tcod.event.KeyDown(0, tcod.event.KeySym.ESCAPE, 0)
@@ -161,8 +161,8 @@ def test_overlay_consumes_escape_before_mode() -> None:
     assert len(overlay_received_escape) == 1
     # Mode should NOT have received Escape (overlay consumed it)
     assert len(mode_received_escape) == 0
-    # TargetingMode should still be active
-    assert controller.targeting_mode.active is True
+    # CombatMode should still be active
+    assert controller.combat_mode.active is True
 
 
 def test_overlay_consumes_q_before_quit() -> None:

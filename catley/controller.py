@@ -22,8 +22,8 @@ from .game.pathfinding_goal import PathfindingGoal
 from .game.turn_manager import TurnManager
 from .input_handler import InputHandler
 from .modes.base import Mode
+from .modes.combat import CombatMode
 from .modes.explore import ExploreMode
-from .modes.targeting import TargetingMode
 from .types import FixedTimestep, InterpolationAlpha
 from .util.clock import Clock
 from .util.coordinates import WorldTilePos
@@ -62,7 +62,7 @@ class Controller:
       `TurnManager`.
     - Input Processing: Immediately processes player input intents each frame to ensure
       zero-latency responsiveness, separate from the fixed logic loop.
-    - Mode Management: Controls the active game mode (e.g., normal, targeting) which
+    - Mode Management: Controls the active game mode (e.g., explore, combat) which
       alters player input and rendering.
     - Factory for Core Systems: Provides factory methods for creating essential game
       systems like `ResolutionSystem`.
@@ -151,7 +151,7 @@ class Controller:
 
         # Initialize mode system - game always has an active mode
         self.explore_mode = ExploreMode(self)
-        self.targeting_mode = TargetingMode(self)
+        self.combat_mode = CombatMode(self)
         self.active_mode: Mode = self.explore_mode
         self.explore_mode.enter()
 
@@ -201,7 +201,7 @@ class Controller:
 
         # Let the active mode handle movement (if it supports it)
         # ExploreMode generates movement intents from held keys
-        # TargetingMode forwards to ExploreMode for movement
+        # CombatMode forwards to ExploreMode for movement
         if not self.overlay_system.has_interactive_overlays():
             self.active_mode.update()
 
@@ -363,17 +363,17 @@ class Controller:
         self.active_mode = new_mode
         new_mode.enter()
 
-    def enter_targeting_mode(self) -> None:
-        """Enter targeting mode from current mode."""
-        self.transition_to_mode(self.targeting_mode)
+    def enter_combat_mode(self) -> None:
+        """Enter combat mode from current mode."""
+        self.transition_to_mode(self.combat_mode)
 
-    def exit_targeting_mode(self) -> None:
-        """Exit targeting mode back to explore mode."""
+    def exit_combat_mode(self) -> None:
+        """Exit combat mode back to explore mode."""
         self.transition_to_mode(self.explore_mode)
 
-    def is_targeting_mode(self) -> bool:
-        """Check if currently in targeting mode."""
-        return self.active_mode is self.targeting_mode
+    def is_combat_mode(self) -> bool:
+        """Check if currently in combat mode."""
+        return self.active_mode is self.combat_mode
 
     def create_resolver(self, **kwargs: object) -> ResolutionSystem:
         """Factory method for resolution systems.

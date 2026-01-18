@@ -60,7 +60,7 @@ class DummyController:
     graphics: MagicMock
     clock: object
     active_mode: object | None
-    is_targeting_mode: object
+    is_combat_mode: object
 
 
 def make_controller() -> DummyController:
@@ -77,7 +77,7 @@ def make_controller() -> DummyController:
         graphics=graphics,
         clock=clock,
         active_mode=None,
-        is_targeting_mode=lambda: False,
+        is_combat_mode=lambda: False,
     )
 
 

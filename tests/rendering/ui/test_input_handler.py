@@ -180,7 +180,7 @@ def make_explore_mode() -> tuple[
         start_actor_pathfinding=start_path,
         overlay_system=overlay_system,
         app=dummy_app,
-        enter_targeting_mode=lambda: None,
+        enter_combat_mode=lambda: None,
         queue_action=lambda a: None,
     )
 

@@ -16,8 +16,12 @@ if TYPE_CHECKING:
     from catley.controller import Controller
 
 
-class TargetingMode(Mode):
-    """Mode for targeting enemies and performing attacks"""
+class CombatMode(Mode):
+    """Mode for deliberate combat - targeting enemies and performing attacks.
+
+    This mode is entered when the player explicitly chooses to engage in combat,
+    shifting the game away from combat-by-default toward deliberate interaction.
+    """
 
     def __init__(self, controller: Controller) -> None:
         super().__init__(controller)
@@ -30,16 +34,16 @@ class TargetingMode(Mode):
         self.targeting_indicator_overlay = TargetingIndicatorOverlay(controller)
 
     def enter(self) -> None:
-        """Enter targeting mode and find all valid targets"""
+        """Enter combat mode and find all valid targets."""
         super().enter()
 
         assert self.controller.overlay_system is not None
         self.candidates = []
 
-        # Subscribe to actor death events only while targeting
+        # Subscribe to actor death events only while in combat mode
         subscribe_to_event(ActorDeathEvent, self._handle_actor_death_event)
 
-        # Set the crosshair cursor to indicate targeting mode
+        # Set the crosshair cursor to indicate combat mode
         self.cursor_manager.set_active_cursor_type("crosshair")
 
         self.controller.overlay_system.show_overlay(self.targeting_indicator_overlay)
@@ -58,9 +62,9 @@ class TargetingMode(Mode):
             self.controller.gw.selected_actor = self.candidates[0]
 
     def _exit(self) -> None:
-        """Exit targeting mode.
+        """Exit combat mode.
 
-        Called via :func:`Controller.exit_targeting_mode`.
+        Called via :func:`Controller.exit_combat_mode`.
         """
         # Remember who we were targeting
         if self.controller.gw.selected_actor:
@@ -86,9 +90,9 @@ class TargetingMode(Mode):
             self.on_actor_death(event.actor)
 
     def handle_input(self, event: tcod.event.Event) -> bool:
-        """Handle targeting mode input.
+        """Handle combat mode input.
 
-        Targeting-specific input is handled first. Unhandled input falls back
+        Combat-specific input is handled first. Unhandled input falls back
         to ExploreMode for common functionality (movement, inventory, etc.).
         """
         if not self.active:
@@ -97,11 +101,11 @@ class TargetingMode(Mode):
         # Handle targeting-specific input first
         match event:
             case tcod.event.KeyDown(sym=tcod.event.KeySym.ESCAPE):
-                self.controller.exit_targeting_mode()
+                self.controller.exit_combat_mode()
                 return True
 
             case tcod.event.KeyDown(sym=Keys.KEY_T):
-                self.controller.exit_targeting_mode()
+                self.controller.exit_combat_mode()
                 return True
 
             case tcod.event.KeyDown(sym=tcod.event.KeySym.TAB):
@@ -156,8 +160,8 @@ class TargetingMode(Mode):
     def update(self) -> None:
         """Rebuild target candidates and forward to explore mode for movement.
 
-        TargetingMode layers on top of ExploreMode, so we forward update()
-        to allow movement while targeting.
+        CombatMode layers on top of ExploreMode, so we forward update()
+        to allow movement while in combat.
         """
         if not self.active:
             return
@@ -202,8 +206,8 @@ class TargetingMode(Mode):
         self.controller.gw.selected_actor = self.candidates[self.current_index]
 
     def on_actor_death(self, actor: Character) -> None:
-        """Handle actor death in targeting mode"""
-        # Remove dead actors from targeting and update current target.
+        """Handle actor death in combat mode."""
+        # Remove dead actors from candidate list and update current target.
         if not self.active:
             return
 
@@ -217,7 +221,7 @@ class TargetingMode(Mode):
         if not self.candidates or (
             current_target and not current_target.health.is_alive()
         ):
-            self.controller.exit_targeting_mode()
+            self.controller.exit_combat_mode()
             return
 
         # Adjust index if needed
