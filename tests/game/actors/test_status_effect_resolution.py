@@ -148,6 +148,7 @@ def test_strength_boost_applies_to_roll() -> None:
 
 
 def test_tripped_skips_turn() -> None:
+    """TrippedEffect should prevent the actor's action for 2 turns."""
     gw = DummyGameWorld()
     player = PC(0, 0, "@", colors.WHITE, "Player", game_world=cast(GameWorld, gw))
     gw.player = player
@@ -160,6 +161,17 @@ def test_tripped_skips_turn() -> None:
         AttackIntent(cast(Controller, controller), player, player, FISTS_TYPE.create())
     )
     controller.run_one_turn()
+    # First turn: action was prevented, but TrippedEffect lasts 2 turns
     assert not controller.update_fov_called
     assert player.energy.accumulated_energy == player.energy.speed
+    # Effect still active after 1 turn (duration=2)
+    assert player.status_effects.has_status_effect(status_effects.TrippedEffect)
+
+    # Second turn: effect expires
+    controller.update_fov_called = False
+    tm.queue_action(
+        AttackIntent(cast(Controller, controller), player, player, FISTS_TYPE.create())
+    )
+    controller.run_one_turn()
+    assert not controller.update_fov_called  # Still prevented on second turn
     assert not player.status_effects.has_status_effect(status_effects.TrippedEffect)

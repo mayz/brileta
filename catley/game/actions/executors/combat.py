@@ -425,9 +425,6 @@ class AttackExecutor(ActionExecutor):
             intent.attacker.modifiers.get_resolution_modifiers(stat_name)
         )
 
-        if resolution_args.get("action_prevented", False):
-            return None
-
         final_advantage = range_modifiers.get(
             "has_advantage", False
         ) or resolution_args.get("has_advantage", False)

@@ -126,9 +126,22 @@ class TurnManager:
             if actor.energy.can_afford(config.ACTION_COST):
                 action = actor.get_next_action(self.controller)
                 if action is not None:
-                    # Update turn effects for this specific actor right before it acts.
+                    # Check if actor is prevented from acting BEFORE update_turn
+                    is_prevented = actor.status_effects.is_action_prevented()
+
+                    if is_prevented:
+                        # Actor is prevented - this counts as their turn.
+                        # Spend ALL energy so they can't attempt again this cycle.
+                        # Call update_turn to decrement effect duration.
+                        actor.update_turn(self.controller)
+                        if hasattr(actor, "energy"):
+                            actor.energy.accumulated_energy = 0
+                        continue
+
+                    # Actor can act - update their turn effects first
                     actor.update_turn(self.controller)
-                    # Execute immediately - let the action system handle everything
+
+                    # Execute the action
                     self.execute_intent(action)
                     if hasattr(actor, "energy"):
                         actor.energy.spend(config.ACTION_COST)

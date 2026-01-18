@@ -299,7 +299,17 @@ class Controller:
             return
 
         # For INSTANT actions, execute immediately.
-        # Process turn effects for the acting player only.
+        # CRITICAL: Check prevention BEFORE update_turn() to match NPC behavior.
+        # If checked after, 1-duration effects (Staggered) would already expire,
+        # allowing the player to act when they should be blocked.
+        if self.gw.player.status_effects.is_action_prevented():
+            # Player's action is blocked - still counts as their turn
+            self.gw.player.update_turn(self)
+            self.gw.player.energy.spend(config.ACTION_COST)
+            publish_event(MessageEvent("You cannot act!", colors.RED))
+            return
+
+        # Process turn effects for the acting player
         self.gw.player.update_turn(self)
 
         # Execute the player's action

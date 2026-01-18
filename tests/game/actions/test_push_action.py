@@ -11,7 +11,11 @@ from catley.events import reset_event_bus_for_testing
 from catley.game.actions.executors.stunts import PushExecutor
 from catley.game.actions.stunts import PushIntent
 from catley.game.actors import Character
-from catley.game.actors.status_effects import OffBalanceEffect, TrippedEffect
+from catley.game.actors.status_effects import (
+    OffBalanceEffect,
+    StaggeredEffect,
+    TrippedEffect,
+)
 from catley.game.game_world import GameWorld
 from catley.game.resolution.d20_system import D20System
 from tests.helpers import DummyGameWorld
@@ -91,8 +95,28 @@ def test_push_success_moves_target_one_tile() -> None:
     assert enemy.y == 5
 
 
+def test_push_success_applies_staggered_effect() -> None:
+    """A successful push should apply StaggeredEffect to the defender."""
+    reset_event_bus_for_testing()
+    controller, player, enemy = _make_world_with_enemy(
+        player_pos=(5, 5), enemy_pos=(6, 5)
+    )
+
+    # Force a successful roll (not critical)
+    with patch("random.randint", return_value=15):
+        intent = PushIntent(cast(Controller, controller), player, enemy)
+        executor = PushExecutor()
+        result = executor.execute(intent)
+
+    assert result is not None
+    assert result.succeeded
+    # Enemy should be staggered (not tripped - that's critical only)
+    assert enemy.status_effects.has_status_effect(StaggeredEffect)
+    assert not enemy.status_effects.has_status_effect(TrippedEffect)
+
+
 def test_push_critical_success_trips_target() -> None:
-    """A critical success push moves and trips the target."""
+    """A critical success push moves, trips target, and TrippedEffect lasts 2 turns."""
     reset_event_bus_for_testing()
     controller, player, enemy = _make_world_with_enemy(
         player_pos=(5, 5), enemy_pos=(6, 5)
@@ -107,8 +131,10 @@ def test_push_critical_success_trips_target() -> None:
     assert result is not None
     assert result.succeeded
     assert enemy.x == 7  # Pushed
-    # Check for TrippedEffect
+    # Check for TrippedEffect with 2-turn duration
     assert enemy.status_effects.has_status_effect(TrippedEffect)
+    # Verify TrippedEffect, not StaggeredEffect
+    assert not enemy.status_effects.has_status_effect(StaggeredEffect)
 
 
 def test_push_partial_success_moves_but_attacker_off_balance() -> None:

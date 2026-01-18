@@ -1142,6 +1142,14 @@ class StatusEffectsComponent:
         """Check if any status effect of the given type exists."""
         return any(isinstance(effect, effect_type) for effect in self._status_effects)
 
+    def is_action_prevented(self) -> bool:
+        """Check if any active status effect prevents this actor from acting.
+
+        Used by the TurnManager to skip an actor's turn when they have effects
+        like Tripped or Staggered active.
+        """
+        return any(effect.prevents_action for effect in self._status_effects)
+
     def get_status_effects_by_type(
         self, effect_type: type[StatusEffect]
     ) -> list[StatusEffect]:

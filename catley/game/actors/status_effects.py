@@ -39,12 +39,17 @@ class StatusEffect(abc.ABC):
         Whether multiple instances of this effect may exist on the same actor.
         If ``False`` (the default), attempts to apply another instance will be
         ignored.
+    prevents_action:
+        If ``True``, this effect prevents the actor from taking any action
+        while active. The TurnManager checks this before executing actions.
+        Used for effects like Tripped or Staggered.
     """
 
     name: str
     duration: int
     description: str = ""
     can_stack: bool = False
+    prevents_action: bool = False
 
     @abc.abstractmethod
     def apply_on_start(self, actor: Actor) -> None:
@@ -131,15 +136,22 @@ class FocusedEffect(StatusEffect):
 
 
 class TrippedEffect(StatusEffect):
-    """Forces the actor to skip their next action opportunity."""
+    """Forces the actor to skip their next two action opportunities.
 
-    # ``duration=1`` means the effect lasts until the actor's next turn begins
-    # and prevents that action before expiring.
+    Applied on critical success push (knocked to the ground) or critical
+    failure push (attacker trips). Lasts 2 turns to differentiate from
+    the lighter StaggeredEffect.
+    """
+
     def __init__(self) -> None:
+        # ``duration=2`` means the actor skips 2 turns before recovering.
+        # This is more punishing than StaggeredEffect (1 turn) because being
+        # knocked to the ground takes longer to recover from than stumbling.
         super().__init__(
             name="Tripped",
-            duration=1,
-            description="Skip next action",
+            duration=2,
+            description="Skip next 2 actions",
+            prevents_action=True,
         )
 
     def apply_on_start(self, actor: Actor) -> None:
@@ -152,8 +164,34 @@ class TrippedEffect(StatusEffect):
         pass
 
     def apply_to_resolution(self, resolution_args: dict[str, bool]) -> dict[str, bool]:
-        """Prevent action entirely by marking it as blocked."""
-        resolution_args["action_prevented"] = True
+        return resolution_args
+
+
+class StaggeredEffect(StatusEffect):
+    """Forces the actor to skip their next action opportunity.
+
+    Applied on successful (non-critical) push. Represents being momentarily
+    disoriented from being shoved. Lasts 1 turn - lighter than TrippedEffect.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(
+            name="Staggered",
+            duration=1,
+            description="Skip next action",
+            prevents_action=True,
+        )
+
+    def apply_on_start(self, actor: Actor) -> None:
+        pass
+
+    def apply_turn_effect(self, actor: Actor) -> None:
+        pass
+
+    def remove_effect(self, actor: Actor) -> None:
+        pass
+
+    def apply_to_resolution(self, resolution_args: dict[str, bool]) -> dict[str, bool]:
         return resolution_args
 
 

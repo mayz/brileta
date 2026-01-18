@@ -72,12 +72,46 @@ def test_focused_effect_expires() -> None:
     assert not actor.status_effects.has_status_effect(status_effects.FocusedEffect)
 
 
-def test_tripped_effect_expires() -> None:
+def test_tripped_effect_expires_after_two_turns() -> None:
+    """TrippedEffect should last 2 turns (skip 2 actions)."""
     controller, actor = make_world()
     actor.status_effects.apply_status_effect(status_effects.TrippedEffect())
     assert actor.status_effects.has_status_effect(status_effects.TrippedEffect)
-    actor.update_turn(cast(Controller, controller))
+    actor.update_turn(cast(Controller, controller))  # Turn 1 - still active
+    assert actor.status_effects.has_status_effect(status_effects.TrippedEffect)
+    actor.update_turn(cast(Controller, controller))  # Turn 2 - expires
     assert not actor.status_effects.has_status_effect(status_effects.TrippedEffect)
+
+
+def test_staggered_effect_expires() -> None:
+    """StaggeredEffect should last 1 turn (skip 1 action)."""
+    controller, actor = make_world()
+    actor.status_effects.apply_status_effect(status_effects.StaggeredEffect())
+    assert actor.status_effects.has_status_effect(status_effects.StaggeredEffect)
+    actor.update_turn(cast(Controller, controller))
+    assert not actor.status_effects.has_status_effect(status_effects.StaggeredEffect)
+
+
+def test_staggered_effect_prevents_action() -> None:
+    """StaggeredEffect should prevent the next action via prevents_action property."""
+    _controller, actor = make_world()
+    actor.status_effects.apply_status_effect(status_effects.StaggeredEffect())
+    # Use the new is_action_prevented() method which checks prevents_action property
+    assert actor.status_effects.is_action_prevented() is True
+
+
+def test_tripped_effect_prevents_action() -> None:
+    """TrippedEffect should also prevent actions via prevents_action property."""
+    _controller, actor = make_world()
+    actor.status_effects.apply_status_effect(status_effects.TrippedEffect())
+    assert actor.status_effects.is_action_prevented() is True
+
+
+def test_non_preventing_effect_does_not_prevent_action() -> None:
+    """OffBalanceEffect should not prevent action (only gives disadvantage)."""
+    _controller, actor = make_world()
+    actor.status_effects.apply_status_effect(status_effects.OffBalanceEffect())
+    assert actor.status_effects.is_action_prevented() is False
 
 
 def test_strength_boost_duration() -> None:

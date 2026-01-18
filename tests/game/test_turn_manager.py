@@ -8,10 +8,11 @@ from catley.events import reset_event_bus_for_testing
 from catley.game.action_router import ActionRouter
 from catley.game.actions.movement import MoveIntent
 from catley.game.actors import NPC, Character
+from catley.game.actors.status_effects import StaggeredEffect
 from catley.game.enums import Disposition
 from catley.game.game_world import GameWorld
 from catley.game.turn_manager import TurnManager
-from tests.helpers import DummyGameWorld
+from tests.helpers import DummyGameWorld, get_controller_with_player_and_map
 
 
 @dataclass
@@ -367,3 +368,137 @@ def test_npc_on_hazard_takes_damage_once_per_player_action() -> None:
     controller.turn_manager.on_player_action()
     second_damage = hp_after_first - npc.health.hp
     assert second_damage >= 1, "NPC should take damage again on next player action"
+
+
+# --- Action Prevention Tests ---
+
+
+def test_staggered_npc_action_blocked_by_turn_manager() -> None:
+    """NPC with StaggeredEffect should have their action blocked.
+
+    Regression test: The is_action_prevented() check must happen BEFORE
+    update_turn(), not after. If checked after, the 1-duration effect
+    will already be expired and removed, allowing the NPC to act.
+    """
+    reset_event_bus_for_testing()
+    gw = DummyGameWorld()
+    player = Character(
+        0, 0, "@", colors.WHITE, "Player", game_world=cast(GameWorld, gw)
+    )
+    # Place hostile NPC adjacent to player - it will want to attack
+    npc = NPC(
+        1,
+        0,
+        "r",
+        colors.RED,
+        "Raider",
+        game_world=cast(GameWorld, gw),
+        disposition=Disposition.HOSTILE,
+    )
+    gw.player = player
+    gw.add_actor(player)
+    gw.add_actor(npc)
+
+    controller = DummyController(gw=gw)
+
+    # Simulate a player action to populate energy and caches
+    controller.turn_manager.on_player_action()
+
+    # Give NPC more energy to ensure they can act
+    npc.energy.regenerate()
+    assert npc.energy.can_afford(controller.action_cost)
+
+    # Apply StaggeredEffect (duration=1) - should block next action
+    npc.status_effects.apply_status_effect(StaggeredEffect())
+    assert npc.status_effects.is_action_prevented()
+
+    initial_hp = player.health.hp
+
+    # Use the REAL TurnManager.process_all_npc_reactions() method
+    # This is what the game actually calls, not the test helper's run_one_turn()
+    controller.turn_manager.process_all_npc_reactions()
+
+    # NPC's action should have been blocked - player takes no damage
+    assert player.health.hp == initial_hp, (
+        "Staggered NPC should not be able to attack - "
+        "is_action_prevented() must be checked BEFORE update_turn()"
+    )
+
+    # Effect should have expired (update_turn called when blocked)
+    assert not npc.status_effects.is_action_prevented()
+
+    # NPC's energy should be depleted (can't act again until next player turn)
+    assert npc.energy.accumulated_energy == 0
+
+
+def test_staggered_player_action_blocked_by_controller() -> None:
+    """Player with StaggeredEffect should have their action blocked.
+
+    Regression test: The is_action_prevented() check must happen BEFORE
+    update_turn(), not after. If checked after, the 1-duration effect
+    will already be expired and removed, allowing the player to act.
+    """
+    reset_event_bus_for_testing()
+    controller = get_controller_with_player_and_map()
+    player = controller.gw.player
+
+    # Record initial position
+    initial_x, initial_y = player.x, player.y
+
+    # Apply StaggeredEffect (duration=1) - should block next action
+    player.status_effects.apply_status_effect(StaggeredEffect())
+    assert player.status_effects.is_action_prevented()
+
+    # Create a move intent to move right
+    move_intent = MoveIntent(controller, player, dx=1, dy=0)
+
+    # Execute through the REAL Controller._execute_player_action_immediately()
+    # This is what the game actually calls when the player presses a key
+    controller._execute_player_action_immediately(move_intent)
+
+    # Player's action should have been blocked - they didn't move
+    assert player.x == initial_x, (
+        "Staggered player should not be able to move - "
+        "is_action_prevented() must be checked BEFORE update_turn()"
+    )
+    assert player.y == initial_y
+
+    # Effect should have expired (update_turn called when blocked)
+    assert not player.status_effects.is_action_prevented()
+
+
+def test_tripped_player_blocked_for_two_turns() -> None:
+    """Player with TrippedEffect (duration=2) should be blocked for 2 turns."""
+    from catley.game.actors.status_effects import TrippedEffect
+
+    reset_event_bus_for_testing()
+    controller = get_controller_with_player_and_map()
+    player = controller.gw.player
+
+    initial_x = player.x
+
+    # Apply TrippedEffect (duration=2) - should block next 2 actions
+    player.status_effects.apply_status_effect(TrippedEffect())
+    assert player.status_effects.is_action_prevented()
+
+    # First attempted action - should be blocked
+    move_intent_1 = MoveIntent(controller, player, dx=1, dy=0)
+    controller._execute_player_action_immediately(move_intent_1)
+
+    assert player.x == initial_x, "First action should be blocked"
+    # Effect should still be active (duration was 2, now 1)
+    assert player.status_effects.is_action_prevented()
+
+    # Second attempted action - should also be blocked
+    move_intent_2 = MoveIntent(controller, player, dx=1, dy=0)
+    controller._execute_player_action_immediately(move_intent_2)
+
+    assert player.x == initial_x, "Second action should also be blocked"
+    # Effect should now be expired (duration was 1, now 0)
+    assert not player.status_effects.is_action_prevented()
+
+    # Third action - should succeed
+    move_intent_3 = MoveIntent(controller, player, dx=1, dy=0)
+    controller._execute_player_action_immediately(move_intent_3)
+
+    assert player.x == initial_x + 1, "Third action should succeed"

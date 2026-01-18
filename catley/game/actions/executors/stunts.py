@@ -13,7 +13,11 @@ from catley import colors
 from catley.events import MessageEvent, publish_event
 from catley.game.actions.base import GameActionResult
 from catley.game.actions.executors.base import ActionExecutor
-from catley.game.actors.status_effects import OffBalanceEffect, TrippedEffect
+from catley.game.actors.status_effects import (
+    OffBalanceEffect,
+    StaggeredEffect,
+    TrippedEffect,
+)
 from catley.game.enums import OutcomeTier
 from catley.util.dice import roll_d
 
@@ -55,16 +59,8 @@ class PushExecutor(ActionExecutor):
         attacker_strength = intent.attacker.stats.strength
         defender_strength = intent.defender.stats.strength
 
-        # Get resolution modifiers from status effects
+        # Get resolution modifiers from status effects (advantage/disadvantage)
         resolution_args = intent.attacker.modifiers.get_resolution_modifiers("strength")
-        if resolution_args.get("action_prevented", False):
-            publish_event(
-                MessageEvent(
-                    f"{intent.attacker.name} cannot act!",
-                    colors.RED,
-                )
-            )
-            return GameActionResult(succeeded=False, block_reason="action_prevented")
 
         resolver = intent.controller.create_resolver(
             ability_score=attacker_strength,
@@ -92,6 +88,10 @@ class PushExecutor(ActionExecutor):
 
             case OutcomeTier.SUCCESS:
                 pushed = self._attempt_push(intent, dx, dy)
+                # Apply StaggeredEffect - defender is disoriented and skips
+                # their next action. This prevents them from immediately
+                # walking back to their original position.
+                intent.defender.status_effects.apply_status_effect(StaggeredEffect())
                 atk_name = intent.attacker.name
                 def_name = intent.defender.name
                 if pushed:

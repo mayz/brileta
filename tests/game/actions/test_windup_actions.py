@@ -34,6 +34,8 @@ class DummyPlayer:
             regenerate=lambda: None,
             can_afford=lambda cost: True,
         )
+        # Status effects mock - player is not prevented from acting by default
+        self.status_effects = SimpleNamespace(is_action_prevented=lambda: False)
 
     def get_next_action(self, controller: Controller) -> None:
         return None
