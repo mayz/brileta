@@ -1248,15 +1248,20 @@ class EnergyComponent:
     - Energy is capped at maximum to prevent infinite buildup
     - Energy is spent when actions are taken
     - Game remains purely turn-based - nothing happens when player is idle
+
+    Note:
+        The actor reference is set after construction by Actor.__init__,
+        following the late-binding pattern used by other components like
+        ContainerStorage.
     """
 
-    actor: Actor
     speed: int = DEFAULT_ACTOR_SPEED
     accumulated_energy: float = 0.0
     max_energy: int = 200  # Energy cap to prevent infinite accumulation
+    actor: Actor | None = None  # Set by Actor.__init__ after construction
 
     def __post_init__(self) -> None:
-        self.accumulated_energy = self.speed
+        self.accumulated_energy = float(self.speed)
 
     @property
     def energy(self) -> float:
@@ -1293,7 +1298,12 @@ class EnergyComponent:
 
         Returns:
             Energy amount proportional to actor speed
+
+        Raises:
+            AssertionError: If actor reference hasn't been set yet.
         """
+        assert self.actor is not None, "EnergyComponent.actor must be set before use"
+
         # Base energy amount that gets scaled by speed
         # This is calibrated so that speed=100 actors get roughly 100 energy per action
         base_energy = 100.0

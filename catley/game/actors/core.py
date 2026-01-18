@@ -152,10 +152,10 @@ class Actor:
         inventory: InventoryComponent | None = None,
         visual_effects: VisualEffectsComponent | None = None,
         ai: AIComponent | None = None,
+        energy: EnergyComponent | None = None,
         # World and appearance
         game_world: GameWorld | None = None,
         blocks_movement: bool = True,
-        speed: int = DEFAULT_ACTOR_SPEED,
         visual_scale: float = 1.0,
         character_layers: list[CharacterLayer] | None = None,
     ) -> None:
@@ -192,7 +192,12 @@ class Actor:
             ConditionsComponent(self.inventory) if self.inventory is not None else None
         )
         self.modifiers = ModifiersComponent(actor=self)
-        self.energy = EnergyComponent(self, speed)
+
+        # Energy is optional - static objects like containers don't need it.
+        # Set the back-reference now that self exists.
+        self.energy = energy
+        if self.energy is not None:
+            self.energy.actor = self
 
         # === Behavioral/Optional Components ===
         self.ai = ai
@@ -422,20 +427,21 @@ class Character(Actor):
             inventory=CharacterInventory(stats, num_attack_slots, actor=self),
             visual_effects=visual_effects_component,
             ai=ai,
-            speed=speed,
+            energy=EnergyComponent(speed=speed),
             visual_scale=effective_visual_scale,
             **kwargs,
         )
 
         self.pathfinding_goal: PathfindingGoal | None = None
 
-        # Type narrowing - these are guaranteed to exist.
+        # Type narrowing - these are guaranteed to exist for Characters.
         self.stats: StatsComponent
         self.health: HealthComponent
         self.inventory: CharacterInventory
         self.visual_effects: VisualEffectsComponent
         self.modifiers: ModifiersComponent
         self.conditions: ConditionsComponent
+        self.energy: EnergyComponent
 
         if starting_weapon:
             self.inventory.equip_to_slot(starting_weapon, 0)

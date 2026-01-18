@@ -1011,29 +1011,25 @@ class TestEnergyComponent:
 
     def test_initialization_with_default_speed(self) -> None:
         """EnergyComponent should initialize with default speed."""
-        actor = make_mock_actor()
-        energy = EnergyComponent(actor)
+        energy = EnergyComponent()
 
         assert energy.speed == DEFAULT_ACTOR_SPEED
 
     def test_initialization_with_custom_speed(self) -> None:
         """EnergyComponent should accept custom speed."""
-        actor = make_mock_actor()
-        energy = EnergyComponent(actor, speed=150)
+        energy = EnergyComponent(speed=150)
 
         assert energy.speed == 150
 
     def test_initialization_sets_initial_energy_to_speed(self) -> None:
         """__post_init__ should set accumulated_energy to speed."""
-        actor = make_mock_actor()
-        energy = EnergyComponent(actor, speed=120)
+        energy = EnergyComponent(speed=120)
 
         assert energy.accumulated_energy == 120
 
     def test_accumulate_energy_adds_to_current(self) -> None:
         """accumulate_energy() should add to accumulated_energy."""
-        actor = make_mock_actor()
-        energy = EnergyComponent(actor)
+        energy = EnergyComponent()
         energy.accumulated_energy = 50
 
         energy.accumulate_energy(30)
@@ -1042,8 +1038,7 @@ class TestEnergyComponent:
 
     def test_accumulate_energy_capped_at_max(self) -> None:
         """accumulate_energy() should not exceed max_energy."""
-        actor = make_mock_actor()
-        energy = EnergyComponent(actor)
+        energy = EnergyComponent()
         energy.accumulated_energy = 190
 
         energy.accumulate_energy(50)
@@ -1052,8 +1047,7 @@ class TestEnergyComponent:
 
     def test_accumulate_energy_ignores_negative_amount(self) -> None:
         """accumulate_energy() should ignore negative amounts."""
-        actor = make_mock_actor()
-        energy = EnergyComponent(actor)
+        energy = EnergyComponent()
         energy.accumulated_energy = 100
 
         energy.accumulate_energy(-50)
@@ -1062,8 +1056,7 @@ class TestEnergyComponent:
 
     def test_accumulate_energy_ignores_zero_amount(self) -> None:
         """accumulate_energy() should ignore zero amount."""
-        actor = make_mock_actor()
-        energy = EnergyComponent(actor)
+        energy = EnergyComponent()
         energy.accumulated_energy = 100
 
         energy.accumulate_energy(0)
@@ -1073,7 +1066,8 @@ class TestEnergyComponent:
     def test_get_speed_based_energy_amount_baseline(self) -> None:
         """get_speed_based_energy_amount() returns ~100 for speed=100."""
         actor = make_mock_actor()
-        energy = EnergyComponent(actor, speed=100)
+        energy = EnergyComponent(speed=100)
+        energy.actor = actor  # Set back-reference for method that needs it
 
         amount = energy.get_speed_based_energy_amount()
 
@@ -1084,8 +1078,10 @@ class TestEnergyComponent:
         """Faster actors should get proportionally more energy."""
         actor = make_mock_actor()
 
-        energy_slow = EnergyComponent(actor, speed=50)
-        energy_fast = EnergyComponent(actor, speed=200)
+        energy_slow = EnergyComponent(speed=50)
+        energy_slow.actor = actor
+        energy_fast = EnergyComponent(speed=200)
+        energy_fast.actor = actor
 
         slow_amount = energy_slow.get_speed_based_energy_amount()
         fast_amount = energy_fast.get_speed_based_energy_amount()
@@ -1096,7 +1092,8 @@ class TestEnergyComponent:
         """Exhaustion should reduce energy amount."""
         actor = make_mock_actor()
         actor.conditions.add_condition(conditions.Exhaustion())
-        energy = EnergyComponent(actor, speed=100)
+        energy = EnergyComponent(speed=100)
+        energy.actor = actor
 
         amount = energy.get_speed_based_energy_amount()
 
@@ -1106,8 +1103,7 @@ class TestEnergyComponent:
 
     def test_can_afford_true_when_sufficient_energy(self) -> None:
         """can_afford() returns True when energy >= cost."""
-        actor = make_mock_actor()
-        energy = EnergyComponent(actor)
+        energy = EnergyComponent()
         energy.accumulated_energy = 100
 
         assert energy.can_afford(100) is True
@@ -1115,16 +1111,14 @@ class TestEnergyComponent:
 
     def test_can_afford_false_when_insufficient_energy(self) -> None:
         """can_afford() returns False when energy < cost."""
-        actor = make_mock_actor()
-        energy = EnergyComponent(actor)
+        energy = EnergyComponent()
         energy.accumulated_energy = 50
 
         assert energy.can_afford(100) is False
 
     def test_spend_reduces_accumulated_energy(self) -> None:
         """spend() should reduce accumulated_energy by cost."""
-        actor = make_mock_actor()
-        energy = EnergyComponent(actor)
+        energy = EnergyComponent()
         energy.accumulated_energy = 100
 
         energy.spend(60)
@@ -1133,8 +1127,7 @@ class TestEnergyComponent:
 
     def test_spend_cannot_go_below_zero(self) -> None:
         """spend() should clamp energy to 0."""
-        actor = make_mock_actor()
-        energy = EnergyComponent(actor)
+        energy = EnergyComponent()
         energy.accumulated_energy = 50
 
         energy.spend(100)
@@ -1143,8 +1136,7 @@ class TestEnergyComponent:
 
     def test_energy_property_alias(self) -> None:
         """energy property should alias accumulated_energy."""
-        actor = make_mock_actor()
-        energy = EnergyComponent(actor)
+        energy = EnergyComponent()
         energy.accumulated_energy = 75
 
         assert energy.energy == 75

@@ -76,10 +76,14 @@ class TurnManager:
         self._cache_dirty: bool = True
 
     def _update_energy_actors_cache(self) -> None:
-        """Update cached list of actors with energy components for performance."""
+        """Update cached list of actors with energy components for performance.
+
+        Only actors with a non-None energy component are included. Static objects
+        like containers don't have energy and are excluded from the action economy.
+        """
         if self._cache_dirty:
             self._energy_actors_cache = [
-                actor for actor in self.controller.gw.actors if hasattr(actor, "energy")
+                actor for actor in self.controller.gw.actors if actor.energy is not None
             ]
             self._cache_dirty = False
 
@@ -100,8 +104,10 @@ class TurnManager:
         # Update cache if needed for performance
         self._update_energy_actors_cache()
 
-        # Update energy for all actors with energy components
+        # Update energy for all actors with energy components.
+        # The cache only contains actors with non-None energy.
         for actor in self._energy_actors_cache:
+            assert actor.energy is not None  # Guaranteed by cache filter
             energy_amount = actor.energy.get_speed_based_energy_amount()
             actor.energy.accumulate_energy(energy_amount)
 
@@ -123,6 +129,9 @@ class TurnManager:
             if actor is self.player:
                 continue
 
+            # Cache only contains actors with non-None energy
+            assert actor.energy is not None
+
             if actor.energy.can_afford(config.ACTION_COST):
                 action = actor.get_next_action(self.controller)
                 if action is not None:
@@ -134,8 +143,7 @@ class TurnManager:
                         # Spend ALL energy so they can't attempt again this cycle.
                         # Call update_turn to decrement effect duration.
                         actor.update_turn(self.controller)
-                        if hasattr(actor, "energy"):
-                            actor.energy.accumulated_energy = 0
+                        actor.energy.accumulated_energy = 0
                         continue
 
                     # Actor can act - update their turn effects first
@@ -143,8 +151,7 @@ class TurnManager:
 
                     # Execute the action
                     self.execute_intent(action)
-                    if hasattr(actor, "energy"):
-                        actor.energy.spend(config.ACTION_COST)
+                    actor.energy.spend(config.ACTION_COST)
 
     def _apply_terrain_hazard(self, actor: Actor) -> None:
         """Check if actor is on hazardous terrain and apply damage if so.
@@ -245,7 +252,7 @@ class TurnManager:
         """Print current energy state for all actors (debugging only)."""
         print("=== RAF Energy State Debug ===")
         for actor in self.controller.gw.actors:
-            if hasattr(actor, "energy"):
+            if actor.energy is not None:
                 energy_per_action = actor.energy.get_speed_based_energy_amount()
                 energy_info = f"{actor.energy.energy:.1f}/{actor.energy.max_energy}"
                 speed_info = f"speed: {actor.energy.speed}, +{energy_per_action:.1f}"
@@ -263,11 +270,11 @@ class TurnManager:
             return {}
 
         # Find base speed (usually player speed)
-        base_speed = self.player.energy.speed if hasattr(self.player, "energy") else 100
+        base_speed = self.player.energy.speed if self.player.energy is not None else 100
 
         ratios = {}
         for actor in self.controller.gw.actors:
-            if hasattr(actor, "energy"):
+            if actor.energy is not None:
                 ratio = actor.energy.speed / base_speed
                 ratios[actor.name] = ratio
 

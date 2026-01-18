@@ -5,8 +5,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from catley import colors
+from catley.config import DEFAULT_ACTOR_SPEED
 from catley.game.actions.environmental import EnvironmentalDamageIntent
-from catley.game.actors.components import VisualEffectsComponent
+from catley.game.actors.components import EnergyComponent, VisualEffectsComponent
 from catley.game.actors.core import Actor
 from catley.game.lights import DynamicLight
 from catley.sound.emitter import SoundEmitter
@@ -61,9 +62,13 @@ class ContainedFire(Actor):
             game_world=game_world,
             blocks_movement=False,  # Can walk through fire (but take damage)
             visual_effects=visual_effects,
+            energy=EnergyComponent(speed=DEFAULT_ACTOR_SPEED),
         )
 
         self.damage_per_turn = damage_per_turn
+
+        # Type narrowing - energy is always set for ContainedFire.
+        self.energy: EnergyComponent
 
         # Add the fire effect
         self.fire_effect = FireEffect()

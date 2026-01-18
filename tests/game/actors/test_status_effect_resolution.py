@@ -38,19 +38,21 @@ class DummyController(Controller):
         # Start of Turn phase: All actors regenerate energy and process status effects
         for actor in self.gw.actors:
             actor.update_turn(cast(Controller, self))
-            actor.energy.regenerate()
+            if actor.energy is not None:
+                actor.energy.regenerate()
 
         # Player action (check if there's a queued action)
         player_action = self.turn_manager.dequeue_player_action()
         if player_action and self.gw.player:
             self.turn_manager.execute_intent(player_action)
-            self.gw.player.energy.spend(self.action_cost)
+            if self.gw.player.energy is not None:
+                self.gw.player.energy.spend(self.action_cost)
 
         # NPC Action Resolution: Process all NPCs with sufficient energy
         for actor in list(self.gw.actors):
             if actor is self.gw.player:
                 continue
-            if hasattr(actor, "energy") and actor.energy.can_afford(self.action_cost):
+            if actor.energy is not None and actor.energy.can_afford(self.action_cost):
                 action = actor.get_next_action(cast(Controller, self))
                 if action is not None:
                     self.turn_manager.execute_intent(action)
