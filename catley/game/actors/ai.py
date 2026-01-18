@@ -72,6 +72,83 @@ class AIComponent(abc.ABC):
         """
         pass
 
+    def _try_escape_hazard(
+        self, controller: Controller, actor: NPC
+    ) -> MoveIntent | None:
+        """Check if standing on hazard and return escape move if possible.
+
+        Finds the nearest safe adjacent tile and returns a MoveIntent to it.
+        Returns None if not on a hazard or if no safe escape exists.
+
+        Args:
+            controller: Game controller with access to world state.
+            actor: Actor to check for hazard escape.
+
+        Returns:
+            MoveIntent to escape, or None if no escape needed/possible.
+        """
+        from catley.environment.tile_types import get_tile_hazard_info
+        from catley.game.actions.movement import MoveIntent
+
+        # Check if currently standing on a hazard
+        tile_id = int(controller.gw.game_map.tiles[actor.x, actor.y])
+        damage_dice, _ = get_tile_hazard_info(tile_id)
+
+        if not damage_dice:
+            return None  # Not on a hazard, no escape needed
+
+        # Find safe adjacent tiles (orthogonal and diagonal).
+        # Track (dx, dy, distance) - prefer orthogonal (1) over diagonal (2).
+        safe_tiles: list[tuple[int, int, int]] = []
+        game_map = controller.gw.game_map
+
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                if dx == 0 and dy == 0:
+                    continue
+
+                nx, ny = actor.x + dx, actor.y + dy
+
+                # Check map boundaries
+                if not (0 <= nx < game_map.width and 0 <= ny < game_map.height):
+                    continue
+
+                # Check if walkable
+                if not game_map.walkable[nx, ny]:
+                    continue
+
+                # Check for blocking actors
+                blocking_actor = controller.gw.get_actor_at_location(nx, ny)
+                if blocking_actor and blocking_actor.blocks_movement:
+                    continue
+
+                # Check if this tile is also hazardous
+                adj_tile_id = int(game_map.tiles[nx, ny])
+                adj_damage, _ = get_tile_hazard_info(adj_tile_id)
+                if adj_damage:
+                    continue  # Skip hazardous tiles
+
+                # This is a valid safe tile - track with distance preference
+                dist = 1 if (dx == 0 or dy == 0) else 2
+                safe_tiles.append((dx, dy, dist))
+
+        if not safe_tiles:
+            return None  # No safe escape exists
+
+        # Pick the closest safe tile (prefer orthogonal)
+        safe_tiles.sort(key=lambda t: t[2])
+        dx, dy, _ = safe_tiles[0]
+
+        # Publish escape message
+        publish_event(
+            MessageEvent(
+                f"{actor.name} scrambles to escape the hazard!",
+                colors.ORANGE,
+            )
+        )
+
+        return MoveIntent(controller, actor, dx, dy)
+
 
 class DispositionBasedAI(AIComponent):
     """AI manager that delegates to focused behavior components.
@@ -102,8 +179,17 @@ class DispositionBasedAI(AIComponent):
         }
 
     def get_action(self, controller: Controller, actor: NPC) -> GameIntent | None:
-        """Delegate to the appropriate behavior based on the current disposition."""
-        # Get the behavior for current disposition
+        """Delegate to the appropriate behavior based on the current disposition.
+
+        Priority: If standing on a hazardous tile, attempt to escape before
+        any other action. Self-preservation overrides disposition behavior.
+        """
+        # Priority: Escape hazards before any other action
+        escape_intent = self._try_escape_hazard(controller, actor)
+        if escape_intent is not None:
+            return escape_intent
+
+        # Normal disposition-based behavior
         behavior = self._behaviors.get(self.disposition)
         if behavior:
             return behavior.get_action(controller, actor)
@@ -128,6 +214,11 @@ class HostileAI(AIComponent):
         self.aggro_radius = aggro_radius
 
     def get_action(self, controller: Controller, actor: NPC) -> GameIntent | None:
+        from catley import config
+
+        if not config.HOSTILE_AI_ENABLED:
+            return None
+
         player = controller.gw.player
 
         if not actor.health.is_alive() or not player.health.is_alive():

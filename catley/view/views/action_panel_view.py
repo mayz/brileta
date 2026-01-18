@@ -152,13 +152,21 @@ class ActionPanelView(TextView):
         self._previous_hotkeys = new_hotkeys
 
     def get_cache_key(self) -> tuple:
-        """Cache key based on mouse position, weapon state, and view dimensions."""
-        mouse_pos = str(self.controller.gw.mouse_tile_location_on_map)
-        player = self.controller.gw.player
+        """Cache key for rendering invalidation."""
+        gw = self.controller.gw
+        mouse_pos = str(gw.mouse_tile_location_on_map)
+
+        # Include target actor position - if they move, cache invalidates
+        target_actor_key = ""
+        if gw.mouse_tile_location_on_map:
+            mx, my = gw.mouse_tile_location_on_map
+            target = gw.get_actor_at_location(mx, my)
+            if target:
+                target_actor_key = f"{target.x},{target.y}"
+
+        player = gw.player
         player_pos = f"{player.x},{player.y}"
-        has_items_at_feet = self.controller.gw.has_pickable_items_at_location(
-            player.x, player.y
-        )
+        has_items_at_feet = gw.has_pickable_items_at_location(player.x, player.y)
         current_tile_dimensions = self.controller.graphics.tile_dimensions
         # Include inventory revision to detect weapon switches and inventory changes,
         # ensuring the panel re-renders immediately when the player switches weapons.
@@ -168,6 +176,7 @@ class ActionPanelView(TextView):
         modifier_revision = player.modifiers.revision
         return (
             mouse_pos,
+            target_actor_key,
             player_pos,
             has_items_at_feet,
             current_tile_dimensions,

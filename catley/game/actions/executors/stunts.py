@@ -39,10 +39,10 @@ class PushExecutor(ActionExecutor):
         - Failure: Attacker gains OffBalanceEffect
         - Critical Failure (nat 1): Attacker gains TrippedEffect
         """
-        # 1. Validate adjacency (Manhattan distance must be 1)
+        # 1. Validate adjacency (Chebyshev distance must be 1, includes diagonals)
         dx = intent.defender.x - intent.attacker.x
         dy = intent.defender.y - intent.attacker.y
-        if abs(dx) + abs(dy) != 1:
+        if max(abs(dx), abs(dy)) != 1:
             publish_event(
                 MessageEvent(
                     f"{intent.defender.name} is not adjacent!",
@@ -87,6 +87,7 @@ class PushExecutor(ActionExecutor):
                     # Couldn't push (edge of map), but still trip them
                     msg = f"Critical! {atk_name} knocks {def_name} to the ground!"
                 publish_event(MessageEvent(msg, colors.YELLOW))
+                self._update_ai_disposition(intent)
                 return GameActionResult(succeeded=True)
 
             case OutcomeTier.SUCCESS:
@@ -99,6 +100,7 @@ class PushExecutor(ActionExecutor):
                 else:
                     msg = f"{atk_name} pushes {def_name} but they have nowhere to go!"
                     publish_event(MessageEvent(msg, colors.LIGHT_GREY))
+                self._update_ai_disposition(intent)
                 return GameActionResult(succeeded=True)
 
             case OutcomeTier.PARTIAL_SUCCESS:
@@ -111,6 +113,7 @@ class PushExecutor(ActionExecutor):
                 else:
                     msg = f"{atk_name} pushes {def_name} but both end up off-balance!"
                 publish_event(MessageEvent(msg, colors.LIGHT_BLUE))
+                self._update_ai_disposition(intent)
                 return GameActionResult(succeeded=True)
 
             case OutcomeTier.FAILURE:
@@ -119,6 +122,7 @@ class PushExecutor(ActionExecutor):
                 def_name = intent.defender.name
                 msg = f"{atk_name} fails to push {def_name} and stumbles off-balance!"
                 publish_event(MessageEvent(msg, colors.GREY))
+                self._update_ai_disposition(intent)
                 return GameActionResult(succeeded=False)
 
             case OutcomeTier.CRITICAL_FAILURE:
@@ -127,6 +131,7 @@ class PushExecutor(ActionExecutor):
                 def_name = intent.defender.name
                 msg = f"Critical miss! {atk_name} trips trying to push {def_name}!"
                 publish_event(MessageEvent(msg, colors.ORANGE))
+                self._update_ai_disposition(intent)
                 return GameActionResult(succeeded=False)
 
         # Fallback (should never reach)
@@ -241,3 +246,34 @@ class PushExecutor(ActionExecutor):
                     colors.ORANGE,
                 )
             )
+
+    def _update_ai_disposition(self, intent: PushIntent) -> None:
+        """Update AI disposition if player pushed an NPC.
+
+        Being pushed (or having someone attempt to push you) is treated as an
+        aggressive act. Non-hostile NPCs become hostile when the player attempts
+        to push them, regardless of whether the push succeeds.
+        """
+        from catley.game.actors import ai
+        from catley.game.enums import Disposition
+
+        # Only trigger for player pushing NPC
+        if intent.attacker != intent.controller.gw.player:
+            return
+
+        # Check if defender has disposition-based AI
+        if not isinstance(intent.defender.ai, ai.DispositionBasedAI):
+            return
+
+        # Only change disposition if not already hostile
+        if intent.defender.ai.disposition == Disposition.HOSTILE:
+            return
+
+        # Make hostile
+        intent.defender.ai.disposition = Disposition.HOSTILE
+        publish_event(
+            MessageEvent(
+                f"{intent.defender.name} becomes hostile after being pushed!",
+                colors.ORANGE,
+            )
+        )

@@ -379,3 +379,183 @@ def test_push_direction_left() -> None:
     # Enemy should be pushed further left (x decreases)
     assert enemy.x == 4
     assert enemy.y == 5
+
+
+# --- Diagonal Push Tests ---
+
+
+def test_push_works_diagonally() -> None:
+    """Push should work on diagonally adjacent targets."""
+    reset_event_bus_for_testing()
+    controller, player, enemy = _make_world_with_enemy(
+        player_pos=(5, 5),
+        enemy_pos=(6, 6),  # Diagonal from player
+    )
+
+    with patch("random.randint", return_value=15):
+        intent = PushIntent(cast(Controller, controller), player, enemy)
+        executor = PushExecutor()
+        result = executor.execute(intent)
+
+    assert result is not None
+    assert result.succeeded
+    # Enemy should be pushed diagonally away (from 6,6 to 7,7)
+    assert enemy.x == 7
+    assert enemy.y == 7
+
+
+# --- Push Hostility Tests ---
+
+
+def test_push_makes_non_hostile_npc_hostile() -> None:
+    """Pushing a non-hostile NPC should make them hostile."""
+    from catley.game.actors import NPC
+    from catley.game.enums import Disposition
+
+    reset_event_bus_for_testing()
+    gw = DummyGameWorld()
+    player = Character(
+        5, 5, "@", colors.WHITE, "Player", game_world=cast(GameWorld, gw)
+    )
+    # Create a wary (non-hostile) NPC
+    npc = NPC(
+        6,
+        5,
+        "n",
+        colors.YELLOW,
+        "Wary NPC",
+        game_world=cast(GameWorld, gw),
+        disposition=Disposition.WARY,
+    )
+    gw.player = player
+    gw.add_actor(player)
+    gw.add_actor(npc)
+    controller = DummyController(gw=gw)
+
+    assert npc.ai.disposition == Disposition.WARY
+
+    # Force successful push
+    with patch("random.randint", return_value=15):
+        intent = PushIntent(cast(Controller, controller), player, npc)
+        executor = PushExecutor()
+        result = executor.execute(intent)
+
+    assert result is not None
+    assert result.succeeded
+    assert npc.ai.disposition == Disposition.HOSTILE
+
+
+def test_failed_push_still_triggers_hostility() -> None:
+    """A failed push should still make the NPC hostile - the attempt is aggressive."""
+    from catley.game.actors import NPC
+    from catley.game.enums import Disposition
+
+    reset_event_bus_for_testing()
+    gw = DummyGameWorld()
+    player = Character(
+        5, 5, "@", colors.WHITE, "Player", game_world=cast(GameWorld, gw)
+    )
+    npc = NPC(
+        6,
+        5,
+        "n",
+        colors.YELLOW,
+        "Wary NPC",
+        game_world=cast(GameWorld, gw),
+        disposition=Disposition.WARY,
+    )
+    gw.player = player
+    gw.add_actor(player)
+    gw.add_actor(npc)
+    controller = DummyController(gw=gw)
+
+    assert npc.ai.disposition == Disposition.WARY
+
+    # Force failed push (low roll, not nat 1)
+    with patch("random.randint", return_value=2):
+        intent = PushIntent(cast(Controller, controller), player, npc)
+        executor = PushExecutor()
+        result = executor.execute(intent)
+
+    assert result is not None
+    assert not result.succeeded
+    # The attempt was aggressive, so NPC becomes hostile
+    assert npc.ai.disposition == Disposition.HOSTILE
+
+
+def test_push_does_not_change_already_hostile() -> None:
+    """Pushing an already hostile NPC should not change their disposition."""
+    from catley.game.actors import NPC
+    from catley.game.enums import Disposition
+
+    reset_event_bus_for_testing()
+    gw = DummyGameWorld()
+    player = Character(
+        5, 5, "@", colors.WHITE, "Player", game_world=cast(GameWorld, gw)
+    )
+    npc = NPC(
+        6,
+        5,
+        "n",
+        colors.RED,
+        "Hostile NPC",
+        game_world=cast(GameWorld, gw),
+        disposition=Disposition.HOSTILE,
+    )
+    gw.player = player
+    gw.add_actor(player)
+    gw.add_actor(npc)
+    controller = DummyController(gw=gw)
+
+    with patch("random.randint", return_value=15):
+        intent = PushIntent(cast(Controller, controller), player, npc)
+        executor = PushExecutor()
+        executor.execute(intent)
+
+    assert npc.ai.disposition == Disposition.HOSTILE
+
+
+def test_npc_pushing_npc_does_not_trigger_hostility() -> None:
+    """NPC pushing another NPC should not change disposition toward player."""
+    from catley.game.actors import NPC
+    from catley.game.enums import Disposition
+
+    reset_event_bus_for_testing()
+    gw = DummyGameWorld()
+    player = Character(
+        0, 0, "@", colors.WHITE, "Player", game_world=cast(GameWorld, gw)
+    )
+    npc1 = NPC(
+        5,
+        5,
+        "a",
+        colors.RED,
+        "Attacker NPC",
+        game_world=cast(GameWorld, gw),
+        disposition=Disposition.HOSTILE,
+    )
+    npc2 = NPC(
+        6,
+        5,
+        "d",
+        colors.YELLOW,
+        "Defender NPC",
+        game_world=cast(GameWorld, gw),
+        disposition=Disposition.WARY,
+    )
+    gw.player = player
+    gw.add_actor(player)
+    gw.add_actor(npc1)
+    gw.add_actor(npc2)
+    controller = DummyController(gw=gw)
+
+    # NPC1 pushes NPC2
+    with patch("random.randint", return_value=15):
+        intent = PushIntent(cast(Controller, controller), npc1, npc2)
+        executor = PushExecutor()
+        result = executor.execute(intent)
+
+    assert result is not None
+    assert result.succeeded
+    # NPC2 should still be wary (NPC-vs-NPC doesn't trigger hostility toward player)
+    assert npc2.ai.disposition == Disposition.WARY

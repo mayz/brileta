@@ -144,6 +144,10 @@ VSYNC = not PERFORMANCE_PROFILING
 ACTION_COST = 100  # Energy cost for standard actions
 DEFAULT_ACTOR_SPEED = 100  # Default speed for actors (energy gained per round)
 
+# Set to False to make hostile NPCs passive (won't attack or pursue)
+# NPCs will still perform reactive behaviors like escaping hazards.
+HOSTILE_AI_ENABLED = True
+
 # Field of view
 FOV_RADIUS = 15  # Player's sight radius
 FOV_ALGORITHM = tcod.constants.FOV_SYMMETRIC_SHADOWCAST
