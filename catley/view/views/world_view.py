@@ -298,11 +298,9 @@ class WorldView(View):
             self._render_actors_traditional(graphics, alpha)
 
         # Render highlights and mode-specific UI on top of actors
-        if self.controller.active_mode:
-            with record_time_live_variable("cpu.render.active_mode_world_ms"):
-                self.controller.active_mode.render_world()
-        else:
-            self._render_selected_actor_highlight()
+        # The active mode is always set (ExploreMode by default)
+        with record_time_live_variable("cpu.render.active_mode_world_ms"):
+            self.controller.active_mode.render_world()
 
         with record_time_live_variable("cpu.render.particles_over_actors_ms"):
             graphics.render_particles(

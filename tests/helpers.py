@@ -242,7 +242,8 @@ def get_controller_with_player_and_map() -> Controller:
             self.controller = controller
             self.graphics = graphics or getattr(controller, "graphics", None)
             self.cursor_manager = SimpleNamespace(
-                update_mouse_position=lambda *_a, **_kw: None
+                update_mouse_position=lambda *_a, **_kw: None,
+                set_active_cursor_type=lambda *_a, **_kw: None,
             )
 
         def render_frame(self, *_a, **_kw) -> None:  # pragma: no cover - stub
@@ -270,7 +271,6 @@ def get_controller_with_player_and_map() -> Controller:
     with (
         patch("catley.controller.FrameManager", DummyFrameManager),
         patch("catley.controller.InputHandler", lambda c, a: None),
-        patch("catley.controller.MovementInputHandler", lambda c: None),
     ):
         from typing import cast
 

@@ -107,33 +107,37 @@ class AttackExecutor(ActionExecutor):
 
         return GameActionResult(consequences=consequences)
 
-    def _execute_tile_shot(self, intent: AttackIntent) -> GameActionResult:
-        """Execute a shot at an environmental tile (wall, door, etc.).
+    def _fire_weapon(
+        self,
+        intent: AttackIntent,
+        weapon: Item,
+        target_x: int,
+        target_y: int,
+    ) -> bool:
+        """Consume ammo and emit common firing effects for ranged attacks.
 
-        Reuses muzzle flash and ammo consumption logic, then plays impact sound
-        at the target tile based on its material.
+        This consolidates the firing mechanics shared between actor attacks and
+        tile shots: ammo consumption, inventory revision, muzzle flash, gunfire
+        sound, and dry-fire click when empty.
+
+        Args:
+            intent: The attack intent with attacker and controller info.
+            weapon: The weapon being fired.
+            target_x: X coordinate of the target (actor or tile).
+            target_y: Y coordinate of the target (actor or tile).
+
+        Returns:
+            True if the weapon fired successfully, False if it couldn't fire
+            (no ammo or no ranged capability).
         """
-        weapon = intent.weapon
-        if weapon is None:
-            publish_event(MessageEvent("No weapon selected!", colors.RED))
-            return GameActionResult(succeeded=False)
-
         ranged_attack = weapon.ranged_attack
         if not ranged_attack or ranged_attack.current_ammo <= 0:
             publish_event(MessageEvent(f"{weapon.name} is empty!", colors.RED))
-            return GameActionResult(succeeded=False)
+            return False
 
-        # Consume ammo
+        # Consume ammo and notify inventory for UI cache invalidation
         ranged_attack.current_ammo -= 1
-
-        # Get target tile info
-        game_map = intent.controller.gw.game_map
-        target_x = intent.target_x
-        target_y = intent.target_y
-        assert target_x is not None and target_y is not None  # Type narrowing
-
-        tile_type_id = int(game_map.tiles[target_x, target_y])
-        tile_name = tile_types.get_tile_type_name_by_id(tile_type_id)
+        intent.attacker.inventory._increment_revision()
 
         # Direction for muzzle flash
         direction_x = target_x - intent.attacker.x
@@ -171,6 +175,37 @@ class AttackExecutor(ActionExecutor):
                 is_player_action=is_player,
             )
         )
+
+        # Emit dry fire click if weapon is now empty
+        if ranged_attack.current_ammo == 0:
+            self._emit_dry_fire(intent)
+
+        return True
+
+    def _execute_tile_shot(self, intent: AttackIntent) -> GameActionResult:
+        """Execute a shot at an environmental tile (wall, door, etc.).
+
+        Uses _fire_weapon for common firing mechanics, then plays impact sound
+        at the target tile based on its material.
+        """
+        weapon = intent.weapon
+        if weapon is None:
+            publish_event(MessageEvent("No weapon selected!", colors.RED))
+            return GameActionResult(succeeded=False)
+
+        target_x = intent.target_x
+        target_y = intent.target_y
+        assert target_x is not None and target_y is not None  # Type narrowing
+
+        # Fire the weapon (handles ammo, muzzle flash, sounds, dry fire)
+        if not self._fire_weapon(intent, weapon, target_x, target_y):
+            return GameActionResult(succeeded=False)
+
+        # Get target tile info for impact effects
+        game_map = intent.controller.gw.game_map
+        tile_type_id = int(game_map.tiles[target_x, target_y])
+        tile_name = tile_types.get_tile_type_name_by_id(tile_type_id)
+        is_player = intent.attacker == intent.controller.gw.player
 
         # Emit impact sound at target tile
         material = AudioMaterialResolver.resolve_tile_material(tile_type_id)
@@ -440,85 +475,32 @@ class AttackExecutor(ActionExecutor):
         )
         attack_result = resolver.resolve(intent.attacker, intent.defender, weapon)
 
-        # Consume ammo for ranged attacks
+        # Fire the weapon for ranged attacks (handles ammo, muzzle flash, sounds)
         ranged_attack = weapon.ranged_attack
         if attack == ranged_attack and ranged_attack is not None:
-            if ranged_attack.current_ammo > 0:
-                ranged_attack.current_ammo -= 1
-                intent.attacker.inventory._increment_revision()
-            else:
-                # This shouldn't happen if validation worked, but safety check
-                publish_event(
-                    MessageEvent(f"No ammo left in {weapon.name}!", colors.RED)
-                )
+            assert intent.defender is not None
+            self._fire_weapon(intent, weapon, intent.defender.x, intent.defender.y)
 
-        # Emit muzzle flash and gunfire sound for ranged attacks
-        if attack == weapon.ranged_attack and weapon.ranged_attack is not None:
-            self._emit_muzzle_flash(intent, weapon)
+            # Handle thrown weapons when empty - remove from inventory and spawn
+            # at target location for potential retrieval.
+            # Skip if critical failure - weapon_drop consequence handles that case.
+            if (
+                ranged_attack.current_ammo == 0
+                and WeaponProperty.THROWN in ranged_attack.properties
+                and attack_result.outcome_tier != OutcomeTier.CRITICAL_FAILURE
+            ):
+                inv = intent.attacker.inventory
+                inv.try_remove_item(weapon)
 
-            # Emit dry fire click if weapon is now empty
-            if weapon.ranged_attack.current_ammo == 0:
-                self._emit_dry_fire(intent)
-
-                # Thrown items are consumed after use - remove from inventory
-                # and spawn at target location for potential retrieval.
-                # Skip if critical failure - weapon_drop consequence handles that case.
-                if (
-                    WeaponProperty.THROWN in weapon.ranged_attack.properties
-                    and attack_result.outcome_tier != OutcomeTier.CRITICAL_FAILURE
-                ):
-                    inv = intent.attacker.inventory
-                    inv.try_remove_item(weapon)
-
-                    # Spawn at target location for potential retrieval
-                    if weapon.can_materialize and intent.defender:
-                        gw = intent.attacker.gw
-                        if gw:
-                            gw.spawn_ground_item(
-                                weapon, intent.defender.x, intent.defender.y
-                            )
+                # Spawn at target location for potential retrieval
+                if weapon.can_materialize and intent.defender:
+                    gw = intent.attacker.gw
+                    if gw:
+                        gw.spawn_ground_item(
+                            weapon, intent.defender.x, intent.defender.y
+                        )
 
         return attack_result
-
-    def _emit_muzzle_flash(self, intent: AttackIntent, weapon: Item) -> None:
-        """Emit muzzle flash and gunfire sound via presentation layer."""
-        assert intent.defender is not None  # Tile shots handled separately
-        direction_x = intent.defender.x - intent.attacker.x
-        direction_y = intent.defender.y - intent.attacker.y
-
-        # Build sound list based on weapon's ammo type
-        sound_events: list[SoundEvent] = []
-        if weapon.ranged_attack:
-            sound_id = get_weapon_sound_id(weapon.ranged_attack.ammo_type)
-            if sound_id:
-                sound_events.append(
-                    SoundEvent(
-                        sound_id=sound_id,
-                        x=intent.attacker.x,
-                        y=intent.attacker.y,
-                        pitch_jitter=(0.95, 1.05),
-                    )
-                )
-
-        # Use presentation layer for staggered combat feedback
-        is_player = intent.attacker == intent.controller.gw.player
-        publish_event(
-            PresentationEvent(
-                effect_events=[
-                    EffectEvent(
-                        "muzzle_flash",
-                        intent.attacker.x,
-                        intent.attacker.y,
-                        direction_x=direction_x,
-                        direction_y=direction_y,
-                    )
-                ],
-                sound_events=sound_events,
-                source_x=intent.attacker.x,
-                source_y=intent.attacker.y,
-                is_player_action=is_player,
-            )
-        )
 
     def _emit_dry_fire(self, intent: AttackIntent) -> None:
         """Emit dry fire click sound when weapon empties.

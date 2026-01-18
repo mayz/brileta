@@ -284,6 +284,49 @@ def test_transfer_item_to_inventory() -> None:
     assert len(player.inventory) == initial_inventory_size + 1
 
 
+def test_transfer_removes_item_from_ground() -> None:
+    """Transferred item should be removed from ground and menu should update."""
+    from tests.helpers import get_controller_with_player_and_map
+
+    controller = get_controller_with_player_and_map()
+    player = controller.gw.player
+    location = (player.x, player.y)
+
+    # Spawn a single item using the real spawning system
+    item = COMBAT_KNIFE_TYPE.create()
+    controller.gw.spawn_ground_item(item, *location)
+
+    # Verify item is on ground
+    ground_items_before = controller.gw.get_pickable_items_at_location(*location)
+    assert len(ground_items_before) == 1, "Should have 1 item on ground"
+    assert ground_items_before[0] is item, "Should be the same item object"
+
+    # Open menu
+    menu = DualPaneMenu(controller, source=ExternalInventory(location, "On the ground"))
+    menu.show()
+
+    assert len(menu.right_options) == 1, "Menu should show 1 item"
+    menu_item = menu.right_options[0].data
+    assert menu_item is not None, "Menu item data should not be None"
+    assert menu_item is item, "Menu should reference the same item object"
+
+    # Transfer
+    menu._transfer_to_inventory(menu_item)
+
+    # Verify item is removed from ground
+    ground_items_after = controller.gw.get_pickable_items_at_location(*location)
+    assert len(ground_items_after) == 0, "Item should be removed from ground"
+
+    # Verify item is in player inventory
+    assert item in player.inventory, "Item should be in player inventory"
+
+    # Verify menu updated to show no items
+    assert len(menu.right_options) == 1, "Menu should have 1 option (placeholder)"
+    assert menu.right_options[0].text == "(no items)", (
+        "Menu should show no items placeholder"
+    )
+
+
 def test_transfer_fails_when_inventory_full() -> None:
     """Transfer should fail gracefully when inventory is full."""
     controller = _make_controller_with_ground_items()

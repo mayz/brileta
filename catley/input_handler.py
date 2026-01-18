@@ -1,45 +1,40 @@
+"""InputHandler - Thin dispatcher that routes input to modes and overlays.
+
+The InputHandler receives raw input events from the app and dispatches them
+to the appropriate handler:
+1. Window close events (OS-level, always work)
+2. Overlay system (menus are modal - they consume input first)
+3. Q key quit command (respects menus)
+4. Active mode's handle_input()
+5. Mouse motion for tile tracking
+
+Movement key tracking and UI command handling have moved to ExploreMode.
+"""
+
 from __future__ import annotations
 
 import copy
-import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 import tcod.event
 
-from catley import colors
-from catley.events import MessageEvent, publish_event
-from catley.game.actors import Actor, Character
 from catley.types import (
     PixelCoord,
     PixelPos,
     RootConsoleTilePos,
-    WorldTileCoord,
     WorldTilePos,
 )
-from catley.view.ui.action_browser_menu import ActionBrowserMenu
-from catley.view.ui.context_menu import ContextMenu
-from catley.view.ui.dual_pane_menu import DualPaneMenu, ExternalInventory
-from catley.view.ui.help_menu import HelpMenu
-
-from .game.actions.base import GameIntent
 
 if TYPE_CHECKING:
     from .app import App
     from .controller import Controller
 
-from typing import Final
-
 from .view.ui.commands import (
-    OpenExistingMenuUICommand,
-    OpenMenuUICommand,
     QuitUICommand,
-    ToggleFullscreenUICommand,
-    UICommand,
 )
 
+
 # Define KeySym constants for alphabetic keys missing from type stubs.
-
-
 class Keys:
     """Container for letter KeySym constants used in pattern matching.
 
@@ -57,6 +52,19 @@ class Keys:
 
 
 class InputHandler:
+    """Thin dispatcher that routes input events to modes and overlays.
+
+    This class is responsible for:
+    - Updating mouse cursor position
+    - Handling window close events (always work)
+    - Delegating input to overlays first (menus are modal)
+    - Handling Q key quit (after overlays had their chance)
+    - Delegating remaining input to the active mode
+    - Updating mouse tile location for hover effects
+
+    Movement key tracking and UI command handling are in ExploreMode.
+    """
+
     def __init__(self, app: App, controller: Controller) -> None:
         self.app = app
         self.controller = controller
@@ -64,45 +72,36 @@ class InputHandler:
         assert self.fm is not None
         self.graphics = self.fm.graphics
         self.cursor_manager = self.fm.cursor_manager
-        self.dev_console_overlay = getattr(self.fm, "dev_console_overlay", None)
         self.gw = controller.gw
-        self.game_map = self.gw.game_map
-        self.p = self.gw.player
-        self.movement_keys: set[tcod.event.KeySym] = set()
 
     def dispatch(self, event: tcod.event.Event) -> None:
-        if isinstance(event, tcod.event.KeyDown | tcod.event.KeyUp) and event.sym in {
-            tcod.event.KeySym.UP,
-            tcod.event.KeySym.DOWN,
-            tcod.event.KeySym.LEFT,
-            tcod.event.KeySym.RIGHT,
-            Keys.KEY_H,
-            Keys.KEY_J,
-            Keys.KEY_K,
-            Keys.KEY_L,
-        }:
-            if isinstance(event, tcod.event.KeyDown):
-                if not self.movement_keys:
-                    self.controller.last_input_time = time.perf_counter()
-                    self.controller.action_count_for_latency_metric = 0
-                self.movement_keys.add(event.sym)
-            else:
-                self.movement_keys.discard(event.sym)
+        """Main entry point for all input events.
 
+        Priority order:
+        1. Mouse position updates (always)
+        2. Window close events (OS-level, always work)
+        3. Overlay system (menus are modal - they consume input first)
+        4. Q key quit command (respects menus)
+        5. Active mode input handling
+        6. Mouse motion for tile tracking
+        """
+        # Update mouse cursor position
         if isinstance(event, tcod.event.MouseState):
-            # Update mouse cursor position using pixel coordinates.
             px_pos: PixelPos = event.position
             px_x: PixelCoord = px_pos[0]
             px_y: PixelCoord = px_pos[1]
 
-            # Scale coordinates for cursor rendering to match framebuffer coordinates
             scale_x, scale_y = self.graphics.get_display_scale_factor()
             scaled_px_x: PixelCoord = px_x * scale_x
             scaled_px_y: PixelCoord = px_y * scale_y
             self.cursor_manager.update_mouse_position(scaled_px_x, scaled_px_y)
 
-        # Try to handle the event with the menu system
-        # For mouse events, we need to send scaled coordinates to match cursor position
+        # Window close events always work (OS-level, can't prevent)
+        if isinstance(event, tcod.event.Quit):
+            QuitUICommand(self.app).execute()
+            return
+
+        # Scale mouse events for overlay system
         menu_event = event
         if isinstance(
             event,
@@ -110,213 +109,42 @@ class InputHandler:
             | tcod.event.MouseButtonUp
             | tcod.event.MouseMotion,
         ):
-            # Create scaled version for menu system
             scale_x, scale_y = self.graphics.get_display_scale_factor()
             scaled_x = event.position.x * scale_x
             scaled_y = event.position.y * scale_y
             menu_event = copy.copy(event)
             menu_event.position = tcod.event.Point(int(scaled_x), int(scaled_y))
 
+        # Overlays first: Menus are modal - they consume input before anything else
         assert self.controller.overlay_system is not None
-        menu_consumed = self.controller.overlay_system.handle_input(menu_event)
+        if self.controller.overlay_system.handle_input(menu_event):
+            return  # Overlay consumed the event
 
-        # If no menu handled it, check for normal game actions
-        if not menu_consumed:
-            action = self.handle_event(event)
-            if action:
-                # UICommands should be executed immediately, not queued
-                if isinstance(action, UICommand):
-                    action.execute()
-                else:
-                    self.controller.queue_action(action)
+        # Q key quits the game (only checked after overlays had their chance)
+        if self._is_quit_key(event):
+            QuitUICommand(self.app).execute()
+            return
 
-    def handle_event(self, event: tcod.event.Event) -> GameIntent | UICommand | None:
-        assert self.controller.overlay_system is not None
-        assert self.fm is not None
+        # Then delegate to active mode
+        if self.controller.active_mode.handle_input(event):
+            return  # Mode consumed the event
 
-        # Don't process game actions if INTERACTIVE menus are active
-        if self.controller.overlay_system.has_interactive_overlays():
-            return None
+        # Handle mouse motion for tile tracking (for hover effects)
+        if isinstance(event, tcod.event.MouseMotion):
+            self._update_mouse_tile_location(event)
 
+    def _is_quit_key(self, event: tcod.event.Event) -> bool:
+        """Check if event is the Q key (quit hotkey)."""
         match event:
-            case tcod.event.MouseMotion():
-                event = self.convert_mouse_coordinates(event)
-
-                root_tile_pos: RootConsoleTilePos = (
-                    int(event.position.x),
-                    int(event.position.y),
-                )
-                world_tile_pos: WorldTilePos | None = (
-                    self.fm.get_world_coords_from_root_tile_coords(root_tile_pos)
-                )
-
-                if world_tile_pos is not None:
-                    self.gw.mouse_tile_location_on_map = world_tile_pos
-                else:
-                    # Mouse is outside the game map area (e.g., on UI views).
-                    self.gw.mouse_tile_location_on_map = None
-
-                return None
-
-        # Handle UI commands.
-        ui_command = self._check_for_ui_command(event)
-        if ui_command:
-            ui_command.execute()
-            return None
-
-        # Don't process game actions if player is dead
-        if self.p.health and not self.p.health.is_alive():
-            return None
-
-        return None
-
-    def _check_for_ui_command(self, event: tcod.event.Event) -> UICommand | None:
-        # Check if a mode wants to handle this first
-        if self.controller.active_mode and self.controller.active_mode.handle_input(
-            event
-        ):
-            return None
-
-        assert self.controller.overlay_system is not None
-
-        # Handle quit command early - this should always work, even when dead
-        match event:
-            case tcod.event.Quit():
-                return QuitUICommand(self.app)
             case tcod.event.KeyDown(sym=Keys.KEY_Q):
-                return QuitUICommand(self.app)
+                return True
+        return False
 
-        # Check action panel hotkeys first (for immediate action execution)
-        if isinstance(event, tcod.event.KeyDown) and hasattr(
-            self.fm, "action_panel_view"
-        ):
-            # Get the character from the key symbol
-            key_char = None
-            if 97 <= event.sym <= 122:  # a-z
-                key_char = chr(event.sym)
-            elif 65 <= event.sym <= 90:  # A-Z
-                key_char = chr(event.sym).lower()
-
-            if key_char:
-                # Don't process hotkey actions if player is dead
-                if not self.p.health.is_alive():
-                    return None
-
-                hotkeys = self.fm.action_panel_view.get_hotkeys()
-                if key_char in hotkeys:
-                    action_option = hotkeys[key_char]
-                    # Execute the action using the same pattern as context menu
-                    action_executed = False
-                    if hasattr(action_option, "execute") and action_option.execute:
-                        result = action_option.execute()
-                        if isinstance(result, GameIntent):
-                            self.controller.queue_action(result)
-                            action_executed = True
-                    elif action_option.action_class:
-                        # Create action instance with static params
-                        action_instance = action_option.action_class(
-                            self.controller,
-                            self.controller.gw.player,
-                            **action_option.static_params,
-                        )
-                        self.controller.queue_action(action_instance)
-                        action_executed = True
-
-                    # If action was executed, check if it affects the hovered tile
-                    if action_executed and self._action_affects_hovered_tile(
-                        action_option
-                    ):
-                        # Invalidate action panel cache to refresh on next frame
-                        self.fm.action_panel_view.invalidate_cache()
-
-                    if action_executed:
-                        return None  # Action handled
-
-        match event:
-            case tcod.event.KeyDown(sym=Keys.KEY_I):
-                # Open inventory (loot mode if standing on items)
-                player = self.controller.gw.player
-                if self.controller.gw.has_pickable_items_at_location(
-                    player.x, player.y
-                ):
-                    source = ExternalInventory((player.x, player.y), "On the ground")
-                    menu = DualPaneMenu(self.controller, source=source)
-                    return OpenExistingMenuUICommand(self.controller, menu)
-                return OpenMenuUICommand(self.controller, DualPaneMenu)
-
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.GRAVE):
-                if self.dev_console_overlay is not None:
-                    self.controller.overlay_system.toggle_overlay(
-                        self.dev_console_overlay
-                    )
-                return None
-
-            case tcod.event.KeyDown(sym=key_sym, mod=key_mod) if (
-                key_sym == tcod.event.KeySym.QUESTION
-                or (
-                    key_sym == tcod.event.KeySym.SLASH
-                    and (key_mod & tcod.event.Modifier.SHIFT)
-                )
-            ):
-                return OpenMenuUICommand(self.controller, HelpMenu)
-
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.SPACE):
-                return OpenMenuUICommand(self.controller, ActionBrowserMenu)
-
-            case tcod.event.KeyDown(sym=Keys.KEY_T):
-                # Toggle targeting mode
-                if self.controller.is_targeting_mode():
-                    self.controller.exit_targeting_mode()
-                else:
-                    self.controller.enter_targeting_mode()
-                return None
-
-            case tcod.event.KeyDown(sym=Keys.KEY_R):
-                # Reload active weapon
-                active_weapon = self.p.inventory.get_active_weapon()
-                if (
-                    active_weapon
-                    and active_weapon.ranged_attack
-                    and active_weapon.ranged_attack.current_ammo
-                    < active_weapon.ranged_attack.max_ammo
-                ):
-                    from .game.actions.combat import ReloadIntent
-
-                    reload_action = ReloadIntent(self.controller, self.p, active_weapon)
-                    self.controller.queue_action(reload_action)
-                else:
-                    publish_event(MessageEvent("Nothing to reload!", colors.GREY))
-                return None
-
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.N1):
-                self.fm.equipment_view.switch_to_slot(0)
-                return None
-
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.N2):
-                self.fm.equipment_view.switch_to_slot(1)
-                return None
-
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.RETURN, mod=mod) if (
-                mod & tcod.event.Modifier.ALT
-            ):
-                return ToggleFullscreenUICommand(self.app)
-
-            case tcod.event.MouseButtonDown():
-                return self._handle_mouse_button_down_event(event)
-
-            case _:
-                return None
-
-    def _handle_mouse_button_down_event(
-        self, event: tcod.event.MouseButtonDown
-    ) -> UICommand | None:
-        """
-        Handle mouse button down events.
-        Returns an action if the event is handled, otherwise None.
-        """
+    def _update_mouse_tile_location(self, event: tcod.event.MouseMotion) -> None:
+        """Update the mouse tile location for hover effects."""
         assert self.fm is not None
 
-        event_with_tile_coords = self.convert_mouse_coordinates(event)
+        event_with_tile_coords = self._convert_mouse_coordinates(event)
         root_tile_pos: RootConsoleTilePos = (
             int(event_with_tile_coords.position.x),
             int(event_with_tile_coords.position.y),
@@ -325,127 +153,13 @@ class InputHandler:
             self.fm.get_world_coords_from_root_tile_coords(root_tile_pos)
         )
 
-        if event.button == tcod.event.MouseButton.LEFT and (
-            tcod.event.get_modifier_state() & tcod.event.Modifier.SHIFT
-        ):
-            if world_tile_pos is None:
-                return None
-            self.controller.start_actor_pathfinding(self.p, world_tile_pos)
-            return None
+        if world_tile_pos is not None:
+            self.gw.mouse_tile_location_on_map = world_tile_pos
+        else:
+            # Mouse is outside the game map area (e.g., on UI views).
+            self.gw.mouse_tile_location_on_map = None
 
-        if event.button == tcod.event.MouseButton.RIGHT:
-            target: Actor | WorldTilePos | None = None
-            if world_tile_pos:
-                world_x: WorldTileCoord
-                world_y: WorldTileCoord
-                world_x, world_y = world_tile_pos
-                if (
-                    0 <= world_x < self.game_map.width
-                    and 0 <= world_y < self.game_map.height
-                    and self.game_map.visible[world_x, world_y]
-                ):
-                    actor_at_click = self.gw.get_actor_at_location(world_x, world_y)
-                    if actor_at_click is not None and (
-                        not isinstance(actor_at_click, Character)
-                        or actor_at_click.health.is_alive()
-                    ):
-                        target = actor_at_click
-                    else:
-                        target = (world_x, world_y)
-            if target and self._has_available_actions(target):
-                context_menu = ContextMenu(self.controller, target, root_tile_pos)
-                return OpenExistingMenuUICommand(self.controller, context_menu)
-            return None
-
-        if event.button != tcod.event.MouseButton.LEFT:
-            return None
-
-        # Check if click is on the status view (conditions display)
-        status_view_command = self._check_status_view_click(root_tile_pos)
-        if status_view_command:
-            return status_view_command
-
-        # Check if click is on the equipment view (weapon slots)
-        if self._check_equipment_view_click(root_tile_pos):
-            return None  # Click handled, no UICommand needed
-
-        # Left click does nothing - no tile/actor selection
-        return None
-
-    def _check_status_view_click(
-        self, root_tile_pos: RootConsoleTilePos
-    ) -> UICommand | None:
-        """Check if click is on a condition row in status view, open inventory.
-
-        Only condition rows are clickable (not status effect rows or empty rows).
-        Status effects are informational only; conditions can be managed in inventory.
-        """
-        status_view = self.fm.status_view
-        tile_x, tile_y = root_tile_pos
-
-        # Check within status view horizontal bounds
-        if not (status_view.x <= tile_x < status_view.x + status_view.width):
-            return None
-
-        # Calculate which row was clicked (relative to view)
-        clicked_row = tile_y - status_view.y
-        if clicked_row < 0:
-            return None
-
-        # Only clickable if clicking on a condition row (after status effects)
-        num_effects = status_view._num_status_effects_displayed
-        num_conditions = status_view._num_conditions_displayed
-
-        # Conditions start after status effects
-        condition_start_row = num_effects
-        condition_end_row = num_effects + num_conditions
-
-        if condition_start_row <= clicked_row < condition_end_row:
-            return OpenMenuUICommand(self.controller, DualPaneMenu)
-
-        return None
-
-    def _check_equipment_view_click(self, root_tile_pos: RootConsoleTilePos) -> bool:
-        """Check if click is within equipment view bounds and delegate to view.
-
-        Returns True if the click was handled, False otherwise.
-        """
-        equipment_view = self.fm.equipment_view
-        tile_x, tile_y = root_tile_pos
-
-        # Check within equipment view bounds
-        if not (equipment_view.x <= tile_x < equipment_view.x + equipment_view.width):
-            return False
-
-        clicked_row = tile_y - equipment_view.y
-        if clicked_row < 0 or clicked_row >= equipment_view.height:
-            return False
-
-        # Delegate to view - it knows its own layout
-        return equipment_view.handle_click(clicked_row)
-
-    def _has_available_actions(self, target: Actor | WorldTilePos) -> bool:
-        """Quickly check if any actions are available for a target."""
-        from catley.game.actions.discovery import ActionDiscovery
-
-        disc = ActionDiscovery()
-        player = self.p
-
-        if isinstance(target, Character):
-            options = disc.get_options_for_target(self.controller, player, target)
-            return bool(options)
-        if isinstance(target, Actor):
-            return False
-
-        world_x, world_y = target
-        if not (
-            0 <= world_x < self.game_map.width and 0 <= world_y < self.game_map.height
-        ):
-            return False
-
-        return bool(self.game_map.visible[world_x, world_y])
-
-    def convert_mouse_coordinates(
+    def _convert_mouse_coordinates(
         self, event: tcod.event.MouseState
     ) -> tcod.event.MouseState:
         """Convert event pixel coordinates to root console tile coordinates."""
@@ -453,8 +167,6 @@ class InputHandler:
         px_x: PixelCoord = px_pos[0]
         px_y: PixelCoord = px_pos[1]
 
-        # Scale coordinates to match framebuffer space
-        # (pixel_to_tile expects framebuffer coords)
         scale_x, scale_y = self.graphics.get_display_scale_factor()
         scaled_px_x: PixelCoord = px_x * scale_x
         scaled_px_y: PixelCoord = px_y * scale_y
@@ -463,27 +175,3 @@ class InputHandler:
         event_copy = copy.copy(event)
         event_copy.position = tcod.event.Point(root_tile_x, root_tile_y)
         return event_copy
-
-    def _action_affects_hovered_tile(self, action_option) -> bool:
-        """Check if an action affects the currently hovered tile."""
-        from catley.game.actions.environment import CloseDoorIntent, OpenDoorIntent
-
-        # Get current mouse position
-        mouse_pos = self.controller.gw.mouse_tile_location_on_map
-        if mouse_pos is None:
-            return False
-
-        mouse_x, mouse_y = mouse_pos
-
-        # Check if it's a door action (either direct or pathfinding)
-        # Direct actions have action_class set
-        if action_option.action_class in (OpenDoorIntent, CloseDoorIntent):
-            action_x = action_option.static_params.get("x")
-            action_y = action_option.static_params.get("y")
-            if action_x is not None and action_y is not None:
-                # Check if this action affects the hovered tile
-                return action_x == mouse_x and action_y == mouse_y
-
-        # Don't invalidate for pathfinding actions (they use execute function)
-        # Cache will be invalidated when the action actually completes
-        return False

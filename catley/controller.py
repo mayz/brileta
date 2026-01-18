@@ -22,8 +22,8 @@ from .game.pathfinding_goal import PathfindingGoal
 from .game.turn_manager import TurnManager
 from .input_handler import InputHandler
 from .modes.base import Mode
+from .modes.explore import ExploreMode
 from .modes.targeting import TargetingMode
-from .movement_handler import MovementInputHandler
 from .types import FixedTimestep, InterpolationAlpha
 from .util.clock import Clock
 from .util.coordinates import WorldTilePos
@@ -146,13 +146,14 @@ class Controller:
         # Prevents performance collapse when rendering framerate drops below timestep
         self.max_logic_steps_per_frame = 5
 
-        self.movement_handler = MovementInputHandler(self)
         self.last_input_time: float | None = None
         self.action_count_for_latency_metric: int = 0
 
-        # Initialize mode system
+        # Initialize mode system - game always has an active mode
+        self.explore_mode = ExploreMode(self)
         self.targeting_mode = TargetingMode(self)
-        self.active_mode: Mode | None = None
+        self.active_mode: Mode = self.explore_mode
+        self.explore_mode.enter()
 
     def update_fov(self) -> None:
         """Recompute the visible area based on the player's point of view."""
@@ -190,31 +191,19 @@ class Controller:
         self.frame_manager.register_metrics()
 
     def process_player_input(self) -> None:
+        """Process all pending player input.
+
+        Should be called once per visual frame before the logic step loop
+        to ensure responsiveness. The active mode handles movement via its
+        update() method.
         """
-        Processes all pending player input. Should be called once per visual frame
-        before the logic step loop to ensure responsiveness.
-        """
-        # Assert that dependencies have been injected
         assert self.overlay_system is not None and self.input_handler is not None
 
-        # Check for player-initiated actions (movement or queued)
-        move_intent = None
+        # Let the active mode handle movement (if it supports it)
+        # ExploreMode generates movement intents from held keys
+        # TargetingMode forwards to ExploreMode for movement
         if not self.overlay_system.has_interactive_overlays():
-            # Check if player is trying to move
-            potential_move = self.movement_handler.generate_intent(
-                self.input_handler.movement_keys
-            )
-            if potential_move:
-                # Energy gate: player must afford the action for speed penalties
-                # to be perceptible. If they can't afford it, time still passes
-                # (energy regenerates) but they don't move.
-                if self.gw.player.energy.can_afford(config.ACTION_COST):
-                    move_intent = potential_move
-                    self._execute_player_action_immediately(move_intent)
-                else:
-                    # Player tried to move but can't afford it - time passes anyway.
-                    # This prevents deadlock where low energy = no regen = stuck.
-                    self.turn_manager.on_player_action()
+            self.active_mode.update()
 
         # Check for other queued player actions
         if self.turn_manager.has_pending_actions():
@@ -223,8 +212,9 @@ class Controller:
                 self._execute_player_action_immediately(player_action)
 
         # Check for autopilot actions if no manual input
+        has_movement_keys = bool(self.explore_mode.movement_keys)
         if (
-            not move_intent
+            not has_movement_keys
             and not self.turn_manager.has_pending_actions()
             and self.turn_manager.is_player_turn_available()
         ):
@@ -361,20 +351,29 @@ class Controller:
         """
         self.turn_manager.queue_action(action)
 
+    def transition_to_mode(self, new_mode: Mode) -> None:
+        """Transition from current mode to a new mode.
+
+        Handles exit of current mode and entry of new mode.
+        Safe to call even if already in the target mode.
+        """
+        if self.active_mode is new_mode:
+            return  # Already in this mode
+        self.active_mode._exit()
+        self.active_mode = new_mode
+        new_mode.enter()
+
     def enter_targeting_mode(self) -> None:
-        """Enter targeting mode"""
-        self.active_mode = self.targeting_mode
-        self.targeting_mode.enter()
+        """Enter targeting mode from current mode."""
+        self.transition_to_mode(self.targeting_mode)
 
     def exit_targeting_mode(self) -> None:
-        """Exit targeting mode"""
-        if self.active_mode == self.targeting_mode:
-            self.targeting_mode._exit()
-            self.active_mode = None
+        """Exit targeting mode back to explore mode."""
+        self.transition_to_mode(self.explore_mode)
 
     def is_targeting_mode(self) -> bool:
-        """Check if currently in targeting mode"""
-        return self.active_mode == self.targeting_mode
+        """Check if currently in targeting mode."""
+        return self.active_mode is self.targeting_mode
 
     def create_resolver(self, **kwargs: object) -> ResolutionSystem:
         """Factory method for resolution systems.

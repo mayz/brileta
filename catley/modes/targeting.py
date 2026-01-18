@@ -86,10 +86,15 @@ class TargetingMode(Mode):
             self.on_actor_death(event.actor)
 
     def handle_input(self, event: tcod.event.Event) -> bool:
-        """Handle targeting mode input"""
+        """Handle targeting mode input.
+
+        Targeting-specific input is handled first. Unhandled input falls back
+        to ExploreMode for common functionality (movement, inventory, etc.).
+        """
         if not self.active:
             return False
 
+        # Handle targeting-specific input first
         match event:
             case tcod.event.KeyDown(sym=tcod.event.KeySym.ESCAPE):
                 self.controller.exit_targeting_mode()
@@ -126,7 +131,9 @@ class TargetingMode(Mode):
                     return True
                 return True  # Consume click even if no valid target
 
-        return False
+        # Fall back to explore mode for everything else
+        # (movement, inventory, reload, weapon switch, etc.)
+        return self.controller.explore_mode.handle_input(event)
 
     def render_world(self) -> None:
         """Render targeting highlights in world space"""
@@ -147,9 +154,16 @@ class TargetingMode(Mode):
                 gw_view.highlight_actor(actor, (100, 0, 0), effect="solid")
 
     def update(self) -> None:
-        """Rebuild target candidates each frame and maintain selection."""
+        """Rebuild target candidates and forward to explore mode for movement.
+
+        TargetingMode layers on top of ExploreMode, so we forward update()
+        to allow movement while targeting.
+        """
         if not self.active:
             return
+
+        # Forward to explore mode for movement
+        self.controller.explore_mode.update()
 
         previous_target = self._get_current_target()
         gw = self.controller.gw

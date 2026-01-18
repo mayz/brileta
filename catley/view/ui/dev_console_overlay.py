@@ -218,6 +218,9 @@ class DevConsoleOverlay(TextOverlay):
                     self.input_buffer += text
                 self._reset_input_state()
                 return True
+            case tcod.event.KeyDown():
+                # Consume all other keyboard input while console is active
+                return True
         return False
 
     # ------------------------------------------------------------------

@@ -98,12 +98,50 @@ class DummyInputHandler:
         pass
 
 
-class DummyMovementHandler:
+class DummyMoveIntentGenerator:
+    """Dummy move intent generator for testing."""
+
     def __init__(self, controller: Controller) -> None:
-        pass
+        self.controller = controller
 
     def generate_intent(self, keys: set) -> None:
         return None
+
+
+class DummyExploreMode:
+    """Dummy explore mode for testing."""
+
+    def __init__(self, controller: Controller) -> None:
+        self.controller = controller
+        self.active = True
+        self.movement_keys: set = set()
+        self.move_generator = DummyMoveIntentGenerator(controller)
+
+    def enter(self) -> None:
+        self.active = True
+
+    def _exit(self) -> None:
+        self.active = False
+
+    def handle_input(self, event: object) -> bool:
+        return False
+
+    def update(self) -> None:
+        """Generate movement intent if keys are held."""
+        if not self.movement_keys:
+            return
+
+        intent = self.move_generator.generate_intent(self.movement_keys)
+        if intent:
+            player = self.controller.gw.player
+            if player.energy.can_afford(100):  # config.ACTION_COST
+                self.controller._execute_player_action_immediately(intent)
+            else:
+                # Player tried to move but can't afford it - time passes anyway
+                self.controller.turn_manager.on_player_action()
+
+    def render_world(self) -> None:
+        pass
 
 
 class DummyTurnManager:
@@ -164,15 +202,23 @@ class DummyOverlaySystem:
 
 class DummyTargetingMode:
     def __init__(self, controller: Controller) -> None:
-        pass
+        self.controller = controller
+        self.active = False
 
     def enter(self) -> None:
-        pass
+        self.active = True
 
     def _exit(self) -> None:
-        pass
+        self.active = False
+
+    def handle_input(self, event: object) -> bool:
+        return False
 
     def update(self) -> None:
+        # Forward to explore mode for movement (layering pattern)
+        self.controller.explore_mode.update()
+
+    def render_world(self) -> None:
         pass
 
 
@@ -181,13 +227,11 @@ def patched_controller(stop_after: int):
     with ExitStack() as stack:
         stack.enter_context(patch("catley.controller.GameWorld", DummyGameWorld))
         stack.enter_context(patch("catley.controller.InputHandler", DummyInputHandler))
-        stack.enter_context(
-            patch("catley.controller.MovementInputHandler", DummyMovementHandler)
-        )
         stack.enter_context(patch("catley.controller.FrameManager", DummyFrameManager))
         stack.enter_context(
             patch("catley.controller.OverlaySystem", DummyOverlaySystem)
         )
+        stack.enter_context(patch("catley.controller.ExploreMode", DummyExploreMode))
         stack.enter_context(
             patch("catley.controller.TargetingMode", DummyTargetingMode)
         )
@@ -391,12 +435,14 @@ def test_energy_gate_blocks_movement_when_insufficient_energy() -> None:
         # Make can_afford return False
         controller.gw.player.energy.can_afford = lambda cost: False  # type: ignore
 
-        # Make movement handler return a move intent
+        # Make explore mode's move generator return a move intent
         move_intent = GameIntent(controller, controller.gw.player)
-        controller.movement_handler.generate_intent = lambda keys: move_intent  # type: ignore
+        controller.explore_mode.move_generator.generate_intent = (
+            lambda keys: move_intent
+        )  # type: ignore
 
-        # Simulate movement keys pressed
-        controller.input_handler.movement_keys = {"UP"}
+        # Simulate movement keys pressed (now in explore_mode, not input_handler)
+        controller.explore_mode.movement_keys = {"UP"}
 
         # Process input - should NOT execute the move
         controller.process_player_input()
@@ -410,13 +456,15 @@ def test_energy_gate_allows_movement_when_sufficient_energy() -> None:
     with patched_controller(stop_after=1) as controller:
         # can_afford already returns True by default in DummyPlayer
 
-        # Make movement handler return a move intent
+        # Make explore mode's move generator return a move intent
         move_intent = GameIntent(controller, controller.gw.player)
         move_intent.animation_type = AnimationType.INSTANT
-        controller.movement_handler.generate_intent = lambda keys: move_intent  # type: ignore
+        controller.explore_mode.move_generator.generate_intent = (
+            lambda keys: move_intent
+        )  # type: ignore
 
-        # Simulate movement keys pressed
-        controller.input_handler.movement_keys = {"UP"}
+        # Simulate movement keys pressed (now in explore_mode)
+        controller.explore_mode.movement_keys = {"UP"}
 
         # Process input - should execute the move
         controller.process_player_input()
@@ -440,12 +488,14 @@ def test_energy_gate_regenerates_energy_when_blocked() -> None:
         # Make can_afford return False
         controller.gw.player.energy.can_afford = lambda cost: False  # type: ignore
 
-        # Make movement handler return a move intent
+        # Make explore mode's move generator return a move intent
         move_intent = GameIntent(controller, controller.gw.player)
-        controller.movement_handler.generate_intent = lambda keys: move_intent  # type: ignore
+        controller.explore_mode.move_generator.generate_intent = (
+            lambda keys: move_intent
+        )  # type: ignore
 
-        # Simulate movement keys pressed
-        controller.input_handler.movement_keys = {"UP"}
+        # Simulate movement keys pressed (now in explore_mode)
+        controller.explore_mode.movement_keys = {"UP"}
 
         # Process input - move blocked, but time should pass
         controller.process_player_input()
@@ -469,11 +519,11 @@ def test_energy_gate_no_regen_when_no_movement_attempted() -> None:
         # Make can_afford return False
         controller.gw.player.energy.can_afford = lambda cost: False  # type: ignore
 
-        # Movement handler returns None (no movement attempt)
+        # Move generator returns None (no movement attempt)
         # This is the default behavior
 
-        # No movement keys pressed
-        controller.input_handler.movement_keys = set()
+        # No movement keys pressed (now in explore_mode)
+        controller.explore_mode.movement_keys = set()
 
         # Process input
         controller.process_player_input()

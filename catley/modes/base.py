@@ -1,20 +1,26 @@
 """Game Mode System - Behavioral overlays that change how the game works.
 
-Modes are a powerful architectural component for temporarily altering game
-behavior while keeping the core game logic running. They are distinct from
-Overlays (like menus), which primarily display information.
+The game always has an active mode. ExploreMode is the default for normal
+gameplay; CombatMode is for combat. Transitions are always mode-to-mode, never
+mode-to-nothing. The Controller always delegates input to current_mode.handle_input().
 
-Use a Mode when you need to:
-- Fundamentally change how player input is interpreted (e.g., mapping keys
-  to target cycling instead of movement).
-- Provide visual feedback directly within the game world (e.g., highlighting
-  targets or drawing an area-of-effect preview).
-- Create a temporary, stateful context for a complex action (e.g., a
-  multi-step lockpicking sequence).
+Modes are appropriate when the interaction:
+- Takes over the normal gameplay context
+- Needs different input handling (including "ignore all input while animation plays")
+- Is self-contained with its own state and entry/exit transitions
 
-The input handling priority is always: Active Mode -> UI Overlays -> Game Actions.
+This includes brief interactions - not just sustained multi-turn contexts. A 3-second
+lockpicking ceremony that shows an animation and auto-exits is architecturally
+consistent with combat mode that you stay in for many turns. Use modes for:
+- Sustained contexts: CombatMode (many turns of combat), ConversationMode (dialogue)
+- Brief ceremonies: LockpickingMode (attempt + result), RepairMode (attempt + result)
+- Resolution presentations: ResolutionCeremonyMode (skill check drama)
+
+Modes are distinct from Overlays (like menus), which primarily display information.
+
+The input handling priority is always: UI Overlays -> Active Mode -> Game Actions.
 The lifecycle is managed by the Controller:
-  enter() -> handle input/render -> exit_..._mode().
+  enter() -> handle input/render -> transition to another mode.
 """
 
 from __future__ import annotations

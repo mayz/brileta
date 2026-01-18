@@ -259,3 +259,28 @@ def test_history_navigation_up_down() -> None:
     assert ov.input_buffer == "cmd2"
     ov.handle_input(tcod.event.KeyDown(0, tcod.event.KeySym.DOWN, 0))
     assert ov.input_buffer == ""
+
+
+def test_console_consumes_all_keydown_events() -> None:
+    """Console should consume all KeyDown events to prevent mode interference.
+
+    This tests the fix for the bug where pressing I while console is open
+    would open the inventory menu instead of just typing in the console.
+    """
+    ov = make_overlay()
+    ov.show()
+
+    # KeyDown for 'I' should be consumed (returns True) even though
+    # the console doesn't explicitly handle this key
+    key_i = tcod.event.KeySym(ord("i"))
+    event = tcod.event.KeyDown(0, key_i, 0)
+    result = ov.handle_input(event)
+
+    assert result is True  # Event was consumed, won't leak to mode
+
+    # Same for other arbitrary keys like 'T' (targeting mode trigger)
+    key_t = tcod.event.KeySym(ord("t"))
+    event = tcod.event.KeyDown(0, key_t, 0)
+    result = ov.handle_input(event)
+
+    assert result is True
