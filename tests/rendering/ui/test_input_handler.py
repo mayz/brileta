@@ -229,9 +229,13 @@ def test_quit_key_is_handled_by_input_handler() -> None:
     assert ih._is_quit_key(event) is True
 
 
-def test_targeting_key_is_handled_by_explore_mode() -> None:
-    """T key should enter targeting mode via ExploreMode."""
+def test_t_key_not_handled_by_explore_mode() -> None:
+    """T key is not handled by ExploreMode - it was removed as combat toggle.
+
+    Note: T key was removed in the equipment slot interaction rework.
+    Combat is now entered by clicking the active equipment slot.
+    """
     mode, _, _ = make_explore_mode()
     event = tcod.event.KeyDown(0, Keys.KEY_T, 0)
     result = mode.handle_input(event)
-    assert result is True  # T key was consumed
+    assert result is False  # T key is not consumed

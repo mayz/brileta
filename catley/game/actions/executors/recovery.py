@@ -14,6 +14,7 @@ if TYPE_CHECKING:
         RestIntent,
         SleepIntent,
         UseConsumableIntent,
+        UseConsumableOnTargetIntent,
     )
 
 
@@ -31,7 +32,8 @@ class UseConsumableExecutor(ActionExecutor):
         if not inventory:
             return GameActionResult(succeeded=False)
 
-        if not inventory.remove_from_inventory(intent.item):
+        # Use try_remove_item which checks attack_slots first, then outfit, then stored
+        if not inventory.try_remove_item(intent.item):
             publish_event(MessageEvent("Item not found in inventory", colors.RED))
             return GameActionResult(succeeded=False)
 
@@ -40,6 +42,68 @@ class UseConsumableExecutor(ActionExecutor):
         if not success:
             inventory.add_to_inventory(intent.item)
             publish_event(MessageEvent(f"Cannot use {intent.item.name}", colors.RED))
+
+        return GameActionResult()
+
+
+class UseConsumableOnTargetExecutor(ActionExecutor):
+    """Executes consumable item usage on another character.
+
+    Similar to UseConsumableExecutor but applies the effect to a target character
+    rather than the actor themselves. Validates adjacency before use.
+    """
+
+    def execute(self, intent: UseConsumableOnTargetIntent) -> GameActionResult | None:  # type: ignore[override]
+        from catley.game import ranges
+
+        if not intent.item.consumable_effect:
+            publish_event(
+                MessageEvent(f"{intent.item.name} cannot be used", colors.RED)
+            )
+            return GameActionResult(succeeded=False)
+
+        # Validate adjacency
+        distance = ranges.calculate_distance(
+            intent.actor.x, intent.actor.y, intent.target.x, intent.target.y
+        )
+        if distance > 1:
+            publish_event(
+                MessageEvent(
+                    f"Too far away to use {intent.item.name} on target", colors.RED
+                )
+            )
+            return GameActionResult(succeeded=False)
+
+        # Validate target is alive
+        if not intent.target.health.is_alive():
+            publish_event(
+                MessageEvent(
+                    f"Cannot use {intent.item.name} on a dead character", colors.RED
+                )
+            )
+            return GameActionResult(succeeded=False)
+
+        inventory = intent.actor.inventory
+        if not inventory:
+            return GameActionResult(succeeded=False)
+
+        # Use try_remove_item which checks attack_slots first, then outfit, then stored
+        if not inventory.try_remove_item(intent.item):
+            publish_event(MessageEvent("Item not found in inventory", colors.RED))
+            return GameActionResult(succeeded=False)
+
+        # Apply consumable effect to target (not the user/actor who is doing the action)
+        success = intent.item.consumable_effect.consume(
+            intent.target, intent.controller
+        )
+
+        if not success:
+            inventory.add_to_inventory(intent.item)
+            publish_event(
+                MessageEvent(
+                    f"Cannot use {intent.item.name} on {intent.target.name}", colors.RED
+                )
+            )
 
         return GameActionResult()
 

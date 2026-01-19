@@ -166,8 +166,12 @@ def test_combat_mode_consumes_escape() -> None:
     assert len(controller.mode_stack) == 1
 
 
-def test_combat_mode_consumes_t_key() -> None:
-    """CombatMode consumes T key and pops itself from the stack."""
+def test_combat_mode_does_not_handle_t_key() -> None:
+    """CombatMode does not handle T key - it was removed as a toggle.
+
+    Note: T key was removed in the equipment slot interaction rework.
+    Combat is now entered/exited by clicking the active equipment slot.
+    """
     controller = get_controller_with_player_and_map()
     controller.enter_combat_mode()
 
@@ -178,8 +182,10 @@ def test_combat_mode_consumes_t_key() -> None:
     event = tcod.event.KeyDown(0, Keys.KEY_T, 0)
     result = controller.combat_mode.handle_input(event)
 
-    assert result is True
-    assert controller.active_mode is controller.explore_mode
+    # T key should NOT be consumed - it falls through
+    assert result is False
+    # Combat mode should still be active
+    assert controller.active_mode is controller.combat_mode
 
 
 def test_mode_stack_preserves_explore_mode_state() -> None:

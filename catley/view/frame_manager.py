@@ -148,8 +148,8 @@ class FrameManager:
         # World view starts after left sidebar
         world_view_x = left_sidebar_width
 
-        # Bottom bar components
-        equipment_width = 25
+        # Bottom bar components - dynamic equipment width based on content
+        equipment_width = self.equipment_view.calculate_min_width()
         equipment_x1 = screen_width_tiles - equipment_width - 1
         equipment_x2 = equipment_x1 + equipment_width
 
@@ -268,6 +268,11 @@ class FrameManager:
         - Presentation - Composite overlays then draw the mouse cursor
         """
         assert self.controller.overlay_system is not None
+
+        # Check if equipment panel needs to grow (grow-only dynamic width)
+        needed_width = self.equipment_view.calculate_min_width()
+        if needed_width > self.equipment_view.width:
+            self._layout_views()
 
         # UI VIEW RENDERING
         for view in self.views:

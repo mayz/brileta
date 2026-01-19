@@ -47,8 +47,12 @@ def test_escape_calls_on_cancel_and_pops() -> None:
     assert controller.picker_mode.active is False
 
 
-def test_t_key_calls_on_cancel_and_pops() -> None:
-    """T key also cancels picker (for combat mode toggle consistency)."""
+def test_t_key_not_handled_by_picker() -> None:
+    """T key is not handled by picker - it falls through to modes below.
+
+    Note: T key was removed as a combat toggle in the equipment slot interaction
+    rework. Combat is now entered by clicking the active equipment slot.
+    """
     from catley.input_handler import Keys
 
     controller = get_controller_with_player_and_map()
@@ -58,15 +62,17 @@ def test_t_key_calls_on_cancel_and_pops() -> None:
     controller.picker_mode.start(on_select=on_select, on_cancel=on_cancel)
     assert controller.active_mode is controller.picker_mode
 
-    # Press T
+    # Press T - should NOT be consumed by picker
     event = tcod.event.KeyDown(0, Keys.KEY_T, 0)
     result = controller.picker_mode.handle_input(event)
 
-    assert result is True
-    on_cancel.assert_called_once()
+    # T key should fall through (not handled)
+    assert result is False
+    on_cancel.assert_not_called()
     on_select.assert_not_called()
-    assert controller.picker_mode not in controller.mode_stack
-    assert controller.picker_mode.active is False
+    # Picker should still be active
+    assert controller.picker_mode in controller.mode_stack
+    assert controller.picker_mode.active is True
 
 
 def test_escape_works_without_on_cancel() -> None:
@@ -383,12 +389,13 @@ def test_combat_mode_with_no_valid_targets() -> None:
     assert len(controller.mode_stack) == 1
 
 
-def test_click_outside_map_bounds_consumed_but_no_callback() -> None:
-    """Click outside the game map bounds is consumed but doesn't trigger callback.
+def test_click_outside_map_bounds_falls_through() -> None:
+    """Click outside the game map bounds falls through to modes below.
 
-    When a click is outside the map area (e.g., on UI elements), the event
-    should be consumed to prevent other handlers from misinterpreting it,
-    but no selection callback should be invoked.
+    When a click is outside the map area (e.g., on UI elements like the
+    equipment view), the event should NOT be consumed. This allows UI
+    handlers in modes below to process the click - for example, clicking
+    the active equipment slot to toggle combat mode.
     """
     controller = get_controller_with_player_and_map()
     on_select = MagicMock()
@@ -411,9 +418,9 @@ def test_click_outside_map_bounds_consumed_but_no_callback() -> None:
 
     result = controller.picker_mode.handle_input(event)
 
-    # Event is consumed
-    assert result is True
-    # But no callbacks are invoked (click was outside map)
+    # Event falls through (not consumed) so UI handlers can process it
+    assert result is False
+    # No callbacks are invoked (click was outside map)
     on_select.assert_not_called()
     on_cancel.assert_not_called()
     # Picker is still active (didn't pop)

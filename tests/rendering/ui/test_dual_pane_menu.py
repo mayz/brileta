@@ -561,15 +561,17 @@ def test_get_hint_lines_splits_on_double_space() -> None:
     menu.show()
 
     # Set width so it must wrap but can fit "[Arrows/JK] Navigate" on first line
-    # The hint is: "[Arrows/JK] Navigate  [Enter] Use/Equip  [D] Drop  [Esc] Close"
+    # The hint is: "[Arrows/JK] Navigate  [Enter] Use  [E] Equip  [D] Drop  [Esc] Close"
     # Double spaces separate the hint groups
     menu.width = 40  # max_len = 36
 
     lines = menu._get_hint_lines()
 
-    # First line should end cleanly at a double-space boundary, not mid-word
+    # First line should end cleanly at a double-space boundary, not mid-word.
+    # Valid endings are: "Navigate", "Use", or a non-alpha character (like "]")
     assert not lines[0].endswith("-")
-    assert not lines[0][-1].isalpha() or lines[0].endswith("Navigate")
+    valid_word_endings = ("Navigate", "Use")
+    assert not lines[0][-1].isalpha() or lines[0].endswith(valid_word_endings)
 
 
 def test_get_hint_lines_loot_mode_different_text() -> None:

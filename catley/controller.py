@@ -10,6 +10,7 @@ from catley.sound import SoundSystem
 
 if TYPE_CHECKING:
     from catley.game.actions.discovery import CombatIntentCache
+    from catley.game.items.item_core import Item
 
 from . import colors, config
 from .events import MessageEvent, publish_event
@@ -423,8 +424,85 @@ class Controller:
         self.transition_to_mode(self.explore_mode)
 
     def is_combat_mode(self) -> bool:
-        """Check if currently in combat mode."""
-        return self.active_mode is self.combat_mode
+        """Check if currently in combat mode (combat mode is in the stack).
+
+        Note: When combat mode is entered, it pushes PickerMode on top for
+        target selection. So we check if combat_mode is anywhere in the stack,
+        not just if it's the active mode.
+        """
+        return self.combat_mode in self.mode_stack
+
+    def start_consumable_targeting(self, item: Item) -> None:
+        """Start consumable targeting via PickerMode.
+
+        Clicking on self uses the item on the player. Clicking on another
+        character uses it on them (pathfinding if needed).
+
+        Args:
+            item: The consumable Item to use.
+        """
+        from catley import colors
+        from catley.events import MessageEvent, publish_event
+        from catley.game import ranges
+        from catley.game.actions.recovery import (
+            UseConsumableIntent,
+            UseConsumableOnTargetIntent,
+        )
+        from catley.game.actors import Character
+        from catley.modes.picker import PickerResult
+
+        player = self.gw.player
+
+        def valid_filter(x: int, y: int) -> bool:
+            """Check if a tile is a valid consumable target."""
+            # Player's own tile is valid (self-target)
+            if x == player.x and y == player.y:
+                return True
+            # Check for a living character at the tile
+            actor = self.gw.get_actor_at_location(x, y)
+            if actor is None:
+                return False
+            return (
+                isinstance(actor, Character)
+                and actor.health.is_alive()
+                and self.gw.game_map.visible[x, y]
+            )
+
+        def on_select(result: PickerResult) -> None:
+            """Handle target selection."""
+            # Self-targeting: use on self
+            if result.tile[0] == player.x and result.tile[1] == player.y:
+                intent = UseConsumableIntent(self, player, item)
+                self.queue_action(intent)
+                return
+
+            # Target is another character
+            target = result.actor
+            if target is not None and isinstance(target, Character):
+                distance = ranges.calculate_distance(
+                    player.x, player.y, target.x, target.y
+                )
+                if distance == 1:
+                    # Adjacent target: use immediately
+                    intent = UseConsumableOnTargetIntent(self, player, item, target)
+                    self.queue_action(intent)
+                else:
+                    # Distant target: pathfind then use
+                    final_intent = UseConsumableOnTargetIntent(
+                        self, player, item, target
+                    )
+                    self.start_actor_pathfinding(
+                        player, (target.x, target.y), final_intent
+                    )
+
+        # Show message about targeting
+        publish_event(MessageEvent(f"Select target for {item.name}", colors.CYAN))
+
+        self.picker_mode.start(
+            on_select=on_select,
+            on_cancel=lambda: None,
+            valid_filter=valid_filter,
+        )
 
     def create_resolver(self, **kwargs: object) -> ResolutionSystem:
         """Factory method for resolution systems.

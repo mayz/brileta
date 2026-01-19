@@ -39,6 +39,7 @@ from catley.game.actions.executors.recovery import (
     RestExecutor,
     SleepExecutor,
     UseConsumableExecutor,
+    UseConsumableOnTargetExecutor,
 )
 from catley.game.actions.executors.stunts import PushExecutor
 from catley.game.actions.misc import (
@@ -53,6 +54,7 @@ from catley.game.actions.recovery import (
     RestIntent,
     SleepIntent,
     UseConsumableIntent,
+    UseConsumableOnTargetIntent,
 )
 from catley.game.actions.stunts import PushIntent
 from catley.game.actors import Character
@@ -95,6 +97,7 @@ class ActionRouter:
             CloseDoorIntent: CloseDoorExecutor(),
             SearchContainerIntent: SearchContainerExecutor(),
             UseConsumableIntent: UseConsumableExecutor(),
+            UseConsumableOnTargetIntent: UseConsumableOnTargetExecutor(),
             RestIntent: RestExecutor(),
             SleepIntent: SleepExecutor(),
             ComfortableSleepIntent: ComfortableSleepExecutor(),

@@ -66,6 +66,7 @@ class _MenuKeys:
     KEY_J: Final = tcod.event.KeySym(ord("j"))
     KEY_K: Final = tcod.event.KeySym(ord("k"))
     KEY_D: Final = tcod.event.KeySym(ord("d"))
+    KEY_E: Final = tcod.event.KeySym(ord("e"))
     KEY_I: Final = tcod.event.KeySym(ord("i"))
     KEY_Q: Final = tcod.event.KeySym(ord("q"))
 
@@ -382,6 +383,41 @@ class DualPaneMenu(Menu):
         self._update_detail_from_cursor()
         return False  # Keep menu open
 
+    def _equip_to_slot(self, item: Item) -> bool:
+        """Equip an item to the active equipment slot.
+
+        This is distinct from _use_item() which uses consumables immediately.
+        This method equips weapons and consumables to a slot for later use.
+
+        Returns True if the menu should close, False to keep it open.
+        """
+        player = self.controller.gw.player
+
+        # Check if item is equippable to attack slots
+        if not (item.melee_attack or item.ranged_attack or item.consumable_effect):
+            publish_event(MessageEvent(f"Cannot equip {item.name} to a slot."))
+            return False
+
+        # Check if already equipped - if so, unequip
+        for idx, slot_item in enumerate(player.inventory.attack_slots):
+            if slot_item is item:
+                success, msg = player.inventory.unequip_to_inventory(idx)
+                color = colors.WHITE if success else colors.YELLOW
+                publish_event(MessageEvent(msg, color))
+                self._populate_left_pane()
+                self._update_detail_from_cursor()
+                return False
+
+        # Not equipped - equip to active slot
+        success, msg = player.inventory.equip_from_inventory(
+            item, player.inventory.active_weapon_slot
+        )
+        color = colors.GREEN if success else colors.YELLOW
+        publish_event(MessageEvent(msg, color))
+        self._populate_left_pane()
+        self._update_detail_from_cursor()
+        return False
+
     def _transfer_to_inventory(self, item: Item) -> bool:
         """Transfer item from source to player inventory.
 
@@ -577,6 +613,18 @@ class DualPaneMenu(Menu):
                         and self._drop_item(option.data)
                     ):
                         self.hide()
+                return True
+
+            # E key equips item to active slot (left pane only, inventory mode only)
+            case tcod.event.KeyDown(sym=_MenuKeys.KEY_E):
+                if (
+                    self.source is None
+                    and self.active_pane == PaneId.LEFT
+                    and 0 <= self.left_cursor < len(self.left_options)
+                ):
+                    option = self.left_options[self.left_cursor]
+                    if option.enabled and isinstance(option.data, Item):
+                        self._equip_to_slot(option.data)
                 return True
 
             # Enter activates current item
@@ -1198,7 +1246,9 @@ class DualPaneMenu(Menu):
                 "[Tab] Switch  [Arrows/JK] Navigate  [Enter] Transfer  [D] Drop  [Esc]"
             )
         else:
-            hint_text = "[Arrows/JK] Navigate  [Enter] Use/Equip  [D] Drop  [Esc] Close"
+            hint_text = (
+                "[Arrows/JK] Navigate  [Enter] Use  [E] Equip  [D] Drop  [Esc] Close"
+            )
 
         max_len = self.width - 4
         if len(hint_text) <= max_len:

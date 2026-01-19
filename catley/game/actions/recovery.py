@@ -36,11 +36,30 @@ def is_safe_location(actor: Character, radius: int = 10) -> tuple[bool, str | No
 
 
 class UseConsumableIntent(GameIntent):
-    """Intent for using a consumable item."""
+    """Intent for using a consumable item on self."""
 
     def __init__(self, controller: Controller, actor: Character, item: Item) -> None:
         super().__init__(controller, actor)
         self.item = item
+
+
+class UseConsumableOnTargetIntent(GameIntent):
+    """Intent for using a consumable item on another character.
+
+    This is used when the player targets another character with a consumable,
+    such as using a healing item on an ally.
+    """
+
+    def __init__(
+        self,
+        controller: Controller,
+        actor: Character,
+        item: Item,
+        target: Character,
+    ) -> None:
+        super().__init__(controller, actor)
+        self.item = item
+        self.target = target
 
 
 class RestIntent(GameIntent):

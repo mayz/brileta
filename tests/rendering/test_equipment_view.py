@@ -29,6 +29,8 @@ def make_equipment_view() -> tuple[DummyController, Character, EquipmentView]:
 
     renderer = MagicMock(spec=GraphicsContext)
     renderer.create_canvas = MagicMock(return_value=MagicMock())
+    # PillowImageCanvas requires tile_dimensions to return actual integers
+    renderer.tile_dimensions = (16, 16)
     controller = DummyController(gw=gw, graphics=renderer)
     view = EquipmentView(cast(Controller, controller), renderer)
 
@@ -86,26 +88,34 @@ def test_switch_to_slot_shows_empty_for_no_weapon() -> None:
         assert "Empty" in message_event.text
 
 
-def test_handle_click_on_weapon_slot_switches() -> None:
-    """Clicking on a weapon slot row should switch to that weapon."""
+def test_handle_click_on_inactive_slot_switches() -> None:
+    """Clicking on an inactive weapon slot should switch to that weapon."""
     _controller, player, view = make_equipment_view()
 
     assert player.inventory.active_weapon_slot == 0
 
-    # Row 1 = slot 0, Row 2 = slot 1
-    result = view.handle_click(2)  # Click row 2 (slot 1)
+    # Simulate the slot bounds that would be set during rendering:
+    # Each slot takes exactly one row (implementation uses 1 row per slot)
+    view._slot_row_bounds = {0: (0, 1), 1: (1, 2)}
+
+    # Click row 1 which is slot 1 (inactive)
+    result = view.handle_click(1)
 
     assert result is True
     assert player.inventory.active_weapon_slot == 1
 
 
-def test_handle_click_on_hint_row_does_nothing() -> None:
-    """Clicking on the hint row (row 0) should not switch weapons."""
+def test_handle_click_outside_slots_does_nothing() -> None:
+    """Clicking outside the slot bounds should not switch weapons."""
     _controller, player, view = make_equipment_view()
 
     assert player.inventory.active_weapon_slot == 0
 
-    result = view.handle_click(0)  # Click hint row
+    # Simulate the slot bounds (1 row per slot)
+    view._slot_row_bounds = {0: (0, 1), 1: (1, 2)}
+
+    # Click row 2 which is outside the slot bounds
+    result = view.handle_click(2)
 
     assert result is False
     assert player.inventory.active_weapon_slot == 0

@@ -20,7 +20,6 @@ from typing import TYPE_CHECKING
 import tcod.event
 
 from catley.game.actors import Actor, Character
-from catley.input_handler import Keys
 from catley.modes.base import Mode
 
 if TYPE_CHECKING:
@@ -128,8 +127,8 @@ class PickerMode(Mode):
             return False
 
         match event:
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.ESCAPE | Keys.KEY_T):
-                # Both Escape and T cancel picking (T is combat mode toggle)
+            case tcod.event.KeyDown(sym=tcod.event.KeySym.ESCAPE):
+                # Escape cancels picking
                 callback = self._on_cancel
                 self.controller.pop_mode()
                 if callback:
@@ -145,7 +144,10 @@ class PickerMode(Mode):
                     self.controller.pop_mode()
                     if callback:
                         callback(result)
-                return True  # Consume click even if invalid
+                    return True
+                # Only consume clicks on the game map (invalid targets).
+                # Clicks outside the game map (on UI) fall through to modes below.
+                return tile is not None
 
         # Let other input fall through to modes below (inventory, weapon slots, etc.)
         return False

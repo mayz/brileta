@@ -149,10 +149,6 @@ class ExploreMode(Mode):
                 self._open_action_browser()
                 return True
 
-            case tcod.event.KeyDown(sym=Keys.KEY_T):
-                self.controller.enter_combat_mode()
-                return True
-
             case tcod.event.KeyDown(sym=Keys.KEY_R):
                 self._reload_weapon()
                 return True

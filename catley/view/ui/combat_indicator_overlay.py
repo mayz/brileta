@@ -1,5 +1,5 @@
 """
-Targeting indicator overlay for displaying targeting mode status.
+Combat indicator overlay for displaying combat mode status.
 
 Shows the current weapon, attack mode, and hit probability for the selected target.
 """
@@ -21,8 +21,8 @@ if TYPE_CHECKING:
     from catley.view.render.canvas import Canvas
 
 
-class TargetingIndicatorOverlay(TextOverlay):
-    """Non-interactive overlay that displays targeting mode status.
+class CombatIndicatorOverlay(TextOverlay):
+    """Non-interactive overlay that displays combat mode status.
 
     Shows weapon name, attack mode (melee/ranged), and hit probability
     for the currently selected target.
@@ -40,7 +40,7 @@ class TargetingIndicatorOverlay(TextOverlay):
         return self.controller.graphics.create_canvas(transparent=True)
 
     def _calculate_dimensions(self) -> None:
-        """Calculate dimensions for the targeting indicator."""
+        """Calculate dimensions for the combat indicator."""
         text = self._build_display_text()
         self._last_text = text
 
@@ -61,7 +61,7 @@ class TargetingIndicatorOverlay(TextOverlay):
         """Build the display text based on current targeting state."""
         target = self._get_current_target()
         if target is None:
-            return "[ TARGETING ]"
+            return "[ COMBAT ]"
 
         player = self.controller.gw.player
         weapon = player.inventory.get_active_weapon()
@@ -108,7 +108,7 @@ class TargetingIndicatorOverlay(TextOverlay):
         if weapon.melee_attack and distance > 1:
             return f"[ {weapon.name} (TOO FAR) ]"
 
-        return "[ TARGETING ]"
+        return "[ COMBAT ]"
 
     def _get_current_target(self) -> Character | None:
         """Get the currently selected target from combat mode."""
@@ -118,7 +118,7 @@ class TargetingIndicatorOverlay(TextOverlay):
         return None
 
     def draw_content(self) -> None:
-        """Draw the targeting indicator text."""
+        """Draw the combat indicator text."""
         assert self.canvas is not None
 
         text = self._build_display_text()

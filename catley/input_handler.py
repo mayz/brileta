@@ -132,9 +132,10 @@ class InputHandler:
             if mode.handle_input(event):
                 return  # Mode consumed the event
 
-        # Handle mouse motion for tile tracking (for hover effects)
+        # Handle mouse motion for tile tracking and hover effects
         if isinstance(event, tcod.event.MouseMotion):
             self._update_mouse_tile_location(event)
+            self._update_hover_cursor(event)
 
     def _is_quit_key(self, event: tcod.event.Event) -> bool:
         """Check if event is the Q key (quit hotkey)."""
@@ -161,6 +162,73 @@ class InputHandler:
         else:
             # Mouse is outside the game map area (e.g., on UI views).
             self.gw.mouse_tile_location_on_map = None
+
+    def _update_hover_cursor(self, event: tcod.event.MouseMotion) -> None:
+        """Update cursor based on what the mouse is hovering over.
+
+        Changes cursor to hand when hovering over the active equipment slot
+        to indicate it's clickable.
+        """
+        assert self.fm is not None
+
+        # Only change cursor in explore mode (not combat/picker)
+        from catley.modes.explore import ExploreMode
+
+        if not isinstance(self.controller.active_mode, ExploreMode):
+            return
+
+        event_with_tile_coords = self._convert_mouse_coordinates(event)
+        root_tile_pos: RootConsoleTilePos = (
+            int(event_with_tile_coords.position.x),
+            int(event_with_tile_coords.position.y),
+        )
+
+        # Check if hovering over equipment view and update hover state
+        is_hovering_active = self._update_equipment_hover_state(root_tile_pos)
+        if is_hovering_active:
+            self.cursor_manager.set_active_cursor_type("crosshair")
+        else:
+            self.cursor_manager.set_active_cursor_type("arrow")
+
+    def _update_equipment_hover_state(self, root_tile_pos: RootConsoleTilePos) -> bool:
+        """Update equipment view hover state and check if hovering active slot.
+
+        Sets the hover row on the equipment view for visual feedback (RED text
+        when hovering active slot). Also returns whether we're hovering over
+        the active slot for cursor updates.
+
+        Args:
+            root_tile_pos: The mouse position in root console tile coordinates.
+
+        Returns:
+            True if hovering over the active equipment slot, False otherwise.
+        """
+        assert self.fm is not None
+
+        if not hasattr(self.fm, "equipment_view"):
+            return False
+
+        equipment_view = self.fm.equipment_view
+        tile_x, tile_y = root_tile_pos
+
+        # Check if within equipment view bounds
+        if not (equipment_view.x <= tile_x < equipment_view.x + equipment_view.width):
+            equipment_view.set_hover_row(None)
+            return False
+
+        clicked_row = tile_y - equipment_view.y
+        if clicked_row < 0 or clicked_row >= equipment_view.height:
+            equipment_view.set_hover_row(None)
+            return False
+
+        # Update hover state for visual feedback
+        is_active = equipment_view.is_row_in_active_slot(clicked_row)
+        if is_active:
+            equipment_view.set_hover_row(clicked_row)
+        else:
+            equipment_view.set_hover_row(None)
+
+        return is_active
 
     def _convert_mouse_coordinates(
         self, event: tcod.event.MouseState

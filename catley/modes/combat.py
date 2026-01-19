@@ -8,10 +8,9 @@ from catley.events import ActorDeathEvent, subscribe_to_event, unsubscribe_from_
 from catley.game import ranges
 from catley.game.actions.combat import AttackIntent
 from catley.game.actors import Character
-from catley.input_handler import Keys
 from catley.modes.base import Mode
 from catley.modes.picker import PickerResult
-from catley.view.ui.targeting_indicator_overlay import TargetingIndicatorOverlay
+from catley.view.ui.combat_indicator_overlay import CombatIndicatorOverlay
 
 if TYPE_CHECKING:
     from catley.controller import Controller
@@ -32,7 +31,7 @@ class CombatMode(Mode):
         self.candidates: list[Character] = []
         self.current_index: int = 0
         self.last_targeted: Character | None = None
-        self.targeting_indicator_overlay = TargetingIndicatorOverlay(controller)
+        self.combat_indicator_overlay = CombatIndicatorOverlay(controller)
 
     def enter(self) -> None:
         """Enter combat mode and find all valid targets.
@@ -51,7 +50,7 @@ class CombatMode(Mode):
 
         # Note: Cursor management is now handled by PickerMode
 
-        self.controller.overlay_system.show_overlay(self.targeting_indicator_overlay)
+        self.controller.overlay_system.show_overlay(self.combat_indicator_overlay)
 
         # Build initial candidate list
         self.update()
@@ -86,7 +85,7 @@ class CombatMode(Mode):
         self.controller.gw.selected_actor = None
 
         # Note: Cursor is restored to arrow by PickerMode when it exits
-        self.targeting_indicator_overlay.hide()
+        self.combat_indicator_overlay.hide()
 
         # Clean up event subscriptions
         unsubscribe_from_event(ActorDeathEvent, self._handle_actor_death_event)
@@ -114,10 +113,6 @@ class CombatMode(Mode):
         # Note: Mouse clicks are handled by PickerMode (on top of this mode)
         match event:
             case tcod.event.KeyDown(sym=tcod.event.KeySym.ESCAPE):
-                self.controller.pop_mode()
-                return True
-
-            case tcod.event.KeyDown(sym=Keys.KEY_T):
                 self.controller.pop_mode()
                 return True
 

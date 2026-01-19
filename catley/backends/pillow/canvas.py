@@ -22,9 +22,10 @@ class PillowImageCanvas(Canvas):
         self,
         renderer: GraphicsContext,
         transparent: bool = True,
+        font_path: Path | None = None,
     ) -> None:
         super().__init__(transparent)
-        self.font_path = Path(config.MESSAGE_LOG_FONT_PATH)
+        self.font_path = font_path if font_path else Path(config.MESSAGE_LOG_FONT_PATH)
         self._current_font_size = 0
         # Temporary default font before scaling is configured.
         self.font = ImageFont.truetype(str(self.font_path), 12)

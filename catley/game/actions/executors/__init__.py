@@ -10,6 +10,7 @@ from .recovery import (
     RestExecutor,
     SleepExecutor,
     UseConsumableExecutor,
+    UseConsumableOnTargetExecutor,
 )
 
 __all__ = [
@@ -26,5 +27,6 @@ __all__ = [
     "SleepExecutor",
     "SwitchWeaponExecutor",
     "UseConsumableExecutor",
+    "UseConsumableOnTargetExecutor",
     "WeaponAreaEffectExecutor",
 ]
