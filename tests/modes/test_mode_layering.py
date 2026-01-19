@@ -13,25 +13,42 @@ from tests.helpers import get_controller_with_player_and_map
 
 
 def test_combat_mode_falls_back_to_explore_for_inventory() -> None:
-    """I key opens inventory while in combat mode via fallback.
+    """I key opens inventory while in combat mode via stack fallback.
 
-    CombatMode doesn't handle I key directly, so it falls back to
-    ExploreMode which handles the inventory command.
+    CombatMode doesn't handle I key directly, so it returns False
+    and the input falls through the stack to ExploreMode.
+
+    Note: PickerMode blocks most input, so we pop it to test CombatMode directly.
     """
     controller = get_controller_with_player_and_map()
     controller.enter_combat_mode()
 
-    event = tcod.event.KeyDown(0, Keys.KEY_I, 0)
-    result = controller.combat_mode.handle_input(event)
+    # Pop picker so we can test CombatMode directly
+    controller.pop_mode()  # Pop picker
+    assert controller.active_mode is controller.combat_mode
 
-    # Event should be handled via ExploreMode fallback
-    assert result is True
+    event = tcod.event.KeyDown(0, Keys.KEY_I, 0)
+
+    # CombatMode returns False for unhandled input
+    combat_result = controller.combat_mode.handle_input(event)
+    assert combat_result is False
+
+    # ExploreMode handles the inventory key
+    explore_result = controller.explore_mode.handle_input(event)
+    assert explore_result is True
 
 
 def test_combat_mode_handles_escape_directly() -> None:
-    """Escape key exits combat mode (handled by CombatMode, not fallback)."""
+    """Escape key exits combat mode (handled by CombatMode, not fallback).
+
+    Note: PickerMode blocks most input, so we pop it to test CombatMode directly.
+    """
     controller = get_controller_with_player_and_map()
     controller.enter_combat_mode()
+
+    # Pop picker so we can test CombatMode directly
+    controller.pop_mode()  # Pop picker
+    assert controller.active_mode is controller.combat_mode
 
     event = tcod.event.KeyDown(0, tcod.event.KeySym.ESCAPE, 0)
     result = controller.combat_mode.handle_input(event)
@@ -43,9 +60,16 @@ def test_combat_mode_handles_escape_directly() -> None:
 
 
 def test_combat_mode_handles_tab_directly() -> None:
-    """Tab key cycles targets (handled by CombatMode, not fallback)."""
+    """Tab key cycles targets (handled by CombatMode, not fallback).
+
+    Note: PickerMode blocks most input, so we pop it to test CombatMode directly.
+    """
     controller = get_controller_with_player_and_map()
     controller.enter_combat_mode()
+
+    # Pop picker so we can test CombatMode directly
+    controller.pop_mode()  # Pop picker
+    assert controller.active_mode is controller.combat_mode
 
     event = tcod.event.KeyDown(0, tcod.event.KeySym.TAB, 0)
     result = controller.combat_mode.handle_input(event)
@@ -54,55 +78,88 @@ def test_combat_mode_handles_tab_directly() -> None:
     assert result is True
 
 
-def test_combat_mode_forwards_update_for_movement() -> None:
-    """CombatMode.update() forwards to ExploreMode for movement.
+def test_controller_updates_all_modes_in_stack() -> None:
+    """Controller.process_player_input() calls update() on all modes.
 
-    This allows players to move while in combat mode.
+    This allows ExploreMode to generate movement intents even when
+    CombatMode or PickerMode is on top of the stack.
     """
+    from unittest.mock import MagicMock, patch
+
     controller = get_controller_with_player_and_map()
     controller.enter_combat_mode()
+
+    # Stack is now [Explore, Combat, Picker]
+    assert len(controller.mode_stack) == 3
 
     # Add a movement key to explore mode's tracking
     controller.explore_mode.movement_keys.add(tcod.event.KeySym.UP)
 
-    # Call combat mode's update - should forward to explore mode
-    # and not raise any errors
-    controller.combat_mode.update()
+    # Ensure input_handler is set (test helper may not set it)
+    if controller.input_handler is None:
+        controller.input_handler = MagicMock()
+
+    # Mock has_interactive_overlays to return False (no menus open)
+    with patch.object(
+        controller.overlay_system, "has_interactive_overlays", return_value=False
+    ):
+        controller.process_player_input()
 
     # Verify explore mode received the update (timing state changed)
+    # even though PickerMode is on top of the stack
     assert controller.explore_mode.move_generator.is_first_move_of_burst is False
 
 
 def test_combat_mode_tracks_movement_via_fallback() -> None:
-    """Movement key events are handled by ExploreMode via fallback."""
+    """Movement key events fall through to ExploreMode via stack.
+
+    Note: PickerMode blocks most input, so we pop it to test CombatMode directly.
+    """
     controller = get_controller_with_player_and_map()
     controller.enter_combat_mode()
 
+    # Pop picker so we can test CombatMode directly
+    controller.pop_mode()  # Pop picker
+    assert controller.active_mode is controller.combat_mode
+
     # Press movement key while in combat mode
     event = tcod.event.KeyDown(0, tcod.event.KeySym.UP, 0)
-    result = controller.combat_mode.handle_input(event)
 
-    # Should be handled via ExploreMode fallback
-    assert result is True
-    # Key should be tracked in ExploreMode
+    # CombatMode doesn't handle movement keys
+    combat_result = controller.combat_mode.handle_input(event)
+    assert combat_result is False
+
+    # ExploreMode handles it (via stack fallback in production)
+    explore_result = controller.explore_mode.handle_input(event)
+    assert explore_result is True
     assert tcod.event.KeySym.UP in controller.explore_mode.movement_keys
 
 
 def test_combat_mode_releases_movement_via_fallback() -> None:
-    """Movement key releases are handled by ExploreMode via fallback."""
+    """Movement key releases fall through to ExploreMode via stack.
+
+    Note: PickerMode blocks most input, so we pop it to test CombatMode directly.
+    """
     controller = get_controller_with_player_and_map()
     controller.enter_combat_mode()
+
+    # Pop picker so we can test CombatMode directly
+    controller.pop_mode()  # Pop picker
+    assert controller.active_mode is controller.combat_mode
 
     # First press the key
     controller.explore_mode.movement_keys.add(tcod.event.KeySym.UP)
 
     # Release it
     event = tcod.event.KeyUp(0, tcod.event.KeySym.UP, 0)
-    result = controller.combat_mode.handle_input(event)
 
-    # Should be handled via ExploreMode fallback
-    assert result is True
-    # Key should be removed from ExploreMode
+    # CombatMode doesn't handle movement key releases
+    combat_result = controller.combat_mode.handle_input(event)
+    assert combat_result is False
+
+    # ExploreMode handles it (via stack fallback in production)
+    explore_result = controller.explore_mode.handle_input(event)
+    assert explore_result is True
     assert tcod.event.KeySym.UP not in controller.explore_mode.movement_keys
 
 

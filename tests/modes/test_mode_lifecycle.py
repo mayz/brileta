@@ -38,12 +38,12 @@ def test_combat_mode_is_inactive_on_init() -> None:
 
 
 def test_mode_transition_calls_exit_and_enter() -> None:
-    """Mode transitions properly call _exit() and enter().
+    """Mode transitions properly call enter() on the new mode.
 
     When transitioning from ExploreMode to CombatMode:
-    - ExploreMode's active should become False
+    - ExploreMode remains active (it's the base of the stack)
     - CombatMode's active should become True
-    - active_mode should point to CombatMode
+    - CombatMode pushes PickerMode, so active_mode is PickerMode
     """
     controller = get_controller_with_player_and_map()
 
@@ -55,24 +55,38 @@ def test_mode_transition_calls_exit_and_enter() -> None:
     # Transition to combat mode
     controller.enter_combat_mode()
 
-    # Verify new state
-    assert controller.explore_mode.active is False
+    # Verify new state - CombatMode pushes PickerMode for target selection
+    assert controller.explore_mode.active is True  # Still active as base of stack
     assert controller.combat_mode.active is True
-    assert controller.active_mode is controller.combat_mode
+    assert controller.picker_mode.active is True  # Picker is pushed on top
+    # Active mode is picker (top of stack), not combat
+    assert controller.active_mode is controller.picker_mode
+    assert controller.combat_mode in controller.mode_stack
 
 
 def test_exit_combat_mode_returns_to_explore() -> None:
-    """Exiting combat mode returns to explore mode."""
+    """Exiting combat mode pops both PickerMode and CombatMode.
+
+    CombatMode pushes PickerMode on entry. When exiting combat mode,
+    we need to pop both (done via transition_to_mode's pop then no-push
+    when ExploreMode is already at base).
+    """
     controller = get_controller_with_player_and_map()
 
     # Enter and exit combat mode
     controller.enter_combat_mode()
+    # Stack is now [Explore, Combat, Picker]
+    assert len(controller.mode_stack) == 3
+
     controller.exit_combat_mode()
 
-    # Should be back in explore mode
+    # Both PickerMode and CombatMode should be popped
     assert controller.explore_mode.active is True
-    assert controller.combat_mode.active is False
+    assert controller.combat_mode.active is False  # _exit() was called
+    assert controller.picker_mode.active is False  # _exit() was called
     assert controller.active_mode is controller.explore_mode
+    assert len(controller.mode_stack) == 1
+    assert controller.mode_stack[0] is controller.explore_mode
 
 
 def test_reenter_combat_mode() -> None:
@@ -86,7 +100,8 @@ def test_reenter_combat_mode() -> None:
     # Second round
     controller.enter_combat_mode()
     assert controller.combat_mode.active is True
-    assert controller.active_mode is controller.combat_mode
+    assert controller.picker_mode.active is True  # Picker pushed on top
+    assert controller.combat_mode in controller.mode_stack
 
 
 def test_transition_to_same_mode_is_noop() -> None:
@@ -117,17 +132,26 @@ def test_transition_to_same_mode_is_noop() -> None:
 
 
 def test_transition_to_same_combat_mode_is_noop() -> None:
-    """Transitioning to combat mode when already there is a no-op."""
+    """Transitioning to combat mode when already there pops to combat.
+
+    With the new stack architecture, entering combat pushes [Combat, Picker].
+    Transitioning to combat again should pop picker and leave combat on top.
+    """
     controller = get_controller_with_player_and_map()
 
-    # Enter combat mode
+    # Enter combat mode - stack is [Explore, Combat, Picker]
     controller.enter_combat_mode()
-    assert controller.active_mode is controller.combat_mode
+    assert controller.combat_mode.active is True
+    assert controller.picker_mode.active is True
+    assert len(controller.mode_stack) == 3
 
     # Try to enter again via transition_to_mode
+    # This should pop picker, then see combat is already active
     controller.transition_to_mode(controller.combat_mode)
 
-    # Should still be in combat mode, explore should still be inactive
+    # Should have popped picker, combat is now on top
     assert controller.active_mode is controller.combat_mode
     assert controller.combat_mode.active is True
-    assert controller.explore_mode.active is False
+    assert controller.explore_mode.active is True
+    assert controller.picker_mode.active is False  # Was popped
+    assert len(controller.mode_stack) == 2

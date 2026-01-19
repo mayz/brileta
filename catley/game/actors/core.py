@@ -228,7 +228,6 @@ class Actor:
             dy: Change in y coordinate
             controller: Controller to queue animation with (if available)
         """
-
         # Store old position for animation
         old_x, old_y = self.x, self.y
 

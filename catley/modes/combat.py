@@ -10,6 +10,7 @@ from catley.game.actions.combat import AttackIntent
 from catley.game.actors import Character
 from catley.input_handler import Keys
 from catley.modes.base import Mode
+from catley.modes.picker import PickerResult
 from catley.view.ui.targeting_indicator_overlay import TargetingIndicatorOverlay
 
 if TYPE_CHECKING:
@@ -34,7 +35,12 @@ class CombatMode(Mode):
         self.targeting_indicator_overlay = TargetingIndicatorOverlay(controller)
 
     def enter(self) -> None:
-        """Enter combat mode and find all valid targets."""
+        """Enter combat mode and find all valid targets.
+
+        Immediately pushes PickerMode to handle target selection. CombatMode
+        provides the combat context (highlights, valid targets) while PickerMode
+        handles the actual click-to-select interaction.
+        """
         super().enter()
 
         assert self.controller.overlay_system is not None
@@ -43,8 +49,7 @@ class CombatMode(Mode):
         # Subscribe to actor death events only while in combat mode
         subscribe_to_event(ActorDeathEvent, self._handle_actor_death_event)
 
-        # Set the crosshair cursor to indicate combat mode
-        self.cursor_manager.set_active_cursor_type("crosshair")
+        # Note: Cursor management is now handled by PickerMode
 
         self.controller.overlay_system.show_overlay(self.targeting_indicator_overlay)
 
@@ -61,10 +66,14 @@ class CombatMode(Mode):
             self.current_index = 0
             self.controller.gw.selected_actor = self.candidates[0]
 
+        # Push PickerMode to handle target selection
+        self._start_target_selection()
+
     def _exit(self) -> None:
         """Exit combat mode.
 
         Called via :func:`Controller.exit_combat_mode`.
+        Note: Cursor management is handled by PickerMode.
         """
         # Remember who we were targeting
         if self.controller.gw.selected_actor:
@@ -76,7 +85,7 @@ class CombatMode(Mode):
         self.current_index = 0
         self.controller.gw.selected_actor = None
 
-        self.cursor_manager.set_active_cursor_type("arrow")
+        # Note: Cursor is restored to arrow by PickerMode when it exits
         self.targeting_indicator_overlay.hide()
 
         # Clean up event subscriptions
@@ -92,20 +101,24 @@ class CombatMode(Mode):
     def handle_input(self, event: tcod.event.Event) -> bool:
         """Handle combat mode input.
 
-        Combat-specific input is handled first. Unhandled input falls back
-        to ExploreMode for common functionality (movement, inventory, etc.).
+        Combat-specific input is handled first. Click-to-attack is handled by
+        PickerMode which is pushed on top of CombatMode.
+
+        Unhandled input returns False to let the mode stack pass it to
+        ExploreMode below.
         """
         if not self.active:
             return False
 
         # Handle targeting-specific input first
+        # Note: Mouse clicks are handled by PickerMode (on top of this mode)
         match event:
             case tcod.event.KeyDown(sym=tcod.event.KeySym.ESCAPE):
-                self.controller.exit_combat_mode()
+                self.controller.pop_mode()
                 return True
 
             case tcod.event.KeyDown(sym=Keys.KEY_T):
-                self.controller.exit_combat_mode()
+                self.controller.pop_mode()
                 return True
 
             case tcod.event.KeyDown(sym=tcod.event.KeySym.TAB):
@@ -124,50 +137,34 @@ class CombatMode(Mode):
                         self.controller.queue_action(attack_action)
                 return True
 
-            case tcod.event.MouseButtonDown(button=tcod.event.MouseButton.LEFT):
-                # Click-to-attack: find actor at click position and attack if valid
-                clicked_actor = self._get_actor_at_mouse_position(event)
-                if clicked_actor and clicked_actor in self.candidates:
-                    attack_action = AttackIntent(
-                        self.controller, self.controller.gw.player, clicked_actor
-                    )
-                    self.controller.queue_action(attack_action)
-                    return True
-                return True  # Consume click even if no valid target
-
-        # Fall back to explore mode for everything else
-        # (movement, inventory, reload, weapon switch, etc.)
-        return self.controller.explore_mode.handle_input(event)
+        # Let the mode stack pass unhandled input to ExploreMode below
+        return False
 
     def render_world(self) -> None:
-        """Render targeting highlights in world space"""
-        if not self.active:
-            return
+        """Render targeting highlights in world space.
 
-        assert self.controller.frame_manager is not None
-
-        current_target = self._get_current_target()
-        gw_view = self.controller.frame_manager.world_view
-
-        for actor in self.candidates:
-            if not self.controller.gw.game_map.visible[actor.x, actor.y]:
-                continue
-            if actor == current_target:
-                gw_view.highlight_actor(actor, (255, 0, 0), effect="pulse")
-            else:
-                gw_view.highlight_actor(actor, (100, 0, 0), effect="solid")
-
-    def update(self) -> None:
-        """Rebuild target candidates and forward to explore mode for movement.
-
-        CombatMode layers on top of ExploreMode, so we forward update()
-        to allow movement while in combat.
+        When PickerMode is on top, it calls _render_combat_visuals() via the
+        render_underneath callback. Skip rendering here to avoid double-rendering
+        highlights.
         """
         if not self.active:
             return
 
-        # Forward to explore mode for movement
-        self.controller.explore_mode.update()
+        # When PickerMode is on top, it handles rendering via render_underneath.
+        # Only render directly when CombatMode is the active (top) mode.
+        if self.controller.active_mode is not self:
+            return
+
+        self._render_targeting_highlights()
+
+    def update(self) -> None:
+        """Rebuild target candidates each frame.
+
+        Movement is handled by ExploreMode.update() which the controller
+        calls for all modes in the stack.
+        """
+        if not self.active:
+            return
 
         previous_target = self._get_current_target()
         gw = self.controller.gw
@@ -213,15 +210,15 @@ class CombatMode(Mode):
 
         # Remove dead actors from candidates
         self.candidates = [
-            actor for actor in self.candidates if actor.health.is_alive()
+            candidate for candidate in self.candidates if candidate.health.is_alive()
         ]
 
-        # If current target is dead or no candidates left, exit targeting mode
+        # If current target is dead or no candidates left, exit combat mode
         current_target = self._get_current_target()
         if not self.candidates or (
             current_target and not current_target.health.is_alive()
         ):
-            self.controller.exit_combat_mode()
+            self.controller.pop_mode()
             return
 
         # Adjust index if needed
@@ -250,46 +247,85 @@ class CombatMode(Mode):
         self.current_index = (self.current_index + direction) % len(self.candidates)
         self.controller.gw.selected_actor = self.candidates[self.current_index]
 
-    def _calculate_distance_to_player(self, actor) -> int:
+    def _calculate_distance_to_player(self, actor: Character) -> int:
         return ranges.calculate_distance(
             self.controller.gw.player.x, self.controller.gw.player.y, actor.x, actor.y
         )
 
-    def _get_actor_at_mouse_position(
-        self, event: tcod.event.MouseButtonDown
-    ) -> Character | None:
-        """Convert mouse click position to world coordinates and find actor there."""
-        assert self.controller.frame_manager is not None
+    # --- PickerMode integration ---
 
-        # Convert pixel coordinates to root console tile coordinates
-        graphics = self.controller.graphics
-        scale_x, scale_y = graphics.get_display_scale_factor()
-        scaled_px_x = event.position.x * scale_x
-        scaled_px_y = event.position.y * scale_y
-        root_tile_x, root_tile_y = graphics.pixel_to_tile(scaled_px_x, scaled_px_y)
+    def _start_target_selection(self) -> None:
+        """Push PickerMode to handle target selection.
 
-        # Convert root tile to world tile coordinates
-        root_tile_pos = (int(root_tile_x), int(root_tile_y))
-        world_tile_pos = (
-            self.controller.frame_manager.get_world_coords_from_root_tile_coords(
-                root_tile_pos
-            )
+        PickerMode handles click-to-select while CombatMode provides the
+        combat context (valid targets, highlights).
+        """
+        self.controller.picker_mode.start(
+            on_select=self._on_target_selected,
+            on_cancel=self._on_target_cancelled,
+            valid_filter=self._is_valid_target,
+            render_underneath=self._render_combat_visuals,
         )
 
-        if world_tile_pos is None:
-            return None
+    def _on_target_selected(self, result: PickerResult) -> None:
+        """Handle target selection from PickerMode.
 
-        world_x, world_y = world_tile_pos
-        gw = self.controller.gw
+        Executes an attack on the selected target and re-pushes PickerMode
+        for the next selection. This keeps the player in combat mode until
+        they explicitly exit.
+        """
+        if (
+            result.actor
+            and isinstance(result.actor, Character)
+            and result.actor in self.candidates
+        ):
+            attack_action = AttackIntent(
+                self.controller, self.controller.gw.player, result.actor
+            )
+            self.controller.queue_action(attack_action)
 
-        # Check bounds and visibility
-        if not (0 <= world_x < gw.game_map.width and 0 <= world_y < gw.game_map.height):
-            return None
-        if not gw.game_map.visible[world_x, world_y]:
-            return None
+        # Stay in combat mode - push picker again for next target
+        self._start_target_selection()
 
-        # Find actor at this position
-        actor = gw.get_actor_at_location(world_x, world_y)
-        if isinstance(actor, Character) and actor.health.is_alive():
-            return actor
-        return None
+    def _on_target_cancelled(self) -> None:
+        """Handle cancel from PickerMode - exit combat mode entirely."""
+        self.controller.pop_mode()
+
+    def _is_valid_target(self, x: int, y: int) -> bool:
+        """Check if a tile contains a valid attack target.
+
+        Used as the valid_filter for PickerMode to restrict selection
+        to tiles containing targetable enemies.
+        """
+        actor = self.controller.gw.get_actor_at_location(x, y)
+        if actor is None:
+            return False
+        return actor in self.candidates
+
+    def _render_combat_visuals(self) -> None:
+        """Render combat highlights while PickerMode is active.
+
+        Called by PickerMode's render_underneath to ensure combat highlights
+        are visible during target selection.
+        """
+        self._render_targeting_highlights()
+
+    def _render_targeting_highlights(self) -> None:
+        """Render the targeting highlights for all candidates.
+
+        Extracted from render_world() to be callable by PickerMode's
+        render_underneath callback.
+        """
+        if self.controller.frame_manager is None:
+            return
+
+        current_target = self._get_current_target()
+        gw_view = self.controller.frame_manager.world_view
+
+        for actor in self.candidates:
+            if not self.controller.gw.game_map.visible[actor.x, actor.y]:
+                continue
+            if actor == current_target:
+                gw_view.highlight_actor(actor, (255, 0, 0), effect="pulse")
+            else:
+                gw_view.highlight_actor(actor, (100, 0, 0), effect="solid")

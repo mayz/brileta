@@ -298,9 +298,10 @@ class WorldView(View):
             self._render_actors_traditional(graphics, alpha)
 
         # Render highlights and mode-specific UI on top of actors
-        # The active mode is always set (ExploreMode by default)
+        # Render all modes in the stack (bottom-to-top) so higher modes draw on top
         with record_time_live_variable("cpu.render.active_mode_world_ms"):
-            self.controller.active_mode.render_world()
+            for mode in self.controller.mode_stack:
+                mode.render_world()
 
         with record_time_live_variable("cpu.render.particles_over_actors_ms"):
             graphics.render_particles(

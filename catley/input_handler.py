@@ -125,9 +125,12 @@ class InputHandler:
             QuitUICommand(self.app).execute()
             return
 
-        # Then delegate to active mode
-        if self.controller.active_mode.handle_input(event):
-            return  # Mode consumed the event
+        # Then delegate to mode stack (top-to-bottom until handled)
+        # This allows modes higher in the stack to intercept input,
+        # and unhandled input falls through to modes below.
+        for mode in reversed(self.controller.mode_stack):
+            if mode.handle_input(event):
+                return  # Mode consumed the event
 
         # Handle mouse motion for tile tracking (for hover effects)
         if isinstance(event, tcod.event.MouseMotion):

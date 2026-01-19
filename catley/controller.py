@@ -24,6 +24,7 @@ from .input_handler import InputHandler
 from .modes.base import Mode
 from .modes.combat import CombatMode
 from .modes.explore import ExploreMode
+from .modes.picker import PickerMode
 from .types import FixedTimestep, InterpolationAlpha
 from .util.clock import Clock
 from .util.coordinates import WorldTilePos
@@ -150,9 +151,12 @@ class Controller:
         self.action_count_for_latency_metric: int = 0
 
         # Initialize mode system - game always has an active mode
+        # Modes are organized in a stack. ExploreMode is always at the bottom.
+        # Other modes (CombatMode, PickerMode, etc.) push on top and pop when done.
         self.explore_mode = ExploreMode(self)
         self.combat_mode = CombatMode(self)
-        self.active_mode: Mode = self.explore_mode
+        self.picker_mode = PickerMode(self)
+        self.mode_stack: list[Mode] = [self.explore_mode]
         self.explore_mode.enter()
 
     def update_fov(self) -> None:
@@ -194,16 +198,17 @@ class Controller:
         """Process all pending player input.
 
         Should be called once per visual frame before the logic step loop
-        to ensure responsiveness. The active mode handles movement via its
-        update() method.
+        to ensure responsiveness. All active modes get update() called to
+        support layered behavior (e.g., movement while in combat/picker mode).
         """
         assert self.overlay_system is not None and self.input_handler is not None
 
-        # Let the active mode handle movement (if it supports it)
-        # ExploreMode generates movement intents from held keys
-        # CombatMode forwards to ExploreMode for movement
+        # Let all modes in the stack update (bottom-to-top)
+        # This allows ExploreMode to generate movement intents even when
+        # CombatMode or PickerMode is on top.
         if not self.overlay_system.has_interactive_overlays():
-            self.active_mode.update()
+            for mode in self.mode_stack:
+                mode.update()
 
         # Check for other queued player actions
         if self.turn_manager.has_pending_actions():
@@ -351,17 +356,63 @@ class Controller:
         """
         self.turn_manager.queue_action(action)
 
-    def transition_to_mode(self, new_mode: Mode) -> None:
-        """Transition from current mode to a new mode.
+    @property
+    def active_mode(self) -> Mode:
+        """The mode currently handling input (top of the mode stack)."""
+        return self.mode_stack[-1]
 
-        Handles exit of current mode and entry of new mode.
-        Safe to call even if already in the target mode.
+    def push_mode(self, mode: Mode) -> None:
+        """Push a mode onto the stack and activate it.
+
+        The pushed mode becomes the new active mode and receives all input.
+        The mode below remains in the stack but is temporarily inactive.
+
+        Raises:
+            RuntimeError: If a mode of the same type is already in the stack.
+        """
+        if any(type(m) is type(mode) for m in self.mode_stack):
+            raise RuntimeError(
+                f"A mode of type {type(mode).__name__} is already in the stack"
+            )
+        # Append before enter() so nested push_mode calls work correctly
+        # (e.g., CombatMode.enter() pushing PickerMode)
+        self.mode_stack.append(mode)
+        mode.enter()
+
+    def pop_mode(self) -> None:
+        """Pop the top mode and return to the mode below.
+
+        ExploreMode (the base) cannot be popped - the stack always has at
+        least one mode. Calling pop_mode when only ExploreMode remains is a no-op.
+        """
+        if len(self.mode_stack) > 1:
+            old_mode = self.mode_stack.pop()
+            old_mode._exit()
+
+    def transition_to_mode(self, new_mode: Mode) -> None:
+        """Replace the top mode with a new one (legacy compatibility).
+
+        For stack-based modes (PickerMode, etc.), prefer push_mode/pop_mode.
+        This method is kept for the ExploreMode <-> CombatMode transitions
+        which conceptually replace rather than stack.
+
+        If the new mode is already in the stack (e.g., transitioning back to
+        ExploreMode), this will pop modes until that mode is on top.
         """
         if self.active_mode is new_mode:
             return  # Already in this mode
-        self.active_mode._exit()
-        self.active_mode = new_mode
-        new_mode.enter()
+
+        # Pop the current top mode
+        self.pop_mode()
+
+        # Keep popping if the new mode is already in the stack below
+        # (e.g., transitioning back to ExploreMode which is at the base)
+        while self.active_mode is not new_mode and new_mode in self.mode_stack:
+            self.pop_mode()
+
+        # Only push if the new mode isn't already the active mode
+        if self.active_mode is not new_mode:
+            self.push_mode(new_mode)
 
     def enter_combat_mode(self) -> None:
         """Enter combat mode from current mode."""
