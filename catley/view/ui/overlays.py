@@ -457,7 +457,10 @@ class Menu(TextOverlay):
                         option.action()
                         self.hide()
                         return True
-                return True  # Consume all keyboard input while menu is active
+                return True  # Consume all KeyDown input while menu is active
+
+            case tcod.event.KeyUp():
+                return False  # Let KeyUp events pass through to modes
 
         return False
 

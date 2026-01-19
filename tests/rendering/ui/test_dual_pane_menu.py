@@ -764,3 +764,112 @@ def test_item_category_property() -> None:
 
     junk = JUNK_ITEM_TYPES[0].create()
     assert junk.category == ItemCategory.JUNK
+
+
+# -----------------------------------------------------------------------------
+# Container Persistence Tests
+# -----------------------------------------------------------------------------
+
+
+def test_permanent_container_persists_when_emptied() -> None:
+    """Permanent containers like bookcases should not be removed when emptied.
+
+    Permanent containers have blocks_movement=True and should remain in the
+    game world even after all items are transferred out, allowing players
+    to put items back into them later.
+
+    Containers are accessed via ActorInventorySource (not ExternalInventory),
+    which is the path used when bumping into a container.
+    """
+    from catley.game.actors.container import create_bookcase
+    from catley.view.ui.dual_pane_menu import ActorInventorySource
+    from tests.helpers import get_controller_with_player_and_map
+
+    controller = get_controller_with_player_and_map()
+    player = controller.gw.player
+
+    # Place bookcase adjacent to player (you bump into it to interact)
+    bookcase_x, bookcase_y = player.x + 1, player.y
+    item = COMBAT_KNIFE_TYPE.create()
+    bookcase = create_bookcase(x=bookcase_x, y=bookcase_y, items=[item])
+    controller.gw.add_actor(bookcase)
+
+    # Verify bookcase is permanent (blocks movement)
+    assert bookcase.blocks_movement is True
+    assert len(bookcase.inventory) == 1
+
+    # Open menu via ActorInventorySource (how containers are actually accessed)
+    menu = DualPaneMenu(
+        controller, source=ActorInventorySource(actor=bookcase, label="Bookcase")
+    )
+    menu.show()
+
+    # Transfer the item
+    menu._transfer_to_inventory(item)
+
+    # Bookcase should still exist even though it's empty
+    assert bookcase in controller.gw.actors, "Permanent container should persist"
+    assert len(bookcase.inventory) == 0
+
+
+def test_temporary_ground_pile_removed_when_emptied() -> None:
+    """Temporary ground item piles should be removed when emptied.
+
+    Temporary ground piles (created when items are dropped) have
+    blocks_movement=False and should be removed from the game world
+    once all items are picked up.
+    """
+    from tests.helpers import get_controller_with_player_and_map
+
+    controller = get_controller_with_player_and_map()
+    player = controller.gw.player
+    location = (player.x, player.y)
+
+    # Spawn a single item using the real spawning system (creates temp pile)
+    item = COMBAT_KNIFE_TYPE.create()
+    ground_pile = controller.gw.spawn_ground_item(item, *location)
+
+    # Verify the pile is temporary (doesn't block movement)
+    assert ground_pile.blocks_movement is False
+    assert ground_pile in controller.gw.actors
+
+    # Open menu at the pile location
+    menu = DualPaneMenu(controller, source=ExternalInventory(location, "On the ground"))
+    menu.show()
+
+    # Transfer the item
+    menu._transfer_to_inventory(item)
+
+    # Ground pile should be removed since it's empty and temporary
+    assert ground_pile not in controller.gw.actors, "Temporary pile should be removed"
+
+
+def test_empty_permanent_container_can_be_searched() -> None:
+    """Empty permanent containers should still be searchable to deposit items.
+
+    When bumping into an empty bookcase, the menu should open so the player
+    can transfer items INTO the container.
+    """
+    from catley.game.actions.environment import SearchContainerIntent
+    from catley.game.actions.executors.containers import SearchContainerExecutor
+    from catley.game.actors.container import create_bookcase
+    from tests.helpers import get_controller_with_player_and_map
+
+    controller = get_controller_with_player_and_map()
+    player = controller.gw.player
+
+    # Create an empty bookcase
+    bookcase = create_bookcase(x=player.x + 1, y=player.y, items=[])
+    controller.gw.add_actor(bookcase)
+
+    # Verify it's empty and permanent
+    assert len(bookcase.inventory) == 0
+    assert bookcase.blocks_movement is True
+
+    # Execute search action
+    intent = SearchContainerIntent(controller, player, bookcase)
+    executor = SearchContainerExecutor()
+    result = executor.execute(intent)
+
+    # Should succeed - empty permanent containers can be opened
+    assert result.succeeded is True, "Empty permanent container should be searchable"

@@ -48,6 +48,7 @@ def make_explore_mode() -> tuple[ExploreMode, Any, DummyGameWorld]:
         handle_input=lambda e: False,
         toggle_overlay=lambda o: None,
         show_menu=lambda m: None,
+        has_interactive_overlays=lambda: False,
     )
 
     from catley.app import App

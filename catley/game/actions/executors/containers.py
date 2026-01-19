@@ -34,8 +34,9 @@ class SearchContainerExecutor(ActionExecutor):
         if target.inventory is None:
             return GameActionResult(succeeded=False, block_reason="Nothing to search")
 
-        # Check if inventory is empty
-        if len(target.inventory) == 0:
+        # For temporary containers (corpses, ground piles), block if empty
+        # For permanent containers (bookcases, crates), allow opening to deposit items
+        if len(target.inventory) == 0 and not target.blocks_movement:
             return GameActionResult(succeeded=False, block_reason="Nothing to loot")
 
         # Import here to avoid circular imports

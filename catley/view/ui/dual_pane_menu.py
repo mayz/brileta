@@ -460,9 +460,11 @@ class DualPaneMenu(Menu):
                         break
 
                 if removed:
-                    # Remove empty ground container
+                    # Remove empty temporary ground piles (not permanent furniture)
+                    # Permanent containers like bookcases have blocks_movement=True
                     if (
-                        not isinstance(actor, Character)
+                        not actor.blocks_movement
+                        and not isinstance(actor, Character)
                         and len(inv) == 0
                         and all(s is None for s in inv.attack_slots)
                     ):
@@ -662,7 +664,10 @@ class DualPaneMenu(Menu):
             case tcod.event.MouseButtonDown(button=tcod.event.MouseButton.LEFT):
                 return self._handle_mouse_click(event)
 
-        return True  # Consume all input while menu is active
+            case tcod.event.KeyUp():
+                return False  # Let KeyUp events pass through to modes
+
+        return True  # Consume all other input while menu is active
 
     def _move_cursor(self, delta: int) -> None:
         """Move cursor within active pane."""
