@@ -6,13 +6,11 @@ Compares the performance of different text rendering backends in real-world scen
 Designed to be easily extensible for new backends.
 
 Usage:
-    python benchmark_text_backends.py [--iterations N] [--backend BACKEND] [--verbose]
+    python benchmark_canvases.py [--iterations N] [--backend BACKEND] [--verbose]
 """
 
 import argparse
 import gc
-
-# Add the project root to Python path so we can import catley modules
 import time
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
@@ -23,7 +21,7 @@ import tcod
 import tcod.context
 from tcod.console import Console
 
-from catley import colors
+from catley import colors, config
 from catley.backends.pillow.canvas import PillowImageCanvas
 from catley.backends.tcod.canvas import TCODConsoleCanvas
 from catley.backends.tcod.graphics import TCODGraphicsContext
@@ -165,16 +163,23 @@ class TextBackendBenchmarkSuite:
         except ImportError:
             pass
 
-        # Initialize TCOD context for testing
+        # Initialize TCOD context for testing with actual tileset
+        tileset = tcod.tileset.load_tilesheet(
+            config.TILESET_PATH,
+            columns=config.TILESET_COLUMNS,
+            rows=config.TILESET_ROWS,
+            charmap=tcod.tileset.CHARMAP_CP437,
+        )
         self.console = Console(80, 50, order="F")
         self.context = tcod.context.new(
             console=self.console,
-            width=800,
-            height=600,
+            tileset=tileset,
             title="Text Backend Benchmark",
             sdl_window_flags=tcod.context.SDL_WINDOW_HIDDEN,
         )
-        self.renderer = TCODGraphicsContext(self.context, self.console, (10, 12))
+        self.renderer = TCODGraphicsContext(
+            self.context, self.console, tileset.tile_shape
+        )
 
     def __enter__(self):
         return self
@@ -381,7 +386,7 @@ class TextBackendBenchmarkSuite:
             backend_benchmark.configure_backend(backend, 300, 200, 12)
             texture = backend_benchmark.frame_cycle(backend)
             # Clean up texture if created
-            if texture and hasattr(texture, "destroy"):
+            if texture is not None and hasattr(texture, "destroy"):
                 texture.destroy()
 
         return self.run_benchmark_test(
