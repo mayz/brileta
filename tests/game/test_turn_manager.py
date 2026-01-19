@@ -7,7 +7,7 @@ from catley.environment.tile_types import TileTypeID
 from catley.events import reset_event_bus_for_testing
 from catley.game.action_router import ActionRouter
 from catley.game.actions.movement import MoveIntent
-from catley.game.actors import NPC, Character
+from catley.game.actors import NPC, PC, Character
 from catley.game.actors.status_effects import StaggeredEffect
 from catley.game.enums import Disposition
 from catley.game.game_world import GameWorld
@@ -469,6 +469,108 @@ def test_staggered_player_action_blocked_by_controller() -> None:
 
     # Effect should have expired (update_turn called when blocked)
     assert not player.status_effects.is_action_prevented()
+
+
+def test_npc_energy_capped_at_action_cost() -> None:
+    """NPC energy should be capped at ACTION_COST to prevent double-actions.
+
+    Regression test: NPCs were moving twice on first activation because they
+    accumulated 200 energy (max_energy) across multiple player actions while
+    out of range. When they finally acted, they had enough for 2 actions.
+
+    The fix caps NPC energy at ACTION_COST (100) after each player action,
+    ensuring NPCs can only ever take one action per player action.
+    """
+    from catley import config
+
+    reset_event_bus_for_testing()
+    gw = DummyGameWorld()
+    player = PC(0, 0, "@", colors.WHITE, "Player", game_world=cast(GameWorld, gw))
+    gw.player = player
+    gw.add_actor(player)
+
+    # Create an NPC far from the player - it will accumulate energy but not act
+    # because its AI won't return an action when player is out of sight/range
+    npc = NPC(
+        10,
+        10,
+        "r",
+        colors.RED,
+        "Raider",
+        game_world=cast(GameWorld, gw),
+        disposition=Disposition.HOSTILE,
+    )
+    gw.add_actor(npc)
+
+    controller = DummyController(gw=gw)
+
+    # Verify NPC starts with 0 energy
+    assert npc.energy is not None
+    assert npc.energy.accumulated_energy == 0
+
+    # Simulate multiple player actions - NPC would normally accumulate
+    # 100 energy per action (speed 100), reaching max_energy of 200
+    for _ in range(5):
+        controller.turn_manager.on_player_action()
+
+    # NPC energy should be capped at ACTION_COST, not max_energy
+    # Without the fix, this would be 200 (allowing double-actions)
+    assert npc.energy.accumulated_energy == config.ACTION_COST, (
+        f"NPC energy should be capped at {config.ACTION_COST}, "
+        f"not {npc.energy.accumulated_energy}"
+    )
+
+    # Verify player energy is NOT capped (player can store up to max_energy)
+    assert player.energy is not None
+    assert player.energy.accumulated_energy > config.ACTION_COST, (
+        "Player energy should NOT be capped at ACTION_COST"
+    )
+
+
+def test_slow_npc_can_still_accumulate_to_action_cost() -> None:
+    """Slow NPCs (speed < 100) should still be able to reach ACTION_COST.
+
+    This ensures the energy cap doesn't break slow actors like Trogs (speed 80).
+    They should accumulate energy over multiple player actions until they
+    reach ACTION_COST, then be able to act.
+    """
+    from catley import config
+
+    reset_event_bus_for_testing()
+    gw = DummyGameWorld()
+    player = Character(
+        0, 0, "@", colors.WHITE, "Player", game_world=cast(GameWorld, gw)
+    )
+    gw.player = player
+    gw.add_actor(player)
+
+    # Create a slow NPC (like a Trog with speed 80)
+    slow_npc = NPC(
+        10,
+        10,
+        "T",
+        colors.DARK_GREY,
+        "Trog",
+        game_world=cast(GameWorld, gw),
+        disposition=Disposition.HOSTILE,
+        speed=80,
+    )
+    gw.add_actor(slow_npc)
+
+    controller = DummyController(gw=gw)
+
+    assert slow_npc.energy is not None
+    assert slow_npc.energy.accumulated_energy == 0
+
+    # First player action: Trog gains 80 energy (can't act yet)
+    controller.turn_manager.on_player_action()
+    assert slow_npc.energy.accumulated_energy == 80
+    assert not slow_npc.energy.can_afford(config.ACTION_COST)
+
+    # Second player action: Trog gains 80 more, capped at 100
+    controller.turn_manager.on_player_action()
+    assert slow_npc.energy.accumulated_energy == config.ACTION_COST
+    assert slow_npc.energy.can_afford(config.ACTION_COST)
 
 
 def test_tripped_player_blocked_for_two_turns() -> None:

@@ -625,6 +625,10 @@ class PC(Character):
             speed=speed,
         )
 
+        # Give player starting energy so they can act immediately on game start.
+        # NPCs don't need this - they get energy from on_player_action() before acting.
+        self.energy.accumulated_energy = float(self.energy.speed)
+
     def get_next_action(self, controller: Controller) -> GameIntent | None:
         """Return the player's next action, prioritizing direct input."""
 

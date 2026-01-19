@@ -1021,11 +1021,15 @@ class TestEnergyComponent:
 
         assert energy.speed == 150
 
-    def test_initialization_sets_initial_energy_to_speed(self) -> None:
-        """__post_init__ should set accumulated_energy to speed."""
+    def test_initialization_starts_with_zero_energy(self) -> None:
+        """EnergyComponent should start with 0 energy.
+
+        NPCs start dormant and get energy from on_player_action().
+        The player is special-cased in PC.__init__ to start with energy.
+        """
         energy = EnergyComponent(speed=120)
 
-        assert energy.accumulated_energy == 120
+        assert energy.accumulated_energy == 0
 
     def test_accumulate_energy_adds_to_current(self) -> None:
         """accumulate_energy() should add to accumulated_energy."""

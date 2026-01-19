@@ -209,12 +209,16 @@ class TestEnergyComponentLateBinding:
         """Basic energy methods should work without actor reference."""
         energy = EnergyComponent(speed=100)
 
-        # These should all work without actor
+        # Components start with 0 energy (NPCs get energy from on_player_action())
+        assert energy.accumulated_energy == 0
+        assert not energy.can_afford(50)
+
+        # Accumulate energy to test other methods
+        energy.accumulate_energy(100)
         assert energy.can_afford(50)
-        energy.accumulate_energy(50)
-        assert energy.accumulated_energy == 150  # 100 initial + 50
+        assert energy.accumulated_energy == 100
         energy.spend(30)
-        assert energy.accumulated_energy == 120
+        assert energy.accumulated_energy == 70
 
 
 # =============================================================================

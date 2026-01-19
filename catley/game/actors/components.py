@@ -1260,9 +1260,6 @@ class EnergyComponent:
     max_energy: int = 200  # Energy cap to prevent infinite accumulation
     actor: Actor | None = None  # Set by Actor.__init__ after construction
 
-    def __post_init__(self) -> None:
-        self.accumulated_energy = float(self.speed)
-
     @property
     def energy(self) -> float:
         """Alias for accumulated_energy for compatibility."""

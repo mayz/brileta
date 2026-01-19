@@ -108,8 +108,15 @@ class TurnManager:
         # The cache only contains actors with non-None energy.
         for actor in self._energy_actors_cache:
             assert actor.energy is not None  # Guaranteed by cache filter
-            energy_amount = actor.energy.get_speed_based_energy_amount()
-            actor.energy.accumulate_energy(energy_amount)
+            actor.energy.accumulate_energy(actor.energy.get_speed_based_energy_amount())
+            # Cap NPC energy to prevent double-actions from accumulation.
+            # Without this, NPCs could store 200 energy (2 actions) while
+            # the player walks toward them, causing double-moves on contact.
+            if actor is not self.player:
+                actor.energy.accumulated_energy = min(
+                    actor.energy.accumulated_energy,
+                    config.ACTION_COST,
+                )
 
         # Apply terrain hazard damage to all NPCs once per player action.
         # This ensures NPCs on hot coals take damage each turn, not each tick.
