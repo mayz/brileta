@@ -105,6 +105,38 @@ class SoundEvent(GameEvent):
     params: dict[str, int | float] | None = None
 
 
+@dataclass
+class CombatInitiatedEvent(GameEvent):
+    """Fired when combat is auto-initiated against the player.
+
+    This event triggers auto-entry into combat mode when:
+    - An NPC attacks the player (hit or miss)
+    - The player attacks a non-hostile NPC (making them hostile)
+    - The player pushes a non-hostile NPC
+    - The player's noise alerts nearby neutral NPCs
+
+    Attributes:
+        attacker: The actor initiating hostile action.
+        defender: The actor being attacked or becoming hostile.
+    """
+
+    attacker: Any  # Avoid circular imports
+    defender: Any
+
+
+@dataclass
+class CombatEndedEvent(GameEvent):
+    """Fired when combat mode ends.
+
+    Provides a hook for exit ceremony effects (sound, visual transition).
+
+    Attributes:
+        reason: Why combat ended - "all_enemies_dead", "manual_exit", or "cancelled".
+    """
+
+    reason: str
+
+
 class EventBus:
     """Simple event bus for publish/subscribe pattern."""
 

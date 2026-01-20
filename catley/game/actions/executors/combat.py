@@ -8,6 +8,7 @@ from catley.constants.combat import CombatConstants as Combat
 from catley.environment import tile_types
 from catley.events import (
     ActorDeathEvent,
+    CombatInitiatedEvent,
     EffectEvent,
     MessageEvent,
     ScreenShakeEvent,
@@ -65,6 +66,19 @@ class AttackExecutor(ActionExecutor):
             return GameActionResult(
                 succeeded=False
             )  # Validation failed, error messages already logged
+
+        # Auto-enter combat mode when NPC attacks player (hit or miss)
+        # Intent alone warrants combat mode - we don't wait for the outcome.
+        if (
+            intent.defender == intent.controller.gw.player
+            and intent.attacker != intent.controller.gw.player
+        ):
+            publish_event(
+                CombatInitiatedEvent(
+                    attacker=intent.attacker,
+                    defender=intent.defender,
+                )
+            )
 
         # 3. Perform the attack roll and immediate effects
         attack_result = self._execute_attack_roll(
@@ -851,6 +865,13 @@ class AttackExecutor(ActionExecutor):
                         f"{intent.attacker.name} due to the attack!"
                     ),
                     colors.ORANGE,
+                )
+            )
+            # Trigger auto-entry into combat mode
+            publish_event(
+                CombatInitiatedEvent(
+                    attacker=intent.attacker,
+                    defender=intent.defender,
                 )
             )
 

@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from catley import colors
-from catley.events import MessageEvent, publish_event
+from catley.events import CombatInitiatedEvent, MessageEvent, publish_event
 from catley.game.actions.base import GameActionResult
 from catley.game.actions.executors.base import ActionExecutor
 from catley.game.actors.status_effects import (
@@ -275,5 +275,12 @@ class PushExecutor(ActionExecutor):
             MessageEvent(
                 f"{intent.defender.name} becomes hostile after being pushed!",
                 colors.ORANGE,
+            )
+        )
+        # Trigger auto-entry into combat mode
+        publish_event(
+            CombatInitiatedEvent(
+                attacker=intent.attacker,
+                defender=intent.defender,
             )
         )

@@ -13,7 +13,13 @@ if TYPE_CHECKING:
     from catley.game.items.item_core import Item
 
 from . import colors, config
-from .events import MessageEvent, publish_event
+from .events import (
+    CombatEndedEvent,
+    CombatInitiatedEvent,
+    MessageEvent,
+    publish_event,
+    subscribe_to_event,
+)
 from .game.actions.base import GameIntent
 from .game.actions.types import AnimationType
 from .game.actors.core import Character
@@ -159,6 +165,9 @@ class Controller:
         self.picker_mode = PickerMode(self)
         self.mode_stack: list[Mode] = [self.explore_mode]
         self.explore_mode.enter()
+
+        # Subscribe to combat initiation events for auto-entry
+        subscribe_to_event(CombatInitiatedEvent, self._on_combat_initiated)
 
     def update_fov(self) -> None:
         """Recompute the visible area based on the player's point of view."""
@@ -419,8 +428,14 @@ class Controller:
         """Enter combat mode from current mode."""
         self.transition_to_mode(self.combat_mode)
 
-    def exit_combat_mode(self) -> None:
-        """Exit combat mode back to explore mode."""
+    def exit_combat_mode(self, reason: str = "manual_exit") -> None:
+        """Exit combat mode back to explore mode.
+
+        Args:
+            reason: Why combat ended - "all_enemies_dead", "manual_exit",
+                    or "cancelled". Used for ceremony hooks.
+        """
+        publish_event(CombatEndedEvent(reason=reason))
         self.transition_to_mode(self.explore_mode)
 
     def is_combat_mode(self) -> bool:
@@ -431,6 +446,51 @@ class Controller:
         not just if it's the active mode.
         """
         return self.combat_mode in self.mode_stack
+
+    def _on_combat_initiated(self, event: CombatInitiatedEvent) -> None:
+        """Auto-enter combat mode when combat is initiated.
+
+        Triggered by:
+        - NPC attacks player (hit or miss)
+        - Player attacks non-hostile NPC
+        - Player pushes non-hostile NPC
+        - Player's noise alerts nearby NPCs
+        """
+        if not self.is_combat_mode():
+            self.enter_combat_mode()
+
+    def has_visible_hostiles(self) -> bool:
+        """Check if any visible NPCs are hostile toward the player.
+
+        Used to warn when exiting combat mode with enemies still in sight.
+        Uses spatial index for efficient radius query (FOV_RADIUS).
+        """
+        from catley.game.actors.ai import DispositionBasedAI
+        from catley.game.enums import Disposition
+
+        player = self.gw.player
+        # Query actors within the configured FOV radius
+        nearby_actors = self.gw.actor_spatial_index.get_in_radius(
+            player.x, player.y, radius=config.FOV_RADIUS
+        )
+
+        for actor in nearby_actors:
+            # Skip non-characters and the player
+            if not isinstance(actor, Character) or actor == player:
+                continue
+            # Skip dead actors
+            if not actor.health.is_alive():
+                continue
+            # Skip actors not visible to the player
+            if not self.gw.game_map.visible[actor.x, actor.y]:
+                continue
+            # Check if hostile
+            if (
+                isinstance(actor.ai, DispositionBasedAI)
+                and actor.ai.disposition == Disposition.HOSTILE
+            ):
+                return True
+        return False
 
     def start_consumable_targeting(self, item: Item) -> None:
         """Start consumable targeting via PickerMode.

@@ -4,7 +4,14 @@ from typing import TYPE_CHECKING
 
 import tcod.event
 
-from catley.events import ActorDeathEvent, subscribe_to_event, unsubscribe_from_event
+from catley import colors
+from catley.events import (
+    ActorDeathEvent,
+    MessageEvent,
+    publish_event,
+    subscribe_to_event,
+    unsubscribe_from_event,
+)
 from catley.game import ranges
 from catley.game.actions.combat import AttackIntent
 from catley.game.actors import Character
@@ -113,7 +120,13 @@ class CombatMode(Mode):
         # Note: Mouse clicks are handled by PickerMode (on top of this mode)
         match event:
             case tcod.event.KeyDown(sym=tcod.event.KeySym.ESCAPE):
-                self.controller.pop_mode()
+                if self.controller.has_visible_hostiles():
+                    publish_event(
+                        MessageEvent(
+                            "Standing down despite hostile presence.", colors.YELLOW
+                        )
+                    )
+                self.controller.exit_combat_mode("manual_exit")
                 return True
 
             case tcod.event.KeyDown(sym=tcod.event.KeySym.TAB):
@@ -213,7 +226,7 @@ class CombatMode(Mode):
         if not self.candidates or (
             current_target and not current_target.health.is_alive()
         ):
-            self.controller.pop_mode()
+            self.controller.exit_combat_mode("all_enemies_dead")
             return
 
         # Adjust index if needed
@@ -284,7 +297,11 @@ class CombatMode(Mode):
 
     def _on_target_cancelled(self) -> None:
         """Handle cancel from PickerMode - exit combat mode entirely."""
-        self.controller.pop_mode()
+        if self.controller.has_visible_hostiles():
+            publish_event(
+                MessageEvent("Standing down despite hostile presence.", colors.YELLOW)
+            )
+        self.controller.exit_combat_mode("cancelled")
 
     def _is_valid_target(self, x: int, y: int) -> bool:
         """Check if a tile contains a valid attack target.

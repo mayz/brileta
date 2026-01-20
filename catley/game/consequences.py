@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from catley import colors
-from catley.events import MessageEvent, publish_event
+from catley.events import CombatInitiatedEvent, MessageEvent, publish_event
 from catley.game.actors import Actor, Character, ai
 from catley.game.actors.status_effects import OffBalanceEffect
 from catley.game.enums import Disposition, OutcomeTier
@@ -139,6 +139,14 @@ class ConsequenceHandler:
                         f"{actor.name} is alerted by the noise!", colors.ORANGE
                     )
                 )
+                # Trigger combat mode if player caused the noise
+                if source == gw.player:
+                    publish_event(
+                        CombatInitiatedEvent(
+                            attacker=source,
+                            defender=actor,
+                        )
+                    )
 
     def _apply_self_injury(self, target: Actor | None, weapon: Item | None) -> None:
         """Apply self-injury consequence from a fumbled attack.

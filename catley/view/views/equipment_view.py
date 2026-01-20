@@ -192,16 +192,21 @@ class EquipmentView(TextView):
             else:
                 item_text = f"{indicator}{slot_number} Empty"
 
-            # Color based on slot state and item type:
-            # - Hovered active consumable: GREEN (beneficial)
-            # - Hovered active weapon: RED (aggressive)
-            # - Active (not hovered): WHITE
+            # Color based on slot state, combat mode, and item type:
+            # - In combat mode with active weapon: RED (always)
+            # - Hovered active consumable (not in combat): GREEN (beneficial)
+            # - Hovered active weapon (not in combat): RED (aggressive)
+            # - Active (not hovered, not in combat): WHITE
             # - Inactive: GREY
             if is_active:
-                # Check if hovering this active slot using pixel bounds
+                in_combat = self.controller.is_combat_mode()
                 is_hovered = self._is_row_in_slot_bounds(self._hover_row, i)
-                if is_hovered:
-                    # Consumables show green (beneficial), weapons show red (aggressive)
+
+                if in_combat:
+                    # In combat mode: active weapon always shows RED
+                    color = colors.RED
+                elif is_hovered:
+                    # Not in combat but hovering: show intent
                     if item and item.consumable_effect:
                         color = colors.CATEGORY_CONSUMABLE
                     else:
@@ -335,7 +340,13 @@ class EquipmentView(TextView):
 
         # Toggle: if already in combat mode, exit
         if self.controller.is_combat_mode():
-            self.controller.exit_combat_mode()
+            if self.controller.has_visible_hostiles():
+                publish_event(
+                    MessageEvent(
+                        "Standing down despite hostile presence.", colors.YELLOW
+                    )
+                )
+            self.controller.exit_combat_mode("manual_exit")
             return True
 
         # Check if picker mode is active (consumable targeting) and exit if so
