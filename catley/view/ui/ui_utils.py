@@ -1,7 +1,13 @@
-"""UI drawing utilities for composing complex UI elements from Canvas primitives."""
+"""UI utilities for composing complex UI elements from Canvas primitives.
+
+Includes:
+- Text wrapping utilities with word-boundary awareness
+- Keycap drawing for keyboard hints
+"""
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from catley import colors
@@ -9,6 +15,42 @@ from catley.util.coordinates import PixelCoord
 
 if TYPE_CHECKING:
     from catley.view.render.canvas import Canvas
+
+
+def wrap_text_by_words(
+    text: str,
+    fits_in_width: Callable[[str], bool],
+) -> list[str]:
+    """Wrap text at word boundaries using a width-checking function.
+
+    This is the shared word-wrapping algorithm used by all backends. Each backend
+    provides its own width measurement function (pixel-based for Pillow,
+    character-count-based for tile-based backends).
+
+    Args:
+        text: Text to wrap
+        fits_in_width: Function that returns True if a string fits in the target width
+
+    Returns:
+        List of wrapped lines. Never returns an empty list - always at least one line.
+    """
+    words = text.split()
+    if not words:
+        return [text] if text else [""]
+
+    lines: list[str] = []
+    current_line = ""
+    for word in words:
+        test = word if not current_line else f"{current_line} {word}"
+        if fits_in_width(test):
+            current_line = test
+        else:
+            if current_line:
+                lines.append(current_line)
+            current_line = word
+    if current_line:
+        lines.append(current_line)
+    return lines if lines else [text]
 
 
 def draw_keycap(

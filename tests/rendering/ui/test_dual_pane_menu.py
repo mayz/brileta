@@ -435,10 +435,10 @@ def test_generate_item_detail_includes_name() -> None:
     knife = COMBAT_KNIFE_TYPE.create()
 
     menu = DualPaneMenu(controller)
-    detail_lines = menu._generate_item_detail(knife)
+    header, _description, _stats = menu._generate_item_detail(knife)
 
-    # First line should contain item name
-    assert any("Combat Knife" in line for line in detail_lines)
+    # Header lines should contain item name
+    assert any("Combat Knife" in line for line in header)
 
 
 def test_generate_item_detail_includes_size() -> None:
@@ -447,10 +447,10 @@ def test_generate_item_detail_includes_size() -> None:
     knife = COMBAT_KNIFE_TYPE.create()
 
     menu = DualPaneMenu(controller)
-    detail_lines = menu._generate_item_detail(knife)
+    header, _description, _stats = menu._generate_item_detail(knife)
 
-    # Should mention size (Normal for combat knife)
-    assert any("Normal" in line or "slot" in line for line in detail_lines)
+    # Header should mention size (Normal for combat knife)
+    assert any("Normal" in line or "slot" in line for line in header)
 
 
 # -----------------------------------------------------------------------------
@@ -883,11 +883,15 @@ def test_empty_permanent_container_can_be_searched() -> None:
     """Empty permanent containers should still be searchable to deposit items.
 
     When bumping into an empty bookcase, the menu should open so the player
-    can transfer items INTO the container.
+    can transfer items INTO the container. The menu should be dual-pane (not
+    single-pane) so the player can see both their inventory and the container.
     """
+    from unittest.mock import MagicMock
+
     from catley.game.actions.environment import SearchContainerIntent
     from catley.game.actions.executors.containers import SearchContainerExecutor
     from catley.game.actors.container import create_bookcase
+    from catley.view.ui.dual_pane_menu import ActorInventorySource
     from tests.helpers import get_controller_with_player_and_map
 
     controller = get_controller_with_player_and_map()
@@ -901,6 +905,16 @@ def test_empty_permanent_container_can_be_searched() -> None:
     assert len(bookcase.inventory) == 0
     assert bookcase.blocks_movement is True
 
+    # Mock the overlay system to capture the menu
+    captured_menu = None
+
+    def capture_menu(menu: DualPaneMenu) -> None:
+        nonlocal captured_menu
+        captured_menu = menu
+
+    controller.overlay_system = MagicMock()
+    controller.overlay_system.show_overlay = capture_menu
+
     # Execute search action
     intent = SearchContainerIntent(controller, player, bookcase)
     executor = SearchContainerExecutor()
@@ -908,3 +922,158 @@ def test_empty_permanent_container_can_be_searched() -> None:
 
     # Should succeed - empty permanent containers can be opened
     assert result.succeeded is True, "Empty permanent container should be searchable"
+
+    # Verify the menu was created with a source (dual-pane, not single-pane)
+    assert captured_menu is not None, "Menu should have been created"
+    assert captured_menu.source is not None, "Menu should have a source (dual-pane)"
+    assert isinstance(captured_menu.source, ActorInventorySource)
+    assert captured_menu.source.actor is bookcase
+
+
+# -----------------------------------------------------------------------------
+# Arrow Key Scrolling Tests
+# -----------------------------------------------------------------------------
+
+
+def test_arrow_keys_scroll_detail_description() -> None:
+    """Left/Right arrows should scroll detail panel when description overflows."""
+    from catley.game.outfit import LEATHER_ARMOR_TYPE
+
+    controller = _make_controller()
+    player = controller.gw.player
+
+    # Leather armor has a long description that should overflow
+    armor = LEATHER_ARMOR_TYPE.create()
+    player.inventory.add_item(armor)
+
+    menu = DualPaneMenu(controller)
+    menu.show()
+    menu._calculate_dimensions()  # Initialize _detail_panel
+
+    # Verify the panel exists and has overflow after showing the menu
+    assert menu._detail_panel is not None, "Detail panel should be initialized"
+
+    # The menu should show the armor as the only item, so it should be selected
+    assert menu.detail_item is armor, "Armor should be selected"
+
+    # Check if there's overflow (may depend on description length)
+    if menu._detail_panel.has_overflow():
+        initial_offset = menu._detail_panel.scroll_offset
+
+        # Right arrow should scroll down
+        right_event = tcod.event.KeyDown(
+            scancode=tcod.event.Scancode.RIGHT,
+            sym=tcod.event.KeySym.RIGHT,
+            mod=tcod.event.Modifier.NONE,
+        )
+        menu.handle_input(right_event)
+        assert menu._detail_panel.scroll_offset > initial_offset, (
+            "Right arrow should scroll down"
+        )
+
+        # Left arrow should scroll back up
+        left_event = tcod.event.KeyDown(
+            scancode=tcod.event.Scancode.LEFT,
+            sym=tcod.event.KeySym.LEFT,
+            mod=tcod.event.Modifier.NONE,
+        )
+        menu.handle_input(left_event)
+        assert menu._detail_panel.scroll_offset == initial_offset, (
+            "Left arrow should scroll back up"
+        )
+
+
+def test_arrow_keys_no_effect_without_overflow() -> None:
+    """Arrow keys should have no effect when description doesn't overflow."""
+    controller = _make_controller()
+    player = controller.gw.player
+
+    # Combat knife has a short description that shouldn't overflow
+    knife = COMBAT_KNIFE_TYPE.create()
+    player.inventory.add_to_inventory(knife)
+
+    menu = DualPaneMenu(controller)
+    menu.show()
+    menu._calculate_dimensions()  # Initialize _detail_panel
+
+    assert menu._detail_panel is not None
+    initial_offset = menu._detail_panel.scroll_offset
+
+    # Right arrow should not crash and should not change offset
+    right_event = tcod.event.KeyDown(
+        scancode=tcod.event.Scancode.RIGHT,
+        sym=tcod.event.KeySym.RIGHT,
+        mod=tcod.event.Modifier.NONE,
+    )
+    menu.handle_input(right_event)
+    assert menu._detail_panel.scroll_offset == initial_offset
+
+
+# -----------------------------------------------------------------------------
+# Condition Detail Generation Tests
+# -----------------------------------------------------------------------------
+
+
+def test_generate_item_detail_for_condition() -> None:
+    """Condition detail should include name and description."""
+    from catley.game.actors.conditions import Condition
+
+    controller = _make_controller()
+    menu = DualPaneMenu(controller)
+
+    # Create a condition with description
+    condition = Condition(
+        name="Test Condition",
+        description="This is a test condition description.",
+    )
+
+    header, description, stats = menu._generate_item_detail(condition)
+
+    # Header should contain "Condition: <name>"
+    assert len(header) == 1
+    assert "Condition:" in header[0]
+    assert "Test Condition" in header[0]
+
+    # Description should contain the condition's description
+    assert len(description) == 1
+    assert description[0] == "This is a test condition description."
+
+    # Stats should be None for conditions
+    assert stats is None
+
+
+def test_generate_item_detail_for_condition_without_description() -> None:
+    """Condition without description should still work."""
+    from catley.game.actors.conditions import Condition
+
+    controller = _make_controller()
+    menu = DualPaneMenu(controller)
+
+    condition = Condition(name="Empty Condition")
+
+    header, description, stats = menu._generate_item_detail(condition)
+
+    assert "Empty Condition" in header[0]
+    assert description == []
+    assert stats is None
+
+
+def test_generate_item_detail_before_show() -> None:
+    """_generate_item_detail should work even before show() is called.
+
+    This tests the guard against uninitialized canvas state.
+    """
+    controller = _make_controller()
+    menu = DualPaneMenu(controller)
+
+    # Don't call show() - canvas and _char_width will be uninitialized
+    knife = COMBAT_KNIFE_TYPE.create()
+
+    # Should not crash
+    header, description, _stats = menu._generate_item_detail(knife)
+
+    # Should still produce valid output
+    assert any("Combat Knife" in line for line in header)
+    # Description should be raw (not wrapped) since canvas isn't initialized
+    if knife.description:
+        assert knife.description in description

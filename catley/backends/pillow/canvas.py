@@ -138,25 +138,20 @@ class PillowImageCanvas(Canvas):
     def wrap_text(
         self, text: str, max_width: int, font_size: int | None = None
     ) -> list[str]:
+        """Wrap text at word boundaries to fit within max_width pixels."""
+        from catley.view.ui.ui_utils import wrap_text_by_words
+
         font = (
             self.font
             if font_size is None
             else ImageFont.truetype(str(self.font_path), font_size)
         )
-        words = text.split()
-        lines: list[str] = []
-        current_line = ""
-        for word in words:
-            test = word if not current_line else f"{current_line} {word}"
-            if font.getbbox(test)[2] - font.getbbox(test)[0] <= max_width:
-                current_line = test
-            else:
-                if current_line:
-                    lines.append(current_line)
-                current_line = word
-        if current_line:
-            lines.append(current_line)
-        return lines
+
+        def fits(s: str) -> bool:
+            bbox = font.getbbox(s)
+            return bbox[2] - bbox[0] <= max_width
+
+        return wrap_text_by_words(text, fits)
 
     def _prepare_for_rendering(self) -> bool:
         """Prepare PIL image for rendering operations."""

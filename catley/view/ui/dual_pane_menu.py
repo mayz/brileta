@@ -22,6 +22,7 @@ from catley.game.enums import ItemCategory, ItemSize
 from catley.game.items.item_core import Item
 from catley.util.coordinates import WorldTilePos
 from catley.view.ui.overlays import Menu, MenuOption
+from catley.view.ui.scrollable_text_panel import ScrollableTextPanel
 
 if TYPE_CHECKING:
     from catley.controller import Controller
@@ -125,7 +126,7 @@ class DualPaneMenu(Menu):
     LEFT_PANE_WIDTH = 35
     DIVIDER_WIDTH = 7
     RIGHT_PANE_WIDTH = 35
-    DETAIL_HEIGHT = 5
+    DETAIL_HEIGHT = 7  # 2 header + 2 description + 1 gap + 1 stats + 1 gap
     HINT_HEIGHT = 2  # Extra row for whitespace above keycaps
     HEADER_HEIGHT = 1
     # Calculated: item list height = TOTAL_HEIGHT - HEADER - DETAIL - HINT - borders
@@ -160,8 +161,19 @@ class DualPaneMenu(Menu):
         self.left_options: list[MenuOption] = []
         self.right_options: list[MenuOption] = []
 
-        # Detail panel
+        # Detail panel state
         self.detail_item: Item | Condition | None = None
+        # Scrollable panel for item details (created in _calculate_dimensions)
+        self._detail_panel: ScrollableTextPanel | None = None
+        # Track last rendered detail item to avoid resetting scroll unnecessarily
+        self._last_rendered_detail_item: Item | Condition | None = None
+        # Cached detail data: fixed header lines, stats line (description is in panel)
+        self._detail_header: list[str] = []
+        self._detail_stats: str | None = None
+
+        # Hover scroll zone for detail panel visual feedback
+        # -1=top zone (scroll up), 0=none, +1=bottom zone (scroll down)
+        self._hover_scroll_zone: int = 0
 
         # Get inventory reference
         self.inventory = controller.gw.player.inventory
@@ -750,11 +762,19 @@ class DualPaneMenu(Menu):
         - D/T/P: Drop (single-pane) or Transfer (dual-pane) - all three keys
                  do the same action
         - Tab: Switch panes (dual-pane only)
-        - Arrows/J/K: Navigate
+        - Up/Down/J/K: Navigate item list
+        - Left/Right: Scroll detail panel description (when overflow)
         - Esc/I/Q/Space: Close menu
+
+        Mouse: The "..." scroll indicators turn white when hovered over,
+        signaling interactivity. Click on them to scroll one line.
         """
         if not self.is_active:
             return False
+
+        # Delegate to scrollable detail panel for Page Up/Down scrolling
+        if self._detail_panel is not None and self._detail_panel.handle_input(event):
+            return True
 
         match event:
             # Tab switches panes (only if right pane exists)
@@ -773,12 +793,22 @@ class DualPaneMenu(Menu):
                         self._update_detail_from_cursor()
                 return True
 
-            # Arrow keys navigate within active pane
+            # Up/Down arrow keys navigate within active pane
             case tcod.event.KeyDown(sym=tcod.event.KeySym.UP):
                 self._move_cursor(-1)
                 return True
             case tcod.event.KeyDown(sym=tcod.event.KeySym.DOWN):
                 self._move_cursor(1)
+                return True
+
+            # Left/Right arrow keys scroll detail panel description
+            case tcod.event.KeyDown(sym=tcod.event.KeySym.LEFT):
+                if self._detail_panel and self._detail_panel.has_overflow():
+                    self._detail_panel.scroll_up()
+                return True
+            case tcod.event.KeyDown(sym=tcod.event.KeySym.RIGHT):
+                if self._detail_panel and self._detail_panel.has_overflow():
+                    self._detail_panel.scroll_down()
                 return True
 
             # Vim keys for navigation (j=down, k=up)
@@ -903,7 +933,7 @@ class DualPaneMenu(Menu):
         return False
 
     def _handle_mouse_motion(self, event: tcod.event.MouseMotion) -> bool:
-        """Handle mouse motion to update hover state."""
+        """Handle mouse motion to update hover state and detect scroll zones."""
         mouse_px_x, mouse_px_y = event.position
 
         # Convert to menu-relative coordinates
@@ -922,6 +952,9 @@ class DualPaneMenu(Menu):
         rel_char_x = int(rel_px_x // char_w)
         rel_line_y = int(rel_px_y // line_h)
 
+        # Track hover zone for visual feedback (ellipsis color change)
+        self._hover_scroll_zone = self._get_description_scroll_zone(rel_line_y)
+
         # Determine which pane the mouse is over
         # Left pane: chars 1 to LEFT_PANE_WIDTH
         # Right pane: chars LEFT_PANE_WIDTH + DIVIDER_WIDTH to end
@@ -929,9 +962,9 @@ class DualPaneMenu(Menu):
         item_start_y = self.HEADER_HEIGHT + 2
 
         if 1 <= rel_char_x < self.LEFT_PANE_WIDTH:
-            # Over left pane
+            # Over left pane - only select if in visible item list area
             option_line = rel_line_y - item_start_y
-            if 0 <= option_line < len(self.left_options):
+            if 0 <= option_line < min(self.ITEM_LIST_HEIGHT, len(self.left_options)):
                 self.active_pane = PaneId.LEFT
                 self.left_cursor = option_line
                 self._update_detail_from_cursor()
@@ -941,20 +974,59 @@ class DualPaneMenu(Menu):
             <= rel_char_x
             < self.TOTAL_WIDTH - 1
         ):
-            # Over right pane
+            # Over right pane - only select if in visible item list area
             option_line = rel_line_y - item_start_y
-            if 0 <= option_line < len(self.right_options):
+            if 0 <= option_line < min(self.ITEM_LIST_HEIGHT, len(self.right_options)):
                 self.active_pane = PaneId.RIGHT
                 self.right_cursor = option_line
                 self._update_detail_from_cursor()
 
         return True
 
+    def _get_description_scroll_zone(self, rel_line_y: int) -> int:
+        """Determine scroll zone from a line position in the description area.
+
+        Args:
+            rel_line_y: The line position relative to the menu top (0-indexed).
+
+        Returns:
+            -1 if should scroll up, +1 if should scroll down, 0 if not in scroll zone.
+        """
+        sep_y = self.TOTAL_HEIGHT - self.DETAIL_HEIGHT - self.HINT_HEIGHT - 1
+        desc_start_y = sep_y + 1 + 2  # detail_start_y + 2 (after header lines)
+        desc_end_y = desc_start_y + 2  # 2 description lines
+
+        if self._detail_panel is None or not self._detail_panel.has_overflow():
+            return 0
+
+        if not (desc_start_y <= rel_line_y < desc_end_y):
+            return 0
+
+        can_up = self._detail_panel.can_scroll_up()
+        can_down = self._detail_panel.can_scroll_down()
+
+        if can_up and can_down:
+            # Both directions available - use top line for up, bottom for down
+            return -1 if rel_line_y == desc_start_y else 1
+        if can_up:
+            return -1
+        if can_down:
+            return 1
+        return 0
+
     def _handle_mouse_click(self, event: tcod.event.MouseButtonDown) -> bool:
-        """Handle mouse click to select/transfer items."""
+        """Handle mouse click to select/transfer items or scroll description.
+
+        Clicking on the "..." scroll indicators scrolls one line in that
+        direction. The indicators turn white when hovered to signal
+        interactivity.
+
+        Clicks in the item list area activate the selected item.
+        Clicks in the hint bar area are ignored.
+        """
         mouse_px_x, mouse_px_y = event.position
 
-        # Check if click is outside menu using tile-based positioning
+        # Convert to menu-relative coordinates
         tile_w, tile_h = self.tile_dimensions
         menu_px_x = self.x_tiles * tile_w
         menu_px_y = self.y_tiles * tile_h
@@ -965,49 +1037,92 @@ class DualPaneMenu(Menu):
             self.hide()
             return True
 
-        # Activate whatever is under cursor (motion handler already updated cursor)
+        # Check which region was clicked
+        char_w = self._char_width
+        line_h = self._line_height
+        if char_w == 0 or line_h == 0:
+            return True
+
+        rel_line_y = int(rel_px_y // line_h)
+
+        # Detail panel region starts at separator line
+        sep_y = self.TOTAL_HEIGHT - self.DETAIL_HEIGHT - self.HINT_HEIGHT - 1
+        detail_start_y_px = (sep_y + 1) * line_h
+        hint_start_y_px = (self.TOTAL_HEIGHT - self.HINT_HEIGHT) * line_h
+
+        # Handle clicks in description area for scrolling
+        if detail_start_y_px <= rel_px_y < hint_start_y_px:
+            scroll_zone = self._get_description_scroll_zone(rel_line_y)
+            # Helper returns non-zero only when _detail_panel exists
+            if self._detail_panel is not None:
+                if scroll_zone == -1:
+                    self._detail_panel.scroll_up()
+                elif scroll_zone == 1:
+                    self._detail_panel.scroll_down()
+            return True
+
+        # If click is in hint bar area, ignore
+        if rel_px_y >= hint_start_y_px:
+            return True
+
+        # Otherwise, click is in item list area - activate item
         result = self._activate_current_item()
         if result:
             self.hide()
         return True
 
-    def _generate_item_detail(self, entity: Item | Condition) -> list[str]:
-        """Generate detail lines for the selected item/condition.
+    def _generate_item_detail(
+        self, entity: Item | Condition
+    ) -> tuple[list[str], list[str], str | None]:
+        """Generate detail data for the selected item/condition.
 
-        For items, the first line is the category name (rendered in category
-        color by _draw_detail_panel). Remaining lines are white.
+        Returns a tuple of (header_lines, description_lines, stats_line):
+        - header_lines: Category + name/size (always visible, max 2 lines)
+        - description_lines: Item description (scrollable)
+        - stats_line: Protection/attack stats (always visible, or None)
+
+        This separation allows the detail panel to keep stats visible at all
+        times while only scrolling the description text.
         """
-        lines: list[str] = []
+        header: list[str] = []
+        description: list[str] = []
+        stats: str | None = None
 
         if isinstance(entity, Condition):
-            lines.append(f"Condition: {entity.name}")
+            header.append(f"Condition: {entity.name}")
             if hasattr(entity, "description") and entity.description:
-                lines.append(entity.description)
-            return lines
+                description.append(entity.description)
+            return header, description, stats
 
         item: Item = entity
 
-        # First line: category name (will be rendered in category color)
+        # Header line 1: category name (will be rendered in category color)
         category_name = _get_category_name(item.category)
         if category_name:
-            lines.append(category_name)
+            header.append(category_name)
 
-        # Size with slot cost explanation
+        # Header line 2: name + size
         size_text = {
             ItemSize.TINY: "Tiny (shares slot)",
             ItemSize.NORMAL: "Normal (1 slot)",
             ItemSize.BIG: "Big (2 slots)",
             ItemSize.HUGE: "Huge (4 slots)",
         }
-        lines.append(f"{item.name} - {size_text.get(item.size, 'Unknown size')}")
+        header.append(f"{item.name} - {size_text.get(item.size, 'Unknown size')}")
 
-        # Description
+        # Description - wrap long descriptions using word boundaries
         if item.description:
-            # Truncate long descriptions
-            desc = item.description
-            if len(desc) > 70:
-                desc = desc[:67] + "..."
-            lines.append(desc)
+            # Only wrap if canvas/dimensions are initialized; otherwise use raw text.
+            # This guards against calls before show() -> _calculate_dimensions().
+            if self.canvas is not None and self._char_width > 0:
+                # Calculate max width for description, accounting for:
+                # - 4 chars margin (2 each side)
+                # - 3 chars for "..." ellipsis that may be prepended/appended
+                max_desc_width = (self.width - 7) * self._char_width
+                wrapped_desc = self.canvas.wrap_text(item.description, max_desc_width)
+                description.extend(wrapped_desc)
+            else:
+                description.append(item.description)
 
         # Check if this is an outfit item - capability is now stored on the item
         from catley.game.outfit import get_outfit_spec
@@ -1020,23 +1135,21 @@ class DualPaneMenu(Menu):
             if outfit_spec.protection > 0:
                 if outfit_cap is not None:
                     if outfit_cap.is_broken:
-                        lines.append(
-                            f"Protection: {outfit_spec.protection}  AP: BROKEN"
-                        )
+                        stats = f"Protection: {outfit_spec.protection}  AP: BROKEN"
                     else:
-                        lines.append(
+                        stats = (
                             f"Protection: {outfit_spec.protection}  "
                             f"AP: {outfit_cap.ap}/{outfit_cap.max_ap}"
                         )
                 else:
                     # Fallback (shouldn't happen for outfit items)
-                    lines.append(
+                    stats = (
                         f"Protection: {outfit_spec.protection}  "
                         f"AP: {outfit_spec.max_ap}"
                     )
             else:
-                lines.append("No protection (clothing only)")
-            return lines
+                stats = "No protection (clothing only)"
+            return header, description, stats
 
         # Find the attack to display: prefer one with PREFERRED, else first available
         from catley.game.items.properties import (
@@ -1065,32 +1178,32 @@ class DualPaneMenu(Menu):
                     chosen_attack = (label, attack)
                     break
 
-        # Show stats for the chosen attack
+        # Build stats line for the chosen attack
         if chosen_attack:
             label, attack = chosen_attack
             if label == "Ranged":
                 # Skip ammo display for THROWN weapons (single-use items)
                 if WeaponProperty.THROWN in attack.properties:
-                    lines.append(f"Ranged: {attack.damage_dice}")
+                    stats = f"Ranged: {attack.damage_dice}"
                 else:
                     ammo_str = (
                         f"{attack.current_ammo}/{attack.max_ammo}"
                         if attack.max_ammo
                         else "N/A"
                     )
-                    lines.append(f"Ranged: {attack.damage_dice} [{ammo_str}]")
+                    stats = f"Ranged: {attack.damage_dice} [{ammo_str}]"
             else:
-                lines.append(f"{label}: {attack.damage_dice}")
+                stats = f"{label}: {attack.damage_dice}"
 
-            # Show properties from the chosen attack only
-            lines.extend(
+            # Append weapon properties to description (not stats line)
+            description.extend(
                 WEAPON_PROPERTY_DESCRIPTIONS[prop]
                 for prop in attack.properties
                 if isinstance(prop, WeaponProperty | TacticalProperty)
                 and prop in WEAPON_PROPERTY_DESCRIPTIONS
             )
 
-        return lines
+        return header, description, stats
 
     def _calculate_dimensions(self) -> None:
         """Calculate menu dimensions in pixels using font metrics."""
@@ -1124,6 +1237,20 @@ class DualPaneMenu(Menu):
 
         self.x_tiles = center_px_x // tile_w if tile_w > 0 else 0
         self.y_tiles = center_px_y // tile_h if tile_h > 0 else 0
+
+        # Create or update the detail panel for description scrolling only
+        # Layout: 2 header + 2 description + 1 gap + 1 stats + 1 gap = 7 lines
+        panel_width = self.width - 4  # 2 chars margin on each side
+        panel_max_lines = 2  # 2 description lines visible (scroll for more)
+        if (
+            self._detail_panel is None
+            or self._detail_panel.max_visible_lines != panel_max_lines
+            or self._detail_panel.width_chars != panel_width
+        ):
+            self._detail_panel = ScrollableTextPanel(
+                max_visible_lines=panel_max_lines,
+                width_chars=panel_width,
+            )
 
     # Visual constants for menu styling
     MENU_BG_COLOR: colors.Color = (15, 15, 15)  # subtle dark grey, not pure black
@@ -1438,7 +1565,17 @@ class DualPaneMenu(Menu):
             self.canvas.draw_text(current_px_x, y * line_h, text, text_color)
 
     def _draw_detail_panel(self) -> None:
-        """Draw the item detail panel at the bottom."""
+        """Draw the item detail panel at the bottom.
+
+        Layout (7 lines total, DETAIL_HEIGHT=7):
+        - Line 0: Category (fixed, colored)
+        - Line 1: Name + Size (fixed)
+        - Line 2: Description line 1 (scrollable)
+        - Line 3: Description line 2 (scrollable)
+        - Line 4: (gap)
+        - Line 5: Stats (fixed, always visible)
+        - Line 6: (gap before hints)
+        """
         assert self.canvas is not None
         assert isinstance(self.canvas, PillowImageCanvas)
         char_w = self._char_width
@@ -1473,44 +1610,59 @@ class DualPaneMenu(Menu):
         )
 
         detail_start_y = sep_y + 1
+        panel_x = 2 * char_w
 
         if self.detail_item is None:
             self.canvas.draw_text(
-                2 * char_w,
+                panel_x,
                 detail_start_y * line_h,
                 "(No item selected)",
                 colors.GREY,
             )
+            self._last_rendered_detail_item = None
             return
 
-        # Generate and draw detail lines
-        detail_lines = self._generate_item_detail(self.detail_item)
+        # Generate separated detail data (header, description, stats)
+        assert self._detail_panel is not None
+        if self.detail_item is not self._last_rendered_detail_item:
+            header, description, stats = self._generate_item_detail(self.detail_item)
+            # Store header and stats for fixed rendering
+            self._detail_header = header
+            self._detail_stats = stats
+            # Only description goes into the scrollable panel
+            self._detail_panel.set_content(description)
+            self._last_rendered_detail_item = self.detail_item
 
-        # Determine if first line should be colored (item category)
-        first_line_color = colors.WHITE
+        # Determine category color for first header line
+        first_line_color: colors.Color = colors.WHITE
         if isinstance(self.detail_item, Item):
             _, cat_color = _get_category_prefix(self.detail_item)
             if cat_color:
                 first_line_color = cat_color
 
-        # Calculate max text width for truncation
-        max_text_width = (self.width - 4) * char_w
+        # Draw fixed header lines (lines 0-1)
+        for i, line in enumerate(self._detail_header[:2]):  # Max 2 header lines
+            color = first_line_color if i == 0 else colors.WHITE
+            self.canvas.draw_text(panel_x, (detail_start_y + i) * line_h, line, color)
 
-        for i, line in enumerate(detail_lines[: self.DETAIL_HEIGHT - 1]):
-            # Truncate text to fit
-            text = line
-            text_width, _, _ = self.canvas.get_text_metrics(text)
-            while text_width > max_text_width and len(text) > 1:
-                text = text[:-1]
-                text_width, _, _ = self.canvas.get_text_metrics(text)
+        # Draw scrollable description (lines 2-3)
+        # Description panel starts at line 2 within the detail area
+        desc_start_y = detail_start_y + 2
+        self._detail_panel.draw(
+            canvas=self.canvas,
+            x=panel_x,
+            y=desc_start_y * line_h,
+            line_height=line_h,
+            char_width=char_w,
+            text_color=colors.WHITE,
+            hover_zone=self._hover_scroll_zone,
+        )
 
-            # First line (category) uses category color, rest are white
-            line_color = first_line_color if i == 0 else colors.WHITE
+        # Draw fixed stats line (line 5, always visible)
+        if self._detail_stats:
+            stats_y = detail_start_y + 5  # Line 5 within detail area
             self.canvas.draw_text(
-                2 * char_w,
-                (detail_start_y + i) * line_h,
-                text,
-                line_color,
+                panel_x, stats_y * line_h, self._detail_stats, colors.WHITE
             )
 
     def _get_hint_lines(self) -> list[str]:
@@ -1633,13 +1785,19 @@ class DualPaneMenu(Menu):
 
         items: list[tuple[str, str]] = []
 
+        # Check if description has overflow (scroll hint only shown when needed)
+        has_scroll = (
+            self._detail_panel is not None and self._detail_panel.has_overflow()
+        )
+
         if self.source is None:
             # Single-pane (inventory only)
             items.append(("ENTER", "Equip"))
             if selected_item and selected_item.consumable_effect:
                 items.append(("U", "Use"))
             items.append(("D", "Drop"))
-            items.append(("ESC", "Close"))
+            if has_scroll:
+                items.append(("←→", "Scroll"))
         elif self.active_pane == PaneId.LEFT:
             # Dual-pane, left pane focused
             items.append(("ENTER", "Equip"))
@@ -1647,18 +1805,20 @@ class DualPaneMenu(Menu):
                 items.append(("U", "Use"))
             items.append(("T", "Transfer"))
             items.append(("TAB", "Switch"))
-            items.append(("ESC", ""))
+            if has_scroll:
+                items.append(("←→", "Scroll"))
         else:
             # Dual-pane, right pane focused
             items.append(("T", "Transfer"))
             items.append(("TAB", "Switch"))
-            items.append(("ESC", "Close"))
+            if has_scroll:
+                items.append(("←→", "Scroll"))
 
         return items
 
     def _draw_hint_bar(self) -> None:
         """Draw the keyboard hints at the bottom using keycap-style rendering."""
-        from catley.view.ui.drawing_utils import draw_keycap
+        from catley.view.ui.ui_utils import draw_keycap
 
         assert self.canvas is not None
         char_w = self._char_width

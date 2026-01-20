@@ -102,21 +102,18 @@ class ModernGLCanvas(Canvas):
     def wrap_text(
         self, text: str, max_width: int, font_size: int | None = None
     ) -> list[str]:
+        """Wrap text at word boundaries to fit within max_width pixels."""
+        from catley.view.ui.ui_utils import wrap_text_by_words
+
         _ = font_size
         tile_width, _ = self.renderer.tile_dimensions
         if tile_width == 0:
             return [text]  # Avoid division by zero
-        chars_per_line = max_width // tile_width
-        if chars_per_line <= 0:
-            return [text]
-        return (
-            text.splitlines()
-            if len(text) <= chars_per_line
-            else [
-                text[i : i + chars_per_line]
-                for i in range(0, len(text), chars_per_line)
-            ]
-        )
+
+        def fits(s: str) -> bool:
+            return len(s) * tile_width <= max_width
+
+        return wrap_text_by_words(text, fits)
 
     def _update_scaling_internal(
         self, tile_height: int

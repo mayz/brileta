@@ -277,7 +277,10 @@ SHELTER_JUMPSUIT_TYPE = ItemType(
 
 LEATHER_ARMOR_TYPE = ItemType(
     name="Leather Armor",
-    description="Hardened leather plates. Basic but reliable protection.",
+    description=(
+        "Hardened leather plates. Basic but reliable protection. "
+        "Covers the torso and shoulders while allowing freedom of movement."
+    ),
     size=ItemSize.NORMAL,
     category=ItemCategory.ARMOR,
     outfit=OutfitSpec(protection=2, max_ap=4),

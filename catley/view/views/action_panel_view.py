@@ -14,7 +14,7 @@ from catley.game.items.properties import WeaponProperty
 from catley.types import InterpolationAlpha
 from catley.util.caching import ResourceCache
 from catley.view.render.graphics import GraphicsContext
-from catley.view.ui.drawing_utils import draw_keycap
+from catley.view.ui.ui_utils import draw_keycap
 
 from .base import TextView
 

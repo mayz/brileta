@@ -63,36 +63,18 @@ class WGPUCanvas(Canvas):
     def wrap_text(
         self, text: str, max_width: int, font_size: int | None = None
     ) -> list[str]:
-        """Wrap text to fit within max_width pixels."""
+        """Wrap text at word boundaries to fit within max_width pixels."""
+        from catley.view.ui.ui_utils import wrap_text_by_words
+
+        _ = font_size
         tile_width, _ = self.renderer.tile_dimensions
-        max_chars_per_line = max_width // tile_width
+        if tile_width == 0:
+            return [text]  # Avoid division by zero
 
-        if max_chars_per_line <= 0:
-            return [text]  # Can't wrap, return as is
+        def fits(s: str) -> bool:
+            return len(s) * tile_width <= max_width
 
-        words = text.split()
-        lines = []
-        current_line = ""
-
-        for word in words:
-            test_line = current_line + (" " if current_line else "") + word
-            if len(test_line) <= max_chars_per_line:
-                current_line = test_line
-            else:
-                if current_line:
-                    lines.append(current_line)
-                    current_line = word
-                else:
-                    # Single word is too long, break it
-                    while len(word) > max_chars_per_line:
-                        lines.append(word[:max_chars_per_line])
-                        word = word[max_chars_per_line:]
-                    current_line = word
-
-        if current_line:
-            lines.append(current_line)
-
-        return lines if lines else [""]
+        return wrap_text_by_words(text, fits)
 
     @property
     def artifact_type(self) -> str:

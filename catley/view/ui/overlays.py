@@ -25,7 +25,7 @@ from catley import colors, config
 from catley.backends.pillow.canvas import PillowImageCanvas
 from catley.types import PixelCoord, PixelPos
 from catley.view.render.canvas import Canvas
-from catley.view.ui.drawing_utils import draw_keycap
+from catley.view.ui.ui_utils import draw_keycap
 
 if TYPE_CHECKING:
     from catley.controller import Controller
