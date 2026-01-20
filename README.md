@@ -10,7 +10,7 @@ The project prioritizes:
 ## Inspirations
 
 **Tone & Setting:**
-- *Fallout 1*, *Fallout 2*, and *Fallout Tactics*
+- *Fallout 1* and *Fallout 2*
 - Late 90s isometric RPGs
 - *Disco Elysium*
 

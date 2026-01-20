@@ -781,9 +781,8 @@ class CharacterInventory(InventoryComponent):
 
         item, _ = self._equipped_outfit
 
-        if not self.can_add_voluntary_item(item):
-            return False, f"No room to store {item.name}"
-
+        # No capacity check needed - moving from equipped to stored doesn't
+        # change total used space (same size calculation applies to both).
         self._stored_items.append(item)
         self._equipped_outfit = None
 

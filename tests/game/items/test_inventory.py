@@ -193,3 +193,32 @@ def test_try_remove_item_from_equipped_outfit() -> None:
 
     assert result is True
     assert inv.equipped_outfit is None
+
+
+def test_unequip_outfit_at_capacity_succeeds() -> None:
+    """Unequipping an outfit should succeed even at full capacity.
+
+    Regression test: The capacity check was incorrectly blocking outfit
+    unequipping when inventory was at capacity, even though equipped items
+    already count toward used space.
+    """
+    from catley.game.outfit import LEATHER_ARMOR_TYPE
+
+    stats = components.StatsComponent(strength=0)  # 5 slots
+    inv = components.CharacterInventory(stats)
+
+    # Equip armor (1 slot) and fill remaining inventory (4 slots) = 5 total
+    armor_item = LEATHER_ARMOR_TYPE.create()
+    inv.set_starting_outfit(armor_item)
+    for i in range(4):
+        inv.add_to_inventory(make_item(f"item{i}", ItemSize.NORMAL))
+
+    assert inv.get_used_inventory_slots() == 5  # At capacity
+
+    # Unequipping should succeed - it's a move, not an add
+    success, msg = inv.unequip_outfit()
+
+    assert success, f"Unequip failed unexpectedly: {msg}"
+    assert inv.equipped_outfit is None
+    assert armor_item in inv
+    assert inv.get_used_inventory_slots() == 5  # Still at capacity
