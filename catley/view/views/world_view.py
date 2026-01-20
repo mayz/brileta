@@ -8,6 +8,9 @@ import numpy as np
 
 from catley import colors, config
 from catley.config import (
+    COMBAT_OUTLINE_MAX_ALPHA,
+    COMBAT_OUTLINE_MIN_ALPHA,
+    COMBAT_OUTLINE_SHIMMER_PERIOD,
     LUMINANCE_THRESHOLD,
     PULSATION_MAX_BLEND_ALPHA,
     PULSATION_PERIOD,
@@ -130,6 +133,66 @@ class WorldView(View):
             final_color = self._apply_pulsating_effect(color, color)
         root_x, root_y = self.x + vp_x, self.y + vp_y
         self.graphics.draw_tile_highlight(root_x, root_y, final_color, alpha)
+
+    def render_actor_outline(
+        self, actor: Actor, color: colors.Color, alpha: float
+    ) -> None:
+        """Render an outlined glyph for an actor at its current position.
+
+        Used for combat targeting to show a shimmering outline around the
+        enemy's glyph shape. The actor must be visible.
+
+        Args:
+            actor: The actor to render an outline for
+            color: RGB color for the outline
+            alpha: Opacity of the outline (0.0-1.0)
+        """
+        if not self.controller.gw.game_map.visible[actor.x, actor.y]:
+            return
+
+        vs = self.viewport_system
+        if not vs.is_visible(actor.x, actor.y):
+            return
+
+        # Convert actor position to screen coordinates
+        vp_x, vp_y = vs.world_to_screen(actor.x, actor.y)
+        root_x = self.x + vp_x
+        root_y = self.y + vp_y
+        screen_x, screen_y = self.graphics.console_to_screen_coords(root_x, root_y)
+
+        visual_scale = getattr(actor, "visual_scale", 1.0)
+
+        self.graphics.draw_actor_outline(
+            actor.ch,
+            screen_x,
+            screen_y,
+            color,
+            alpha,
+            scale_x=visual_scale,
+            scale_y=visual_scale,
+        )
+
+    def get_shimmer_alpha(self, period: float = COMBAT_OUTLINE_SHIMMER_PERIOD) -> float:
+        """Calculate oscillating alpha for shimmer effect.
+
+        Returns an alpha value that smoothly oscillates between configured
+        min and max values over the specified period, creating a breathing
+        or pulsing visual effect.
+
+        Args:
+            period: Duration in seconds for one complete oscillation cycle
+
+        Returns:
+            Alpha value between COMBAT_OUTLINE_MIN_ALPHA and COMBAT_OUTLINE_MAX_ALPHA
+        """
+        game_time = self.controller.clock.last_time
+        t = (game_time % period) / period
+        # Sinusoidal oscillation from min to max alpha
+        normalized = (math.sin(t * 2 * math.pi) + 1) / 2
+        return (
+            COMBAT_OUTLINE_MIN_ALPHA
+            + (COMBAT_OUTLINE_MAX_ALPHA - COMBAT_OUTLINE_MIN_ALPHA) * normalized
+        )
 
     # ------------------------------------------------------------------
     # Drawing

@@ -49,6 +49,9 @@ SELECTED_HIGHLIGHT: Color = WHITE
 
 DEAD: Color = (128, 128, 128)
 
+# Combat targeting
+COMBAT_OUTLINE: ColorRGBA = (255, 50, 50, 255)  # Red outline for targetable enemies
+
 # Debugging colors
 DEBUG_COLORS: list[Color] = [
     (0, 255, 0),  # Lime Green

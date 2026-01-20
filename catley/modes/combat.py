@@ -129,12 +129,6 @@ class CombatMode(Mode):
                 self.controller.exit_combat_mode("manual_exit")
                 return True
 
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.TAB):
-                if self.candidates:
-                    direction = -1 if (event.mod & tcod.event.Modifier.SHIFT) else 1
-                    self._cycle_target(direction)
-                return True
-
             case tcod.event.KeyDown(sym=tcod.event.KeySym.RETURN):
                 if self._get_current_target():
                     target = self._get_current_target()
@@ -247,14 +241,6 @@ class CombatMode(Mode):
             return self.candidates[self.current_index]
         return None
 
-    def _cycle_target(self, direction: int = 1) -> None:
-        """Cycle to next/previous target. direction: 1 for next, -1 for previous"""
-        if not self.candidates:
-            return
-
-        self.current_index = (self.current_index + direction) % len(self.candidates)
-        self.controller.gw.selected_actor = self.candidates[self.current_index]
-
     def _calculate_distance_to_player(self, actor: Character) -> int:
         return ranges.calculate_distance(
             self.controller.gw.player.x, self.controller.gw.player.y, actor.x, actor.y
@@ -323,21 +309,20 @@ class CombatMode(Mode):
         self._render_targeting_highlights()
 
     def _render_targeting_highlights(self) -> None:
-        """Render the targeting highlights for all candidates.
+        """Render shimmering glyph outlines on all targetable enemies.
 
-        Extracted from render_world() to be callable by PickerMode's
-        render_underneath callback.
+        All visible candidates get the same shimmering outline effect - there's
+        no visual distinction between "current target" and others since TAB
+        cycling has been removed in favor of pure mouse targeting.
         """
         if self.controller.frame_manager is None:
             return
 
-        current_target = self._get_current_target()
         gw_view = self.controller.frame_manager.world_view
+        alpha = gw_view.get_shimmer_alpha()
+        outline_color = colors.COMBAT_OUTLINE[:3]  # Extract RGB from RGBA
 
         for actor in self.candidates:
             if not self.controller.gw.game_map.visible[actor.x, actor.y]:
                 continue
-            if actor == current_target:
-                gw_view.highlight_actor(actor, (255, 0, 0), effect="pulse")
-            else:
-                gw_view.highlight_actor(actor, (100, 0, 0), effect="solid")
+            gw_view.render_actor_outline(actor, outline_color, alpha)

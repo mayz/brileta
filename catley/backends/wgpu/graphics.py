@@ -18,6 +18,7 @@ from catley.util.coordinates import (
     CoordinateConverter,
 )
 from catley.util.glyph_buffer import GlyphBuffer
+from catley.util.tilesets import derive_outlined_atlas
 from catley.view.render.base_graphics import BaseGraphicsContext
 
 from .resource_manager import WGPUResourceManager
@@ -56,7 +57,9 @@ class WGPUGraphicsContext(BaseGraphicsContext):
 
         # Atlas texture and UV mapping
         self.atlas_texture: wgpu.GPUTexture | None = None
+        self.outlined_atlas_texture: wgpu.GPUTexture | None = None
         self.uv_map: np.ndarray | None = None
+        self._atlas_pixels: np.ndarray | None = None
 
         # Screen renderer
         self.screen_renderer: WGPUScreenRenderer | None = None
@@ -110,6 +113,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
 
         # Load atlas texture and prepare UV mapping
         self.atlas_texture = self._load_atlas_texture()
+        self.outlined_atlas_texture = self._load_outlined_atlas_texture()
         self.uv_map = self._precalculate_uv_map()
 
         # Initialize all renderers
@@ -316,6 +320,64 @@ class WGPUGraphicsContext(BaseGraphicsContext):
             scaled_h,
             uv_coords,
             final_color,
+        )
+
+    def draw_actor_outline(
+        self,
+        char: str,
+        screen_x: float,
+        screen_y: float,
+        color: colors.Color,
+        alpha: float,
+        scale_x: float = 1.0,
+        scale_y: float = 1.0,
+    ) -> None:
+        """Draws an outlined glyph using the pre-generated outlined atlas.
+
+        The outlined atlas contains white outlines which are tinted by the color
+        parameter and rendered with the specified alpha for shimmer effects.
+        """
+        if (
+            self.ui_texture_renderer is None
+            or self.uv_map is None
+            or self.outlined_atlas_texture is None
+        ):
+            return
+
+        # Convert color to 0-1 range with alpha
+        final_color = (
+            color[0] / 255.0,
+            color[1] / 255.0,
+            color[2] / 255.0,
+            max(0.0, min(1.0, alpha)),
+        )
+
+        uv_coords = self.uv_map[ord(char)]
+        u1, v1, u2, v2 = uv_coords
+        tile_w, tile_h = self.tile_dimensions
+
+        # Apply scaling and center on tile
+        scaled_w = tile_w * scale_x
+        scaled_h = tile_h * scale_y
+        offset_x = (tile_w - scaled_w) / 2
+        offset_y = (tile_h - scaled_h) / 2
+
+        # Calculate final position
+        x = screen_x + offset_x
+        y = screen_y + offset_y
+
+        # Create vertices for the outlined quad
+        vertices = np.zeros(6, dtype=self.ui_texture_renderer.VERTEX_DTYPE)
+        vertices[0] = ((x, y), (u1, v1), final_color)
+        vertices[1] = ((x + scaled_w, y), (u2, v1), final_color)
+        vertices[2] = ((x, y + scaled_h), (u1, v2), final_color)
+        vertices[3] = ((x + scaled_w, y), (u2, v1), final_color)
+        vertices[4] = ((x, y + scaled_h), (u1, v2), final_color)
+        vertices[5] = ((x + scaled_w, y + scaled_h), (u2, v2), final_color)
+
+        # Queue the outlined texture for batched rendering
+        self.ui_texture_renderer.add_textured_quad(
+            self.outlined_atlas_texture, vertices
         )
 
     def get_display_scale_factor(self) -> tuple[float, float]:
@@ -672,11 +734,49 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         )
         pixels[magenta_mask, 3] = 0
 
+        # Store pixels for outlined atlas generation
+        self._atlas_pixels = pixels
+
         # Create WGPU texture using resource manager
         return self.resource_manager.create_atlas_texture(
             width=img.size[0],
             height=img.size[1],
             data=pixels.tobytes(),
+            texture_format="rgba8unorm",
+        )
+
+    def _load_outlined_atlas_texture(self) -> wgpu.GPUTexture | None:
+        """Creates an outlined version of the tileset atlas.
+
+        Uses the derive_outlined_atlas utility to create a tileset where each
+        glyph is replaced with just its 1-pixel outline. The outline is white
+        so it can be tinted to any color at render time.
+
+        Returns None if required resources are not available (e.g., in tests).
+        """
+        if self.resource_manager is None or self._atlas_pixels is None:
+            return None
+
+        # Calculate tile dimensions from the atlas
+        height, width = self._atlas_pixels.shape[:2]
+        tile_width = width // config.TILESET_COLUMNS
+        tile_height = height // config.TILESET_ROWS
+
+        # Generate the outlined atlas in white so it can be tinted to any color
+        outlined_pixels = derive_outlined_atlas(
+            self._atlas_pixels,
+            tile_width,
+            tile_height,
+            config.TILESET_COLUMNS,
+            config.TILESET_ROWS,
+            color=(255, 255, 255, 255),
+        )
+
+        # Create WGPU texture using resource manager
+        return self.resource_manager.create_atlas_texture(
+            width=width,
+            height=height,
+            data=outlined_pixels.tobytes(),
             texture_format="rgba8unorm",
         )
 
@@ -728,9 +828,11 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         self.background_renderer = None
         self.environmental_effect_renderer = None
         self.atlas_texture = None
+        self.outlined_atlas_texture = None
         self.shader_manager = None
         self.resource_manager = None
         self._world_view_cpu_buffer = None
+        self._atlas_pixels = None
 
         # Let WGPU context cleanup happen naturally
         self.wgpu_context = None

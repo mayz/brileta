@@ -106,6 +106,33 @@ class GraphicsContext(abc.ABC):
         pass
 
     @abc.abstractmethod
+    def draw_actor_outline(
+        self,
+        char: str,
+        screen_x: float,
+        screen_y: float,
+        color: colors.Color,
+        alpha: float,
+        scale_x: float = 1.0,
+        scale_y: float = 1.0,
+    ) -> None:
+        """Draw an outlined version of a character glyph for combat targeting.
+
+        Renders a 1-pixel outline tracing the glyph shape. The outline is
+        pre-generated in an outlined tileset and tinted with the specified color.
+
+        Args:
+            char: Character to draw (e.g., 'g' for goblin)
+            screen_x: Screen X coordinate in pixels (can be fractional)
+            screen_y: Screen Y coordinate in pixels (can be fractional)
+            color: RGB color to tint the outline
+            alpha: Opacity of the outline (0.0-1.0), used for shimmer effect
+            scale_x: Horizontal scale factor (1.0 = normal width).
+            scale_y: Vertical scale factor (1.0 = normal height).
+        """
+        pass
+
+    @abc.abstractmethod
     def get_display_scale_factor(self) -> tuple[float, float]:
         """Get the (x_scale, y_scale) factor for high-DPI displays.
 

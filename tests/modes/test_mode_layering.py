@@ -59,10 +59,11 @@ def test_combat_mode_handles_escape_directly() -> None:
     assert controller.active_mode is controller.explore_mode
 
 
-def test_combat_mode_handles_tab_directly() -> None:
-    """Tab key cycles targets (handled by CombatMode, not fallback).
+def test_combat_mode_does_not_handle_tab() -> None:
+    """Tab key is not handled by CombatMode (TAB cycling removed).
 
-    Note: PickerMode blocks most input, so we pop it to test CombatMode directly.
+    CombatMode uses pure mouse targeting - all visible enemies get shimmering
+    outlines and the player clicks to select a target.
     """
     controller = get_controller_with_player_and_map()
     controller.enter_combat_mode()
@@ -74,8 +75,8 @@ def test_combat_mode_handles_tab_directly() -> None:
     event = tcod.event.KeyDown(0, tcod.event.KeySym.TAB, 0)
     result = controller.combat_mode.handle_input(event)
 
-    # Event handled by CombatMode directly (even without valid targets)
-    assert result is True
+    # TAB is not handled by CombatMode - falls through to other modes
+    assert result is False
 
 
 def test_controller_updates_all_modes_in_stack() -> None:

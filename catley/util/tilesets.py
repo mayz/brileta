@@ -64,3 +64,90 @@ def derive_outlined_tileset(
         outlined.set_tile(codepoint, tile)
 
     return outlined
+
+
+def derive_outlined_atlas(
+    atlas_pixels: np.ndarray,
+    tile_width: int,
+    tile_height: int,
+    columns: int,
+    rows: int,
+    color: colors.ColorRGBA = colors.COMBAT_OUTLINE,
+) -> np.ndarray:
+    """Create an outlined version of a tileset atlas as a numpy array.
+
+    Takes a tileset atlas image (as RGBA numpy array) and returns a new atlas
+    where each tile contains only a 1-pixel outline of the original glyph shape.
+    This works with any graphics backend that uses numpy arrays.
+
+    The algorithm for each tile:
+    1. Extract the alpha channel to find where the glyph is
+    2. Dilate the mask by 1 pixel in all 8 directions
+    3. Subtract the original mask to get only the outline pixels
+    4. Fill those pixels with the outline color
+
+    Args:
+        atlas_pixels: RGBA pixel array of the tileset atlas (height, width, 4)
+        tile_width: Width of each tile in pixels
+        tile_height: Height of each tile in pixels
+        columns: Number of tile columns in the atlas
+        rows: Number of tile rows in the atlas
+        color: RGBA color for the outline (default: combat red)
+
+    Returns:
+        New RGBA pixel array with only the outlines, same dimensions as input
+    """
+    height, width = atlas_pixels.shape[:2]
+    outlined = np.zeros_like(atlas_pixels)
+    outline_rgba = np.asarray(color, dtype=np.uint8)
+
+    # Process each tile in the atlas
+    for row in range(rows):
+        for col in range(columns):
+            # Calculate tile bounds
+            y1 = row * tile_height
+            y2 = y1 + tile_height
+            x1 = col * tile_width
+            x2 = x1 + tile_width
+
+            # Bounds check
+            if y2 > height or x2 > width:
+                continue
+
+            # Extract the tile
+            tile = atlas_pixels[y1:y2, x1:x2]
+
+            # Get the alpha mask (where alpha > 0)
+            alpha = tile[:, :, 3] > 0
+
+            # Dilate the mask by 1 pixel in all 8 directions
+            # Pad with zeros to handle edge cases
+            padded = np.pad(alpha, 1, mode="constant", constant_values=False)
+
+            # Get all 8 neighbors plus center
+            neighbors = [
+                padded[:-2, :-2],  # top-left
+                padded[:-2, 1:-1],  # top
+                padded[:-2, 2:],  # top-right
+                padded[1:-1, :-2],  # left
+                padded[1:-1, 1:-1],  # center
+                padded[1:-1, 2:],  # right
+                padded[2:, :-2],  # bottom-left
+                padded[2:, 1:-1],  # bottom
+                padded[2:, 2:],  # bottom-right
+            ]
+
+            # Dilated mask is True wherever any neighbor is True
+            dilated = np.logical_or.reduce(neighbors)
+
+            # Outline is the dilated area minus the original glyph
+            outline_mask = dilated & ~alpha
+
+            # Create the outlined tile
+            outlined_tile = np.zeros_like(tile)
+            outlined_tile[outline_mask] = outline_rgba
+
+            # Write back to the output atlas
+            outlined[y1:y2, x1:x2] = outlined_tile
+
+    return outlined

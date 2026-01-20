@@ -14,6 +14,7 @@ from catley.util.coordinates import (
     CoordinateConverter,
 )
 from catley.util.glyph_buffer import GlyphBuffer
+from catley.util.tilesets import derive_outlined_atlas
 from catley.view.render.base_graphics import BaseGraphicsContext
 
 from .resource_manager import ModernGLResourceManager
@@ -120,6 +121,7 @@ class ModernGLGraphicsContext(BaseGraphicsContext):
 
         # --- Shader and Texture Setup ---
         self.atlas_texture = self._load_atlas_texture()
+        self.outlined_atlas_texture = self._load_outlined_atlas_texture()
         self.uv_map = self._precalculate_uv_map()
 
         # --- Shared Resource Manager for GPU Resources ---
@@ -213,7 +215,44 @@ class ModernGLGraphicsContext(BaseGraphicsContext):
             (pixels[:, :, 0] == 255) & (pixels[:, :, 1] == 0) & (pixels[:, :, 2] == 255)
         )
         pixels[magenta_mask, 3] = 0
+        # Store pixels for outlined atlas generation
+        self._atlas_pixels = pixels
         texture = self.mgl_context.texture(img.size, 4, pixels.tobytes())
+        texture.filter = (moderngl.NEAREST, moderngl.NEAREST)
+        return texture
+
+    def _load_outlined_atlas_texture(self) -> moderngl.Texture | None:
+        """Creates an outlined version of the tileset atlas.
+
+        Uses the derive_outlined_atlas utility to create a tileset where each
+        glyph is replaced with just its 1-pixel outline. The outline is white
+        so it can be tinted to any color at render time.
+
+        Returns None if the atlas pixels are not available (e.g., in tests).
+        """
+        # Handle case where atlas pixels are not available (mocked in tests)
+        if not hasattr(self, "_atlas_pixels") or self._atlas_pixels is None:
+            return None
+
+        # Calculate tile dimensions from the atlas
+        height, width = self._atlas_pixels.shape[:2]
+        tile_width = width // config.TILESET_COLUMNS
+        tile_height = height // config.TILESET_ROWS
+
+        # Generate the outlined atlas in white so it can be tinted to any color
+        outlined_pixels = derive_outlined_atlas(
+            self._atlas_pixels,
+            tile_width,
+            tile_height,
+            config.TILESET_COLUMNS,
+            config.TILESET_ROWS,
+            color=(255, 255, 255, 255),
+        )
+
+        # Create the texture
+        texture = self.mgl_context.texture(
+            (width, height), 4, outlined_pixels.tobytes()
+        )
         texture.filter = (moderngl.NEAREST, moderngl.NEAREST)
         return texture
 
@@ -421,6 +460,89 @@ class ModernGLGraphicsContext(BaseGraphicsContext):
             uv_coords,
             final_color,
         )
+
+    def draw_actor_outline(
+        self,
+        char: str,
+        screen_x: float,
+        screen_y: float,
+        color: colors.Color,
+        alpha: float,
+        scale_x: float = 1.0,
+        scale_y: float = 1.0,
+    ) -> None:
+        """Draws an outlined glyph using the pre-generated outlined atlas.
+
+        The outlined atlas contains white outlines which are tinted by the color
+        parameter and rendered with the specified alpha for shimmer effects.
+        """
+        if self.outlined_atlas_texture is None or self.uv_map is None:
+            return
+
+        # Convert color to 0-1 range with alpha
+        final_color = (
+            color[0] / 255.0,
+            color[1] / 255.0,
+            color[2] / 255.0,
+            max(0.0, min(1.0, alpha)),
+        )
+
+        uv_coords = self.uv_map[ord(char)]
+        tile_w, tile_h = self.tile_dimensions
+
+        # Apply scaling and center on tile
+        scaled_w = tile_w * scale_x
+        scaled_h = tile_h * scale_y
+        offset_x = (tile_w - scaled_w) / 2
+        offset_y = (tile_h - scaled_h) / 2
+
+        # Render immediately using the outlined atlas texture
+        self._draw_outlined_quad_immediately(
+            screen_x + offset_x,
+            screen_y + offset_y,
+            scaled_w,
+            scaled_h,
+            uv_coords,
+            final_color,
+        )
+
+    def _draw_outlined_quad_immediately(
+        self,
+        x: float,
+        y: float,
+        w: float,
+        h: float,
+        uv_coords: np.ndarray,
+        color_rgba: tuple[float, float, float, float],
+    ) -> None:
+        """Helper to render a quad with the outlined atlas texture immediately."""
+        # Guard against None (caller should check, but pyright needs this)
+        if self.outlined_atlas_texture is None:
+            return
+
+        u1, v1, u2, v2 = uv_coords
+
+        vertices = np.zeros(6, dtype=VERTEX_DTYPE)
+        vertices[0] = ((x, y), (u1, v1), color_rgba)
+        vertices[1] = ((x + w, y), (u2, v1), color_rgba)
+        vertices[2] = ((x, y + h), (u1, v2), color_rgba)
+        vertices[3] = ((x + w, y), (u2, v1), color_rgba)
+        vertices[4] = ((x, y + h), (u1, v2), color_rgba)
+        vertices[5] = ((x + w, y + h), (u2, v2), color_rgba)
+
+        # Set up shader uniforms
+        program = self.screen_renderer.screen_program
+        program["u_letterbox"].value = self.letterbox_geometry
+
+        # Bind the outlined atlas texture
+        self.outlined_atlas_texture.use(location=0)
+
+        # Render using persistent VBO/VAO
+        self.immediate_vbo.write(vertices.tobytes())
+        self.immediate_vao_screen.render(moderngl.TRIANGLES, vertices=6)
+
+        # Restore the main atlas texture
+        self.atlas_texture.use(location=0)
 
     # --- Coordinate and Dimension Management ---
 

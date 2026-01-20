@@ -832,7 +832,14 @@ class TestModernGLGraphicsContextEdgeCases:
             mock_img.convert.return_value = mock_img
             mock_array = np.ones((256, 256, 4), dtype=np.uint8) * 255
 
-            with patch("numpy.array", return_value=mock_array):
+            with (
+                patch("numpy.array", return_value=mock_array),
+                patch.object(
+                    ModernGLGraphicsContext,
+                    "_load_outlined_atlas_texture",
+                    return_value=None,
+                ),
+            ):
                 mock_open.return_value = mock_img
                 graphics_ctx = ModernGLGraphicsContext(mock_window)
 
@@ -851,7 +858,14 @@ class TestModernGLGraphicsContextEdgeCases:
             mock_img.convert.return_value = mock_img
             mock_array = np.ones((256, 256, 4), dtype=np.uint8) * 255
 
-            with patch("numpy.array", return_value=mock_array):
+            with (
+                patch("numpy.array", return_value=mock_array),
+                patch.object(
+                    ModernGLGraphicsContext,
+                    "_load_outlined_atlas_texture",
+                    return_value=None,
+                ),
+            ):
                 mock_open.return_value = mock_img
                 graphics_ctx = ModernGLGraphicsContext(mock_window)
 

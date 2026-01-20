@@ -86,12 +86,22 @@ class TCODGraphicsContext(GraphicsContext):
         self._coordinate_converter = self._create_coordinate_converter()
 
         # Set up smooth actor rendering
-        self._actor_texture_cache = {}
+        self._actor_texture_cache: dict[int, tcod.sdl.render.Texture] = {}
         self._effect_cache_limit = 20
         self._effect_texture_cache = ResourceCache[int, tcod.sdl.render.Texture](
             name="EffectTextureCache", max_size=self._effect_cache_limit
         )
         self._tileset = context.sdl_atlas.tileset if context.sdl_atlas else None
+
+        # Generate outlined tileset for combat targeting (white outlines for tinting)
+        self._outlined_tileset: tcod.tileset.Tileset | None = None
+        self._outlined_texture_cache: dict[int, tcod.sdl.render.Texture] = {}
+        if self._tileset is not None:
+            from catley.util.tilesets import derive_outlined_tileset
+
+            self._outlined_tileset = derive_outlined_tileset(
+                self._tileset, color=(255, 255, 255, 255)
+            )
 
         # The cache for temporary TCOD consoles.
         self._temp_console_cache: dict[tuple[int, int], Console] = {}
@@ -303,6 +313,71 @@ class TCODGraphicsContext(GraphicsContext):
 
         # Reset for next use
         texture.color_mod = (255, 255, 255)
+
+    def draw_actor_outline(
+        self,
+        char: str,
+        screen_x: float,
+        screen_y: float,
+        color: colors.Color,
+        alpha: float,
+        scale_x: float = 1.0,
+        scale_y: float = 1.0,
+    ) -> None:
+        """Draw an outlined glyph for combat targeting.
+
+        Uses the pre-generated outlined tileset where each glyph is just its
+        1-pixel outline. The outline is tinted with the specified color and
+        rendered with the given alpha for shimmer effects.
+        """
+        if not self._outlined_tileset:
+            return
+
+        char_code = ord(char)
+        tile_pixels = self._outlined_tileset.get_tile(char_code)
+
+        # Get or create cached texture for this outlined character
+        if char_code not in self._outlined_texture_cache:
+            if tile_pixels.shape[2] == 3:
+                rgba_pixels = np.zeros((*tile_pixels.shape[:2], 4), dtype=np.uint8)
+                rgba_pixels[:, :, :3] = tile_pixels
+                rgba_pixels[:, :, 3] = 255
+                tile_pixels = rgba_pixels
+
+            texture = self.sdl_renderer.upload_texture(tile_pixels)
+            texture.blend_mode = tcod.sdl.render.BlendMode.BLEND
+            self._outlined_texture_cache[char_code] = texture
+
+        texture = self._outlined_texture_cache[char_code]
+
+        # Apply color tint and alpha
+        texture.color_mod = color
+        texture.alpha_mod = int(max(0.0, min(1.0, alpha)) * 255)
+
+        # Draw at precise position with scaling
+        shape = cast(tuple[int, int, int], tile_pixels.shape)
+        texture_h = shape[0]
+        texture_w = shape[1]
+
+        tile_w, tile_h = self.tile_dimensions
+        base_scale = min(tile_w / texture_w, tile_h / texture_h)
+        scaled_w = int(texture_w * base_scale * scale_x)
+        scaled_h = int(texture_h * base_scale * scale_y)
+
+        offset_x = (tile_w - scaled_w) / 2
+        offset_y = (tile_h - scaled_h) / 2
+
+        dest_rect = (
+            int(screen_x + offset_x),
+            int(screen_y + offset_y),
+            scaled_w,
+            scaled_h,
+        )
+        self.sdl_renderer.copy(texture, dest=dest_rect)
+
+        # Reset for next use
+        texture.color_mod = (255, 255, 255)
+        texture.alpha_mod = 255
 
     def draw_mouse_cursor(self, cursor_manager: CursorManager) -> None:
         """Draws the active cursor using data from the cursor manager."""
