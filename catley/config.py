@@ -230,8 +230,19 @@ ASSETS_BASE_DIR = PROJECT_ROOT_PATH / "assets"
 
 BASE_MOUSE_CURSOR_PATH = ASSETS_BASE_DIR / "cursors"
 
-MESSAGE_LOG_FONT_PATH = ASSETS_BASE_DIR / "fonts" / "SourceSans3-Medium.ttf"
-MESSAGE_LOG_FONT_SIZE = 20
+# UI Font Configuration
+UI_FONT_PATH = ASSETS_BASE_DIR / "fonts" / "CozetteVector.ttf"
+
+# Per-view font sizes
+MESSAGE_LOG_FONT_SIZE = 36
+ACTION_PANEL_FONT_SIZE = 48
+PLAYER_STATUS_FONT_SIZE = 48
+EQUIPMENT_FONT_SIZE = 48  # Same size as action panel and player status
+MENU_FONT_SIZE = 36  # Slightly smaller than action panel to fit more content
+
+# Menu line spacing multiplier. At 1.0, line height = ascent + descent.
+# Increase slightly (e.g., 1.02) if box-drawing chars show gaps between rows.
+MENU_LINE_SPACING = 1.0
 
 # Tileset
 TILESET_PATH = ASSETS_BASE_DIR / "tilesets" / "Taffer_20x20.png"

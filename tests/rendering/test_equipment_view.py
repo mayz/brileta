@@ -94,9 +94,10 @@ def test_handle_click_on_inactive_slot_switches() -> None:
 
     assert player.inventory.active_weapon_slot == 0
 
-    # Simulate the slot bounds that would be set during rendering:
-    # Each slot takes exactly one row (implementation uses 1 row per slot)
-    view._slot_row_bounds = {0: (0, 1), 1: (1, 2)}
+    # Simulate the slot pixel bounds that would be set during rendering.
+    # With tile_dimensions (16, 16), row 0 center is at pixel 8, row 1 center at 24.
+    # Each slot spans one line_height (approx tile_height=16 pixels).
+    view._slot_pixel_bounds = {0: (0, 16), 1: (16, 32)}
 
     # Click row 1 which is slot 1 (inactive)
     result = view.handle_click(1)
@@ -111,10 +112,10 @@ def test_handle_click_outside_slots_does_nothing() -> None:
 
     assert player.inventory.active_weapon_slot == 0
 
-    # Simulate the slot bounds (1 row per slot)
-    view._slot_row_bounds = {0: (0, 1), 1: (1, 2)}
+    # Simulate the slot pixel bounds (each slot spans 16 pixels)
+    view._slot_pixel_bounds = {0: (0, 16), 1: (16, 32)}
 
-    # Click row 2 which is outside the slot bounds
+    # Click row 2 which is outside the slot bounds (center at pixel 40)
     result = view.handle_click(2)
 
     assert result is False

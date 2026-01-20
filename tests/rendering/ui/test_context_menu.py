@@ -63,9 +63,14 @@ def test_context_menu_closes_on_click_outside() -> None:
     menu.show()
     menu._calculate_dimensions()
 
+    # Calculate outside position using menu's actual pixel dimensions
+    tile_w, tile_h = controller.graphics.tile_dimensions
+    menu_pixel_x = menu.x_tiles * tile_w
+    menu_pixel_y = menu.y_tiles * tile_h
+    # Click outside the menu's pixel bounds (to the right and below)
     outside: RootConsoleTilePos = (
-        (menu.x_tiles + menu.width + 1) * controller.graphics.tile_dimensions[0],
-        (menu.y_tiles + menu.height + 1) * controller.graphics.tile_dimensions[1],
+        menu_pixel_x + menu.pixel_width + 10,
+        menu_pixel_y + menu.pixel_height + 10,
     )
     event = tcod.event.MouseButtonDown(outside, outside, tcod.event.MouseButton.LEFT)
 
@@ -81,9 +86,14 @@ def test_context_menu_stays_open_on_click_inside() -> None:
     menu.show()
     menu._calculate_dimensions()
 
+    # Calculate inside position using menu's actual pixel dimensions
+    tile_w, tile_h = controller.graphics.tile_dimensions
+    menu_pixel_x = menu.x_tiles * tile_w
+    menu_pixel_y = menu.y_tiles * tile_h
+    # Click inside the menu's pixel bounds (with some padding from edges)
     inside: RootConsoleTilePos = (
-        (menu.x_tiles + 1) * controller.graphics.tile_dimensions[0],
-        (menu.y_tiles + 1) * controller.graphics.tile_dimensions[1],
+        menu_pixel_x + menu._char_width,  # One character in from left edge
+        menu_pixel_y + menu._line_height,  # One line down from top edge
     )
     event = tcod.event.MouseButtonDown(inside, inside, tcod.event.MouseButton.LEFT)
 

@@ -372,7 +372,7 @@ def test_use_item_equips_weapon() -> None:
     assert knife not in player.inventory.attack_slots
 
     # Use the knife
-    menu._use_item(knife)
+    menu._equip_item(knife)
 
     # Knife should now be equipped
     assert knife not in player.inventory._stored_items
@@ -394,7 +394,7 @@ def test_use_item_unequips_equipped_weapon() -> None:
     menu.show()
 
     # Use the knife (should unequip)
-    menu._use_item(knife)
+    menu._equip_item(knife)
 
     # Knife should now be in stored items, not equipped
     assert knife in player.inventory._stored_items
@@ -519,7 +519,8 @@ def test_get_hint_lines_single_line_when_wide() -> None:
     lines = menu._get_hint_lines()
 
     assert len(lines) == 1
-    assert "[Arrows/JK] Navigate" in lines[0]
+    # New hint format: "[Enter] Equip  [U] Use  [D] Drop  [Esc] Close"
+    assert "[Enter] Equip" in lines[0]
 
 
 def test_get_hint_lines_wraps_when_narrow() -> None:
@@ -528,8 +529,8 @@ def test_get_hint_lines_wraps_when_narrow() -> None:
     menu = DualPaneMenu(controller, source=None)
     menu.show()
 
-    # Narrow width (40 tiles) should require wrapping
-    menu.width = 40
+    # Very narrow width (25 tiles) should require wrapping even for short hints
+    menu.width = 25
     lines = menu._get_hint_lines()
 
     assert len(lines) > 1
@@ -545,11 +546,10 @@ def test_get_hint_lines_preserves_all_hints() -> None:
     lines = menu._get_hint_lines()
     combined = " ".join(lines)
 
-    # All key hints should be present
-    assert "Arrows" in combined or "JK" in combined
-    assert "Navigate" in combined
+    # Base hints always present (Use is context-sensitive, not always shown)
+    # Single-pane: "[Enter] Equip  [D] Drop  [Esc] Close"
     assert "Enter" in combined
-    assert "Use" in combined or "Equip" in combined
+    assert "Equip" in combined
     assert "Drop" in combined
     assert "Esc" in combined
 
@@ -560,18 +560,53 @@ def test_get_hint_lines_splits_on_double_space() -> None:
     menu = DualPaneMenu(controller, source=None)
     menu.show()
 
-    # Set width so it must wrap but can fit "[Arrows/JK] Navigate" on first line
-    # The hint is: "[Arrows/JK] Navigate  [Enter] Use  [E] Equip  [D] Drop  [Esc] Close"
-    # Double spaces separate the hint groups
-    menu.width = 40  # max_len = 36
+    # Very narrow width to force wrapping
+    menu.width = 25
 
     lines = menu._get_hint_lines()
 
     # First line should end cleanly at a double-space boundary, not mid-word.
-    # Valid endings are: "Navigate", "Use", or a non-alpha character (like "]")
+    # Valid endings are: "Equip", "Drop", "Close", or a non-alpha character
     assert not lines[0].endswith("-")
-    valid_word_endings = ("Navigate", "Use")
+    valid_word_endings = ("Equip", "Drop", "Close")
     assert not lines[0][-1].isalpha() or lines[0].endswith(valid_word_endings)
+
+
+def test_get_hint_lines_hides_use_for_non_consumables() -> None:
+    """[U] Use hint should only appear when a consumable is selected."""
+    from unittest.mock import MagicMock
+
+    from catley.game.items.item_core import Item
+
+    controller = _make_controller()
+    menu = DualPaneMenu(controller, source=None)
+    menu.width = 80  # Set width to avoid wrapping issues
+
+    # Create mock items - one with consumable_effect, one without
+    weapon = MagicMock(spec=Item)
+    weapon.consumable_effect = None
+
+    consumable = MagicMock(spec=Item)
+    consumable.consumable_effect = MagicMock()  # Has effect
+
+    # Manually set up menu state without calling show()
+    menu.left_options = [
+        MagicMock(data=weapon, enabled=True),
+        MagicMock(data=consumable, enabled=True),
+    ]
+    menu.active_pane = PaneId.LEFT
+
+    # Select weapon - should NOT show Use
+    menu.left_cursor = 0
+    lines = menu._get_hint_lines()
+    combined = " ".join(lines)
+    assert "Use" not in combined
+
+    # Select consumable - should show Use
+    menu.left_cursor = 1
+    lines = menu._get_hint_lines()
+    combined = " ".join(lines)
+    assert "Use" in combined
 
 
 def test_get_hint_lines_loot_mode_different_text() -> None:
@@ -615,7 +650,7 @@ def test_weapon_items_show_category_prefix() -> None:
     # Check prefix_segments contains category dot indicator
     assert pistol_option.prefix_segments is not None
     combined_prefix = "".join(seg[0] for seg in pistol_option.prefix_segments)
-    assert "\u2022" in combined_prefix
+    assert "\u25cf" in combined_prefix
 
 
 def test_consumable_items_show_category_prefix() -> None:
@@ -636,7 +671,7 @@ def test_consumable_items_show_category_prefix() -> None:
     # Check prefix_segments contains category dot indicator
     assert stim_option.prefix_segments is not None
     combined_prefix = "".join(seg[0] for seg in stim_option.prefix_segments)
-    assert "\u2022" in combined_prefix
+    assert "\u25cf" in combined_prefix
 
 
 def test_junk_items_show_category_prefix() -> None:
@@ -657,7 +692,7 @@ def test_junk_items_show_category_prefix() -> None:
     # Check prefix_segments contains category dot indicator
     assert junk_option.prefix_segments is not None
     combined_prefix = "".join(seg[0] for seg in junk_option.prefix_segments)
-    assert "\u2022" in combined_prefix
+    assert "\u25cf" in combined_prefix
 
 
 def test_munitions_items_show_category_prefix() -> None:
@@ -678,7 +713,7 @@ def test_munitions_items_show_category_prefix() -> None:
     # Check prefix_segments contains category dot indicator
     assert ammo_option.prefix_segments is not None
     combined_prefix = "".join(seg[0] for seg in ammo_option.prefix_segments)
-    assert "\u2022" in combined_prefix
+    assert "\u25cf" in combined_prefix
 
 
 def test_category_prefix_has_correct_color() -> None:
@@ -699,7 +734,7 @@ def test_category_prefix_has_correct_color() -> None:
 
     # Find the segment with the dot indicator
     category_segment = next(
-        (seg for seg in pistol_option.prefix_segments if "\u2022" in seg[0]), None
+        (seg for seg in pistol_option.prefix_segments if "\u25cf" in seg[0]), None
     )
     assert category_segment is not None
     assert category_segment[1] == colors.CATEGORY_WEAPON
@@ -724,10 +759,10 @@ def test_equipped_item_shows_both_slot_and_category() -> None:
     # Check both slot and category dot are present
     combined_prefix = "".join(seg[0] for seg in pistol_option.prefix_segments)
     assert "[1]" in combined_prefix
-    assert "\u2022" in combined_prefix
+    assert "\u25cf" in combined_prefix
 
     # Slot should come before category dot
-    assert combined_prefix.index("[1]") < combined_prefix.index("\u2022")
+    assert combined_prefix.index("[1]") < combined_prefix.index("\u25cf")
 
 
 def test_right_pane_items_show_category_prefix() -> None:
@@ -748,7 +783,7 @@ def test_right_pane_items_show_category_prefix() -> None:
     # Check prefix_segments contains category dot indicator
     assert stim_option.prefix_segments is not None
     combined_prefix = "".join(seg[0] for seg in stim_option.prefix_segments)
-    assert "\u2022" in combined_prefix
+    assert "\u25cf" in combined_prefix
 
 
 def test_item_category_property() -> None:

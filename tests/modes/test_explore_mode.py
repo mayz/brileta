@@ -274,3 +274,20 @@ def test_has_available_actions_returns_true_for_visible_tile() -> None:
     in_bounds_pos = (5, 5)
     result = mode._has_available_actions(in_bounds_pos)
     assert result is True
+
+
+def test_has_available_actions_returns_true_for_character_without_actions() -> None:
+    """Characters always return True so context menu opens.
+
+    Regression test: Previously returned False when no actions were available,
+    preventing the context menu from opening on NPCs when unarmed.
+    """
+    mode, _, gw = make_explore_mode()
+
+    # Create an NPC (player has no weapon, so no attack actions available)
+    npc = Character(5, 5, "N", colors.WHITE, "NPC", game_world=cast(Any, gw))
+    gw.add_actor(npc)
+
+    # Should return True - let the menu handle showing "no actions available"
+    result = mode._has_available_actions(npc)
+    assert result is True

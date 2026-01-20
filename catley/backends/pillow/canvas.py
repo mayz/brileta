@@ -7,7 +7,7 @@ import numpy as np
 from PIL import Image as PILImage
 from PIL import ImageDraw, ImageFont
 
-from catley import colors, config
+from catley import colors
 from catley.util.coordinates import PixelCoord, TileCoord
 from catley.view.render.canvas import Canvas
 
@@ -21,18 +21,34 @@ class PillowImageCanvas(Canvas):
     def __init__(
         self,
         renderer: GraphicsContext,
+        font_path: Path,
         transparent: bool = True,
-        font_path: Path | None = None,
+        font_size: int | None = None,
+        line_spacing: float = 1.0,
     ) -> None:
+        """Initialize a Pillow-based canvas for text and shape rendering.
+
+        Args:
+            renderer: Graphics context providing tile dimensions.
+            font_path: Path to TTF font file.
+            transparent: Whether the canvas background is transparent.
+            font_size: Explicit font size in pixels. If None, scales with tile height.
+            line_spacing: Multiplier for line height (1.0 = tight, 1.3 = comfortable).
+        """
         super().__init__(transparent)
-        self.font_path = font_path if font_path else Path(config.MESSAGE_LOG_FONT_PATH)
+        self.font_path = font_path
+        self._explicit_font_size = font_size
+        self._line_spacing = line_spacing
         self._current_font_size = 0
         # Temporary default font before scaling is configured.
         self.font = ImageFont.truetype(str(self.font_path), 12)
         ascent, descent = self.font.getmetrics()
         self._actual_ascent = ascent
         self._actual_descent = descent
-        self._effective_line_height = ascent + descent
+        # Measure actual glyph height for box-drawing characters.
+        bbox = self.font.getbbox("║")
+        glyph_height = bbox[3] - bbox[1]
+        self._effective_line_height = int(glyph_height * self._line_spacing)
         self._target_tile_height: int = 0
         self._font_needs_update: bool = True
         self.image: PILImage.Image | None = None
@@ -79,10 +95,12 @@ class PillowImageCanvas(Canvas):
         return self._effective_line_height
 
     def _update_font_for_tile_height(self, tile_height: int) -> None:
-        # Use simple proportional scaling - works reliably with any font
-        # Font size should be slightly larger than tile height for good
-        # visual appearance
-        target_font_size = max(8, round(tile_height * 1.1))
+        # Use explicit font size if provided, otherwise scale from tile height
+        if self._explicit_font_size is not None:
+            target_font_size = self._explicit_font_size
+        else:
+            # Default scaling - font size slightly larger than tile height
+            target_font_size = max(8, round(tile_height * 1.1))
 
         try:
             self.font = ImageFont.truetype(str(self.font_path), target_font_size)
@@ -95,7 +113,14 @@ class PillowImageCanvas(Canvas):
         ascent, descent = self.font.getmetrics()
         self._actual_ascent = ascent
         self._actual_descent = descent
-        self._effective_line_height = ascent + descent
+
+        # Measure actual height of box-drawing character for seamless connections.
+        # font.getmetrics() returns declared metrics for text layout, which include
+        # extra space that box-drawing characters don't use. Using getbbox() on ║
+        # gives us the actual rendered glyph height.
+        bbox = self.font.getbbox("║")
+        glyph_height = bbox[3] - bbox[1]
+        self._effective_line_height = int(glyph_height * self._line_spacing)
 
     def get_text_metrics(
         self, text: str, font_size: int | None = None
@@ -151,7 +176,20 @@ class PillowImageCanvas(Canvas):
         font_size: int | None = None,
     ) -> None:
         """Render a single text operation to the PIL image."""
-        self._render_single_text(pixel_x, pixel_y, text, color, font_size)
+        if self._drawer is None:
+            return
+
+        font_to_use = self.font
+        if font_size is not None:
+            font_to_use = ImageFont.truetype(str(self.font_path), font_size)
+
+        self._drawer.text(
+            (int(pixel_x), int(pixel_y)),
+            text,
+            font=font_to_use,
+            fill=(*color, 255),
+            anchor="la",
+        )
 
     def _render_rect_op(
         self,
@@ -213,27 +251,3 @@ class PillowImageCanvas(Canvas):
         self._drawer = None
 
         return pixels
-
-    def _render_single_text(
-        self,
-        pixel_x: PixelCoord,
-        pixel_y: PixelCoord,
-        text: str,
-        color: colors.Color,
-        font_size: int | None,
-    ) -> None:
-        """Render text anchored to the top-left corner."""
-        if self._drawer is None:
-            return
-
-        font_to_use = self.font
-        if font_size is not None:
-            font_to_use = ImageFont.truetype(str(self.font_path), font_size)
-
-        self._drawer.text(
-            (int(pixel_x), int(pixel_y)),
-            text,
-            font=font_to_use,
-            fill=(*color, 255),
-            anchor="lt",
-        )

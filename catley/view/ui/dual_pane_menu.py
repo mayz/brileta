@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Final
 import tcod.event
 
 from catley import colors
+from catley.backends.pillow.canvas import PillowImageCanvas
 from catley.events import MessageEvent, publish_event
 from catley.game.actors import Actor, Character, Condition
 from catley.game.enums import ItemCategory, ItemSize
@@ -33,11 +34,11 @@ def _get_category_prefix(item: Item) -> tuple[str, colors.Color | None]:
     a colored dot indicator. Returns ("", None) for MISC category items.
     """
     category_info: dict[ItemCategory, tuple[str, colors.Color]] = {
-        ItemCategory.WEAPON: ("\u2022 ", colors.CATEGORY_WEAPON),
-        ItemCategory.ARMOR: ("\u2022 ", colors.CATEGORY_ARMOR),
-        ItemCategory.CONSUMABLE: ("\u2022 ", colors.CATEGORY_CONSUMABLE),
-        ItemCategory.JUNK: ("\u2022 ", colors.CATEGORY_JUNK),
-        ItemCategory.MUNITIONS: ("\u2022 ", colors.CATEGORY_MUNITIONS),
+        ItemCategory.WEAPON: ("\u25cf ", colors.CATEGORY_WEAPON),
+        ItemCategory.ARMOR: ("\u25cf ", colors.CATEGORY_ARMOR),
+        ItemCategory.CONSUMABLE: ("\u25cf ", colors.CATEGORY_CONSUMABLE),
+        ItemCategory.JUNK: ("\u25cf ", colors.CATEGORY_JUNK),
+        ItemCategory.MUNITIONS: ("\u25cf ", colors.CATEGORY_MUNITIONS),
     }
 
     return category_info.get(item.category, ("", None))
@@ -63,12 +64,14 @@ class _MenuKeys:
     these as value patterns (comparison) rather than capture patterns.
     """
 
+    KEY_D: Final = tcod.event.KeySym(ord("d"))
+    KEY_I: Final = tcod.event.KeySym(ord("i"))
     KEY_J: Final = tcod.event.KeySym(ord("j"))
     KEY_K: Final = tcod.event.KeySym(ord("k"))
-    KEY_D: Final = tcod.event.KeySym(ord("d"))
-    KEY_E: Final = tcod.event.KeySym(ord("e"))
-    KEY_I: Final = tcod.event.KeySym(ord("i"))
+    KEY_P: Final = tcod.event.KeySym(ord("p"))
     KEY_Q: Final = tcod.event.KeySym(ord("q"))
+    KEY_T: Final = tcod.event.KeySym(ord("t"))
+    KEY_U: Final = tcod.event.KeySym(ord("u"))
 
 
 @dataclass
@@ -123,7 +126,7 @@ class DualPaneMenu(Menu):
     DIVIDER_WIDTH = 7
     RIGHT_PANE_WIDTH = 35
     DETAIL_HEIGHT = 5
-    HINT_HEIGHT = 1
+    HINT_HEIGHT = 2  # Extra row for whitespace above keycaps
     HEADER_HEIGHT = 1
     # Calculated: item list height = TOTAL_HEIGHT - HEADER - DETAIL - HINT - borders
     ITEM_LIST_HEIGHT = TOTAL_HEIGHT - HEADER_HEIGHT - DETAIL_HEIGHT - HINT_HEIGHT - 3
@@ -175,21 +178,26 @@ class DualPaneMenu(Menu):
         """Populate left pane with player inventory items."""
         self.left_options.clear()
 
-        # Collect all items: stored + equipped weapons + equipped outfit
-        stored_items = self.inventory._stored_items
-        all_items_to_display: list[tuple[Item | Condition, str]] = [
-            (item, "stored") for item in stored_items
-        ]
+        # Collect equipped items separately from stored items
+        equipped_items: list[tuple[Item | Condition, str]] = []
 
         # Add equipped weapons with their slot index
         for slot_index, equipped_item in enumerate(self.inventory.attack_slots):
             if equipped_item:
-                all_items_to_display.append((equipped_item, f"slot:{slot_index}"))
+                equipped_items.append((equipped_item, f"slot:{slot_index}"))
 
         # Add equipped outfit
         if self.inventory.equipped_outfit is not None:
             outfit_item, _ = self.inventory.equipped_outfit
-            all_items_to_display.append((outfit_item, "outfit"))
+            equipped_items.append((outfit_item, "outfit"))
+
+        # Add stored items as tuples with "stored" status
+        stored_items: list[tuple[Item | Condition, str]] = [
+            (item, "stored") for item in self.inventory._stored_items
+        ]
+
+        # Stored items first, then equipped items at the bottom
+        all_items_to_display = stored_items + equipped_items
 
         if not all_items_to_display:
             self.left_options.append(
@@ -203,7 +211,29 @@ class DualPaneMenu(Menu):
             )
             return
 
+        # Track whether we need to insert a separator
+        has_equipped = len(equipped_items) > 0
+        has_stored = len(stored_items) > 0
+        separator_inserted = False
+
         for entity, item_status in all_items_to_display:
+            # Insert separator between stored and equipped items (empty line)
+            if (
+                has_equipped
+                and has_stored
+                and not separator_inserted
+                and item_status != "stored"
+            ):
+                self.left_options.append(
+                    MenuOption(
+                        key=None,
+                        text="",
+                        enabled=False,
+                        color=colors.GREY,
+                        is_primary_action=False,
+                    )
+                )
+                separator_inserted = True
             if isinstance(entity, Item):
                 item = entity
 
@@ -230,7 +260,7 @@ class DualPaneMenu(Menu):
                     MenuOption(
                         key=None,
                         text=item.name,
-                        action=functools.partial(self._use_item, item),
+                        action=functools.partial(self._equip_item, item),
                         enabled=True,
                         color=colors.WHITE,
                         data=item,
@@ -240,17 +270,20 @@ class DualPaneMenu(Menu):
 
             elif isinstance(entity, Condition):
                 condition = entity
-                # Conditions have no category, just alignment spaces
+                # Conditions show red block in icon position to indicate slot usage
                 self.left_options.append(
                     MenuOption(
                         key=None,
-                        text=f"{condition.name} \u2588",  # Block character
+                        text=condition.name,
                         action=None,
                         enabled=False,
                         color=condition.display_color,
                         force_color=True,
                         data=condition,
-                        prefix_segments=[("     ", colors.WHITE)],  # Alignment only
+                        prefix_segments=[
+                            ("     ", colors.WHITE),  # Alignment with equipped slots
+                            ("\u2588 ", colors.RED),  # Red block as slot indicator
+                        ],
                     )
                 )
 
@@ -325,8 +358,63 @@ class DualPaneMenu(Menu):
         else:
             self.detail_item = None
 
-    def _use_item(self, item: Item) -> bool:
-        """Use or equip an item from player inventory.
+    def _find_item_index(self, item: Item, pane: PaneId) -> int | None:
+        """Find the index of an item in the specified pane's options."""
+        options = self.left_options if pane == PaneId.LEFT else self.right_options
+        for i, opt in enumerate(options):
+            if opt.data is item:
+                return i
+        return None
+
+    def _ensure_valid_cursor(self, pane: PaneId) -> None:
+        """Ensure cursor in specified pane is on an enabled option.
+
+        If the current position is valid and enabled, keeps it.
+        Otherwise finds the nearest enabled option (preferring forward, then backward).
+        Falls back to position 0 if no enabled options exist.
+        """
+        if pane == PaneId.LEFT:
+            options = self.left_options
+            cursor = self.left_cursor
+        else:
+            options = self.right_options
+            cursor = self.right_cursor
+
+        # If current position is valid and enabled, keep it
+        if 0 <= cursor < len(options) and options[cursor].enabled:
+            return
+
+        # Find nearest enabled option (prefer forward, then backward)
+        for i in range(cursor, len(options)):
+            if options[i].enabled:
+                if pane == PaneId.LEFT:
+                    self.left_cursor = i
+                else:
+                    self.right_cursor = i
+                return
+        for i in range(cursor - 1, -1, -1):
+            if options[i].enabled:
+                if pane == PaneId.LEFT:
+                    self.left_cursor = i
+                else:
+                    self.right_cursor = i
+                return
+
+        # No enabled options - set to 0
+        if pane == PaneId.LEFT:
+            self.left_cursor = 0
+        else:
+            self.right_cursor = 0
+
+    def _equip_item(self, item: Item) -> bool:
+        """Equip or unequip any item from player inventory.
+
+        Handles:
+        - Armor/outfits: Toggle equip to outfit slot
+        - Any other item: Toggle equip to active hand slot
+
+        Any item can be held in a hand slot. Attack actions just won't work
+        for non-weapons.
 
         Returns False to keep menu open.
         """
@@ -334,7 +422,7 @@ class DualPaneMenu(Menu):
 
         player = self.controller.gw.player
 
-        # Check if item is an outfit
+        # Check if item is an outfit (armor)
         if is_outfit_type(item.item_type):
             # Check if this outfit is already equipped
             equipped = player.inventory.equipped_outfit
@@ -348,8 +436,9 @@ class DualPaneMenu(Menu):
                 success, message = player.inventory.equip_outfit(item)
                 color = colors.GREEN if success else colors.YELLOW
                 publish_event(MessageEvent(message, color))
-        elif item.equippable:
-            # Check if item is already equipped (weapon)
+        else:
+            # Any item can go in a hand slot
+            # Check if item is already equipped in a hand slot
             currently_equipped_slot = None
             for i, equipped_item in enumerate(player.inventory.attack_slots):
                 if equipped_item == item:
@@ -357,65 +446,48 @@ class DualPaneMenu(Menu):
                     break
 
             if currently_equipped_slot is not None:
+                # Unequip it
                 success, message = player.inventory.unequip_to_inventory(
                     currently_equipped_slot
                 )
                 color = colors.WHITE if success else colors.YELLOW
                 publish_event(MessageEvent(message, color))
             else:
+                # Equip to active hand slot
                 active_slot = player.inventory.active_weapon_slot
                 success, message = player.inventory.equip_from_inventory(
                     item, active_slot
                 )
                 color = colors.GREEN if success else colors.YELLOW
                 publish_event(MessageEvent(message, color))
-        else:
-            from catley.game.actions.recovery import UseConsumableIntent
-
-            if item.consumable_effect:
-                intent = UseConsumableIntent(self.controller, player, item)
-                self.controller.queue_action(intent)
-                return True  # Close menu after using consumable
-            publish_event(MessageEvent(f"{item.name} cannot be used", colors.YELLOW))
 
         # Refresh panes after equip/unequip
         self._populate_left_pane()
+
+        # Follow the item to its new position in the list
+        new_index = self._find_item_index(item, PaneId.LEFT)
+        if new_index is not None:
+            self.left_cursor = new_index
+        self._ensure_valid_cursor(PaneId.LEFT)
+
         self._update_detail_from_cursor()
         return False  # Keep menu open
 
-    def _equip_to_slot(self, item: Item) -> bool:
-        """Equip an item to the active equipment slot.
+    def _use_consumable(self, item: Item) -> bool:
+        """Use a consumable item from player inventory.
 
-        This is distinct from _use_item() which uses consumables immediately.
-        This method equips weapons and consumables to a slot for later use.
-
-        Returns True if the menu should close, False to keep it open.
+        Returns True to close menu after using consumable, False otherwise.
         """
+        from catley.game.actions.recovery import UseConsumableIntent
+
         player = self.controller.gw.player
 
-        # Check if item is equippable to attack slots
-        if not (item.melee_attack or item.ranged_attack or item.consumable_effect):
-            publish_event(MessageEvent(f"Cannot equip {item.name} to a slot."))
-            return False
+        if item.consumable_effect:
+            intent = UseConsumableIntent(self.controller, player, item)
+            self.controller.queue_action(intent)
+            return True  # Close menu after using consumable
 
-        # Check if already equipped - if so, unequip
-        for idx, slot_item in enumerate(player.inventory.attack_slots):
-            if slot_item is item:
-                success, msg = player.inventory.unequip_to_inventory(idx)
-                color = colors.WHITE if success else colors.YELLOW
-                publish_event(MessageEvent(msg, color))
-                self._populate_left_pane()
-                self._update_detail_from_cursor()
-                return False
-
-        # Not equipped - equip to active slot
-        success, msg = player.inventory.equip_from_inventory(
-            item, player.inventory.active_weapon_slot
-        )
-        color = colors.GREEN if success else colors.YELLOW
-        publish_event(MessageEvent(msg, color))
-        self._populate_left_pane()
-        self._update_detail_from_cursor()
+        publish_event(MessageEvent(f"{item.name} cannot be used.", colors.YELLOW))
         return False
 
     def _transfer_to_inventory(self, item: Item) -> bool:
@@ -493,9 +565,19 @@ class DualPaneMenu(Menu):
         self._populate_left_pane()
         self._populate_right_pane()
 
-        # Adjust cursor if needed
-        if self.right_cursor >= len(self.right_options):
-            self.right_cursor = max(0, len(self.right_options) - 1)
+        # Check if right pane still has selectable items
+        has_selectable_right = any(opt.enabled for opt in self.right_options)
+
+        if has_selectable_right:
+            # Stay in right pane, select next item
+            self._ensure_valid_cursor(PaneId.RIGHT)
+        else:
+            # Right pane empty - switch to left pane and select transferred item
+            self.active_pane = PaneId.LEFT
+            new_index = self._find_item_index(item, PaneId.LEFT)
+            if new_index is not None:
+                self.left_cursor = new_index
+            self._ensure_valid_cursor(PaneId.LEFT)
 
         self._update_detail_from_cursor()
         return False  # Keep menu open
@@ -517,11 +599,17 @@ class DualPaneMenu(Menu):
                 publish_event(MessageEvent("Container is full!", colors.RED))
                 return False
 
-        # Unequip if equipped
+        # Unequip if equipped in attack slots
         for i, equipped_item in enumerate(player.inventory.attack_slots):
             if equipped_item == item:
                 player.inventory.unequip_slot(i)
                 break
+
+        # Unequip if equipped as outfit (armor)
+        if player.inventory.equipped_outfit is not None:
+            outfit_item, _ = player.inventory.equipped_outfit
+            if outfit_item == item:
+                player.inventory.unequip_outfit()
 
         # Remove from inventory
         player.inventory.remove_from_inventory(item)
@@ -546,9 +634,19 @@ class DualPaneMenu(Menu):
         self._populate_left_pane()
         self._populate_right_pane()
 
-        # Adjust cursor if needed
-        if self.left_cursor >= len(self.left_options):
-            self.left_cursor = max(0, len(self.left_options) - 1)
+        # Check if left pane still has selectable items
+        has_selectable_left = any(opt.enabled for opt in self.left_options)
+
+        if has_selectable_left:
+            # Stay in left pane, select next item
+            self._ensure_valid_cursor(PaneId.LEFT)
+        else:
+            # Left pane empty - switch to right pane and select transferred item
+            self.active_pane = PaneId.RIGHT
+            new_index = self._find_item_index(item, PaneId.RIGHT)
+            if new_index is not None:
+                self.right_cursor = new_index
+            self._ensure_valid_cursor(PaneId.RIGHT)
 
         self._update_detail_from_cursor()
         return False  # Keep menu open
@@ -556,17 +654,105 @@ class DualPaneMenu(Menu):
     def _drop_item(self, item: Item) -> bool:
         """Drop an item from inventory to the ground at player location.
 
-        Returns True to close menu.
+        Drops the item immediately and transitions to dual-pane view showing
+        ground items. Returns False to keep menu open.
         """
-        from catley.game.actions.misc import DropItemIntent
-
         player = self.controller.gw.player
-        intent = DropItemIntent(self.controller, player, item)
-        self.controller.queue_action(intent)
-        return True  # Close menu after dropping
+
+        # Unequip if equipped in a hand slot
+        for i, equipped_item in enumerate(player.inventory.attack_slots):
+            if equipped_item == item:
+                player.inventory.unequip_slot(i)
+                break
+
+        # Unequip if equipped as outfit
+        if player.inventory.equipped_outfit is not None:
+            outfit_item, _ = player.inventory.equipped_outfit
+            if outfit_item == item:
+                player.inventory.unequip_outfit()
+
+        # Remove from inventory
+        player.inventory.remove_from_inventory(item)
+
+        # Spawn on ground at player position
+        self.controller.gw.spawn_ground_item(item, player.x, player.y)
+        publish_event(MessageEvent(f"You drop {item.name}.", colors.WHITE))
+
+        # Transition to dual-pane mode showing ground items
+        self.source = ExternalInventory(
+            position=(player.x, player.y),
+            label="On the ground",
+        )
+
+        # Recalculate dimensions for dual-pane width
+        self._calculate_dimensions()
+
+        # Refresh both panes
+        self._populate_left_pane()
+        self._populate_right_pane()
+
+        # Check if left pane still has selectable items
+        has_selectable_left = any(opt.enabled for opt in self.left_options)
+
+        if has_selectable_left:
+            # Stay in left pane, select next item
+            self._ensure_valid_cursor(PaneId.LEFT)
+        else:
+            # Left pane empty - switch to right pane and select dropped item
+            self.active_pane = PaneId.RIGHT
+            new_index = self._find_item_index(item, PaneId.RIGHT)
+            if new_index is not None:
+                self.right_cursor = new_index
+            self._ensure_valid_cursor(PaneId.RIGHT)
+
+        self._update_detail_from_cursor()
+        return False  # Keep menu open
+
+    def _handle_drop_or_transfer(self) -> None:
+        """Handle D/T/P key press: drop (single-pane) or transfer (dual-pane).
+
+        In single-pane mode (inventory only):
+            - Drops the item at player's feet and transitions to dual-pane
+
+        In dual-pane mode:
+            - Left pane: transfers item to container/ground
+            - Right pane: transfers item to player inventory
+        """
+        if self.source is None:
+            # Single-pane mode: drop item
+            if self.active_pane == PaneId.LEFT and 0 <= self.left_cursor < len(
+                self.left_options
+            ):
+                option = self.left_options[self.left_cursor]
+                if option.enabled and isinstance(option.data, Item):
+                    self._drop_item(option.data)
+        else:
+            # Dual-pane mode: transfer between panes
+            if self.active_pane == PaneId.LEFT:
+                # Transfer from inventory to container/ground
+                if 0 <= self.left_cursor < len(self.left_options):
+                    option = self.left_options[self.left_cursor]
+                    if option.enabled and isinstance(option.data, Item):
+                        self._transfer_to_container(option.data)
+            else:
+                # Transfer from container/ground to inventory
+                if 0 <= self.right_cursor < len(self.right_options):
+                    option = self.right_options[self.right_cursor]
+                    if option.enabled and isinstance(option.data, Item):
+                        self._transfer_to_inventory(option.data)
 
     def handle_input(self, event: tcod.event.Event) -> bool:
-        """Handle dual-pane navigation and actions."""
+        """Handle dual-pane navigation and actions.
+
+        Key mappings:
+        - Enter: Equip/unequip (left pane only, both modes)
+        - U: Use consumable (left pane only, both modes)
+        - D/T/P: Drop (single-pane) or Transfer (dual-pane) - all three keys
+                 do the same action
+        - Tab: Switch panes (dual-pane only)
+        - Arrows/J/K: Navigate
+        - Esc/I/Q/Space: Close menu
+        """
         if not self.is_active:
             return False
 
@@ -603,8 +789,16 @@ class DualPaneMenu(Menu):
                 self._move_cursor(-1)
                 return True
 
-            # D key drops highlighted item from left pane
-            case tcod.event.KeyDown(sym=_MenuKeys.KEY_D):
+            # D/T/P keys: Drop (single-pane) or Transfer (dual-pane)
+            # All three keys do the same action
+            case tcod.event.KeyDown(
+                sym=_MenuKeys.KEY_D | _MenuKeys.KEY_T | _MenuKeys.KEY_P
+            ):
+                self._handle_drop_or_transfer()
+                return True
+
+            # U key: Use consumable (left pane only)
+            case tcod.event.KeyDown(sym=_MenuKeys.KEY_U):
                 if self.active_pane == PaneId.LEFT and 0 <= self.left_cursor < len(
                     self.left_options
                 ):
@@ -612,28 +806,20 @@ class DualPaneMenu(Menu):
                     if (
                         option.enabled
                         and isinstance(option.data, Item)
-                        and self._drop_item(option.data)
+                        and self._use_consumable(option.data)
                     ):
                         self.hide()
                 return True
 
-            # E key equips item to active slot (left pane only, inventory mode only)
-            case tcod.event.KeyDown(sym=_MenuKeys.KEY_E):
-                if (
-                    self.source is None
-                    and self.active_pane == PaneId.LEFT
-                    and 0 <= self.left_cursor < len(self.left_options)
+            # Enter: Equip/unequip (left pane only)
+            case tcod.event.KeyDown(sym=tcod.event.KeySym.RETURN):
+                if self.active_pane == PaneId.LEFT and 0 <= self.left_cursor < len(
+                    self.left_options
                 ):
                     option = self.left_options[self.left_cursor]
                     if option.enabled and isinstance(option.data, Item):
-                        self._equip_to_slot(option.data)
-                return True
-
-            # Enter activates current item
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.RETURN):
-                result = self._activate_current_item()
-                if result:
-                    self.hide()
+                        self._equip_item(option.data)
+                # Enter does nothing on right pane
                 return True
 
             # Escape closes menu
@@ -692,30 +878,25 @@ class DualPaneMenu(Menu):
         self._update_detail_from_cursor()
 
     def _activate_current_item(self) -> bool:
-        """Activate the currently selected item.
+        """Activate the currently selected item (used for mouse clicks).
+
+        Left pane: equip the item
+        Right pane: transfer to inventory (pick up)
 
         Returns True if menu should close.
         """
         if self.active_pane == PaneId.LEFT:
-            options = self.left_options
-            cursor = self.left_cursor
-
-            if 0 <= cursor < len(options):
-                option = options[cursor]
-                if option.enabled:
-                    # In loot mode, Enter on left pane transfers to container
-                    if self.source is not None and isinstance(option.data, Item):
-                        return self._transfer_to_container(option.data)
-                    if option.action:
-                        result = option.action()
-                        return result is True
-        else:
-            options = self.right_options
-            cursor = self.right_cursor
-
-            if 0 <= cursor < len(options):
-                option = options[cursor]
+            if 0 <= self.left_cursor < len(self.left_options):
+                option = self.left_options[self.left_cursor]
                 if option.enabled and option.action:
+                    # Left pane action is _equip_item
+                    result = option.action()
+                    return result is True
+        else:
+            if 0 <= self.right_cursor < len(self.right_options):
+                option = self.right_options[self.right_cursor]
+                if option.enabled and option.action:
+                    # Right pane action is _transfer_to_inventory
                     result = option.action()
                     return result is True
 
@@ -726,26 +907,30 @@ class DualPaneMenu(Menu):
         mouse_px_x, mouse_px_y = event.position
 
         # Convert to menu-relative coordinates
-        menu_px_x = self.x_tiles * self.tile_dimensions[0]
-        menu_px_y = self.y_tiles * self.tile_dimensions[1]
+        tile_w, tile_h = self.tile_dimensions
+        menu_px_x = self.x_tiles * tile_w
+        menu_px_y = self.y_tiles * tile_h
         rel_px_x = mouse_px_x - menu_px_x
         rel_px_y = mouse_px_y - menu_px_y
 
-        tile_w, tile_h = self.tile_dimensions
-        if tile_w == 0 or tile_h == 0:
+        char_w = self._char_width
+        line_h = self._line_height
+        if char_w == 0 or line_h == 0:
             return True
 
-        rel_tile_x = int(rel_px_x // tile_w)
-        rel_tile_y = int(rel_px_y // tile_h)
+        # Convert to character/line position
+        rel_char_x = int(rel_px_x // char_w)
+        rel_line_y = int(rel_px_y // line_h)
 
         # Determine which pane the mouse is over
-        # Left pane: tiles 1 to LEFT_PANE_WIDTH
-        # Right pane: tiles LEFT_PANE_WIDTH + DIVIDER_WIDTH to end
-        item_start_y = self.HEADER_HEIGHT + 1  # After header and border
+        # Left pane: chars 1 to LEFT_PANE_WIDTH
+        # Right pane: chars LEFT_PANE_WIDTH + DIVIDER_WIDTH to end
+        # Items start at line 2: border (0) + header (1) + items start (2)
+        item_start_y = self.HEADER_HEIGHT + 2
 
-        if 1 <= rel_tile_x < self.LEFT_PANE_WIDTH:
+        if 1 <= rel_char_x < self.LEFT_PANE_WIDTH:
             # Over left pane
-            option_line = rel_tile_y - item_start_y
+            option_line = rel_line_y - item_start_y
             if 0 <= option_line < len(self.left_options):
                 self.active_pane = PaneId.LEFT
                 self.left_cursor = option_line
@@ -753,11 +938,11 @@ class DualPaneMenu(Menu):
         elif (
             self.source is not None
             and self.LEFT_PANE_WIDTH + self.DIVIDER_WIDTH
-            <= rel_tile_x
+            <= rel_char_x
             < self.TOTAL_WIDTH - 1
         ):
             # Over right pane
-            option_line = rel_tile_y - item_start_y
+            option_line = rel_line_y - item_start_y
             if 0 <= option_line < len(self.right_options):
                 self.active_pane = PaneId.RIGHT
                 self.right_cursor = option_line
@@ -769,9 +954,10 @@ class DualPaneMenu(Menu):
         """Handle mouse click to select/transfer items."""
         mouse_px_x, mouse_px_y = event.position
 
-        # Check if click is outside menu
-        menu_px_x = self.x_tiles * self.tile_dimensions[0]
-        menu_px_y = self.y_tiles * self.tile_dimensions[1]
+        # Check if click is outside menu using tile-based positioning
+        tile_w, tile_h = self.tile_dimensions
+        menu_px_x = self.x_tiles * tile_w
+        menu_px_y = self.y_tiles * tile_h
         rel_px_x = mouse_px_x - menu_px_x
         rel_px_y = mouse_px_y - menu_px_y
 
@@ -907,50 +1093,75 @@ class DualPaneMenu(Menu):
         return lines
 
     def _calculate_dimensions(self) -> None:
-        """Calculate menu dimensions and position."""
-        tile_w, tile_h = self.tile_dimensions
-        if tile_w == 0 or tile_h == 0:
+        """Calculate menu dimensions in pixels using font metrics."""
+        # Get font metrics from the PillowImageCanvas
+        assert isinstance(self.canvas, PillowImageCanvas)
+        self._line_height = self.canvas.get_effective_line_height()
+        self._char_width, _, _ = self.canvas.get_text_metrics(" ")
+
+        if self._line_height == 0 or self._char_width == 0:
             return
 
-        # Use narrower width for inventory-only mode
+        # Use narrower width for inventory-only mode (in characters)
         self.width = self.SINGLE_PANE_WIDTH if self.source is None else self.TOTAL_WIDTH
         self.height = self.TOTAL_HEIGHT
 
-        self.pixel_width = self.width * tile_w
-        self.pixel_height = self.height * tile_h
+        # Calculate pixel dimensions from font metrics
+        self.pixel_width = self.width * self._char_width
+        self.pixel_height = self.height * self._line_height
+
+        # Store tile dimensions for screen positioning
+        self.tile_dimensions = self.controller.graphics.tile_dimensions
+        tile_w, tile_h = self.tile_dimensions
 
         # Center on screen
-        screen_width = self.controller.graphics.console_width_tiles
-        screen_height = self.controller.graphics.console_height_tiles
+        screen_pixel_w = self.controller.graphics.console_width_tiles * tile_w
+        screen_pixel_h = self.controller.graphics.console_height_tiles * tile_h
 
-        self.x_tiles = max(0, (screen_width - self.width) // 2)
-        self.y_tiles = max(0, (screen_height - self.height) // 2)
+        # Calculate centered pixel position, then convert to tiles
+        center_px_x = (screen_pixel_w - self.pixel_width) // 2
+        center_px_y = (screen_pixel_h - self.pixel_height) // 2
+
+        self.x_tiles = center_px_x // tile_w if tile_w > 0 else 0
+        self.y_tiles = center_px_y // tile_h if tile_h > 0 else 0
 
     # Visual constants for menu styling
     MENU_BG_COLOR: colors.Color = (15, 15, 15)  # subtle dark grey, not pure black
 
     def draw_content(self) -> None:
-        """Render the complete dual-pane interface."""
+        """Render the complete dual-pane interface using pixel-based layout."""
         assert self.canvas is not None
+        assert isinstance(self.canvas, PillowImageCanvas)
 
-        tile_w, tile_h = self.tile_dimensions
+        char_w = self._char_width
+        line_h = self._line_height
 
-        # Draw outer frame
-        self.canvas.draw_frame(
-            0, 0, self.width, self.height, colors.WHITE, colors.BLACK
+        # Fill entire background with black
+        self.canvas.draw_rect(
+            pixel_x=0,
+            pixel_y=0,
+            width=self.pixel_width,
+            height=self.pixel_height,
+            color=colors.BLACK,
+            fill=True,
         )
 
+        # Draw double-line box frame using inherited method
+        self._draw_box_frame()
+
         # Fill interior with dark grey (slightly lighter than pure black)
-        for y in range(1, self.height - 1):
-            for x in range(1, self.width - 1):
-                self.canvas.draw_rect(
-                    x * tile_w,
-                    y * tile_h,
-                    tile_w,
-                    tile_h,
-                    self.MENU_BG_COLOR,
-                    fill=True,
-                )
+        interior_px_x = char_w
+        interior_px_y = line_h
+        interior_width = (self.width - 2) * char_w
+        interior_height = (self.height - 2) * line_h
+        self.canvas.draw_rect(
+            pixel_x=interior_px_x,
+            pixel_y=interior_px_y,
+            width=interior_width,
+            height=interior_height,
+            color=self.MENU_BG_COLOR,
+            fill=True,
+        )
 
         # Draw pane headers
         self._draw_pane_headers()
@@ -972,7 +1183,9 @@ class DualPaneMenu(Menu):
     def _draw_pane_headers(self) -> None:
         """Draw the capacity bar headers for both panes."""
         assert self.canvas is not None
-        tile_w, tile_h = self.tile_dimensions
+        assert isinstance(self.canvas, PillowImageCanvas)
+        char_w = self._char_width
+        line_h = self._line_height
 
         player = self.controller.gw.player
         used_space = player.inventory.get_used_inventory_slots()
@@ -988,47 +1201,49 @@ class DualPaneMenu(Menu):
         else:
             capacity_color = colors.YELLOW
 
-        # Left pane header
+        # Left pane header (line 1, inside the border - line 0 is the top border)
         current_x = 1
-        header_y = 0
+        header_y = 1
 
         # Title
         prefix_text = "Inventory:"
         title_color = colors.YELLOW
 
         self.canvas.draw_text(
-            pixel_x=current_x * tile_w,
-            pixel_y=header_y * tile_h,
+            pixel_x=current_x * char_w,
+            pixel_y=header_y * line_h,
             text=prefix_text,
             color=title_color,
         )
-        current_x += len(prefix_text) + 1
+        prefix_width, _, _ = self.canvas.get_text_metrics(prefix_text + " ")
+        current_px_x = current_x * char_w + prefix_width
 
-        # Capacity bar
+        # Capacity bar - draw slots as colored rectangles
         slot_colors = player.inventory.get_inventory_slot_colors()
-        bar_end = min(current_x + total_slots, self.LEFT_PANE_WIDTH - 8)
-        for i in range(min(total_slots, bar_end - current_x)):
+        bar_max_chars = self.LEFT_PANE_WIDTH - current_x - 8
+        slot_width = char_w  # Each slot is one character wide
+        for i in range(min(total_slots, bar_max_chars)):
             color = slot_colors[i] if i < len(slot_colors) else colors.GREY
             self.canvas.draw_rect(
-                current_x * tile_w, header_y * tile_h, tile_w, tile_h, color, fill=True
+                current_px_x, header_y * line_h, slot_width, line_h, color, fill=True
             )
-            self.canvas.draw_text(
-                current_x * tile_w, header_y * tile_h, " ", colors.WHITE
-            )
-            current_x += 1
+            current_px_x += slot_width
+
+        # Add a small gap before usage text
+        current_px_x += char_w // 2
 
         # Usage text with severity-based color
-        usage_text = f" {used_space}/{total_slots}"
+        usage_text = f"{used_space}/{total_slots}"
         self.canvas.draw_text(
-            current_x * tile_w, header_y * tile_h, usage_text, capacity_color
+            current_px_x, header_y * line_h, usage_text, capacity_color
         )
 
         # Right pane header (only in loot mode)
         if self.source is not None:
             right_start = self.LEFT_PANE_WIDTH + self.DIVIDER_WIDTH
             self.canvas.draw_text(
-                right_start * tile_w,
-                header_y * tile_h,
+                right_start * char_w,
+                header_y * line_h,
                 f"{self.source.label}:",
                 colors.YELLOW,
             )
@@ -1036,9 +1251,12 @@ class DualPaneMenu(Menu):
     def _draw_left_pane_items(self) -> None:
         """Draw items in the left pane."""
         assert self.canvas is not None
-        tile_w, tile_h = self.tile_dimensions
+        assert isinstance(self.canvas, PillowImageCanvas)
+        char_w = self._char_width
+        line_h = self._line_height
 
-        start_y = self.HEADER_HEIGHT + 1
+        # Items start at line 2: border (0) + header (1) + items start (2)
+        start_y = self.HEADER_HEIGHT + 2
         for i, option in enumerate(self.left_options):
             if i >= self.ITEM_LIST_HEIGHT:
                 break
@@ -1048,36 +1266,37 @@ class DualPaneMenu(Menu):
 
             # Draw highlight background for selected item
             if is_selected and option.enabled:
-                for x in range(1, self.LEFT_PANE_WIDTH):
-                    self.canvas.draw_rect(
-                        x * tile_w,
-                        y * tile_h,
-                        tile_w,
-                        tile_h,
-                        colors.DARK_GREY,
-                        fill=True,
-                    )
+                self.canvas.draw_rect(
+                    char_w,  # Start at column 1
+                    y * line_h,
+                    (self.LEFT_PANE_WIDTH - 1) * char_w,
+                    line_h,
+                    colors.DARK_GREY,
+                    fill=True,
+                )
 
             # Draw prefix segments (slot indicator + category prefix)
-            x = 1
+            current_px_x = char_w  # Start at column 1
             if option.prefix_segments:
                 for segment_text, segment_color in option.prefix_segments:
                     draw_color = segment_color
                     if is_selected and option.enabled:
                         draw_color = self._brighten_color(draw_color)
                     self.canvas.draw_text(
-                        x * tile_w, y * tile_h, segment_text, draw_color
+                        current_px_x, y * line_h, segment_text, draw_color
                     )
-                    x += len(segment_text)
+                    segment_width, _, _ = self.canvas.get_text_metrics(segment_text)
+                    current_px_x += segment_width
             elif option.prefix:
                 # Fallback to legacy prefix/prefix_color
                 prefix_color = option.prefix_color or option.color
                 if is_selected and option.enabled:
                     prefix_color = self._brighten_color(prefix_color)
                 self.canvas.draw_text(
-                    x * tile_w, y * tile_h, option.prefix, prefix_color
+                    current_px_x, y * line_h, option.prefix, prefix_color
                 )
-                x += len(option.prefix)
+                prefix_width, _, _ = self.canvas.get_text_metrics(option.prefix)
+                current_px_x += prefix_width
 
             # Draw key hint
             if option.key:
@@ -1085,8 +1304,9 @@ class DualPaneMenu(Menu):
                 key_color = colors.YELLOW if option.enabled else colors.GREY
                 if is_selected and option.enabled:
                     key_color = self._brighten_color(key_color)
-                self.canvas.draw_text(x * tile_w, y * tile_h, key_text, key_color)
-                x += len(key_text)
+                self.canvas.draw_text(current_px_x, y * line_h, key_text, key_color)
+                key_width, _, _ = self.canvas.get_text_metrics(key_text)
+                current_px_x += key_width
 
             # Draw item text
             text_color = (
@@ -1095,51 +1315,69 @@ class DualPaneMenu(Menu):
             if is_selected and option.enabled:
                 text_color = self._brighten_color(text_color)
 
-            # Truncate text to fit pane
-            max_text_len = self.LEFT_PANE_WIDTH - x - 1
-            text = (
-                option.text[:max_text_len]
-                if len(option.text) > max_text_len
-                else option.text
-            )
-            self.canvas.draw_text(x * tile_w, y * tile_h, text, text_color)
+            # Calculate max width for text and truncate if needed
+            max_text_width = self.LEFT_PANE_WIDTH * char_w - current_px_x - char_w
+            text = option.text
+            text_width, _, _ = self.canvas.get_text_metrics(text)
+            while text_width > max_text_width and len(text) > 1:
+                text = text[:-1]
+                text_width, _, _ = self.canvas.get_text_metrics(text)
+
+            self.canvas.draw_text(current_px_x, y * line_h, text, text_color)
 
     def _draw_divider(self) -> None:
-        """Draw the center divider with transfer arrow."""
+        """Draw the center divider with transfer arrow.
+
+        Uses Unicode box-drawing double vertical line (║) to match the outer
+        frame, with proper T-junctions at the top border (╦).
+        Triangle arrows (▶/◀) indicate transfer direction.
+        """
         assert self.canvas is not None
-        tile_w, tile_h = self.tile_dimensions
+        char_w = self._char_width
+        line_h = self._line_height
 
         divider_x = self.LEFT_PANE_WIDTH + self.DIVIDER_WIDTH // 2
-        mid_y = self.HEADER_HEIGHT + 1 + self.ITEM_LIST_HEIGHT // 2
+        # Arrow centered in item list area (which starts at line 2)
+        mid_y = self.HEADER_HEIGHT + 2 + self.ITEM_LIST_HEIGHT // 2
 
-        # Draw vertical line
-        for y in range(
-            self.HEADER_HEIGHT + 1, self.HEADER_HEIGHT + 1 + self.ITEM_LIST_HEIGHT
-        ):
+        # Column positions for the two divider lines
+        left_divider_col = self.LEFT_PANE_WIDTH + 1
+        right_divider_col = self.LEFT_PANE_WIDTH + self.DIVIDER_WIDTH - 2
+
+        # Draw T-junctions at top border (row 0) where dividers meet horizontal line
+        self.canvas.draw_text(left_divider_col * char_w, 0, "╦", colors.WHITE)
+        self.canvas.draw_text(right_divider_col * char_w, 0, "╦", colors.WHITE)
+
+        # Draw vertical lines using double box-drawing character (║)
+        # Lines start at row 1 (below the top border T-junction)
+        for y in range(1, self.HEADER_HEIGHT + 2 + self.ITEM_LIST_HEIGHT):
             self.canvas.draw_text(
-                (self.LEFT_PANE_WIDTH + 1) * tile_w,
-                y * tile_h,
-                "|",
-                colors.GREY,
+                left_divider_col * char_w,
+                y * line_h,
+                "║",
+                colors.WHITE,
             )
             self.canvas.draw_text(
-                (self.LEFT_PANE_WIDTH + self.DIVIDER_WIDTH - 2) * tile_w,
-                y * tile_h,
-                "|",
-                colors.GREY,
+                right_divider_col * char_w,
+                y * line_h,
+                "║",
+                colors.WHITE,
             )
 
-        # Draw transfer arrow
-        arrow = ">" if self.active_pane == PaneId.LEFT else "<"
+        # Draw transfer arrow using black triangles (U+25B6, U+25C0)
+        arrow = "▶" if self.active_pane == PaneId.LEFT else "◀"
         arrow_color = colors.WHITE
-        self.canvas.draw_text(divider_x * tile_w, mid_y * tile_h, arrow, arrow_color)
+        self.canvas.draw_text(divider_x * char_w, mid_y * line_h, arrow, arrow_color)
 
     def _draw_right_pane_items(self) -> None:
         """Draw items in the right pane."""
         assert self.canvas is not None
-        tile_w, tile_h = self.tile_dimensions
+        assert isinstance(self.canvas, PillowImageCanvas)
+        char_w = self._char_width
+        line_h = self._line_height
 
-        start_y = self.HEADER_HEIGHT + 1
+        # Items start at line 2: border (0) + header (1) + items start (2)
+        start_y = self.HEADER_HEIGHT + 2
         right_start = self.LEFT_PANE_WIDTH + self.DIVIDER_WIDTH
 
         for i, option in enumerate(self.right_options):
@@ -1151,17 +1389,16 @@ class DualPaneMenu(Menu):
 
             # Draw highlight background
             if is_selected and option.enabled:
-                for x in range(right_start, self.TOTAL_WIDTH - 1):
-                    self.canvas.draw_rect(
-                        x * tile_w,
-                        y * tile_h,
-                        tile_w,
-                        tile_h,
-                        colors.DARK_GREY,
-                        fill=True,
-                    )
+                self.canvas.draw_rect(
+                    right_start * char_w,
+                    y * line_h,
+                    (self.TOTAL_WIDTH - right_start - 1) * char_w,
+                    line_h,
+                    colors.DARK_GREY,
+                    fill=True,
+                )
 
-            x = right_start
+            current_px_x = right_start * char_w
 
             # Draw prefix segments (category prefix)
             if option.prefix_segments:
@@ -1170,9 +1407,10 @@ class DualPaneMenu(Menu):
                     if is_selected and option.enabled:
                         draw_color = self._brighten_color(draw_color)
                     self.canvas.draw_text(
-                        x * tile_w, y * tile_h, segment_text, draw_color
+                        current_px_x, y * line_h, segment_text, draw_color
                     )
-                    x += len(segment_text)
+                    segment_width, _, _ = self.canvas.get_text_metrics(segment_text)
+                    current_px_x += segment_width
 
             # Draw key hint
             if option.key:
@@ -1180,44 +1418,66 @@ class DualPaneMenu(Menu):
                 key_color = colors.YELLOW if option.enabled else colors.GREY
                 if is_selected and option.enabled:
                     key_color = self._brighten_color(key_color)
-                self.canvas.draw_text(x * tile_w, y * tile_h, key_text, key_color)
-                x += len(key_text)
+                self.canvas.draw_text(current_px_x, y * line_h, key_text, key_color)
+                key_width, _, _ = self.canvas.get_text_metrics(key_text)
+                current_px_x += key_width
 
             # Draw item text
             text_color = option.color if option.enabled else colors.GREY
             if is_selected and option.enabled:
                 text_color = self._brighten_color(text_color)
 
-            max_text_len = self.TOTAL_WIDTH - x - 2
-            text = (
-                option.text[:max_text_len]
-                if len(option.text) > max_text_len
-                else option.text
-            )
-            self.canvas.draw_text(x * tile_w, y * tile_h, text, text_color)
+            # Calculate max width for text and truncate if needed
+            max_text_width = (self.TOTAL_WIDTH - 1) * char_w - current_px_x
+            text = option.text
+            text_width, _, _ = self.canvas.get_text_metrics(text)
+            while text_width > max_text_width and len(text) > 1:
+                text = text[:-1]
+                text_width, _, _ = self.canvas.get_text_metrics(text)
+
+            self.canvas.draw_text(current_px_x, y * line_h, text, text_color)
 
     def _draw_detail_panel(self) -> None:
         """Draw the item detail panel at the bottom."""
         assert self.canvas is not None
-        tile_w, tile_h = self.tile_dimensions
+        assert isinstance(self.canvas, PillowImageCanvas)
+        char_w = self._char_width
+        line_h = self._line_height
 
-        # Separator line - account for dynamic hint line count
-        hint_line_count = len(self._get_hint_lines())
-        sep_y = self.TOTAL_HEIGHT - self.DETAIL_HEIGHT - hint_line_count - 1
+        # Separator line - keycap hints always fit on one line
+        sep_y = self.TOTAL_HEIGHT - self.DETAIL_HEIGHT - self.HINT_HEIGHT - 1
+
+        # Draw horizontal separator with T-junctions where it meets the border
+        # Uses double-to-single T-junctions: ╟ (left) and ╢ (right)
+        separator_px_y = sep_y * line_h
+
+        # Column positions for divider lines (used in loot mode)
+        left_divider_col = self.LEFT_PANE_WIDTH + 1
+        right_divider_col = self.LEFT_PANE_WIDTH + self.DIVIDER_WIDTH - 2
+
+        # Left junction (double-vertical to single-horizontal)
+        self.canvas.draw_text(0, separator_px_y, "╟", colors.WHITE)
+
+        # Horizontal line with junction characters where dividers meet
         for x in range(1, self.width - 1):
-            self.canvas.draw_text(
-                x * tile_w,
-                sep_y * tile_h,
-                "\u2500",
-                colors.GREY,  # Box drawing horizontal
-            )
+            # In loot mode, draw junctions where divider columns meet separator
+            if self.source is not None and x in (left_divider_col, right_divider_col):
+                # ╨ = double vertical up meeting single horizontal
+                self.canvas.draw_text(x * char_w, separator_px_y, "╨", colors.WHITE)
+            else:
+                self.canvas.draw_text(x * char_w, separator_px_y, "─", colors.WHITE)
+
+        # Right junction
+        self.canvas.draw_text(
+            (self.width - 1) * char_w, separator_px_y, "╢", colors.WHITE
+        )
 
         detail_start_y = sep_y + 1
 
         if self.detail_item is None:
             self.canvas.draw_text(
-                2 * tile_w,
-                detail_start_y * tile_h,
+                2 * char_w,
+                detail_start_y * line_h,
                 "(No item selected)",
                 colors.GREY,
             )
@@ -1233,40 +1493,117 @@ class DualPaneMenu(Menu):
             if cat_color:
                 first_line_color = cat_color
 
+        # Calculate max text width for truncation
+        max_text_width = (self.width - 4) * char_w
+
         for i, line in enumerate(detail_lines[: self.DETAIL_HEIGHT - 1]):
-            truncated = line[: self.width - 4]
+            # Truncate text to fit
+            text = line
+            text_width, _, _ = self.canvas.get_text_metrics(text)
+            while text_width > max_text_width and len(text) > 1:
+                text = text[:-1]
+                text_width, _, _ = self.canvas.get_text_metrics(text)
+
             # First line (category) uses category color, rest are white
             line_color = first_line_color if i == 0 else colors.WHITE
             self.canvas.draw_text(
-                2 * tile_w,
-                (detail_start_y + i) * tile_h,
-                truncated,
+                2 * char_w,
+                (detail_start_y + i) * line_h,
+                text,
                 line_color,
             )
 
     def _get_hint_lines(self) -> list[str]:
-        """Get hint text wrapped into lines that fit the current width."""
-        if self.source is not None:
-            hint_text = (
-                "[Tab] Switch  [Arrows/JK] Navigate  [Enter] Transfer  [D] Drop  [Esc]"
-            )
-        else:
-            hint_text = (
-                "[Arrows/JK] Navigate  [Enter] Use  [E] Equip  [D] Drop  [Esc] Close"
-            )
+        """Get hint text wrapped into lines that fit the current width.
 
+        Footer commands vary by mode, active pane, and selected item:
+        - [Enter] Equip: Always shown (any item can be held)
+        - [U] Use: Only if selected item has consumable_effect
+        - [D] Drop / [T] Transfer: Always shown
+        - [Tab] Switch: Dual-pane mode only
+        """
+        # Get selected item to determine which hints to show
+        selected_item: Item | None = None
+        if self.active_pane == PaneId.LEFT:
+            if 0 <= self.left_cursor < len(self.left_options):
+                data = self.left_options[self.left_cursor].data
+                if isinstance(data, Item):
+                    selected_item = data
+        elif 0 <= self.right_cursor < len(self.right_options):
+            data = self.right_options[self.right_cursor].data
+            if isinstance(data, Item):
+                selected_item = data
+
+        # Build hint parts based on context
+        parts: list[str] = []
+
+        if self.source is None:
+            # Single-pane (inventory only)
+            parts.append("[Enter] Equip")
+            if selected_item and selected_item.consumable_effect:
+                parts.append("[U] Use")
+            parts.append("[D] Drop")
+            parts.append("[Esc] Close")
+        elif self.active_pane == PaneId.LEFT:
+            # Dual-pane, left pane focused
+            parts.append("[Enter] Equip")
+            if selected_item and selected_item.consumable_effect:
+                parts.append("[U] Use")
+            parts.append("[T] Transfer")
+            parts.append("[Tab] Switch")
+            parts.append("[Esc]")
+        else:
+            # Dual-pane, right pane focused
+            parts.append("[T] Transfer")
+            parts.append("[Tab] Switch")
+            parts.append("[Esc] Close")
+
+        hint_text = "  ".join(parts)
+
+        # Use pixel-based width checking if canvas is available
+        if isinstance(self.canvas, PillowImageCanvas) and self._char_width > 0:
+            max_width = (self.width - 4) * self._char_width
+            hint_width, _, _ = self.canvas.get_text_metrics(hint_text)
+            if hint_width <= max_width:
+                return [hint_text]
+
+            # Wrap using pixel widths
+            lines: list[str] = []
+            remaining = hint_text
+            while remaining:
+                remaining_width, _, _ = self.canvas.get_text_metrics(remaining)
+                if remaining_width <= max_width:
+                    lines.append(remaining)
+                    break
+                # Find last space before max_width
+                split_at = -1
+                for j in range(len(remaining) - 1, 0, -1):
+                    test_text = remaining[:j]
+                    test_width, _, _ = self.canvas.get_text_metrics(test_text)
+                    if test_width <= max_width:
+                        # Found a position that fits, now find a space
+                        space_pos = test_text.rfind("  ")
+                        if space_pos == -1:
+                            space_pos = test_text.rfind(" ")
+                        split_at = space_pos if space_pos > 0 else j
+                        break
+                if split_at <= 0:
+                    split_at = len(remaining) // 2
+                lines.append(remaining[:split_at].rstrip())
+                remaining = remaining[split_at:].lstrip()
+            return lines
+
+        # Fallback to character-based wrapping
         max_len = self.width - 4
         if len(hint_text) <= max_len:
             return [hint_text]
 
-        # Wrap into multiple lines
-        lines: list[str] = []
+        lines = []
         remaining = hint_text
         while remaining:
             if len(remaining) <= max_len:
                 lines.append(remaining)
                 break
-            # Find last space before max_len
             split_at = remaining.rfind("  ", 0, max_len)
             if split_at == -1:
                 split_at = remaining.rfind(" ", 0, max_len)
@@ -1276,18 +1613,79 @@ class DualPaneMenu(Menu):
             remaining = remaining[split_at:].lstrip()
         return lines
 
+    def _get_hint_items(self) -> list[tuple[str, str]]:
+        """Get hint items as (key, label) pairs for keycap rendering.
+
+        Returns a list of (key_text, label_text) tuples. The key_text is
+        displayed inside a keycap, and label_text follows it.
+        """
+        # Get selected item to determine which hints to show
+        selected_item: Item | None = None
+        if self.active_pane == PaneId.LEFT:
+            if 0 <= self.left_cursor < len(self.left_options):
+                data = self.left_options[self.left_cursor].data
+                if isinstance(data, Item):
+                    selected_item = data
+        elif 0 <= self.right_cursor < len(self.right_options):
+            data = self.right_options[self.right_cursor].data
+            if isinstance(data, Item):
+                selected_item = data
+
+        items: list[tuple[str, str]] = []
+
+        if self.source is None:
+            # Single-pane (inventory only)
+            items.append(("ENTER", "Equip"))
+            if selected_item and selected_item.consumable_effect:
+                items.append(("U", "Use"))
+            items.append(("D", "Drop"))
+            items.append(("ESC", "Close"))
+        elif self.active_pane == PaneId.LEFT:
+            # Dual-pane, left pane focused
+            items.append(("ENTER", "Equip"))
+            if selected_item and selected_item.consumable_effect:
+                items.append(("U", "Use"))
+            items.append(("T", "Transfer"))
+            items.append(("TAB", "Switch"))
+            items.append(("ESC", ""))
+        else:
+            # Dual-pane, right pane focused
+            items.append(("T", "Transfer"))
+            items.append(("TAB", "Switch"))
+            items.append(("ESC", "Close"))
+
+        return items
+
     def _draw_hint_bar(self) -> None:
-        """Draw the keyboard hints at the bottom."""
+        """Draw the keyboard hints at the bottom using keycap-style rendering."""
+        from catley.view.ui.drawing_utils import draw_keycap
+
         assert self.canvas is not None
-        tile_w, tile_h = self.tile_dimensions
+        char_w = self._char_width
+        line_h = self._line_height
 
-        hint_lines = self._get_hint_lines()
-        hint_color = colors.GREY
+        hint_items = self._get_hint_items()
 
-        # Draw lines from bottom up
-        for i, line in enumerate(reversed(hint_lines)):
-            y = self.TOTAL_HEIGHT - 1 - i
-            self.canvas.draw_text(2 * tile_w, y * tile_h, line, hint_color)
+        # Starting position: 2 chars from left edge, on second-to-last row
+        current_x = 2 * char_w
+        y = (self.TOTAL_HEIGHT - 2) * line_h
+        spacing = 16  # Pixels between hint groups
+
+        # Use larger keycaps than the default (which is 85% of line height)
+        keycap_size = int(line_h * 1.15)
+
+        for key, label in hint_items:
+            # Draw keycap at larger size
+            width = draw_keycap(self.canvas, current_x, y, key, keycap_size=keycap_size)
+            current_x += width
+
+            # Draw label if present
+            if label:
+                self.canvas.draw_text(current_x, y, label, colors.GREY)
+                label_width, _, _ = self.canvas.get_text_metrics(label)
+                current_x += label_width + spacing
+            else:
+                current_x += spacing
 
     def _brighten_color(self, color: colors.Color) -> colors.Color:
         """Brighten a color for hover/selection highlighting."""

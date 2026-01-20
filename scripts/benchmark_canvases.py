@@ -109,13 +109,13 @@ class TCODBackendBenchmark(BackendBenchmark):
 
 
 class PillowBackendBenchmark(BackendBenchmark):
-    """Benchmark for Pillow text backend."""
+    """Benchmark for Pillow text backend using native PIL text rendering."""
 
     def __init__(self):
         super().__init__("Pillow")
 
     def setup(self, renderer: GraphicsContext) -> PillowImageCanvas:
-        return PillowImageCanvas(renderer)
+        return PillowImageCanvas(renderer, font_path=config.UI_FONT_PATH)
 
     def cleanup(self, backend: PillowImageCanvas) -> None:
         # Clean up any remaining PIL resources

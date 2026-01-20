@@ -659,8 +659,7 @@ class CharacterInventory(InventoryComponent):
         return True, f"Equipped {item.name}."
 
     def unequip_to_inventory(self, slot_index: int) -> tuple[bool, str]:
-        """Unequip the item in ``slot_index`` and store it if space allows."""
-
+        """Unequip the item in ``slot_index`` and store it."""
         if not (0 <= slot_index < len(self.attack_slots)):
             return False, f"Invalid slot index: {slot_index}"
 
@@ -668,9 +667,8 @@ class CharacterInventory(InventoryComponent):
         if item is None:
             return False, "No item to unequip"
 
-        if not self.can_add_voluntary_item(item):
-            return False, f"No room to store {item.name}"
-
+        # No capacity check needed - moving from equipped to stored doesn't
+        # change total used space (same size calculation applies to both).
         self.attack_slots[slot_index] = None
         self._stored_items.append(item)
         self._update_encumbrance_status()

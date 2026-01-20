@@ -390,39 +390,8 @@ class ExploreMode(Mode):
         return True  # Consume right click even if no menu opened
 
     def _handle_left_click(self, root_tile_pos: RootConsoleTilePos) -> bool:
-        """Handle left click on status view or equipment view."""
-        # Check if click is on the status view (conditions display)
-        if self._check_status_view_click(root_tile_pos):
-            return True
-
-        # Check if click is on the equipment view (weapon slots)
+        """Handle left click on equipment view (weapon slots)."""
         return self._check_equipment_view_click(root_tile_pos)
-
-    def _check_status_view_click(self, root_tile_pos: RootConsoleTilePos) -> bool:
-        """Check if click is on a condition row in status view."""
-        if self._fm is None or not hasattr(self._fm, "status_view"):
-            return False
-
-        status_view = self._fm.status_view
-        tile_x, tile_y = root_tile_pos
-
-        if not (status_view.x <= tile_x < status_view.x + status_view.width):
-            return False
-
-        clicked_row = tile_y - status_view.y
-        if clicked_row < 0:
-            return False
-
-        num_effects = status_view._num_status_effects_displayed
-        num_conditions = status_view._num_conditions_displayed
-        condition_start_row = num_effects
-        condition_end_row = num_effects + num_conditions
-
-        if condition_start_row <= clicked_row < condition_end_row:
-            OpenMenuUICommand(self.controller, DualPaneMenu).execute()
-            return True
-
-        return False
 
     def _check_equipment_view_click(self, root_tile_pos: RootConsoleTilePos) -> bool:
         """Check if click is within equipment view bounds."""
@@ -443,13 +412,9 @@ class ExploreMode(Mode):
 
     def _has_available_actions(self, target: Actor | WorldTilePos) -> bool:
         """Quickly check if any actions are available for a target."""
-        from catley.game.actions.discovery import ActionDiscovery
-
-        disc = ActionDiscovery()
-
         if isinstance(target, Character):
-            options = disc.get_options_for_target(self.controller, self._p, target)
-            return bool(options)
+            # Always show menu for visible characters; menu handles empty options.
+            return True
         if isinstance(target, Actor):
             return False
 

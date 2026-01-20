@@ -10,7 +10,7 @@ from tests.rendering.backends.test_canvases import _make_renderer
 
 
 def test_dual_pane_menu_equips_to_active_slot() -> None:
-    """Test that DualPaneMenu._use_item equips to the active weapon slot."""
+    """Test that DualPaneMenu._equip_item equips to the active weapon slot."""
     stats = components.StatsComponent(strength=0)
     inv = components.CharacterInventory(stats)
     pistol = PISTOL_TYPE.create()
@@ -31,7 +31,7 @@ def test_dual_pane_menu_equips_to_active_slot() -> None:
     )
 
     menu = DualPaneMenu(controller)
-    menu._use_item(knife)
+    menu._equip_item(knife)
 
     assert inv.attack_slots[1] == knife
     assert knife not in inv

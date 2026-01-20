@@ -71,7 +71,8 @@ def test_message_log_view_ttf_rendering_visible(monkeypatch: Any) -> None:
     assert pixels.max() > 0, "Expected rendered texture to have non-black pixels"
 
 
-def test_message_log_view_font_scales_on_resize(monkeypatch: Any) -> None:
+def test_message_log_view_font_stays_fixed_on_resize(monkeypatch: Any) -> None:
+    """Font size stays fixed when MessageLogView uses explicit font_size."""
     monkeypatch.setattr(tcod.sdl.video, "new_window", lambda *a, **kw: object())
     monkeypatch.setattr(
         tcod.sdl.render, "new_renderer", lambda *a, **kw: DummyRenderer()
@@ -106,4 +107,5 @@ def test_message_log_view_font_scales_on_resize(monkeypatch: Any) -> None:
     assert view.canvas is not None
     tb = cast(PillowImageCanvas, view.canvas)
     ascent, descent = tb.get_font_metrics()
-    assert (ascent + descent) > initial_line_height
+    # With explicit font_size, font should stay the same regardless of tile size
+    assert (ascent + descent) == initial_line_height

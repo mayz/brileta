@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from catley import colors
+from catley import colors, config
 from catley.backends.pillow.canvas import PillowImageCanvas
 from catley.types import InterpolationAlpha
 from catley.util.caching import ResourceCache
@@ -20,7 +20,12 @@ class MessageLogView(TextView):
     def __init__(self, message_log: MessageLog, graphics: GraphicsContext) -> None:
         super().__init__()
         self.message_log = message_log
-        self.canvas = PillowImageCanvas(graphics)
+        self.canvas = PillowImageCanvas(
+            graphics,
+            font_path=config.UI_FONT_PATH,
+            font_size=config.MESSAGE_LOG_FONT_SIZE,
+            line_spacing=1.0,
+        )
         self.renderer = graphics
 
         # View pixel dimensions will be calculated when resize() is called
@@ -65,18 +70,22 @@ class MessageLogView(TextView):
             0, 0, self.view_width_px, self.view_height_px, colors.BLACK, fill=True
         )
 
-        # Draw a subtle top border to separate from action panel
-        self.canvas.draw_rect(0, 0, self.view_width_px, 1, colors.DARK_GREY, fill=True)
+        # Padding from edges
+        x_padding = 8
+        bottom_padding = 8
 
         ascent, descent = self.canvas.get_font_metrics()
         line_height = ascent + descent
-        y_baseline = self.view_height_px - descent
+        y_baseline = self.view_height_px - descent - bottom_padding
+
+        # Available width for text (accounting for left and right padding)
+        text_width = self.view_width_px - (x_padding * 2)
 
         for message in reversed(self.message_log.messages):
             if y_baseline < line_height:
                 break
 
-            wrapped_lines = self.canvas.wrap_text(message.full_text, self.view_width_px)
+            wrapped_lines = self.canvas.wrap_text(message.full_text, text_width)
             for line in reversed(wrapped_lines):
                 text_top = y_baseline - ascent
                 if text_top < 0:
@@ -84,7 +93,7 @@ class MessageLogView(TextView):
                     break
 
                 self.canvas.draw_text(
-                    pixel_x=0, pixel_y=text_top, text=line, color=message.fg
+                    pixel_x=x_padding, pixel_y=text_top, text=line, color=message.fg
                 )
                 y_baseline -= line_height
 

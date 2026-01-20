@@ -28,7 +28,7 @@ def draw_keycap(
         pixel_x: X position in pixels
         pixel_y: Y position in pixels (baseline of text line)
         key: The key character to display (will be converted to uppercase)
-        keycap_size: Size of the keycap square (defaults to 60% of line height)
+        keycap_size: Size of the keycap square (defaults to 85% of line height)
         bg_color: Background color of the keycap
         border_color: Border color of the keycap
         text_color: Color of the key character
@@ -41,15 +41,15 @@ def draw_keycap(
     line_height = ascent + descent
 
     if keycap_size is None:
-        keycap_size = int(line_height * 0.6)
+        keycap_size = int(line_height * 0.85)
 
     # Calculate vertical position to align keycap with text
     # pixel_y is the TOP of the text line
     # Position keycap slightly above the text line for proper text centering
     keycap_y = pixel_y - 2
 
-    # Use smaller font for keycap text (roughly 40% of line height)
-    keycap_font_size = max(8, int(line_height * 0.4))
+    # Use smaller font for keycap text (65% of keycap size for readability)
+    keycap_font_size = max(8, int(keycap_size * 0.65))
 
     # Get text metrics for dynamic sizing with smaller font
     key_upper = key.upper()
@@ -58,7 +58,7 @@ def draw_keycap(
     )
 
     # Calculate dynamic width: use larger of fixed size or text width + padding
-    internal_padding = 8  # Internal padding for text
+    internal_padding = 12  # Internal padding for text
     keycap_width = max(keycap_size, text_width + internal_padding)
     keycap_height = keycap_size  # Keep height fixed for consistency
 

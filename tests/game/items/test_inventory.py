@@ -91,6 +91,34 @@ def test_unequip_to_inventory_moves_item() -> None:
     assert item in inv
 
 
+def test_unequip_big_item_at_capacity_succeeds() -> None:
+    """Unequipping a BIG item should succeed even at full capacity.
+
+    Regression test: The capacity check was incorrectly counting the
+    equipped item twice, causing BIG items to fail unequipping when
+    inventory was near capacity.
+    """
+    stats = components.StatsComponent(strength=0)
+    inv = components.CharacterInventory(stats)
+
+    # Fill inventory to capacity (5 slots default).
+    # Equip a BIG item (2 slots) + add 3 NORMAL items (3 slots) = 5 slots.
+    big_weapon = make_item("big_weapon", ItemSize.BIG)
+    inv.equip_to_slot(big_weapon, 0)
+    for i in range(3):
+        inv.add_to_inventory(make_item(f"item{i}", ItemSize.NORMAL))
+
+    assert inv.get_used_inventory_slots() == 5  # At capacity
+
+    # Unequipping should succeed - it's a move, not an add.
+    success, msg = inv.unequip_to_inventory(0)
+
+    assert success, f"Unequip failed unexpectedly: {msg}"
+    assert inv.attack_slots[0] is None
+    assert big_weapon in inv
+    assert inv.get_used_inventory_slots() == 5  # Still at capacity
+
+
 def test_try_remove_item_from_equipped_slot() -> None:
     """try_remove_item removes item from equipped attack slot and returns True."""
     stats = components.StatsComponent(strength=0)

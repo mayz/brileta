@@ -33,8 +33,10 @@ def make_controller_with_equipment_view() -> tuple[Controller, EquipmentView]:
     renderer.tile_dimensions = (16, 16)
     view = EquipmentView(controller, renderer)
 
-    # Initialize slot bounds as if it were rendered (1 row per slot)
-    view._slot_row_bounds = {0: (0, 1), 1: (1, 2)}
+    # Initialize slot pixel bounds as if it were rendered.
+    # With tile_dimensions (16, 16), row 0 center is at pixel 8, row 1 center at 24.
+    # Each slot spans one line_height (approx tile_height=16 pixels).
+    view._slot_pixel_bounds = {0: (0, 16), 1: (16, 32)}
 
     return controller, view
 
@@ -175,8 +177,9 @@ def test_is_row_in_active_slot() -> None:
     """is_row_in_active_slot correctly identifies active slot rows."""
     _controller, view = make_controller_with_equipment_view()
 
-    # With slot 0 active: row 0 is active, row 1 is inactive (1 row per slot)
-    view._slot_row_bounds = {0: (0, 1), 1: (1, 2)}
+    # With slot 0 active: row 0 is active, row 1 is inactive.
+    # Pixel bounds use 16px per slot with tile_dimensions (16, 16).
+    view._slot_pixel_bounds = {0: (0, 16), 1: (16, 32)}
 
     assert view.is_row_in_active_slot(0) is True
     assert view.is_row_in_active_slot(1) is False
@@ -187,7 +190,8 @@ def test_get_slot_at_row() -> None:
     """_get_slot_at_row returns correct slot index for each row."""
     _controller, view = make_controller_with_equipment_view()
 
-    view._slot_row_bounds = {0: (0, 1), 1: (1, 2)}
+    # Pixel bounds use 16px per slot with tile_dimensions (16, 16).
+    view._slot_pixel_bounds = {0: (0, 16), 1: (16, 32)}
 
     assert view._get_slot_at_row(0) == 0
     assert view._get_slot_at_row(1) == 1

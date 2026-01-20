@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock
 
-from catley import colors
+from catley import colors, config
 from catley.backends.moderngl.canvas import ModernGLCanvas
 from catley.backends.pillow.canvas import PillowImageCanvas
 from catley.backends.tcod.canvas import TCODConsoleCanvas
@@ -25,10 +25,17 @@ def _make_renderer(tile_height: int = 16) -> GraphicsContext:
     return renderer
 
 
+def _make_canvas(canvas_class: type, renderer: GraphicsContext):
+    """Create a canvas instance with appropriate arguments for the class type."""
+    if canvas_class is PillowImageCanvas:
+        return canvas_class(renderer, font_path=config.UI_FONT_PATH)
+    return canvas_class(renderer)
+
+
 def test_backend_interchangeability() -> None:
     renderer = _make_renderer()
     tcod_backend = TCODConsoleCanvas(renderer)
-    pillow_backend = PillowImageCanvas(renderer)
+    pillow_backend = PillowImageCanvas(renderer, font_path=config.UI_FONT_PATH)
     tcod_backend.configure_scaling(16)
     pillow_backend.configure_scaling(16)
 
@@ -46,7 +53,7 @@ def test_backend_interchangeability() -> None:
 
 def test_no_unnecessary_scaling() -> None:
     renderer = _make_renderer()
-    backend = PillowImageCanvas(renderer)
+    backend = PillowImageCanvas(renderer, font_path=config.UI_FONT_PATH)
     update_mock = MagicMock()
     backend._update_scaling_internal = update_mock  # type: ignore[assignment]
     backend.configure_scaling(16)
@@ -57,7 +64,7 @@ def test_no_unnecessary_scaling() -> None:
 
 def test_pillow_font_sizing() -> None:
     renderer = _make_renderer()
-    backend = PillowImageCanvas(renderer)
+    backend = PillowImageCanvas(renderer, font_path=config.UI_FONT_PATH)
     for height in [12, 16, 20, 24, 32]:
         backend.configure_scaling(height)
         ascent, descent = backend.get_font_metrics()
@@ -67,7 +74,7 @@ def test_pillow_font_sizing() -> None:
 def test_layout_consistency() -> None:
     renderer = _make_renderer()
     tcod_backend = TCODConsoleCanvas(renderer)
-    pillow_backend = PillowImageCanvas(renderer)
+    pillow_backend = PillowImageCanvas(renderer, font_path=config.UI_FONT_PATH)
     tcod_backend.configure_scaling(16)
     pillow_backend.configure_scaling(16)
     _asc_t, desc_t = tcod_backend.get_font_metrics()
@@ -83,7 +90,7 @@ def test_rendering_workflow() -> None:
 
     # Test both backends
     for backend_class in [TCODConsoleCanvas, PillowImageCanvas]:
-        backend = backend_class(renderer)
+        backend = _make_canvas(backend_class, renderer)
         backend.configure_dimensions(100, 80)
         backend.configure_scaling(16)
 
@@ -103,7 +110,7 @@ def test_caching_behavior() -> None:
     renderer = _make_renderer()
 
     for backend_class in [TCODConsoleCanvas, PillowImageCanvas]:
-        backend = backend_class(renderer)
+        backend = _make_canvas(backend_class, renderer)
         backend.configure_dimensions(100, 80)
         backend.configure_scaling(16)
 
@@ -137,7 +144,7 @@ def test_operation_recording() -> None:
     renderer = _make_renderer()
 
     for backend_class in [TCODConsoleCanvas, PillowImageCanvas]:
-        backend = backend_class(renderer)
+        backend = _make_canvas(backend_class, renderer)
         backend.configure_dimensions(100, 80)
         backend.configure_scaling(16)
 
@@ -171,7 +178,7 @@ def test_coordinate_types() -> None:
     renderer = _make_renderer()
 
     for backend_class in [TCODConsoleCanvas, PillowImageCanvas]:
-        backend = backend_class(renderer)
+        backend = _make_canvas(backend_class, renderer)
         backend.configure_dimensions(100, 80)
         backend.configure_scaling(16)
 
@@ -197,7 +204,7 @@ def test_error_handling() -> None:
     renderer = _make_renderer()
 
     for backend_class in [TCODConsoleCanvas, PillowImageCanvas]:
-        backend = backend_class(renderer)
+        backend = _make_canvas(backend_class, renderer)
 
         # Test with no dimensions configured
         backend.begin_frame()
@@ -226,7 +233,7 @@ def test_dimension_cache_invalidation() -> None:
     renderer = _make_renderer()
 
     for backend_class in [TCODConsoleCanvas, PillowImageCanvas]:
-        backend = backend_class(renderer)
+        backend = _make_canvas(backend_class, renderer)
         backend.configure_dimensions(100, 80)
         backend.configure_scaling(16)
 

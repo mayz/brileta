@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from catley import colors
+from catley import colors, config
 from catley.backends.pillow.canvas import PillowImageCanvas
 from catley.environment import tile_types
 from catley.game.actions.discovery import ActionCategory, ActionDiscovery, ActionOption
@@ -28,7 +28,12 @@ class ActionPanelView(TextView):
     def __init__(self, controller: Controller) -> None:
         super().__init__()
         self.controller = controller
-        self.canvas = PillowImageCanvas(controller.graphics)
+        self.canvas = PillowImageCanvas(
+            controller.graphics,
+            font_path=config.UI_FONT_PATH,
+            font_size=config.ACTION_PANEL_FONT_SIZE,
+            line_spacing=1.0,
+        )
         self.discovery = ActionDiscovery()
         self._cached_actions: list[ActionOption] = []
         self._cached_target_name: str | None = None
@@ -46,34 +51,107 @@ class ActionPanelView(TextView):
             name=f"{self.__class__.__name__}Render", max_size=1
         )
 
-    def _draw_keycap_with_label(self, x: int, y: int, key: str, label: str) -> int:
-        """Draw a keycap with label text. Returns the total width consumed."""
-        current_x = x
+    def _wrap_text(self, text: str, max_width: int) -> list[str]:
+        """Wrap text to fit within max_width pixels.
 
+        Args:
+            text: The text to wrap
+            max_width: Maximum width in pixels
+
+        Returns:
+            List of lines that fit within max_width
+        """
+        if max_width <= 0:
+            return [text]
+
+        words = text.split(" ")
+        lines: list[str] = []
+        current_line = ""
+
+        for word in words:
+            test_line = f"{current_line} {word}".strip()
+            width, _, _ = self.canvas.get_text_metrics(test_line)
+
+            if width <= max_width:
+                current_line = test_line
+            else:
+                if current_line:
+                    lines.append(current_line)
+                current_line = word
+
+        if current_line:
+            lines.append(current_line)
+
+        return lines if lines else [text]
+
+    def _draw_keycap_with_label(
+        self,
+        x: int,
+        y: int,
+        key: str,
+        label: str,
+        label_x: int | None = None,
+        max_width: int | None = None,
+    ) -> tuple[int, int]:
+        """Draw a keycap with label text, wrapping if needed.
+
+        Args:
+            x: X position for keycap
+            y: Y position for keycap and label
+            key: Key text to display in keycap
+            label: Label text to display after keycap
+            label_x: If provided, draw label at this fixed x position for alignment
+            max_width: If provided, wrap label to fit within this width from label_x
+
+        Returns:
+            Tuple of (width consumed on first line, total height consumed in pixels)
+        """
         # Draw keycap
         keycap_width = draw_keycap(
             canvas=self.canvas,
-            pixel_x=current_x,
+            pixel_x=x,
             pixel_y=y,
             key=key,
             bg_color=colors.DARK_GREY,
             border_color=colors.GREY,
             text_color=colors.WHITE,
         )
-        current_x += keycap_width
 
-        # Draw label
-        self.canvas.draw_text(
-            pixel_x=current_x,
-            pixel_y=y,
-            text=label,
-            color=colors.WHITE,
-        )
+        # Draw label at fixed position if provided, otherwise right after keycap
+        actual_label_x = label_x if label_x is not None else x + keycap_width
 
-        # Calculate actual text width to return total consumed width
-        label_width, _, _ = self.canvas.get_text_metrics(label)
+        ascent, descent = self.canvas.get_font_metrics()
+        line_height = ascent + descent
 
-        return keycap_width + label_width  # Total width consumed
+        # Calculate available width for label
+        if max_width is not None:
+            available_width = max_width - actual_label_x
+        else:
+            # 8px right padding
+            available_width = self.view_width_px - actual_label_x - 8
+
+        # Wrap text if needed
+        lines = self._wrap_text(label, available_width)
+
+        # Draw each line
+        current_y = y
+        for line in lines:
+            self.canvas.draw_text(
+                pixel_x=actual_label_x,
+                pixel_y=current_y,
+                text=line,
+                color=colors.WHITE,
+            )
+            current_y += line_height
+
+        # Calculate width of first line for return value
+        if lines:
+            first_line_width, _, _ = self.canvas.get_text_metrics(lines[0])
+        else:
+            first_line_width = 0
+        total_height = line_height * len(lines)
+
+        return keycap_width + first_line_width, total_height
 
     def _get_action_priority(self, action: ActionOption) -> int:
         """Get sort priority for an action. Lower values sort first.
@@ -285,13 +363,13 @@ class ActionPanelView(TextView):
             y_pixel += line_height // 2
 
             # Show pickup prompt
-            self._draw_keycap_with_label(
+            _, pickup_height = self._draw_keycap_with_label(
                 x=x_padding,
                 y=y_pixel - ascent,
                 key="I",
                 label="Pick up items",
             )
-            y_pixel += line_height * 2
+            y_pixel += pickup_height + line_height
 
         # Actions section (contextual actions based on mouse hover)
         if self._cached_actions:
@@ -321,7 +399,7 @@ class ActionPanelView(TextView):
                     pixel_x=x_padding,
                     pixel_y=y_pixel - ascent,
                     text=f"{category_name}",
-                    color=colors.DARK_GREY,
+                    color=colors.GREY,
                 )
                 y_pixel += line_height
 
@@ -343,13 +421,19 @@ class ActionPanelView(TextView):
                             f" {self._cached_target_name} ", " "
                         )
 
+                    # Build full label with probability if available
+                    full_label = action_name
+                    if action.success_probability is not None:
+                        prob_percent = int(action.success_probability * 100)
+                        full_label = f"{action_name} ({prob_percent}%)"
+
                     # Use helper method to draw keycap with action name
                     if action.hotkey:
-                        action_width = self._draw_keycap_with_label(
+                        _, action_height = self._draw_keycap_with_label(
                             x=x_padding + 20,
                             y=y_pixel - ascent,
                             key=action.hotkey,
-                            label=action_name,
+                            label=full_label,
                         )
                     else:
                         # Draw empty keycap placeholder
@@ -367,30 +451,14 @@ class ActionPanelView(TextView):
                         self.canvas.draw_text(
                             pixel_x=current_x,
                             pixel_y=y_pixel - ascent,
-                            text=action_name,
+                            text=full_label,
                             color=colors.WHITE,
                         )
-                        action_width = (
-                            current_x + len(action_name) * 8
-                        )  # Rough estimate
+                        action_height = line_height
 
-                    # Draw success probability in grey if available
-                    if action.success_probability is not None:
-                        prob_percent = int(action.success_probability * 100)
-                        prob_text = f" ({prob_percent}%)"
+                    y_pixel += action_height + line_height // 3  # Gap between actions
 
-                        # Position probability after the keycap + action text
-                        prob_x = x_padding + 20 + action_width
-                        self.canvas.draw_text(
-                            pixel_x=prob_x,
-                            pixel_y=y_pixel - ascent,
-                            text=prob_text,
-                            color=colors.GREY,
-                        )
-
-                    y_pixel += line_height
-
-                y_pixel += line_height // 2  # Small spacing between categories
+                y_pixel += line_height // 4  # Extra spacing between categories
 
         elif self._cached_target_name is None:
             # Show helpful hints only when no items at feet and no mouse target
@@ -399,14 +467,14 @@ class ActionPanelView(TextView):
                     pixel_x=x_padding,
                     pixel_y=y_pixel - ascent,
                     text="Hover over targets",
-                    color=colors.DARK_GREY,
+                    color=colors.GREY,
                 )
                 y_pixel += line_height
                 self.canvas.draw_text(
                     pixel_x=x_padding,
                     pixel_y=y_pixel - ascent,
                     text="to see actions",
-                    color=colors.DARK_GREY,
+                    color=colors.GREY,
                 )
                 y_pixel += line_height * 2
 
@@ -416,41 +484,50 @@ class ActionPanelView(TextView):
                 text="Controls:",
                 color=colors.GREY,
             )
-            y_pixel += line_height
-            # [Space] Action menu - use helper method
-            self._draw_keycap_with_label(
-                x=x_padding + 20,
-                y=y_pixel - ascent,
-                key="Space",
-                label="Action menu",
-            )
-            y_pixel += line_height
+            # Extra spacing after header before keycaps
+            y_pixel += line_height + line_height // 3
 
-            # [I] Inventory - use helper method
-            self._draw_keycap_with_label(
-                x=x_padding + 20,
-                y=y_pixel - ascent,
-                key="I",
-                label="Inventory",
-            )
-            y_pixel += line_height
+            # Calculate keycap sizing for right-aligned keycaps
+            keycap_size = int(line_height * 0.85)
+            keycap_font_size = max(8, int(keycap_size * 0.65))
+            keycap_internal_padding = 12
+            keycap_gap = 12  # Gap after keycap (from draw_keycap)
+            label_gap = 8  # Extra gap before label
 
-            # [Right-click] Context - use helper method
-            self._draw_keycap_with_label(
-                x=x_padding + 20,
-                y=y_pixel - ascent,
-                key="R-Click",
-                label="Context",
-            )
-            y_pixel += line_height
+            def get_keycap_width(key: str) -> int:
+                """Calculate the width of a keycap (excluding gap after)."""
+                text_width, _, _ = self.canvas.get_text_metrics(
+                    key.upper(), font_size=keycap_font_size
+                )
+                return max(keycap_size, text_width + keycap_internal_padding)
 
-            # [?] Help - use helper method
-            self._draw_keycap_with_label(
-                x=x_padding + 20,
-                y=y_pixel - ascent,
-                key="?",
-                label="Help",
-            )
+            # Find widest keycap to set the right edge of keycap column
+            control_keys = ["Space", "I", "R-Click", "?"]
+            widest_keycap = max(get_keycap_width(k) for k in control_keys)
+            # Right edge of keycap column (keycaps right-align to this)
+            keycap_right_edge = x_padding + widest_keycap
+            # Label column starts after gap
+            label_column_x = keycap_right_edge + keycap_gap + label_gap
+
+            # Helper to draw right-aligned keycap with label
+            def draw_control(key: str, label: str) -> int:
+                """Draw control and return height consumed."""
+                nonlocal y_pixel
+                kw = get_keycap_width(key)
+                keycap_x = keycap_right_edge - kw
+                _, height = self._draw_keycap_with_label(
+                    x=keycap_x,
+                    y=y_pixel - ascent,
+                    key=key,
+                    label=label,
+                    label_x=label_column_x,
+                )
+                return height
+
+            y_pixel += draw_control("Space", "Action menu")
+            y_pixel += draw_control("I", "Inventory")
+            y_pixel += draw_control("R-Click", "Context")
+            draw_control("?", "Help")
 
     def _update_cached_data(self) -> None:
         """Update cached target information and available actions."""

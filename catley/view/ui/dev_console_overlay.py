@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 import tcod.event
 
-from catley import colors
+from catley import colors, config
 from catley.backends.pillow.canvas import PillowImageCanvas
 from catley.util.live_vars import live_variable_registry
 from catley.util.misc import string_to_type
@@ -113,7 +113,9 @@ class DevConsoleOverlay(TextOverlay):
     # Overlay interface
     # ------------------------------------------------------------------
     def _get_backend(self) -> Canvas:
-        return PillowImageCanvas(self.controller.graphics, transparent=True)
+        return PillowImageCanvas(
+            self.controller.graphics, font_path=config.UI_FONT_PATH, transparent=True
+        )
 
     def _calculate_dimensions(self) -> None:
         g = self.controller.graphics

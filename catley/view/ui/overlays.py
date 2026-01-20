@@ -21,9 +21,11 @@ from typing import TYPE_CHECKING, Any
 
 import tcod.event
 
-from catley import colors
-from catley.types import PixelCoord, PixelPos, RootConsoleTileCoord
+from catley import colors, config
+from catley.backends.pillow.canvas import PillowImageCanvas
+from catley.types import PixelCoord, PixelPos
 from catley.view.render.canvas import Canvas
+from catley.view.ui.drawing_utils import draw_keycap
 
 if TYPE_CHECKING:
     from catley.controller import Controller
@@ -297,13 +299,16 @@ class Menu(TextOverlay):
     ) -> None:
         super().__init__(controller)
         self.title = title
-        self.width_tiles = width
-        self.max_height_tiles = max_height
+        self.width_chars = width  # Width in characters (not tiles)
+        self.max_height_lines = max_height  # Max height in text lines
         self.options: list[MenuOption] = []
         self._content_revision = -1
         self.hovered_option_index: int | None = None
         self.mouse_px_x: PixelCoord = 0
         self.mouse_px_y: PixelCoord = 0
+        # Font metrics - will be set in _calculate_dimensions
+        self._line_height = 0
+        self._char_width = 0
 
     @abc.abstractmethod
     def populate_options(self) -> None:
@@ -349,17 +354,20 @@ class Menu(TextOverlay):
         ):
             return None
 
-        tile_x: RootConsoleTileCoord = int(
-            menu_relative_px_x // self.tile_dimensions[0]
-        )
-        tile_y: RootConsoleTileCoord = int(
-            menu_relative_px_y // self.tile_dimensions[1]
-        )
-
-        if not (1 <= tile_x < self.width - 1 and 2 <= tile_y < self.height - 1):
+        # Ensure font metrics are set
+        if self._line_height == 0 or self._char_width == 0:
             return None
 
-        option_line: int = tile_y - 2
+        # Convert pixel position to character/line position
+        char_x = int(menu_relative_px_x // self._char_width)
+        line_y = int(menu_relative_px_y // self._line_height)
+
+        # Check if within content area (not on border or outside options area)
+        # Layout: border(1) + title(1) = options start at line 2
+        if not (1 <= char_x < self.width - 1 and 2 <= line_y < self.height - 1):
+            return None
+
+        option_line: int = line_y - 2
 
         if 0 <= option_line < len(self.options):
             return option_line
@@ -465,8 +473,13 @@ class Menu(TextOverlay):
         return False
 
     def _get_backend(self) -> Canvas:
-        """Lazily initializes and returns a backend-appropriate canvas for Phase 1."""
-        return self.controller.graphics.create_canvas(transparent=False)
+        """Return a PillowImageCanvas for crisp VGA font rendering."""
+        return PillowImageCanvas(
+            self.controller.graphics,
+            font_path=config.UI_FONT_PATH,
+            font_size=config.MENU_FONT_SIZE,
+            line_spacing=config.MENU_LINE_SPACING,
+        )
 
     def draw(self) -> None:
         super().draw()
@@ -475,88 +488,107 @@ class Menu(TextOverlay):
         super().present()
 
     def _calculate_dimensions(self) -> None:
-        """Calculate and set the menu's final dimensions in tiles."""
-        required_content_lines = 1 + 1 + len(self.options) + 1
-        total_height_tiles = required_content_lines + 2
-        menu_height_tiles = min(total_height_tiles, self.max_height_tiles)
-        menu_height_tiles = max(menu_height_tiles, 5)
+        """Calculate menu dimensions in pixels using font metrics."""
+        # Get font metrics from the PillowImageCanvas
+        assert isinstance(self.canvas, PillowImageCanvas)
+        self._line_height = self.canvas.get_effective_line_height()
+        # Get character width from a space character
+        self._char_width, _, _ = self.canvas.get_text_metrics(" ")
 
-        min_width_tiles = max(len(self.title) + 4, 20)
-        menu_width_tiles = max(self.width_tiles, min_width_tiles)
+        # Calculate dimensions in text lines
+        # Layout: border(1) + title(1) + options + border(1)
+        required_content_lines = 1 + 1 + len(self.options)
+        total_lines = required_content_lines + 1  # +1 for bottom border
+        menu_height_lines = min(total_lines, self.max_height_lines)
+        menu_height_lines = max(menu_height_lines, 5)
 
+        # Calculate minimum width needed for title with padding
+        min_width_chars = max(len(self.title) + 4, 20)
+
+        # Also ensure width accommodates the longest option text.
+        # Account for: border + padding + key "(x) " + text + padding + border
+        for option in self.options:
+            option_text = f"({option.key}) {option.text}" if option.key else option.text
+            # Add prefix if present
+            full_text = option.prefix + option_text + option.suffix
+            # Add 4 chars for borders and padding
+            required_chars = len(full_text) + 4
+            min_width_chars = max(min_width_chars, required_chars)
+
+        menu_width_chars = max(self.width_chars, min_width_chars)
+
+        # Store tile dimensions for positioning on screen
         self.tile_dimensions = self.controller.graphics.tile_dimensions
-        self.width = menu_width_tiles
-        self.height = menu_height_tiles
+        # Store dimensions in lines/chars for layout calculations
+        self.width = menu_width_chars
+        self.height = menu_height_lines
 
-        self.pixel_width = self.width * self.tile_dimensions[0]
-        self.pixel_height = self.height * self.tile_dimensions[1]
+        # Calculate pixel dimensions from font metrics
+        self.pixel_width = self.width * self._char_width
+        self.pixel_height = self.height * self._line_height
 
-        self.x_tiles = (self.controller.graphics.console_width_tiles - self.width) // 2
-        self.y_tiles = (
-            self.controller.graphics.console_height_tiles - self.height
-        ) // 2
+        # Center on screen - convert pixel dimensions to tiles for positioning
+        tile_w, tile_h = self.tile_dimensions
+        screen_pixel_w = self.controller.graphics.console_width_tiles * tile_w
+        screen_pixel_h = self.controller.graphics.console_height_tiles * tile_h
+
+        # Calculate centered pixel position, then convert to tiles
+        center_px_x = (screen_pixel_w - self.pixel_width) // 2
+        center_px_y = (screen_pixel_h - self.pixel_height) // 2
+
+        # Store tile position for presentation (used by TextOverlay.present())
+        self.x_tiles = center_px_x // tile_w if tile_w > 0 else 0
+        self.y_tiles = center_px_y // tile_h if tile_h > 0 else 0
 
     def draw_content(self) -> None:
-        """Render the menu content using only the Canvas interface."""
+        """Render the menu content using pixel-based layout with font metrics."""
         assert self.canvas is not None
+        assert isinstance(self.canvas, PillowImageCanvas)
 
-        # Draw the frame without a title.  The backend's draw_frame method no
-        # longer accepts a title parameter, so the render_title hook handles
-        # drawing header text explicitly.
-        self.canvas.draw_frame(
-            tile_x=0,
-            tile_y=0,
-            width=self.width,
-            height=self.height,
-            fg=colors.WHITE,
-            bg=colors.BLACK,
-        )
-
-        interior_px_x: PixelCoord = self.tile_dimensions[0]
-        interior_px_y: PixelCoord = self.tile_dimensions[1]
-        interior_width_px: PixelCoord = (self.width - 2) * self.tile_dimensions[0]
-        interior_height_px: PixelCoord = (self.height - 2) * self.tile_dimensions[1]
-
+        # Fill entire background with black
         self.canvas.draw_rect(
-            pixel_x=interior_px_x,
-            pixel_y=interior_px_y,
-            width=interior_width_px,
-            height=interior_height_px,
+            pixel_x=0,
+            pixel_y=0,
+            width=self.pixel_width,
+            height=self.pixel_height,
             color=colors.BLACK,
             fill=True,
         )
+
+        # Draw double-line box frame using Unicode box-drawing characters
+        self._draw_box_frame()
 
         # Draw the title
         self.render_title()
 
         # Draw options with hover highlighting
-        y_offset_tiles: RootConsoleTileCoord = 2
+        # Options start at line 2 (after border and title)
+        y_line = 2
         for i, option in enumerate(self.options):
-            if y_offset_tiles >= self.height - 1:
+            if y_line >= self.height - 1:
                 break
 
             is_hovered = self.hovered_option_index == i and option.enabled
 
+            # Calculate pixel positions using font metrics
+            text_px_y: PixelCoord = self._line_height * y_line
+
             if is_hovered:
-                hover_bg_px_x: PixelCoord = self.tile_dimensions[0]
-                hover_bg_px_y: PixelCoord = self.tile_dimensions[1] * y_offset_tiles
-                hover_bg_width_px: PixelCoord = (self.width - 2) * self.tile_dimensions[
-                    0
-                ]
-                hover_bg_height_px: PixelCoord = self.tile_dimensions[1]
+                # Draw hover background
+                hover_bg_px_x: PixelCoord = self._char_width
+                hover_bg_width_px: PixelCoord = (self.width - 2) * self._char_width
 
                 self.canvas.draw_rect(
                     pixel_x=hover_bg_px_x,
-                    pixel_y=hover_bg_px_y,
+                    pixel_y=text_px_y,
                     width=hover_bg_width_px,
-                    height=hover_bg_height_px,
+                    height=self._line_height,
                     color=colors.DARK_GREY,
                     fill=True,
                 )
 
-            option_text = f"({option.key}) {option.text}" if option.key else option.text
-
-            text_color = option.color
+            # Options use WHITE text (title is yellow, options are white)
+            text_color = colors.WHITE
             if is_hovered:
                 r, g, b = text_color
                 text_color = (
@@ -565,8 +597,8 @@ class Menu(TextOverlay):
                     min(255, b + 40),
                 )
 
-            base_px_x: PixelCoord = self.tile_dimensions[0] * 2
-            text_px_y: PixelCoord = self.tile_dimensions[1] * y_offset_tiles
+            # Start text at column 2 (one char padding from border)
+            base_px_x: PixelCoord = self._char_width * 2
             current_px_x = base_px_x
 
             # Draw prefix in its own color if present
@@ -585,15 +617,30 @@ class Menu(TextOverlay):
                     text=option.prefix,
                     color=prefix_color,
                 )
-                current_px_x += len(option.prefix) * self.tile_dimensions[0]
+                prefix_width, _, _ = self.canvas.get_text_metrics(option.prefix)
+                current_px_x += prefix_width
 
+            # Draw keycap-styled hotkey if present
+            if option.key:
+                line_h = self._line_height
+                keycap_width = draw_keycap(
+                    self.canvas,
+                    current_px_x,
+                    text_px_y,
+                    option.key,
+                    keycap_size=int(line_h * 1.15),
+                )
+                current_px_x += keycap_width
+
+            # Draw option text
             self.canvas.draw_text(
                 pixel_x=current_px_x,
                 pixel_y=text_px_y,
-                text=option_text,
+                text=option.text,
                 color=text_color,
             )
-            current_px_x += len(option_text) * self.tile_dimensions[0]
+            option_text_width, _, _ = self.canvas.get_text_metrics(option.text)
+            current_px_x += option_text_width
 
             # Draw suffix in its own color if present
             if option.suffix:
@@ -612,18 +659,57 @@ class Menu(TextOverlay):
                     color=suffix_color,
                 )
 
-            y_offset_tiles += 1
+            y_line += 1
+
+    def _draw_box_frame(self) -> None:
+        """Draw a double-line box frame using Unicode box-drawing characters.
+
+        Uses double-line characters for a clean, classic menu appearance:
+        ╔═══╗
+        ║   ║
+        ╚═══╝
+        """
+        assert self.canvas is not None
+        char_w = self._char_width
+        line_h = self._line_height
+
+        # Double-line corners
+        self.canvas.draw_text(0, 0, "╔", colors.WHITE)
+        self.canvas.draw_text((self.width - 1) * char_w, 0, "╗", colors.WHITE)
+        self.canvas.draw_text(0, (self.height - 1) * line_h, "╚", colors.WHITE)
+        self.canvas.draw_text(
+            (self.width - 1) * char_w, (self.height - 1) * line_h, "╝", colors.WHITE
+        )
+
+        # Double horizontal lines (top and bottom)
+        for x in range(1, self.width - 1):
+            self.canvas.draw_text(x * char_w, 0, "═", colors.WHITE)
+            self.canvas.draw_text(
+                x * char_w, (self.height - 1) * line_h, "═", colors.WHITE
+            )
+
+        # Double vertical lines (left and right)
+        for y in range(1, self.height - 1):
+            self.canvas.draw_text(0, y * line_h, "║", colors.WHITE)
+            self.canvas.draw_text(
+                (self.width - 1) * char_w, y * line_h, "║", colors.WHITE
+            )
 
     def render_title(self) -> None:
-        """Renders the menu's title, centered, in the header area."""
-        assert self.canvas is not None
+        """Renders the menu's title, centered, in the header area.
 
-        title_width_tiles = len(self.title)
-        center_x_tile = (self.width - title_width_tiles) // 2
+        Title is rendered on line 1 (after the top border on line 0).
+        """
+        assert self.canvas is not None
+        assert isinstance(self.canvas, PillowImageCanvas)
+
+        # Get actual title width in pixels for proper centering
+        title_width_px, _, _ = self.canvas.get_text_metrics(self.title)
+        center_px_x = (self.pixel_width - title_width_px) // 2
 
         self.canvas.draw_text(
-            pixel_x=center_x_tile * self.tile_dimensions[0],
-            pixel_y=0,
+            pixel_x=center_px_x,
+            pixel_y=self._line_height,  # Line 1, after the top border
             text=self.title,
             color=colors.YELLOW,
         )

@@ -42,9 +42,8 @@ from .ui.dev_console_overlay import DevConsoleOverlay
 from .views.action_panel_view import ActionPanelView
 from .views.base import View
 from .views.equipment_view import EquipmentView
-from .views.health_view import HealthView
 from .views.message_log_view import MessageLogView
-from .views.status_view import StatusView
+from .views.player_status_view import PlayerStatusView
 from .views.world_view import WorldView
 
 if TYPE_CHECKING:
@@ -90,14 +89,12 @@ class FrameManager:
             self.graphics,
         )
 
-        self.health_view = HealthView(self.controller, self.graphics)
-        self.status_view = StatusView(self.controller)
+        self.player_status_view = PlayerStatusView(self.controller, self.graphics)
         self.action_panel_view = ActionPanelView(self.controller)
 
         self.views: list[View] = [
             self.world_view,
-            self.health_view,
-            self.status_view,
+            self.player_status_view,
             self.equipment_view,
             self.message_log_view,
             self.action_panel_view,
@@ -130,20 +127,16 @@ class FrameManager:
         screen_height_tiles = config.SCREEN_HEIGHT
         tile_dimensions = self.graphics.tile_dimensions
 
-        # Left sidebar dimensions
+        # Left sidebar dimensions (action panel only now)
         left_sidebar_width = 20
         left_sidebar_x = 0
 
-        # Message log at bottom of left sidebar
-        message_log_height = 10
-        message_log_y = screen_height_tiles - message_log_height
-
-        # Action panel takes rest of left sidebar
-        action_panel_y = 0
-
-        # Bottom bar dimensions (only status and equipment now)
+        # Bottom bar dimensions
         bottom_ui_height = 10
         bottom_ui_y = screen_height_tiles - bottom_ui_height
+
+        # Action panel fills entire left sidebar (above bottom bar)
+        action_panel_y = 0
 
         # World view starts after left sidebar
         world_view_x = left_sidebar_width
@@ -153,32 +146,29 @@ class FrameManager:
         equipment_x1 = screen_width_tiles - equipment_width - 1
         equipment_x2 = equipment_x1 + equipment_width
 
-        status_x1 = left_sidebar_width + 1
-        status_x2 = equipment_x1 - 1
+        # Message log spans bottom bar from left to equipment
+        message_log_x2 = equipment_x1 - 1
 
         # Set view bounds
         self.world_view.tile_dimensions = tile_dimensions
         self.world_view.set_bounds(world_view_x, 0, screen_width_tiles, bottom_ui_y)
 
-        self.health_view.tile_dimensions = tile_dimensions
-        self.health_view.set_bounds(screen_width_tiles - 40, 0, screen_width_tiles, 1)
+        # Player status view in upper-right (transparent HUD overlay)
+        self.player_status_view.tile_dimensions = tile_dimensions
+        self.player_status_view.set_bounds(
+            screen_width_tiles - 40, 0, screen_width_tiles, 20
+        )
 
-        # Action panel in left sidebar (top portion)
+        # Action panel fills left sidebar (above bottom bar)
         self.action_panel_view.tile_dimensions = tile_dimensions
         self.action_panel_view.set_bounds(
-            left_sidebar_x, action_panel_y, left_sidebar_width, message_log_y
+            left_sidebar_x, action_panel_y, left_sidebar_width, bottom_ui_y
         )
 
-        # Message log in left sidebar (bottom portion)
+        # Message log spans bottom bar (left edge to equipment)
         self.message_log_view.tile_dimensions = tile_dimensions
         self.message_log_view.set_bounds(
-            left_sidebar_x, message_log_y, left_sidebar_width, screen_height_tiles
-        )
-
-        # Status view in bottom center
-        self.status_view.tile_dimensions = tile_dimensions
-        self.status_view.set_bounds(
-            status_x1, bottom_ui_y, status_x2, screen_height_tiles
+            0, bottom_ui_y, message_log_x2, screen_height_tiles
         )
 
         # Equipment view in bottom right

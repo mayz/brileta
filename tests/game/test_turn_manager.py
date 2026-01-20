@@ -579,32 +579,55 @@ def test_tripped_player_blocked_for_two_turns() -> None:
 
     reset_event_bus_for_testing()
     controller = get_controller_with_player_and_map()
-    player = controller.gw.player
+    gw = controller.gw
+    player = gw.player
 
-    initial_x = player.x
+    # Find a valid move direction (walkable tile with no actor).
+    # NPCs can spawn adjacent to the player, so we need to find a clear path.
+    directions = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+    dx, dy = 0, 0
+    for test_dx, test_dy in directions:
+        target_x, target_y = player.x + test_dx, player.y + test_dy
+        if (
+            gw.game_map.walkable[target_x, target_y]
+            and gw.get_actor_at_location(target_x, target_y) is None
+        ):
+            dx, dy = test_dx, test_dy
+            break
+    else:
+        # No clear direction found - clear the tile to the right
+        blocker = gw.get_actor_at_location(player.x + 1, player.y)
+        if blocker:
+            gw.remove_actor(blocker)
+        dx, dy = 1, 0
+
+    initial_x, initial_y = player.x, player.y
 
     # Apply TrippedEffect (duration=2) - should block next 2 actions
     player.status_effects.apply_status_effect(TrippedEffect())
     assert player.status_effects.is_action_prevented()
 
     # First attempted action - should be blocked
-    move_intent_1 = MoveIntent(controller, player, dx=1, dy=0)
+    move_intent_1 = MoveIntent(controller, player, dx=dx, dy=dy)
     controller._execute_player_action_immediately(move_intent_1)
 
     assert player.x == initial_x, "First action should be blocked"
+    assert player.y == initial_y, "First action should be blocked"
     # Effect should still be active (duration was 2, now 1)
     assert player.status_effects.is_action_prevented()
 
     # Second attempted action - should also be blocked
-    move_intent_2 = MoveIntent(controller, player, dx=1, dy=0)
+    move_intent_2 = MoveIntent(controller, player, dx=dx, dy=dy)
     controller._execute_player_action_immediately(move_intent_2)
 
     assert player.x == initial_x, "Second action should also be blocked"
+    assert player.y == initial_y, "Second action should also be blocked"
     # Effect should now be expired (duration was 1, now 0)
     assert not player.status_effects.is_action_prevented()
 
     # Third action - should succeed
-    move_intent_3 = MoveIntent(controller, player, dx=1, dy=0)
+    move_intent_3 = MoveIntent(controller, player, dx=dx, dy=dy)
     controller._execute_player_action_immediately(move_intent_3)
 
-    assert player.x == initial_x + 1, "Third action should succeed"
+    assert player.x == initial_x + dx, "Third action should succeed"
+    assert player.y == initial_y + dy, "Third action should succeed"
