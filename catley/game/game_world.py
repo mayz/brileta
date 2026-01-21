@@ -26,7 +26,10 @@ from catley.game.outfit import LEATHER_ARMOR_TYPE
 from catley.types import TileCoord, WorldTileCoord, WorldTilePos
 from catley.util.coordinates import Rect
 from catley.util.spatial import SpatialHashGrid, SpatialIndex
-from catley.view.render.lighting.base import LightingSystem
+from catley.view.render.lighting.base import LightingConfig, LightingSystem
+
+# Cache the default sun azimuth to avoid repeated instantiation
+_DEFAULT_SUN_AZIMUTH = LightingConfig().sun_azimuth_degrees
 
 
 class GameWorld:
@@ -150,13 +153,8 @@ class GameWorld:
                     elevation_rad = math.pi * (0.5 - abs(time_normalized))  # 0 to π/2
                     elevation_degrees = math.degrees(elevation_rad)
 
-                    # Update the light with new sun position
-                    from catley.view.render.lighting.cpu import CPULightingSystem
-
-                    azimuth = 135.0  # Default
-                    if isinstance(self.lighting_system, CPULightingSystem):
-                        azimuth = self.lighting_system.config.sun_azimuth_degrees
-
+                    # Update the light with new sun position using shared defaults.
+                    azimuth = _DEFAULT_SUN_AZIMUTH
                     light.direction = DirectionalLight.create_sun(
                         elevation_degrees=elevation_degrees,
                         azimuth_degrees=azimuth,

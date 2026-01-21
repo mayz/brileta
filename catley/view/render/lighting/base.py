@@ -8,10 +8,20 @@ without changing any other code.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import numpy as np
 
+from catley.config import (
+    AMBIENT_LIGHT_LEVEL,
+    SKY_EXPOSURE_POWER,
+    SUN_AZIMUTH_DEGREES,
+    SUN_COLOR,
+    SUN_ELEVATION_DEGREES,
+    SUN_ENABLED,
+    SUN_INTENSITY,
+)
 from catley.types import FixedTimestep
 from catley.util.coordinates import Rect
 
@@ -19,6 +29,22 @@ if TYPE_CHECKING:
     from catley.game.actors import Actor
     from catley.game.game_world import GameWorld
     from catley.game.lights import LightSource
+
+
+@dataclass(frozen=True)
+class LightingConfig:
+    """Shared configuration defaults for lighting systems."""
+
+    fov_radius: int = 15
+    ambient_light: float = AMBIENT_LIGHT_LEVEL
+
+    # Global sunlight configuration
+    sun_enabled: bool = SUN_ENABLED
+    sun_color: tuple[int, int, int] = SUN_COLOR
+    sun_elevation_degrees: float = SUN_ELEVATION_DEGREES
+    sun_azimuth_degrees: float = SUN_AZIMUTH_DEGREES
+    sun_intensity: float = SUN_INTENSITY
+    sky_exposure_power: float = SKY_EXPOSURE_POWER
 
 
 class LightingSystem(ABC):

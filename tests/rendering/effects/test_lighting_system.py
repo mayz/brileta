@@ -1,72 +1,10 @@
 import math
-
-import numpy as np
+from unittest.mock import Mock
 
 from catley.environment.map import MapRegion
 from catley.game.game_world import GameWorld
 from catley.game.lights import DirectionalLight, DynamicLight, StaticLight, Vec2
-from catley.types import FixedTimestep
-from catley.util.coordinates import Rect
-from catley.view.render.lighting.cpu import CPULightingSystem
-
-
-def test_cpu_lighting_system_basic() -> None:
-    """Test that CPULightingSystem can be created and compute a basic lightmap."""
-    import random
-
-    # Seed RNG for deterministic map generation - avoids intermittent failures
-    # when the light happens to land in an outdoor room (20% chance), which
-    # reduces light intensity via sky_exposure calculations
-    random.seed(42)
-
-    gw = GameWorld(50, 50)
-    lighting_system = CPULightingSystem(gw)
-
-    # Add a static light
-    static_light = StaticLight(position=(25, 25), radius=5, color=(255, 255, 255))
-    gw.add_light(static_light)
-
-    # Compute lightmap for a small area around the light
-    viewport_bounds = Rect(20, 20, 10, 10)
-    lightmap = lighting_system.compute_lightmap(viewport_bounds)
-
-    # Should return a numpy array
-    assert isinstance(lightmap, np.ndarray)
-    assert lightmap.shape == (10, 10, 3)
-
-    # Light should be brighter in the center
-    center_intensity = lightmap[5, 5]
-    corner_intensity = lightmap[0, 0]
-    assert np.any(center_intensity > corner_intensity)
-
-
-def test_cpu_lighting_system_dynamic_light() -> None:
-    """Test that dynamic lights can be added and affect the lightmap."""
-    gw = GameWorld(50, 50)
-    lighting_system = CPULightingSystem(gw)
-
-    # Add a dynamic light
-    dynamic_light = DynamicLight(
-        position=(25, 25), radius=3, color=(255, 128, 64), flicker_enabled=True
-    )
-    gw.add_light(dynamic_light)
-
-    # Compute lightmap
-    viewport_bounds = Rect(22, 22, 6, 6)
-    lightmap = lighting_system.compute_lightmap(viewport_bounds)
-
-    # Should return a numpy array with the right shape
-    assert isinstance(lightmap, np.ndarray)
-    assert lightmap.shape == (6, 6, 3)
-
-
-def test_cpu_lighting_system_update() -> None:
-    """Test that lighting system can be updated without errors."""
-    gw = GameWorld(50, 50)
-    lighting_system = CPULightingSystem(gw)
-
-    # Should not raise any exceptions
-    lighting_system.update(FixedTimestep(0.016))  # 60 FPS delta time
+from catley.view.render.lighting.base import LightingConfig
 
 
 # Vec2 Tests
@@ -234,24 +172,32 @@ def test_map_region_default_values() -> None:
     assert region.sky_exposure == 1.0
 
 
-# Directional Lighting Integration Tests
-def test_cpu_lighting_system_with_directional_light() -> None:
-    """Test that CPULightingSystem can handle DirectionalLight."""
-    gw = GameWorld(50, 50)
-    lighting_system = CPULightingSystem(gw)
+# Lighting configuration tests
+def test_lighting_config_defaults() -> None:
+    """Test LightingConfig default values match expected configuration."""
+    config = LightingConfig()
 
-    # Add a directional light (sun)
-    sun = DirectionalLight.create_sun(intensity=0.5)
-    gw.add_light(sun)
+    # Check default sun configuration
+    assert config.sun_enabled is True
+    assert config.sun_intensity > 0.0
+    assert config.sun_elevation_degrees > 0.0
+    assert config.sun_azimuth_degrees > 0.0
+    assert config.sky_exposure_power > 0.0
 
-    # Should be able to compute lightmap without errors
-    viewport_bounds = Rect(20, 20, 10, 10)
-    lightmap = lighting_system.compute_lightmap(viewport_bounds)
-
-    assert isinstance(lightmap, np.ndarray)
-    assert lightmap.shape == (10, 10, 3)
+    # Check color is a valid RGB tuple
+    assert len(config.sun_color) == 3
+    assert all(0 <= c <= 255 for c in config.sun_color)
 
 
+def test_lighting_config_overrides() -> None:
+    """Test LightingConfig supports explicit overrides."""
+    config = LightingConfig(sun_enabled=False, sun_intensity=0.5)
+
+    assert config.sun_enabled is False
+    assert config.sun_intensity == 0.5
+
+
+# GameWorld lighting integration tests
 def test_global_lights_filtering() -> None:
     """Test GameWorld.get_global_lights() correctly filters DirectionalLight."""
     gw = GameWorld(30, 30)
@@ -294,8 +240,7 @@ def test_static_lights_filtering() -> None:
 def test_time_of_day_sun_position() -> None:
     """Test GameWorld.set_time_of_day() updates sun elevation."""
     gw = GameWorld(30, 30)
-    lighting_system = CPULightingSystem(gw)
-    gw.lighting_system = lighting_system
+    gw.lighting_system = Mock()
 
     # Add sun
     sun = DirectionalLight.create_sun(elevation_degrees=45.0)
@@ -310,98 +255,10 @@ def test_time_of_day_sun_position() -> None:
     assert abs(magnitude - 1.0) < 1e-6
 
 
-def test_directional_light_with_sky_exposure() -> None:
-    """Test that directional lighting respects sky exposure in regions."""
-    gw = GameWorld(50, 50)
-    lighting_system = CPULightingSystem(gw)
-
-    # Create outdoor and indoor regions
-    outdoor_region = MapRegion.create_outdoor_region(map_region_id=1, sky_exposure=1.0)
-    indoor_region = MapRegion.create_indoor_region(map_region_id=2, sky_exposure=0.0)
-
-    # Add regions to map (basic setup)
-    gw.game_map.regions = {1: outdoor_region, 2: indoor_region}
-
-    # Add sun
-    sun = DirectionalLight.create_sun(intensity=0.8)
-    gw.add_light(sun)
-
-    # Should be able to compute lightmap
-    viewport_bounds = Rect(20, 20, 10, 10)
-    lightmap = lighting_system.compute_lightmap(viewport_bounds)
-
-    assert isinstance(lightmap, np.ndarray)
-    assert lightmap.shape == (10, 10, 3)
-
-
-# Indoor/Outdoor Behavior Tests
-def test_torch_effectiveness_with_sunlight_config() -> None:
-    """Test that torch effectiveness is configured correctly with sun enabled."""
-    from catley.view.render.lighting.cpu import LightingConfig
-
-    # Test basic configuration creation and properties
-    config_with_sun = LightingConfig(sun_enabled=True, sun_intensity=0.8)
-    assert config_with_sun.sun_enabled is True
-    assert config_with_sun.sun_intensity == 0.8
-
-    config_no_sun = LightingConfig(sun_enabled=False)
-    assert config_no_sun.sun_enabled is False
-
-    # Test one lighting system instance to avoid cache conflicts
-    gw = GameWorld(30, 30)
-    lighting_system = CPULightingSystem(gw, config=config_with_sun)
-    assert lighting_system.config.sun_enabled is True
-    assert lighting_system.config.sun_intensity == 0.8
-
-
-def test_lighting_config_defaults() -> None:
-    """Test LightingConfig default values match expected configuration."""
-    from catley.view.render.lighting.cpu import LightingConfig
-
-    config = LightingConfig()
-
-    # Check default sun configuration
-    assert config.sun_enabled is True  # Assuming sun is enabled by default
-    assert config.sun_intensity > 0.0
-    assert config.sun_elevation_degrees > 0.0
-    assert config.sun_azimuth_degrees > 0.0
-    assert config.sky_exposure_power > 0.0
-
-    # Check color is a valid RGB tuple
-    assert len(config.sun_color) == 3
-    assert all(0 <= c <= 255 for c in config.sun_color)
-
-
-def test_multiple_light_types_integration() -> None:
-    """Test that static, dynamic, and directional lights work together."""
-    gw = GameWorld(50, 50)
-    lighting_system = CPULightingSystem(gw)
-
-    # Add all types of lights
-    static_light = StaticLight(position=(20, 20), radius=3, color=(255, 255, 255))
-    dynamic_light = DynamicLight(position=(25, 25), radius=2, color=(255, 128, 0))
-    sun = DirectionalLight.create_sun(intensity=0.3)
-
-    gw.add_light(static_light)
-    gw.add_light(dynamic_light)
-    gw.add_light(sun)
-
-    # Should be able to compute combined lighting
-    viewport_bounds = Rect(18, 18, 10, 10)
-    lightmap = lighting_system.compute_lightmap(viewport_bounds)
-
-    assert isinstance(lightmap, np.ndarray)
-    assert lightmap.shape == (10, 10, 3)
-
-    # Should have some illumination from multiple sources
-    max_intensity = np.max(lightmap)
-    assert max_intensity > 0.0
-
-
 def test_lighting_system_light_management() -> None:
-    """Test adding and removing lights properly updates the lighting system."""
+    """Test adding and removing lights properly notifies the lighting system."""
     gw = GameWorld(30, 30)
-    lighting_system = CPULightingSystem(gw)
+    lighting_system = Mock()
     gw.lighting_system = lighting_system
 
     # Initially no lights
@@ -412,11 +269,13 @@ def test_lighting_system_light_management() -> None:
     gw.add_light(light)
     assert len(gw.lights) == 1
     assert light in gw.lights
+    lighting_system.on_light_added.assert_called_once_with(light)
 
     # Remove the light
     gw.remove_light(light)
     assert len(gw.lights) == 0
     assert light not in gw.lights
+    lighting_system.on_light_removed.assert_called_once_with(light)
 
     # Removing non-existent light should not crash
     gw.remove_light(light)  # Should not raise exception

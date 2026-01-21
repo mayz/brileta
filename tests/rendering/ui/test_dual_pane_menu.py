@@ -290,11 +290,10 @@ def test_transfer_removes_item_from_ground() -> None:
 
     controller = get_controller_with_player_and_map()
     player = controller.gw.player
-    location = (player.x, player.y)
-
     # Spawn a single item using the real spawning system
     item = COMBAT_KNIFE_TYPE.create()
-    controller.gw.spawn_ground_item(item, *location)
+    ground_actor = controller.gw.spawn_ground_item(item, player.x, player.y)
+    location = (ground_actor.x, ground_actor.y)
 
     # Verify item is on ground
     ground_items_before = controller.gw.get_pickable_items_at_location(*location)

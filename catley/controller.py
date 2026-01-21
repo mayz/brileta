@@ -42,7 +42,6 @@ from .view.animation import AnimationManager
 from .view.frame_manager import FrameManager
 from .view.presentation import PresentationManager
 from .view.render.graphics import GraphicsContext
-from .view.render.lighting.cpu import CPULightingSystem
 from .view.ui.overlays import OverlaySystem
 
 
@@ -80,16 +79,17 @@ class Controller:
         self.app = app
         self.gw = GameWorld(config.MAP_WIDTH, config.MAP_HEIGHT)
 
-        # In test environments, use CPU lighting to avoid GPU initialization issues
-        # with dummy graphics contexts. This preserves explicit GPU failure behavior
-        # in production while allowing tests to run.
         lighting_backend = config.LIGHTING_BACKEND
-        if config.IS_TEST_ENVIRONMENT:
-            lighting_backend = "cpu"
+        if (
+            lighting_backend == "moderngl"
+            and config.IS_TEST_ENVIRONMENT
+            and getattr(graphics, "mgl_context", None) is None
+        ):
+            import moderngl
+
+            graphics.mgl_context = moderngl.create_context(standalone=True)
 
         match lighting_backend:
-            case "cpu":
-                self.gw.lighting_system = CPULightingSystem(self.gw)
             case "moderngl":
                 from .backends.moderngl.gpu_lighting import GPULightingSystem
 

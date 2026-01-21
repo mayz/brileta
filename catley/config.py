@@ -89,17 +89,14 @@ GRAPHICS_BACKEND: Literal["tcod", "moderngl", "wgpu"] = "moderngl"
 
 # Lighting system selection (independent of graphics backend)
 # Same tradeoffs as GRAPHICS_BACKEND above.
-LIGHTING_BACKEND: Literal["cpu", "moderngl", "wgpu"] = "moderngl"
+LIGHTING_BACKEND: Literal["moderngl", "wgpu"] = "moderngl"
 
 # These are the valid combinations of
 # APP_BACKEND, GRAPHICS_BACKEND, and LIGHTING_BACKEND.
 VALID_BACKEND_CONFIG_COMBINATIONS = [
-    ("tcod", "tcod", "cpu"),
     ("tcod", "tcod", "moderngl"),
     ("tcod", "tcod", "wgpu"),
-    ("glfw", "moderngl", "cpu"),
     ("glfw", "moderngl", "moderngl"),
-    ("glfw", "wgpu", "cpu"),
     ("glfw", "wgpu", "wgpu"),
 ]
 
