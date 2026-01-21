@@ -24,6 +24,7 @@ from catley.view.render.lighting.base import LightingSystem
 if TYPE_CHECKING:
     from catley.backends.wgpu.resource_manager import WGPUResourceManager
     from catley.backends.wgpu.shader_manager import WGPUShaderManager
+    from catley.game.actors import Actor
     from catley.game.game_world import GameWorld
     from catley.game.lights import LightSource
     from catley.view.render.graphics import GraphicsContext
@@ -1264,6 +1265,15 @@ class GPULightingSystem(LightingSystem):
     def on_global_light_changed(self) -> None:
         """Notification that global lighting has changed."""
         self.revision += 1
+
+    def on_actor_moved(self, actor: Actor) -> None:
+        """Invalidate shadow caster cache when any actor moves.
+
+        Actors cast shadows, so when they move we need to recollect shadow
+        caster positions. We invalidate the cache by clearing it, which forces
+        _compute_lightmap_gpu to rebuild it on the next frame.
+        """
+        self._cached_shadow_casters = None
 
     def release(self) -> None:
         """Release GPU resources."""

@@ -326,11 +326,11 @@ class GameWorld:
         return self.item_spawner.spawn_multiple(items, x, y)
 
     def on_actor_moved(self, actor: Actor) -> None:
-        """Notify the lighting system when an actor with a dynamic light moves.
+        """Notify the lighting system when an actor moves.
 
-        This method should be called whenever an actor moves. It will check if the
-        actor has any associated dynamic lights and update their positions, then
-        notify the lighting system to invalidate relevant caches.
+        This method should be called whenever an actor moves. It will:
+        1. Update any dynamic lights owned by this actor
+        2. Invalidate the shadow caster cache (actors cast shadows)
 
         Args:
             actor: The actor that moved
@@ -341,6 +341,9 @@ class GameWorld:
                 if isinstance(light, DynamicLight) and light.owner is actor:
                     light.position = (actor.x, actor.y)
                     self.lighting_system.on_light_moved(light)
+
+            # Invalidate shadow caster cache since actor positions affect shadows
+            self.lighting_system.on_actor_moved(actor)
 
     def get_pickable_items_at_location(
         self, x: WorldTileCoord, y: WorldTileCoord

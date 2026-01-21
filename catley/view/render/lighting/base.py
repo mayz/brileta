@@ -16,6 +16,7 @@ from catley.types import FixedTimestep
 from catley.util.coordinates import Rect
 
 if TYPE_CHECKING:
+    from catley.game.actors import Actor
     from catley.game.game_world import GameWorld
     from catley.game.lights import LightSource
 
@@ -112,6 +113,19 @@ class LightingSystem(ABC):
 
         Default implementation does nothing. Subclasses can override to
         invalidate caches when global lighting conditions change.
+        """
+        # Default implementation does nothing
+        return
+
+    def on_actor_moved(self, actor: Actor) -> None:
+        """Notification that an actor has moved (invalidates shadow caster cache).
+
+        Actors cast shadows, so when they move their cached shadow positions
+        become stale. Subclasses should override to invalidate shadow caster
+        caches.
+
+        Args:
+            actor: The actor that moved
         """
         # Default implementation does nothing
         return
