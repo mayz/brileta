@@ -15,6 +15,21 @@ To run unit tests:
 
 This command, defined in the `Makefile`, will automatically sync dependencies and run the test suite within the correct environment.
 
+## Headless Linux / CI (Ubuntu)
+
+When running in a headless Linux container, ModernGL and WGPU tests require an X11 display. Install these system packages and run tests under Xvfb, rather than running `make` directly:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y \
+  libgl1-mesa-dri libgl1 libglx-mesa0 libegl1 \
+  libx11-6 libxext6 libxrandr2 libxi6 libxxf86vm1 \
+  libvulkan1 mesa-vulkan-drivers vulkan-tools \
+  xvfb xauth
+
+xvfb-run -a make
+```
+
   **CRITICAL**: This project uses `uv` for dependency management. Always run Python commands with `uv run`:
   - Use `uv run python script.py` NOT `python script.py`
   - Use `uv run pyright` NOT `pyright`
