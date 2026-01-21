@@ -39,6 +39,10 @@ def _make_combat_test_world(
     """
     controller = get_controller_with_player_and_map()
     player = controller.gw.player
+    # Remove any randomly spawned NPCs to keep combat tests deterministic.
+    for actor in list(controller.gw.actors):
+        if isinstance(actor, Character) and actor is not player:
+            controller.gw.remove_actor(actor)
 
     # Move player to the specified position
     player.x = player_pos[0]
