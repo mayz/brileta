@@ -163,6 +163,10 @@ class InputHandler:
             # Mouse is outside the game map area (e.g., on UI views).
             self.gw.mouse_tile_location_on_map = None
 
+        self.controller.update_contextual_target_from_hover(
+            self.gw.mouse_tile_location_on_map
+        )
+
     def _update_hover_cursor(self, event: tcod.event.MouseMotion) -> None:
         """Update cursor based on what the mouse is hovering over.
 

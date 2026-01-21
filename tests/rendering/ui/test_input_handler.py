@@ -48,6 +48,10 @@ class DummyController:
     overlay_system: Any = None
     app: Any = None
 
+    def update_contextual_target_from_hover(self, _mouse_pos: Any) -> None:
+        """No-op placeholder to satisfy InputHandler interactions."""
+        return
+
 
 def make_input_handler() -> tuple[InputHandler, list[tuple[Any, tuple[int, int], Any]]]:
     """Create an InputHandler for testing."""

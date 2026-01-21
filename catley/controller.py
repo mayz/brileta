@@ -22,6 +22,7 @@ from .events import (
 )
 from .game.actions.base import GameIntent
 from .game.actions.types import AnimationType
+from .game.actors import Actor
 from .game.actors.core import Character
 from .game.game_world import GameWorld
 from .game.lights import DirectionalLight, DynamicLight
@@ -168,6 +169,12 @@ class Controller:
 
         # Subscribe to combat initiation events for auto-entry
         subscribe_to_event(CombatInitiatedEvent, self._on_combat_initiated)
+
+        # Contextual target tracking (adjacency-based with hover overrides).
+        self.contextual_target: Actor | None = None
+        self._adjacency_contextual_target: Actor | None = None
+        self._hovered_contextual_target: Actor | None = None
+        self._last_movement_direction: tuple[int, int] | None = None
 
     def update_fov(self) -> None:
         """Recompute the visible area based on the player's point of view."""
@@ -321,6 +328,12 @@ class Controller:
         self.turn_manager.execute_intent(action)
         self.gw.player.energy.spend(config.ACTION_COST)
 
+        # Update contextual target selection after movement attempts.
+        from catley.game.actions.movement import MoveIntent
+
+        if isinstance(action, MoveIntent) and action.actor is self.gw.player:
+            self.update_contextual_target_from_movement(action.dx, action.dy)
+
         # Check for terrain hazard damage after the player completes their action
         self.turn_manager._apply_terrain_hazard(self.gw.player)
 
@@ -329,6 +342,110 @@ class Controller:
 
         # RAF: Trigger immediate NPC scheduling based on the world state change
         self.turn_manager.on_player_action()
+
+    def update_contextual_target_from_movement(self, dx: int, dy: int) -> None:
+        """Update the contextual target based on player movement direction.
+
+        This sets a deterministic adjacency-based target unless a mouse hover
+        override is active. The selected target is stored even when overridden
+        so it can be restored when the hover ends.
+        """
+        if dx == 0 and dy == 0:
+            return
+
+        self._last_movement_direction = (dx, dy)
+        self._adjacency_contextual_target = self._select_adjacent_target(dx, dy)
+        if self._hovered_contextual_target is None:
+            self.contextual_target = self._adjacency_contextual_target
+
+    def update_contextual_target_from_hover(
+        self, mouse_pos: WorldTilePos | None
+    ) -> None:
+        """Update the contextual target based on the current mouse hover."""
+        if mouse_pos is None:
+            self._hovered_contextual_target = None
+            self._refresh_contextual_target_from_adjacency()
+            return
+
+        mouse_x, mouse_y = mouse_pos
+        hovered_actor = self._get_visible_actor_at_tile(mouse_x, mouse_y)
+        if hovered_actor is not None:
+            self._hovered_contextual_target = hovered_actor
+            self.contextual_target = hovered_actor
+            return
+
+        self._hovered_contextual_target = None
+        self._refresh_contextual_target_from_adjacency()
+
+    def _refresh_contextual_target_from_adjacency(self) -> None:
+        """Re-select the best adjacency-based target when hover ends."""
+        if self._hovered_contextual_target is not None:
+            self.contextual_target = self._hovered_contextual_target
+            return
+
+        if self._last_movement_direction is None:
+            self._adjacency_contextual_target = self._get_adjacent_actor_fallback()
+        else:
+            dx, dy = self._last_movement_direction
+            self._adjacency_contextual_target = self._select_adjacent_target(dx, dy)
+
+        self.contextual_target = self._adjacency_contextual_target
+
+    def _select_adjacent_target(self, dx: int, dy: int) -> Actor | None:
+        """Pick an adjacent actor in the move direction or fall back."""
+        player = self.gw.player
+        target = self._get_adjacent_actor_at_offset(player, dx, dy)
+        if target is not None:
+            return target
+        return self._get_adjacent_actor_fallback()
+
+    def _get_adjacent_actor_fallback(self) -> Actor | None:
+        """Select a deterministic adjacent actor when no directional target exists."""
+        player = self.gw.player
+        for offset_x, offset_y in (
+            (0, -1),
+            (1, 0),
+            (0, 1),
+            (-1, 0),
+            (-1, -1),
+            (1, -1),
+            (1, 1),
+            (-1, 1),
+        ):
+            actor = self._get_adjacent_actor_at_offset(player, offset_x, offset_y)
+            if actor is not None:
+                return actor
+        return None
+
+    def _get_adjacent_actor_at_offset(
+        self, player: Character, dx: int, dy: int
+    ) -> Actor | None:
+        """Return the visible actor at the given adjacent offset, if any."""
+        target_x = player.x + dx
+        target_y = player.y + dy
+        return self._get_visible_actor_at_tile(target_x, target_y)
+
+    def _get_visible_actor_at_tile(self, x: int, y: int) -> Actor | None:
+        """Return the first visible actor at a tile, if any."""
+        gm = self.gw.game_map
+        if not (0 <= x < gm.width and 0 <= y < gm.height):
+            return None
+        if not gm.visible[x, y]:
+            return None
+
+        actors_at_tile = self.gw.actor_spatial_index.get_at_point(x, y)
+        if not actors_at_tile:
+            return None
+
+        for actor in sorted(actors_at_tile, key=self._actor_sort_key):
+            if actor is not self.gw.player:
+                return actor
+        return None
+
+    @staticmethod
+    def _actor_sort_key(actor: Actor) -> tuple[int, int, str]:
+        """Deterministic ordering for multiple actors on the same tile."""
+        return (actor.y, actor.x, actor.name)
 
     def _process_all_available_npc_actions(self) -> None:
         """Process all NPCs who can currently afford actions immediately.

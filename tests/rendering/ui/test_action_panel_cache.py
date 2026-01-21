@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 
 from catley import colors
 from catley.controller import Controller
-from catley.game.actors import Character
+from catley.game.actors import Actor, Character
 from catley.game.game_world import GameWorld
 from catley.view.render.graphics import GraphicsContext
 from catley.view.views.action_panel_view import ActionPanelView
@@ -29,6 +29,7 @@ class DummyController:
     gw: DummyGameWorld
     graphics: Any = None
     combat_mode: DummyCombatMode | None = None
+    contextual_target: Actor | None = None
 
     def __post_init__(self) -> None:
         if self.combat_mode is None:
@@ -171,3 +172,47 @@ class TestActionPanelCacheKey:
         key_after = view.get_cache_key()
 
         assert key_before == key_after
+
+    def test_cache_key_changes_when_contextual_target_changes(self) -> None:
+        """Cache key should change when contextual target changes."""
+        controller, view = make_action_panel()
+        gw = controller.gw
+
+        contextual = Character(
+            2, 2, "C", colors.RED, "Contextual", game_world=cast(GameWorld, gw)
+        )
+        gw.add_actor(contextual)
+
+        controller.contextual_target = contextual
+        key_with_contextual = view.get_cache_key()
+
+        controller.contextual_target = None
+        key_without_contextual = view.get_cache_key()
+
+        assert key_with_contextual != key_without_contextual
+
+
+class TestActionPanelContextualTarget:
+    """Tests for contextual target usage in action panel."""
+
+    def test_contextual_target_preferred_over_mouse_target(self) -> None:
+        """Contextual target should override mouse hover for action panel data."""
+        controller, view = make_action_panel()
+        gw = controller.gw
+
+        contextual = Character(
+            2, 2, "C", colors.RED, "Contextual", game_world=cast(GameWorld, gw)
+        )
+        hovered = Character(
+            3, 3, "H", colors.RED, "Hovered", game_world=cast(GameWorld, gw)
+        )
+        gw.add_actor(contextual)
+        gw.add_actor(hovered)
+
+        controller.contextual_target = contextual
+        controller.gw.mouse_tile_location_on_map = (hovered.x, hovered.y)
+        view.discovery.get_options_for_target = MagicMock(return_value=[])
+
+        view._update_cached_data()
+
+        assert view._cached_target_name == contextual.name

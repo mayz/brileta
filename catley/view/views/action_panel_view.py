@@ -8,7 +8,7 @@ from catley import colors, config
 from catley.backends.pillow.canvas import PillowImageCanvas
 from catley.environment import tile_types
 from catley.game.actions.discovery import ActionCategory, ActionDiscovery, ActionOption
-from catley.game.actors import Character
+from catley.game.actors import Actor, Character
 from catley.game.actors.container import Container
 from catley.game.items.properties import WeaponProperty
 from catley.types import InterpolationAlpha
@@ -237,7 +237,13 @@ class ActionPanelView(TextView):
         gw = self.controller.gw
         mouse_pos = str(gw.mouse_tile_location_on_map)
 
-        # Include target actor position - if they move, cache invalidates
+        # Include contextual target position so movement/hover changes invalidate.
+        contextual_target_key = ""
+        contextual_target = self.controller.contextual_target
+        if contextual_target is not None:
+            contextual_target_key = f"{contextual_target.x},{contextual_target.y}"
+
+        # Include mouse target actor position - if they move, cache invalidates
         target_actor_key = ""
         if gw.mouse_tile_location_on_map:
             mx, my = gw.mouse_tile_location_on_map
@@ -264,6 +270,7 @@ class ActionPanelView(TextView):
 
         return (
             mouse_pos,
+            contextual_target_key,
             target_actor_key,
             player_pos,
             has_items_at_feet,
@@ -589,6 +596,16 @@ class ActionPanelView(TextView):
             return
 
         gw = self.controller.gw
+        contextual_target = self.controller.contextual_target
+
+        if (
+            contextual_target is not None
+            and contextual_target in gw.actors
+            and gw.game_map.visible[contextual_target.x, contextual_target.y]
+        ):
+            self._populate_actor_target_data(contextual_target)
+            return
+
         mouse_pos = gw.mouse_tile_location_on_map
 
         # Clear cache if no mouse position
@@ -696,44 +713,7 @@ class ActionPanelView(TextView):
 
         # Handle actor target
         if target_actor:
-            self._cached_target_name = target_actor.name
-
-            # Get description based on actor type
-            if isinstance(target_actor, Character):
-                # Characters always have health component
-                if target_actor.health.is_alive():
-                    self._cached_target_description = (
-                        f"HP: {target_actor.health.hp}/{target_actor.health.max_hp}"
-                    )
-                else:
-                    self._cached_target_description = "Deceased"
-
-                # Get available actions for this target
-                if target_actor is not gw.player:
-                    self._cached_actions = self.discovery.get_options_for_target(
-                        self.controller, gw.player, target_actor
-                    )
-                else:
-                    self._cached_actions = []
-            elif isinstance(target_actor, Container):
-                # Container - show search action via environment discovery
-                self._cached_target_description = None
-                context = self.discovery.context_builder.build_context(
-                    self.controller, gw.player
-                )
-                env_discovery = self.discovery.environment_discovery
-                self._cached_actions = (
-                    env_discovery.discover_environment_actions_for_tile(
-                        self.controller,
-                        gw.player,
-                        context,
-                        target_actor.x,
-                        target_actor.y,
-                    )
-                )
-            else:
-                self._cached_target_description = None
-                self._cached_actions = []
+            self._populate_actor_target_data(target_actor)
         else:
             # Show tile information
             tile_id = gw.game_map.tiles[x, y]
@@ -763,6 +743,46 @@ class ActionPanelView(TextView):
                 )
             else:
                 self._cached_actions = []
+
+    def _populate_actor_target_data(self, target_actor: Actor) -> None:
+        """Populate action panel data for a target actor."""
+        gw = self.controller.gw
+        self._cached_target_name = target_actor.name
+
+        # Get description based on actor type
+        if isinstance(target_actor, Character):
+            # Characters always have health component
+            if target_actor.health.is_alive():
+                self._cached_target_description = (
+                    f"HP: {target_actor.health.hp}/{target_actor.health.max_hp}"
+                )
+            else:
+                self._cached_target_description = "Deceased"
+
+            # Get available actions for this target
+            if target_actor is not gw.player:
+                self._cached_actions = self.discovery.get_options_for_target(
+                    self.controller, gw.player, target_actor
+                )
+            else:
+                self._cached_actions = []
+        elif isinstance(target_actor, Container):
+            # Container - show search action via environment discovery
+            self._cached_target_description = None
+            context = self.discovery.context_builder.build_context(
+                self.controller, gw.player
+            )
+            env_discovery = self.discovery.environment_discovery
+            self._cached_actions = env_discovery.discover_environment_actions_for_tile(
+                self.controller,
+                gw.player,
+                context,
+                target_actor.x,
+                target_actor.y,
+            )
+        else:
+            self._cached_target_description = None
+            self._cached_actions = []
 
     def _update_combat_mode_data(self) -> None:
         """Update cached data for combat mode's action-centric display.
