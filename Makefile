@@ -25,8 +25,13 @@ typecheck:
 # Run tests. Installs/syncs dependencies AND runs pytest in the same logical command.
 test:
 	uv sync && \
-	if [ -z "$$DISPLAY" ] && command -v xvfb-run >/dev/null 2>&1 ; then \
-		xvfb-run -s "-screen 0 1024x768x24" uv run pytest tests/ ; \
+	if [ "$(shell uname)" = "Linux" ] && [ -z "$$DISPLAY" ]; then \
+		if command -v xvfb-run >/dev/null 2>&1 ; then \
+			xvfb-run -s "-screen 0 1024x768x24" uv run pytest tests/ ; \
+		else \
+			echo "Headless run detected (DISPLAY is empty). Install Xvfb and Mesa/Vulkan packages, then run again with xvfb-run -a make." ; \
+			exit 1 ; \
+		fi ; \
 	else \
 		uv run pytest tests/ ; \
 	fi
