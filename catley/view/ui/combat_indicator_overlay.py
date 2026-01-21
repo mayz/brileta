@@ -64,7 +64,7 @@ class CombatIndicatorOverlay(TextOverlay):
             return "[ COMBAT ]"
 
         player = self.controller.gw.player
-        weapon = player.inventory.get_active_weapon()
+        weapon = player.inventory.get_active_item()
 
         # Fallback to fists if no weapon equipped
         if weapon is None:

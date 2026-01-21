@@ -466,7 +466,7 @@ class DualPaneMenu(Menu):
                 publish_event(MessageEvent(message, color))
             else:
                 # Equip to active hand slot
-                active_slot = player.inventory.active_weapon_slot
+                active_slot = player.inventory.active_slot
                 success, message = player.inventory.equip_from_inventory(
                     item, active_slot
                 )

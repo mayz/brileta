@@ -105,7 +105,7 @@ class ItemActionDiscovery:
         # Equipment switching - only show when NOT in combat
         if not context.in_combat:
             for i, item in enumerate(actor.inventory.attack_slots):
-                if i != actor.inventory.active_weapon_slot and item:
+                if i != actor.inventory.active_slot and item:
                     options.append(
                         ActionOption(
                             id=f"switch-{item.name}",

@@ -42,15 +42,15 @@ def test_switch_to_slot_changes_active_weapon() -> None:
     _controller, player, view = make_equipment_view()
 
     # Start at slot 0
-    assert player.inventory.active_weapon_slot == 0
+    assert player.inventory.active_slot == 0
 
     # Switch to slot 1
     view.switch_to_slot(1)
-    assert player.inventory.active_weapon_slot == 1
+    assert player.inventory.active_slot == 1
 
     # Switch back to slot 0
     view.switch_to_slot(0)
-    assert player.inventory.active_weapon_slot == 0
+    assert player.inventory.active_slot == 0
 
 
 def test_switch_to_slot_publishes_message() -> None:
@@ -70,7 +70,6 @@ def test_switch_to_slot_publishes_message() -> None:
         mock_publish.assert_called_once()
         message_event = mock_publish.call_args[0][0]
         assert "Plasma Rifle" in message_event.text
-        assert "secondary" in message_event.text
 
 
 def test_switch_to_slot_shows_empty_for_no_weapon() -> None:
@@ -92,7 +91,7 @@ def test_handle_click_on_inactive_slot_switches() -> None:
     """Clicking on an inactive weapon slot should switch to that weapon."""
     _controller, player, view = make_equipment_view()
 
-    assert player.inventory.active_weapon_slot == 0
+    assert player.inventory.active_slot == 0
 
     # Simulate the slot pixel bounds that would be set during rendering.
     # With tile_dimensions (16, 16), row 0 center is at pixel 8, row 1 center at 24.
@@ -103,14 +102,14 @@ def test_handle_click_on_inactive_slot_switches() -> None:
     result = view.handle_click(1)
 
     assert result is True
-    assert player.inventory.active_weapon_slot == 1
+    assert player.inventory.active_slot == 1
 
 
 def test_handle_click_outside_slots_does_nothing() -> None:
     """Clicking outside the slot bounds should not switch weapons."""
     _controller, player, view = make_equipment_view()
 
-    assert player.inventory.active_weapon_slot == 0
+    assert player.inventory.active_slot == 0
 
     # Simulate the slot pixel bounds (each slot spans 16 pixels)
     view._slot_pixel_bounds = {0: (0, 16), 1: (16, 32)}
@@ -119,4 +118,4 @@ def test_handle_click_outside_slots_does_nothing() -> None:
     result = view.handle_click(2)
 
     assert result is False
-    assert player.inventory.active_weapon_slot == 0
+    assert player.inventory.active_slot == 0

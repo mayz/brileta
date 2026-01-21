@@ -106,7 +106,7 @@ class ConsequenceHandler:
         inv = actor.inventory
         if inv is None:
             return
-        active_slot = inv.active_weapon_slot
+        active_slot = inv.active_slot
         removed = inv.unequip_slot(active_slot)
         if removed is None:
             return

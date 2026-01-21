@@ -123,7 +123,7 @@ class CombatActionDiscovery:
         This keeps the action panel focused and less overwhelming.
         """
         options: list[ActionOption] = []
-        active_weapon = actor.inventory.get_active_weapon()
+        active_weapon = actor.inventory.get_active_item()
         equipped_weapons = [active_weapon] if active_weapon else []
 
         if not equipped_weapons:
@@ -223,7 +223,7 @@ class CombatActionDiscovery:
         DEPRECATED: used by the old state machine, will be removed in Task 3.
         """
         options: list[ActionOption] = []
-        active_weapon = actor.inventory.get_active_weapon()
+        active_weapon = actor.inventory.get_active_item()
         equipped_weapons = [active_weapon] if active_weapon else []
 
         if not equipped_weapons:
@@ -354,7 +354,7 @@ class CombatActionDiscovery:
         options: list[ActionOption] = []
         # Note: The weapon filtering is handled by get_combat_options_for_target(),
         # but we keep this check for the empty fallback case.
-        active_weapon = actor.inventory.get_active_weapon()
+        active_weapon = actor.inventory.get_active_item()
         equipped_weapons = [active_weapon] if active_weapon else []
 
         if not equipped_weapons:

@@ -73,16 +73,16 @@ def test_click_inactive_slot_switches_weapon() -> None:
     controller, view = make_controller_with_equipment_view()
     player = controller.gw.player
 
-    assert player.inventory.active_weapon_slot == 0
+    assert player.inventory.active_slot == 0
 
     # Click row 1 which is slot 1 (inactive)
     result = view.handle_click(1)
 
     assert result is True
-    assert player.inventory.active_weapon_slot == 1
+    assert player.inventory.active_slot == 1
 
 
-def test_click_active_weapon_slot_enters_combat_mode() -> None:
+def test_click_active_slot_enters_combat_mode() -> None:
     """Clicking active slot with weapon enters combat mode."""
     controller, view = make_controller_with_equipment_view()
     player = controller.gw.player
@@ -100,8 +100,8 @@ def test_click_active_weapon_slot_enters_combat_mode() -> None:
     assert controller.is_combat_mode()
 
 
-def test_click_active_weapon_slot_exits_combat_mode() -> None:
-    """Clicking active weapon slot while in combat exits combat mode."""
+def test_click_active_slot_exits_combat_mode() -> None:
+    """Clicking active slot while in combat exits combat mode."""
     controller, view = make_controller_with_equipment_view()
     player = controller.gw.player
 

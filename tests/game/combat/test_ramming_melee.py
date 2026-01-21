@@ -56,7 +56,7 @@ def test_ramming_uses_melee_weapon_when_available() -> None:
     knife = COMBAT_KNIFE_TYPE.create()
     player.inventory.equip_to_slot(pistol, 0)
     player.inventory.equip_to_slot(knife, 1)
-    player.inventory.switch_to_weapon_slot(0)
+    player.inventory.switch_to_slot(0)
 
     intent = AttackIntent(
         cast(Controller, controller),
@@ -78,7 +78,7 @@ def test_ramming_falls_back_to_fists_when_no_melee_weapon() -> None:
     rifle = HUNTING_RIFLE_TYPE.create()
     player.inventory.equip_to_slot(pistol, 0)
     player.inventory.equip_to_slot(rifle, 1)
-    player.inventory.switch_to_weapon_slot(0)
+    player.inventory.switch_to_slot(0)
 
     intent = AttackIntent(
         cast(Controller, controller),

@@ -98,7 +98,7 @@ def test_weapon_drop_and_noise_alert() -> None:
 
     assert result is not None
     assert any(c.type == "weapon_drop" for c in result.consequences)
-    assert attacker.inventory.get_active_weapon() is None
+    assert attacker.inventory.get_active_item() is None
     ground_actor = next(
         a
         for a in controller.gw.actors
@@ -210,4 +210,4 @@ def test_weapon_drop_consequence_still_works() -> None:
 
     assert result is not None
     assert any(c.type == "weapon_drop" for c in result.consequences)
-    assert attacker.inventory.get_active_weapon() is None
+    assert attacker.inventory.get_active_item() is None

@@ -289,7 +289,7 @@ def test_thrown_weapon_removed_from_inventory_on_success() -> None:
     controller, attacker, defender, knife = _make_thrown_world()
 
     # Verify knife is equipped
-    assert attacker.inventory.get_active_weapon() is knife
+    assert attacker.inventory.get_active_item() is knife
     assert knife in attacker.inventory.attack_slots
     assert knife.ranged_attack is not None
 
@@ -314,7 +314,7 @@ def test_thrown_weapon_removed_from_inventory_on_success() -> None:
 
     # Knife should be removed from attack slots
     assert knife not in attacker.inventory.attack_slots
-    assert attacker.inventory.get_active_weapon() is not knife
+    assert attacker.inventory.get_active_item() is not knife
 
 
 def test_thrown_weapon_spawns_at_target_location() -> None:

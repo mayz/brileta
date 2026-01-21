@@ -115,8 +115,8 @@ class AttackExecutor(ActionExecutor):
                 intent.attacker.inventory.attack_slots
             ):
                 if equipped_weapon == intent.weapon:
-                    if slot_index != intent.attacker.inventory.active_weapon_slot:
-                        intent.attacker.inventory.switch_to_weapon_slot(slot_index)
+                    if slot_index != intent.attacker.inventory.active_slot:
+                        intent.attacker.inventory.switch_to_slot(slot_index)
                     break
 
         return GameActionResult(consequences=consequences)
@@ -326,7 +326,7 @@ class AttackExecutor(ActionExecutor):
         weapon even if it is ranged-only.
         """
 
-        active_weapon = actor.inventory.get_active_weapon()
+        active_weapon = actor.inventory.get_active_item()
 
         # If we have an active weapon and it's suitable for melee, use it
         if active_weapon and self._is_suitable_melee_for_ramming(active_weapon):

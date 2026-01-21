@@ -628,7 +628,7 @@ class Menu(TextOverlay):
                     current_px_x,
                     text_px_y,
                     option.key,
-                    keycap_size=int(line_h * 1.15),
+                    keycap_size=int(line_h * 1.0),
                 )
                 current_px_x += keycap_width
 

@@ -227,7 +227,7 @@ class ExploreMode(Mode):
 
     def _reload_weapon(self) -> None:
         """Reload the active weapon."""
-        active_weapon = self._p.inventory.get_active_weapon()
+        active_weapon = self._p.inventory.get_active_item()
         if (
             active_weapon
             and active_weapon.ranged_attack

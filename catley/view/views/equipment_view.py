@@ -88,7 +88,7 @@ class EquipmentView(TextView):
                 break
 
             # Build text exactly as draw_content() does
-            indicator = "▶ " if i == player.inventory.active_weapon_slot else "  "
+            indicator = "▶ " if i == player.inventory.active_slot else "  "
             slot_number = f"[{i + 1}]"
 
             if item:
@@ -153,7 +153,7 @@ class EquipmentView(TextView):
         self.canvas.draw_rect(0, 0, pixel_width, pixel_height, colors.BLACK, fill=True)
 
         player = self.controller.gw.player
-        active_slot = player.inventory.active_weapon_slot
+        active_slot = player.inventory.active_slot
 
         # Get font metrics for proper line spacing
         ascent, descent = self.canvas.get_font_metrics()
@@ -243,20 +243,18 @@ class EquipmentView(TextView):
         return bounds[0] <= row_center_px < bounds[1]
 
     def switch_to_slot(self, slot_index: int) -> None:
-        """Switch to the specified weapon slot and publish a message.
+        """Switch to the specified equipment slot and publish a message.
 
         Args:
-            slot_index: The weapon slot to switch to (0 = primary, 1 = secondary).
+            slot_index: The equipment slot to switch to (0 = primary, 1 = secondary).
         """
         player = self.controller.gw.player
-        if player.inventory.switch_to_weapon_slot(slot_index):
-            weapon = player.inventory.get_active_weapon()
-            weapon_name = weapon.name if weapon else "Empty"
-            slot_names = {0: "primary", 1: "secondary"}
-            slot_label = slot_names.get(slot_index, "weapon")
+        if player.inventory.switch_to_slot(slot_index):
+            item = player.inventory.get_active_item()
+            item_name = item.name if item else "Empty"
             publish_event(
                 MessageEvent(
-                    f"Switched to {slot_label} weapon: {weapon_name}",
+                    f"Switched to {item_name}",
                     colors.GREEN,
                 )
             )
@@ -280,7 +278,7 @@ class EquipmentView(TextView):
 
         player = self.controller.gw.player
 
-        if slot_index != player.inventory.active_weapon_slot:
+        if slot_index != player.inventory.active_slot:
             # Inactive slot: switch to it
             self.switch_to_slot(slot_index)
             return True
@@ -319,7 +317,7 @@ class EquipmentView(TextView):
         Returns:
             True if the row is within the active slot bounds.
         """
-        active_slot = self.controller.gw.player.inventory.active_weapon_slot
+        active_slot = self.controller.gw.player.inventory.active_slot
         return self._is_row_in_slot_bounds(view_relative_row, active_slot)
 
     def _use_active_slot_item(self) -> bool:
@@ -333,7 +331,7 @@ class EquipmentView(TextView):
             True if action was taken, False otherwise.
         """
         player = self.controller.gw.player
-        item = player.inventory.get_active_weapon()
+        item = player.inventory.get_active_item()
 
         if item is None:
             return False

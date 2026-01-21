@@ -17,7 +17,7 @@ def test_attack_switches_active_weapon() -> None:
     controller, player, target, _, _ = _make_combat_world()
     rifle = HUNTING_RIFLE_TYPE.create()
     player.inventory.equip_to_slot(rifle, 1)
-    player.inventory.switch_to_weapon_slot(0)
+    player.inventory.switch_to_slot(0)
 
     intent = AttackIntent(cast(Controller, controller), player, target, rifle)
     executor = AttackExecutor()
@@ -36,4 +36,4 @@ def test_attack_switches_active_weapon() -> None:
         result = executor.execute(intent)
 
     assert result is not None
-    assert player.inventory.active_weapon_slot == 1
+    assert player.inventory.active_slot == 1

@@ -135,7 +135,7 @@ class SwitchWeaponExecutor(ActionExecutor):
         # Move logic from old SwitchWeaponAction.execute()
         inventory = getattr(intent.actor, "inventory", None)
         if inventory:
-            inventory.switch_to_weapon_slot(intent.slot)
+            inventory.switch_to_slot(intent.slot)
         return GameActionResult()
 
 

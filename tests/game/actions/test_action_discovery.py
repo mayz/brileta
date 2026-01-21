@@ -570,7 +570,7 @@ def test_combat_actions_show_only_active_weapon() -> None:
     ctx = disc._build_context(cast(Controller, controller), player)
 
     # With pistol active (slot 0, the default), should only see pistol actions
-    assert player.inventory.active_weapon_slot == 0
+    assert player.inventory.active_slot == 0
     opts = disc._get_combat_options_for_target(
         cast(Controller, controller), player, target, ctx
     )
@@ -583,8 +583,8 @@ def test_combat_actions_show_only_active_weapon() -> None:
     )
 
     # Switch to shotgun (slot 1) and verify actions change
-    player.inventory.switch_to_weapon_slot(1)
-    assert player.inventory.active_weapon_slot == 1
+    player.inventory.switch_to_slot(1)
+    assert player.inventory.active_slot == 1
 
     ctx = disc._build_context(cast(Controller, controller), player)
     opts = disc._get_combat_options_for_target(

@@ -18,7 +18,7 @@ def test_dual_pane_menu_equips_to_active_slot() -> None:
 
     inv.equip_to_slot(pistol, 0)
     inv.add_to_inventory(knife)
-    inv.switch_to_weapon_slot(1)
+    inv.switch_to_slot(1)
 
     player = SimpleNamespace(inventory=inv)
     controller = cast(
