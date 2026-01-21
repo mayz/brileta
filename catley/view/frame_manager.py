@@ -346,9 +346,7 @@ class FrameManager:
             intensity: Amplitude of shake in tiles (0.0-0.3 typical).
             duration: Duration of the shake in seconds.
         """
-        from catley.config import SCREEN_SHAKE_ENABLED
-
-        if not SCREEN_SHAKE_ENABLED:
+        if not config.SCREEN_SHAKE_ENABLED:
             return
         self.screen_shake.trigger(intensity, duration)
 

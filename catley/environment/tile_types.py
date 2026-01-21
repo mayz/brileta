@@ -18,6 +18,7 @@ import numpy as np
 
 from catley import colors
 from catley.game.enums import ImpactMaterial
+from catley.util.dice import Dice
 
 # --- Hazard Cost Constants ---
 # Used by pathfinding to make AI avoid hazardous tiles.
@@ -409,8 +410,6 @@ def _compute_hazard_cost(damage_dice: str) -> int:
     """
     if not damage_dice:
         return 1
-
-    from catley.util.dice import Dice
 
     avg_damage = Dice(damage_dice).average()
     return int(HAZARD_BASE_COST + avg_damage * HAZARD_DAMAGE_SCALING)

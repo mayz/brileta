@@ -41,6 +41,7 @@ from catley.game.pathfinding_goal import PathfindingGoal
 from catley.sound.emitter import SoundEmitter
 from catley.types import TileCoord, WorldTileCoord
 from catley.util.pathfinding import find_local_path
+from catley.view.animation import MoveAnimation
 
 from .ai import AIComponent, DispositionBasedAI
 from .components import (
@@ -245,8 +246,6 @@ class Actor:
 
         # Automatically create animation if controller available
         if controller and hasattr(controller, "animation_manager"):
-            from catley.view.animation import MoveAnimation
-
             start_pos = (float(old_x), float(old_y))
             end_pos = (float(self.x), float(self.y))
             animation = MoveAnimation(self, start_pos, end_pos)

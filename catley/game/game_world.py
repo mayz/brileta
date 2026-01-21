@@ -1,14 +1,13 @@
+import math
 import random
 
 from catley import colors, config
 from catley.config import PLAYER_BASE_STRENGTH, PLAYER_BASE_TOUGHNESS
 from catley.environment.generators import RoomsAndCorridorsGenerator
 from catley.environment.map import GameMap, MapRegion
-from catley.game.actors import (
-    Actor,
-    Character,
-    create_bookcase,
-)
+from catley.environment.tile_types import TileTypeID
+from catley.game.actors import NPC, PC, Actor, Character, create_bookcase
+from catley.game.actors.environmental import ContainedFire
 from catley.game.enums import CreatureSize
 from catley.game.item_spawner import ItemSpawner
 from catley.game.items.item_core import Item
@@ -20,8 +19,9 @@ from catley.game.items.item_types import (
     PISTOL_TYPE,
     REVOLVER_TYPE,
     SHOTGUN_SHELLS_TYPE,
+    SLEDGEHAMMER_TYPE,
 )
-from catley.game.lights import DynamicLight, GlobalLight, LightSource
+from catley.game.lights import DirectionalLight, DynamicLight, GlobalLight, LightSource
 from catley.game.outfit import LEATHER_ARMOR_TYPE
 from catley.types import TileCoord, WorldTileCoord, WorldTilePos
 from catley.util.coordinates import Rect
@@ -136,10 +136,6 @@ class GameWorld:
         Args:
             time_hours: Time in 24-hour format (0.0 = midnight, 12.0 = noon)
         """
-        import math
-
-        from catley.game.lights import DirectionalLight
-
         # Update sun direction based on time for all directional lights
         for light in self.get_global_lights():
             if isinstance(light, DirectionalLight):
@@ -205,8 +201,6 @@ class GameWorld:
 
     def _create_player(self) -> Character:
         """Instantiate the player character and starting inventory."""
-        from catley.game.actors import PC
-
         player = PC(
             x=0,
             y=0,
@@ -289,8 +283,6 @@ class GameWorld:
 
     def _convert_region_to_outdoor_tiles(self, region: MapRegion) -> None:
         """TEMPORARY: Convert indoor floor tiles to outdoor tiles in a region."""
-        from catley.environment.tile_types import TileTypeID
-
         if not self.game_map:
             return
 
@@ -417,9 +409,6 @@ class GameWorld:
         self, rooms: list, num_npcs: int = 10, max_attempts_per_npc: int = 10
     ) -> None:
         """Add NPCs to random locations in rooms."""
-        from catley.game.actors import NPC
-        from catley.game.items.item_types import SLEDGEHAMMER_TYPE
-
         for npc_index in range(num_npcs):
             placed = False
 
@@ -481,8 +470,6 @@ class GameWorld:
 
     def _add_test_fire(self, rooms: list) -> None:
         """Add a test fire to demonstrate the fire system."""
-        from catley.game.actors.environmental import ContainedFire
-
         # Pick the first room to add a campfire
         if rooms:
             room = rooms[0]
@@ -507,8 +494,6 @@ class GameWorld:
 
         Creates a 2x2 acid pool in the bottom-right corner of the room.
         """
-        from catley.environment.tile_types import TileTypeID
-
         # Place acid pool in bottom-right corner (away from campfire)
         pool_x = room.x2 - 3  # 3 tiles from right wall
         pool_y = room.y2 - 3  # 3 tiles from bottom wall

@@ -52,6 +52,7 @@ if TYPE_CHECKING:
 from catley import colors
 from catley.config import DEFAULT_ACTOR_SPEED
 from catley.constants.movement import MovementConstants
+from catley.events import MessageEvent, publish_event
 from catley.game.enums import ItemSize
 from catley.game.items.item_core import Item
 
@@ -448,9 +449,6 @@ class CharacterInventory(InventoryComponent):
         """Add or remove encumbrance status effect based on current load."""
         if not self.actor:
             return
-
-        from catley import colors
-        from catley.events import MessageEvent, publish_event
 
         currently_encumbered = self.actor.status_effects.has_status_effect(
             EncumberedEffect

@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from catley import colors
 from catley.environment import tile_types
 from catley.environment.tile_types import TileTypeID
 from catley.types import WorldTilePos
@@ -196,8 +197,6 @@ class GameMap:
         self, region: MapRegion, is_light: bool
     ) -> tuple[int, int, int]:
         """Get the appropriate ground background color for a region."""
-        from catley import colors
-
         # Determine if this is an outdoor region based on sky exposure
         is_outdoor = region.sky_exposure > 0.5
 
@@ -211,8 +210,6 @@ class GameMap:
         self, region: MapRegion, is_light: bool
     ) -> tuple[int, int, int]:
         """Get the appropriate wall background color for a region."""
-        from catley import colors
-
         # Determine if this is an outdoor region based on sky exposure
         is_outdoor = region.sky_exposure > 0.5
 

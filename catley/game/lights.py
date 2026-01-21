@@ -7,6 +7,7 @@ they are, but have no knowledge of how they are rendered.
 
 from __future__ import annotations
 
+import math
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
@@ -182,8 +183,6 @@ class DirectionalLight(GlobalLight):
             intensity: Base sun intensity
             color: Sun color (warm white by default)
         """
-        import math
-
         # Convert to radians
         elevation_rad = math.radians(elevation_degrees)
         azimuth_rad = math.radians(azimuth_degrees)
