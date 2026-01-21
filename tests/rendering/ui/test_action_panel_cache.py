@@ -16,11 +16,27 @@ from tests.helpers import DummyGameWorld
 
 
 @dataclass
+class DummyCombatMode:
+    """Minimal combat mode for testing."""
+
+    selected_action: Any = None
+
+
+@dataclass
 class DummyController:
     """Minimal controller for testing ActionPanelView."""
 
     gw: DummyGameWorld
     graphics: Any = None
+    combat_mode: DummyCombatMode | None = None
+
+    def __post_init__(self) -> None:
+        if self.combat_mode is None:
+            self.combat_mode = DummyCombatMode()
+
+    def is_combat_mode(self) -> bool:
+        """Always return False for these tests - not in combat mode."""
+        return False
 
 
 def make_action_panel() -> tuple[DummyController, ActionPanelView]:

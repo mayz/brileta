@@ -167,10 +167,16 @@ class ActionDiscovery:
         return self.combat_discovery.get_all_terminal_combat_actions(controller, actor)
 
     def _get_combat_options(
-        self, controller: Controller, actor: Character, context: ActionContext
+        self,
+        controller: Controller,
+        actor: Character,
+        context: ActionContext,
+        target: Character | None = None,
     ) -> list[ActionOption]:
         """DEPRECATED wrapper for combat options."""
-        return self.combat_discovery.get_all_combat_actions(controller, actor, context)
+        return self.combat_discovery.get_all_combat_actions(
+            controller, actor, context, target
+        )
 
     def _get_combat_options_for_target(
         self,

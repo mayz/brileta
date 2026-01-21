@@ -42,6 +42,9 @@ class ActionPanelView(TextView):
         # Sticky hotkeys: track action id -> hotkey for continuity
         self._previous_hotkeys: dict[str, str] = {}
 
+        # Hit areas for mouse click detection: (x1, y1, x2, y2, action)
+        self._action_hit_areas: list[tuple[int, int, int, int, ActionOption]] = []
+
         # View pixel dimensions will be calculated when resize() is called
         self.view_width_px = 0
         self.view_height_px = 0
@@ -252,6 +255,13 @@ class ActionPanelView(TextView):
         # Include modifier revision to detect status effect changes (off-balance, etc.),
         # ensuring probabilities update immediately when player state changes.
         modifier_revision = player.modifiers.revision
+
+        # Include combat mode state for action-centric rendering
+        is_combat = self.controller.is_combat_mode()
+        selected_action_id = ""
+        if is_combat and self.controller.combat_mode.selected_action:
+            selected_action_id = self.controller.combat_mode.selected_action.id
+
         return (
             mouse_pos,
             target_actor_key,
@@ -262,6 +272,8 @@ class ActionPanelView(TextView):
             self.view_height_px,
             inventory_revision,
             modifier_revision,
+            is_combat,
+            selected_action_id,
         )
 
     def set_bounds(self, x1: int, y1: int, x2: int, y2: int) -> None:
@@ -285,6 +297,9 @@ class ActionPanelView(TextView):
         self.canvas.draw_rect(
             0, 0, self.view_width_px, self.view_height_px, colors.BLACK, fill=True
         )
+
+        # Clear hit areas for fresh tracking
+        self._action_hit_areas.clear()
 
         # Update cached data
         self._update_cached_data()
@@ -405,10 +420,35 @@ class ActionPanelView(TextView):
 
                 # Action items
                 for action in actions[:8]:  # More actions can fit with smaller font
+                    # Check if this action is selected (in combat mode)
+                    is_selected = action.static_params.get("_is_selected", False)
+
+                    # Selection indicator prefix: ▶ for selected, spaces for alignment
+                    selection_indicator = "▶ " if is_selected else "  "
+                    indicator_width, _, _ = self.canvas.get_text_metrics(
+                        selection_indicator
+                    )
+
+                    # Track this action's hit area (full row from padding to edge)
+                    hit_y_start = y_pixel - ascent - 2
+                    hit_y_end = y_pixel + line_height + 2
+                    self._action_hit_areas.append(
+                        (
+                            x_padding,
+                            hit_y_start,
+                            self.view_width_px - x_padding,
+                            hit_y_end,
+                            action,
+                        )
+                    )
+
                     # Clean up action name - remove redundant target name
                     action_name = action.name
-                    if self._cached_target_name and isinstance(
-                        self._cached_target_name, str
+                    # Don't strip "Combat Mode" header since that's not a target name
+                    if (
+                        self._cached_target_name
+                        and isinstance(self._cached_target_name, str)
+                        and self._cached_target_name != "Combat Mode"
                     ):
                         # Handle thrown weapons first: "Throw Weapon at TargetName"
                         # to just "Throw Weapon" (must be before the generic replace)
@@ -427,32 +467,44 @@ class ActionPanelView(TextView):
                         prob_percent = int(action.success_probability * 100)
                         full_label = f"{action_name} ({prob_percent}%)"
 
-                    # Use helper method to draw keycap with action name
+                    # Choose text color based on selection state
+                    text_color = colors.YELLOW if is_selected else colors.WHITE
+
+                    # Draw selection indicator (▶ for selected, spaces for alignment)
+                    indicator_x = x_padding
+                    indicator_color = colors.YELLOW if is_selected else colors.DARK_GREY
+                    self.canvas.draw_text(
+                        pixel_x=indicator_x,
+                        pixel_y=y_pixel - ascent,
+                        text=selection_indicator,
+                        color=indicator_color,
+                    )
+
+                    # Draw keycap after the indicator
+                    keycap_x = x_padding + indicator_width
                     if action.hotkey:
                         _, action_height = self._draw_keycap_with_label(
-                            x=x_padding + 20,
+                            x=keycap_x,
                             y=y_pixel - ascent,
                             key=action.hotkey,
                             label=full_label,
                         )
                     else:
                         # Draw empty keycap placeholder
-                        current_x = x_padding + 20
                         keycap_width = draw_keycap(
                             canvas=self.canvas,
-                            pixel_x=current_x,
+                            pixel_x=keycap_x,
                             pixel_y=y_pixel - ascent,
                             key=" ",
                             bg_color=colors.BLACK,
                             border_color=colors.DARK_GREY,
                             text_color=colors.DARK_GREY,
                         )
-                        current_x += keycap_width
                         self.canvas.draw_text(
-                            pixel_x=current_x,
+                            pixel_x=keycap_x + keycap_width,
                             pixel_y=y_pixel - ascent,
                             text=full_label,
-                            color=colors.WHITE,
+                            color=text_color,
                         )
                         action_height = line_height
 
@@ -531,6 +583,11 @@ class ActionPanelView(TextView):
 
     def _update_cached_data(self) -> None:
         """Update cached target information and available actions."""
+        # In combat mode, show action-centric panel instead of target-centric
+        if self.controller.is_combat_mode():
+            self._update_combat_mode_data()
+            return
+
         gw = self.controller.gw
         mouse_pos = gw.mouse_tile_location_on_map
 
@@ -707,6 +764,33 @@ class ActionPanelView(TextView):
             else:
                 self._cached_actions = []
 
+    def _update_combat_mode_data(self) -> None:
+        """Update cached data for combat mode's action-centric display.
+
+        In combat mode, the panel shows available combat actions (Attack, Push,
+        etc.) rather than target-specific actions. The player selects an action
+        first, then clicks a target to execute it.
+
+        Probabilities are shown in the cursor tooltip overlay, not here.
+        """
+        combat_mode = self.controller.combat_mode
+
+        # Get player's combat actions without target (no probabilities)
+        # Probabilities are displayed in the cursor tooltip instead
+        self._cached_actions = combat_mode.get_available_combat_actions()
+
+        # Simple header for combat mode
+        self._cached_target_name = "Combat Mode"
+        self._cached_target_description = None
+
+        # Mark the selected action for highlighting during render
+        selected = combat_mode.selected_action
+        for action in self._cached_actions:
+            # Store selection state in a way the render can check
+            action.static_params["_is_selected"] = (
+                selected is not None and action.id == selected.id
+            )
+
     def get_hotkeys(self) -> dict[str, ActionOption]:
         """Get current hotkey mappings for direct execution."""
         hotkeys = {}
@@ -714,6 +798,21 @@ class ActionPanelView(TextView):
             if action.hotkey:
                 hotkeys[action.hotkey.lower()] = action
         return hotkeys
+
+    def get_action_at_pixel(self, px: int, py: int) -> ActionOption | None:
+        """Return the action at the given pixel coordinates, or None.
+
+        Args:
+            px: X pixel coordinate relative to the action panel.
+            py: Y pixel coordinate relative to the action panel.
+
+        Returns:
+            The ActionOption at the given position, or None if no action.
+        """
+        for x1, y1, x2, y2, action in self._action_hit_areas:
+            if x1 <= px < x2 and y1 <= py < y2:
+                return action
+        return None
 
     def invalidate_cache(self) -> None:
         """Clear the action panel cache to force refresh on next draw."""

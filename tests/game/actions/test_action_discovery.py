@@ -150,12 +150,20 @@ def test_get_combat_options_melee_ranged_and_reload() -> None:
     disc = ActionDiscovery()
     ctx = disc._build_context(cast(Controller, controller), player)
 
-    opts = disc._get_combat_options(cast(Controller, controller), player, ctx)
-    names = {o.name for o in opts}
+    # Without target: probabilities should be None
+    opts_no_target = disc._get_combat_options(cast(Controller, controller), player, ctx)
+    names = {o.name for o in opts_no_target}
 
-    assert f"Melee attack with {pistol.name}" in names
-    assert f"Ranged attack with {pistol.name}" in names
+    # Action names use the weapon's verb (e.g., "Pistol-whip", "Shoot")
+    assert "Pistol-whip" in names
+    assert "Shoot" in names
     assert f"Reload {pistol.name}" not in names
+
+    # Verify probabilities are None without target
+    melee_opt_no_target = next(
+        o for o in opts_no_target if o.static_params.get("attack_mode") == "melee"
+    )
+    assert melee_opt_no_target.success_probability is None
 
     inv_opts = disc._get_inventory_options(
         cast(Controller, controller),
@@ -165,7 +173,11 @@ def test_get_combat_options_melee_ranged_and_reload() -> None:
     inv_names = {o.name for o in inv_opts}
     assert f"Reload {pistol.name}" in inv_names
 
-    melee_opt = next(o for o in opts if o.name.startswith("Melee attack"))
+    # With target: probabilities should be calculated
+    opts = disc._get_combat_options(
+        cast(Controller, controller), player, ctx, melee_target
+    )
+    melee_opt = next(o for o in opts if o.static_params.get("attack_mode") == "melee")
     expected_melee_prob = disc._calculate_combat_probability(
         cast(Controller, controller),
         player,
@@ -173,7 +185,7 @@ def test_get_combat_options_melee_ranged_and_reload() -> None:
         "strength",
     )
     assert melee_opt.success_probability == expected_melee_prob
-    ranged_opt = next(o for o in opts if o.name.startswith("Ranged attack"))
+    ranged_opt = next(o for o in opts if o.static_params.get("attack_mode") == "ranged")
     distance = ranges.calculate_distance(
         player.x, player.y, melee_target.x, melee_target.y
     )
@@ -209,7 +221,7 @@ def test_get_combat_options_for_target_filters() -> None:
 
 
 def test_combat_options_ignore_dead_and_unseen() -> None:
-    controller, player, melee_target, ranged_target, pistol = _make_combat_world()
+    controller, player, melee_target, ranged_target, _pistol = _make_combat_world()
     melee_target.health.hp = 0
     controller.gw.game_map.visible[ranged_target.x, ranged_target.y] = False
     controller.gw.game_map.tiles[2, 0] = TileTypeID.WALL
@@ -218,10 +230,8 @@ def test_combat_options_ignore_dead_and_unseen() -> None:
     ctx = disc._build_context(cast(Controller, controller), player)
     opts = disc._get_combat_options(cast(Controller, controller), player, ctx)
     names = {o.name for o in opts}
-    assert names == {
-        f"Melee attack with {pistol.name}",
-        f"Ranged attack with {pistol.name}",
-    }
+    # Action names use the weapon's verb
+    assert names == {"Pistol-whip", "Shoot"}
 
 
 def test_combat_option_probabilities_reflect_status_effects() -> None:
@@ -230,8 +240,11 @@ def test_combat_option_probabilities_reflect_status_effects() -> None:
     disc = ActionDiscovery()
     ctx = disc._build_context(cast(Controller, controller), player)
 
-    opts = disc._get_combat_options(cast(Controller, controller), player, ctx)
-    melee_opt = next(o for o in opts if o.name.startswith("Melee attack"))
+    # With target: probabilities should reflect status effects
+    opts = disc._get_combat_options(
+        cast(Controller, controller), player, ctx, melee_target
+    )
+    melee_opt = next(o for o in opts if o.static_params.get("attack_mode") == "melee")
     expected_melee_prob = disc._calculate_combat_probability(
         cast(Controller, controller),
         player,
@@ -240,7 +253,7 @@ def test_combat_option_probabilities_reflect_status_effects() -> None:
     )
     assert melee_opt.success_probability == expected_melee_prob
 
-    ranged_opt = next(o for o in opts if o.name.startswith("Ranged attack"))
+    ranged_opt = next(o for o in opts if o.static_params.get("attack_mode") == "ranged")
     distance = ranges.calculate_distance(
         player.x, player.y, melee_target.x, melee_target.y
     )

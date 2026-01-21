@@ -14,10 +14,11 @@ from catley.events import (
 )
 from catley.game import ranges
 from catley.game.actions.combat import AttackIntent
+from catley.game.actions.discovery import ActionCategory, ActionOption
+from catley.game.actions.stunts import PushIntent
 from catley.game.actors import Character
 from catley.modes.base import Mode
 from catley.modes.picker import PickerResult
-from catley.view.ui.combat_indicator_overlay import CombatIndicatorOverlay
 
 if TYPE_CHECKING:
     from catley.controller import Controller
@@ -38,7 +39,11 @@ class CombatMode(Mode):
         self.candidates: list[Character] = []
         self.current_index: int = 0
         self.last_targeted: Character | None = None
-        self.combat_indicator_overlay = CombatIndicatorOverlay(controller)
+
+        # Selected action for action-centric combat UI.
+        # When in combat mode, the player first selects an action (Attack, Push, etc.)
+        # then clicks on a target to execute it.
+        self.selected_action: ActionOption | None = None
 
     def enter(self) -> None:
         """Enter combat mode and find all valid targets.
@@ -49,15 +54,18 @@ class CombatMode(Mode):
         """
         super().enter()
 
-        assert self.controller.overlay_system is not None
         self.candidates = []
 
         # Subscribe to actor death events only while in combat mode
         subscribe_to_event(ActorDeathEvent, self._handle_actor_death_event)
 
-        # Note: Cursor management is now handled by PickerMode
+        # Set default action (Attack) for action-centric UI
+        self._set_default_action()
 
-        self.controller.overlay_system.show_overlay(self.combat_indicator_overlay)
+        # Show combat tooltip overlay (if available - may not exist in tests)
+        fm = self.controller.frame_manager
+        if fm is not None and hasattr(fm, "combat_tooltip_overlay"):
+            self.controller.overlay_system.show_overlay(fm.combat_tooltip_overlay)
 
         # Build initial candidate list
         self.update()
@@ -90,9 +98,14 @@ class CombatMode(Mode):
         self.candidates = []
         self.current_index = 0
         self.controller.gw.selected_actor = None
+        self.selected_action = None  # Reset action selection on exit
 
-        # Note: Cursor is restored to arrow by PickerMode when it exits
-        self.combat_indicator_overlay.hide()
+        # Hide combat tooltip overlay (if available - may not exist in tests)
+        fm = self.controller.frame_manager
+        if fm is not None and hasattr(fm, "combat_tooltip_overlay"):
+            tooltip = fm.combat_tooltip_overlay
+            if tooltip.is_active:
+                tooltip.hide()
 
         # Clean up event subscriptions
         unsubscribe_from_event(ActorDeathEvent, self._handle_actor_death_event)
@@ -117,8 +130,14 @@ class CombatMode(Mode):
             return False
 
         # Handle targeting-specific input first
-        # Note: Mouse clicks are handled by PickerMode (on top of this mode)
+        # Note: Target selection clicks are handled by PickerMode (on top of this mode)
         match event:
+            case tcod.event.MouseButtonDown(button=tcod.event.MouseButton.LEFT):
+                # Check if click is on action panel to select actions
+                if self._try_select_action_by_click(event):
+                    return True
+                # Otherwise let PickerMode handle target selection
+
             case tcod.event.KeyDown(sym=tcod.event.KeySym.ESCAPE):
                 if self.controller.has_visible_hostiles():
                     publish_event(
@@ -130,14 +149,19 @@ class CombatMode(Mode):
                 return True
 
             case tcod.event.KeyDown(sym=tcod.event.KeySym.RETURN):
-                if self._get_current_target():
-                    target = self._get_current_target()
-                    if isinstance(target, Character):
-                        attack_action = AttackIntent(
-                            self.controller, self.controller.gw.player, target
-                        )
-                        self.controller.queue_action(attack_action)
+                # Execute the currently selected action on the current target
+                target = self._get_current_target()
+                if target and isinstance(target, Character):
+                    intent = self._create_intent_for_target(target)
+                    if intent is not None:
+                        self.controller.queue_action(intent)
                 return True
+
+            case tcod.event.KeyDown(sym=sym):
+                # Check for action hotkey selection (a-z)
+                key_char = chr(sym) if 97 <= sym <= 122 else None  # a-z
+                if key_char and self._try_select_action_by_hotkey(key_char):
+                    return True
 
         # Let the mode stack pass unhandled input to ExploreMode below
         return False
@@ -264,7 +288,7 @@ class CombatMode(Mode):
     def _on_target_selected(self, result: PickerResult) -> None:
         """Handle target selection from PickerMode.
 
-        Executes an attack on the selected target and re-pushes PickerMode
+        Executes the selected action on the target and re-pushes PickerMode
         for the next selection. This keeps the player in combat mode until
         they explicitly exit.
         """
@@ -273,10 +297,10 @@ class CombatMode(Mode):
             and isinstance(result.actor, Character)
             and result.actor in self.candidates
         ):
-            attack_action = AttackIntent(
-                self.controller, self.controller.gw.player, result.actor
-            )
-            self.controller.queue_action(attack_action)
+            # Create appropriate intent based on selected action
+            intent = self._create_intent_for_target(result.actor)
+            if intent is not None:
+                self.controller.queue_action(intent)
 
         # Stay in combat mode - push picker again for next target
         self._start_target_selection()
@@ -326,3 +350,223 @@ class CombatMode(Mode):
             if not self.controller.gw.game_map.visible[actor.x, actor.y]:
                 continue
             gw_view.render_actor_outline(actor, outline_color, alpha)
+
+    # --- Action-centric combat UI ---
+
+    def _set_default_action(self) -> None:
+        """Set the default combat action (Attack) when entering combat mode.
+
+        Uses the discovery system to get available combat actions and selects
+        the first attack action as the default.
+        """
+        from catley.game.actions.discovery import ActionDiscovery
+
+        discovery = ActionDiscovery()
+        actions = discovery.combat_discovery.get_player_combat_actions(
+            self.controller, self.controller.gw.player
+        )
+
+        # Find the first combat (attack) action as default
+        for action in actions:
+            if action.category == ActionCategory.COMBAT:
+                self.selected_action = action
+                return
+
+        # If no combat actions, try to use Push as fallback
+        for action in actions:
+            if action.category == ActionCategory.STUNT:
+                self.selected_action = action
+                return
+
+        # If no actions at all, leave as None
+        self.selected_action = None
+
+    def select_action(self, action: ActionOption) -> None:
+        """Select a combat action to use on the next target click.
+
+        Args:
+            action: The action to select.
+        """
+        self.selected_action = action
+
+    def get_available_combat_actions(
+        self, target: Character | None = None
+    ) -> list[ActionOption]:
+        """Get all combat actions available to the player.
+
+        Returns actions like Attack (melee/ranged) and Push. These are
+        action-centric (not tied to a specific target) for the combat
+        mode action panel.
+
+        If a target is provided, probabilities will be calculated against
+        that specific target. Otherwise, probabilities are left as None.
+
+        Also validates that the currently selected action is still available
+        (e.g., after weapon switch). If the selected action becomes invalid,
+        it resets to the first available action.
+
+        Args:
+            target: Optional target for probability calculation. If None,
+                    actions are returned without probability values.
+        """
+        from catley.game.actions.discovery import ActionDiscovery
+
+        discovery = ActionDiscovery()
+        actions = discovery.combat_discovery.get_player_combat_actions(
+            self.controller, self.controller.gw.player, target
+        )
+
+        # Validate current selection is still available (may have changed due to
+        # weapon switch, running out of ammo, etc.)
+        self._ensure_valid_selection(actions)
+
+        return actions
+
+    def _ensure_valid_selection(self, actions: list[ActionOption]) -> None:
+        """Reset selection if current action is no longer available.
+
+        Called after getting available actions to handle cases like weapon
+        switching where the previously selected action may no longer exist.
+        Also auto-selects first available action if none is currently selected,
+        ensuring there's always a selection when valid actions exist.
+
+        Args:
+            actions: The current list of available combat actions.
+        """
+        if not actions:
+            self.selected_action = None
+            return
+
+        # Auto-select first action if none currently selected
+        if self.selected_action is None:
+            self.selected_action = actions[0]
+            return
+
+        # Check if current selection is still valid
+        action_ids = {a.id for a in actions}
+        if self.selected_action.id not in action_ids:
+            # Weapon changed - select first action
+            self.selected_action = actions[0]
+
+    def _try_select_action_by_hotkey(self, key: str) -> bool:
+        """Try to select a combat action by its hotkey.
+
+        Uses the action panel's hotkey mappings as the source of truth, since
+        the panel uses a sticky hotkey system that preserves assignments across
+        frames. Falls back to index-based hotkey assignment in tests where
+        the action panel may not be available.
+
+        Args:
+            key: The lowercase letter pressed (a-z).
+
+        Returns:
+            True if an action was selected, False otherwise.
+        """
+        # Try to get hotkey mappings from the action panel (source of truth)
+        fm = self.controller.frame_manager
+        if fm is not None and hasattr(fm, "action_panel_view"):
+            hotkeys = fm.action_panel_view.get_hotkeys()
+            if key in hotkeys:
+                self.select_action(hotkeys[key])
+                return True
+            return False
+
+        # Fallback for tests: assign hotkeys by index
+        actions = self.get_available_combat_actions()
+        hotkey_chars = "abcdefghijklmnopqrstuvwxyz"
+        for i, action in enumerate(actions):
+            if i < len(hotkey_chars) and hotkey_chars[i] == key:
+                self.select_action(action)
+                return True
+
+        return False
+
+    def _try_select_action_by_click(self, event: tcod.event.MouseButtonDown) -> bool:
+        """Try to select a combat action by clicking on it in the action panel.
+
+        Args:
+            event: The mouse button down event.
+
+        Returns:
+            True if click was on action panel and an action was selected.
+        """
+        fm = self.controller.frame_manager
+        if fm is None or not hasattr(fm, "action_panel_view"):
+            return False
+        action_panel_view = fm.action_panel_view
+
+        # Convert raw pixel position to scaled pixel position
+        graphics = self.controller.graphics
+        scale_x, scale_y = graphics.get_display_scale_factor()
+        scaled_px_x = int(event.position.x * scale_x)
+        scaled_px_y = int(event.position.y * scale_y)
+
+        # Calculate action panel's screen pixel bounds
+        tile_width, tile_height = graphics.tile_dimensions
+        panel_px_x = action_panel_view.x * tile_width
+        panel_px_y = action_panel_view.y * tile_height
+        panel_px_width = action_panel_view.width * tile_width
+        panel_px_height = action_panel_view.height * tile_height
+
+        # Check if click is within panel bounds
+        if not (
+            panel_px_x <= scaled_px_x < panel_px_x + panel_px_width
+            and panel_px_y <= scaled_px_y < panel_px_y + panel_px_height
+        ):
+            return False
+
+        # Convert to panel-relative pixel coordinates
+        rel_px_x = scaled_px_x - panel_px_x
+        rel_px_y = scaled_px_y - panel_px_y
+
+        # Check if click hit an action
+        action = action_panel_view.get_action_at_pixel(rel_px_x, rel_px_y)
+        if action is not None:
+            self.select_action(action)
+            return True
+
+        return False
+
+    def _create_intent_for_target(
+        self, target: Character
+    ) -> AttackIntent | PushIntent | None:
+        """Create the appropriate intent for the selected action and target.
+
+        Uses the currently selected action to determine what intent to create.
+        Falls back to AttackIntent if no action is selected.
+
+        Args:
+            target: The target character for the action.
+
+        Returns:
+            The appropriate GameIntent, or None if the action is invalid for
+            this target (e.g., Push on a non-adjacent target).
+        """
+        player = self.controller.gw.player
+
+        # Fall back to default attack if no action selected
+        if self.selected_action is None:
+            return AttackIntent(self.controller, player, target)
+
+        # Handle based on action category
+        if self.selected_action.category == ActionCategory.COMBAT:
+            # Attack action - use weapon from static params if available
+            weapon = self.selected_action.static_params.get("weapon")
+            attack_mode = self.selected_action.static_params.get("attack_mode")
+            return AttackIntent(
+                self.controller, player, target, weapon=weapon, attack_mode=attack_mode
+            )
+
+        if (
+            self.selected_action.category == ActionCategory.STUNT
+            and self.selected_action.action_class == PushIntent
+        ):
+            # Validate adjacency for push
+            distance = ranges.calculate_distance(player.x, player.y, target.x, target.y)
+            if distance != 1:
+                publish_event(MessageEvent("Target is not adjacent.", colors.YELLOW))
+                return None
+            return PushIntent(self.controller, player, target)
+
+        # Unknown action type - fall back to attack
+        return AttackIntent(self.controller, player, target)

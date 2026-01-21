@@ -15,6 +15,7 @@ from .types import ActionCategory, ActionOption, ActionRequirement
 if TYPE_CHECKING:
     from catley.controller import Controller
     from catley.game.items.capabilities import MeleeAttack, RangedAttack
+    from catley.game.items.item_core import Item
 
 
 class CombatActionDiscovery:
@@ -31,6 +32,138 @@ class CombatActionDiscovery:
         self.formatter = formatter
 
     # Public API -----------------------------------------------------
+
+    def get_player_combat_actions(
+        self,
+        controller: Controller,
+        actor: Character,
+        target: Character | None = None,
+    ) -> list[ActionOption]:
+        """Get combat actions for action-centric UI.
+
+        Returns only combat actions that can be executed RIGHT NOW. Actions are
+        filtered based on whether valid targets exist:
+        - Melee attacks: only shown if an adjacent enemy exists
+        - Ranged attacks: only shown if a target is within weapon range
+        - Push: only shown if an adjacent enemy exists
+
+        If a specific target is provided, probabilities will be calculated
+        against that target. Otherwise, probabilities are left as None.
+
+        Used by combat mode's action-centric panel where the player selects
+        an action first, then clicks to execute it.
+
+        Args:
+            controller: Game controller.
+            actor: The acting character (usually the player).
+            target: Optional specific target for probability calculation.
+
+        Returns:
+            List of ActionOptions for executable combat and stunt actions.
+        """
+        options: list[ActionOption] = []
+        context = self.context_builder.build_context(controller, actor)
+
+        # Check what's actually executable
+        has_adjacent_enemy = self._has_adjacent_enemy(actor, context)
+
+        # Filter attack actions by executability
+        all_attacks = self.get_all_combat_actions(controller, actor, context, target)
+        for attack in all_attacks:
+            attack_mode = attack.static_params.get("attack_mode")
+            weapon = attack.static_params.get("weapon")
+            if attack_mode == "melee":
+                # Melee only shown if adjacent enemy exists
+                if has_adjacent_enemy:
+                    options.append(attack)
+            elif (
+                attack_mode == "ranged"
+                and weapon is not None
+                and self._has_enemy_in_weapon_range(actor, weapon, context)
+            ):
+                # Ranged only shown if any target is within weapon range
+                options.append(attack)
+
+        # Only add Push if adjacent enemy exists
+        if has_adjacent_enemy:
+            # Calculate push probability if target is provided and adjacent
+            push_prob: float | None = None
+            if target is not None:
+                dist = ranges.calculate_distance(actor.x, actor.y, target.x, target.y)
+                if dist == 1:
+                    push_prob = self._calculate_opposed_probability(
+                        controller, actor, target, "strength", "strength"
+                    )
+
+            options.append(
+                ActionOption(
+                    id="push",
+                    name="Push",
+                    description="Shove target 1 tile away. Strength vs Strength.",
+                    category=ActionCategory.STUNT,
+                    action_class=PushIntent,
+                    requirements=[ActionRequirement.TARGET_ACTOR],
+                    static_params={},
+                    success_probability=push_prob,
+                )
+            )
+
+        return options
+
+    def _has_adjacent_enemy(self, actor: Character, context: ActionContext) -> bool:
+        """Check if any valid combat target is adjacent to the actor.
+
+        Args:
+            actor: The acting character.
+            context: Action context containing nearby actors.
+
+        Returns:
+            True if at least one valid enemy is adjacent (distance == 1).
+        """
+        for target in context.nearby_actors:
+            if (
+                target != actor
+                and isinstance(target, Character)
+                and target.health
+                and target.health.is_alive()
+            ):
+                distance = ranges.calculate_distance(
+                    actor.x, actor.y, target.x, target.y
+                )
+                if distance == 1:
+                    return True
+        return False
+
+    def _has_enemy_in_weapon_range(
+        self, actor: Character, weapon: Item, context: ActionContext
+    ) -> bool:
+        """Check if any enemy is within the weapon's ranged attack range.
+
+        Args:
+            actor: The acting character.
+            weapon: The weapon to check range for.
+            context: Action context containing nearby actors.
+
+        Returns:
+            True if at least one valid enemy is within the weapon's range.
+        """
+        if not weapon.ranged_attack:
+            return False
+
+        for target in context.nearby_actors:
+            if (
+                target != actor
+                and isinstance(target, Character)
+                and target.health
+                and target.health.is_alive()
+            ):
+                dist = ranges.calculate_distance(actor.x, actor.y, target.x, target.y)
+                range_cat = ranges.get_range_category(dist, weapon)
+                range_mods = ranges.get_range_modifier(weapon, range_cat)
+                if range_mods is not None:
+                    return True
+        return False
+
     def discover_combat_actions(
         self, controller: Controller, actor: Character, context: ActionContext
     ) -> list[ActionOption]:
@@ -115,12 +248,23 @@ class CombatActionDiscovery:
         return resolver.calculate_success_probability()
 
     def get_all_combat_actions(
-        self, controller: Controller, actor: Character, context: ActionContext
+        self,
+        controller: Controller,
+        actor: Character,
+        context: ActionContext,
+        target: Character | None = None,
     ) -> list[ActionOption]:
         """Discover all combat actions without any UI presentation logic.
 
         Only shows actions for the currently active weapon, not all equipped weapons.
         This keeps the action panel focused and less overwhelming.
+
+        Args:
+            controller: Game controller.
+            actor: The acting character.
+            context: Action context containing nearby actors.
+            target: Optional specific target for probability calculation.
+                    If None, actions are returned with success_probability=None.
         """
         options: list[ActionOption] = []
         active_weapon = actor.inventory.get_active_item()
@@ -131,39 +275,22 @@ class CombatActionDiscovery:
 
             equipped_weapons = [FISTS_TYPE.create()]
 
-        # Choose a representative target for probability calculations
-        representative: Character | None = None
-        closest_dist: float | None = None
-        for potential in context.nearby_actors:
-            if (
-                isinstance(potential, Character)
-                and potential.health
-                and potential.health.is_alive()
-            ):
-                dist = ranges.calculate_distance(
-                    actor.x, actor.y, potential.x, potential.y
-                )
-                if closest_dist is None or dist < closest_dist:
-                    closest_dist = dist
-                    representative = potential
-
         for weapon in equipped_weapons:
             # Melee attacks
             melee_prob: float | None = None
-            if representative is not None:
-                dist = ranges.calculate_distance(
-                    actor.x, actor.y, representative.x, representative.y
-                )
-                if weapon.melee_attack and dist == 1:
+            if target is not None and weapon.melee_attack:
+                dist = ranges.calculate_distance(actor.x, actor.y, target.x, target.y)
+                if dist == 1:
                     melee_prob = self.context_builder.calculate_combat_probability(
-                        controller, actor, representative, "strength"
+                        controller, actor, target, "strength"
                     )
             if weapon.melee_attack:
+                verb = weapon.melee_attack._spec.verb.capitalize()
                 options.append(
                     ActionOption(
                         id=f"melee-{weapon.name}",
-                        name=f"Melee attack with {weapon.name}",
-                        description=f"Close combat attack using {weapon.name}",
+                        name=verb,
+                        description=f"{verb} a target with {weapon.name}",
                         category=ActionCategory.COMBAT,
                         action_class=AttackIntent,
                         requirements=[ActionRequirement.TARGET_ACTOR],
@@ -175,30 +302,29 @@ class CombatActionDiscovery:
             # Ranged attacks
             ranged_prob: float | None = None
             if (
-                weapon.ranged_attack
+                target is not None
+                and weapon.ranged_attack
                 and weapon.ranged_attack.current_ammo > 0
-                and representative is not None
             ):
-                dist = ranges.calculate_distance(
-                    actor.x, actor.y, representative.x, representative.y
-                )
+                dist = ranges.calculate_distance(actor.x, actor.y, target.x, target.y)
                 range_cat = ranges.get_range_category(dist, weapon)
                 range_mods = ranges.get_range_modifier(weapon, range_cat)
                 if range_mods is not None:
                     ranged_prob = self.context_builder.calculate_combat_probability(
                         controller,
                         actor,
-                        representative,
+                        target,
                         "observation",
                         range_mods,
                     )
 
             if weapon.ranged_attack and weapon.ranged_attack.current_ammo > 0:
+                verb = weapon.ranged_attack._spec.verb.capitalize()
                 options.append(
                     ActionOption(
                         id=f"ranged-{weapon.name}",
-                        name=f"Ranged attack with {weapon.name}",
-                        description=f"Use {weapon.name} for a ranged attack",
+                        name=verb,
+                        description=f"{verb} a target with {weapon.name}",
                         category=ActionCategory.COMBAT,
                         action_class=AttackIntent,
                         requirements=[ActionRequirement.TARGET_ACTOR],

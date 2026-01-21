@@ -36,6 +36,7 @@ from catley.util.live_vars import live_variable_registry
 from .render.effects.effects import EffectContext
 from .render.effects.screen_shake import ScreenShake
 from .render.graphics import GraphicsContext
+from .ui.combat_tooltip_overlay import CombatTooltipOverlay
 from .ui.cursor_manager import CursorManager
 from .ui.debug_stats_overlay import DebugStatsOverlay
 from .ui.dev_console_overlay import DevConsoleOverlay
@@ -107,6 +108,7 @@ class FrameManager:
         self.debug_stats_overlay = DebugStatsOverlay(self.controller)
         self.controller.overlay_system.show_overlay(self.debug_stats_overlay)
         self.dev_console_overlay = DevConsoleOverlay(self.controller)
+        self.combat_tooltip_overlay = CombatTooltipOverlay(self.controller)
 
         # Register live variables owned by the frame manager
         live_variable_registry.register(
