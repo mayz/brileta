@@ -250,7 +250,7 @@ class TestWGPUGraphicsContext:
         self.graphics_ctx.present_texture(Mock(), 0, 0, 10, 10)
         self.graphics_ctx.draw_background(Mock(), 0, 0, 10, 10)
 
-        self.graphics_ctx.draw_debug_rect(0, 0, 100, 100, colors.GREEN)
+        self.graphics_ctx.draw_rect_outline(0, 0, 100, 100, colors.GREEN, 1.0)
 
         # create_canvas should now work and return a WGPUCanvas
         canvas = self.graphics_ctx.create_canvas()

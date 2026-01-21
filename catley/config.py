@@ -50,13 +50,16 @@ ENVIRONMENTAL_EFFECTS_ENABLED = True
 
 # Rendering effects
 PULSATION_PERIOD = 2.0  # Seconds for full pulsation cycle (selected actor)
-PULSATION_MAX_BLEND_ALPHA = 0.5  # Maximum alpha for pulsation blending
+PULSATION_MAX_BLEND_ALPHA = Opacity(0.5)  # Maximum alpha for pulsation blending
 LUMINANCE_THRESHOLD = 127.5  # For determining light vs dark colors
 
 # Combat outline shimmer effect (shimmering glyph outlines on targetable enemies)
 COMBAT_OUTLINE_SHIMMER_PERIOD = 2.4  # Seconds for full shimmer cycle
-COMBAT_OUTLINE_MIN_ALPHA = 0.4  # Minimum alpha during shimmer
-COMBAT_OUTLINE_MAX_ALPHA = 0.85  # Maximum alpha during shimmer
+COMBAT_OUTLINE_MIN_ALPHA = Opacity(0.4)  # Minimum alpha during shimmer
+COMBAT_OUTLINE_MAX_ALPHA = Opacity(0.85)  # Maximum alpha during shimmer
+
+# Contextual target outline (exploration mode)
+CONTEXTUAL_OUTLINE_ALPHA = Opacity(0.55)  # Solid outline opacity
 
 # Shake effect
 # Set to False to disable screen shake

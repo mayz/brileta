@@ -306,8 +306,8 @@ class FrameManager:
                 # Pick a color from the debug palette, wrapping around if needed
                 color = debug_colors.DEBUG_COLORS[i % len(debug_colors.DEBUG_COLORS)]
 
-                self.graphics.draw_debug_rect(
-                    int(px_x), int(px_y), int(px_w), int(px_h), color
+                self.graphics.draw_rect_outline(
+                    int(px_x), int(px_y), int(px_w), int(px_h), color, 1.0
                 )
 
         # Draw the mouse cursor on top of all overlays

@@ -11,6 +11,7 @@ from catley.config import (
     COMBAT_OUTLINE_MAX_ALPHA,
     COMBAT_OUTLINE_MIN_ALPHA,
     COMBAT_OUTLINE_SHIMMER_PERIOD,
+    CONTEXTUAL_OUTLINE_ALPHA,
     LUMINANCE_THRESHOLD,
     PULSATION_MAX_BLEND_ALPHA,
     PULSATION_PERIOD,
@@ -833,6 +834,45 @@ class WorldView(View):
                 effect="solid",
                 alpha=SELECTION_HIGHLIGHT_ALPHA,
             )
+
+    def _render_contextual_target_outline(self) -> None:
+        if self.controller.is_combat_mode():
+            return
+        actor = self.controller.contextual_target
+        if actor is None or actor not in self.controller.gw.actors:
+            return
+        if not self.controller.gw.game_map.visible[actor.x, actor.y]:
+            return
+        if actor.character_layers:
+            self._render_layered_tile_outline(
+                actor, colors.CONTEXTUAL_OUTLINE, float(CONTEXTUAL_OUTLINE_ALPHA)
+            )
+            return
+        self.render_actor_outline(
+            actor, colors.CONTEXTUAL_OUTLINE, float(CONTEXTUAL_OUTLINE_ALPHA)
+        )
+
+    def _render_layered_tile_outline(
+        self, actor: Actor, color: colors.Color, alpha: float
+    ) -> None:
+        vs = self.viewport_system
+        if not vs.is_visible(actor.x, actor.y):
+            return
+
+        vp_x, vp_y = vs.world_to_screen(actor.x, actor.y)
+        root_x = self.x + vp_x
+        root_y = self.y + vp_y
+        screen_x, screen_y = self.graphics.console_to_screen_coords(root_x, root_y)
+
+        tile_w, tile_h = self.graphics.tile_dimensions
+        self.graphics.draw_rect_outline(
+            int(screen_x),
+            int(screen_y),
+            int(tile_w),
+            int(tile_h),
+            color,
+            alpha,
+        )
 
     def _update_mouse_tile_location(self) -> None:
         """Update the stored world-space mouse tile based on the current camera."""

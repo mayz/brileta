@@ -46,6 +46,7 @@ OUTDOOR_LIGHT_WALL: Color = (80, 60, 40)  # Sunlit rock/stone
 PLAYER_COLOR: Color = WHITE
 NPC_COLOR: Color = YELLOW
 SELECTED_HIGHLIGHT: Color = WHITE
+CONTEXTUAL_OUTLINE: Color = (90, 190, 200)
 
 DEAD: Color = (128, 128, 128)
 

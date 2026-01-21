@@ -80,20 +80,27 @@ class BaseGraphicsContext(GraphicsContext):
             uv_map[i] = [u1, v1, u2, v2]
         return uv_map
 
-    def draw_debug_rect(
-        self, px_x: int, px_y: int, px_w: int, px_h: int, color: colors.Color
+    def draw_rect_outline(
+        self,
+        px_x: int,
+        px_y: int,
+        px_w: int,
+        px_h: int,
+        color: colors.Color,
+        alpha: float,
     ) -> None:
-        """Draw a debug rectangle outline.
-
-        This implementation is shared between backends as it just adds quads
-        to the screen renderer which each backend implements.
-        """
+        """Draw a rectangle outline using the screen renderer."""
         if not hasattr(self, "screen_renderer") or self.screen_renderer is None:
             return
         if self.uv_map is None:
             return
 
-        color_rgba = (color[0] / 255.0, color[1] / 255.0, color[2] / 255.0, 1.0)
+        color_rgba = (
+            color[0] / 255.0,
+            color[1] / 255.0,
+            color[2] / 255.0,
+            max(0.0, min(1.0, alpha)),
+        )
         uv_coords = self.uv_map[self.SOLID_BLOCK_CHAR]
 
         # Top edge

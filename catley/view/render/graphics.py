@@ -300,10 +300,16 @@ class GraphicsContext(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def draw_debug_rect(
-        self, px_x: int, px_y: int, px_w: int, px_h: int, color: colors.Color
+    def draw_rect_outline(
+        self,
+        px_x: int,
+        px_y: int,
+        px_w: int,
+        px_h: int,
+        color: colors.Color,
+        alpha: float,
     ) -> None:
-        """Draws a raw, unfilled rectangle directly to the screen for debugging."""
+        """Draws an unfilled rectangle outline directly to the screen."""
         pass
 
     @property

@@ -763,39 +763,47 @@ class TCODGraphicsContext(GraphicsContext):
         dest_rect = (int(left), int(top), int(dest_width), int(dest_height))
         self.sdl_renderer.copy(texture, dest=dest_rect)
 
-    def draw_debug_rect(
-        self, px_x: int, px_y: int, px_w: int, px_h: int, color: colors.Color
+    def draw_rect_outline(
+        self,
+        px_x: int,
+        px_y: int,
+        px_w: int,
+        px_h: int,
+        color: colors.Color,
+        alpha: float,
     ) -> None:
-        """Draws a raw, unfilled rectangle directly to the screen for debugging."""
+        """Draws a raw, unfilled rectangle directly to the screen."""
         if not self.sdl_renderer:
             return
 
         # Create a small 1x1 pixel texture for drawing the outline
-        if not hasattr(self, "_debug_pixel_texture"):
+        if not hasattr(self, "_outline_pixel_texture"):
             # Create a 1x1 white pixel texture
             pixel_array = np.ones((1, 1, 4), dtype=np.uint8) * 255
-            self._debug_pixel_texture = self.sdl_renderer.upload_texture(pixel_array)
-            self._debug_pixel_texture.blend_mode = tcod.sdl.render.BlendMode.BLEND
+            self._outline_pixel_texture = self.sdl_renderer.upload_texture(pixel_array)
+            self._outline_pixel_texture.blend_mode = tcod.sdl.render.BlendMode.BLEND
 
         # Set the color for the texture
-        self._debug_pixel_texture.color_mod = color
+        self._outline_pixel_texture.color_mod = color
+        self._outline_pixel_texture.alpha_mod = int(max(0.0, min(1.0, alpha)) * 255)
 
         # Draw the four sides of the rectangle using the 1x1 texture
         # Top edge
-        self.sdl_renderer.copy(self._debug_pixel_texture, dest=(px_x, px_y, px_w, 1))
+        self.sdl_renderer.copy(self._outline_pixel_texture, dest=(px_x, px_y, px_w, 1))
         # Bottom edge
         self.sdl_renderer.copy(
-            self._debug_pixel_texture, dest=(px_x, px_y + px_h - 1, px_w, 1)
+            self._outline_pixel_texture, dest=(px_x, px_y + px_h - 1, px_w, 1)
         )
         # Left edge
-        self.sdl_renderer.copy(self._debug_pixel_texture, dest=(px_x, px_y, 1, px_h))
+        self.sdl_renderer.copy(self._outline_pixel_texture, dest=(px_x, px_y, 1, px_h))
         # Right edge
         self.sdl_renderer.copy(
-            self._debug_pixel_texture, dest=(px_x + px_w - 1, px_y, 1, px_h)
+            self._outline_pixel_texture, dest=(px_x + px_w - 1, px_y, 1, px_h)
         )
 
         # Reset color mod for next use
-        self._debug_pixel_texture.color_mod = (255, 255, 255)
+        self._outline_pixel_texture.color_mod = (255, 255, 255)
+        self._outline_pixel_texture.alpha_mod = 255
 
     def create_canvas(self, transparent: bool = True) -> Any:
         """Creates a TCOD canvas that uses Console."""

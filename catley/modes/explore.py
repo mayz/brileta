@@ -195,6 +195,7 @@ class ExploreMode(Mode):
         # This is the default rendering when no other mode is active
         if self._fm is not None and hasattr(self._fm, "world_view"):
             self._fm.world_view._render_selected_actor_highlight()
+            self._fm.world_view._render_contextual_target_outline()
 
     # -------------------------------------------------------------------------
     # UI Command Helpers

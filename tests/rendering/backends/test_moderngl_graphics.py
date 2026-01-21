@@ -254,12 +254,12 @@ class TestModernGLGraphicsContext:
         # Should have added vertices for the highlight
         assert self.graphics_ctx.screen_renderer.vertex_count > initial_vertex_count
 
-    def test_draw_debug_rect(self):
-        """Test drawing debug rectangles."""
+    def test_draw_rect_outline(self):
+        """Test drawing rectangle outlines."""
         initial_vertex_count = self.graphics_ctx.screen_renderer.vertex_count
 
-        self.graphics_ctx.draw_debug_rect(
-            px_x=10, px_y=20, px_w=100, px_h=50, color=(0, 255, 0)
+        self.graphics_ctx.draw_rect_outline(
+            px_x=10, px_y=20, px_w=100, px_h=50, color=(0, 255, 0), alpha=1.0
         )
 
         # Should have added vertices for 4 edges (24 vertices total)
