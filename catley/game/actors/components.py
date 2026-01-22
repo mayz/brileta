@@ -564,8 +564,7 @@ class CharacterInventory(InventoryComponent):
         # Process equipped outfit
         if self._equipped_outfit is not None:
             outfit_item, _ = self._equipped_outfit
-            # Use a distinct color for armor slots
-            armor_color = colors.CATEGORY_ARMOR
+            armor_color = colors.WHITE
 
             if outfit_item.size == ItemSize.TINY:
                 if not has_processed_tiny_slot:

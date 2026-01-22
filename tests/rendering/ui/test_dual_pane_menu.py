@@ -238,6 +238,20 @@ def test_arrow_keys_move_cursor() -> None:
     assert menu.left_cursor == 0
 
 
+def test_ensure_valid_cursor_handles_empty_options() -> None:
+    """Cursor validation should not crash when options are emptied."""
+    controller = _make_controller_with_inventory_items()
+    menu = DualPaneMenu(controller)
+    menu.show()
+
+    menu.left_cursor = 5
+    menu.left_options = []
+
+    menu._ensure_valid_cursor(PaneId.LEFT)
+
+    assert menu.left_cursor == 0
+
+
 def test_escape_closes_menu() -> None:
     """Escape key should close the menu."""
     controller = _make_controller()

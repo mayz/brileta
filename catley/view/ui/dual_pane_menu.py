@@ -391,20 +391,30 @@ class DualPaneMenu(Menu):
         else:
             options = self.right_options
             cursor = self.right_cursor
+        options_len = len(options)
 
         # If current position is valid and enabled, keep it
-        if 0 <= cursor < len(options) and options[cursor].enabled:
+        if 0 <= cursor < options_len and options[cursor].enabled:
+            return
+
+        if options_len == 0:
+            if pane == PaneId.LEFT:
+                self.left_cursor = 0
+            else:
+                self.right_cursor = 0
             return
 
         # Find nearest enabled option (prefer forward, then backward)
-        for i in range(cursor, len(options)):
+        forward_start = max(0, cursor)
+        for i in range(forward_start, options_len):
             if options[i].enabled:
                 if pane == PaneId.LEFT:
                     self.left_cursor = i
                 else:
                     self.right_cursor = i
                 return
-        for i in range(cursor - 1, -1, -1):
+        backward_start = min(cursor - 1, options_len - 1)
+        for i in range(backward_start, -1, -1):
             if options[i].enabled:
                 if pane == PaneId.LEFT:
                     self.left_cursor = i
