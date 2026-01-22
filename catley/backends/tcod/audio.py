@@ -270,7 +270,6 @@ class TCODAudioBackend(AudioBackend):
             no lower-priority channels can be stolen
         """
         if not self._initialized:
-            logger.warning("Audio backend not initialized")
             return None
 
         # First try to find an idle channel

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 import tcod.map
@@ -44,6 +45,8 @@ from .view.frame_manager import FrameManager
 from .view.presentation import PresentationManager
 from .view.render.graphics import GraphicsContext
 from .view.ui.overlays import OverlaySystem
+
+logger = logging.getLogger(__name__)
 
 
 class Controller:
@@ -865,8 +868,8 @@ class Controller:
                 assets_path = Path(__file__).parent.parent / "assets"
                 self.sound_system.set_assets_path(assets_path)
             except Exception as e:
-                # Log error but continue without audio
-                print(f"Warning: Failed to initialize audio backend: {e}")
+                # Continue without audio; avoid user-visible warnings.
+                logger.debug("Failed to initialize audio backend: %s", e)
 
     def cleanup(self) -> None:
         """Clean up resources when the controller is being shut down."""
