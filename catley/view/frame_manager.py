@@ -245,6 +245,8 @@ class FrameManager:
     def on_window_resized(self) -> None:
         """Called when the game window is resized to update view layouts."""
         self._layout_views()
+        if self.controller.overlay_system is not None:
+            self.controller.overlay_system.invalidate_all()
 
     def add_view(self, view: View) -> None:
         """Add a UI view to be rendered each frame."""

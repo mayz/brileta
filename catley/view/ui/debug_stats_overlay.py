@@ -19,6 +19,7 @@ class DebugStatsOverlay(TextOverlay):
     def __init__(self, controller: Controller) -> None:
         super().__init__(controller)
         self.is_interactive = False
+        self.always_dirty = True
 
     def _get_backend(self) -> Canvas:
         return self.controller.graphics.create_canvas(transparent=True)

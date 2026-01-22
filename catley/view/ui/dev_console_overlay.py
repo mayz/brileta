@@ -130,10 +130,6 @@ class DevConsoleOverlay(TextOverlay):
 
     def draw_content(self) -> None:
         assert self.canvas is not None
-        now = time.perf_counter()
-        if now - self._last_blink_time >= 0.5:
-            self._cursor_visible = not self._cursor_visible
-            self._last_blink_time = now
 
         # Background
         self.canvas.draw_rect(
@@ -181,6 +177,19 @@ class DevConsoleOverlay(TextOverlay):
             cursor_x, _, _ = self.canvas.get_text_metrics(prompt)
             _ascent, _ = self.canvas.get_font_metrics()
             self.canvas.draw_text(cursor_x, prompt_y, "|", colors.WHITE)
+
+    def draw(self) -> None:
+        """Update cursor blink state and draw when needed."""
+        if not self.is_active:
+            return
+
+        now = time.perf_counter()
+        if now - self._last_blink_time >= 0.5:
+            self._cursor_visible = not self._cursor_visible
+            self._last_blink_time = now
+            self.invalidate()
+
+        super().draw()
 
     # ------------------------------------------------------------------
     # Input handling

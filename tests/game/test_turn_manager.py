@@ -1,7 +1,7 @@
 from dataclasses import dataclass
-from typing import cast
+from typing import Any, cast
 
-from catley import colors
+from catley import colors, config
 from catley.controller import Controller
 from catley.environment.tile_types import TileTypeID
 from catley.events import reset_event_bus_for_testing
@@ -79,6 +79,10 @@ class DummyController:
         self.action_cost = 100
         self.update_fov_called = False
         self.message_log = type("Log", (), {"add_message": lambda *a, **kw: None})()
+        self.combat_tooltip_invalidations = 0
+
+    def invalidate_combat_tooltip(self) -> None:
+        self.combat_tooltip_invalidations += 1
 
     def start_actor_pathfinding(self, *args, **kwargs):
         return Controller.start_actor_pathfinding(
@@ -433,6 +437,85 @@ def test_staggered_npc_action_blocked_by_turn_manager() -> None:
 
     # NPC's energy should be depleted (can't act again until next player turn)
     assert npc.energy.accumulated_energy == 0
+
+
+def test_npc_action_invalidates_combat_tooltip() -> None:
+    """NPC actions should trigger combat tooltip invalidation."""
+    reset_event_bus_for_testing()
+    gw = DummyGameWorld()
+    player = Character(
+        0, 0, "@", colors.WHITE, "Player", game_world=cast(GameWorld, gw)
+    )
+    npc = NPC(
+        1,
+        0,
+        "r",
+        colors.RED,
+        "Raider",
+        game_world=cast(GameWorld, gw),
+        disposition=Disposition.HOSTILE,
+    )
+    gw.player = player
+    gw.add_actor(player)
+    gw.add_actor(npc)
+
+    controller = DummyController(gw=gw)
+    controller.turn_manager.on_player_action()
+    npc.energy.accumulated_energy = config.ACTION_COST
+    npc.get_next_action = lambda _controller: MoveIntent(_controller, npc, dx=1, dy=0)
+    controller.turn_manager.execute_intent = lambda _intent: None  # type: ignore[assignment]
+
+    controller.turn_manager.process_all_npc_reactions()
+
+    assert controller.combat_tooltip_invalidations == 1
+
+
+def test_player_action_invalidates_combat_tooltip(monkeypatch: Any) -> None:
+    """Player actions should refresh combat tooltip probabilities."""
+    reset_event_bus_for_testing()
+    controller = get_controller_with_player_and_map()
+    controller.mode_stack.append(controller.combat_mode)
+
+    class DummyTooltip:
+        def __init__(self) -> None:
+            self.is_active = True
+
+        def invalidate(self) -> None:
+            return
+
+    tooltip = DummyTooltip()
+    controller.frame_manager.combat_tooltip_overlay = tooltip
+
+    invalidations = 0
+
+    def _invalidate() -> None:
+        nonlocal invalidations
+        invalidations += 1
+
+    monkeypatch.setattr(tooltip, "invalidate", _invalidate)
+    tooltip.is_active = True
+
+    player = controller.gw.player
+    directions = [(1, 0), (-1, 0), (0, 1), (0, -1)]
+    dx, dy = 0, 0
+    for test_dx, test_dy in directions:
+        target_x, target_y = player.x + test_dx, player.y + test_dy
+        if (
+            controller.gw.game_map.walkable[target_x, target_y]
+            and controller.gw.get_actor_at_location(target_x, target_y) is None
+        ):
+            dx, dy = test_dx, test_dy
+            break
+    else:
+        blocker = controller.gw.get_actor_at_location(player.x + 1, player.y)
+        if blocker:
+            controller.gw.remove_actor(blocker)
+        dx, dy = 1, 0
+
+    move_intent = MoveIntent(controller, player, dx=dx, dy=dy)
+    controller._execute_player_action_immediately(move_intent)
+
+    assert invalidations == 1
 
 
 def test_staggered_player_action_blocked_by_controller() -> None:

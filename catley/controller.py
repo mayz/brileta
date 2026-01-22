@@ -319,6 +319,7 @@ class Controller:
             self.gw.player.update_turn(self)
             self.gw.player.energy.spend(config.ACTION_COST)
             publish_event(MessageEvent("You cannot act!", colors.RED))
+            self.invalidate_combat_tooltip()
             return
 
         # Process turn effects for the acting player
@@ -342,6 +343,7 @@ class Controller:
 
         # RAF: Trigger immediate NPC scheduling based on the world state change
         self.turn_manager.on_player_action()
+        self.invalidate_combat_tooltip()
 
     def update_contextual_target_from_movement(self, dx: int, dy: int) -> None:
         """Update the contextual target based on player movement direction.
@@ -563,6 +565,19 @@ class Controller:
         not just if it's the active mode.
         """
         return self.combat_mode in self.mode_stack
+
+    def invalidate_combat_tooltip(self) -> None:
+        """Refresh the combat tooltip overlay if it is active."""
+        if not self.is_combat_mode():
+            return
+
+        fm = self.frame_manager
+        if fm is None or not hasattr(fm, "combat_tooltip_overlay"):
+            return
+
+        tooltip = fm.combat_tooltip_overlay
+        if tooltip.is_active:
+            tooltip.invalidate()
 
     def _on_combat_initiated(self, event: CombatInitiatedEvent) -> None:
         """Auto-enter combat mode when combat is initiated.

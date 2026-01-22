@@ -80,6 +80,9 @@ class TextOverlay(Overlay):
         super().__init__(controller)
         self.canvas = self._get_backend()
         self._cached_texture: Any | None = None
+        self._dirty = True
+        # Set True for overlays with content that changes every frame (e.g. live stats).
+        self.always_dirty = False
         self.x_tiles, self.y_tiles, self.width, self.height = 0, 0, 0, 0
         self.pixel_width, self.pixel_height = 0, 0
         self.tile_dimensions = (
@@ -102,9 +105,26 @@ class TextOverlay(Overlay):
     def draw_content(self) -> None:
         """Subclasses implement the actual drawing commands using the canvas."""
 
+    def invalidate(self) -> None:
+        """Mark the overlay as dirty so it will be re-rendered next frame."""
+        self._dirty = True
+        self._cached_texture = None
+
+    def show(self) -> None:
+        """Activate overlay and mark it for redraw."""
+        super().show()
+        self.invalidate()
+
     def draw(self) -> None:
         """Orchestrate rendering. This is the main entry point."""
         if not self.is_active:
+            return
+
+        if (
+            not self.always_dirty
+            and not self._dirty
+            and self._cached_texture is not None
+        ):
             return
 
         self._calculate_dimensions()
@@ -112,6 +132,7 @@ class TextOverlay(Overlay):
         if self.width <= 0 or self.height <= 0:
             # Nothing to render when dimensions are zero.
             self._cached_texture = None
+            self._dirty = False
             return
 
         self.canvas.configure_drawing_offset(self.x_tiles, self.y_tiles)
@@ -130,6 +151,7 @@ class TextOverlay(Overlay):
             else:
                 texture = self.canvas.create_texture(self.controller.graphics, artifact)
             self._cached_texture = texture
+            self._dirty = False
 
     def present(self) -> None:
         """Presents the cached texture if one was created by the backend."""
@@ -195,6 +217,9 @@ class OverlaySystem:
                 if not overlay.is_active and overlay in self.active_overlays:
                     self.active_overlays.remove(overlay)
 
+                if consumed and isinstance(overlay, TextOverlay):
+                    overlay.invalidate()
+
                 return consumed
 
             # If we get here, there were only non-interactive overlays
@@ -225,6 +250,12 @@ class OverlaySystem:
     def has_interactive_overlays(self) -> bool:
         """Check if there are any active, interactive overlays."""
         return any(o.is_interactive for o in self.active_overlays)
+
+    def invalidate_all(self) -> None:
+        """Invalidate all active text overlays."""
+        for overlay in self.active_overlays:
+            if isinstance(overlay, TextOverlay):
+                overlay.invalidate()
 
     # Legacy methods for backward compatibility
     def show_menu(self, menu: Menu) -> None:

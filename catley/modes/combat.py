@@ -98,7 +98,7 @@ class CombatMode(Mode):
         self.candidates = []
         self.current_index = 0
         self.controller.gw.selected_actor = None
-        self.selected_action = None  # Reset action selection on exit
+        self._set_selected_action(None)  # Reset action selection on exit
 
         # Hide combat tooltip overlay (if available - may not exist in tests)
         fm = self.controller.frame_manager
@@ -369,17 +369,17 @@ class CombatMode(Mode):
         # Find the first combat (attack) action as default
         for action in actions:
             if action.category == ActionCategory.COMBAT:
-                self.selected_action = action
+                self._set_selected_action(action)
                 return
 
         # If no combat actions, try to use Push as fallback
         for action in actions:
             if action.category == ActionCategory.STUNT:
-                self.selected_action = action
+                self._set_selected_action(action)
                 return
 
         # If no actions at all, leave as None
-        self.selected_action = None
+        self._set_selected_action(None)
 
     def select_action(self, action: ActionOption) -> None:
         """Select a combat action to use on the next target click.
@@ -387,7 +387,7 @@ class CombatMode(Mode):
         Args:
             action: The action to select.
         """
-        self.selected_action = action
+        self._set_selected_action(action)
 
     def get_available_combat_actions(
         self, target: Character | None = None
@@ -434,19 +434,37 @@ class CombatMode(Mode):
             actions: The current list of available combat actions.
         """
         if not actions:
-            self.selected_action = None
+            self._set_selected_action(None)
             return
 
         # Auto-select first action if none currently selected
         if self.selected_action is None:
-            self.selected_action = actions[0]
+            self._set_selected_action(actions[0])
             return
 
         # Check if current selection is still valid
         action_ids = {a.id for a in actions}
         if self.selected_action.id not in action_ids:
             # Weapon changed - select first action
-            self.selected_action = actions[0]
+            self._set_selected_action(actions[0])
+
+    def _set_selected_action(self, action: ActionOption | None) -> None:
+        """Assign selected action and refresh tooltip if it changed."""
+        if self.selected_action is action:
+            return
+
+        self.selected_action = action
+        self._invalidate_combat_tooltip()
+
+    def _invalidate_combat_tooltip(self) -> None:
+        """Invalidate combat tooltip overlay if it is active."""
+        fm = self.controller.frame_manager
+        if fm is None or not hasattr(fm, "combat_tooltip_overlay"):
+            return
+
+        tooltip = fm.combat_tooltip_overlay
+        if tooltip.is_active:
+            tooltip.invalidate()
 
     def _try_select_action_by_hotkey(self, key: str) -> bool:
         """Try to select a combat action by its hotkey.

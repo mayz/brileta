@@ -132,6 +132,7 @@ class TurnManager:
         Hazard damage is NOT applied here - it's applied once per player action
         in on_player_action() to avoid damage being applied every tick.
         """
+        any_action_executed = False
         for actor in self._energy_actors_cache:
             if actor is self.player:
                 continue
@@ -159,6 +160,12 @@ class TurnManager:
                     # Execute the action
                     self.execute_intent(action)
                     actor.energy.spend(config.ACTION_COST)
+                    any_action_executed = True
+
+        if any_action_executed and hasattr(
+            self.controller, "invalidate_combat_tooltip"
+        ):
+            self.controller.invalidate_combat_tooltip()
 
     def _apply_terrain_hazard(self, actor: Actor) -> None:
         """Check if actor is on hazardous terrain and apply damage if so.

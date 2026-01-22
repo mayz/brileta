@@ -29,6 +29,7 @@ class DummyFrameManager:
             set_active_cursor_type=lambda *a: None,
         )
     )
+    combat_tooltip_overlay: Any = None
 
     def get_world_coords_from_root_tile_coords(
         self, pos: tuple[int, int]
@@ -47,10 +48,14 @@ class DummyController:
     explore_mode: Any = None
     overlay_system: Any = None
     app: Any = None
+    mode_stack: list[Any] = field(default_factory=list)
 
     def update_contextual_target_from_hover(self, _mouse_pos: Any) -> None:
         """No-op placeholder to satisfy InputHandler interactions."""
         return
+
+    def is_combat_mode(self) -> bool:
+        return False
 
 
 def make_input_handler() -> tuple[InputHandler, list[tuple[Any, tuple[int, int], Any]]]:
@@ -118,6 +123,7 @@ def make_input_handler() -> tuple[InputHandler, list[tuple[Any, tuple[int, int],
     # Create a mock active_mode that doesn't consume input
     # (so InputHandler falls through to overlay handling)
     controller.active_mode = SimpleNamespace(handle_input=lambda e: False)
+    controller.mode_stack = [controller.active_mode]
 
     ih = InputHandler(dummy_app, cast(Any, controller))
     return ih, calls
@@ -243,3 +249,25 @@ def test_t_key_not_handled_by_explore_mode() -> None:
     event = tcod.event.KeyDown(0, Keys.KEY_T, 0)
     result = mode.handle_input(event)
     assert result is False  # T key is not consumed
+
+
+def test_mouse_motion_invalidates_combat_tooltip() -> None:
+    """Mouse motion should invalidate the combat tooltip when in combat."""
+    ih, _ = make_input_handler()
+
+    class DummyTooltip:
+        def __init__(self) -> None:
+            self.invalidated = 0
+            self.is_active = True
+
+        def invalidate(self) -> None:
+            self.invalidated += 1
+
+    tooltip = DummyTooltip()
+    ih.controller.frame_manager.combat_tooltip_overlay = tooltip
+    ih.controller.is_combat_mode = lambda: True
+
+    event = tcod.event.MouseMotion((5, 5), (1, 1))
+    ih.dispatch(event)
+
+    assert tooltip.invalidated == 1

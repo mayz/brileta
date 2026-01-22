@@ -167,6 +167,13 @@ class InputHandler:
             self.gw.mouse_tile_location_on_map
         )
 
+        if self.controller.is_combat_mode():
+            fm = self.controller.frame_manager
+            if fm is not None and hasattr(fm, "combat_tooltip_overlay"):
+                tooltip = fm.combat_tooltip_overlay
+                if tooltip.is_active:
+                    tooltip.invalidate()
+
     def _update_hover_cursor(self, event: tcod.event.MouseMotion) -> None:
         """Update cursor based on what the mouse is hovering over.
 
