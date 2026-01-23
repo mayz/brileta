@@ -82,6 +82,10 @@ class MockListRenderer:
         self.rows.clear()
         self._hit_areas.clear()
 
+    def clear_hit_areas(self) -> None:
+        """Clear only hit areas (not rows or hover state)."""
+        self._hit_areas.clear()
+
 
 def make_explore_mode_with_panel() -> tuple[
     DummyController, ExploreMode, ActionPanelView
@@ -225,3 +229,101 @@ class TestActionClickHandling:
         mode._try_execute_action_panel_click(event)
 
         assert len(callback_called) == 1
+
+
+class TestStaleHitAreasRegression:
+    """Regression tests for stale hit areas bug.
+
+    When a section transitions from rendered to not-rendered, its hit areas
+    must be cleared. Otherwise, clicks on the newly-rendered section could
+    be intercepted by stale hit areas from the previously-rendered section.
+
+    See: ActionPanelView.draw_content() clear_hit_areas() calls.
+    """
+
+    def test_stale_controls_hit_areas_do_not_intercept_action_clicks(self) -> None:
+        """Stale controls hit areas should not intercept clicks on actions.
+
+        Scenario:
+        1. No target selected - controls section rendered at y=100-200
+        2. Target selected - actions section rendered at y=100-200, controls hidden
+        3. Click at y=150 should hit the action, NOT trigger stale controls callback
+        """
+        _controller, mode, view = make_explore_mode_with_panel()
+
+        # Simulate stale controls hit areas (from when no target was selected)
+        # These overlap with where actions will be rendered
+        controls_callback_called = []
+
+        def stale_controls_callback() -> None:
+            controls_callback_called.append(True)
+
+        stale_control_row = SelectableRow(
+            text="Action menu",
+            key="Space",
+            execute=stale_controls_callback,
+        )
+        view._controls_renderer.rows = [stale_control_row]
+        # Stale hit area at y=100-150 (overlapping with actions area)
+        view._controls_renderer._hit_areas = [((10, 100, 70, 150), 0)]
+
+        # Now set up actions (as if target was just selected)
+        action = ActionOption(
+            id="attack",
+            name="Attack",
+            description="Attack the target",
+            category=ActionCategory.COMBAT,
+            action_class=MagicMock(),  # type: ignore[arg-type]
+            static_params={},
+        )
+        action_row = SelectableRow(text="Attack", key="A", data=action)
+        view._actions_renderer.rows = [action_row]
+        # Fresh hit area at y=100-150 (same position as stale controls)
+        view._actions_renderer._hit_areas = [((10, 100, 70, 150), 0)]
+
+        # Click in the overlapping area
+        event = MagicMock(spec=tcod.event.MouseButtonDown)
+        event.button = tcod.event.MouseButton.LEFT
+        event.position = tcod.event.Point(40, 125)
+
+        # This simulates what happens AFTER draw_content clears stale hit areas
+        # In the real code, draw_content() would call clear_hit_areas() on
+        # _controls_renderer when the controls section isn't rendered.
+        view._controls_renderer.clear_hit_areas()
+
+        mode._try_execute_action_panel_click(event)
+
+        # The stale controls callback should NOT have been triggered
+        assert len(controls_callback_called) == 0
+        # The action should have been queued
+        assert len(_controller.queued_actions) == 1
+
+    def test_stale_actions_hit_areas_cleared_when_no_target(self) -> None:
+        """Stale actions hit areas should not return actions when no target.
+
+        Scenario:
+        1. Target selected - actions at y=100-150
+        2. Target deselected - controls rendered, actions hidden
+        3. get_action_at_pixel should return None, not stale action
+        """
+        _controller, _mode, view = make_explore_mode_with_panel()
+
+        # Simulate stale actions hit areas (from when target was selected)
+        stale_action = ActionOption(
+            id="stale-attack",
+            name="Stale Attack",
+            description="This action should not be returned",
+            category=ActionCategory.COMBAT,
+            action_class=MagicMock(),  # type: ignore[arg-type]
+            static_params={},
+        )
+        stale_row = SelectableRow(text="Stale Attack", key="A", data=stale_action)
+        view._actions_renderer.rows = [stale_row]
+        view._actions_renderer._hit_areas = [((10, 100, 70, 150), 0)]
+
+        # Simulate clearing stale hit areas (what draw_content does)
+        view._actions_renderer.clear_hit_areas()
+
+        # get_action_at_pixel should return None now
+        result = view.get_action_at_pixel(40, 125)
+        assert result is None

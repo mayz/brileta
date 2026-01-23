@@ -138,7 +138,12 @@ class ActionDiscovery:
         return options
 
     def _create_attack_gateway_action(self, controller: Controller) -> ActionOption:
-        """Create the 'Attack' gateway action that enters combat mode."""
+        """Create the 'Attack...' gateway action that enters combat mode.
+
+        The ellipsis signals to the player that this action leads to more
+        choices (combat mode entry with weapon/target selection) rather than
+        executing immediately like Talk or Shove.
+        """
 
         def enter_combat() -> bool:
             controller.enter_combat_mode()
@@ -146,7 +151,7 @@ class ActionDiscovery:
 
         return ActionOption(
             id="attack-gateway",
-            name="Attack",
+            name="Attack...",
             description="Enter combat mode to select an attack",
             category=ActionCategory.COMBAT,
             action_class=None,

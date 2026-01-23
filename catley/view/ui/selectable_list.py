@@ -554,3 +554,12 @@ class SelectableListRenderer:
         self.rows.clear()
         self._hit_areas.clear()
         self.hovered_index = None
+
+    def clear_hit_areas(self) -> None:
+        """Clear hit areas without affecting rows or hover state.
+
+        Use this when a section transitions from rendered to not-rendered,
+        to prevent stale hit areas from intercepting clicks meant for other
+        sections that are now rendered in the same screen region.
+        """
+        self._hit_areas.clear()

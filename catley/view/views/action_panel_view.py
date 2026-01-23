@@ -370,6 +370,10 @@ class ActionPanelView(TextView):
             y_pixel = self._render_selectable_list(
                 self._actions_renderer, rows, y_pixel, x_padding, line_height, ascent
             )
+        else:
+            # Actions section not rendered - clear stale hit areas to prevent
+            # get_action_at_pixel from returning stale actions.
+            self._actions_renderer.clear_hit_areas()
 
         # Items at player's feet section (after target+actions, as secondary context)
         if items_here:
@@ -421,6 +425,10 @@ class ActionPanelView(TextView):
                 ascent,
             )
             y_pixel += line_height  # Spacing after items section
+        else:
+            # Pickup section not rendered - clear stale hit areas to prevent
+            # clicks from triggering the pickup callback.
+            self._pickup_renderer.clear_hit_areas()
 
         # Show hints and controls only when no target is selected/hovered
         if self._cached_target_name is None and not self._cached_actions:
@@ -481,6 +489,10 @@ class ActionPanelView(TextView):
                 line_height,
                 ascent,
             )
+        else:
+            # Controls section not rendered - clear stale hit areas to prevent
+            # clicks in the actions area from accidentally triggering controls.
+            self._controls_renderer.clear_hit_areas()
 
     def _update_cached_data(self) -> None:
         """Update cached target information and available actions.
