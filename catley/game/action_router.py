@@ -41,6 +41,7 @@ from catley.game.actions.executors.recovery import (
     UseConsumableExecutor,
     UseConsumableOnTargetExecutor,
 )
+from catley.game.actions.executors.social import TalkExecutor
 from catley.game.actions.executors.stunts import PushExecutor
 from catley.game.actions.misc import (
     DropItemIntent,
@@ -56,6 +57,7 @@ from catley.game.actions.recovery import (
     UseConsumableIntent,
     UseConsumableOnTargetIntent,
 )
+from catley.game.actions.social import TalkIntent
 from catley.game.actions.stunts import PushIntent
 from catley.game.actors import Character
 from catley.game.actors.container import Container
@@ -104,6 +106,7 @@ class ActionRouter:
             AreaEffectIntent: WeaponAreaEffectExecutor(),
             EnvironmentalDamageIntent: EnvironmentalDamageExecutor(),
             PushIntent: PushExecutor(),
+            TalkIntent: TalkExecutor(),
         }
 
     def execute_intent(self, intent: GameIntent) -> None:

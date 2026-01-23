@@ -354,10 +354,10 @@ class CombatMode(Mode):
     # --- Action-centric combat UI ---
 
     def _set_default_action(self) -> None:
-        """Set the default combat action (Attack) when entering combat mode.
+        """Set the default combat action when entering combat mode.
 
-        Uses the discovery system to get available combat actions and selects
-        the first attack action as the default.
+        Selects the first action from discovery, which is already sorted by
+        priority (PREFERRED attacks first).
         """
         from catley.game.actions.discovery import ActionDiscovery
 
@@ -366,20 +366,10 @@ class CombatMode(Mode):
             self.controller, self.controller.gw.player
         )
 
-        # Find the first combat (attack) action as default
-        for action in actions:
-            if action.category == ActionCategory.COMBAT:
-                self._set_selected_action(action)
-                return
-
-        # If no combat actions, try to use Push as fallback
-        for action in actions:
-            if action.category == ActionCategory.STUNT:
-                self._set_selected_action(action)
-                return
-
-        # If no actions at all, leave as None
-        self._set_selected_action(None)
+        if actions:
+            self._set_selected_action(actions[0])
+        else:
+            self._set_selected_action(None)
 
     def select_action(self, action: ActionOption) -> None:
         """Select a combat action to use on the next target click.

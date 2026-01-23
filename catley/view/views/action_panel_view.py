@@ -7,19 +7,24 @@ from typing import TYPE_CHECKING, Any
 from catley import colors, config
 from catley.backends.pillow.canvas import PillowImageCanvas
 from catley.environment import tile_types
-from catley.game.actions.discovery import ActionCategory, ActionDiscovery, ActionOption
+from catley.game.actions.discovery import ActionDiscovery, ActionOption
 from catley.game.actors import Actor, Character
 from catley.game.actors.container import Container
 from catley.game.items.properties import WeaponProperty
 from catley.types import InterpolationAlpha
 from catley.util.caching import ResourceCache
 from catley.view.render.graphics import GraphicsContext
-from catley.view.ui.ui_utils import draw_keycap
+from catley.view.ui.selectable_list import (
+    LayoutMode,
+    SelectableListRenderer,
+    SelectableRow,
+)
 
 from .base import TextView
 
 if TYPE_CHECKING:
     from catley.controller import Controller
+    from catley.game.actions.discovery import TargetType
 
 
 class ActionPanelView(TextView):
@@ -38,12 +43,18 @@ class ActionPanelView(TextView):
         self._cached_actions: list[ActionOption] = []
         self._cached_target_name: str | None = None
         self._cached_target_description: str | None = None
+        self._cached_default_action_id: str | None = None  # The right-click default
+        self._cached_is_selected: bool = False  # True if target is selected (not hover)
 
         # Sticky hotkeys: track action id -> hotkey for continuity
         self._previous_hotkeys: dict[str, str] = {}
 
-        # Hit areas for mouse click detection: (x1, y1, x2, y2, action)
-        self._action_hit_areas: list[tuple[int, int, int, int, ActionOption]] = []
+        # Separate renderers for each section to avoid shared hovered_index state.
+        # Using one renderer for multiple sections causes cross-section highlighting
+        # bugs where hovered_index from one section affects rendering of another.
+        self._pickup_renderer = SelectableListRenderer(self.canvas, LayoutMode.KEYCAP)
+        self._actions_renderer = SelectableListRenderer(self.canvas, LayoutMode.KEYCAP)
+        self._controls_renderer = SelectableListRenderer(self.canvas, LayoutMode.KEYCAP)
 
         # View pixel dimensions will be calculated when resize() is called
         self.view_width_px = 0
@@ -53,108 +64,6 @@ class ActionPanelView(TextView):
         self._texture_cache = ResourceCache[tuple, Any](
             name=f"{self.__class__.__name__}Render", max_size=1
         )
-
-    def _wrap_text(self, text: str, max_width: int) -> list[str]:
-        """Wrap text to fit within max_width pixels.
-
-        Args:
-            text: The text to wrap
-            max_width: Maximum width in pixels
-
-        Returns:
-            List of lines that fit within max_width
-        """
-        if max_width <= 0:
-            return [text]
-
-        words = text.split(" ")
-        lines: list[str] = []
-        current_line = ""
-
-        for word in words:
-            test_line = f"{current_line} {word}".strip()
-            width, _, _ = self.canvas.get_text_metrics(test_line)
-
-            if width <= max_width:
-                current_line = test_line
-            else:
-                if current_line:
-                    lines.append(current_line)
-                current_line = word
-
-        if current_line:
-            lines.append(current_line)
-
-        return lines if lines else [text]
-
-    def _draw_keycap_with_label(
-        self,
-        x: int,
-        y: int,
-        key: str,
-        label: str,
-        label_x: int | None = None,
-        max_width: int | None = None,
-    ) -> tuple[int, int]:
-        """Draw a keycap with label text, wrapping if needed.
-
-        Args:
-            x: X position for keycap
-            y: Y position for keycap and label
-            key: Key text to display in keycap
-            label: Label text to display after keycap
-            label_x: If provided, draw label at this fixed x position for alignment
-            max_width: If provided, wrap label to fit within this width from label_x
-
-        Returns:
-            Tuple of (width consumed on first line, total height consumed in pixels)
-        """
-        # Draw keycap
-        keycap_width = draw_keycap(
-            canvas=self.canvas,
-            pixel_x=x,
-            pixel_y=y,
-            key=key,
-            bg_color=colors.DARK_GREY,
-            border_color=colors.GREY,
-            text_color=colors.WHITE,
-        )
-
-        # Draw label at fixed position if provided, otherwise right after keycap
-        actual_label_x = label_x if label_x is not None else x + keycap_width
-
-        ascent, descent = self.canvas.get_font_metrics()
-        line_height = ascent + descent
-
-        # Calculate available width for label
-        if max_width is not None:
-            available_width = max_width - actual_label_x
-        else:
-            # 8px right padding
-            available_width = self.view_width_px - actual_label_x - 8
-
-        # Wrap text if needed
-        lines = self._wrap_text(label, available_width)
-
-        # Draw each line
-        current_y = y
-        for line in lines:
-            self.canvas.draw_text(
-                pixel_x=actual_label_x,
-                pixel_y=current_y,
-                text=line,
-                color=colors.WHITE,
-            )
-            current_y += line_height
-
-        # Calculate width of first line for return value
-        if lines:
-            first_line_width, _, _ = self.canvas.get_text_metrics(lines[0])
-        else:
-            first_line_width = 0
-        total_height = line_height * len(lines)
-
-        return keycap_width + first_line_width, total_height
 
     def _get_action_priority(self, action: ActionOption) -> int:
         """Get sort priority for an action. Lower values sort first.
@@ -188,11 +97,18 @@ class ActionPanelView(TextView):
             return 2  # Lowest priority
         return 1  # Middle priority
 
-    def _assign_hotkeys(self, actions: list[ActionOption]) -> None:
+    def _assign_hotkeys(
+        self, actions: list[ActionOption], default_action_id: str | None = None
+    ) -> None:
         """Assign hotkeys to actions with priority sorting and sticky persistence.
+
+        Args:
+            actions: The actions to assign hotkeys to.
+            default_action_id: If provided, this action gets "a" hotkey first.
 
         Actions are first sorted by priority (PREFERRED first, IMPROVISED last),
         then hotkeys are assigned with preference for previous assignments.
+        The default action always gets "a" to ensure it's the primary hotkey.
         """
         if not actions:
             self._previous_hotkeys.clear()
@@ -206,8 +122,22 @@ class ActionPanelView(TextView):
         used_hotkeys: set[str] = set()
         new_hotkeys: dict[str, str] = {}
 
-        # First pass: try to preserve previous hotkey assignments
+        # First: assign "a" to the default action (if it exists in the list)
+        if default_action_id:
+            for action in actions:
+                if action.id == default_action_id or action.id.startswith(
+                    default_action_id + "-"
+                ):
+                    action.hotkey = "a"
+                    used_hotkeys.add("a")
+                    new_hotkeys[action.id] = "a"
+                    break
+
+        # Second pass: try to preserve previous hotkey assignments
         for action in actions:
+            if action.hotkey is not None:
+                # Already assigned (default action)
+                continue
             if action.id in self._previous_hotkeys:
                 prev_key = self._previous_hotkeys[action.id]
                 if prev_key not in used_hotkeys and prev_key in hotkey_chars:
@@ -215,7 +145,7 @@ class ActionPanelView(TextView):
                     used_hotkeys.add(prev_key)
                     new_hotkeys[action.id] = prev_key
 
-        # Second pass: assign new hotkeys to actions that don't have one
+        # Third pass: assign new hotkeys to actions that don't have one
         hotkey_index = 0
         for action in actions:
             if action.hotkey is None:
@@ -237,11 +167,11 @@ class ActionPanelView(TextView):
         gw = self.controller.gw
         mouse_pos = str(gw.mouse_tile_location_on_map)
 
-        # Include contextual target position so movement/hover changes invalidate.
-        contextual_target_key = ""
-        contextual_target = self.controller.contextual_target
-        if contextual_target is not None:
-            contextual_target_key = f"{contextual_target.x},{contextual_target.y}"
+        # Include selected target - this is the primary source when set
+        selected_target_key = ""
+        selected_target = self.controller.selected_target
+        if selected_target is not None:
+            selected_target_key = f"sel:{selected_target.x},{selected_target.y}"
 
         # Include mouse target actor position - if they move, cache invalidates
         target_actor_key = ""
@@ -270,7 +200,7 @@ class ActionPanelView(TextView):
 
         return (
             mouse_pos,
-            contextual_target_key,
+            selected_target_key,
             target_actor_key,
             player_pos,
             has_items_at_feet,
@@ -305,9 +235,6 @@ class ActionPanelView(TextView):
             0, 0, self.view_width_px, self.view_height_px, colors.BLACK, fill=True
         )
 
-        # Clear hit areas for fresh tracking
-        self._action_hit_areas.clear()
-
         # Update cached data
         self._update_cached_data()
 
@@ -319,7 +246,13 @@ class ActionPanelView(TextView):
         y_pixel = ascent + 5
         x_padding = 8
 
-        # Target name section
+        # Check for items at player's feet (rendered later, after target+actions)
+        player = self.controller.gw.player
+        items_here = self.controller.gw.get_pickable_items_at_location(
+            player.x, player.y
+        )
+
+        # Target name section (selected or hovered target)
         if self._cached_target_name:
             self.canvas.draw_text(
                 pixel_x=x_padding,
@@ -328,6 +261,16 @@ class ActionPanelView(TextView):
                 color=colors.YELLOW,
             )
             y_pixel += line_height
+
+            # Show "Selected" indicator when target is selected (not just hovered)
+            if self._cached_is_selected:
+                self.canvas.draw_text(
+                    pixel_x=x_padding,
+                    pixel_y=y_pixel - ascent,
+                    text="Selected",
+                    color=colors.GREY,
+                )
+                y_pixel += line_height
 
             # Target description (if available)
             if self._cached_target_description:
@@ -347,14 +290,91 @@ class ActionPanelView(TextView):
 
             y_pixel += line_height // 2  # Add spacing
 
-        # ALWAYS check for items at player's feet (regardless of mouse hover)
-        player = self.controller.gw.player
-        items_here = self.controller.gw.get_pickable_items_at_location(
-            player.x, player.y
-        )
+        # Actions section - flat list with default action first
+        is_combat = self.controller.is_combat_mode()
+        if self._cached_actions:
+            # Prefix match: "search" matches "search-container-adjacent"
+            default_action: ActionOption | None = None
+            if self._cached_default_action_id:
+                for action in self._cached_actions:
+                    if (
+                        action.id == self._cached_default_action_id
+                        or action.id.startswith(self._cached_default_action_id + "-")
+                    ):
+                        default_action = action
+                        break
 
+            # Assign hotkeys to all actions (default action gets "a")
+            self._assign_hotkeys(
+                self._cached_actions,
+                default_action.id if default_action else None,
+            )
+
+            # Sort actions: default first, then by priority
+            sorted_actions: list[ActionOption] = []
+            if default_action:
+                sorted_actions.append(default_action)
+            sorted_actions.extend(
+                a for a in self._cached_actions if a is not default_action
+            )
+
+            # Convert actions to SelectableRows for unified rendering
+            rows: list[SelectableRow] = []
+            for action in sorted_actions[:10]:  # Limit to 10 actions
+                # Clean up action name - remove redundant target name
+                action_name = action.name
+                if (
+                    self._cached_target_name
+                    and isinstance(self._cached_target_name, str)
+                    and self._cached_target_name != "Combat Mode"
+                ):
+                    action_name = action_name.replace(
+                        f" at {self._cached_target_name}", ""
+                    )
+                    action_name = action_name.replace(
+                        f" {self._cached_target_name} ", " "
+                    )
+
+                # Build full label with probability if available
+                full_label = action_name
+                if action.success_probability is not None:
+                    prob_percent = int(action.success_probability * 100)
+                    full_label = f"{action_name} ({prob_percent}%)"
+
+                # Check for selection state (combat mode)
+                is_selected = action.static_params.get("_is_selected", False)
+
+                # Selection indicator prefix: only in combat mode where it matters
+                # In explore mode, no prefix needed - labels follow keycaps directly
+                prefix_segments: list[tuple[str, colors.Color]] | None = None
+                if is_combat:
+                    if is_selected:
+                        prefix_segments = [("▶ ", colors.YELLOW)]
+                    else:
+                        prefix_segments = [("  ", colors.WHITE)]
+
+                # Choose text color based on selection state
+                text_color = colors.YELLOW if is_selected else colors.WHITE
+
+                rows.append(
+                    SelectableRow(
+                        text=full_label,
+                        key=action.hotkey,
+                        enabled=True,
+                        color=text_color,
+                        data=action,
+                        prefix_segments=prefix_segments,
+                    )
+                )
+
+            y_pixel = self._render_selectable_list(
+                self._actions_renderer, rows, y_pixel, x_padding, line_height, ascent
+            )
+
+        # Items at player's feet section (after target+actions, as secondary context)
         if items_here:
-            # Show items at player's feet prominently
+            y_pixel += line_height  # Spacing before items section
+
             self.canvas.draw_text(
                 pixel_x=x_padding,
                 pixel_y=y_pixel - ascent,
@@ -385,154 +405,38 @@ class ActionPanelView(TextView):
             y_pixel += line_height // 2
 
             # Show pickup prompt
-            _, pickup_height = self._draw_keycap_with_label(
-                x=x_padding,
-                y=y_pixel - ascent,
-                key="I",
-                label="Pick up items",
-            )
-            y_pixel += pickup_height + line_height
-
-        # Actions section (contextual actions based on mouse hover)
-        if self._cached_actions:
-            # Sort by priority and assign hotkeys with sticky persistence
-            self._assign_hotkeys(self._cached_actions)
-
-            # Group actions by category
-            actions_by_category: dict[ActionCategory, list[ActionOption]] = {}
-            for action in self._cached_actions:
-                if action.category not in actions_by_category:
-                    actions_by_category[action.category] = []
-                actions_by_category[action.category].append(action)
-
-            # Display actions by category
-            category_names = {
-                ActionCategory.COMBAT: "Combat",
-                ActionCategory.ENVIRONMENT: "Environment",
-                ActionCategory.ITEMS: "Items",
-                ActionCategory.SOCIAL: "Social",
-                ActionCategory.STUNT: "Stunts",
-            }
-
-            for category, actions in actions_by_category.items():
-                # Category header
-                category_name = category_names.get(category, "Other")
-                self.canvas.draw_text(
-                    pixel_x=x_padding,
-                    pixel_y=y_pixel - ascent,
-                    text=f"{category_name}",
-                    color=colors.GREY,
+            pickup_row = [
+                SelectableRow(
+                    key="I",
+                    text="Pick up items",
+                    execute=self._on_inventory_click,
                 )
-                y_pixel += line_height
+            ]
+            y_pixel = self._render_selectable_list(
+                self._pickup_renderer,
+                pickup_row,
+                y_pixel,
+                x_padding,
+                line_height,
+                ascent,
+            )
+            y_pixel += line_height  # Spacing after items section
 
-                # Action items
-                for action in actions[:8]:  # More actions can fit with smaller font
-                    # Check if this action is selected (in combat mode)
-                    is_selected = action.static_params.get("_is_selected", False)
-
-                    # Selection indicator prefix: ▶ for selected, spaces for alignment
-                    selection_indicator = "▶ " if is_selected else "  "
-                    indicator_width, _, _ = self.canvas.get_text_metrics(
-                        selection_indicator
-                    )
-
-                    # Track this action's hit area (full row from padding to edge)
-                    hit_y_start = y_pixel - ascent - 2
-                    hit_y_end = y_pixel + line_height + 2
-                    self._action_hit_areas.append(
-                        (
-                            x_padding,
-                            hit_y_start,
-                            self.view_width_px - x_padding,
-                            hit_y_end,
-                            action,
-                        )
-                    )
-
-                    # Clean up action name - remove redundant target name
-                    action_name = action.name
-                    # Don't strip "Combat Mode" header since that's not a target name
-                    if (
-                        self._cached_target_name
-                        and isinstance(self._cached_target_name, str)
-                        and self._cached_target_name != "Combat Mode"
-                    ):
-                        # Handle thrown weapons first: "Throw Weapon at TargetName"
-                        # to just "Throw Weapon" (must be before the generic replace)
-                        action_name = action_name.replace(
-                            f" at {self._cached_target_name}", ""
-                        )
-                        # Remove patterns like "Verb TargetName with Weapon"
-                        # to just "Verb with Weapon"
-                        action_name = action_name.replace(
-                            f" {self._cached_target_name} ", " "
-                        )
-
-                    # Build full label with probability if available
-                    full_label = action_name
-                    if action.success_probability is not None:
-                        prob_percent = int(action.success_probability * 100)
-                        full_label = f"{action_name} ({prob_percent}%)"
-
-                    # Choose text color based on selection state
-                    text_color = colors.YELLOW if is_selected else colors.WHITE
-
-                    # Draw selection indicator (▶ for selected, spaces for alignment)
-                    indicator_x = x_padding
-                    indicator_color = colors.YELLOW if is_selected else colors.DARK_GREY
-                    self.canvas.draw_text(
-                        pixel_x=indicator_x,
-                        pixel_y=y_pixel - ascent,
-                        text=selection_indicator,
-                        color=indicator_color,
-                    )
-
-                    # Draw keycap after the indicator
-                    keycap_x = x_padding + indicator_width
-                    if action.hotkey:
-                        _, action_height = self._draw_keycap_with_label(
-                            x=keycap_x,
-                            y=y_pixel - ascent,
-                            key=action.hotkey,
-                            label=full_label,
-                        )
-                    else:
-                        # Draw empty keycap placeholder
-                        keycap_width = draw_keycap(
-                            canvas=self.canvas,
-                            pixel_x=keycap_x,
-                            pixel_y=y_pixel - ascent,
-                            key=" ",
-                            bg_color=colors.BLACK,
-                            border_color=colors.DARK_GREY,
-                            text_color=colors.DARK_GREY,
-                        )
-                        self.canvas.draw_text(
-                            pixel_x=keycap_x + keycap_width,
-                            pixel_y=y_pixel - ascent,
-                            text=full_label,
-                            color=text_color,
-                        )
-                        action_height = line_height
-
-                    y_pixel += action_height + line_height // 3  # Gap between actions
-
-                y_pixel += line_height // 4  # Extra spacing between categories
-
-        elif self._cached_target_name is None:
+        # Show hints and controls only when no target is selected/hovered
+        if self._cached_target_name is None and not self._cached_actions:
             # Show helpful hints only when no items at feet and no mouse target
             if not items_here:
                 self.canvas.draw_text(
                     pixel_x=x_padding,
                     pixel_y=y_pixel - ascent,
-                    text="Hover over targets",
+                    text="Click to select a",
                     color=colors.GREY,
                 )
                 y_pixel += line_height
                 self.canvas.draw_text(
                     pixel_x=x_padding,
                     pixel_y=y_pixel - ascent,
-                    text="to see actions",
+                    text="target for actions",
                     color=colors.GREY,
                 )
                 y_pixel += line_height * 2
@@ -546,66 +450,65 @@ class ActionPanelView(TextView):
             # Extra spacing after header before keycaps
             y_pixel += line_height + line_height // 3
 
-            # Calculate keycap sizing for right-aligned keycaps
-            keycap_size = int(line_height * 0.85)
-            keycap_font_size = max(8, int(keycap_size * 0.65))
-            keycap_internal_padding = 12
-            keycap_gap = 12  # Gap after keycap (from draw_keycap)
-            label_gap = 8  # Extra gap before label
-
-            def get_keycap_width(key: str) -> int:
-                """Calculate the width of a keycap (excluding gap after)."""
-                text_width, _, _ = self.canvas.get_text_metrics(
-                    key.upper(), font_size=keycap_font_size
-                )
-                return max(keycap_size, text_width + keycap_internal_padding)
-
-            # Find widest keycap to set the right edge of keycap column
-            control_keys = ["Space", "I", "R-Click", "?"]
-            widest_keycap = max(get_keycap_width(k) for k in control_keys)
-            # Right edge of keycap column (keycaps right-align to this)
-            keycap_right_edge = x_padding + widest_keycap
-            # Label column starts after gap
-            label_column_x = keycap_right_edge + keycap_gap + label_gap
-
-            # Helper to draw right-aligned keycap with label
-            def draw_control(key: str, label: str) -> int:
-                """Draw control and return height consumed."""
-                nonlocal y_pixel
-                kw = get_keycap_width(key)
-                keycap_x = keycap_right_edge - kw
-                _, height = self._draw_keycap_with_label(
-                    x=keycap_x,
-                    y=y_pixel - ascent,
-                    key=key,
-                    label=label,
-                    label_x=label_column_x,
-                )
-                return height
-
-            y_pixel += draw_control("Space", "Action menu")
-            y_pixel += draw_control("I", "Inventory")
-            y_pixel += draw_control("R-Click", "Context")
-            draw_control("?", "Help")
+            # Use SelectableListRenderer for controls section with execute callbacks
+            control_rows: list[SelectableRow] = [
+                SelectableRow(
+                    key="Space",
+                    text="Action menu",
+                    execute=self._on_action_menu_click,
+                ),
+                SelectableRow(
+                    key="I",
+                    text="Inventory",
+                    execute=self._on_inventory_click,
+                ),
+                SelectableRow(
+                    key="R-Click",
+                    text="Quick action",
+                    execute=self._on_quick_action_click,
+                ),
+                SelectableRow(
+                    key="?",
+                    text="Help",
+                    execute=self._on_help_click,
+                ),
+            ]
+            y_pixel = self._render_selectable_list(
+                self._controls_renderer,
+                control_rows,
+                y_pixel,
+                x_padding,
+                line_height,
+                ascent,
+            )
 
     def _update_cached_data(self) -> None:
-        """Update cached target information and available actions."""
+        """Update cached target information and available actions.
+
+        Target priority (outside combat mode):
+        1. selected_target - sticky selection from left-click
+        2. Mouse hover position - for tile/item inspection
+        """
         # In combat mode, show action-centric panel instead of target-centric
         if self.controller.is_combat_mode():
             self._update_combat_mode_data()
             return
 
         gw = self.controller.gw
-        contextual_target = self.controller.contextual_target
 
+        # Priority 1: Use selected_target if set (sticky selection)
+        selected_target = self.controller.selected_target
         if (
-            contextual_target is not None
-            and contextual_target in gw.actors
-            and gw.game_map.visible[contextual_target.x, contextual_target.y]
+            selected_target is not None
+            and selected_target in gw.actors
+            and gw.game_map.visible[selected_target.x, selected_target.y]
         ):
-            self._populate_actor_target_data(contextual_target)
+            self._cached_is_selected = True
+            self._populate_actor_target_data(selected_target)
             return
 
+        # Priority 2: Mouse hover position (not selected)
+        self._cached_is_selected = False
         mouse_pos = gw.mouse_tile_location_on_map
 
         # Clear cache if no mouse position
@@ -699,7 +602,7 @@ class ActionPanelView(TextView):
                         name="Walk to and pick up",
                         description="Move to the items and pick them up",
                         category=ActionCategory.ITEMS,
-                        action_class=None,  # type: ignore[arg-type]
+                        action_class=None,
                         requirements=[],
                         static_params={},
                         execute=create_pathfind_and_pickup(x, y),
@@ -746,8 +649,16 @@ class ActionPanelView(TextView):
 
     def _populate_actor_target_data(self, target_actor: Actor) -> None:
         """Populate action panel data for a target actor."""
+        from catley.game.actions.discovery import classify_target
+
         gw = self.controller.gw
         self._cached_target_name = target_actor.name
+
+        # Determine the default action for this target (for right-click indicator)
+        target_type = classify_target(self.controller, target_actor)
+        self._cached_default_action_id = self._get_default_action_id_for_type(
+            target_type
+        )
 
         # Get description based on actor type
         if isinstance(target_actor, Character):
@@ -784,6 +695,32 @@ class ActionPanelView(TextView):
             self._cached_target_description = None
             self._cached_actions = []
 
+    def _get_default_action_id_for_type(
+        self, target_type: TargetType | None
+    ) -> str | None:
+        """Map target type to the action ID that matches the default action."""
+        from catley.game.actions.discovery.types import TargetType as TT
+
+        if target_type is None:
+            return None
+
+        # Map target types to action ID patterns used by the discovery system
+        match target_type:
+            case TT.NPC:
+                return "talk"  # TalkIntent
+            case TT.CONTAINER:
+                return "search"  # SearchContainerIntent
+            case TT.DOOR_CLOSED:
+                return "open"  # OpenDoorIntent
+            case TT.DOOR_OPEN:
+                return "close"  # CloseDoorIntent
+            case TT.ITEM_PILE:
+                return "pickup"  # PickupItemsAtLocationIntent
+            case TT.FLOOR:
+                return "walk"  # Pathfinding
+            case _:
+                return None
+
     def _update_combat_mode_data(self) -> None:
         """Update cached data for combat mode's action-centric display.
 
@@ -793,6 +730,11 @@ class ActionPanelView(TextView):
 
         Probabilities are shown in the cursor tooltip overlay, not here.
         """
+        # Combat actions are different from explore actions - don't carry over
+        # hotkeys. This prevents the explore-mode hotkey (e.g., "B" for Talk)
+        # from incorrectly selecting a combat action.
+        self._previous_hotkeys.clear()
+
         combat_mode = self.controller.combat_mode
 
         # Get player's combat actions without target (no probabilities)
@@ -810,6 +752,73 @@ class ActionPanelView(TextView):
             action.static_params["_is_selected"] = (
                 selected is not None and action.id == selected.id
             )
+
+    def _render_selectable_list(
+        self,
+        renderer: SelectableListRenderer,
+        rows: list[SelectableRow],
+        y_pixel: int,
+        x_padding: int,
+        line_height: int,
+        ascent: int,
+    ) -> int:
+        """Render a list of selectable rows with standard parameters.
+
+        Args:
+            renderer: The renderer to use for this section.
+            rows: The rows to render.
+            y_pixel: Starting y position.
+            x_padding: Horizontal padding from panel edge.
+            line_height: Height of each line in pixels.
+            ascent: Font ascent in pixels.
+
+        Returns:
+            The y position after rendering.
+        """
+        renderer.rows = rows
+        return renderer.render(
+            x_start=x_padding,
+            y_start=y_pixel,
+            max_width=self.view_width_px - x_padding * 2,
+            line_height=line_height,
+            ascent=ascent,
+            row_gap=0,
+        )
+
+    # -------------------------------------------------------------------------
+    # Control Row Callbacks
+    # -------------------------------------------------------------------------
+
+    def _on_action_menu_click(self) -> None:
+        """Open the action browser menu when 'Action menu' control is clicked."""
+        from catley.view.ui.action_browser_menu import ActionBrowserMenu
+        from catley.view.ui.commands import OpenMenuUICommand
+
+        OpenMenuUICommand(self.controller, ActionBrowserMenu).execute()
+
+    def _on_inventory_click(self) -> None:
+        """Open inventory when 'Inventory' control is clicked."""
+        from catley.view.ui.commands import open_inventory_or_loot
+
+        open_inventory_or_loot(self.controller)
+
+    def _on_quick_action_click(self) -> None:
+        """Show a message when 'Quick action' control is clicked.
+
+        R-Click is context-dependent, so clicking on it just shows a hint.
+        """
+        from catley.events import MessageEvent, publish_event
+
+        publish_event(
+            MessageEvent("Right-click on a target for quick action", colors.GREY)
+        )
+
+    def _on_help_click(self) -> None:
+        """Open the help menu when 'Help' control is clicked."""
+        from catley.view.ui.commands import OpenMenuUICommand
+        from catley.view.ui.help_menu import HelpMenu
+
+        OpenMenuUICommand(self.controller, HelpMenu).execute()
 
     def get_hotkeys(self) -> dict[str, ActionOption]:
         """Get current hotkey mappings for direct execution."""
@@ -829,10 +838,56 @@ class ActionPanelView(TextView):
         Returns:
             The ActionOption at the given position, or None if no action.
         """
-        for x1, y1, x2, y2, action in self._action_hit_areas:
-            if x1 <= px < x2 and y1 <= py < y2:
-                return action
+        # Only the actions renderer contains ActionOptions
+        row = self._actions_renderer.get_row_at_pixel(px, py)
+        if row is not None and isinstance(row.data, ActionOption):
+            return row.data
         return None
+
+    def execute_at_pixel(self, px: int, py: int) -> bool:
+        """Execute the callback for the row at the given pixel coordinates.
+
+        This handles both action rows (via ActionOption) and control rows
+        (via their execute callbacks).
+
+        Args:
+            px: X pixel coordinate relative to the action panel.
+            py: Y pixel coordinate relative to the action panel.
+
+        Returns:
+            True if a callback was executed, False otherwise.
+        """
+        # Check all renderers for executable rows
+        for renderer in (
+            self._pickup_renderer,
+            self._actions_renderer,
+            self._controls_renderer,
+        ):
+            if renderer.execute_at_pixel(px, py):
+                return True
+        return False
+
+    def update_hover_from_pixel(self, px: int, py: int) -> bool:
+        """Update hover state from pixel coordinates.
+
+        Args:
+            px: X pixel coordinate relative to the action panel.
+            py: Y pixel coordinate relative to the action panel.
+
+        Returns:
+            True if hover state changed (needs redraw).
+        """
+        # Update all renderers and return True if any changed.
+        # Each renderer maintains its own hovered_index for its section.
+        changed = False
+        for renderer in (
+            self._pickup_renderer,
+            self._actions_renderer,
+            self._controls_renderer,
+        ):
+            if renderer.update_hover_from_pixel(px, py):
+                changed = True
+        return changed
 
     def invalidate_cache(self) -> None:
         """Clear the action panel cache to force refresh on next draw."""

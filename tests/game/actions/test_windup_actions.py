@@ -61,6 +61,7 @@ class DummyGameWorld:
         self.lighting_system = None
         self.actor_spatial_index = SpatialHashGrid(cell_size=16)
         self.actor_spatial_index.add(self.player)
+        self.mouse_tile_location_on_map: tuple[int, int] | None = None
 
     def add_light(self, light) -> None:
         """Add a light source to the world."""

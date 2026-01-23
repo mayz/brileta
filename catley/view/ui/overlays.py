@@ -25,7 +25,11 @@ from catley import colors, config
 from catley.backends.pillow.canvas import PillowImageCanvas
 from catley.types import PixelCoord, PixelPos
 from catley.view.render.canvas import Canvas
-from catley.view.ui.ui_utils import draw_keycap
+from catley.view.ui.selectable_list import (
+    LayoutMode,
+    SelectableListRenderer,
+    SelectableRow,
+)
 
 if TYPE_CHECKING:
     from catley.controller import Controller
@@ -340,6 +344,9 @@ class Menu(TextOverlay):
         # Font metrics - will be set in _calculate_dimensions
         self._line_height = 0
         self._char_width = 0
+        # Create list renderer for option rendering (canvas created by super().__init__)
+        assert isinstance(self.canvas, PillowImageCanvas)
+        self._list_renderer = SelectableListRenderer(self.canvas, LayoutMode.KEYCAP)
 
     @abc.abstractmethod
     def populate_options(self) -> None:
@@ -375,36 +382,6 @@ class Menu(TextOverlay):
 
         return relative_px_x, relative_px_y
 
-    def _get_hovered_option_index(
-        self, menu_relative_px_x: PixelCoord, menu_relative_px_y: PixelCoord
-    ) -> int | None:
-        """Determine which menu option (if any) is under the mouse cursor."""
-        if not (
-            0 <= menu_relative_px_x < self.pixel_width
-            and 0 <= menu_relative_px_y < self.pixel_height
-        ):
-            return None
-
-        # Ensure font metrics are set
-        if self._line_height == 0 or self._char_width == 0:
-            return None
-
-        # Convert pixel position to character/line position
-        char_x = int(menu_relative_px_x // self._char_width)
-        line_y = int(menu_relative_px_y // self._line_height)
-
-        # Check if within content area (not on border or outside options area)
-        # Layout: border(1) + title(1) = options start at line 2
-        if not (1 <= char_x < self.width - 1 and 2 <= line_y < self.height - 1):
-            return None
-
-        option_line: int = line_y - 2
-
-        if 0 <= option_line < len(self.options):
-            return option_line
-
-        return None
-
     def _is_point_inside_menu(
         self, global_px_x: PixelCoord, global_px_y: PixelCoord
     ) -> bool:
@@ -420,13 +397,16 @@ class Menu(TextOverlay):
     def _update_mouse_state(
         self, global_px_x: PixelCoord, global_px_y: PixelCoord
     ) -> None:
-        """Update internal mouse tracking state."""
+        """Update internal mouse tracking state using the list renderer's hit areas."""
         self.mouse_px_x, self.mouse_px_y = self._convert_global_mouse_to_menu_relative(
             global_px_x, global_px_y
         )
-        self.hovered_option_index = self._get_hovered_option_index(
-            self.mouse_px_x, self.mouse_px_y
+        # Use the renderer's hit area tracking for hover detection.
+        # The renderer's hit areas are in menu-relative coordinates.
+        self._list_renderer.update_hover_from_pixel(
+            int(self.mouse_px_x), int(self.mouse_px_y)
         )
+        self.hovered_option_index = self._list_renderer.hovered_index
 
     def handle_input(self, event: tcod.event.Event) -> bool:
         """Handle input events for the menu. Returns True if event was consumed."""
@@ -522,7 +502,8 @@ class Menu(TextOverlay):
         """Calculate menu dimensions in pixels using font metrics."""
         # Get font metrics from the PillowImageCanvas
         assert isinstance(self.canvas, PillowImageCanvas)
-        self._line_height = self.canvas.get_effective_line_height()
+        # Reduce line height by 1px to close gaps between border glyphs
+        self._line_height = self.canvas.get_effective_line_height() - 1
         # Get character width from a space character
         self._char_width, _, _ = self.canvas.get_text_metrics(" ")
 
@@ -592,105 +573,49 @@ class Menu(TextOverlay):
         # Draw the title
         self.render_title()
 
-        # Draw options with hover highlighting
-        # Options start at line 2 (after border and title)
-        y_line = 2
-        for i, option in enumerate(self.options):
-            if y_line >= self.height - 1:
-                break
-
-            is_hovered = self.hovered_option_index == i and option.enabled
-
-            # Calculate pixel positions using font metrics
-            text_px_y: PixelCoord = self._line_height * y_line
-
-            if is_hovered:
-                # Draw hover background
-                hover_bg_px_x: PixelCoord = self._char_width
-                hover_bg_width_px: PixelCoord = (self.width - 2) * self._char_width
-
-                self.canvas.draw_rect(
-                    pixel_x=hover_bg_px_x,
-                    pixel_y=text_px_y,
-                    width=hover_bg_width_px,
-                    height=self._line_height,
-                    color=colors.DARK_GREY,
-                    fill=True,
-                )
-
-            # Options use WHITE text (title is yellow, options are white)
-            text_color = colors.WHITE
-            if is_hovered:
-                r, g, b = text_color
-                text_color = (
-                    min(255, r + 40),
-                    min(255, g + 40),
-                    min(255, b + 40),
-                )
-
-            # Start text at column 2 (one char padding from border)
-            base_px_x: PixelCoord = self._char_width * 2
-            current_px_x = base_px_x
-
-            # Draw prefix in its own color if present
-            if option.prefix:
-                prefix_color = option.prefix_color
-                if is_hovered:
-                    r, g, b = prefix_color
-                    prefix_color = (
-                        min(255, r + 40),
-                        min(255, g + 40),
-                        min(255, b + 40),
-                    )
-                self.canvas.draw_text(
-                    pixel_x=current_px_x,
-                    pixel_y=text_px_y,
-                    text=option.prefix,
-                    color=prefix_color,
-                )
-                prefix_width, _, _ = self.canvas.get_text_metrics(option.prefix)
-                current_px_x += prefix_width
-
-            # Draw keycap-styled hotkey if present
-            if option.key:
-                line_h = self._line_height
-                keycap_width = draw_keycap(
-                    self.canvas,
-                    current_px_x,
-                    text_px_y,
-                    option.key,
-                    keycap_size=int(line_h * 1.0),
-                )
-                current_px_x += keycap_width
-
-            # Draw option text
-            self.canvas.draw_text(
-                pixel_x=current_px_x,
-                pixel_y=text_px_y,
-                text=option.text,
-                color=text_color,
+        # Convert MenuOptions to SelectableRows for the renderer
+        rows = [
+            SelectableRow(
+                text=opt.text,
+                key=opt.key,
+                enabled=opt.enabled,
+                color=opt.color,
+                # Convert prefix/prefix_color to prefix_segments if present
+                prefix_segments=(
+                    opt.prefix_segments
+                    if opt.prefix_segments
+                    else [(opt.prefix, opt.prefix_color)]
+                    if opt.prefix
+                    else None
+                ),
+                suffix=opt.suffix,
+                suffix_color=opt.suffix_color,
+                force_color=opt.force_color,
+                data=opt,  # Preserve MenuOption for click handling
             )
-            option_text_width, _, _ = self.canvas.get_text_metrics(option.text)
-            current_px_x += option_text_width
+            for opt in self.options
+        ]
+        self._list_renderer.rows = rows
+        self._list_renderer.hovered_index = self.hovered_option_index
 
-            # Draw suffix in its own color if present
-            if option.suffix:
-                suffix_color = option.suffix_color
-                if is_hovered:
-                    r, g, b = suffix_color
-                    suffix_color = (
-                        min(255, r + 40),
-                        min(255, g + 40),
-                        min(255, b + 40),
-                    )
-                self.canvas.draw_text(
-                    pixel_x=current_px_x,
-                    pixel_y=text_px_y,
-                    text=option.suffix,
-                    color=suffix_color,
-                )
+        # Options start at line 2 (after border + title)
+        # Content area is inset from borders with some margin
+        content_margin = self._char_width + 8  # 1 char + 8px margin from border
+        content_x = content_margin
+        content_y = self._line_height * 2  # After border (line 0) + title (line 1)
+        content_width = self.pixel_width - (content_margin * 2)  # Width minus margins
 
-            y_line += 1
+        # Get font ascent for proper vertical positioning
+        _, ascent, _ = self.canvas.get_text_metrics("X")
+
+        self._list_renderer.render(
+            x_start=content_x,
+            y_start=content_y + ascent,  # Baseline position
+            max_width=content_width,
+            line_height=self._line_height,
+            ascent=ascent,
+            row_gap=0,  # Menu options are tightly packed
+        )
 
     def _draw_box_frame(self) -> None:
         """Draw a double-line box frame using Unicode box-drawing characters.

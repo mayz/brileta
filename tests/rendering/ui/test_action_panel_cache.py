@@ -29,7 +29,8 @@ class DummyController:
     gw: DummyGameWorld
     graphics: Any = None
     combat_mode: DummyCombatMode | None = None
-    contextual_target: Actor | None = None
+    selected_target: Actor | None = None
+    hovered_actor: Actor | None = None
 
     def __post_init__(self) -> None:
         if self.combat_mode is None:
@@ -173,46 +174,81 @@ class TestActionPanelCacheKey:
 
         assert key_before == key_after
 
-    def test_cache_key_changes_when_contextual_target_changes(self) -> None:
-        """Cache key should change when contextual target changes."""
+    def test_cache_key_changes_when_selected_target_changes(self) -> None:
+        """Cache key should change when selected target changes."""
         controller, view = make_action_panel()
         gw = controller.gw
 
-        contextual = Character(
-            2, 2, "C", colors.RED, "Contextual", game_world=cast(GameWorld, gw)
+        selected = Character(
+            2, 2, "S", colors.RED, "Selected", game_world=cast(GameWorld, gw)
         )
-        gw.add_actor(contextual)
+        gw.add_actor(selected)
 
-        controller.contextual_target = contextual
-        key_with_contextual = view.get_cache_key()
+        controller.selected_target = selected
+        key_with_selected = view.get_cache_key()
 
-        controller.contextual_target = None
-        key_without_contextual = view.get_cache_key()
+        controller.selected_target = None
+        key_without_selected = view.get_cache_key()
 
-        assert key_with_contextual != key_without_contextual
+        assert key_with_selected != key_without_selected
 
 
-class TestActionPanelContextualTarget:
-    """Tests for contextual target usage in action panel."""
+class TestActionPanelSelectedTarget:
+    """Tests for selected target usage in action panel."""
 
-    def test_contextual_target_preferred_over_mouse_target(self) -> None:
-        """Contextual target should override mouse hover for action panel data."""
+    def test_selected_target_preferred_over_mouse_target(self) -> None:
+        """Selected target should override mouse hover for action panel data."""
         controller, view = make_action_panel()
         gw = controller.gw
 
-        contextual = Character(
-            2, 2, "C", colors.RED, "Contextual", game_world=cast(GameWorld, gw)
+        selected = Character(
+            2, 2, "S", colors.RED, "Selected", game_world=cast(GameWorld, gw)
         )
         hovered = Character(
             3, 3, "H", colors.RED, "Hovered", game_world=cast(GameWorld, gw)
         )
-        gw.add_actor(contextual)
+        gw.add_actor(selected)
         gw.add_actor(hovered)
 
-        controller.contextual_target = contextual
+        controller.selected_target = selected
         controller.gw.mouse_tile_location_on_map = (hovered.x, hovered.y)
         view.discovery.get_options_for_target = MagicMock(return_value=[])
 
         view._update_cached_data()
 
-        assert view._cached_target_name == contextual.name
+        assert view._cached_target_name == selected.name
+
+    def test_selected_indicator_set_for_selected_target(self) -> None:
+        """_cached_is_selected should be True when target is from selected_target."""
+        controller, view = make_action_panel()
+        gw = controller.gw
+
+        selected = Character(
+            2, 2, "S", colors.RED, "Selected", game_world=cast(GameWorld, gw)
+        )
+        gw.add_actor(selected)
+
+        controller.selected_target = selected
+        view.discovery.get_options_for_target = MagicMock(return_value=[])
+
+        view._update_cached_data()
+
+        assert view._cached_is_selected is True
+
+    def test_selected_indicator_not_set_for_hover_target(self) -> None:
+        """_cached_is_selected should be False when target is from mouse hover."""
+        controller, view = make_action_panel()
+        gw = controller.gw
+
+        hovered = Character(
+            3, 3, "H", colors.RED, "Hovered", game_world=cast(GameWorld, gw)
+        )
+        gw.add_actor(hovered)
+
+        controller.selected_target = None
+        controller.gw.mouse_tile_location_on_map = (hovered.x, hovered.y)
+        view.discovery.get_options_for_target = MagicMock(return_value=[])
+
+        view._update_cached_data()
+
+        assert view._cached_is_selected is False

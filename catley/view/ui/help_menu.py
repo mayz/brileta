@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from catley import colors, config
@@ -12,46 +13,127 @@ if TYPE_CHECKING:
 
 
 class HelpMenu(Menu):
-    """Menu showing all available commands."""
+    """Menu showing all available commands.
 
-    FONT_SIZE = 36
+    Clicking on an option performs that action (where applicable).
+    """
 
     def __init__(self, controller: Controller) -> None:
         super().__init__("Help - Available Commands", controller, width=60)
 
     def _get_backend(self) -> Canvas:
-        """Return a PillowImageCanvas with larger font for keycap-heavy content."""
+        """Return a PillowImageCanvas matching the action panel font size."""
         return PillowImageCanvas(
             self.controller.graphics,
             font_path=config.UI_FONT_PATH,
-            font_size=self.FONT_SIZE,
+            font_size=config.ACTION_PANEL_FONT_SIZE,
             line_spacing=config.MENU_LINE_SPACING,
         )
 
     def populate_options(self) -> None:
-        """Populate help options.
-
-        Items with a single-key binding use MenuOption.key for keycap rendering.
-        Items with multi-key or non-keyboard bindings leave key=None.
-        """
-        # Format: (key or None, command name, description)
-        help_items: list[tuple[str | None, str, str]] = [
-            (None, "Movement", "Arrow keys or numpad"),
-            (None, "Select Actor", "Left-click to select"),
-            ("T", "Target Menu", "Full targeting options for selected actor"),
-            ("I", "Inventory", "Open inventory (pick up items when on ground)"),
-            ("`", "Dev Console", "Open developer console"),
-            ("Q", "Quit", "Quit game"),
-            ("?", "Help", "Show this help menu"),
+        """Populate help options with clickable actions."""
+        # Clickable items: (key, text, action)
+        clickable_items: list[tuple[str, str, Callable[[], None] | None]] = [
+            ("Arrows / HJKL", "Movement", self._on_movement),
+            ("L-Click", "Select actor", self._on_select_actor),
+            ("R-Click", "Quick action", self._on_quick_action),
+            ("Space", "Action menu", self._on_action_menu),
+            ("I", "Inventory", self._on_inventory),
+            ("R", "Reload weapon", self._on_reload),
+            ("1", "Weapon slot 1", lambda: self._on_weapon_slot(0)),
+            ("2", "Weapon slot 2", lambda: self._on_weapon_slot(1)),
+            ("`", "Dev console", self._on_dev_console),
+            ("Alt+Ret", "Toggle fullscreen", self._on_fullscreen),
+            ("Esc", "Close menus", None),
+            ("?", "This help", None),
         ]
 
-        for key, command, description in help_items:
+        for key, text, action in clickable_items:
             self.add_option(
                 MenuOption(
                     key=key,
-                    text=f"{command} - {description}",
-                    enabled=False,
+                    text=text,
+                    enabled=True,
+                    action=action if action else self.hide,
                     color=colors.WHITE,
                     is_primary_action=False,
                 )
             )
+
+    # -------------------------------------------------------------------------
+    # Action Callbacks
+    # -------------------------------------------------------------------------
+
+    def _on_movement(self) -> None:
+        """Hint about movement controls."""
+        from catley.events import MessageEvent, publish_event
+
+        publish_event(
+            MessageEvent("Use arrow keys or HJKL to move around", colors.GREY)
+        )
+
+    def _on_select_actor(self) -> None:
+        """Hint about L-Click behavior."""
+        from catley.events import MessageEvent, publish_event
+
+        publish_event(MessageEvent("Left-click on an actor to select it", colors.GREY))
+
+    def _on_quick_action(self) -> None:
+        """Hint about R-Click behavior."""
+        from catley.events import MessageEvent, publish_event
+
+        publish_event(
+            MessageEvent("Right-click on a target for quick action", colors.GREY)
+        )
+
+    def _on_action_menu(self) -> None:
+        """Open the action browser menu."""
+        from catley.view.ui.action_browser_menu import ActionBrowserMenu
+        from catley.view.ui.commands import OpenMenuUICommand
+
+        OpenMenuUICommand(self.controller, ActionBrowserMenu).execute()
+
+    def _on_inventory(self) -> None:
+        """Open inventory (loot mode if standing on items)."""
+        from catley.view.ui.commands import open_inventory_or_loot
+
+        open_inventory_or_loot(self.controller)
+
+    def _on_reload(self) -> None:
+        """Reload the active weapon."""
+        from catley.events import MessageEvent, publish_event
+        from catley.game.actions.combat import ReloadIntent
+
+        player = self.controller.gw.player
+        active_weapon = player.inventory.get_active_item()
+        if (
+            active_weapon
+            and active_weapon.ranged_attack
+            and active_weapon.ranged_attack.current_ammo
+            < active_weapon.ranged_attack.max_ammo
+        ):
+            reload_action = ReloadIntent(self.controller, player, active_weapon)
+            self.controller.queue_action(reload_action)
+        else:
+            publish_event(MessageEvent("Nothing to reload!", colors.GREY))
+
+    def _on_weapon_slot(self, slot: int) -> None:
+        """Switch to a weapon slot."""
+        fm = self.controller.frame_manager
+        if fm is not None and hasattr(fm, "equipment_view"):
+            fm.equipment_view.switch_to_slot(slot)
+
+    def _on_dev_console(self) -> None:
+        """Toggle the dev console overlay."""
+        fm = self.controller.frame_manager
+        if fm is not None:
+            dev_console = getattr(fm, "dev_console_overlay", None)
+            if dev_console is not None:
+                self.controller.overlay_system.toggle_overlay(dev_console)
+
+    def _on_fullscreen(self) -> None:
+        """Toggle fullscreen mode."""
+        if hasattr(self.controller, "app") and hasattr(
+            self.controller.app, "toggle_fullscreen"
+        ):
+            self.controller.app.toggle_fullscreen()

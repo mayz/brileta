@@ -382,6 +382,35 @@ class TestPlayerCombatActionsDiscovery:
         for action in actions:
             assert action.action_class is not None
 
+    def test_preferred_attacks_come_before_improvised(self) -> None:
+        """PREFERRED attacks should be sorted before IMPROVISED attacks.
+
+        For a pistol: Shoot (PREFERRED) should come before Pistol-whip (IMPROVISED).
+        This ensures the default selection and [A] hotkey go to the primary attack.
+        """
+        from catley.game.items.item_types import PISTOL_TYPE
+
+        reset_event_bus_for_testing()
+        controller, player, _npc = _make_combat_test_world(
+            player_pos=(5, 5),
+            enemy_pos=(6, 5),  # Adjacent - both attacks available
+        )
+
+        # Equip a pistol (has PREFERRED ranged and IMPROVISED melee)
+        pistol = PISTOL_TYPE.create()
+        player.inventory.add_to_inventory(pistol)
+        player.inventory.equip_to_slot(pistol, 0)
+
+        actions = controller.combat_mode.get_available_combat_actions()
+
+        # Filter to just COMBAT actions (excludes Push which is STUNT)
+        combat_actions = [a for a in actions if a.category == ActionCategory.COMBAT]
+        assert len(combat_actions) == 2, "Expected both Shoot and Pistol-whip"
+
+        # Shoot (PREFERRED) should come before Pistol-whip (IMPROVISED)
+        assert combat_actions[0].name == "Shoot"
+        assert combat_actions[1].name == "Pistol-whip"
+
 
 # --- Enter Key Execution Tests ---
 

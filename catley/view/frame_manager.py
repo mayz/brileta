@@ -207,11 +207,6 @@ class FrameManager:
             num_samples=100,
         )
         live_variable_registry.register_metric(
-            "cpu.render.selected_actor_highlight_ms",
-            description="CPU time for selected actor highlight rendering",
-            num_samples=100,
-        )
-        live_variable_registry.register_metric(
             "cpu.render.present_background_ms",
             description="CPU time for presenting background texture",
             num_samples=100,

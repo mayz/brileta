@@ -135,6 +135,26 @@ class PillowImageCanvas(Canvas):
         height = bbox[3] - bbox[1]
         return int(width), int(height), self._effective_line_height
 
+    def get_text_bbox(
+        self, text: str, font_size: int | None = None
+    ) -> tuple[int, int, int, int]:
+        """Return ``(x_offset, y_offset, width, height)`` for ``text``.
+
+        For Pillow, the bbox may not start at (0, 0) - e.g., a "C" might have
+        bbox starting at (2, 3). The offsets indicate where glyph pixels start.
+        """
+        font = (
+            self.font
+            if font_size is None
+            else ImageFont.truetype(str(self.font_path), font_size)
+        )
+        bbox = font.getbbox(text)
+        x_offset = int(bbox[0])
+        y_offset = int(bbox[1])
+        width = int(bbox[2] - bbox[0])
+        height = int(bbox[3] - bbox[1])
+        return (x_offset, y_offset, width, height)
+
     def wrap_text(
         self, text: str, max_width: int, font_size: int | None = None
     ) -> list[str]:

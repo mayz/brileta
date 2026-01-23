@@ -59,7 +59,7 @@ COMBAT_OUTLINE_MIN_ALPHA = Opacity(0.4)  # Minimum alpha during shimmer
 COMBAT_OUTLINE_MAX_ALPHA = Opacity(0.85)  # Maximum alpha during shimmer
 
 # Contextual target outline (exploration mode)
-CONTEXTUAL_OUTLINE_ALPHA = Opacity(0.55)  # Solid outline opacity
+CONTEXTUAL_OUTLINE_ALPHA = Opacity(0.70)  # Solid outline opacity
 
 # Shake effect
 # Set to False to disable screen shake
@@ -221,7 +221,6 @@ TILE_EMISSION_ENABLED = True
 
 # Mouse and selection
 MOUSE_HIGHLIGHT_ALPHA = Opacity(0.6)  # Alpha blending for mouse cursor highlight
-SELECTION_HIGHLIGHT_ALPHA = Opacity(0.6)  # Alpha blending for selected actor highlight
 
 # Movement
 MOVEMENT_KEY_REPEAT_DELAY = 0.25

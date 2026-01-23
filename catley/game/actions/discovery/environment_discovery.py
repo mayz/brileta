@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from catley.game.actions.combat import AttackIntent
 from catley.game.actions.environment import (
     CloseDoorIntent,
     OpenDoorIntent,
@@ -272,7 +271,7 @@ class EnvironmentActionDiscovery:
                         name="Go to and Open Door",
                         description="Move to this door and open it",
                         category=ActionCategory.ENVIRONMENT,
-                        action_class=None,  # type: ignore[arg-type]
+                        action_class=None,
                         requirements=[],
                         static_params={},
                         execute=create_pathfind_and_open(tile_x, tile_y),
@@ -335,48 +334,12 @@ class EnvironmentActionDiscovery:
                         name="Go to and Close Door",
                         description="Move to this door and close it",
                         category=ActionCategory.ENVIRONMENT,
-                        action_class=None,  # type: ignore[arg-type]
+                        action_class=None,
                         requirements=[],
                         static_params={},
                         execute=create_pathfind_and_close(tile_x, tile_y),
                     )
                 )
-        else:
-            # Check if it's a walkable floor tile (not a door, not a wall)
-            if distance > 0 and gm.walkable[tile_x, tile_y]:
-                # Create "Go here" action for walkable tiles
-                def create_pathfind_to_tile(tx: int, ty: int):
-                    def pathfind_to_tile():
-                        from catley.util.pathfinding import find_local_path
-
-                        gm = controller.gw.game_map
-                        path = find_local_path(
-                            gm,
-                            controller.gw.actor_spatial_index,
-                            actor,
-                            (actor.x, actor.y),
-                            (tx, ty),
-                        )
-                        if path:
-                            controller.start_actor_pathfinding(actor, (tx, ty))
-                            return True
-                        return False
-
-                    return pathfind_to_tile
-
-                options.append(
-                    ActionOption(
-                        id="go-here",
-                        name="Go here",
-                        description="Walk to this location",
-                        category=ActionCategory.ENVIRONMENT,
-                        action_class=None,  # type: ignore[arg-type]
-                        requirements=[],
-                        static_params={},
-                        execute=create_pathfind_to_tile(tile_x, tile_y),
-                    )
-                )
-
         # === Container at Tile ===
         # Check for container actors at this tile
         actors_at_tile = controller.gw.actor_spatial_index.get_at_point(tile_x, tile_y)
@@ -438,17 +401,54 @@ class EnvironmentActionDiscovery:
                     options.append(
                         ActionOption(
                             id="go-and-search-container",
-                            name=f"Go to and Search {container.name}",
+                            name=f"Search {container.name}",
                             description=f"Move to and search the {container.name}",
                             category=ActionCategory.ENVIRONMENT,
-                            action_class=None,  # type: ignore[arg-type]
+                            action_class=None,
                             requirements=[],
                             static_params={},
                             execute=create_pathfind_and_search(container),
                         )
                     )
-                # Only handle the first container at this tile
+                # Only handle the first container at this tile; skip "Go here" since
+                # the container-specific action is more relevant
                 break
+        else:
+            # No container at tile - offer "Go here" for walkable tiles
+            # (The for-else construct: the else runs only if we didn't break)
+            if distance > 0 and gm.walkable[tile_x, tile_y]:
+                # Create "Go here" action for walkable tiles without containers
+                def create_pathfind_to_tile(tx: int, ty: int):
+                    def pathfind_to_tile():
+                        from catley.util.pathfinding import find_local_path
+
+                        gm = controller.gw.game_map
+                        path = find_local_path(
+                            gm,
+                            controller.gw.actor_spatial_index,
+                            actor,
+                            (actor.x, actor.y),
+                            (tx, ty),
+                        )
+                        if path:
+                            controller.start_actor_pathfinding(actor, (tx, ty))
+                            return True
+                        return False
+
+                    return pathfind_to_tile
+
+                options.append(
+                    ActionOption(
+                        id="go-here",
+                        name="Go here",
+                        description="Walk to this location",
+                        category=ActionCategory.ENVIRONMENT,
+                        action_class=None,
+                        requirements=[],
+                        static_params={},
+                        execute=create_pathfind_to_tile(tile_x, tile_y),
+                    )
+                )
 
         # Add shoot-at-tile actions for non-walkable tiles
         options.extend(
@@ -465,78 +465,16 @@ class EnvironmentActionDiscovery:
         tile_y: int,
         tile_id: int,
     ) -> list[ActionOption]:
-        """Get shoot-at-tile actions for non-walkable visible tiles."""
-        from catley.environment.tile_types import TileTypeID, get_tile_type_name_by_id
+        """Get shoot-at-tile actions for destructible environment tiles.
 
-        options: list[ActionOption] = []
-        gm = controller.gw.game_map
-
-        # Only offer shoot actions for non-walkable tiles (walls, closed doors, etc.)
-        if gm.walkable[tile_x, tile_y]:
-            return options
-
-        # Check if actor has a ranged weapon with ammo
-        equipped_weapons = [w for w in actor.inventory.attack_slots if w is not None]
-        ranged_weapons_with_ammo = [
-            w
-            for w in equipped_weapons
-            if w.ranged_attack and w.ranged_attack.current_ammo > 0
-        ]
-
-        if not ranged_weapons_with_ammo:
-            return options
-
-        # Note: We don't check line of sight here because the caller already
-        # verified visibility (gm.visible[tile_x, tile_y]). The strict Bresenham
-        # LOS check is meant for projectiles traveling through space to a target
-        # behind it, but for shooting at a visible surface, visibility suffices.
-
-        # Determine contextual action name based on tile type
-        if tile_id == TileTypeID.WALL:
-            target_name = "wall"
-        elif tile_id in (TileTypeID.DOOR_CLOSED, TileTypeID.DOOR_OPEN):
-            target_name = "door"
-        else:
-            # Fallback to tile's display name
-            target_name = get_tile_type_name_by_id(tile_id).lower()
-
-        # Create shoot action for each ranged weapon with ammo
-        for weapon in ranged_weapons_with_ammo:
-            # Create a closure to capture the weapon
-            def create_shoot_action(w, tx: int, ty: int):
-                def shoot_tile():
-                    intent = AttackIntent(
-                        controller,
-                        actor,
-                        defender=None,
-                        weapon=w,
-                        attack_mode="ranged",
-                        target_x=tx,
-                        target_y=ty,
-                    )
-                    controller.turn_manager.queue_action(intent)
-                    return True
-
-                return shoot_tile
-
-            action_name = f"Shoot at {target_name}"
-            if len(ranged_weapons_with_ammo) > 1:
-                action_name = f"Shoot at {target_name} ({weapon.name})"
-
-            options.append(
-                ActionOption(
-                    id=f"shoot-tile-{weapon.name}",
-                    name=action_name,
-                    description=f"Fire {weapon.name} at the {target_name}",
-                    category=ActionCategory.COMBAT,
-                    action_class=None,  # type: ignore[arg-type]
-                    requirements=[],
-                    static_params={},
-                    execute=create_shoot_action(weapon, tile_x, tile_y),
-                )
-            )
-
-        return options
+        Currently returns an empty list since no environmental tiles in the game
+        are destructible. This method is kept as a stub for future implementation
+        of destructible terrain.
+        """
+        # No environmental tiles are currently destructible, so no shoot actions
+        # are offered. This stub remains for potential future implementation of
+        # destructible walls, doors, or other terrain.
+        return []
 
     def _get_movement_options(
         self, controller: Controller, actor: Character, context: ActionContext

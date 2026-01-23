@@ -13,7 +13,6 @@ Examples:
     - QuitUICommand: Exit the application
     - ToggleFullscreenUICommand: Change display mode
     - OpenMenuUICommand: Show/hide interface views
-    - SelectOrDeselectActorUICommand: Change UI selection state
 
 UI commands are immediate and don't consume game turns. They handle the
 "meta" layer of interaction - how the player interacts with the game
@@ -26,7 +25,6 @@ import abc
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from catley.game.actors import Actor
 from catley.view.ui.overlays import Menu
 
 if TYPE_CHECKING:
@@ -62,25 +60,6 @@ class QuitUICommand(UICommand):
         self.app.quit()
 
 
-class SelectOrDeselectActorUICommand(UICommand):
-    """
-    Command to select a new actor or deselect (clear) the current selection.
-    """
-
-    def __init__(self, controller: Controller, selection: Actor | None) -> None:
-        """
-        Args:
-            controller: The game controller.
-            selection: The actor to select (or None to deselect).
-        """
-        super().__init__()
-        self.controller = controller
-        self.selection = selection
-
-    def execute(self) -> None:
-        self.controller.gw.selected_actor = self.selection
-
-
 class OpenMenuUICommand(UICommand):
     """Command to open a menu, like the inventory or help menu."""
 
@@ -108,3 +87,25 @@ class OpenExistingMenuUICommand(UICommand):
     def execute(self) -> None:
         assert self.controller.overlay_system is not None
         self.controller.overlay_system.show_menu(self.menu)
+
+
+def open_inventory_or_loot(controller: Controller) -> None:
+    """Open inventory, or loot mode if standing on items.
+
+    This is the shared implementation for opening the inventory menu.
+    If the player is standing on pickable items, opens a two-pane loot
+    interface showing both the ground items and player inventory.
+    Otherwise, opens the regular inventory menu.
+
+    Args:
+        controller: The game controller.
+    """
+    from catley.view.ui.dual_pane_menu import DualPaneMenu, ExternalInventory
+
+    player = controller.gw.player
+    if controller.gw.has_pickable_items_at_location(player.x, player.y):
+        source = ExternalInventory((player.x, player.y), "On the ground")
+        menu = DualPaneMenu(controller, source=source)
+        OpenExistingMenuUICommand(controller, menu).execute()
+    else:
+        OpenMenuUICommand(controller, DualPaneMenu).execute()

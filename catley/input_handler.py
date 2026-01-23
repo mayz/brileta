@@ -163,9 +163,7 @@ class InputHandler:
             # Mouse is outside the game map area (e.g., on UI views).
             self.gw.mouse_tile_location_on_map = None
 
-        self.controller.update_contextual_target_from_hover(
-            self.gw.mouse_tile_location_on_map
-        )
+        self.controller.update_hovered_actor(self.gw.mouse_tile_location_on_map)
 
         if self.controller.is_combat_mode():
             fm = self.controller.frame_manager

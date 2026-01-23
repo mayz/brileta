@@ -28,6 +28,8 @@ The project prioritizes:
 
 **Respect the Intent/Executor pattern:** All world-changing actions go through intents and executors. This architecture enables future extensibility.
 
+**Input Philosophy:** The game must be fully playable with mouse-only. Keyboard shortcuts exist for convenience and speed but are never required. Keyboard-only play is not a design goal.
+
 ## Getting Started
 
 1. Install **Python 3.14**.

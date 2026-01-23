@@ -45,8 +45,8 @@ OUTDOOR_LIGHT_WALL: Color = (80, 60, 40)  # Sunlit rock/stone
 # Actor colors
 PLAYER_COLOR: Color = WHITE
 NPC_COLOR: Color = YELLOW
-SELECTED_HIGHLIGHT: Color = WHITE
-CONTEXTUAL_OUTLINE: Color = (90, 190, 200)
+HOVER_OUTLINE: Color = WHITE  # White for hover feedback
+SELECTION_OUTLINE: Color = (255, 200, 60)  # Golden outline for click-selected targets
 
 DEAD: Color = (128, 128, 128)
 

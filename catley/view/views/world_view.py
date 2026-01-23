@@ -15,7 +15,6 @@ from catley.config import (
     LUMINANCE_THRESHOLD,
     PULSATION_MAX_BLEND_ALPHA,
     PULSATION_PERIOD,
-    SELECTION_HIGHLIGHT_ALPHA,
 )
 from catley.types import InterpolationAlpha, Opacity
 from catley.util.caching import ResourceCache
@@ -822,35 +821,53 @@ class WorldView(View):
                         scale_y=visual_scale,
                     )
 
-    @record_time_live_variable("cpu.render.selected_actor_highlight_ms")
-    def _render_selected_actor_highlight(self) -> None:
-        if self.controller.is_combat_mode():
-            return
-        actor = self.controller.gw.selected_actor
-        if actor and self.controller.gw.game_map.visible[actor.x, actor.y]:
-            self.highlight_actor(
-                actor,
-                colors.SELECTED_HIGHLIGHT,
-                effect="solid",
-                alpha=SELECTION_HIGHLIGHT_ALPHA,
-            )
+    def _render_selection_and_hover_outlines(self) -> None:
+        """Render outlines for selected and hovered actors.
 
-    def _render_contextual_target_outline(self) -> None:
+        Outlines are rendered in priority order:
+        1. selected_target (golden) - sticky click-to-select
+        2. hovered_actor (subtle grey) - visual feedback only
+        """
         if self.controller.is_combat_mode():
             return
-        actor = self.controller.contextual_target
-        if actor is None or actor not in self.controller.gw.actors:
-            return
-        if not self.controller.gw.game_map.visible[actor.x, actor.y]:
-            return
-        if actor.character_layers:
-            self._render_layered_tile_outline(
-                actor, colors.CONTEXTUAL_OUTLINE, float(CONTEXTUAL_OUTLINE_ALPHA)
+
+        # Priority 1: Render selected target outline (golden)
+        selected = self.controller.selected_target
+        if (
+            selected is not None
+            and selected in self.controller.gw.actors
+            and self.controller.gw.game_map.visible[selected.x, selected.y]
+        ):
+            self._draw_actor_outline(
+                selected, colors.SELECTION_OUTLINE, float(CONTEXTUAL_OUTLINE_ALPHA)
             )
+            return  # Don't also render hover outline for same actor
+
+        # Priority 2: Render hover outline (white)
+        hovered = self.controller.hovered_actor
+        if hovered is None or hovered not in self.controller.gw.actors:
             return
-        self.render_actor_outline(
-            actor, colors.CONTEXTUAL_OUTLINE, float(CONTEXTUAL_OUTLINE_ALPHA)
-        )
+        if not self.controller.gw.game_map.visible[hovered.x, hovered.y]:
+            return
+        self._draw_actor_outline(hovered, colors.HOVER_OUTLINE, 0.50)
+
+    def _draw_actor_outline(
+        self, actor: Actor, color: colors.Color, alpha: float
+    ) -> None:
+        """Draw an outline around an actor, handling content layers properly.
+
+        If the actor has content layers (multi-character composition like bookcase),
+        outlines the entire tile. Otherwise, outlines the glyph shape.
+
+        Args:
+            actor: The actor to outline
+            color: RGB color for the outline
+            alpha: Opacity of the outline (0.0-1.0)
+        """
+        if actor.character_layers or actor.has_complex_visuals:
+            self._render_layered_tile_outline(actor, color, alpha)
+        else:
+            self.render_actor_outline(actor, color, alpha)
 
     def _render_layered_tile_outline(
         self, actor: Actor, color: colors.Color, alpha: float

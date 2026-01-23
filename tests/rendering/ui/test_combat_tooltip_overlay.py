@@ -84,7 +84,7 @@ class TestCombatTooltipOverlayVisibility:
             name="Attack",
             description="Test attack",
             category=ActionCategory.COMBAT,
-            action_class=None,  # type: ignore[arg-type]
+            action_class=None,
             requirements=[],
             static_params={},
             success_probability=0.65,
@@ -111,7 +111,7 @@ class TestCombatTooltipOverlayVisibility:
             name="Attack",
             description="Test attack",
             category=ActionCategory.COMBAT,
-            action_class=None,  # type: ignore[arg-type]
+            action_class=None,
             requirements=[],
             static_params={},
             success_probability=0.65,
@@ -145,7 +145,7 @@ class TestCombatTooltipOverlayVisibility:
             name="Attack",
             description="Test attack",
             category=ActionCategory.COMBAT,
-            action_class=None,  # type: ignore[arg-type]
+            action_class=None,
             requirements=[],
             static_params={},
             success_probability=0.65,
@@ -175,7 +175,7 @@ class TestCombatTooltipOverlayVisibility:
             name="Attack",
             description="Test attack",
             category=ActionCategory.COMBAT,
-            action_class=None,  # type: ignore[arg-type]
+            action_class=None,
             requirements=[],
             static_params={},
             success_probability=0.65,

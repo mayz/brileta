@@ -178,6 +178,7 @@ class Actor:
         self.name = name
         self.visual_scale = visual_scale
         self.character_layers = character_layers  # Multi-char visual composition
+        self.has_complex_visuals = False  # Flag for actors with particle effects, etc.
         self.gw = game_world
         self.blocks_movement = blocks_movement
         # Light source removed - handled by new lighting system

@@ -23,6 +23,11 @@ from catley.game.items.item_core import Item
 from catley.util.coordinates import WorldTilePos
 from catley.view.ui.overlays import Menu, MenuOption
 from catley.view.ui.scrollable_text_panel import ScrollableTextPanel
+from catley.view.ui.selectable_list import (
+    LayoutMode,
+    SelectableListRenderer,
+    SelectableRow,
+)
 
 if TYPE_CHECKING:
     from catley.controller import Controller
@@ -174,6 +179,10 @@ class DualPaneMenu(Menu):
         # Hover scroll zone for detail panel visual feedback
         # -1=top zone (scroll up), 0=none, +1=bottom zone (scroll down)
         self._hover_scroll_zone: int = 0
+
+        # Unified list renderers for item panes (created lazily after canvas init)
+        self._left_renderer: SelectableListRenderer | None = None
+        self._right_renderer: SelectableListRenderer | None = None
 
         # Get inventory reference
         self.inventory = controller.gw.player.inventory
@@ -1262,6 +1271,14 @@ class DualPaneMenu(Menu):
                 width_chars=panel_width,
             )
 
+        # Create list renderers for item panes (uses INLINE mode for inventory)
+        if self._left_renderer is None:
+            self._left_renderer = SelectableListRenderer(self.canvas, LayoutMode.INLINE)
+        if self._right_renderer is None:
+            self._right_renderer = SelectableListRenderer(
+                self.canvas, LayoutMode.INLINE
+            )
+
     # Visual constants for menu styling
     MENU_BG_COLOR: colors.Color = (15, 15, 15)  # subtle dark grey, not pure black
 
@@ -1386,81 +1403,44 @@ class DualPaneMenu(Menu):
             )
 
     def _draw_left_pane_items(self) -> None:
-        """Draw items in the left pane."""
+        """Draw items in the left pane using SelectableListRenderer."""
         assert self.canvas is not None
         assert isinstance(self.canvas, PillowImageCanvas)
+        assert self._left_renderer is not None
+
         char_w = self._char_width
         line_h = self._line_height
 
+        # Convert MenuOptions to SelectableRows (limit to visible area)
+        self._left_renderer.rows = [
+            SelectableRow(
+                text=option.text,
+                key=option.key,
+                enabled=option.enabled,
+                color=option.color,
+                data=option,
+                prefix_segments=option.prefix_segments,
+                force_color=option.force_color,
+            )
+            for option in self.left_options[: self.ITEM_LIST_HEIGHT]
+        ]
+        # Set hover state based on active pane and cursor
+        self._left_renderer.hovered_index = (
+            self.left_cursor if self.active_pane == PaneId.LEFT else None
+        )
+
         # Items start at line 2: border (0) + header (1) + items start (2)
         start_y = self.HEADER_HEIGHT + 2
-        for i, option in enumerate(self.left_options):
-            if i >= self.ITEM_LIST_HEIGHT:
-                break
 
-            y = start_y + i
-            is_selected = self.active_pane == PaneId.LEFT and i == self.left_cursor
-
-            # Draw highlight background for selected item
-            if is_selected and option.enabled:
-                self.canvas.draw_rect(
-                    char_w,  # Start at column 1
-                    y * line_h,
-                    (self.LEFT_PANE_WIDTH - 1) * char_w,
-                    line_h,
-                    colors.DARK_GREY,
-                    fill=True,
-                )
-
-            # Draw prefix segments (slot indicator + category prefix)
-            current_px_x = char_w  # Start at column 1
-            if option.prefix_segments:
-                for segment_text, segment_color in option.prefix_segments:
-                    draw_color = segment_color
-                    if is_selected and option.enabled:
-                        draw_color = self._brighten_color(draw_color)
-                    self.canvas.draw_text(
-                        current_px_x, y * line_h, segment_text, draw_color
-                    )
-                    segment_width, _, _ = self.canvas.get_text_metrics(segment_text)
-                    current_px_x += segment_width
-            elif option.prefix:
-                # Fallback to legacy prefix/prefix_color
-                prefix_color = option.prefix_color or option.color
-                if is_selected and option.enabled:
-                    prefix_color = self._brighten_color(prefix_color)
-                self.canvas.draw_text(
-                    current_px_x, y * line_h, option.prefix, prefix_color
-                )
-                prefix_width, _, _ = self.canvas.get_text_metrics(option.prefix)
-                current_px_x += prefix_width
-
-            # Draw key hint
-            if option.key:
-                key_text = f"({option.key}) "
-                key_color = colors.YELLOW if option.enabled else colors.GREY
-                if is_selected and option.enabled:
-                    key_color = self._brighten_color(key_color)
-                self.canvas.draw_text(current_px_x, y * line_h, key_text, key_color)
-                key_width, _, _ = self.canvas.get_text_metrics(key_text)
-                current_px_x += key_width
-
-            # Draw item text
-            text_color = (
-                option.color if option.enabled or option.force_color else colors.GREY
-            )
-            if is_selected and option.enabled:
-                text_color = self._brighten_color(text_color)
-
-            # Calculate max width for text and truncate if needed
-            max_text_width = self.LEFT_PANE_WIDTH * char_w - current_px_x - char_w
-            text = option.text
-            text_width, _, _ = self.canvas.get_text_metrics(text)
-            while text_width > max_text_width and len(text) > 1:
-                text = text[:-1]
-                text_width, _, _ = self.canvas.get_text_metrics(text)
-
-            self.canvas.draw_text(current_px_x, y * line_h, text, text_color)
+        # Render with proper coordinates
+        self._left_renderer.render(
+            x_start=char_w,  # Start at column 1
+            y_start=start_y * line_h,  # Top of first row
+            max_width=(self.LEFT_PANE_WIDTH - 2) * char_w,
+            line_height=line_h,
+            ascent=0,  # Text draws at y_pixel directly (not baseline-adjusted)
+            row_gap=0,
+        )
 
     def _draw_divider(self) -> None:
         """Draw the center divider with transfer arrow.
@@ -1507,72 +1487,45 @@ class DualPaneMenu(Menu):
         self.canvas.draw_text(divider_x * char_w, mid_y * line_h, arrow, arrow_color)
 
     def _draw_right_pane_items(self) -> None:
-        """Draw items in the right pane."""
+        """Draw items in the right pane using SelectableListRenderer."""
         assert self.canvas is not None
         assert isinstance(self.canvas, PillowImageCanvas)
+        assert self._right_renderer is not None
+
         char_w = self._char_width
         line_h = self._line_height
+
+        # Convert MenuOptions to SelectableRows (limit to visible area)
+        self._right_renderer.rows = [
+            SelectableRow(
+                text=option.text,
+                key=option.key,
+                enabled=option.enabled,
+                color=option.color,
+                data=option,
+                prefix_segments=option.prefix_segments,
+                force_color=option.force_color,
+            )
+            for option in self.right_options[: self.ITEM_LIST_HEIGHT]
+        ]
+        # Set hover state based on active pane and cursor
+        self._right_renderer.hovered_index = (
+            self.right_cursor if self.active_pane == PaneId.RIGHT else None
+        )
 
         # Items start at line 2: border (0) + header (1) + items start (2)
         start_y = self.HEADER_HEIGHT + 2
         right_start = self.LEFT_PANE_WIDTH + self.DIVIDER_WIDTH
 
-        for i, option in enumerate(self.right_options):
-            if i >= self.ITEM_LIST_HEIGHT:
-                break
-
-            y = start_y + i
-            is_selected = self.active_pane == PaneId.RIGHT and i == self.right_cursor
-
-            # Draw highlight background
-            if is_selected and option.enabled:
-                self.canvas.draw_rect(
-                    right_start * char_w,
-                    y * line_h,
-                    (self.TOTAL_WIDTH - right_start - 1) * char_w,
-                    line_h,
-                    colors.DARK_GREY,
-                    fill=True,
-                )
-
-            current_px_x = right_start * char_w
-
-            # Draw prefix segments (category prefix)
-            if option.prefix_segments:
-                for segment_text, segment_color in option.prefix_segments:
-                    draw_color = segment_color
-                    if is_selected and option.enabled:
-                        draw_color = self._brighten_color(draw_color)
-                    self.canvas.draw_text(
-                        current_px_x, y * line_h, segment_text, draw_color
-                    )
-                    segment_width, _, _ = self.canvas.get_text_metrics(segment_text)
-                    current_px_x += segment_width
-
-            # Draw key hint
-            if option.key:
-                key_text = f"({option.key}) "
-                key_color = colors.YELLOW if option.enabled else colors.GREY
-                if is_selected and option.enabled:
-                    key_color = self._brighten_color(key_color)
-                self.canvas.draw_text(current_px_x, y * line_h, key_text, key_color)
-                key_width, _, _ = self.canvas.get_text_metrics(key_text)
-                current_px_x += key_width
-
-            # Draw item text
-            text_color = option.color if option.enabled else colors.GREY
-            if is_selected and option.enabled:
-                text_color = self._brighten_color(text_color)
-
-            # Calculate max width for text and truncate if needed
-            max_text_width = (self.TOTAL_WIDTH - 1) * char_w - current_px_x
-            text = option.text
-            text_width, _, _ = self.canvas.get_text_metrics(text)
-            while text_width > max_text_width and len(text) > 1:
-                text = text[:-1]
-                text_width, _, _ = self.canvas.get_text_metrics(text)
-
-            self.canvas.draw_text(current_px_x, y * line_h, text, text_color)
+        # Render with proper coordinates
+        self._right_renderer.render(
+            x_start=right_start * char_w,
+            y_start=start_y * line_h,  # Top of first row
+            max_width=(self.TOTAL_WIDTH - right_start - 1) * char_w,
+            line_height=line_h,
+            ascent=0,  # Text draws at y_pixel directly (not baseline-adjusted)
+            row_gap=0,
+        )
 
     def _draw_detail_panel(self) -> None:
         """Draw the item detail panel at the bottom.

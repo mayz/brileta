@@ -471,8 +471,8 @@ def test_tile_specific_door_actions() -> None:
         cast(Controller, controller), player, ctx, 1, 0
     )
 
-    # Should find direct door action for adjacent door (plus shoot action if armed)
-    assert len(adjacent_actions) >= 1
+    # Should find direct door action for adjacent door (no shoot actions for tiles)
+    assert len(adjacent_actions) == 1
     door_actions = [a for a in adjacent_actions if a.name == "Open Door"]
     assert len(door_actions) == 1
     adjacent_action = door_actions[0]
@@ -482,14 +482,14 @@ def test_tile_specific_door_actions() -> None:
 
     # Test 2: Distant door (player at 0,0, door at 3,3 - distance 3)
     gw.game_map.tiles[3, 3] = TileTypeID.DOOR_CLOSED
+    gw.game_map.walkable[3, 3] = False  # Closed doors are not walkable
 
     distant_actions = disc.environment_discovery.discover_environment_actions_for_tile(
         cast(Controller, controller), player, ctx, 3, 3
     )
 
-    # Should find movement-required door action for distant door
-    # (plus shoot action if player is armed)
-    assert len(distant_actions) >= 1
+    # Should find movement-required door action for distant door (no shoot actions)
+    assert len(distant_actions) == 1
     go_door_actions = [a for a in distant_actions if a.name == "Go to and Open Door"]
     assert len(go_door_actions) == 1
     distant_action = go_door_actions[0]
@@ -506,8 +506,8 @@ def test_tile_specific_door_actions() -> None:
         )
     )
 
-    # Should find close door action (plus shoot action if armed)
-    assert len(open_door_actions) >= 1
+    # Should find close door action only (no shoot actions for tiles)
+    assert len(open_door_actions) == 1
     close_actions = [a for a in open_door_actions if "close" in a.name.lower()]
     assert len(close_actions) == 1
     close_action = close_actions[0]
@@ -522,7 +522,6 @@ def test_tile_specific_door_actions() -> None:
     )
 
     # Should find "Go here" action for a regular floor tile at distance > 0
-    # (no shoot action since floor is walkable)
     assert len(floor_actions) == 1
     go_action = floor_actions[0]
     assert go_action.name == "Go here"
@@ -687,8 +686,12 @@ def test_tile_specific_container_search_action() -> None:
     assert search_options[0].action_class is SearchContainerIntent
 
 
-def test_distant_container_offers_go_and_search() -> None:
-    """Test that distant containers show 'Go to and Search' action."""
+def test_distant_container_offers_search_with_pathfinding() -> None:
+    """Test that distant containers show 'Search' action with pathfinding.
+
+    The action name is just 'Search {container}' without the 'Go to and' prefix
+    since the movement is implied.
+    """
     gw = DummyGameWorld()
     player = Character(0, 0, "@", colors.WHITE, "P", game_world=cast(GameWorld, gw))
     gw.player = player
@@ -708,5 +711,209 @@ def test_distant_container_offers_go_and_search() -> None:
 
     search_options = [o for o in opts if "Search" in o.name]
     assert len(search_options) == 1
-    assert "Go to and Search" in search_options[0].name
+    # Name should be "Search Bookcase" without "Go to and" prefix
+    assert search_options[0].name == "Search Bookcase"
     assert search_options[0].execute is not None  # Uses pathfinding
+
+
+def test_get_options_for_target_outside_combat_shows_attack_gateway() -> None:
+    """Outside combat, targeting a character shows Attack gateway and Talk action."""
+    controller, player, hostile, _, _ = _make_context_world()
+    # Make hostile non-hostile so we're out of combat
+    cast(Any, hostile.ai).disposition = Disposition.FRIENDLY
+
+    disc = ActionDiscovery()
+
+    # Stub is_combat_mode to return False (since DummyController doesn't have it)
+    controller.is_combat_mode = lambda: False  # type: ignore[attr-defined]
+
+    opts = disc.get_options_for_target(cast(Controller, controller), player, hostile)
+
+    # Should have Attack gateway and Talk actions
+    action_ids = {o.id for o in opts}
+    assert "attack-gateway" in action_ids, "Should have Attack gateway action"
+    assert "talk" in action_ids, "Should have Talk action"
+
+    # Attack gateway should have execute function that would enter combat mode
+    attack_opt = next(o for o in opts if o.id == "attack-gateway")
+    assert attack_opt.execute is not None
+    assert attack_opt.category == ActionCategory.COMBAT
+
+    # Talk should have Social category
+    talk_opt = next(o for o in opts if o.id == "talk")
+    assert talk_opt.category == ActionCategory.SOCIAL
+
+
+def test_get_options_for_target_in_combat_shows_combat_actions() -> None:
+    """In combat, targeting a character shows full combat actions."""
+    controller, player, melee_target, _, _ = _make_combat_world()
+    disc = ActionDiscovery()
+
+    # Stub is_combat_mode to return True
+    controller.is_combat_mode = lambda: True  # type: ignore[attr-defined]
+
+    opts = disc.get_options_for_target(
+        cast(Controller, controller), player, melee_target
+    )
+
+    # Should have actual combat actions (Pistol-whip, Shoot, etc.), not the gateway
+    action_ids = {o.id for o in opts}
+    assert "attack-gateway" not in action_ids, (
+        "Should NOT have Attack gateway in combat"
+    )
+
+    # Should have actual weapon attack actions
+    assert any("melee" in o.id for o in opts), "Should have melee attack action"
+
+
+def test_attack_gateway_not_shown_for_dead_targets() -> None:
+    """Attack gateway should not appear for dead targets."""
+    controller, player, hostile, _, _ = _make_context_world()
+    hostile.health.hp = 0  # Kill the target
+    cast(Any, hostile.ai).disposition = Disposition.FRIENDLY
+
+    disc = ActionDiscovery()
+    controller.is_combat_mode = lambda: False  # type: ignore[attr-defined]
+
+    opts = disc.get_options_for_target(cast(Controller, controller), player, hostile)
+
+    # Should not have Attack gateway for dead target
+    action_ids = {o.id for o in opts}
+    assert "attack-gateway" not in action_ids
+
+
+def test_talk_action_pathfinds_for_distant_target() -> None:
+    """Talk action for distant target should have pathfinding behavior."""
+    controller, player, _, friend, _ = _make_context_world()
+    # Friend is at (20, 20), player at (0, 0) - definitely not adjacent
+
+    disc = ActionDiscovery()
+    controller.is_combat_mode = lambda: False  # type: ignore[attr-defined]
+
+    opts = disc.get_options_for_target(cast(Controller, controller), player, friend)
+
+    talk_opt = next(o for o in opts if o.id == "talk")
+    assert talk_opt.execute is not None, "Distant Talk should have execute function"
+
+
+def test_talk_action_not_shown_in_combat_mode() -> None:
+    """Talk action should NOT appear when in combat mode.
+
+    In combat, get_options_for_target() should return combat actions, not social
+    actions like Talk.
+    """
+    controller, player, melee_target, _, _ = _make_combat_world()
+    disc = ActionDiscovery()
+
+    # Stub is_combat_mode to return True (combat mode)
+    controller.is_combat_mode = lambda: True  # type: ignore[attr-defined]
+
+    opts = disc.get_options_for_target(
+        cast(Controller, controller), player, melee_target
+    )
+
+    # Should NOT have Talk action in combat mode
+    action_ids = {o.id for o in opts}
+    assert "talk" not in action_ids, "Talk should NOT appear in combat mode"
+
+    # Should have combat actions instead
+    assert any("melee" in o.id or "ranged" in o.id for o in opts), (
+        "Should have combat actions in combat mode"
+    )
+
+
+def test_container_tile_excludes_go_here_action() -> None:
+    """Clicking on a container tile should NOT show 'Go here' action.
+
+    The container-specific search action is more relevant, so 'Go here' should
+    be excluded to reduce clutter.
+    """
+    gw = DummyGameWorld()
+    player = Character(0, 0, "@", colors.WHITE, "P", game_world=cast(GameWorld, gw))
+    gw.player = player
+    gw.add_actor(player)
+
+    # Create a container at a walkable tile far from player
+    crate = create_bookcase(x=5, y=5, game_world=cast(GameWorld, gw))
+    gw.add_actor(crate)
+
+    controller = DummyController(gw=gw)
+    disc = ActionDiscovery()
+    ctx = disc._build_context(cast(Controller, controller), player)
+
+    opts = disc.environment_discovery.discover_environment_actions_for_tile(
+        cast(Controller, controller), player, ctx, 5, 5
+    )
+
+    # Should have Search action but NOT "Go here"
+    action_names = {o.name for o in opts}
+    assert "Search Bookcase" in action_names, "Should have Search action"
+    assert "Go here" not in action_names, (
+        "Should NOT have 'Go here' when container is present"
+    )
+
+
+def test_no_shoot_actions_for_environmental_tiles() -> None:
+    """Shoot actions should NOT appear for any environmental tiles.
+
+    No tiles in the game are currently destructible, so no shoot actions
+    should be offered for walls, doors, boulders, or any other tiles.
+    """
+    gw = DummyGameWorld()
+    player = Character(
+        0,
+        0,
+        "@",
+        colors.WHITE,
+        "Player",
+        game_world=cast(GameWorld, gw),
+        observation=5,
+    )
+    # Give player a ranged weapon with ammo
+    pistol = PISTOL_TYPE.create()
+    pistol_ranged = cast(RangedAttack, pistol.ranged_attack)
+    pistol_ranged.current_ammo = 6
+    player.inventory.equip_to_slot(pistol, 0)
+
+    gw.player = player
+    gw.add_actor(player)
+
+    controller = DummyController(gw=gw)
+    disc = ActionDiscovery()
+    ctx = disc._build_context(cast(Controller, controller), player)
+
+    # Test 1: Wall should NOT have shoot action
+    gw.game_map.tiles[3, 0] = TileTypeID.WALL
+    gw.game_map.walkable[3, 0] = False
+    wall_opts = disc.environment_discovery.discover_environment_actions_for_tile(
+        cast(Controller, controller), player, ctx, 3, 0
+    )
+    wall_shoot_opts = [o for o in wall_opts if "Shoot" in o.name]
+    assert len(wall_shoot_opts) == 0, "Wall should NOT have shoot action"
+
+    # Test 2: Closed door should NOT have shoot action
+    gw.game_map.tiles[4, 0] = TileTypeID.DOOR_CLOSED
+    gw.game_map.walkable[4, 0] = False
+    door_opts = disc.environment_discovery.discover_environment_actions_for_tile(
+        cast(Controller, controller), player, ctx, 4, 0
+    )
+    door_shoot_opts = [o for o in door_opts if "Shoot" in o.name]
+    assert len(door_shoot_opts) == 0, "Closed door should NOT have shoot action"
+
+    # Test 3: Boulder should NOT have shoot action
+    gw.game_map.tiles[5, 0] = TileTypeID.BOULDER
+    gw.game_map.walkable[5, 0] = False
+    boulder_opts = disc.environment_discovery.discover_environment_actions_for_tile(
+        cast(Controller, controller), player, ctx, 5, 0
+    )
+    boulder_shoot_opts = [o for o in boulder_opts if "Shoot" in o.name]
+    assert len(boulder_shoot_opts) == 0, "Boulder should NOT have shoot action"
+
+    # Test 4: Open door should NOT have shoot action
+    gw.game_map.tiles[6, 0] = TileTypeID.DOOR_OPEN
+    gw.game_map.walkable[6, 0] = True
+    open_door_opts = disc.environment_discovery.discover_environment_actions_for_tile(
+        cast(Controller, controller), player, ctx, 6, 0
+    )
+    open_door_shoot_opts = [o for o in open_door_opts if "Shoot" in o.name]
+    assert len(open_door_shoot_opts) == 0, "Open door should NOT have shoot action"

@@ -102,23 +102,91 @@ class ActionDiscovery:
     def get_options_for_target(
         self, controller: Controller, actor: Character, target: Character
     ) -> list[ActionOption]:
+        """Get actions available when targeting a specific character.
+
+        In combat mode: Returns full combat actions (weapon attacks, stunts).
+        Outside combat: Returns an "Attack" gateway action that enters combat mode,
+                       plus any social actions (Talk, etc.).
+        """
         context = self.context_builder.build_context(controller, actor)
         options: list[ActionOption] = []
-        # Combat actions (weapon attacks)
-        options.extend(
-            self.combat_discovery.get_combat_options_for_target(
-                controller, actor, target, context
+
+        if controller.is_combat_mode():
+            # Inside combat - show full combat actions
+            options.extend(
+                self.combat_discovery.get_combat_options_for_target(
+                    controller, actor, target, context
+                )
             )
-        )
-        # Stunt actions (Push, etc.) - filter to only this target
-        options.extend(
-            stunt
-            for stunt in self.combat_discovery.discover_stunt_actions(
-                controller, actor, context
+            # Stunt actions (Push, etc.) - filter to only this target
+            options.extend(
+                stunt
+                for stunt in self.combat_discovery.discover_stunt_actions(
+                    controller, actor, context
+                )
+                if stunt.static_params.get("defender") == target
             )
-            if stunt.static_params.get("defender") == target
-        )
+        else:
+            # Outside combat - show "Attack" gateway and social actions
+            # Only show Attack if target is a valid combat target
+            if target.health and target.health.is_alive() and target is not actor:
+                options.append(self._create_attack_gateway_action(controller))
+
+            # Add social actions (Talk)
+            options.append(self._create_talk_action(controller, actor, target))
+
         return options
+
+    def _create_attack_gateway_action(self, controller: Controller) -> ActionOption:
+        """Create the 'Attack' gateway action that enters combat mode."""
+
+        def enter_combat() -> bool:
+            controller.enter_combat_mode()
+            return True
+
+        return ActionOption(
+            id="attack-gateway",
+            name="Attack",
+            description="Enter combat mode to select an attack",
+            category=ActionCategory.COMBAT,
+            action_class=None,
+            requirements=[],
+            static_params={},
+            execute=enter_combat,
+        )
+
+    def _create_talk_action(
+        self, controller: Controller, actor: Character, target: Character
+    ) -> ActionOption:
+        """Create a 'Talk' action for social interaction."""
+        from catley.game.actions.social import TalkIntent
+
+        def talk() -> bool:
+            from catley.game import ranges
+
+            distance = ranges.calculate_distance(actor.x, actor.y, target.x, target.y)
+            if distance == 1:
+                # Adjacent - talk immediately
+                intent = TalkIntent(controller, actor, target)
+                controller.queue_action(intent)
+            else:
+                # Not adjacent - pathfind then talk
+                final_intent = TalkIntent(controller, actor, target)
+                controller.start_actor_pathfinding(
+                    actor, (target.x, target.y), final_intent=final_intent
+                )
+            return True
+
+        return ActionOption(
+            id="talk",
+            name="Talk",
+            description=f"Approach and speak with {target.name}",
+            category=ActionCategory.SOCIAL,
+            action_class=TalkIntent,
+            requirements=[],
+            static_params={"target": target},
+            execute=talk,
+        )
 
     def _sort_by_relevance(
         self, options: list[ActionOption], context: ActionContext

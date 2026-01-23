@@ -173,11 +173,14 @@ class Controller:
         # Subscribe to combat initiation events for auto-entry
         subscribe_to_event(CombatInitiatedEvent, self._on_combat_initiated)
 
-        # Contextual target tracking (adjacency-based with hover overrides).
-        self.contextual_target: Actor | None = None
-        self._adjacency_contextual_target: Actor | None = None
-        self._hovered_contextual_target: Actor | None = None
-        self._last_movement_direction: tuple[int, int] | None = None
+        # Selection-based target tracking for click-to-select interaction.
+        # selected_target is sticky (persists until explicitly deselected by
+        # clicking empty ground). ActionPanel displays actions for selected_target.
+        self.selected_target: Actor | None = None
+
+        # Hover target tracking for visual feedback (outline only, no game state).
+        # Updated each frame based on mouse position, used for subtle hover highlight.
+        self.hovered_actor: Actor | None = None
 
     def update_fov(self) -> None:
         """Recompute the visible area based on the player's point of view."""
@@ -332,12 +335,6 @@ class Controller:
         self.turn_manager.execute_intent(action)
         self.gw.player.energy.spend(config.ACTION_COST)
 
-        # Update contextual target selection after movement attempts.
-        from catley.game.actions.movement import MoveIntent
-
-        if isinstance(action, MoveIntent) and action.actor is self.gw.player:
-            self.update_contextual_target_from_movement(action.dx, action.dy)
-
         # Check for terrain hazard damage after the player completes their action
         self.turn_manager._apply_terrain_hazard(self.gw.player)
 
@@ -348,87 +345,21 @@ class Controller:
         self.turn_manager.on_player_action()
         self.invalidate_combat_tooltip()
 
-    def update_contextual_target_from_movement(self, dx: int, dy: int) -> None:
-        """Update the contextual target based on player movement direction.
+        # Refresh hovered actor in case actors moved into/out of the mouse position
+        self.update_hovered_actor(self.gw.mouse_tile_location_on_map)
 
-        This sets a deterministic adjacency-based target unless a mouse hover
-        override is active. The selected target is stored even when overridden
-        so it can be restored when the hover ends.
+    def update_hovered_actor(self, mouse_pos: WorldTilePos | None) -> None:
+        """Update the hovered actor based on mouse position.
+
+        This is used for visual feedback only (subtle hover outline).
+        Does not affect game state or ActionPanel.
         """
-        if dx == 0 and dy == 0:
-            return
-
-        self._last_movement_direction = (dx, dy)
-        self._adjacency_contextual_target = self._select_adjacent_target(dx, dy)
-        if self._hovered_contextual_target is None:
-            self.contextual_target = self._adjacency_contextual_target
-
-    def update_contextual_target_from_hover(
-        self, mouse_pos: WorldTilePos | None
-    ) -> None:
-        """Update the contextual target based on the current mouse hover."""
         if mouse_pos is None:
-            self._hovered_contextual_target = None
-            self._refresh_contextual_target_from_adjacency()
+            self.hovered_actor = None
             return
 
         mouse_x, mouse_y = mouse_pos
-        hovered_actor = self._get_visible_actor_at_tile(mouse_x, mouse_y)
-        if hovered_actor is not None:
-            self._hovered_contextual_target = hovered_actor
-            self.contextual_target = hovered_actor
-            return
-
-        self._hovered_contextual_target = None
-        self._refresh_contextual_target_from_adjacency()
-
-    def _refresh_contextual_target_from_adjacency(self) -> None:
-        """Re-select the best adjacency-based target when hover ends."""
-        if self._hovered_contextual_target is not None:
-            self.contextual_target = self._hovered_contextual_target
-            return
-
-        if self._last_movement_direction is None:
-            self._adjacency_contextual_target = self._get_adjacent_actor_fallback()
-        else:
-            dx, dy = self._last_movement_direction
-            self._adjacency_contextual_target = self._select_adjacent_target(dx, dy)
-
-        self.contextual_target = self._adjacency_contextual_target
-
-    def _select_adjacent_target(self, dx: int, dy: int) -> Actor | None:
-        """Pick an adjacent actor in the move direction or fall back."""
-        player = self.gw.player
-        target = self._get_adjacent_actor_at_offset(player, dx, dy)
-        if target is not None:
-            return target
-        return self._get_adjacent_actor_fallback()
-
-    def _get_adjacent_actor_fallback(self) -> Actor | None:
-        """Select a deterministic adjacent actor when no directional target exists."""
-        player = self.gw.player
-        for offset_x, offset_y in (
-            (0, -1),
-            (1, 0),
-            (0, 1),
-            (-1, 0),
-            (-1, -1),
-            (1, -1),
-            (1, 1),
-            (-1, 1),
-        ):
-            actor = self._get_adjacent_actor_at_offset(player, offset_x, offset_y)
-            if actor is not None:
-                return actor
-        return None
-
-    def _get_adjacent_actor_at_offset(
-        self, player: Character, dx: int, dy: int
-    ) -> Actor | None:
-        """Return the visible actor at the given adjacent offset, if any."""
-        target_x = player.x + dx
-        target_y = player.y + dy
-        return self._get_visible_actor_at_tile(target_x, target_y)
+        self.hovered_actor = self._get_visible_actor_at_tile(mouse_x, mouse_y)
 
     def _get_visible_actor_at_tile(self, x: int, y: int) -> Actor | None:
         """Return the first visible actor at a tile, if any."""
@@ -626,6 +557,26 @@ class Controller:
             ):
                 return True
         return False
+
+    def select_target(self, target: Actor | None) -> None:
+        """Set the selected target for the ActionPanel.
+
+        Selected targets are sticky - they persist until explicitly deselected
+        (by clicking empty ground or calling deselect_target). This enables
+        RTS-style click-to-select where the panel locks to a target.
+
+        Args:
+            target: The actor to select, or None to deselect.
+        """
+        self.selected_target = target
+
+    def deselect_target(self) -> None:
+        """Clear the selected target.
+
+        Call this when the player clicks on empty ground or otherwise wants
+        to clear the selection.
+        """
+        self.selected_target = None
 
     def start_consumable_targeting(self, item: Item) -> None:
         """Start consumable targeting via PickerMode.

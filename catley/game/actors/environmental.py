@@ -75,6 +75,9 @@ class ContainedFire(Actor):
         if self.visual_effects is not None:
             self.visual_effects.add_continuous_effect(self.fire_effect)
 
+        # Mark as having complex visuals so outline rendering uses full-tile outline
+        self.has_complex_visuals = True
+
         # Create dynamic light for this fire
         if game_world:
             self.light_source = DynamicLight(

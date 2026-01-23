@@ -50,7 +50,7 @@ class DummyController:
     app: Any = None
     mode_stack: list[Any] = field(default_factory=list)
 
-    def update_contextual_target_from_hover(self, _mouse_pos: Any) -> None:
+    def update_hovered_actor(self, _mouse_pos: Any) -> None:
         """No-op placeholder to satisfy InputHandler interactions."""
         return
 
@@ -192,6 +192,7 @@ def make_explore_mode() -> tuple[
         app=dummy_app,
         enter_combat_mode=lambda: None,
         queue_action=lambda a: None,
+        deselect_target=lambda: None,
     )
 
     mode = ExploreMode(cast(Any, controller))

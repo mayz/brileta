@@ -6,6 +6,7 @@ from catley.game import ranges
 from catley.game.actions.combat import AttackIntent
 from catley.game.actions.stunts import PushIntent
 from catley.game.actors import Character
+from catley.game.items.properties import WeaponProperty
 
 from .action_context import ActionContext, ActionContextBuilder
 from .action_factory import ActionFactory
@@ -108,7 +109,34 @@ class CombatActionDiscovery:
                 )
             )
 
+        # Sort by category and priority so PREFERRED attacks appear first
+        options.sort(key=lambda a: (a.category.value, self._get_action_priority(a)))
         return options
+
+    def _get_action_priority(self, action: ActionOption) -> int:
+        """Get sort priority for an action. Lower values sort first.
+
+        Priority order:
+        - 0: PREFERRED attacks (weapon's intended use, e.g., Shoot for a pistol)
+        - 1: Regular attacks (no special property)
+        - 2: IMPROVISED attacks (not designed as weapon, e.g., Pistol-whip)
+        """
+        weapon = action.static_params.get("weapon")
+        attack_mode = action.static_params.get("attack_mode")
+        if weapon is None or attack_mode is None:
+            return 1
+        attack = None
+        if attack_mode == "melee" and weapon.melee_attack:
+            attack = weapon.melee_attack
+        elif attack_mode == "ranged" and weapon.ranged_attack:
+            attack = weapon.ranged_attack
+        if attack is None:
+            return 1
+        if WeaponProperty.PREFERRED in attack.properties:
+            return 0
+        if WeaponProperty.IMPROVISED in attack.properties:
+            return 2
+        return 1
 
     def _has_adjacent_enemy(self, actor: Character, context: ActionContext) -> bool:
         """Check if any valid combat target is adjacent to the actor.

@@ -93,9 +93,9 @@ def draw_keycap(
     # Use smaller font for keycap text (65% of keycap size for readability)
     keycap_font_size = max(8, int(keycap_size * 0.65))
 
-    # Get text metrics for dynamic sizing with smaller font
+    # Get text bbox for proper centering (includes glyph offset)
     key_upper = key.upper()
-    text_width, text_height, _ = canvas.get_text_metrics(
+    x_off, y_off, text_width, text_height = canvas.get_text_bbox(
         key_upper, font_size=keycap_font_size
     )
 
@@ -124,9 +124,15 @@ def draw_keycap(
         fill=False,
     )
 
-    # Center the text in the dynamic keycap
-    text_x = pixel_x + (keycap_width - text_width) // 2
-    text_y = keycap_y + (keycap_height - text_height) // 2
+    # Center the text in the dynamic keycap, accounting for bbox offset.
+    # The bbox offset tells us where the glyph pixels actually start relative
+    # to the drawing origin, so we subtract it to properly center the visual.
+    #
+    # Note: PIL's rectangle() draws with inclusive bounds, so actual visual
+    # height is keycap_height + 1. We account for this in vertical centering
+    # by using keycap_height + 1 (horizontal centering already works correctly).
+    text_x = pixel_x + (keycap_width - text_width) // 2 - x_off
+    text_y = keycap_y + (keycap_height + 1 - text_height) // 2 - y_off
 
     # Draw the key character with smaller font
     canvas.draw_text(

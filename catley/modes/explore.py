@@ -30,17 +30,10 @@ from catley.types import (
     PixelCoord,
     PixelPos,
     RootConsoleTilePos,
-    WorldTileCoord,
     WorldTilePos,
 )
 from catley.view.ui.action_browser_menu import ActionBrowserMenu
-from catley.view.ui.commands import (
-    OpenExistingMenuUICommand,
-    OpenMenuUICommand,
-    ToggleFullscreenUICommand,
-)
-from catley.view.ui.context_menu import ContextMenu
-from catley.view.ui.dual_pane_menu import DualPaneMenu, ExternalInventory
+from catley.view.ui.commands import OpenMenuUICommand, ToggleFullscreenUICommand
 from catley.view.ui.help_menu import HelpMenu
 
 if TYPE_CHECKING:
@@ -170,6 +163,9 @@ class ExploreMode(Mode):
             case tcod.event.MouseButtonDown():
                 return self._handle_mouse_click(event)
 
+            case tcod.event.MouseMotion():
+                return self._handle_mouse_motion(event)
+
         return False
 
     def update(self) -> None:
@@ -191,11 +187,10 @@ class ExploreMode(Mode):
                 self.controller.turn_manager.on_player_action()
 
     def render_world(self) -> None:
-        """Render selected actor highlight."""
+        """Render actor outlines for selection and hover feedback."""
         # This is the default rendering when no other mode is active
         if self._fm is not None and hasattr(self._fm, "world_view"):
-            self._fm.world_view._render_selected_actor_highlight()
-            self._fm.world_view._render_contextual_target_outline()
+            self._fm.world_view._render_selection_and_hover_outlines()
 
     # -------------------------------------------------------------------------
     # UI Command Helpers
@@ -203,13 +198,9 @@ class ExploreMode(Mode):
 
     def _open_inventory(self) -> None:
         """Open inventory (loot mode if standing on items)."""
-        player = self._p
-        if self._gw.has_pickable_items_at_location(player.x, player.y):
-            source = ExternalInventory((player.x, player.y), "On the ground")
-            menu = DualPaneMenu(self.controller, source=source)
-            OpenExistingMenuUICommand(self.controller, menu).execute()
-        else:
-            OpenMenuUICommand(self.controller, DualPaneMenu).execute()
+        from catley.view.ui.commands import open_inventory_or_loot
+
+        open_inventory_or_loot(self.controller)
 
     def _toggle_dev_console(self) -> None:
         """Toggle the dev console overlay."""
@@ -284,7 +275,8 @@ class ExploreMode(Mode):
             result = action_option.execute()
             if isinstance(result, GameIntent):
                 self.controller.queue_action(result)
-                action_executed = True
+            # execute() handled the action (returns True/False or a GameIntent)
+            action_executed = True
         elif action_option.action_class:
             # Create action instance with static params
             action_instance = action_option.action_class(
@@ -323,8 +315,76 @@ class ExploreMode(Mode):
     # Mouse Click Handling
     # -------------------------------------------------------------------------
 
+    def _get_panel_relative_coords(
+        self, event: tcod.event.MouseState
+    ) -> tuple[int, int, bool]:
+        """Convert mouse event coordinates to action panel-relative pixel coords.
+
+        Args:
+            event: Mouse event with position in raw pixel coordinates.
+
+        Returns:
+            Tuple of (rel_px_x, rel_px_y, is_inside_panel). If the mouse is
+            outside the panel bounds, rel_px_x and rel_px_y are set to -1.
+        """
+        if self._fm is None or not hasattr(self._fm, "action_panel_view"):
+            return (-1, -1, False)
+
+        action_panel_view = self._fm.action_panel_view
+        graphics = self.controller.graphics
+
+        # Convert raw pixel position to scaled pixel position
+        scale_x, scale_y = graphics.get_display_scale_factor()
+        scaled_px_x = int(event.position.x * scale_x)
+        scaled_px_y = int(event.position.y * scale_y)
+
+        # Calculate action panel's screen pixel bounds
+        tile_width, tile_height = graphics.tile_dimensions
+        panel_px_x = action_panel_view.x * tile_width
+        panel_px_y = action_panel_view.y * tile_height
+        panel_px_width = action_panel_view.width * tile_width
+        panel_px_height = action_panel_view.height * tile_height
+
+        # Check if mouse is within panel bounds
+        if (
+            panel_px_x <= scaled_px_x < panel_px_x + panel_px_width
+            and panel_px_y <= scaled_px_y < panel_px_y + panel_px_height
+        ):
+            # Convert to panel-relative pixel coordinates
+            rel_px_x = scaled_px_x - panel_px_x
+            rel_px_y = scaled_px_y - panel_px_y
+            return (rel_px_x, rel_px_y, True)
+
+        return (-1, -1, False)
+
+    def _handle_mouse_motion(self, event: tcod.event.MouseMotion) -> bool:
+        """Handle mouse motion for hover state updates.
+
+        Updates the action panel hover state when the mouse moves over it.
+        """
+        if self._fm is None or not hasattr(self._fm, "action_panel_view"):
+            return False
+
+        action_panel_view = self._fm.action_panel_view
+        rel_px_x, rel_px_y, _ = self._get_panel_relative_coords(event)
+
+        # Update hover state (invalidates cache if changed)
+        # When outside panel, rel_px_x/rel_px_y are -1, which clears hover
+        if action_panel_view.update_hover_from_pixel(rel_px_x, rel_px_y):
+            action_panel_view.invalidate_cache()
+
+        # Don't consume mouse motion - other handlers may need it
+        return False
+
     def _handle_mouse_click(self, event: tcod.event.MouseButtonDown) -> bool:
-        """Handle mouse button down events."""
+        """Handle mouse button down events.
+
+        Click behavior:
+        - Left-click on actor/object: Select it (ActionPanel locks to target)
+        - Left-click on empty ground: Deselect current target
+        - Shift+left-click: Pathfind to that tile
+        - Right-click on actor/object: Execute default action immediately
+        """
         if self._fm is None:
             return False
 
@@ -337,7 +397,7 @@ class ExploreMode(Mode):
             self._fm.get_world_coords_from_root_tile_coords(root_tile_pos)
         )
 
-        # Shift+left click for pathfinding
+        # Shift+left click for pathfinding (regardless of what's there)
         if event.button == tcod.event.MouseButton.LEFT and (
             tcod.event.get_modifier_state() & tcod.event.Modifier.SHIFT
         ):
@@ -345,13 +405,59 @@ class ExploreMode(Mode):
                 self.controller.start_actor_pathfinding(self._p, world_tile_pos)
             return True
 
-        # Right click for context menu
+        # Right click executes default action
         if event.button == tcod.event.MouseButton.RIGHT:
             return self._handle_right_click(world_tile_pos, root_tile_pos)
 
-        # Left click handling
+        # Left click for selection/deselection or action panel clicks
         if event.button == tcod.event.MouseButton.LEFT:
-            return self._handle_left_click(root_tile_pos)
+            # Check if click is on the action panel first
+            if self._try_execute_action_panel_click(event):
+                return True
+            return self._handle_left_click(root_tile_pos, world_tile_pos)
+
+        return False
+
+    def _try_execute_action_panel_click(
+        self, event: tcod.event.MouseButtonDown
+    ) -> bool:
+        """Try to execute an action by clicking on it in the action panel.
+
+        Args:
+            event: The mouse button down event.
+
+        Returns:
+            True if click was on action panel and action executed.
+        """
+        if self._fm is None or not hasattr(self._fm, "action_panel_view"):
+            return False
+
+        rel_px_x, rel_px_y, is_inside = self._get_panel_relative_coords(event)
+        if not is_inside:
+            return False
+
+        action_panel_view = self._fm.action_panel_view
+
+        # First check for control row clicks (handled via execute callbacks)
+        if action_panel_view.execute_at_pixel(rel_px_x, rel_px_y):
+            return True
+
+        # Then check for action option clicks
+        action_option = action_panel_view.get_action_at_pixel(rel_px_x, rel_px_y)
+        if action_option is not None:
+            # Execute the action (same logic as hotkey handling)
+            if hasattr(action_option, "execute") and action_option.execute:
+                result = action_option.execute()
+                if isinstance(result, GameIntent):
+                    self.controller.queue_action(result)
+            elif action_option.action_class:
+                action_instance = action_option.action_class(
+                    self.controller,
+                    self._p,
+                    **action_option.static_params,
+                )
+                self.controller.queue_action(action_instance)
+            return True
 
         return False
 
@@ -360,39 +466,104 @@ class ExploreMode(Mode):
         world_tile_pos: WorldTilePos | None,
         root_tile_pos: RootConsoleTilePos,
     ) -> bool:
-        """Handle right click for context menu."""
-        target: Actor | WorldTilePos | None = None
+        """Handle right click for default action execution.
 
-        if world_tile_pos:
-            world_x: WorldTileCoord
-            world_y: WorldTileCoord
-            world_x, world_y = world_tile_pos
-            game_map = self._gw.game_map
+        Right-click executes the contextually obvious action immediately:
+        - NPC: Talk (pathfind to them first if needed)
+        - Container: Search (pathfind to adjacent tile if needed)
+        - Closed door: Open (pathfind to adjacent tile if needed)
+        - Open door: Close (pathfind to adjacent tile if needed)
+        - Item pile: Pick up (pathfind to items if needed)
+        - Floor tile: Walk there
+        """
+        from catley.game.actions.discovery import execute_default_action
 
-            if (
-                0 <= world_x < game_map.width
-                and 0 <= world_y < game_map.height
-                and game_map.visible[world_x, world_y]
-            ):
-                actor_at_click = self._gw.get_actor_at_location(world_x, world_y)
-                if actor_at_click is not None and (
-                    not isinstance(actor_at_click, Character)
-                    or actor_at_click.health.is_alive()
-                ):
-                    target = actor_at_click
-                else:
-                    target = (world_x, world_y)
+        if world_tile_pos is None:
+            return True  # Consume right click even if nothing to do
 
-        if target and self._has_available_actions(target):
-            context_menu = ContextMenu(self.controller, target, root_tile_pos)
-            OpenExistingMenuUICommand(self.controller, context_menu).execute()
+        world_x, world_y = world_tile_pos
+        game_map = self._gw.game_map
+
+        # Check bounds and visibility
+        if not (0 <= world_x < game_map.width and 0 <= world_y < game_map.height):
             return True
 
-        return True  # Consume right click even if no menu opened
+        if not game_map.visible[world_x, world_y]:
+            return True  # Can't interact with non-visible tiles
 
-    def _handle_left_click(self, root_tile_pos: RootConsoleTilePos) -> bool:
-        """Handle left click on equipment view (weapon slots)."""
-        return self._check_equipment_view_click(root_tile_pos)
+        # Determine the target (actor at location or tile position)
+        target: Actor | WorldTilePos
+        actor_at_click = self._gw.get_actor_at_location(world_x, world_y)
+        if actor_at_click is not None and actor_at_click is not self._p:
+            # Skip dead characters
+            if (
+                isinstance(actor_at_click, Character)
+                and not actor_at_click.health.is_alive()
+            ):
+                target = (world_x, world_y)
+            else:
+                target = actor_at_click
+        else:
+            target = (world_x, world_y)
+
+        # Execute the default action for this target
+        execute_default_action(self.controller, target)
+
+        # Clear selection after right-click action
+        self.controller.deselect_target()
+        return True
+
+    def _handle_left_click(
+        self, root_tile_pos: RootConsoleTilePos, world_tile_pos: WorldTilePos | None
+    ) -> bool:
+        """Handle left click for selection and UI interaction.
+
+        Left-click behavior:
+        - Click on actor/container: Toggle selection (select if not selected,
+          deselect if already selected)
+        - Click on empty ground: Deselect current target
+        - Click on equipment view: Handle weapon slot switching
+        """
+        # First check equipment view (always takes priority for its region)
+        if self._check_equipment_view_click(root_tile_pos):
+            return True
+
+        # If no world position, can't do selection
+        if world_tile_pos is None:
+            return False
+
+        world_x, world_y = world_tile_pos
+        game_map = self._gw.game_map
+
+        # Check bounds and visibility
+        if not (0 <= world_x < game_map.width and 0 <= world_y < game_map.height):
+            return False
+
+        if not game_map.visible[world_x, world_y]:
+            # Clicked on non-visible tile - deselect
+            self.controller.deselect_target()
+            return True
+
+        # Check for actor at click location
+        actor_at_click = self._gw.get_actor_at_location(world_x, world_y)
+        if actor_at_click is not None and actor_at_click is not self._p:
+            # Skip dead characters
+            if (
+                isinstance(actor_at_click, Character)
+                and not actor_at_click.health.is_alive()
+            ):
+                self.controller.deselect_target()
+                return True
+            # Toggle selection: deselect if already selected, otherwise select
+            if self.controller.selected_target is actor_at_click:
+                self.controller.deselect_target()
+            else:
+                self.controller.select_target(actor_at_click)
+            return True
+
+        # Clicked on empty ground - deselect current target
+        self.controller.deselect_target()
+        return True
 
     def _check_equipment_view_click(self, root_tile_pos: RootConsoleTilePos) -> bool:
         """Check if click is within equipment view bounds."""

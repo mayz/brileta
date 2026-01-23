@@ -74,6 +74,18 @@ class Canvas(ABC):
     ) -> tuple[int, int, int]:
         """Return ``(width, height, line_height)`` for ``text``."""
 
+    def get_text_bbox(
+        self, text: str, font_size: int | None = None
+    ) -> tuple[int, int, int, int]:
+        """Return ``(x_offset, y_offset, width, height)`` for ``text``.
+
+        The offsets indicate where the actual glyph pixels start relative to the
+        drawing origin. For tile-based backends, offsets are always (0, 0).
+        For pixel-based backends like Pillow, these may be non-zero.
+        """
+        width, height, _ = self.get_text_metrics(text, font_size)
+        return (0, 0, width, height)
+
     @abstractmethod
     def wrap_text(
         self, text: str, max_width: int, font_size: int | None = None

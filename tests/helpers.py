@@ -70,6 +70,9 @@ class DummyGameWorld(GameWorld):
         self.lights: list = []
         self.lighting_system = None
 
+        # Mouse position for hover tracking
+        self.mouse_tile_location_on_map: tuple[int, int] | None = None
+
     def add_actor(self, actor: Actor) -> None:
         """Adds an actor to the list and the spatial index."""
         self.actors.append(actor)

@@ -31,6 +31,21 @@ class ActionCategory(Enum):
     SOCIAL = auto()
 
 
+class TargetType(Enum):
+    """Classification of targets for default action lookup.
+
+    Used by the right-click default action system to determine what action
+    to perform when the player right-clicks on different target types.
+    """
+
+    NPC = auto()  # Any character (disposition is a continuum)
+    CONTAINER = auto()  # Searchable containers (crates, bookcases, etc.)
+    DOOR_CLOSED = auto()  # Closed doors
+    DOOR_OPEN = auto()  # Open doors
+    ITEM_PILE = auto()  # Items on the ground
+    FLOOR = auto()  # Walkable tile (for pathfinding)
+
+
 class ActionRequirement(Enum):
     """Represents what an action needs from the user to be executed."""
 
@@ -41,13 +56,18 @@ class ActionRequirement(Enum):
 
 @dataclass
 class ActionOption:
-    """Represents an action choice the player can select from a menu."""
+    """Represents an action choice the player can select from a menu.
+
+    The action_class field is optional because some actions (like gateway
+    actions or pathfind-and-execute patterns) use the execute callback
+    instead of a direct action class instantiation.
+    """
 
     id: str
     name: str
     description: str
     category: ActionCategory
-    action_class: type[GameIntent]
+    action_class: type[GameIntent] | None
     requirements: list[ActionRequirement] = field(default_factory=list)
     static_params: dict[str, Any] = field(default_factory=dict)
     hotkey: str | None = None

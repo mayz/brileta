@@ -34,6 +34,7 @@ RootConsoleTilePos = tuple[
 # Raw SDL pixel coordinates (SDL3-ready for float precision)
 PixelCoord = int | float  # Example: px_x=123.5
 PixelPos = tuple[PixelCoord, PixelCoord]  # Example: (123.5, 456.7)
+PixelRect = tuple[int, int, int, int]  # Example: (x1, y1, x2, y2) for hit areas
 
 # =============================================================================
 # UTILITY TYPES
