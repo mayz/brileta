@@ -224,7 +224,8 @@ MOUSE_HIGHLIGHT_ALPHA = Opacity(0.6)  # Alpha blending for mouse cursor highligh
 
 # Movement
 MOVEMENT_KEY_REPEAT_DELAY = 0.25
-MOVEMENT_KEY_REPEAT_INTERVAL = 0.05
+MOVEMENT_KEY_REPEAT_INTERVAL = 0.07
+AUTOPILOT_MOVE_INTERVAL = 0.07  # Rate-limit autopilot to match held key speed
 
 # =============================================================================
 # ASSET PATHS

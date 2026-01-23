@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import TYPE_CHECKING
 
 import tcod.map
@@ -161,6 +162,9 @@ class Controller:
         self.last_input_time: float | None = None
         self.action_count_for_latency_metric: int = 0
 
+        # Autopilot rate limiting - prevents Benny Hill speed when auto-walking
+        self._last_autopilot_move_time: float = 0.0
+
         # Initialize mode system - game always has an active mode
         # Modes are organized in a stack. ExploreMode is always at the bottom.
         # Other modes (CombatMode, PickerMode, etc.) push on top and pop when done.
@@ -241,8 +245,13 @@ class Controller:
 
         # Check for autopilot actions if no manual input
         has_movement_keys = bool(self.explore_mode.movement_keys)
+        now = time.perf_counter()
+        autopilot_ready = (
+            now >= self._last_autopilot_move_time + config.AUTOPILOT_MOVE_INTERVAL
+        )
         if (
             not has_movement_keys
+            and autopilot_ready
             and not self.turn_manager.has_pending_actions()
             and self.turn_manager.is_player_turn_available()
         ):
@@ -251,6 +260,7 @@ class Controller:
                 # Energy gate autopilot same as manual movement
                 if self.gw.player.energy.can_afford(config.ACTION_COST):
                     self._execute_player_action_immediately(autopilot_action)
+                    self._last_autopilot_move_time = now
                 else:
                     # Can't afford action - time passes but no movement
                     self.turn_manager.on_player_action()
