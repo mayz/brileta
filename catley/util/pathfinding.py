@@ -88,10 +88,11 @@ def find_local_path(
     region sequence, then use find_local_path() to pathfind within or between
     adjacent regions.
 
-    This pathfinder is aware of both static, unwalkable map tiles,
-    dynamic blocking actors, and environmental hazards. It generates a
-    temporary cost map for each request to ensure the path is valid for
-    the current game state.
+    This pathfinder is aware of static unwalkable map tiles and
+    environmental hazards. It generates a temporary cost map for each
+    request. Blocking actors are intentionally ignored here - collisions
+    with moving actors are handled at movement execution time via the
+    collision detection system.
 
     Hazardous tiles (acid pools, hot coals, fire actors) are assigned higher
     costs so the pathfinder prefers to route around them when alternatives
@@ -116,7 +117,7 @@ def find_local_path(
     # non-walkable tiles to 0. This ensures hazards anywhere on the map
     # are considered, not just within the start-end bounding box.
     hazard_costs = get_hazard_cost_map(game_map.tiles)
-    cost = np.where(game_map.walkable, hazard_costs, 0).astype(np.int8)
+    cost = np.where(game_map.walkable, hazard_costs, 0).astype(np.int16)
 
     # Bounding box for spatial index queries (actors near the path)
     x1 = max(0, min(start_pos[0], end_pos[0]))
@@ -127,10 +128,7 @@ def find_local_path(
     nearby_actors = actor_spatial_index.get_in_bounds(x1, y1, x2, y2)
 
     for actor in nearby_actors:
-        if actor.blocks_movement and actor is not pathing_actor:
-            # Blocking actors are impassable
-            cost[actor.x, actor.y] = 0
-        elif (
+        if (
             hasattr(actor, "damage_per_turn")
             and actor.damage_per_turn > 0
             and cost[actor.x, actor.y] > 0

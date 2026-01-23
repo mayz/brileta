@@ -93,25 +93,6 @@ def test_find_path_avoids_static_wall(
     assert (1, 3) not in path
 
 
-def test_find_path_avoids_blocking_actor(
-    basic_setup: tuple[GameMap, SpatialHashGrid[DummyActor]],
-) -> None:
-    gm, index = basic_setup
-    pathing = DummyActor(1, 1)
-    actor = DummyActor(1, 3, True)
-    index.add(actor)
-    path = find_local_path(
-        gm,
-        cast(SpatialIndex[Actor], index),
-        cast(Actor, pathing),
-        (1, 1),
-        (1, 5),
-    )
-    assert path
-    assert (1, 3) not in path
-    assert path[-1] == (1, 5)
-
-
 def test_find_path_ignores_non_blocking_actor(
     basic_setup: tuple[GameMap, SpatialHashGrid[DummyActor]],
 ) -> None:
@@ -170,9 +151,14 @@ def test_distant_blocking_actor_ignored(
     assert path == [(1, 2), (1, 3), (1, 4), (1, 5)]
 
 
-def test_pathing_actor_is_ignored(
+def test_blocking_actors_ignored_for_pathfinding(
     basic_setup: tuple[GameMap, SpatialHashGrid[DummyActor]],
 ) -> None:
+    """Blocking actors are intentionally ignored during pathfinding.
+
+    Collisions with moving actors are handled at movement execution time
+    via the collision detection system, not during path planning.
+    """
     gm, index = basic_setup
     pathing = DummyActor(1, 1)
     other = DummyActor(1, 3)
@@ -185,9 +171,8 @@ def test_pathing_actor_is_ignored(
         (1, 1),
         (1, 5),
     )
-    assert path
-    assert (1, 3) not in path
-    assert path[-1] == (1, 5)
+    # Path goes straight through - blocking actors don't affect pathfinding
+    assert path == [(1, 2), (1, 3), (1, 4), (1, 5)]
 
 
 # --- Hazard Avoidance Tests ---

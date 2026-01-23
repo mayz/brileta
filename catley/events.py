@@ -159,7 +159,8 @@ class EventBus:
         """Publish an event to all subscribed handlers."""
         event_type = type(event)
         if event_type in self._handlers:
-            for handler in self._handlers[event_type]:
+            # Copy the handler list to allow safe subscribe/unsubscribe during dispatch
+            for handler in list(self._handlers[event_type]):
                 try:
                     handler(event)
                 except Exception:

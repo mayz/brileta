@@ -420,7 +420,7 @@ _tile_type_properties_hazard_cost = np.array(
         _compute_hazard_cost(str(t["hazard_damage"]))
         for t in _registered_tile_type_data_list
     ],
-    dtype=np.int8,
+    dtype=np.int16,
 )
 
 # --- Public Helper Functions for Accessing Tile Properties ---
@@ -462,7 +462,7 @@ def get_hazard_cost_map(tile_type_ids_map: np.ndarray) -> np.ndarray:
     """
     Converts a map of TileTypeIDs into a map of pathfinding hazard costs.
 
-    Returns an int8 array where:
+    Returns an int16 array where:
     - 1 = safe tile (normal movement cost)
     - >1 = hazardous tile (higher cost to discourage pathfinding through it)
 
