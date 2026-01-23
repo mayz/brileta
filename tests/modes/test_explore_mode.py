@@ -291,3 +291,149 @@ def test_has_available_actions_returns_true_for_character_without_actions() -> N
     # Should return True - let the menu handle showing "no actions available"
     result = mode._has_available_actions(npc)
     assert result is True
+
+
+# -----------------------------------------------------------------------------
+# Right-Click Behavior Tests
+# -----------------------------------------------------------------------------
+
+
+def make_explore_mode_with_mocks() -> tuple[
+    ExploreMode, Any, DummyGameWorld, list[tuple[Any, ...]]
+]:
+    """Create an ExploreMode with tracking mocks for pathfinding and deselect.
+
+    Returns:
+        Tuple of (ExploreMode, controller, game_world, pathfinding_calls)
+        where pathfinding_calls is a list that captures (actor, target, kwargs)
+        for each call to start_actor_pathfinding.
+    """
+    mode, controller, gw = make_explore_mode()
+
+    # Track pathfinding calls
+    pathfinding_calls: list[tuple[Any, ...]] = []
+
+    def mock_start_pathfinding(actor, target, **kwargs):
+        pathfinding_calls.append((actor, target, kwargs))
+        return True
+
+    controller.start_actor_pathfinding = mock_start_pathfinding
+
+    # Track deselect calls
+    controller.deselect_target = MagicMock()
+
+    # Also need to track queue_action calls for actor interaction
+    controller.queued_actions = []
+    controller.queue_action = lambda a: controller.queued_actions.append(a)
+
+    # Mock is_combat_mode for actor interaction tests
+    controller.is_combat_mode = lambda: False
+
+    return mode, controller, gw, pathfinding_calls
+
+
+def test_right_click_visible_tile_triggers_walk() -> None:
+    """Right-clicking on a visible tile triggers pathfinding to that tile."""
+    mode, _controller, gw, pathfinding_calls = make_explore_mode_with_mocks()
+
+    # Make the tile visible and explored
+    gw.game_map.visible[5, 5] = True
+    gw.game_map.explored[5, 5] = True
+
+    # Simulate right-click at world position (5, 5)
+    result = mode._handle_right_click(world_tile_pos=(5, 5), root_tile_pos=(5, 5))
+
+    assert result is True
+    assert len(pathfinding_calls) == 1
+    # The pathfinding should target (5, 5)
+    _, target, _ = pathfinding_calls[0]
+    assert target == (5, 5)
+
+
+def test_right_click_explored_not_visible_tile_triggers_walk() -> None:
+    """Right-clicking on an explored-but-not-visible tile triggers walk-to."""
+    mode, controller, gw, pathfinding_calls = make_explore_mode_with_mocks()
+
+    # Make the tile explored but NOT visible (remembered tile)
+    gw.game_map.explored[5, 5] = True
+    gw.game_map.visible[5, 5] = False
+
+    # Simulate right-click at world position (5, 5)
+    result = mode._handle_right_click(world_tile_pos=(5, 5), root_tile_pos=(5, 5))
+
+    assert result is True
+    # Should have triggered pathfinding
+    assert len(pathfinding_calls) == 1
+    _, target, _ = pathfinding_calls[0]
+    assert target == (5, 5)
+    # Should have called deselect_target
+    controller.deselect_target.assert_called_once()
+
+
+def test_right_click_unexplored_tile_does_nothing() -> None:
+    """Right-clicking on an unexplored tile should not start pathfinding."""
+    mode, controller, gw, pathfinding_calls = make_explore_mode_with_mocks()
+
+    # Tile is neither explored nor visible
+    gw.game_map.explored[5, 5] = False
+    gw.game_map.visible[5, 5] = False
+
+    # Simulate right-click at world position (5, 5)
+    result = mode._handle_right_click(world_tile_pos=(5, 5), root_tile_pos=(5, 5))
+
+    assert result is True  # Event consumed
+    # But no pathfinding should have started
+    assert len(pathfinding_calls) == 0
+    # And deselect should NOT have been called (we exit early)
+    controller.deselect_target.assert_not_called()
+
+
+def test_right_click_visible_tile_with_actor_triggers_interaction() -> None:
+    """Right-clicking on a visible tile with an actor triggers actor interaction."""
+    mode, controller, gw, _pathfinding_calls = make_explore_mode_with_mocks()
+
+    # Create an NPC at (1, 0) - adjacent to player at (0, 0)
+    npc = Character(1, 0, "N", colors.WHITE, "NPC", game_world=cast(Any, gw))
+    gw.add_actor(npc)
+
+    # Make the tile visible and explored
+    gw.game_map.visible[1, 0] = True
+    gw.game_map.explored[1, 0] = True
+
+    # Simulate right-click at world position (1, 0) where NPC is
+    result = mode._handle_right_click(world_tile_pos=(1, 0), root_tile_pos=(1, 0))
+
+    assert result is True
+    # Should have queued a TalkIntent for the adjacent NPC
+    assert len(controller.queued_actions) == 1
+    from catley.game.actions.social import TalkIntent
+
+    assert isinstance(controller.queued_actions[0], TalkIntent)
+
+
+def test_right_click_explored_not_visible_tile_with_actor_only_walks() -> None:
+    """Right-clicking explored-but-not-visible tile ignores actors (walks only).
+
+    When right-clicking on a remembered tile, we don't know what's there now,
+    so we can only initiate walking - not full actor interaction.
+    """
+    mode, controller, gw, pathfinding_calls = make_explore_mode_with_mocks()
+
+    # Create an NPC at (5, 5)
+    npc = Character(5, 5, "N", colors.WHITE, "NPC", game_world=cast(Any, gw))
+    gw.add_actor(npc)
+
+    # Make the tile explored but NOT visible
+    gw.game_map.explored[5, 5] = True
+    gw.game_map.visible[5, 5] = False
+
+    # Simulate right-click at world position (5, 5) where NPC is
+    result = mode._handle_right_click(world_tile_pos=(5, 5), root_tile_pos=(5, 5))
+
+    assert result is True
+    # Should have triggered pathfinding (walk only, no actor detection)
+    assert len(pathfinding_calls) == 1
+    _, target, _ = pathfinding_calls[0]
+    assert target == (5, 5)
+    # No talk/interaction action should have been queued
+    assert len(controller.queued_actions) == 0

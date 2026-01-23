@@ -484,13 +484,24 @@ class ExploreMode(Mode):
         world_x, world_y = world_tile_pos
         game_map = self._gw.game_map
 
-        # Check bounds and visibility
+        # Check bounds
         if not (0 <= world_x < game_map.width and 0 <= world_y < game_map.height):
             return True
 
-        if not game_map.visible[world_x, world_y]:
-            return True  # Can't interact with non-visible tiles
+        # Must at least be explored (remembered) to interact
+        if not game_map.explored[world_x, world_y]:
+            return True  # Can't interact with unexplored tiles
 
+        # For remembered but not currently visible tiles, only allow walking
+        if not game_map.visible[world_x, world_y]:
+            # Can only walk to remembered tiles - no interaction with unseen actors
+            # Use start_actor_pathfinding directly rather than execute_default_action,
+            # since the latter would try to classify actors at the tile.
+            self.controller.start_actor_pathfinding(self._p, (world_x, world_y))
+            self.controller.deselect_target()
+            return True
+
+        # Visible tiles - full interaction (existing code continues here)
         # Determine the target (actor at location or tile position)
         target: Actor | WorldTilePos
         actor_at_click = self._gw.get_actor_at_location(world_x, world_y)
