@@ -260,3 +260,124 @@ class TestExecuteDefaultActionInCombatMode:
         from catley.game.actions.social import TalkIntent
 
         assert isinstance(queued_actions[0], TalkIntent)
+
+
+class TestAdjacentPositionSelection:
+    """Tests that execute_default_action selects the closest adjacent tile."""
+
+    def test_container_search_selects_closest_adjacent_tile(self) -> None:
+        """When searching a container from distance, pick the closest adjacent tile.
+
+        Setup: Player at (5, 0), container at (2, 0)
+        Adjacent tiles to container: (1, 0), (3, 0), (2, -1), (2, 1)
+        Expected: (3, 0) is closest to player (distance 2), should be selected.
+        """
+        from catley.game.actions.discovery import execute_default_action
+
+        controller, player, _ = _make_test_world()
+        container = Container(
+            2, 0, name="Bookcase", game_world=cast(GameWorld, controller.gw)
+        )
+        controller.gw.add_actor(container)
+
+        # Position player to the right of container with a gap
+        player.x = 5
+        player.y = 0
+        controller.gw.actor_spatial_index.update(player)
+
+        # Track pathfinding calls
+        pathfinding_targets: list[tuple[int, int]] = []
+
+        def mock_start_pathfinding(actor, target, final_intent=None):
+            pathfinding_targets.append(target)
+            return True
+
+        def mock_is_combat_mode():
+            return False
+
+        controller.start_actor_pathfinding = mock_start_pathfinding  # type: ignore
+        controller.is_combat_mode = mock_is_combat_mode  # type: ignore
+
+        result = execute_default_action(controller, container)  # type: ignore[arg-type]
+
+        assert result is True
+        assert len(pathfinding_targets) == 1
+        # (3, 0) is to the right of container, closest to player at (5, 0)
+        assert pathfinding_targets[0] == (3, 0)
+
+    def test_container_search_selects_left_when_player_on_left(self) -> None:
+        """When player is to the left, select the left adjacent tile.
+
+        Setup: Player at (0, 5), container at (3, 5)
+        Adjacent tiles: (2, 5), (4, 5), (3, 4), (3, 6)
+        Expected: (2, 5) is closest to player (distance 2), should be selected.
+        """
+        from catley.game.actions.discovery import execute_default_action
+
+        controller, player, _ = _make_test_world()
+        container = Container(
+            3, 5, name="Chest", game_world=cast(GameWorld, controller.gw)
+        )
+        controller.gw.add_actor(container)
+
+        # Position player to the left of container
+        player.x = 0
+        player.y = 5
+        controller.gw.actor_spatial_index.update(player)
+
+        pathfinding_targets: list[tuple[int, int]] = []
+
+        def mock_start_pathfinding(actor, target, final_intent=None):
+            pathfinding_targets.append(target)
+            return True
+
+        def mock_is_combat_mode():
+            return False
+
+        controller.start_actor_pathfinding = mock_start_pathfinding  # type: ignore
+        controller.is_combat_mode = mock_is_combat_mode  # type: ignore
+
+        result = execute_default_action(controller, container)  # type: ignore[arg-type]
+
+        assert result is True
+        assert len(pathfinding_targets) == 1
+        # (2, 5) is to the left of container, closest to player at (0, 5)
+        assert pathfinding_targets[0] == (2, 5)
+
+    def test_door_open_selects_closest_adjacent_tile(self) -> None:
+        """When opening a door from distance, pick the closest adjacent tile.
+
+        Setup: Player at (5, 3), closed door at (2, 3)
+        Adjacent tiles: (1, 3), (3, 3), (2, 2), (2, 4)
+        Expected: (3, 3) is closest to player (distance 2), should be selected.
+        """
+        from catley.game.actions.discovery import execute_default_action
+
+        controller, player, _ = _make_test_world()
+
+        # Create a closed door
+        controller.gw.game_map.tiles[2, 3] = TileTypeID.DOOR_CLOSED
+
+        # Position player to the right of door with a gap
+        player.x = 5
+        player.y = 3
+        controller.gw.actor_spatial_index.update(player)
+
+        pathfinding_targets: list[tuple[int, int]] = []
+
+        def mock_start_pathfinding(actor, target, final_intent=None):
+            pathfinding_targets.append(target)
+            return True
+
+        def mock_is_combat_mode():
+            return False
+
+        controller.start_actor_pathfinding = mock_start_pathfinding  # type: ignore
+        controller.is_combat_mode = mock_is_combat_mode  # type: ignore
+
+        result = execute_default_action(controller, (2, 3))  # type: ignore[arg-type]
+
+        assert result is True
+        assert len(pathfinding_targets) == 1
+        # (3, 3) is to the right of door, closest to player at (5, 3)
+        assert pathfinding_targets[0] == (3, 3)

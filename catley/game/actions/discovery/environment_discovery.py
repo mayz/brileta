@@ -232,35 +232,17 @@ class EnvironmentActionDiscovery:
                 # Not adjacent - require movement (use pathfinding)
                 def create_pathfind_and_open(tx: int, ty: int):
                     def pathfind_and_open():
-                        from catley.util.pathfinding import find_local_path
+                        from catley.util.pathfinding import find_closest_adjacent_tile
 
-                        gm = controller.gw.game_map
-                        # Find reachable adjacent position to the door
-                        for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-                            adj_x, adj_y = tx + dx, ty + dy
-                            if (
-                                0 <= adj_x < gm.width
-                                and 0 <= adj_y < gm.height
-                                and gm.tiles[adj_x, adj_y] != TileTypeID.WALL
-                                and not controller.gw.get_actor_at_location(
-                                    adj_x, adj_y
-                                )
-                            ):
-                                path = find_local_path(
-                                    gm,
-                                    controller.gw.actor_spatial_index,
-                                    actor,
-                                    (actor.x, actor.y),
-                                    (adj_x, adj_y),
-                                )
-                                if path:
-                                    door_intent = OpenDoorIntent(
-                                        controller, actor, tx, ty
-                                    )
-                                    controller.start_actor_pathfinding(
-                                        actor, (adj_x, adj_y), final_intent=door_intent
-                                    )
-                                    return True
+                        gw = controller.gw
+                        adj = find_closest_adjacent_tile(
+                            tx, ty, actor.x, actor.y, gw.game_map, gw, actor
+                        )
+                        if adj is not None:
+                            door_intent = OpenDoorIntent(controller, actor, tx, ty)
+                            return controller.start_actor_pathfinding(
+                                actor, adj, final_intent=door_intent
+                            )
                         return False
 
                     return pathfind_and_open
@@ -295,35 +277,17 @@ class EnvironmentActionDiscovery:
                 # Not adjacent - require movement (use pathfinding)
                 def create_pathfind_and_close(tx: int, ty: int):
                     def pathfind_and_close():
-                        from catley.util.pathfinding import find_local_path
+                        from catley.util.pathfinding import find_closest_adjacent_tile
 
-                        gm = controller.gw.game_map
-                        # Find reachable adjacent position to the door
-                        for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-                            adj_x, adj_y = tx + dx, ty + dy
-                            if (
-                                0 <= adj_x < gm.width
-                                and 0 <= adj_y < gm.height
-                                and gm.tiles[adj_x, adj_y] != TileTypeID.WALL
-                                and not controller.gw.get_actor_at_location(
-                                    adj_x, adj_y
-                                )
-                            ):
-                                path = find_local_path(
-                                    gm,
-                                    controller.gw.actor_spatial_index,
-                                    actor,
-                                    (actor.x, actor.y),
-                                    (adj_x, adj_y),
-                                )
-                                if path:
-                                    door_intent = CloseDoorIntent(
-                                        controller, actor, tx, ty
-                                    )
-                                    controller.start_actor_pathfinding(
-                                        actor, (adj_x, adj_y), final_intent=door_intent
-                                    )
-                                    return True
+                        gw = controller.gw
+                        adj = find_closest_adjacent_tile(
+                            tx, ty, actor.x, actor.y, gw.game_map, gw, actor
+                        )
+                        if adj is not None:
+                            door_intent = CloseDoorIntent(controller, actor, tx, ty)
+                            return controller.start_actor_pathfinding(
+                                actor, adj, final_intent=door_intent
+                            )
                         return False
 
                     return pathfind_and_close
@@ -363,37 +327,21 @@ class EnvironmentActionDiscovery:
                     # Not adjacent - require movement (use pathfinding)
                     def create_pathfind_and_search(c: Container):
                         def pathfind_and_search():
-                            from catley.util.pathfinding import find_local_path
+                            from catley.util.pathfinding import (
+                                find_closest_adjacent_tile,
+                            )
 
-                            gm = controller.gw.game_map
-                            # Find reachable adjacent position to the container
-                            for ddx, ddy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-                                adj_x, adj_y = c.x + ddx, c.y + ddy
-                                if (
-                                    0 <= adj_x < gm.width
-                                    and 0 <= adj_y < gm.height
-                                    and gm.walkable[adj_x, adj_y]
-                                    and not controller.gw.get_actor_at_location(
-                                        adj_x, adj_y
-                                    )
-                                ):
-                                    path = find_local_path(
-                                        gm,
-                                        controller.gw.actor_spatial_index,
-                                        actor,
-                                        (actor.x, actor.y),
-                                        (adj_x, adj_y),
-                                    )
-                                    if path:
-                                        search_intent = SearchContainerIntent(
-                                            controller, actor, c
-                                        )
-                                        controller.start_actor_pathfinding(
-                                            actor,
-                                            (adj_x, adj_y),
-                                            final_intent=search_intent,
-                                        )
-                                        return True
+                            gw = controller.gw
+                            adj = find_closest_adjacent_tile(
+                                c.x, c.y, actor.x, actor.y, gw.game_map, gw, actor
+                            )
+                            if adj is not None:
+                                search_intent = SearchContainerIntent(
+                                    controller, actor, c
+                                )
+                                return controller.start_actor_pathfinding(
+                                    actor, adj, final_intent=search_intent
+                                )
                             return False
 
                         return pathfind_and_search

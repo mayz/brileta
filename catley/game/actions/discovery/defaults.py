@@ -119,9 +119,8 @@ def _pathfind_to_adjacent_and_execute(
 ) -> bool:
     """Pathfind to a tile adjacent to (target_x, target_y) and execute intent.
 
-    Finds the first adjacent walkable tile (not a wall, not blocked by another
-    actor) that has a valid path, then starts pathfinding with the intent to
-    execute upon arrival.
+    Finds the closest adjacent walkable tile that has a valid path, then starts
+    pathfinding with the intent to execute upon arrival.
 
     Args:
         controller: The game controller.
@@ -132,35 +131,16 @@ def _pathfind_to_adjacent_and_execute(
     Returns:
         True if pathfinding was started, False if no valid adjacent tile found.
     """
-    from catley.environment.tile_types import TileTypeID
-    from catley.util.pathfinding import find_local_path
+    from catley.util.pathfinding import find_closest_adjacent_tile
 
     gw = controller.gw
-    gm = gw.game_map
     player = gw.player
 
-    for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-        adj_x, adj_y = target_x + dx, target_y + dy
-        if not (0 <= adj_x < gm.width and 0 <= adj_y < gm.height):
-            continue
-        if gm.tiles[adj_x, adj_y] == TileTypeID.WALL:
-            continue
-
-        blocker = gw.get_actor_at_location(adj_x, adj_y)
-        if blocker is not None and blocker is not player:
-            continue
-
-        path = find_local_path(
-            gm,
-            gw.actor_spatial_index,
-            player,
-            (player.x, player.y),
-            (adj_x, adj_y),
-        )
-        if path:
-            return controller.start_actor_pathfinding(
-                player, (adj_x, adj_y), final_intent=intent
-            )
+    adj = find_closest_adjacent_tile(
+        target_x, target_y, player.x, player.y, gw.game_map, gw, player
+    )
+    if adj is not None:
+        return controller.start_actor_pathfinding(player, adj, final_intent=intent)
 
     return False
 
@@ -201,7 +181,6 @@ def execute_default_action(
 
     player = controller.gw.player
     gw = controller.gw
-    gm = gw.game_map
 
     # Get target position
     if isinstance(target, (Character, Container)):
@@ -258,20 +237,9 @@ def execute_default_action(
                 return True
             # Not adjacent - pathfind to adjacent tile then search
             final_intent = SearchContainerIntent(controller, player, container)
-            # Find adjacent walkable tile
-            for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-                adj_x, adj_y = container.x + dx, container.y + dy
-                if (
-                    0 <= adj_x < gm.width
-                    and 0 <= adj_y < gm.height
-                    and gm.walkable[adj_x, adj_y]
-                ):
-                    blocker = gw.get_actor_at_location(adj_x, adj_y)
-                    if blocker is None or blocker is player:
-                        return controller.start_actor_pathfinding(
-                            player, (adj_x, adj_y), final_intent=final_intent
-                        )
-            return False
+            return _pathfind_to_adjacent_and_execute(
+                controller, container.x, container.y, final_intent
+            )
 
         case TargetType.DOOR_CLOSED:
             # Open door - pathfind to adjacent tile if not adjacent

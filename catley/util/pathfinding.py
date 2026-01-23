@@ -13,6 +13,61 @@ if TYPE_CHECKING:
 
 from catley.types import WorldTilePos
 
+if TYPE_CHECKING:
+    from catley.game.game_world import GameWorld
+
+
+def find_closest_adjacent_tile(
+    target_x: int,
+    target_y: int,
+    reference_x: int,
+    reference_y: int,
+    game_map: GameMap,
+    game_world: GameWorld,
+    reference_actor: Actor | None = None,
+) -> WorldTilePos | None:
+    """Find the closest walkable, unoccupied tile adjacent to a target position.
+
+    This is used when an actor needs to interact with something they can't
+    stand on (e.g., a container, closed door). It finds the best cardinal-
+    adjacent tile to approach from, prioritizing tiles closest to the
+    reference position.
+
+    Args:
+        target_x: X coordinate of the target (e.g., container position).
+        target_y: Y coordinate of the target.
+        reference_x: X coordinate to measure distance from (e.g., player position).
+        reference_y: Y coordinate to measure distance from.
+        game_map: The GameMap for bounds and walkability checks.
+        game_world: The GameWorld for actor occupancy checks.
+        reference_actor: If provided, this actor is allowed to occupy an
+            adjacent tile (used when the reference is an actor that might
+            already be standing on a valid adjacent tile).
+
+    Returns:
+        The (x, y) position of the closest valid adjacent tile, or None if
+        no valid adjacent tile exists.
+    """
+    # Cardinal adjacent positions, sorted by Manhattan distance from reference
+    offsets = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+    adjacent = [(target_x + dx, target_y + dy) for dx, dy in offsets]
+    adjacent.sort(key=lambda p: abs(p[0] - reference_x) + abs(p[1] - reference_y))
+
+    for adj_x, adj_y in adjacent:
+        # Bounds check
+        if not (0 <= adj_x < game_map.width and 0 <= adj_y < game_map.height):
+            continue
+        # Walkability check
+        if not game_map.walkable[adj_x, adj_y]:
+            continue
+        # Occupancy check
+        blocker = game_world.get_actor_at_location(adj_x, adj_y)
+        if blocker is not None and blocker is not reference_actor:
+            continue
+        return (adj_x, adj_y)
+
+    return None
+
 
 def find_region_path(
     game_map: GameMap,
@@ -88,11 +143,10 @@ def find_local_path(
     region sequence, then use find_local_path() to pathfind within or between
     adjacent regions.
 
-    This pathfinder is aware of static unwalkable map tiles and
-    environmental hazards. It generates a temporary cost map for each
-    request. Blocking actors are intentionally ignored here - collisions
-    with moving actors are handled at movement execution time via the
-    collision detection system.
+    This pathfinder is aware of static unwalkable map tiles, blocking
+    actors (NPCs, furniture, etc.), and environmental hazards. It generates
+    a temporary cost map for each request. All blocking actors are treated
+    as impassable obstacles during path planning.
 
     Hazardous tiles (acid pools, hot coals, fire actors) are assigned higher
     costs so the pathfinder prefers to route around them when alternatives
@@ -128,6 +182,18 @@ def find_local_path(
     nearby_actors = actor_spatial_index.get_in_bounds(x1, y1, x2, y2)
 
     for actor in nearby_actors:
+        # All blocking actors are treated as impassable obstacles.
+        #
+        # NOTE: Do NOT "optimize" this to ignore mobile actors. We tried that
+        # (reasoning: "actors move, so pre-computed avoidance is unreliable").
+        # It broke pathfinding because Character.get_next_action() validates
+        # each step using find_local_path - if this function ignores blocking
+        # actors, validation always passes, so rerouting never triggers when
+        # an actor blocks the path. Treat all blockers as obstacles here; the
+        # validation mechanism handles dynamic rerouting when actors move.
+        if actor.blocks_movement and actor is not pathing_actor:
+            cost[actor.x, actor.y] = 0
+
         if (
             hasattr(actor, "damage_per_turn")
             and actor.damage_per_turn > 0

@@ -19,6 +19,8 @@ from catley.util.spatial import SpatialHashGrid, SpatialIndex
 
 @dataclass
 class DummyActor:
+    """Mock actor for pathfinding tests."""
+
     x: int
     y: int
     blocks_movement: bool = True
@@ -151,17 +153,13 @@ def test_distant_blocking_actor_ignored(
     assert path == [(1, 2), (1, 3), (1, 4), (1, 5)]
 
 
-def test_blocking_actors_ignored_for_pathfinding(
+def test_blocking_actors_avoided(
     basic_setup: tuple[GameMap, SpatialHashGrid[DummyActor]],
 ) -> None:
-    """Blocking actors are intentionally ignored during pathfinding.
-
-    Collisions with moving actors are handled at movement execution time
-    via the collision detection system, not during path planning.
-    """
+    """Blocking actors are treated as impassable during pathfinding."""
     gm, index = basic_setup
     pathing = DummyActor(1, 1)
-    other = DummyActor(1, 3)
+    other = DummyActor(1, 3, blocks_movement=True)
     index.add(pathing)
     index.add(other)
     path = find_local_path(
@@ -171,8 +169,10 @@ def test_blocking_actors_ignored_for_pathfinding(
         (1, 1),
         (1, 5),
     )
-    # Path goes straight through - blocking actors don't affect pathfinding
-    assert path == [(1, 2), (1, 3), (1, 4), (1, 5)]
+    # Path routes around the blocking actor
+    assert path
+    assert (1, 3) not in path
+    assert path[-1] == (1, 5)
 
 
 # --- Hazard Avoidance Tests ---
@@ -293,3 +293,127 @@ def test_find_path_through_fire_when_no_alternative(
     assert path
     assert (1, 3) in path  # Had to go through fire
     assert path[-1] == (1, 5)
+
+
+# --- find_closest_adjacent_tile Tests ---
+
+
+@dataclass
+class DummyGameWorld:
+    """Mock GameWorld for testing find_closest_adjacent_tile."""
+
+    actors_at_locations: dict[tuple[int, int], object]
+
+    def get_actor_at_location(self, x: int, y: int) -> object | None:
+        return self.actors_at_locations.get((x, y))
+
+
+def test_find_closest_adjacent_tile_selects_closest(
+    basic_setup: tuple[GameMap, SpatialHashGrid[DummyActor]],
+) -> None:
+    """Should select the adjacent tile closest to the reference position."""
+    from catley.util.pathfinding import find_closest_adjacent_tile
+
+    gm, _ = basic_setup
+    gw = DummyGameWorld(actors_at_locations={})
+
+    # Target at (3, 3), reference at (6, 3) - player is to the right
+    # Adjacent tiles: (2,3), (4,3), (3,2), (3,4)
+    # (4,3) is closest to (6,3) with distance 2
+    result = find_closest_adjacent_tile(3, 3, 6, 3, gm, gw)  # type: ignore[arg-type]
+    assert result == (4, 3)
+
+
+def test_find_closest_adjacent_tile_selects_left_when_player_on_left(
+    basic_setup: tuple[GameMap, SpatialHashGrid[DummyActor]],
+) -> None:
+    """When player is to the left, select the left adjacent tile."""
+    from catley.util.pathfinding import find_closest_adjacent_tile
+
+    gm, _ = basic_setup
+    gw = DummyGameWorld(actors_at_locations={})
+
+    # Target at (5, 5), reference at (2, 5) - player is to the left
+    # Adjacent tiles: (4,5), (6,5), (5,4), (5,6)
+    # (4,5) is closest to (2,5) with distance 2
+    result = find_closest_adjacent_tile(5, 5, 2, 5, gm, gw)  # type: ignore[arg-type]
+    assert result == (4, 5)
+
+
+def test_find_closest_adjacent_tile_skips_occupied(
+    basic_setup: tuple[GameMap, SpatialHashGrid[DummyActor]],
+) -> None:
+    """Should skip tiles occupied by other actors."""
+    from catley.util.pathfinding import find_closest_adjacent_tile
+
+    gm, _ = basic_setup
+    # Block the closest tile (4, 3) with an actor
+    blocker = DummyActor(4, 3)
+    gw = DummyGameWorld(actors_at_locations={(4, 3): blocker})
+
+    # Target at (3, 3), reference at (6, 3)
+    # (4,3) is blocked, so should select next closest
+    result = find_closest_adjacent_tile(3, 3, 6, 3, gm, gw)  # type: ignore[arg-type]
+    assert result != (4, 3)
+    assert result is not None
+
+
+def test_find_closest_adjacent_tile_allows_reference_actor(
+    basic_setup: tuple[GameMap, SpatialHashGrid[DummyActor]],
+) -> None:
+    """Reference actor is allowed to occupy an adjacent tile."""
+    from catley.util.pathfinding import find_closest_adjacent_tile
+
+    gm, _ = basic_setup
+    # The reference actor is standing on (4, 3)
+    ref_actor = DummyActor(4, 3)
+    gw = DummyGameWorld(actors_at_locations={(4, 3): ref_actor})
+
+    # Target at (3, 3), reference at (4, 3) - actor is already adjacent
+    # Should still return (4, 3) since ref_actor is allowed there
+    result = find_closest_adjacent_tile(
+        3,
+        3,
+        4,
+        3,
+        gm,
+        gw,  # type: ignore[arg-type]
+        reference_actor=ref_actor,  # type: ignore[arg-type]
+    )
+    assert result == (4, 3)
+
+
+def test_find_closest_adjacent_tile_skips_unwalkable(
+    basic_setup: tuple[GameMap, SpatialHashGrid[DummyActor]],
+) -> None:
+    """Should skip unwalkable tiles."""
+    from catley.util.pathfinding import find_closest_adjacent_tile
+
+    gm, _ = basic_setup
+    # Make the closest tile (4, 3) a wall
+    gm.tiles[4, 3] = TileTypeID.WALL
+    gm.invalidate_property_caches()
+    gw = DummyGameWorld(actors_at_locations={})
+
+    # Target at (3, 3), reference at (6, 3)
+    # (4,3) is a wall, so should select next closest
+    result = find_closest_adjacent_tile(3, 3, 6, 3, gm, gw)  # type: ignore[arg-type]
+    assert result != (4, 3)
+    assert result is not None
+
+
+def test_find_closest_adjacent_tile_returns_none_when_all_blocked(
+    basic_setup: tuple[GameMap, SpatialHashGrid[DummyActor]],
+) -> None:
+    """Returns None when all adjacent tiles are blocked."""
+    from catley.util.pathfinding import find_closest_adjacent_tile
+
+    gm, _ = basic_setup
+    # Block all adjacent tiles
+    for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+        gm.tiles[3 + dx, 3 + dy] = TileTypeID.WALL
+    gm.invalidate_property_caches()
+    gw = DummyGameWorld(actors_at_locations={})
+
+    result = find_closest_adjacent_tile(3, 3, 6, 3, gm, gw)  # type: ignore[arg-type]
+    assert result is None
