@@ -8,13 +8,6 @@ The Python code is set up as a Python package that was set up with `uv`.
 
 To create a virtual environment and install all dependencies, run `uv sync`. Everything is in the local `uv.lock` file.
 
-I've been using `uv run ruff check` as a linter, and Pylance/Pyright as a language server in VSCode and type checker.
-
-To run unit tests:
-`make test`
-
-This command, defined in the `Makefile`, will automatically sync dependencies and run the test suite within the correct environment.
-
 ## Headless Linux / CI (Ubuntu)
 
 When running in a headless Linux container, ModernGL and WGPU tests require an X11 display. Install these system packages; `make` will use Xvfb automatically on headless Linux and fail fast if it is missing:
@@ -28,12 +21,10 @@ sudo apt-get install -y \
   xvfb xauth
 ```
 
-  **CRITICAL**: This project uses `uv` for dependency management. Always run Python commands with `uv run`:
+**CRITICAL**: This project uses `uv` for dependency management. When running Python commands directly, use `uv run`:
   - Use `uv run python script.py` NOT `python script.py`
-  - Use `uv run pyright` NOT `pyright`
-  - Use `uv run pytest` NOT `pytest`
 
-  The only exception is the Makefile targets which already handle this automatically.
+The Makefile targets handle this automatically.
 
 ## Quality Checks
 
@@ -42,13 +33,10 @@ sudo apt-get install -y \
 make
 ```
 
-This runs the full quality pipeline: `uv run ruff format`, `uv run ruff check`, `uv run pyright`, and `uv run pytest`. All checks must pass before considering work complete.
-
-Individual commands are available as `make lint`, `make format`, `make typecheck`, or `make test`.
+Do NOT run individual tools (pytest, pyright, ruff) separately first. Just run `make` once - it handles formatting, linting, type checking, and tests together. See the `Makefile` for details.
 
 ## Style
 
-- I've been using `uv run ruff format` to format code. Wherever possible, I try to annotate params and variable with their types, as you can see throughout the code.
 - All new code must be fully type-hinted and pass static analysis.
 - Good Documentation: Comments should describe what code is doing and (if particularly complex) why it is doing it.
 
