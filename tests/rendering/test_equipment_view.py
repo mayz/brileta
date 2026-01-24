@@ -72,8 +72,8 @@ def test_switch_to_slot_publishes_message() -> None:
         assert "Plasma Rifle" in message_event.text
 
 
-def test_switch_to_slot_shows_empty_for_no_weapon() -> None:
-    """switch_to_slot should show 'Empty' when slot has no weapon."""
+def test_switch_to_slot_shows_fists_for_no_weapon() -> None:
+    """switch_to_slot should show 'Fists' when slot has no weapon."""
     _controller, player, view = make_equipment_view()
 
     # Slot 1 is empty by default
@@ -84,7 +84,7 @@ def test_switch_to_slot_shows_empty_for_no_weapon() -> None:
 
         mock_publish.assert_called_once()
         message_event = mock_publish.call_args[0][0]
-        assert "Empty" in message_event.text
+        assert "Fists" in message_event.text
 
 
 def test_handle_click_on_inactive_slot_switches() -> None:

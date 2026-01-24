@@ -777,22 +777,51 @@ class AttackExecutor(ActionExecutor):
     ) -> None:
         """Log appropriate hit message based on critical status."""
         assert intent.defender is not None  # Tile shots handled separately
+
+        # Get verb from weapon based on attack mode
+        verb = self._get_attack_verb(weapon, intent.attack_mode)
+        verb_conjugated = self._conjugate_verb(verb)
+
+        # Include weapon name for non-unarmed attacks
+        is_unarmed = weapon.melee_attack and WeaponProperty.UNARMED in (
+            weapon.melee_attack._spec.properties or set()
+        )
+        weapon_part = "" if is_unarmed else f" with {weapon.name}"
+
         if attack_result.outcome_tier == OutcomeTier.CRITICAL_SUCCESS:
             hit_color = colors.YELLOW
             message = (
-                f"Critical hit! {intent.attacker.name} strikes {intent.defender.name} "
-                f"with {weapon.name} for {damage} damage."
+                f"Critical hit! {intent.attacker.name} {verb_conjugated} "
+                f"{intent.defender.name}{weapon_part} for {damage} damage."
             )
         else:
             hit_color = colors.WHITE  # Default color for a standard hit
             message = (
-                f"{intent.attacker.name} hits {intent.defender.name} "
-                f"with {weapon.name} for {damage} damage."
+                f"{intent.attacker.name} {verb_conjugated} {intent.defender.name}"
+                f"{weapon_part} for {damage} damage."
             )
         hp_message_part = (
             f" ({intent.defender.name} has {intent.defender.health.hp} HP left.)"
         )
         publish_event(MessageEvent(message + hp_message_part, hit_color))
+
+    def _get_attack_verb(self, weapon: Item, attack_mode: str | None) -> str:
+        """Get the verb for an attack based on weapon and attack mode."""
+        if attack_mode == "melee" and weapon.melee_attack:
+            return weapon.melee_attack._spec.verb
+        if attack_mode == "ranged" and weapon.ranged_attack:
+            return weapon.ranged_attack._spec.verb
+        # Fallback for weapons without explicit verb
+        return "hit"
+
+    def _conjugate_verb(self, verb: str) -> str:
+        """Conjugate a verb to third person singular present tense.
+
+        Examples: punch -> punches, stab -> stabs, hit -> hits
+        """
+        if verb.endswith(("s", "x", "z", "ch", "sh")):
+            return verb + "es"
+        return verb + "s"
 
     def _handle_post_attack_effects(
         self,

@@ -25,7 +25,7 @@ FISTS_TYPE = ItemType(
     description="Your bare hands. Better than nothing, but not by much.",
     size=ItemSize.TINY,
     category=ItemCategory.WEAPON,
-    melee_attack=MeleeAttackSpec("d4", {WeaponProperty.UNARMED}),
+    melee_attack=MeleeAttackSpec("d3", {WeaponProperty.UNARMED}, verb="punch"),
     can_materialize=False,
 )
 

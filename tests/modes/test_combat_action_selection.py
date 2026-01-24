@@ -14,7 +14,7 @@ from catley import colors
 from catley.events import reset_event_bus_for_testing
 from catley.game.actions.combat import AttackIntent
 from catley.game.actions.discovery import ActionCategory, ActionOption
-from catley.game.actions.stunts import PushIntent, TripIntent
+from catley.game.actions.stunts import KickIntent, PunchIntent, PushIntent, TripIntent
 from catley.game.actors import NPC
 from catley.game.enums import Disposition
 from tests.helpers import get_controller_with_player_and_map
@@ -310,6 +310,146 @@ class TestCombatModeIntentCreation:
             final_intent = call_args[0][2]
             assert isinstance(final_intent, TripIntent), (
                 f"Expected TripIntent but got {type(final_intent).__name__}"
+            )
+            assert final_intent.defender == npc
+
+    def test_kick_action_creates_kick_intent(self) -> None:
+        """Selected Kick action should create KickIntent for adjacent target.
+
+        This test ensures that the combat mode correctly handles KickIntent,
+        which was added as a new stunt alongside Push and Trip.
+        """
+        reset_event_bus_for_testing()
+        controller, _player, npc = _make_combat_test_world(
+            player_pos=(5, 5),
+            enemy_pos=(6, 5),  # Adjacent
+        )
+        controller.enter_combat_mode()
+
+        # Select Kick
+        kick_action = ActionOption(
+            id="kick",
+            name="Kick",
+            description="Kick target, dealing damage and pushing them back.",
+            category=ActionCategory.STUNT,
+            action_class=KickIntent,
+            requirements=[],
+            static_params={},
+        )
+        controller.combat_mode.select_action(kick_action)
+
+        intent = controller.combat_mode._create_intent_for_target(npc)
+
+        # Must be KickIntent, not AttackIntent or error
+        assert isinstance(intent, KickIntent), (
+            f"Expected KickIntent but got {type(intent).__name__}. "
+            "Kick stunt action is not creating the correct intent type."
+        )
+        assert intent.defender == npc
+
+    def test_kick_on_distant_target_starts_pathfinding(self) -> None:
+        """Kick on non-adjacent target should start pathfinding with KickIntent."""
+        reset_event_bus_for_testing()
+        controller, _player, npc = _make_combat_test_world(
+            player_pos=(5, 5),
+            enemy_pos=(8, 5),  # 3 tiles away
+        )
+        controller.enter_combat_mode()
+
+        # Select Kick
+        kick_action = ActionOption(
+            id="kick",
+            name="Kick",
+            description="Kick target, dealing damage and pushing them back.",
+            category=ActionCategory.STUNT,
+            action_class=KickIntent,
+            requirements=[],
+            static_params={},
+        )
+        controller.combat_mode.select_action(kick_action)
+
+        with patch.object(controller, "start_actor_pathfinding") as mock_pathfind:
+            mock_pathfind.return_value = True
+
+            intent = controller.combat_mode._create_intent_for_target(npc)
+
+            assert intent is None  # Pathfinding started
+
+            mock_pathfind.assert_called_once()
+            call_args = mock_pathfind.call_args
+            final_intent = call_args[0][2]
+            assert isinstance(final_intent, KickIntent), (
+                f"Expected KickIntent but got {type(final_intent).__name__}"
+            )
+            assert final_intent.defender == npc
+
+    def test_punch_action_creates_punch_intent(self) -> None:
+        """Selected Punch action should create PunchIntent for adjacent target.
+
+        This test ensures that the combat mode correctly handles PunchIntent,
+        which was added as a new stunt alongside Push, Trip, and Kick.
+        """
+        reset_event_bus_for_testing()
+        controller, _player, npc = _make_combat_test_world(
+            player_pos=(5, 5),
+            enemy_pos=(6, 5),  # Adjacent
+        )
+        controller.enter_combat_mode()
+
+        # Select Punch
+        punch_action = ActionOption(
+            id="punch",
+            name="Punch",
+            description="Punch target, potentially stunning them.",
+            category=ActionCategory.STUNT,
+            action_class=PunchIntent,
+            requirements=[],
+            static_params={},
+        )
+        controller.combat_mode.select_action(punch_action)
+
+        intent = controller.combat_mode._create_intent_for_target(npc)
+
+        # Must be PunchIntent, not AttackIntent or error
+        assert isinstance(intent, PunchIntent), (
+            f"Expected PunchIntent but got {type(intent).__name__}. "
+            "Punch stunt action is not creating the correct intent type."
+        )
+        assert intent.defender == npc
+
+    def test_punch_on_distant_target_starts_pathfinding(self) -> None:
+        """Punch on non-adjacent target should start pathfinding with PunchIntent."""
+        reset_event_bus_for_testing()
+        controller, _player, npc = _make_combat_test_world(
+            player_pos=(5, 5),
+            enemy_pos=(8, 5),  # 3 tiles away
+        )
+        controller.enter_combat_mode()
+
+        # Select Punch
+        punch_action = ActionOption(
+            id="punch",
+            name="Punch",
+            description="Punch target, potentially stunning them.",
+            category=ActionCategory.STUNT,
+            action_class=PunchIntent,
+            requirements=[],
+            static_params={},
+        )
+        controller.combat_mode.select_action(punch_action)
+
+        with patch.object(controller, "start_actor_pathfinding") as mock_pathfind:
+            mock_pathfind.return_value = True
+
+            intent = controller.combat_mode._create_intent_for_target(npc)
+
+            assert intent is None  # Pathfinding started
+
+            mock_pathfind.assert_called_once()
+            call_args = mock_pathfind.call_args
+            final_intent = call_args[0][2]
+            assert isinstance(final_intent, PunchIntent), (
+                f"Expected PunchIntent but got {type(final_intent).__name__}"
             )
             assert final_intent.defender == npc
 
@@ -647,6 +787,90 @@ class TestCombatModeEnterKeyExecution:
             assert isinstance(queued_intent, TripIntent), (
                 f"Expected TripIntent but got {type(queued_intent).__name__}. "
                 "Trip action is incorrectly falling back to attack."
+            )
+
+    def test_enter_key_with_kick_queues_kick_intent(self) -> None:
+        """Pressing Enter with Kick selected should queue KickIntent."""
+        reset_event_bus_for_testing()
+        controller, _player, npc = _make_combat_test_world(
+            player_pos=(5, 5),
+            enemy_pos=(6, 5),  # Adjacent
+        )
+        controller.enter_combat_mode()
+
+        # Select Kick
+        kick_action = ActionOption(
+            id="kick",
+            name="Kick",
+            description="Kick target, dealing damage and pushing them back.",
+            category=ActionCategory.STUNT,
+            action_class=KickIntent,
+            requirements=[],
+            static_params={},
+        )
+        controller.combat_mode.select_action(kick_action)
+
+        # Manually set current target
+        controller.combat_mode.candidates = [npc]
+        controller.combat_mode.current_index = 0
+
+        # Press Enter
+        event = tcod.event.KeyDown(
+            sym=tcod.event.KeySym.RETURN,
+            scancode=tcod.event.Scancode.RETURN,
+            mod=tcod.event.Modifier.NONE,
+        )
+
+        with patch.object(controller, "queue_action") as mock_queue:
+            controller.combat_mode.handle_input(event)
+
+            assert mock_queue.called
+            queued_intent = mock_queue.call_args[0][0]
+            assert isinstance(queued_intent, KickIntent), (
+                f"Expected KickIntent but got {type(queued_intent).__name__}. "
+                "Kick action is incorrectly falling back to attack."
+            )
+
+    def test_enter_key_with_punch_queues_punch_intent(self) -> None:
+        """Pressing Enter with Punch selected should queue PunchIntent."""
+        reset_event_bus_for_testing()
+        controller, _player, npc = _make_combat_test_world(
+            player_pos=(5, 5),
+            enemy_pos=(6, 5),  # Adjacent
+        )
+        controller.enter_combat_mode()
+
+        # Select Punch
+        punch_action = ActionOption(
+            id="punch",
+            name="Punch",
+            description="Punch target, potentially stunning them.",
+            category=ActionCategory.STUNT,
+            action_class=PunchIntent,
+            requirements=[],
+            static_params={},
+        )
+        controller.combat_mode.select_action(punch_action)
+
+        # Manually set current target
+        controller.combat_mode.candidates = [npc]
+        controller.combat_mode.current_index = 0
+
+        # Press Enter
+        event = tcod.event.KeyDown(
+            sym=tcod.event.KeySym.RETURN,
+            scancode=tcod.event.Scancode.RETURN,
+            mod=tcod.event.Modifier.NONE,
+        )
+
+        with patch.object(controller, "queue_action") as mock_queue:
+            controller.combat_mode.handle_input(event)
+
+            assert mock_queue.called
+            queued_intent = mock_queue.call_args[0][0]
+            assert isinstance(queued_intent, PunchIntent), (
+                f"Expected PunchIntent but got {type(queued_intent).__name__}. "
+                "Punch action is incorrectly falling back to attack."
             )
 
 
@@ -1020,3 +1244,102 @@ class TestApproachAndAttack:
 
             # Verify pathfinding was attempted
             mock_pathfind.assert_called_once()
+
+
+# --- Integration Tests: Discovery <-> Combat Mode Handler Consistency ---
+
+
+class TestAllDiscoverableActionsHaveHandlers:
+    """Integration tests ensuring every discoverable action works in combat mode.
+
+    These tests catch the case where a new action is added to discovery but
+    the combat mode handler is not updated to create the corresponding intent.
+    """
+
+    def test_all_stunt_actions_have_combat_mode_handlers(self) -> None:
+        """Every discoverable STUNT action must have a handler in combat mode.
+
+        This test gets all stunt actions from the action discovery system and
+        verifies each one can be successfully executed via combat mode without
+        raising an "Unhandled action type" error.
+
+        If this test fails after adding a new stunt, you need to update
+        CombatMode._create_intent_for_target() to handle the new intent class.
+        """
+        reset_event_bus_for_testing()
+        controller, _player, npc = _make_combat_test_world(
+            player_pos=(5, 5),
+            enemy_pos=(6, 5),  # Adjacent so all melee actions work
+        )
+        controller.enter_combat_mode()
+
+        # Get all available actions and filter to STUNT category
+        actions = controller.combat_mode.get_available_combat_actions()
+        stunt_actions = [a for a in actions if a.category == ActionCategory.STUNT]
+
+        assert len(stunt_actions) > 0, "Expected at least one stunt action"
+
+        # Try each stunt action - if any raises ValueError, the handler is missing
+        for stunt in stunt_actions:
+            controller.combat_mode.select_action(stunt)
+
+            # This should NOT raise "Unhandled action type" ValueError
+            try:
+                intent = controller.combat_mode._create_intent_for_target(npc)
+            except ValueError as e:
+                if "Unhandled action type" in str(e):
+                    raise AssertionError(
+                        f"Stunt action '{stunt.name}' (class={stunt.action_class}) "
+                        f"is discoverable but has no handler in CombatMode. "
+                        f"Add a handler in _create_intent_for_target()."
+                    ) from e
+                raise
+
+            # Verify the intent was created with correct type
+            assert intent is not None, (
+                f"Stunt '{stunt.name}' returned None for adjacent target"
+            )
+            assert stunt.action_class is not None, (
+                f"Stunt '{stunt.name}' has no action_class defined"
+            )
+            assert type(intent) is stunt.action_class, (
+                f"Stunt '{stunt.name}' created {type(intent).__name__} "
+                f"instead of {stunt.action_class.__name__}"
+            )
+
+    def test_all_combat_actions_have_handlers(self) -> None:
+        """Every discoverable COMBAT action must work in combat mode.
+
+        Similar to the stunt test, but for attack actions.
+        """
+        reset_event_bus_for_testing()
+        controller, _player, npc = _make_combat_test_world(
+            player_pos=(5, 5),
+            enemy_pos=(6, 5),  # Adjacent
+        )
+        controller.enter_combat_mode()
+
+        actions = controller.combat_mode.get_available_combat_actions()
+        combat_actions = [a for a in actions if a.category == ActionCategory.COMBAT]
+
+        assert len(combat_actions) > 0, "Expected at least one combat action"
+
+        for combat_action in combat_actions:
+            controller.combat_mode.select_action(combat_action)
+
+            try:
+                intent = controller.combat_mode._create_intent_for_target(npc)
+            except ValueError as e:
+                if "Unhandled action type" in str(e):
+                    raise AssertionError(
+                        f"Combat action '{combat_action.name}' is discoverable "
+                        f"but has no handler in CombatMode."
+                    ) from e
+                raise
+
+            # For melee actions, intent should be created
+            # For ranged with adjacent target, also valid
+            assert intent is not None, (
+                f"Combat action '{combat_action.name}' "
+                f"returned None for adjacent target"
+            )

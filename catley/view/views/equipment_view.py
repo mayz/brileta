@@ -111,7 +111,7 @@ class EquipmentView(TextView):
                     )
                     item_text += f" {ammo}"
             else:
-                item_text = f"{indicator}{slot_number} Empty"
+                item_text = f"{indicator}{slot_number} Fists"
 
             # Use font metrics for pixel width
             text_width, _, _ = self.canvas.get_text_metrics(item_text)
@@ -197,7 +197,7 @@ class EquipmentView(TextView):
                     )
                     item_text += f" {ammo}"
             else:
-                item_text = f"{indicator}{slot_number} Empty"
+                item_text = f"{indicator}{slot_number} Fists"
 
             # Color based on slot state, combat mode, and item type:
             # - In combat mode with active weapon: RED (always)
@@ -258,7 +258,7 @@ class EquipmentView(TextView):
         player = self.controller.gw.player
         if player.inventory.switch_to_slot(slot_index):
             item = player.inventory.get_active_item()
-            item_name = item.name if item else "Empty"
+            item_name = item.name if item else "Fists"
             publish_event(
                 MessageEvent(
                     f"Switched to {item_name}",
@@ -331,7 +331,7 @@ class EquipmentView(TextView):
         """Use the item in the active slot based on its capabilities.
 
         - Toggle: if already in combat or picker mode, exit that mode
-        - Weapons: enter combat mode
+        - Weapons (including Fists): enter combat mode
         - Consumables: enter picker mode for target selection
 
         Returns:
@@ -339,9 +339,6 @@ class EquipmentView(TextView):
         """
         player = self.controller.gw.player
         item = player.inventory.get_active_item()
-
-        if item is None:
-            return False
 
         # Toggle: if already in combat mode, exit
         if self.controller.is_combat_mode():
@@ -358,6 +355,11 @@ class EquipmentView(TextView):
         # Note: combat mode check above handles combat+picker case
         if self.controller.picker_mode.active:
             self.controller.pop_mode()  # Pop PickerMode
+            return True
+
+        # Fists (empty slot) - enter combat mode for unarmed combat
+        if item is None:
+            self.controller.enter_combat_mode()
             return True
 
         # Weapons enter combat mode

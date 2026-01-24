@@ -72,3 +72,61 @@ class TripIntent(GameIntent):
         super().__init__(controller, attacker)
         self.attacker = attacker
         self.defender = defender
+
+
+class KickIntent(GameIntent):
+    """Intent to kick an adjacent enemy, dealing damage and pushing them back.
+
+    Resolution uses Strength vs Agility opposed check. Kick combines damage
+    with repositioning - it's the offensive alternative to Push. Unlike Push,
+    Kick deals d4 damage on any success, and can trip the target on critical.
+
+    Execution is performed by
+    :class:`~catley.game.actions.executors.stunts.KickExecutor`.
+    """
+
+    def __init__(
+        self,
+        controller: Controller,
+        attacker: Character,
+        defender: Character,
+    ) -> None:
+        """Create a kick intent.
+
+        Args:
+            controller: Game controller providing context.
+            attacker: The character performing the kick.
+            defender: The target character being kicked.
+        """
+        super().__init__(controller, attacker)
+        self.attacker = attacker
+        self.defender = defender
+
+
+class PunchIntent(GameIntent):
+    """Intent to punch an adjacent enemy with bare fists.
+
+    If the attacker has a weapon equipped, it will be holstered first
+    (moved to inventory), consuming the turn. The next turn, the attacker
+    can punch. If no weapon is equipped, the punch executes immediately.
+
+    Execution is performed by
+    :class:`~catley.game.actions.executors.stunts.PunchExecutor`.
+    """
+
+    def __init__(
+        self,
+        controller: Controller,
+        attacker: Character,
+        defender: Character,
+    ) -> None:
+        """Create a punch intent.
+
+        Args:
+            controller: Game controller providing context.
+            attacker: The character performing the punch.
+            defender: The target character being punched.
+        """
+        super().__init__(controller, attacker)
+        self.attacker = attacker
+        self.defender = defender

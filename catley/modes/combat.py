@@ -13,9 +13,10 @@ from catley.events import (
     unsubscribe_from_event,
 )
 from catley.game import ranges
+from catley.game.actions.base import GameIntent
 from catley.game.actions.combat import AttackIntent
 from catley.game.actions.discovery import ActionCategory, ActionOption
-from catley.game.actions.stunts import PushIntent, TripIntent
+from catley.game.actions.stunts import KickIntent, PunchIntent, PushIntent, TripIntent
 from catley.game.actors import Character
 from catley.modes.base import Mode
 from catley.modes.picker import PickerResult
@@ -535,9 +536,7 @@ class CombatMode(Mode):
 
         return False
 
-    def _create_intent_for_target(
-        self, target: Character
-    ) -> AttackIntent | PushIntent | TripIntent | None:
+    def _create_intent_for_target(self, target: Character) -> GameIntent | None:
         """Create the appropriate intent for the selected action and target.
 
         Uses the currently selected action to determine what intent to create.
@@ -586,6 +585,12 @@ class CombatMode(Mode):
             if self.selected_action.action_class == TripIntent:
                 intent = TripIntent(self.controller, player, target)
                 return self._handle_melee_intent(target, distance, intent)
+            if self.selected_action.action_class == KickIntent:
+                intent = KickIntent(self.controller, player, target)
+                return self._handle_melee_intent(target, distance, intent)
+            if self.selected_action.action_class == PunchIntent:
+                intent = PunchIntent(self.controller, player, target)
+                return self._handle_melee_intent(target, distance, intent)
 
         # Unhandled action type - fail loudly so we catch missing handlers
         raise ValueError(
@@ -598,8 +603,8 @@ class CombatMode(Mode):
         self,
         target: Character,
         distance: int,
-        intent: AttackIntent | PushIntent | TripIntent,
-    ) -> AttackIntent | PushIntent | TripIntent | None:
+        intent: GameIntent,
+    ) -> GameIntent | None:
         """Handle melee intent creation, with approach if needed.
 
         If adjacent, returns the intent for immediate execution.

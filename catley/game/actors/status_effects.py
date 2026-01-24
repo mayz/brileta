@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import abc
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
+
+from catley import colors
 
 if TYPE_CHECKING:
     from . import Actor
@@ -50,6 +52,7 @@ class StatusEffect(abc.ABC):
     description: str = ""
     can_stack: bool = False
     prevents_action: bool = False
+    display_color: colors.Color = field(default=colors.LIGHT_GREY)
 
     @abc.abstractmethod
     def apply_on_start(self, actor: Actor) -> None:
@@ -87,6 +90,7 @@ class OffBalanceEffect(StatusEffect):
             name="Off Balance",
             duration=1,
             description="Disadvantage on next action",
+            display_color=colors.ORANGE,
         )
 
     def apply_on_start(self, actor: Actor) -> None:
@@ -118,6 +122,7 @@ class FocusedEffect(StatusEffect):
             name="Focused",
             duration=1,
             description="Advantage on next action",
+            display_color=colors.LIGHT_GREEN,
         )
 
     def apply_on_start(self, actor: Actor) -> None:
@@ -152,6 +157,7 @@ class TrippedEffect(StatusEffect):
             duration=2,
             description="Skip next 2 actions",
             prevents_action=True,
+            display_color=colors.RED,
         )
 
     def apply_on_start(self, actor: Actor) -> None:
@@ -180,6 +186,7 @@ class StaggeredEffect(StatusEffect):
             duration=1,
             description="Skip next action",
             prevents_action=True,
+            display_color=colors.DEEP_ORANGE,
         )
 
     def apply_on_start(self, actor: Actor) -> None:
@@ -209,6 +216,7 @@ class StrengthBoostEffect(StatusEffect):
             name="Strength Boost",
             duration=duration,
             description="Strength increased by 2",
+            display_color=colors.GREEN,
         )
 
     def apply_on_start(self, actor: Actor) -> None:

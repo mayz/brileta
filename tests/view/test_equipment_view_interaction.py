@@ -159,18 +159,21 @@ def test_click_active_consumable_slot_exits_targeting() -> None:
     assert not controller.picker_mode.active
 
 
-def test_click_empty_active_slot_does_nothing() -> None:
-    """Clicking active slot when empty does nothing."""
+def test_click_empty_active_slot_enters_combat_mode() -> None:
+    """Clicking active slot when empty (Fists) enters combat mode."""
     controller, view = make_controller_with_equipment_view()
     player = controller.gw.player
 
-    # Ensure active slot is empty
+    # Ensure active slot is empty (Fists)
     player.inventory.ready_slots[0] = None
 
-    # Click active slot
+    assert not controller.is_combat_mode()
+
+    # Click active slot - should enter combat mode for unarmed combat
     result = view.handle_click(0)
 
-    assert result is False
+    assert result is True
+    assert controller.is_combat_mode()
 
 
 def test_is_row_in_active_slot() -> None:

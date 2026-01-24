@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, cast
 
 from catley.game import ranges
 from catley.game.actions.combat import AttackIntent
-from catley.game.actions.stunts import PushIntent, TripIntent
+from catley.game.actions.stunts import KickIntent, PunchIntent, PushIntent, TripIntent
 from catley.game.actors import Character
 from catley.game.items.properties import WeaponProperty
 
@@ -124,6 +124,55 @@ class CombatActionDiscovery:
                 requirements=[ActionRequirement.TARGET_ACTOR],
                 static_params={},
                 success_probability=trip_prob,
+            )
+        )
+
+        # Always add Kick - approach handled on execution
+        # Kick uses Strength vs Agility and deals d4 damage + push
+        kick_prob: float | None = None
+        if target is not None:
+            kick_prob = self._calculate_opposed_probability(
+                controller, actor, target, "strength", "agility"
+            )
+
+        options.append(
+            ActionOption(
+                id="kick",
+                name="Kick",
+                description="Kick target for d4 damage + push. Strength vs Agility.",
+                category=ActionCategory.STUNT,
+                action_class=KickIntent,
+                requirements=[ActionRequirement.TARGET_ACTOR],
+                static_params={},
+                success_probability=kick_prob,
+            )
+        )
+
+        # Always add Punch - always available, holsters weapon if needed
+        # Punch deals d3 damage. If weapon equipped, holsters it first.
+        punch_prob: float | None = None
+        if target is not None:
+            punch_prob = self._calculate_opposed_probability(
+                controller, actor, target, "strength", "agility"
+            )
+
+        # Determine description based on whether weapon is equipped
+        active_weapon = actor.inventory.get_active_item()
+        if active_weapon is not None:
+            punch_desc = f"Holster {active_weapon.name}, then punch next turn."
+        else:
+            punch_desc = "Punch target for d3 damage. Strength vs Agility."
+
+        options.append(
+            ActionOption(
+                id="punch",
+                name="Punch",
+                description=punch_desc,
+                category=ActionCategory.STUNT,
+                action_class=PunchIntent,
+                requirements=[ActionRequirement.TARGET_ACTOR],
+                static_params={},
+                success_probability=punch_prob if active_weapon is None else None,
             )
         )
 

@@ -208,7 +208,7 @@ class PlayerStatusView(TextView):
                 else:
                     color = colors.YELLOW
             else:
-                color = colors.LIGHT_GREY
+                color = effect.display_color
             lines.append((effect.name, color))
         return lines
 

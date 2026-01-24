@@ -63,8 +63,8 @@ def test_status_effects_with_colors() -> None:
     actor.status_effects.apply_status_effect(effect)
 
     lines = view._get_status_effects()
-    # PlayerStatusView returns just the name (no duration), with LIGHT_GREY color
-    assert lines == [("Off Balance", colors.LIGHT_GREY)]
+    # PlayerStatusView returns just the name (no duration), colored by severity
+    assert lines == [("Off Balance", colors.ORANGE)]
 
 
 def test_encumbered_severity_colors() -> None:
