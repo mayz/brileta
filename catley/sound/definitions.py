@@ -341,6 +341,24 @@ SOUND_DEFINITIONS = {
         priority=4,
         rolloff_factor=1.0,
     ),
+    # --- UI sounds ---
+    # Non-diegetic interface feedback. Played at player position for full volume.
+    "ui_select": SoundDefinition(
+        sound_id="ui_select",
+        layers=[
+            SoundLayer(
+                file="ui_select.ogg",
+                volume=1.0,
+                loop=False,
+                pitch_variation=(0.97, 1.03),  # Subtle ±3% variation
+            ),
+        ],
+        base_volume=0.5,  # UI sounds should be present but not overwhelming
+        falloff_start=100.0,  # No distance falloff for UI sounds
+        max_distance=200.0,
+        priority=6,
+        rolloff_factor=0.0,
+    ),
 }
 
 

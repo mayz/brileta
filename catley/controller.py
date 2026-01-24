@@ -19,6 +19,7 @@ from .events import (
     CombatEndedEvent,
     CombatInitiatedEvent,
     MessageEvent,
+    SoundEvent,
     publish_event,
     subscribe_to_event,
 )
@@ -578,6 +579,12 @@ class Controller:
         Args:
             target: The actor to select, or None to deselect.
         """
+        # Play selection sound when selecting a new target
+        if target is not None and target is not self.selected_target:
+            # Use player position so UI sound plays at full volume
+            publish_event(
+                SoundEvent(sound_id="ui_select", x=self.gw.player.x, y=self.gw.player.y)
+            )
         self.selected_target = target
 
     def deselect_target(self) -> None:
