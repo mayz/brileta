@@ -9,13 +9,14 @@ Displays four lines ordered by permanence:
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from catley import colors, config
 from catley.backends.pillow.canvas import PillowImageCanvas
 from catley.game.actors import Condition, StatusEffect
 from catley.game.actors.status_effects import EncumberedEffect
 from catley.types import InterpolationAlpha
+from catley.util.caching import ResourceCache
 from catley.view.render.graphics import GraphicsContext
 
 from .base import TextView
@@ -41,12 +42,19 @@ class PlayerStatusView(TextView):
         """
         super().__init__()
         self.controller = controller
+        self._graphics = graphics
         # Use PillowImageCanvas with VGA font for crisp pixel rendering
         self.canvas = PillowImageCanvas(
             graphics,
             font_path=config.UI_FONT_PATH,
             font_size=config.PLAYER_STATUS_FONT_SIZE,
             line_spacing=1.0,
+        )
+        # Override cache to release textures on eviction
+        self._texture_cache = ResourceCache[Any, Any](
+            name=f"{self.__class__.__name__}Render",
+            max_size=1,
+            on_evict=lambda tex: self._graphics.release_texture(tex),
         )
 
     def get_cache_key(

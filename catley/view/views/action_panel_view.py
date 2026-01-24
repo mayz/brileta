@@ -62,7 +62,9 @@ class ActionPanelView(TextView):
 
         # Override the cache from the base class for pixel-based rendering
         self._texture_cache = ResourceCache[tuple, Any](
-            name=f"{self.__class__.__name__}Render", max_size=1
+            name=f"{self.__class__.__name__}Render",
+            max_size=1,
+            on_evict=lambda tex: self.controller.graphics.release_texture(tex),
         )
 
     def _get_action_priority(self, action: ActionOption) -> int:

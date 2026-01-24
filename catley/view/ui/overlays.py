@@ -112,7 +112,9 @@ class TextOverlay(Overlay):
     def invalidate(self) -> None:
         """Mark the overlay as dirty so it will be re-rendered next frame."""
         self._dirty = True
-        self._cached_texture = None
+        if self._cached_texture is not None:
+            self.controller.graphics.release_texture(self._cached_texture)
+            self._cached_texture = None
 
     def show(self) -> None:
         """Activate overlay and mark it for redraw."""
@@ -135,7 +137,9 @@ class TextOverlay(Overlay):
 
         if self.width <= 0 or self.height <= 0:
             # Nothing to render when dimensions are zero.
-            self._cached_texture = None
+            if self._cached_texture is not None:
+                self.controller.graphics.release_texture(self._cached_texture)
+                self._cached_texture = None
             self._dirty = False
             return
 
@@ -147,6 +151,9 @@ class TextOverlay(Overlay):
         self.draw_content()
         artifact = self.canvas.end_frame()
         if artifact is not None:
+            # Release old texture before creating new one
+            if self._cached_texture is not None:
+                self.controller.graphics.release_texture(self._cached_texture)
             # Use cache key for unique texture caching per overlay
             if hasattr(self.canvas, "create_texture_with_cache_key"):
                 texture = self.canvas.create_texture_with_cache_key(

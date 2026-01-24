@@ -28,6 +28,7 @@ from catley.util.live_vars import record_time_live_variable
 from catley.view.render.effects.decals import DecalSystem
 from catley.view.render.effects.effects import EffectLibrary
 from catley.view.render.effects.environmental import EnvironmentalEffectSystem
+from catley.view.render.effects.floating_text import FloatingTextManager
 from catley.view.render.effects.particles import (
     ParticleLayer,
     SubTileParticleSystem,
@@ -76,9 +77,14 @@ class WorldView(View):
         self.environmental_system = EnvironmentalEffectSystem()
         self.decal_system = DecalSystem()
         self.effect_library = EffectLibrary()
+        self.floating_text_manager = FloatingTextManager()
         self.current_light_intensity: np.ndarray | None = None
+        # Note: No on_evict callback here because _active_background_texture keeps
+        # an external reference to cached textures. Releasing on eviction would
+        # invalidate that reference. Textures are cleaned up by GC instead.
         self._texture_cache = ResourceCache[tuple, Any](
-            name="WorldViewCache", max_size=5
+            name="WorldViewCache",
+            max_size=5,
         )
         self._active_background_texture: Any | None = None
         self._light_overlay_texture: Any | None = None
@@ -275,6 +281,7 @@ class WorldView(View):
         # logic timestep or the interpolation alpha.
         self.particle_system.update(delta_time)
         self.environmental_system.update(delta_time)
+        self.floating_text_manager.update(delta_time)
         # Update decals for age-based cleanup
         self._game_time += delta_time
         self.decal_system.update(delta_time, self._game_time)
@@ -373,6 +380,14 @@ class WorldView(View):
                 viewport_bounds,
                 view_offset,
                 self.viewport_system,
+            )
+
+        with record_time_live_variable("cpu.render.floating_text_ms"):
+            self.floating_text_manager.render(
+                graphics,
+                self.viewport_system,
+                view_offset,
+                self.controller.gw,
             )
 
         if config.ENVIRONMENTAL_EFFECTS_ENABLED:

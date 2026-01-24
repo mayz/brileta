@@ -26,6 +26,7 @@ import logging
 from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass
+from enum import Enum, auto
 from typing import Any
 
 from catley import colors
@@ -70,6 +71,46 @@ class ActorDeathEvent(GameEvent):
     """Event for when an actor dies."""
 
     actor: Any  # Avoid circular imports
+
+
+class FloatingTextValence(Enum):
+    """Semantic meaning of floating text for color selection."""
+
+    NEGATIVE = auto()  # Red - damage, debuffs, failures
+    POSITIVE = auto()  # Green - healing, buffs
+    NEUTRAL = auto()  # Yellow - informational
+
+
+class FloatingTextSize(Enum):
+    """Size presets for floating text. Value is font size in pixels."""
+
+    NORMAL = 32
+    LARGE = 38
+
+
+@dataclass
+class FloatingTextEvent(GameEvent):
+    """Event requesting floating text display above an actor.
+
+    Attributes:
+        text: The text to display (e.g., "-3", "TRIPPED", "💀")
+        target_actor_id: Python id() of the actor the text should follow
+        valence: Semantic meaning for color selection
+        size: Font size preset (NORMAL or LARGE)
+        duration: How long the text should display (None = use default)
+        color: Optional RGB color override (None = use valence color)
+        world_x: Initial world X position (fallback if actor not found)
+        world_y: Initial world Y position (fallback if actor not found)
+    """
+
+    text: str
+    target_actor_id: int
+    valence: FloatingTextValence = FloatingTextValence.NEUTRAL
+    size: FloatingTextSize = FloatingTextSize.NORMAL
+    duration: float | None = None  # None = use default (0.7s)
+    color: tuple[int, int, int] | None = None  # None = use valence color
+    world_x: int = 0
+    world_y: int = 0
 
 
 @dataclass

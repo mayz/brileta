@@ -345,6 +345,9 @@ def patched_controller(stop_after: int):
             def draw_debug_rect(self, *_a, **_kw):
                 pass
 
+            def release_texture(self, *_a, **_kw):
+                pass
+
         from typing import cast
 
         from catley.view.render.graphics import GraphicsContext

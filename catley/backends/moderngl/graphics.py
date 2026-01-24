@@ -9,6 +9,8 @@ from catley.backends.gl_window import GLWindow
 from catley.game.enums import BlendMode
 from catley.types import (
     InterpolationAlpha,
+    Opacity,
+    PixelCoord,
 )
 from catley.util.coordinates import (
     CoordinateConverter,
@@ -406,6 +408,36 @@ class ModernGLGraphicsContext(BaseGraphicsContext):
         # Queue the texture and vertices for batched rendering
         self.ui_texture_renderer.add_textured_quad(texture, vertices)
 
+    def draw_texture_alpha(
+        self,
+        texture: moderngl.Texture,
+        screen_x: PixelCoord,
+        screen_y: PixelCoord,
+        alpha: Opacity,
+    ) -> None:
+        """Draw a texture at pixel coordinates with alpha modulation."""
+        if alpha <= 0.0 or not isinstance(texture, moderngl.Texture):
+            return
+
+        px_x1 = float(screen_x)
+        px_y1 = float(screen_y)
+        px_x2 = px_x1 + texture.width
+        px_y2 = px_y1 + texture.height
+
+        # Create vertices with alpha in the color
+        vertices = np.zeros(6, dtype=VERTEX_DTYPE)
+        u1, v1, u2, v2 = 0.0, 0.0, 1.0, 1.0
+        color_rgba = (1.0, 1.0, 1.0, float(alpha))
+
+        vertices[0] = ((px_x1, px_y1), (u1, v1), color_rgba)
+        vertices[1] = ((px_x2, px_y1), (u2, v1), color_rgba)
+        vertices[2] = ((px_x1, px_y2), (u1, v2), color_rgba)
+        vertices[3] = ((px_x2, px_y1), (u2, v1), color_rgba)
+        vertices[4] = ((px_x1, px_y2), (u1, v2), color_rgba)
+        vertices[5] = ((px_x2, px_y2), (u2, v2), color_rgba)
+
+        self.ui_texture_renderer.add_textured_quad(texture, vertices)
+
     def draw_actor_smooth(
         self,
         char: str,
@@ -718,3 +750,8 @@ class ModernGLGraphicsContext(BaseGraphicsContext):
         from catley.backends.moderngl.canvas import ModernGLCanvas
 
         return ModernGLCanvas(self, transparent)
+
+    def release_texture(self, texture: Any) -> None:
+        """Release ModernGL texture resources."""
+        if texture is not None and hasattr(texture, "release"):
+            texture.release()

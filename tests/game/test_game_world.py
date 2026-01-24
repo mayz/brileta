@@ -532,3 +532,88 @@ class TestEnvironmentMethods:
         gw.set_time_of_day(18.0)  # Sunset
 
         mock_system.on_global_light_changed.assert_called()
+
+
+# ---------------------------------------------------------------------------
+# TestActorIdRegistry
+# ---------------------------------------------------------------------------
+
+
+class TestActorIdRegistry:
+    """Tests for O(1) actor lookup by Python object ID."""
+
+    def test_add_actor_registers_in_id_registry(self) -> None:
+        gw = make_world()
+        actor = make_actor(gw, x=5, y=5)
+
+        gw.add_actor(actor)
+
+        assert id(actor) in gw._actor_id_registry
+        assert gw._actor_id_registry[id(actor)] is actor
+
+    def test_remove_actor_unregisters_from_id_registry(self) -> None:
+        gw = make_world()
+        actor = make_actor(gw, x=5, y=5)
+        gw.add_actor(actor)
+
+        gw.remove_actor(actor)
+
+        assert id(actor) not in gw._actor_id_registry
+
+    def test_get_actor_by_id_returns_correct_actor(self) -> None:
+        gw = make_world()
+        actor1 = make_actor(gw, x=5, y=5)
+        actor2 = make_actor(gw, x=10, y=10)
+        gw.add_actor(actor1)
+        gw.add_actor(actor2)
+
+        result = gw.get_actor_by_id(id(actor1))
+
+        assert result is actor1
+
+    def test_get_actor_by_id_returns_none_for_unknown_id(self) -> None:
+        gw = make_world()
+        actor = make_actor(gw, x=5, y=5)
+        gw.add_actor(actor)
+
+        result = gw.get_actor_by_id(999999999)
+
+        assert result is None
+
+    def test_get_actor_by_id_returns_none_after_removal(self) -> None:
+        gw = make_world()
+        actor = make_actor(gw, x=5, y=5)
+        gw.add_actor(actor)
+        actor_id = id(actor)
+
+        gw.remove_actor(actor)
+        result = gw.get_actor_by_id(actor_id)
+
+        assert result is None
+
+    def test_remove_nonexistent_actor_does_not_affect_registry(self) -> None:
+        gw = make_world()
+        actor1 = make_actor(gw, x=5, y=5)
+        actor2 = make_actor(gw, x=10, y=10)
+        gw.add_actor(actor1)
+
+        # actor2 was never added - removing it should not affect actor1
+        gw.remove_actor(actor2)
+
+        assert gw.get_actor_by_id(id(actor1)) is actor1
+
+    def test_multiple_actors_in_registry(self) -> None:
+        gw = make_world()
+        actors = [make_actor(gw, x=i, y=i) for i in range(5)]
+        for actor in actors:
+            gw.add_actor(actor)
+
+        # All actors should be retrievable
+        for actor in actors:
+            assert gw.get_actor_by_id(id(actor)) is actor
+
+    def test_registry_empty_initially(self) -> None:
+        gw = make_world()
+
+        # DummyGameWorld starts with empty registry
+        assert len(gw._actor_id_registry) == 0

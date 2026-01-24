@@ -275,6 +275,27 @@ class GraphicsContext(abc.ABC):
         pass
 
     @abc.abstractmethod
+    def draw_texture_alpha(
+        self,
+        texture: Any,
+        screen_x: PixelCoord,
+        screen_y: PixelCoord,
+        alpha: Opacity,
+    ) -> None:
+        """Draw a texture at pixel coordinates with alpha modulation.
+
+        Used for effects like floating text that need sub-tile positioning
+        and fade effects.
+
+        Args:
+            texture: Backend-specific texture object
+            screen_x: X position in screen pixels
+            screen_y: Y position in screen pixels
+            alpha: Overall opacity (0.0 to 1.0)
+        """
+        pass
+
+    @abc.abstractmethod
     def draw_background(
         self,
         texture: Any,
@@ -322,4 +343,16 @@ class GraphicsContext(abc.ABC):
     @abc.abstractmethod
     def create_canvas(self, transparent: bool = True) -> Any:
         """Creates a backend-appropriate canvas for drawing operations."""
+        pass
+
+    @abc.abstractmethod
+    def release_texture(self, texture: Any) -> None:
+        """Release a texture's GPU resources.
+
+        Call this when done with a texture created via texture_from_numpy().
+        Each backend handles cleanup appropriately for its texture type.
+
+        Args:
+            texture: The backend-specific texture object to release.
+        """
         pass

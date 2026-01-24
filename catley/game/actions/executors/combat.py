@@ -10,6 +10,8 @@ from catley.events import (
     ActorDeathEvent,
     CombatInitiatedEvent,
     EffectEvent,
+    FloatingTextEvent,
+    FloatingTextValence,
     MessageEvent,
     ScreenShakeEvent,
     SoundEvent,
@@ -673,6 +675,17 @@ class AttackExecutor(ActionExecutor):
                     miss_color,
                 )
             )
+
+        # Emit floating text for miss (on the attacker, showing their failure)
+        publish_event(
+            FloatingTextEvent(
+                text="MISS",
+                target_actor_id=id(intent.attacker),
+                valence=FloatingTextValence.NEUTRAL,
+                world_x=intent.attacker.x,
+                world_y=intent.attacker.y,
+            )
+        )
 
         # Handle 'awkward' weapon property on miss
         if (

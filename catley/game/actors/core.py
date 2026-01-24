@@ -34,6 +34,12 @@ from typing import TYPE_CHECKING
 
 from catley import colors
 from catley.config import DEFAULT_ACTOR_SPEED
+from catley.events import (
+    FloatingTextEvent,
+    FloatingTextSize,
+    FloatingTextValence,
+    publish_event,
+)
 from catley.game.actors import conditions
 from catley.game.enums import CreatureSize, Disposition, InjuryLocation
 from catley.game.items.item_core import Item
@@ -269,7 +275,7 @@ class Actor:
 
         That includes:
         - Update health math.
-        - Visual feedback.
+        - Visual feedback (flash and floating text).
         - Handle death consequences, if any.
 
         Args:
@@ -281,6 +287,8 @@ class Actor:
             self.visual_effects.flash(colors.RED)
 
         if self.health:
+            actual_damage = amount
+
             if damage_type == "radiation":
                 initial_hp = self.health.hp
                 self.health.take_damage(amount, damage_type="radiation")
@@ -299,6 +307,24 @@ class Actor:
             else:
                 # Delegate health math to the health component.
                 self.health.take_damage(amount)
+
+            # Emit floating text: skull for lethal damage, number otherwise
+            if actual_damage > 0:
+                died = not self.health.is_alive()
+                publish_event(
+                    FloatingTextEvent(
+                        text="💀" if died else f"-{actual_damage}",
+                        target_actor_id=id(self),
+                        valence=FloatingTextValence.NEGATIVE,
+                        size=FloatingTextSize.LARGE
+                        if died
+                        else FloatingTextSize.NORMAL,
+                        duration=1.2 if died else None,
+                        color=(200, 200, 200) if died else None,  # Light gray skull
+                        world_x=self.x,
+                        world_y=self.y,
+                    )
+                )
 
             if not self.health.is_alive():
                 # Handle death consequences.

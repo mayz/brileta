@@ -10,7 +10,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from catley import colors
-from catley.events import CombatInitiatedEvent, MessageEvent, publish_event
+from catley.events import (
+    CombatInitiatedEvent,
+    FloatingTextEvent,
+    FloatingTextValence,
+    MessageEvent,
+    publish_event,
+)
 from catley.game.actions.base import GameActionResult
 from catley.game.actions.executors.base import ActionExecutor
 from catley.game.actors.status_effects import (
@@ -77,6 +83,15 @@ class PushExecutor(ActionExecutor):
                 intent.defender.status_effects.apply_status_effect(TrippedEffect())
                 atk_name = intent.attacker.name
                 def_name = intent.defender.name
+                publish_event(
+                    FloatingTextEvent(
+                        text="PUSHED",
+                        target_actor_id=id(intent.defender),
+                        valence=FloatingTextValence.NEGATIVE,
+                        world_x=intent.defender.x,
+                        world_y=intent.defender.y,
+                    )
+                )
                 if pushed:
                     msg = f"Critical! {atk_name} shoves {def_name} to the ground!"
                 else:
@@ -94,6 +109,15 @@ class PushExecutor(ActionExecutor):
                 intent.defender.status_effects.apply_status_effect(StaggeredEffect())
                 atk_name = intent.attacker.name
                 def_name = intent.defender.name
+                publish_event(
+                    FloatingTextEvent(
+                        text="PUSHED",
+                        target_actor_id=id(intent.defender),
+                        valence=FloatingTextValence.NEGATIVE,
+                        world_x=intent.defender.x,
+                        world_y=intent.defender.y,
+                    )
+                )
                 if pushed:
                     msg = f"{atk_name} shoves {def_name} back!"
                     publish_event(MessageEvent(msg, colors.WHITE))
@@ -120,6 +144,15 @@ class PushExecutor(ActionExecutor):
                 intent.attacker.status_effects.apply_status_effect(OffBalanceEffect())
                 atk_name = intent.attacker.name
                 def_name = intent.defender.name
+                publish_event(
+                    FloatingTextEvent(
+                        text="FAILED",
+                        target_actor_id=id(intent.attacker),
+                        valence=FloatingTextValence.NEGATIVE,
+                        world_x=intent.attacker.x,
+                        world_y=intent.attacker.y,
+                    )
+                )
                 msg = f"{atk_name} fails to push {def_name} and stumbles off-balance!"
                 publish_event(MessageEvent(msg, colors.GREY))
                 self._update_ai_disposition(intent)
@@ -339,6 +372,15 @@ class TripExecutor(ActionExecutor):
             case OutcomeTier.CRITICAL_SUCCESS:
                 # Trip + bonus damage from hard landing
                 intent.defender.status_effects.apply_status_effect(TrippedEffect())
+                publish_event(
+                    FloatingTextEvent(
+                        text="TRIPPED",
+                        target_actor_id=id(intent.defender),
+                        valence=FloatingTextValence.NEGATIVE,
+                        world_x=intent.defender.x,
+                        world_y=intent.defender.y,
+                    )
+                )
                 impact_damage = roll_d(4)
                 intent.defender.take_damage(impact_damage, damage_type="impact")
                 msg = (
@@ -351,6 +393,15 @@ class TripExecutor(ActionExecutor):
 
             case OutcomeTier.SUCCESS:
                 intent.defender.status_effects.apply_status_effect(TrippedEffect())
+                publish_event(
+                    FloatingTextEvent(
+                        text="TRIPPED",
+                        target_actor_id=id(intent.defender),
+                        valence=FloatingTextValence.NEGATIVE,
+                        world_x=intent.defender.x,
+                        world_y=intent.defender.y,
+                    )
+                )
                 msg = f"{atk_name} trips {def_name}! They fall prone!"
                 publish_event(MessageEvent(msg, colors.WHITE))
                 self._update_ai_disposition(intent)
@@ -360,6 +411,15 @@ class TripExecutor(ActionExecutor):
                 # Target tripped but attacker stumbles
                 intent.defender.status_effects.apply_status_effect(TrippedEffect())
                 intent.attacker.status_effects.apply_status_effect(OffBalanceEffect())
+                publish_event(
+                    FloatingTextEvent(
+                        text="TRIPPED",
+                        target_actor_id=id(intent.defender),
+                        valence=FloatingTextValence.NEGATIVE,
+                        world_x=intent.defender.x,
+                        world_y=intent.defender.y,
+                    )
+                )
                 msg = f"{atk_name} trips {def_name} but stumbles in the process!"
                 publish_event(MessageEvent(msg, colors.LIGHT_BLUE))
                 self._update_ai_disposition(intent)
@@ -368,6 +428,15 @@ class TripExecutor(ActionExecutor):
             case OutcomeTier.FAILURE:
                 # Trip attempt fails - attacker stumbles
                 intent.attacker.status_effects.apply_status_effect(OffBalanceEffect())
+                publish_event(
+                    FloatingTextEvent(
+                        text="FAILED",
+                        target_actor_id=id(intent.attacker),
+                        valence=FloatingTextValence.NEGATIVE,
+                        world_x=intent.attacker.x,
+                        world_y=intent.attacker.y,
+                    )
+                )
                 msg = f"{atk_name} fails to trip {def_name} and stumbles!"
                 publish_event(MessageEvent(msg, colors.GREY))
                 self._update_ai_disposition(intent)

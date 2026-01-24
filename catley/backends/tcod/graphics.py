@@ -89,7 +89,9 @@ class TCODGraphicsContext(GraphicsContext):
         self._actor_texture_cache: dict[int, tcod.sdl.render.Texture] = {}
         self._effect_cache_limit = 20
         self._effect_texture_cache = ResourceCache[int, tcod.sdl.render.Texture](
-            name="EffectTextureCache", max_size=self._effect_cache_limit
+            name="EffectTextureCache",
+            max_size=self._effect_cache_limit,
+            on_evict=self.release_texture,
         )
         self._tileset = context.sdl_atlas.tileset if context.sdl_atlas else None
 
@@ -735,6 +737,26 @@ class TCODGraphicsContext(GraphicsContext):
         dest_rect = (int(left), int(top), int(dest_width), int(dest_height))
         self.sdl_renderer.copy(texture, dest=dest_rect)
 
+    def draw_texture_alpha(
+        self,
+        texture: tcod.sdl.render.Texture,
+        screen_x: PixelCoord,
+        screen_y: PixelCoord,
+        alpha: Opacity,
+    ) -> None:
+        """Draw a texture at pixel coordinates with alpha modulation."""
+        if alpha <= 0.0 or not isinstance(texture, tcod.sdl.render.Texture):
+            return
+
+        # Set alpha modulation
+        texture.alpha_mod = int(max(0.0, min(1.0, alpha)) * 255)
+
+        dest = (int(screen_x), int(screen_y), texture.width, texture.height)
+        self.sdl_renderer.copy(texture, dest=dest)
+
+        # Reset alpha mod to avoid affecting other draws
+        texture.alpha_mod = 255
+
     def draw_background(
         self,
         texture: tcod.sdl.render.Texture,
@@ -810,3 +832,9 @@ class TCODGraphicsContext(GraphicsContext):
         from catley.backends.tcod.canvas import TCODConsoleCanvas
 
         return TCODConsoleCanvas(self, transparent)
+
+    def release_texture(self, texture: Any) -> None:
+        """Release texture. TCOD/SDL textures auto-clean via GC."""
+        # CFFI finalizer handles SDL_DestroyTexture on garbage collection.
+        # No explicit release needed for TCOD textures.
+        pass

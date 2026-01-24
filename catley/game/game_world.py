@@ -76,6 +76,8 @@ class GameWorld:
         """Adds an actor to the world and registers it with the spatial index."""
         self.actors.append(actor)
         self.actor_spatial_index.add(actor)
+        # Register actor by its Python object id for O(1) lookup.
+        self._actor_id_registry[id(actor)] = actor
 
     def remove_actor(self, actor: Actor) -> None:
         """Removes an actor from the world and spatial index."""
@@ -85,6 +87,8 @@ class GameWorld:
         except ValueError:
             # Actor was not in the list; ignore.
             pass
+        # Always attempt to unregister from the id registry.
+        self._actor_id_registry.pop(id(actor), None)
 
     def add_light(self, light: LightSource) -> None:
         """Add a light source to the world and notify the lighting system.
@@ -198,6 +202,9 @@ class GameWorld:
         """Initialize the collections used to track actors."""
         self.actors: list[Actor] = []
         self.actor_spatial_index: SpatialIndex[Actor] = SpatialHashGrid(cell_size=16)
+        # Registry for O(1) actor lookup by Python object id.
+        # Used by floating text system to track actor positions.
+        self._actor_id_registry: dict[int, Actor] = {}
 
     def _create_player(self) -> Character:
         """Instantiate the player character and starting inventory."""
@@ -396,6 +403,15 @@ class GameWorld:
 
         # If no blocking actor exists, return whichever actor is found first.
         return actors_at_point[0]
+
+    def get_actor_by_id(self, actor_id: int) -> Actor | None:
+        """Look up an actor by its Python object ID in O(1) time.
+
+        Uses the internal actor registry for constant-time lookup.
+        Used by floating text system to track actor positions.
+        Returns None if actor no longer exists.
+        """
+        return self._actor_id_registry.get(actor_id)
 
     def has_pickable_items_at_location(
         self, x: WorldTileCoord, y: WorldTileCoord

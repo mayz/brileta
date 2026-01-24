@@ -54,6 +54,8 @@ class DummyGameWorld(GameWorld):
 
         self.actor_spatial_index = SpatialHashGrid(cell_size=16)
         self.actors: list[Actor] = []
+        # Registry for O(1) actor lookup by Python object id.
+        self._actor_id_registry: dict[int, Actor] = {}
 
         self.item_spawner = ItemSpawner(self)
 
@@ -77,6 +79,7 @@ class DummyGameWorld(GameWorld):
         """Adds an actor to the list and the spatial index."""
         self.actors.append(actor)
         self.actor_spatial_index.add(actor)
+        self._actor_id_registry[id(actor)] = actor
 
     def remove_actor(self, actor: Actor) -> None:
         """Removes an actor from the list and the spatial index."""
@@ -85,6 +88,11 @@ class DummyGameWorld(GameWorld):
             self.actor_spatial_index.remove(actor)
         except ValueError:
             pass
+        self._actor_id_registry.pop(id(actor), None)
+
+    def get_actor_by_id(self, actor_id: int) -> Actor | None:
+        """Look up an actor by its Python object ID in O(1) time."""
+        return self._actor_id_registry.get(actor_id)
 
     def get_pickable_items_at_location(
         self, x: WorldTileCoord, y: WorldTileCoord
@@ -238,6 +246,9 @@ def get_controller_with_player_and_map() -> Controller:
             pass
 
         def draw_debug_rect(self, *_a, **_kw):
+            pass
+
+        def release_texture(self, *_a, **_kw):
             pass
 
     class DummyFrameManager:

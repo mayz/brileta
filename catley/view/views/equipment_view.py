@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from catley import colors, config
 from catley.backends.pillow.canvas import PillowImageCanvas
@@ -8,6 +8,7 @@ from catley.constants.view import ViewConstants as View
 from catley.events import MessageEvent, publish_event
 from catley.game.items.properties import WeaponProperty
 from catley.types import InterpolationAlpha
+from catley.util.caching import ResourceCache
 from catley.view.render.graphics import GraphicsContext
 
 from .base import TextView
@@ -45,6 +46,12 @@ class EquipmentView(TextView):
         self._hover_row: int | None = None
         # High-water mark for panel width in pixels (grow-only semantics)
         self._max_width_px_seen: int = 0
+        # Override cache to release textures on eviction
+        self._texture_cache = ResourceCache[Any, Any](
+            name=f"{self.__class__.__name__}Render",
+            max_size=1,
+            on_evict=lambda tex: self._graphics.release_texture(tex),
+        )
 
     def set_bounds(self, x1: int, y1: int, x2: int, y2: int) -> None:
         """Override set_bounds to configure scaling when view is resized."""
