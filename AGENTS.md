@@ -40,13 +40,25 @@ Do NOT run individual tools (pytest, pyright, ruff) separately first. Just run `
 - All new code must be fully type-hinted and pass static analysis.
 - Good Documentation: Comments should describe what code is doing and (if particularly complex) why it is doing it.
 
+## Testing
+
+Write unit tests for:
+- New behavior (actions, executors, game logic)
+- Bug fixes (to prevent regression)
+- Non-obvious logic that could break
+
+Skip tests for:
+- Simple config/constant changes
+- String/copy changes
+- Straightforward wiring already covered elsewhere
+
+When in doubt, write the test.
+
 ## Dev Notes
 
 - Identical Outcome: Ideally, there should be no performance regressions and no visual regressions (unless deliberately making visual changes).
 
 - When modifying existing architectures, preserve the intended separation of concerns. Look at module names and existing patterns to understand the intended responsibility boundaries.
-
-- When implementing new code or fixing bugs, if the functionality isn't already covered by unit testing, implement one or more unit tests to test it as you see fit.
 
 - As you make changes, add docstrings and line comments to clarify to a human reader *what* the code is doing and, if needed, *why* it's doing it that way.
 
