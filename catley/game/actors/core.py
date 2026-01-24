@@ -335,6 +335,50 @@ class Actor:
                 if self.gw and self.gw.selected_actor == self:
                     self.gw.selected_actor = None
 
+    def heal(self, amount: int | None = None) -> int:
+        """Heal the actor.
+
+        Handles:
+        - Health math (delegated to HealthComponent)
+        - Visual feedback (green flash and floating text)
+
+        Args:
+            amount: Amount to heal. If None, restore to full HP.
+
+        Returns:
+            Actual amount healed (may be less than requested if at/near max HP).
+        """
+        if not self.health:
+            return 0
+
+        before = self.health.hp
+
+        if amount is None:
+            # Full restore
+            self.health.hp = self.health.max_hp
+        else:
+            self.health.heal(amount)
+
+        healed = self.health.hp - before
+
+        if healed > 0:
+            # Visual feedback
+            if self.visual_effects:
+                self.visual_effects.flash(colors.GREEN)
+
+            # Emit floating text showing amount healed
+            publish_event(
+                FloatingTextEvent(
+                    text=f"+{healed}",
+                    target_actor_id=id(self),
+                    valence=FloatingTextValence.POSITIVE,
+                    world_x=self.x,
+                    world_y=self.y,
+                )
+            )
+
+        return healed
+
     def add_sound_emitter(self, emitter: SoundEmitter) -> None:
         """Add a sound emitter to this actor.
 

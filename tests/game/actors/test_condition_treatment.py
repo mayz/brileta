@@ -48,8 +48,7 @@ def test_consumable_effect_batch_removal() -> None:
     actor.conditions.add_condition(conditions.Exhaustion())
 
     spec = ConsumableEffectSpec(
-        effect_type=ConsumableEffectType.HEAL_HP,
-        effect_value=0,
+        effect_type=ConsumableEffectType.HEAL,
         target_condition_types={conditions.Exhaustion},
     )
     item_type = ItemType(

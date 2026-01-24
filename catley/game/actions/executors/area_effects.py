@@ -201,7 +201,7 @@ class WeaponAreaEffectExecutor(ActionExecutor):
             if damage > 0:
                 actor.take_damage(damage, damage_type=damage_type)
             else:
-                actor.health.heal(-damage)
+                actor.heal(-damage)
             hits.append((actor, damage))
         return hits
 

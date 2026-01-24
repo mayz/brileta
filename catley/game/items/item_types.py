@@ -362,8 +362,7 @@ MEGATONIC_TYPE = ItemType(
     size=ItemSize.NORMAL,
     category=ItemCategory.CONSUMABLE,
     consumable_effect=ConsumableEffectSpec(
-        effect_type=ConsumableEffectType.HEAL_HP,
-        effect_value=0,
+        effect_type=ConsumableEffectType.HEAL,
         target_condition_types={conditions.Exhaustion},
     ),
 )
@@ -374,8 +373,7 @@ STIM_TYPE = ItemType(
     size=ItemSize.TINY,
     category=ItemCategory.CONSUMABLE,
     consumable_effect=ConsumableEffectSpec(
-        effect_type=ConsumableEffectType.HEAL_HP,
-        effect_value=0,
+        effect_type=ConsumableEffectType.HEAL,
     ),
 )
 
@@ -397,8 +395,7 @@ FOOD_TYPE = ItemType(
     size=ItemSize.NORMAL,
     category=ItemCategory.CONSUMABLE,
     consumable_effect=ConsumableEffectSpec(
-        effect_type=ConsumableEffectType.HEAL_HP,
-        effect_value=0,
+        effect_type=ConsumableEffectType.HEAL,
     ),
 )
 
@@ -408,7 +405,6 @@ DRINK_TYPE = ItemType(
     size=ItemSize.NORMAL,
     category=ItemCategory.CONSUMABLE,
     consumable_effect=ConsumableEffectSpec(
-        effect_type=ConsumableEffectType.HEAL_HP,
-        effect_value=0,
+        effect_type=ConsumableEffectType.HEAL,
     ),
 )

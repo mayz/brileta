@@ -373,17 +373,22 @@ class AreaEffect:
 
 # === Consumable Capability ===
 class ConsumableEffectSpec:  # Definition Class
-    """Defines the effect of a consumable item."""
+    """Defines the effect of a consumable item.
+
+    For HEAL effect type:
+        - effect_value=None: Restore to full HP
+        - effect_value=N: Heal N hit points (capped at max HP)
+    """
 
     effect_type: ConsumableEffectType
-    effect_value: int
+    effect_value: int | None
     max_uses: int = 1
     target_condition_types: set[type[Condition]]
 
     def __init__(
         self,
         effect_type: ConsumableEffectType,
-        effect_value: int,
+        effect_value: int | None = None,
         max_uses: int = 1,
         *,
         target_condition_types: set[type[Condition]] | None = None,
@@ -414,24 +419,21 @@ class ConsumableEffect:  # Handler Class
         messages: list[str] = []
         health = target_actor.health
 
-        # Apply healing effects
+        # Apply healing effects (Actor.heal handles floating text)
         if health and self._spec.effect_type == ConsumableEffectType.HEAL:
-            before = health.hp
-            health.heal(self._spec.effect_value)
-            healed = health.hp - before
-            if healed:
-                messages.append(f"Restored {healed} HP")
-        elif health and self._spec.effect_type == ConsumableEffectType.HEAL_HP:
-            if health.hp < health.max_hp:
-                healed = health.max_hp - health.hp
-                health.hp = health.max_hp
-                messages.append(f"Restored {healed} HP")
-            else:
+            if health.hp >= health.max_hp:
                 messages.append("Already at full HP")
+            else:
+                # Actor.heal() handles floating text display
+                healed = target_actor.heal(self._spec.effect_value)
+                if healed:
+                    messages.append(f"Restored {healed} HP")
         elif self._spec.effect_type == ConsumableEffectType.POISON and health:
-            damage = abs(self._spec.effect_value)
-            target_actor.take_damage(damage)
-            messages.append(f"Took {damage} poison damage")
+            # POISON requires a specific damage value
+            damage = abs(self._spec.effect_value) if self._spec.effect_value else 0
+            if damage > 0:
+                target_actor.take_damage(damage)
+                messages.append(f"Took {damage} poison damage")
 
         # Remove conditions in bulk if specified
         removed_conditions: list[conditions.Condition] = []
