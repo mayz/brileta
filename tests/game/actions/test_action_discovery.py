@@ -835,6 +835,78 @@ def test_attack_gateway_not_shown_for_dead_targets() -> None:
     assert "attack-gateway" not in action_ids
 
 
+def test_get_options_for_target_outside_combat_shows_stunts() -> None:
+    """Outside combat, targeting a character shows Push and Trip stunts."""
+    controller, player, hostile, _, _ = _make_context_world()
+    # Make hostile non-hostile so we're out of combat
+    cast(Any, hostile.ai).disposition = Disposition.FRIENDLY
+
+    disc = ActionDiscovery()
+    controller.is_combat_mode = lambda: False  # type: ignore[attr-defined]
+
+    opts = disc.get_options_for_target(cast(Controller, controller), player, hostile)
+
+    # Should have Push and Trip stunt actions
+    action_ids = {o.id for o in opts}
+    assert "push" in action_ids, "Should have Push stunt action"
+    assert "trip" in action_ids, "Should have Trip stunt action"
+
+    # Verify Push has correct category and execute
+    push_opt = next(o for o in opts if o.id == "push")
+    assert push_opt.category == ActionCategory.STUNT
+    assert push_opt.execute is not None
+    assert push_opt.static_params.get("defender") == hostile
+
+    # Verify Trip has correct category and execute
+    trip_opt = next(o for o in opts if o.id == "trip")
+    assert trip_opt.category == ActionCategory.STUNT
+    assert trip_opt.execute is not None
+    assert trip_opt.static_params.get("defender") == hostile
+
+
+def test_stunts_not_shown_for_dead_targets() -> None:
+    """Push and Trip should not appear for dead targets."""
+    controller, player, hostile, _, _ = _make_context_world()
+    hostile.health.hp = 0  # Kill the target
+    cast(Any, hostile.ai).disposition = Disposition.FRIENDLY
+
+    disc = ActionDiscovery()
+    controller.is_combat_mode = lambda: False  # type: ignore[attr-defined]
+
+    opts = disc.get_options_for_target(cast(Controller, controller), player, hostile)
+
+    # Should not have stunts for dead target
+    action_ids = {o.id for o in opts}
+    assert "push" not in action_ids, "Push should not appear for dead target"
+    assert "trip" not in action_ids, "Trip should not appear for dead target"
+
+
+def test_stunts_not_shown_in_combat_mode_explore_path() -> None:
+    """In combat mode, get_options_for_target returns combat actions instead.
+
+    The stunts in combat mode come from discover_stunt_actions, not from
+    the explore-mode stunt creation methods.
+    """
+    controller, player, melee_target, _, _ = _make_combat_world()
+    disc = ActionDiscovery()
+
+    # Stub is_combat_mode to return True
+    controller.is_combat_mode = lambda: True  # type: ignore[attr-defined]
+
+    opts = disc.get_options_for_target(
+        cast(Controller, controller), player, melee_target
+    )
+
+    # Should have combat-style stunt actions (with target in ID), not explore-style
+    # The explore-style has id="push", combat-style has id="push-{name}-{x}-{y}"
+    push_opts = [o for o in opts if o.id.startswith("push")]
+    # Guard: combat mode may or may not return push stunts depending on adjacency/setup.
+    # We only care that IF push appears, it's combat-style (target-specific), not
+    # explore-style (generic "push"). This verifies no interference between modes.
+    if push_opts:
+        assert push_opts[0].id != "push", "In combat, Push should be target-specific"
+
+
 def test_talk_action_pathfinds_for_distant_target() -> None:
     """Talk action for distant target should have pathfinding behavior."""
     controller, player, _, friend, _ = _make_context_world()

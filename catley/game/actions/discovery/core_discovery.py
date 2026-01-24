@@ -127,10 +127,12 @@ class ActionDiscovery:
                 if stunt.static_params.get("defender") == target
             )
         else:
-            # Outside combat - show "Attack" gateway and social actions
-            # Only show Attack if target is a valid combat target
+            # Outside combat - show "Attack" gateway, stunts, and social actions
+            # Only show Attack and stunts if target is a valid combat target
             if target.health and target.health.is_alive() and target is not actor:
                 options.append(self._create_attack_gateway_action(controller))
+                options.append(self._create_push_action(controller, actor, target))
+                options.append(self._create_trip_action(controller, actor, target))
 
             # Add social actions (Talk)
             options.append(self._create_talk_action(controller, actor, target))
@@ -191,6 +193,82 @@ class ActionDiscovery:
             requirements=[],
             static_params={"target": target},
             execute=talk,
+        )
+
+    def _create_push_action(
+        self, controller: Controller, actor: Character, target: Character
+    ) -> ActionOption:
+        """Create a 'Push' stunt action.
+
+        Push shoves the target one tile away. If not adjacent, the actor will
+        approach the target first. If the target is non-hostile, this triggers
+        hostility and auto-enters combat mode.
+        """
+        from catley.game.actions.stunts import PushIntent
+
+        def push() -> bool:
+            from catley.game import ranges
+
+            distance = ranges.calculate_distance(actor.x, actor.y, target.x, target.y)
+            if distance == 1:
+                # Adjacent - push immediately
+                intent = PushIntent(controller, actor, target)
+                controller.queue_action(intent)
+            else:
+                # Not adjacent - pathfind then push
+                final_intent = PushIntent(controller, actor, target)
+                controller.start_actor_pathfinding(
+                    actor, (target.x, target.y), final_intent=final_intent
+                )
+            return True
+
+        return ActionOption(
+            id="push",
+            name="Push",
+            description="Shove target 1 tile away. Strength vs Strength.",
+            category=ActionCategory.STUNT,
+            action_class=PushIntent,
+            requirements=[],
+            static_params={"defender": target},
+            execute=push,
+        )
+
+    def _create_trip_action(
+        self, controller: Controller, actor: Character, target: Character
+    ) -> ActionOption:
+        """Create a 'Trip' stunt action.
+
+        Trip knocks the target prone. If not adjacent, the actor will approach
+        the target first. If the target is non-hostile, this triggers hostility
+        and auto-enters combat mode.
+        """
+        from catley.game.actions.stunts import TripIntent
+
+        def trip() -> bool:
+            from catley.game import ranges
+
+            distance = ranges.calculate_distance(actor.x, actor.y, target.x, target.y)
+            if distance == 1:
+                # Adjacent - trip immediately
+                intent = TripIntent(controller, actor, target)
+                controller.queue_action(intent)
+            else:
+                # Not adjacent - pathfind then trip
+                final_intent = TripIntent(controller, actor, target)
+                controller.start_actor_pathfinding(
+                    actor, (target.x, target.y), final_intent=final_intent
+                )
+            return True
+
+        return ActionOption(
+            id="trip",
+            name="Trip",
+            description="Knock target prone. Agility vs Agility.",
+            category=ActionCategory.STUNT,
+            action_class=TripIntent,
+            requirements=[],
+            static_params={"defender": target},
+            execute=trip,
         )
 
     def _sort_by_relevance(
