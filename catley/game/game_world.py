@@ -12,6 +12,7 @@ from catley.game.enums import CreatureSize
 from catley.game.item_spawner import ItemSpawner
 from catley.game.items.item_core import Item
 from catley.game.items.item_types import (
+    ALARM_CLOCK_TYPE,
     COMBAT_KNIFE_TYPE,
     FOOD_TYPE,
     HUNTING_SHOTGUN_TYPE,
@@ -71,6 +72,7 @@ class GameWorld:
 
         if not config.IS_TEST_ENVIRONMENT:
             self._add_test_fire(rooms)
+            self._add_starting_room_items(rooms[0])
 
     def add_actor(self, actor: Actor) -> None:
         """Adds an actor to the world and registers it with the spatial index."""
@@ -596,3 +598,18 @@ class GameWorld:
             if not placed:
                 # Container could not be placed; skip it
                 pass
+
+    def _add_starting_room_items(self, room: Rect) -> None:
+        """Place discoverable items in the starting room.
+
+        Adds some junk items in a corner for the player to find and experiment with.
+        """
+        # Place in top-right corner (campfire is top-left)
+        item_x = room.x2 - 2
+        item_y = room.y1 + 2
+
+        if (
+            self.game_map.walkable[item_x, item_y]
+            and self.get_actor_at_location(item_x, item_y) is None
+        ):
+            self.spawn_ground_item(ALARM_CLOCK_TYPE.create(), item_x, item_y)

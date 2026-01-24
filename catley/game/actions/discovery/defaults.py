@@ -11,11 +11,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from catley.game.actions.discovery.types import TargetType
+from catley.game.actors import Actor, ItemPile
 
 if TYPE_CHECKING:
     from catley.controller import Controller
     from catley.game.actions.base import GameIntent
-    from catley.game.actors import Actor
     from catley.types import WorldTilePos
 
 
@@ -63,6 +63,9 @@ def classify_target(
 
     if isinstance(target, Container):
         return TargetType.CONTAINER
+
+    if isinstance(target, ItemPile):
+        return TargetType.ITEM_PILE
 
     # Handle tile position targets (tuple of x, y)
     if isinstance(target, tuple) and len(target) == 2:
@@ -183,7 +186,7 @@ def execute_default_action(
     gw = controller.gw
 
     # Get target position
-    if isinstance(target, (Character, Container)):
+    if isinstance(target, (Character, Container, ItemPile)):
         target_x, target_y = target.x, target.y
     elif isinstance(target, tuple):
         target_x, target_y = target

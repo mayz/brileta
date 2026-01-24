@@ -11,8 +11,7 @@ from catley import colors
 from catley.controller import Controller
 from catley.game.actions.executors.misc import PickupExecutor
 from catley.game.actions.misc import PickupIntent
-from catley.game.actors import Actor, Character
-from catley.game.actors.components import CharacterInventory, StatsComponent
+from catley.game.actors import Actor, Character, ItemPile
 from catley.game.enums import ItemSize
 from catley.game.game_world import GameWorld
 from catley.game.items.item_core import Item, ItemType
@@ -39,11 +38,11 @@ def make_test_item(name: str = "Test Item") -> Item:
     return Item(item_type)
 
 
-def make_world_with_ground_item() -> tuple[DummyController, Character, Item, Actor]:
-    """Create a world with a player and an item on the ground (in a dead actor).
+def make_world_with_ground_item() -> tuple[DummyController, Character, Item, Character]:
+    """Create a world with a player and an item on a dead body.
 
     Returns:
-        (controller, player, item, dead_actor_holding_item)
+        (controller, player, item, dead_character_holding_item)
     """
     gw = DummyGameWorld()
 
@@ -57,26 +56,23 @@ def make_world_with_ground_item() -> tuple[DummyController, Character, Item, Act
     # Create item
     item = make_test_item("Rusty Knife")
 
-    # Create dead actor holding the item at player's location
-    stats = StatsComponent(strength=5)
-    inventory = CharacterInventory(stats)
-    dead_actor = Actor(
+    # Create dead character holding the item at player's location
+    dead_char = Character(
         x=0,
         y=0,
         ch="x",
         color=colors.DEAD,
         name="Dead Body",
         game_world=cast(GameWorld, gw),
-        stats=stats,
-        inventory=inventory,
-        blocks_movement=False,
     )
-    assert dead_actor.inventory is not None
-    dead_actor.inventory.add_to_inventory(item)
-    gw.add_actor(dead_actor)
+    # Kill the character so it's recognized as a corpse
+    dead_char.take_damage(dead_char.health.max_hp)
+    assert dead_char.inventory is not None
+    dead_char.inventory.add_to_inventory(item)
+    gw.add_actor(dead_char)
 
     controller = DummyController(gw)
-    return controller, player, item, dead_actor
+    return controller, player, item, dead_char
 
 
 class TestPickupExecutorRemovesItemsFromSource:
@@ -297,7 +293,7 @@ class TestPickupExecutorEdgeCases:
         assert not result.succeeded
 
     def test_pickup_removes_empty_ground_container(self) -> None:
-        """Test that empty non-Character containers are removed after pickup."""
+        """Test that empty item piles are removed after pickup."""
         gw = DummyGameWorld()
 
         player = Character(
@@ -308,22 +304,15 @@ class TestPickupExecutorEdgeCases:
 
         item = make_test_item()
 
-        # Create a non-Character ground container (like a dropped item pile)
-        stats = StatsComponent(strength=5)
-        inventory = CharacterInventory(stats)
-        ground_container = Actor(
+        # Create an item pile
+        ground_container = ItemPile(
             x=0,
             y=0,
             ch="!",
-            color=colors.WHITE,
             name="Item Pile",
+            items=[item],
             game_world=cast(GameWorld, gw),
-            stats=stats,
-            inventory=inventory,
-            blocks_movement=False,
         )
-        assert ground_container.inventory is not None
-        ground_container.inventory.add_to_inventory(item)
         gw.add_actor(ground_container)
 
         # Verify container is in the world

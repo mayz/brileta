@@ -1,7 +1,10 @@
-"""Container actors for item storage in the game world.
+"""Container and item pile actors for item storage in the game world.
 
 Containers are static actors that can hold items and be searched/looted.
 Examples include crates, chests, lockers, barrels, etc.
+
+ItemPiles are ephemeral actors representing dropped loot on the ground.
+They disappear when emptied and don't block movement.
 """
 
 from __future__ import annotations
@@ -88,6 +91,70 @@ class Container(Actor):
 
     # Type narrowing - inventory is always ContainerStorage for containers
     inventory: ContainerStorage
+
+
+class ItemPile(Actor):
+    """An ephemeral pile of items dropped on the ground.
+
+    Item piles represent loot that can be picked up by the player. Unlike
+    containers, item piles:
+    - Never block movement (you walk over them)
+    - Disappear when emptied
+    - Use "Pick up" rather than "Search" as the interaction verb
+
+    Item piles are created by the ItemSpawner when items are dropped or
+    spawned in the world.
+    """
+
+    def __init__(
+        self,
+        x: WorldTileCoord,
+        y: WorldTileCoord,
+        ch: str = "%",
+        color: colors.Color = colors.WHITE,
+        name: str = "Item pile",
+        items: list[Item] | None = None,
+        game_world: GameWorld | None = None,
+    ) -> None:
+        """Create an item pile actor.
+
+        Args:
+            x: X coordinate in world tiles
+            y: Y coordinate in world tiles
+            ch: Display character (defaults to %)
+            color: Display color
+            name: Name shown when examining
+            items: Initial items in the pile
+            game_world: Reference to the game world
+        """
+        # Item piles use ContainerStorage with high capacity
+        storage = ContainerStorage(capacity=100, actor=None)
+
+        super().__init__(
+            x=x,
+            y=y,
+            ch=ch,
+            color=color,
+            name=name,
+            inventory=storage,
+            game_world=game_world,
+            blocks_movement=False,  # Always walkable
+        )
+
+        # Set back-reference now that self exists
+        storage.actor = self
+
+        # Add initial items
+        if items:
+            for item in items:
+                storage.add_item(item)
+
+    # Type narrowing - inventory is always ContainerStorage for item piles
+    inventory: ContainerStorage
+
+    def is_empty(self) -> bool:
+        """Check if this pile has no items left."""
+        return len(self.inventory.get_items()) == 0
 
 
 # === Factory Functions ===

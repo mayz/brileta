@@ -11,6 +11,7 @@ from .ai import AIComponent
 from .conditions import Condition
 from .container import (
     Container,
+    ItemPile,
     create_bookcase,
 )
 from .core import NPC, PC, Actor, Character
@@ -26,6 +27,7 @@ __all__ = [
     "PC",
     "NPC",
     "Container",
+    "ItemPile",
     # Factory Functions
     "create_bookcase",
     # Base/Interface Classes

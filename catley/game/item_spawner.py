@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, TypeGuard, cast
+from typing import TYPE_CHECKING, TypeGuard
 
 from catley import colors
-from catley.game.actors import Actor, Character, components
+from catley.game.actors import Actor, ItemPile
 from catley.game.items.item_core import Item
 from catley.types import WorldTileCoord, WorldTilePos
 
@@ -32,7 +32,7 @@ class ItemSpawner:
         if consolidate:
             existing = self.game_world.get_actor_at_location(x, y)
             if self._can_consolidate_with(existing, item):
-                success, _, _ = existing.inventory.add_to_inventory(item)  # type: ignore[union-attr]
+                success, _ = existing.inventory.add_item(item)
                 if success:
                     self._update_pile_appearance(existing)
                     return existing
@@ -53,19 +53,14 @@ class ItemSpawner:
     # ------------------------------------------------------------------
     def _can_consolidate_with(
         self, actor: Actor | None, item: Item
-    ) -> TypeGuard[Actor]:
-        """Check if an item can be added to an existing actor."""
-        return (
-            actor is not None
-            and getattr(actor, "inventory", None) is not None
-            and not actor.blocks_movement
-            and not isinstance(actor, Character)
-        )
+    ) -> TypeGuard[ItemPile]:
+        """Check if an item can be added to an existing item pile."""
+        return isinstance(actor, ItemPile)
 
-    def _create_ground_actor(self, items: list[Item], x: int, y: int) -> Actor:
-        """Create a new ground actor containing the specified items."""
+    def _create_ground_actor(self, items: list[Item], x: int, y: int) -> ItemPile:
+        """Create a new item pile containing the specified items."""
         if not items:
-            raise ValueError("Cannot create ground actor with no items")
+            raise ValueError("Cannot create item pile with no items")
 
         ch, color = self._get_pile_appearance(items)
 
@@ -74,22 +69,18 @@ class ItemSpawner:
         else:
             name = f"Item pile ({len(items)} items)"
 
-        ground_actor = Actor(
+        pile = ItemPile(
             x=x,
             y=y,
             ch=ch,
             color=color,
             name=name,
+            items=items,
             game_world=self.game_world,
-            blocks_movement=False,
-            inventory=components.CharacterInventory(components.StatsComponent()),
         )
-        inv = cast(components.CharacterInventory, ground_actor.inventory)
-        for item in items:
-            inv.add_to_inventory(item)
 
-        self.game_world.add_actor(ground_actor)
-        return ground_actor
+        self.game_world.add_actor(pile)
+        return pile
 
     def _find_valid_spawn_location(
         self, x: WorldTileCoord, y: WorldTileCoord
@@ -129,14 +120,11 @@ class ItemSpawner:
             return "%", colors.LIGHT_GREY
         return "#", colors.LIGHT_GREY
 
-    def _update_pile_appearance(self, pile_actor: Actor) -> None:
+    def _update_pile_appearance(self, pile: ItemPile) -> None:
         """Update the appearance of an existing item pile based on current contents."""
-        if not getattr(pile_actor, "inventory", None):
-            return
-
-        items = [item for item in pile_actor.inventory if isinstance(item, Item)]  # type: ignore[union-attr]
-        pile_actor.ch, pile_actor.color = self._get_pile_appearance(items)
+        items = pile.inventory.get_items()
+        pile.ch, pile.color = self._get_pile_appearance(items)
         if len(items) == 1:
-            pile_actor.name = f"Dropped {items[0].name}"
+            pile.name = f"Dropped {items[0].name}"
         else:
-            pile_actor.name = f"Item pile ({len(items)} items)"
+            pile.name = f"Item pile ({len(items)} items)"

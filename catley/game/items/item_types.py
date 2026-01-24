@@ -93,7 +93,7 @@ HUNTING_RIFLE_TYPE = ItemType(
         properties={WeaponProperty.PREFERRED},
     ),
     melee_attack=MeleeAttackSpec(
-        "d6", {WeaponProperty.TWO_HANDED, WeaponProperty.AWKWARD}
+        "d6", {WeaponProperty.TWO_HANDED, WeaponProperty.AWKWARD}, verb="bash"
     ),
 )
 
@@ -115,7 +115,7 @@ SNIPER_RIFLE_TYPE = ItemType(
         },
     ),
     melee_attack=MeleeAttackSpec(
-        "d6", {WeaponProperty.TWO_HANDED, WeaponProperty.AWKWARD}
+        "d6", {WeaponProperty.TWO_HANDED, WeaponProperty.AWKWARD}, verb="bash"
     ),
 )
 
@@ -133,7 +133,7 @@ HUNTING_SHOTGUN_TYPE = ItemType(
         properties={WeaponProperty.PREFERRED},
     ),
     melee_attack=MeleeAttackSpec(
-        "d6", {WeaponProperty.TWO_HANDED, WeaponProperty.AWKWARD}
+        "d6", {WeaponProperty.TWO_HANDED, WeaponProperty.AWKWARD}, verb="bash"
     ),
 )
 
@@ -282,7 +282,9 @@ ROCK_TYPE = ItemType(
         max_range=8,
         properties={WeaponProperty.THROWN, WeaponProperty.IMPROVISED},
     ),
-    melee_attack=MeleeAttackSpec("d3", properties={WeaponProperty.IMPROVISED}),
+    melee_attack=MeleeAttackSpec(
+        "d3", properties={WeaponProperty.IMPROVISED}, verb="bash"
+    ),
 )
 
 ALARM_CLOCK_TYPE = ItemType(
@@ -300,7 +302,9 @@ ALARM_CLOCK_TYPE = ItemType(
         max_range=6,
         properties={WeaponProperty.THROWN, WeaponProperty.IMPROVISED},
     ),
-    melee_attack=MeleeAttackSpec("d6", properties={WeaponProperty.IMPROVISED}),
+    melee_attack=MeleeAttackSpec(
+        "d6", properties={WeaponProperty.IMPROVISED}, verb="clock"
+    ),
 )
 
 BLEACH_TYPE = ItemType(
@@ -340,7 +344,9 @@ RUBBER_CHICKEN_TYPE = ItemType(
         max_range=6,
         properties={WeaponProperty.THROWN, WeaponProperty.IMPROVISED},
     ),
-    melee_attack=MeleeAttackSpec("d2", properties={WeaponProperty.IMPROVISED}),
+    melee_attack=MeleeAttackSpec(
+        "d2", properties={WeaponProperty.IMPROVISED}, verb="slap"
+    ),
 )
 
 # === Medical and Recovery Items ===

@@ -17,7 +17,7 @@ import tcod.event
 from catley import colors
 from catley.backends.pillow.canvas import PillowImageCanvas
 from catley.events import MessageEvent, publish_event
-from catley.game.actors import Actor, Character, Condition
+from catley.game.actors import Actor, Character, Condition, ItemPile
 from catley.game.enums import ItemCategory, ItemSize
 from catley.game.items.item_core import Item
 from catley.util.coordinates import WorldTilePos
@@ -543,31 +543,30 @@ class DualPaneMenu(Menu):
                 if a.x == world_x and a.y == world_y
             ]
             for actor in actors_here:
-                inv = getattr(actor, "inventory", None)
-                if inv is None:
-                    continue
-
                 removed = False
-                if item in inv:
-                    inv.remove_from_inventory(item)
-                    removed = True
 
-                for i, equipped_item in enumerate(inv.ready_slots):
-                    if equipped_item == item:
-                        inv.unequip_slot(i)
+                # Handle item piles (ContainerStorage)
+                if isinstance(actor, ItemPile):
+                    if actor.inventory.remove_item(item):
                         removed = True
-                        break
+                        if actor.is_empty():
+                            self.controller.gw.remove_actor(actor)
+
+                # Handle characters (dead bodies with CharacterInventory)
+                elif isinstance(actor, Character):
+                    inv = actor.inventory
+                    if inv is not None:
+                        if item in inv:
+                            inv.remove_from_inventory(item)
+                            removed = True
+
+                        for i, equipped_item in enumerate(inv.ready_slots):
+                            if equipped_item == item:
+                                inv.unequip_slot(i)
+                                removed = True
+                                break
 
                 if removed:
-                    # Remove empty temporary ground piles (not permanent furniture)
-                    # Permanent containers like bookcases have blocks_movement=True
-                    if (
-                        not actor.blocks_movement
-                        and not isinstance(actor, Character)
-                        and len(inv) == 0
-                        and all(s is None for s in inv.ready_slots)
-                    ):
-                        self.controller.gw.remove_actor(actor)
                     break
 
         # Add to player inventory
