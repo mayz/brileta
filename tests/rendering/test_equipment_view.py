@@ -62,7 +62,7 @@ def test_switch_to_slot_publishes_message() -> None:
         name="Plasma Rifle", description="A plasma weapon", size=ItemSize.NORMAL
     )
     weapon = Item(weapon_type)
-    player.inventory.attack_slots[1] = weapon
+    player.inventory.ready_slots[1] = weapon
 
     with patch("catley.view.views.equipment_view.publish_event") as mock_publish:
         view.switch_to_slot(1)
@@ -77,7 +77,7 @@ def test_switch_to_slot_shows_empty_for_no_weapon() -> None:
     _controller, player, view = make_equipment_view()
 
     # Slot 1 is empty by default
-    assert player.inventory.attack_slots[1] is None
+    assert player.inventory.ready_slots[1] is None
 
     with patch("catley.view.views.equipment_view.publish_event") as mock_publish:
         view.switch_to_slot(1)

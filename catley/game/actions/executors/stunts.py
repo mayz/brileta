@@ -38,7 +38,7 @@ class PushExecutor(ActionExecutor):
 
         Resolution:
         - Critical Success (nat 20): Target pushed + TrippedEffect
-        - Success: Target pushed 1 tile
+        - Success: Target pushed 1 tile + StaggeredEffect
         - Partial Success (tie): Target pushed, attacker gains OffBalanceEffect
         - Failure: Attacker gains OffBalanceEffect
         - Critical Failure (nat 1): Attacker gains TrippedEffect

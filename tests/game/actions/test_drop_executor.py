@@ -81,7 +81,7 @@ class TestDropItemExecutorBasicFunctionality:
         assert result.succeeded
         assert item not in player.inventory
 
-    def test_drop_removes_equipped_item_from_attack_slot(self) -> None:
+    def test_drop_removes_equipped_item_from_ready_slot(self) -> None:
         """Test that dropping an equipped item removes it from the slot."""
         controller, player, item = make_player_with_item()
 
@@ -90,7 +90,7 @@ class TestDropItemExecutorBasicFunctionality:
         player.inventory.equip_to_slot(item, 0)
 
         # Verify item is equipped
-        assert player.inventory.attack_slots[0] == item
+        assert player.inventory.ready_slots[0] == item
 
         # Create and execute drop intent
         intent = DropItemIntent(cast(Controller, controller), player, item)
@@ -100,7 +100,7 @@ class TestDropItemExecutorBasicFunctionality:
         # Item should be removed from equipped slot
         assert result is not None
         assert result.succeeded
-        assert player.inventory.attack_slots[0] is None
+        assert player.inventory.ready_slots[0] is None
 
     def test_drop_spawns_item_on_ground_at_player_location(self) -> None:
         """Test that dropped item appears on ground at player's position."""

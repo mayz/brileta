@@ -41,7 +41,7 @@ def _get_category_prefix(item: Item) -> tuple[str, colors.Color | None]:
     """
     category_info: dict[ItemCategory, tuple[str, colors.Color]] = {
         ItemCategory.WEAPON: ("\u25cf ", colors.CATEGORY_WEAPON),
-        ItemCategory.ARMOR: ("\u25cf ", colors.CATEGORY_ARMOR),
+        ItemCategory.OUTFIT: ("\u25cf ", colors.CATEGORY_OUTFIT),
         ItemCategory.CONSUMABLE: ("\u25cf ", colors.CATEGORY_CONSUMABLE),
         ItemCategory.JUNK: ("\u25cf ", colors.CATEGORY_JUNK),
         ItemCategory.MUNITIONS: ("\u25cf ", colors.CATEGORY_MUNITIONS),
@@ -54,7 +54,7 @@ def _get_category_name(category: ItemCategory) -> str:
     """Return the display name for an item category."""
     names: dict[ItemCategory, str] = {
         ItemCategory.WEAPON: "Weapon",
-        ItemCategory.ARMOR: "Armor",
+        ItemCategory.OUTFIT: "Outfit",
         ItemCategory.CONSUMABLE: "Consumable",
         ItemCategory.JUNK: "Junk",
         ItemCategory.MUNITIONS: "Munition",
@@ -200,17 +200,20 @@ class DualPaneMenu(Menu):
         self.left_options.clear()
 
         # Collect equipped items separately from stored items
-        equipped_items: list[tuple[Item | Condition, str]] = []
+        # Equipment slots are always shown (even when empty/None)
+        equipped_items: list[tuple[Item | Condition | None, str]] = []
 
-        # Add equipped weapons with their slot index
-        for slot_index, equipped_item in enumerate(self.inventory.attack_slots):
-            if equipped_item:
-                equipped_items.append((equipped_item, f"slot:{slot_index}"))
+        # Add all ready slots (even if empty)
+        for slot_index in range(len(self.inventory.ready_slots)):
+            equipped_item = self.inventory.ready_slots[slot_index]
+            equipped_items.append((equipped_item, f"slot:{slot_index}"))
 
-        # Add equipped outfit
+        # Add outfit slot (even if empty)
         if self.inventory.equipped_outfit is not None:
             outfit_item, _ = self.inventory.equipped_outfit
             equipped_items.append((outfit_item, "outfit"))
+        else:
+            equipped_items.append((None, "outfit"))
 
         # Add stored items as tuples with "stored" status
         stored_items: list[tuple[Item | Condition, str]] = [
@@ -218,59 +221,45 @@ class DualPaneMenu(Menu):
         ]
 
         # Stored items first, then equipped items at the bottom
+        # (Visual separator is drawn in _draw_left_pane_items, not as a list item)
         all_items_to_display = stored_items + equipped_items
 
-        if not all_items_to_display:
-            self.left_options.append(
-                MenuOption(
-                    key=None,
-                    text="(inventory empty)",
-                    enabled=False,
-                    color=colors.GREY,
-                    is_primary_action=False,
-                )
-            )
-            return
-
-        # Track whether we need to insert a separator
-        has_equipped = len(equipped_items) > 0
-        has_stored = len(stored_items) > 0
-        separator_inserted = False
-
         for entity, item_status in all_items_to_display:
-            # Insert separator between stored and equipped items (empty line)
-            if (
-                has_equipped
-                and has_stored
-                and not separator_inserted
-                and item_status != "stored"
-            ):
+            # Handle empty equipment slots (None)
+            if entity is None:
+                prefix_segments: list[tuple[str, colors.Color]] = []
+                if item_status.startswith("slot:"):
+                    slot_num = int(item_status.split(":")[1]) + 1
+                    prefix_segments.append((f" [{slot_num}]  ", colors.GREY))
+                elif item_status == "outfit":
+                    prefix_segments.append((" [\U0000f007]  ", colors.GREY))
                 self.left_options.append(
                     MenuOption(
                         key=None,
-                        text="",
+                        text="(empty)",
                         enabled=False,
                         color=colors.GREY,
                         is_primary_action=False,
+                        prefix_segments=prefix_segments,
                     )
                 )
-                separator_inserted = True
-            if isinstance(entity, Item):
+
+            elif isinstance(entity, Item):
                 item = entity
 
                 # Build prefix segments: slot indicator (if equipped) + category
-                prefix_segments: list[tuple[str, colors.Color]] = []
+                prefix_segments = []
 
                 # Parse equipped slot number for prefix
                 if item_status.startswith("slot:"):
                     slot_num = int(item_status.split(":")[1]) + 1
-                    prefix_segments.append((f"[{slot_num}]  ", colors.YELLOW))
+                    prefix_segments.append((f" [{slot_num}]  ", colors.YELLOW))
                 elif item_status == "outfit":
-                    # Show [A] for equipped armor/outfit
-                    prefix_segments.append(("[A]  ", colors.CATEGORY_ARMOR))
+                    # Show glyph for equipped outfit/armor
+                    prefix_segments.append((" [\U0000f007]  ", colors.CATEGORY_OUTFIT))
                 else:
                     # Add alignment spaces to match equipped items
-                    prefix_segments.append(("     ", colors.WHITE))
+                    prefix_segments.append(("      ", colors.WHITE))
 
                 # Add category prefix
                 cat_prefix, cat_color = _get_category_prefix(item)
@@ -302,7 +291,7 @@ class DualPaneMenu(Menu):
                         force_color=True,
                         data=condition,
                         prefix_segments=[
-                            ("     ", colors.WHITE),  # Alignment with equipped slots
+                            ("      ", colors.WHITE),  # Alignment with equipped slots
                             ("\u2588 ", colors.RED),  # Red block as slot indicator
                         ],
                     )
@@ -471,7 +460,7 @@ class DualPaneMenu(Menu):
             # Any item can go in a hand slot
             # Check if item is already equipped in a hand slot
             currently_equipped_slot = None
-            for i, equipped_item in enumerate(player.inventory.attack_slots):
+            for i, equipped_item in enumerate(player.inventory.ready_slots):
                 if equipped_item == item:
                     currently_equipped_slot = i
                     break
@@ -484,10 +473,17 @@ class DualPaneMenu(Menu):
                 color = colors.WHITE if success else colors.YELLOW
                 publish_event(MessageEvent(message, color))
             else:
-                # Equip to active hand slot
-                active_slot = player.inventory.active_slot
+                # Equip to first empty slot, or active slot if none empty
+                target_slot = None
+                for i, slot_item in enumerate(player.inventory.ready_slots):
+                    if slot_item is None:
+                        target_slot = i
+                        break
+                if target_slot is None:
+                    target_slot = player.inventory.active_slot
+
                 success, message = player.inventory.equip_from_inventory(
-                    item, active_slot
+                    item, target_slot
                 )
                 color = colors.GREEN if success else colors.YELLOW
                 publish_event(MessageEvent(message, color))
@@ -556,7 +552,7 @@ class DualPaneMenu(Menu):
                     inv.remove_from_inventory(item)
                     removed = True
 
-                for i, equipped_item in enumerate(inv.attack_slots):
+                for i, equipped_item in enumerate(inv.ready_slots):
                     if equipped_item == item:
                         inv.unequip_slot(i)
                         removed = True
@@ -569,7 +565,7 @@ class DualPaneMenu(Menu):
                         not actor.blocks_movement
                         and not isinstance(actor, Character)
                         and len(inv) == 0
-                        and all(s is None for s in inv.attack_slots)
+                        and all(s is None for s in inv.ready_slots)
                     ):
                         self.controller.gw.remove_actor(actor)
                     break
@@ -630,8 +626,8 @@ class DualPaneMenu(Menu):
                 publish_event(MessageEvent("Container is full!", colors.RED))
                 return False
 
-        # Unequip if equipped in attack slots
-        for i, equipped_item in enumerate(player.inventory.attack_slots):
+        # Unequip if equipped in ready slots
+        for i, equipped_item in enumerate(player.inventory.ready_slots):
             if equipped_item == item:
                 player.inventory.unequip_slot(i)
                 break
@@ -691,7 +687,7 @@ class DualPaneMenu(Menu):
         player = self.controller.gw.player
 
         # Unequip if equipped in a hand slot
-        for i, equipped_item in enumerate(player.inventory.attack_slots):
+        for i, equipped_item in enumerate(player.inventory.ready_slots):
             if equipped_item == item:
                 player.inventory.unequip_slot(i)
                 break
@@ -951,6 +947,45 @@ class DualPaneMenu(Menu):
 
         return False
 
+    def _map_left_pane_line_to_index(self, option_line: int) -> int | None:
+        """Map a visual line offset in the left pane to a left_options index.
+
+        The left pane layout is:
+        - Stored items at top (lines 0 to max_stored_lines-1)
+        - Separator line (not selectable)
+        - Equipment slots pinned at bottom (lines ITEM_LIST_HEIGHT-num_equipment
+          to ITEM_LIST_HEIGHT-1)
+
+        Args:
+            option_line: Line offset from the start of the item list area (0-indexed).
+
+        Returns:
+            Index into left_options, or None if the line is not selectable
+            (out of bounds, separator, or empty area).
+        """
+        if option_line < 0 or option_line >= self.ITEM_LIST_HEIGHT:
+            return None
+
+        num_equipment = self._equipment_slot_count
+        num_stored = len(self.left_options) - num_equipment
+        max_stored_lines = self.ITEM_LIST_HEIGHT - num_equipment - 1
+        visible_stored = min(num_stored, max_stored_lines)
+
+        # Stored items section: lines 0 to visible_stored-1
+        if option_line < visible_stored:
+            return option_line
+
+        # Equipment section: last num_equipment lines of the list area
+        equipment_start_line = self.ITEM_LIST_HEIGHT - num_equipment
+        if option_line >= equipment_start_line:
+            equipment_offset = option_line - equipment_start_line
+            equipment_index = num_stored + equipment_offset
+            if equipment_index < len(self.left_options):
+                return equipment_index
+
+        # Separator or empty area between stored and equipment
+        return None
+
     def _handle_mouse_motion(self, event: tcod.event.MouseMotion) -> bool:
         """Handle mouse motion to update hover state and detect scroll zones."""
         mouse_px_x, mouse_px_y = event.position
@@ -981,11 +1016,13 @@ class DualPaneMenu(Menu):
         item_start_y = self.HEADER_HEIGHT + 2
 
         if 1 <= rel_char_x < self.LEFT_PANE_WIDTH:
-            # Over left pane - only select if in visible item list area
+            # Over left pane - map visual line to option index
+            # Layout: stored items at top, separator, equipment pinned at bottom
             option_line = rel_line_y - item_start_y
-            if 0 <= option_line < min(self.ITEM_LIST_HEIGHT, len(self.left_options)):
+            option_index = self._map_left_pane_line_to_index(option_line)
+            if option_index is not None:
                 self.active_pane = PaneId.LEFT
-                self.left_cursor = option_line
+                self.left_cursor = option_index
                 self._update_detail_from_cursor()
         elif (
             self.source is not None
@@ -1402,8 +1439,17 @@ class DualPaneMenu(Menu):
                 colors.YELLOW,
             )
 
+    @property
+    def _equipment_slot_count(self) -> int:
+        """Number of equipment slots (weapon slots + outfit slot)."""
+        return len(self.inventory.ready_slots) + 1
+
     def _draw_left_pane_items(self) -> None:
-        """Draw items in the left pane using SelectableListRenderer."""
+        """Draw items in the left pane using SelectableListRenderer.
+
+        Equipment slots are pinned at the bottom of the list area, right above
+        the detail panel separator. Stored items flow from the top.
+        """
         assert self.canvas is not None
         assert isinstance(self.canvas, PillowImageCanvas)
         assert self._left_renderer is not None
@@ -1411,7 +1457,25 @@ class DualPaneMenu(Menu):
         char_w = self._char_width
         line_h = self._line_height
 
-        # Convert MenuOptions to SelectableRows (limit to visible area)
+        # Items start at line 2: border (0) + header (1) + items start (2)
+        start_y = self.HEADER_HEIGHT + 2
+        max_width = (self.LEFT_PANE_WIDTH - 2) * char_w
+
+        # Split options: stored items (+ separator) vs equipment slots
+        # Equipment slots are always the last N items (weapon slots + outfit)
+        num_equipment = self._equipment_slot_count
+        stored_options = self.left_options[:-num_equipment]
+        equipment_options = self.left_options[-num_equipment:]
+
+        # Calculate where equipment slots should be pinned (bottom of list area)
+        # Equipment gets the last EQUIPMENT_SLOT_COUNT lines, plus 1 for separator
+        equipment_start_line = start_y + self.ITEM_LIST_HEIGHT - num_equipment
+
+        # Render stored items from the top (limited to available space above equipment)
+        # Reserve space for: separator line (1) + equipment slots (3)
+        max_stored_lines = self.ITEM_LIST_HEIGHT - num_equipment - 1
+        visible_stored = stored_options[:max_stored_lines]
+
         self._left_renderer.rows = [
             SelectableRow(
                 text=option.text,
@@ -1422,23 +1486,85 @@ class DualPaneMenu(Menu):
                 prefix_segments=option.prefix_segments,
                 force_color=option.force_color,
             )
-            for option in self.left_options[: self.ITEM_LIST_HEIGHT]
+            for option in visible_stored
         ]
-        # Set hover state based on active pane and cursor
-        self._left_renderer.hovered_index = (
-            self.left_cursor if self.active_pane == PaneId.LEFT else None
+        # Set hover for stored items (cursor in range of stored section)
+        if self.active_pane == PaneId.LEFT and self.left_cursor < len(visible_stored):
+            self._left_renderer.hovered_index = self.left_cursor
+        else:
+            self._left_renderer.hovered_index = None
+
+        self._left_renderer.render(
+            x_start=char_w,
+            y_start=start_y * line_h,
+            max_width=max_width,
+            line_height=line_h,
+            ascent=0,
+            row_gap=0,
         )
 
-        # Items start at line 2: border (0) + header (1) + items start (2)
-        start_y = self.HEADER_HEIGHT + 2
+        # Draw separator line above equipment section (left pane only)
+        # This line only spans the left pane since equipment is a left-pane concept
+        separator_line_y = equipment_start_line - 1
+        separator_px_y = separator_line_y * line_h
 
-        # Render with proper coordinates
+        # Left junction with border
+        self.canvas.draw_text(0, separator_px_y, "╟", colors.WHITE)
+
+        # Determine right edge based on mode
+        if self.source is None:
+            # Inventory-only mode: line spans full width
+            right_edge = self.width - 1
+            right_junction = "╢"
+            # Horizontal line across
+            for x in range(1, right_edge):
+                self.canvas.draw_text(x * char_w, separator_px_y, "─", colors.WHITE)
+            # Right junction with border
+            self.canvas.draw_text(
+                right_edge * char_w, separator_px_y, right_junction, colors.WHITE
+            )
+        else:
+            # Dual-pane mode: line spans only left pane, connects to divider
+            left_divider_col = self.LEFT_PANE_WIDTH + 1
+            # Horizontal line up to the divider
+            for x in range(1, left_divider_col):
+                self.canvas.draw_text(x * char_w, separator_px_y, "─", colors.WHITE)
+            # Junction where line meets the divider (mirror of left side's ╟)
+            self.canvas.draw_text(
+                left_divider_col * char_w, separator_px_y, "╢", colors.WHITE
+            )
+
+        # Render equipment slots at fixed bottom position
+        equipment_rows = [
+            SelectableRow(
+                text=option.text,
+                key=option.key,
+                enabled=option.enabled,
+                color=option.color,
+                data=option,
+                prefix_segments=option.prefix_segments,
+                force_color=option.force_color,
+            )
+            for option in equipment_options
+        ]
+
+        # Calculate hover index for equipment section
+        equipment_start_index = len(stored_options)
+        if (
+            self.active_pane == PaneId.LEFT
+            and self.left_cursor >= equipment_start_index
+        ):
+            self._left_renderer.hovered_index = self.left_cursor - equipment_start_index
+        else:
+            self._left_renderer.hovered_index = None
+
+        self._left_renderer.rows = equipment_rows
         self._left_renderer.render(
-            x_start=char_w,  # Start at column 1
-            y_start=start_y * line_h,  # Top of first row
-            max_width=(self.LEFT_PANE_WIDTH - 2) * char_w,
+            x_start=char_w,
+            y_start=equipment_start_line * line_h,
+            max_width=max_width,
             line_height=line_h,
-            ascent=0,  # Text draws at y_pixel directly (not baseline-adjusted)
+            ascent=0,
             row_gap=0,
         )
 

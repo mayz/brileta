@@ -107,7 +107,7 @@ def test_dual_pane_pickup_from_dead_actor_clears_slot() -> None:
     controller.gw.add_actor(npc)
     npc.health.hp = 0
 
-    pistol = npc.inventory.attack_slots[0]
+    pistol = npc.inventory.ready_slots[0]
     assert pistol is not None
 
     source = ExternalInventory((npc.x, npc.y), "Dead NPC")
@@ -115,7 +115,7 @@ def test_dual_pane_pickup_from_dead_actor_clears_slot() -> None:
     menu._transfer_to_inventory(pistol)
 
     assert controller.gw.get_pickable_items_at_location(npc.x, npc.y) == []
-    assert all(slot is None for slot in npc.inventory.attack_slots)
+    assert all(slot is None for slot in npc.inventory.ready_slots)
 
 
 def gw_actor_count(gw: DummyGameWorld) -> int:

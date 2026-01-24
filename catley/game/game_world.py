@@ -353,8 +353,8 @@ class GameWorld:
                 and not actor.health.is_alive()  # Only from dead actors
             ):
                 # Add all equipped items from all slots
-                attack_slots = actor.inventory.attack_slots
-                items_found.extend(item for item in attack_slots if item)
+                ready_slots = actor.inventory.ready_slots
+                items_found.extend(item for item in ready_slots if item)
 
             elif (
                 actor.x == x
@@ -366,12 +366,10 @@ class GameWorld:
                 items_found.extend(
                     item for item in list(actor.inventory) if isinstance(item, Item)
                 )
-                # Only check attack_slots for CharacterInventory, not ContainerStorage
-                if hasattr(actor.inventory, "attack_slots"):
+                # Only check ready_slots for CharacterInventory, not ContainerStorage
+                if hasattr(actor.inventory, "ready_slots"):
                     items_found.extend(
-                        item
-                        for item in actor.inventory.attack_slots
-                        if item is not None
+                        item for item in actor.inventory.ready_slots if item is not None
                     )
 
         # Future: Add items directly on the ground if we implement that

@@ -89,7 +89,7 @@ def test_click_active_slot_enters_combat_mode() -> None:
 
     # Equip a melee weapon in active slot
     weapon = make_melee_weapon()
-    player.inventory.attack_slots[0] = weapon
+    player.inventory.ready_slots[0] = weapon
 
     assert not controller.is_combat_mode()
 
@@ -107,7 +107,7 @@ def test_click_active_slot_exits_combat_mode() -> None:
 
     # Equip a melee weapon and enter combat mode
     weapon = make_melee_weapon()
-    player.inventory.attack_slots[0] = weapon
+    player.inventory.ready_slots[0] = weapon
     controller.enter_combat_mode()
 
     assert controller.is_combat_mode()
@@ -126,7 +126,7 @@ def test_click_active_consumable_slot_enters_targeting() -> None:
 
     # Equip a consumable in active slot
     consumable = make_consumable_item()
-    player.inventory.attack_slots[0] = consumable
+    player.inventory.ready_slots[0] = consumable
 
     # Click active slot
     result = view.handle_click(0)
@@ -144,7 +144,7 @@ def test_click_active_consumable_slot_exits_targeting() -> None:
 
     # Equip a consumable
     consumable = make_consumable_item()
-    player.inventory.attack_slots[0] = consumable
+    player.inventory.ready_slots[0] = consumable
 
     # Enter targeting mode
     controller.start_consumable_targeting(consumable)
@@ -165,7 +165,7 @@ def test_click_empty_active_slot_does_nothing() -> None:
     player = controller.gw.player
 
     # Ensure active slot is empty
-    player.inventory.attack_slots[0] = None
+    player.inventory.ready_slots[0] = None
 
     # Click active slot
     result = view.handle_click(0)

@@ -97,7 +97,7 @@ class PickupExecutor(ActionExecutor):
                 if (
                     not isinstance(actor, Character)
                     and len(inv) == 0
-                    and all(s is None for s in inv.attack_slots)
+                    and all(s is None for s in inv.ready_slots)
                 ):
                     gw.remove_actor(actor)
                 return True

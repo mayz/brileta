@@ -112,7 +112,7 @@ class AttackExecutor(ActionExecutor):
         # Switch active weapon to the one that was just used
         if intent.weapon is not None and intent.attacker.inventory is not None:
             for slot_index, equipped_weapon in enumerate(
-                intent.attacker.inventory.attack_slots
+                intent.attacker.inventory.ready_slots
             ):
                 if equipped_weapon == intent.weapon:
                     if slot_index != intent.attacker.inventory.active_slot:

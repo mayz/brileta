@@ -22,7 +22,7 @@ def test_get_used_inventory_slots_and_tiny_sharing():
     assert inv.get_used_inventory_slots() == 1
     inv.add_to_inventory(normal)
     assert inv.get_used_inventory_slots() == 2
-    inv.attack_slots[0] = big
+    inv.ready_slots[0] = big
     assert inv.get_used_inventory_slots() == 4
     inv.add_to_inventory(injury)
     assert inv.get_used_inventory_slots() == 5
@@ -57,7 +57,7 @@ def test_equip_from_inventory_swaps_and_removes_item() -> None:
     success, _ = inv.equip_from_inventory(stored, 0)
 
     assert success
-    assert inv.attack_slots[0] is stored
+    assert inv.ready_slots[0] is stored
     assert equipped in inv
     assert stored not in inv
 
@@ -74,7 +74,7 @@ def test_equip_from_inventory_fails_when_full() -> None:
     success, _ = inv.equip_from_inventory(items[0], 0)
 
     assert not success
-    assert inv.attack_slots[0] is old_item
+    assert inv.ready_slots[0] is old_item
     assert items[0] in inv
 
 
@@ -87,7 +87,7 @@ def test_unequip_to_inventory_moves_item() -> None:
     success, _ = inv.unequip_to_inventory(0)
 
     assert success
-    assert inv.attack_slots[0] is None
+    assert inv.ready_slots[0] is None
     assert item in inv
 
 
@@ -114,13 +114,13 @@ def test_unequip_big_item_at_capacity_succeeds() -> None:
     success, msg = inv.unequip_to_inventory(0)
 
     assert success, f"Unequip failed unexpectedly: {msg}"
-    assert inv.attack_slots[0] is None
+    assert inv.ready_slots[0] is None
     assert big_weapon in inv
     assert inv.get_used_inventory_slots() == 5  # Still at capacity
 
 
 def test_try_remove_item_from_equipped_slot() -> None:
-    """try_remove_item removes item from equipped attack slot and returns True."""
+    """try_remove_item removes item from equipped ready slot and returns True."""
     stats = components.StatsComponent(strength=0)
     inv = components.CharacterInventory(stats)
     item = make_item("weapon", ItemSize.NORMAL)
@@ -129,7 +129,7 @@ def test_try_remove_item_from_equipped_slot() -> None:
     result = inv.try_remove_item(item)
 
     assert result is True
-    assert inv.attack_slots[0] is None
+    assert inv.ready_slots[0] is None
 
 
 def test_try_remove_item_from_stored_inventory() -> None:
@@ -167,7 +167,7 @@ def test_try_remove_item_checks_equipped_first() -> None:
     result = inv.try_remove_item(item)
 
     assert result is True
-    assert inv.attack_slots[0] is None
+    assert inv.ready_slots[0] is None
     # Item was only in equipped slot, not stored, so this confirms
     # the method found it in equipped slots
 

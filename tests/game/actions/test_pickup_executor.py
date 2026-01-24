@@ -111,7 +111,7 @@ class TestPickupExecutorRemovesItemsFromSource:
         dead_actor.inventory.equip_to_slot(item, 0)
 
         # Verify item is equipped
-        assert dead_actor.inventory.attack_slots[0] == item
+        assert dead_actor.inventory.ready_slots[0] == item
 
         # Create and execute pickup intent
         intent = PickupIntent(cast(Controller, controller), player, [item])
@@ -121,7 +121,7 @@ class TestPickupExecutorRemovesItemsFromSource:
         # Item should be removed from dead actor's equipment
         assert result is not None
         assert result.succeeded
-        assert dead_actor.inventory.attack_slots[0] is None
+        assert dead_actor.inventory.ready_slots[0] is None
         assert item in player.inventory
 
     def test_pickup_multiple_items_removes_all_from_source(self) -> None:

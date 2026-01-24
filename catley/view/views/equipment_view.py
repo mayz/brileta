@@ -83,7 +83,7 @@ class EquipmentView(TextView):
         player = self.controller.gw.player
         current_width_px = 0
 
-        for i, item in enumerate(player.inventory.attack_slots):
+        for i, item in enumerate(player.inventory.ready_slots):
             if i >= View.EQUIPMENT_MAX_SLOTS:
                 break
 
@@ -162,7 +162,7 @@ class EquipmentView(TextView):
         # Clear slot pixel bounds
         self._slot_pixel_bounds = {}
 
-        for i, item in enumerate(player.inventory.attack_slots):
+        for i, item in enumerate(player.inventory.ready_slots):
             if i >= View.EQUIPMENT_MAX_SLOTS:
                 break
 

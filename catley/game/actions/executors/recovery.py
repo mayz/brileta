@@ -32,7 +32,7 @@ class UseConsumableExecutor(ActionExecutor):
         if not inventory:
             return GameActionResult(succeeded=False)
 
-        # Use try_remove_item which checks attack_slots first, then outfit, then stored
+        # Use try_remove_item which checks ready_slots first, then outfit, then stored
         if not inventory.try_remove_item(intent.item):
             publish_event(MessageEvent("Item not found in inventory", colors.RED))
             return GameActionResult(succeeded=False)
@@ -87,7 +87,7 @@ class UseConsumableOnTargetExecutor(ActionExecutor):
         if not inventory:
             return GameActionResult(succeeded=False)
 
-        # Use try_remove_item which checks attack_slots first, then outfit, then stored
+        # Use try_remove_item which checks ready_slots first, then outfit, then stored
         if not inventory.try_remove_item(intent.item):
             publish_event(MessageEvent("Item not found in inventory", colors.RED))
             return GameActionResult(succeeded=False)

@@ -179,11 +179,11 @@ def test_use_consumable_intent_stores_target() -> None:
 
 
 def test_use_equipped_consumable_on_adjacent_target() -> None:
-    """Using an equipped consumable (in attack slot) on an adjacent target succeeds.
+    """Using an equipped consumable (in ready slot) on an adjacent target succeeds.
 
     This tests the fix for the "item not found in inventory" bug where equipped
     consumables couldn't be used because the removal code only checked stored
-    inventory, not attack slots.
+    inventory, not ready slots.
     """
     controller = get_controller_with_player_and_map()
     gw = controller.gw
@@ -193,12 +193,12 @@ def test_use_equipped_consumable_on_adjacent_target() -> None:
     npc = Character(player.x + 1, player.y, "N", colors.WHITE, "NPC", game_world=gw)
     gw.add_actor(npc)
 
-    # Create and EQUIP a healing potion (put it in attack slot, not stored inventory)
+    # Create and EQUIP a healing potion (put it in ready slot, not stored inventory)
     potion = make_healing_potion()
     player.inventory.equip_to_slot(potion, slot_index=0)
 
     # Verify it's equipped, not in stored inventory
-    assert potion in player.inventory.attack_slots
+    assert potion in player.inventory.ready_slots
     assert potion not in player.inventory._stored_items
 
     # Damage the NPC
@@ -209,9 +209,9 @@ def test_use_equipped_consumable_on_adjacent_target() -> None:
     executor = UseConsumableOnTargetExecutor()
     result = executor.execute(intent)
 
-    # Should succeed - the fix uses try_remove_item which checks attack_slots
+    # Should succeed - the fix uses try_remove_item which checks ready_slots
     assert result is not None
     assert result.succeeded is True
-    # Potion should have been consumed (removed from attack slot)
-    assert potion not in player.inventory.attack_slots
+    # Potion should have been consumed (removed from ready slot)
+    assert potion not in player.inventory.ready_slots
     assert potion not in player.inventory

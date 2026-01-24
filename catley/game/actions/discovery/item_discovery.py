@@ -46,7 +46,7 @@ class ItemActionDiscovery:
     ) -> list[ActionOption]:
         options: list[ActionOption] = []
 
-        equipped_weapons = [w for w in actor.inventory.attack_slots if w is not None]
+        equipped_weapons = [w for w in actor.inventory.ready_slots if w is not None]
         options.extend(
             ActionOption(
                 id=f"reload-{weapon.name}",
@@ -104,7 +104,7 @@ class ItemActionDiscovery:
 
         # Equipment switching - only show when NOT in combat
         if not context.in_combat:
-            for i, item in enumerate(actor.inventory.attack_slots):
+            for i, item in enumerate(actor.inventory.ready_slots):
                 if i != actor.inventory.active_slot and item:
                     options.append(
                         ActionOption(

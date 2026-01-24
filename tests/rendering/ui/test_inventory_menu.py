@@ -33,5 +33,5 @@ def test_dual_pane_menu_equips_to_active_slot() -> None:
     menu = DualPaneMenu(controller)
     menu._equip_item(knife)
 
-    assert inv.attack_slots[1] == knife
+    assert inv.ready_slots[1] == knife
     assert knife not in inv

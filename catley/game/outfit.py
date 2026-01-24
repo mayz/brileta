@@ -263,7 +263,7 @@ RAGS_TYPE = ItemType(
     name="Rags",
     description="Tattered scraps of cloth. Offers no real protection.",
     size=ItemSize.NORMAL,
-    category=ItemCategory.ARMOR,
+    category=ItemCategory.OUTFIT,
     outfit=OutfitSpec(protection=0, max_ap=0),
 )
 
@@ -271,7 +271,7 @@ SHELTER_JUMPSUIT_TYPE = ItemType(
     name="Shelter Jumpsuit",
     description="Standard-issue vault dweller attire. Comfortable but not protective.",
     size=ItemSize.NORMAL,
-    category=ItemCategory.ARMOR,
+    category=ItemCategory.OUTFIT,
     outfit=OutfitSpec(protection=0, max_ap=0),
 )
 
@@ -282,7 +282,7 @@ LEATHER_ARMOR_TYPE = ItemType(
         "Covers the torso and shoulders while allowing freedom of movement."
     ),
     size=ItemSize.NORMAL,
-    category=ItemCategory.ARMOR,
+    category=ItemCategory.OUTFIT,
     outfit=OutfitSpec(protection=2, max_ap=4),
 )
 
@@ -290,7 +290,7 @@ SCRAP_ARMOR_TYPE = ItemType(
     name="Scrap Armor",
     description="Cobbled together from salvaged metal. Decent protection.",
     size=ItemSize.BIG,
-    category=ItemCategory.ARMOR,
+    category=ItemCategory.OUTFIT,
     outfit=OutfitSpec(protection=4, max_ap=6),
 )
 
@@ -298,7 +298,7 @@ COMBAT_ARMOR_TYPE = ItemType(
     name="Combat Armor",
     description="Pre-war military grade protection. Hard to find, harder to break.",
     size=ItemSize.BIG,
-    category=ItemCategory.ARMOR,
+    category=ItemCategory.OUTFIT,
     outfit=OutfitSpec(protection=6, max_ap=8),
 )
 
@@ -306,7 +306,7 @@ POWER_ARMOR_TYPE = ItemType(
     name="Power Armor",
     description="Powered exoskeleton with armor plating. The best protection.",
     size=ItemSize.HUGE,
-    category=ItemCategory.ARMOR,
+    category=ItemCategory.OUTFIT,
     outfit=OutfitSpec(protection=8, max_ap=12),
 )
 

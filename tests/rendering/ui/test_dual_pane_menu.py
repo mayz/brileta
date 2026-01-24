@@ -94,8 +94,9 @@ def test_dual_pane_menu_inventory_only_mode() -> None:
     menu = DualPaneMenu(controller, source=None)
     menu.show()
 
-    # Left pane should have items
-    assert len(menu.left_options) == 2
+    # Left pane should have items: 2 stored + 3 equipment slots
+    # (Equipment slots always shown even when empty, separator is visual only)
+    assert len(menu.left_options) == 5
 
     # Right pane should be empty
     assert len(menu.right_options) == 0
@@ -151,10 +152,12 @@ def test_dual_pane_menu_empty_inventory() -> None:
     menu = DualPaneMenu(controller)
     menu.show()
 
-    # Should have a placeholder option
-    assert len(menu.left_options) == 1
-    assert menu.left_options[0].text == "(inventory empty)"
-    assert not menu.left_options[0].enabled
+    # Equipment slots always shown even when empty (2 weapon + 1 outfit)
+    assert len(menu.left_options) == 3
+    # All should show "(empty)" and be disabled
+    for opt in menu.left_options:
+        assert opt.text == "(empty)"
+        assert not opt.enabled
 
 
 # -----------------------------------------------------------------------------
@@ -382,14 +385,14 @@ def test_use_item_equips_weapon() -> None:
 
     # Knife should be in inventory, not equipped
     assert knife in player.inventory
-    assert knife not in player.inventory.attack_slots
+    assert knife not in player.inventory.ready_slots
 
     # Use the knife
     menu._equip_item(knife)
 
     # Knife should now be equipped
     assert knife not in player.inventory._stored_items
-    assert knife in player.inventory.attack_slots
+    assert knife in player.inventory.ready_slots
 
 
 def test_use_item_unequips_equipped_weapon() -> None:
@@ -401,7 +404,7 @@ def test_use_item_unequips_equipped_weapon() -> None:
     player.inventory.equip_to_slot(knife, 0)
 
     # Knife should be equipped
-    assert knife in player.inventory.attack_slots
+    assert knife in player.inventory.ready_slots
 
     menu = DualPaneMenu(controller)
     menu.show()
@@ -411,7 +414,7 @@ def test_use_item_unequips_equipped_weapon() -> None:
 
     # Knife should now be in stored items, not equipped
     assert knife in player.inventory._stored_items
-    assert knife not in player.inventory.attack_slots
+    assert knife not in player.inventory.ready_slots
 
 
 # -----------------------------------------------------------------------------
@@ -1090,3 +1093,219 @@ def test_generate_item_detail_before_show() -> None:
     # Description should be raw (not wrapped) since canvas isn't initialized
     if knife.description:
         assert knife.description in description
+
+
+# -----------------------------------------------------------------------------
+# Equip to First Empty Slot Tests
+# -----------------------------------------------------------------------------
+
+
+def test_equip_item_prefers_empty_slot_over_active() -> None:
+    """Equipping an item should fill the first empty slot, not replace active.
+
+    When the active slot is occupied but another slot is empty, equipping
+    a new weapon should target the empty slot rather than replacing the
+    weapon in the active slot.
+    """
+    controller = _make_controller()
+    player = controller.gw.player
+
+    # Equip a knife to slot 0 (active slot)
+    knife = COMBAT_KNIFE_TYPE.create()
+    player.inventory.equip_to_slot(knife, 0)
+    player.inventory.active_slot = 0  # Ensure slot 0 is active
+
+    # Add a pistol to inventory (not equipped)
+    pistol = PISTOL_TYPE.create()
+    player.inventory.add_to_inventory(pistol)
+
+    # Verify initial state: knife in slot 0, slot 1 empty, pistol in stored
+    assert player.inventory.ready_slots[0] == knife
+    assert player.inventory.ready_slots[1] is None
+    assert pistol in player.inventory._stored_items
+
+    menu = DualPaneMenu(controller)
+    menu.show()
+
+    # Equip the pistol
+    menu._equip_item(pistol)
+
+    # Pistol should go to slot 1 (empty), NOT replace knife in slot 0
+    assert player.inventory.ready_slots[0] == knife, "Knife should stay in slot 0"
+    assert player.inventory.ready_slots[1] == pistol, "Pistol should fill empty slot 1"
+    assert pistol not in player.inventory._stored_items
+
+
+def test_equip_item_uses_active_slot_when_all_full() -> None:
+    """When all slots are full, equipping should swap with active slot."""
+    controller = _make_controller()
+    player = controller.gw.player
+
+    # Fill both slots
+    knife = COMBAT_KNIFE_TYPE.create()
+    pistol = PISTOL_TYPE.create()
+    player.inventory.equip_to_slot(knife, 0)
+    player.inventory.equip_to_slot(pistol, 1)
+    player.inventory.active_slot = 0
+
+    # Add a third weapon to inventory
+    knife2 = COMBAT_KNIFE_TYPE.create()
+    player.inventory.add_to_inventory(knife2)
+
+    menu = DualPaneMenu(controller)
+    menu.show()
+
+    # Equip the new knife
+    menu._equip_item(knife2)
+
+    # New knife should replace the active slot (0), original knife goes to inventory
+    assert player.inventory.ready_slots[0] == knife2
+    assert player.inventory.ready_slots[1] == pistol
+    assert knife in player.inventory._stored_items
+
+
+# -----------------------------------------------------------------------------
+# Mouse Interaction with Pinned Equipment Tests
+# -----------------------------------------------------------------------------
+
+
+def test_map_left_pane_line_to_index_stored_items() -> None:
+    """Mouse clicks on stored items should map to correct indices."""
+    controller = _make_controller()
+    player = controller.gw.player
+
+    # Add items to inventory (stored)
+    knife = COMBAT_KNIFE_TYPE.create()
+    pistol = PISTOL_TYPE.create()
+    player.inventory.add_to_inventory(knife)
+    player.inventory.add_to_inventory(pistol)
+
+    menu = DualPaneMenu(controller, source=None)
+    menu.show()
+
+    # Stored items are at the beginning of left_options
+    # Lines 0, 1 should map to indices 0, 1
+    assert menu._map_left_pane_line_to_index(0) == 0
+    assert menu._map_left_pane_line_to_index(1) == 1
+
+
+def test_map_left_pane_line_to_index_equipment_slots() -> None:
+    """Mouse clicks on pinned equipment should map to correct indices."""
+    controller = _make_controller()
+    player = controller.gw.player
+
+    # Add items to inventory (stored)
+    knife = COMBAT_KNIFE_TYPE.create()
+    pistol = PISTOL_TYPE.create()
+    player.inventory.add_to_inventory(knife)
+    player.inventory.add_to_inventory(pistol)
+
+    menu = DualPaneMenu(controller, source=None)
+    menu.show()
+
+    # left_options layout: [stored0, stored1, equip0, equip1, outfit]
+    # Equipment is pinned at bottom of ITEM_LIST_HEIGHT
+    num_equipment = menu._equipment_slot_count  # Should be 3
+    num_stored = len(menu.left_options) - num_equipment  # 2 stored items
+
+    # Equipment starts at line (ITEM_LIST_HEIGHT - num_equipment)
+    equipment_start_line = menu.ITEM_LIST_HEIGHT - num_equipment
+
+    # Click on first equipment slot
+    expected_index = num_stored  # Equipment starts after stored items
+    assert menu._map_left_pane_line_to_index(equipment_start_line) == expected_index
+
+    # Click on second equipment slot
+    assert (
+        menu._map_left_pane_line_to_index(equipment_start_line + 1)
+        == expected_index + 1
+    )
+
+    # Click on outfit slot (third equipment slot)
+    assert (
+        menu._map_left_pane_line_to_index(equipment_start_line + 2)
+        == expected_index + 2
+    )
+
+
+def test_map_left_pane_line_to_index_separator_not_selectable() -> None:
+    """Mouse clicks on the separator line should return None."""
+    controller = _make_controller()
+    player = controller.gw.player
+
+    # Add some items
+    knife = COMBAT_KNIFE_TYPE.create()
+    player.inventory.add_to_inventory(knife)
+
+    menu = DualPaneMenu(controller, source=None)
+    menu.show()
+
+    # The separator is one line above equipment
+    num_equipment = menu._equipment_slot_count
+    separator_line = menu.ITEM_LIST_HEIGHT - num_equipment - 1
+
+    # Separator should not be selectable
+    assert menu._map_left_pane_line_to_index(separator_line) is None
+
+
+def test_map_left_pane_line_to_index_gap_not_selectable() -> None:
+    """Mouse clicks in the gap between stored items and separator return None."""
+    controller = _make_controller()
+    player = controller.gw.player
+
+    # Add only one item to leave a large gap
+    knife = COMBAT_KNIFE_TYPE.create()
+    player.inventory.add_to_inventory(knife)
+
+    menu = DualPaneMenu(controller, source=None)
+    menu.show()
+
+    # With 1 stored item, there's a gap from line 1 to separator
+    # Lines in the gap should not be selectable
+    num_equipment = menu._equipment_slot_count
+    separator_line = menu.ITEM_LIST_HEIGHT - num_equipment - 1
+
+    # Line 1 (right after the single stored item) should be in the gap
+    assert menu._map_left_pane_line_to_index(1) is None
+
+    # Line halfway through the gap should also not be selectable
+    mid_gap = separator_line // 2
+    if mid_gap > 0:
+        assert menu._map_left_pane_line_to_index(mid_gap) is None
+
+
+def test_equipment_slot_count_matches_inventory_structure() -> None:
+    """_equipment_slot_count should reflect actual inventory structure."""
+    controller = _make_controller()
+    menu = DualPaneMenu(controller, source=None)
+    menu.show()
+
+    # Should be ready_slots (2) + outfit (1) = 3
+    player = controller.gw.player
+    expected = len(player.inventory.ready_slots) + 1
+    assert menu._equipment_slot_count == expected
+    assert (
+        menu._equipment_slot_count == 3
+    )  # Current inventory has 2 weapon slots + 1 outfit
+
+
+def test_left_options_ends_with_equipment_slots() -> None:
+    """left_options should have equipment slots at the end."""
+    controller = _make_controller()
+    player = controller.gw.player
+
+    # Add an item to inventory
+    knife = COMBAT_KNIFE_TYPE.create()
+    player.inventory.add_to_inventory(knife)
+
+    menu = DualPaneMenu(controller, source=None)
+    menu.show()
+
+    # Last 3 options should be equipment slots (2 weapons + 1 outfit)
+    num_equipment = menu._equipment_slot_count
+    equipment_options = menu.left_options[-num_equipment:]
+
+    # Empty equipment slots show "(empty)" text
+    for opt in equipment_options:
+        assert opt.text == "(empty)"
+        assert not opt.enabled

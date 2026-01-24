@@ -203,7 +203,7 @@ class ActionBrowserStateMachine:
         self, controller: Controller, actor: Character, context
     ) -> bool:
         """Return True if the actor has any usable weapons in the current context."""
-        equipped_weapons = [w for w in actor.inventory.attack_slots if w]
+        equipped_weapons = [w for w in actor.inventory.ready_slots if w]
         if not equipped_weapons:
             return True  # Fists always available
 
@@ -283,7 +283,7 @@ class ActionBrowserStateMachine:
         context = self.action_discovery.context_builder.build_context(controller, actor)
         options = [self._get_back_option()]
 
-        equipped_weapons = [w for w in actor.inventory.attack_slots if w]
+        equipped_weapons = [w for w in actor.inventory.ready_slots if w]
         if not equipped_weapons:
             from catley.game.items.item_types import FISTS_TYPE
 

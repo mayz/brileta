@@ -250,8 +250,3 @@ class Item:
     def category(self) -> ItemCategory:
         """Return the item's category for UI display and game mechanics."""
         return self.item_type.category
-
-    @property
-    def equippable(self) -> bool:
-        """Return True if this item can be equipped (has any attack capabilities)."""
-        return self.melee_attack is not None or self.ranged_attack is not None

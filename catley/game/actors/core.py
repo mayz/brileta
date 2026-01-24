@@ -368,7 +368,7 @@ class Character(Actor):
         weirdness: int = 0,
         ai: AIComponent | None = None,
         starting_weapon: Item | None = None,
-        num_attack_slots: int = 2,
+        num_ready_slots: int = 2,
         speed: int = DEFAULT_ACTOR_SPEED,
         creature_size: CreatureSize = CreatureSize.MEDIUM,
         idle_profile: IdleAnimationProfile | None = None,
@@ -387,7 +387,7 @@ class Character(Actor):
             strength, toughness, etc.: Ability scores
             ai: AI component for autonomous behavior (None for player)
             starting_weapon: Initial equipped weapon
-            num_attack_slots: The number of attack slots this character should have
+            num_ready_slots: The number of ready slots this character should have
             speed: Action speed (higher = more frequent actions)
             creature_size: Size category for idle animation and visual_scale defaults
             idle_profile: Custom idle animation profile (overrides creature_size)
@@ -423,7 +423,7 @@ class Character(Actor):
             game_world=game_world,
             stats=stats,
             health=HealthComponent(stats),
-            inventory=CharacterInventory(stats, num_attack_slots, actor=self),
+            inventory=CharacterInventory(stats, num_ready_slots, actor=self),
             visual_effects=visual_effects_component,
             ai=ai,
             energy=EnergyComponent(speed=speed),
@@ -589,7 +589,7 @@ class PC(Character):
         demeanor: int = 0,
         weirdness: int = 0,
         starting_weapon: Item | None = None,
-        num_attack_slots: int = 2,
+        num_ready_slots: int = 2,
         speed: int = DEFAULT_ACTOR_SPEED,
     ) -> None:
         """Instantiate PC.
@@ -603,7 +603,7 @@ class PC(Character):
             strength, toughness, etc.: Ability scores
             light_source: Optional light source
             starting_weapon: Initial equipped weapon
-            num_attack_slots: The number of attack slots this character should have
+            num_ready_slots: The number of ready slots this character should have
             speed: Action speed (higher = more frequent actions)
         """
         super().__init__(
@@ -621,7 +621,7 @@ class PC(Character):
             demeanor=demeanor,
             weirdness=weirdness,
             starting_weapon=starting_weapon,
-            num_attack_slots=num_attack_slots,
+            num_ready_slots=num_ready_slots,
             speed=speed,
         )
 
@@ -670,7 +670,7 @@ class NPC(Character):
         demeanor: int = 0,
         weirdness: int = 0,
         starting_weapon: Item | None = None,
-        num_attack_slots: int = 2,
+        num_ready_slots: int = 2,
         disposition: Disposition = Disposition.WARY,
         speed: int = DEFAULT_ACTOR_SPEED,
         **kwargs,
@@ -686,7 +686,7 @@ class NPC(Character):
             strength, toughness, etc.: Ability scores
             light_source: Optional light source
             starting_weapon: Initial equipped weapon
-            num_attack_slots: The number of attack slots this character should have
+            num_ready_slots: The number of ready slots this character should have
             disposition: Starting disposition toward player
             speed: Action speed (higher = more frequent actions)
             **kwargs: Additional Actor parameters
@@ -707,7 +707,7 @@ class NPC(Character):
             weirdness=weirdness,
             ai=DispositionBasedAI(disposition=disposition),
             starting_weapon=starting_weapon,
-            num_attack_slots=num_attack_slots,
+            num_ready_slots=num_ready_slots,
             speed=speed,
             **kwargs,
         )

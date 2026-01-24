@@ -387,9 +387,9 @@ class TestInventoryComponentGaps:
         assert slot_colors[0] == colors.RED  # Injury display_color
 
     def test_get_available_attacks_returns_all_slots(self) -> None:
-        """get_available_attacks() should return all attack slots."""
+        """get_available_attacks() should return all ready slots."""
         stats = make_stats()
-        inv = CharacterInventory(stats, num_attack_slots=3)
+        inv = CharacterInventory(stats, num_ready_slots=3)
 
         weapon = make_item("sword")
         inv.equip_to_slot(weapon, 1)

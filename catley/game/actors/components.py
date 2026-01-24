@@ -258,7 +258,7 @@ class CharacterInventory(InventoryComponent):
     This is the full-featured inventory used by player characters and NPCs.
     It includes:
     - Stats-based capacity (derived from strength)
-    - Equipment/attack slots for weapons
+    - Equipment/ready slots for weapons
     - Outfit slot for armor/clothing
     - Support for conditions (injuries, status effects that take inventory space)
     - Encumbrance mechanics
@@ -267,14 +267,14 @@ class CharacterInventory(InventoryComponent):
     def __init__(
         self,
         stats_component: StatsComponent,
-        num_attack_slots: int = 2,
+        num_ready_slots: int = 2,
         actor: Actor | None = None,
     ) -> None:
         super().__init__(actor)
         self.stats = stats_component
         self._stored_items: list[Item | Condition] = []
 
-        self.attack_slots: list[Item | None] = [None] * num_attack_slots
+        self.ready_slots: list[Item | None] = [None] * num_ready_slots
         self.active_slot: int = 0
 
         # Outfit slot (armor/clothing) - stores tuple of (Item, OutfitCapability)
@@ -345,7 +345,7 @@ class CharacterInventory(InventoryComponent):
                 used_space += 1
 
         # Count equipped weapons
-        for equipped_item in self.attack_slots:
+        for equipped_item in self.ready_slots:
             if equipped_item:
                 if equipped_item.size == ItemSize.TINY:
                     has_tiny_items = True
@@ -401,7 +401,7 @@ class CharacterInventory(InventoryComponent):
                     for i in self._stored_items
                 ) or any(
                     eq_item is not None and eq_item.size == ItemSize.TINY
-                    for eq_item in self.attack_slots
+                    for eq_item in self.ready_slots
                 )
                 return 0 if has_tiny else 1
             if item.size == ItemSize.NORMAL:
@@ -494,7 +494,7 @@ class CharacterInventory(InventoryComponent):
     def try_remove_item(self, item: Item) -> bool:
         """Remove an item from either equipped slots or stored inventory.
 
-        Checks equipped attack slots first, then equipped outfit, then stored
+        Checks equipped ready slots first, then equipped outfit, then stored
         inventory. Stops after finding and removing the item from one location.
 
         Args:
@@ -503,8 +503,8 @@ class CharacterInventory(InventoryComponent):
         Returns:
             True if the item was found and removed, False otherwise.
         """
-        # Check equipped attack slots first
-        for slot_idx, equipped in enumerate(self.attack_slots):
+        # Check equipped ready slots first
+        for slot_idx, equipped in enumerate(self.ready_slots):
             if equipped is item:
                 self.unequip_slot(slot_idx)
                 return True
@@ -546,7 +546,7 @@ class CharacterInventory(InventoryComponent):
                 slot_colors.append(entity_in_slot.display_color)
 
         # Process equipped weapons
-        for equipped_item in self.attack_slots:
+        for equipped_item in self.ready_slots:
             if equipped_item:
                 item_bar_color = colors.WHITE
 
@@ -582,8 +582,8 @@ class CharacterInventory(InventoryComponent):
     # === Equipment Management ===
 
     def switch_to_slot(self, slot_index: int) -> bool:
-        """Switch to a specific attack slot. Returns True if successful."""
-        if 0 <= slot_index < len(self.attack_slots):
+        """Switch to a specific ready slot. Returns True if successful."""
+        if 0 <= slot_index < len(self.ready_slots):
             self.active_slot = slot_index
             self._increment_revision()
             return True
@@ -591,32 +591,32 @@ class CharacterInventory(InventoryComponent):
 
     def get_active_item(self) -> Item | None:
         """Get the currently active equipped item."""
-        if 0 <= self.active_slot < len(self.attack_slots):
-            return self.attack_slots[self.active_slot]
+        if 0 <= self.active_slot < len(self.ready_slots):
+            return self.ready_slots[self.active_slot]
         return None
 
     @property
-    def num_attack_slots(self) -> int:
-        """Get number of attack slots this character has"""
-        return len(self.attack_slots)
+    def num_ready_slots(self) -> int:
+        """Get number of ready slots this character has"""
+        return len(self.ready_slots)
 
     def equip_to_slot(self, item: Item, slot_index: int = 0) -> Item | None:
         """Equip item to specified slot, return what was there before"""
-        if not (0 <= slot_index < len(self.attack_slots)):
+        if not (0 <= slot_index < len(self.ready_slots)):
             raise ValueError(f"Invalid slot index: {slot_index}")
 
-        old_item = self.attack_slots[slot_index]
-        self.attack_slots[slot_index] = item
+        old_item = self.ready_slots[slot_index]
+        self.ready_slots[slot_index] = item
         self._increment_revision()
         return old_item
 
     def unequip_slot(self, slot_index: int) -> Item | None:
         """Unequip specified slot, return what was equipped"""
-        if not (0 <= slot_index < len(self.attack_slots)):
+        if not (0 <= slot_index < len(self.ready_slots)):
             raise ValueError(f"Invalid slot index: {slot_index}")
 
-        item = self.attack_slots[slot_index]
-        self.attack_slots[slot_index] = None
+        item = self.ready_slots[slot_index]
+        self.ready_slots[slot_index] = None
         if item is not None:
             self._increment_revision()
         return item
@@ -633,13 +633,13 @@ class CharacterInventory(InventoryComponent):
 
         if item not in self._stored_items:
             return False, f"{item.name} is not in inventory"
-        if not (0 <= slot_index < len(self.attack_slots)):
+        if not (0 <= slot_index < len(self.ready_slots)):
             return False, f"Invalid slot index: {slot_index}"
 
         # Remove the item from stored inventory first
         self._stored_items.remove(item)
 
-        old_item = self.attack_slots[slot_index]
+        old_item = self.ready_slots[slot_index]
         if old_item is not None:
             if not self.can_add_voluntary_item(old_item):
                 # Revert and fail
@@ -647,7 +647,7 @@ class CharacterInventory(InventoryComponent):
                 return False, f"No room to unequip {old_item.name}"
             self._stored_items.append(old_item)
 
-        self.attack_slots[slot_index] = item
+        self.ready_slots[slot_index] = item
         self._update_encumbrance_status()
         self._increment_revision()
 
@@ -657,16 +657,16 @@ class CharacterInventory(InventoryComponent):
 
     def unequip_to_inventory(self, slot_index: int) -> tuple[bool, str]:
         """Unequip the item in ``slot_index`` and store it."""
-        if not (0 <= slot_index < len(self.attack_slots)):
+        if not (0 <= slot_index < len(self.ready_slots)):
             return False, f"Invalid slot index: {slot_index}"
 
-        item = self.attack_slots[slot_index]
+        item = self.ready_slots[slot_index]
         if item is None:
             return False, "No item to unequip"
 
         # No capacity check needed - moving from equipped to stored doesn't
         # change total used space (same size calculation applies to both).
-        self.attack_slots[slot_index] = None
+        self.ready_slots[slot_index] = None
         self._stored_items.append(item)
         self._update_encumbrance_status()
         self._increment_revision()
@@ -675,7 +675,7 @@ class CharacterInventory(InventoryComponent):
     def get_equipped_items(self) -> list[tuple[Item, int]]:
         """Get all equipped items with their slot index"""
         items = []
-        for i, item in enumerate(self.attack_slots):
+        for i, item in enumerate(self.ready_slots):
             if item is not None:
                 items.append((item, i))
         return items
@@ -690,7 +690,7 @@ class CharacterInventory(InventoryComponent):
     def get_available_attacks(self) -> list[tuple[Item | None, int, str]]:
         """Get all possible attacks including unarmed slots"""
         attacks = []
-        for i, item in enumerate(self.attack_slots):
+        for i, item in enumerate(self.ready_slots):
             display_name = self.get_slot_display_name(i)
             attacks.append((item, i, display_name))
         return attacks

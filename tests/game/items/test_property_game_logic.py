@@ -285,12 +285,12 @@ def _make_thrown_world():
 
 
 def test_thrown_weapon_removed_from_inventory_on_success() -> None:
-    """Thrown weapons are removed from inventory and attack slots after use."""
+    """Thrown weapons are removed from inventory and ready slots after use."""
     controller, attacker, defender, knife = _make_thrown_world()
 
     # Verify knife is equipped
     assert attacker.inventory.get_active_item() is knife
-    assert knife in attacker.inventory.attack_slots
+    assert knife in attacker.inventory.ready_slots
     assert knife.ranged_attack is not None
 
     intent = AttackIntent(cast(Controller, controller), attacker, defender, knife)
@@ -312,8 +312,8 @@ def test_thrown_weapon_removed_from_inventory_on_success() -> None:
         knife.ranged_attack.current_ammo = 1
         executor.execute(intent)
 
-    # Knife should be removed from attack slots
-    assert knife not in attacker.inventory.attack_slots
+    # Knife should be removed from ready slots
+    assert knife not in attacker.inventory.ready_slots
     assert attacker.inventory.get_active_item() is not knife
 
 

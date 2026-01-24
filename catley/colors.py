@@ -25,7 +25,7 @@ MENU_HOVER_BG: Color = (40, 40, 40)  # Dark grey for hover background
 
 # Item category colors (for inventory UI prefixes)
 CATEGORY_WEAPON: Color = (220, 60, 60)  # Desaturated red
-CATEGORY_ARMOR: Color = (100, 140, 220)  # Steel blue
+CATEGORY_OUTFIT: Color = (100, 140, 220)  # Steel blue
 CATEGORY_CONSUMABLE: Color = (80, 200, 120)  # Soft green
 CATEGORY_JUNK: Color = (160, 120, 180)  # Muted purple
 CATEGORY_MUNITIONS: Color = (220, 180, 60)  # Brass yellow
