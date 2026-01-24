@@ -14,7 +14,7 @@ from catley import colors
 from catley.events import reset_event_bus_for_testing
 from catley.game.actions.combat import AttackIntent
 from catley.game.actions.discovery import ActionCategory, ActionOption
-from catley.game.actions.stunts import PushIntent
+from catley.game.actions.stunts import PushIntent, TripIntent
 from catley.game.actors import NPC
 from catley.game.enums import Disposition
 from tests.helpers import get_controller_with_player_and_map
@@ -243,6 +243,76 @@ class TestCombatModeIntentCreation:
             assert isinstance(final_intent, PushIntent)
             assert final_intent.defender == npc
 
+    def test_trip_action_creates_trip_intent(self) -> None:
+        """Selected Trip action should create TripIntent for adjacent target.
+
+        This test ensures that selecting a stunt action and clicking on a target
+        creates the correct intent type, not a fallback AttackIntent.
+        """
+        reset_event_bus_for_testing()
+        controller, _player, npc = _make_combat_test_world(
+            player_pos=(5, 5),
+            enemy_pos=(6, 5),  # Adjacent
+        )
+        controller.enter_combat_mode()
+
+        # Select Trip
+        trip_action = ActionOption(
+            id="trip",
+            name="Trip",
+            description="Knock target prone.",
+            category=ActionCategory.STUNT,
+            action_class=TripIntent,
+            requirements=[],
+            static_params={},
+        )
+        controller.combat_mode.select_action(trip_action)
+
+        intent = controller.combat_mode._create_intent_for_target(npc)
+
+        # Must be TripIntent, not AttackIntent
+        assert isinstance(intent, TripIntent), (
+            f"Expected TripIntent but got {type(intent).__name__}. "
+            "Stunt action selection is not creating the correct intent type."
+        )
+        assert intent.defender == npc
+
+    def test_trip_on_distant_target_starts_pathfinding(self) -> None:
+        """Trip on non-adjacent target should start pathfinding with TripIntent."""
+        reset_event_bus_for_testing()
+        controller, _player, npc = _make_combat_test_world(
+            player_pos=(5, 5),
+            enemy_pos=(8, 5),  # 3 tiles away
+        )
+        controller.enter_combat_mode()
+
+        # Select Trip
+        trip_action = ActionOption(
+            id="trip",
+            name="Trip",
+            description="Knock target prone.",
+            category=ActionCategory.STUNT,
+            action_class=TripIntent,
+            requirements=[],
+            static_params={},
+        )
+        controller.combat_mode.select_action(trip_action)
+
+        with patch.object(controller, "start_actor_pathfinding") as mock_pathfind:
+            mock_pathfind.return_value = True
+
+            intent = controller.combat_mode._create_intent_for_target(npc)
+
+            assert intent is None  # Pathfinding started
+
+            mock_pathfind.assert_called_once()
+            call_args = mock_pathfind.call_args
+            final_intent = call_args[0][2]
+            assert isinstance(final_intent, TripIntent), (
+                f"Expected TripIntent but got {type(final_intent).__name__}"
+            )
+            assert final_intent.defender == npc
+
     def test_no_selected_action_falls_back_to_attack(self) -> None:
         """If no action is selected, should fall back to AttackIntent."""
         reset_event_bus_for_testing()
@@ -409,6 +479,21 @@ class TestPlayerCombatActionsDiscovery:
         assert push_action is not None
         assert push_action.category == ActionCategory.STUNT
 
+    def test_returns_trip_stunt_when_adjacent_enemy(self) -> None:
+        """Should include Trip when an enemy is adjacent."""
+        reset_event_bus_for_testing()
+        controller, _player, _npc = _make_combat_test_world(
+            player_pos=(5, 5),
+            enemy_pos=(6, 5),  # Adjacent
+        )
+
+        actions = controller.combat_mode.get_available_combat_actions()
+
+        trip_actions = [a for a in actions if a.id == "trip"]
+        assert len(trip_actions) == 1
+        assert trip_actions[0].category == ActionCategory.STUNT
+        assert trip_actions[0].action_class == TripIntent
+
     def test_actions_have_valid_action_class(self) -> None:
         """Combat actions should have valid action_class set."""
         reset_event_bus_for_testing()
@@ -521,6 +606,48 @@ class TestCombatModeEnterKeyExecution:
             assert mock_queue.called
             queued_intent = mock_queue.call_args[0][0]
             assert isinstance(queued_intent, PushIntent)
+
+    def test_enter_key_with_trip_queues_trip_intent(self) -> None:
+        """Pressing Enter with Trip selected should queue TripIntent."""
+        reset_event_bus_for_testing()
+        controller, _player, npc = _make_combat_test_world(
+            player_pos=(5, 5),
+            enemy_pos=(6, 5),  # Adjacent
+        )
+        controller.enter_combat_mode()
+
+        # Select Trip
+        trip_action = ActionOption(
+            id="trip",
+            name="Trip",
+            description="Knock target prone.",
+            category=ActionCategory.STUNT,
+            action_class=TripIntent,
+            requirements=[],
+            static_params={},
+        )
+        controller.combat_mode.select_action(trip_action)
+
+        # Manually set current target
+        controller.combat_mode.candidates = [npc]
+        controller.combat_mode.current_index = 0
+
+        # Press Enter
+        event = tcod.event.KeyDown(
+            sym=tcod.event.KeySym.RETURN,
+            scancode=tcod.event.Scancode.RETURN,
+            mod=tcod.event.Modifier.NONE,
+        )
+
+        with patch.object(controller, "queue_action") as mock_queue:
+            controller.combat_mode.handle_input(event)
+
+            assert mock_queue.called
+            queued_intent = mock_queue.call_args[0][0]
+            assert isinstance(queued_intent, TripIntent), (
+                f"Expected TripIntent but got {type(queued_intent).__name__}. "
+                "Trip action is incorrectly falling back to attack."
+            )
 
 
 # --- Combat Action Filtering Tests ---

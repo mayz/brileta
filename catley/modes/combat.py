@@ -15,7 +15,7 @@ from catley.events import (
 from catley.game import ranges
 from catley.game.actions.combat import AttackIntent
 from catley.game.actions.discovery import ActionCategory, ActionOption
-from catley.game.actions.stunts import PushIntent
+from catley.game.actions.stunts import PushIntent, TripIntent
 from catley.game.actors import Character
 from catley.modes.base import Mode
 from catley.modes.picker import PickerResult
@@ -537,7 +537,7 @@ class CombatMode(Mode):
 
     def _create_intent_for_target(
         self, target: Character
-    ) -> AttackIntent | PushIntent | None:
+    ) -> AttackIntent | PushIntent | TripIntent | None:
         """Create the appropriate intent for the selected action and target.
 
         Uses the currently selected action to determine what intent to create.
@@ -579,22 +579,27 @@ class CombatMode(Mode):
             # Melee attacks may need approach first
             return self._handle_melee_intent(target, distance, intent)
 
-        if (
-            self.selected_action.category == ActionCategory.STUNT
-            and self.selected_action.action_class == PushIntent
-        ):
-            intent = PushIntent(self.controller, player, target)
-            return self._handle_melee_intent(target, distance, intent)
+        if self.selected_action.category == ActionCategory.STUNT:
+            if self.selected_action.action_class == PushIntent:
+                intent = PushIntent(self.controller, player, target)
+                return self._handle_melee_intent(target, distance, intent)
+            if self.selected_action.action_class == TripIntent:
+                intent = TripIntent(self.controller, player, target)
+                return self._handle_melee_intent(target, distance, intent)
 
-        # Unknown action type - fall back to attack
-        return AttackIntent(self.controller, player, target)
+        # Unhandled action type - fail loudly so we catch missing handlers
+        raise ValueError(
+            f"Unhandled action type in combat mode: "
+            f"category={self.selected_action.category}, "
+            f"action_class={self.selected_action.action_class}"
+        )
 
     def _handle_melee_intent(
         self,
         target: Character,
         distance: int,
-        intent: AttackIntent | PushIntent,
-    ) -> AttackIntent | PushIntent | None:
+        intent: AttackIntent | PushIntent | TripIntent,
+    ) -> AttackIntent | PushIntent | TripIntent | None:
         """Handle melee intent creation, with approach if needed.
 
         If adjacent, returns the intent for immediate execution.

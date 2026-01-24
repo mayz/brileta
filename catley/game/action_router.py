@@ -42,7 +42,7 @@ from catley.game.actions.executors.recovery import (
     UseConsumableOnTargetExecutor,
 )
 from catley.game.actions.executors.social import TalkExecutor
-from catley.game.actions.executors.stunts import PushExecutor
+from catley.game.actions.executors.stunts import PushExecutor, TripExecutor
 from catley.game.actions.misc import (
     DropItemIntent,
     PickupIntent,
@@ -58,7 +58,7 @@ from catley.game.actions.recovery import (
     UseConsumableOnTargetIntent,
 )
 from catley.game.actions.social import TalkIntent
-from catley.game.actions.stunts import PushIntent
+from catley.game.actions.stunts import PushIntent, TripIntent
 from catley.game.actors import Character
 from catley.game.actors.container import Container
 
@@ -106,6 +106,7 @@ class ActionRouter:
             AreaEffectIntent: WeaponAreaEffectExecutor(),
             EnvironmentalDamageIntent: EnvironmentalDamageExecutor(),
             PushIntent: PushExecutor(),
+            TripIntent: TripExecutor(),
             TalkIntent: TalkExecutor(),
         }
 

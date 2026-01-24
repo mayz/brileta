@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, cast
 
 from catley.game import ranges
 from catley.game.actions.combat import AttackIntent
-from catley.game.actions.stunts import PushIntent
+from catley.game.actions.stunts import PushIntent, TripIntent
 from catley.game.actors import Character
 from catley.game.items.properties import WeaponProperty
 
@@ -104,6 +104,26 @@ class CombatActionDiscovery:
                 requirements=[ActionRequirement.TARGET_ACTOR],
                 static_params={},
                 success_probability=push_prob,
+            )
+        )
+
+        # Always add Trip - approach handled on execution
+        trip_prob: float | None = None
+        if target is not None:
+            trip_prob = self._calculate_opposed_probability(
+                controller, actor, target, "agility", "agility"
+            )
+
+        options.append(
+            ActionOption(
+                id="trip",
+                name="Trip",
+                description="Knock target prone. Agility vs Agility.",
+                category=ActionCategory.STUNT,
+                action_class=TripIntent,
+                requirements=[ActionRequirement.TARGET_ACTOR],
+                static_params={},
+                success_probability=trip_prob,
             )
         )
 
@@ -233,6 +253,24 @@ class CombatActionDiscovery:
                         requirements=[],  # Target already specified
                         static_params={"defender": target},
                         success_probability=push_prob,
+                    )
+                )
+
+            # Trip requires adjacency (distance == 1)
+            if distance == 1:
+                trip_prob = self._calculate_opposed_probability(
+                    controller, actor, target, "agility", "agility"
+                )
+                options.append(
+                    ActionOption(
+                        id=f"trip-{target.name}-{target.x}-{target.y}",
+                        name=f"Trip {target.name}",
+                        description="Knock target prone. Agility vs Agility.",
+                        category=ActionCategory.STUNT,
+                        action_class=TripIntent,
+                        requirements=[],  # Target already specified
+                        static_params={"defender": target},
+                        success_probability=trip_prob,
                     )
                 )
 

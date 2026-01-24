@@ -43,3 +43,32 @@ class PushIntent(GameIntent):
         super().__init__(controller, attacker)
         self.attacker = attacker
         self.defender = defender
+
+
+class TripIntent(GameIntent):
+    """Intent to trip an adjacent enemy, causing them to fall prone.
+
+    Resolution uses Agility vs Agility opposed check. Trip is the reliable
+    knockdown option - any success applies TrippedEffect (skips 2 turns),
+    unlike Push which only causes knockdown on critical success.
+
+    Execution is performed by
+    :class:`~catley.game.actions.executors.stunts.TripExecutor`.
+    """
+
+    def __init__(
+        self,
+        controller: Controller,
+        attacker: Character,
+        defender: Character,
+    ) -> None:
+        """Create a trip intent.
+
+        Args:
+            controller: Game controller providing context.
+            attacker: The character performing the trip.
+            defender: The target character being tripped.
+        """
+        super().__init__(controller, attacker)
+        self.attacker = attacker
+        self.defender = defender

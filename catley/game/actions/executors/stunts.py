@@ -22,7 +22,7 @@ from catley.game.enums import OutcomeTier
 from catley.util.dice import roll_d
 
 if TYPE_CHECKING:
-    from catley.game.actions.stunts import PushIntent
+    from catley.game.actions.stunts import PushIntent, TripIntent
 
 
 class PushExecutor(ActionExecutor):
@@ -273,7 +273,144 @@ class PushExecutor(ActionExecutor):
         intent.defender.ai.disposition = Disposition.HOSTILE
         publish_event(
             MessageEvent(
-                f"{intent.defender.name} becomes hostile after being pushed!",
+                f"{intent.defender.name} turns hostile!",
+                colors.ORANGE,
+            )
+        )
+        # Trigger auto-entry into combat mode
+        publish_event(
+            CombatInitiatedEvent(
+                attacker=intent.attacker,
+                defender=intent.defender,
+            )
+        )
+
+
+class TripExecutor(ActionExecutor):
+    """Executes trip stunt intents.
+
+    Trip is an Agility vs Agility opposed check that causes the target to
+    fall prone. Unlike Push, Trip does not move the target but reliably
+    applies TrippedEffect on any success (not just critical).
+    """
+
+    def execute(self, intent: TripIntent) -> GameActionResult | None:  # type: ignore[override]
+        """Execute a trip attempt.
+
+        Resolution:
+        - Critical Success (nat 20): Target tripped + 1d4 impact damage
+        - Success: Target gains TrippedEffect (skips 2 turns)
+        - Partial Success (tie): Target tripped, attacker gains OffBalanceEffect
+        - Failure: Attacker gains OffBalanceEffect
+        - Critical Failure (nat 1): Attacker gains TrippedEffect
+        """
+        # 1. Validate adjacency (Chebyshev distance must be 1, includes diagonals)
+        dx = intent.defender.x - intent.attacker.x
+        dy = intent.defender.y - intent.attacker.y
+        if max(abs(dx), abs(dy)) != 1:
+            publish_event(
+                MessageEvent(
+                    f"{intent.defender.name} is not adjacent!",
+                    colors.RED,
+                )
+            )
+            return GameActionResult(succeeded=False, block_reason="not_adjacent")
+
+        # 2. Perform opposed Agility check
+        attacker_agility = intent.attacker.stats.agility
+        defender_agility = intent.defender.stats.agility
+
+        # Get resolution modifiers from status effects (advantage/disadvantage)
+        resolution_args = intent.attacker.modifiers.get_resolution_modifiers("agility")
+
+        resolver = intent.controller.create_resolver(
+            ability_score=attacker_agility,
+            roll_to_exceed=defender_agility + 10,
+            has_advantage=resolution_args.get("has_advantage", False),
+            has_disadvantage=resolution_args.get("has_disadvantage", False),
+        )
+        result = resolver.resolve(intent.attacker, intent.defender)
+
+        # 3. Handle outcome tiers
+        atk_name = intent.attacker.name
+        def_name = intent.defender.name
+
+        match result.outcome_tier:
+            case OutcomeTier.CRITICAL_SUCCESS:
+                # Trip + bonus damage from hard landing
+                intent.defender.status_effects.apply_status_effect(TrippedEffect())
+                impact_damage = roll_d(4)
+                intent.defender.take_damage(impact_damage, damage_type="impact")
+                msg = (
+                    f"Critical! {atk_name} sweeps {def_name}'s legs out! "
+                    f"{def_name} hits the ground hard for {impact_damage} damage!"
+                )
+                publish_event(MessageEvent(msg, colors.YELLOW))
+                self._update_ai_disposition(intent)
+                return GameActionResult(succeeded=True)
+
+            case OutcomeTier.SUCCESS:
+                intent.defender.status_effects.apply_status_effect(TrippedEffect())
+                msg = f"{atk_name} trips {def_name}! They fall prone!"
+                publish_event(MessageEvent(msg, colors.WHITE))
+                self._update_ai_disposition(intent)
+                return GameActionResult(succeeded=True)
+
+            case OutcomeTier.PARTIAL_SUCCESS:
+                # Target tripped but attacker stumbles
+                intent.defender.status_effects.apply_status_effect(TrippedEffect())
+                intent.attacker.status_effects.apply_status_effect(OffBalanceEffect())
+                msg = f"{atk_name} trips {def_name} but stumbles in the process!"
+                publish_event(MessageEvent(msg, colors.LIGHT_BLUE))
+                self._update_ai_disposition(intent)
+                return GameActionResult(succeeded=True)
+
+            case OutcomeTier.FAILURE:
+                # Trip attempt fails - attacker stumbles
+                intent.attacker.status_effects.apply_status_effect(OffBalanceEffect())
+                msg = f"{atk_name} fails to trip {def_name} and stumbles!"
+                publish_event(MessageEvent(msg, colors.GREY))
+                self._update_ai_disposition(intent)
+                return GameActionResult(succeeded=False)
+
+            case OutcomeTier.CRITICAL_FAILURE:
+                # Attacker overextends and falls
+                intent.attacker.status_effects.apply_status_effect(TrippedEffect())
+                msg = f"Critical miss! {atk_name} trips over their own feet!"
+                publish_event(MessageEvent(msg, colors.ORANGE))
+                self._update_ai_disposition(intent)
+                return GameActionResult(succeeded=False)
+
+        # Fallback (should never reach)
+        return GameActionResult(succeeded=False)
+
+    def _update_ai_disposition(self, intent: TripIntent) -> None:
+        """Update AI disposition if player tripped an NPC.
+
+        Attempting to trip someone is treated as an aggressive act.
+        Non-hostile NPCs become hostile when the player attempts to trip them,
+        regardless of whether the trip succeeds.
+        """
+        from catley.game.actors import ai
+        from catley.game.enums import Disposition
+
+        # Only trigger for player tripping NPC
+        if intent.attacker != intent.controller.gw.player:
+            return
+
+        # Check if defender has disposition-based AI
+        if not isinstance(intent.defender.ai, ai.DispositionBasedAI):
+            return
+
+        # Only change disposition if not already hostile
+        if intent.defender.ai.disposition == Disposition.HOSTILE:
+            return
+
+        # Make hostile
+        intent.defender.ai.disposition = Disposition.HOSTILE
+        publish_event(
+            MessageEvent(
+                f"{intent.defender.name} turns hostile!",
                 colors.ORANGE,
             )
         )
