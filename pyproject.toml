@@ -22,7 +22,7 @@ where = ["catley"]
 pythonpath = "."
 testpaths = ["tests"]
 python_files = ["test_*.py"]
-addopts = "-ra -n auto"
+addopts = "-ra -n auto --dist=worksteal"
 filterwarnings = []
 
 [tool.ruff.lint]
