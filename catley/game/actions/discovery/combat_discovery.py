@@ -42,14 +42,18 @@ class CombatActionDiscovery:
     ) -> list[ActionOption]:
         """Get combat actions for action-centric UI.
 
-        Returns only combat actions that can be executed RIGHT NOW. Actions are
-        filtered based on whether valid targets exist:
-        - Melee attacks: only shown if an adjacent enemy exists
+        Returns combat actions based on capability, not immediate executability.
+        Actions are shown if the actor has the capability to perform them:
+        - Melee attacks: always shown if actor has a melee weapon
         - Ranged attacks: only shown if a target is within weapon range
-        - Push: only shown if an adjacent enemy exists
+        - Push: always shown (approach will be handled on execution)
+
+        When a melee action or Push is selected on a non-adjacent target, the
+        combat mode will pathfind to an adjacent tile before executing.
 
         If a specific target is provided, probabilities will be calculated
-        against that target. Otherwise, probabilities are left as None.
+        against that target (only for adjacent targets). Otherwise, probabilities
+        are left as None.
 
         Used by combat mode's action-centric panel where the player selects
         an action first, then clicks to execute it.
@@ -60,23 +64,19 @@ class CombatActionDiscovery:
             target: Optional specific target for probability calculation.
 
         Returns:
-            List of ActionOptions for executable combat and stunt actions.
+            List of ActionOptions for combat and stunt actions.
         """
         options: list[ActionOption] = []
         context = self.context_builder.build_context(controller, actor)
 
-        # Check what's actually executable
-        has_adjacent_enemy = self._has_adjacent_enemy(actor, context)
-
-        # Filter attack actions by executability
+        # Get all attack actions and filter by type
         all_attacks = self.get_all_combat_actions(controller, actor, context, target)
         for attack in all_attacks:
             attack_mode = attack.static_params.get("attack_mode")
             weapon = attack.static_params.get("weapon")
             if attack_mode == "melee":
-                # Melee only shown if adjacent enemy exists
-                if has_adjacent_enemy:
-                    options.append(attack)
+                # Melee always shown - approach handled on execution
+                options.append(attack)
             elif (
                 attack_mode == "ranged"
                 and weapon is not None
@@ -85,29 +85,27 @@ class CombatActionDiscovery:
                 # Ranged only shown if any target is within weapon range
                 options.append(attack)
 
-        # Only add Push if adjacent enemy exists
-        if has_adjacent_enemy:
-            # Calculate push probability if target is provided and adjacent
-            push_prob: float | None = None
-            if target is not None:
-                dist = ranges.calculate_distance(actor.x, actor.y, target.x, target.y)
-                if dist == 1:
-                    push_prob = self._calculate_opposed_probability(
-                        controller, actor, target, "strength", "strength"
-                    )
-
-            options.append(
-                ActionOption(
-                    id="push",
-                    name="Push",
-                    description="Shove target 1 tile away. Strength vs Strength.",
-                    category=ActionCategory.STUNT,
-                    action_class=PushIntent,
-                    requirements=[ActionRequirement.TARGET_ACTOR],
-                    static_params={},
-                    success_probability=push_prob,
-                )
+        # Always add Push - approach handled on execution
+        # Calculate push probability if target is provided (regardless of distance,
+        # since player will approach before executing)
+        push_prob: float | None = None
+        if target is not None:
+            push_prob = self._calculate_opposed_probability(
+                controller, actor, target, "strength", "strength"
             )
+
+        options.append(
+            ActionOption(
+                id="push",
+                name="Push",
+                description="Shove target 1 tile away. Strength vs Strength.",
+                category=ActionCategory.STUNT,
+                action_class=PushIntent,
+                requirements=[ActionRequirement.TARGET_ACTOR],
+                static_params={},
+                success_probability=push_prob,
+            )
+        )
 
         # Sort by category and priority so PREFERRED attacks appear first
         options.sort(key=lambda a: (a.category.value, self._get_action_priority(a)))
@@ -304,14 +302,13 @@ class CombatActionDiscovery:
             equipped_weapons = [FISTS_TYPE.create()]
 
         for weapon in equipped_weapons:
-            # Melee attacks
+            # Melee attacks - calculate probability regardless of distance since
+            # player will approach before executing
             melee_prob: float | None = None
             if target is not None and weapon.melee_attack:
-                dist = ranges.calculate_distance(actor.x, actor.y, target.x, target.y)
-                if dist == 1:
-                    melee_prob = self.context_builder.calculate_combat_probability(
-                        controller, actor, target, "strength"
-                    )
+                melee_prob = self.context_builder.calculate_combat_probability(
+                    controller, actor, target, "strength"
+                )
             if weapon.melee_attack:
                 verb = weapon.melee_attack._spec.verb.capitalize()
                 options.append(

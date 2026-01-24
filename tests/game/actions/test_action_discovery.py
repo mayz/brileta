@@ -269,6 +269,59 @@ def test_combat_option_probabilities_reflect_status_effects() -> None:
     assert ranged_opt.success_probability == expected_ranged_prob
 
 
+def test_melee_probability_calculated_for_distant_target() -> None:
+    """Melee attack probability should be calculated even for non-adjacent targets.
+
+    Since approach-and-attack is now supported, the probability shows what would
+    happen after reaching the target.
+    """
+    controller, player, _melee_target, ranged_target, _pistol = _make_combat_world()
+    # ranged_target is at (4, 0), player at (0, 0) - distance 4, not adjacent
+    disc = ActionDiscovery()
+    ctx = disc._build_context(cast(Controller, controller), player)
+
+    # Get combat options with ranged_target (distant)
+    opts = disc.combat_discovery.get_all_combat_actions(
+        cast(Controller, controller), player, ctx, ranged_target
+    )
+
+    # Melee option should have a probability calculated (not None)
+    melee_opt = next(o for o in opts if o.static_params.get("attack_mode") == "melee")
+    assert melee_opt.success_probability is not None
+
+    # Probability should match what we'd calculate directly
+    expected_prob = disc.context_builder.calculate_combat_probability(
+        cast(Controller, controller), player, ranged_target, "strength"
+    )
+    assert melee_opt.success_probability == expected_prob
+
+
+def test_push_probability_calculated_for_distant_target() -> None:
+    """Push probability should be calculated even for non-adjacent targets.
+
+    Since approach-and-push is now supported, the probability shows what would
+    happen after reaching the target.
+    """
+    controller, player, _melee_target, ranged_target, _pistol = _make_combat_world()
+    # ranged_target is at (4, 0), player at (0, 0) - distance 4, not adjacent
+    disc = ActionDiscovery()
+
+    # Get player combat actions with ranged_target (distant)
+    opts = disc.combat_discovery.get_player_combat_actions(
+        cast(Controller, controller), player, ranged_target
+    )
+
+    # Push option should have a probability calculated (not None)
+    push_opt = next(o for o in opts if o.id == "push")
+    assert push_opt.success_probability is not None
+
+    # Probability should match opposed check calculation
+    expected_prob = disc.combat_discovery._calculate_opposed_probability(
+        cast(Controller, controller), player, ranged_target, "strength", "strength"
+    )
+    assert push_opt.success_probability == expected_prob
+
+
 def test_sort_by_relevance_orders_actions() -> None:
     ctx = ActionContext(0, 0, [], [], True)
     opt1 = ActionOption(

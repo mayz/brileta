@@ -205,8 +205,8 @@ class TestCombatModeIntentCreation:
         assert isinstance(intent, PushIntent)
         assert intent.defender == npc
 
-    def test_push_on_distant_target_returns_none(self) -> None:
-        """Push on non-adjacent target should return None (invalid)."""
+    def test_push_on_distant_target_starts_pathfinding(self) -> None:
+        """Push on non-adjacent target should start pathfinding."""
         reset_event_bus_for_testing()
         controller, _player, npc = _make_combat_test_world(
             player_pos=(5, 5),
@@ -226,10 +226,22 @@ class TestCombatModeIntentCreation:
         )
         controller.combat_mode.select_action(push_action)
 
-        intent = controller.combat_mode._create_intent_for_target(npc)
+        # Mock start_actor_pathfinding to verify it's called
+        with patch.object(controller, "start_actor_pathfinding") as mock_pathfind:
+            mock_pathfind.return_value = True  # Simulate successful pathfinding start
 
-        # Should return None because target is not adjacent
-        assert intent is None
+            intent = controller.combat_mode._create_intent_for_target(npc)
+
+            # Should return None (action queued for after pathfinding)
+            assert intent is None
+
+            # Verify pathfinding was started with PushIntent as final_intent
+            mock_pathfind.assert_called_once()
+            call_args = mock_pathfind.call_args
+            assert call_args[0][1] == (npc.x, npc.y)  # Target position
+            final_intent = call_args[0][2]
+            assert isinstance(final_intent, PushIntent)
+            assert final_intent.defender == npc
 
     def test_no_selected_action_falls_back_to_attack(self) -> None:
         """If no action is selected, should fall back to AttackIntent."""
@@ -243,6 +255,34 @@ class TestCombatModeIntentCreation:
         intent = controller.combat_mode._create_intent_for_target(npc)
 
         assert isinstance(intent, AttackIntent)
+
+    def test_no_selected_action_on_distant_target_starts_pathfinding(self) -> None:
+        """Default attack on distant target should start pathfinding."""
+        reset_event_bus_for_testing()
+        controller, _player, npc = _make_combat_test_world(
+            player_pos=(5, 5),
+            enemy_pos=(8, 5),  # 3 tiles away
+        )
+        controller.enter_combat_mode()
+
+        # No action selected - uses default attack
+        controller.combat_mode.selected_action = None
+
+        with patch.object(controller, "start_actor_pathfinding") as mock_pathfind:
+            mock_pathfind.return_value = True
+
+            intent = controller.combat_mode._create_intent_for_target(npc)
+
+            # Should return None (action queued for after pathfinding)
+            assert intent is None
+
+            # Verify pathfinding was started with AttackIntent as final_intent
+            mock_pathfind.assert_called_once()
+            call_args = mock_pathfind.call_args
+            assert call_args[0][1] == (npc.x, npc.y)  # Target position
+            final_intent = call_args[0][2]
+            assert isinstance(final_intent, AttackIntent)
+            assert final_intent.defender == npc
 
 
 # --- Hotkey Selection Tests ---
@@ -489,8 +529,12 @@ class TestCombatModeEnterKeyExecution:
 class TestCombatActionFiltering:
     """Test that only executable actions are shown in the action panel."""
 
-    def test_no_melee_when_no_adjacent_enemy(self) -> None:
-        """Melee attack should not appear when no enemy is adjacent."""
+    def test_melee_shown_even_when_no_adjacent_enemy(self) -> None:
+        """Melee attack should appear even when no enemy is adjacent.
+
+        Melee actions are shown regardless of adjacency - approach is handled
+        on execution via pathfinding.
+        """
         reset_event_bus_for_testing()
         controller, _player, _npc = _make_combat_test_world(
             player_pos=(5, 5),
@@ -502,10 +546,14 @@ class TestCombatActionFiltering:
         melee_actions = [
             a for a in actions if a.static_params.get("attack_mode") == "melee"
         ]
-        assert len(melee_actions) == 0
+        assert len(melee_actions) >= 1
 
-    def test_no_push_when_no_adjacent_enemy(self) -> None:
-        """Push should not appear when no enemy is adjacent."""
+    def test_push_shown_even_when_no_adjacent_enemy(self) -> None:
+        """Push should appear even when no enemy is adjacent.
+
+        Push is shown regardless of adjacency - approach is handled on execution
+        via pathfinding.
+        """
         reset_event_bus_for_testing()
         controller, _player, _npc = _make_combat_test_world(
             player_pos=(5, 5),
@@ -515,7 +563,7 @@ class TestCombatActionFiltering:
         actions = controller.combat_mode.get_available_combat_actions()
 
         push_actions = [a for a in actions if a.id == "push"]
-        assert len(push_actions) == 0
+        assert len(push_actions) == 1
 
     def test_melee_and_push_appear_when_adjacent(self) -> None:
         """Melee and Push should appear when enemy is adjacent."""
@@ -534,15 +582,20 @@ class TestCombatActionFiltering:
         assert len(melee_actions) >= 1
         assert len(push_actions) == 1
 
-    def test_no_actions_when_no_enemies(self) -> None:
-        """No combat actions should appear when no enemies exist."""
+    def test_push_shown_even_when_no_enemies(self) -> None:
+        """Push should always appear, even when no enemies exist.
+
+        Actions are shown based on capability, not immediate executability.
+        Push is available as a stunt option regardless of targets.
+        """
         reset_event_bus_for_testing()
         controller = get_controller_with_player_and_map()
 
         actions = controller.combat_mode.get_available_combat_actions()
 
-        # No enemies means no executable actions
-        assert len(actions) == 0
+        # Push is always available as a capability
+        push_actions = [a for a in actions if a.id == "push"]
+        assert len(push_actions) == 1
 
     def test_no_ranged_action_when_enemy_beyond_max_range(self) -> None:
         """Ranged attack should not appear when enemy is beyond weapon's max range."""
@@ -692,3 +745,151 @@ class TestCombatModeClickSelection:
         result = controller.combat_mode._try_select_action_by_click(event)
 
         assert result is False
+
+
+# --- Approach and Attack Tests ---
+
+
+class TestApproachAndAttack:
+    """Test approach-and-attack behavior for distant targets."""
+
+    def test_melee_on_distant_target_starts_pathfinding(self) -> None:
+        """Melee attack on non-adjacent target should start pathfinding."""
+        from catley.game.actions.combat import AttackIntent
+
+        reset_event_bus_for_testing()
+        controller, _player, npc = _make_combat_test_world(
+            player_pos=(5, 5),
+            enemy_pos=(8, 5),  # 3 tiles away
+        )
+        controller.enter_combat_mode()
+
+        # Select a melee attack action
+        melee_action = ActionOption(
+            id="melee-test",
+            name="Strike",
+            description="Melee attack",
+            category=ActionCategory.COMBAT,
+            action_class=AttackIntent,
+            requirements=[],
+            static_params={"attack_mode": "melee", "weapon": None},
+        )
+        controller.combat_mode.select_action(melee_action)
+
+        # Mock start_actor_pathfinding to verify it's called
+        with patch.object(controller, "start_actor_pathfinding") as mock_pathfind:
+            mock_pathfind.return_value = True
+
+            intent = controller.combat_mode._create_intent_for_target(npc)
+
+            # Should return None (action queued for after pathfinding)
+            assert intent is None
+
+            # Verify pathfinding was started with AttackIntent as final_intent
+            mock_pathfind.assert_called_once()
+            call_args = mock_pathfind.call_args
+            assert call_args[0][1] == (npc.x, npc.y)  # Target position
+            final_intent = call_args[0][2]
+            assert isinstance(final_intent, AttackIntent)
+            assert final_intent.defender == npc
+
+    def test_melee_on_adjacent_target_executes_immediately(self) -> None:
+        """Melee attack on adjacent target should return intent immediately."""
+        from catley.game.actions.combat import AttackIntent
+
+        reset_event_bus_for_testing()
+        controller, _player, npc = _make_combat_test_world(
+            player_pos=(5, 5),
+            enemy_pos=(6, 5),  # Adjacent
+        )
+        controller.enter_combat_mode()
+
+        # Select a melee attack action
+        melee_action = ActionOption(
+            id="melee-test",
+            name="Strike",
+            description="Melee attack",
+            category=ActionCategory.COMBAT,
+            action_class=AttackIntent,
+            requirements=[],
+            static_params={"attack_mode": "melee", "weapon": None},
+        )
+        controller.combat_mode.select_action(melee_action)
+
+        # Should NOT start pathfinding for adjacent target
+        with patch.object(controller, "start_actor_pathfinding") as mock_pathfind:
+            intent = controller.combat_mode._create_intent_for_target(npc)
+
+            # Should return intent for immediate execution
+            assert isinstance(intent, AttackIntent)
+            assert intent.defender == npc
+
+            # Pathfinding should NOT have been called
+            mock_pathfind.assert_not_called()
+
+    def test_ranged_on_distant_target_executes_immediately(self) -> None:
+        """Ranged attack should execute immediately regardless of distance."""
+        from catley.game.actions.combat import AttackIntent
+
+        reset_event_bus_for_testing()
+        controller, _player, npc = _make_combat_test_world(
+            player_pos=(5, 5),
+            enemy_pos=(10, 5),  # 5 tiles away
+        )
+        controller.enter_combat_mode()
+
+        # Select a ranged attack action
+        ranged_action = ActionOption(
+            id="ranged-test",
+            name="Shoot",
+            description="Ranged attack",
+            category=ActionCategory.COMBAT,
+            action_class=AttackIntent,
+            requirements=[],
+            static_params={"attack_mode": "ranged", "weapon": None},
+        )
+        controller.combat_mode.select_action(ranged_action)
+
+        # Should NOT start pathfinding for ranged attack
+        with patch.object(controller, "start_actor_pathfinding") as mock_pathfind:
+            intent = controller.combat_mode._create_intent_for_target(npc)
+
+            # Should return intent for immediate execution
+            assert isinstance(intent, AttackIntent)
+            assert intent.defender == npc
+
+            # Pathfinding should NOT have been called
+            mock_pathfind.assert_not_called()
+
+    def test_pathfinding_failure_returns_none(self) -> None:
+        """When pathfinding fails, should return None without creating intent."""
+        reset_event_bus_for_testing()
+        controller, _player, npc = _make_combat_test_world(
+            player_pos=(5, 5),
+            enemy_pos=(8, 5),  # 3 tiles away
+        )
+        controller.enter_combat_mode()
+
+        # Select Push
+        push_action = ActionOption(
+            id="push",
+            name="Push",
+            description="Shove target 1 tile away.",
+            category=ActionCategory.STUNT,
+            action_class=PushIntent,
+            requirements=[],
+            static_params={},
+        )
+        controller.combat_mode.select_action(push_action)
+
+        # Mock pathfinding to fail
+        with patch.object(controller, "start_actor_pathfinding") as mock_pathfind:
+            mock_pathfind.return_value = False  # Path blocked
+
+            intent = controller.combat_mode._create_intent_for_target(npc)
+
+            # Should return None (pathfinding failed)
+            assert intent is None
+
+            # Verify pathfinding was attempted
+            mock_pathfind.assert_called_once()
