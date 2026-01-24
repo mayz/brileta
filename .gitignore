@@ -1,5 +1,10 @@
 .DS_Store
 
+# Editor files
+*.swp
+*.swo
+*~
+
 # Python-generated files
 __pycache__/
 *.py[oc]
