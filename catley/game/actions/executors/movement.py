@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING
 from catley.environment.tile_types import TileTypeID
 from catley.game.actions.base import GameActionResult
 from catley.game.actions.executors.base import ActionExecutor
-from catley.game.actors import Character
 from catley.game.actors.container import Container
 
 if TYPE_CHECKING:
@@ -54,14 +53,7 @@ class MoveExecutor(ActionExecutor):
         # Success! Move the actor (this automatically creates animation)
         intent.actor.move(intent.dx, intent.dy, intent.controller)
 
-        if (
-            isinstance(intent.actor, Character)
-            and (goal := intent.actor.pathfinding_goal)
-            and (intent.actor.x, intent.actor.y) == goal.target_pos
-        ):
-            final_intent = goal.final_intent
-            intent.controller.stop_actor_pathfinding(intent.actor)
-            if final_intent is not None:
-                intent.controller.queue_action(final_intent)
+        # Plan advancement is handled by TurnManager (player) and
+        # process_all_npc_reactions (NPC) after action execution.
 
         return GameActionResult(succeeded=True, should_update_fov=True)

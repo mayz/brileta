@@ -229,12 +229,13 @@ class HostileAI(AIComponent):
         from catley.game.actions.combat import AttackIntent
 
         if distance == 1:
-            controller.stop_actor_pathfinding(actor)
+            controller.stop_walk_to_plan(actor)
             return AttackIntent(controller, actor, player)
 
-        goal = actor.pathfinding_goal
-        if goal:
-            gx, gy = goal.target_pos
+        # Check if already walking toward a valid adjacent-to-player tile
+        plan = actor.active_plan
+        if plan is not None and plan.context.target_position is not None:
+            gx, gy = plan.context.target_position
             if (
                 ranges.calculate_distance(player.x, player.y, gx, gy) == 1
                 and controller.gw.game_map.walkable[gx, gy]
@@ -289,7 +290,7 @@ class HostileAI(AIComponent):
                     best_score = score
                     best_dest = (tx, ty)
 
-        if best_dest and controller.start_actor_pathfinding(actor, best_dest):
+        if best_dest and controller.start_walk_to_plan(actor, best_dest):
             return None
 
         return None

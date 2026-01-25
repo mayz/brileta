@@ -232,18 +232,7 @@ class EnvironmentActionDiscovery:
                 # Not adjacent - require movement (use pathfinding)
                 def create_pathfind_and_open(tx: int, ty: int):
                     def pathfind_and_open():
-                        from catley.util.pathfinding import find_closest_adjacent_tile
-
-                        gw = controller.gw
-                        adj = find_closest_adjacent_tile(
-                            tx, ty, actor.x, actor.y, gw.game_map, gw, actor
-                        )
-                        if adj is not None:
-                            door_intent = OpenDoorIntent(controller, actor, tx, ty)
-                            return controller.start_actor_pathfinding(
-                                actor, adj, final_intent=door_intent
-                            )
-                        return False
+                        return controller.start_open_door_plan(actor, tx, ty)
 
                     return pathfind_and_open
 
@@ -277,18 +266,7 @@ class EnvironmentActionDiscovery:
                 # Not adjacent - require movement (use pathfinding)
                 def create_pathfind_and_close(tx: int, ty: int):
                     def pathfind_and_close():
-                        from catley.util.pathfinding import find_closest_adjacent_tile
-
-                        gw = controller.gw
-                        adj = find_closest_adjacent_tile(
-                            tx, ty, actor.x, actor.y, gw.game_map, gw, actor
-                        )
-                        if adj is not None:
-                            door_intent = CloseDoorIntent(controller, actor, tx, ty)
-                            return controller.start_actor_pathfinding(
-                                actor, adj, final_intent=door_intent
-                            )
-                        return False
+                        return controller.start_close_door_plan(actor, tx, ty)
 
                     return pathfind_and_close
 
@@ -340,20 +318,7 @@ class EnvironmentActionDiscovery:
                 # Create "Go here" action for walkable tiles without containers
                 def create_pathfind_to_tile(tx: int, ty: int):
                     def pathfind_to_tile():
-                        from catley.util.pathfinding import find_local_path
-
-                        gm = controller.gw.game_map
-                        path = find_local_path(
-                            gm,
-                            controller.gw.actor_spatial_index,
-                            actor,
-                            (actor.x, actor.y),
-                            (tx, ty),
-                        )
-                        if path:
-                            controller.start_actor_pathfinding(actor, (tx, ty))
-                            return True
-                        return False
+                        return controller.start_walk_to_plan(actor, (tx, ty))
 
                     return pathfind_to_tile
 

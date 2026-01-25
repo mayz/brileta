@@ -29,7 +29,6 @@ from .game.actors import Actor
 from .game.actors.core import Character
 from .game.game_world import GameWorld
 from .game.lights import DirectionalLight, DynamicLight
-from .game.pathfinding_goal import PathfindingGoal
 from .game.turn_manager import TurnManager
 from .input_handler import InputHandler
 from .modes.base import Mode
@@ -41,7 +40,6 @@ from .util.clock import Clock
 from .util.coordinates import WorldTilePos
 from .util.live_vars import live_variable_registry, record_time_live_variable
 from .util.message_log import MessageLog
-from .util.pathfinding import find_local_path, find_region_path
 from .view.animation import AnimationManager
 from .view.frame_manager import FrameManager
 from .view.presentation import PresentationManager
@@ -659,13 +657,8 @@ class Controller:
                     intent = UseConsumableOnTargetIntent(self, player, item, target)
                     self.queue_action(intent)
                 else:
-                    # Distant target: pathfind then use
-                    final_intent = UseConsumableOnTargetIntent(
-                        self, player, item, target
-                    )
-                    self.start_actor_pathfinding(
-                        player, (target.x, target.y), final_intent
-                    )
+                    # Distant target: use ActionPlan to pathfind then use
+                    self.start_use_consumable_on_target_plan(player, target, item)
 
         # Show message about targeting
         publish_event(MessageEvent(f"Select target for {item.name}", colors.CYAN))
@@ -685,145 +678,6 @@ class Controller:
         from catley.game.resolution.d20_system import D20System
 
         return D20System(**kwargs)  # type: ignore[call-arg]
-
-    def start_actor_pathfinding(
-        self,
-        actor: Character,
-        target_pos: WorldTilePos,
-        final_intent: GameIntent | None = None,
-    ) -> bool:
-        """Calculate a path and assign a :class:`PathfindingGoal` to ``actor``.
-
-        Uses hierarchical pathfinding (HPA*) when crossing regions. For paths
-        within a single region, uses direct A*. If the direct destination is
-        blocked, the search falls back to any adjacent walkable tile.
-
-        Returns ``False`` if no path can be found.
-        """
-        gm = self.gw.game_map
-        asi = self.gw.actor_spatial_index
-        start_pos: WorldTilePos = (actor.x, actor.y)
-
-        def _local_path(start: WorldTilePos, dest: WorldTilePos) -> list[WorldTilePos]:
-            return find_local_path(gm, asi, actor, start, dest)
-
-        # Try hierarchical pathfinding if regions are set up
-        result = self._try_hierarchical_path(actor, start_pos, target_pos)
-        if result is not None:
-            path, high_level_path, dest = result
-            if path:
-                actor.pathfinding_goal = PathfindingGoal(
-                    target_pos=dest,
-                    final_intent=final_intent,
-                    high_level_path=high_level_path,
-                    _cached_path=path,
-                )
-                return True
-
-        # Fall back to direct A* (same region or no region info)
-        path = _local_path(start_pos, target_pos)
-        dest = target_pos
-
-        # If direct path fails, try adjacent tiles
-        if not path:
-            best_path: list[WorldTilePos] | None = None
-            best_dest: WorldTilePos | None = None
-            for dx in (-1, 0, 1):
-                for dy in (-1, 0, 1):
-                    if dx == 0 and dy == 0:
-                        continue
-                    tx = target_pos[0] + dx
-                    ty = target_pos[1] + dy
-                    if not (0 <= tx < gm.width and 0 <= ty < gm.height):
-                        continue
-                    if not gm.walkable[tx, ty]:
-                        continue
-                    blocker = self.gw.get_actor_at_location(tx, ty)
-                    if blocker and blocker.blocks_movement and blocker is not actor:
-                        continue
-                    candidate = _local_path(start_pos, (tx, ty))
-                    if candidate and (
-                        best_path is None or len(candidate) < len(best_path)
-                    ):
-                        best_path = candidate
-                        best_dest = (tx, ty)
-            if best_path is not None and best_dest is not None:
-                path = best_path
-                dest = best_dest
-
-        if path:
-            actor.pathfinding_goal = PathfindingGoal(
-                target_pos=dest,
-                final_intent=final_intent,
-                _cached_path=path,
-            )
-            return True
-
-        self.stop_actor_pathfinding(actor)
-        if actor is self.gw.player:
-            publish_event(MessageEvent("Path is blocked.", colors.YELLOW))
-        return False
-
-    def _try_hierarchical_path(
-        self,
-        actor: Character,
-        start_pos: WorldTilePos,
-        target_pos: WorldTilePos,
-    ) -> tuple[list[WorldTilePos], list[int] | None, WorldTilePos] | None:
-        """Attempt hierarchical pathfinding across regions.
-
-        Returns (local_path, high_level_path, effective_dest) if cross-region
-        path is found, or None if regions aren't set up or positions are in
-        the same region.
-        """
-        gm = self.gw.game_map
-        asi = self.gw.actor_spatial_index
-
-        # Check if regions are set up
-        if not gm.regions:
-            return None
-
-        # Get region IDs for start and end positions
-        start_region_id = gm.tile_to_region_id[start_pos[0], start_pos[1]]
-        end_region_id = gm.tile_to_region_id[target_pos[0], target_pos[1]]
-
-        # If either position isn't in a region, or same region, use direct path
-        if start_region_id < 0 or end_region_id < 0:
-            return None
-        if start_region_id == end_region_id:
-            return None
-
-        # Find path through region graph
-        region_path = find_region_path(gm, start_region_id, end_region_id)
-        if region_path is None or len(region_path) < 2:
-            return None
-
-        # Get the next region we need to enter (index 1, since 0 is current)
-        next_region_id = region_path[1]
-
-        # Get the connection point to the next region
-        current_region = gm.regions.get(start_region_id)
-        if current_region is None:
-            return None
-
-        connection_point = current_region.connections.get(next_region_id)
-        if connection_point is None:
-            return None
-
-        # Compute local path to the connection point
-        local_path = find_local_path(gm, asi, actor, start_pos, connection_point)
-        if not local_path:
-            return None
-
-        # Store remaining regions to traverse (excluding current region)
-        high_level_path = region_path[1:]
-
-        return (local_path, high_level_path, target_pos)
-
-    def stop_actor_pathfinding(self, actor: Character) -> None:
-        """Immediately cancel ``actor``'s active pathfinding goal."""
-
-        actor.pathfinding_goal = None
 
     def start_walk_to_plan(self, actor: Character, target_pos: WorldTilePos) -> bool:
         """Create an ActivePlan for walking to a target position.
@@ -968,6 +822,121 @@ class Controller:
             weapon=weapon,
         )
         actor.active_plan = ActivePlan(plan=get_melee_attack_plan(), context=context)
+        return True
+
+    def start_open_door_plan(self, actor: Character, door_x: int, door_y: int) -> bool:
+        """Start an open door action plan at the specified coordinates.
+
+        Creates an ActionPlan that will approach the door and open it.
+
+        Args:
+            actor: The character performing the action.
+            door_x: X coordinate of the door.
+            door_y: Y coordinate of the door.
+
+        Returns:
+            True (always succeeds in creating the plan).
+        """
+        from catley.game.action_plan import (
+            ActivePlan,
+            PlanContext,
+            get_open_door_plan,
+        )
+
+        context = PlanContext(
+            actor=actor,
+            controller=self,
+            target_position=(door_x, door_y),
+        )
+        actor.active_plan = ActivePlan(plan=get_open_door_plan(), context=context)
+        return True
+
+    def start_close_door_plan(self, actor: Character, door_x: int, door_y: int) -> bool:
+        """Start a close door action plan at the specified coordinates.
+
+        Creates an ActionPlan that will approach the door and close it.
+
+        Args:
+            actor: The character performing the action.
+            door_x: X coordinate of the door.
+            door_y: Y coordinate of the door.
+
+        Returns:
+            True (always succeeds in creating the plan).
+        """
+        from catley.game.action_plan import (
+            ActivePlan,
+            PlanContext,
+            get_close_door_plan,
+        )
+
+        context = PlanContext(
+            actor=actor,
+            controller=self,
+            target_position=(door_x, door_y),
+        )
+        actor.active_plan = ActivePlan(plan=get_close_door_plan(), context=context)
+        return True
+
+    def start_pickup_items_plan(
+        self, actor: Character, target_pos: WorldTilePos
+    ) -> bool:
+        """Start a pickup items action plan at the specified position.
+
+        Creates an ActionPlan that will walk to the position and pick up items.
+
+        Args:
+            actor: The character performing the action.
+            target_pos: Position of the items to pick up.
+
+        Returns:
+            True (always succeeds in creating the plan).
+        """
+        from catley.game.action_plan import (
+            ActivePlan,
+            PlanContext,
+            get_pickup_items_plan,
+        )
+
+        context = PlanContext(
+            actor=actor,
+            controller=self,
+            target_position=target_pos,
+        )
+        actor.active_plan = ActivePlan(plan=get_pickup_items_plan(), context=context)
+        return True
+
+    def start_use_consumable_on_target_plan(
+        self, actor: Character, target: Character, item: Item
+    ) -> bool:
+        """Start a use consumable on target action plan.
+
+        Creates an ActionPlan that will approach the target and use the item on them.
+
+        Args:
+            actor: The character performing the action.
+            target: The target character to use the consumable on.
+            item: The consumable item to use.
+
+        Returns:
+            True (always succeeds in creating the plan).
+        """
+        from catley.game.action_plan import (
+            ActivePlan,
+            PlanContext,
+            get_use_consumable_on_target_plan,
+        )
+
+        context = PlanContext(
+            actor=actor,
+            controller=self,
+            target_actor=target,
+            target_position=(target.x, target.y),
+            item=item,
+        )
+        actor.active_plan = ActivePlan(
+            plan=get_use_consumable_on_target_plan(), context=context
+        )
         return True
 
     def _initialize_sound_system(self) -> None:

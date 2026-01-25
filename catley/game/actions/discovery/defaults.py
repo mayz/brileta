@@ -15,7 +15,6 @@ from catley.game.actors import Actor, ItemPile
 
 if TYPE_CHECKING:
     from catley.controller import Controller
-    from catley.game.actions.base import GameIntent
     from catley.types import WorldTilePos
 
 
@@ -114,40 +113,6 @@ def get_default_action_id(target_type: TargetType) -> str | None:
     return DEFAULT_ACTION_IDS.get(target_type)
 
 
-def _pathfind_to_adjacent_and_execute(
-    controller: Controller,
-    target_x: int,
-    target_y: int,
-    intent: GameIntent,
-) -> bool:
-    """Pathfind to a tile adjacent to (target_x, target_y) and execute intent.
-
-    Finds the closest adjacent walkable tile that has a valid path, then starts
-    pathfinding with the intent to execute upon arrival.
-
-    Args:
-        controller: The game controller.
-        target_x: X coordinate of the target tile.
-        target_y: Y coordinate of the target tile.
-        intent: The GameIntent to execute when the player arrives.
-
-    Returns:
-        True if pathfinding was started, False if no valid adjacent tile found.
-    """
-    from catley.util.pathfinding import find_closest_adjacent_tile
-
-    gw = controller.gw
-    player = gw.player
-
-    adj = find_closest_adjacent_tile(
-        target_x, target_y, player.x, player.y, gw.game_map, gw, player
-    )
-    if adj is not None:
-        return controller.start_actor_pathfinding(player, adj, final_intent=intent)
-
-    return False
-
-
 def execute_default_action(
     controller: Controller,
     target: Actor | WorldTilePos,
@@ -225,23 +190,19 @@ def execute_default_action(
 
         case TargetType.DOOR_CLOSED:
             # Open door - pathfind to adjacent tile if not adjacent
-            open_intent = OpenDoorIntent(controller, player, target_x, target_y)
             if distance == 1:
+                open_intent = OpenDoorIntent(controller, player, target_x, target_y)
                 controller.queue_action(open_intent)
                 return True
-            return _pathfind_to_adjacent_and_execute(
-                controller, target_x, target_y, open_intent
-            )
+            return controller.start_open_door_plan(player, target_x, target_y)
 
         case TargetType.DOOR_OPEN:
             # Close door - pathfind to adjacent tile if not adjacent
-            close_intent = CloseDoorIntent(controller, player, target_x, target_y)
             if distance == 1:
+                close_intent = CloseDoorIntent(controller, player, target_x, target_y)
                 controller.queue_action(close_intent)
                 return True
-            return _pathfind_to_adjacent_and_execute(
-                controller, target_x, target_y, close_intent
-            )
+            return controller.start_close_door_plan(player, target_x, target_y)
 
         case TargetType.ITEM_PILE:
             # Pick up items - pathfind to the tile if not at it
@@ -250,16 +211,13 @@ def execute_default_action(
                 pickup_intent = PickupItemsAtLocationIntent(controller, player)
                 controller.queue_action(pickup_intent)
                 return True
-            # Not at items - pathfind then pick up
-            final_intent = PickupItemsAtLocationIntent(controller, player)
-            return controller.start_actor_pathfinding(
-                player, (target_x, target_y), final_intent=final_intent
-            )
+            # Not at items - use ActionPlan to pathfind then pick up
+            return controller.start_pickup_items_plan(player, (target_x, target_y))
 
         case TargetType.FLOOR:
             # Walk to tile
             if distance == 0:
                 return False  # Already there
-            return controller.start_actor_pathfinding(player, (target_x, target_y))
+            return controller.start_walk_to_plan(player, (target_x, target_y))
 
     return False

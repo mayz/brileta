@@ -103,17 +103,27 @@ def test_context_menu_stays_open_on_click_inside() -> None:
     assert menu.is_active
 
 
-def test_menu_hides_unreachable_door_action() -> None:
-    controller, door_pos = _make_controller_with_door(reachable=False)
-    menu = ContextMenu(controller, door_pos, (0, 0))
+def test_menu_shows_door_action_regardless_of_reachability() -> None:
+    """Door actions are always shown. ActionPlans handle pathfinding lazily.
+
+    Previously, the menu would check reachability before showing options.
+    With ActionPlans, we always show the option and let the plan handle
+    path calculation (and graceful cancellation if unreachable).
+    """
+    # Test unreachable door - option should still be shown
+    controller_unreachable, door_pos_unreachable = _make_controller_with_door(
+        reachable=False
+    )
+    menu = ContextMenu(controller_unreachable, door_pos_unreachable, (0, 0))
     menu.populate_options()
     texts = [o.text for o in menu.options]
-    assert "Go to and Open Door" not in texts
+    assert "Go to and Open Door" in texts
 
-
-def test_menu_shows_reachable_door_action() -> None:
-    controller, door_pos = _make_controller_with_door(reachable=True)
-    menu = ContextMenu(controller, door_pos, (0, 0))
+    # Test reachable door - option should be shown
+    controller_reachable, door_pos_reachable = _make_controller_with_door(
+        reachable=True
+    )
+    menu = ContextMenu(controller_reachable, door_pos_reachable, (0, 0))
     menu.populate_options()
     texts = [o.text for o in menu.options]
     assert "Go to and Open Door" in texts

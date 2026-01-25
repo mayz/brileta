@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING
 from catley import config
 from catley.game.action_router import ActionRouter
 from catley.game.actions.base import GameActionResult, GameIntent
+from catley.util.coordinates import WorldTilePos
 
 if TYPE_CHECKING:
     from catley.controller import Controller
@@ -134,6 +135,9 @@ class TurnManager:
         Hazard damage is NOT applied here - it's applied once per player action
         in on_player_action() to avoid damage being applied every tick.
         """
+        from catley.game.action_plan import ApproachStep
+        from catley.game.actors.core import Character
+
         any_action_executed = False
         for actor in self._energy_actors_cache:
             if actor is self.player:
@@ -160,9 +164,16 @@ class TurnManager:
                     actor.update_turn(self.controller)
 
                     # Execute the action
-                    self.execute_intent(action)
+                    result = self.execute_intent(action)
                     actor.energy.spend(config.ACTION_COST)
                     any_action_executed = True
+
+                    # Handle plan advancement for NPCs with active plans
+                    if isinstance(actor, Character) and actor.active_plan is not None:
+                        plan = actor.active_plan
+                        step = plan.get_current_step()
+                        if isinstance(step, ApproachStep):
+                            self._on_approach_result(actor, result)
 
         if any_action_executed and hasattr(
             self.controller, "invalidate_combat_tooltip"
@@ -367,12 +378,18 @@ class TurnManager:
         if plan.cached_path is None or not plan.cached_path:
             gm = self.controller.gw.game_map
             asi = self.controller.gw.actor_spatial_index
-            start_pos = (actor.x, actor.y)
+            start_pos: tuple[int, int] = (actor.x, actor.y)
 
             # First try direct path to target
             plan.cached_path = find_local_path(gm, asi, actor, start_pos, target_pos)
 
-            # If direct path fails and we have a stop_distance, try adjacent tiles.
+            # If direct path fails, try hierarchical (cross-region) pathfinding
+            if not plan.cached_path:
+                hierarchical = self._try_hierarchical_path(actor, start_pos, target_pos)
+                if hierarchical:
+                    plan.cached_path, plan.cached_hierarchical_path = hierarchical
+
+            # If still no path and we have a stop_distance, try adjacent tiles.
             # The target tile is likely occupied (e.g., by an enemy we're approaching).
             if not plan.cached_path and step.stop_distance > 0:
                 best_path: list[tuple[int, int]] | None = None
@@ -437,6 +454,10 @@ class TurnManager:
             if plan.cached_path:
                 plan.cached_path.pop(0)
 
+            # After popping, check if we need to compute the next hierarchical segment
+            if not plan.cached_path and plan.cached_hierarchical_path:
+                self._advance_hierarchical_path(actor, plan)
+
             # Check if we've now arrived at destination
             if plan.context.target_actor is not None:
                 target_pos = (plan.context.target_actor.x, plan.context.target_actor.y)
@@ -457,6 +478,140 @@ class TurnManager:
         else:
             # Move failed (blocked) - invalidate path for recalculation
             plan.cached_path = None
+            plan.cached_hierarchical_path = None
+
+    def _try_hierarchical_path(
+        self,
+        actor: Character,
+        start_pos: WorldTilePos,
+        target_pos: WorldTilePos,
+    ) -> tuple[list[WorldTilePos], list[int] | None] | None:
+        """Attempt hierarchical pathfinding across regions.
+
+        Returns (local_path, high_level_path) if cross-region path is found,
+        or None if regions aren't set up or positions are in the same region.
+
+        Args:
+            actor: The character pathfinding.
+            start_pos: Starting position.
+            target_pos: Target position.
+
+        Returns:
+            Tuple of (local_path, high_level_path) or None.
+        """
+        from catley.util.pathfinding import find_local_path, find_region_path
+
+        gm = self.controller.gw.game_map
+        asi = self.controller.gw.actor_spatial_index
+
+        # Check if regions are set up
+        if not gm.regions:
+            return None
+
+        # Get region IDs for start and end positions
+        start_region_id = gm.tile_to_region_id[start_pos[0], start_pos[1]]
+        end_region_id = gm.tile_to_region_id[target_pos[0], target_pos[1]]
+
+        # If either position isn't in a region, or same region, use direct path
+        if start_region_id < 0 or end_region_id < 0:
+            return None
+        if start_region_id == end_region_id:
+            return None
+
+        # Find path through region graph
+        region_path = find_region_path(gm, start_region_id, end_region_id)
+        if region_path is None or len(region_path) < 2:
+            return None
+
+        # Get the next region we need to enter (index 1, since 0 is current)
+        next_region_id = region_path[1]
+
+        # Get the connection point to the next region
+        current_region = gm.regions.get(start_region_id)
+        if current_region is None:
+            return None
+
+        connection_point = current_region.connections.get(next_region_id)
+        if connection_point is None:
+            return None
+
+        # Compute local path to the connection point
+        local_path = find_local_path(gm, asi, actor, start_pos, connection_point)
+        if not local_path:
+            return None
+
+        # Store remaining regions to traverse (excluding current region)
+        high_level_path = region_path[1:]
+
+        return (local_path, high_level_path)
+
+    def _advance_hierarchical_path(self, actor: Character, plan: ActivePlan) -> None:
+        """Compute next path segment when current local path is exhausted.
+
+        For hierarchical (cross-region) paths, when cached_path becomes empty
+        but cached_hierarchical_path still has regions to traverse, this computes
+        the local path to the next connection point (or to target_pos if we're
+        in the final region).
+
+        Args:
+            actor: The character executing the plan.
+            plan: The active plan with hierarchical path data.
+        """
+        from catley.util.pathfinding import find_local_path
+
+        if plan.cached_hierarchical_path is None:
+            return
+
+        # Only act if local path is exhausted and we have more regions to go
+        if plan.cached_path:
+            return
+
+        gm = self.controller.gw.game_map
+        asi = self.controller.gw.actor_spatial_index
+
+        # Pop the region we just entered
+        current_region_id = plan.cached_hierarchical_path.pop(0)
+
+        # Determine target position
+        if plan.context.target_actor is not None:
+            target_pos: WorldTilePos = (
+                plan.context.target_actor.x,
+                plan.context.target_actor.y,
+            )
+        elif plan.context.target_position is not None:
+            target_pos = plan.context.target_position
+        else:
+            actor.active_plan = None
+            return
+
+        if plan.cached_hierarchical_path:
+            # More regions to traverse - path to next connection point
+            next_region_id = plan.cached_hierarchical_path[0]
+            current_region = gm.regions.get(current_region_id)
+            if current_region is None:
+                actor.active_plan = None
+                return
+
+            connection_point = current_region.connections.get(next_region_id)
+            if connection_point is None:
+                actor.active_plan = None
+                return
+
+            # Compute local path to connection point
+            new_path = find_local_path(
+                gm, asi, actor, (actor.x, actor.y), connection_point
+            )
+            if new_path:
+                plan.cached_path = new_path
+            else:
+                # Can't reach connection - clear plan
+                actor.active_plan = None
+        else:
+            # We're in the final region - path to target
+            new_path = find_local_path(gm, asi, actor, (actor.x, actor.y), target_pos)
+            if new_path:
+                plan.cached_path = new_path
+            # If no path, leave cached_path empty - plan will handle it next turn
 
     # === Preserved Methods for Compatibility ===
     # These methods are kept to maintain compatibility with existing code
@@ -477,11 +632,10 @@ class TurnManager:
         )
 
     def is_player_turn_available(self) -> bool:
-        """Return True if player has pending actions or autopilot goals."""
+        """Return True if player has pending actions or active plans."""
         has_manual_action = self.has_pending_actions()
         has_active_plan = getattr(self.player, "active_plan", None) is not None
-        has_autopilot_goal = getattr(self.player, "pathfinding_goal", None) is not None
-        return has_manual_action or has_active_plan or has_autopilot_goal
+        return has_manual_action or has_active_plan
 
     # Backwards compatibility for old name
     def is_turn_available(self) -> bool:  # pragma: no cover - legacy

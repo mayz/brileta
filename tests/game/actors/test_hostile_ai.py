@@ -44,13 +44,15 @@ def make_world() -> tuple[DummyController, Character, NPC]:
     return controller, player, npc
 
 
-def test_hostile_ai_sets_pathfinding_goal() -> None:
+def test_hostile_ai_sets_active_plan() -> None:
+    """HostileAI creates an active_plan to walk toward player."""
     controller, player, npc = make_world()
     action = npc.ai.get_action(controller, npc)
-    assert action is None
-    goal = npc.pathfinding_goal
-    assert goal is not None
-    tx, ty = goal.target_pos
+    assert action is None  # Returns None because plan was set
+    plan = npc.active_plan
+    assert plan is not None
+    assert plan.context.target_position is not None
+    tx, ty = plan.context.target_position
     assert ranges.calculate_distance(player.x, player.y, tx, ty) == 1
 
 
@@ -60,7 +62,7 @@ def test_hostile_ai_attacks_when_adjacent() -> None:
     npc.y = 0
     action = npc.ai.get_action(controller, npc)
     assert isinstance(action, AttackIntent)
-    assert npc.pathfinding_goal is None
+    assert npc.active_plan is None
 
 
 def test_hostile_ai_avoids_hazardous_destination_tiles() -> None:
@@ -76,13 +78,14 @@ def test_hostile_ai_avoids_hazardous_destination_tiles() -> None:
     controller.gw.game_map.invalidate_property_caches()
 
     action = npc.ai.get_action(controller, npc)
-    assert action is None  # Returns None because pathfinding goal was set
+    assert action is None  # Returns None because plan was set
 
-    goal = npc.pathfinding_goal
-    assert goal is not None
+    plan = npc.active_plan
+    assert plan is not None
+    assert plan.context.target_position is not None
 
     # The destination should NOT be the hazardous tile
-    tx, ty = goal.target_pos
+    tx, ty = plan.context.target_position
     assert (tx, ty) != (1, 0), "AI should avoid hazardous destination tile"
 
     # But it should still be adjacent to the player
@@ -108,11 +111,12 @@ def test_hostile_ai_uses_hazardous_tile_when_no_alternative() -> None:
     action = npc.ai.get_action(controller, npc)
     assert action is None
 
-    goal = npc.pathfinding_goal
-    assert goal is not None
+    plan = npc.active_plan
+    assert plan is not None
+    assert plan.context.target_position is not None
 
     # AI should still pick a destination (the least bad option)
-    tx, ty = goal.target_pos
+    tx, ty = plan.context.target_position
     assert ranges.calculate_distance(player.x, player.y, tx, ty) == 1
 
 
@@ -182,10 +186,10 @@ def test_npc_stays_if_all_adjacent_hazardous() -> None:
 
     action = npc.ai.get_action(controller, npc)
 
-    # Should fall through to normal behavior (pathfinding to player)
-    # since there's no escape, returns None and sets pathfinding goal
+    # Should fall through to normal behavior (setting active_plan)
+    # since there's no escape, returns None and sets active plan
     assert action is None
-    assert npc.pathfinding_goal is not None
+    assert npc.active_plan is not None
 
 
 def test_npc_skips_blocked_safe_tile() -> None:

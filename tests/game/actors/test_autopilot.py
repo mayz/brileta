@@ -4,13 +4,12 @@ from typing import cast
 from catley import colors
 from catley.controller import Controller
 from catley.environment.tile_types import TileTypeID
+from catley.game.action_plan import ActivePlan, ApproachStep
 from catley.game.actions.base import GameIntent
-from catley.game.actions.environment import OpenDoorIntent
 from catley.game.actions.executors.movement import MoveExecutor
 from catley.game.actions.movement import MoveIntent
-from catley.game.actors import Character
+from catley.game.actors import PC, Character
 from catley.game.game_world import GameWorld
-from catley.game.pathfinding_goal import PathfindingGoal
 from catley.game.turn_manager import TurnManager
 from tests.helpers import DummyGameWorld
 
@@ -41,141 +40,110 @@ class DummyFinalIntent(GameIntent):
     pass
 
 
-def test_start_actor_pathfinding_success() -> None:
+def test_start_walk_to_plan_success() -> None:
+    """Test that start_walk_to_plan creates an active plan."""
     controller, player = make_world()
-    success = controller.start_actor_pathfinding(player, (1, 0))
+    success = controller.start_walk_to_plan(player, (1, 0))
     assert success
-    goal = player.pathfinding_goal
-    assert isinstance(goal, PathfindingGoal)
-    assert goal.target_pos == (1, 0)
-    assert goal._cached_path and goal._cached_path[-1] == (1, 0)
+    plan = player.active_plan
+    assert isinstance(plan, ActivePlan)
+    assert plan.context.target_position == (1, 0)
 
 
-def test_autopilot_moves_and_triggers_final_intent() -> None:
+def test_action_plan_approach_and_complete() -> None:
+    """Test that ActionPlan approaches target and completes."""
     controller, player = make_world()
-    final_intent = DummyFinalIntent(controller, player)
-    controller.start_actor_pathfinding(player, (1, 0), final_intent=final_intent)
+    controller.start_walk_to_plan(player, (1, 0))
 
-    action = cast(MoveIntent, player.get_next_action(controller))
-    assert isinstance(action, MoveIntent)
-    assert (action.dx, action.dy) == (1, 0)
+    # TurnManager should generate a MoveIntent from the plan
+    intent = controller.turn_manager._get_intent_from_plan(player)
+    assert isinstance(intent, MoveIntent)
+    assert (intent.dx, intent.dy) == (1, 0)
 
-    MoveExecutor().execute(action)
+    # Execute the move
+    result = MoveExecutor().execute(intent)
+    assert result is not None and result.succeeded
 
-    assert player.pathfinding_goal is None
-    queued = controller.turn_manager.dequeue_player_action()
-    assert queued is final_intent
+    # Simulate the TurnManager handling the approach result
+    controller.turn_manager._on_approach_result(player, result)
+
+    # Plan should complete since we arrived at destination
+    assert player.active_plan is None
 
 
-def test_start_actor_pathfinding_handles_door() -> None:
+def test_open_door_plan_approach_then_open() -> None:
+    """Test that door plan approaches then opens."""
     controller, player = make_world()
     gm = controller.gw.game_map
+
+    # Place a closed door at (3, 0)
     gm.tiles[3, 0] = TileTypeID.DOOR_CLOSED
     gm.invalidate_property_caches()
 
-    success = controller.start_actor_pathfinding(
-        player,
-        (3, 0),
-        final_intent=OpenDoorIntent(controller, player, 3, 0),
-    )
-    assert success
-    assert player.pathfinding_goal is not None
-    assert player.pathfinding_goal.target_pos == (2, 0)
+    # Start an open door plan
+    controller.start_open_door_plan(player, 3, 0)
+    plan = player.active_plan
+    assert plan is not None
+    assert plan.context.target_position == (3, 0)
+
+    # First step should be ApproachStep
+    step = plan.get_current_step()
+    assert isinstance(step, ApproachStep)
+    assert step.stop_distance == 1  # Stop adjacent to door
+
+    # Move toward door
+    intent = controller.turn_manager._get_intent_from_plan(player)
+    assert isinstance(intent, MoveIntent)
 
 
-def test_get_next_action_handles_empty_cached_path() -> None:
-    """Test that get_next_action handles the case where _cached_path becomes empty.
-
-    This is a regression test confirming that the code correctly handles empty
-    _cached_path by recalculating the path. The check at line 418
-    (if goal._cached_path:) catches the empty list case and triggers path
-    recalculation at line 431.
-
-    This test confirms bug #2 is NOT actually a bug - the code handles it.
-    """
+def test_plan_path_recalculation_when_blocked() -> None:
+    """Test that plans recalculate path when blocked."""
     controller, player = make_world()
-
-    # Set up a pathfinding goal with an empty path to simulate the edge case
-    player.pathfinding_goal = PathfindingGoal(
-        target_pos=(5, 5),
-        final_intent=None,
-        _cached_path=[],  # Empty path - will trigger recalculation
-    )
-
-    # The code should recalculate the path and return a valid action
-    action = player.get_next_action(controller)
-
-    # Should get a valid MoveIntent (path was recalculated)
-    assert isinstance(action, MoveIntent)
-    assert player.pathfinding_goal is not None
-    assert player.pathfinding_goal._cached_path is not None
-    assert len(player.pathfinding_goal._cached_path) > 0  # Path was recalculated
-
-
-def test_pathfinding_validation_accepts_single_step_paths() -> None:
-    """Test that pathfinding validation accepts 1-step paths (Bug 3.1 fix).
-
-    Previously, the code checked `if len(validation) == 2:` which incorrectly
-    rejected valid 1-step paths. Since find_path() doesn't include the start
-    position, a direct adjacent move returns a path of length 1, not 2.
-
-    The fix changed this to `if validation:` to accept any non-empty path.
-    """
-    controller, player = make_world()
-
-    # Set up a pathfinding goal to an adjacent tile (1 step away)
-    player.pathfinding_goal = PathfindingGoal(
-        target_pos=(1, 0),
-        final_intent=None,
-        _cached_path=[(1, 0)],  # Single-step path
-    )
-
-    # The validation should accept this 1-step path without recalculating
-    action = player.get_next_action(controller)
-
-    # Should get a valid MoveIntent
-    assert isinstance(action, MoveIntent)
-    assert (action.dx, action.dy) == (1, 0)
-
-
-def test_pathfinding_validation_recalculates_when_path_blocked() -> None:
-    """Test that pathfinding recalculates when the cached path is blocked."""
-    controller, player = make_world()
-
-    # Set up a goal with a cached path that goes through a blocked tile
-    # First, block tile (1, 0)
     gm = controller.gw.game_map
+
+    # Start a walk plan
+    controller.start_walk_to_plan(player, (2, 0))
+
+    # Get initial intent
+    intent = controller.turn_manager._get_intent_from_plan(player)
+    assert isinstance(intent, MoveIntent)
+
+    # Block the path after getting the first move
     gm.walkable[1, 0] = False
 
-    player.pathfinding_goal = PathfindingGoal(
-        target_pos=(2, 0),
-        final_intent=None,
-        _cached_path=[(1, 0), (2, 0)],  # Path goes through blocked tile
-    )
+    # Clear cached path to force recalculation
+    plan = player.active_plan
+    assert plan is not None
+    plan.cached_path = None
 
-    # Should recalculate and find alternate path (or return None if unreachable)
-    action = player.get_next_action(controller)
-
-    # Either finds alternate path or clears goal if unreachable
-    if action is not None:
-        assert isinstance(action, MoveIntent)
+    # Should find an alternate path or fail gracefully
+    intent = controller.turn_manager._get_intent_from_plan(player)
+    # Either finds alternate or returns None (and cancels plan)
+    if intent is not None:
+        assert isinstance(intent, MoveIntent)
         # Should not try to move to blocked tile
-        assert (action.dx, action.dy) != (1, 0)
+        assert not (intent.dx == 1 and intent.dy == 0)
 
 
-def test_get_next_action_returns_none_when_no_path_possible() -> None:
-    """Test that get_next_action returns None when target is completely unreachable.
-
-    This tests the defensive check added to handle the case where pathfinding
-    recalculation fails to find any valid path.
-    """
+def test_plan_single_step_path() -> None:
+    """Test that single-step paths work correctly."""
     controller, player = make_world()
 
-    # Surround the target position with walls to make it unreachable
-    gm = controller.gw.game_map
-    target = (5, 5)
+    # Create plan to adjacent tile
+    controller.start_walk_to_plan(player, (1, 0))
 
-    # Block all tiles around and including the target
+    intent = controller.turn_manager._get_intent_from_plan(player)
+    assert isinstance(intent, MoveIntent)
+    assert (intent.dx, intent.dy) == (1, 0)
+
+
+def test_plan_unreachable_target() -> None:
+    """Test that unreachable targets result in plan cancellation."""
+    controller, player = make_world()
+    gm = controller.gw.game_map
+
+    # Surround the target position with walls to make it unreachable
+    target = (5, 5)
     for dx in (-1, 0, 1):
         for dy in (-1, 0, 1):
             tx, ty = target[0] + dx, target[1] + dy
@@ -183,16 +151,47 @@ def test_get_next_action_returns_none_when_no_path_possible() -> None:
                 gm.tiles[tx, ty] = TileTypeID.WALL
     gm.invalidate_property_caches()
 
-    # Set up a pathfinding goal with an empty path (simulating stale state)
-    player.pathfinding_goal = PathfindingGoal(
-        target_pos=target,
-        final_intent=None,
-        _cached_path=[],  # Empty - will trigger recalculation
-    )
+    # Create plan to unreachable target
+    controller.start_walk_to_plan(player, target)
 
-    # Should return None since no path can be found
+    # Should return None (no path possible) and cancel plan
+    intent = controller.turn_manager._get_intent_from_plan(player)
+    assert intent is None
+    assert player.active_plan is None
+
+
+def test_stop_walk_to_plan_cancels_plan() -> None:
+    """Test that stop_walk_to_plan cancels the active plan."""
+    controller, player = make_world()
+
+    controller.start_walk_to_plan(player, (5, 5))
+    assert player.active_plan is not None
+
+    controller.stop_walk_to_plan(player)
+    assert player.active_plan is None
+
+
+def test_manual_input_cancels_plan() -> None:
+    """Test that manual input cancels the active plan.
+
+    Uses PC (not Character) since the manual action cancellation logic
+    is in PC.get_next_action().
+    """
+    gw = DummyGameWorld()
+    player = PC(0, 0, "@", colors.WHITE, "Player", game_world=cast(GameWorld, gw))
+    gw.player = player
+    gw.add_actor(player)
+    controller = DummyController(gw)
+
+    # Start a plan
+    controller.start_walk_to_plan(player, (5, 5))
+    assert player.active_plan is not None
+
+    # Queue a manual action
+    manual_intent = MoveIntent(controller, player, 0, 1)
+    controller.queue_action(manual_intent)
+
+    # Get next action should cancel plan and return manual action
     action = player.get_next_action(controller)
-
-    assert action is None
-    # Goal should be cleared when no path is possible
-    assert player.pathfinding_goal is None
+    assert action is manual_intent
+    assert player.active_plan is None

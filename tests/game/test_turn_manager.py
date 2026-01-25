@@ -39,13 +39,21 @@ class DummyControllerAutopilot(Controller):
             if actor.energy is not None:
                 actor.energy.regenerate()
 
-        # Player action (from autopilot)
+        # Player action (from active_plan or queued)
         if self.gw.player:
-            player_action = self.gw.player.get_next_action(cast(Controller, self))
+            player = self.gw.player
+            # First check for queued manual actions
+            player_action = player.get_next_action(cast(Controller, self))
+            # If no manual action, check for active plan
+            if player_action is None and player.active_plan is not None:
+                player_action = self.turn_manager._get_intent_from_plan(player)
             if player_action:
-                self.turn_manager.execute_intent(player_action)
-                if self.gw.player.energy is not None:
-                    self.gw.player.energy.spend(self.action_cost)
+                result = self.turn_manager.execute_intent(player_action)
+                # Handle plan advancement after move
+                if player.active_plan is not None:
+                    self.turn_manager._on_approach_result(player, result)
+                if player.energy is not None:
+                    player.energy.spend(self.action_cost)
 
         # NPC Action Resolution: Process all NPCs with sufficient energy
         for actor in list(self.gw.actors):
@@ -84,20 +92,11 @@ class DummyController:
     def invalidate_combat_tooltip(self) -> None:
         self.combat_tooltip_invalidations += 1
 
-    def start_actor_pathfinding(self, *args, **kwargs):
-        return Controller.start_actor_pathfinding(
-            cast(Controller, self), *args, **kwargs
-        )
+    def start_walk_to_plan(self, *args: Any, **kwargs: Any) -> bool:
+        return Controller.start_walk_to_plan(cast(Controller, self), *args, **kwargs)
 
-    def _try_hierarchical_path(self, *args, **kwargs):
-        return Controller._try_hierarchical_path(
-            cast(Controller, self), *args, **kwargs
-        )
-
-    def stop_actor_pathfinding(self, *args, **kwargs):
-        return Controller.stop_actor_pathfinding(
-            cast(Controller, self), *args, **kwargs
-        )
+    def stop_walk_to_plan(self, *args: Any, **kwargs: Any) -> None:
+        return Controller.stop_walk_to_plan(cast(Controller, self), *args, **kwargs)
 
     def update_fov(self) -> None:
         self.update_fov_called = True
@@ -184,30 +183,30 @@ def test_turn_manager_updates_fov_using_action_result() -> None:
     assert not controller.update_fov_called
 
 
-def test_is_player_turn_available_with_goal() -> None:
+def test_is_player_turn_available_with_plan() -> None:
     controller, player = _make_autopilot_world()
     tm = controller.turn_manager
     assert not tm.is_player_turn_available()
-    controller.start_actor_pathfinding(player, (1, 0))
+    controller.start_walk_to_plan(player, (1, 0))
     assert tm.is_player_turn_available()
 
 
-def test_process_unified_round_handles_autopilot() -> None:
+def test_process_unified_round_handles_active_plan() -> None:
     controller, player = _make_autopilot_world()
     tm = controller.turn_manager
-    controller.start_actor_pathfinding(player, (1, 0))
+    controller.start_walk_to_plan(player, (1, 0))
     controller.run_one_turn()
     assert (player.x, player.y) == (1, 0)
-    assert player.pathfinding_goal is None
+    assert player.active_plan is None
     assert not tm.is_player_turn_available()
 
 
-def test_npc_autopilot_waits_without_player_turn() -> None:
+def test_npc_active_plan_waits_without_player_turn() -> None:
     controller, _player, npc = make_world()
     tm = controller.turn_manager
-    # Hostile NPC sets a goal toward the player
+    # Hostile NPC sets a plan toward the player
     npc.ai.get_action(cast(Controller, controller), npc)
-    assert npc.pathfinding_goal is not None
+    assert npc.active_plan is not None
     assert not tm.is_player_turn_available()
 
     controller.run_one_turn()

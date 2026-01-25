@@ -44,10 +44,8 @@ from catley.game.action_plan import ActivePlan
 from catley.game.actors import conditions
 from catley.game.enums import CreatureSize, Disposition, InjuryLocation
 from catley.game.items.item_core import Item
-from catley.game.pathfinding_goal import PathfindingGoal
 from catley.sound.emitter import SoundEmitter
 from catley.types import TileCoord, WorldTileCoord
-from catley.util.pathfinding import find_local_path
 from catley.view.animation import MoveAnimation
 
 from .ai import AIComponent, DispositionBasedAI
@@ -502,10 +500,7 @@ class Character(Actor):
             **kwargs,
         )
 
-        self.pathfinding_goal: PathfindingGoal | None = None
-
-        # ActionPlan system - coexists with pathfinding_goal during migration.
-        # When active_plan is set, it takes precedence over pathfinding_goal.
+        # ActionPlan system for multi-step actions (approach + execute)
         self.active_plan: ActivePlan | None = None
 
         # Type narrowing - these are guaranteed to exist for Characters.
@@ -535,110 +530,16 @@ class Character(Actor):
         return len({c.injury_location for c in arm_injuries}) < 2
 
     def get_next_action(self, controller: Controller) -> GameIntent | None:
-        """Return a MoveIntent following this character's PathfindingGoal.
+        """Return the next action for this character.
 
-        For hierarchical paths (crossing regions), this method manages both the
-        local path within the current region and the high-level region sequence.
-        When the local path is exhausted, it computes the next segment.
+        For player: TurnManager handles active_plan via _get_intent_from_plan().
+        For NPCs: AI component returns actions, and plan advancement is handled
+        by TurnManager.process_all_npc_reactions().
 
-        The autopilot revalidates the next step each turn. If the cached path is
-        blocked, a new path is calculated. When no path can be found the goal is
-        cleared and ``None`` is returned.
+        This base implementation returns None. Subclasses may override to
+        provide AI-driven behavior.
         """
-        goal = self.pathfinding_goal
-        if goal is None:
-            return None
-
-        path_is_valid = False
-        if goal._cached_path:
-            next_pos = goal._cached_path[0]
-            validation = find_local_path(
-                controller.gw.game_map,
-                controller.gw.actor_spatial_index,
-                self,
-                (self.x, self.y),
-                next_pos,
-            )
-            if validation:
-                path_is_valid = True
-
-        if not path_is_valid:
-            recalculated = controller.start_actor_pathfinding(
-                self, goal.target_pos, goal.final_intent
-            )
-            if not recalculated:
-                return None
-
-        # Defensive check: path may be empty if recalculation found no valid route
-        if not self.pathfinding_goal or not self.pathfinding_goal._cached_path:
-            self.pathfinding_goal = None
-            return None
-
-        next_pos = self.pathfinding_goal._cached_path.pop(0)
-        dx, dy = next_pos[0] - self.x, next_pos[1] - self.y
-
-        # After popping, check if we need to compute the next path segment
-        self._advance_hierarchical_path(controller)
-
-        from catley.game.actions.movement import MoveIntent
-
-        return MoveIntent(controller, self, dx, dy)
-
-    def _advance_hierarchical_path(self, controller: Controller) -> None:
-        """Compute next path segment when current local path is exhausted.
-
-        For hierarchical (cross-region) paths, when _cached_path becomes empty
-        but high_level_path still has regions to traverse, this computes the
-        local path to the next connection point (or to target_pos if we're in
-        the final region).
-        """
-        goal = self.pathfinding_goal
-        if goal is None:
-            return
-
-        # Only act if local path is exhausted and we have more regions to go
-        if goal._cached_path:
-            return
-        if not goal.high_level_path:
-            return
-
-        gm = controller.gw.game_map
-        asi = controller.gw.actor_spatial_index
-
-        # Pop the region we just entered
-        current_region_id = goal.high_level_path.pop(0)
-
-        if goal.high_level_path:
-            # More regions to traverse - path to next connection point
-            next_region_id = goal.high_level_path[0]
-            current_region = gm.regions.get(current_region_id)
-            if current_region is None:
-                self.pathfinding_goal = None
-                return
-
-            connection_point = current_region.connections.get(next_region_id)
-            if connection_point is None:
-                self.pathfinding_goal = None
-                return
-
-            # Compute local path to connection point
-            # Note: We'll be at next_pos after moving, but we compute from current
-            # position since the move hasn't happened yet. The path will be
-            # validated on next turn anyway.
-            new_path = find_local_path(
-                gm, asi, self, (self.x, self.y), connection_point
-            )
-            if new_path:
-                goal._cached_path = new_path
-            else:
-                # Can't reach connection - clear goal
-                self.pathfinding_goal = None
-        else:
-            # We're in the final region - path to target
-            new_path = find_local_path(gm, asi, self, (self.x, self.y), goal.target_pos)
-            if new_path:
-                goal._cached_path = new_path
-            # If no path, leave _cached_path empty - goal will be cleared on next turn
+        return None
 
 
 class PC(Character):
@@ -708,14 +609,11 @@ class PC(Character):
         """Return the player's next action, prioritizing direct input."""
 
         if controller.turn_manager.has_pending_actions():
-            if hasattr(controller, "stop_actor_pathfinding"):
-                controller.stop_actor_pathfinding(self)
+            # Manual input cancels any active plan
+            controller.stop_walk_to_plan(self)
             return controller.turn_manager.dequeue_player_action()
 
-        autopilot_action = super().get_next_action(controller)
-        if autopilot_action:
-            return autopilot_action
-
+        # Active plans are handled by TurnManager._get_intent_from_plan()
         return None
 
 

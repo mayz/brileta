@@ -582,32 +582,9 @@ class ActionPanelView(TextView):
 
                     def create_pathfind_and_pickup(item_x: int, item_y: int):
                         def pathfind_and_pickup():
-                            from catley.game.actions.misc import (
-                                PickupItemsAtLocationIntent,
+                            return self.controller.start_pickup_items_plan(
+                                gw.player, (item_x, item_y)
                             )
-                            from catley.util.pathfinding import find_local_path
-
-                            gm = self.controller.gw.game_map
-                            # Find path directly to the item location
-                            path = find_local_path(
-                                gm,
-                                self.controller.gw.actor_spatial_index,
-                                gw.player,
-                                (gw.player.x, gw.player.y),
-                                (item_x, item_y),
-                            )
-                            if path:
-                                # Create intent to pickup items when we arrive
-                                pickup_intent = PickupItemsAtLocationIntent(
-                                    self.controller, gw.player
-                                )
-                                self.controller.start_actor_pathfinding(
-                                    gw.player,
-                                    (item_x, item_y),
-                                    final_intent=pickup_intent,
-                                )
-                                return True
-                            return False
 
                         return pathfind_and_pickup
 

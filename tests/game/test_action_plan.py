@@ -366,27 +366,6 @@ def test_character_can_set_active_plan() -> None:
     assert player.active_plan.plan.name == "Walk"
 
 
-def test_character_active_plan_coexists_with_pathfinding_goal() -> None:
-    """Character can have both active_plan and pathfinding_goal set."""
-    from catley.game.pathfinding_goal import PathfindingGoal
-
-    _controller, player, context = make_test_context()
-
-    # Set a pathfinding goal
-    player.pathfinding_goal = PathfindingGoal(target_pos=(10, 10))
-
-    # Set an active plan
-    plan = ActionPlan(name="Walk", steps=[ApproachStep()])
-    active = ActivePlan(plan=plan, context=context)
-    player.active_plan = active
-
-    # Both should coexist
-    assert player.pathfinding_goal is not None
-    assert player.active_plan is not None
-    assert player.pathfinding_goal.target_pos == (10, 10)
-    assert player.active_plan.plan.name == "Walk"
-
-
 # -----------------------------------------------------------------------------
 # ApproachStep pathfinding fallback tests
 # -----------------------------------------------------------------------------

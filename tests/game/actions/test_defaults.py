@@ -336,12 +336,11 @@ class TestAdjacentPositionSelection:
         assert len(search_plan_calls) == 1
         assert search_plan_calls[0][1] == container
 
-    def test_door_open_selects_closest_adjacent_tile(self) -> None:
-        """When opening a door from distance, pick the closest adjacent tile.
+    def test_door_open_starts_plan(self) -> None:
+        """When opening a door from distance, start an open door plan.
 
         Setup: Player at (5, 3), closed door at (2, 3)
-        Adjacent tiles: (1, 3), (3, 3), (2, 2), (2, 4)
-        Expected: (3, 3) is closest to player (distance 2), should be selected.
+        Expected: start_open_door_plan is called with the door coordinates.
         """
         from catley.game.actions.discovery import execute_default_action
 
@@ -355,21 +354,21 @@ class TestAdjacentPositionSelection:
         player.y = 3
         controller.gw.actor_spatial_index.update(player)
 
-        pathfinding_targets: list[tuple[int, int]] = []
+        open_door_plan_calls: list[tuple[Character, int, int]] = []
 
-        def mock_start_pathfinding(actor, target, final_intent=None):
-            pathfinding_targets.append(target)
+        def mock_start_open_door_plan(actor, door_x, door_y):
+            open_door_plan_calls.append((actor, door_x, door_y))
             return True
 
         def mock_is_combat_mode():
             return False
 
-        controller.start_actor_pathfinding = mock_start_pathfinding  # type: ignore
+        controller.start_open_door_plan = mock_start_open_door_plan  # type: ignore
         controller.is_combat_mode = mock_is_combat_mode  # type: ignore
 
         result = execute_default_action(controller, (2, 3))  # type: ignore[arg-type]
 
         assert result is True
-        assert len(pathfinding_targets) == 1
-        # (3, 3) is to the right of door, closest to player at (5, 3)
-        assert pathfinding_targets[0] == (3, 3)
+        assert len(open_door_plan_calls) == 1
+        # Called with door position
+        assert open_door_plan_calls[0] == (player, 2, 3)

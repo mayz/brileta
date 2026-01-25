@@ -46,7 +46,8 @@ class PlanContext:
         controller: The game controller for accessing game state.
         target_actor: The target actor for targeted actions (e.g., attack, push).
         target_position: The target position for position-based actions (e.g., move).
-        weapon: The weapon being used, if any.
+        weapon: The weapon being used for combat actions, if any.
+        item: The item being used for consumable targeting, if any.
     """
 
     actor: Character
@@ -54,6 +55,7 @@ class PlanContext:
     target_actor: Character | Actor | None = None
     target_position: WorldTilePos | None = None
     weapon: Item | None = None
+    item: Item | None = None
 
 
 @dataclass
@@ -177,12 +179,15 @@ class ActivePlan:
         current_step_index: Index of the step currently being executed.
         cached_path: For ApproachStep, the current path to the target.
             Peek at [0] for next position. Pop only after move succeeds.
+        cached_hierarchical_path: For cross-region paths, the sequence of
+            region IDs to traverse. None for same-region paths.
     """
 
     plan: ActionPlan
     context: PlanContext
     current_step_index: int = 0
     cached_path: list[WorldTilePos] | None = None
+    cached_hierarchical_path: list[int] | None = None
 
     def get_current_step(self) -> Step | None:
         """Return the current step, or None if the plan is complete.
@@ -376,6 +381,105 @@ def get_melee_attack_plan() -> ActionPlan:
                     "defender": ctx.target_actor,
                     "weapon": ctx.weapon,
                     "attack_mode": "melee",
+                },
+            ),
+        ],
+    )
+
+
+def get_open_door_plan() -> ActionPlan:
+    """Create OpenDoorPlan lazily to avoid circular imports.
+
+    Uses target_position for door coordinates. The IntentStep extracts x, y
+    from ctx.target_position since doors are tiles, not actors.
+    """
+    from catley.game.actions.environment import OpenDoorIntent
+
+    return ActionPlan(
+        name="Open Door",
+        requires_target=False,
+        requires_adjacency=True,
+        steps=[
+            ApproachStep(stop_distance=1),
+            IntentStep(
+                intent_class=OpenDoorIntent,
+                params=lambda ctx: {
+                    "actor": ctx.actor,
+                    "x": ctx.target_position[0] if ctx.target_position else 0,
+                    "y": ctx.target_position[1] if ctx.target_position else 0,
+                },
+            ),
+        ],
+    )
+
+
+def get_close_door_plan() -> ActionPlan:
+    """Create CloseDoorPlan lazily to avoid circular imports.
+
+    Uses target_position for door coordinates. The IntentStep extracts x, y
+    from ctx.target_position since doors are tiles, not actors.
+    """
+    from catley.game.actions.environment import CloseDoorIntent
+
+    return ActionPlan(
+        name="Close Door",
+        requires_target=False,
+        requires_adjacency=True,
+        steps=[
+            ApproachStep(stop_distance=1),
+            IntentStep(
+                intent_class=CloseDoorIntent,
+                params=lambda ctx: {
+                    "actor": ctx.actor,
+                    "x": ctx.target_position[0] if ctx.target_position else 0,
+                    "y": ctx.target_position[1] if ctx.target_position else 0,
+                },
+            ),
+        ],
+    )
+
+
+def get_pickup_items_plan() -> ActionPlan:
+    """Create PickupItemsPlan lazily to avoid circular imports.
+
+    Approaches the target position and picks up all items at that location.
+    Uses stop_distance=0 since player must be standing on the items.
+    """
+    from catley.game.actions.misc import PickupItemsAtLocationIntent
+
+    return ActionPlan(
+        name="Pick Up Items",
+        requires_target=False,
+        requires_adjacency=False,
+        steps=[
+            ApproachStep(stop_distance=0),
+            IntentStep(
+                intent_class=PickupItemsAtLocationIntent,
+                params=lambda ctx: {"actor": ctx.actor},
+            ),
+        ],
+    )
+
+
+def get_use_consumable_on_target_plan() -> ActionPlan:
+    """Create UseConsumableOnTargetPlan lazily to avoid circular imports.
+
+    Approaches the target actor and uses the consumable item on them.
+    """
+    from catley.game.actions.recovery import UseConsumableOnTargetIntent
+
+    return ActionPlan(
+        name="Use Consumable",
+        requires_target=True,
+        requires_adjacency=True,
+        steps=[
+            ApproachStep(stop_distance=1),
+            IntentStep(
+                intent_class=UseConsumableOnTargetIntent,
+                params=lambda ctx: {
+                    "actor": ctx.actor,
+                    "item": ctx.item,
+                    "target": ctx.target_actor,
                 },
             ),
         ],
