@@ -20,7 +20,7 @@ ruff-check:
 
 # Run type checking
 typecheck:
-	uv run pyright
+	uv run ty check
 
 # Run tests. Installs/syncs dependencies AND runs pytest in the same logical command.
 test:

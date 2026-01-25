@@ -546,7 +546,7 @@ class ModernGLGraphicsContext(BaseGraphicsContext):
         color_rgba: tuple[float, float, float, float],
     ) -> None:
         """Helper to render a quad with the outlined atlas texture immediately."""
-        # Guard against None (caller should check, but pyright needs this)
+        # Guard against None (caller should check, but type checker needs this)
         if self.outlined_atlas_texture is None:
             return
 

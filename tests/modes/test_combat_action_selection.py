@@ -951,7 +951,7 @@ class TestCombatActionFiltering:
 
         # Equip player with a pistol
         pistol = PISTOL_TYPE.create()
-        pistol.ranged_attack.current_ammo = 6  # pyright: ignore[reportOptionalMemberAccess]
+        pistol.ranged_attack.current_ammo = 6
         player.inventory.equip_to_slot(pistol, slot_index=0)
 
         actions = controller.combat_mode.get_available_combat_actions()
@@ -977,7 +977,7 @@ class TestCombatActionFiltering:
 
         # Equip player with a pistol
         pistol = PISTOL_TYPE.create()
-        pistol.ranged_attack.current_ammo = 6  # pyright: ignore[reportOptionalMemberAccess]
+        pistol.ranged_attack.current_ammo = 6
         player.inventory.equip_to_slot(pistol, slot_index=0)
 
         actions = controller.combat_mode.get_available_combat_actions()

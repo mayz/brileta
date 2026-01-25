@@ -33,7 +33,7 @@ The Makefile targets handle this automatically.
 make
 ```
 
-Do NOT run individual tools (pytest, pyright, ruff) separately first. Just run `make` once - it handles formatting, linting, type checking, and tests together. See the `Makefile` for details.
+Do NOT run individual tools (pytest, ty, ruff) separately first. Just run `make` once - it handles formatting, linting, type checking, and tests together. See the `Makefile` for details.
 
 ## Style
 

@@ -1085,7 +1085,7 @@ class GPULightingSystem(LightingSystem):
                     print("Failed to read mapped buffer data")
                     return None
                 # wgpu returns memoryview but types it as ArrayLike
-                result_data = np.frombuffer(mapped_data, dtype=np.float32)  # pyright: ignore[reportCallIssue,reportArgumentType]
+                result_data = np.frombuffer(mapped_data, dtype=np.float32)
             finally:
                 # Always unmap the buffer, even if mapping failed
                 try:

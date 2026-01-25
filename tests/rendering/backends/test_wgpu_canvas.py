@@ -42,10 +42,10 @@ class TestWGPUCanvas:
         self.mock_device = Mock()
         self.mock_resource_manager.device = self.mock_device
 
-        self.canvas = WGPUCanvas(  # pyright: ignore[reportOptionalCall]
+        self.canvas = WGPUCanvas(
             self.mock_renderer, self.mock_resource_manager, transparent=True
         )
-        self.opaque_canvas = WGPUCanvas(  # pyright: ignore[reportOptionalCall]
+        self.opaque_canvas = WGPUCanvas(
             self.mock_renderer, self.mock_resource_manager, transparent=False
         )
 
@@ -245,7 +245,7 @@ class TestWGPUCanvas:
         from catley.view.render.canvas import Canvas
 
         # Verify WGPUCanvas is a proper subclass
-        assert issubclass(WGPUCanvas, Canvas)  # pyright: ignore[reportArgumentType]
+        assert issubclass(WGPUCanvas, Canvas)
         assert isinstance(self.canvas, Canvas)
 
         # Test that required abstract methods are implemented
@@ -283,12 +283,12 @@ def test_canvas_creation_parameters():
     mock_resource_manager = Mock()
 
     # Test transparent canvas (default)
-    transparent_canvas = WGPUCanvas(mock_renderer, mock_resource_manager)  # pyright: ignore[reportOptionalCall]
+    transparent_canvas = WGPUCanvas(mock_renderer, mock_resource_manager)
     assert transparent_canvas.transparent is True
     assert transparent_canvas.renderer is mock_renderer
 
     # Test opaque canvas
-    opaque_canvas = WGPUCanvas(mock_renderer, mock_resource_manager, transparent=False)  # pyright: ignore[reportOptionalCall]
+    opaque_canvas = WGPUCanvas(mock_renderer, mock_resource_manager, transparent=False)
     assert opaque_canvas.transparent is False
     assert opaque_canvas.renderer is mock_renderer
 
@@ -299,8 +299,7 @@ def test_canvas_operation_caching():
     mock_renderer = Mock()
     mock_renderer.tile_dimensions = (20, 20)
     mock_resource_manager = Mock()
-    canvas = WGPUCanvas(mock_renderer, mock_resource_manager)  # pyright: ignore[reportOptionalCall]
-
+    canvas = WGPUCanvas(mock_renderer, mock_resource_manager)
     # Begin frame and add operations
     canvas.begin_frame()
     canvas.draw_text(0, 0, "Test", colors.WHITE)

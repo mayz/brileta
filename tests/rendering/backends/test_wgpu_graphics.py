@@ -65,7 +65,7 @@ class TestWGPUGraphicsContext:
         # Try to create real WGPU context, fall back to mock if unavailable
         try:
             # Attempt real WGPU context creation (defer init for testing)
-            self.graphics_ctx = WGPUGraphicsContext(mock_window, _defer_init=True)  # pyright: ignore[reportOptionalCall]
+            self.graphics_ctx = WGPUGraphicsContext(mock_window, _defer_init=True)
             self.real_wgpu = True
         except Exception:
             # Fall back to mocked WGPU for environments without GPU
@@ -80,7 +80,7 @@ class TestWGPUGraphicsContext:
                 mock_device.queue = mock_queue
                 mock_wgpu.create_surface_from_window.return_value = mock_surface
 
-                self.graphics_ctx = WGPUGraphicsContext(mock_window, _defer_init=True)  # pyright: ignore[reportOptionalCall]
+                self.graphics_ctx = WGPUGraphicsContext(mock_window, _defer_init=True)
                 self.real_wgpu = False
 
         # Add mock resource manager for testing
@@ -369,8 +369,7 @@ def test_wgpu_graphics_context_window_parameters():
     mock_window.get_framebuffer_size = Mock(return_value=(1024, 768))
     mock_window.flip = Mock()
 
-    ctx = WGPUGraphicsContext(mock_window, _defer_init=True)  # pyright: ignore[reportOptionalCall]
-
+    ctx = WGPUGraphicsContext(mock_window, _defer_init=True)
     # Verify window is properly stored
     assert ctx.window is mock_window
 
@@ -386,7 +385,6 @@ def test_wgpu_graphics_context_default_parameters():
     mock_window.get_framebuffer_size = Mock(return_value=(800, 600))
     mock_window.flip = Mock()
 
-    ctx = WGPUGraphicsContext(mock_window, _defer_init=True)  # pyright: ignore[reportOptionalCall]
-
+    ctx = WGPUGraphicsContext(mock_window, _defer_init=True)
     # Verify window is properly stored
     assert ctx.window is mock_window

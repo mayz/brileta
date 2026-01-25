@@ -257,7 +257,7 @@ class Actor:
             start_pos = (float(old_x), float(old_y))
             end_pos = (float(self.x), float(self.y))
             animation = MoveAnimation(self, start_pos, end_pos)
-            controller.animation_manager.add(animation)  # pyright: ignore[reportAttributeAccessIssue]
+            controller.animation_manager.add(animation)
 
     def teleport(self, x: WorldTileCoord, y: WorldTileCoord) -> None:
         """Instantly move the actor's logical and visual position."""
