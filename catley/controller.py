@@ -242,6 +242,8 @@ class Controller:
         if self.turn_manager.has_pending_actions():
             player_action = self.turn_manager.dequeue_player_action()
             if player_action:
+                # Manual action cancels any active walk plan
+                self.stop_walk_to_plan(self.gw.player)
                 self._execute_player_action_immediately(player_action)
 
         # Check for autopilot actions if no manual input
@@ -256,9 +258,16 @@ class Controller:
             and not self.turn_manager.has_pending_actions()
             and self.turn_manager.is_player_turn_available()
         ):
-            autopilot_action = self.gw.player.get_next_action(self)
+            # Get autopilot action - check active_plan first, then pathfinding_goal
+            if self.gw.player.active_plan is not None:
+                autopilot_action = self.turn_manager._get_intent_from_plan(
+                    self.gw.player
+                )
+            else:
+                # Fall back to pathfinding_goal (legacy system)
+                autopilot_action = self.gw.player.get_next_action(self)
+
             if autopilot_action:
-                # Energy gate autopilot same as manual movement
                 if self.gw.player.energy.can_afford(config.ACTION_COST):
                     self._execute_player_action_immediately(autopilot_action)
                     self._last_autopilot_move_time = now
@@ -342,8 +351,8 @@ class Controller:
         # Process turn effects for the acting player
         self.gw.player.update_turn(self)
 
-        # Execute the player's action
-        self.turn_manager.execute_intent(action)
+        # Execute the player's action (using execute_player_intent for plan advancement)
+        self.turn_manager.execute_player_intent(action)
         self.gw.player.energy.spend(config.ACTION_COST)
 
         # Check for terrain hazard damage after the player completes their action
@@ -815,6 +824,34 @@ class Controller:
         """Immediately cancel ``actor``'s active pathfinding goal."""
 
         actor.pathfinding_goal = None
+
+    def start_walk_to_plan(self, actor: Character, target_pos: WorldTilePos) -> bool:
+        """Create an ActivePlan for walking to a target position.
+
+        This is the ActionPlan equivalent of start_actor_pathfinding() for
+        simple walk-to-tile actions. It creates a WalkToPlan with a single
+        ApproachStep.
+
+        Args:
+            actor: The character to move.
+            target_pos: The destination position.
+
+        Returns:
+            True (always succeeds in creating the plan - path is calculated lazily).
+        """
+        from catley.game.action_plan import ActivePlan, PlanContext, WalkToPlan
+
+        context = PlanContext(
+            actor=actor,
+            controller=self,
+            target_position=target_pos,
+        )
+        actor.active_plan = ActivePlan(plan=WalkToPlan, context=context)
+        return True
+
+    def stop_walk_to_plan(self, actor: Character) -> None:
+        """Cancel an actor's active plan."""
+        actor.active_plan = None
 
     def _initialize_sound_system(self) -> None:
         """Initialize the sound system and audio backend."""

@@ -211,3 +211,13 @@ class ActivePlan:
             True if current_step_index >= len(plan.steps).
         """
         return self.current_step_index >= len(self.plan.steps)
+
+
+# =============================================================================
+# Pre-defined Action Plans
+# =============================================================================
+
+WalkToPlan = ActionPlan(
+    name="Walk",
+    steps=[ApproachStep(stop_distance=0)],
+)

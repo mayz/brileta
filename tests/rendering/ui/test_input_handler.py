@@ -129,21 +129,23 @@ def make_input_handler() -> tuple[InputHandler, list[tuple[Any, tuple[int, int],
     return ih, calls
 
 
-def make_explore_mode() -> tuple[
-    ExploreMode, Any, list[tuple[Any, tuple[int, int], Any]]
-]:
+def make_explore_mode() -> tuple[ExploreMode, Any, list[tuple[Any, tuple[int, int]]]]:
     """Create an ExploreMode for testing mouse click handling."""
     gw = DummyGameWorld(width=10, height=10)
     player = Character(0, 0, "@", colors.WHITE, "Player", game_world=cast(Any, gw))
     gw.player = player
     gw.add_actor(player)
 
-    calls: list[tuple[Any, tuple[int, int], Any]] = []
+    calls: list[tuple[Any, tuple[int, int]]] = []
+
+    def start_walk_to_plan(actor: Any, pos: tuple[int, int]) -> bool:
+        calls.append((actor, pos))
+        return True
 
     def start_path(
         actor: Any, pos: tuple[int, int], final_intent: Any | None = None
     ) -> bool:
-        calls.append((actor, pos, final_intent))
+        # Legacy pathfinding - not used for simple walk-to-tile anymore
         return True
 
     renderer = SimpleNamespace(
@@ -188,6 +190,7 @@ def make_explore_mode() -> tuple[
         graphics=renderer,
         frame_manager=frame_manager,
         start_actor_pathfinding=start_path,
+        start_walk_to_plan=start_walk_to_plan,
         overlay_system=overlay_system,
         app=dummy_app,
         enter_combat_mode=lambda: None,
@@ -211,7 +214,7 @@ def test_shift_click_starts_pathfinding(monkeypatch: Any) -> None:
     event = tcod.event.MouseButtonDown((5, 5), (5, 5), tcod.event.MouseButton.LEFT)
     result = mode._handle_mouse_click(event)
     assert result is True  # Event was consumed
-    assert calls == [(mode._p, (5, 5), None)]
+    assert calls == [(mode._p, (5, 5))]
 
 
 def test_right_click_distant_tile_opens_menu() -> None:

@@ -402,7 +402,7 @@ class ExploreMode(Mode):
             tcod.event.get_modifier_state() & tcod.event.Modifier.SHIFT
         ):
             if world_tile_pos is not None:
-                self.controller.start_actor_pathfinding(self._p, world_tile_pos)
+                self.controller.start_walk_to_plan(self._p, world_tile_pos)
             return True
 
         # Right click executes default action
@@ -495,9 +495,9 @@ class ExploreMode(Mode):
         # For remembered but not currently visible tiles, only allow walking
         if not game_map.visible[world_x, world_y]:
             # Can only walk to remembered tiles - no interaction with unseen actors
-            # Use start_actor_pathfinding directly rather than execute_default_action,
+            # Use start_walk_to_plan directly rather than execute_default_action,
             # since the latter would try to classify actors at the tile.
-            self.controller.start_actor_pathfinding(self._p, (world_x, world_y))
+            self.controller.start_walk_to_plan(self._p, (world_x, world_y))
             self.controller.deselect_target()
             return True
 

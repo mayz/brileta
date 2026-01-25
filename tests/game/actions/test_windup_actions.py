@@ -166,6 +166,10 @@ class DummyTurnManager:
     def execute_intent(self, action: GameIntent) -> None:
         self.processed.append(action)
 
+    def execute_player_intent(self, action: GameIntent) -> None:
+        """Execute player intent (handles plan advancement in real impl)."""
+        self.execute_intent(action)
+
     def process_all_npc_turns(self) -> None:
         pass
 

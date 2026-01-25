@@ -714,3 +714,245 @@ def test_tripped_player_blocked_for_two_turns() -> None:
 
     assert player.x == initial_x + dx, "Third action should succeed"
     assert player.y == initial_y + dy, "Third action should succeed"
+
+
+# --- ActionPlan System Tests ---
+
+
+def test_is_player_turn_available_with_active_plan() -> None:
+    """is_player_turn_available returns True when player has an active_plan."""
+    from catley.game.action_plan import ActivePlan, PlanContext, WalkToPlan
+
+    controller, player = _make_world()
+    tm = controller.turn_manager
+
+    # No plan - should return False
+    assert not tm.is_player_turn_available()
+
+    # Set up an active plan
+    context = PlanContext(
+        actor=player,
+        controller=cast(Controller, controller),
+        target_position=(3, 0),
+    )
+    player.active_plan = ActivePlan(plan=WalkToPlan, context=context)
+
+    # Now should return True
+    assert tm.is_player_turn_available()
+
+
+def test_get_next_player_intent_from_active_plan() -> None:
+    """get_next_player_intent returns intent from active_plan."""
+    from catley.game.action_plan import ActivePlan, PlanContext, WalkToPlan
+    from catley.game.actions.movement import MoveIntent
+
+    controller, player = _make_world()
+    tm = controller.turn_manager
+
+    # Set up an active plan to walk to (3, 0)
+    context = PlanContext(
+        actor=player,
+        controller=cast(Controller, controller),
+        target_position=(3, 0),
+    )
+    player.active_plan = ActivePlan(plan=WalkToPlan, context=context)
+
+    # Get the intent - should be a MoveIntent
+    intent = tm.get_next_player_intent()
+
+    assert intent is not None
+    assert isinstance(intent, MoveIntent)
+    assert intent.dx == 1  # Moving right toward (3, 0)
+    assert intent.dy == 0
+
+
+def test_handle_approach_step_peeks_at_path() -> None:
+    """_handle_approach_step peeks at cached_path[0] without popping."""
+    from catley.game.action_plan import (
+        ActivePlan,
+        ApproachStep,
+        PlanContext,
+        WalkToPlan,
+    )
+
+    controller, player = _make_world()
+    tm = controller.turn_manager
+
+    # Set up an active plan with a pre-populated path
+    context = PlanContext(
+        actor=player,
+        controller=cast(Controller, controller),
+        target_position=(3, 0),
+    )
+    active_plan = ActivePlan(plan=WalkToPlan, context=context)
+    active_plan.cached_path = [(1, 0), (2, 0), (3, 0)]  # Pre-populate the path
+    player.active_plan = active_plan
+
+    # Get the approach step
+    step = active_plan.get_current_step()
+    assert isinstance(step, ApproachStep)
+
+    # Handle the approach step
+    intent = tm._handle_approach_step(player, active_plan, step)
+
+    # Intent should be created
+    assert intent is not None
+    assert intent.dx == 1
+    assert intent.dy == 0
+
+    # Path should NOT be popped yet
+    assert len(active_plan.cached_path) == 3
+    assert active_plan.cached_path[0] == (1, 0)
+
+
+def test_on_approach_result_pops_path_on_success() -> None:
+    """_on_approach_result pops from cached_path when move succeeds."""
+    from catley.game.action_plan import ActivePlan, PlanContext, WalkToPlan
+    from catley.game.actions.base import GameActionResult
+
+    controller, player = _make_world()
+    tm = controller.turn_manager
+
+    # Set up an active plan with a pre-populated path
+    context = PlanContext(
+        actor=player,
+        controller=cast(Controller, controller),
+        target_position=(3, 0),
+    )
+    active_plan = ActivePlan(plan=WalkToPlan, context=context)
+    active_plan.cached_path = [(1, 0), (2, 0), (3, 0)]
+    player.active_plan = active_plan
+
+    # Simulate a successful move result
+    result = GameActionResult(succeeded=True)
+
+    # Call _on_approach_result
+    tm._on_approach_result(player, result)
+
+    # Path should be popped
+    assert len(active_plan.cached_path) == 2
+    assert active_plan.cached_path[0] == (2, 0)
+
+
+def test_on_approach_result_invalidates_path_on_failure() -> None:
+    """_on_approach_result sets cached_path to None when move fails."""
+    from catley.game.action_plan import ActivePlan, PlanContext, WalkToPlan
+    from catley.game.actions.base import GameActionResult
+
+    controller, player = _make_world()
+    tm = controller.turn_manager
+
+    # Set up an active plan with a pre-populated path
+    context = PlanContext(
+        actor=player,
+        controller=cast(Controller, controller),
+        target_position=(3, 0),
+    )
+    active_plan = ActivePlan(plan=WalkToPlan, context=context)
+    active_plan.cached_path = [(1, 0), (2, 0), (3, 0)]
+    player.active_plan = active_plan
+
+    # Simulate a failed move result
+    result = GameActionResult(succeeded=False)
+
+    # Call _on_approach_result
+    tm._on_approach_result(player, result)
+
+    # Path should be invalidated (set to None for recalculation)
+    assert active_plan.cached_path is None
+
+
+def test_plan_completes_when_destination_reached() -> None:
+    """Active plan is cleared when player reaches destination."""
+    from catley.game.action_plan import ActivePlan, PlanContext, WalkToPlan
+    from catley.game.actions.base import GameActionResult
+
+    controller, player = _make_world()
+    tm = controller.turn_manager
+
+    # Move player to (2, 0) so they're one step from destination
+    player.x = 2
+
+    # Set up an active plan to walk to (3, 0) - only one step away
+    context = PlanContext(
+        actor=player,
+        controller=cast(Controller, controller),
+        target_position=(3, 0),
+    )
+    active_plan = ActivePlan(plan=WalkToPlan, context=context)
+    active_plan.cached_path = [(3, 0)]
+    player.active_plan = active_plan
+
+    # Simulate executing the move: player moves to (3, 0)
+    player.x = 3
+
+    # Simulate a successful move result
+    result = GameActionResult(succeeded=True)
+    tm._on_approach_result(player, result)
+
+    # Plan should be completed and cleared
+    assert player.active_plan is None
+
+
+def test_execute_player_intent_handles_plan_advancement() -> None:
+    """execute_player_intent calls _on_approach_result for plan advancement."""
+    from catley.game.action_plan import ActivePlan, PlanContext, WalkToPlan
+    from catley.game.actions.movement import MoveIntent
+
+    controller, player = _make_world()
+    tm = controller.turn_manager
+
+    # Set up an active plan with a path
+    context = PlanContext(
+        actor=player,
+        controller=cast(Controller, controller),
+        target_position=(3, 0),
+    )
+    active_plan = ActivePlan(plan=WalkToPlan, context=context)
+    active_plan.cached_path = [(1, 0), (2, 0), (3, 0)]
+    player.active_plan = active_plan
+
+    # Create and execute a move intent
+    intent = MoveIntent(cast(Controller, controller), player, dx=1, dy=0)
+    result = tm.execute_player_intent(intent)
+
+    # Move should succeed
+    assert result.succeeded
+    assert player.x == 1
+
+    # Path should be popped (handled by execute_player_intent)
+    assert len(active_plan.cached_path) == 2
+
+
+def test_walk_to_plan_full_journey() -> None:
+    """Player walks full journey using WalkToPlan."""
+    from catley.game.action_plan import ActivePlan, PlanContext, WalkToPlan
+
+    controller, player = _make_world()
+    tm = controller.turn_manager
+
+    # Set up an active plan to walk to (3, 0)
+    context = PlanContext(
+        actor=player,
+        controller=cast(Controller, controller),
+        target_position=(3, 0),
+    )
+    player.active_plan = ActivePlan(plan=WalkToPlan, context=context)
+
+    # Execute turns until destination reached
+    for _ in range(10):  # Safety limit
+        if player.active_plan is None:
+            break
+
+        intent = tm.get_next_player_intent()
+        if intent is None:
+            break
+
+        tm.execute_player_intent(intent)
+
+    # Player should be at destination
+    assert player.x == 3
+    assert player.y == 0
+
+    # Plan should be completed
+    assert player.active_plan is None

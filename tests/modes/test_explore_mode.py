@@ -83,6 +83,7 @@ def make_explore_mode() -> tuple[ExploreMode, Any, DummyGameWorld]:
         enter_combat_mode=lambda: None,
         queue_action=lambda a: None,
         start_actor_pathfinding=lambda *a: True,
+        start_walk_to_plan=lambda *a: True,
         last_input_time=0.0,
         action_count_for_latency_metric=0,
         _execute_player_action_immediately=lambda intent: None,
@@ -306,18 +307,24 @@ def make_explore_mode_with_mocks() -> tuple[
     Returns:
         Tuple of (ExploreMode, controller, game_world, pathfinding_calls)
         where pathfinding_calls is a list that captures (actor, target, kwargs)
-        for each call to start_actor_pathfinding.
+        for each call to start_actor_pathfinding or start_walk_to_plan.
     """
     mode, controller, gw = make_explore_mode()
 
-    # Track pathfinding calls
+    # Track pathfinding calls (both legacy and new plan-based)
     pathfinding_calls: list[tuple[Any, ...]] = []
 
     def mock_start_pathfinding(actor, target, **kwargs):
         pathfinding_calls.append((actor, target, kwargs))
         return True
 
+    def mock_start_walk_to_plan(actor, target):
+        # Track as (actor, target, {}) for consistency with legacy format
+        pathfinding_calls.append((actor, target, {}))
+        return True
+
     controller.start_actor_pathfinding = mock_start_pathfinding
+    controller.start_walk_to_plan = mock_start_walk_to_plan
 
     # Track deselect calls
     controller.deselect_target = MagicMock()

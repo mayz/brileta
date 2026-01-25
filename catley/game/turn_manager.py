@@ -27,11 +27,13 @@ from typing import TYPE_CHECKING
 
 from catley import config
 from catley.game.action_router import ActionRouter
-from catley.game.actions.base import GameIntent
+from catley.game.actions.base import GameActionResult, GameIntent
 
 if TYPE_CHECKING:
     from catley.controller import Controller
+    from catley.game.action_plan import ActivePlan, ApproachStep
     from catley.game.actors import Actor
+    from catley.game.actors.core import Character
 
 
 class TurnManager:
@@ -205,16 +207,230 @@ class TurnManager:
             )
             self.execute_intent(intent)
 
-    def execute_intent(self, intent: GameIntent) -> None:
+    def execute_intent(self, intent: GameIntent) -> GameActionResult:
         """Execute a single GameIntent by routing it to the ActionRouter.
 
-        This method is unchanged from the original - it handles the actual
-        execution of actions regardless of whether they're player or NPC actions.
+        Returns the GameActionResult so callers can inspect whether the action
+        succeeded and decide how to proceed (e.g., for plan advancement).
 
         Args:
             intent: The GameIntent to execute
+
+        Returns:
+            GameActionResult from the executor, or a failed result if no executor.
         """
-        self.action_router.execute_intent(intent)
+        return self.action_router.execute_intent(intent)
+
+    # === ActionPlan System Methods ===
+    # These methods handle the ActionPlan system for multi-step player actions.
+
+    def get_next_player_intent(self) -> GameIntent | None:
+        """Get the next player intent, checking active_plan first.
+
+        This is the primary entry point for getting player actions when using
+        the ActionPlan system. It checks in order:
+        1. Player's active_plan (if any)
+        2. Queued manual actions
+
+        Returns:
+            The next GameIntent to execute, or None if no action available.
+        """
+        # Check active_plan first
+        if self.player.active_plan is not None:
+            intent = self._get_intent_from_plan(self.player)
+            if intent is not None:
+                return intent
+            # Plan completed or couldn't generate intent - fall through
+
+        # Fall back to queued actions
+        return self.dequeue_player_action()
+
+    def execute_player_intent(self, intent: GameIntent) -> GameActionResult:
+        """Execute a player intent and handle plan advancement if applicable.
+
+        This method wraps execute_intent() and handles the plan advancement
+        logic internally. The Controller doesn't need to know about plan
+        internals - it just calls this method.
+
+        Args:
+            intent: The GameIntent to execute.
+
+        Returns:
+            The GameActionResult from execution.
+        """
+        result = self.execute_intent(intent)
+
+        # Handle plan advancement for ApproachStep moves
+        if self.player.active_plan is not None:
+            self._on_approach_result(self.player, result)
+
+        return result
+
+    def _get_intent_from_plan(self, actor: Character) -> GameIntent | None:
+        """Generate the next intent from an actor's active plan.
+
+        Handles step skipping, IntentStep execution, and ApproachStep
+        pathfinding. Returns None if the plan is complete or can't proceed.
+
+        Args:
+            actor: The character with an active plan.
+
+        Returns:
+            A GameIntent to execute, or None if plan is done/blocked.
+        """
+        from catley.game.action_plan import ApproachStep, IntentStep
+
+        plan = actor.active_plan
+        if plan is None:
+            return None
+
+        step = plan.get_current_step()
+
+        # Plan complete?
+        if step is None:
+            actor.active_plan = None
+            return None
+
+        # Skip steps whose conditions are met
+        while (
+            step is not None and step.skip_if is not None and step.skip_if(plan.context)
+        ):
+            plan.advance()
+            step = plan.get_current_step()
+
+        if step is None:
+            actor.active_plan = None
+            return None
+
+        # Generate intent based on step type
+        if isinstance(step, IntentStep):
+            params = step.params(plan.context)
+            intent = step.intent_class(plan.context.controller, **params)
+            plan.advance()
+            return intent
+
+        if isinstance(step, ApproachStep):
+            return self._handle_approach_step(actor, plan, step)
+
+        # Unknown step type
+        return None
+
+    def _handle_approach_step(
+        self,
+        actor: Character,
+        plan: ActivePlan,
+        step: ApproachStep,
+    ) -> GameIntent | None:
+        """Handle an ApproachStep by generating the next MoveIntent.
+
+        This method:
+        1. Checks if we've arrived (based on stop_distance)
+        2. Calculates path if needed
+        3. PEEKs at the next position (does NOT pop)
+        4. Returns a MoveIntent
+
+        The path is only popped after the move succeeds, in _on_approach_result().
+
+        Args:
+            actor: The character executing the plan.
+            plan: The active plan containing the step.
+            step: The ApproachStep to handle.
+
+        Returns:
+            A MoveIntent for the next step, or None if arrived/blocked.
+        """
+        from catley.game.actions.movement import MoveIntent
+        from catley.util.pathfinding import find_local_path
+
+        # Determine target position
+        if plan.context.target_actor is not None:
+            target_pos = (plan.context.target_actor.x, plan.context.target_actor.y)
+        elif plan.context.target_position is not None:
+            target_pos = plan.context.target_position
+        else:
+            # No target - can't approach
+            actor.active_plan = None
+            return None
+
+        # Check if we've arrived (based on stop_distance)
+        dx_to_target = target_pos[0] - actor.x
+        dy_to_target = target_pos[1] - actor.y
+        current_distance = max(abs(dx_to_target), abs(dy_to_target))  # Chebyshev
+
+        if current_distance <= step.stop_distance:
+            # Arrived - advance to next step
+            plan.advance()
+            # Recurse to get intent from next step (if any)
+            return self._get_intent_from_plan(actor)
+
+        # Generate path if needed
+        if plan.cached_path is None or not plan.cached_path:
+            gm = self.controller.gw.game_map
+            asi = self.controller.gw.actor_spatial_index
+            plan.cached_path = find_local_path(
+                gm, asi, actor, (actor.x, actor.y), target_pos
+            )
+
+        if not plan.cached_path:
+            # Can't reach target - cancel plan
+            actor.active_plan = None
+            return None
+
+        # PEEK at next position - don't pop yet!
+        # We only pop after confirming the move succeeded.
+        next_pos = plan.cached_path[0]
+        dx = next_pos[0] - actor.x
+        dy = next_pos[1] - actor.y
+
+        return MoveIntent(plan.context.controller, actor, dx, dy)
+
+    def _on_approach_result(self, actor: Character, result: GameActionResult) -> None:
+        """Handle the result of an approach move.
+
+        Called after executing a MoveIntent from an ApproachStep. Updates the
+        plan state based on whether the move succeeded:
+        - Success: Pop the path entry we just moved to
+        - Failure: Invalidate path for recalculation on next turn
+
+        Args:
+            actor: The character who attempted the move.
+            result: The result from executing the MoveIntent.
+        """
+        from catley.game.action_plan import ApproachStep
+
+        plan = actor.active_plan
+        if plan is None:
+            return
+
+        step = plan.get_current_step()
+        if not isinstance(step, ApproachStep):
+            return
+
+        if result.succeeded:
+            # Move succeeded - now safe to pop the path
+            if plan.cached_path:
+                plan.cached_path.pop(0)
+
+            # Check if we've now arrived at destination
+            if plan.context.target_actor is not None:
+                target_pos = (plan.context.target_actor.x, plan.context.target_actor.y)
+            elif plan.context.target_position is not None:
+                target_pos = plan.context.target_position
+            else:
+                return
+
+            dx = target_pos[0] - actor.x
+            dy = target_pos[1] - actor.y
+            distance = max(abs(dx), abs(dy))
+
+            if distance <= step.stop_distance:
+                # Arrived - advance to next step (or complete plan)
+                plan.advance()
+                if plan.is_complete():
+                    actor.active_plan = None
+        else:
+            # Move failed (blocked) - invalidate path for recalculation
+            plan.cached_path = None
 
     # === Preserved Methods for Compatibility ===
     # These methods are kept to maintain compatibility with existing code
@@ -237,8 +453,9 @@ class TurnManager:
     def is_player_turn_available(self) -> bool:
         """Return True if player has pending actions or autopilot goals."""
         has_manual_action = self.has_pending_actions()
+        has_active_plan = getattr(self.player, "active_plan", None) is not None
         has_autopilot_goal = getattr(self.player, "pathfinding_goal", None) is not None
-        return has_manual_action or has_autopilot_goal
+        return has_manual_action or has_active_plan or has_autopilot_goal
 
     # Backwards compatibility for old name
     def is_turn_available(self) -> bool:  # pragma: no cover - legacy
