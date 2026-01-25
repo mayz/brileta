@@ -310,54 +310,26 @@ class EnvironmentActionDiscovery:
         for tile_actor in actors_at_tile:
             if isinstance(tile_actor, Container):
                 container = tile_actor
-                if distance <= 1:
-                    # Adjacent - direct search action
-                    options.append(
-                        ActionOption(
-                            id="search-container-adjacent",
-                            name=f"Search {container.name}",
-                            description=f"Search the {container.name} for items",
-                            category=ActionCategory.ENVIRONMENT,
-                            action_class=SearchContainerIntent,
-                            requirements=[],
-                            static_params={"target": container},
-                        )
+
+                def create_search_plan(c: Container):
+                    def search():
+                        controller.start_search_container_plan(actor, c)
+                        return True
+
+                    return search
+
+                options.append(
+                    ActionOption(
+                        id="search-container",
+                        name=f"Search {container.name}",
+                        description=f"Search the {container.name} for items",
+                        category=ActionCategory.ENVIRONMENT,
+                        action_class=SearchContainerIntent,
+                        requirements=[],
+                        static_params={"target": container},
+                        execute=create_search_plan(container),
                     )
-                else:
-                    # Not adjacent - require movement (use pathfinding)
-                    def create_pathfind_and_search(c: Container):
-                        def pathfind_and_search():
-                            from catley.util.pathfinding import (
-                                find_closest_adjacent_tile,
-                            )
-
-                            gw = controller.gw
-                            adj = find_closest_adjacent_tile(
-                                c.x, c.y, actor.x, actor.y, gw.game_map, gw, actor
-                            )
-                            if adj is not None:
-                                search_intent = SearchContainerIntent(
-                                    controller, actor, c
-                                )
-                                return controller.start_actor_pathfinding(
-                                    actor, adj, final_intent=search_intent
-                                )
-                            return False
-
-                        return pathfind_and_search
-
-                    options.append(
-                        ActionOption(
-                            id="go-and-search-container",
-                            name=f"Search {container.name}",
-                            description=f"Move to and search the {container.name}",
-                            category=ActionCategory.ENVIRONMENT,
-                            action_class=None,
-                            requirements=[],
-                            static_params={},
-                            execute=create_pathfind_and_search(container),
-                        )
-                    )
+                )
                 # Only handle the first container at this tile; skip "Go here" since
                 # the container-specific action is more relevant
                 break

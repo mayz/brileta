@@ -169,19 +169,7 @@ class ActionDiscovery:
         from catley.game.actions.social import TalkIntent
 
         def talk() -> bool:
-            from catley.game import ranges
-
-            distance = ranges.calculate_distance(actor.x, actor.y, target.x, target.y)
-            if distance == 1:
-                # Adjacent - talk immediately
-                intent = TalkIntent(controller, actor, target)
-                controller.queue_action(intent)
-            else:
-                # Not adjacent - pathfind then talk
-                final_intent = TalkIntent(controller, actor, target)
-                controller.start_actor_pathfinding(
-                    actor, (target.x, target.y), final_intent=final_intent
-                )
+            controller.start_talk_plan(actor, target)
             return True
 
         return ActionOption(
@@ -207,19 +195,7 @@ class ActionDiscovery:
         from catley.game.actions.stunts import PushIntent
 
         def push() -> bool:
-            from catley.game import ranges
-
-            distance = ranges.calculate_distance(actor.x, actor.y, target.x, target.y)
-            if distance == 1:
-                # Adjacent - push immediately
-                intent = PushIntent(controller, actor, target)
-                controller.queue_action(intent)
-            else:
-                # Not adjacent - pathfind then push
-                final_intent = PushIntent(controller, actor, target)
-                controller.start_actor_pathfinding(
-                    actor, (target.x, target.y), final_intent=final_intent
-                )
+            controller.start_push_plan(actor, target)
             return True
 
         return ActionOption(
@@ -245,19 +221,7 @@ class ActionDiscovery:
         from catley.game.actions.stunts import TripIntent
 
         def trip() -> bool:
-            from catley.game import ranges
-
-            distance = ranges.calculate_distance(actor.x, actor.y, target.x, target.y)
-            if distance == 1:
-                # Adjacent - trip immediately
-                intent = TripIntent(controller, actor, target)
-                controller.queue_action(intent)
-            else:
-                # Not adjacent - pathfind then trip
-                final_intent = TripIntent(controller, actor, target)
-                controller.start_actor_pathfinding(
-                    actor, (target.x, target.y), final_intent=final_intent
-                )
+            controller.start_trip_plan(actor, target)
             return True
 
         return ActionOption(

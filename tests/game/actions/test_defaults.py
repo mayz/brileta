@@ -231,46 +231,44 @@ class TestExecuteDefaultActionInCombatMode:
         assert isinstance(queued_actions[0], AttackIntent)
 
     def test_npc_default_is_talk_outside_combat_mode(self) -> None:
-        """Outside combat mode, right-clicking an adjacent NPC should talk."""
+        """Outside combat mode, right-clicking an NPC should start TalkPlan."""
         from catley.game.actions.discovery import execute_default_action
 
         controller, player, npc = _make_test_world()
 
-        # Track what action gets queued
-        queued_actions: list = []
-
-        def mock_queue_action(intent):
-            queued_actions.append(intent)
-
         def mock_is_combat_mode():
             return False
 
-        controller.queue_action = mock_queue_action  # type: ignore[attr-defined]
-        controller.is_combat_mode = mock_is_combat_mode  # type: ignore[attr-defined]
+        # Mock the start_talk_plan method to track calls
+        talk_plan_calls: list = []
 
-        # Move player adjacent to NPC for immediate action
+        def mock_start_talk_plan(actor, target):
+            talk_plan_calls.append((actor, target))
+            return True
+
+        controller.is_combat_mode = mock_is_combat_mode  # type: ignore[attr-defined]
+        controller.start_talk_plan = mock_start_talk_plan  # type: ignore[attr-defined]
+
+        # Position player (distant or adjacent - plan handles both)
         player.x = 4
         player.y = 5
 
         result = execute_default_action(controller, npc)  # type: ignore[arg-type]
 
         assert result is True
-        assert len(queued_actions) == 1
-        # Should be a TalkIntent, not AttackIntent
-        from catley.game.actions.social import TalkIntent
-
-        assert isinstance(queued_actions[0], TalkIntent)
+        assert len(talk_plan_calls) == 1
+        assert talk_plan_calls[0][0] == player
+        assert talk_plan_calls[0][1] == npc
 
 
 class TestAdjacentPositionSelection:
-    """Tests that execute_default_action selects the closest adjacent tile."""
+    """Tests that execute_default_action handles container and door targets."""
 
-    def test_container_search_selects_closest_adjacent_tile(self) -> None:
-        """When searching a container from distance, pick the closest adjacent tile.
+    def test_container_search_starts_search_plan(self) -> None:
+        """Searching a container should start a SearchContainerPlan.
 
-        Setup: Player at (5, 0), container at (2, 0)
-        Adjacent tiles to container: (1, 0), (3, 0), (2, -1), (2, 1)
-        Expected: (3, 0) is closest to player (distance 2), should be selected.
+        The plan system handles finding the closest adjacent tile during
+        execution via ApproachStep.
         """
         from catley.game.actions.discovery import execute_default_action
 
@@ -280,38 +278,33 @@ class TestAdjacentPositionSelection:
         )
         controller.gw.add_actor(container)
 
-        # Position player to the right of container with a gap
+        # Position player away from container
         player.x = 5
         player.y = 0
         controller.gw.actor_spatial_index.update(player)
 
-        # Track pathfinding calls
-        pathfinding_targets: list[tuple[int, int]] = []
+        # Track search plan calls
+        search_plan_calls: list = []
 
-        def mock_start_pathfinding(actor, target, final_intent=None):
-            pathfinding_targets.append(target)
+        def mock_start_search_container_plan(actor, target):
+            search_plan_calls.append((actor, target))
             return True
 
         def mock_is_combat_mode():
             return False
 
-        controller.start_actor_pathfinding = mock_start_pathfinding  # type: ignore
+        controller.start_search_container_plan = mock_start_search_container_plan  # type: ignore
         controller.is_combat_mode = mock_is_combat_mode  # type: ignore
 
         result = execute_default_action(controller, container)  # type: ignore[arg-type]
 
         assert result is True
-        assert len(pathfinding_targets) == 1
-        # (3, 0) is to the right of container, closest to player at (5, 0)
-        assert pathfinding_targets[0] == (3, 0)
+        assert len(search_plan_calls) == 1
+        assert search_plan_calls[0][0] == player
+        assert search_plan_calls[0][1] == container
 
-    def test_container_search_selects_left_when_player_on_left(self) -> None:
-        """When player is to the left, select the left adjacent tile.
-
-        Setup: Player at (0, 5), container at (3, 5)
-        Adjacent tiles: (2, 5), (4, 5), (3, 4), (3, 6)
-        Expected: (2, 5) is closest to player (distance 2), should be selected.
-        """
+    def test_container_search_works_from_different_positions(self) -> None:
+        """SearchContainerPlan should start regardless of player position."""
         from catley.game.actions.discovery import execute_default_action
 
         controller, player, _ = _make_test_world()
@@ -325,24 +318,23 @@ class TestAdjacentPositionSelection:
         player.y = 5
         controller.gw.actor_spatial_index.update(player)
 
-        pathfinding_targets: list[tuple[int, int]] = []
+        search_plan_calls: list = []
 
-        def mock_start_pathfinding(actor, target, final_intent=None):
-            pathfinding_targets.append(target)
+        def mock_start_search_container_plan(actor, target):
+            search_plan_calls.append((actor, target))
             return True
 
         def mock_is_combat_mode():
             return False
 
-        controller.start_actor_pathfinding = mock_start_pathfinding  # type: ignore
+        controller.start_search_container_plan = mock_start_search_container_plan  # type: ignore
         controller.is_combat_mode = mock_is_combat_mode  # type: ignore
 
         result = execute_default_action(controller, container)  # type: ignore[arg-type]
 
         assert result is True
-        assert len(pathfinding_targets) == 1
-        # (2, 5) is to the left of container, closest to player at (0, 5)
-        assert pathfinding_targets[0] == (2, 5)
+        assert len(search_plan_calls) == 1
+        assert search_plan_calls[0][1] == container
 
     def test_door_open_selects_closest_adjacent_tile(self) -> None:
         """When opening a door from distance, pick the closest adjacent tile.

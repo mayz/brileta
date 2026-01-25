@@ -879,6 +879,97 @@ class Controller:
         actor.active_plan = ActivePlan(plan=get_punch_plan(), context=context)
         return True
 
+    def start_kick_plan(self, actor: Character, target: Character) -> bool:
+        """Start a kick action plan targeting the specified character."""
+        from catley.game.action_plan import ActivePlan, PlanContext, get_kick_plan
+
+        context = PlanContext(
+            actor=actor,
+            controller=self,
+            target_actor=target,
+            target_position=(target.x, target.y),
+        )
+        actor.active_plan = ActivePlan(plan=get_kick_plan(), context=context)
+        return True
+
+    def start_trip_plan(self, actor: Character, target: Character) -> bool:
+        """Start a trip action plan targeting the specified character."""
+        from catley.game.action_plan import ActivePlan, PlanContext, get_trip_plan
+
+        context = PlanContext(
+            actor=actor,
+            controller=self,
+            target_actor=target,
+            target_position=(target.x, target.y),
+        )
+        actor.active_plan = ActivePlan(plan=get_trip_plan(), context=context)
+        return True
+
+    def start_push_plan(self, actor: Character, target: Character) -> bool:
+        """Start a push action plan targeting the specified character."""
+        from catley.game.action_plan import ActivePlan, PlanContext, get_push_plan
+
+        context = PlanContext(
+            actor=actor,
+            controller=self,
+            target_actor=target,
+            target_position=(target.x, target.y),
+        )
+        actor.active_plan = ActivePlan(plan=get_push_plan(), context=context)
+        return True
+
+    def start_talk_plan(self, actor: Character, target: Character) -> bool:
+        """Start a talk action plan targeting the specified character."""
+        from catley.game.action_plan import ActivePlan, PlanContext, get_talk_plan
+
+        context = PlanContext(
+            actor=actor,
+            controller=self,
+            target_actor=target,
+            target_position=(target.x, target.y),
+        )
+        actor.active_plan = ActivePlan(plan=get_talk_plan(), context=context)
+        return True
+
+    def start_search_container_plan(self, actor: Character, container: Actor) -> bool:
+        """Start a search container action plan for the specified container."""
+        from catley.game.action_plan import (
+            ActivePlan,
+            PlanContext,
+            get_search_container_plan,
+        )
+
+        context = PlanContext(
+            actor=actor,
+            controller=self,
+            target_actor=container,
+            target_position=(container.x, container.y),
+        )
+        actor.active_plan = ActivePlan(
+            plan=get_search_container_plan(), context=context
+        )
+        return True
+
+    def start_melee_attack_plan(
+        self, actor: Character, target: Character, weapon: Item | None
+    ) -> bool:
+        """Start a melee attack action plan targeting the specified character."""
+        from catley.game.action_plan import (
+            ActivePlan,
+            PlanContext,
+            get_melee_attack_plan,
+        )
+
+        context = PlanContext(
+            actor=actor,
+            controller=self,
+            target_actor=target,
+            target_position=(target.x, target.y),
+            weapon=weapon,
+        )
+        actor.active_plan = ActivePlan(plan=get_melee_attack_plan(), context=context)
+        return True
+
     def _initialize_sound_system(self) -> None:
         """Initialize the sound system and audio backend."""
         # Sound system for managing audio playback

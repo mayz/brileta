@@ -168,13 +168,8 @@ def execute_default_action(
         True if an action was initiated, False otherwise.
     """
     from catley.game.actions.combat import AttackIntent
-    from catley.game.actions.environment import (
-        CloseDoorIntent,
-        OpenDoorIntent,
-        SearchContainerIntent,
-    )
+    from catley.game.actions.environment import CloseDoorIntent, OpenDoorIntent
     from catley.game.actions.misc import PickupItemsAtLocationIntent
-    from catley.game.actions.social import TalkIntent
     from catley.game.actors import Character
     from catley.game.actors.container import Container
 
@@ -208,20 +203,12 @@ def execute_default_action(
                 controller.queue_action(intent)
                 return True
 
-            # Not in combat - talk to NPC (pathfind to them if not adjacent)
-            if distance == 1:
-                # Adjacent - talk immediately
-                intent = TalkIntent(controller, player, target)
-                controller.queue_action(intent)
-                return True
-            # Not adjacent - pathfind then talk
-            final_intent = TalkIntent(controller, player, target)
-            return controller.start_actor_pathfinding(
-                player, (target_x, target_y), final_intent=final_intent
-            )
+            # Not in combat - talk to NPC (uses ActionPlan for approach)
+            controller.start_talk_plan(player, target)
+            return True
 
         case TargetType.CONTAINER:
-            # Search container - pathfind to it if not adjacent
+            # Search container - uses ActionPlan for approach
             container = target if isinstance(target, Container) else None
             if container is None:
                 # Try to get container at tile position
@@ -233,16 +220,8 @@ def execute_default_action(
             if container is None:
                 return False
 
-            if distance == 1:
-                # Adjacent - search immediately
-                search_intent = SearchContainerIntent(controller, player, container)
-                controller.queue_action(search_intent)
-                return True
-            # Not adjacent - pathfind to adjacent tile then search
-            final_intent = SearchContainerIntent(controller, player, container)
-            return _pathfind_to_adjacent_and_execute(
-                controller, container.x, container.y, final_intent
-            )
+            controller.start_search_container_plan(player, container)
+            return True
 
         case TargetType.DOOR_CLOSED:
             # Open door - pathfind to adjacent tile if not adjacent

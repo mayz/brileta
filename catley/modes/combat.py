@@ -540,54 +540,50 @@ class CombatMode(Mode):
         """Create the appropriate intent for the selected action and target.
 
         Uses the currently selected action to determine what intent to create.
-        Falls back to AttackIntent if no action is selected.
+        Falls back to melee attack if no action is selected.
 
-        For melee attacks and Push, if the target is not adjacent, initiates
-        pathfinding to an adjacent tile with the action as the final_intent.
-        Returns None in this case (action will be queued on arrival).
+        Melee actions and stunts use the ActionPlan system which handles
+        approach internally. Ranged attacks execute immediately.
 
         Args:
             target: The target character for the action.
 
         Returns:
-            The appropriate GameIntent for immediate execution, or None if
-            pathfinding was started (action queued for later) or if pathfinding
-            failed.
+            The appropriate GameIntent for immediate execution (ranged only),
+            or None if an ActionPlan was started.
         """
         player = self.controller.gw.player
-        distance = ranges.calculate_distance(player.x, player.y, target.x, target.y)
 
-        # Fall back to default attack if no action selected
+        # Fall back to default melee attack if no action selected
         if self.selected_action is None:
-            return self._handle_melee_intent(
-                target, distance, AttackIntent(self.controller, player, target)
-            )
+            self.controller.start_melee_attack_plan(player, target, weapon=None)
+            return None
 
         # Handle based on action category
         if self.selected_action.category == ActionCategory.COMBAT:
             weapon = self.selected_action.static_params.get("weapon")
             attack_mode = self.selected_action.static_params.get("attack_mode")
-            intent = AttackIntent(
-                self.controller, player, target, weapon=weapon, attack_mode=attack_mode
-            )
 
-            # Ranged attacks execute immediately regardless of distance
+            # Ranged attacks execute immediately (out-of-range handled by executor)
             if attack_mode == "ranged":
-                return intent
+                return AttackIntent(
+                    self.controller, player, target, weapon=weapon, attack_mode="ranged"
+                )
 
-            # Melee attacks may need approach first
-            return self._handle_melee_intent(target, distance, intent)
+            # Melee attacks use ActionPlan for approach
+            self.controller.start_melee_attack_plan(player, target, weapon)
+            return None
 
         if self.selected_action.category == ActionCategory.STUNT:
             if self.selected_action.action_class == PushIntent:
-                intent = PushIntent(self.controller, player, target)
-                return self._handle_melee_intent(target, distance, intent)
+                self.controller.start_push_plan(player, target)
+                return None
             if self.selected_action.action_class == TripIntent:
-                intent = TripIntent(self.controller, player, target)
-                return self._handle_melee_intent(target, distance, intent)
+                self.controller.start_trip_plan(player, target)
+                return None
             if self.selected_action.action_class == KickIntent:
-                intent = KickIntent(self.controller, player, target)
-                return self._handle_melee_intent(target, distance, intent)
+                self.controller.start_kick_plan(player, target)
+                return None
             if self.selected_action.action_class == PunchIntent:
                 # Punch uses the ActionPlan system - it handles approach, holster,
                 # and punch as separate steps.
@@ -600,38 +596,3 @@ class CombatMode(Mode):
             f"category={self.selected_action.category}, "
             f"action_class={self.selected_action.action_class}"
         )
-
-    def _handle_melee_intent(
-        self,
-        target: Character,
-        distance: int,
-        intent: GameIntent,
-    ) -> GameIntent | None:
-        """Handle melee intent creation, with approach if needed.
-
-        If adjacent, returns the intent for immediate execution.
-        If not adjacent, starts pathfinding with the intent as final_intent.
-
-        Args:
-            target: The target character.
-            distance: Pre-calculated distance to target.
-            intent: The intent to execute (AttackIntent or PushIntent).
-
-        Returns:
-            The intent if adjacent and ready to execute, None if pathfinding
-            was started or failed.
-        """
-        if distance == 1:
-            # Adjacent - execute immediately
-            return intent
-
-        # Not adjacent - pathfind first, then execute
-        player = self.controller.gw.player
-        if self.controller.start_actor_pathfinding(
-            player, (target.x, target.y), intent
-        ):
-            # Pathfinding started - action will be queued on arrival
-            return None
-
-        # Pathfinding failed - "Path is blocked" message already shown
-        return None

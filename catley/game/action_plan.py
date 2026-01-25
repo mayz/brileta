@@ -252,3 +252,131 @@ def get_punch_plan() -> ActionPlan:
             ),
         ],
     )
+
+
+def get_kick_plan() -> ActionPlan:
+    """Create KickPlan lazily to avoid circular imports."""
+    from catley.game.actions.stunts import KickIntent
+
+    return ActionPlan(
+        name="Kick",
+        requires_target=True,
+        requires_adjacency=True,
+        steps=[
+            ApproachStep(stop_distance=1),
+            IntentStep(
+                intent_class=KickIntent,
+                params=lambda ctx: {
+                    "attacker": ctx.actor,
+                    "defender": ctx.target_actor,
+                },
+            ),
+        ],
+    )
+
+
+def get_trip_plan() -> ActionPlan:
+    """Create TripPlan lazily to avoid circular imports."""
+    from catley.game.actions.stunts import TripIntent
+
+    return ActionPlan(
+        name="Trip",
+        requires_target=True,
+        requires_adjacency=True,
+        steps=[
+            ApproachStep(stop_distance=1),
+            IntentStep(
+                intent_class=TripIntent,
+                params=lambda ctx: {
+                    "attacker": ctx.actor,
+                    "defender": ctx.target_actor,
+                },
+            ),
+        ],
+    )
+
+
+def get_push_plan() -> ActionPlan:
+    """Create PushPlan lazily to avoid circular imports."""
+    from catley.game.actions.stunts import PushIntent
+
+    return ActionPlan(
+        name="Push",
+        requires_target=True,
+        requires_adjacency=True,
+        steps=[
+            ApproachStep(stop_distance=1),
+            IntentStep(
+                intent_class=PushIntent,
+                params=lambda ctx: {
+                    "attacker": ctx.actor,
+                    "defender": ctx.target_actor,
+                },
+            ),
+        ],
+    )
+
+
+def get_talk_plan() -> ActionPlan:
+    """Create TalkPlan lazily to avoid circular imports."""
+    from catley.game.actions.social import TalkIntent
+
+    return ActionPlan(
+        name="Talk",
+        requires_target=True,
+        requires_adjacency=True,
+        steps=[
+            ApproachStep(stop_distance=1),
+            IntentStep(
+                intent_class=TalkIntent,
+                params=lambda ctx: {
+                    "actor": ctx.actor,
+                    "target": ctx.target_actor,
+                },
+            ),
+        ],
+    )
+
+
+def get_search_container_plan() -> ActionPlan:
+    """Create SearchContainerPlan lazily to avoid circular imports."""
+    from catley.game.actions.environment import SearchContainerIntent
+
+    return ActionPlan(
+        name="Search",
+        requires_target=True,
+        requires_adjacency=True,
+        steps=[
+            ApproachStep(stop_distance=1),
+            IntentStep(
+                intent_class=SearchContainerIntent,
+                params=lambda ctx: {
+                    "actor": ctx.actor,
+                    "target": ctx.target_actor,
+                },
+            ),
+        ],
+    )
+
+
+def get_melee_attack_plan() -> ActionPlan:
+    """Create MeleeAttackPlan lazily to avoid circular imports."""
+    from catley.game.actions.combat import AttackIntent
+
+    return ActionPlan(
+        name="Melee Attack",
+        requires_target=True,
+        requires_adjacency=True,
+        steps=[
+            ApproachStep(stop_distance=1),
+            IntentStep(
+                intent_class=AttackIntent,
+                params=lambda ctx: {
+                    "attacker": ctx.actor,
+                    "defender": ctx.target_actor,
+                    "weapon": ctx.weapon,
+                    "attack_mode": "melee",
+                },
+            ),
+        ],
+    )

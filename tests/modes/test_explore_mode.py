@@ -336,6 +336,21 @@ def make_explore_mode_with_mocks() -> tuple[
     # Mock is_combat_mode for actor interaction tests
     controller.is_combat_mode = lambda: False
 
+    # Track plan calls for Talk and Search Container (ActionPlan system)
+    controller.talk_plan_calls = []
+    controller.search_plan_calls = []
+
+    def mock_start_talk_plan(actor, target):
+        controller.talk_plan_calls.append((actor, target))
+        return True
+
+    def mock_start_search_container_plan(actor, target):
+        controller.search_plan_calls.append((actor, target))
+        return True
+
+    controller.start_talk_plan = mock_start_talk_plan
+    controller.start_search_container_plan = mock_start_search_container_plan
+
     return mode, controller, gw, pathfinding_calls
 
 
@@ -396,7 +411,7 @@ def test_right_click_unexplored_tile_does_nothing() -> None:
 
 
 def test_right_click_visible_tile_with_actor_triggers_interaction() -> None:
-    """Right-clicking on a visible tile with an actor triggers actor interaction."""
+    """Right-clicking on a visible tile with an actor starts TalkPlan."""
     mode, controller, gw, _pathfinding_calls = make_explore_mode_with_mocks()
 
     # Create an NPC at (1, 0) - adjacent to player at (0, 0)
@@ -411,11 +426,11 @@ def test_right_click_visible_tile_with_actor_triggers_interaction() -> None:
     result = mode._handle_right_click(world_tile_pos=(1, 0), root_tile_pos=(1, 0))
 
     assert result is True
-    # Should have queued a TalkIntent for the adjacent NPC
-    assert len(controller.queued_actions) == 1
-    from catley.game.actions.social import TalkIntent
-
-    assert isinstance(controller.queued_actions[0], TalkIntent)
+    # Should have started a TalkPlan for the NPC
+    assert len(controller.talk_plan_calls) == 1
+    actor, target = controller.talk_plan_calls[0]
+    assert actor == gw.player
+    assert target == npc
 
 
 def test_right_click_explored_not_visible_tile_with_actor_only_walks() -> None:
