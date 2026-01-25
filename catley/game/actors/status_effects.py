@@ -70,7 +70,9 @@ class StatusEffect(abc.ABC):
         """Return ``True`` if the effect should be removed this turn."""
         return self.duration == 0
 
-    def apply_to_resolution(self, resolution_args: dict[str, bool]) -> dict[str, bool]:
+    def apply_to_resolution(
+        self, resolution_args: dict[str, bool | str]
+    ) -> dict[str, bool | str]:
         """Modify resolution arguments to apply this effect's influence."""
         return resolution_args
 
@@ -102,7 +104,9 @@ class OffBalanceEffect(StatusEffect):
     def remove_effect(self, actor: Actor) -> None:
         pass
 
-    def apply_to_resolution(self, resolution_args: dict[str, bool]) -> dict[str, bool]:
+    def apply_to_resolution(
+        self, resolution_args: dict[str, bool | str]
+    ) -> dict[str, bool | str]:
         """Apply disadvantage to resolution."""
         resolution_args["has_disadvantage"] = True
         return resolution_args
@@ -134,7 +138,9 @@ class FocusedEffect(StatusEffect):
     def remove_effect(self, actor: Actor) -> None:
         pass
 
-    def apply_to_resolution(self, resolution_args: dict[str, bool]) -> dict[str, bool]:
+    def apply_to_resolution(
+        self, resolution_args: dict[str, bool | str]
+    ) -> dict[str, bool | str]:
         """Apply advantage to resolution."""
         resolution_args["has_advantage"] = True
         return resolution_args
@@ -169,7 +175,9 @@ class TrippedEffect(StatusEffect):
     def remove_effect(self, actor: Actor) -> None:
         pass
 
-    def apply_to_resolution(self, resolution_args: dict[str, bool]) -> dict[str, bool]:
+    def apply_to_resolution(
+        self, resolution_args: dict[str, bool | str]
+    ) -> dict[str, bool | str]:
         return resolution_args
 
 
@@ -198,7 +206,9 @@ class StaggeredEffect(StatusEffect):
     def remove_effect(self, actor: Actor) -> None:
         pass
 
-    def apply_to_resolution(self, resolution_args: dict[str, bool]) -> dict[str, bool]:
+    def apply_to_resolution(
+        self, resolution_args: dict[str, bool | str]
+    ) -> dict[str, bool | str]:
         return resolution_args
 
 
@@ -265,7 +275,9 @@ class EncumberedEffect(StatusEffect):
     def remove_effect(self, actor: Actor) -> None:
         pass
 
-    def apply_to_resolution(self, resolution_args: dict[str, bool]) -> dict[str, bool]:
+    def apply_to_resolution(
+        self, resolution_args: dict[str, bool | str]
+    ) -> dict[str, bool | str]:
         """Apply disadvantage to movement and defense actions."""
         stat_name = resolution_args.get("stat_name")
         if stat_name == "agility":

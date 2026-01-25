@@ -13,6 +13,10 @@ class Message:
     count: int = 1
     sequence_number: int = 0
 
+    def __contains__(self, item: str) -> bool:
+        """Support 'substring in message' syntax for convenient testing."""
+        return item in self.plain_text
+
     @property
     def full_text(self) -> str:
         """The full text of this message, including the count if > 1."""

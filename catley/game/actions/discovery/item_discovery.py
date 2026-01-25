@@ -127,7 +127,7 @@ class ItemActionDiscovery:
         options: list[ActionOption] = []
         safe, _ = is_safe_location(actor)
 
-        if actor.health.ap < actor.health.max_ap and safe:
+        if actor.health.ap < actor.health.max_ap and safe:  # type: ignore[unresolved-attribute]
             options.append(
                 ActionOption(
                     id="rest",

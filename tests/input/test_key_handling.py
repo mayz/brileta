@@ -45,14 +45,14 @@ class TestKeysClassValidity:
     @pytest.mark.parametrize(
         "key_name,expected_keysym",
         [
-            ("KEY_H", tcod.event.KeySym.h),
-            ("KEY_J", tcod.event.KeySym.j),
-            ("KEY_K", tcod.event.KeySym.k),
-            ("KEY_L", tcod.event.KeySym.l),
-            ("KEY_Q", tcod.event.KeySym.q),
-            ("KEY_I", tcod.event.KeySym.i),
-            ("KEY_T", tcod.event.KeySym.t),
-            ("KEY_R", tcod.event.KeySym.r),
+            ("KEY_H", tcod.event.KeySym.h),  # type: ignore[unresolved-attribute]
+            ("KEY_J", tcod.event.KeySym.j),  # type: ignore[unresolved-attribute]
+            ("KEY_K", tcod.event.KeySym.k),  # type: ignore[unresolved-attribute]
+            ("KEY_L", tcod.event.KeySym.l),  # type: ignore[unresolved-attribute]
+            ("KEY_Q", tcod.event.KeySym.q),  # type: ignore[unresolved-attribute]
+            ("KEY_I", tcod.event.KeySym.i),  # type: ignore[unresolved-attribute]
+            ("KEY_T", tcod.event.KeySym.t),  # type: ignore[unresolved-attribute]
+            ("KEY_R", tcod.event.KeySym.r),  # type: ignore[unresolved-attribute]
         ],
     )
     def test_key_constant_matches_tcod_keysym(
@@ -203,7 +203,7 @@ class TestKeySymConsistency:
         assert valid_keysym == ord("i"), (
             "tcod.event.KeySym(105) should return 105 (valid lowercase 'i')"
         )
-        assert valid_keysym == tcod.event.KeySym.i
+        assert valid_keysym == tcod.event.KeySym.i  # type: ignore[unresolved-attribute]
 
 
 class TestKeyEventCreation:
@@ -237,7 +237,7 @@ class TestKeyEventCreation:
     def test_keydown_event_sym_matches_keys_constant(self) -> None:
         """KeyDown event sym should match Keys constants for proper event handling."""
         event = tcod.event.KeyDown(
-            sym=tcod.event.KeySym.i,
+            sym=tcod.event.KeySym.i,  # type: ignore[unresolved-attribute]
             scancode=0,
             mod=tcod.event.Modifier.NONE,
         )

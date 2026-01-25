@@ -306,7 +306,7 @@ def test_apply_terrain_hazard_skips_actor_without_game_world() -> None:
     controller = DummyController(gw=gw)
 
     # Remove game world reference from player
-    player.gw = None  # type: ignore[assignment]
+    player.gw = None
 
     initial_hp = player.health.hp
 
@@ -462,7 +462,7 @@ def test_npc_action_invalidates_combat_tooltip() -> None:
     controller.turn_manager.on_player_action()
     npc.energy.accumulated_energy = config.ACTION_COST
     npc.get_next_action = lambda _controller: MoveIntent(_controller, npc, dx=1, dy=0)
-    controller.turn_manager.execute_intent = lambda _intent: None  # type: ignore[assignment]
+    controller.turn_manager.execute_intent = lambda _intent: None
 
     controller.turn_manager.process_all_npc_reactions()
 
@@ -796,8 +796,8 @@ def test_handle_approach_step_peeks_at_path() -> None:
 
     # Intent should be created
     assert intent is not None
-    assert intent.dx == 1
-    assert intent.dy == 0
+    assert intent.dx == 1  # type: ignore[possibly-missing-attribute]
+    assert intent.dy == 0  # type: ignore[possibly-missing-attribute]
 
     # Path should NOT be popped yet
     assert len(active_plan.cached_path) == 3

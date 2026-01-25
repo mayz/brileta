@@ -48,6 +48,12 @@ class AIComponent(abc.ABC):
     def __init__(self) -> None:
         self.actor: Actor | None = None
 
+    @property
+    @abc.abstractmethod
+    def disposition(self) -> Disposition:
+        """The AI's current disposition toward the player."""
+        ...
+
     @abc.abstractmethod
     def get_action(self, controller: Controller, actor: NPC) -> GameIntent | None:
         """Determine what action this AI wants to perform this turn.
@@ -166,7 +172,7 @@ class DispositionBasedAI(AIComponent):
     ) -> None:
         super().__init__()
 
-        self.disposition = disposition
+        self._disposition = disposition
 
         # Create behavior delegates for each possible disposition
         self._behaviors: dict[Disposition, AIComponent] = {
@@ -177,6 +183,14 @@ class DispositionBasedAI(AIComponent):
             Disposition.FRIENDLY: FriendlyAI(),
             Disposition.ALLY: AllyAI(),
         }
+
+    @property
+    def disposition(self) -> Disposition:
+        return self._disposition
+
+    @disposition.setter
+    def disposition(self, value: Disposition) -> None:
+        self._disposition = value
 
     def get_action(self, controller: Controller, actor: NPC) -> GameIntent | None:
         """Delegate to the appropriate behavior based on the current disposition.
@@ -212,6 +226,10 @@ class HostileAI(AIComponent):
     def __init__(self, aggro_radius: int = Combat.DEFAULT_AGGRO_RADIUS) -> None:
         super().__init__()
         self.aggro_radius = aggro_radius
+
+    @property
+    def disposition(self) -> Disposition:
+        return Disposition.HOSTILE
 
     def get_action(self, controller: Controller, actor: NPC) -> GameIntent | None:
         from catley import config
@@ -276,12 +294,9 @@ class HostileAI(AIComponent):
                 hazard_cost = get_hazard_cost(tile_id)
 
                 # Also check for fire actors (campfires, etc.) at this position
-                if (
-                    actor_at_tile
-                    and hasattr(actor_at_tile, "damage_per_turn")
-                    and actor_at_tile.damage_per_turn > 0
-                ):
-                    fire_cost = HAZARD_BASE_COST + actor_at_tile.damage_per_turn
+                damage_per_turn = getattr(actor_at_tile, "damage_per_turn", 0)
+                if actor_at_tile and damage_per_turn > 0:
+                    fire_cost = HAZARD_BASE_COST + damage_per_turn
                     hazard_cost = max(hazard_cost, fire_cost)
 
                 score = dist + hazard_cost
@@ -376,6 +391,10 @@ class HostileAI(AIComponent):
 class WaryAI(AIComponent):
     """Wary behavior: wait and watch, but ready to become hostile."""
 
+    @property
+    def disposition(self) -> Disposition:
+        return Disposition.WARY
+
     def get_action(self, controller: Controller, actor: NPC) -> GameIntent | None:
         # For now, just wait (do nothing)
         # Future: might back away if player gets too close
@@ -384,6 +403,10 @@ class WaryAI(AIComponent):
 
 class UnfriendlyAI(AIComponent):
     """Unfriendly behavior: suspicious but not immediately hostile."""
+
+    @property
+    def disposition(self) -> Disposition:
+        return Disposition.UNFRIENDLY
 
     def get_action(self, controller: Controller, actor: NPC) -> GameIntent | None:
         # For now, just wait (do nothing)
@@ -394,6 +417,10 @@ class UnfriendlyAI(AIComponent):
 class ApproachableAI(AIComponent):
     """Approachable behavior: neutral, might initiate interaction."""
 
+    @property
+    def disposition(self) -> Disposition:
+        return Disposition.APPROACHABLE
+
     def get_action(self, controller: Controller, actor: NPC) -> GameIntent | None:
         # For now, just wait (do nothing)
         # Future: might greet player when they approach, offer quests
@@ -403,6 +430,10 @@ class ApproachableAI(AIComponent):
 class FriendlyAI(AIComponent):
     """Friendly behavior: helpful and welcoming."""
 
+    @property
+    def disposition(self) -> Disposition:
+        return Disposition.FRIENDLY
+
     def get_action(self, controller: Controller, actor: NPC) -> GameIntent | None:
         # For now, just wait (do nothing)
         # Future: might follow player, offer help, trade
@@ -411,6 +442,10 @@ class FriendlyAI(AIComponent):
 
 class AllyAI(AIComponent):
     """Ally behavior: actively helpful in combat and exploration."""
+
+    @property
+    def disposition(self) -> Disposition:
+        return Disposition.ALLY
 
     def get_action(self, controller: Controller, actor: NPC) -> GameIntent | None:
         # For now, just wait (do nothing)

@@ -8,14 +8,14 @@ rather than a scoring matrix.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from catley.game.actions.discovery.types import TargetType
 from catley.game.actors import Actor, ItemPile
+from catley.types import WorldTilePos
 
 if TYPE_CHECKING:
     from catley.controller import Controller
-    from catley.types import WorldTilePos
 
 
 # Default action IDs by target type.
@@ -68,7 +68,7 @@ def classify_target(
 
     # Handle tile position targets (tuple of x, y)
     if isinstance(target, tuple) and len(target) == 2:
-        x, y = target
+        x, y = cast(WorldTilePos, target)
 
         # Check bounds
         if not (0 <= x < gm.width and 0 <= y < gm.height):
@@ -149,7 +149,7 @@ def execute_default_action(
     if isinstance(target, (Character, Container, ItemPile)):
         target_x, target_y = target.x, target.y
     elif isinstance(target, tuple):
-        target_x, target_y = target
+        target_x, target_y = cast(WorldTilePos, target)
     else:
         return False
 

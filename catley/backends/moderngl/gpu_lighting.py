@@ -29,6 +29,9 @@ if TYPE_CHECKING:
     from catley.view.render.graphics import GraphicsContext
 
 
+from . import get_uniform
+
+
 class GPULightingSystem(LightingSystem):
     """GPU-accelerated implementation of the lighting system using fragment shaders.
 
@@ -61,12 +64,11 @@ class GPULightingSystem(LightingSystem):
 
         self.graphics_context = graphics_context
         # Check if graphics context has mgl_context (for real ModernGL usage)
+        self.mgl_context: moderngl.Context
         if hasattr(graphics_context, "mgl_context"):
-            self.mgl_context = graphics_context.mgl_context
+            self.mgl_context = graphics_context.mgl_context  # type: ignore[assignment]
         else:
             # Create a standalone context for lighting calculations
-            import moderngl
-
             self.mgl_context = moderngl.create_context(standalone=True)
 
         # GPU resources
@@ -102,6 +104,11 @@ class GPULightingSystem(LightingSystem):
         # Initialize GPU resources
         if not self._initialize_gpu_resources():
             raise RuntimeError("Failed to initialize ModernGL GPU lighting system")
+
+    def _uniform(self, name: str) -> moderngl.Uniform:
+        """Get a uniform from the fragment program with proper type narrowing."""
+        assert self._fragment_program is not None
+        return get_uniform(self._fragment_program, name)
 
     def _initialize_gpu_resources(self) -> bool:
         """Initialize GPU fragment shader-based lighting.
@@ -169,10 +176,9 @@ class GPULightingSystem(LightingSystem):
             self._shader_manager = ShaderManager(self.mgl_context)
 
             # Initialize resource manager - use shared one if available AND ModernGL
-            if hasattr(self.graphics_context, "resource_manager") and hasattr(
-                self.graphics_context, "mgl_context"
-            ):
-                self._resource_manager = self.graphics_context.resource_manager
+            resource_manager = getattr(self.graphics_context, "resource_manager", None)
+            if isinstance(resource_manager, ModernGLResourceManager):
+                self._resource_manager = resource_manager
             else:
                 # Create our own ModernGL resource manager for standalone context
                 self._resource_manager = ModernGLResourceManager(self.mgl_context)
@@ -382,17 +388,17 @@ class GPULightingSystem(LightingSystem):
             else:
                 # Still need to update time uniform for dynamic effects
                 assert self._fragment_program is not None
-                self._fragment_program["u_time"].value = self._time
+                self._uniform("u_time").value = self._time
 
             # Bind sky exposure texture to texture unit 1
             if self._sky_exposure_texture is not None:
                 self._sky_exposure_texture.use(location=1)
-                self._fragment_program["u_sky_exposure_map"].value = 1
+                self._uniform("u_sky_exposure_map").value = 1
 
             # Bind emission texture to texture unit 2
             if self._emission_texture is not None:
                 self._emission_texture.use(location=2)
-                self._fragment_program["u_emission_map"].value = 2
+                self._uniform("u_emission_map").value = 2
 
             # Render full-screen quad
             self._fullscreen_vao.render()
@@ -464,25 +470,25 @@ class GPULightingSystem(LightingSystem):
 
         # Set uniforms
         assert self._fragment_program is not None
-        self._fragment_program["u_light_count"].value = light_count
-        self._fragment_program["u_light_positions"].value = positions
-        self._fragment_program["u_light_radii"].value = radii
-        self._fragment_program["u_light_intensities"].value = intensities
-        self._fragment_program["u_light_colors"].value = colors
-        self._fragment_program["u_light_flicker_enabled"].value = flicker_enabled
-        self._fragment_program["u_light_flicker_speed"].value = flicker_speed
-        self._fragment_program["u_light_min_brightness"].value = min_brightness
-        self._fragment_program["u_light_max_brightness"].value = max_brightness
-        self._fragment_program["u_ambient_light"].value = AMBIENT_LIGHT_LEVEL
-        self._fragment_program["u_time"].value = self._time
-        self._fragment_program["u_tile_aligned"].value = True
+        self._uniform("u_light_count").value = light_count
+        self._uniform("u_light_positions").value = positions
+        self._uniform("u_light_radii").value = radii
+        self._uniform("u_light_intensities").value = intensities
+        self._uniform("u_light_colors").value = colors
+        self._uniform("u_light_flicker_enabled").value = flicker_enabled
+        self._uniform("u_light_flicker_speed").value = flicker_speed
+        self._uniform("u_light_min_brightness").value = min_brightness
+        self._uniform("u_light_max_brightness").value = max_brightness
+        self._uniform("u_ambient_light").value = AMBIENT_LIGHT_LEVEL
+        self._uniform("u_time").value = self._time
+        self._uniform("u_tile_aligned").value = True
 
         # Set viewport uniforms for coordinate calculation
-        self._fragment_program["u_viewport_offset"].value = (
+        self._uniform("u_viewport_offset").value = (
             viewport_bounds.x1,
             viewport_bounds.y1,
         )
-        self._fragment_program["u_viewport_size"].value = (
+        self._uniform("u_viewport_size").value = (
             viewport_bounds.width,
             viewport_bounds.height,
         )
@@ -510,11 +516,11 @@ class GPULightingSystem(LightingSystem):
 
         # Set shadow uniforms
         assert self._fragment_program is not None
-        self._fragment_program["u_shadow_caster_count"].value = actual_count
-        self._fragment_program["u_shadow_caster_positions"].value = shadow_positions
-        self._fragment_program["u_shadow_intensity"].value = SHADOW_INTENSITY
-        self._fragment_program["u_shadow_max_length"].value = SHADOW_MAX_LENGTH
-        self._fragment_program["u_shadow_falloff_enabled"].value = SHADOW_FALLOFF
+        self._uniform("u_shadow_caster_count").value = actual_count
+        self._uniform("u_shadow_caster_positions").value = shadow_positions
+        self._uniform("u_shadow_intensity").value = SHADOW_INTENSITY
+        self._uniform("u_shadow_max_length").value = SHADOW_MAX_LENGTH
+        self._uniform("u_shadow_falloff_enabled").value = SHADOW_FALLOFF
 
     def _set_directional_light_uniforms(self) -> None:
         """Set uniforms for directional lighting (sun/moon)."""
@@ -532,26 +538,24 @@ class GPULightingSystem(LightingSystem):
 
         if directional_light:
             # Set sun uniforms from the directional light
-            self._fragment_program["u_sun_direction"].value = (
+            self._uniform("u_sun_direction").value = (
                 directional_light.direction.x,
                 directional_light.direction.y,
             )
-            self._fragment_program["u_sun_color"].value = (
+            self._uniform("u_sun_color").value = (
                 directional_light.color[0] / 255.0,
                 directional_light.color[1] / 255.0,
                 directional_light.color[2] / 255.0,
             )
-            self._fragment_program[
-                "u_sun_intensity"
-            ].value = directional_light.intensity
+            self._uniform("u_sun_intensity").value = directional_light.intensity
         else:
             # No directional light - set "off" values
-            self._fragment_program["u_sun_direction"].value = (0.0, 0.0)
-            self._fragment_program["u_sun_color"].value = (0.0, 0.0, 0.0)
-            self._fragment_program["u_sun_intensity"].value = 0.0
+            self._uniform("u_sun_direction").value = (0.0, 0.0)
+            self._uniform("u_sun_color").value = (0.0, 0.0, 0.0)
+            self._uniform("u_sun_intensity").value = 0.0
 
         # Always set sky exposure power
-        self._fragment_program["u_sky_exposure_power"].value = SKY_EXPOSURE_POWER
+        self._uniform("u_sky_exposure_power").value = SKY_EXPOSURE_POWER
 
     def _collect_light_data(self, viewport_bounds: Rect) -> list[float]:
         """Collect light data from the game world and format for GPU uniforms.

@@ -59,7 +59,7 @@ def get_line(
 ) -> list[tuple[int, int]]:
     """Return Bresenham line points from (start_x, start_y) to (end_x, end_y)."""
 
-    return [tuple(pt) for pt in tcod.los.bresenham((start_x, start_y), (end_x, end_y))]  # type: ignore[arg-type]
+    return [tuple(pt) for pt in tcod.los.bresenham((start_x, start_y), (end_x, end_y))]
 
 
 def calculate_distance(x1: int, y1: int, x2: int, y2: int) -> int:

@@ -375,7 +375,7 @@ class InputTrackingModeA(Mode):
     def handle_input(self, event: tcod.event.Event) -> bool:
         self.received_events.append(event)
         return (
-            isinstance(event, tcod.event.KeyDown) and event.sym == tcod.event.KeySym.a
+            isinstance(event, tcod.event.KeyDown) and event.sym == tcod.event.KeySym.a  # type: ignore[unresolved-attribute]
         )
 
 
@@ -395,7 +395,7 @@ class InputTrackingModeB(Mode):
     def handle_input(self, event: tcod.event.Event) -> bool:
         self.received_events.append(event)
         return (
-            isinstance(event, tcod.event.KeyDown) and event.sym == tcod.event.KeySym.b
+            isinstance(event, tcod.event.KeyDown) and event.sym == tcod.event.KeySym.b  # type: ignore[unresolved-attribute]
         )
 
 
@@ -444,7 +444,7 @@ def test_input_handler_dispatches_to_mode_stack_in_reverse_order() -> None:
     input_handler = InputHandler(mock_app, controller)
 
     # Test 1: 'b' key should be handled by mode_b (top of stack)
-    event_b = tcod.event.KeyDown(0, tcod.event.KeySym.b, 0)
+    event_b = tcod.event.KeyDown(0, tcod.event.KeySym.b, 0)  # type: ignore[unresolved-attribute]
     input_handler.dispatch(event_b)
 
     # mode_b received the event and handled it
@@ -454,7 +454,7 @@ def test_input_handler_dispatches_to_mode_stack_in_reverse_order() -> None:
     assert len(mode_a.received_events) == 0
 
     # Test 2: 'a' key falls through mode_b to mode_a
-    event_a = tcod.event.KeyDown(0, tcod.event.KeySym.a, 0)
+    event_a = tcod.event.KeyDown(0, tcod.event.KeySym.a, 0)  # type: ignore[unresolved-attribute]
     input_handler.dispatch(event_a)
 
     # mode_b received it first but didn't handle it

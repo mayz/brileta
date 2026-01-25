@@ -371,7 +371,7 @@ def patched_controller(stop_after: int):
             if call_count[0] >= stop_after:
                 raise StopIteration()
 
-        controller.update_logic_step = patched_update_logic_step  # type: ignore[assignment]
+        controller.update_logic_step = patched_update_logic_step
         yield controller
 
 
@@ -409,7 +409,7 @@ def test_windup_action_not_immediately_processed() -> None:
             controller.update_logic_step()
 
         # The action should not be processed yet (animation still playing)
-        assert intent not in controller.turn_manager.processed  # type: ignore[attr-defined]
+        assert intent not in controller.turn_manager.processed
 
 
 def test_instant_action_processed_immediately() -> None:
@@ -423,7 +423,7 @@ def test_instant_action_processed_immediately() -> None:
         controller.process_player_input()
 
         # INSTANT actions should be processed immediately
-        assert intent in controller.turn_manager.processed  # type: ignore[attr-defined]
+        assert intent in controller.turn_manager.processed
 
         # Run one logic step to trigger StopIteration
         with pytest.raises(StopIteration):
@@ -439,13 +439,13 @@ def test_energy_gate_blocks_movement_when_insufficient_energy() -> None:
     """Player cannot move when they don't have enough energy."""
     with patched_controller(stop_after=1) as controller:
         # Make can_afford return False
-        controller.gw.player.energy.can_afford = lambda cost: False  # type: ignore
+        controller.gw.player.energy.can_afford = lambda cost: False
 
         # Make explore mode's move generator return a move intent
         move_intent = GameIntent(controller, controller.gw.player)
         controller.explore_mode.move_generator.generate_intent = (
             lambda keys: move_intent
-        )  # type: ignore
+        )
 
         # Simulate movement keys pressed (now in explore_mode, not input_handler)
         controller.explore_mode.movement_keys = {"UP"}
@@ -454,7 +454,7 @@ def test_energy_gate_blocks_movement_when_insufficient_energy() -> None:
         controller.process_player_input()
 
         # Move should not have been processed
-        assert move_intent not in controller.turn_manager.processed  # type: ignore
+        assert move_intent not in controller.turn_manager.processed
 
 
 def test_energy_gate_allows_movement_when_sufficient_energy() -> None:
@@ -467,7 +467,7 @@ def test_energy_gate_allows_movement_when_sufficient_energy() -> None:
         move_intent.animation_type = AnimationType.INSTANT
         controller.explore_mode.move_generator.generate_intent = (
             lambda keys: move_intent
-        )  # type: ignore
+        )
 
         # Simulate movement keys pressed (now in explore_mode)
         controller.explore_mode.movement_keys = {"UP"}
@@ -476,7 +476,7 @@ def test_energy_gate_allows_movement_when_sufficient_energy() -> None:
         controller.process_player_input()
 
         # Move should have been processed
-        assert move_intent in controller.turn_manager.processed  # type: ignore
+        assert move_intent in controller.turn_manager.processed
 
 
 def test_energy_gate_regenerates_energy_when_blocked() -> None:
@@ -489,16 +489,16 @@ def test_energy_gate_regenerates_energy_when_blocked() -> None:
             nonlocal on_player_action_called
             on_player_action_called = True
 
-        controller.turn_manager.on_player_action = track_on_player_action  # type: ignore
+        controller.turn_manager.on_player_action = track_on_player_action
 
         # Make can_afford return False
-        controller.gw.player.energy.can_afford = lambda cost: False  # type: ignore
+        controller.gw.player.energy.can_afford = lambda cost: False
 
         # Make explore mode's move generator return a move intent
         move_intent = GameIntent(controller, controller.gw.player)
         controller.explore_mode.move_generator.generate_intent = (
             lambda keys: move_intent
-        )  # type: ignore
+        )
 
         # Simulate movement keys pressed (now in explore_mode)
         controller.explore_mode.movement_keys = {"UP"}
@@ -520,10 +520,10 @@ def test_energy_gate_no_regen_when_no_movement_attempted() -> None:
             nonlocal on_player_action_called
             on_player_action_called = True
 
-        controller.turn_manager.on_player_action = track_on_player_action  # type: ignore
+        controller.turn_manager.on_player_action = track_on_player_action
 
         # Make can_afford return False
-        controller.gw.player.energy.can_afford = lambda cost: False  # type: ignore
+        controller.gw.player.energy.can_afford = lambda cost: False
 
         # Move generator returns None (no movement attempt)
         # This is the default behavior

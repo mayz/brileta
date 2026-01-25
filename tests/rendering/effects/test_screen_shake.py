@@ -149,13 +149,13 @@ def test_world_view_applies_screen_shake_before_render(monkeypatch) -> None:
     controller = DummyController()
     shake = ScreenShake()
     # Use a float offset (0.15 tiles) to test sub-tile shake
-    shake.update = lambda dt: (0.15, 0.0)  # type: ignore[assignment]
+    shake.update = lambda dt: (0.15, 0.0)
     view = WorldView(cast("Controller", controller), shake)
     view.set_bounds(0, 0, 10, 10)
 
     # Mock the light overlay rendering to avoid mocking game_map.visible
-    view._render_light_overlay = lambda renderer: None  # type: ignore[assignment]
-    view._update_tile_animations = lambda: None  # type: ignore[assignment]
+    view._render_light_overlay = lambda renderer: None
+    view._update_tile_animations = lambda: None
 
     view.draw(cast(GraphicsContext, controller.graphics), InterpolationAlpha(0.0))
 
@@ -175,7 +175,7 @@ def test_world_view_screen_shake_does_not_overflow(monkeypatch) -> None:
     controller = DummyController()
     shake = ScreenShake()
     # Use a larger float offset to test bounds checking
-    shake.update = lambda dt: (0.5, 0.0)  # type: ignore[assignment]
+    shake.update = lambda dt: (0.5, 0.0)
     view = WorldView(cast("Controller", controller), shake)
     view.set_bounds(0, 0, 10, 10)
 
@@ -195,11 +195,11 @@ def test_world_view_screen_shake_does_not_overflow(monkeypatch) -> None:
         captured["dest_height"] = world_bottom - bounds.y1 + 1
         original_render_map()
 
-    view._render_map_unlit = wrapped_render_map  # type: ignore[assignment]
+    view._render_map_unlit = wrapped_render_map
 
     # Mock the light overlay rendering to avoid mocking game_map.visible
-    view._render_light_overlay = lambda renderer: None  # type: ignore[assignment]
-    view._update_tile_animations = lambda: None  # type: ignore[assignment]
+    view._render_light_overlay = lambda renderer: None
+    view._update_tile_animations = lambda: None
 
     view.draw(cast(GraphicsContext, controller.graphics), InterpolationAlpha(0.0))
 
@@ -217,13 +217,13 @@ def test_small_map_actor_alignment(monkeypatch) -> None:
     controller.gw.game_map.explored[:] = True  # All tiles are explored
 
     shake = ScreenShake()
-    shake.update = lambda dt: (0.0, 0.0)  # type: ignore[assignment]
+    shake.update = lambda dt: (0.0, 0.0)
     view = WorldView(cast("Controller", controller), shake)
     view.set_bounds(0, 0, 10, 8)
 
     # Mock the light overlay rendering to avoid mocking game_map.visible
-    view._render_light_overlay = lambda renderer: None  # type: ignore[assignment]
-    view._update_tile_animations = lambda: None  # type: ignore[assignment]
+    view._render_light_overlay = lambda renderer: None
+    view._update_tile_animations = lambda: None
 
     view.draw(cast(GraphicsContext, controller.graphics), InterpolationAlpha(0.0))
 

@@ -155,8 +155,11 @@ class TextOverlay(Overlay):
             if self._cached_texture is not None:
                 self.controller.graphics.release_texture(self._cached_texture)
             # Use cache key for unique texture caching per overlay
-            if hasattr(self.canvas, "create_texture_with_cache_key"):
-                texture = self.canvas.create_texture_with_cache_key(
+            create_with_key = getattr(
+                self.canvas, "create_texture_with_cache_key", None
+            )
+            if callable(create_with_key):
+                texture = create_with_key(
                     self.controller.graphics, artifact, self._cache_key
                 )
             else:

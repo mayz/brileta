@@ -104,15 +104,15 @@ class BaseGraphicsContext(GraphicsContext):
         uv_coords = self.uv_map[self.SOLID_BLOCK_CHAR]
 
         # Top edge
-        self.screen_renderer.add_quad(px_x, px_y, px_w, 1, uv_coords, color_rgba)
+        self.screen_renderer.add_quad(px_x, px_y, px_w, 1, uv_coords, color_rgba)  # type: ignore[unresolved-attribute]
         # Bottom edge
-        self.screen_renderer.add_quad(
+        self.screen_renderer.add_quad(  # type: ignore[unresolved-attribute]
             px_x, px_y + px_h - 1, px_w, 1, uv_coords, color_rgba
         )
         # Left edge
-        self.screen_renderer.add_quad(px_x, px_y, 1, px_h, uv_coords, color_rgba)
+        self.screen_renderer.add_quad(px_x, px_y, 1, px_h, uv_coords, color_rgba)  # type: ignore[unresolved-attribute]
         # Right edge
-        self.screen_renderer.add_quad(
+        self.screen_renderer.add_quad(  # type: ignore[unresolved-attribute]
             px_x + px_w - 1, px_y, 1, px_h, uv_coords, color_rgba
         )
 
@@ -132,7 +132,7 @@ class BaseGraphicsContext(GraphicsContext):
         w, h = self.tile_dimensions
         uv = self.uv_map[self.SOLID_BLOCK_CHAR]
         color_rgba = (color[0] / 255, color[1] / 255, color[2] / 255, alpha)
-        self.screen_renderer.add_quad(px_x, px_y, w, h, uv, color_rgba)
+        self.screen_renderer.add_quad(px_x, px_y, w, h, uv, color_rgba)  # type: ignore[unresolved-attribute]
 
     def render_particles(
         self,
@@ -266,7 +266,7 @@ class BaseGraphicsContext(GraphicsContext):
         w, h = self.tile_dimensions
 
         # Add the particle quad to the vertex buffer
-        self.screen_renderer.add_quad(screen_x, screen_y, w, h, uv_coords, final_color)
+        self.screen_renderer.add_quad(screen_x, screen_y, w, h, uv_coords, final_color)  # type: ignore[unresolved-attribute]
 
     def console_to_screen_coords(self, console_x: float, console_y: float) -> PixelPos:
         """Convert console coordinates to screen pixel coordinates.
@@ -372,8 +372,9 @@ class BaseGraphicsContext(GraphicsContext):
         """Get the coordinate converter."""
         if self._coordinate_converter is None:
             self._setup_coordinate_converter()
-            assert self._coordinate_converter is not None
-        return self._coordinate_converter
+        converter = self._coordinate_converter
+        assert converter is not None
+        return converter
 
     def _preprocess_pixels_for_texture(
         self, pixels: np.ndarray, transparent: bool = True

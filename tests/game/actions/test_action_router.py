@@ -217,7 +217,7 @@ def test_bump_into_container_opens_search_menu() -> None:
 
     # Mock the overlay_system.show_overlay to verify it's called
     mock_overlay = MagicMock()
-    controller.overlay_system = mock_overlay
+    controller.overlay_system = mock_overlay  # type: ignore[unresolved-attribute]
 
     # Patch DualPaneMenu so it doesn't need full controller setup
     with patch("catley.view.ui.dual_pane_menu.DualPaneMenu") as mock_menu_class:

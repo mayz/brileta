@@ -7,6 +7,7 @@ from catley.events import MessageEvent, publish_event
 from catley.game.actions.base import GameActionResult
 from catley.game.actions.executors.base import ActionExecutor
 from catley.game.actors import Character, conditions
+from catley.game.actors.components import CharacterInventory
 
 if TYPE_CHECKING:
     from catley.game.actions.recovery import (
@@ -29,7 +30,7 @@ class UseConsumableExecutor(ActionExecutor):
             return GameActionResult(succeeded=False)
 
         inventory = intent.actor.inventory
-        if not inventory:
+        if not isinstance(inventory, CharacterInventory):
             return GameActionResult(succeeded=False)
 
         # Use try_remove_item which checks ready_slots first, then outfit, then stored
@@ -84,7 +85,7 @@ class UseConsumableOnTargetExecutor(ActionExecutor):
             return GameActionResult(succeeded=False)
 
         inventory = intent.actor.inventory
-        if not inventory:
+        if not isinstance(inventory, CharacterInventory):
             return GameActionResult(succeeded=False)
 
         # Use try_remove_item which checks ready_slots first, then outfit, then stored

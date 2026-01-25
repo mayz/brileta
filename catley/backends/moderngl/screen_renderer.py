@@ -3,6 +3,7 @@ import numpy as np
 
 from catley.types import PixelPos
 
+from . import get_uniform
 from .shader_manager import ShaderManager
 
 # Maximum number of quads (2 triangles per quad) to draw per frame.
@@ -55,7 +56,7 @@ class ScreenRenderer:
         program = self.shader_manager.create_program(
             "glsl/screen/main.vert", "glsl/screen/main.frag", "screen_renderer"
         )
-        program["u_atlas"].value = 0
+        get_uniform(program, "u_atlas").value = 0
         return program
 
     def begin_frame(self) -> None:
@@ -102,10 +103,10 @@ class ScreenRenderer:
 
         if letterbox_geometry is not None:
             # Pass letterbox geometry to shader for proper coordinate transformation
-            self.screen_program["u_letterbox"].value = letterbox_geometry
+            get_uniform(self.screen_program, "u_letterbox").value = letterbox_geometry
         else:
             # No letterboxing - use full screen
-            self.screen_program["u_letterbox"].value = (
+            get_uniform(self.screen_program, "u_letterbox").value = (
                 0,
                 0,
                 int(window_size[0]),

@@ -8,6 +8,7 @@ from catley.util.caching import ResourceCache
 from catley.util.glyph_buffer import GlyphBuffer
 from catley.util.tilesets import unicode_to_cp437
 
+from . import get_uniform
 from .shader_manager import ShaderManager
 
 # Vertex structure for rendering
@@ -104,7 +105,7 @@ class TextureRenderer:
         program = self.shader_manager.create_program(
             "glsl/glyph/render.vert", "glsl/glyph/render.frag", "texture_renderer"
         )
-        program["u_atlas"].value = 0
+        get_uniform(program, "u_atlas").value = 0
         return program
 
     def _encode_glyph_buffer_to_vertices(
@@ -446,7 +447,10 @@ class TextureRenderer:
         total_vertices = glyph_buffer.width * glyph_buffer.height * 6
 
         # Set uniforms and render only the vertices for this buffer
-        self.texture_program["u_texture_size"].value = (width_px, height_px)
+        get_uniform(self.texture_program, "u_texture_size").value = (
+            width_px,
+            height_px,
+        )
         self.atlas_texture.use(location=0)
 
         # Critical: only render the vertices that belong to this buffer

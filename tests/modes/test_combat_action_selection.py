@@ -951,7 +951,7 @@ class TestCombatActionFiltering:
 
         # Equip player with a pistol
         pistol = PISTOL_TYPE.create()
-        pistol.ranged_attack.current_ammo = 6  # type: ignore[union-attr]
+        pistol.ranged_attack.current_ammo = 6  # pyright: ignore[reportOptionalMemberAccess]
         player.inventory.equip_to_slot(pistol, slot_index=0)
 
         actions = controller.combat_mode.get_available_combat_actions()
@@ -977,7 +977,7 @@ class TestCombatActionFiltering:
 
         # Equip player with a pistol
         pistol = PISTOL_TYPE.create()
-        pistol.ranged_attack.current_ammo = 6  # type: ignore[union-attr]
+        pistol.ranged_attack.current_ammo = 6  # pyright: ignore[reportOptionalMemberAccess]
         player.inventory.equip_to_slot(pistol, slot_index=0)
 
         actions = controller.combat_mode.get_available_combat_actions()
@@ -1077,7 +1077,7 @@ class TestCombatModeClickSelection:
         controller.enter_combat_mode()
 
         # Set frame_manager to None
-        controller.frame_manager = None  # type: ignore[assignment]
+        controller.frame_manager = None
 
         event = tcod.event.MouseButtonDown(
             (50, 30), (50, 30), tcod.event.MouseButton.LEFT

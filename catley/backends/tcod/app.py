@@ -54,7 +54,7 @@ class TCODApp(App[TCODGraphicsContext]):
             sdl_window_flags=sdl_flags,
         )
 
-        self.sdl_renderer: tcod.sdl.render.Renderer = self.tcod_context.sdl_renderer  # type: ignore[assignment]
+        self.sdl_renderer: tcod.sdl.render.Renderer = self.tcod_context.sdl_renderer
 
         # SDL3 requires explicit text input enabling for TextInput events.
         # Enable at startup so dev console can receive text input.
@@ -151,7 +151,7 @@ class TCODApp(App[TCODGraphicsContext]):
             window.fullscreen = False
         else:
             # SDL3 uses FULLSCREEN instead of FULLSCREEN_DESKTOP
-            window.fullscreen = WindowFlags.FULLSCREEN
+            window.fullscreen = WindowFlags.FULLSCREEN  # type: ignore[assignment]
 
     def _exit_backend(self) -> None:
         """Performs backend-specific exit procedures for TCOD."""

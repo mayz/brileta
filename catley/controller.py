@@ -91,7 +91,7 @@ class Controller:
         ):
             import moderngl
 
-            graphics.mgl_context = moderngl.create_context(standalone=True)
+            graphics.mgl_context = moderngl.create_context(standalone=True)  # type: ignore[unresolved-attribute]
 
         match lighting_backend:
             case "moderngl":

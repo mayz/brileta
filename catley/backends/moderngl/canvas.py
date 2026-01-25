@@ -68,8 +68,8 @@ class ModernGLCanvas(Canvas):
         # Pass THIS canvas's VBO and VAO to the renderer for isolation
         return moderngl_renderer.render_glyph_buffer_to_texture(
             artifact,
-            vbo_override=self.vbo,
-            vao_override=self.vao,
+            buffer_override=self.vbo,
+            secondary_override=self.vao,
         )
 
     def create_texture_with_cache_key(
@@ -85,8 +85,8 @@ class ModernGLCanvas(Canvas):
         # Pass cache key for unique caching per overlay
         return moderngl_renderer.render_glyph_buffer_to_texture(
             artifact,
-            vbo_override=self.vbo,
-            vao_override=self.vao,
+            buffer_override=self.vbo,
+            secondary_override=self.vao,
             cache_key_suffix=cache_key,
         )
 

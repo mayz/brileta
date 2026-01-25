@@ -778,7 +778,7 @@ def test_get_options_for_target_outside_combat_shows_attack_gateway() -> None:
     disc = ActionDiscovery()
 
     # Stub is_combat_mode to return False (since DummyController doesn't have it)
-    controller.is_combat_mode = lambda: False  # type: ignore[attr-defined]
+    controller.is_combat_mode = lambda: False
 
     opts = disc.get_options_for_target(cast(Controller, controller), player, hostile)
 
@@ -803,7 +803,7 @@ def test_get_options_for_target_in_combat_shows_combat_actions() -> None:
     disc = ActionDiscovery()
 
     # Stub is_combat_mode to return True
-    controller.is_combat_mode = lambda: True  # type: ignore[attr-defined]
+    controller.is_combat_mode = lambda: True
 
     opts = disc.get_options_for_target(
         cast(Controller, controller), player, melee_target
@@ -826,7 +826,7 @@ def test_attack_gateway_not_shown_for_dead_targets() -> None:
     cast(Any, hostile.ai).disposition = Disposition.FRIENDLY
 
     disc = ActionDiscovery()
-    controller.is_combat_mode = lambda: False  # type: ignore[attr-defined]
+    controller.is_combat_mode = lambda: False
 
     opts = disc.get_options_for_target(cast(Controller, controller), player, hostile)
 
@@ -842,7 +842,7 @@ def test_get_options_for_target_outside_combat_shows_stunts() -> None:
     cast(Any, hostile.ai).disposition = Disposition.FRIENDLY
 
     disc = ActionDiscovery()
-    controller.is_combat_mode = lambda: False  # type: ignore[attr-defined]
+    controller.is_combat_mode = lambda: False
 
     opts = disc.get_options_for_target(cast(Controller, controller), player, hostile)
 
@@ -871,7 +871,7 @@ def test_stunts_not_shown_for_dead_targets() -> None:
     cast(Any, hostile.ai).disposition = Disposition.FRIENDLY
 
     disc = ActionDiscovery()
-    controller.is_combat_mode = lambda: False  # type: ignore[attr-defined]
+    controller.is_combat_mode = lambda: False
 
     opts = disc.get_options_for_target(cast(Controller, controller), player, hostile)
 
@@ -891,7 +891,7 @@ def test_stunts_not_shown_in_combat_mode_explore_path() -> None:
     disc = ActionDiscovery()
 
     # Stub is_combat_mode to return True
-    controller.is_combat_mode = lambda: True  # type: ignore[attr-defined]
+    controller.is_combat_mode = lambda: True
 
     opts = disc.get_options_for_target(
         cast(Controller, controller), player, melee_target
@@ -913,7 +913,7 @@ def test_talk_action_pathfinds_for_distant_target() -> None:
     # Friend is at (20, 20), player at (0, 0) - definitely not adjacent
 
     disc = ActionDiscovery()
-    controller.is_combat_mode = lambda: False  # type: ignore[attr-defined]
+    controller.is_combat_mode = lambda: False
 
     opts = disc.get_options_for_target(cast(Controller, controller), player, friend)
 
@@ -931,7 +931,7 @@ def test_talk_action_not_shown_in_combat_mode() -> None:
     disc = ActionDiscovery()
 
     # Stub is_combat_mode to return True (combat mode)
-    controller.is_combat_mode = lambda: True  # type: ignore[attr-defined]
+    controller.is_combat_mode = lambda: True
 
     opts = disc.get_options_for_target(
         cast(Controller, controller), player, melee_target

@@ -376,6 +376,15 @@ class RealisticPerformanceBenchmark:
         """Export results to JSON."""
         output_path = Path(filename)
 
+        # Get OpenGL info if using ModernGL backend
+        mgl_context = getattr(self.app.graphics, "mgl_context", None)
+        if mgl_context is not None:
+            opengl_version = mgl_context.info.get("GL_VERSION", "Unknown")
+            gpu_renderer = mgl_context.info.get("GL_RENDERER", "Unknown")
+        else:
+            opengl_version = "N/A (WGPU backend)"
+            gpu_renderer = "N/A (WGPU backend)"
+
         export_data = {
             "metadata": {
                 "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -383,10 +392,8 @@ class RealisticPerformanceBenchmark:
                 "target_fps": self.target_fps,
                 "vsync_enabled": True,
                 "visible_window": True,
-                "opengl_version": self.app.mgl_context.info.get(
-                    "GL_VERSION", "Unknown"
-                ),
-                "gpu_renderer": self.app.mgl_context.info.get("GL_RENDERER", "Unknown"),
+                "opengl_version": opengl_version,
+                "gpu_renderer": gpu_renderer,
             },
             "results": [asdict(result) for result in self.results],
         }

@@ -194,13 +194,10 @@ def find_local_path(
         if actor.blocks_movement and actor is not pathing_actor:
             cost[actor.x, actor.y] = 0
 
-        if (
-            hasattr(actor, "damage_per_turn")
-            and actor.damage_per_turn > 0
-            and cost[actor.x, actor.y] > 0
-        ):
+        damage_per_turn = getattr(actor, "damage_per_turn", 0)
+        if damage_per_turn > 0 and cost[actor.x, actor.y] > 0:
             # Fire hazards (campfires, barrel fires, torches) are high-cost
-            fire_cost = HAZARD_BASE_COST + actor.damage_per_turn
+            fire_cost = HAZARD_BASE_COST + damage_per_turn
             cost[actor.x, actor.y] = max(cost[actor.x, actor.y], fire_cost)
 
     astar = tcod.path.AStar(cost=cost, diagonal=1)

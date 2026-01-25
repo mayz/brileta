@@ -83,7 +83,7 @@ class GlfwApp(App[GraphicsContextImplClass]):
         if app_config.fullscreen:
             monitor = glfw.get_primary_monitor()
             mode = glfw.get_video_mode(monitor)
-            glfw.set_window_monitor(
+            glfw.set_window_monitor(  # type: ignore[possibly-missing-attribute]
                 self.window,
                 monitor,
                 0,
@@ -93,7 +93,7 @@ class GlfwApp(App[GraphicsContextImplClass]):
                 mode.refresh_rate,
             )
         elif app_config.maximized:
-            glfw.maximize_window(self.window)
+            glfw.maximize_window(self.window)  # type: ignore[possibly-missing-attribute]
 
         # Store windowed mode position/size for fullscreen toggle
         self.windowed_x, self.windowed_y = glfw.get_window_pos(self.window)
@@ -144,8 +144,9 @@ class GlfwApp(App[GraphicsContextImplClass]):
             # Suppress stderr during shutdown to hide harmless CoreAnimation warnings
             with SuppressStderr():
                 # Clean up WGPU resources before terminating GLFW
-                if hasattr(self.graphics, "cleanup"):
-                    self.graphics.cleanup()
+                cleanup = getattr(self.graphics, "cleanup", None)
+                if callable(cleanup):
+                    cleanup()
 
                 # Restore system cursor when exiting
                 glfw.set_input_mode(self.window, glfw.CURSOR, glfw.CURSOR_NORMAL)
@@ -165,7 +166,7 @@ class GlfwApp(App[GraphicsContextImplClass]):
         """Toggles the display between windowed and fullscreen mode."""
         if glfw.get_window_monitor(self.window):
             # Return to windowed mode
-            glfw.set_window_monitor(
+            glfw.set_window_monitor(  # type: ignore[possibly-missing-attribute]
                 self.window,
                 None,
                 self.windowed_x,
@@ -184,7 +185,7 @@ class GlfwApp(App[GraphicsContextImplClass]):
             # Go fullscreen
             monitor = glfw.get_primary_monitor()
             mode = glfw.get_video_mode(monitor)
-            glfw.set_window_monitor(
+            glfw.set_window_monitor(  # type: ignore[possibly-missing-attribute]
                 self.window,
                 monitor,
                 0,

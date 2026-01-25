@@ -116,7 +116,7 @@ class TestTCODAudioBackendBugDetection:
         )
 
         # Also verify the stream is silenced (gain = 0)
-        stream = channel._stream
+        stream = channel._stream  # type: ignore[possibly-missing-attribute]
         assert stream.gain == 0.0, (
             "Stream gain should be 0 after stop to prevent any audio output."
         )

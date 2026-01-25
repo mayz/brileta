@@ -56,13 +56,13 @@ class WGPUBackgroundRenderer:
         buffer_size = self.MAX_BACKGROUND_QUADS * 6 * VERTEX_DTYPE.itemsize
         self.vertex_buffer = self.resource_manager.device.create_buffer(
             size=buffer_size,
-            usage=wgpu.BufferUsage.VERTEX | wgpu.BufferUsage.COPY_DST,  # type: ignore
+            usage=wgpu.BufferUsage.VERTEX | wgpu.BufferUsage.COPY_DST,
         )
 
         # Create uniform buffer for letterbox parameters
         self.uniform_buffer = self.resource_manager.device.create_buffer(
             size=4 * 4,  # 4 floats: offset_x, offset_y, scaled_w, scaled_h
-            usage=wgpu.BufferUsage.UNIFORM | wgpu.BufferUsage.COPY_DST,  # type: ignore
+            usage=wgpu.BufferUsage.UNIFORM | wgpu.BufferUsage.COPY_DST,
         )
 
         # Cache bind groups using weak references for automatic cleanup

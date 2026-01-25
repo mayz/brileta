@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import functools
 import string
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import tcod.event
 
@@ -73,7 +73,7 @@ class ContextMenu(Menu):
                 )
             )
         elif isinstance(self.target, tuple):
-            x, y = self.target
+            x, y = cast(WorldTilePos, self.target)
             tile = gm.tiles[x, y]
             distance = ranges.calculate_distance(player.x, player.y, x, y)
 

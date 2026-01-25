@@ -26,7 +26,9 @@ class Condition(abc.ABC):  # noqa: B024
     def __str__(self) -> str:
         return self.name
 
-    def apply_to_resolution(self, resolution_args: dict[str, bool]) -> dict[str, bool]:
+    def apply_to_resolution(
+        self, resolution_args: dict[str, bool | str]
+    ) -> dict[str, bool | str]:
         """Modify resolution arguments if this condition has an effect."""
         return resolution_args
 
@@ -58,7 +60,9 @@ class Injury(Condition):
             display_color=colors.RED,
         )
 
-    def apply_to_resolution(self, resolution_args: dict[str, bool]) -> dict[str, bool]:
+    def apply_to_resolution(
+        self, resolution_args: dict[str, bool | str]
+    ) -> dict[str, bool | str]:
         """Apply disadvantage based on injury location and action stat."""
         stat_name = resolution_args.get("stat_name")
         if stat_name is None:
@@ -96,7 +100,9 @@ class Rads(Condition):
             display_color=colors.YELLOW,
         )
 
-    def apply_to_resolution(self, resolution_args: dict[str, bool]) -> dict[str, bool]:
+    def apply_to_resolution(
+        self, resolution_args: dict[str, bool | str]
+    ) -> dict[str, bool | str]:
         """Radiation exposure causes general weakness affecting all physical actions."""
         stat_name = resolution_args.get("stat_name")
         if stat_name in {"strength", "toughness", "agility"}:
@@ -154,7 +160,9 @@ class Sickness(Condition):
                 )
             )
 
-    def apply_to_resolution(self, resolution_args: dict[str, bool]) -> dict[str, bool]:
+    def apply_to_resolution(
+        self, resolution_args: dict[str, bool | str]
+    ) -> dict[str, bool | str]:
         """Apply sickness penalties to action resolution."""
         stat_name = resolution_args.get("stat_name")
         if stat_name is None:

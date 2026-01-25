@@ -7,6 +7,7 @@ and fragment shader functionality.
 
 from unittest.mock import Mock, patch
 
+import moderngl
 import numpy as np
 import pytest
 
@@ -961,14 +962,14 @@ class TestGPUDirectionalLighting:
         mock_shader_manager = Mock()
         mock_fragment_program = Mock()
         mock_fragment_uniforms = {
-            "u_sun_direction": Mock(),
-            "u_sun_color": Mock(),
-            "u_sun_intensity": Mock(),
-            "u_sky_exposure_power": Mock(),
+            "u_sun_direction": Mock(spec=moderngl.Uniform),
+            "u_sun_color": Mock(spec=moderngl.Uniform),
+            "u_sun_intensity": Mock(spec=moderngl.Uniform),
+            "u_sky_exposure_power": Mock(spec=moderngl.Uniform),
         }
 
         def getitem(key):
-            return mock_fragment_uniforms.get(key, Mock())
+            return mock_fragment_uniforms.get(key, Mock(spec=moderngl.Uniform))
 
         mock_fragment_program.__getitem__ = Mock(side_effect=getitem)
         mock_shader_manager.create_program.return_value = mock_fragment_program
@@ -1011,14 +1012,14 @@ class TestGPUDirectionalLighting:
         mock_shader_manager = Mock()
         mock_fragment_program = Mock()
         mock_fragment_uniforms = {
-            "u_sun_direction": Mock(),
-            "u_sun_color": Mock(),
-            "u_sun_intensity": Mock(),
-            "u_sky_exposure_power": Mock(),
+            "u_sun_direction": Mock(spec=moderngl.Uniform),
+            "u_sun_color": Mock(spec=moderngl.Uniform),
+            "u_sun_intensity": Mock(spec=moderngl.Uniform),
+            "u_sky_exposure_power": Mock(spec=moderngl.Uniform),
         }
 
         def getitem(key):
-            return mock_fragment_uniforms.get(key, Mock())
+            return mock_fragment_uniforms.get(key, Mock(spec=moderngl.Uniform))
 
         mock_fragment_program.__getitem__ = Mock(side_effect=getitem)
         mock_shader_manager.create_program.return_value = mock_fragment_program

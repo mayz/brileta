@@ -376,10 +376,9 @@ class GameWorld:
                     item for item in list(actor.inventory) if isinstance(item, Item)
                 )
                 # Only check ready_slots for CharacterInventory, not ContainerStorage
-                if hasattr(actor.inventory, "ready_slots"):
-                    items_found.extend(
-                        item for item in actor.inventory.ready_slots if item is not None
-                    )
+                ready_slots = getattr(actor.inventory, "ready_slots", None)
+                if ready_slots is not None:
+                    items_found.extend(item for item in ready_slots if item is not None)
 
         # Future: Add items directly on the ground if we implement that
         # e.g., items_found.extend(self.game_map.get_items_on_ground(x,y))
@@ -505,7 +504,7 @@ class GameWorld:
             self._add_test_acid_pool(room)
             self._add_test_hot_coals(room)
 
-    def _add_test_acid_pool(self, room) -> None:  # type: ignore[no-untyped-def]
+    def _add_test_acid_pool(self, room) -> None:
         """Add a small acid pool to demonstrate hazardous terrain.
 
         Creates a 2x2 acid pool in the bottom-right corner of the room.
@@ -526,7 +525,7 @@ class GameWorld:
                 ):
                     self.game_map.tiles[x, y] = TileTypeID.ACID_POOL
 
-    def _add_test_hot_coals(self, room) -> None:  # type: ignore[no-untyped-def]
+    def _add_test_hot_coals(self, room) -> None:
         """Add a small patch of hot coals to demonstrate animated terrain.
 
         Creates a 2x2 hot coals area in the bottom-right corner of the room.

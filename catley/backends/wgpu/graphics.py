@@ -91,7 +91,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         # Create WGPU adapter and device first (required before getting context)
         # Note: This takes ~290ms due to GPU enumeration - unavoidable with WGPU.
         adapter = wgpu.gpu.request_adapter_sync(
-            power_preference=wgpu.PowerPreference.high_performance  # type: ignore
+            power_preference=wgpu.PowerPreference.high_performance
         )
         self.device = adapter.request_device_sync(
             required_features=[],
@@ -222,18 +222,18 @@ class WGPUGraphicsContext(BaseGraphicsContext):
 
         # Configure the WGPU context
         surface_format = wgpu.TextureFormat.bgra8unorm
-        self.wgpu_context.configure(
+        self.wgpu_context.configure(  # type: ignore[unresolved-attribute]
             device=self.device,
             format=surface_format,
-            usage=wgpu.TextureUsage.RENDER_ATTACHMENT,  # type: ignore
+            usage=wgpu.TextureUsage.RENDER_ATTACHMENT,
         )
         return True
 
     def render_glyph_buffer_to_texture(
         self,
         glyph_buffer: GlyphBuffer,
-        canvas_vbo: wgpu.GPUBuffer | None = None,
-        cpu_buffer_override: np.ndarray | None = None,
+        buffer_override: wgpu.GPUBuffer | None = None,
+        secondary_override: np.ndarray | None = None,
         cache_key_suffix: str = "",
     ) -> wgpu.GPUTexture:
         """Render GlyphBuffer to a WGPU texture."""
@@ -241,7 +241,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
             raise RuntimeError("Texture renderer not initialized")
 
         # Handle case where no CPU buffer is provided (e.g., WorldView)
-        if cpu_buffer_override is None:
+        if secondary_override is None:
             # This is the WorldView case. Reuse our internal buffer.
             from .texture_renderer import TEXTURE_VERTEX_DTYPE
 
@@ -259,13 +259,13 @@ class WGPUGraphicsContext(BaseGraphicsContext):
             cpu_buffer_to_use = self._world_view_cpu_buffer
         else:
             # This is a UI Canvas case. Use the buffer it provided.
-            cpu_buffer_to_use = cpu_buffer_override
+            cpu_buffer_to_use = secondary_override
 
         # Pass the chosen buffer and cache key to the renderer
         return self.texture_renderer.render(
             glyph_buffer,
             cpu_buffer_to_use,
-            buffer_override=canvas_vbo,
+            buffer_override=buffer_override,
             cache_key_suffix=cache_key_suffix,
         )
 
@@ -388,7 +388,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
             # Get the actual content scale from GLFW for high-DPI displays
             import glfw
 
-            scale_x, scale_y = glfw.get_window_content_scale(self.window.glfw_window)
+            scale_x, scale_y = glfw.get_window_content_scale(self.window.glfw_window)  # type: ignore[possibly-missing-attribute]
             return (scale_x, scale_y)
         except (AttributeError, TypeError, Exception):
             # Fallback for tests or when GLFW window is not available
@@ -582,7 +582,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
             # Always present the frame, even if rendering failed.
             # rendercanvas wraps wgpu's GPUCanvasContext - access the underlying
             # context to call present() since we manage our own render loop.
-            self.wgpu_context._wgpu_context.present()  # type: ignore[attr-defined]
+            self.wgpu_context._wgpu_context.present()
 
     def add_tile_to_screen(
         self,

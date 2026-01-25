@@ -44,7 +44,7 @@ class UITextureRenderer:
         self.program = self.shader_manager.create_program(
             "glsl/ui/texture.vert", "glsl/ui/texture.frag", "ui_texture_renderer"
         )
-        self.program["u_texture"].value = 0  # Use texture unit 0
+        self.program["u_texture"].value = 0  # type: ignore[invalid-assignment]
 
         # Create CPU-side buffer to aggregate all vertex data
         self.cpu_vertex_buffer = np.zeros(self.MAX_UI_QUADS * 6, dtype=VERTEX_DTYPE)
@@ -82,7 +82,7 @@ class UITextureRenderer:
             return
 
         # Set letterbox uniform once for all UI elements
-        self.program["u_letterbox"].value = letterbox_geometry
+        self.program["u_letterbox"].value = letterbox_geometry  # type: ignore[invalid-assignment]
 
         # Upload all vertex data to GPU in a single operation
         self.vbo.write(self.cpu_vertex_buffer[: self.vertex_count].tobytes())
@@ -157,7 +157,7 @@ class ModernGLGraphicsContext(BaseGraphicsContext):
         """Helper to render a single quad with a custom texture immediately."""
         # Use persistent resources instead of creating temp VBO/VAO
         program = self.ui_texture_renderer.program
-        program["u_letterbox"].value = self.letterbox_geometry
+        program["u_letterbox"].value = self.letterbox_geometry  # type: ignore[invalid-assignment]
 
         texture.use(location=0)
 
@@ -343,10 +343,8 @@ class ModernGLGraphicsContext(BaseGraphicsContext):
     def render_glyph_buffer_to_texture(
         self,
         glyph_buffer: GlyphBuffer,
-        # NEW: Optional overrides from the canvas
-        vbo_override: moderngl.Buffer | None = None,
-        vao_override: moderngl.VertexArray | None = None,
-        # Cache key suffix for unique caching per overlay
+        buffer_override: moderngl.Buffer | None = None,
+        secondary_override: moderngl.VertexArray | None = None,
         cache_key_suffix: str = "",
     ) -> Any:
         """Renders a GlyphBuffer to a cached, correctly oriented texture."""
@@ -370,8 +368,8 @@ class ModernGLGraphicsContext(BaseGraphicsContext):
         self.texture_renderer.render(
             glyph_buffer,
             target_fbo,
-            vbo_override=vbo_override,
-            vao_override=vao_override,
+            vbo_override=buffer_override,
+            vao_override=secondary_override,
         )
 
         return target_texture
@@ -564,7 +562,7 @@ class ModernGLGraphicsContext(BaseGraphicsContext):
 
         # Set up shader uniforms
         program = self.screen_renderer.screen_program
-        program["u_letterbox"].value = self.letterbox_geometry
+        program["u_letterbox"].value = self.letterbox_geometry  # type: ignore[invalid-assignment]
 
         # Bind the outlined atlas texture
         self.outlined_atlas_texture.use(location=0)
@@ -710,7 +708,7 @@ class ModernGLGraphicsContext(BaseGraphicsContext):
 
         # Set up shader uniforms like ScreenRenderer does
         program = self.screen_renderer.screen_program
-        program["u_letterbox"].value = self.letterbox_geometry
+        program["u_letterbox"].value = self.letterbox_geometry  # type: ignore[invalid-assignment]
 
         # Use the reusable gradient texture
         self.radial_gradient_texture.use(location=0)

@@ -89,8 +89,8 @@ class WGPUCanvas(Canvas):
         # Use the renderer's method, but pass this canvas's OWN vertex buffers
         return renderer.render_glyph_buffer_to_texture(
             artifact,
-            canvas_vbo=self.vertex_buffer,
-            cpu_buffer_override=self.cpu_vertex_buffer,
+            buffer_override=self.vertex_buffer,
+            secondary_override=self.cpu_vertex_buffer,
         )
 
     def create_texture_with_cache_key(
@@ -103,8 +103,8 @@ class WGPUCanvas(Canvas):
         # Pass cache key for unique caching per overlay
         return renderer.render_glyph_buffer_to_texture(
             artifact,
-            canvas_vbo=self.vertex_buffer,
-            cpu_buffer_override=self.cpu_vertex_buffer,
+            buffer_override=self.vertex_buffer,
+            secondary_override=self.cpu_vertex_buffer,
             cache_key_suffix=cache_key,
         )
 
@@ -175,7 +175,7 @@ class WGPUCanvas(Canvas):
             if buffer_size > 0:
                 self.vertex_buffer = self.resource_manager.device.create_buffer(
                     size=buffer_size,
-                    usage=wgpu.BufferUsage.VERTEX | wgpu.BufferUsage.COPY_DST,  # type: ignore
+                    usage=wgpu.BufferUsage.VERTEX | wgpu.BufferUsage.COPY_DST,
                     label=f"canvas_vbo_{id(self)}",
                 )
             else:

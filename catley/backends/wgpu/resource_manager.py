@@ -99,11 +99,11 @@ class WGPUResourceManager:
         """
         if self._nearest_sampler is None:
             self._nearest_sampler = self.device.create_sampler(
-                mag_filter=wgpu.FilterMode.nearest,  # type: ignore
-                min_filter=wgpu.FilterMode.nearest,  # type: ignore
-                mipmap_filter=wgpu.MipmapFilterMode.nearest,  # type: ignore
-                address_mode_u=wgpu.AddressMode.clamp_to_edge,  # type: ignore
-                address_mode_v=wgpu.AddressMode.clamp_to_edge,  # type: ignore
+                mag_filter=wgpu.FilterMode.nearest,
+                min_filter=wgpu.FilterMode.nearest,
+                mipmap_filter=wgpu.MipmapFilterMode.nearest,
+                address_mode_u=wgpu.AddressMode.clamp_to_edge,
+                address_mode_v=wgpu.AddressMode.clamp_to_edge,
                 label="shared_nearest_sampler",
             )
         return self._nearest_sampler
@@ -116,11 +116,11 @@ class WGPUResourceManager:
         """
         if self._linear_sampler is None:
             self._linear_sampler = self.device.create_sampler(
-                mag_filter=wgpu.FilterMode.linear,  # type: ignore
-                min_filter=wgpu.FilterMode.linear,  # type: ignore
-                mipmap_filter=wgpu.MipmapFilterMode.linear,  # type: ignore
-                address_mode_u=wgpu.AddressMode.clamp_to_edge,  # type: ignore
-                address_mode_v=wgpu.AddressMode.clamp_to_edge,  # type: ignore
+                mag_filter=wgpu.FilterMode.linear,
+                min_filter=wgpu.FilterMode.linear,
+                mipmap_filter=wgpu.MipmapFilterMode.linear,
+                address_mode_u=wgpu.AddressMode.clamp_to_edge,
+                address_mode_v=wgpu.AddressMode.clamp_to_edge,
                 label="shared_linear_sampler",
             )
         return self._linear_sampler
@@ -158,8 +158,8 @@ class WGPUResourceManager:
         # Create new texture
         texture = self.device.create_texture(
             size=(width, height, 1),
-            format=texture_format,  # type: ignore
-            usage=usage,  # type: ignore
+            format=texture_format,
+            usage=usage,
         )
 
         # Cache it for future use
@@ -187,7 +187,7 @@ class WGPUResourceManager:
         # Create new buffer
         buffer = self.device.create_buffer(
             size=size,
-            usage=usage,  # type: ignore
+            usage=usage,
             label=label or "",
         )
 
@@ -215,7 +215,7 @@ class WGPUResourceManager:
 
         # Create new texture view
         if texture_format:
-            view = texture.create_view(format=texture_format)  # type: ignore
+            view = texture.create_view(format=texture_format)
         else:
             view = texture.create_view()
         self._texture_view_cache[texture_id] = view
@@ -237,8 +237,8 @@ class WGPUResourceManager:
         """
         texture = self.device.create_texture(
             size=(width, height, 1),
-            format=texture_format,  # type: ignore
-            usage=wgpu.TextureUsage.TEXTURE_BINDING | wgpu.TextureUsage.COPY_DST,  # type: ignore
+            format=texture_format,
+            usage=wgpu.TextureUsage.TEXTURE_BINDING | wgpu.TextureUsage.COPY_DST,
         )
 
         # Upload the texture data
@@ -248,7 +248,7 @@ class WGPUResourceManager:
                 "mip_level": 0,
                 "origin": (0, 0, 0),
             },
-            data=memoryview(data),  # type: ignore
+            data=memoryview(data),
             data_layout={
                 "offset": 0,
                 "bytes_per_row": width * 4,  # 4 bytes per pixel for RGBA

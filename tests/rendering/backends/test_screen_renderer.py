@@ -7,6 +7,7 @@ allowing us to test the ScreenRenderer logic without needing a real OpenGL conte
 
 from unittest.mock import Mock
 
+import moderngl
 import numpy as np
 import pytest
 
@@ -31,7 +32,7 @@ class TestScreenRenderer:
 
         # Mock the shader program creation with proper subscripting support
         self.mock_program = Mock()
-        self.mock_uniform = Mock()
+        self.mock_uniform = Mock(spec=moderngl.Uniform)
         # Configure the program to support subscripting like program["u_screen_size"]
         self.mock_program.__getitem__ = Mock(return_value=self.mock_uniform)
         self.mock_mgl_context.program.return_value = self.mock_program

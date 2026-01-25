@@ -65,7 +65,7 @@ class TestWGPUGraphicsContext:
         # Try to create real WGPU context, fall back to mock if unavailable
         try:
             # Attempt real WGPU context creation (defer init for testing)
-            self.graphics_ctx = WGPUGraphicsContext(mock_window, _defer_init=True)  # type: ignore[misc]
+            self.graphics_ctx = WGPUGraphicsContext(mock_window, _defer_init=True)  # pyright: ignore[reportOptionalCall]
             self.real_wgpu = True
         except Exception:
             # Fall back to mocked WGPU for environments without GPU
@@ -80,7 +80,7 @@ class TestWGPUGraphicsContext:
                 mock_device.queue = mock_queue
                 mock_wgpu.create_surface_from_window.return_value = mock_surface
 
-                self.graphics_ctx = WGPUGraphicsContext(mock_window, _defer_init=True)  # type: ignore[misc]
+                self.graphics_ctx = WGPUGraphicsContext(mock_window, _defer_init=True)  # pyright: ignore[reportOptionalCall]
                 self.real_wgpu = False
 
         # Add mock resource manager for testing
@@ -239,7 +239,7 @@ class TestWGPUGraphicsContext:
         self.graphics_ctx.draw_mouse_cursor(mock_cursor)  # type: ignore[arg-type]
 
         # render_particles should handle None screen_renderer gracefully
-        self.graphics_ctx.render_particles(Mock(), Mock(), Mock(), Mock())
+        self.graphics_ctx.render_particles(Mock(), Mock(), Mock(), Mock())  # type: ignore[arg-type]
 
         # apply_environmental_effect is now implemented
         self.graphics_ctx.apply_environmental_effect(
@@ -323,12 +323,12 @@ class TestWGPUGraphicsContext:
         assert result is mock_texture
 
         # Verify that the texture renderer was called with expected parameters
-        # Note: cpu_buffer_override will be created as a temporary buffer
+        # Note: secondary_override (cpu buffer) will be created as a temporary buffer
         call_args = mock_texture_renderer.render.call_args
         assert call_args[0][0] is glyph_buffer  # First arg is glyph_buffer
         assert (
             call_args[0][1] is not None
-        )  # Second arg is cpu_buffer_override (created)
+        )  # Second arg is cpu buffer (created internally)
         assert call_args[1]["buffer_override"] is None  # buffer_override is None
 
     def test_add_tile_to_screen(self):
@@ -369,7 +369,7 @@ def test_wgpu_graphics_context_window_parameters():
     mock_window.get_framebuffer_size = Mock(return_value=(1024, 768))
     mock_window.flip = Mock()
 
-    ctx = WGPUGraphicsContext(mock_window, _defer_init=True)  # type: ignore[misc]
+    ctx = WGPUGraphicsContext(mock_window, _defer_init=True)  # pyright: ignore[reportOptionalCall]
 
     # Verify window is properly stored
     assert ctx.window is mock_window
@@ -386,7 +386,7 @@ def test_wgpu_graphics_context_default_parameters():
     mock_window.get_framebuffer_size = Mock(return_value=(800, 600))
     mock_window.flip = Mock()
 
-    ctx = WGPUGraphicsContext(mock_window, _defer_init=True)  # type: ignore[misc]
+    ctx = WGPUGraphicsContext(mock_window, _defer_init=True)  # pyright: ignore[reportOptionalCall]
 
     # Verify window is properly stored
     assert ctx.window is mock_window

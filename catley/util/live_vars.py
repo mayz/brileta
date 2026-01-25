@@ -94,7 +94,7 @@ class LiveVariableRegistry:
         self,
         name: str,
         description: str = "",
-        stats_type: type[T] = MostRecentNVar,
+        stats_type: type[T] = MostRecentNVar,  # type: ignore[assignment]
         num_samples: int = 1000,
         formatter: Callable[[Any], str] | None = None,
     ) -> LiveVariable:

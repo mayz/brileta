@@ -196,7 +196,9 @@ class Actor:
         # === Dependent & Facade Components ===
         self.status_effects = StatusEffectsComponent(self)
         self.conditions = (
-            ConditionsComponent(self.inventory) if self.inventory is not None else None
+            ConditionsComponent(self.inventory)
+            if isinstance(self.inventory, CharacterInventory)
+            else None
         )
         self.modifiers = ModifiersComponent(actor=self)
 
@@ -293,7 +295,7 @@ class Actor:
                 self.health.take_damage(amount, damage_type="radiation")
 
                 actual_damage = initial_hp - self.health.hp
-                if self.inventory is not None and actual_damage > 0:
+                if isinstance(self.inventory, CharacterInventory) and actual_damage > 0:
                     for _ in range(actual_damage):
                         if (
                             self.inventory.get_used_inventory_slots()

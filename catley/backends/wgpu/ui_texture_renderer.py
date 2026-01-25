@@ -68,7 +68,7 @@ class WGPUUITextureRenderer:
         # Create dedicated uniform buffer for letterbox parameters
         self.uniform_buffer = self.resource_manager.device.create_buffer(
             size=16,  # vec4<f32> = 16 bytes
-            usage=wgpu.BufferUsage.UNIFORM | wgpu.BufferUsage.COPY_DST,  # type: ignore
+            usage=wgpu.BufferUsage.UNIFORM | wgpu.BufferUsage.COPY_DST,
             label="ui_texture_renderer_uniform_buffer",
         )
 
@@ -205,13 +205,13 @@ class WGPUUITextureRenderer:
         )
         self.resource_manager.queue.write_buffer(
             self.uniform_buffer, 0, memoryview(letterbox_data)
-        )  # type: ignore
+        )
 
         # Upload all vertex data to GPU in a single operation
         self.resource_manager.queue.write_buffer(
             self.vertex_buffer,
             0,
-            memoryview(self.cpu_vertex_buffer[: self.vertex_count].tobytes()),  # type: ignore
+            memoryview(self.cpu_vertex_buffer[: self.vertex_count].tobytes()),
         )
 
         # Set up render pass

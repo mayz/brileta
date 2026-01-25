@@ -208,8 +208,8 @@ def test_overlay_consumes_escape_before_mode() -> None:
             mode_received_escape.append(True)
         return original_mode_handle(event)
 
-    controller.overlay_system.handle_input = mock_overlay_handle  # type: ignore[method-assign]
-    controller.combat_mode.handle_input = mock_mode_handle  # type: ignore[method-assign]
+    controller.overlay_system.handle_input = mock_overlay_handle
+    controller.combat_mode.handle_input = mock_mode_handle
 
     # Dispatch Escape through InputHandler
     escape_event = tcod.event.KeyDown(0, tcod.event.KeySym.ESCAPE, 0)
@@ -251,7 +251,7 @@ def test_overlay_consumes_q_before_quit() -> None:
             return True  # Overlay consumes Q (simulating menu close)
         return original_overlay_handle(event)
 
-    controller.overlay_system.handle_input = mock_overlay_handle  # type: ignore[method-assign]
+    controller.overlay_system.handle_input = mock_overlay_handle
 
     # Dispatch Q through InputHandler
     q_event = tcod.event.KeyDown(0, Keys.KEY_Q, 0)

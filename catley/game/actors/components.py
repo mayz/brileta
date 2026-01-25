@@ -39,7 +39,7 @@ from __future__ import annotations
 import math
 import time
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from catley.game.outfit import OutfitCapability
@@ -1010,7 +1010,7 @@ class ModifiersComponent:
         all_effects.extend(self.get_all_conditions())
         return all_effects
 
-    def get_resolution_modifiers(self, stat_name: str) -> dict[str, bool]:
+    def get_resolution_modifiers(self, stat_name: str) -> dict[str, bool | str]:
         """Aggregates resolution modifiers from all active effects and conditions.
 
         This is the primary method for determining advantage, disadvantage, or
@@ -1066,10 +1066,12 @@ class ModifiersComponent:
         # Apply graduated encumbrance penalty: 0.85^slots_over
         # Only CharacterInventory has get_slots_over_capacity()
         inventory = self.actor.inventory
-        if inventory is not None and hasattr(inventory, "get_slots_over_capacity"):
-            slots_over = inventory.get_slots_over_capacity()
-            if slots_over > 0:
-                multiplier *= MovementConstants.ENCUMBRANCE_SPEED_BASE**slots_over
+        if inventory is not None:
+            get_slots_over = getattr(inventory, "get_slots_over_capacity", None)
+            if callable(get_slots_over):
+                slots_over = cast(int, get_slots_over())
+                if slots_over > 0:
+                    multiplier *= MovementConstants.ENCUMBRANCE_SPEED_BASE**slots_over
 
         return multiplier
 
@@ -1169,11 +1171,11 @@ class StatusEffectsComponent:
 class ConditionsComponent:
     """Manages an actor's long-term conditions.
 
-    Storage is delegated to an :class:`InventoryComponent` instance so that
+    Storage is delegated to a :class:`CharacterInventory` instance so that
     conditions continue to consume inventory space.
     """
 
-    def __init__(self, inventory: InventoryComponent) -> None:
+    def __init__(self, inventory: CharacterInventory) -> None:
         self.inventory = inventory
 
     def __iter__(self):

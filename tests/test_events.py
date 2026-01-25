@@ -2,6 +2,8 @@
 
 import logging
 
+import pytest
+
 from catley.events import (
     EventBus,
     GameEvent,
@@ -16,7 +18,7 @@ class TestEventBus:
     """Tests for the EventBus class."""
 
     def test_handler_exception_does_not_crash_event_bus(
-        self, caplog: "logging.LogRecord"
+        self, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Test that exceptions in handlers don't crash the event bus.
 
@@ -50,7 +52,7 @@ class TestEventBus:
         assert "Error handling event MessageEvent" in caplog.text
 
     def test_handler_exception_includes_traceback_in_log(
-        self, caplog: "logging.LogRecord"
+        self, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Test that handler exceptions log full tracebacks.
 
@@ -97,7 +99,7 @@ class TestGlobalEventBus:
         assert received_events[0].text == "Hello"
 
     def test_global_handler_exception_is_handled(
-        self, caplog: "logging.LogRecord"
+        self, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Test that global event bus handles exceptions gracefully."""
 

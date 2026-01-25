@@ -55,7 +55,7 @@ def test_no_unnecessary_scaling() -> None:
     renderer = _make_renderer()
     backend = PillowImageCanvas(renderer, font_path=config.UI_FONT_PATH)
     update_mock = MagicMock()
-    backend._update_scaling_internal = update_mock  # type: ignore[assignment]
+    backend._update_scaling_internal = update_mock
     backend.configure_scaling(16)
     backend.configure_scaling(16)
     backend.configure_scaling(20)

@@ -42,12 +42,12 @@ class TestWGPUCanvas:
         self.mock_device = Mock()
         self.mock_resource_manager.device = self.mock_device
 
-        self.canvas = WGPUCanvas(
+        self.canvas = WGPUCanvas(  # pyright: ignore[reportOptionalCall]
             self.mock_renderer, self.mock_resource_manager, transparent=True
-        )  # type: ignore[misc]
-        self.opaque_canvas = WGPUCanvas(
+        )
+        self.opaque_canvas = WGPUCanvas(  # pyright: ignore[reportOptionalCall]
             self.mock_renderer, self.mock_resource_manager, transparent=False
-        )  # type: ignore[misc]
+        )
 
     def test_initialization(self):
         """Test canvas initialization."""
@@ -217,10 +217,10 @@ class TestWGPUCanvas:
         call_args = self.mock_renderer.render_glyph_buffer_to_texture.call_args
         assert call_args[0][0] is glyph_buffer  # glyph_buffer (positional)
         assert (
-            call_args[1]["canvas_vbo"] is self.canvas.vertex_buffer
+            call_args[1]["buffer_override"] is self.canvas.vertex_buffer
         )  # GPU buffer (keyword)
         assert (
-            call_args[1]["cpu_buffer_override"] is self.canvas.cpu_vertex_buffer
+            call_args[1]["secondary_override"] is self.canvas.cpu_vertex_buffer
         )  # CPU buffer (keyword)
 
         # Test with non-GlyphBuffer artifact
@@ -245,7 +245,7 @@ class TestWGPUCanvas:
         from catley.view.render.canvas import Canvas
 
         # Verify WGPUCanvas is a proper subclass
-        assert issubclass(WGPUCanvas, Canvas)  # type: ignore[arg-type]
+        assert issubclass(WGPUCanvas, Canvas)  # pyright: ignore[reportArgumentType]
         assert isinstance(self.canvas, Canvas)
 
         # Test that required abstract methods are implemented
@@ -283,12 +283,12 @@ def test_canvas_creation_parameters():
     mock_resource_manager = Mock()
 
     # Test transparent canvas (default)
-    transparent_canvas = WGPUCanvas(mock_renderer, mock_resource_manager)  # type: ignore[misc]
+    transparent_canvas = WGPUCanvas(mock_renderer, mock_resource_manager)  # pyright: ignore[reportOptionalCall]
     assert transparent_canvas.transparent is True
     assert transparent_canvas.renderer is mock_renderer
 
     # Test opaque canvas
-    opaque_canvas = WGPUCanvas(mock_renderer, mock_resource_manager, transparent=False)  # type: ignore[misc]
+    opaque_canvas = WGPUCanvas(mock_renderer, mock_resource_manager, transparent=False)  # pyright: ignore[reportOptionalCall]
     assert opaque_canvas.transparent is False
     assert opaque_canvas.renderer is mock_renderer
 
@@ -299,7 +299,7 @@ def test_canvas_operation_caching():
     mock_renderer = Mock()
     mock_renderer.tile_dimensions = (20, 20)
     mock_resource_manager = Mock()
-    canvas = WGPUCanvas(mock_renderer, mock_resource_manager)  # type: ignore[misc]
+    canvas = WGPUCanvas(mock_renderer, mock_resource_manager)  # pyright: ignore[reportOptionalCall]
 
     # Begin frame and add operations
     canvas.begin_frame()

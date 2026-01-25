@@ -71,7 +71,7 @@ class SpatialBenchmark:
 
     def run_basic_benchmark(
         self, *, num_actors: int = 100, num_frames: int = 1000
-    ) -> dict[str, float]:
+    ) -> dict[str, Any]:
         """Run a benchmark simulating typical frame usage."""
 
         print(f"Running basic benchmark: {num_actors} actors, {num_frames} frames...")
@@ -120,16 +120,23 @@ class SpatialBenchmark:
         spatial_stats = perf_tracker.get_measurements_by_prefix("spatial_")
         spatial_total_time = sum(stats.total_time for stats in spatial_stats.values())
 
+        # Compute metrics as local variables for type safety
+        avg_frame_time = total_time / num_frames
+        fps = num_frames / total_time
+        operations_per_second = (num_frames * 35) / total_time
+        time_per_operation = total_time / (num_frames * 35)
+        spatial_percentage = (
+            (spatial_total_time / total_time) * 100 if total_time > 0 else 0
+        )
+
         results = {
             "total_time": total_time,
-            "avg_frame_time": total_time / num_frames,
-            "fps": num_frames / total_time,
-            "operations_per_second": (num_frames * 35) / total_time,
-            "time_per_operation": total_time / (num_frames * 35),
+            "avg_frame_time": avg_frame_time,
+            "fps": fps,
+            "operations_per_second": operations_per_second,
+            "time_per_operation": time_per_operation,
             "spatial_total_time": spatial_total_time,
-            "spatial_percentage": (spatial_total_time / total_time) * 100
-            if total_time > 0
-            else 0,
+            "spatial_percentage": spatial_percentage,
             "spatial_breakdown": {
                 name: {
                     "avg_time": stats.avg_time,
@@ -141,12 +148,10 @@ class SpatialBenchmark:
         }
 
         print(f"  Total time: {total_time:.3f}s")
-        print(f"  Avg frame time: {results['avg_frame_time'] * 1000:.3f}ms")
-        print(f"  Simulated FPS: {results['fps']:.1f}")
-        print(f"  Operations/sec: {results['operations_per_second']:.0f}")
-        print(
-            f"  Spatial operations: {results['spatial_percentage']:.1f}% of total time"
-        )
+        print(f"  Avg frame time: {avg_frame_time * 1000:.3f}ms")
+        print(f"  Simulated FPS: {fps:.1f}")
+        print(f"  Operations/sec: {operations_per_second:.0f}")
+        print(f"  Spatial operations: {spatial_percentage:.1f}% of total time")
 
         print("  Detailed operation breakdown:")
         for name, stats in spatial_stats.items():
@@ -215,23 +220,26 @@ class SpatialBenchmark:
         # Get instrumented breakdown
         spatial_stats = perf_tracker.get_measurements_by_prefix("spatial_")
 
+        # Compute metrics as local variables for type safety
+        ops_per_sec = num_operations / total_time if total_time > 0 else 0
+        ops_divisor = num_operations // 3
+        avg_radius_query = (
+            op_times["radius_queries"] / ops_divisor if num_operations > 0 else 0
+        )
+        avg_bounds_query = (
+            op_times["bounds_queries"] / ops_divisor if num_operations > 0 else 0
+        )
+        avg_update = op_times["updates"] / ops_divisor if num_operations > 0 else 0
+
         results = {
             "total_time": total_time,
-            "operations_per_second": num_operations / total_time
-            if total_time > 0
-            else 0,
+            "operations_per_second": ops_per_sec,
             "radius_query_time": op_times["radius_queries"],
             "bounds_query_time": op_times["bounds_queries"],
             "update_time": op_times["updates"],
-            "avg_radius_query": op_times["radius_queries"] / (num_operations // 3)
-            if num_operations > 0
-            else 0,
-            "avg_bounds_query": op_times["bounds_queries"] / (num_operations // 3)
-            if num_operations > 0
-            else 0,
-            "avg_update": op_times["updates"] / (num_operations // 3)
-            if num_operations > 0
-            else 0,
+            "avg_radius_query": avg_radius_query,
+            "avg_bounds_query": avg_bounds_query,
+            "avg_update": avg_update,
             "instrumented_breakdown": {
                 name: {
                     "avg_time": stats.avg_time,
@@ -243,16 +251,16 @@ class SpatialBenchmark:
         }
 
         print(f"  Total time: {total_time:.3f}s")
-        print(f"  Operations/sec: {results['operations_per_second']:.0f}")
-        print(f"  Avg radius query: {results['avg_radius_query'] * 1_000_000:.1f}µs")
-        print(f"  Avg bounds query: {results['avg_bounds_query'] * 1_000_000:.1f}µs")
-        print(f"  Avg update: {results['avg_update'] * 1_000_000:.1f}µs")
+        print(f"  Operations/sec: {ops_per_sec:.0f}")
+        print(f"  Avg radius query: {avg_radius_query * 1_000_000:.1f}µs")
+        print(f"  Avg bounds query: {avg_bounds_query * 1_000_000:.1f}µs")
+        print(f"  Avg update: {avg_update * 1_000_000:.1f}µs")
 
         print("  Instrumented operation breakdown:")
-        for name, data in results["instrumented_breakdown"].items():
+        for name, stats in spatial_stats.items():
             print(
-                f"    {name}: {data['avg_time'] * 1_000_000:.1f}"
-                f"µs avg, {data['call_count']} calls"
+                f"    {name}: {stats.avg_time * 1_000_000:.1f}"
+                f"µs avg, {stats.call_count} calls"
             )
 
         disable_performance_tracking()

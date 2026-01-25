@@ -64,7 +64,11 @@ class GraphicsContext(abc.ABC):
 
     @abc.abstractmethod
     def render_glyph_buffer_to_texture(
-        self, glyph_buffer: GlyphBuffer, *args, **kwargs
+        self,
+        glyph_buffer: GlyphBuffer,
+        buffer_override: Any = None,
+        secondary_override: Any = None,
+        cache_key_suffix: str = "",
     ) -> Any:
         """
         Takes a GlyphBuffer scene description and renders it to a new,

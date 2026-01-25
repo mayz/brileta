@@ -17,7 +17,7 @@ from catley.game.enums import BlendMode
 from catley.types import InterpolationAlpha, Opacity
 from catley.util.coordinates import Rect
 from catley.util.glyph_buffer import GlyphBuffer
-from catley.view.render.effects.particles import SubTileParticleSystem
+from catley.view.render.effects.particles import ParticleLayer, SubTileParticleSystem
 
 
 class MockGLWindow:
@@ -482,8 +482,7 @@ class TestModernGLGraphicsContext:
         particle_system.lifetimes = np.array([5.0, 3.0, 2.0])
         particle_system.max_lifetimes = np.array([10.0, 5.0, 4.0])
 
-        layer = Mock()
-        layer.value = 1
+        layer = ParticleLayer.OVER_ACTORS
 
         viewport_bounds = Rect(0, 0, 100, 100)
         view_offset = (0, 0)
