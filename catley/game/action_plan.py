@@ -221,3 +221,34 @@ WalkToPlan = ActionPlan(
     name="Walk",
     steps=[ApproachStep(stop_distance=0)],
 )
+
+
+def get_punch_plan() -> ActionPlan:
+    """Create PunchPlan lazily to avoid circular imports.
+
+    PunchPlan needs to import intent classes from stunts.py, which can cause
+    circular imports if done at module level. This factory function defers
+    the import until the plan is actually needed.
+    """
+    from catley.game.actions.stunts import HolsterWeaponIntent, PunchIntent
+
+    return ActionPlan(
+        name="Punch",
+        requires_target=True,
+        requires_adjacency=True,
+        steps=[
+            ApproachStep(stop_distance=1),
+            IntentStep(
+                intent_class=HolsterWeaponIntent,
+                params=lambda ctx: {"actor": ctx.actor},
+                skip_if=lambda ctx: ctx.actor.inventory.get_active_item() is None,
+            ),
+            IntentStep(
+                intent_class=PunchIntent,
+                params=lambda ctx: {
+                    "attacker": ctx.actor,
+                    "defender": ctx.target_actor,
+                },
+            ),
+        ],
+    )

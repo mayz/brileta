@@ -383,14 +383,14 @@ class TestCombatModeIntentCreation:
             )
             assert final_intent.defender == npc
 
-    def test_punch_action_creates_punch_intent(self) -> None:
-        """Selected Punch action should create PunchIntent for adjacent target.
+    def test_punch_action_starts_punch_plan(self) -> None:
+        """Selected Punch action should start a PunchPlan for adjacent target.
 
-        This test ensures that the combat mode correctly handles PunchIntent,
-        which was added as a new stunt alongside Push, Trip, and Kick.
+        Punch uses the ActionPlan system instead of creating intents directly.
+        The plan handles approach, holstering, and the punch attack as separate steps.
         """
         reset_event_bus_for_testing()
-        controller, _player, npc = _make_combat_test_world(
+        controller, player, npc = _make_combat_test_world(
             player_pos=(5, 5),
             enemy_pos=(6, 5),  # Adjacent
         )
@@ -410,17 +410,21 @@ class TestCombatModeIntentCreation:
 
         intent = controller.combat_mode._create_intent_for_target(npc)
 
-        # Must be PunchIntent, not AttackIntent or error
-        assert isinstance(intent, PunchIntent), (
-            f"Expected PunchIntent but got {type(intent).__name__}. "
-            "Punch stunt action is not creating the correct intent type."
-        )
-        assert intent.defender == npc
+        # Punch now uses the plan system, so returns None (no direct intent)
+        assert intent is None, "Punch should use plan system, not return an intent"
+        # Player should have an active plan
+        assert player.active_plan is not None
+        assert player.active_plan.plan.name == "Punch"
+        assert player.active_plan.context.target_actor == npc
 
-    def test_punch_on_distant_target_starts_pathfinding(self) -> None:
-        """Punch on non-adjacent target should start pathfinding with PunchIntent."""
+    def test_punch_on_distant_target_starts_punch_plan(self) -> None:
+        """Punch on non-adjacent target should start PunchPlan with approach step.
+
+        The PunchPlan includes an ApproachStep that handles pathfinding internally,
+        so no explicit start_actor_pathfinding call is made.
+        """
         reset_event_bus_for_testing()
-        controller, _player, npc = _make_combat_test_world(
+        controller, player, npc = _make_combat_test_world(
             player_pos=(5, 5),
             enemy_pos=(8, 5),  # 3 tiles away
         )
@@ -438,20 +442,17 @@ class TestCombatModeIntentCreation:
         )
         controller.combat_mode.select_action(punch_action)
 
-        with patch.object(controller, "start_actor_pathfinding") as mock_pathfind:
-            mock_pathfind.return_value = True
+        intent = controller.combat_mode._create_intent_for_target(npc)
 
-            intent = controller.combat_mode._create_intent_for_target(npc)
+        # Plan system handles approach internally
+        assert intent is None
+        assert player.active_plan is not None
+        assert player.active_plan.plan.name == "Punch"
+        # The plan's first step should be ApproachStep
+        from catley.game.action_plan import ApproachStep
 
-            assert intent is None  # Pathfinding started
-
-            mock_pathfind.assert_called_once()
-            call_args = mock_pathfind.call_args
-            final_intent = call_args[0][2]
-            assert isinstance(final_intent, PunchIntent), (
-                f"Expected PunchIntent but got {type(final_intent).__name__}"
-            )
-            assert final_intent.defender == npc
+        first_step = player.active_plan.plan.steps[0]
+        assert isinstance(first_step, ApproachStep)
 
     def test_no_selected_action_falls_back_to_attack(self) -> None:
         """If no action is selected, should fall back to AttackIntent."""
@@ -831,10 +832,10 @@ class TestCombatModeEnterKeyExecution:
                 "Kick action is incorrectly falling back to attack."
             )
 
-    def test_enter_key_with_punch_queues_punch_intent(self) -> None:
-        """Pressing Enter with Punch selected should queue PunchIntent."""
+    def test_enter_key_with_punch_starts_punch_plan(self) -> None:
+        """Pressing Enter with Punch selected should start PunchPlan."""
         reset_event_bus_for_testing()
-        controller, _player, npc = _make_combat_test_world(
+        controller, player, npc = _make_combat_test_world(
             player_pos=(5, 5),
             enemy_pos=(6, 5),  # Adjacent
         )
@@ -863,15 +864,15 @@ class TestCombatModeEnterKeyExecution:
             mod=tcod.event.Modifier.NONE,
         )
 
-        with patch.object(controller, "queue_action") as mock_queue:
-            controller.combat_mode.handle_input(event)
+        # Punch now uses the plan system, not queue_action
+        controller.combat_mode.handle_input(event)
 
-            assert mock_queue.called
-            queued_intent = mock_queue.call_args[0][0]
-            assert isinstance(queued_intent, PunchIntent), (
-                f"Expected PunchIntent but got {type(queued_intent).__name__}. "
-                "Punch action is incorrectly falling back to attack."
-            )
+        # Player should have an active punch plan
+        assert player.active_plan is not None, (
+            "Expected PunchPlan to be set on player. "
+            "Punch action should use the ActionPlan system."
+        )
+        assert player.active_plan.plan.name == "Punch"
 
 
 # --- Combat Action Filtering Tests ---
@@ -1265,9 +1266,12 @@ class TestAllDiscoverableActionsHaveHandlers:
 
         If this test fails after adding a new stunt, you need to update
         CombatMode._create_intent_for_target() to handle the new intent class.
+
+        Note: Punch uses the ActionPlan system instead of direct intent creation,
+        so it returns None and sets an active_plan on the player instead.
         """
         reset_event_bus_for_testing()
-        controller, _player, npc = _make_combat_test_world(
+        controller, player, npc = _make_combat_test_world(
             player_pos=(5, 5),
             enemy_pos=(6, 5),  # Adjacent so all melee actions work
         )
@@ -1281,6 +1285,9 @@ class TestAllDiscoverableActionsHaveHandlers:
 
         # Try each stunt action - if any raises ValueError, the handler is missing
         for stunt in stunt_actions:
+            # Clear any existing plan before testing this action
+            player.active_plan = None
+
             controller.combat_mode.select_action(stunt)
 
             # This should NOT raise "Unhandled action type" ValueError
@@ -1295,17 +1302,25 @@ class TestAllDiscoverableActionsHaveHandlers:
                     ) from e
                 raise
 
-            # Verify the intent was created with correct type
-            assert intent is not None, (
-                f"Stunt '{stunt.name}' returned None for adjacent target"
-            )
-            assert stunt.action_class is not None, (
-                f"Stunt '{stunt.name}' has no action_class defined"
-            )
-            assert type(intent) is stunt.action_class, (
-                f"Stunt '{stunt.name}' created {type(intent).__name__} "
-                f"instead of {stunt.action_class.__name__}"
-            )
+            # Punch uses the ActionPlan system (returns None, sets active_plan)
+            if stunt.action_class == PunchIntent:
+                assert intent is None, "Punch should use plan system, not return intent"
+                assert player.active_plan is not None, (
+                    "Punch should set active_plan on player"
+                )
+                assert player.active_plan.plan.name == "Punch"
+            else:
+                # Other stunts return intents directly
+                assert intent is not None, (
+                    f"Stunt '{stunt.name}' returned None for adjacent target"
+                )
+                assert stunt.action_class is not None, (
+                    f"Stunt '{stunt.name}' has no action_class defined"
+                )
+                assert type(intent) is stunt.action_class, (
+                    f"Stunt '{stunt.name}' created {type(intent).__name__} "
+                    f"instead of {stunt.action_class.__name__}"
+                )
 
     def test_all_combat_actions_have_handlers(self) -> None:
         """Every discoverable COMBAT action must work in combat mode.

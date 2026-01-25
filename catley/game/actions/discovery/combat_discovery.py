@@ -148,8 +148,8 @@ class CombatActionDiscovery:
             )
         )
 
-        # Always add Punch - always available, holsters weapon if needed
-        # Punch deals d3 damage. If weapon equipped, holsters it first.
+        # Always add Punch - always available, uses ActionPlan system.
+        # PunchPlan handles approach, holster (if weapon equipped), then punch.
         punch_prob: float | None = None
         if target is not None:
             punch_prob = self._calculate_opposed_probability(

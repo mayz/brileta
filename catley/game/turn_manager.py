@@ -367,9 +367,35 @@ class TurnManager:
         if plan.cached_path is None or not plan.cached_path:
             gm = self.controller.gw.game_map
             asi = self.controller.gw.actor_spatial_index
-            plan.cached_path = find_local_path(
-                gm, asi, actor, (actor.x, actor.y), target_pos
-            )
+            start_pos = (actor.x, actor.y)
+
+            # First try direct path to target
+            plan.cached_path = find_local_path(gm, asi, actor, start_pos, target_pos)
+
+            # If direct path fails and we have a stop_distance, try adjacent tiles.
+            # The target tile is likely occupied (e.g., by an enemy we're approaching).
+            if not plan.cached_path and step.stop_distance > 0:
+                best_path: list[tuple[int, int]] | None = None
+                for dx in (-1, 0, 1):
+                    for dy in (-1, 0, 1):
+                        if dx == 0 and dy == 0:
+                            continue
+                        tx = target_pos[0] + dx
+                        ty = target_pos[1] + dy
+                        if not (0 <= tx < gm.width and 0 <= ty < gm.height):
+                            continue
+                        if not gm.walkable[tx, ty]:
+                            continue
+                        blocker = self.controller.gw.get_actor_at_location(tx, ty)
+                        if blocker and blocker.blocks_movement and blocker is not actor:
+                            continue
+                        candidate = find_local_path(gm, asi, actor, start_pos, (tx, ty))
+                        if candidate and (
+                            best_path is None or len(candidate) < len(best_path)
+                        ):
+                            best_path = candidate
+                if best_path is not None:
+                    plan.cached_path = best_path
 
         if not plan.cached_path:
             # Can't reach target - cancel plan

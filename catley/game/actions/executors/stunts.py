@@ -29,6 +29,7 @@ from catley.util.dice import roll_d
 
 if TYPE_CHECKING:
     from catley.game.actions.stunts import (
+        HolsterWeaponIntent,
         KickIntent,
         PunchIntent,
         PushIntent,
@@ -804,44 +805,58 @@ class KickExecutor(ActionExecutor):
         )
 
 
+class HolsterWeaponExecutor(ActionExecutor):
+    """Executes holster weapon intents.
+
+    Moves the active weapon from the equipment slot to inventory. Used as a
+    preparatory step in action plans requiring unarmed combat (e.g., PunchPlan).
+    """
+
+    def execute(self, intent: HolsterWeaponIntent) -> GameActionResult | None:  # type: ignore[override]
+        """Execute a holster weapon action.
+
+        If a weapon is equipped, unequips it to inventory and emits a message.
+        If no weapon is equipped, succeeds silently (no-op).
+        """
+        actor = intent.holsterer
+        active_weapon = actor.inventory.get_active_item()
+
+        if active_weapon is None:
+            # No weapon to holster - succeed silently
+            return GameActionResult(succeeded=True)
+
+        # Holster the weapon (move to inventory) - this always succeeds
+        # because equipped items already count toward capacity
+        actor.inventory.unequip_to_inventory(actor.inventory.active_slot)
+        publish_event(
+            MessageEvent(
+                f"{actor.name} holsters their {active_weapon.name}.",
+                colors.WHITE,
+            )
+        )
+        return GameActionResult(succeeded=True)
+
+
 class PunchExecutor(ActionExecutor):
     """Executes punch intents.
 
-    If the attacker has a weapon equipped, this holsters it first (consuming
-    the turn). If no weapon is equipped, executes a punch attack with Fists.
+    Performs an unarmed punch attack using Fists (d3 damage). When used via
+    the ActionPlan system, holstering is handled by a separate HolsterWeaponIntent
+    step that precedes the punch.
     """
 
     def execute(self, intent: PunchIntent) -> GameActionResult | None:  # type: ignore[override]
-        """Execute a punch attempt.
+        """Execute a punch attack with Fists.
 
-        If weapon equipped: holster it and return (turn consumed).
-        If no weapon: punch the target with Fists.
+        Holstering is handled by a separate HolsterWeaponIntent step when using
+        the ActionPlan system. This executor assumes the attacker is ready to punch.
         """
         from catley.game.items.item_types import FISTS_TYPE
 
         atk_name = intent.attacker.name
         def_name = intent.defender.name
 
-        # Check if attacker has a weapon in active slot
-        active_weapon = intent.attacker.inventory.get_active_item()
-        if active_weapon is not None:
-            # Holster the weapon (move to inventory) - this always succeeds
-            # because equipped items already count toward capacity
-            intent.attacker.inventory.unequip_to_inventory(
-                intent.attacker.inventory.active_slot
-            )
-            publish_event(
-                MessageEvent(
-                    f"{atk_name} holsters their {active_weapon.name}.",
-                    colors.WHITE,
-                )
-            )
-            # Re-queue the punch for next turn so the attack follows through
-            intent.controller.queue_action(intent)
-            return GameActionResult(succeeded=True)
-
-        # No weapon equipped - execute punch attack
-        # 1. Validate adjacency
+        # 1. Validate adjacency (target may have moved since plan started)
         dx = intent.defender.x - intent.attacker.x
         dy = intent.defender.y - intent.attacker.y
         if max(abs(dx), abs(dy)) != 1:

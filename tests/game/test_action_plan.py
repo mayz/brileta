@@ -385,3 +385,81 @@ def test_character_active_plan_coexists_with_pathfinding_goal() -> None:
     assert player.active_plan is not None
     assert player.pathfinding_goal.target_pos == (10, 10)
     assert player.active_plan.plan.name == "Walk"
+
+
+# -----------------------------------------------------------------------------
+# ApproachStep pathfinding fallback tests
+# -----------------------------------------------------------------------------
+
+
+def test_approach_step_finds_path_to_adjacent_tile_when_target_occupied() -> None:
+    """ApproachStep should pathfind to adjacent tile when target is blocked.
+
+    When stop_distance > 0, the actor doesn't need to reach the exact target
+    position - just get within range. This tests the fallback logic in
+    TurnManager._handle_approach_step: when pathfinding to an occupied tile
+    fails, it should try adjacent tiles.
+    """
+    from catley.events import reset_event_bus_for_testing
+    from catley.game.actions.movement import MoveIntent
+    from tests.helpers import get_controller_with_player_and_map
+
+    reset_event_bus_for_testing()
+    controller = get_controller_with_player_and_map()
+    player = controller.gw.player
+    gm = controller.gw.game_map
+
+    # Find a walkable tile 2 squares away from the player for the enemy
+    # Search in the cardinal directions first, then diagonals
+    enemy_pos: tuple[int, int] | None = None
+    for dx, dy in [(2, 0), (-2, 0), (0, 2), (0, -2), (2, 2), (-2, -2)]:
+        tx, ty = player.x + dx, player.y + dy
+        in_bounds = 0 <= tx < gm.width and 0 <= ty < gm.height
+        if not in_bounds or not gm.walkable[tx, ty]:
+            continue
+        # Also verify intermediate tile is walkable (for pathfinding)
+        mid_x, mid_y = player.x + dx // 2, player.y + dy // 2
+        if gm.walkable[mid_x, mid_y]:
+            enemy_pos = (tx, ty)
+            break
+
+    assert enemy_pos is not None, "Test setup failed: no walkable tile found for enemy"
+
+    # Create enemy at the found position - 2 tiles away from player
+    enemy = Character(
+        enemy_pos[0],
+        enemy_pos[1],
+        "r",
+        colors.RED,
+        "Raider",
+        game_world=controller.gw,
+    )
+    controller.gw.add_actor(enemy)
+
+    # Create an ActivePlan with ApproachStep targeting the enemy
+    # stop_distance=1 means we want to end up adjacent
+    context = PlanContext(
+        actor=player,
+        controller=controller,
+        target_actor=enemy,
+        target_position=(enemy.x, enemy.y),
+    )
+    plan = ActionPlan(
+        name="Approach Enemy",
+        steps=[ApproachStep(stop_distance=1)],
+        requires_target=True,
+    )
+    player.active_plan = ActivePlan(plan=plan, context=context)
+
+    # Get the next intent from the plan
+    # This should succeed despite the target tile being occupied by the enemy
+    intent = controller.turn_manager._get_intent_from_plan(player)
+
+    # Should get a valid MoveIntent (not None - the adjacent tile fallback worked)
+    assert intent is not None, (
+        "ApproachStep should find path to adjacent tile when target is occupied"
+    )
+    assert isinstance(intent, MoveIntent)
+
+    # The plan should still be active (not cancelled)
+    assert player.active_plan is not None

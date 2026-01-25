@@ -7,8 +7,8 @@ from unittest.mock import patch
 from catley import colors
 from catley.controller import Controller
 from catley.events import reset_event_bus_for_testing
-from catley.game.actions.executors.stunts import PunchExecutor
-from catley.game.actions.stunts import PunchIntent
+from catley.game.actions.executors.stunts import HolsterWeaponExecutor, PunchExecutor
+from catley.game.actions.stunts import HolsterWeaponIntent, PunchIntent
 from catley.game.actors import Character
 from catley.game.game_world import GameWorld
 from catley.game.items.item_types import COMBAT_KNIFE_TYPE, FISTS_TYPE
@@ -93,38 +93,84 @@ def test_fists_verb_is_punch() -> None:
     assert fists.melee_attack._spec.verb == "punch"
 
 
-# --- Punch Holster Tests ---
+# --- Holster Weapon Tests ---
 
 
-def test_punch_with_weapon_holsters_and_requeues() -> None:
-    """Punching with a weapon equipped should holster and re-queue the punch.
-
-    This ensures the punch follows through on the next turn after holstering,
-    rather than just consuming the turn with no attack.
-    """
+def test_holster_weapon_executor_unequips_weapon() -> None:
+    """HolsterWeaponExecutor should move active weapon to inventory."""
     reset_event_bus_for_testing()
-    controller, player, enemy = _make_world_with_enemy()
+    controller, player, _ = _make_world_with_enemy()
 
     # Give player a weapon
     knife = COMBAT_KNIFE_TYPE.create()
     player.inventory.equip_to_slot(knife, slot_index=0)
     assert player.inventory.get_active_item() == knife
 
-    intent = PunchIntent(cast(Controller, controller), player, enemy)
-    executor = PunchExecutor()
+    intent = HolsterWeaponIntent(cast(Controller, controller), player)
+    executor = HolsterWeaponExecutor()
     result = executor.execute(intent)
 
     assert result is not None
     assert result.succeeded
     # Weapon should now be in inventory, not equipped
     assert player.inventory.get_active_item() is None
-    # Enemy should not have taken damage (holstering consumed the turn)
-    # (enemy starts at full HP)
+    # Knife should still be in inventory (not dropped/destroyed)
+    assert player.inventory.has_item(knife)
 
-    # The punch intent should be re-queued for follow-through
+
+def test_holster_weapon_executor_succeeds_when_unarmed() -> None:
+    """HolsterWeaponExecutor should succeed silently when no weapon equipped."""
+    reset_event_bus_for_testing()
+    controller, player, _ = _make_world_with_enemy()
+
+    # Ensure player is unarmed
+    assert player.inventory.get_active_item() is None
+
+    intent = HolsterWeaponIntent(cast(Controller, controller), player)
+    executor = HolsterWeaponExecutor()
+    result = executor.execute(intent)
+
+    assert result is not None
+    assert result.succeeded
+
+
+def test_punch_executor_does_not_holster() -> None:
+    """PunchExecutor should not handle holstering - that's HolsterWeaponExecutor's job.
+
+    In the ActionPlan system, holstering is handled by a separate step.
+    PunchExecutor assumes the attacker is ready to punch.
+    """
+    reset_event_bus_for_testing()
+    controller, player, enemy = _make_world_with_enemy()
+    initial_hp = enemy.health.hp
+
+    # Give player a weapon - PunchExecutor should still execute the punch
+    knife = COMBAT_KNIFE_TYPE.create()
+    player.inventory.equip_to_slot(knife, slot_index=0)
+    assert player.inventory.get_active_item() == knife
+
+    # Force a successful roll and d3 damage of 2
+    def fixed_randint(a: int, b: int) -> int:
+        if b == 20:  # d20 roll
+            return 15  # Success
+        if b == 3:  # d3 damage
+            return 2
+        return a
+
+    with patch("random.randint", fixed_randint):
+        intent = PunchIntent(cast(Controller, controller), player, enemy)
+        executor = PunchExecutor()
+        result = executor.execute(intent)
+
+    assert result is not None
+    assert result.succeeded
+    # Weapon should still be equipped (PunchExecutor doesn't holster)
+    assert player.inventory.get_active_item() == knife
+    # Enemy should have taken damage (punch executed)
+    assert enemy.health.hp == initial_hp - 2
+    # No re-queuing should have happened
     assert controller.queued_actions is not None
-    assert len(controller.queued_actions) == 1
-    assert controller.queued_actions[0] is intent
+    assert len(controller.queued_actions) == 0
 
 
 # --- Punch Attack Tests ---

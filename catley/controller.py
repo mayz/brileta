@@ -853,6 +853,32 @@ class Controller:
         """Cancel an actor's active plan."""
         actor.active_plan = None
 
+    def start_punch_plan(self, actor: Character, target: Character) -> bool:
+        """Start a punch action plan targeting the specified character.
+
+        Creates a PunchPlan that will:
+        1. Approach the target if not adjacent (ApproachStep)
+        2. Holster weapon if one is equipped (HolsterWeaponIntent, skipped if unarmed)
+        3. Execute the punch attack (PunchIntent)
+
+        Args:
+            actor: The character performing the punch.
+            target: The target character being punched.
+
+        Returns:
+            True (always succeeds in creating the plan).
+        """
+        from catley.game.action_plan import ActivePlan, PlanContext, get_punch_plan
+
+        context = PlanContext(
+            actor=actor,
+            controller=self,
+            target_actor=target,
+            target_position=(target.x, target.y),
+        )
+        actor.active_plan = ActivePlan(plan=get_punch_plan(), context=context)
+        return True
+
     def _initialize_sound_system(self) -> None:
         """Initialize the sound system and audio backend."""
         # Sound system for managing audio playback

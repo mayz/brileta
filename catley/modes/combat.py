@@ -589,8 +589,10 @@ class CombatMode(Mode):
                 intent = KickIntent(self.controller, player, target)
                 return self._handle_melee_intent(target, distance, intent)
             if self.selected_action.action_class == PunchIntent:
-                intent = PunchIntent(self.controller, player, target)
-                return self._handle_melee_intent(target, distance, intent)
+                # Punch uses the ActionPlan system - it handles approach, holster,
+                # and punch as separate steps.
+                self.controller.start_punch_plan(player, target)
+                return None
 
         # Unhandled action type - fail loudly so we catch missing handlers
         raise ValueError(

@@ -43,6 +43,7 @@ from catley.game.actions.executors.recovery import (
 )
 from catley.game.actions.executors.social import TalkExecutor
 from catley.game.actions.executors.stunts import (
+    HolsterWeaponExecutor,
     KickExecutor,
     PunchExecutor,
     PushExecutor,
@@ -63,7 +64,13 @@ from catley.game.actions.recovery import (
     UseConsumableOnTargetIntent,
 )
 from catley.game.actions.social import TalkIntent
-from catley.game.actions.stunts import KickIntent, PunchIntent, PushIntent, TripIntent
+from catley.game.actions.stunts import (
+    HolsterWeaponIntent,
+    KickIntent,
+    PunchIntent,
+    PushIntent,
+    TripIntent,
+)
 from catley.game.actors import Character
 from catley.game.actors.container import Container
 
@@ -114,6 +121,7 @@ class ActionRouter:
             TripIntent: TripExecutor(),
             KickIntent: KickExecutor(),
             PunchIntent: PunchExecutor(),
+            HolsterWeaponIntent: HolsterWeaponExecutor(),
             TalkIntent: TalkExecutor(),
         }
 

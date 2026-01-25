@@ -106,9 +106,9 @@ class KickIntent(GameIntent):
 class PunchIntent(GameIntent):
     """Intent to punch an adjacent enemy with bare fists.
 
-    If the attacker has a weapon equipped, it will be holstered first
-    (moved to inventory), consuming the turn. The next turn, the attacker
-    can punch. If no weapon is equipped, the punch executes immediately.
+    Deals d3 damage using Strength vs Agility opposed check. When used via
+    the ActionPlan system, holstering is handled by a separate HolsterWeaponIntent
+    step that precedes the punch.
 
     Execution is performed by
     :class:`~catley.game.actions.executors.stunts.PunchExecutor`.
@@ -130,3 +130,25 @@ class PunchIntent(GameIntent):
         super().__init__(controller, attacker)
         self.attacker = attacker
         self.defender = defender
+
+
+class HolsterWeaponIntent(GameIntent):
+    """Intent to holster the currently equipped weapon.
+
+    Moves the active weapon from the equipment slot to inventory. This is
+    used as a preparatory step in action plans that require unarmed combat
+    (e.g., PunchPlan).
+
+    Execution is performed by
+    :class:`~catley.game.actions.executors.stunts.HolsterWeaponExecutor`.
+    """
+
+    def __init__(self, controller: Controller, actor: Character) -> None:
+        """Create a holster weapon intent.
+
+        Args:
+            controller: Game controller providing context.
+            actor: The character holstering their weapon.
+        """
+        super().__init__(controller, actor)
+        self.holsterer = actor
