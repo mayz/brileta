@@ -232,3 +232,52 @@ def test_bump_into_container_opens_search_menu() -> None:
         assert mock_menu_class.called
         # Verify show_overlay was called with the menu (not show)
         mock_overlay.show_overlay.assert_called_once_with(mock_menu_instance)
+
+
+def test_execute_intent_returns_game_action_result() -> None:
+    """ActionRouter.execute_intent returns a GameActionResult.
+
+    This is required for the ActionPlan system to detect step success/failure
+    and decide whether to advance, retry, or cancel.
+    """
+    controller, player = _make_world()
+    router = ActionRouter(cast(Controller, controller))
+
+    # Successful move should return result with succeeded=True
+    intent = MoveIntent(cast(Controller, controller), player, 1, 0)
+    result = router.execute_intent(intent)
+
+    assert isinstance(result, GameActionResult)
+    assert result.succeeded is True
+
+
+def test_execute_intent_returns_failure_for_blocked_move() -> None:
+    """ActionRouter.execute_intent returns succeeded=False for blocked moves."""
+    controller, player = _make_world()
+    gm = controller.gw.game_map
+    gm.tiles[1, 0] = TileTypeID.WALL
+
+    router = ActionRouter(cast(Controller, controller))
+    intent = MoveIntent(cast(Controller, controller), player, 1, 0)
+    result = router.execute_intent(intent)
+
+    assert isinstance(result, GameActionResult)
+    assert result.succeeded is False
+    assert result.block_reason == "wall"
+
+
+def test_execute_intent_returns_failure_for_unregistered_intent() -> None:
+    """ActionRouter.execute_intent returns succeeded=False for unknown intents."""
+    from catley.game.actions.base import GameIntent
+
+    class UnknownIntent(GameIntent):
+        pass
+
+    controller, player = _make_world()
+    router = ActionRouter(cast(Controller, controller))
+
+    intent = UnknownIntent(cast(Controller, controller), player)
+    result = router.execute_intent(intent)
+
+    assert isinstance(result, GameActionResult)
+    assert result.succeeded is False

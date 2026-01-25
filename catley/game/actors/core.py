@@ -40,6 +40,7 @@ from catley.events import (
     FloatingTextValence,
     publish_event,
 )
+from catley.game.action_plan import ActivePlan
 from catley.game.actors import conditions
 from catley.game.enums import CreatureSize, Disposition, InjuryLocation
 from catley.game.items.item_core import Item
@@ -502,6 +503,10 @@ class Character(Actor):
         )
 
         self.pathfinding_goal: PathfindingGoal | None = None
+
+        # ActionPlan system - coexists with pathfinding_goal during migration.
+        # When active_plan is set, it takes precedence over pathfinding_goal.
+        self.active_plan: ActivePlan | None = None
 
         # Type narrowing - these are guaranteed to exist for Characters.
         self.stats: StatsComponent

@@ -117,13 +117,21 @@ class ActionRouter:
             TalkIntent: TalkExecutor(),
         }
 
-    def execute_intent(self, intent: GameIntent) -> None:
+    def execute_intent(self, intent: GameIntent) -> GameActionResult:
         """The single public entry point for executing any action.
-        It dispatches the intent and arbitrates its result."""
+
+        Dispatches the intent to its executor and arbitrates the result.
+        Returns the GameActionResult so callers (like the plan system) can
+        inspect whether the action succeeded and decide how to proceed.
+
+        Returns:
+            GameActionResult with succeeded=False if no executor found,
+            otherwise the result from the executor after arbitration.
+        """
         executor = self._executor_registry.get(type(intent))
         if not executor:
-            # Optionally, log an error for an unhandled intent type.
-            return
+            # No executor registered for this intent type.
+            return GameActionResult(succeeded=False)
 
         result = executor.execute(intent)
         if not result:
@@ -131,6 +139,8 @@ class ActionRouter:
 
         # Arbitrate the result to handle special cases and chained actions.
         self._arbitrate_result(intent, result)
+
+        return result
 
     def _arbitrate_result(
         self, original_intent: GameIntent, result: GameActionResult
