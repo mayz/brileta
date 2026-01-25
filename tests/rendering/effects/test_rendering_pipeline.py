@@ -4,7 +4,7 @@ os.environ["SDL_VIDEODRIVER"] = "dummy"
 os.environ["SDL_RENDER_DRIVER"] = "software"
 
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Self
 
 import tcod
 from tcod.console import Console
@@ -38,7 +38,7 @@ class DummyContext:
         self.sdl_renderer = DummyRenderer()
         self.sdl_atlas = DummyAtlas()
 
-    def __enter__(self) -> "DummyContext":
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:

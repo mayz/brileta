@@ -67,8 +67,8 @@ invalid-assignment = "ignore"  # Mock assignments in tests
 dev = [
     "py-spy>=0.4.0",
     "pyinstaller>=6.17.0",
-    "pyright>=1.1.402",
+    "pyright>=1.1.408",
     "pytest>=8.4.0",
     "pytest-xdist>=3.8.0",
-    "ruff>=0.14.2",
+    "ruff>=0.14.14",
 ]
