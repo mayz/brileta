@@ -190,6 +190,15 @@ class DummyTurnManager:
         """Dummy implementation for terrain hazard checks."""
         pass
 
+    # Presentation timing methods
+    def is_presentation_complete(self) -> bool:
+        """Dummy implementation - always complete."""
+        return True
+
+    def clear_presentation_timing(self) -> None:
+        """Dummy implementation - no-op."""
+        pass
+
 
 class DummyOverlaySystem:
     def __init__(self, controller: Controller) -> None:

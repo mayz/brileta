@@ -237,23 +237,28 @@ class Controller:
             for mode in self.mode_stack:
                 mode.update()
 
-        # Check for other queued player actions
+        # Check for other queued player actions (manual input from UI/keys)
         if self.turn_manager.has_pending_actions():
             player_action = self.turn_manager.dequeue_player_action()
             if player_action:
-                # Manual action cancels any active plan
+                # Manual action cancels any active plan and presentation timing.
+                # Player input should feel immediately responsive.
                 self.stop_plan(self.gw.player)
+                self.turn_manager.clear_presentation_timing()
                 self._execute_player_action_immediately(player_action)
 
-        # Check for autopilot actions if no manual input
+        # Check for autopilot actions if no manual input.
+        # Autopilot respects presentation timing to create paced movement.
         has_movement_keys = bool(self.explore_mode.movement_keys)
         now = time.perf_counter()
         autopilot_ready = (
             now >= self._last_autopilot_move_time + config.AUTOPILOT_MOVE_INTERVAL
         )
+        presentation_complete = self.turn_manager.is_presentation_complete()
         if (
             not has_movement_keys
             and autopilot_ready
+            and presentation_complete
             and not self.turn_manager.has_pending_actions()
             and self.turn_manager.is_player_turn_available()
         ):
@@ -408,7 +413,14 @@ class Controller:
         This eliminates the artificial frame-rate delay that was breaking speed ratios
         in RAF V1. All NPCs who gained sufficient energy from the last player action
         will act immediately, maintaining perfect proportional speed relationships.
+
+        NPC actions wait for presentation timing to complete, creating readable
+        sequencing where players can follow cause and effect.
         """
+        # Wait for current action's presentation to complete before NPCs act
+        if not self.turn_manager.is_presentation_complete():
+            return
+
         # Process all available NPC actions from TurnManager
         self.turn_manager.process_all_npc_reactions()
 

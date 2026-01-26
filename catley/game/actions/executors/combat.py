@@ -121,7 +121,13 @@ class AttackExecutor(ActionExecutor):
                         intent.attacker.inventory.switch_to_slot(slot_index)
                     break
 
-        return GameActionResult(consequences=consequences)
+        # Determine presentation timing based on attack type.
+        # Ranged attacks: 350ms, Melee attacks: 300ms
+        presentation_ms = 350 if attack == weapon.ranged_attack else 300
+
+        return GameActionResult(
+            consequences=consequences, presentation_ms=presentation_ms
+        )
 
     def _fire_weapon(
         self,
@@ -269,7 +275,8 @@ class AttackExecutor(ActionExecutor):
         for consequence in consequences:
             handler.apply_consequence(consequence)
 
-        return GameActionResult(consequences=consequences)
+        # Ranged attack timing: 350ms
+        return GameActionResult(consequences=consequences, presentation_ms=350)
 
     def _determine_attack_method(
         self, intent: AttackIntent
@@ -962,11 +969,13 @@ class ReloadExecutor(ActionExecutor):
                     colors.GREEN,
                 )
             )
-        else:
-            publish_event(
-                MessageEvent(
-                    f"No {ranged_attack.ammo_type} ammo available!",
-                    colors.RED,
-                )
+            # Reload takes 300ms presentation time
+            return GameActionResult(presentation_ms=300)
+
+        publish_event(
+            MessageEvent(
+                f"No {ranged_attack.ammo_type} ammo available!",
+                colors.RED,
             )
-        return GameActionResult()
+        )
+        return GameActionResult(succeeded=False)

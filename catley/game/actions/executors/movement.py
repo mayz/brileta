@@ -56,4 +56,13 @@ class MoveExecutor(ActionExecutor):
         # Plan advancement is handled by TurnManager (player) and
         # process_all_npc_reactions (NPC) after action execution.
 
-        return GameActionResult(succeeded=True, should_update_fov=True)
+        # Movement uses 0ms presentation by default - the existing
+        # AUTOPILOT_MOVE_INTERVAL and animation system handle pacing.
+        # ApproachStep can pass custom timing if dramatic pacing is needed.
+        presentation_ms = (
+            intent.presentation_ms if intent.presentation_ms is not None else 0
+        )
+
+        return GameActionResult(
+            succeeded=True, should_update_fov=True, presentation_ms=presentation_ms
+        )

@@ -18,10 +18,16 @@ Key Principles:
 - Faster actors get proportionally more energy per player action
 - No time passes when player is idle - game state is stable
 - Action execution is distributed smoothly over frames for visual appeal
+
+Presentation Timing:
+- Actions return `presentation_ms` in their GameActionResult
+- The TurnManager delays the next action until presentation completes
+- This creates readable sequencing where players can follow cause and effect
 """
 
 from __future__ import annotations
 
+import time
 from collections import deque
 from typing import TYPE_CHECKING
 
@@ -78,6 +84,12 @@ class TurnManager:
         self._energy_actors_cache: list[Actor] = []
         self._cache_dirty: bool = True
 
+        # Presentation timing state: tracks when actions complete and how long
+        # to wait before processing the next action. This creates readable
+        # sequencing where players can follow cause and effect.
+        self._last_action_completed_time: float = 0.0
+        self._pending_presentation_ms: int = 0
+
     def _update_energy_actors_cache(self) -> None:
         """Update cached list of actors with energy components for performance.
 
@@ -93,6 +105,39 @@ class TurnManager:
     def invalidate_cache(self) -> None:
         """Mark actor cache as dirty (call when actors are added/removed)."""
         self._cache_dirty = True
+
+    def is_presentation_complete(self) -> bool:
+        """Check if the current action's presentation time has elapsed.
+
+        Returns True if either:
+        - No presentation is pending (presentation_ms was 0)
+        - Enough time has passed since the last action completed
+
+        This method is non-blocking and should be called before processing
+        the next action to create readable action sequencing.
+        """
+        if self._pending_presentation_ms == 0:
+            return True
+
+        elapsed_ms = (time.perf_counter() - self._last_action_completed_time) * 1000
+        return elapsed_ms >= self._pending_presentation_ms
+
+    def _record_action_timing(self, result: GameActionResult) -> None:
+        """Record timing after an action completes for presentation delay.
+
+        Args:
+            result: The GameActionResult containing presentation_ms.
+        """
+        self._last_action_completed_time = time.perf_counter()
+        self._pending_presentation_ms = result.presentation_ms
+
+    def clear_presentation_timing(self) -> None:
+        """Clear any pending presentation timing.
+
+        Call this when manually interrupting action flow (e.g., player
+        cancels a plan or starts a new action while presenting).
+        """
+        self._pending_presentation_ms = 0
 
     def on_player_action(self) -> None:
         """Handle per-turn updates when player acts.
@@ -129,16 +174,18 @@ class TurnManager:
             self._apply_terrain_hazard(actor)
 
     def process_all_npc_reactions(self) -> None:
-        """Process all NPCs who can currently afford actions immediately.
+        """Process ONE NPC who can currently afford an action.
 
-        Note: This method is called every game tick to check if NPCs can act.
-        Hazard damage is NOT applied here - it's applied once per player action
-        in on_player_action() to avoid damage being applied every tick.
+        Called every game tick. Processes only one NPC per call so that
+        presentation timing gates each NPC action individually, creating
+        sequential cause-and-effect between NPCs.
+
+        Note: Hazard damage is NOT applied here - it's applied once per player
+        action in on_player_action() to avoid damage being applied every tick.
         """
         from catley.game.action_plan import ApproachStep
         from catley.game.actors.core import Character
 
-        any_action_executed = False
         for actor in self._energy_actors_cache:
             if actor is self.player:
                 continue
@@ -148,6 +195,16 @@ class TurnManager:
 
             if actor.energy.can_afford(config.ACTION_COST):
                 action = actor.get_next_action(self.controller)
+
+                # If AI returned None but NPC has an active plan, get intent
+                # from plan (mirrors player autopilot in process_player_input).
+                if (
+                    action is None
+                    and isinstance(actor, Character)
+                    and actor.active_plan is not None
+                ):
+                    action = self._get_intent_from_plan(actor)
+
                 if action is not None:
                     # Check if actor is prevented from acting BEFORE update_turn
                     is_prevented = actor.status_effects.is_action_prevented()
@@ -166,7 +223,6 @@ class TurnManager:
                     # Execute the action
                     result = self.execute_intent(action)
                     actor.energy.spend(config.ACTION_COST)
-                    any_action_executed = True
 
                     # Handle plan advancement for NPCs with active plans
                     if isinstance(actor, Character) and actor.active_plan is not None:
@@ -175,10 +231,12 @@ class TurnManager:
                         if isinstance(step, ApproachStep):
                             self._on_approach_result(actor, result)
 
-        if any_action_executed and hasattr(
-            self.controller, "invalidate_combat_tooltip"
-        ):
-            self.controller.invalidate_combat_tooltip()
+                    if hasattr(self.controller, "invalidate_combat_tooltip"):
+                        self.controller.invalidate_combat_tooltip()
+
+                    # Process only ONE NPC per call - presentation timing
+                    # will gate the next call, sequencing NPC actions
+                    return
 
     def _apply_terrain_hazard(self, actor: Actor) -> None:
         """Check if actor is on hazardous terrain and apply damage if so.
@@ -224,13 +282,18 @@ class TurnManager:
         Returns the GameActionResult so callers can inspect whether the action
         succeeded and decide how to proceed (e.g., for plan advancement).
 
+        Also records the action's presentation timing to delay subsequent actions.
+
         Args:
             intent: The GameIntent to execute
 
         Returns:
             GameActionResult from the executor, or a failed result if no executor.
         """
-        return self.action_router.execute_intent(intent)
+        result = self.action_router.execute_intent(intent)
+        # Record timing for presentation delay before next action
+        self._record_action_timing(result)
+        return result
 
     # === ActionPlan System Methods ===
     # These methods handle the ActionPlan system for multi-step player actions.

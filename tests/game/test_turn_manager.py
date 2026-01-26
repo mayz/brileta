@@ -1,3 +1,4 @@
+import time
 from dataclasses import dataclass
 from typing import Any, cast
 
@@ -7,6 +8,7 @@ from catley.environment.tile_types import TileTypeID
 from catley.events import reset_event_bus_for_testing
 from catley.game.action_plan import WalkToPlan
 from catley.game.action_router import ActionRouter
+from catley.game.actions.base import GameActionResult
 from catley.game.actions.movement import MoveIntent
 from catley.game.actors import NPC, PC, Character
 from catley.game.actors.status_effects import StaggeredEffect
@@ -956,3 +958,126 @@ def test_walk_to_plan_full_journey() -> None:
 
     # Plan should be completed
     assert player.active_plan is None
+
+
+# --- Presentation Timing Tests ---
+
+
+def test_game_action_result_has_presentation_ms_field() -> None:
+    """GameActionResult should have presentation_ms field defaulting to 0."""
+    result = GameActionResult()
+    assert hasattr(result, "presentation_ms")
+    assert result.presentation_ms == 0
+
+    # Can set custom timing
+    result_with_timing = GameActionResult(presentation_ms=350)
+    assert result_with_timing.presentation_ms == 350
+
+
+def test_turn_manager_is_presentation_complete_no_delay() -> None:
+    """is_presentation_complete returns True when no delay is pending."""
+    controller, _player = _make_world()
+    tm = controller.turn_manager
+
+    # Initially, no presentation is pending
+    assert tm.is_presentation_complete()
+
+
+def test_turn_manager_is_presentation_complete_with_delay() -> None:
+    """is_presentation_complete returns False when delay is pending."""
+    controller, _player = _make_world()
+    tm = controller.turn_manager
+
+    # Manually set presentation timing to simulate a just-executed action
+    tm._last_action_completed_time = time.perf_counter()
+    tm._pending_presentation_ms = 5000  # 5 seconds - definitely not elapsed
+
+    # Should return False because delay hasn't elapsed
+    assert not tm.is_presentation_complete()
+
+
+def test_turn_manager_is_presentation_complete_after_delay() -> None:
+    """is_presentation_complete returns True after delay elapses."""
+    controller, _player = _make_world()
+    tm = controller.turn_manager
+
+    # Set presentation timing to a value in the past
+    tm._last_action_completed_time = time.perf_counter() - 1.0  # 1 second ago
+    tm._pending_presentation_ms = 100  # 100ms - definitely elapsed
+
+    # Should return True because delay has elapsed
+    assert tm.is_presentation_complete()
+
+
+def test_turn_manager_record_action_timing() -> None:
+    """_record_action_timing stores timing from GameActionResult."""
+    controller, _player = _make_world()
+    tm = controller.turn_manager
+
+    result = GameActionResult(presentation_ms=350)
+    tm._record_action_timing(result)
+
+    assert tm._pending_presentation_ms == 350
+    # Time should be recorded (recent)
+    elapsed = time.perf_counter() - tm._last_action_completed_time
+    assert elapsed < 0.1  # Less than 100ms ago
+
+
+def test_turn_manager_clear_presentation_timing() -> None:
+    """clear_presentation_timing clears pending delay."""
+    controller, _player = _make_world()
+    tm = controller.turn_manager
+
+    # Set some timing
+    tm._pending_presentation_ms = 500
+    tm._last_action_completed_time = time.perf_counter()
+
+    # Clear it
+    tm.clear_presentation_timing()
+
+    # Should return to complete state
+    assert tm._pending_presentation_ms == 0
+    assert tm.is_presentation_complete()
+
+
+def test_execute_intent_records_timing() -> None:
+    """execute_intent records presentation timing from result."""
+    controller, player = _make_world()
+    tm = controller.turn_manager
+
+    # Execute a move intent with custom timing
+    intent = MoveIntent(
+        cast(Controller, controller), player, dx=1, dy=0, presentation_ms=250
+    )
+    result = tm.execute_intent(intent)
+
+    # Timing should be recorded
+    assert result.presentation_ms == 250
+    assert tm._pending_presentation_ms == result.presentation_ms
+
+
+def test_move_executor_returns_presentation_timing() -> None:
+    """MoveExecutor returns presentation_ms in result."""
+    controller, player = _make_world()
+    router = ActionRouter(cast(Controller, controller))
+
+    intent = MoveIntent(cast(Controller, controller), player, dx=1, dy=0)
+    result = router.execute_intent(intent)
+
+    # MoveExecutor returns 0ms by default (AUTOPILOT_MOVE_INTERVAL handles pacing)
+    assert result.presentation_ms == 0
+
+
+def test_move_intent_custom_presentation_timing() -> None:
+    """MoveIntent can pass custom presentation_ms to executor."""
+    controller, player = _make_world()
+    router = ActionRouter(cast(Controller, controller))
+
+    # Create intent with custom timing
+    intent = MoveIntent(
+        cast(Controller, controller), player, dx=1, dy=0, presentation_ms=150
+    )
+    result = router.execute_intent(intent)
+
+    # Should use the custom timing
+    assert result.presentation_ms == 150
