@@ -138,8 +138,11 @@ def make_explore_mode() -> tuple[ExploreMode, Any, list[tuple[Any, tuple[int, in
 
     calls: list[tuple[Any, tuple[int, int]]] = []
 
-    def start_walk_to_plan(actor: Any, pos: tuple[int, int]) -> bool:
-        calls.append((actor, pos))
+    def start_plan(
+        actor: Any, plan: Any, target_position: tuple[int, int] | None = None, **kwargs
+    ) -> bool:
+        if target_position:
+            calls.append((actor, target_position))
         return True
 
     def start_path(
@@ -190,7 +193,7 @@ def make_explore_mode() -> tuple[ExploreMode, Any, list[tuple[Any, tuple[int, in
         graphics=renderer,
         frame_manager=frame_manager,
         start_actor_pathfinding=start_path,
-        start_walk_to_plan=start_walk_to_plan,
+        start_plan=start_plan,
         overlay_system=overlay_system,
         app=dummy_app,
         enter_combat_mode=lambda: None,

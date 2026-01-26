@@ -2,10 +2,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from catley.game.action_plan import WalkToPlan
 from catley.game.actions.environment import (
     CloseDoorIntent,
+    CloseDoorPlan,
     OpenDoorIntent,
+    OpenDoorPlan,
     SearchContainerIntent,
+    SearchContainerPlan,
 )
 from catley.game.actions.recovery import (
     ComfortableSleepIntent,
@@ -232,7 +236,9 @@ class EnvironmentActionDiscovery:
                 # Not adjacent - require movement (use pathfinding)
                 def create_pathfind_and_open(tx: int, ty: int):
                     def pathfind_and_open():
-                        return controller.start_open_door_plan(actor, tx, ty)
+                        return controller.start_plan(
+                            actor, OpenDoorPlan, target_position=(tx, ty)
+                        )
 
                     return pathfind_and_open
 
@@ -266,7 +272,9 @@ class EnvironmentActionDiscovery:
                 # Not adjacent - require movement (use pathfinding)
                 def create_pathfind_and_close(tx: int, ty: int):
                     def pathfind_and_close():
-                        return controller.start_close_door_plan(actor, tx, ty)
+                        return controller.start_plan(
+                            actor, CloseDoorPlan, target_position=(tx, ty)
+                        )
 
                     return pathfind_and_close
 
@@ -291,7 +299,12 @@ class EnvironmentActionDiscovery:
 
                 def create_search_plan(c: Container):
                     def search():
-                        controller.start_search_container_plan(actor, c)
+                        controller.start_plan(
+                            actor,
+                            SearchContainerPlan,
+                            target_actor=c,
+                            target_position=(c.x, c.y),
+                        )
                         return True
 
                     return search
@@ -318,7 +331,9 @@ class EnvironmentActionDiscovery:
                 # Create "Go here" action for walkable tiles without containers
                 def create_pathfind_to_tile(tx: int, ty: int):
                     def pathfind_to_tile():
-                        return controller.start_walk_to_plan(actor, (tx, ty))
+                        return controller.start_plan(
+                            actor, WalkToPlan, target_position=(tx, ty)
+                        )
 
                     return pathfind_to_tile
 

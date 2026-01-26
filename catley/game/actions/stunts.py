@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from catley.game.action_plan import ActionPlan, ApproachStep, IntentStep
 from catley.game.actions.base import GameIntent
 
 if TYPE_CHECKING:
@@ -152,3 +153,77 @@ class HolsterWeaponIntent(GameIntent):
         """
         super().__init__(controller, actor)
         self.holsterer = actor
+
+
+# =============================================================================
+# Action Plans for Stunts
+# =============================================================================
+
+PunchPlan = ActionPlan(
+    name="Punch",
+    requires_target=True,
+    requires_adjacency=True,
+    steps=[
+        ApproachStep(stop_distance=1),
+        IntentStep(
+            intent_class=HolsterWeaponIntent,
+            params=lambda ctx: {"actor": ctx.actor},
+            skip_if=lambda ctx: ctx.actor.inventory.get_active_item() is None,
+        ),
+        IntentStep(
+            intent_class=PunchIntent,
+            params=lambda ctx: {
+                "attacker": ctx.actor,
+                "defender": ctx.target_actor,
+            },
+        ),
+    ],
+)
+
+KickPlan = ActionPlan(
+    name="Kick",
+    requires_target=True,
+    requires_adjacency=True,
+    steps=[
+        ApproachStep(stop_distance=1),
+        IntentStep(
+            intent_class=KickIntent,
+            params=lambda ctx: {
+                "attacker": ctx.actor,
+                "defender": ctx.target_actor,
+            },
+        ),
+    ],
+)
+
+TripPlan = ActionPlan(
+    name="Trip",
+    requires_target=True,
+    requires_adjacency=True,
+    steps=[
+        ApproachStep(stop_distance=1),
+        IntentStep(
+            intent_class=TripIntent,
+            params=lambda ctx: {
+                "attacker": ctx.actor,
+                "defender": ctx.target_actor,
+            },
+        ),
+    ],
+)
+
+PushPlan = ActionPlan(
+    name="Push",
+    requires_target=True,
+    requires_adjacency=True,
+    steps=[
+        ApproachStep(stop_distance=1),
+        IntentStep(
+            intent_class=PushIntent,
+            params=lambda ctx: {
+                "attacker": ctx.actor,
+                "defender": ctx.target_actor,
+            },
+        ),
+    ],
+)

@@ -239,15 +239,15 @@ class TestExecuteDefaultActionInCombatMode:
         def mock_is_combat_mode():
             return False
 
-        # Mock the start_talk_plan method to track calls
-        talk_plan_calls: list = []
+        # Mock the start_plan method to track calls
+        plan_calls: list = []
 
-        def mock_start_talk_plan(actor, target):
-            talk_plan_calls.append((actor, target))
+        def mock_start_plan(actor, plan, target_actor=None, target_position=None, **kw):
+            plan_calls.append((actor, plan, target_actor, target_position))
             return True
 
         controller.is_combat_mode = mock_is_combat_mode  # type: ignore[attr-defined]
-        controller.start_talk_plan = mock_start_talk_plan  # type: ignore[attr-defined]
+        controller.start_plan = mock_start_plan  # type: ignore[attr-defined]
 
         # Position player (distant or adjacent - plan handles both)
         player.x = 4
@@ -256,9 +256,9 @@ class TestExecuteDefaultActionInCombatMode:
         result = execute_default_action(controller, npc)  # type: ignore[arg-type]
 
         assert result is True
-        assert len(talk_plan_calls) == 1
-        assert talk_plan_calls[0][0] == player
-        assert talk_plan_calls[0][1] == npc
+        assert len(plan_calls) == 1
+        assert plan_calls[0][0] == player  # actor
+        assert plan_calls[0][2] == npc  # target_actor
 
 
 class TestAdjacentPositionSelection:
@@ -283,25 +283,25 @@ class TestAdjacentPositionSelection:
         player.y = 0
         controller.gw.actor_spatial_index.update(player)
 
-        # Track search plan calls
-        search_plan_calls: list = []
+        # Track plan calls
+        plan_calls: list = []
 
-        def mock_start_search_container_plan(actor, target):
-            search_plan_calls.append((actor, target))
+        def mock_start_plan(actor, plan, target_actor=None, target_position=None, **kw):
+            plan_calls.append((actor, plan, target_actor, target_position))
             return True
 
         def mock_is_combat_mode():
             return False
 
-        controller.start_search_container_plan = mock_start_search_container_plan  # type: ignore
+        controller.start_plan = mock_start_plan  # type: ignore
         controller.is_combat_mode = mock_is_combat_mode  # type: ignore
 
         result = execute_default_action(controller, container)  # type: ignore[arg-type]
 
         assert result is True
-        assert len(search_plan_calls) == 1
-        assert search_plan_calls[0][0] == player
-        assert search_plan_calls[0][1] == container
+        assert len(plan_calls) == 1
+        assert plan_calls[0][0] == player  # actor
+        assert plan_calls[0][2] == container  # target_actor
 
     def test_container_search_works_from_different_positions(self) -> None:
         """SearchContainerPlan should start regardless of player position."""
@@ -318,29 +318,29 @@ class TestAdjacentPositionSelection:
         player.y = 5
         controller.gw.actor_spatial_index.update(player)
 
-        search_plan_calls: list = []
+        plan_calls: list = []
 
-        def mock_start_search_container_plan(actor, target):
-            search_plan_calls.append((actor, target))
+        def mock_start_plan(actor, plan, target_actor=None, target_position=None, **kw):
+            plan_calls.append((actor, plan, target_actor, target_position))
             return True
 
         def mock_is_combat_mode():
             return False
 
-        controller.start_search_container_plan = mock_start_search_container_plan  # type: ignore
+        controller.start_plan = mock_start_plan  # type: ignore
         controller.is_combat_mode = mock_is_combat_mode  # type: ignore
 
         result = execute_default_action(controller, container)  # type: ignore[arg-type]
 
         assert result is True
-        assert len(search_plan_calls) == 1
-        assert search_plan_calls[0][1] == container
+        assert len(plan_calls) == 1
+        assert plan_calls[0][2] == container  # target_actor
 
     def test_door_open_starts_plan(self) -> None:
         """When opening a door from distance, start an open door plan.
 
         Setup: Player at (5, 3), closed door at (2, 3)
-        Expected: start_open_door_plan is called with the door coordinates.
+        Expected: start_plan is called with OpenDoorPlan and door coordinates.
         """
         from catley.game.actions.discovery import execute_default_action
 
@@ -354,21 +354,22 @@ class TestAdjacentPositionSelection:
         player.y = 3
         controller.gw.actor_spatial_index.update(player)
 
-        open_door_plan_calls: list[tuple[Character, int, int]] = []
+        plan_calls: list = []
 
-        def mock_start_open_door_plan(actor, door_x, door_y):
-            open_door_plan_calls.append((actor, door_x, door_y))
+        def mock_start_plan(actor, plan, target_actor=None, target_position=None, **kw):
+            plan_calls.append((actor, plan, target_actor, target_position))
             return True
 
         def mock_is_combat_mode():
             return False
 
-        controller.start_open_door_plan = mock_start_open_door_plan  # type: ignore
+        controller.start_plan = mock_start_plan  # type: ignore
         controller.is_combat_mode = mock_is_combat_mode  # type: ignore
 
         result = execute_default_action(controller, (2, 3))  # type: ignore[arg-type]
 
         assert result is True
-        assert len(open_door_plan_calls) == 1
-        # Called with door position
-        assert open_door_plan_calls[0] == (player, 2, 3)
+        assert len(plan_calls) == 1
+        # Called with door position as target_position
+        assert plan_calls[0][0] == player  # actor
+        assert plan_calls[0][3] == (2, 3)  # target_position

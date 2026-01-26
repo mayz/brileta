@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from catley.game.action_plan import ActionPlan, ApproachStep, IntentStep
 from catley.game.actions.base import GameIntent
 
 if TYPE_CHECKING:
@@ -37,3 +38,24 @@ class TalkIntent(GameIntent):
         """
         super().__init__(controller, actor)
         self.target = target
+
+
+# =============================================================================
+# Action Plans for Social Interactions
+# =============================================================================
+
+TalkPlan = ActionPlan(
+    name="Talk",
+    requires_target=True,
+    requires_adjacency=True,
+    steps=[
+        ApproachStep(stop_distance=1),
+        IntentStep(
+            intent_class=TalkIntent,
+            params=lambda ctx: {
+                "actor": ctx.actor,
+                "target": ctx.target_actor,
+            },
+        ),
+    ],
+)

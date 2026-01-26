@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from catley.game.action_plan import ActionPlan, ApproachStep, IntentStep
 from catley.game.actions.base import GameIntent
 from catley.game.actors import Character
 from catley.game.items.item_core import Item
@@ -76,3 +77,26 @@ class ReloadIntent(GameIntent):
 
         # Type narrowing.
         self.actor: Character
+
+
+# =============================================================================
+# Action Plans for Combat
+# =============================================================================
+
+MeleeAttackPlan = ActionPlan(
+    name="Melee Attack",
+    requires_target=True,
+    requires_adjacency=True,
+    steps=[
+        ApproachStep(stop_distance=1),
+        IntentStep(
+            intent_class=AttackIntent,
+            params=lambda ctx: {
+                "attacker": ctx.actor,
+                "defender": ctx.target_actor,
+                "weapon": ctx.weapon,
+                "attack_mode": "melee",
+            },
+        ),
+    ],
+)

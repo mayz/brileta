@@ -9,6 +9,7 @@ import tcod.event
 from catley import colors
 from catley.environment.tile_types import TileTypeID
 from catley.game import ranges
+from catley.game.action_plan import WalkToPlan
 from catley.game.actions.base import GameIntent
 from catley.game.actions.combat import AttackIntent
 from catley.game.actions.discovery import (
@@ -18,7 +19,12 @@ from catley.game.actions.discovery import (
     ActionOption,
     CombatIntentCache,
 )
-from catley.game.actions.environment import CloseDoorIntent, OpenDoorIntent
+from catley.game.actions.environment import (
+    CloseDoorIntent,
+    CloseDoorPlan,
+    OpenDoorIntent,
+    OpenDoorPlan,
+)
 from catley.game.actors import Actor, Character
 from catley.util.coordinates import (
     PixelCoord,
@@ -84,8 +90,10 @@ class ContextMenu(Menu):
                             key=None,
                             text="Go to and Open Door",
                             action=lambda door_x=x, door_y=y: (
-                                self.controller.start_open_door_plan(
-                                    player, door_x, door_y
+                                self.controller.start_plan(
+                                    player,
+                                    OpenDoorPlan,
+                                    target_position=(door_x, door_y),
                                 )
                             ),
                         )
@@ -96,8 +104,10 @@ class ContextMenu(Menu):
                             key=None,
                             text="Go to and Close Door",
                             action=lambda door_x=x, door_y=y: (
-                                self.controller.start_close_door_plan(
-                                    player, door_x, door_y
+                                self.controller.start_plan(
+                                    player,
+                                    CloseDoorPlan,
+                                    target_position=(door_x, door_y),
                                 )
                             ),
                         )
@@ -108,7 +118,9 @@ class ContextMenu(Menu):
                             key=None,
                             text="Go here",
                             action=lambda dest=(x, y): (
-                                self.controller.start_walk_to_plan(player, dest)
+                                self.controller.start_plan(
+                                    player, WalkToPlan, target_position=dest
+                                )
                             ),
                         )
                     )

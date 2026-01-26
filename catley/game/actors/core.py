@@ -612,7 +612,7 @@ class PC(Character):
 
         if controller.turn_manager.has_pending_actions():
             # Manual input cancels any active plan
-            controller.stop_walk_to_plan(self)
+            controller.stop_plan(self)
             return controller.turn_manager.dequeue_player_action()
 
         # Active plans are handled by TurnManager._get_intent_from_plan()

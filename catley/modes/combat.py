@@ -14,9 +14,18 @@ from catley.events import (
 )
 from catley.game import ranges
 from catley.game.actions.base import GameIntent
-from catley.game.actions.combat import AttackIntent
+from catley.game.actions.combat import AttackIntent, MeleeAttackPlan
 from catley.game.actions.discovery import ActionCategory, ActionOption
-from catley.game.actions.stunts import KickIntent, PunchIntent, PushIntent, TripIntent
+from catley.game.actions.stunts import (
+    KickIntent,
+    KickPlan,
+    PunchIntent,
+    PunchPlan,
+    PushIntent,
+    PushPlan,
+    TripIntent,
+    TripPlan,
+)
 from catley.game.actors import Character
 from catley.modes.base import Mode
 from catley.modes.picker import PickerResult
@@ -554,9 +563,13 @@ class CombatMode(Mode):
         """
         player = self.controller.gw.player
 
+        target_pos = (target.x, target.y)
+
         # Fall back to default melee attack if no action selected
         if self.selected_action is None:
-            self.controller.start_melee_attack_plan(player, target, weapon=None)
+            self.controller.start_plan(
+                player, MeleeAttackPlan, target_actor=target, target_position=target_pos
+            )
             return None
 
         # Handle based on action category
@@ -571,23 +584,37 @@ class CombatMode(Mode):
                 )
 
             # Melee attacks use ActionPlan for approach
-            self.controller.start_melee_attack_plan(player, target, weapon)
+            self.controller.start_plan(
+                player,
+                MeleeAttackPlan,
+                target_actor=target,
+                target_position=target_pos,
+                weapon=weapon,
+            )
             return None
 
         if self.selected_action.category == ActionCategory.STUNT:
             if self.selected_action.action_class == PushIntent:
-                self.controller.start_push_plan(player, target)
+                self.controller.start_plan(
+                    player, PushPlan, target_actor=target, target_position=target_pos
+                )
                 return None
             if self.selected_action.action_class == TripIntent:
-                self.controller.start_trip_plan(player, target)
+                self.controller.start_plan(
+                    player, TripPlan, target_actor=target, target_position=target_pos
+                )
                 return None
             if self.selected_action.action_class == KickIntent:
-                self.controller.start_kick_plan(player, target)
+                self.controller.start_plan(
+                    player, KickPlan, target_actor=target, target_position=target_pos
+                )
                 return None
             if self.selected_action.action_class == PunchIntent:
                 # Punch uses the ActionPlan system - it handles approach, holster,
                 # and punch as separate steps.
-                self.controller.start_punch_plan(player, target)
+                self.controller.start_plan(
+                    player, PunchPlan, target_actor=target, target_position=target_pos
+                )
                 return None
 
         # Unhandled action type - fail loudly so we catch missing handlers

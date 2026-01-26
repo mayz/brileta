@@ -83,7 +83,7 @@ def make_explore_mode() -> tuple[ExploreMode, Any, DummyGameWorld]:
         enter_combat_mode=lambda: None,
         queue_action=lambda a: None,
         start_actor_pathfinding=lambda *a: True,
-        start_walk_to_plan=lambda *a: True,
+        start_plan=lambda *a, **kw: True,
         last_input_time=0.0,
         action_count_for_latency_metric=0,
         _execute_player_action_immediately=lambda intent: None,
@@ -307,7 +307,7 @@ def make_explore_mode_with_mocks() -> tuple[
     Returns:
         Tuple of (ExploreMode, controller, game_world, pathfinding_calls)
         where pathfinding_calls is a list that captures (actor, target, kwargs)
-        for each call to start_actor_pathfinding or start_walk_to_plan.
+        for each call to start_actor_pathfinding or start_plan.
     """
     mode, controller, gw = make_explore_mode()
 
@@ -318,13 +318,19 @@ def make_explore_mode_with_mocks() -> tuple[
         pathfinding_calls.append((actor, target, kwargs))
         return True
 
-    def mock_start_walk_to_plan(actor, target):
-        # Track as (actor, target, {}) for consistency with legacy format
-        pathfinding_calls.append((actor, target, {}))
+    def mock_start_plan(actor, plan, target_actor=None, target_position=None, **kwargs):
+        # Track as (actor, target_position, {plan, target_actor, ...})
+        pathfinding_calls.append(
+            (
+                actor,
+                target_position,
+                {"plan": plan, "target_actor": target_actor, **kwargs},
+            )
+        )
         return True
 
     controller.start_actor_pathfinding = mock_start_pathfinding
-    controller.start_walk_to_plan = mock_start_walk_to_plan
+    controller.start_plan = mock_start_plan
 
     # Track deselect calls
     controller.deselect_target = MagicMock()
@@ -335,21 +341,6 @@ def make_explore_mode_with_mocks() -> tuple[
 
     # Mock is_combat_mode for actor interaction tests
     controller.is_combat_mode = lambda: False
-
-    # Track plan calls for Talk and Search Container (ActionPlan system)
-    controller.talk_plan_calls = []
-    controller.search_plan_calls = []
-
-    def mock_start_talk_plan(actor, target):
-        controller.talk_plan_calls.append((actor, target))
-        return True
-
-    def mock_start_search_container_plan(actor, target):
-        controller.search_plan_calls.append((actor, target))
-        return True
-
-    controller.start_talk_plan = mock_start_talk_plan
-    controller.start_search_container_plan = mock_start_search_container_plan
 
     return mode, controller, gw, pathfinding_calls
 
@@ -412,7 +403,9 @@ def test_right_click_unexplored_tile_does_nothing() -> None:
 
 def test_right_click_visible_tile_with_actor_triggers_interaction() -> None:
     """Right-clicking on a visible tile with an actor starts TalkPlan."""
-    mode, controller, gw, _pathfinding_calls = make_explore_mode_with_mocks()
+    from catley.game.actions.social import TalkPlan
+
+    mode, _controller, gw, pathfinding_calls = make_explore_mode_with_mocks()
 
     # Create an NPC at (1, 0) - adjacent to player at (0, 0)
     npc = Character(1, 0, "N", colors.WHITE, "NPC", game_world=cast(Any, gw))
@@ -427,10 +420,11 @@ def test_right_click_visible_tile_with_actor_triggers_interaction() -> None:
 
     assert result is True
     # Should have started a TalkPlan for the NPC
-    assert len(controller.talk_plan_calls) == 1
-    actor, target = controller.talk_plan_calls[0]
+    assert len(pathfinding_calls) == 1
+    actor, _target_pos, kwargs = pathfinding_calls[0]
     assert actor == gw.player
-    assert target == npc
+    assert kwargs.get("plan") == TalkPlan
+    assert kwargs.get("target_actor") == npc
 
 
 def test_right_click_explored_not_visible_tile_with_actor_only_walks() -> None:

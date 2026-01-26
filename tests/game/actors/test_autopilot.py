@@ -4,8 +4,9 @@ from typing import cast
 from catley import colors
 from catley.controller import Controller
 from catley.environment.tile_types import TileTypeID
-from catley.game.action_plan import ActivePlan, ApproachStep
+from catley.game.action_plan import ActivePlan, ApproachStep, WalkToPlan
 from catley.game.actions.base import GameIntent
+from catley.game.actions.environment import OpenDoorPlan
 from catley.game.actions.executors.movement import MoveExecutor
 from catley.game.actions.movement import MoveIntent
 from catley.game.actors import PC, Character
@@ -40,10 +41,10 @@ class DummyFinalIntent(GameIntent):
     pass
 
 
-def test_start_walk_to_plan_success() -> None:
-    """Test that start_walk_to_plan creates an active plan."""
+def test_start_plan_success() -> None:
+    """Test that start_plan creates an active plan."""
     controller, player = make_world()
-    success = controller.start_walk_to_plan(player, (1, 0))
+    success = controller.start_plan(player, WalkToPlan, target_position=(1, 0))
     assert success
     plan = player.active_plan
     assert isinstance(plan, ActivePlan)
@@ -53,7 +54,7 @@ def test_start_walk_to_plan_success() -> None:
 def test_action_plan_approach_and_complete() -> None:
     """Test that ActionPlan approaches target and completes."""
     controller, player = make_world()
-    controller.start_walk_to_plan(player, (1, 0))
+    controller.start_plan(player, WalkToPlan, target_position=(1, 0))
 
     # TurnManager should generate a MoveIntent from the plan
     intent = controller.turn_manager._get_intent_from_plan(player)
@@ -81,7 +82,7 @@ def test_open_door_plan_approach_then_open() -> None:
     gm.invalidate_property_caches()
 
     # Start an open door plan
-    controller.start_open_door_plan(player, 3, 0)
+    controller.start_plan(player, OpenDoorPlan, target_position=(3, 0))
     plan = player.active_plan
     assert plan is not None
     assert plan.context.target_position == (3, 0)
@@ -102,7 +103,7 @@ def test_plan_path_recalculation_when_blocked() -> None:
     gm = controller.gw.game_map
 
     # Start a walk plan
-    controller.start_walk_to_plan(player, (2, 0))
+    controller.start_plan(player, WalkToPlan, target_position=(2, 0))
 
     # Get initial intent
     intent = controller.turn_manager._get_intent_from_plan(player)
@@ -130,7 +131,7 @@ def test_plan_single_step_path() -> None:
     controller, player = make_world()
 
     # Create plan to adjacent tile
-    controller.start_walk_to_plan(player, (1, 0))
+    controller.start_plan(player, WalkToPlan, target_position=(1, 0))
 
     intent = controller.turn_manager._get_intent_from_plan(player)
     assert isinstance(intent, MoveIntent)
@@ -152,7 +153,7 @@ def test_plan_unreachable_target() -> None:
     gm.invalidate_property_caches()
 
     # Create plan to unreachable target
-    controller.start_walk_to_plan(player, target)
+    controller.start_plan(player, WalkToPlan, target_position=target)
 
     # Should return None (no path possible) and cancel plan
     intent = controller.turn_manager._get_intent_from_plan(player)
@@ -160,14 +161,14 @@ def test_plan_unreachable_target() -> None:
     assert player.active_plan is None
 
 
-def test_stop_walk_to_plan_cancels_plan() -> None:
-    """Test that stop_walk_to_plan cancels the active plan."""
+def test_stop_plan_cancels_plan() -> None:
+    """Test that stop_plan cancels the active plan."""
     controller, player = make_world()
 
-    controller.start_walk_to_plan(player, (5, 5))
+    controller.start_plan(player, WalkToPlan, target_position=(5, 5))
     assert player.active_plan is not None
 
-    controller.stop_walk_to_plan(player)
+    controller.stop_plan(player)
     assert player.active_plan is None
 
 
@@ -184,7 +185,7 @@ def test_manual_input_cancels_plan() -> None:
     controller = DummyController(gw)
 
     # Start a plan
-    controller.start_walk_to_plan(player, (5, 5))
+    controller.start_plan(player, WalkToPlan, target_position=(5, 5))
     assert player.active_plan is not None
 
     # Queue a manual action

@@ -5,6 +5,7 @@ from catley import colors, config
 from catley.controller import Controller
 from catley.environment.tile_types import TileTypeID
 from catley.events import reset_event_bus_for_testing
+from catley.game.action_plan import WalkToPlan
 from catley.game.action_router import ActionRouter
 from catley.game.actions.movement import MoveIntent
 from catley.game.actors import NPC, PC, Character
@@ -92,11 +93,11 @@ class DummyController:
     def invalidate_combat_tooltip(self) -> None:
         self.combat_tooltip_invalidations += 1
 
-    def start_walk_to_plan(self, *args: Any, **kwargs: Any) -> bool:
-        return Controller.start_walk_to_plan(cast(Controller, self), *args, **kwargs)
+    def start_plan(self, *args: Any, **kwargs: Any) -> bool:
+        return Controller.start_plan(cast(Controller, self), *args, **kwargs)
 
-    def stop_walk_to_plan(self, *args: Any, **kwargs: Any) -> None:
-        return Controller.stop_walk_to_plan(cast(Controller, self), *args, **kwargs)
+    def stop_plan(self, *args: Any, **kwargs: Any) -> None:
+        return Controller.stop_plan(cast(Controller, self), *args, **kwargs)
 
     def update_fov(self) -> None:
         self.update_fov_called = True
@@ -187,14 +188,14 @@ def test_is_player_turn_available_with_plan() -> None:
     controller, player = _make_autopilot_world()
     tm = controller.turn_manager
     assert not tm.is_player_turn_available()
-    controller.start_walk_to_plan(player, (1, 0))
+    controller.start_plan(player, WalkToPlan, target_position=(1, 0))
     assert tm.is_player_turn_available()
 
 
 def test_process_unified_round_handles_active_plan() -> None:
     controller, player = _make_autopilot_world()
     tm = controller.turn_manager
-    controller.start_walk_to_plan(player, (1, 0))
+    controller.start_plan(player, WalkToPlan, target_position=(1, 0))
     controller.run_one_turn()
     assert (player.x, player.y) == (1, 0)
     assert player.active_plan is None

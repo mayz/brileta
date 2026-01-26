@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from catley.game.action_plan import ActionPlan, ApproachStep, IntentStep
 from catley.game.actors import Character
 from catley.game.enums import Disposition
 from catley.game.items.item_core import Item
@@ -81,3 +82,25 @@ class ComfortableSleepIntent(GameIntent):
 
     def __init__(self, controller: Controller, actor: Character) -> None:
         super().__init__(controller, actor)
+
+
+# =============================================================================
+# Action Plans for Recovery Actions
+# =============================================================================
+
+UseConsumableOnTargetPlan = ActionPlan(
+    name="Use Consumable",
+    requires_target=True,
+    requires_adjacency=True,
+    steps=[
+        ApproachStep(stop_distance=1),
+        IntentStep(
+            intent_class=UseConsumableOnTargetIntent,
+            params=lambda ctx: {
+                "actor": ctx.actor,
+                "item": ctx.item,
+                "target": ctx.target_actor,
+            },
+        ),
+    ],
+)

@@ -132,9 +132,17 @@ def execute_default_action(
     Returns:
         True if an action was initiated, False otherwise.
     """
+    from catley.game.action_plan import WalkToPlan
     from catley.game.actions.combat import AttackIntent
-    from catley.game.actions.environment import CloseDoorIntent, OpenDoorIntent
-    from catley.game.actions.misc import PickupItemsAtLocationIntent
+    from catley.game.actions.environment import (
+        CloseDoorIntent,
+        CloseDoorPlan,
+        OpenDoorIntent,
+        OpenDoorPlan,
+        SearchContainerPlan,
+    )
+    from catley.game.actions.misc import PickupItemsAtLocationIntent, PickupItemsPlan
+    from catley.game.actions.social import TalkPlan
     from catley.game.actors import Character
     from catley.game.actors.container import Container
 
@@ -169,7 +177,12 @@ def execute_default_action(
                 return True
 
             # Not in combat - talk to NPC (uses ActionPlan for approach)
-            controller.start_talk_plan(player, target)
+            controller.start_plan(
+                player,
+                TalkPlan,
+                target_actor=target,
+                target_position=(target.x, target.y),
+            )
             return True
 
         case TargetType.CONTAINER:
@@ -185,7 +198,12 @@ def execute_default_action(
             if container is None:
                 return False
 
-            controller.start_search_container_plan(player, container)
+            controller.start_plan(
+                player,
+                SearchContainerPlan,
+                target_actor=container,
+                target_position=(container.x, container.y),
+            )
             return True
 
         case TargetType.DOOR_CLOSED:
@@ -194,7 +212,9 @@ def execute_default_action(
                 open_intent = OpenDoorIntent(controller, player, target_x, target_y)
                 controller.queue_action(open_intent)
                 return True
-            return controller.start_open_door_plan(player, target_x, target_y)
+            return controller.start_plan(
+                player, OpenDoorPlan, target_position=(target_x, target_y)
+            )
 
         case TargetType.DOOR_OPEN:
             # Close door - pathfind to adjacent tile if not adjacent
@@ -202,7 +222,9 @@ def execute_default_action(
                 close_intent = CloseDoorIntent(controller, player, target_x, target_y)
                 controller.queue_action(close_intent)
                 return True
-            return controller.start_close_door_plan(player, target_x, target_y)
+            return controller.start_plan(
+                player, CloseDoorPlan, target_position=(target_x, target_y)
+            )
 
         case TargetType.ITEM_PILE:
             # Pick up items - pathfind to the tile if not at it
@@ -212,12 +234,16 @@ def execute_default_action(
                 controller.queue_action(pickup_intent)
                 return True
             # Not at items - use ActionPlan to pathfind then pick up
-            return controller.start_pickup_items_plan(player, (target_x, target_y))
+            return controller.start_plan(
+                player, PickupItemsPlan, target_position=(target_x, target_y)
+            )
 
         case TargetType.FLOOR:
             # Walk to tile
             if distance == 0:
                 return False  # Already there
-            return controller.start_walk_to_plan(player, (target_x, target_y))
+            return controller.start_plan(
+                player, WalkToPlan, target_position=(target_x, target_y)
+            )
 
     return False

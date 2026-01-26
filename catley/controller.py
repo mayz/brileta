@@ -11,6 +11,7 @@ from catley.game.resolution.base import ResolutionSystem
 from catley.sound import SoundSystem
 
 if TYPE_CHECKING:
+    from catley.game.action_plan import ActionPlan
     from catley.game.actions.discovery import CombatIntentCache
     from catley.game.items.item_core import Item
 
@@ -240,8 +241,8 @@ class Controller:
         if self.turn_manager.has_pending_actions():
             player_action = self.turn_manager.dequeue_player_action()
             if player_action:
-                # Manual action cancels any active walk plan
-                self.stop_walk_to_plan(self.gw.player)
+                # Manual action cancels any active plan
+                self.stop_plan(self.gw.player)
                 self._execute_player_action_immediately(player_action)
 
         # Check for autopilot actions if no manual input
@@ -658,7 +659,15 @@ class Controller:
                     self.queue_action(intent)
                 else:
                     # Distant target: use ActionPlan to pathfind then use
-                    self.start_use_consumable_on_target_plan(player, target, item)
+                    from catley.game.actions.recovery import UseConsumableOnTargetPlan
+
+                    self.start_plan(
+                        player,
+                        UseConsumableOnTargetPlan,
+                        target_actor=target,
+                        target_position=(target.x, target.y),
+                        item=item,
+                    )
 
         # Show message about targeting
         publish_event(MessageEvent(f"Select target for {item.name}", colors.CYAN))
@@ -679,265 +688,48 @@ class Controller:
 
         return D20System(**kwargs)  # type: ignore[call-arg]
 
-    def start_walk_to_plan(self, actor: Character, target_pos: WorldTilePos) -> bool:
-        """Create an ActivePlan for walking to a target position.
+    def start_plan(
+        self,
+        actor: Character,
+        plan: ActionPlan,
+        target_actor: Character | Actor | None = None,
+        target_position: WorldTilePos | None = None,
+        weapon: Item | None = None,
+        item: Item | None = None,
+    ) -> bool:
+        """Start an action plan for an actor.
 
-        This is the ActionPlan equivalent of start_actor_pathfinding() for
-        simple walk-to-tile actions. It creates a WalkToPlan with a single
-        ApproachStep.
-
-        Args:
-            actor: The character to move.
-            target_pos: The destination position.
-
-        Returns:
-            True (always succeeds in creating the plan - path is calculated lazily).
-        """
-        from catley.game.action_plan import ActivePlan, PlanContext, WalkToPlan
-
-        context = PlanContext(
-            actor=actor,
-            controller=self,
-            target_position=target_pos,
-        )
-        actor.active_plan = ActivePlan(plan=WalkToPlan, context=context)
-        return True
-
-    def stop_walk_to_plan(self, actor: Character) -> None:
-        """Cancel an actor's active plan."""
-        actor.active_plan = None
-
-    def start_punch_plan(self, actor: Character, target: Character) -> bool:
-        """Start a punch action plan targeting the specified character.
-
-        Creates a PunchPlan that will:
-        1. Approach the target if not adjacent (ApproachStep)
-        2. Holster weapon if one is equipped (HolsterWeaponIntent, skipped if unarmed)
-        3. Execute the punch attack (PunchIntent)
+        This is the unified method for starting any ActionPlan. It creates
+        the PlanContext and ActivePlan, then assigns it to the actor.
 
         Args:
-            actor: The character performing the punch.
-            target: The target character being punched.
+            actor: The character executing the plan.
+            plan: The ActionPlan to execute.
+            target_actor: Optional target actor for targeted actions.
+            target_position: Optional target position. For actor targets,
+                this is usually derived from (target_actor.x, target_actor.y).
+            weapon: Optional weapon for combat actions.
+            item: Optional item for consumable actions.
 
         Returns:
             True (always succeeds in creating the plan).
         """
-        from catley.game.action_plan import ActivePlan, PlanContext, get_punch_plan
+        from catley.game.action_plan import ActivePlan, PlanContext
 
         context = PlanContext(
             actor=actor,
             controller=self,
-            target_actor=target,
-            target_position=(target.x, target.y),
-        )
-        actor.active_plan = ActivePlan(plan=get_punch_plan(), context=context)
-        return True
-
-    def start_kick_plan(self, actor: Character, target: Character) -> bool:
-        """Start a kick action plan targeting the specified character."""
-        from catley.game.action_plan import ActivePlan, PlanContext, get_kick_plan
-
-        context = PlanContext(
-            actor=actor,
-            controller=self,
-            target_actor=target,
-            target_position=(target.x, target.y),
-        )
-        actor.active_plan = ActivePlan(plan=get_kick_plan(), context=context)
-        return True
-
-    def start_trip_plan(self, actor: Character, target: Character) -> bool:
-        """Start a trip action plan targeting the specified character."""
-        from catley.game.action_plan import ActivePlan, PlanContext, get_trip_plan
-
-        context = PlanContext(
-            actor=actor,
-            controller=self,
-            target_actor=target,
-            target_position=(target.x, target.y),
-        )
-        actor.active_plan = ActivePlan(plan=get_trip_plan(), context=context)
-        return True
-
-    def start_push_plan(self, actor: Character, target: Character) -> bool:
-        """Start a push action plan targeting the specified character."""
-        from catley.game.action_plan import ActivePlan, PlanContext, get_push_plan
-
-        context = PlanContext(
-            actor=actor,
-            controller=self,
-            target_actor=target,
-            target_position=(target.x, target.y),
-        )
-        actor.active_plan = ActivePlan(plan=get_push_plan(), context=context)
-        return True
-
-    def start_talk_plan(self, actor: Character, target: Character) -> bool:
-        """Start a talk action plan targeting the specified character."""
-        from catley.game.action_plan import ActivePlan, PlanContext, get_talk_plan
-
-        context = PlanContext(
-            actor=actor,
-            controller=self,
-            target_actor=target,
-            target_position=(target.x, target.y),
-        )
-        actor.active_plan = ActivePlan(plan=get_talk_plan(), context=context)
-        return True
-
-    def start_search_container_plan(self, actor: Character, container: Actor) -> bool:
-        """Start a search container action plan for the specified container."""
-        from catley.game.action_plan import (
-            ActivePlan,
-            PlanContext,
-            get_search_container_plan,
-        )
-
-        context = PlanContext(
-            actor=actor,
-            controller=self,
-            target_actor=container,
-            target_position=(container.x, container.y),
-        )
-        actor.active_plan = ActivePlan(
-            plan=get_search_container_plan(), context=context
-        )
-        return True
-
-    def start_melee_attack_plan(
-        self, actor: Character, target: Character, weapon: Item | None
-    ) -> bool:
-        """Start a melee attack action plan targeting the specified character."""
-        from catley.game.action_plan import (
-            ActivePlan,
-            PlanContext,
-            get_melee_attack_plan,
-        )
-
-        context = PlanContext(
-            actor=actor,
-            controller=self,
-            target_actor=target,
-            target_position=(target.x, target.y),
+            target_actor=target_actor,
+            target_position=target_position,
             weapon=weapon,
-        )
-        actor.active_plan = ActivePlan(plan=get_melee_attack_plan(), context=context)
-        return True
-
-    def start_open_door_plan(self, actor: Character, door_x: int, door_y: int) -> bool:
-        """Start an open door action plan at the specified coordinates.
-
-        Creates an ActionPlan that will approach the door and open it.
-
-        Args:
-            actor: The character performing the action.
-            door_x: X coordinate of the door.
-            door_y: Y coordinate of the door.
-
-        Returns:
-            True (always succeeds in creating the plan).
-        """
-        from catley.game.action_plan import (
-            ActivePlan,
-            PlanContext,
-            get_open_door_plan,
-        )
-
-        context = PlanContext(
-            actor=actor,
-            controller=self,
-            target_position=(door_x, door_y),
-        )
-        actor.active_plan = ActivePlan(plan=get_open_door_plan(), context=context)
-        return True
-
-    def start_close_door_plan(self, actor: Character, door_x: int, door_y: int) -> bool:
-        """Start a close door action plan at the specified coordinates.
-
-        Creates an ActionPlan that will approach the door and close it.
-
-        Args:
-            actor: The character performing the action.
-            door_x: X coordinate of the door.
-            door_y: Y coordinate of the door.
-
-        Returns:
-            True (always succeeds in creating the plan).
-        """
-        from catley.game.action_plan import (
-            ActivePlan,
-            PlanContext,
-            get_close_door_plan,
-        )
-
-        context = PlanContext(
-            actor=actor,
-            controller=self,
-            target_position=(door_x, door_y),
-        )
-        actor.active_plan = ActivePlan(plan=get_close_door_plan(), context=context)
-        return True
-
-    def start_pickup_items_plan(
-        self, actor: Character, target_pos: WorldTilePos
-    ) -> bool:
-        """Start a pickup items action plan at the specified position.
-
-        Creates an ActionPlan that will walk to the position and pick up items.
-
-        Args:
-            actor: The character performing the action.
-            target_pos: Position of the items to pick up.
-
-        Returns:
-            True (always succeeds in creating the plan).
-        """
-        from catley.game.action_plan import (
-            ActivePlan,
-            PlanContext,
-            get_pickup_items_plan,
-        )
-
-        context = PlanContext(
-            actor=actor,
-            controller=self,
-            target_position=target_pos,
-        )
-        actor.active_plan = ActivePlan(plan=get_pickup_items_plan(), context=context)
-        return True
-
-    def start_use_consumable_on_target_plan(
-        self, actor: Character, target: Character, item: Item
-    ) -> bool:
-        """Start a use consumable on target action plan.
-
-        Creates an ActionPlan that will approach the target and use the item on them.
-
-        Args:
-            actor: The character performing the action.
-            target: The target character to use the consumable on.
-            item: The consumable item to use.
-
-        Returns:
-            True (always succeeds in creating the plan).
-        """
-        from catley.game.action_plan import (
-            ActivePlan,
-            PlanContext,
-            get_use_consumable_on_target_plan,
-        )
-
-        context = PlanContext(
-            actor=actor,
-            controller=self,
-            target_actor=target,
-            target_position=(target.x, target.y),
             item=item,
         )
-        actor.active_plan = ActivePlan(
-            plan=get_use_consumable_on_target_plan(), context=context
-        )
+        actor.active_plan = ActivePlan(plan=plan, context=context)
         return True
+
+    def stop_plan(self, actor: Character) -> None:
+        """Cancel an actor's active plan."""
+        actor.active_plan = None
 
     def _initialize_sound_system(self) -> None:
         """Initialize the sound system and audio backend."""

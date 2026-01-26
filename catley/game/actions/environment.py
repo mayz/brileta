@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from catley.game.action_plan import ActionPlan, ApproachStep, IntentStep
+
 from .base import GameIntent
 
 if TYPE_CHECKING:
@@ -54,3 +56,58 @@ class CloseDoorIntent(GameIntent):
         super().__init__(controller, actor)
         self.x = x
         self.y = y
+
+
+# =============================================================================
+# Action Plans for Environment Interactions
+# =============================================================================
+
+SearchContainerPlan = ActionPlan(
+    name="Search",
+    requires_target=True,
+    requires_adjacency=True,
+    steps=[
+        ApproachStep(stop_distance=1),
+        IntentStep(
+            intent_class=SearchContainerIntent,
+            params=lambda ctx: {
+                "actor": ctx.actor,
+                "target": ctx.target_actor,
+            },
+        ),
+    ],
+)
+
+OpenDoorPlan = ActionPlan(
+    name="Open Door",
+    requires_target=False,
+    requires_adjacency=True,
+    steps=[
+        ApproachStep(stop_distance=1),
+        IntentStep(
+            intent_class=OpenDoorIntent,
+            params=lambda ctx: {
+                "actor": ctx.actor,
+                "x": ctx.target_position[0] if ctx.target_position else 0,
+                "y": ctx.target_position[1] if ctx.target_position else 0,
+            },
+        ),
+    ],
+)
+
+CloseDoorPlan = ActionPlan(
+    name="Close Door",
+    requires_target=False,
+    requires_adjacency=True,
+    steps=[
+        ApproachStep(stop_distance=1),
+        IntentStep(
+            intent_class=CloseDoorIntent,
+            params=lambda ctx: {
+                "actor": ctx.actor,
+                "x": ctx.target_position[0] if ctx.target_position else 0,
+                "y": ctx.target_position[1] if ctx.target_position else 0,
+            },
+        ),
+    ],
+)

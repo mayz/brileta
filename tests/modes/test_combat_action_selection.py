@@ -1183,16 +1183,16 @@ class TestApproachAndAttack:
         )
         controller.combat_mode.select_action(ranged_action)
 
-        # Ranged attack should NOT start a walk plan
-        with patch.object(controller, "start_walk_to_plan") as mock_walk_plan:
+        # Ranged attack should NOT start a plan for approach
+        with patch.object(controller, "start_plan") as mock_start_plan:
             intent = controller.combat_mode._create_intent_for_target(npc)
 
             # Should return intent for immediate execution
             assert isinstance(intent, AttackIntent)
             assert intent.defender == npc
 
-            # Walk plan should NOT have been called (ranged doesn't need approach)
-            mock_walk_plan.assert_not_called()
+            # start_plan should NOT have been called (ranged doesn't need approach)
+            mock_start_plan.assert_not_called()
 
     def test_push_on_target_starts_plan_regardless_of_path(self) -> None:
         """Push should start a plan regardless of whether path exists.

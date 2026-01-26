@@ -166,10 +166,15 @@ class ActionDiscovery:
         self, controller: Controller, actor: Character, target: Character
     ) -> ActionOption:
         """Create a 'Talk' action for social interaction."""
-        from catley.game.actions.social import TalkIntent
+        from catley.game.actions.social import TalkIntent, TalkPlan
 
         def talk() -> bool:
-            controller.start_talk_plan(actor, target)
+            controller.start_plan(
+                actor,
+                TalkPlan,
+                target_actor=target,
+                target_position=(target.x, target.y),
+            )
             return True
 
         return ActionOption(
@@ -192,10 +197,15 @@ class ActionDiscovery:
         approach the target first. If the target is non-hostile, this triggers
         hostility and auto-enters combat mode.
         """
-        from catley.game.actions.stunts import PushIntent
+        from catley.game.actions.stunts import PushIntent, PushPlan
 
         def push() -> bool:
-            controller.start_push_plan(actor, target)
+            controller.start_plan(
+                actor,
+                PushPlan,
+                target_actor=target,
+                target_position=(target.x, target.y),
+            )
             return True
 
         return ActionOption(
@@ -218,10 +228,15 @@ class ActionDiscovery:
         the target first. If the target is non-hostile, this triggers hostility
         and auto-enters combat mode.
         """
-        from catley.game.actions.stunts import TripIntent
+        from catley.game.actions.stunts import TripIntent, TripPlan
 
         def trip() -> bool:
-            controller.start_trip_plan(actor, target)
+            controller.start_plan(
+                actor,
+                TripPlan,
+                target_actor=target,
+                target_position=(target.x, target.y),
+            )
             return True
 
         return ActionOption(

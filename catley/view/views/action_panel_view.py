@@ -579,11 +579,14 @@ class ActionPanelView(TextView):
                         ActionCategory,
                         ActionOption,
                     )
+                    from catley.game.actions.misc import PickupItemsPlan
 
                     def create_pathfind_and_pickup(item_x: int, item_y: int):
                         def pathfind_and_pickup():
-                            return self.controller.start_pickup_items_plan(
-                                gw.player, (item_x, item_y)
+                            return self.controller.start_plan(
+                                gw.player,
+                                PickupItemsPlan,
+                                target_position=(item_x, item_y),
                             )
 
                         return pathfind_and_pickup

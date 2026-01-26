@@ -27,6 +27,7 @@ from catley import colors
 from catley.constants.combat import CombatConstants as Combat
 from catley.events import MessageEvent, publish_event
 from catley.game import ranges
+from catley.game.action_plan import WalkToPlan
 from catley.game.enums import Disposition
 
 if TYPE_CHECKING:
@@ -247,7 +248,7 @@ class HostileAI(AIComponent):
         from catley.game.actions.combat import AttackIntent
 
         if distance == 1:
-            controller.stop_walk_to_plan(actor)
+            controller.stop_plan(actor)
             return AttackIntent(controller, actor, player)
 
         # Check if already walking toward a valid adjacent-to-player tile
@@ -305,7 +306,9 @@ class HostileAI(AIComponent):
                     best_score = score
                     best_dest = (tx, ty)
 
-        if best_dest and controller.start_walk_to_plan(actor, best_dest):
+        if best_dest and controller.start_plan(
+            actor, WalkToPlan, target_position=best_dest
+        ):
             return None
 
         return None
