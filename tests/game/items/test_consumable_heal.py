@@ -53,7 +53,7 @@ class TestConsumableHealPartial:
     def test_heal_specific_amount(self) -> None:
         """HEAL with effect_value heals that specific amount."""
         controller, actor = make_world()
-        actor.health.hp = 5
+        actor.health._hp = 5
 
         spec = ConsumableEffectSpec(
             effect_type=ConsumableEffectType.HEAL,
@@ -70,7 +70,7 @@ class TestConsumableHealPartial:
     def test_heal_capped_at_max_hp(self) -> None:
         """HEAL with effect_value doesn't exceed max HP."""
         controller, actor = make_world()
-        actor.health.hp = actor.health.max_hp - 2
+        actor.health._hp = actor.health.max_hp - 2
 
         spec = ConsumableEffectSpec(
             effect_type=ConsumableEffectType.HEAL,
@@ -90,7 +90,7 @@ class TestConsumableHealFull:
     def test_heal_full_restore_with_none(self) -> None:
         """HEAL with effect_value=None restores to full HP."""
         controller, actor = make_world()
-        actor.health.hp = 1
+        actor.health._hp = 1
 
         spec = ConsumableEffectSpec(
             effect_type=ConsumableEffectType.HEAL,
@@ -106,7 +106,7 @@ class TestConsumableHealFull:
     def test_heal_full_restore_without_effect_value(self) -> None:
         """HEAL without effect_value argument restores to full HP."""
         controller, actor = make_world()
-        actor.health.hp = 1
+        actor.health._hp = 1
 
         spec = ConsumableEffectSpec(
             effect_type=ConsumableEffectType.HEAL,
@@ -165,7 +165,7 @@ class TestConsumableHealTriggersFloatingText:
     def test_heal_triggers_actor_heal_floating_text(self) -> None:
         """HEAL should trigger floating text via Actor.heal()."""
         controller, actor = make_world()
-        actor.health.hp = 5
+        actor.health._hp = 5
 
         spec = ConsumableEffectSpec(
             effect_type=ConsumableEffectType.HEAL,

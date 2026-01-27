@@ -47,7 +47,7 @@ def _make_tooltip_test_world(
 
     # If enemy should be dead, kill it
     if not enemy_alive and npc.health:
-        npc.health.take_damage(npc.health.max_hp)
+        npc.take_damage(npc.health.max_hp)
 
     # Make NPC visible
     gm.visible[npc.x, npc.y] = True

@@ -166,9 +166,8 @@ class ConsequenceHandler:
         half_sides = max(2, damage_dice.sides // 2)
         damage = roll_d(half_sides)
 
-        health = target.health
-        if health is not None:
-            health.hp -= damage
+        # Use take_damage() to properly handle death visuals if this kills them
+        target.take_damage(damage)
 
         publish_event(
             MessageEvent(

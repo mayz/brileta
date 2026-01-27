@@ -90,46 +90,55 @@ class HealthComponent:
     Note: Armor protection is now handled by the outfit system (catley.game.outfit).
     This component only tracks HP. Damage reduction from armor happens in the
     combat system before calling take_damage().
+
+    IMPORTANT: All damage to actors must go through Actor.take_damage(), not
+    this component directly. Actor.take_damage() handles death visuals (changing
+    glyph to 'x', etc.) which this component knows nothing about.
     """
 
     stats: StatsComponent
-    hp: int = field(init=False)
+    _hp: int = field(init=False)
 
     def __post_init__(self) -> None:
-        self.hp = self.stats.max_hp
+        self._hp = self.stats.max_hp
+
+    @property
+    def hp(self) -> int:
+        """Current HP (read-only). Use Actor.take_damage() or Actor.heal()."""
+        return self._hp
 
     @property
     def max_hp(self) -> int:
         """Get max HP from stats component."""
         return self.stats.max_hp
 
-    def take_damage(self, amount: int, damage_type: str = "normal") -> None:
-        """Handle damage to the actor.
+    def _apply_damage(self, amount: int) -> None:
+        """Internal: Apply damage to HP. Called by Actor.take_damage().
 
-        Note: Armor protection is applied before this method is called.
-        The outfit system (catley.game.outfit) handles damage reduction.
-        This method only applies the final damage amount to HP.
+        Do NOT call this directly - use Actor.take_damage() instead, which
+        handles death visuals and other consequences.
 
         Args:
-            amount: Amount of damage to take (after armor reduction)
-            damage_type: "normal", "radiation", or "armor_piercing"
-                (damage_type is kept for interface compatibility but no longer
-                affects armor - armor-piercing is handled by the outfit system)
+            amount: Amount of damage to apply (after armor reduction)
         """
         if amount > 0:
-            self.hp = max(0, self.hp - amount)
+            self._hp = max(0, self._hp - amount)
 
-    def heal(self, amount: int) -> None:
-        """Heal the actor by the specified amount, up to max_hp.
+    def _apply_healing(self, amount: int) -> None:
+        """Internal: Apply healing to HP. Called by Actor.heal().
 
         Args:
             amount: Amount to heal
         """
-        self.hp = min(self.max_hp, self.hp + amount)
+        self._hp = min(self.max_hp, self._hp + amount)
+
+    def heal_to_full(self) -> None:
+        """Restore HP to maximum. Safe to call directly for full heals."""
+        self._hp = self.max_hp
 
     def is_alive(self) -> bool:
         """Return True if the actor is alive (HP > 0)."""
-        return self.hp > 0
+        return self._hp > 0
 
 
 class InventoryComponent:

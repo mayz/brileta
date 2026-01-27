@@ -195,7 +195,7 @@ def test_armor_piercing_bypasses_armor() -> None:
 
     # Test that armor_piercing damage bypasses armor (handled in combat_arbiter)
     # Here we just test that take_damage applies damage to HP
-    defender.health.take_damage(5)
+    defender.take_damage(5)
 
     # HP should be reduced
     assert defender.health.hp == initial_hp - 5  # HP reduced directly

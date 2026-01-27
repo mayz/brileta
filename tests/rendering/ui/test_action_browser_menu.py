@@ -16,7 +16,7 @@ def test_continue_option_shown_when_target_dead() -> None:
     controller.message_log = MessageLog()
 
     # Simulate a cached attack that killed the target.
-    melee_target.health.hp = 0
+    melee_target.health._hp = 0
     controller.combat_intent_cache = CombatIntentCache(
         weapon=pistol,
         attack_mode="ranged",

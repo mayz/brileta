@@ -41,7 +41,7 @@ class MoveAnimation(Animation):
     """Animation for smoothly moving an actor between two positions.
 
     Interpolates an actor's render_x and render_y coordinates from a start
-    position to an end position over a fixed duration, creating smooth
+    position to an end position over a configurable duration, creating smooth
     movement that's easy for players to track visually.
     """
 
@@ -50,6 +50,7 @@ class MoveAnimation(Animation):
         actor: Actor,
         start_pos: tuple[float, float],
         end_pos: tuple[float, float],
+        duration: float = 0.15,
     ) -> None:
         """Initialize a movement animation.
 
@@ -57,11 +58,13 @@ class MoveAnimation(Animation):
             actor: The actor to animate.
             start_pos: Starting position as (x, y) coordinates.
             end_pos: Target position as (x, y) coordinates.
+            duration: Animation duration in seconds. Defaults to 0.15s for
+                backward compatibility.
         """
         self.actor = actor
         self.start_x, self.start_y = start_pos
         self.end_x, self.end_y = end_pos
-        self.duration = 0.15  # Animation duration in seconds
+        self.duration = duration
         self.elapsed_time = 0.0
 
         # Take control of the actor's render position
@@ -80,6 +83,17 @@ class MoveAnimation(Animation):
         Returns:
             True if the animation is finished, False otherwise.
         """
+        # If the actor died mid-animation, terminate immediately.
+        # The render position was already snapped when the actor died.
+        # We check health directly rather than _animation_controlled to avoid
+        # interfering with queued animations for the same actor.
+        if (
+            hasattr(self.actor, "health")
+            and self.actor.health is not None
+            and not self.actor.health.is_alive()
+        ):
+            return True
+
         self.elapsed_time += fixed_timestep
 
         if self.elapsed_time >= self.duration:
@@ -156,12 +170,18 @@ class AnimationManager:
         self._queue.clear()
 
     def interrupt_player_animations(self, player_actor: Actor) -> None:
-        """Remove all animations belonging to ``player_actor`` from the queue."""
+        """Remove all animations belonging to ``player_actor`` from the queue.
 
+        Snaps the player to their animation's end position before removing,
+        preventing visual pops when manual input interrupts movement.
+        """
         remaining_animations: deque[Animation] = deque()
 
         for animation in self._queue:
             if isinstance(animation, MoveAnimation) and animation.actor is player_actor:
+                # Snap to end position before releasing control
+                animation.actor.render_x = animation.end_x
+                animation.actor.render_y = animation.end_y
                 animation.actor._animation_controlled = False
             else:
                 remaining_animations.append(animation)

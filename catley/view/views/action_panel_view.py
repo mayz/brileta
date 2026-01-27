@@ -9,7 +9,7 @@ from catley.backends.pillow.canvas import PillowImageCanvas
 from catley.environment import tile_types
 from catley.game.actions.discovery import ActionDiscovery, ActionOption
 from catley.game.actors import Actor, Character
-from catley.game.actors.container import Container
+from catley.game.actors.container import Container, ItemPile
 from catley.game.items.properties import WeaponProperty
 from catley.types import InterpolationAlpha
 from catley.util.caching import ResourceCache
@@ -685,6 +685,51 @@ class ActionPanelView(TextView):
                 target_actor.x,
                 target_actor.y,
             )
+        elif isinstance(target_actor, ItemPile):
+            # ItemPile - show "Walk to and pick up" action
+            items = list(target_actor.inventory)
+            if len(items) == 1:
+                self._cached_target_description = "An item on the ground"
+            else:
+                self._cached_target_description = "Multiple items here"
+
+            # Create pickup action based on distance
+            distance = max(
+                abs(target_actor.x - gw.player.x),
+                abs(target_actor.y - gw.player.y),
+            )
+
+            if distance == 0:
+                # Player is standing on items - G key works, no action needed
+                self._cached_actions = []
+            else:
+                # Player needs to move - create "Walk to and pick up" action
+                from catley.game.actions.discovery import ActionCategory
+                from catley.game.actions.misc import PickupItemsPlan
+
+                item_x, item_y = target_actor.x, target_actor.y
+
+                def create_pathfind_and_pickup(x: int, y: int):
+                    def pathfind_and_pickup():
+                        return self.controller.start_plan(
+                            gw.player,
+                            PickupItemsPlan,
+                            target_position=(x, y),
+                        )
+
+                    return pathfind_and_pickup
+
+                pickup_action = ActionOption(
+                    id="walk-and-pickup",
+                    name="Walk to and pick up",
+                    description="Move to the items and pick them up",
+                    category=ActionCategory.ITEMS,
+                    action_class=None,
+                    requirements=[],
+                    static_params={},
+                    execute=create_pathfind_and_pickup(item_x, item_y),
+                )
+                self._cached_actions = [pickup_action]
         else:
             self._cached_target_description = None
             self._cached_actions = []

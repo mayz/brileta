@@ -123,11 +123,9 @@ class AttackExecutor(ActionExecutor):
 
         # Determine presentation timing based on attack type.
         # Ranged attacks: 350ms, Melee attacks: 300ms
-        presentation_ms = 350 if attack == weapon.ranged_attack else 300
+        duration_ms = 350 if attack == weapon.ranged_attack else 300
 
-        return GameActionResult(
-            consequences=consequences, presentation_ms=presentation_ms
-        )
+        return GameActionResult(consequences=consequences, duration_ms=duration_ms)
 
     def _fire_weapon(
         self,
@@ -276,7 +274,7 @@ class AttackExecutor(ActionExecutor):
             handler.apply_consequence(consequence)
 
         # Ranged attack timing: 350ms
-        return GameActionResult(consequences=consequences, presentation_ms=350)
+        return GameActionResult(consequences=consequences, duration_ms=350)
 
     def _determine_attack_method(
         self, intent: AttackIntent
@@ -970,7 +968,7 @@ class ReloadExecutor(ActionExecutor):
                 )
             )
             # Reload takes 300ms presentation time
-            return GameActionResult(presentation_ms=300)
+            return GameActionResult(duration_ms=300)
 
         publish_event(
             MessageEvent(

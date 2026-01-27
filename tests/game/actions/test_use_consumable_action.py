@@ -28,7 +28,7 @@ def make_world() -> tuple[DummyController, Character]:
 
 def test_use_consumable_action_heals_and_consumes_item() -> None:
     controller, actor = make_world()
-    actor.health.hp -= 5
+    actor.health._hp -= 5
     item = STIM_TYPE.create()
     actor.inventory.add_to_inventory(item)
 

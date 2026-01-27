@@ -47,7 +47,7 @@ def test_use_consumable_on_adjacent_target() -> None:
     player.inventory.add_to_inventory(potion)
 
     # Damage the NPC
-    npc.health.hp = 5  # Less than max
+    npc.health._hp = 5  # Less than max
 
     # Create and execute the intent
     intent = UseConsumableOnTargetIntent(controller, player, potion, npc)
@@ -94,7 +94,7 @@ def test_use_consumable_on_dead_target_fails() -> None:
     # Create an adjacent but dead NPC
     npc = Character(player.x + 1, player.y, "N", colors.WHITE, "NPC", game_world=gw)
     gw.add_actor(npc)
-    npc.health.hp = 0  # Dead
+    npc.health._hp = 0  # Dead
 
     # Give player a healing potion
     potion = make_healing_potion()
@@ -202,7 +202,7 @@ def test_use_equipped_consumable_on_adjacent_target() -> None:
     assert potion not in player.inventory._stored_items
 
     # Damage the NPC
-    npc.health.hp = 5  # Less than max
+    npc.health._hp = 5  # Less than max
 
     # Create and execute the intent
     intent = UseConsumableOnTargetIntent(controller, player, potion, npc)

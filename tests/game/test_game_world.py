@@ -52,7 +52,7 @@ def make_character(
     )
     if not alive:
         # Kill the character by depleting HP.
-        char.health.hp = 0
+        char.health._hp = 0
     return char
 
 

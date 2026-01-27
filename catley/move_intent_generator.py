@@ -80,10 +80,22 @@ class MoveIntentGenerator:
         if self.is_first_move_of_burst:
             self.is_first_move_of_burst = False
             self.next_move_time = current_time + config.MOVEMENT_KEY_REPEAT_DELAY
-            return MoveIntent(self.controller, self.controller.gw.player, dx, dy)
+            return MoveIntent(
+                self.controller,
+                self.controller.gw.player,
+                dx,
+                dy,
+                duration_ms=config.HELD_KEY_MOVE_DURATION_MS,
+            )
 
         if current_time >= self.next_move_time:
             self.next_move_time = current_time + config.MOVEMENT_KEY_REPEAT_INTERVAL
-            return MoveIntent(self.controller, self.controller.gw.player, dx, dy)
+            return MoveIntent(
+                self.controller,
+                self.controller.gw.player,
+                dx,
+                dy,
+                duration_ms=config.HELD_KEY_MOVE_DURATION_MS,
+            )
 
         return None

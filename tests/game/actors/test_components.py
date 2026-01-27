@@ -182,55 +182,55 @@ class TestHealthComponent:
         assert health.hp == 15  # toughness + 5
         assert health.max_hp == 15
 
-    def test_take_damage_reduces_hp(self) -> None:
-        """take_damage() should reduce HP by the specified amount.
+    def test_apply_damage_reduces_hp(self) -> None:
+        """_apply_damage() should reduce HP by the specified amount.
 
-        Note: Armor protection is now handled by the outfit system (outfit.py).
-        This test only verifies HP reduction.
+        Note: In production, use Actor.take_damage() which handles death visuals.
+        This tests the internal component method directly.
         """
         stats = make_stats(toughness=10)
         health = HealthComponent(stats)
 
-        health.take_damage(3)
+        health._apply_damage(3)
 
         assert health.hp == 12  # 15 - 3 = 12
 
-    def test_take_damage_hp_cannot_go_below_zero(self) -> None:
+    def test_apply_damage_hp_cannot_go_below_zero(self) -> None:
         """HP should be clamped to zero, never negative."""
         stats = make_stats(toughness=5)  # max_hp = 10
         health = HealthComponent(stats)
 
-        health.take_damage(100)
+        health._apply_damage(100)
 
         assert health.hp == 0
 
-    def test_heal_increases_hp(self) -> None:
-        """heal() should increase HP by the specified amount."""
+    def test_apply_healing_increases_hp(self) -> None:
+        """_apply_healing() should increase HP by the specified amount."""
         stats = make_stats(toughness=10)
         health = HealthComponent(stats)
-        health.hp = 5
+        health._hp = 5  # Direct access for test setup
 
-        health.heal(3)
+        health._apply_healing(3)
 
         assert health.hp == 8
 
-    def test_heal_capped_at_max_hp(self) -> None:
-        """heal() should not increase HP beyond max_hp."""
+    def test_apply_healing_capped_at_max_hp(self) -> None:
+        """_apply_healing() should not increase HP beyond max_hp."""
         stats = make_stats(toughness=10)
         health = HealthComponent(stats)
-        health.hp = 14
+        health._hp = 14  # Direct access for test setup
 
-        health.heal(10)
+        health._apply_healing(10)
 
         assert health.hp == 15  # Capped at max_hp
 
-    def test_heal_exact_to_max(self) -> None:
-        """Healing that exactly reaches max_hp works correctly."""
+    def test_heal_to_full(self) -> None:
+        """heal_to_full() restores HP to maximum."""
         stats = make_stats(toughness=10)
         health = HealthComponent(stats)
-        health.hp = 10
+        health._hp = 5  # Direct access for test setup
 
-        health.heal(5)
+        health.heal_to_full()
 
         assert health.hp == 15
 
@@ -238,7 +238,7 @@ class TestHealthComponent:
         """is_alive() should return True when HP > 0."""
         stats = make_stats()
         health = HealthComponent(stats)
-        health.hp = 1
+        health._hp = 1  # Direct access for test setup
 
         assert health.is_alive() is True
 
@@ -246,7 +246,7 @@ class TestHealthComponent:
         """is_alive() should return False when HP == 0."""
         stats = make_stats()
         health = HealthComponent(stats)
-        health.hp = 0
+        health._hp = 0  # Direct access for test setup
 
         assert health.is_alive() is False
 

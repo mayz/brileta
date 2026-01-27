@@ -150,9 +150,8 @@ class Sickness(Condition):
             )
         elif self.sickness_type == "Radiation Sickness":
             damage = 1
-            health = actor.health
-            if health is not None:
-                health.hp = max(0, health.hp - damage)
+            # Use take_damage() to properly handle death visuals if this kills them
+            actor.take_damage(damage, damage_type="radiation")
             publish_event(
                 MessageEvent(
                     f"{actor.name} suffers from {self.sickness_type}! (-{damage} HP)",

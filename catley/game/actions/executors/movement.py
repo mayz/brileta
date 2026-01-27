@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from catley import config
 from catley.environment.tile_types import TileTypeID
 from catley.game.actions.base import GameActionResult
 from catley.game.actions.executors.base import ActionExecutor
@@ -50,19 +51,23 @@ class MoveExecutor(ActionExecutor):
                 succeeded=False, blocked_by=blocking_actor, block_reason="actor"
             )
 
-        # Success! Move the actor (this automatically creates animation)
-        intent.actor.move(intent.dx, intent.dy, intent.controller)
+        # Use intent's duration, or fall back to autopilot default.
+        duration_ms = (
+            intent.duration_ms
+            if intent.duration_ms is not None
+            else config.AUTOPILOT_MOVE_DURATION_MS
+        )
+
+        # Success! Move the actor with the specified animation duration.
+        intent.actor.move(
+            intent.dx, intent.dy, intent.controller, duration=duration_ms / 1000.0
+        )
 
         # Plan advancement is handled by TurnManager (player) and
         # process_all_npc_reactions (NPC) after action execution.
 
-        # Movement uses 0ms presentation by default - the existing
-        # AUTOPILOT_MOVE_INTERVAL and animation system handle pacing.
-        # ApproachStep can pass custom timing if dramatic pacing is needed.
-        presentation_ms = (
-            intent.presentation_ms if intent.presentation_ms is not None else 0
-        )
-
+        # Return duration_ms as duration_ms so TurnManager waits
+        # for the animation to complete before processing the next action.
         return GameActionResult(
-            succeeded=True, should_update_fov=True, presentation_ms=presentation_ms
+            succeeded=True, should_update_fov=True, duration_ms=duration_ms
         )

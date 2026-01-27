@@ -59,3 +59,29 @@ def test_radiation_sickness_damages_hp() -> None:
     starting_hp = actor.health.hp
     rad.apply_turn_effect(actor)
     assert actor.health.hp == starting_hp - 1
+
+
+def test_radiation_sickness_death_handling() -> None:
+    """Radiation sickness properly handles death visuals when it kills an actor.
+
+    Regression test: When radiation sickness damage kills an actor, the death
+    handling must run (glyph -> 'x', color -> DEAD). Previously, direct HP
+    manipulation bypassed Actor.take_damage() and left corpses with their
+    original glyph.
+    """
+    actor = make_actor()
+    rad = conditions.Sickness(sickness_type="Radiation Sickness")
+    actor.inventory.add_to_inventory(rad)
+
+    # Set HP to 1 so radiation damage will kill them
+    actor.health._hp = 1
+
+    rad.apply_turn_effect(actor)
+
+    # Actor should be dead
+    assert not actor.health.is_alive()
+
+    # Death visuals should have been applied (this was the bug)
+    assert actor.ch == "x", "Death handling should change glyph to 'x'"
+    assert actor.color == colors.DEAD, "Death handling should change color to DEAD"
+    assert not actor.blocks_movement, "Dead actors should not block movement"

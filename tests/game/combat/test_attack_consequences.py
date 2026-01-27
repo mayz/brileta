@@ -147,6 +147,51 @@ def test_self_injury_consequence() -> None:
     assert attacker.health.hp < initial_hp
 
 
+def test_self_injury_death_handling() -> None:
+    """Test that self_injury consequence properly handles death visuals.
+
+    Regression test: When an attacker fumbles and kills themselves with
+    self-injury damage, the death handling must run (glyph -> 'x', color -> DEAD).
+    Previously, direct HP manipulation bypassed Actor.take_damage() and left
+    corpses with their original glyph.
+    """
+    _controller, attacker, _defender, _bystander, intent = make_world()
+    executor = AttackExecutor()
+
+    # Set attacker HP low enough that self-injury will kill them
+    assert attacker.health is not None
+    attacker.health._hp = 1
+
+    # Force random to select self_injury (0.40 <= roll < 0.75)
+    with (
+        patch.object(AttackExecutor, "_validate_attack", return_value={}),
+        patch.object(
+            AttackExecutor,
+            "_execute_attack_roll",
+            return_value=D20ResolutionResult(outcome_tier=OutcomeTier.CRITICAL_FAILURE),
+        ),
+        patch.object(
+            AttackExecutor,
+            "_apply_combat_outcome",
+            return_value=0,
+        ),
+        patch.object(
+            AttackExecutor,
+            "_handle_post_attack_effects",
+        ),
+        patch.object(random, "random", return_value=0.50),  # Selects self_injury
+    ):
+        executor.execute(intent)
+
+    # Attacker should be dead
+    assert not attacker.health.is_alive()
+
+    # Death visuals should have been applied (this was the bug)
+    assert attacker.ch == "x", "Death handling should change glyph to 'x'"
+    assert attacker.color == colors.DEAD, "Death handling should change color to DEAD"
+    assert not attacker.blocks_movement, "Dead actors should not block movement"
+
+
 def test_off_balance_consequence() -> None:
     """Test that off_balance consequence applies OffBalanceEffect to attacker."""
     _controller, attacker, _defender, _bystander, intent = make_world()

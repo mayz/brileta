@@ -222,7 +222,7 @@ def test_get_combat_options_for_target_filters() -> None:
 
 def test_combat_options_ignore_dead_and_unseen() -> None:
     controller, player, melee_target, ranged_target, _pistol = _make_combat_world()
-    melee_target.health.hp = 0
+    melee_target.health._hp = 0
     controller.gw.game_map.visible[ranged_target.x, ranged_target.y] = False
     controller.gw.game_map.tiles[2, 0] = TileTypeID.WALL
 
@@ -822,7 +822,7 @@ def test_get_options_for_target_in_combat_shows_combat_actions() -> None:
 def test_attack_gateway_not_shown_for_dead_targets() -> None:
     """Attack gateway should not appear for dead targets."""
     controller, player, hostile, _, _ = _make_context_world()
-    hostile.health.hp = 0  # Kill the target
+    hostile.health._hp = 0  # Kill the target
     cast(Any, hostile.ai).disposition = Disposition.FRIENDLY
 
     disc = ActionDiscovery()
@@ -867,7 +867,7 @@ def test_get_options_for_target_outside_combat_shows_stunts() -> None:
 def test_stunts_not_shown_for_dead_targets() -> None:
     """Push and Trip should not appear for dead targets."""
     controller, player, hostile, _, _ = _make_context_world()
-    hostile.health.hp = 0  # Kill the target
+    hostile.health._hp = 0  # Kill the target
     cast(Any, hostile.ai).disposition = Disposition.FRIENDLY
 
     disc = ActionDiscovery()

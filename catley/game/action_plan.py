@@ -82,8 +82,8 @@ class IntentStep(Step):
     through a callback. When the plan executor reaches this step, it instantiates
     the intent with parameters from the current context and executes it.
 
-    Note: IntentStep has no presentation_ms field. The executor owns timing and
-    returns it in GameActionResult.presentation_ms. This keeps timing logic with
+    Note: IntentStep has no duration_ms field. The executor owns timing and
+    returns it in GameActionResult.duration_ms. This keeps timing logic with
     the action logic (e.g., critical hits might take longer).
 
     Attributes:

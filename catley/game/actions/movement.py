@@ -19,9 +19,9 @@ if TYPE_CHECKING:
 class MoveIntent(GameIntent):
     """Intent for moving an actor on the game map.
 
-    The optional `presentation_ms` parameter allows callers (like ApproachStep)
-    to specify custom timing for movement pacing. If not provided, the executor
-    uses a default value.
+    The optional `duration_ms` parameter allows callers to specify custom timing
+    for movement. This duration controls both animation speed and pacing before
+    the next action. If not provided, the executor uses AUTOPILOT_MOVE_DURATION_MS.
     """
 
     def __init__(
@@ -30,7 +30,7 @@ class MoveIntent(GameIntent):
         actor: Character,
         dx: int,
         dy: int,
-        presentation_ms: int | None = None,
+        duration_ms: int | None = None,
     ) -> None:
         super().__init__(controller, actor)
 
@@ -40,8 +40,9 @@ class MoveIntent(GameIntent):
         self.dx = dx
         self.dy = dy
 
-        # Optional presentation timing override. If None, executor uses default.
-        self.presentation_ms = presentation_ms
+        # Optional duration override. Controls both animation and pacing.
+        # If None, executor uses config.AUTOPILOT_MOVE_DURATION_MS.
+        self.duration_ms = duration_ms
 
     @property
     def newx(self) -> int:

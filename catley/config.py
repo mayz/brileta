@@ -225,7 +225,12 @@ MOUSE_HIGHLIGHT_ALPHA = Opacity(0.6)  # Alpha blending for mouse cursor highligh
 # Movement
 MOVEMENT_KEY_REPEAT_DELAY = 0.25
 MOVEMENT_KEY_REPEAT_INTERVAL = 0.07
-AUTOPILOT_MOVE_INTERVAL = 0.07  # Rate-limit autopilot to match held key speed
+
+# Unified action timing: duration controls both animation and pacing.
+# Duration for held-key movement (ms). Fast, responsive. Matches current feel.
+HELD_KEY_MOVE_DURATION_MS = 70
+# Duration for autopilot movement (ms). Slightly slower, can vary for approach.
+AUTOPILOT_MOVE_DURATION_MS = 100
 
 # =============================================================================
 # ASSET PATHS

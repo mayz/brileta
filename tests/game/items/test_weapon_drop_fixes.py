@@ -105,7 +105,7 @@ def test_dual_pane_pickup_from_dead_actor_clears_slot() -> None:
         starting_weapon=PISTOL_TYPE.create(),
     )
     controller.gw.add_actor(npc)
-    npc.health.hp = 0
+    npc.health._hp = 0
 
     pistol = npc.inventory.ready_slots[0]
     assert pistol is not None

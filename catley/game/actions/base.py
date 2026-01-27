@@ -49,7 +49,7 @@ class GameActionResult:
     what happens next, such as updating the player's field of view or
     triggering a new, chained action in response to a specific failure.
 
-    The `presentation_ms` field specifies how long the action's presentation
+    The `duration_ms` field specifies how long the action's presentation
     should take before the next action is processed. This creates readable
     sequencing where players can follow cause and effect. Executors own timing
     and return appropriate values based on action type.
@@ -61,9 +61,9 @@ class GameActionResult:
     block_reason: str | None = None
     consequences: list[Consequence] = field(default_factory=list)
 
-    # Presentation timing: how long (in milliseconds) before the next action
+    # Action duration: how long (in milliseconds) before the next action
     # should be processed. 0 means immediate (no delay).
-    presentation_ms: int = 0
+    duration_ms: int = 0
 
 
 class GameIntent:

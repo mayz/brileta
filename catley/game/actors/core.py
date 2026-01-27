@@ -228,7 +228,11 @@ class Actor:
         return f"{self.__class__.__name__}({fields})"
 
     def move(
-        self, dx: TileCoord, dy: TileCoord, controller: Controller | None = None
+        self,
+        dx: TileCoord,
+        dy: TileCoord,
+        controller: Controller | None = None,
+        duration: float = 0.1,
     ) -> None:
         """Move the actor and automatically create movement animation.
 
@@ -236,6 +240,7 @@ class Actor:
             dx: Change in x coordinate
             dy: Change in y coordinate
             controller: Controller to queue animation with (if available)
+            duration: Animation duration in seconds. Defaults to 0.1s.
         """
         # Store old position for animation
         old_x, old_y = self.x, self.y
@@ -256,7 +261,7 @@ class Actor:
         if controller and hasattr(controller, "animation_manager"):
             start_pos = (float(old_x), float(old_y))
             end_pos = (float(self.x), float(self.y))
-            animation = MoveAnimation(self, start_pos, end_pos)
+            animation = MoveAnimation(self, start_pos, end_pos, duration=duration)
             controller.animation_manager.add(animation)
 
     def teleport(self, x: WorldTileCoord, y: WorldTileCoord) -> None:
@@ -292,7 +297,7 @@ class Actor:
 
             if damage_type == "radiation":
                 initial_hp = self.health.hp
-                self.health.take_damage(amount, damage_type="radiation")
+                self.health._apply_damage(amount)
 
                 actual_damage = initial_hp - self.health.hp
                 if isinstance(self.inventory, CharacterInventory) and actual_damage > 0:
@@ -307,7 +312,7 @@ class Actor:
                                 break
             else:
                 # Delegate health math to the health component.
-                self.health.take_damage(amount)
+                self.health._apply_damage(amount)
 
             # Emit floating text: skull for lethal damage, number otherwise
             if actual_damage > 0:
@@ -332,6 +337,13 @@ class Actor:
                 self.ch = "x"
                 self.color = colors.DEAD
                 self.blocks_movement = False
+
+                # Release animation control and snap render position to logical.
+                # This prevents corpses from sliding if killed mid-animation.
+                self._animation_controlled = False
+                self.render_x = float(self.x)
+                self.render_y = float(self.y)
+
                 # If this actor was selected, deselect it.
                 if self.gw and self.gw.selected_actor == self:
                     self.gw.selected_actor = None
@@ -356,9 +368,9 @@ class Actor:
 
         if amount is None:
             # Full restore
-            self.health.hp = self.health.max_hp
+            self.health.heal_to_full()
         else:
-            self.health.heal(amount)
+            self.health._apply_healing(amount)
 
         healed = self.health.hp - before
 

@@ -164,7 +164,7 @@ def test_actor_bumping_dead_actor_does_nothing() -> None:
         "Dead NPC",
         game_world=cast(GameWorld, controller.gw),
     )
-    dead_npc.health.hp = 0
+    dead_npc.health._hp = 0
     controller.gw.add_actor(dead_npc)
 
     with patch(

@@ -17,6 +17,7 @@ class DummyActor:
         self.render_x = float(x)
         self.render_y = float(y)
         self._animation_controlled = False
+        self.health: Any = None  # Optional health component for death tests
 
 
 class TestAnimation:
@@ -44,12 +45,32 @@ class TestMoveAnimation:
         assert animation.start_y == 4.0
         assert animation.end_x == 7.0
         assert animation.end_y == 8.0
-        assert animation.duration == 0.15
+        assert animation.duration == 0.15  # Default duration
         assert animation.elapsed_time == 0.0
 
         # Actor should be set to start position
         assert actor.render_x == 3.0
         assert actor.render_y == 4.0
+
+    def test_custom_duration(self) -> None:
+        """MoveAnimation accepts custom duration parameter."""
+        actor = DummyActor(0, 0)
+
+        # Test with 70ms duration (held-key movement)
+        animation = MoveAnimation(
+            cast(Any, actor), (0.0, 0.0), (10.0, 10.0), duration=0.07
+        )
+        assert animation.duration == 0.07
+
+        # At 50% completion (0.035 seconds)
+        finished = animation.update(FixedTimestep(0.035))
+        assert not finished
+        assert actor.render_x == pytest.approx(5.0)
+
+        # Complete the animation
+        finished = animation.update(FixedTimestep(0.035))
+        assert finished
+        assert actor.render_x == 10.0
 
     def test_animation_progression(self) -> None:
         """Animation progresses correctly over time."""
@@ -223,6 +244,47 @@ def manager() -> AnimationManager:
     return AnimationManager()
 
 
+class TestMoveAnimationInterruption:
+    """Tests for animation self-termination when actor dies."""
+
+    def test_animation_terminates_when_actor_dies(self) -> None:
+        """Animation returns finished=True if actor dies mid-animation.
+
+        This prevents corpses from sliding to their destination when an
+        NPC is killed while their move animation is in progress.
+        """
+        from catley.game.actors.components import HealthComponent, StatsComponent
+
+        # Create an actor with health
+        actor = DummyActor(0, 0)
+        stats = StatsComponent(toughness=10)
+        actor.health = HealthComponent(stats)
+
+        animation = MoveAnimation(cast(Any, actor), (0.0, 0.0), (10.0, 10.0))
+
+        # Verify animation is controlling the actor
+        assert actor._animation_controlled
+
+        # Partial animation progress
+        finished = animation.update(FixedTimestep(0.05))
+        assert not finished
+        assert actor.render_x > 0.0  # Animation has moved render position
+
+        # Simulate actor death: kill them and snap render position
+        actor.health._hp = 0
+        actor._animation_controlled = False
+        actor.render_x = float(actor.x)
+        actor.render_y = float(actor.y)
+
+        # Animation should terminate immediately on next update
+        finished = animation.update(FixedTimestep(0.01))
+        assert finished
+
+        # Render position should remain at snapped position (not moved by animation)
+        assert actor.render_x == 0.0
+        assert actor.render_y == 0.0
+
+
 class TestAnimationManagerInterruption:
     """Tests for the new interruption and snap methods."""
 
@@ -279,6 +341,10 @@ class TestAnimationManagerInterruption:
         assert remaining.actor is npc_actor
         assert not player_actor._animation_controlled
         assert npc_actor._animation_controlled
+
+        # Player should be snapped to end position
+        assert player_actor.render_x == 1.0
+        assert player_actor.render_y == 1.0
 
     def test_interrupt_player_animations_on_empty_queue(
         self, manager: AnimationManager

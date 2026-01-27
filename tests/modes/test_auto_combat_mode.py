@@ -351,8 +351,8 @@ def test_multiple_events_same_frame_handled() -> None:
     controller.gw.game_map.visible[npc2.x, npc2.y] = True
 
     # Give NPCs enough HP to survive fist attacks
-    npc.health.hp = 100
-    npc2.health.hp = 100
+    npc.health._hp = 100
+    npc2.health._hp = 100
 
     assert not controller.is_combat_mode()
 
@@ -437,7 +437,7 @@ def test_has_visible_hostiles_ignores_dead_hostiles() -> None:
 
     # Make the NPC visible and then kill them
     controller.gw.game_map.visible[npc.x, npc.y] = True
-    npc.health.hp = 0
+    npc.health._hp = 0
 
     assert npc.ai.disposition == Disposition.HOSTILE
     assert not npc.health.is_alive()
@@ -464,7 +464,7 @@ def test_combat_auto_exits_when_all_enemies_dead() -> None:
     assert controller.is_combat_mode()
 
     # Kill the NPC (trigger on_actor_death)
-    npc.health.hp = 0
+    npc.health._hp = 0
     controller.combat_mode.on_actor_death(npc)
 
     # Combat mode should have auto-exited
@@ -495,7 +495,7 @@ def test_combat_ended_event_published_on_auto_exit() -> None:
     controller.enter_combat_mode()
 
     # Kill the NPC
-    npc.health.hp = 0
+    npc.health._hp = 0
     controller.combat_mode.on_actor_death(npc)
 
     # Verify event was published with correct reason

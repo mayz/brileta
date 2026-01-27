@@ -178,7 +178,7 @@ class SleepExecutor(ActionExecutor):
             return GameActionResult(succeeded=False)
 
         if intent.actor.health:
-            intent.actor.health.hp = intent.actor.health.max_hp
+            intent.actor.health.heal_to_full()
             publish_event(MessageEvent("Restored all HP", colors.GREEN))
 
         if intent.actor.conditions:
@@ -205,7 +205,7 @@ class ComfortableSleepExecutor(ActionExecutor):
             return GameActionResult(succeeded=False)
 
         if intent.actor.health:
-            intent.actor.health.hp = intent.actor.health.max_hp
+            intent.actor.health.heal_to_full()
             publish_event(MessageEvent("Restored all HP", colors.GREEN))
 
         if intent.actor.conditions:

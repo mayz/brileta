@@ -327,8 +327,8 @@ def test_environmental_damage_death_handling() -> None:
     subscribe_to_event(ActorDeathEvent, lambda e: death_events.append(e))
 
     # Reduce target health to make them die from environmental damage
-    target1.health.hp = 2  # Will die from 3 damage
-    target2.health.hp = 10  # Will survive
+    target1.health._hp = 2  # Will die from 3 damage
+    target2.health._hp = 10  # Will survive
 
     executor.execute(intent)
 

@@ -43,7 +43,7 @@ class TestActorHeal:
     def test_heal_specific_amount(self) -> None:
         """heal(amount) should heal the specified amount."""
         actor = make_character()
-        actor.health.hp = 5
+        actor.health._hp = 5
 
         healed = actor.heal(3)
 
@@ -53,7 +53,7 @@ class TestActorHeal:
     def test_heal_returns_actual_amount_healed(self) -> None:
         """heal() should return actual amount healed when capped at max."""
         actor = make_character()
-        actor.health.hp = actor.health.max_hp - 2  # 2 HP below max
+        actor.health._hp = actor.health.max_hp - 2  # 2 HP below max
 
         healed = actor.heal(10)  # Try to heal 10
 
@@ -63,7 +63,7 @@ class TestActorHeal:
     def test_heal_none_restores_to_full(self) -> None:
         """heal(None) should restore to full HP."""
         actor = make_character()
-        actor.health.hp = 1
+        actor.health._hp = 1
 
         healed = actor.heal(None)
 
@@ -73,7 +73,7 @@ class TestActorHeal:
     def test_heal_no_argument_restores_to_full(self) -> None:
         """heal() with no argument should restore to full HP."""
         actor = make_character()
-        actor.health.hp = 1
+        actor.health._hp = 1
 
         actor.heal()
 
@@ -107,7 +107,7 @@ class TestActorHeal:
     def test_heal_emits_floating_text(self) -> None:
         """heal() should emit a FloatingTextEvent with positive valence."""
         actor = make_character()
-        actor.health.hp = 5
+        actor.health._hp = 5
 
         with patch("catley.game.actors.core.publish_event") as mock_publish:
             actor.heal(3)
@@ -122,7 +122,7 @@ class TestActorHeal:
     def test_heal_triggers_green_flash(self) -> None:
         """heal() should trigger a green flash on visual effects."""
         actor = make_character()
-        actor.health.hp = 5
+        actor.health._hp = 5
 
         with patch("catley.game.actors.core.publish_event"):
             actor.heal(3)
@@ -134,7 +134,7 @@ class TestActorHeal:
     def test_heal_full_restore_emits_correct_amount(self) -> None:
         """Full restore heal should emit floating text with actual amount healed."""
         actor = make_character()
-        actor.health.hp = 3
+        actor.health._hp = 3
         expected_heal = actor.health.max_hp - 3
 
         with patch("catley.game.actors.core.publish_event") as mock_publish:

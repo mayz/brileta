@@ -20,7 +20,7 @@ Key Principles:
 - Action execution is distributed smoothly over frames for visual appeal
 
 Presentation Timing:
-- Actions return `presentation_ms` in their GameActionResult
+- Actions return `duration_ms` in their GameActionResult
 - The TurnManager delays the next action until presentation completes
 - This creates readable sequencing where players can follow cause and effect
 """
@@ -88,7 +88,7 @@ class TurnManager:
         # to wait before processing the next action. This creates readable
         # sequencing where players can follow cause and effect.
         self._last_action_completed_time: float = 0.0
-        self._pending_presentation_ms: int = 0
+        self._pending_duration_ms: int = 0
 
     def _update_energy_actors_cache(self) -> None:
         """Update cached list of actors with energy components for performance.
@@ -110,26 +110,26 @@ class TurnManager:
         """Check if the current action's presentation time has elapsed.
 
         Returns True if either:
-        - No presentation is pending (presentation_ms was 0)
+        - No presentation is pending (duration_ms was 0)
         - Enough time has passed since the last action completed
 
         This method is non-blocking and should be called before processing
         the next action to create readable action sequencing.
         """
-        if self._pending_presentation_ms == 0:
+        if self._pending_duration_ms == 0:
             return True
 
         elapsed_ms = (time.perf_counter() - self._last_action_completed_time) * 1000
-        return elapsed_ms >= self._pending_presentation_ms
+        return elapsed_ms >= self._pending_duration_ms
 
     def _record_action_timing(self, result: GameActionResult) -> None:
         """Record timing after an action completes for presentation delay.
 
         Args:
-            result: The GameActionResult containing presentation_ms.
+            result: The GameActionResult containing duration_ms.
         """
         self._last_action_completed_time = time.perf_counter()
-        self._pending_presentation_ms = result.presentation_ms
+        self._pending_duration_ms = result.duration_ms
 
     def clear_presentation_timing(self) -> None:
         """Clear any pending presentation timing.
@@ -137,7 +137,7 @@ class TurnManager:
         Call this when manually interrupting action flow (e.g., player
         cancels a plan or starts a new action while presenting).
         """
-        self._pending_presentation_ms = 0
+        self._pending_duration_ms = 0
 
     def on_player_action(self) -> None:
         """Handle per-turn updates when player acts.

@@ -43,7 +43,7 @@ def test_remove_conditions_by_type() -> None:
 
 def test_consumable_effect_batch_removal() -> None:
     controller, actor = make_world()
-    actor.health.hp = actor.health.max_hp - 5
+    actor.health._hp = actor.health.max_hp - 5
     actor.conditions.add_condition(conditions.Exhaustion())
     actor.conditions.add_condition(conditions.Exhaustion())
 
