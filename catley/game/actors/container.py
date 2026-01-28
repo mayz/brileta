@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from catley import colors
+from catley.game.countables import get_countable_display_name
 from catley.types import WorldTileCoord
 
 from .components import ContainerStorage
@@ -153,8 +154,28 @@ class ItemPile(Actor):
     inventory: ContainerStorage
 
     def is_empty(self) -> bool:
-        """Check if this pile has no items left."""
-        return len(self.inventory.get_items()) == 0
+        """Check if this pile has no items and no countables."""
+        return len(self.inventory.get_items()) == 0 and not self.inventory.countables
+
+    @property
+    def display_name(self) -> str:
+        """Get a descriptive name for this item pile.
+
+        Includes both items and countables in the description.
+        """
+        item_count = len(self.inventory.get_items())
+        countable_parts = [
+            get_countable_display_name(ct, qty)
+            for ct, qty in self.inventory.countables.items()
+        ]
+
+        if item_count and countable_parts:
+            return f"Items and {', '.join(countable_parts)}"
+        if countable_parts:
+            return ", ".join(countable_parts)
+        if item_count == 1:
+            return self.inventory.get_items()[0].name
+        return f"Item pile ({item_count} items)"
 
 
 # === Factory Functions ===

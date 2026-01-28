@@ -912,14 +912,15 @@ class WorldView(View):
         if fm is None:
             return
 
-        assert self.controller.coordinate_converter is not None
-
+        # Use graphics.pixel_to_tile which correctly handles letterboxing offsets,
+        # rather than coordinate_converter.pixel_to_tile which assumes no offset.
         px_x: PixelCoord = fm.cursor_manager.mouse_pixel_x
         px_y: PixelCoord = fm.cursor_manager.mouse_pixel_y
-        root_tile_pos: RootConsoleTilePos = (
-            self.controller.coordinate_converter.pixel_to_tile(px_x, px_y)
+        root_tile_pos: RootConsoleTilePos = self.controller.graphics.pixel_to_tile(
+            px_x, px_y
         )
         world_tile_pos = fm.get_world_coords_from_root_tile_coords(root_tile_pos)
+
         self.controller.gw.mouse_tile_location_on_map = world_tile_pos
 
     @record_time_live_variable("cpu.render.light_overlay_ms")

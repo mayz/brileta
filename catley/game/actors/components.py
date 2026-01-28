@@ -53,6 +53,7 @@ from catley import colors
 from catley.config import DEFAULT_ACTOR_SPEED
 from catley.constants.movement import MovementConstants
 from catley.events import MessageEvent, publish_event
+from catley.game.countables import CountableType
 from catley.game.enums import ItemSize
 from catley.game.items.item_core import Item
 
@@ -148,6 +149,9 @@ class InventoryComponent:
     (with stats-based capacity, equipment slots, conditions) and simple container
     storage (fixed capacity, items only) can implement.
 
+    Also provides countable storage for fungible items like coins. Countables
+    are weightless and don't consume inventory slots.
+
     Subclasses:
         CharacterInventory: Stats-backed inventory with equipment slots and conditions
         ContainerStorage: Fixed-capacity simple item storage for containers
@@ -156,6 +160,7 @@ class InventoryComponent:
     def __init__(self, actor: Actor | None = None) -> None:
         self.actor = actor  # Back-reference for status effects
         self.revision = 0  # Revision counter for UI caching
+        self._countables: dict[CountableType, int] = {}
 
     def _increment_revision(self) -> None:
         """Bump the revision to signal a state change."""
@@ -193,6 +198,83 @@ class InventoryComponent:
     def __contains__(self, item: object) -> bool:
         """Check if item is in this inventory. Subclasses must implement."""
         raise NotImplementedError
+
+    # === Countable Storage Methods ===
+
+    def get_countable(self, countable_type: CountableType) -> int:
+        """Get quantity of a countable. Returns 0 if none.
+
+        Args:
+            countable_type: The type of countable to check.
+
+        Returns:
+            The quantity owned, or 0 if none.
+        """
+        return self._countables.get(countable_type, 0)
+
+    def add_countable(self, countable_type: CountableType, amount: int) -> None:
+        """Add countables. Always succeeds (weightless).
+
+        Args:
+            countable_type: The type of countable to add.
+            amount: The quantity to add. Non-positive values are ignored.
+        """
+        if amount <= 0:
+            return
+        current = self._countables.get(countable_type, 0)
+        self._countables[countable_type] = current + amount
+        self._increment_revision()
+
+    def remove_countable(self, countable_type: CountableType, amount: int) -> bool:
+        """Remove countables. Returns False if insufficient.
+
+        Args:
+            countable_type: The type of countable to remove.
+            amount: The quantity to remove.
+
+        Returns:
+            True if successfully removed, False if insufficient quantity.
+        """
+        current = self._countables.get(countable_type, 0)
+        if current < amount:
+            return False
+        new_amount = current - amount
+        if new_amount == 0:
+            del self._countables[countable_type]
+        else:
+            self._countables[countable_type] = new_amount
+        self._increment_revision()
+        return True
+
+    def transfer_countable_to(
+        self,
+        target: InventoryComponent,
+        countable_type: CountableType,
+        amount: int,
+    ) -> bool:
+        """Transfer countables to another inventory.
+
+        Args:
+            target: The inventory to transfer to.
+            countable_type: The type of countable to transfer.
+            amount: The quantity to transfer.
+
+        Returns:
+            True if transfer succeeded, False if source has insufficient quantity.
+        """
+        if not self.remove_countable(countable_type, amount):
+            return False
+        target.add_countable(countable_type, amount)
+        return True
+
+    @property
+    def countables(self) -> dict[CountableType, int]:
+        """Read-only view of countables.
+
+        Returns:
+            A copy of the countables dictionary.
+        """
+        return dict(self._countables)
 
 
 class ContainerStorage(InventoryComponent):

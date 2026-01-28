@@ -18,6 +18,7 @@ from catley import colors
 from catley.backends.pillow.canvas import PillowImageCanvas
 from catley.events import MessageEvent, publish_event
 from catley.game.actors import Actor, Character, Condition, ItemPile
+from catley.game.countables import CountableType, get_countable_definition
 from catley.game.enums import ItemCategory, ItemSize
 from catley.game.items.item_core import Item
 from catley.util.coordinates import WorldTilePos
@@ -31,6 +32,44 @@ from catley.view.ui.selectable_list import (
 
 if TYPE_CHECKING:
     from catley.controller import Controller
+
+
+def group_items_for_display(items: list[Item]) -> list[tuple[Item, int]]:
+    """Group stackable (Tiny) items by ItemType for display.
+
+    Returns a list of (representative_item, count) tuples.
+    Non-tiny items always have count=1.
+
+    This is a UI-only transformation - items remain individual objects in storage.
+    It enables compact display like "Shotgun Shell x 5" while preserving the
+    ability to drop/transfer items individually.
+
+    Args:
+        items: List of items to group.
+
+    Returns:
+        List of (item, count) tuples where item is a representative of its group.
+    """
+    groups: list[tuple[Item, int]] = []
+
+    for item in items:
+        # Only tiny items can stack
+        if item.size != ItemSize.TINY:
+            groups.append((item, 1))
+            continue
+
+        # Check if we can add to existing group (same ItemType)
+        found = False
+        for i, (rep, count) in enumerate(groups):
+            if rep.item_type is item.item_type:
+                groups[i] = (rep, count + 1)
+                found = True
+                break
+
+        if not found:
+            groups.append((item, 1))
+
+    return groups
 
 
 def _get_category_prefix(item: Item) -> tuple[str, colors.Color | None]:
@@ -70,6 +109,7 @@ class _MenuKeys:
     these as value patterns (comparison) rather than capture patterns.
     """
 
+    KEY_A: Final = tcod.event.KeySym(ord("a"))
     KEY_D: Final = tcod.event.KeySym(ord("d"))
     KEY_I: Final = tcod.event.KeySym(ord("i"))
     KEY_J: Final = tcod.event.KeySym(ord("j"))
@@ -167,11 +207,11 @@ class DualPaneMenu(Menu):
         self.right_options: list[MenuOption] = []
 
         # Detail panel state
-        self.detail_item: Item | Condition | None = None
+        self.detail_item: Item | Condition | CountableType | None = None
         # Scrollable panel for item details (created in _calculate_dimensions)
         self._detail_panel: ScrollableTextPanel | None = None
         # Track last rendered detail item to avoid resetting scroll unnecessarily
-        self._last_rendered_detail_item: Item | Condition | None = None
+        self._last_rendered_detail_item: Item | Condition | CountableType | None = None
         # Cached detail data: fixed header lines, stats line (description is in panel)
         self._detail_header: list[str] = []
         self._detail_stats: str | None = None
@@ -196,35 +236,74 @@ class DualPaneMenu(Menu):
         self._update_detail_from_cursor()
 
     def _populate_left_pane(self) -> None:
-        """Populate left pane with player inventory items."""
+        """Populate left pane with player inventory items.
+
+        Uses item grouping for Tiny stored items to display stacked with "x N" suffix.
+        Equipment slots are always shown individually (even when empty).
+        """
         self.left_options.clear()
 
         # Collect equipped items separately from stored items
         # Equipment slots are always shown (even when empty/None)
-        equipped_items: list[tuple[Item | Condition | None, str]] = []
+        equipped_items: list[tuple[Item | Condition | None, str, int]] = []
 
         # Add all ready slots (even if empty)
         for slot_index in range(len(self.inventory.ready_slots)):
             equipped_item = self.inventory.ready_slots[slot_index]
-            equipped_items.append((equipped_item, f"slot:{slot_index}"))
+            equipped_items.append((equipped_item, f"slot:{slot_index}", 1))
 
         # Add outfit slot (even if empty)
         if self.inventory.equipped_outfit is not None:
             outfit_item, _ = self.inventory.equipped_outfit
-            equipped_items.append((outfit_item, "outfit"))
+            equipped_items.append((outfit_item, "outfit", 1))
         else:
-            equipped_items.append((None, "outfit"))
+            equipped_items.append((None, "outfit", 1))
 
-        # Add stored items as tuples with "stored" status
-        stored_items: list[tuple[Item | Condition, str]] = [
-            (item, "stored") for item in self.inventory._stored_items
+        # Group stored items for stacked display (Tiny items only)
+        # First separate items from conditions since conditions don't stack
+        stored_items_only = [
+            item for item in self.inventory._stored_items if isinstance(item, Item)
         ]
+        stored_conditions = [
+            cond for cond in self.inventory._stored_items if isinstance(cond, Condition)
+        ]
+
+        # Group items (tiny items will be combined)
+        grouped_items = group_items_for_display(stored_items_only)
+
+        # Build stored items list with count: (entity, status, count)
+        stored_items: list[tuple[Item | Condition, str, int]] = [
+            (item, "stored", count) for item, count in grouped_items
+        ]
+        # Conditions always have count 1
+        stored_items.extend([(cond, "stored", 1) for cond in stored_conditions])
+
+        # Add countables (coins, etc.) at the top of stored section
+        for countable_type in CountableType:
+            quantity = self.inventory.get_countable(countable_type)
+            if quantity > 0:
+                defn = get_countable_definition(countable_type)
+                display_name = defn.plural_name if quantity > 1 else defn.name
+                self.left_options.append(
+                    MenuOption(
+                        key=None,
+                        text=f"{quantity} {display_name}",
+                        action=None,  # Drop via D key handler
+                        enabled=True,
+                        color=colors.WHITE,
+                        data=countable_type,
+                        prefix_segments=[
+                            ("      ", colors.WHITE),  # Alignment with equipped slots
+                            (f"{defn.glyph} ", defn.color),
+                        ],
+                    )
+                )
 
         # Stored items first, then equipped items at the bottom
         # (Visual separator is drawn in _draw_left_pane_items, not as a list item)
         all_items_to_display = stored_items + equipped_items
 
-        for entity, item_status in all_items_to_display:
+        for entity, item_status, count in all_items_to_display:
             # Handle empty equipment slots (None)
             if entity is None:
                 prefix_segments: list[tuple[str, colors.Color]] = []
@@ -266,10 +345,15 @@ class DualPaneMenu(Menu):
                 if cat_prefix and cat_color:
                     prefix_segments.append((cat_prefix, cat_color))
 
+                # Add stack count suffix for grouped items
+                display_text = item.name
+                if count > 1:
+                    display_text = f"{item.name} x {count}"
+
                 self.left_options.append(
                     MenuOption(
                         key=None,
-                        text=item.name,
+                        text=display_text,
                         action=functools.partial(self._equip_item, item),
                         enabled=True,
                         color=colors.WHITE,
@@ -298,7 +382,11 @@ class DualPaneMenu(Menu):
                 )
 
     def _populate_right_pane(self) -> None:
-        """Populate right pane from source (container/ground/None)."""
+        """Populate right pane from source (container/ground/None).
+
+        Uses item grouping for Tiny items to display stacked with "x N" suffix.
+        Also displays countables from the source.
+        """
         self.right_options.clear()
 
         if self.source is None:
@@ -306,8 +394,9 @@ class DualPaneMenu(Menu):
             return
 
         items = self._get_items_from_source()
+        countables = self._get_countables_from_source()
 
-        if not items:
+        if not items and not countables:
             self.right_options.append(
                 MenuOption(
                     key=None,
@@ -319,17 +408,46 @@ class DualPaneMenu(Menu):
             )
             return
 
-        for item in items:
+        # Add countables first
+        for countable_type, quantity in countables.items():
+            if quantity > 0:
+                defn = get_countable_definition(countable_type)
+                display_name = defn.plural_name if quantity > 1 else defn.name
+                self.right_options.append(
+                    MenuOption(
+                        key=None,
+                        text=f"{quantity} {display_name}",
+                        action=functools.partial(
+                            self._transfer_countable_to_inventory, countable_type
+                        ),
+                        enabled=True,
+                        color=colors.WHITE,
+                        data=countable_type,
+                        prefix_segments=[
+                            (f"{defn.glyph} ", defn.color),
+                        ],
+                    )
+                )
+
+        # Group tiny items for stacked display
+        grouped_items = group_items_for_display(items)
+
+        for item, count in grouped_items:
             # Build prefix segments with category prefix
             prefix_segments: list[tuple[str, colors.Color]] = []
             cat_prefix, cat_color = _get_category_prefix(item)
             if cat_prefix and cat_color:
                 prefix_segments.append((cat_prefix, cat_color))
 
+            # Add stack count suffix for grouped items
+            display_text = item.name
+            if count > 1:
+                display_text = f"{item.name} x {count}"
+
             self.right_options.append(
                 MenuOption(
                     key=None,
-                    text=item.name,
+                    text=display_text,
                     action=functools.partial(self._transfer_to_inventory, item),
                     enabled=True,
                     color=colors.WHITE,
@@ -353,6 +471,26 @@ class DualPaneMenu(Menu):
         # ExternalInventory - position-based ground items
         world_x, world_y = self.source.position
         return self.controller.gw.get_pickable_items_at_location(world_x, world_y)
+
+    def _get_countables_from_source(self) -> dict[CountableType, int]:
+        """Get countables from the right pane source."""
+        if self.source is None:
+            return {}
+
+        if isinstance(self.source, ActorInventorySource):
+            inv = self.source.actor.inventory
+            if inv is None:
+                return {}
+            return inv.countables
+
+        # ExternalInventory - check for item piles at location
+        world_x, world_y = self.source.position
+        for actor in self.controller.gw.actor_spatial_index.get_at_point(
+            world_x, world_y
+        ):
+            if isinstance(actor, ItemPile):
+                return actor.inventory.countables
+        return {}
 
     def _update_detail_from_cursor(self) -> None:
         """Update detail_item based on current cursor position."""
@@ -537,12 +675,9 @@ class DualPaneMenu(Menu):
         elif self.source is not None:
             # ExternalInventory - position-based ground items
             world_x, world_y = self.source.position
-            actors_here = [
-                a
-                for a in self.controller.gw.actors
-                if a.x == world_x and a.y == world_y
-            ]
-            for actor in actors_here:
+            for actor in self.controller.gw.actor_spatial_index.get_at_point(
+                world_x, world_y
+            ):
                 removed = False
 
                 # Handle item piles (ContainerStorage)
@@ -603,6 +738,130 @@ class DualPaneMenu(Menu):
             new_index = self._find_item_index(item, PaneId.LEFT)
             if new_index is not None:
                 self.left_cursor = new_index
+            self._ensure_valid_cursor(PaneId.LEFT)
+
+        self._update_detail_from_cursor()
+        return False  # Keep menu open
+
+    def _transfer_all_to_inventory(self, item: Item) -> bool:
+        """Transfer all items of the same ItemType from source to player inventory.
+
+        Returns False to keep menu open.
+        """
+        player = self.controller.gw.player
+
+        # Find all items of the same type from source
+        source_items = self._get_items_from_source()
+        items_to_transfer = [i for i in source_items if i.item_type is item.item_type]
+
+        if not items_to_transfer:
+            return False
+
+        # Check capacity
+        if not player.inventory.can_add_voluntary_item(items_to_transfer[0]):
+            publish_event(MessageEvent("Your inventory is full!", colors.RED))
+            return False
+
+        transferred_count = 0
+        for transfer_item in items_to_transfer:
+            if not player.inventory.can_add_voluntary_item(transfer_item):
+                break  # Stop when full
+
+            # Remove from source
+            if isinstance(self.source, ActorInventorySource):
+                inv = self.source.actor.inventory
+                if inv is not None:
+                    inv.remove_item(transfer_item)
+            elif self.source is not None:
+                world_x, world_y = self.source.position
+                for actor in self.controller.gw.actor_spatial_index.get_at_point(
+                    world_x, world_y
+                ):
+                    if isinstance(actor, ItemPile):
+                        removed = actor.inventory.remove_item(transfer_item)
+                        if removed and actor.is_empty():
+                            self.controller.gw.remove_actor(actor)
+                        break
+
+            player.inventory.add_to_inventory(transfer_item)
+            transferred_count += 1
+
+        if transferred_count == 1:
+            publish_event(MessageEvent(f"You pick up {item.name}.", colors.WHITE))
+        else:
+            publish_event(
+                MessageEvent(
+                    f"You pick up {transferred_count} {item.name}.", colors.WHITE
+                )
+            )
+
+        self._populate_left_pane()
+        self._populate_right_pane()
+
+        has_selectable_right = any(opt.enabled for opt in self.right_options)
+
+        if has_selectable_right:
+            self._ensure_valid_cursor(PaneId.RIGHT)
+        else:
+            self.active_pane = PaneId.LEFT
+            self._ensure_valid_cursor(PaneId.LEFT)
+
+        self._update_detail_from_cursor()
+        return False  # Keep menu open
+
+    def _transfer_countable_to_inventory(self, countable_type: CountableType) -> bool:
+        """Transfer all countables of a type from source to player inventory.
+
+        Returns False to keep menu open.
+        """
+        player = self.controller.gw.player
+
+        # Get quantity from source
+        if isinstance(self.source, ActorInventorySource):
+            inv = self.source.actor.inventory
+            if inv is None:
+                return False
+            quantity = inv.get_countable(countable_type)
+            if quantity <= 0:
+                return False
+            inv.remove_countable(countable_type, quantity)
+        elif self.source is not None:
+            # ExternalInventory - position-based ground items
+            world_x, world_y = self.source.position
+            quantity = 0
+            for actor in self.controller.gw.actor_spatial_index.get_at_point(
+                world_x, world_y
+            ):
+                if isinstance(actor, ItemPile):
+                    quantity = actor.inventory.get_countable(countable_type)
+                    if quantity > 0:
+                        actor.inventory.remove_countable(countable_type, quantity)
+                        if actor.is_empty():
+                            self.controller.gw.remove_actor(actor)
+                    break
+            if quantity <= 0:
+                return False
+        else:
+            return False
+
+        # Add to player inventory
+        player.inventory.add_countable(countable_type, quantity)
+
+        defn = get_countable_definition(countable_type)
+        name = defn.plural_name if quantity > 1 else defn.name
+        publish_event(MessageEvent(f"You pick up {quantity} {name}.", colors.WHITE))
+
+        # Refresh both panes
+        self._populate_left_pane()
+        self._populate_right_pane()
+
+        # Check if right pane still has selectable items
+        has_selectable_right = any(opt.enabled for opt in self.right_options)
+
+        if has_selectable_right:
+            self._ensure_valid_cursor(PaneId.RIGHT)
+        else:
+            self.active_pane = PaneId.LEFT
             self._ensure_valid_cursor(PaneId.LEFT)
 
         self._update_detail_from_cursor()
@@ -677,6 +936,137 @@ class DualPaneMenu(Menu):
         self._update_detail_from_cursor()
         return False  # Keep menu open
 
+    def _transfer_all_to_container(self, item: Item) -> bool:
+        """Transfer all items of the same ItemType from inventory to container/ground.
+
+        Returns False to keep menu open.
+        """
+        if self.source is None:
+            return False
+
+        player = self.controller.gw.player
+
+        # Find all items of the same type
+        items_to_transfer = [
+            i for i in player.inventory.get_items() if i.item_type is item.item_type
+        ]
+
+        if not items_to_transfer:
+            return False
+
+        # For ActorInventorySource, check capacity
+        if isinstance(self.source, ActorInventorySource):
+            inv = self.source.actor.inventory
+            if inv is not None:
+                available = inv.capacity - len(inv)
+                if available < len(items_to_transfer):
+                    publish_event(MessageEvent("Container is full!", colors.RED))
+                    return False
+
+        # Unequip and transfer each item
+        for transfer_item in items_to_transfer:
+            for i, equipped_item in enumerate(player.inventory.ready_slots):
+                if equipped_item == transfer_item:
+                    player.inventory.unequip_slot(i)
+                    break
+            if player.inventory.equipped_outfit is not None:
+                outfit_item, _ = player.inventory.equipped_outfit
+                if outfit_item == transfer_item:
+                    player.inventory.unequip_outfit()
+
+            player.inventory.remove_from_inventory(transfer_item)
+
+            if isinstance(self.source, ActorInventorySource):
+                inv = self.source.actor.inventory
+                if inv is not None:
+                    inv.add_item(transfer_item)
+            else:
+                world_x, world_y = self.source.position
+                self.controller.gw.spawn_ground_item(transfer_item, world_x, world_y)
+
+        if len(items_to_transfer) == 1:
+            publish_event(
+                MessageEvent(
+                    f"You put {items_to_transfer[0].name} in {self.source.label}.",
+                    colors.WHITE,
+                )
+            )
+        else:
+            count = len(items_to_transfer)
+            msg = f"You put {count} {item.name} in {self.source.label}."
+            publish_event(MessageEvent(msg, colors.WHITE))
+
+        self._populate_left_pane()
+        self._populate_right_pane()
+
+        has_selectable_left = any(opt.enabled for opt in self.left_options)
+
+        if has_selectable_left:
+            self._ensure_valid_cursor(PaneId.LEFT)
+        else:
+            self.active_pane = PaneId.RIGHT
+            self._ensure_valid_cursor(PaneId.RIGHT)
+
+        self._update_detail_from_cursor()
+        return False  # Keep menu open
+
+    def _transfer_countable_to_ground(self, countable_type: CountableType) -> bool:
+        """Transfer all countables of a type from inventory to ground/container.
+
+        Returns False to keep menu open.
+        """
+        if self.source is None:
+            return False
+
+        player = self.controller.gw.player
+        quantity = player.inventory.get_countable(countable_type)
+
+        if quantity <= 0:
+            return False
+
+        # Remove from player inventory
+        player.inventory.remove_countable(countable_type, quantity)
+
+        # Add to container or spawn on ground
+        if isinstance(self.source, ActorInventorySource):
+            inv = self.source.actor.inventory
+            if inv is not None:
+                inv.add_countable(countable_type, quantity)
+            defn = get_countable_definition(countable_type)
+            name = defn.plural_name if quantity > 1 else defn.name
+            publish_event(
+                MessageEvent(
+                    f"You put {quantity} {name} in {self.source.label}.", colors.WHITE
+                )
+            )
+        else:
+            # ExternalInventory - spawn on ground at source location
+            world_x, world_y = self.source.position
+            self.controller.gw.item_spawner.spawn_ground_countable(
+                (world_x, world_y), countable_type, quantity
+            )
+            defn = get_countable_definition(countable_type)
+            name = defn.plural_name if quantity > 1 else defn.name
+            publish_event(
+                MessageEvent(f"You put down {quantity} {name}.", colors.WHITE)
+            )
+
+        # Refresh both panes
+        self._populate_left_pane()
+        self._populate_right_pane()
+
+        # Check if left pane still has selectable items
+        has_selectable_left = any(opt.enabled for opt in self.left_options)
+
+        if has_selectable_left:
+            self._ensure_valid_cursor(PaneId.LEFT)
+        else:
+            self.active_pane = PaneId.RIGHT
+            self._ensure_valid_cursor(PaneId.RIGHT)
+
+        self._update_detail_from_cursor()
+        return False  # Keep menu open
+
     def _drop_item(self, item: Item) -> bool:
         """Drop an item from inventory to the ground at player location.
 
@@ -734,6 +1124,120 @@ class DualPaneMenu(Menu):
         self._update_detail_from_cursor()
         return False  # Keep menu open
 
+    def _drop_all_of_type(self, item: Item) -> bool:
+        """Drop all items of the same ItemType from inventory.
+
+        For Tiny items, finds and drops all with the same item_type.
+        For other sizes, just drops the single item.
+        Returns False to keep menu open.
+        """
+        player = self.controller.gw.player
+
+        # Find all items of the same type
+        items_to_drop = [
+            i for i in player.inventory.get_items() if i.item_type is item.item_type
+        ]
+
+        if not items_to_drop:
+            return False
+
+        # Unequip any that are equipped
+        for drop_item in items_to_drop:
+            for i, equipped_item in enumerate(player.inventory.ready_slots):
+                if equipped_item == drop_item:
+                    player.inventory.unequip_slot(i)
+                    break
+            if player.inventory.equipped_outfit is not None:
+                outfit_item, _ = player.inventory.equipped_outfit
+                if outfit_item == drop_item:
+                    player.inventory.unequip_outfit()
+
+        # Remove all from inventory and spawn on ground
+        for drop_item in items_to_drop:
+            player.inventory.remove_from_inventory(drop_item)
+            self.controller.gw.spawn_ground_item(drop_item, player.x, player.y)
+
+        if len(items_to_drop) == 1:
+            publish_event(
+                MessageEvent(f"You drop {items_to_drop[0].name}.", colors.WHITE)
+            )
+        else:
+            publish_event(
+                MessageEvent(
+                    f"You drop {len(items_to_drop)} {item.name}.", colors.WHITE
+                )
+            )
+
+        # Transition to dual-pane mode showing ground items
+        self.source = ExternalInventory(
+            position=(player.x, player.y),
+            label="On the ground",
+        )
+
+        self._calculate_dimensions()
+        self._populate_left_pane()
+        self._populate_right_pane()
+
+        has_selectable_left = any(opt.enabled for opt in self.left_options)
+
+        if has_selectable_left:
+            self._ensure_valid_cursor(PaneId.LEFT)
+        else:
+            self.active_pane = PaneId.RIGHT
+            self._ensure_valid_cursor(PaneId.RIGHT)
+
+        self._update_detail_from_cursor()
+        return False  # Keep menu open
+
+    def _drop_countable(self, countable_type: CountableType) -> bool:
+        """Drop all countables of a type from inventory to the ground.
+
+        Drops all countables immediately and transitions to dual-pane view.
+        Returns False to keep menu open.
+        """
+        player = self.controller.gw.player
+        quantity = player.inventory.get_countable(countable_type)
+
+        if quantity <= 0:
+            return False
+
+        # Remove from inventory
+        player.inventory.remove_countable(countable_type, quantity)
+
+        # Spawn on ground at player position
+        self.controller.gw.item_spawner.spawn_ground_countable(
+            (player.x, player.y), countable_type, quantity
+        )
+
+        defn = get_countable_definition(countable_type)
+        name = defn.plural_name if quantity > 1 else defn.name
+        publish_event(MessageEvent(f"You drop {quantity} {name}.", colors.WHITE))
+
+        # Transition to dual-pane mode showing ground items
+        self.source = ExternalInventory(
+            position=(player.x, player.y),
+            label="On the ground",
+        )
+
+        # Recalculate dimensions for dual-pane width
+        self._calculate_dimensions()
+
+        # Refresh both panes
+        self._populate_left_pane()
+        self._populate_right_pane()
+
+        # Stay in left pane if items remain, otherwise switch to right
+        has_selectable_left = any(opt.enabled for opt in self.left_options)
+
+        if has_selectable_left:
+            self._ensure_valid_cursor(PaneId.LEFT)
+        else:
+            self.active_pane = PaneId.RIGHT
+            self._ensure_valid_cursor(PaneId.RIGHT)
+
+        self._update_detail_from_cursor()
+        return False  # Keep menu open
+
     def _handle_drop_or_transfer(self) -> None:
         """Handle D/T/P key press: drop (single-pane) or transfer (dual-pane).
 
@@ -745,27 +1249,73 @@ class DualPaneMenu(Menu):
             - Right pane: transfers item to player inventory
         """
         if self.source is None:
-            # Single-pane mode: drop item
+            # Single-pane mode: drop item or countable
             if self.active_pane == PaneId.LEFT and 0 <= self.left_cursor < len(
                 self.left_options
             ):
                 option = self.left_options[self.left_cursor]
-                if option.enabled and isinstance(option.data, Item):
-                    self._drop_item(option.data)
+                if option.enabled:
+                    if isinstance(option.data, Item):
+                        self._drop_item(option.data)
+                    elif isinstance(option.data, CountableType):
+                        self._drop_countable(option.data)
         else:
             # Dual-pane mode: transfer between panes
             if self.active_pane == PaneId.LEFT:
                 # Transfer from inventory to container/ground
                 if 0 <= self.left_cursor < len(self.left_options):
                     option = self.left_options[self.left_cursor]
-                    if option.enabled and isinstance(option.data, Item):
-                        self._transfer_to_container(option.data)
+                    if option.enabled:
+                        if isinstance(option.data, Item):
+                            self._transfer_to_container(option.data)
+                        elif isinstance(option.data, CountableType):
+                            self._transfer_countable_to_ground(option.data)
             else:
                 # Transfer from container/ground to inventory
                 if 0 <= self.right_cursor < len(self.right_options):
                     option = self.right_options[self.right_cursor]
-                    if option.enabled and isinstance(option.data, Item):
-                        self._transfer_to_inventory(option.data)
+                    if option.enabled:
+                        if isinstance(option.data, Item):
+                            self._transfer_to_inventory(option.data)
+                        elif isinstance(option.data, CountableType):
+                            self._transfer_countable_to_inventory(option.data)
+
+    def _handle_drop_or_transfer_all(self) -> None:
+        """Handle A key press: drop/transfer all items of the same type.
+
+        For stacked items (Tiny size with same ItemType), drops or transfers
+        all of them at once. For countables, behaves the same as D/T (already
+        drops all). For non-stackable items, drops/transfers just the one.
+        """
+        if self.source is None:
+            # Single-pane mode: drop all
+            if self.active_pane == PaneId.LEFT and 0 <= self.left_cursor < len(
+                self.left_options
+            ):
+                option = self.left_options[self.left_cursor]
+                if option.enabled:
+                    if isinstance(option.data, Item):
+                        self._drop_all_of_type(option.data)
+                    elif isinstance(option.data, CountableType):
+                        self._drop_countable(option.data)
+        else:
+            # Dual-pane mode: transfer all
+            if self.active_pane == PaneId.LEFT:
+                if 0 <= self.left_cursor < len(self.left_options):
+                    option = self.left_options[self.left_cursor]
+                    if option.enabled:
+                        if isinstance(option.data, Item):
+                            self._transfer_all_to_container(option.data)
+                        elif isinstance(option.data, CountableType):
+                            self._transfer_countable_to_ground(option.data)
+            else:
+                if 0 <= self.right_cursor < len(self.right_options):
+                    option = self.right_options[self.right_cursor]
+                    if option.enabled:
+                        if isinstance(option.data, Item):
+                            self._transfer_all_to_inventory(option.data)
+                        elif isinstance(option.data, CountableType):
+                            self._transfer_countable_to_inventory(option.data)
 
     def handle_input(self, event: tcod.event.Event) -> bool:
         """Handle dual-pane navigation and actions.
@@ -839,6 +1389,11 @@ class DualPaneMenu(Menu):
                 sym=_MenuKeys.KEY_D | _MenuKeys.KEY_T | _MenuKeys.KEY_P
             ):
                 self._handle_drop_or_transfer()
+                return True
+
+            # A key: Drop All / Transfer All for stacked items
+            case tcod.event.KeyDown(sym=_MenuKeys.KEY_A):
+                self._handle_drop_or_transfer_all()
                 return True
 
             # U key: Use consumable (left pane only)
@@ -1127,9 +1682,9 @@ class DualPaneMenu(Menu):
         return True
 
     def _generate_item_detail(
-        self, entity: Item | Condition
+        self, entity: Item | Condition | CountableType
     ) -> tuple[list[str], list[str], str | None]:
-        """Generate detail data for the selected item/condition.
+        """Generate detail data for the selected item/condition/countable.
 
         Returns a tuple of (header_lines, description_lines, stats_line):
         - header_lines: Category + name/size (always visible, max 2 lines)
@@ -1143,10 +1698,34 @@ class DualPaneMenu(Menu):
         description: list[str] = []
         stats: str | None = None
 
+        def wrap_description(text: str) -> list[str]:
+            """Wrap description text to fit the detail panel width."""
+            if self.canvas is not None and self._char_width > 0:
+                # Calculate max width for description, accounting for:
+                # - 4 chars margin (2 each side)
+                # - 3 chars for "..." ellipsis that may be prepended/appended
+                max_desc_width = (self.width - 7) * self._char_width
+                return self.canvas.wrap_text(text, max_desc_width)
+            return [text]
+
+        if isinstance(entity, CountableType):
+            defn = get_countable_definition(entity)
+            # Get quantity from appropriate source based on active pane
+            if self.active_pane == PaneId.LEFT:
+                quantity = self.inventory.get_countable(entity)
+            else:
+                countables = self._get_countables_from_source()
+                quantity = countables.get(entity, 0)
+            header.append("Currency")
+            name = defn.plural_name if quantity != 1 else defn.name
+            header.append(f"{quantity} {name} - Tiny (shares slot)")
+            description.extend(wrap_description("Money. You know how it works."))
+            return header, description, stats
+
         if isinstance(entity, Condition):
             header.append(f"Condition: {entity.name}")
             if hasattr(entity, "description") and entity.description:
-                description.append(entity.description)
+                description.extend(wrap_description(entity.description))
             return header, description, stats
 
         item: Item = entity
@@ -1167,17 +1746,7 @@ class DualPaneMenu(Menu):
 
         # Description - wrap long descriptions using word boundaries
         if item.description:
-            # Only wrap if canvas/dimensions are initialized; otherwise use raw text.
-            # This guards against calls before show() -> _calculate_dimensions().
-            if self.canvas is not None and self._char_width > 0:
-                # Calculate max width for description, accounting for:
-                # - 4 chars margin (2 each side)
-                # - 3 chars for "..." ellipsis that may be prepended/appended
-                max_desc_width = (self.width - 7) * self._char_width
-                wrapped_desc = self.canvas.wrap_text(item.description, max_desc_width)
-                description.extend(wrapped_desc)
-            else:
-                description.append(item.description)
+            description.extend(wrap_description(item.description))
 
         # Check if this is an outfit item - capability is now stored on the item
         from catley.game.outfit import get_outfit_spec
@@ -1859,17 +2428,22 @@ class DualPaneMenu(Menu):
         Returns a list of (key_text, label_text) tuples. The key_text is
         displayed inside a keycap, and label_text follows it.
         """
-        # Get selected item to determine which hints to show
+        # Get selected data to determine which hints to show
         selected_item: Item | None = None
+        selected_countable: CountableType | None = None
         if self.active_pane == PaneId.LEFT:
             if 0 <= self.left_cursor < len(self.left_options):
                 data = self.left_options[self.left_cursor].data
                 if isinstance(data, Item):
                     selected_item = data
+                elif isinstance(data, CountableType):
+                    selected_countable = data
         elif 0 <= self.right_cursor < len(self.right_options):
             data = self.right_options[self.right_cursor].data
             if isinstance(data, Item):
                 selected_item = data
+            elif isinstance(data, CountableType):
+                selected_countable = data
 
         items: list[tuple[str, str]] = []
 
@@ -1878,26 +2452,59 @@ class DualPaneMenu(Menu):
             self._detail_panel is not None and self._detail_panel.has_overflow()
         )
 
+        # Check if selected item is stackable (Tiny size) AND has multiple in stack
+        # We only show "All" hint when there's more than one item to transfer
+        stack_count = 0
+        if selected_item and selected_item.size == ItemSize.TINY:
+            if self.active_pane == PaneId.LEFT:
+                stack_count = sum(
+                    1
+                    for i in self.inventory.get_items()
+                    if i.item_type is selected_item.item_type
+                )
+            else:
+                source_items = self._get_items_from_source()
+                stack_count = sum(
+                    1 for i in source_items if i.item_type is selected_item.item_type
+                )
+        show_all_hint = stack_count > 1
+
         if self.source is None:
             # Single-pane (inventory only)
-            items.append(("ENTER", "Equip"))
-            if selected_item and selected_item.consumable_effect:
-                items.append(("U", "Use"))
-            items.append(("D", "Drop"))
+            if selected_countable:
+                # Countables can only be dropped (all at once)
+                items.append(("D", "Drop All"))
+            else:
+                items.append(("ENTER", "Equip"))
+                if selected_item and selected_item.consumable_effect:
+                    items.append(("U", "Use"))
+                items.append(("D", "Drop"))
+                if show_all_hint:
+                    items.append(("A", "Drop All"))
             if has_scroll:
                 items.append(("←→", "Scroll"))
         elif self.active_pane == PaneId.LEFT:
             # Dual-pane, left pane focused
-            items.append(("ENTER", "Equip"))
-            if selected_item and selected_item.consumable_effect:
-                items.append(("U", "Use"))
-            items.append(("T", "Transfer"))
+            if selected_countable:
+                items.append(("T", "Transfer All"))
+            else:
+                items.append(("ENTER", "Equip"))
+                if selected_item and selected_item.consumable_effect:
+                    items.append(("U", "Use"))
+                items.append(("T", "Transfer"))
+                if show_all_hint:
+                    items.append(("A", "Transfer All"))
             items.append(("TAB", "Switch"))
             if has_scroll:
                 items.append(("←→", "Scroll"))
         else:
             # Dual-pane, right pane focused
-            items.append(("T", "Transfer"))
+            if selected_countable:
+                items.append(("T", "Transfer All"))
+            else:
+                items.append(("T", "Transfer"))
+                if show_all_hint:
+                    items.append(("A", "Transfer All"))
             items.append(("TAB", "Switch"))
             if has_scroll:
                 items.append(("←→", "Scroll"))

@@ -561,8 +561,14 @@ class ExploreMode(Mode):
             return True
 
         # Check for actor at click location
-        actor_at_click = self._gw.get_actor_at_location(world_x, world_y)
-        if actor_at_click is not None and actor_at_click is not self._p:
+        # Use spatial index to find all actors, since get_actor_at_location
+        # prioritizes blocking actors (player) over non-blocking (ItemPile)
+        actor_at_click = None
+        for actor in self._gw.actor_spatial_index.get_at_point(world_x, world_y):
+            if actor is not self._p:
+                actor_at_click = actor
+                break
+        if actor_at_click is not None:
             # Skip dead characters
             if (
                 isinstance(actor_at_click, Character)

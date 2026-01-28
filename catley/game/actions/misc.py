@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from catley.game.action_plan import ActionPlan, ApproachStep, IntentStep
+from catley.game.actors.components import InventoryComponent
+from catley.game.countables import CountableType
 
 from .base import GameIntent
 
@@ -41,6 +43,41 @@ class DropItemIntent(GameIntent):
     def __init__(self, controller: Controller, actor: Character, item: Item) -> None:
         super().__init__(controller, actor)
         self.item = item
+
+
+class PickupCountableIntent(GameIntent):
+    """Intent for picking up countables from an inventory source.
+
+    Use amount=-1 to pick up all of the specified countable type.
+    """
+
+    def __init__(
+        self,
+        controller: Controller,
+        actor: Character,
+        source: InventoryComponent,
+        countable_type: CountableType,
+        amount: int,
+    ) -> None:
+        super().__init__(controller, actor)
+        self.source = source
+        self.countable_type = countable_type
+        self.amount = amount  # -1 for "all"
+
+
+class DropCountableIntent(GameIntent):
+    """Intent for dropping countables on the ground."""
+
+    def __init__(
+        self,
+        controller: Controller,
+        actor: Character,
+        countable_type: CountableType,
+        amount: int,
+    ) -> None:
+        super().__init__(controller, actor)
+        self.countable_type = countable_type
+        self.amount = amount
 
 
 # =============================================================================

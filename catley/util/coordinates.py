@@ -90,16 +90,14 @@ class CoordinateConverter:
         renderer_scaled_width: PixelCoord,
         renderer_scaled_height: PixelCoord,
     ) -> None:
-        """Initializes converter with final rendered console dimensions."""
+        """Initializes converter with final rendered console dimensions.
+
+        Note: This converter assumes pixel coordinates are already adjusted for
+        letterboxing. The graphics backends handle letterboxing offset before
+        calling this converter.
+        """
         self.console_width_in_tiles = console_width_in_tiles
         self.console_height_in_tiles = console_height_in_tiles
-
-        # The renderer now handles the offset calculation. This converter just needs
-        # to know the final size of the rendered area to calculate tile sizes.
-        self.offset_x = 0
-        self.offset_y = 0
-
-        # Calculate tile size based on the final scaled dimensions
         self.tile_width_screen_px = renderer_scaled_width / console_width_in_tiles
         self.tile_height_screen_px = renderer_scaled_height / console_height_in_tiles
 
@@ -108,15 +106,14 @@ class CoordinateConverter:
     ) -> RootConsoleTilePos:
         """Convert pixel coordinates to root console tile coordinates.
 
+        Assumes pixel coordinates are already adjusted for letterboxing offset.
+        Use graphics.pixel_to_tile() for raw screen coordinates.
+
         Return:
             A RootConsoleTilePos.
         """
-        # Adjust for letterboxing offsets
-        adj_x: float = pixel_x - self.offset_x
-        adj_y: float = pixel_y - self.offset_y
-
-        tile_x: TileCoord = int(adj_x // self.tile_width_screen_px)
-        tile_y: TileCoord = int(adj_y // self.tile_height_screen_px)
+        tile_x: TileCoord = int(pixel_x // self.tile_width_screen_px)
+        tile_y: TileCoord = int(pixel_y // self.tile_height_screen_px)
 
         # Clamp to valid range
         tile_x = max(0, min(tile_x, self.console_width_in_tiles - 1))

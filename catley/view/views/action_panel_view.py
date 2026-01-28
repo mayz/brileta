@@ -10,6 +10,7 @@ from catley.environment import tile_types
 from catley.game.actions.discovery import ActionDiscovery, ActionOption
 from catley.game.actors import Actor, Character
 from catley.game.actors.container import Container, ItemPile
+from catley.game.countables import CountableType
 from catley.game.items.properties import WeaponProperty
 from catley.types import InterpolationAlpha
 from catley.util.caching import ResourceCache
@@ -248,11 +249,20 @@ class ActionPanelView(TextView):
         y_pixel = ascent + 5
         x_padding = 8
 
-        # Check for items at player's feet (rendered later, after target+actions)
+        # Check for items/countables at player's feet (rendered later)
         player = self.controller.gw.player
         items_here = self.controller.gw.get_pickable_items_at_location(
             player.x, player.y
         )
+        # Also check for countables in any ItemPile at player's location
+        # Use spatial index since get_actor_at_location prioritizes blocking actors
+        countables_here: dict[CountableType, int] = {}
+        for actor in self.controller.gw.actor_spatial_index.get_at_point(
+            player.x, player.y
+        ):
+            if isinstance(actor, ItemPile):
+                countables_here = actor.inventory.countables
+                break
 
         # Target name section (selected or hovered target)
         if self._cached_target_name:
@@ -378,32 +388,41 @@ class ActionPanelView(TextView):
             self._actions_renderer.clear_hit_areas()
 
         # Items at player's feet section (after target+actions, as secondary context)
-        if items_here:
+        if items_here or countables_here:
+            from catley.game.countables import get_countable_display_name
+
             y_pixel += line_height  # Spacing before items section
 
             self.canvas.draw_text(
                 pixel_x=x_padding,
                 pixel_y=y_pixel - ascent,
-                text="Items at your feet:",
+                text="At your feet:",
                 color=colors.YELLOW,
             )
             y_pixel += line_height
 
+            # Build list of display strings (items + countables)
+            display_items: list[str] = [item.name for item in items_here]
+            for countable_type, quantity in countables_here.items():
+                display_items.append(
+                    get_countable_display_name(countable_type, quantity)
+                )
+
             # List items (up to 3)
-            for item in items_here[:3]:
+            for name in display_items[:3]:
                 self.canvas.draw_text(
                     pixel_x=x_padding + 10,
                     pixel_y=y_pixel - ascent,
-                    text=f"• {item.name}",
+                    text=f"• {name}",
                     color=colors.WHITE,
                 )
                 y_pixel += line_height
 
-            if len(items_here) > 3:
+            if len(display_items) > 3:
                 self.canvas.draw_text(
                     pixel_x=x_padding + 10,
                     pixel_y=y_pixel - ascent,
-                    text=f"• ...and {len(items_here) - 3} more",
+                    text=f"• ...and {len(display_items) - 3} more",
                     color=colors.GREY,
                 )
                 y_pixel += line_height
@@ -592,7 +611,7 @@ class ActionPanelView(TextView):
                         return pathfind_and_pickup
 
                     pickup_action = ActionOption(
-                        id="walk-and-pickup",
+                        id="pickup-walk",  # Must start with "pickup" for default action
                         name="Walk to and pick up",
                         description="Move to the items and pick them up",
                         category=ActionCategory.ITEMS,
@@ -646,7 +665,11 @@ class ActionPanelView(TextView):
         from catley.game.actions.discovery import classify_target
 
         gw = self.controller.gw
-        self._cached_target_name = target_actor.name
+        # Use display_name for ItemPiles (handles countables correctly)
+        if isinstance(target_actor, ItemPile):
+            self._cached_target_name = target_actor.display_name
+        else:
+            self._cached_target_name = target_actor.name
 
         # Determine the default action for this target (for right-click indicator)
         target_type = classify_target(self.controller, target_actor)
@@ -688,10 +711,11 @@ class ActionPanelView(TextView):
         elif isinstance(target_actor, ItemPile):
             # ItemPile - show "Walk to and pick up" action
             items = list(target_actor.inventory)
-            if len(items) == 1:
+            has_countables = bool(target_actor.inventory.countables)
+            if len(items) == 1 and not has_countables:
                 self._cached_target_description = "An item on the ground"
             else:
-                self._cached_target_description = "Multiple items here"
+                self._cached_target_description = "On the ground"
 
             # Create pickup action based on distance
             distance = max(
@@ -720,7 +744,7 @@ class ActionPanelView(TextView):
                     return pathfind_and_pickup
 
                 pickup_action = ActionOption(
-                    id="walk-and-pickup",
+                    id="pickup-walk",  # Must start with "pickup" for default action
                     name="Walk to and pick up",
                     description="Move to the items and pick them up",
                     category=ActionCategory.ITEMS,

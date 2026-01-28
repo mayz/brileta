@@ -69,6 +69,7 @@ def make_controller(root_tile: RootConsoleTilePos = (5, 5)) -> DummyController:
         clear_console=lambda *a, **k: None,
         root_console=None,
         blit_console=lambda *a, **k: None,
+        pixel_to_tile=lambda _x, _y: root_tile,
     )
     clock = SimpleNamespace(last_delta_time=0.016)
     coordinate_converter = SimpleNamespace(pixel_to_tile=lambda _x, _y: root_tile)

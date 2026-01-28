@@ -79,7 +79,15 @@ def classify_target(
         if items:
             return TargetType.ITEM_PILE
 
-        # Check for actors at the tile
+        # Check for ItemPile with countables (may have no items)
+        # Need to check all actors at tile since get_actor_at_location prioritizes
+        # blocking actors (player) over non-blocking (ItemPile)
+        actors_at_tile = gw.actor_spatial_index.get_at_point(x, y)
+        for actor in actors_at_tile:
+            if isinstance(actor, ItemPile):
+                return TargetType.ITEM_PILE
+
+        # Check for other actors at the tile
         actor_at_tile = gw.get_actor_at_location(x, y)
         if actor_at_tile is not None:
             if isinstance(actor_at_tile, Character) and actor_at_tile is not gw.player:

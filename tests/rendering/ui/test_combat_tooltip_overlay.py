@@ -33,6 +33,12 @@ def _make_tooltip_test_world(
     player.x = player_pos[0]
     player.y = player_pos[1]
 
+    # Remove any pre-existing actor at the enemy position (from random NPC spawning)
+    # to ensure our test NPC is the one returned by get_actor_at_location
+    existing = controller.gw.get_actor_at_location(enemy_pos[0], enemy_pos[1])
+    if existing is not None:
+        controller.gw.remove_actor(existing)
+
     # Create an NPC with hostile disposition
     npc = NPC(
         enemy_pos[0],

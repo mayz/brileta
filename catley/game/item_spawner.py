@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, TypeGuard
 
 from catley import colors
 from catley.game.actors import Actor, ItemPile
+from catley.game.countables import CountableType
 from catley.game.items.item_core import Item
 from catley.types import WorldTileCoord, WorldTilePos
 
@@ -47,6 +48,48 @@ class ItemSpawner:
 
         final_x, final_y = self._find_valid_spawn_location(x, y)
         return self._create_ground_actor(items, final_x, final_y)
+
+    def spawn_ground_countable(
+        self,
+        position: tuple[int, int],
+        countable_type: CountableType,
+        amount: int,
+    ) -> ItemPile:
+        """Spawn countables on the ground, consolidating with existing piles.
+
+        If an item pile already exists at the position, the countables are added
+        to it. Otherwise, a new empty pile is created to hold the countables.
+
+        Args:
+            position: The (x, y) world tile position.
+            countable_type: The type of countable to spawn.
+            amount: The quantity to spawn.
+
+        Returns:
+            The ItemPile containing the countables (existing or newly created).
+        """
+        x, y = position
+
+        # Check all actors at position for an existing ItemPile
+        # (get_actor_at_location prioritizes blocking actors like the player)
+        for actor in self.game_world.actor_spatial_index.get_at_point(x, y):
+            if isinstance(actor, ItemPile):
+                actor.inventory.add_countable(countable_type, amount)
+                return actor
+
+        # Create a new pile with no items, just countables
+        pile = ItemPile(
+            x=x,
+            y=y,
+            ch="%",  # same as regular item piles
+            color=colors.WHITE,
+            name="Countables",
+            items=None,
+            game_world=self.game_world,
+        )
+        pile.inventory.add_countable(countable_type, amount)
+        self.game_world.add_actor(pile)
+        return pile
 
     # ------------------------------------------------------------------
     # Internal helpers

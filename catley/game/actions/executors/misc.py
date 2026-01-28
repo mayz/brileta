@@ -7,12 +7,15 @@ from catley.events import MessageEvent, publish_event
 from catley.game.actions.base import GameActionResult
 from catley.game.actions.executors.base import ActionExecutor
 from catley.game.actors import Character, ItemPile
+from catley.game.countables import get_countable_definition
 from catley.game.items.item_core import Item
 from catley.game.items.properties import WeaponProperty
 
 if TYPE_CHECKING:
     from catley.game.actions.misc import (
+        DropCountableIntent,
         DropItemIntent,
+        PickupCountableIntent,
         PickupIntent,
         PickupItemsAtLocationIntent,
         SwitchWeaponIntent,
@@ -107,18 +110,28 @@ class PickupItemsAtLocationExecutor(ActionExecutor):
 
     def execute(self, intent: PickupItemsAtLocationIntent) -> GameActionResult | None:  # type: ignore[override]
         """Open the pickup menu UI for items at the actor's location."""
+        from catley.game.actors.container import ItemPile
         from catley.view.ui.commands import OpenExistingMenuUICommand
         from catley.view.ui.dual_pane_menu import DualPaneMenu, ExternalInventory
 
+        gw = intent.controller.gw
+        actor_x, actor_y = intent.actor.x, intent.actor.y
+
         # Check if there are items at the actor's location
-        items = intent.controller.gw.get_pickable_items_at_location(
-            intent.actor.x, intent.actor.y
-        )
-        if items:
+        items = gw.get_pickable_items_at_location(actor_x, actor_y)
+
+        # Also check for countables in any ItemPile at this location
+        # Must use spatial index since get_actor_at_location prioritizes blocking
+        # actors (player) over non-blocking (ItemPile)
+        has_countables = False
+        for actor in gw.actor_spatial_index.get_at_point(actor_x, actor_y):
+            if isinstance(actor, ItemPile) and actor.inventory.countables:
+                has_countables = True
+                break
+
+        if items or has_countables:
             # Open the pickup menu with ground items as the source
-            source = ExternalInventory(
-                (intent.actor.x, intent.actor.y), "On the ground"
-            )
+            source = ExternalInventory((actor_x, actor_y), "On the ground")
             menu = DualPaneMenu(intent.controller, source=source)
             pickup_cmd = OpenExistingMenuUICommand(intent.controller, menu)
             pickup_cmd.execute()
@@ -158,3 +171,57 @@ class DropItemExecutor(ActionExecutor):
         publish_event(MessageEvent(f"You drop {item.name}.", colors.WHITE))
 
         return GameActionResult()
+
+
+class PickupCountableExecutor(ActionExecutor):
+    """Executes pickup countable intents."""
+
+    def execute(self, intent: PickupCountableIntent) -> GameActionResult | None:  # type: ignore[override]
+        """Pick up countables from the source inventory."""
+        actor_inv = getattr(intent.actor, "inventory", None)
+        if actor_inv is None:
+            return GameActionResult(succeeded=False)
+
+        amount = intent.amount
+        if amount < 0:
+            # -1 means "take all"
+            amount = intent.source.get_countable(intent.countable_type)
+
+        if amount <= 0:
+            return GameActionResult(succeeded=False)
+
+        if intent.source.transfer_countable_to(
+            actor_inv, intent.countable_type, amount
+        ):
+            defn = get_countable_definition(intent.countable_type)
+            name = defn.plural_name if amount > 1 else defn.name
+            publish_event(MessageEvent(f"Picked up {amount} {name}.", colors.WHITE))
+            return GameActionResult(succeeded=True)
+
+        return GameActionResult(succeeded=False)
+
+
+class DropCountableExecutor(ActionExecutor):
+    """Executes drop countable intents by placing countables on the ground."""
+
+    def execute(self, intent: DropCountableIntent) -> GameActionResult | None:  # type: ignore[override]
+        """Drop countables from inventory to the ground at actor's location."""
+        inventory = getattr(intent.actor, "inventory", None)
+        if inventory is None:
+            return GameActionResult(succeeded=False)
+
+        if not inventory.remove_countable(intent.countable_type, intent.amount):
+            return GameActionResult(succeeded=False)
+
+        # Spawn countables on the ground using the item spawner
+        intent.controller.gw.item_spawner.spawn_ground_countable(
+            (intent.actor.x, intent.actor.y),
+            intent.countable_type,
+            intent.amount,
+        )
+
+        defn = get_countable_definition(intent.countable_type)
+        name = defn.plural_name if intent.amount > 1 else defn.name
+        publish_event(MessageEvent(f"Dropped {intent.amount} {name}.", colors.WHITE))
+
+        return GameActionResult(succeeded=True)

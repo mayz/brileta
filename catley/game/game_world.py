@@ -8,6 +8,7 @@ from catley.environment.map import GameMap, MapRegion
 from catley.environment.tile_types import TileTypeID
 from catley.game.actors import NPC, PC, Actor, Character, create_bookcase
 from catley.game.actors.environmental import ContainedFire
+from catley.game.countables import CountableType
 from catley.game.enums import CreatureSize
 from catley.game.item_spawner import ItemSpawner
 from catley.game.items.item_core import Item
@@ -240,6 +241,9 @@ class GameWorld:
         # Equip starting armor
         armor_item = LEATHER_ARMOR_TYPE.create()
         player.inventory.set_starting_outfit(armor_item)
+
+        # Starting money
+        player.inventory.add_countable(CountableType.COIN, 50)
 
     def _generate_map(
         self, map_width: int, map_height: int
@@ -612,3 +616,14 @@ class GameWorld:
             and self.get_actor_at_location(item_x, item_y) is None
         ):
             self.spawn_ground_item(ALARM_CLOCK_TYPE.create(), item_x, item_y)
+
+        # Place a coin pile nearby for testing countables
+        coin_x = item_x - 1
+        coin_y = item_y
+        if (
+            self.game_map.walkable[coin_x, coin_y]
+            and self.get_actor_at_location(coin_x, coin_y) is None
+        ):
+            self.item_spawner.spawn_ground_countable(
+                (coin_x, coin_y), CountableType.COIN, 43
+            )
