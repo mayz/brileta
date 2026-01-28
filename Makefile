@@ -14,9 +14,9 @@ lint: format ruff-check typecheck
 format:
 	uv run ruff format .
 
-# Run ruff linting
+# Run ruff linting (auto-fix what it can)
 ruff-check:
-	uv run ruff check .
+	uv run ruff check --fix .
 
 # Run type checking
 typecheck:
