@@ -42,6 +42,7 @@ uniform float u_sky_exposure_power;
 // Emission texture: RGB = emission color * intensity, A = light radius
 uniform sampler2D u_emission_map;
 uniform ivec2 u_viewport_size;
+uniform ivec2 u_map_size;  // Full map dimensions for sky exposure UV calculation
 
 // Noise function for flicker effects
 float noise2d(vec2 coord) {
@@ -352,8 +353,8 @@ void main() {
     // Apply directional lighting (sun/moon) if sky exposure is present
     if (u_sun_intensity > 0.0) {
         // Sample sky exposure for this tile
-        // v_uv is already normalized to [0,1] for the viewport, we need to map to full map
-        vec2 map_uv = v_uv;  // The texture coordinates should already be correct
+        // Convert world position to map UV coordinates (sky exposure texture covers full map)
+        vec2 map_uv = tile_pos / vec2(u_map_size);
         float sky_exposure = texture(u_sky_exposure_map, map_uv).r;
         
         if (sky_exposure > 0.1) {

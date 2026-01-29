@@ -826,7 +826,19 @@ class GPULightingSystem(LightingSystem):
         )  # sun_color + sun_intensity
         buffer.extend(
             struct.pack("f3f", SKY_EXPOSURE_POWER, 0.0, 0.0, 0.0)
-        )  # sky_exposure_power + padding
+        )  # sky_exposure_power + implicit padding to align _padding2
+        buffer.extend(struct.pack("3f", 0.0, 0.0, 0.0))  # _padding2 (vec3f = 12 bytes)
+        buffer.extend(
+            struct.pack("f", 0.0)
+        )  # implicit padding to align map_size (4 bytes)
+
+        # Map size for sky exposure UV calculation
+        game_map = self.game_world.game_map
+        map_width = float(game_map.width) if game_map else 1.0
+        map_height = float(game_map.height) if game_map else 1.0
+        buffer.extend(
+            struct.pack("2f2f", map_width, map_height, 0.0, 0.0)
+        )  # map_size + _padding3
 
         return bytes(buffer)
 

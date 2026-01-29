@@ -48,6 +48,8 @@ struct LightingUniforms {
     sun_intensity: f32,
     sky_exposure_power: f32,
     _padding2: vec3f,  // Ensure 16-byte alignment
+    map_size: vec2f,  // Full map dimensions for sky exposure UV calculation
+    _padding3: vec2f,  // Padding for 16-byte alignment
 }
 
 @group(0) @binding(0) var<uniform> uniforms: LightingUniforms;
@@ -378,8 +380,10 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4f {
 
     // Directional Light (Sun/Moon)
     if (uniforms.sun_intensity > 0.0) {
-        let sky_exposure = textureSample(sky_exposure_map, texture_sampler, input.uv).r;
-        
+        // Convert world position to map UV coordinates (sky exposure texture covers full map)
+        let map_uv = tile_pos / uniforms.map_size;
+        let sky_exposure = textureSample(sky_exposure_map, texture_sampler, map_uv).r;
+
         if (sky_exposure > 0.1) {
             let effective_exposure = pow(sky_exposure, uniforms.sky_exposure_power);
             var sun_contribution = uniforms.sun_color * uniforms.sun_intensity * effective_exposure;

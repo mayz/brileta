@@ -536,6 +536,11 @@ class GPULightingSystem(LightingSystem):
 
         assert self._fragment_program is not None
 
+        # Set map size uniform for sky exposure UV calculation
+        game_map = self.game_world.game_map
+        if game_map:
+            self._uniform("u_map_size").value = (game_map.width, game_map.height)
+
         if directional_light:
             # Set sun uniforms from the directional light
             self._uniform("u_sun_direction").value = (
