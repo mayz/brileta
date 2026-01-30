@@ -19,6 +19,7 @@ from catley.util.glyph_buffer import GlyphBuffer
 from catley.util.tilesets import derive_outlined_atlas
 from catley.view.render.base_graphics import BaseGraphicsContext
 
+from .atmospheric_renderer import ModernGLAtmosphericRenderer
 from .resource_manager import ModernGLResourceManager
 from .screen_renderer import VERTEX_DTYPE, ScreenRenderer
 from .shader_manager import ShaderManager
@@ -134,6 +135,29 @@ class ModernGLGraphicsContext(BaseGraphicsContext):
 
         # --- ScreenRenderer for main screen rendering ---
         self.screen_renderer = ScreenRenderer(self.mgl_context, self.atlas_texture)
+        self.atmospheric_renderer = ModernGLAtmosphericRenderer(self.mgl_context)
+        self._atmospheric_layers: list[
+            tuple[
+                tuple[int, int],
+                tuple[int, int],
+                tuple[int, int],
+                float,
+                moderngl.Texture | None,
+                moderngl.Texture | None,
+                moderngl.Texture | None,
+                float,
+                float,
+                float,
+                float,
+                tuple[int, int, int],
+                tuple[float, float],
+                float,
+                float,
+                float,
+                str,
+                tuple[int, int, int, int],
+            ]
+        ] = []
 
         # Set initial viewport and update dimensions (this will set _tile_dimensions)
         window_width, window_height = map(int, self.window.get_framebuffer_size())
@@ -316,6 +340,53 @@ class ModernGLGraphicsContext(BaseGraphicsContext):
             [(self.immediate_vbo, "2f 2f 4f", "in_vert", "in_uv", "in_color")],
         )
 
+    def draw_debug_tile_grid(
+        self,
+        view_origin: tuple[int, int],
+        view_size: tuple[int, int],
+        offset_pixels: tuple[float, float],
+    ) -> None:
+        """Render a 1-pixel cyan tile grid overlay for the given view bounds."""
+        if self.screen_renderer is None or self.uv_map is None:
+            return
+
+        origin_x, origin_y = view_origin
+        width_tiles, height_tiles = view_size
+        offset_x, offset_y = offset_pixels
+
+        px_left, px_top = self.console_to_screen_coords(origin_x, origin_y)
+        px_right, px_bottom = self.console_to_screen_coords(
+            origin_x + width_tiles, origin_y + height_tiles
+        )
+
+        left = round(px_left + offset_x)
+        top = round(px_top + offset_y)
+        width_px = round(px_right - px_left)
+        height_px = round(px_bottom - px_top)
+
+        if width_px <= 0 or height_px <= 0:
+            return
+
+        uv = self.uv_map[self.SOLID_BLOCK_CHAR]
+        color_rgba = (
+            colors.CYAN[0] / 255.0,
+            colors.CYAN[1] / 255.0,
+            colors.CYAN[2] / 255.0,
+            1.0,
+        )
+
+        # Vertical grid lines
+        for i in range(width_tiles + 1):
+            px_x, _ = self.console_to_screen_coords(origin_x + i, origin_y)
+            x = round(px_x + offset_x)
+            self.screen_renderer.add_quad(x, top, 1, height_px, uv, color_rgba)
+
+        # Horizontal grid lines
+        for j in range(height_tiles + 1):
+            _, px_y = self.console_to_screen_coords(origin_x, origin_y + j)
+            y = round(px_y + offset_y)
+            self.screen_renderer.add_quad(left, y, width_px, 1, uv, color_rgba)
+
     # --- Frame Lifecycle & Main Rendering ---
 
     def prepare_to_present(self) -> None:
@@ -323,15 +394,111 @@ class ModernGLGraphicsContext(BaseGraphicsContext):
         self.mgl_context.clear(0.0, 0.0, 0.0)
         self.screen_renderer.begin_frame()
         self.ui_texture_renderer.begin_frame()
+        self._atmospheric_layers = []
 
     def finalize_present(self) -> None:
         """Uploads all vertex data and draws the scene in a single batch."""
+        window_size = self.window.get_framebuffer_size()
         self.screen_renderer.render_to_screen(
-            self.window.get_framebuffer_size(),
+            window_size,
             letterbox_geometry=self.letterbox_geometry,
         )
+        if self._atmospheric_layers:
+            letterbox = self.letterbox_geometry or (
+                0,
+                0,
+                int(window_size[0]),
+                int(window_size[1]),
+            )
+            for layer_state in self._atmospheric_layers:
+                (
+                    viewport_offset,
+                    viewport_size,
+                    map_size,
+                    sky_exposure_threshold,
+                    sky_exposure_texture,
+                    explored_texture,
+                    visible_texture,
+                    noise_scale,
+                    noise_threshold_low,
+                    noise_threshold_high,
+                    strength,
+                    tint_color,
+                    drift_offset,
+                    turbulence_offset,
+                    turbulence_strength,
+                    turbulence_scale,
+                    blend_mode,
+                    pixel_bounds,
+                ) = layer_state
+                self.atmospheric_renderer.render(
+                    viewport_offset,
+                    viewport_size,
+                    map_size,
+                    sky_exposure_threshold,
+                    sky_exposure_texture,
+                    explored_texture,
+                    visible_texture,
+                    noise_scale,
+                    noise_threshold_low,
+                    noise_threshold_high,
+                    strength,
+                    tint_color,
+                    drift_offset,
+                    turbulence_offset,
+                    turbulence_strength,
+                    turbulence_scale,
+                    blend_mode,
+                    pixel_bounds,
+                    letterbox,
+                )
         if self.letterbox_geometry is not None:
             self.ui_texture_renderer.render(self.letterbox_geometry)
+
+    def set_atmospheric_layer(
+        self,
+        viewport_offset: tuple[int, int],
+        viewport_size: tuple[int, int],
+        map_size: tuple[int, int],
+        sky_exposure_threshold: float,
+        sky_exposure_texture: moderngl.Texture | None,
+        explored_texture: moderngl.Texture | None,
+        visible_texture: moderngl.Texture | None,
+        noise_scale: float,
+        noise_threshold_low: float,
+        noise_threshold_high: float,
+        strength: float,
+        tint_color: tuple[int, int, int],
+        drift_offset: tuple[float, float],
+        turbulence_offset: float,
+        turbulence_strength: float,
+        turbulence_scale: float,
+        blend_mode: str,
+        pixel_bounds: tuple[int, int, int, int],
+    ) -> None:
+        """Store atmospheric layer data for rendering this frame."""
+        self._atmospheric_layers.append(
+            (
+                viewport_offset,
+                viewport_size,
+                map_size,
+                sky_exposure_threshold,
+                sky_exposure_texture,
+                explored_texture,
+                visible_texture,
+                noise_scale,
+                noise_threshold_low,
+                noise_threshold_high,
+                strength,
+                tint_color,
+                drift_offset,
+                turbulence_offset,
+                turbulence_strength,
+                turbulence_scale,
+                blend_mode,
+                pixel_bounds,
+            )
+        )
 
     # --- GraphicsContext ABC Implementation ---
 

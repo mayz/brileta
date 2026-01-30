@@ -92,6 +92,14 @@ class WorldView(View):
         self._shake_offset: tuple[float, float] = (0.0, 0.0)
         # Cumulative game time for decal age tracking
         self._game_time: float = 0.0
+        from catley.view.render.effects.atmospheric import (
+            AtmosphericConfig,
+            AtmosphericLayerSystem,
+        )
+
+        self.atmospheric_system = AtmosphericLayerSystem(
+            AtmosphericConfig.create_default()
+        )
 
     def set_bounds(self, x1: int, y1: int, x2: int, y2: int) -> None:
         """Override set_bounds to update viewport and console dimensions."""
@@ -282,6 +290,7 @@ class WorldView(View):
         self.particle_system.update(delta_time)
         self.environmental_system.update(delta_time)
         self.floating_text_manager.update(delta_time)
+        self.atmospheric_system.update(delta_time)
         # Update decals for age-based cleanup
         self._game_time += delta_time
         self.decal_system.update(delta_time, self._game_time)
@@ -343,6 +352,86 @@ class WorldView(View):
         viewport_bounds = Rect.from_bounds(0, 0, self.width - 1, self.height - 1)
         view_offset = (self.x, self.y)
 
+        visible_bounds = vs.get_visible_bounds()
+        viewport_offset = (visible_bounds.x1, visible_bounds.y1)
+        viewport_size = (self.width, self.height)
+        map_size = (
+            self.controller.gw.game_map.width,
+            self.controller.gw.game_map.height,
+        )
+        px_left, px_top = graphics.console_to_screen_coords(self.x, self.y)
+        px_right, px_bottom = graphics.console_to_screen_coords(
+            self.x + self.width, self.y + self.height
+        )
+        px_left += offset_x_pixels
+        px_right += offset_x_pixels
+        px_top += offset_y_pixels
+        px_bottom += offset_y_pixels
+
+        set_atmospheric_layer = getattr(graphics, "set_atmospheric_layer", None)
+        if callable(set_atmospheric_layer):
+            active_layers = self.atmospheric_system.get_active_layers()
+            # Render mist first, then shadows, to keep shadows readable on top.
+            active_layers.sort(
+                key=lambda layer_state: (
+                    0 if layer_state[0].blend_mode == "lighten" else 1
+                )
+            )
+            sky_exposure_texture = None
+            explored_texture = None
+            visible_texture = None
+            if self.lighting_system is not None:
+                get_sky_exposure_texture = getattr(
+                    self.lighting_system, "get_sky_exposure_texture", None
+                )
+                if callable(get_sky_exposure_texture):
+                    sky_exposure_texture = get_sky_exposure_texture()
+                get_explored_texture = getattr(
+                    self.lighting_system, "get_explored_texture", None
+                )
+                if callable(get_explored_texture):
+                    explored_texture = get_explored_texture()
+                get_visible_texture = getattr(
+                    self.lighting_system, "get_visible_texture", None
+                )
+                if callable(get_visible_texture):
+                    visible_texture = get_visible_texture()
+
+            for layer, state in active_layers:
+                effective_strength = layer.strength
+                if layer.disable_when_overcast:
+                    coverage = self.atmospheric_system.config.cloud_coverage
+                    # Keep a baseline shadow presence while still responding to
+                    # coverage.
+                    coverage_scale = 0.35 + 0.65 * (1.0 - coverage)
+                    effective_strength *= max(0.0, min(1.0, coverage_scale))
+
+                set_atmospheric_layer(
+                    viewport_offset,
+                    viewport_size,
+                    map_size,
+                    layer.sky_exposure_threshold,
+                    sky_exposure_texture,
+                    explored_texture,
+                    visible_texture,
+                    layer.noise_scale,
+                    layer.noise_threshold_low,
+                    layer.noise_threshold_high,
+                    effective_strength,
+                    layer.tint_color,
+                    (state.drift_offset_x, state.drift_offset_y),
+                    state.turbulence_offset,
+                    layer.turbulence_strength,
+                    layer.turbulence_scale,
+                    layer.blend_mode,
+                    (
+                        round(px_left),
+                        round(px_top),
+                        round(px_right),
+                        round(px_bottom),
+                    ),
+                )
+
         # Render persistent decals (blood splatters, etc.) on the floor
         with record_time_live_variable("cpu.render.decals_ms"):
             graphics.render_decals(
@@ -396,6 +485,15 @@ class WorldView(View):
                     graphics,
                     viewport_bounds,
                     view_offset,
+                )
+
+        if config.DEBUG_SHOW_TILE_GRID and config.GRAPHICS_BACKEND == "moderngl":
+            grid_renderer = getattr(graphics, "draw_debug_tile_grid", None)
+            if callable(grid_renderer):
+                grid_renderer(
+                    (self.x, self.y),
+                    (self.width, self.height),
+                    (offset_x_pixels, offset_y_pixels),
                 )
 
         # Restore camera position after rendering

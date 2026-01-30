@@ -128,6 +128,8 @@ SHOW_FPS = False
 
 # Set to True to draw colored outlines around each View for debugging layouts.
 DEBUG_DRAW_VIEW_OUTLINES = False
+# Set to True to render a debug tile grid overlay on the world view.
+DEBUG_SHOW_TILE_GRID: bool = False
 
 # --- Begin Engine Settings (Derived from flags above) - DO NOT CHANGE DIRECTLY ---
 

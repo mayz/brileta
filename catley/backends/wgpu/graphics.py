@@ -23,6 +23,7 @@ from catley.util.glyph_buffer import GlyphBuffer
 from catley.util.tilesets import derive_outlined_atlas
 from catley.view.render.base_graphics import BaseGraphicsContext
 
+from .atmospheric_renderer import WGPUAtmosphericRenderer
 from .resource_manager import WGPUResourceManager
 from .screen_renderer import WGPUScreenRenderer
 from .shader_manager import WGPUShaderManager
@@ -75,6 +76,10 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         self.background_renderer = None
         # Environmental effect renderer for batched effect rendering
         self.environmental_effect_renderer = None
+        # Atmospheric renderer for cloud shadows and mist
+        self.atmospheric_renderer: WGPUAtmosphericRenderer | None = None
+        # Queued atmospheric layers for this frame
+        self._atmospheric_layers: list[tuple] = []
 
         # Letterbox/viewport state
         self.letterbox_geometry: tuple[int, int, int, int] | None = None
@@ -153,6 +158,12 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         from .environmental_effect_renderer import WGPUEnvironmentalEffectRenderer
 
         self.environmental_effect_renderer = WGPUEnvironmentalEffectRenderer(
+            self.resource_manager,
+            self.shader_manager,
+            surface_format,
+        )
+
+        self.atmospheric_renderer = WGPUAtmosphericRenderer(
             self.resource_manager,
             self.shader_manager,
             surface_format,
@@ -504,6 +515,9 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         self.ui_texture_renderer.begin_frame()
         self.background_renderer.begin_frame()
         self.environmental_effect_renderer.begin_frame()
+        if self.atmospheric_renderer is not None:
+            self.atmospheric_renderer.begin_frame()
+        self._atmospheric_layers = []
 
     def finalize_present(self) -> None:
         """Finalize frame presentation by rendering to screen."""
@@ -555,7 +569,60 @@ class WGPUGraphicsContext(BaseGraphicsContext):
                 render_pass, window_size, self.letterbox_geometry
             )
 
-            # Then render environmental effects (atmospheric overlays)
+            # Then render atmospheric layers (cloud shadows, ground mist)
+            if self._atmospheric_layers and self.atmospheric_renderer is not None:
+                letterbox = self.letterbox_geometry or (
+                    0,
+                    0,
+                    int(window_size[0]),
+                    int(window_size[1]),
+                )
+                for layer_state in self._atmospheric_layers:
+                    (
+                        viewport_offset,
+                        viewport_size,
+                        map_size,
+                        sky_exposure_threshold,
+                        sky_exposure_texture,
+                        explored_texture,
+                        visible_texture,
+                        noise_scale,
+                        noise_threshold_low,
+                        noise_threshold_high,
+                        strength,
+                        tint_color,
+                        drift_offset,
+                        turbulence_offset,
+                        turbulence_strength,
+                        turbulence_scale,
+                        blend_mode,
+                        pixel_bounds,
+                    ) = layer_state
+                    self.atmospheric_renderer.render(
+                        render_pass,
+                        window_size,
+                        letterbox,
+                        viewport_offset,
+                        viewport_size,
+                        map_size,
+                        sky_exposure_threshold,
+                        sky_exposure_texture,
+                        explored_texture,
+                        visible_texture,
+                        noise_scale,
+                        noise_threshold_low,
+                        noise_threshold_high,
+                        strength,
+                        tint_color,
+                        drift_offset,
+                        turbulence_offset,
+                        turbulence_strength,
+                        turbulence_scale,
+                        blend_mode,
+                        pixel_bounds,
+                    )
+
+            # Then render environmental effects (discrete effects like smoke puffs)
             if (
                 self.environmental_effect_renderer is not None
                 and self.environmental_effect_renderer.vertex_count > 0
@@ -850,6 +917,51 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         # Update coordinate converter
         self._setup_coordinate_converter()
 
+    def set_atmospheric_layer(
+        self,
+        viewport_offset: tuple[int, int],
+        viewport_size: tuple[int, int],
+        map_size: tuple[int, int],
+        sky_exposure_threshold: float,
+        sky_exposure_texture: wgpu.GPUTexture | None,
+        explored_texture: wgpu.GPUTexture | None,
+        visible_texture: wgpu.GPUTexture | None,
+        noise_scale: float,
+        noise_threshold_low: float,
+        noise_threshold_high: float,
+        strength: float,
+        tint_color: tuple[int, int, int],
+        drift_offset: tuple[float, float],
+        turbulence_offset: float,
+        turbulence_strength: float,
+        turbulence_scale: float,
+        blend_mode: str,
+        pixel_bounds: tuple[int, int, int, int],
+    ) -> None:
+        """Store atmospheric layer data for rendering this frame."""
+        self._atmospheric_layers.append(
+            (
+                viewport_offset,
+                viewport_size,
+                map_size,
+                sky_exposure_threshold,
+                sky_exposure_texture,
+                explored_texture,
+                visible_texture,
+                noise_scale,
+                noise_threshold_low,
+                noise_threshold_high,
+                strength,
+                tint_color,
+                drift_offset,
+                turbulence_offset,
+                turbulence_strength,
+                turbulence_scale,
+                blend_mode,
+                pixel_bounds,
+            )
+        )
+
     def cleanup(self) -> None:
         """Clean up WGPU resources before shutdown."""
         if self.resource_manager is not None:
@@ -861,6 +973,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         self.ui_texture_renderer = None
         self.background_renderer = None
         self.environmental_effect_renderer = None
+        self.atmospheric_renderer = None
         self.atlas_texture = None
         self.outlined_atlas_texture = None
         self.shader_manager = None

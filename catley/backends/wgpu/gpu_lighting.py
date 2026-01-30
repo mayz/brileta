@@ -124,6 +124,12 @@ class GPULightingSystem(LightingSystem):
         self._sky_exposure_sampler: wgpu.GPUSampler | None = None
         self._cached_map_revision: int = -1
 
+        # Explored/visible textures for fog-of-war masking
+        self._explored_texture: wgpu.GPUTexture | None = None
+        self._cached_exploration_revision: int = -1
+        self._visible_texture: wgpu.GPUTexture | None = None
+        self._cached_visibility_revision: tuple[int, int] | None = None
+
         # Emission texture for light-emitting tiles (acid pools, hot coals, etc.)
         self._emission_texture: wgpu.GPUTexture | None = None
 
@@ -542,6 +548,112 @@ class GPULightingSystem(LightingSystem):
 
         # Update cached revision
         self._cached_map_revision = game_map.structural_revision
+
+    def _update_explored_texture(self) -> None:
+        """Update the explored mask texture from the game map.
+
+        Creates a single-channel texture where each pixel represents whether
+        a tile has been explored by the player (255) or not (0).
+        Uses r8unorm format for WebGPU compatibility (filterable).
+        """
+        game_map = self.game_world.game_map
+        if game_map is None:
+            return
+
+        # Check if we need to update based on exploration revision
+        if (
+            self._cached_exploration_revision == game_map.exploration_revision
+            and self._explored_texture is not None
+        ):
+            return  # No update needed
+
+        # Convert bool array to uint8 (0 or 255), transposed to match texture coords
+        explored_data = np.ascontiguousarray(
+            (game_map.explored.T * 255).astype(np.uint8)
+        )
+
+        # Release old texture if it exists
+        if self._explored_texture is not None:
+            self._explored_texture = None
+
+        # Create new texture with explored data - use r8unorm for filterability
+        self._explored_texture = self.device.create_texture(
+            size=(game_map.width, game_map.height, 1),
+            format=wgpu.TextureFormat.r8unorm,
+            usage=wgpu.TextureUsage.TEXTURE_BINDING | wgpu.TextureUsage.COPY_DST,
+        )
+
+        # Write explored data to texture
+        self.queue.write_texture(
+            {
+                "texture": self._explored_texture,
+                "mip_level": 0,
+                "origin": (0, 0, 0),
+            },
+            memoryview(explored_data.tobytes()),
+            {
+                "offset": 0,
+                "bytes_per_row": game_map.width,  # 1 byte per uint8
+                "rows_per_image": game_map.height,
+            },
+            (game_map.width, game_map.height, 1),
+        )
+
+        # Update cached revision
+        self._cached_exploration_revision = game_map.exploration_revision
+
+    def _update_visible_texture(self) -> None:
+        """Update the visible mask texture from the game map.
+
+        Creates a single-channel texture where each pixel represents whether
+        a tile is currently visible to the player (255) or not (0).
+        Uses r8unorm format for WebGPU compatibility (filterable).
+        """
+        game_map = self.game_world.game_map
+        if game_map is None:
+            return
+
+        # Check if we need to update based on visibility revision
+        if self._visible_texture is not None:
+            current_revision = (self._cached_exploration_revision, self.revision)
+            if self._cached_visibility_revision == current_revision:
+                return  # No update needed
+
+        # Convert bool array to uint8 (0 or 255), transposed to match texture coords
+        visible_data = np.ascontiguousarray((game_map.visible.T * 255).astype(np.uint8))
+
+        # Release old texture if it exists
+        if self._visible_texture is not None:
+            self._visible_texture = None
+
+        # Create new texture with visible data - use r8unorm for filterability
+        self._visible_texture = self.device.create_texture(
+            size=(game_map.width, game_map.height, 1),
+            format=wgpu.TextureFormat.r8unorm,
+            usage=wgpu.TextureUsage.TEXTURE_BINDING | wgpu.TextureUsage.COPY_DST,
+        )
+
+        # Write visible data to texture
+        self.queue.write_texture(
+            {
+                "texture": self._visible_texture,
+                "mip_level": 0,
+                "origin": (0, 0, 0),
+            },
+            memoryview(visible_data.tobytes()),
+            {
+                "offset": 0,
+                "bytes_per_row": game_map.width,  # 1 byte per uint8
+                "rows_per_image": game_map.height,
+            },
+            (game_map.width, game_map.height, 1),
+        )
+
+        # Update cached revision
+        self._cached_visibility_revision = (
+            self._cached_exploration_revision,
+            self.revision,
+        )
 
     def _update_emission_texture(self, viewport_bounds: Rect) -> None:
         """Update the emission texture with light-emitting tile data.
@@ -998,6 +1110,10 @@ class GPULightingSystem(LightingSystem):
             # Update sky exposure texture if needed
             self._update_sky_exposure_texture()
 
+            # Update explored/visible textures for fog-of-war masking
+            self._update_explored_texture()
+            self._update_visible_texture()
+
             # Update emission texture for light-emitting tiles
             self._update_emission_texture(viewport_bounds)
 
@@ -1257,6 +1373,18 @@ class GPULightingSystem(LightingSystem):
         """
         self._cached_shadow_casters = None
 
+    def get_sky_exposure_texture(self) -> wgpu.GPUTexture | None:
+        """Return the sky exposure texture for atmospheric effects."""
+        return self._sky_exposure_texture
+
+    def get_explored_texture(self) -> wgpu.GPUTexture | None:
+        """Return the explored mask texture for fog-of-war effects."""
+        return self._explored_texture
+
+    def get_visible_texture(self) -> wgpu.GPUTexture | None:
+        """Return the visible mask texture for fog-of-war effects."""
+        return self._visible_texture
+
     def release(self) -> None:
         """Release GPU resources."""
         # WGPU resources are automatically cleaned up by Python GC
@@ -1269,6 +1397,8 @@ class GPULightingSystem(LightingSystem):
         self._vertex_buffer = None
         self._sky_exposure_texture = None
         self._sky_exposure_sampler = None
+        self._explored_texture = None
+        self._visible_texture = None
         self._emission_texture = None
 
         # Clear cached data

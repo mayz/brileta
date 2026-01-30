@@ -97,6 +97,10 @@ class GPULightingSystem(LightingSystem):
         # Sky exposure texture for directional lighting
         self._sky_exposure_texture: moderngl.Texture | None = None
         self._cached_map_revision: int = -1
+        self._explored_texture: moderngl.Texture | None = None
+        self._cached_exploration_revision: int = -1
+        self._visible_texture: moderngl.Texture | None = None
+        self._cached_visibility_revision: tuple[int, int] | None = None
 
         # Emission texture for light-emitting tiles (acid pools, hot coals, etc.)
         self._emission_texture: moderngl.Texture | None = None
@@ -109,6 +113,18 @@ class GPULightingSystem(LightingSystem):
         """Get a uniform from the fragment program with proper type narrowing."""
         assert self._fragment_program is not None
         return get_uniform(self._fragment_program, name)
+
+    def get_sky_exposure_texture(self) -> moderngl.Texture | None:
+        """Return the sky exposure texture for mask-based effects."""
+        return self._sky_exposure_texture
+
+    def get_explored_texture(self) -> moderngl.Texture | None:
+        """Return the explored mask texture."""
+        return self._explored_texture
+
+    def get_visible_texture(self) -> moderngl.Texture | None:
+        """Return the visible mask texture."""
+        return self._visible_texture
 
     def _initialize_gpu_resources(self) -> bool:
         """Initialize GPU fragment shader-based lighting.
@@ -353,6 +369,8 @@ class GPULightingSystem(LightingSystem):
 
             # Update sky exposure texture if needed
             self._update_sky_exposure_texture()
+            self._update_explored_texture()
+            self._update_visible_texture()
 
             # Update emission texture for light-emitting tiles
             self._update_emission_texture(viewport_bounds)
@@ -752,6 +770,64 @@ class GPULightingSystem(LightingSystem):
         # Update cached revision
         self._cached_map_revision = game_map.structural_revision
 
+    def _update_explored_texture(self) -> None:
+        """Update the explored mask texture from the game map."""
+        game_map = self.game_world.game_map
+        if game_map is None:
+            return
+
+        if (
+            self._cached_exploration_revision == game_map.exploration_revision
+            and self._explored_texture is not None
+        ):
+            return
+
+        explored_data = np.ascontiguousarray(game_map.explored.T, dtype=np.float32)
+
+        if self._explored_texture is not None:
+            self._explored_texture.release()
+
+        assert self.mgl_context is not None
+        self._explored_texture = self.mgl_context.texture(
+            (game_map.width, game_map.height),
+            components=1,
+            dtype="f4",
+        )
+        assert self._explored_texture is not None
+        self._explored_texture.write(explored_data.tobytes())
+
+        self._cached_exploration_revision = game_map.exploration_revision
+
+    def _update_visible_texture(self) -> None:
+        """Update the visible mask texture from the game map."""
+        game_map = self.game_world.game_map
+        if game_map is None:
+            return
+
+        if self._visible_texture is not None:
+            current_revision = (self._cached_exploration_revision, self.revision)
+            if self._cached_visibility_revision == current_revision:
+                return
+
+        visible_data = np.ascontiguousarray(game_map.visible.T, dtype=np.float32)
+
+        if self._visible_texture is not None:
+            self._visible_texture.release()
+
+        assert self.mgl_context is not None
+        self._visible_texture = self.mgl_context.texture(
+            (game_map.width, game_map.height),
+            components=1,
+            dtype="f4",
+        )
+        assert self._visible_texture is not None
+        self._visible_texture.write(visible_data.tobytes())
+
+        self._cached_visibility_revision = (
+            self._cached_exploration_revision,
+            self.revision,
+        )
+
     def _update_emission_texture(self, viewport_bounds: Rect) -> None:
         """Update the emission texture with light-emitting tile data.
 
@@ -909,6 +985,10 @@ class GPULightingSystem(LightingSystem):
             self._fullscreen_vao.release()
         if self._sky_exposure_texture is not None:
             self._sky_exposure_texture.release()
+        if self._explored_texture is not None:
+            self._explored_texture.release()
+        if self._visible_texture is not None:
+            self._visible_texture.release()
         if self._emission_texture is not None:
             self._emission_texture.release()
 
