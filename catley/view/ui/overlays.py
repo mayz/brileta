@@ -110,11 +110,12 @@ class TextOverlay(Overlay):
         """Subclasses implement the actual drawing commands using the canvas."""
 
     def invalidate(self) -> None:
-        """Mark the overlay as dirty so it will be re-rendered next frame."""
+        """Mark the overlay as dirty so it will be re-rendered next frame.
+
+        Note: We don't release the cached texture here because it's owned by
+        the FBO cache and will be reused on the next render.
+        """
         self._dirty = True
-        if self._cached_texture is not None:
-            self.controller.graphics.release_texture(self._cached_texture)
-            self._cached_texture = None
 
     def show(self) -> None:
         """Activate overlay and mark it for redraw."""
@@ -137,9 +138,9 @@ class TextOverlay(Overlay):
 
         if self.width <= 0 or self.height <= 0:
             # Nothing to render when dimensions are zero.
-            if self._cached_texture is not None:
-                self.controller.graphics.release_texture(self._cached_texture)
-                self._cached_texture = None
+            # Don't release texture - it's owned by the FBO cache and may be
+            # reused if dimensions become non-zero again.
+            self._cached_texture = None
             self._dirty = False
             return
 
@@ -151,9 +152,8 @@ class TextOverlay(Overlay):
         self.draw_content()
         artifact = self.canvas.end_frame()
         if artifact is not None:
-            # Release old texture before creating new one
-            if self._cached_texture is not None:
-                self.controller.graphics.release_texture(self._cached_texture)
+            # Note: We don't release the old texture because it's owned by
+            # the FBO cache. The same texture will be returned and reused.
             # Use cache key for unique texture caching per overlay
             create_with_key = getattr(
                 self.canvas, "create_texture_with_cache_key", None
