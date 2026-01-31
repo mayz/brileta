@@ -360,3 +360,19 @@ class GraphicsContext(abc.ABC):
             texture: The backend-specific texture object to release.
         """
         pass
+
+    @abc.abstractmethod
+    def draw_debug_tile_grid(
+        self,
+        view_origin: tuple[int, int],
+        view_size: tuple[int, int],
+        offset_pixels: tuple[float, float],
+    ) -> None:
+        """Render a debug tile grid overlay for the given view bounds.
+
+        Args:
+            view_origin: Top-left corner of the view in tile coordinates.
+            view_size: Size of the view in tiles (width, height).
+            offset_pixels: Pixel offset for screen shake effects.
+        """
+        pass

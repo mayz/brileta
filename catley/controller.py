@@ -83,9 +83,8 @@ class Controller:
         self.app = app
         self.gw = GameWorld(config.MAP_WIDTH, config.MAP_HEIGHT)
 
-        lighting_backend = config.LIGHTING_BACKEND
         if (
-            lighting_backend == "moderngl"
+            config.BACKEND.lighting == "moderngl"
             and config.IS_TEST_ENVIRONMENT
             and getattr(graphics, "mgl_context", None) is None
         ):
@@ -93,7 +92,7 @@ class Controller:
 
             graphics.mgl_context = moderngl.create_context(standalone=True)  # type: ignore[unresolved-attribute]
 
-        match lighting_backend:
+        match config.BACKEND.lighting:
             case "moderngl":
                 from .backends.moderngl.gpu_lighting import GPULightingSystem
 
@@ -102,8 +101,6 @@ class Controller:
                 from .backends.wgpu.gpu_lighting import GPULightingSystem
 
                 self.gw.lighting_system = GPULightingSystem(self.gw, graphics)
-            case _:
-                raise ValueError(f"Unknown lighting backend: {config.LIGHTING_BACKEND}")
 
         self.graphics = graphics
         self.coordinate_converter = graphics.coordinate_converter

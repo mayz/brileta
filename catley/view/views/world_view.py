@@ -487,14 +487,12 @@ class WorldView(View):
                     view_offset,
                 )
 
-        if config.DEBUG_SHOW_TILE_GRID and config.GRAPHICS_BACKEND == "moderngl":
-            grid_renderer = getattr(graphics, "draw_debug_tile_grid", None)
-            if callable(grid_renderer):
-                grid_renderer(
-                    (self.x, self.y),
-                    (self.width, self.height),
-                    (offset_x_pixels, offset_y_pixels),
-                )
+        if config.DEBUG_SHOW_TILE_GRID:
+            graphics.draw_debug_tile_grid(
+                (self.x, self.y),
+                (self.width, self.height),
+                (offset_x_pixels, offset_y_pixels),
+            )
 
         # Restore camera position after rendering
         vs.camera.set_position(original_cam_x, original_cam_y)

@@ -962,6 +962,53 @@ class WGPUGraphicsContext(BaseGraphicsContext):
             )
         )
 
+    def draw_debug_tile_grid(
+        self,
+        view_origin: tuple[int, int],
+        view_size: tuple[int, int],
+        offset_pixels: tuple[float, float],
+    ) -> None:
+        """Render a 1-pixel cyan tile grid overlay for the given view bounds."""
+        if self.screen_renderer is None or self.uv_map is None:
+            return
+
+        origin_x, origin_y = view_origin
+        width_tiles, height_tiles = view_size
+        offset_x, offset_y = offset_pixels
+
+        px_left, px_top = self.console_to_screen_coords(origin_x, origin_y)
+        px_right, px_bottom = self.console_to_screen_coords(
+            origin_x + width_tiles, origin_y + height_tiles
+        )
+
+        left = round(px_left + offset_x)
+        top = round(px_top + offset_y)
+        width_px = round(px_right - px_left)
+        height_px = round(px_bottom - px_top)
+
+        if width_px <= 0 or height_px <= 0:
+            return
+
+        uv = self.uv_map[self.SOLID_BLOCK_CHAR]
+        color_rgba = (
+            colors.CYAN[0] / 255.0,
+            colors.CYAN[1] / 255.0,
+            colors.CYAN[2] / 255.0,
+            1.0,
+        )
+
+        # Vertical grid lines
+        for i in range(width_tiles + 1):
+            px_x, _ = self.console_to_screen_coords(origin_x + i, origin_y)
+            x = round(px_x + offset_x)
+            self.screen_renderer.add_quad(x, top, 1, height_px, uv, color_rgba)
+
+        # Horizontal grid lines
+        for j in range(height_tiles + 1):
+            _, px_y = self.console_to_screen_coords(origin_x, origin_y + j)
+            y = round(px_y + offset_y)
+            self.screen_renderer.add_quad(left, y, width_px, 1, uv, color_rgba)
+
     def cleanup(self) -> None:
         """Clean up WGPU resources before shutdown."""
         if self.resource_manager is not None:

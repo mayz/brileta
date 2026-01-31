@@ -11,8 +11,6 @@ def main() -> None:
     # Suppress SDL3 startup info messages from tcod
     logging.getLogger("tcod.sdl").setLevel(logging.ERROR)
 
-    config.validate_backend_configuration()
-
     random.seed(config.RANDOM_SEED)
 
     app_config = AppConfig(
@@ -22,7 +20,7 @@ def main() -> None:
         vsync=config.VSYNC,
     )
 
-    match config.APP_BACKEND:
+    match config.BACKEND.app:
         case "tcod":
             from catley.backends.tcod.app import TCODApp
 
@@ -31,8 +29,6 @@ def main() -> None:
             from catley.backends.glfw.app import GlfwApp
 
             _APP_CLASS = GlfwApp
-        case _:
-            raise ValueError(f"Unknown app backend: {config.APP_BACKEND}")
 
     app: App = _APP_CLASS(app_config)
     app.run()

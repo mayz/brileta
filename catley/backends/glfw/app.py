@@ -11,7 +11,7 @@ from catley.util.misc import SuppressStderr
 
 from .window import GlfwWindow
 
-match config.GRAPHICS_BACKEND:
+match config.BACKEND.graphics:
     case "wgpu":
         from catley.backends.wgpu.graphics import WGPUGraphicsContext
 
@@ -20,10 +20,6 @@ match config.GRAPHICS_BACKEND:
         from catley.backends.moderngl.graphics import ModernGLGraphicsContext
 
         GraphicsContextImplClass = ModernGLGraphicsContext
-    case _:
-        raise ValueError(
-            f"Can't choose graphics backend {config.GRAPHICS_BACKEND!r} for GLFW"
-        )
 
 
 class GlfwApp(App[GraphicsContextImplClass]):

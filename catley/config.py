@@ -6,6 +6,7 @@ Organized by functional area for easy maintenance.
 """
 
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
@@ -73,35 +74,36 @@ AUDIO_ENABLED = True
 # BACKEND CONFIGURATION
 # =============================================================================
 
-# Application backend selection
-APP_BACKEND: Literal["tcod", "glfw"] = "glfw"
+# Options: "moderngl", "wgpu", "tcod-moderngl", "tcod-wgpu"
+# - "moderngl": Fast startup (~350ms). Recommended for now.
+# - "wgpu": Future-proof (WebGPU/Vulkan/Metal) but slow startup (~1200ms).
+# - "tcod-moderngl" / "tcod-wgpu": Legacy tcod app backend with GPU lighting.
+BACKEND_NAME = "moderngl"
 
-# Graphics context selection
-# - "moderngl":
-#   Fast startup (~350ms). Recommended for now.
-# - "wgpu":
-#   Ready to go and future-proof (WebGPU/Vulkan/Metal).
-#   BUT: slow startup (~1200ms) due to pipeline state object creation overhead.
-#   The first pipeline creation triggers Metal shader compiler init (~165ms) and
-#   adapter/device enumeration (~290ms). wgpu-py doesn't yet support Apple's
-#   Metal Binary Archives for caching compiled pipelines.
-#
-#   When switching to "wgpu" as a default, consider implementing a loading screen
-#   to mask the ~1.2s init time, or just accept the startup cost.
-GRAPHICS_BACKEND: Literal["tcod", "moderngl", "wgpu"] = "moderngl"
+# --- Backend implementation - DO NOT CHANGE DIRECTLY ---
 
-# Lighting system selection (independent of graphics backend)
-# Same tradeoffs as GRAPHICS_BACKEND above.
-LIGHTING_BACKEND: Literal["moderngl", "wgpu"] = "moderngl"
 
-# These are the valid combinations of
-# APP_BACKEND, GRAPHICS_BACKEND, and LIGHTING_BACKEND.
-VALID_BACKEND_CONFIG_COMBINATIONS = [
-    ("tcod", "tcod", "moderngl"),
-    ("tcod", "tcod", "wgpu"),
-    ("glfw", "moderngl", "moderngl"),
-    ("glfw", "wgpu", "wgpu"),
-]
+@dataclass(frozen=True)
+class BackendConfig:
+    """Configuration for which backends to use for app, graphics, and lighting."""
+
+    app: Literal["tcod", "glfw"]
+    graphics: Literal["tcod", "moderngl", "wgpu"]
+    lighting: Literal["moderngl", "wgpu"]
+
+
+_BACKEND_CONFIGS: dict[str, BackendConfig] = {
+    "tcod-moderngl": BackendConfig("tcod", "tcod", "moderngl"),
+    "tcod-wgpu": BackendConfig("tcod", "tcod", "wgpu"),
+    "moderngl": BackendConfig("glfw", "moderngl", "moderngl"),
+    "wgpu": BackendConfig("glfw", "wgpu", "wgpu"),
+}
+
+if BACKEND_NAME not in _BACKEND_CONFIGS:
+    _valid = ", ".join(f'"{k}"' for k in _BACKEND_CONFIGS)
+    raise ValueError(f'Invalid BACKEND_NAME "{BACKEND_NAME}". Valid options: {_valid}')
+
+BACKEND: BackendConfig = _BACKEND_CONFIGS[BACKEND_NAME]
 
 # ============================================================================
 # PERFORMANCE CONFIGURATION
@@ -298,27 +300,3 @@ PROBABILITY_DESCRIPTORS_MILITARY = [
 
 SHOW_MESSAGE_SEQUENCE_NUMBERS = False
 PRINT_MESSAGES_TO_CONSOLE = False
-
-# =============================================================================
-# Supporting functions
-# =============================================================================
-
-
-def validate_backend_configuration() -> None:
-    """Validate the backend configuration.
-
-    Raises:
-        ValueError: If the backend combination is not valid.
-    """
-    if (
-        APP_BACKEND,
-        GRAPHICS_BACKEND,
-        LIGHTING_BACKEND,
-    ) not in VALID_BACKEND_CONFIG_COMBINATIONS:
-        valid_combos = "\n  ".join(str(c) for c in VALID_BACKEND_CONFIG_COMBINATIONS)
-        raise ValueError(
-            f"Invalid backend configuration: "
-            f"APP_BACKEND={APP_BACKEND}, GRAPHICS_BACKEND={GRAPHICS_BACKEND}, "
-            f"LIGHTING_BACKEND={LIGHTING_BACKEND}.\n"
-            f"Valid combinations are:\n  {valid_combos}"
-        )

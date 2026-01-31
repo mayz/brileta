@@ -838,3 +838,58 @@ class TCODGraphicsContext(GraphicsContext):
         # CFFI finalizer handles SDL_DestroyTexture on garbage collection.
         # No explicit release needed for TCOD textures.
         pass
+
+    def draw_debug_tile_grid(
+        self,
+        view_origin: tuple[int, int],
+        view_size: tuple[int, int],
+        offset_pixels: tuple[float, float],
+    ) -> None:
+        """Render a 1-pixel cyan tile grid overlay for the given view bounds."""
+        if not self.sdl_renderer:
+            return
+
+        origin_x, origin_y = view_origin
+        width_tiles, height_tiles = view_size
+        offset_x, offset_y = offset_pixels
+
+        px_left, px_top = self.console_to_screen_coords(origin_x, origin_y)
+        px_right, px_bottom = self.console_to_screen_coords(
+            origin_x + width_tiles, origin_y + height_tiles
+        )
+
+        left = round(px_left + offset_x)
+        top = round(px_top + offset_y)
+        width_px = round(px_right - px_left)
+        height_px = round(px_bottom - px_top)
+
+        if width_px <= 0 or height_px <= 0:
+            return
+
+        # Create reusable 1x1 pixel texture for grid lines
+        if not hasattr(self, "_grid_pixel_texture"):
+            pixel_array = np.ones((1, 1, 4), dtype=np.uint8) * 255
+            self._grid_pixel_texture = self.sdl_renderer.upload_texture(pixel_array)
+            self._grid_pixel_texture.blend_mode = tcod.sdl.render.BlendMode.BLEND
+
+        self._grid_pixel_texture.color_mod = colors.CYAN
+        self._grid_pixel_texture.alpha_mod = 255
+
+        # Vertical grid lines
+        for i in range(width_tiles + 1):
+            px_x, _ = self.console_to_screen_coords(origin_x + i, origin_y)
+            x = round(px_x + offset_x)
+            self.sdl_renderer.copy(
+                self._grid_pixel_texture, dest=(x, top, 1, height_px)
+            )
+
+        # Horizontal grid lines
+        for j in range(height_tiles + 1):
+            _, px_y = self.console_to_screen_coords(origin_x, origin_y + j)
+            y = round(px_y + offset_y)
+            self.sdl_renderer.copy(
+                self._grid_pixel_texture, dest=(left, y, width_px, 1)
+            )
+
+        # Reset for next use
+        self._grid_pixel_texture.color_mod = (255, 255, 255)
