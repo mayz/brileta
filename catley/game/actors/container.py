@@ -19,6 +19,9 @@ from .components import ContainerStorage
 from .core import Actor, CharacterLayer
 
 if TYPE_CHECKING:
+    from catley.controller import Controller
+    from catley.game.actions.discovery import ActionOption
+    from catley.game.actors.core import Character
     from catley.game.game_world import GameWorld
     from catley.game.items.item_core import Item
 
@@ -93,6 +96,30 @@ class Container(Actor):
     # Type narrowing - inventory is always ContainerStorage for containers
     inventory: ContainerStorage
 
+    def get_target_description(self) -> str | None:
+        """Return a short description for the action panel."""
+        return "A container"
+
+    def get_contextual_actions(
+        self, controller: Controller, player: Character
+    ) -> list[ActionOption]:
+        """Return context-sensitive actions for this container."""
+        from catley.game.actions.discovery import ActionDiscovery
+
+        discovery = (
+            controller.action_discovery
+            if hasattr(controller, "action_discovery")
+            else ActionDiscovery()
+        )
+        context = discovery.context_builder.build_context(controller, player)
+        return discovery.environment_discovery.discover_environment_actions_for_tile(
+            controller,
+            player,
+            context,
+            self.x,
+            self.y,
+        )
+
 
 class ItemPile(Actor):
     """An ephemeral pile of items dropped on the ground.
@@ -152,6 +179,49 @@ class ItemPile(Actor):
 
     # Type narrowing - inventory is always ContainerStorage for item piles
     inventory: ContainerStorage
+
+    def get_target_description(self) -> str | None:
+        """Return a short description for the action panel."""
+        items = list(self.inventory)
+        has_countables = bool(self.inventory.countables)
+        if len(items) == 1 and not has_countables:
+            return "An item on the ground"
+        return "On the ground"
+
+    def get_contextual_actions(
+        self, controller: Controller, player: Character
+    ) -> list[ActionOption]:
+        """Return context-sensitive actions for this item pile."""
+        from catley.game.actions.discovery import ActionCategory, ActionOption
+        from catley.game.actions.misc import PickupItemsPlan
+
+        distance = max(abs(self.x - player.x), abs(self.y - player.y))
+        if distance == 0:
+            return []
+
+        item_x, item_y = self.x, self.y
+
+        def create_pathfind_and_pickup(x: int, y: int):
+            def pathfind_and_pickup():
+                return controller.start_plan(
+                    player,
+                    PickupItemsPlan,
+                    target_position=(x, y),
+                )
+
+            return pathfind_and_pickup
+
+        pickup_action = ActionOption(
+            id="pickup-walk",
+            name="Walk to and pick up",
+            description="Move to the items and pick them up",
+            category=ActionCategory.ITEMS,
+            action_class=None,
+            requirements=[],
+            static_params={},
+            execute=create_pathfind_and_pickup(item_x, item_y),
+        )
+        return [pickup_action]
 
     def is_empty(self) -> bool:
         """Check if this pile has no items and no countables."""

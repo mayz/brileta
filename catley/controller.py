@@ -24,6 +24,7 @@ from .events import (
     subscribe_to_event,
 )
 from .game.actions.base import GameIntent
+from .game.actions.discovery import ActionDiscovery
 from .game.actions.types import AnimationType
 from .game.actors import Actor
 from .game.actors.core import Character
@@ -82,6 +83,7 @@ class Controller:
     def __init__(self, app: App, graphics: GraphicsContext) -> None:
         self.app = app
         self.gw = GameWorld(config.MAP_WIDTH, config.MAP_HEIGHT)
+        self.action_discovery = ActionDiscovery()
 
         if (
             config.BACKEND.lighting == "moderngl"

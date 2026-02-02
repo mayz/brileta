@@ -70,6 +70,7 @@ from .idle_animation import (
 if TYPE_CHECKING:
     from catley.controller import Controller
     from catley.game.actions.base import GameIntent
+    from catley.game.actions.discovery import ActionOption
     from catley.game.game_world import GameWorld
 
 
@@ -423,6 +424,16 @@ class Actor:
         """
         return None
 
+    def get_target_description(self) -> str | None:
+        """Return a short description for the action panel."""
+        return None
+
+    def get_contextual_actions(
+        self, controller: Controller, player: Character
+    ) -> list[ActionOption]:
+        """Return context-sensitive actions for the action panel."""
+        return []
+
 
 class Character(Actor):
     """A character (player, NPC, monster) with full capabilities.
@@ -554,6 +565,44 @@ class Character(Actor):
         provide AI-driven behavior.
         """
         return None
+
+    def get_target_description(self) -> str | None:
+        """Return a descriptive label for this character."""
+        if not self.health.is_alive():
+            return "Deceased"
+
+        parts = [f"HP: {self.health.hp}/{self.health.max_hp}"]
+        if isinstance(self.ai, DispositionBasedAI):
+            label = self.ai.disposition.name.replace("_", " ").lower()
+            parts.append(label.title())
+
+        return " | ".join(parts)
+
+    def get_contextual_actions(
+        self, controller: Controller, player: Character
+    ) -> list[ActionOption]:
+        """Return actions available when targeting this character."""
+        from catley.game.actions.discovery import ActionCategory, ActionDiscovery
+
+        discovery = (
+            controller.action_discovery
+            if hasattr(controller, "action_discovery")
+            else ActionDiscovery()
+        )
+
+        if self is player:
+            all_actions = discovery.get_available_options(controller, player)
+            return [
+                action
+                for action in all_actions
+                if action.category
+                in (
+                    ActionCategory.ITEMS,
+                    ActionCategory.ENVIRONMENT,
+                )
+            ]
+
+        return discovery.get_options_for_target(controller, player, self)
 
 
 class PC(Character):

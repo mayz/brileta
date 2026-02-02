@@ -8,8 +8,8 @@ from catley import colors, config
 from catley.backends.pillow.canvas import PillowImageCanvas
 from catley.environment import tile_types
 from catley.game.actions.discovery import ActionDiscovery, ActionOption
-from catley.game.actors import Actor, Character
-from catley.game.actors.container import Container, ItemPile
+from catley.game.actors import Actor
+from catley.game.actors.container import ItemPile
 from catley.game.countables import CountableType
 from catley.game.items.properties import WeaponProperty
 from catley.types import InterpolationAlpha
@@ -26,6 +26,7 @@ from .base import TextView
 if TYPE_CHECKING:
     from catley.controller import Controller
     from catley.game.actions.discovery import TargetType
+    from catley.game.items.item_core import Item
 
 
 class ActionPanelView(TextView):
@@ -40,7 +41,11 @@ class ActionPanelView(TextView):
             font_size=config.ACTION_PANEL_FONT_SIZE,
             line_spacing=1.0,
         )
-        self.discovery = ActionDiscovery()
+        self.discovery = (
+            controller.action_discovery
+            if hasattr(controller, "action_discovery")
+            else ActionDiscovery()
+        )
         self._cached_actions: list[ActionOption] = []
         self._cached_target_name: str | None = None
         self._cached_target_description: str | None = None
@@ -180,7 +185,7 @@ class ActionPanelView(TextView):
         target_actor_key = ""
         if gw.mouse_tile_location_on_map:
             mx, my = gw.mouse_tile_location_on_map
-            target = gw.get_actor_at_location(mx, my)
+            target, _items = self._resolve_hover_target(mx, my)
             if target:
                 target_actor_key = f"{target.x},{target.y}"
 
@@ -554,74 +559,51 @@ class ActionPanelView(TextView):
             self._cached_actions = []
             return
 
-        # Get target at mouse position
-        target_actor = None
-        non_blocking_actor = None
+        target_actor, items = self._resolve_hover_target(x, y)
+        if items:
+            if len(items) == 1:
+                self._cached_target_name = items[0].name
+                self._cached_target_description = "An item on the ground"
+            else:
+                self._cached_target_name = f"{len(items)} items"
+                self._cached_target_description = "Multiple items here"
 
-        # Check for visible actors first
-        if gw.game_map.visible[x, y]:
-            actor = gw.get_actor_at_location(x, y)
-            if actor:
-                if actor.blocks_movement:
-                    target_actor = actor
-                else:
-                    non_blocking_actor = actor
+            # Create item pickup actions based on distance
+            distance = max(abs(x - gw.player.x), abs(y - gw.player.y))
 
-        # Check for items if no blocking actor
-        if not target_actor:
-            items = gw.get_pickable_items_at_location(x, y)
-            if items and gw.game_map.visible[x, y]:
-                if len(items) == 1:
-                    self._cached_target_name = items[0].name
-                    self._cached_target_description = "An item on the ground"
-                else:
-                    self._cached_target_name = f"{len(items)} items"
-                    self._cached_target_description = "Multiple items here"
-
-                # Get item-specific actions from discovery system
-                context = self.discovery.context_builder.build_context(
-                    self.controller, gw.player
+            if distance == 0:
+                # Player is standing on items - G key works
+                self._cached_actions = []
+            else:
+                # Player needs to move - create "Walk to" action
+                from catley.game.actions.discovery import (
+                    ActionCategory,
+                    ActionOption,
                 )
-                # Create item pickup actions based on distance
-                distance = max(abs(x - gw.player.x), abs(y - gw.player.y))
+                from catley.game.actions.misc import PickupItemsPlan
 
-                if distance == 0:
-                    # Player is standing on items - G key works
-                    self._cached_actions = []
-                else:
-                    # Player needs to move - create "Walk to" action
-                    from catley.game.actions.discovery import (
-                        ActionCategory,
-                        ActionOption,
-                    )
-                    from catley.game.actions.misc import PickupItemsPlan
+                def create_pathfind_and_pickup(item_x: int, item_y: int):
+                    def pathfind_and_pickup():
+                        return self.controller.start_plan(
+                            gw.player,
+                            PickupItemsPlan,
+                            target_position=(item_x, item_y),
+                        )
 
-                    def create_pathfind_and_pickup(item_x: int, item_y: int):
-                        def pathfind_and_pickup():
-                            return self.controller.start_plan(
-                                gw.player,
-                                PickupItemsPlan,
-                                target_position=(item_x, item_y),
-                            )
+                    return pathfind_and_pickup
 
-                        return pathfind_and_pickup
-
-                    pickup_action = ActionOption(
-                        id="pickup-walk",  # Must start with "pickup" for default action
-                        name="Walk to and pick up",
-                        description="Move to the items and pick them up",
-                        category=ActionCategory.ITEMS,
-                        action_class=None,
-                        requirements=[],
-                        static_params={},
-                        execute=create_pathfind_and_pickup(x, y),
-                    )
-                    self._cached_actions = [pickup_action]
-                return
-
-        # Use non-blocking actor if no items
-        if not target_actor and non_blocking_actor:
-            target_actor = non_blocking_actor
+                pickup_action = ActionOption(
+                    id="pickup-walk",  # Must start with "pickup" for default action
+                    name="Walk to and pick up",
+                    description="Move to the items and pick them up",
+                    category=ActionCategory.ITEMS,
+                    action_class=None,
+                    requirements=[],
+                    static_params={},
+                    execute=create_pathfind_and_pickup(x, y),
+                )
+                self._cached_actions = [pickup_action]
+            return
 
         # Handle actor target
         if target_actor:
@@ -654,6 +636,24 @@ class ActionPanelView(TextView):
             else:
                 self._cached_actions = []
 
+    def _resolve_hover_target(
+        self, x: int, y: int
+    ) -> tuple[Actor | None, list[Item] | None]:
+        """Resolve a hover target at a location, preferring actors over items."""
+        gw = self.controller.gw
+        if not gw.game_map.visible[x, y]:
+            return None, None
+
+        actor = gw.get_actor_at_location(x, y)
+        if actor is not None:
+            return actor, None
+
+        items = gw.get_pickable_items_at_location(x, y)
+        if items:
+            return None, items
+
+        return None, None
+
     def _populate_actor_target_data(self, target_actor: Actor) -> None:
         """Populate action panel data for a target actor."""
         from catley.game.actions.discovery import classify_target
@@ -671,106 +671,10 @@ class ActionPanelView(TextView):
             target_type
         )
 
-        # Get description based on actor type
-        if isinstance(target_actor, Character):
-            # Characters always have health component
-            if target_actor.health.is_alive():
-                self._cached_target_description = (
-                    f"HP: {target_actor.health.hp}/{target_actor.health.max_hp}"
-                )
-            else:
-                self._cached_target_description = "Deceased"
-
-            # Get available actions for this target
-            if target_actor is gw.player:
-                # Hovering over self - show self-targeting actions (consumables, rest)
-                self._cached_actions = self._get_general_actions()
-            else:
-                self._cached_actions = self.discovery.get_options_for_target(
-                    self.controller, gw.player, target_actor
-                )
-        elif isinstance(target_actor, Container):
-            # Container - show search action via environment discovery
-            self._cached_target_description = None
-            context = self.discovery.context_builder.build_context(
-                self.controller, gw.player
-            )
-            env_discovery = self.discovery.environment_discovery
-            self._cached_actions = env_discovery.discover_environment_actions_for_tile(
-                self.controller,
-                gw.player,
-                context,
-                target_actor.x,
-                target_actor.y,
-            )
-        elif isinstance(target_actor, ItemPile):
-            # ItemPile - show "Walk to and pick up" action
-            items = list(target_actor.inventory)
-            has_countables = bool(target_actor.inventory.countables)
-            if len(items) == 1 and not has_countables:
-                self._cached_target_description = "An item on the ground"
-            else:
-                self._cached_target_description = "On the ground"
-
-            # Create pickup action based on distance
-            distance = max(
-                abs(target_actor.x - gw.player.x),
-                abs(target_actor.y - gw.player.y),
-            )
-
-            if distance == 0:
-                # Player is standing on items - G key works, no action needed
-                self._cached_actions = []
-            else:
-                # Player needs to move - create "Walk to and pick up" action
-                from catley.game.actions.discovery import ActionCategory
-                from catley.game.actions.misc import PickupItemsPlan
-
-                item_x, item_y = target_actor.x, target_actor.y
-
-                def create_pathfind_and_pickup(x: int, y: int):
-                    def pathfind_and_pickup():
-                        return self.controller.start_plan(
-                            gw.player,
-                            PickupItemsPlan,
-                            target_position=(x, y),
-                        )
-
-                    return pathfind_and_pickup
-
-                pickup_action = ActionOption(
-                    id="pickup-walk",  # Must start with "pickup" for default action
-                    name="Walk to and pick up",
-                    description="Move to the items and pick them up",
-                    category=ActionCategory.ITEMS,
-                    action_class=None,
-                    requirements=[],
-                    static_params={},
-                    execute=create_pathfind_and_pickup(item_x, item_y),
-                )
-                self._cached_actions = [pickup_action]
-        else:
-            self._cached_target_description = None
-            self._cached_actions = []
-
-    def _get_general_actions(self) -> list[ActionOption]:
-        """Get general actions available regardless of what player is looking at.
-
-        Returns actions like Rest, Sleep, Use Consumable that are self-targeting
-        and don't require a specific target.
-        """
-        from catley.game.actions.discovery import ActionCategory
-
-        gw = self.controller.gw
-        player = gw.player
-
-        # Get all available actions and filter to self-targeting categories
-        all_actions = self.discovery.get_available_options(self.controller, player)
-        return [
-            a
-            for a in all_actions
-            if a.category in (ActionCategory.ITEMS, ActionCategory.ENVIRONMENT)
-        ]
+        self._cached_target_description = target_actor.get_target_description()
+        self._cached_actions = target_actor.get_contextual_actions(
+            self.controller, gw.player
+        )
 
     def _get_default_action_id_for_type(
         self, target_type: TargetType | None

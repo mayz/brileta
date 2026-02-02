@@ -8,8 +8,11 @@ from unittest.mock import MagicMock
 
 from catley import colors
 from catley.controller import Controller
-from catley.game.actors import Actor, Character
+from catley.game.actors import Actor, Character, ItemPile
+from catley.game.countables import CountableType, get_countable_display_name
+from catley.game.enums import ItemSize
 from catley.game.game_world import GameWorld
+from catley.game.items.item_core import Item, ItemType
 from catley.view.render.graphics import GraphicsContext
 from catley.view.views.action_panel_view import ActionPanelView
 from tests.helpers import DummyGameWorld
@@ -217,6 +220,29 @@ class TestActionPanelSelectedTarget:
         view._update_cached_data()
 
         assert view._cached_target_name == selected.name
+
+
+class TestActionPanelHoverResolution:
+    """Tests for hover target resolution behavior."""
+
+    def test_hover_prefers_actor_over_items_for_countables(self) -> None:
+        """Hover should prefer actor data when both actors and items exist."""
+        controller, view = make_action_panel()
+        gw = controller.gw
+
+        item = Item(ItemType(name="Sword", description="", size=ItemSize.NORMAL))
+        gw.items[(10, 10)] = [item]
+
+        pile = ItemPile(10, 10, game_world=cast(GameWorld, gw))
+        pile.inventory.add_countable(CountableType.COIN, 3)
+        gw.add_actor(pile)
+
+        gw.mouse_tile_location_on_map = (10, 10)
+        view._update_cached_data()
+
+        assert view._cached_target_name == get_countable_display_name(
+            CountableType.COIN, 3
+        )
 
     def test_selected_indicator_set_for_selected_target(self) -> None:
         """_cached_is_selected should be True when target is from selected_target."""
