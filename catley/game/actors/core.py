@@ -30,7 +30,7 @@ maintaining flexibility through optional components.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from catley import colors
 from catley.config import DEFAULT_ACTOR_SPEED
@@ -70,6 +70,7 @@ from .idle_animation import (
 if TYPE_CHECKING:
     from catley.controller import Controller
     from catley.game.actions.base import GameIntent
+    from catley.game.actions.discovery import ActionDiscovery, ActionOption
     from catley.game.game_world import GameWorld
 
 
@@ -145,6 +146,8 @@ class Actor:
     computation) for the capabilities they actually use, while maintaining a
     unified and clear interface for game systems.
     """
+
+    _action_discovery: ClassVar[ActionDiscovery | None] = None
 
     def __init__(
         self,
@@ -423,6 +426,25 @@ class Actor:
         """
         return None
 
+    def get_target_description(self) -> str | None:
+        """Return a short description for UI targeting panels."""
+        return None
+
+    def get_contextual_actions(
+        self, controller: Controller, player: Character
+    ) -> list[ActionOption]:
+        """Return available actions when this actor is targeted."""
+        return []
+
+    @classmethod
+    def _get_action_discovery(cls) -> ActionDiscovery:
+        """Return a shared ActionDiscovery instance for actor-driven UI info."""
+        if cls._action_discovery is None:
+            from catley.game.actions.discovery import ActionDiscovery
+
+            cls._action_discovery = ActionDiscovery()
+        return cls._action_discovery
+
 
 class Character(Actor):
     """A character (player, NPC, monster) with full capabilities.
@@ -554,6 +576,27 @@ class Character(Actor):
         provide AI-driven behavior.
         """
         return None
+
+    def get_target_description(self) -> str | None:
+        """Describe this character using disposition and name."""
+        if self.health and not self.health.is_alive():
+            return "Deceased"
+
+        disposition = getattr(self.ai, "disposition", None)
+        if disposition is None:
+            return self.name
+
+        return f"A {disposition.name.lower()} {self.name}"
+
+    def get_contextual_actions(
+        self, controller: Controller, player: Character
+    ) -> list[ActionOption]:
+        """Return contextual actions for this character."""
+        if self is player:
+            return []
+
+        discovery = self._get_action_discovery()
+        return discovery.get_options_for_target(controller, player, self)
 
 
 class PC(Character):

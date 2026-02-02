@@ -19,6 +19,9 @@ from .components import ContainerStorage
 from .core import Actor, CharacterLayer
 
 if TYPE_CHECKING:
+    from catley.controller import Controller
+    from catley.game.actions.discovery import ActionOption
+    from catley.game.actors.core import Character
     from catley.game.game_world import GameWorld
     from catley.game.items.item_core import Item
 
@@ -92,6 +95,24 @@ class Container(Actor):
 
     # Type narrowing - inventory is always ContainerStorage for containers
     inventory: ContainerStorage
+
+    def get_target_description(self) -> str | None:
+        """Describe this container for targeting UI."""
+        return "A container"
+
+    def get_contextual_actions(
+        self, controller: Controller, player: Character
+    ) -> list[ActionOption]:
+        """Return available actions when targeting this container."""
+        discovery = self._get_action_discovery()
+        context = discovery.context_builder.build_context(controller, player)
+        return discovery.environment_discovery.discover_environment_actions_for_tile(
+            controller,
+            player,
+            context,
+            self.x,
+            self.y,
+        )
 
 
 class ItemPile(Actor):
@@ -176,6 +197,55 @@ class ItemPile(Actor):
         if item_count == 1:
             return self.inventory.get_items()[0].name
         return f"Item pile ({item_count} items)"
+
+    def get_target_description(self) -> str | None:
+        """Describe the items on the ground for targeting UI."""
+        items = list(self.inventory)
+        has_countables = bool(self.inventory.countables)
+        if len(items) == 1 and not has_countables:
+            return "An item on the ground"
+        if items or has_countables:
+            return "On the ground"
+        return None
+
+    def get_contextual_actions(
+        self, controller: Controller, player: Character
+    ) -> list[ActionOption]:
+        """Return available actions for picking up this item pile."""
+        distance = max(
+            abs(self.x - player.x),
+            abs(self.y - player.y),
+        )
+
+        if distance == 0:
+            return []
+
+        from catley.game.actions.discovery import ActionCategory, ActionOption
+        from catley.game.actions.misc import PickupItemsPlan
+
+        item_x, item_y = self.x, self.y
+
+        def create_pathfind_and_pickup(x: int, y: int):
+            def pathfind_and_pickup() -> bool:
+                return controller.start_plan(
+                    player,
+                    PickupItemsPlan,
+                    target_position=(x, y),
+                )
+
+            return pathfind_and_pickup
+
+        pickup_action = ActionOption(
+            id="pickup-walk",  # Must start with "pickup" for default action
+            name="Walk to and pick up",
+            description="Move to the items and pick them up",
+            category=ActionCategory.ITEMS,
+            action_class=None,
+            requirements=[],
+            static_params={},
+            execute=create_pathfind_and_pickup(item_x, item_y),
+        )
+        return [pickup_action]
 
 
 # === Factory Functions ===

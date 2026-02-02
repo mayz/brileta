@@ -9,7 +9,10 @@ from unittest.mock import MagicMock
 from catley import colors
 from catley.controller import Controller
 from catley.game.actors import Actor, Character
+from catley.game.actors.container import ItemPile
+from catley.game.enums import ItemSize
 from catley.game.game_world import GameWorld
+from catley.game.items.item_core import ItemType
 from catley.view.render.graphics import GraphicsContext
 from catley.view.views.action_panel_view import ActionPanelView
 from tests.helpers import DummyGameWorld
@@ -39,6 +42,10 @@ class DummyController:
     def is_combat_mode(self) -> bool:
         """Always return False for these tests - not in combat mode."""
         return False
+
+    def start_plan(self, *_args: object, **_kwargs: object) -> bool:
+        """Stub start_plan used by contextual actions."""
+        return True
 
 
 def make_action_panel() -> tuple[DummyController, ActionPanelView]:
@@ -212,7 +219,7 @@ class TestActionPanelSelectedTarget:
 
         controller.selected_target = selected
         controller.gw.mouse_tile_location_on_map = (hovered.x, hovered.y)
-        view.discovery.get_options_for_target = MagicMock(return_value=[])
+        selected.get_contextual_actions = MagicMock(return_value=[])
 
         view._update_cached_data()
 
@@ -229,7 +236,7 @@ class TestActionPanelSelectedTarget:
         gw.add_actor(selected)
 
         controller.selected_target = selected
-        view.discovery.get_options_for_target = MagicMock(return_value=[])
+        selected.get_contextual_actions = MagicMock(return_value=[])
 
         view._update_cached_data()
 
@@ -247,8 +254,37 @@ class TestActionPanelSelectedTarget:
 
         controller.selected_target = None
         controller.gw.mouse_tile_location_on_map = (hovered.x, hovered.y)
-        view.discovery.get_options_for_target = MagicMock(return_value=[])
+        hovered.get_contextual_actions = MagicMock(return_value=[])
 
         view._update_cached_data()
 
         assert view._cached_is_selected is False
+
+
+class TestActionPanelItemPilePriority:
+    """Tests for ItemPile precedence over loose item listings."""
+
+    def test_item_pile_target_wins_over_items_list(self) -> None:
+        """Item pile actor should be used even when items are present."""
+        controller, view = make_action_panel()
+        gw = controller.gw
+
+        item_type = ItemType(
+            name="Widget",
+            description="A test widget.",
+            size=ItemSize.TINY,
+        )
+        item_one = item_type.create()
+        item_two = item_type.create()
+        pile = ItemPile(
+            3, 3, items=[item_one, item_two], game_world=cast(GameWorld, gw)
+        )
+        gw.add_actor(pile)
+
+        gw.items[(3, 3)] = [item_one, item_two]
+        gw.mouse_tile_location_on_map = (3, 3)
+
+        view._update_cached_data()
+
+        assert view._cached_target_name == pile.display_name
+        assert view._cached_target_description == pile.get_target_description()
