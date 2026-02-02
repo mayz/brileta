@@ -12,7 +12,7 @@ from typing import Literal
 
 import tcod.constants
 
-from catley.types import Opacity
+from catley.types import Opacity, RandomSeed
 
 # =============================================================================
 # GENERAL
@@ -20,8 +20,9 @@ from catley.types import Opacity
 
 PROJECT_ROOT_PATH = Path(__file__).resolve().parent.parent
 
-# RANDOM_SEED = None
-RANDOM_SEED = "burrito1"
+# Master seed for all randomness (map generation, gameplay, etc.)
+# Set to None for non-deterministic behavior.
+RANDOM_SEED: RandomSeed = "burrito1"
 
 # Test environment detection
 IS_TEST_ENVIRONMENT = "pytest" in sys.modules
@@ -158,7 +159,7 @@ DEFAULT_ACTOR_SPEED = 100  # Default speed for actors (energy gained per round)
 HOSTILE_AI_ENABLED = True
 
 # Field of view
-FOV_RADIUS = 15  # Player's sight radius
+FOV_RADIUS = 50  # Player's sight radius (large enough to cover full viewport)
 FOV_ALGORITHM = tcod.constants.FOV_SYMMETRIC_SHADOWCAST
 FOV_LIGHT_WALLS = True
 
@@ -175,10 +176,27 @@ PLAYER_BASE_TOUGHNESS = 30  # Player's starting toughness score
 MAP_WIDTH = 80
 MAP_HEIGHT = 43
 
-# Room generation
+# Generator type: "dungeon" (legacy rooms+corridors) or "settlement" (pipeline-based)
+# TODO: Add "wilderness" once CellularAutomataTerrainLayer is implemented
+MAP_GENERATOR_TYPE = "settlement"
+
+# Room generation (for dungeon generator)
 MAX_ROOM_SIZE = 20
 MIN_ROOM_SIZE = 6
 MAX_NUM_ROOMS = 3
+
+# Settlement generation (for settlement generator)
+SETTLEMENT_STREET_STYLE = "cross"  # "single", "cross", or "grid"
+SETTLEMENT_LOT_MIN_SIZE = (
+    14  # Min lot dimension for BSP subdivision (must fit smallest template + margin)
+)
+SETTLEMENT_LOT_MAX_SIZE = (
+    26  # Max lot dimension (larger lots fit bigger buildings like taverns)
+)
+SETTLEMENT_BUILDING_DENSITY = (
+    0.85  # Probability of placing a building in each lot (0.0-1.0)
+)
+SETTLEMENT_MAX_BUILDINGS = 12  # Maximum buildings per settlement
 
 
 # =============================================================================

@@ -32,6 +32,7 @@ class DummyGameWorld(GameWorld):
         *,
         game_map: GameMap | None = None,
         actors: Sequence[Actor] | None = None,
+        **kwargs: object,
     ) -> None:
         # Avoid heavy GameWorld initialization.
         if game_map is None:

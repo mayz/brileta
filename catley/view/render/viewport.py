@@ -207,10 +207,14 @@ class ViewportSystem:
             self.camera.world_x = map_width / 2.0 - 0.5
             self.viewport.offset_x = (vp_w - map_width) // 2
         else:
-            # Clamp camera to map edges
+            # Clamp camera to map edges. The camera position is rounded in
+            # get_world_bounds, so we use half_vp_w - 0.5 as minimum (rounds up
+            # to show column 0) and map_width - half_vp_w as maximum (shows the
+            # last column). Python's banker's rounding means 19.5 rounds to 20
+            # but 22.5 rounds to 22, so we avoid .5 at the max end.
             self.camera.world_x = max(
                 half_vp_w - 0.5,
-                min(self.camera.world_x, map_width - half_vp_w - 0.5),
+                min(self.camera.world_x, map_width - half_vp_w),
             )
             self.viewport.offset_x = 0
 
@@ -219,10 +223,11 @@ class ViewportSystem:
             self.camera.world_y = map_height / 2.0 - 0.5
             self.viewport.offset_y = (vp_h - map_height) // 2
         else:
-            # Clamp camera to map edges
+            # Clamp camera to map edges. Same logic as X axis - avoid .5 at max
+            # to prevent banker's rounding from cutting off the last row.
             self.camera.world_y = max(
                 half_vp_h - 0.5,
-                min(self.camera.world_y, map_height - half_vp_h - 0.5),
+                min(self.camera.world_y, map_height - half_vp_h),
             )
             self.viewport.offset_y = 0
 

@@ -50,7 +50,7 @@ class DummyLighting:
 
 
 class DummyGameWorld:
-    def __init__(self, w: int, h: int) -> None:
+    def __init__(self, w: int, h: int, **kwargs: object) -> None:
         from catley.util.spatial import SpatialHashGrid
 
         self.player = DummyPlayer()

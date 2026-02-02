@@ -1,42 +1,21 @@
+"""Dungeon-style map generation with rooms and corridors."""
+
 from __future__ import annotations
 
-import abc
 import random
 from collections import deque
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import numpy as np
 
 from catley.environment.map import MapRegion
 from catley.environment.tile_types import TileTypeID
-from catley.types import WorldTileCoord
 from catley.util.coordinates import Rect
 
+from .base import BaseMapGenerator, GeneratedMapData
+
 if TYPE_CHECKING:
-    from catley.util.coordinates import TileCoord
-
-
-@dataclass
-class GeneratedMapData:
-    """A container for all raw data produced by a map generator."""
-
-    tiles: np.ndarray
-    regions: dict[int, MapRegion]
-    tile_to_region_id: np.ndarray
-
-
-class BaseMapGenerator(abc.ABC):
-    """Abstract base class for map generation algorithms."""
-
-    def __init__(self, map_width: TileCoord, map_height: TileCoord) -> None:
-        self.map_width = map_width
-        self.map_height = map_height
-
-    @abc.abstractmethod
-    def generate(self) -> GeneratedMapData:
-        """Generate the map layout and its structural data."""
-        raise NotImplementedError
+    from catley.types import TileCoord, WorldTileCoord
 
 
 class RoomsAndCorridorsGenerator(BaseMapGenerator):

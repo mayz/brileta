@@ -78,3 +78,7 @@ Opacity = NewType("Opacity", float)
 
 # Unique identifier for sound definitions (e.g., "fire_ambient", "waterfall_ambient")
 SoundId = str
+
+# Random seed for deterministic generation (map generation, etc.)
+# Can be an int for numeric seeds or a descriptive string like "burrito1".
+RandomSeed = int | str | None

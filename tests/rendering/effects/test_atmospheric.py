@@ -19,7 +19,7 @@ def test_default_config_values() -> None:
     assert cloud.name == "cloud_shadows"
     assert cloud.blend_mode == "darken"
     assert cloud.strength == 0.8
-    assert cloud.tint_color == (140, 150, 165)
+    assert cloud.tint_color == (70, 75, 80)
     assert cloud.noise_scale == 0.03
     assert cloud.noise_threshold_low == 0.46
     assert cloud.noise_threshold_high == 0.62

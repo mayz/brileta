@@ -44,7 +44,14 @@ class GameWorld:
     the single source of truth for the game's state.
     """
 
-    def __init__(self, map_width: TileCoord, map_height: TileCoord) -> None:
+    MAX_MAP_REGENERATION_ATTEMPTS = 10
+
+    def __init__(
+        self,
+        map_width: TileCoord,
+        map_height: TileCoord,
+        generator_type: str = "dungeon",  # "dungeon" or "settlement"
+    ) -> None:
         self.mouse_tile_location_on_map: WorldTilePos | None = None
         self.item_spawner = ItemSpawner(self)
         self.selected_actor: Actor | None = None
@@ -52,18 +59,34 @@ class GameWorld:
         self.lights: list[LightSource] = []  # All light sources in the world
         self.lighting_system: LightingSystem | None = None
 
-        self._init_actor_storage()
+        self.generator_type = generator_type
 
-        self.game_map, rooms = self._generate_map(map_width, map_height)
+        # Attempt map generation with retry if no valid spawn point exists
+        for attempt in range(self.MAX_MAP_REGENERATION_ATTEMPTS):
+            self._init_actor_storage()
+            self.lights = []
 
-        if not rooms:
-            raise RuntimeError(
-                "Map generation produced no rooms - check generator parameters"
-            )
+            self.game_map, rooms = self._generate_map(map_width, map_height)
 
-        self.player = self._create_player()
-        self.add_actor(self.player)
-        self._position_player(rooms[0])
+            if not rooms:
+                raise RuntimeError(
+                    "Map generation produced no rooms - check generator parameters"
+                )
+
+            self.player = self._create_player()
+            self.add_actor(self.player)
+
+            try:
+                self._position_player(rooms[0])
+                break  # Success - valid spawn point found
+            except ValueError:
+                # No valid 3x3 spawn area, retry with new map
+                if attempt == self.MAX_MAP_REGENERATION_ATTEMPTS - 1:
+                    raise RuntimeError(
+                        f"Failed to generate map with valid spawn point after "
+                        f"{self.MAX_MAP_REGENERATION_ATTEMPTS} attempts"
+                    ) from None
+                continue
 
         # Note: Rooms now have random 20% chance of being outdoor (set in generator)
 
@@ -248,7 +271,44 @@ class GameWorld:
     def _generate_map(
         self, map_width: int, map_height: int
     ) -> tuple[GameMap, list[Rect]]:
-        """Create the game map and return it along with generated rooms."""
+        """Create the game map and return it along with generated rooms/buildings."""
+        generator_type = self.generator_type
+
+        if generator_type == "settlement":
+            # Pipeline-based settlement generator
+            from catley.environment.generators.pipeline import create_pipeline
+
+            generator = create_pipeline(
+                "settlement",
+                map_width,
+                map_height,
+                seed=config.RANDOM_SEED,
+            )
+            map_data = generator.generate()
+
+            game_map = GameMap(map_width, map_height, map_data)
+            game_map.gw = self
+
+            # For settlements, use building regions as spawn points
+            building_regions = [
+                r for r in map_data.regions.values() if r.region_type == "building"
+            ]
+            if building_regions:
+                building_rects = [r.bounds[0] for r in building_regions if r.bounds]
+            else:
+                # Fallback: use exterior region or center of map
+                exterior_regions = [
+                    r for r in map_data.regions.values() if r.region_type == "exterior"
+                ]
+                if exterior_regions:
+                    building_rects = [r.bounds[0] for r in exterior_regions if r.bounds]
+                else:
+                    building_rects = [
+                        Rect(map_width // 2 - 2, map_height // 2 - 2, 4, 4)
+                    ]
+
+            return game_map, building_rects
+        # Default: dungeon generator
         generator = RoomsAndCorridorsGenerator(
             map_width,
             map_height,
@@ -314,9 +374,110 @@ class GameWorld:
         self.game_map.invalidate_property_caches()
 
     def _position_player(self, room: Rect) -> None:
-        """Place the player in the center of ``room``."""
-        # Use teleport() to sync logical and visual positions instantly
-        self.player.teleport(*room.center())
+        """Place the player at a valid spawn point within the room.
+
+        Attempts to find a location with at least 3x3 walkable tiles around it.
+        Falls back to the room center if no such location exists.
+        """
+        spawn_point = self._get_spawn_point(room)
+        self.player.teleport(*spawn_point)
+
+    def _get_spawn_point(self, room: Rect) -> tuple[int, int]:
+        """Find a spawn point with at least 3x3 walkable tiles around it.
+
+        Searches within the room bounds first, then falls back to searching
+        the entire map. This ensures the player spawns in a position where
+        they can move in any direction.
+
+        Args:
+            room: The room rectangle to search within first.
+
+        Returns:
+            A (x, y) tuple for the best spawn point found.
+
+        Raises:
+            ValueError: If no position with a 3x3 walkable area exists on the map.
+        """
+        # First try within room bounds
+        spawn = self._find_spawn_in_room(room)
+        if spawn:
+            return spawn
+
+        # Fall back to searching the entire map
+        spawn = self._find_spawn_on_map()
+        if spawn:
+            return spawn
+
+        # No valid spawn point with 3x3 open area exists
+        raise ValueError("No valid spawn point with 3x3 walkable area found")
+
+    def _has_3x3_walkable(self, x: int, y: int) -> bool:
+        """Check if position (x, y) has a 3x3 area of walkable tiles around it."""
+        for dx in range(-1, 2):
+            for dy in range(-1, 2):
+                nx, ny = x + dx, y + dy
+                if not (
+                    0 <= nx < self.game_map.width and 0 <= ny < self.game_map.height
+                ):
+                    return False
+                if not self.game_map.walkable[nx, ny]:
+                    return False
+        return True
+
+    def _find_spawn_in_room(self, room: Rect) -> tuple[int, int] | None:
+        """Search within room bounds for a spawn point with 3x3 open space."""
+        center_x, center_y = room.center()
+
+        # Check center first
+        if self._has_3x3_walkable(center_x, center_y):
+            return (center_x, center_y)
+
+        # Spiral outward from center
+        max_radius = max(room.width, room.height) // 2
+
+        for radius in range(1, max_radius + 1):
+            for dx in range(-radius, radius + 1):
+                for dy in range(-radius, radius + 1):
+                    # Only check perimeter of this radius
+                    if abs(dx) != radius and abs(dy) != radius:
+                        continue
+
+                    x = center_x + dx
+                    y = center_y + dy
+
+                    # Stay within room bounds
+                    if not (room.x1 <= x < room.x2 and room.y1 <= y < room.y2):
+                        continue
+
+                    if self._has_3x3_walkable(x, y):
+                        return (x, y)
+
+        return None
+
+    def _find_spawn_on_map(self) -> tuple[int, int] | None:
+        """Search the entire map for a spawn point with 3x3 open space."""
+        width = self.game_map.width
+        height = self.game_map.height
+        center_x, center_y = width // 2, height // 2
+        max_radius = max(width, height) // 2
+
+        for radius in range(0, max_radius + 1):
+            for dx in range(-radius, radius + 1):
+                for dy in range(-radius, radius + 1):
+                    if radius > 0 and abs(dx) != radius and abs(dy) != radius:
+                        continue
+
+                    x = center_x + dx
+                    y = center_y + dy
+
+                    if (
+                        0 <= x < width
+                        and 0 <= y < height
+                        and self._has_3x3_walkable(x, y)
+                    ):
+                        return (x, y)
+
+        return None
 
     def spawn_ground_item(
         self, item: Item, x: WorldTileCoord, y: WorldTileCoord, **kwargs
@@ -434,13 +595,22 @@ class GameWorld:
     def _populate_npcs(
         self, rooms: list, num_npcs: int = 10, max_attempts_per_npc: int = 10
     ) -> None:
-        """Add NPCs to random locations in rooms."""
+        """Add NPCs to random locations in rooms.
+
+        Rooms must have width and height >= 4 to allow interior placement
+        (avoiding walls). Smaller rooms are skipped.
+        """
+        # Filter to rooms large enough for NPC placement (need width/height >= 4)
+        valid_rooms = [r for r in rooms if r.width >= 4 and r.height >= 4]
+        if not valid_rooms:
+            return  # No rooms large enough for NPCs
+
         for npc_index in range(num_npcs):
             placed = False
 
             for _ in range(max_attempts_per_npc):
-                # Pick a random room
-                room = random.choice(rooms)
+                # Pick a random room from valid rooms
+                room = random.choice(valid_rooms)
 
                 # Pick a random tile within the room (avoiding walls)
                 npc_x = random.randint(room.x1 + 1, room.x2 - 2)
@@ -566,6 +736,7 @@ class GameWorld:
 
         Spawns bookcases throughout the dungeon, each containing random junk items.
         Bookcases use multi-character composition for a rich visual appearance.
+        Rooms must have width and height >= 4 for interior placement.
 
         Args:
             rooms: List of Rect objects representing rooms
@@ -574,12 +745,21 @@ class GameWorld:
         """
         from catley.game.items.junk_item_types import get_random_junk_type
 
+        # Filter to rooms large enough for container placement
+        valid_rooms = [r for r in rooms if r.width >= 4 and r.height >= 4]
+        if not valid_rooms:
+            return  # No rooms large enough for containers
+
         for _ in range(num_containers):
             placed = False
 
             for _ in range(max_attempts):
-                # Pick a random room (skip the first room where player spawns)
-                room = rooms[0] if len(rooms) <= 1 else random.choice(rooms[1:])
+                # Pick a random room (skip first room where player spawns if possible)
+                room = (
+                    valid_rooms[0]
+                    if len(valid_rooms) <= 1
+                    else random.choice(valid_rooms[1:])
+                )
 
                 # Pick a random position within the room
                 container_x = random.randint(room.x1 + 1, room.x2 - 2)

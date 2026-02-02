@@ -47,7 +47,7 @@ class AtmosphericConfig:
                     enabled=True,
                     blend_mode="darken",
                     strength=0.8,
-                    tint_color=(140, 150, 165),
+                    tint_color=(70, 75, 80),
                     noise_scale=0.03,
                     noise_threshold_low=0.46,
                     noise_threshold_high=0.62,

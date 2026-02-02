@@ -41,6 +41,10 @@ class TileTypeID(IntEnum):
     DOOR_CLOSED = auto()
     DOOR_OPEN = auto()
     BOULDER = auto()
+    # Outdoor terrain variety
+    GRASS = auto()
+    DIRT_PATH = auto()
+    GRAVEL = auto()
     # Hazardous terrain types
     ACID_POOL = auto()
     HOT_COALS = auto()
@@ -320,6 +324,46 @@ register_tile_type(
         casts_shadows=True,
         dark=(ord("#"), colors.DARK_GREY, colors.DARK_GROUND),
         light=(ord("#"), colors.LIGHT_GREY, colors.LIGHT_GROUND),
+    ),
+)
+
+# --- Outdoor Terrain Variety ---
+# These tiles provide visual variety for outdoor areas.
+# All are walkable and transparent.
+
+register_tile_type(
+    TileTypeID.GRASS,
+    make_tile_type_data(
+        walkable=True,
+        transparent=True,
+        display_name="Grass",
+        material=ImpactMaterial.FLESH,  # Soft impact sound
+        dark=(ord(" "), colors.DARK_GREY, (30, 50, 25)),  # Dark green
+        light=(ord(" "), colors.LIGHT_GREY, (70, 110, 50)),  # Light green
+    ),
+)
+
+register_tile_type(
+    TileTypeID.DIRT_PATH,
+    make_tile_type_data(
+        walkable=True,
+        transparent=True,
+        display_name="Dirt Path",
+        material=ImpactMaterial.STONE,
+        dark=(ord(" "), colors.DARK_GREY, (45, 35, 25)),  # Dark brown
+        light=(ord(" "), colors.LIGHT_GREY, (100, 80, 55)),  # Worn brown
+    ),
+)
+
+register_tile_type(
+    TileTypeID.GRAVEL,
+    make_tile_type_data(
+        walkable=True,
+        transparent=True,
+        display_name="Gravel",
+        material=ImpactMaterial.STONE,
+        dark=(ord(" "), colors.DARK_GREY, (50, 45, 40)),  # Dark grey-brown
+        light=(ord(" "), colors.LIGHT_GREY, (95, 90, 80)),  # Light grey
     ),
 )
 

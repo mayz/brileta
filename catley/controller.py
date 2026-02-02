@@ -82,7 +82,11 @@ class Controller:
 
     def __init__(self, app: App, graphics: GraphicsContext) -> None:
         self.app = app
-        self.gw = GameWorld(config.MAP_WIDTH, config.MAP_HEIGHT)
+        self.gw = GameWorld(
+            config.MAP_WIDTH,
+            config.MAP_HEIGHT,
+            generator_type=config.MAP_GENERATOR_TYPE,
+        )
         self.action_discovery = ActionDiscovery()
 
         if (
