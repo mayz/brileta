@@ -6,7 +6,7 @@ from catley.config import PLAYER_BASE_STRENGTH, PLAYER_BASE_TOUGHNESS
 from catley.environment.generators import RoomsAndCorridorsGenerator
 from catley.environment.map import GameMap, MapRegion
 from catley.environment.tile_types import TileTypeID
-from catley.game.actors import NPC, PC, Actor, Character, create_bookcase
+from catley.game.actors import NPC, PC, Actor, Character, ItemPile, create_bookcase
 from catley.game.actors.environmental import ContainedFire
 from catley.game.countables import CountableType
 from catley.game.enums import CreatureSize
@@ -421,8 +421,15 @@ class GameWorld:
     def has_pickable_items_at_location(
         self, x: WorldTileCoord, y: WorldTileCoord
     ) -> bool:
-        """Check if there are any pickable items at the specified location."""
-        return bool(self.get_pickable_items_at_location(x, y))
+        """Check if there are any pickable items or countables at the location."""
+        if self.get_pickable_items_at_location(x, y):
+            return True
+        # Check for countables in ItemPiles at this location. Use the spatial
+        # index directly since get_actor_at_location prioritizes blocking actors.
+        for actor in self.actor_spatial_index.get_at_point(x, y):
+            if isinstance(actor, ItemPile) and actor.inventory.countables:
+                return True
+        return False
 
     def _populate_npcs(
         self, rooms: list, num_npcs: int = 10, max_attempts_per_npc: int = 10

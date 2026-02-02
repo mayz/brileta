@@ -6,7 +6,8 @@ from typing import cast
 from unittest.mock import MagicMock
 
 from catley import colors
-from catley.game.actors import Actor, Character, components
+from catley.game.actors import Actor, Character, ItemPile, components
+from catley.game.countables import CountableType
 from catley.game.enums import ItemSize
 from catley.game.game_world import GameWorld
 from catley.game.items.item_core import Item, ItemType
@@ -443,6 +444,22 @@ class TestItemOperations:
         item = make_test_item("Weapon")
         # DummyGameWorld's get_pickable_items_at_location uses self.items dict.
         gw.items[(5, 5)] = [item]
+
+        result = gw.has_pickable_items_at_location(5, 5)
+
+        assert result is True
+
+    def test_has_pickable_items_returns_true_for_countables_only(self) -> None:
+        """Coins on the ground (no items) should still trigger dual-pane view."""
+        gw = make_world()
+        # Create an ItemPile with only countables (no regular items).
+        pile = ItemPile(
+            x=5,
+            y=5,
+            game_world=cast(GameWorld, gw),
+        )
+        pile.inventory.add_countable(CountableType.COIN, 43)
+        gw.add_actor(pile)
 
         result = gw.has_pickable_items_at_location(5, 5)
 
