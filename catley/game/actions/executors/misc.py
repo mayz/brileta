@@ -142,10 +142,11 @@ class SwitchWeaponExecutor(ActionExecutor):
     """Executes weapon switching intents."""
 
     def execute(self, intent: SwitchWeaponIntent) -> GameActionResult | None:  # type: ignore[override]
-        # Move logic from old SwitchWeaponAction.execute()
         inventory = getattr(intent.actor, "inventory", None)
-        if inventory:
-            inventory.switch_to_slot(intent.slot)
+        if inventory is not None and inventory.switch_to_slot(intent.slot):
+            item = inventory.get_active_item()
+            item_name = item.name if item else "Fists"
+            publish_event(MessageEvent(f"Switched to {item_name}", colors.GREEN))
         return GameActionResult()
 
 

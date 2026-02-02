@@ -6,8 +6,9 @@ common functionality like movement, inventory, and weapon switching.
 
 Responsibilities:
 - Movement: tracks held movement keys, generates intents via MoveIntentGenerator
-- UI commands: I (inventory), Space (action browser), R (reload), 1/2 (slots), etc.
-- Mouse interaction: context menus, equipment clicks, action panel hotkeys
+- UI commands: I (inventory), R (reload), 1/2 (slots), ? (help), etc.
+- Mouse interaction: hover over things to see options in ActionPanel, click to select
+- Click weapon for combat mode
 - Rendering: selected actor highlight when not in another mode
 """
 
@@ -33,7 +34,6 @@ from catley.types import (
     RootConsoleTilePos,
     WorldTilePos,
 )
-from catley.view.ui.action_browser_menu import ActionBrowserMenu
 from catley.view.ui.commands import OpenMenuUICommand, ToggleFullscreenUICommand
 from catley.view.ui.help_menu import HelpMenu
 
@@ -139,10 +139,6 @@ class ExploreMode(Mode):
                 self._open_help()
                 return True
 
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.SPACE):
-                self._open_action_browser()
-                return True
-
             case tcod.event.KeyDown(sym=Keys.KEY_R):
                 self._reload_weapon()
                 return True
@@ -214,10 +210,6 @@ class ExploreMode(Mode):
         """Open the help menu."""
         OpenMenuUICommand(self.controller, HelpMenu).execute()
 
-    def _open_action_browser(self) -> None:
-        """Open the action browser menu."""
-        OpenMenuUICommand(self.controller, ActionBrowserMenu).execute()
-
     def _reload_weapon(self) -> None:
         """Reload the active weapon."""
         active_weapon = self._p.inventory.get_active_item()
@@ -235,9 +227,11 @@ class ExploreMode(Mode):
             publish_event(MessageEvent("Nothing to reload!", colors.GREY))
 
     def _switch_weapon_slot(self, slot: int) -> None:
-        """Switch to a weapon slot."""
-        if self._fm is not None and hasattr(self._fm, "equipment_view"):
-            self._fm.equipment_view.switch_to_slot(slot)
+        """Switch to a weapon slot via the intent system."""
+        from catley.game.actions.misc import SwitchWeaponIntent
+
+        switch_action = SwitchWeaponIntent(self.controller, self._p, slot)
+        self.controller.queue_action(switch_action)
 
     # -------------------------------------------------------------------------
     # Action Panel Hotkey Handling

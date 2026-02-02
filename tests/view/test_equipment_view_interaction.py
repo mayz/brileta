@@ -69,7 +69,7 @@ def make_consumable_item() -> Item:
 
 
 def test_click_inactive_slot_switches_weapon() -> None:
-    """Clicking an inactive slot switches to it."""
+    """Clicking an inactive slot switches to it via intent system."""
     controller, view = make_controller_with_equipment_view()
     player = controller.gw.player
 
@@ -79,6 +79,12 @@ def test_click_inactive_slot_switches_weapon() -> None:
     result = view.handle_click(1)
 
     assert result is True
+
+    # Process the queued SwitchWeaponIntent
+    action = controller.turn_manager.dequeue_player_action()
+    assert action is not None
+    controller.turn_manager.execute_player_intent(action)
+
     assert player.inventory.active_slot == 1
 
 

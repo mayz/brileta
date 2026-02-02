@@ -451,10 +451,10 @@ class ActionPanelView(TextView):
             # clicks from triggering the pickup callback.
             self._pickup_renderer.clear_hit_areas()
 
-        # Show hints and controls only when no target is selected/hovered
-        if self._cached_target_name is None and not self._cached_actions:
-            # Show helpful hints only when no items at feet and no mouse target
-            if not items_here:
+        # Show controls when no target is selected/hovered
+        if self._cached_target_name is None:
+            # Show helpful hints only when no items at feet and no general actions
+            if not items_here and not self._cached_actions:
                 self.canvas.draw_text(
                     pixel_x=x_padding,
                     pixel_y=y_pixel - ascent,
@@ -481,11 +481,6 @@ class ActionPanelView(TextView):
 
             # Use SelectableListRenderer for controls section with execute callbacks
             control_rows: list[SelectableRow] = [
-                SelectableRow(
-                    key="Space",
-                    text="Action menu",
-                    execute=self._on_action_menu_click,
-                ),
                 SelectableRow(
                     key="I",
                     text="Inventory",
@@ -544,7 +539,7 @@ class ActionPanelView(TextView):
         self._cached_is_selected = False
         mouse_pos = gw.mouse_tile_location_on_map
 
-        # Clear cache if no mouse position
+        # No mouse position yet (game just started) - show default controls
         if mouse_pos is None:
             self._cached_target_name = None
             self._cached_target_description = None
@@ -552,6 +547,7 @@ class ActionPanelView(TextView):
             return
 
         x, y = mouse_pos
+        # Mouse outside map bounds (e.g., on UI) - show Controls section
         if not (0 <= x < gw.game_map.width and 0 <= y < gw.game_map.height):
             self._cached_target_name = None
             self._cached_target_description = None
@@ -631,7 +627,7 @@ class ActionPanelView(TextView):
         if target_actor:
             self._populate_actor_target_data(target_actor)
         else:
-            # Show tile information
+            # Show tile information and general actions
             tile_id = gw.game_map.tiles[x, y]
             tile_name = tile_types.get_tile_type_name_by_id(tile_id)
 
@@ -644,13 +640,11 @@ class ActionPanelView(TextView):
 
             self._cached_target_description = None
 
-            # Get environment actions for this specific tile
+            # Get tile-specific environment actions (e.g., door actions)
             if gw.game_map.visible[x, y]:
-                # Build context for action discovery
                 context = self.discovery.context_builder.build_context(
                     self.controller, gw.player
                 )
-                # Get tile-specific environment actions (e.g., door actions)
                 env_discovery = self.discovery.environment_discovery
                 self._cached_actions = (
                     env_discovery.discover_environment_actions_for_tile(
@@ -688,12 +682,13 @@ class ActionPanelView(TextView):
                 self._cached_target_description = "Deceased"
 
             # Get available actions for this target
-            if target_actor is not gw.player:
+            if target_actor is gw.player:
+                # Hovering over self - show self-targeting actions (consumables, rest)
+                self._cached_actions = self._get_general_actions()
+            else:
                 self._cached_actions = self.discovery.get_options_for_target(
                     self.controller, gw.player, target_actor
                 )
-            else:
-                self._cached_actions = []
         elif isinstance(target_actor, Container):
             # Container - show search action via environment discovery
             self._cached_target_description = None
@@ -757,6 +752,25 @@ class ActionPanelView(TextView):
         else:
             self._cached_target_description = None
             self._cached_actions = []
+
+    def _get_general_actions(self) -> list[ActionOption]:
+        """Get general actions available regardless of what player is looking at.
+
+        Returns actions like Rest, Sleep, Use Consumable that are self-targeting
+        and don't require a specific target.
+        """
+        from catley.game.actions.discovery import ActionCategory
+
+        gw = self.controller.gw
+        player = gw.player
+
+        # Get all available actions and filter to self-targeting categories
+        all_actions = self.discovery.get_available_options(self.controller, player)
+        return [
+            a
+            for a in all_actions
+            if a.category in (ActionCategory.ITEMS, ActionCategory.ENVIRONMENT)
+        ]
 
     def _get_default_action_id_for_type(
         self, target_type: TargetType | None
@@ -851,13 +865,6 @@ class ActionPanelView(TextView):
     # -------------------------------------------------------------------------
     # Control Row Callbacks
     # -------------------------------------------------------------------------
-
-    def _on_action_menu_click(self) -> None:
-        """Open the action browser menu when 'Action menu' control is clicked."""
-        from catley.view.ui.action_browser_menu import ActionBrowserMenu
-        from catley.view.ui.commands import OpenMenuUICommand
-
-        OpenMenuUICommand(self.controller, ActionBrowserMenu).execute()
 
     def _on_inventory_click(self) -> None:
         """Open inventory when 'Inventory' control is clicked."""

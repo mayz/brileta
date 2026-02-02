@@ -673,8 +673,8 @@ class CharacterInventory(InventoryComponent):
     # === Equipment Management ===
 
     def switch_to_slot(self, slot_index: int) -> bool:
-        """Switch to a specific ready slot. Returns True if successful."""
-        if 0 <= slot_index < len(self.ready_slots):
+        """Switch to a specific ready slot. Returns True if slot actually changed."""
+        if 0 <= slot_index < len(self.ready_slots) and slot_index != self.active_slot:
             self.active_slot = slot_index
             self._increment_revision()
             return True

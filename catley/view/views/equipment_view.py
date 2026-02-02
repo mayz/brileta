@@ -249,23 +249,6 @@ class EquipmentView(TextView):
 
         return bounds[0] <= row_center_px < bounds[1]
 
-    def switch_to_slot(self, slot_index: int) -> None:
-        """Switch to the specified equipment slot and publish a message.
-
-        Args:
-            slot_index: The equipment slot to switch to (0 = primary, 1 = secondary).
-        """
-        player = self.controller.gw.player
-        if player.inventory.switch_to_slot(slot_index):
-            item = player.inventory.get_active_item()
-            item_name = item.name if item else "Fists"
-            publish_event(
-                MessageEvent(
-                    f"Switched to {item_name}",
-                    colors.GREEN,
-                )
-            )
-
     def handle_click(self, view_relative_row: int) -> bool:
         """Handle a click on this view at the given row.
 
@@ -286,8 +269,11 @@ class EquipmentView(TextView):
         player = self.controller.gw.player
 
         if slot_index != player.inventory.active_slot:
-            # Inactive slot: switch to it
-            self.switch_to_slot(slot_index)
+            # Inactive slot: switch to it via intent system
+            from catley.game.actions.misc import SwitchWeaponIntent
+
+            switch_action = SwitchWeaponIntent(self.controller, player, slot_index)
+            self.controller.queue_action(switch_action)
             return True
 
         # Active slot: use the item

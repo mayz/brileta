@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from catley.game.actions.combat import ReloadIntent
 
 # Optional action classes that may not yet exist
-from catley.game.actions.misc import PickupIntent, SwitchWeaponIntent
+from catley.game.actions.misc import PickupIntent
 from catley.game.actions.recovery import (
     ComfortableSleepIntent,
     RestIntent,
@@ -37,7 +37,9 @@ class ItemActionDiscovery:
     def discover_item_actions(
         self, controller: Controller, actor: Character, context: ActionContext
     ) -> list[ActionOption]:
-        return self._get_inventory_options(controller, actor, context)
+        options = self._get_inventory_options(controller, actor, context)
+        options.extend(self._get_recovery_options(controller, actor, context))
+        return options
 
     # ------------------------------------------------------------------
     # Discovery helpers
@@ -102,23 +104,6 @@ class ItemActionDiscovery:
                 )
             )
 
-        # Equipment switching - only show when NOT in combat
-        if not context.in_combat:
-            for i, item in enumerate(actor.inventory.ready_slots):
-                if i != actor.inventory.active_slot and item:
-                    options.append(
-                        ActionOption(
-                            id=f"switch-{item.name}",
-                            name=f"Switch to {item.name}",
-                            description=f"Equip {item.name} as active weapon",
-                            category=ActionCategory.ITEMS,
-                            action_class=SwitchWeaponIntent,
-                            requirements=[],
-                            static_params={"slot": i},
-                            hotkey=str(i + 1),
-                        )
-                    )
-
         return options
 
     def _get_recovery_options(
@@ -127,7 +112,15 @@ class ItemActionDiscovery:
         options: list[ActionOption] = []
         safe, _ = is_safe_location(actor)
 
-        if actor.health.ap < actor.health.max_ap and safe:  # type: ignore[unresolved-attribute]
+        # Check if armor can be recovered via rest (damaged but not broken)
+        outfit = actor.inventory.outfit_capability
+        can_rest_recover = (
+            outfit is not None
+            and outfit.damaged_since_rest
+            and outfit.ap > 0
+            and outfit.ap < outfit.max_ap
+        )
+        if can_rest_recover and safe:
             options.append(
                 ActionOption(
                     id="rest",

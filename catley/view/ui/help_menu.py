@@ -37,7 +37,6 @@ class HelpMenu(Menu):
             ("Arrows / HJKL", "Movement", self._on_movement),
             ("L-Click", "Select actor", self._on_select_actor),
             ("R-Click", "Quick action", self._on_quick_action),
-            ("Space", "Action menu", self._on_action_menu),
             ("I", "Inventory", self._on_inventory),
             ("R", "Reload weapon", self._on_reload),
             ("1", "Weapon slot 1", lambda: self._on_weapon_slot(0)),
@@ -86,13 +85,6 @@ class HelpMenu(Menu):
             MessageEvent("Right-click on a target for quick action", colors.GREY)
         )
 
-    def _on_action_menu(self) -> None:
-        """Open the action browser menu."""
-        from catley.view.ui.action_browser_menu import ActionBrowserMenu
-        from catley.view.ui.commands import OpenMenuUICommand
-
-        OpenMenuUICommand(self.controller, ActionBrowserMenu).execute()
-
     def _on_inventory(self) -> None:
         """Open inventory (loot mode if standing on items)."""
         from catley.view.ui.commands import open_inventory_or_loot
@@ -118,10 +110,12 @@ class HelpMenu(Menu):
             publish_event(MessageEvent("Nothing to reload!", colors.GREY))
 
     def _on_weapon_slot(self, slot: int) -> None:
-        """Switch to a weapon slot."""
-        fm = self.controller.frame_manager
-        if fm is not None and hasattr(fm, "equipment_view"):
-            fm.equipment_view.switch_to_slot(slot)
+        """Switch to a weapon slot via the intent system."""
+        from catley.game.actions.misc import SwitchWeaponIntent
+
+        player = self.controller.gw.player
+        switch_action = SwitchWeaponIntent(self.controller, player, slot)
+        self.controller.queue_action(switch_action)
 
     def _on_dev_console(self) -> None:
         """Toggle the dev console overlay."""

@@ -359,27 +359,6 @@ def test_sort_by_relevance_orders_actions() -> None:
     assert ordered[2] == opt2
 
 
-def test_inventory_options_hide_weapon_switching_when_in_combat() -> None:
-    controller, player, hostile, _friend, _ = _make_context_world()
-    pistol = PISTOL_TYPE.create()
-    knife = COMBAT_KNIFE_TYPE.create()
-    player.inventory.equip_to_slot(pistol, 0)
-    player.inventory.equip_to_slot(knife, 1)
-    disc = ActionDiscovery()
-
-    ctx = disc._build_context(cast(Controller, controller), player)
-    assert ctx.in_combat
-    opts = disc._get_inventory_options(cast(Controller, controller), player, ctx)
-    assert all(not o.name.startswith("Switch to") for o in opts)
-
-    cast(Any, hostile.ai).disposition = Disposition.FRIENDLY  # Out of combat
-    ctx = disc._build_context(cast(Controller, controller), player)
-    assert not ctx.in_combat
-    opts = disc._get_inventory_options(cast(Controller, controller), player, ctx)
-    names = {o.name for o in opts}
-    assert f"Switch to {knife.name}" in names
-
-
 def test_target_specific_option_probabilities_reflect_status_effects() -> None:
     controller, player, melee_target, ranged_target, pistol = _make_combat_world()
     player.status_effects.apply_status_effect(status_effects.OffBalanceEffect())
