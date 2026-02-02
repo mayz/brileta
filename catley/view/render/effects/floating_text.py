@@ -55,6 +55,7 @@ class FloatingText:
     world_x: float
     world_y: float
     color_override: tuple[int, int, int] | None = None  # Overrides valence color
+    bubble: bool = False
 
     # Cached texture (created on first render)
     _texture: Any = field(default=None, init=False, repr=False)
@@ -127,9 +128,11 @@ class FloatingText:
         text_height = int(bbox[3] - bbox[1])
 
         # Add padding
-        padding = 4
-        img_width = text_width + padding * 2
-        img_height = text_height + padding * 2
+        padding_x = 6 if self.bubble else 4
+        padding_y = 4
+        tail_height = 6 if self.bubble else 0
+        img_width = text_width + padding_x * 2
+        img_height = text_height + padding_y * 2 + tail_height
 
         # Ensure minimum size
         img_width = max(1, img_width)
@@ -139,9 +142,34 @@ class FloatingText:
         image = PILImage.new("RGBA", (img_width, img_height), (0, 0, 0, 0))
         draw = ImageDraw.Draw(image)
 
+        if self.bubble:
+            bubble_fill = (20, 20, 20, 210)
+            bubble_outline = (235, 235, 235, 230)
+            corner_radius = 4
+            bubble_rect = (0, 0, img_width - 1, img_height - tail_height - 1)
+            draw.rounded_rectangle(
+                bubble_rect,
+                radius=corner_radius,
+                fill=bubble_fill,
+                outline=bubble_outline,
+                width=1,
+            )
+            tail_center_x = img_width // 2
+            tail_base_y = img_height - tail_height - 1
+            tail_tip_y = img_height - 1
+            draw.polygon(
+                [
+                    (tail_center_x - 4, tail_base_y),
+                    (tail_center_x + 4, tail_base_y),
+                    (tail_center_x, tail_tip_y),
+                ],
+                fill=bubble_fill,
+                outline=bubble_outline,
+            )
+
         # Draw text centered in image
-        text_x = padding - int(bbox[0])  # Adjust for glyph offset
-        text_y = padding - int(bbox[1])
+        text_x = padding_x - int(bbox[0])  # Adjust for glyph offset
+        text_y = padding_y - int(bbox[1])
         draw.text((text_x, text_y), self.text, font=font, fill=(*color, 255))
 
         # Convert to numpy and create texture
@@ -214,6 +242,7 @@ class FloatingTextManager:
             world_y=float(event.world_y),
             color_override=event.color,
             duration=duration,
+            bubble=event.bubble,
         )
         self._texts.append(text)
 

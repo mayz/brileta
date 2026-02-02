@@ -101,6 +101,7 @@ class FloatingTextEvent(GameEvent):
         color: Optional RGB color override (None = use valence color)
         world_x: Initial world X position (fallback if actor not found)
         world_y: Initial world Y position (fallback if actor not found)
+        bubble: Whether to render the text inside a speech bubble
     """
 
     text: str
@@ -111,6 +112,7 @@ class FloatingTextEvent(GameEvent):
     color: tuple[int, int, int] | None = None  # None = use valence color
     world_x: int = 0
     world_y: int = 0
+    bubble: bool = False
 
 
 @dataclass

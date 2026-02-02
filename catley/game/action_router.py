@@ -7,8 +7,16 @@ pattern. It is the single point of entry for all game actions.
 
 from __future__ import annotations
 
+import time
 from typing import TYPE_CHECKING, cast
 
+from catley import colors
+from catley.events import (
+    FloatingTextEvent,
+    FloatingTextSize,
+    FloatingTextValence,
+    publish_event,
+)
 from catley.game.actions.area_effects import AreaEffectIntent
 from catley.game.actions.base import GameActionResult, GameIntent
 from catley.game.actions.combat import AttackIntent, ReloadIntent
@@ -75,7 +83,8 @@ from catley.game.actions.stunts import (
     PushIntent,
     TripIntent,
 )
-from catley.game.actors import Character
+from catley.game.actors import NPC, Character
+from catley.game.actors.barks import pick_bump_bark
 from catley.game.actors.container import Container
 
 if TYPE_CHECKING:
@@ -102,6 +111,8 @@ class ActionRouter:
 
     def __init__(self, controller: Controller):
         self.controller = controller
+        self._bark_block_until: dict[int, float] = {}
+        self._bark_cooldown_seconds = 0.25
         # This registry is the heart of the dispatcher.
         self._executor_registry: dict[type, ActionExecutor] = {
             MoveIntent: MoveExecutor(),
@@ -190,6 +201,7 @@ class ActionRouter:
             # adjacent and can choose an action from the ActionPanel. This shifts
             # the game away from combat-by-default toward deliberate interaction.
             if bumper is self.controller.gw.player:
+                self._emit_bump_bark(bumpee)
                 return
 
             # An NPC ramming another actor should ONLY trigger an attack
@@ -223,3 +235,36 @@ class ActionRouter:
             container = cast(Container, result.blocked_by)
             new_intent = SearchContainerIntent(self.controller, intent.actor, container)
             self.execute_intent(new_intent)  # Recursive call
+
+    def _emit_bump_bark(self, target: Character) -> None:
+        """Show a short speech bubble when the player bumps an NPC."""
+        if not isinstance(target, NPC):
+            return
+
+        now = time.perf_counter()
+        block_until = self._bark_block_until.get(id(target))
+        if block_until is not None and now < block_until:
+            return
+
+        bark = pick_bump_bark(target)
+        if not bark:
+            return
+
+        duration = 1.1
+        self._bark_block_until[id(target)] = (
+            now + duration + self._bark_cooldown_seconds
+        )
+
+        publish_event(
+            FloatingTextEvent(
+                text=bark,
+                target_actor_id=id(target),
+                valence=FloatingTextValence.NEUTRAL,
+                size=FloatingTextSize.NORMAL,
+                duration=duration,
+                color=colors.LIGHT_GREY,
+                world_x=target.x,
+                world_y=target.y,
+                bubble=True,
+            )
+        )

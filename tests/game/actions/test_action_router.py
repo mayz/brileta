@@ -5,12 +5,13 @@ from unittest.mock import MagicMock, patch
 from catley import colors
 from catley.controller import Controller
 from catley.environment.tile_types import TileTypeID
+from catley.events import FloatingTextEvent
 from catley.game.action_router import ActionRouter
 from catley.game.actions.base import GameActionResult
 from catley.game.actions.combat import AttackIntent
 from catley.game.actions.environment import SearchContainerIntent
 from catley.game.actions.movement import MoveIntent
-from catley.game.actors import Character
+from catley.game.actors import NPC, Character
 from catley.game.actors.container import create_bookcase
 from catley.game.game_world import GameWorld
 from tests.helpers import DummyGameWorld
@@ -88,6 +89,59 @@ def test_player_bumping_npc_does_not_attack() -> None:
         # Player remains at original position (blocked by NPC)
         assert (player.x, player.y) == (0, 0)
         assert not controller.update_fov_called
+
+
+def test_player_bump_npc_emits_bark() -> None:
+    controller, player = _make_world()
+    npc = NPC(
+        1,
+        0,
+        "N",
+        colors.WHITE,
+        "NPC",
+        game_world=cast(GameWorld, controller.gw),
+    )
+    controller.gw.add_actor(npc)
+
+    with (
+        patch("catley.game.action_router.pick_bump_bark", return_value="Hey"),
+        patch("catley.game.action_router.publish_event") as mock_publish,
+        patch("catley.game.action_router.time.perf_counter", return_value=1.0),
+    ):
+        router = ActionRouter(cast(Controller, controller))
+        intent = MoveIntent(cast(Controller, controller), player, 1, 0)
+        router.execute_intent(intent)
+
+        assert mock_publish.called
+        event = mock_publish.call_args[0][0]
+        assert isinstance(event, FloatingTextEvent)
+        assert event.text == "Hey"
+        assert event.bubble is True
+
+
+def test_bark_respects_cooldown() -> None:
+    controller, player = _make_world()
+    npc = NPC(
+        1,
+        0,
+        "N",
+        colors.WHITE,
+        "NPC",
+        game_world=cast(GameWorld, controller.gw),
+    )
+    controller.gw.add_actor(npc)
+
+    with (
+        patch("catley.game.action_router.pick_bump_bark", return_value="Hey"),
+        patch("catley.game.action_router.publish_event") as mock_publish,
+        patch("catley.game.action_router.time.perf_counter", side_effect=[1.0, 1.2]),
+    ):
+        router = ActionRouter(cast(Controller, controller))
+        intent = MoveIntent(cast(Controller, controller), player, 1, 0)
+        router.execute_intent(intent)
+        router.execute_intent(intent)
+
+        assert mock_publish.call_count == 1
 
 
 def test_npc_bumping_player_triggers_attack() -> None:
