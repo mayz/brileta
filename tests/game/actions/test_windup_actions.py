@@ -186,6 +186,10 @@ class DummyTurnManager:
         """Dummy implementation of RAF V2 process_all_npc_reactions method."""
         pass
 
+    def process_all_ready_npcs_immediately(self) -> None:
+        """Dummy implementation for held-key NPC processing."""
+        pass
+
     def _apply_terrain_hazard(self, actor: Any) -> None:
         """Dummy implementation for terrain hazard checks."""
         pass

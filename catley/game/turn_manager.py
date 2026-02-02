@@ -238,6 +238,55 @@ class TurnManager:
                     # will gate the next call, sequencing NPC actions
                     return
 
+    def process_all_ready_npcs_immediately(self) -> None:
+        """Process all NPCs who can afford an action in one call.
+
+        Unlike process_all_npc_reactions() which processes one NPC per call
+        for visual pacing, this method processes ALL ready NPCs immediately.
+        Used for held-key movement where the player is moving fast and
+        presentation timing would starve NPCs of their turns.
+        """
+        from catley.game.action_plan import ApproachStep
+        from catley.game.actors.core import Character
+
+        for actor in self._energy_actors_cache:
+            if actor is self.player:
+                continue
+
+            assert actor.energy is not None
+
+            if actor.energy.can_afford(config.ACTION_COST):
+                action = actor.get_next_action(self.controller)
+
+                if (
+                    action is None
+                    and isinstance(actor, Character)
+                    and actor.active_plan is not None
+                ):
+                    action = self._get_intent_from_plan(actor)
+
+                if action is not None:
+                    is_prevented = actor.status_effects.is_action_prevented()
+
+                    if is_prevented:
+                        actor.update_turn(self.controller)
+                        actor.energy.accumulated_energy = 0
+                        continue
+
+                    actor.update_turn(self.controller)
+                    # Use action_router directly to avoid overwriting player's
+                    # presentation timing (execute_intent calls _record_action_timing).
+                    result = self.action_router.execute_intent(action)
+                    actor.energy.spend(config.ACTION_COST)
+
+                    if isinstance(actor, Character) and actor.active_plan is not None:
+                        plan = actor.active_plan
+                        step = plan.get_current_step()
+                        if isinstance(step, ApproachStep):
+                            self._on_approach_result(actor, result)
+
+                    # Continue to next NPC (don't return)
+
     def _apply_terrain_hazard(self, actor: Actor) -> None:
         """Check if actor is on hazardous terrain and apply damage if so.
 
@@ -488,7 +537,27 @@ class TurnManager:
         dx = next_pos[0] - actor.x
         dy = next_pos[1] - actor.y
 
-        return MoveIntent(plan.context.controller, actor, dx, dy)
+        duration_ms = self._approach_move_duration_ms(current_distance)
+        return MoveIntent(plan.context.controller, actor, dx, dy, duration_ms)
+
+    def _approach_move_duration_ms(self, distance: int) -> int:
+        """Return a movement duration based on remaining approach distance.
+
+        The curve slows movement as the actor gets closer, creating a more
+        deliberate approach near the target while keeping long-distance travel
+        snappy. The duration is clamped to [70, 140] ms.
+        """
+        min_duration_ms = 70
+        max_duration_ms = 140
+        far_distance = 4
+        distance_span = 3
+
+        progress = (far_distance - distance) / distance_span
+        duration_range = max_duration_ms - min_duration_ms
+        duration_ms = min_duration_ms + duration_range * progress
+
+        clamped = max(min_duration_ms, min(max_duration_ms, duration_ms))
+        return round(clamped)
 
     def _on_approach_result(self, actor: Character, result: GameActionResult) -> None:
         """Handle the result of an approach move.

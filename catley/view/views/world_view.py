@@ -168,8 +168,13 @@ class WorldView(View):
         if not vs.is_visible(actor.x, actor.y):
             return
 
-        # Convert actor position to screen coordinates
-        vp_x, vp_y = vs.world_to_screen(actor.x, actor.y)
+        # Convert actor position to screen coordinates.
+        # Use animation-controlled sub-tile positions when available so outlines
+        # stay in sync with moving glyphs.
+        if getattr(actor, "_animation_controlled", False):
+            vp_x, vp_y = vs.world_to_screen_float(actor.render_x, actor.render_y)
+        else:
+            vp_x, vp_y = vs.world_to_screen(actor.x, actor.y)
         root_x = self.x + vp_x
         root_y = self.y + vp_y
         screen_x, screen_y = self.graphics.console_to_screen_coords(root_x, root_y)
@@ -603,7 +608,7 @@ class WorldView(View):
         # Get lighting intensity (reuse existing lighting logic)
         light_rgb = self._get_actor_lighting_intensity(actor, bounds)
 
-        # INTERPOLATION MAGIC: Blend between previous and current position
+        # INTERPOLATION MAGIC: Blend between previous and current position.
         # When interpolation_alpha=0.0: Show exactly where actor was last logic step
         # (prev_x/prev_y)
         # When interpolation_alpha=1.0: Show exactly where actor is now (x/y)
@@ -611,12 +616,19 @@ class WorldView(View):
         # smooth movement!
         # Formula: lerp(prev, current, interpolation_alpha) =
         # prev * (1-interpolation_alpha) + current * interpolation_alpha
-        interpolated_x = (
-            actor.prev_x * (1.0 - interpolation_alpha) + actor.x * interpolation_alpha
-        )
-        interpolated_y = (
-            actor.prev_y * (1.0 - interpolation_alpha) + actor.y * interpolation_alpha
-        )
+        if getattr(actor, "_animation_controlled", False):
+            # Animation-controlled actors own their sub-tile position via MoveAnimation.
+            interpolated_x = actor.render_x
+            interpolated_y = actor.render_y
+        else:
+            interpolated_x = (
+                actor.prev_x * (1.0 - interpolation_alpha)
+                + actor.x * interpolation_alpha
+            )
+            interpolated_y = (
+                actor.prev_y * (1.0 - interpolation_alpha)
+                + actor.y * interpolation_alpha
+            )
 
         # Apply idle animation drift offset (subtle sub-tile movement)
         # Only for living actors - corpses and objects don't shift weight

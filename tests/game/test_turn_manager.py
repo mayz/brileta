@@ -807,6 +807,56 @@ def test_handle_approach_step_peeks_at_path() -> None:
     assert active_plan.cached_path[0] == (1, 0)
 
 
+def test_handle_approach_step_sets_duration_based_on_distance() -> None:
+    """_handle_approach_step assigns slower durations when close to the target."""
+    from catley.game.action_plan import (
+        ActivePlan,
+        ApproachStep,
+        PlanContext,
+        WalkToPlan,
+    )
+
+    controller, player = _make_world()
+    tm = controller.turn_manager
+
+    far_context = PlanContext(
+        actor=player,
+        controller=cast(Controller, controller),
+        target_position=(30, 0),
+    )
+    far_plan = ActivePlan(plan=WalkToPlan, context=far_context)
+    far_plan.cached_path = [(1, 0)]
+    player.active_plan = far_plan
+
+    far_step = far_plan.get_current_step()
+    assert isinstance(far_step, ApproachStep)
+
+    far_intent = tm._handle_approach_step(player, far_plan, far_step)
+
+    assert far_intent is not None
+    assert isinstance(far_intent, MoveIntent)
+    assert far_intent.duration_ms == 70
+
+    # Distance=1 is the closest approach, producing maximum duration (140ms).
+    near_context = PlanContext(
+        actor=player,
+        controller=cast(Controller, controller),
+        target_position=(1, 0),
+    )
+    near_plan = ActivePlan(plan=WalkToPlan, context=near_context)
+    near_plan.cached_path = [(1, 0)]
+    player.active_plan = near_plan
+
+    near_step = near_plan.get_current_step()
+    assert isinstance(near_step, ApproachStep)
+
+    near_intent = tm._handle_approach_step(player, near_plan, near_step)
+
+    assert near_intent is not None
+    assert isinstance(near_intent, MoveIntent)
+    assert near_intent.duration_ms == 140
+
+
 def test_on_approach_result_pops_path_on_success() -> None:
     """_on_approach_result pops from cached_path when move succeeds."""
     from catley.game.action_plan import ActivePlan, PlanContext, WalkToPlan

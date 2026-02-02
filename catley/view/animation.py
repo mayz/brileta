@@ -103,10 +103,12 @@ class MoveAnimation(Animation):
             self.actor._animation_controlled = False
             return True
 
-        # Linear interpolation between start and end positions
+        # Ease-out interpolation starts promptly and eases into the stop,
+        # avoiding a perceived "hesitation" at the start of short moves.
         progress = self.elapsed_time / self.duration
-        self.actor.render_x = self.start_x + (self.end_x - self.start_x) * progress
-        self.actor.render_y = self.start_y + (self.end_y - self.start_y) * progress
+        eased = 1.0 - (1.0 - progress) ** 2
+        self.actor.render_x = self.start_x + (self.end_x - self.start_x) * eased
+        self.actor.render_y = self.start_y + (self.end_y - self.start_y) * eased
 
         return False
 

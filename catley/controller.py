@@ -356,6 +356,12 @@ class Controller:
 
         # RAF: Trigger immediate NPC scheduling based on the world state change
         self.turn_manager.on_player_action()
+
+        # Process all ready NPCs immediately. This ensures NPCs get their turns
+        # even during held-key movement, where presentation timing would otherwise
+        # starve them (player resets timer every 70ms, NPCs never see it expire).
+        self.turn_manager.process_all_ready_npcs_immediately()
+
         self.invalidate_combat_tooltip()
 
         # Refresh hovered actor in case actors moved into/out of the mouse position

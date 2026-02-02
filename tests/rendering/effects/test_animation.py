@@ -62,10 +62,10 @@ class TestMoveAnimation:
         )
         assert animation.duration == 0.07
 
-        # At 50% completion (0.035 seconds)
+        # At 50% time (0.035 seconds), ease-out gives 75% of distance.
         finished = animation.update(FixedTimestep(0.035))
         assert not finished
-        assert actor.render_x == pytest.approx(5.0)
+        assert actor.render_x == pytest.approx(7.5)
 
         # Complete the animation
         finished = animation.update(FixedTimestep(0.035))
@@ -73,21 +73,21 @@ class TestMoveAnimation:
         assert actor.render_x == 10.0
 
     def test_animation_progression(self) -> None:
-        """Animation progresses correctly over time."""
+        """Animation progresses correctly over time with ease-out curve."""
         actor = DummyActor(0, 0)
         animation = MoveAnimation(cast(Any, actor), (0.0, 0.0), (10.0, 20.0))
 
-        # At 50% completion (0.075 seconds)
+        # At 50% time (0.075 seconds), ease-out gives 75% of distance.
         finished = animation.update(FixedTimestep(0.075))
-        assert not finished
-        assert actor.render_x == pytest.approx(5.0)
-        assert actor.render_y == pytest.approx(10.0)
-
-        # At 75% completion (additional 0.0375 seconds = 0.1125 total)
-        finished = animation.update(FixedTimestep(0.0375))
         assert not finished
         assert actor.render_x == pytest.approx(7.5)
         assert actor.render_y == pytest.approx(15.0)
+
+        # At 75% time (0.1125 total), ease-out gives 93.75% of distance.
+        finished = animation.update(FixedTimestep(0.0375))
+        assert not finished
+        assert actor.render_x == pytest.approx(9.375)
+        assert actor.render_y == pytest.approx(18.75)
 
     def test_animation_completion(self) -> None:
         """Animation completes and snaps to final position."""
@@ -130,11 +130,12 @@ class TestMoveAnimation:
         actor = DummyActor(0, 0)
         animation = MoveAnimation(cast(Any, actor), (-2.0, -3.0), (2.0, 3.0))
 
-        # At 50% completion
+        # At 50% time, ease-out gives 75% of distance.
+        # From (-2,-3) to (2,3) = distance (4,6), so 75% = (1.0, 1.5)
         finished = animation.update(FixedTimestep(0.075))
         assert not finished
-        assert actor.render_x == pytest.approx(0.0)
-        assert actor.render_y == pytest.approx(0.0)
+        assert actor.render_x == pytest.approx(1.0)
+        assert actor.render_y == pytest.approx(1.5)
 
 
 class TestAnimationManager:
@@ -162,14 +163,14 @@ class TestAnimationManager:
 
         manager.add(animation)
 
-        # Animation in progress
-        manager.update(FixedTimestep(0.075))  # 50% completion
+        # At 50% time, ease-out gives 75% of distance.
+        manager.update(FixedTimestep(0.075))
         assert not manager.is_queue_empty()
-        assert actor.render_x == pytest.approx(5.0)
-        assert actor.render_y == pytest.approx(5.0)
+        assert actor.render_x == pytest.approx(7.5)
+        assert actor.render_y == pytest.approx(7.5)
 
         # Animation completes
-        manager.update(FixedTimestep(0.075))  # 100% completion
+        manager.update(FixedTimestep(0.075))
         assert manager.is_queue_empty()
         assert actor.render_x == 10.0
         assert actor.render_y == 10.0
@@ -187,18 +188,18 @@ class TestAnimationManager:
         manager.add(anim1)
         manager.add(anim2)
 
-        # Both animations should run simultaneously
-        manager.update(FixedTimestep(0.075))  # 50% of both animations
+        # At 50% time, ease-out gives 75% of distance for both.
+        manager.update(FixedTimestep(0.075))
         assert not manager.is_queue_empty()
-        # First actor moves from (0,0) to (2,2), so 50% progress = (1,1)
-        assert actor1.render_x == pytest.approx(1.0)
-        assert actor1.render_y == pytest.approx(1.0)
-        # Second actor moves from (5,5) to (7,7), so 50% progress = (6,6)
-        assert actor2.render_x == pytest.approx(6.0)
-        assert actor2.render_y == pytest.approx(6.0)
+        # First actor moves from (0,0) to (2,2), 75% = (1.5, 1.5)
+        assert actor1.render_x == pytest.approx(1.5)
+        assert actor1.render_y == pytest.approx(1.5)
+        # Second actor moves from (5,5) to (7,7), 75% = (6.5, 6.5)
+        assert actor2.render_x == pytest.approx(6.5)
+        assert actor2.render_y == pytest.approx(6.5)
 
         # Complete both animations
-        manager.update(FixedTimestep(0.075))  # Complete both animations simultaneously
+        manager.update(FixedTimestep(0.075))
         assert manager.is_queue_empty()
         assert actor1.render_x == 2.0
         assert actor1.render_y == 2.0
