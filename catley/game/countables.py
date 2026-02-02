@@ -42,7 +42,7 @@ COUNTABLE_DEFINITIONS: dict[CountableType, CountableDefinition] = {
         countable_type=CountableType.COIN,
         name="Coin",
         plural_name="Coins",
-        glyph="\u25cf",  # solid circle
+        glyph="\U0000e706",
         color=(255, 215, 0),  # gold
     ),
 }

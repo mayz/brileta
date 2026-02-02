@@ -87,7 +87,7 @@ class TestCountableDefinitions:
         assert defn.countable_type == CountableType.COIN
         assert defn.name == "Coin"
         assert defn.plural_name == "Coins"
-        assert defn.glyph == "\u25cf"  # solid circle
+        assert defn.glyph == "\U0000e706"
         assert defn.color == (255, 215, 0)  # gold
 
     def test_countable_definition_is_frozen(self) -> None:
