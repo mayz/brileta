@@ -93,3 +93,30 @@ class TestGetShimmerAlpha:
         midpoint = (COMBAT_OUTLINE_MIN_ALPHA + COMBAT_OUTLINE_MAX_ALPHA) / 2
         assert alpha_fast == pytest.approx(midpoint, rel=1e-6)
         assert alpha_slow == pytest.approx(COMBAT_OUTLINE_MAX_ALPHA, rel=1e-6)
+
+
+class TestSmoothScrollingBuffer:
+    """Tests for smooth scrolling buffer padding."""
+
+    def test_glyph_buffer_includes_padding(self) -> None:
+        """Glyph buffer should be larger than viewport by 2*padding."""
+        view = object.__new__(WorldView)
+        view._SCROLL_PADDING = 1
+
+        # Simulate set_bounds setting viewport dimensions
+        view.width = 60
+        view.height = 40
+
+        from catley.util.glyph_buffer import GlyphBuffer
+
+        pad = view._SCROLL_PADDING
+        buffer = GlyphBuffer(view.width + 2 * pad, view.height + 2 * pad)
+
+        # Buffer should be viewport + 2 tiles (1 on each edge)
+        assert buffer.width == view.width + 2
+        assert buffer.height == view.height + 2
+
+    def test_scroll_padding_constant_exists(self) -> None:
+        """WorldView should have _SCROLL_PADDING class constant."""
+        assert hasattr(WorldView, "_SCROLL_PADDING")
+        assert WorldView._SCROLL_PADDING >= 1

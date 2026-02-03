@@ -21,7 +21,7 @@ from catley.events import (
     FloatingTextValence,
     subscribe_to_event,
 )
-from catley.types import DeltaTime, Opacity
+from catley.types import DeltaTime, Opacity, ViewOffset
 
 if TYPE_CHECKING:
     from catley.game.game_world import GameWorld
@@ -266,7 +266,7 @@ class FloatingTextManager:
         self,
         graphics: GraphicsContext,
         viewport_system: ViewportSystem,
-        view_offset: tuple[int, int],
+        view_offset: ViewOffset,
         game_world: GameWorld,
     ) -> None:
         """Render all active floating texts.
@@ -290,7 +290,7 @@ class FloatingTextManager:
         text: FloatingText,
         graphics: GraphicsContext,
         viewport_system: ViewportSystem,
-        view_offset: tuple[int, int],
+        view_offset: ViewOffset,
         game_world: GameWorld,
         font: ImageFont.FreeTypeFont,
     ) -> None:

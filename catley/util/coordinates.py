@@ -7,6 +7,7 @@ from catley.types import (
     PixelPos,
     RootConsoleTilePos,
     TileCoord,
+    ViewOffset,
     WorldTilePos,
 )
 
@@ -131,7 +132,7 @@ def convert_particle_to_screen_coords(
     particle_system: SubTileParticleSystem,
     particle_index: int,
     viewport_bounds: Rect,
-    view_offset: RootConsoleTilePos,
+    view_offset: ViewOffset,
     graphics: GraphicsContext,
     viewport_system: ViewportSystem | None = None,
 ) -> tuple[float, float] | None:

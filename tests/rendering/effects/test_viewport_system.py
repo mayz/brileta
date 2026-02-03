@@ -60,3 +60,50 @@ def test_world_to_screen_clamps_when_shaken() -> None:
     vs.camera.world_y -= 1.0
 
     assert vs.world_to_screen(0, 0) == (0, 0)
+
+
+def test_get_camera_fractional_offset_at_integer() -> None:
+    """Fractional offset should be zero when camera is at integer position."""
+    vs = ViewportSystem(10, 8)
+    vs.camera.set_position(25.0, 30.0)
+
+    frac_x, frac_y = vs.get_camera_fractional_offset()
+    assert frac_x == pytest.approx(0.0)
+    assert frac_y == pytest.approx(0.0)
+
+
+def test_get_camera_fractional_offset_positive() -> None:
+    """Fractional offset should be positive when camera is past tile center."""
+    vs = ViewportSystem(10, 8)
+    vs.camera.set_position(25.3, 30.7)
+
+    frac_x, frac_y = vs.get_camera_fractional_offset()
+    # 25.3 rounds to 25, so fractional is 0.3
+    assert frac_x == pytest.approx(0.3)
+    # 30.7 rounds to 31, so fractional is -0.3
+    assert frac_y == pytest.approx(-0.3)
+
+
+def test_get_camera_fractional_offset_negative() -> None:
+    """Fractional offset should be negative when camera is before tile center."""
+    vs = ViewportSystem(10, 8)
+    vs.camera.set_position(25.4, 30.4)
+
+    frac_x, frac_y = vs.get_camera_fractional_offset()
+    # 25.4 rounds to 25, so fractional is 0.4
+    assert frac_x == pytest.approx(0.4)
+    # 30.4 rounds to 30, so fractional is 0.4
+    assert frac_y == pytest.approx(0.4)
+
+
+def test_get_camera_fractional_offset_at_half() -> None:
+    """Fractional offset at 0.5 depends on banker's rounding."""
+    vs = ViewportSystem(10, 8)
+    # Python's round() uses banker's rounding: 25.5 -> 26, 26.5 -> 26
+    vs.camera.set_position(25.5, 26.5)
+
+    frac_x, frac_y = vs.get_camera_fractional_offset()
+    # 25.5 rounds to 26, fractional is -0.5
+    assert frac_x == pytest.approx(-0.5)
+    # 26.5 rounds to 26, fractional is 0.5
+    assert frac_y == pytest.approx(0.5)

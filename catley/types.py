@@ -27,6 +27,9 @@ RootConsoleTilePos = tuple[
     RootConsoleTileCoord, RootConsoleTileCoord
 ]  # Example: (10, 5) = tile 10,5 on UI
 
+# Float-capable view offset for smooth scrolling (camera fractional offset)
+ViewOffset = tuple[float, float]
+
 # =============================================================================
 # PIXEL-BASED COORDINATE SYSTEMS (Can be float in SDL3)
 # =============================================================================

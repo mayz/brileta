@@ -49,6 +49,11 @@ if TYPE_CHECKING:
 class WorldView(View):
     """View responsible for rendering the game world (map, actors, effects)."""
 
+    # Extra tiles rendered around the viewport edges for smooth sub-tile scrolling.
+    # When the camera moves between tiles, we offset the rendered texture by the
+    # fractional amount. The padding ensures there's always content to show at edges.
+    _SCROLL_PADDING: int = 1
+
     def __init__(
         self,
         controller: Controller,
@@ -65,10 +70,12 @@ class WorldView(View):
         self.viewport_system = ViewportSystem(
             config.DEFAULT_VIEWPORT_WIDTH, config.DEFAULT_VIEWPORT_HEIGHT
         )
-        # Game map console matches the viewport dimensions rather than the
-        # entire map. This keeps rendering fast and memory usage reasonable.
+        # Game map console is larger than the viewport by _SCROLL_PADDING tiles
+        # on each edge. This allows smooth sub-tile scrolling without gaps.
+        pad = self._SCROLL_PADDING
         self.map_glyph_buffer = GlyphBuffer(
-            config.DEFAULT_VIEWPORT_WIDTH, config.DEFAULT_VIEWPORT_HEIGHT
+            config.DEFAULT_VIEWPORT_WIDTH + 2 * pad,
+            config.DEFAULT_VIEWPORT_HEIGHT + 2 * pad,
         )
         # Particle system also operates only on the visible viewport area.
         self.particle_system = SubTileParticleSystem(
@@ -90,6 +97,8 @@ class WorldView(View):
         self._light_overlay_texture: Any | None = None
         # Screen shake offset in tiles for sub-tile rendering
         self._shake_offset: tuple[float, float] = (0.0, 0.0)
+        # Camera fractional offset for smooth scrolling (set each frame in present())
+        self._camera_frac_offset: tuple[float, float] = (0.0, 0.0)
         # Cumulative game time for decal age tracking
         self._game_time: float = 0.0
         from catley.view.render.effects.atmospheric import (
@@ -108,7 +117,11 @@ class WorldView(View):
             super().set_bounds(x1, y1, x2, y2)
             # Update the existing viewport's size instead of replacing it.
             self.viewport_system.viewport.resize(self.width, self.height)
-            self.map_glyph_buffer = GlyphBuffer(self.width, self.height)
+            # Glyph buffer includes padding for smooth scrolling.
+            pad = self._SCROLL_PADDING
+            self.map_glyph_buffer = GlyphBuffer(
+                self.width + 2 * pad, self.height + 2 * pad
+            )
             self.particle_system = SubTileParticleSystem(self.width, self.height)
             self.environmental_system = EnvironmentalEffectSystem()
             self.decal_system = DecalSystem()
@@ -145,7 +158,10 @@ class WorldView(View):
         final_color = color
         if effect == "pulse":
             final_color = self._apply_pulsating_effect(color, color)
-        root_x, root_y = self.x + vp_x, self.y + vp_y
+        # Apply camera fractional offset for smooth scrolling alignment
+        cam_frac_x, cam_frac_y = self._camera_frac_offset
+        root_x = self.x + vp_x - cam_frac_x
+        root_y = self.y + vp_y - cam_frac_y
         self.graphics.draw_tile_highlight(root_x, root_y, final_color, alpha)
 
     def render_actor_outline(
@@ -175,6 +191,12 @@ class WorldView(View):
             vp_x, vp_y = vs.world_to_screen_float(actor.render_x, actor.render_y)
         else:
             vp_x, vp_y = vs.world_to_screen(actor.x, actor.y)
+
+        # Apply camera fractional offset for smooth scrolling alignment
+        cam_frac_x, cam_frac_y = self._camera_frac_offset
+        vp_x -= cam_frac_x
+        vp_y -= cam_frac_y
+
         root_x = self.x + vp_x
         root_y = self.y + vp_y
         screen_x, screen_y = self.graphics.console_to_screen_coords(root_x, root_y)
@@ -217,13 +239,18 @@ class WorldView(View):
     # Drawing
     # ------------------------------------------------------------------
     def _get_background_cache_key(self) -> tuple:
-        """Generate a hashable key representing the state of the static background."""
+        """Generate a hashable key representing the state of the static background.
+
+        The camera position is rounded to integers because that's what determines
+        which tiles are rendered (see Viewport.get_world_bounds). The fractional
+        camera offset is handled at presentation time for smooth scrolling.
+        """
         gw = self.controller.gw
         vs = self.viewport_system
 
         camera_key = (
-            round(vs.camera.world_x, 2),
-            round(vs.camera.world_y, 2),
+            round(vs.camera.world_x),
+            round(vs.camera.world_y),
             vs.offset_x,
             vs.offset_y,
         )
@@ -311,25 +338,56 @@ class WorldView(View):
         if not self.visible:
             return
 
-        # Convert shake offset from tiles to pixels for background rendering
-        shake_tile_x, shake_tile_y = self._shake_offset
-        # Get pixel offset by computing the difference in screen coords
+        vs = self.viewport_system
+        pad = self._SCROLL_PADDING
+
+        # Calculate pixel offsets for smooth scrolling.
+        # The background texture is larger than the viewport (includes padding),
+        # so we need to offset it to align the visible portion correctly.
         base_px_x, base_px_y = graphics.console_to_screen_coords(0.0, 0.0)
+
+        # 1. Screen shake offset (existing behavior)
+        shake_tile_x, shake_tile_y = self._shake_offset
         shake_px_x, shake_px_y = graphics.console_to_screen_coords(
             shake_tile_x, shake_tile_y
         )
-        offset_x_pixels = shake_px_x - base_px_x
-        offset_y_pixels = shake_px_y - base_px_y
+        shake_offset_x = shake_px_x - base_px_x
+        shake_offset_y = shake_px_y - base_px_y
 
-        # 1. Present the cached unlit background with shake offset
+        # 2. Camera fractional offset for smooth sub-tile scrolling.
+        # The camera position is rounded when selecting which tiles to render.
+        # The fractional part tells us how far between tiles the camera actually is.
+        # We offset the texture in the opposite direction to compensate.
+        cam_frac_x, cam_frac_y = vs.get_camera_fractional_offset()
+        # Store for use by actor/particle rendering methods
+        self._camera_frac_offset = (cam_frac_x, cam_frac_y)
+        cam_px_x, cam_px_y = graphics.console_to_screen_coords(-cam_frac_x, -cam_frac_y)
+        cam_offset_x = cam_px_x - base_px_x
+        cam_offset_y = cam_px_y - base_px_y
+
+        # 3. Padding offset: the texture starts 1 tile before the viewport origin,
+        # so we shift it back by the padding amount.
+        pad_px_x, pad_px_y = graphics.console_to_screen_coords(-pad, -pad)
+        pad_offset_x = pad_px_x - base_px_x
+        pad_offset_y = pad_px_y - base_px_y
+
+        # Combined offset for background rendering
+        offset_x_pixels = shake_offset_x + cam_offset_x + pad_offset_x
+        offset_y_pixels = shake_offset_y + cam_offset_y + pad_offset_y
+
+        # The padded texture dimensions
+        tex_width = self.width + 2 * pad
+        tex_height = self.height + 2 * pad
+
+        # 1. Present the cached unlit background with combined offset
         if self._active_background_texture:
             with record_time_live_variable("cpu.render.present_background_ms"):
                 graphics.draw_background(
                     self._active_background_texture,
                     self.x,
                     self.y,
-                    self.width,
-                    self.height,
+                    tex_width,
+                    tex_height,
                     offset_x_pixels,
                     offset_y_pixels,
                 )
@@ -341,8 +399,8 @@ class WorldView(View):
                     self._light_overlay_texture,
                     self.x,
                     self.y,
-                    self.width,
-                    self.height,
+                    tex_width,
+                    tex_height,
                     offset_x_pixels,
                     offset_y_pixels,
                 )
@@ -355,7 +413,9 @@ class WorldView(View):
         vs.camera.world_y += shake_tile_y
 
         viewport_bounds = Rect.from_bounds(0, 0, self.width - 1, self.height - 1)
-        view_offset = (self.x, self.y)
+        # Include camera fractional offset in view_offset for particles/decals/etc.
+        # This ensures they shift with the background during smooth scrolling.
+        view_offset = (self.x - cam_frac_x, self.y - cam_frac_y)
 
         visible_bounds = vs.get_visible_bounds()
         viewport_offset = (visible_bounds.x1, visible_bounds.y1)
@@ -508,17 +568,27 @@ class WorldView(View):
 
     @record_time_live_variable("cpu.render.map_unlit_ms")
     def _render_map_unlit(self) -> None:
-        """Renders the static, unlit background of the game world."""
+        """Renders the static, unlit background of the game world.
+
+        The glyph buffer is larger than the viewport by _SCROLL_PADDING tiles on
+        each edge. This allows smooth sub-tile scrolling: when the camera moves
+        between tiles, we offset the rendered texture by the fractional amount,
+        and the padding ensures there's always content at the edges.
+        """
         gw = self.controller.gw
         vs = self.viewport_system
+        pad = self._SCROLL_PADDING
 
         # Clear the console for this view to a default black background.
         self.map_glyph_buffer.clear()
 
-        # Iterate over every tile in the destination console (the viewport).
-        for vp_y in range(self.map_glyph_buffer.height):
-            for vp_x in range(self.map_glyph_buffer.width):
-                # For each screen tile, find out which world tile it corresponds to.
+        # Iterate over every tile in the padded buffer.
+        for buf_y in range(self.map_glyph_buffer.height):
+            for buf_x in range(self.map_glyph_buffer.width):
+                # Convert buffer position to viewport position (accounting for padding),
+                # then to world position. Buffer (pad, pad) = viewport (0, 0).
+                vp_x = buf_x - pad
+                vp_y = buf_y - pad
                 world_x, world_y = vs.screen_to_world(vp_x, vp_y)
 
                 # Check if the world tile is within the map bounds.
@@ -533,7 +603,7 @@ class WorldView(View):
                     dark_appearance = gw.game_map.dark_appearance_map[world_x, world_y]
                     fg_rgba = (*dark_appearance["fg"], 255)
                     bg_rgba = (*dark_appearance["bg"], 255)
-                    self.map_glyph_buffer.data[vp_x, vp_y] = (
+                    self.map_glyph_buffer.data[buf_x, buf_y] = (
                         dark_appearance["ch"],
                         fg_rgba,
                         bg_rgba,
@@ -642,6 +712,12 @@ class WorldView(View):
             interpolated_y += drift_y
 
         vp_x, vp_y = vs.world_to_screen_float(interpolated_x, interpolated_y)
+
+        # Apply camera fractional offset for smooth scrolling alignment.
+        # The background is offset by -cam_frac, so actors need the same adjustment.
+        cam_frac_x, cam_frac_y = self._camera_frac_offset
+        vp_x -= cam_frac_x
+        vp_y -= cam_frac_y
 
         # Root console position where this viewport pixel ends up
         root_x = self.x + vp_x
@@ -1063,9 +1139,12 @@ class WorldView(View):
             return None
         # ---------------------------------------------------------------------
 
-        # Create a GlyphBuffer for the light overlay.
+        # Create a GlyphBuffer for the light overlay with padding for smooth scrolling.
         # It's already transparent by default from its own .clear() method.
-        light_glyph_buffer = GlyphBuffer(self.width, self.height)
+        pad = self._SCROLL_PADDING
+        buf_width = self.width + 2 * pad
+        buf_height = self.height + 2 * pad
+        light_glyph_buffer = GlyphBuffer(buf_width, buf_height)
 
         # Get viewport bounds and calculate world coordinates
         vs = self.viewport_system
@@ -1119,22 +1198,23 @@ class WorldView(View):
                             spillover_intensity * 0.3
                         )
 
-            # Map world coordinates to viewport coordinates for all explored tiles
+            # Map world coordinates to buffer coordinates for all explored tiles.
+            # Add padding since the buffer starts 'pad' tiles before the viewport.
             exp_x, exp_y = np.nonzero(explored_mask_slice)
-            viewport_x = vs.offset_x + exp_x
-            viewport_y = vs.offset_y + exp_y
+            buffer_x = vs.offset_x + exp_x + pad
+            buffer_y = vs.offset_y + exp_y + pad
 
-            # Ensure coordinates are within bounds
+            # Ensure coordinates are within the padded buffer bounds
             valid_mask = (
-                (viewport_x >= 0)
-                & (viewport_x < self.width)
-                & (viewport_y >= 0)
-                & (viewport_y < self.height)
+                (buffer_x >= 0)
+                & (buffer_x < buf_width)
+                & (buffer_y >= 0)
+                & (buffer_y < buf_height)
             )
 
             if np.any(valid_mask):
-                final_vp_x = viewport_x[valid_mask]
-                final_vp_y = viewport_y[valid_mask]
+                final_buf_x = buffer_x[valid_mask]
+                final_buf_y = buffer_y[valid_mask]
 
                 # Get pure light appearance data for all explored tiles
                 light_chars = light_app_slice["ch"][
@@ -1239,9 +1319,9 @@ class WorldView(View):
                 bg_rgba = np.hstack((scaled_bg_rgb, alpha_channel))
 
                 # Now, do the vectorized assignment to the GlyphBuffer.
-                # The mask is for (width, height) indexing with XY coordinates.
-                final_mask_T = np.zeros((self.width, self.height), dtype=bool)
-                final_mask_T[final_vp_x, final_vp_y] = True
+                # The mask is for (buf_width, buf_height) indexing with XY coordinates.
+                final_mask_T = np.zeros((buf_width, buf_height), dtype=bool)
+                final_mask_T[final_buf_x, final_buf_y] = True
 
                 light_glyph_buffer.data["ch"][final_mask_T] = light_chars
                 light_glyph_buffer.data["fg"][final_mask_T] = light_fg_rgba

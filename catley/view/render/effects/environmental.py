@@ -5,8 +5,8 @@ from typing import TYPE_CHECKING
 
 from catley import colors
 from catley.game.enums import BlendMode
-from catley.types import DeltaTime
-from catley.util.coordinates import Rect, TileCoord
+from catley.types import DeltaTime, ViewOffset
+from catley.util.coordinates import Rect
 
 if TYPE_CHECKING:
     from catley.view.render.graphics import GraphicsContext
@@ -120,7 +120,7 @@ class EnvironmentalEffectSystem:
         self,
         renderer: GraphicsContext,
         viewport_bounds: Rect,
-        view_offset: tuple[TileCoord, TileCoord],
+        view_offset: ViewOffset,
     ) -> None:
         """
         Render all active environmental effects using the renderer.

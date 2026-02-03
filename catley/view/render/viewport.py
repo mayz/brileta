@@ -264,6 +264,23 @@ class ViewportSystem:
         """Converts viewport/screen coordinates to world coordinates."""
         return self.viewport.viewport_to_world(vp_x, vp_y, self.camera)
 
+    def get_camera_fractional_offset(self) -> tuple[float, float]:
+        """Return the fractional part of the camera position for smooth scrolling.
+
+        This is the difference between the actual camera position and the
+        rounded position used for tile selection. When the background is rendered
+        with padding tiles, this offset can be applied at presentation time
+        to achieve smooth sub-tile scrolling.
+
+        Returns:
+            (offset_x, offset_y) in tile units. Positive values mean the camera
+            is past the tile center, requiring a negative presentation offset.
+        """
+        return (
+            self.camera.world_x - round(self.camera.world_x),
+            self.camera.world_y - round(self.camera.world_y),
+        )
+
     @property
     def offset_x(self) -> int:
         return self.viewport.offset_x

@@ -228,13 +228,17 @@ def test_small_map_actor_alignment(monkeypatch) -> None:
     view.draw(cast(GraphicsContext, controller.graphics), InterpolationAlpha(0.0))
 
     vs = view.viewport_system
-    px, py = vs.world_to_screen(controller.gw.player.x, controller.gw.player.y)
+    vp_x, vp_y = vs.world_to_screen(controller.gw.player.x, controller.gw.player.y)
+    # The glyph buffer is larger than the viewport by _SCROLL_PADDING on each edge.
+    # Buffer coordinates = viewport coordinates + padding.
+    pad = view._SCROLL_PADDING
+    buf_x, buf_y = vp_x + pad, vp_y + pad
     # With smooth rendering enabled, actors are drawn via SDL, not console
     if config.SMOOTH_ACTOR_RENDERING_ENABLED:
-        assert view.map_glyph_buffer.data["ch"][px, py] == 0  # No character in console
+        assert view.map_glyph_buffer.data["ch"][buf_x, buf_y] == 0  # No char in console
     else:
-        assert view.map_glyph_buffer.data["ch"][px, py] == ord("@")
-    assert (px, py) == (
+        assert view.map_glyph_buffer.data["ch"][buf_x, buf_y] == ord("@")
+    assert (vp_x, vp_y) == (
         vs.offset_x + controller.gw.player.x,
         vs.offset_y + controller.gw.player.y,
     )

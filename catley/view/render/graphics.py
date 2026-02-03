@@ -33,6 +33,7 @@ from catley.types import (
     PixelPos,
     RootConsoleTilePos,
     TileDimensions,
+    ViewOffset,
 )
 from catley.util.coordinates import CoordinateConverter, Rect
 from catley.util.glyph_buffer import GlyphBuffer
@@ -155,8 +156,8 @@ class GraphicsContext(abc.ABC):
     @abc.abstractmethod
     def draw_tile_highlight(
         self,
-        root_x: int,
-        root_y: int,
+        root_x: float,
+        root_y: float,
         color: colors.Color,
         alpha: Opacity,
     ) -> None:
@@ -169,7 +170,7 @@ class GraphicsContext(abc.ABC):
         particle_system: SubTileParticleSystem,
         layer: ParticleLayer,
         viewport_bounds: Rect,
-        view_offset: RootConsoleTilePos,
+        view_offset: ViewOffset,
         viewport_system: ViewportSystem | None = None,
     ) -> None:
         """
@@ -195,7 +196,7 @@ class GraphicsContext(abc.ABC):
         self,
         decal_system: DecalSystem,
         viewport_bounds: Rect,
-        view_offset: RootConsoleTilePos,
+        view_offset: ViewOffset,
         viewport_system: ViewportSystem,
         game_time: float,
     ) -> None:
