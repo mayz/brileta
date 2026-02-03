@@ -8,29 +8,31 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+import pytest
 import tcod.event
 
 from catley import colors
-from catley.events import reset_event_bus_for_testing
+from catley.controller import Controller
 from catley.game.actions.combat import AttackIntent
 from catley.game.actions.discovery import ActionCategory, ActionOption
 from catley.game.actions.stunts import KickIntent, PunchIntent, PushIntent, TripIntent
-from catley.game.actors import NPC
+from catley.game.actors import NPC, Character
 from catley.game.enums import Disposition
-from tests.helpers import get_controller_with_player_and_map
+from tests.helpers import reset_dummy_controller
 
 # --- Helper functions ---
 
 
 def _make_combat_test_world(
+    controller: Controller,
     player_pos: tuple[int, int] = (5, 5),
     enemy_pos: tuple[int, int] = (6, 5),
     *,
     enemy_disposition: Disposition = Disposition.HOSTILE,
-):
+) -> tuple[Controller, Character, NPC]:
     """Create a test world with player and NPC at specified positions."""
-    controller = get_controller_with_player_and_map()
     player = controller.gw.player
+    assert player is not None
     gm = controller.gw.game_map
 
     # Move player to the specified position
@@ -49,8 +51,9 @@ def _make_combat_test_world(
     )
     controller.gw.add_actor(npc)
 
-    # Make NPC and path to NPC visible and transparent for line of sight
-    gm.visible[npc.x, npc.y] = True
+    # Make all tiles visible and transparent for line of sight
+    gm.visible[:] = True
+    gm.transparent[:] = True
     # Set all tiles between player and NPC to transparent for line of sight
     min_x = min(player_pos[0], enemy_pos[0])
     max_x = max(player_pos[0], enemy_pos[0])
@@ -63,16 +66,24 @@ def _make_combat_test_world(
     return controller, player, npc
 
 
+@pytest.fixture
+def combat_controller(dummy_controller: Controller) -> Controller:
+    reset_dummy_controller(dummy_controller)
+    return dummy_controller
+
+
 # --- CombatMode Action Selection Tests ---
 
 
 class TestCombatModeActionSelection:
     """Test selected_action state management on CombatMode."""
 
-    def test_default_action_is_attack_on_enter(self) -> None:
+    def test_default_action_is_attack_on_enter(
+        self, combat_controller: Controller
+    ) -> None:
         """selected_action should default to Attack when entering combat mode."""
-        reset_event_bus_for_testing()
         controller, _player, _npc = _make_combat_test_world(
+            combat_controller,
             player_pos=(5, 5),
             enemy_pos=(6, 5),  # Adjacent - so actions are available
         )
@@ -81,10 +92,9 @@ class TestCombatModeActionSelection:
         assert controller.combat_mode.selected_action is not None
         assert controller.combat_mode.selected_action.category == ActionCategory.COMBAT
 
-    def test_select_action_updates_state(self) -> None:
+    def test_select_action_updates_state(self, combat_controller: Controller) -> None:
         """select_action() should update selected_action."""
-        reset_event_bus_for_testing()
-        controller = get_controller_with_player_and_map()
+        controller = combat_controller
         controller.enter_combat_mode()
 
         push_action = ActionOption(
@@ -101,10 +111,11 @@ class TestCombatModeActionSelection:
         assert controller.combat_mode.selected_action is not None
         assert controller.combat_mode.selected_action.id == "push"
 
-    def test_selected_action_resets_on_exit(self) -> None:
+    def test_selected_action_resets_on_exit(
+        self, combat_controller: Controller
+    ) -> None:
         """Exiting combat mode should reset selected_action to None."""
-        reset_event_bus_for_testing()
-        controller = get_controller_with_player_and_map()
+        controller = combat_controller
         controller.enter_combat_mode()
 
         # Select Push
@@ -126,10 +137,12 @@ class TestCombatModeActionSelection:
         # selected_action should be cleared
         assert controller.combat_mode.selected_action is None
 
-    def test_selected_action_resets_on_reenter(self) -> None:
+    def test_selected_action_resets_on_reenter(
+        self, combat_controller: Controller
+    ) -> None:
         """Re-entering combat should reset to default Attack."""
-        reset_event_bus_for_testing()
         controller, _player, _npc = _make_combat_test_world(
+            combat_controller,
             player_pos=(5, 5),
             enemy_pos=(6, 5),  # Adjacent - so actions are available
         )
@@ -164,14 +177,16 @@ class TestCombatModeActionSelection:
 class TestCombatModeIntentCreation:
     """Test _create_intent_for_target creates correct intent types."""
 
-    def test_attack_action_starts_melee_attack_plan(self) -> None:
+    def test_attack_action_starts_melee_attack_plan(
+        self, combat_controller: Controller
+    ) -> None:
         """Selected melee attack action should start MeleeAttackPlan.
 
         Melee attacks now use the ActionPlan system which handles
         approach uniformly.
         """
-        reset_event_bus_for_testing()
         controller, player, npc = _make_combat_test_world(
+            combat_controller,
             player_pos=(5, 5),
             enemy_pos=(6, 5),
         )
@@ -197,15 +212,15 @@ class TestCombatModeIntentCreation:
         assert player.active_plan.plan.name == "Melee Attack"
         assert player.active_plan.context.target_actor == npc
 
-    def test_push_action_starts_push_plan(self) -> None:
+    def test_push_action_starts_push_plan(self, combat_controller: Controller) -> None:
         """Selected Push action should start PushPlan for adjacent target.
 
         Push uses the ActionPlan system which handles both adjacent and
         distant targets uniformly. For adjacent targets, the ApproachStep
         is skipped and the push executes on the next turn.
         """
-        reset_event_bus_for_testing()
         controller, player, npc = _make_combat_test_world(
+            combat_controller,
             player_pos=(5, 5),
             enemy_pos=(6, 5),  # Adjacent
         )
@@ -231,10 +246,12 @@ class TestCombatModeIntentCreation:
         assert player.active_plan.plan.name == "Push"
         assert player.active_plan.context.target_actor == npc
 
-    def test_push_on_distant_target_starts_push_plan(self) -> None:
+    def test_push_on_distant_target_starts_push_plan(
+        self, combat_controller: Controller
+    ) -> None:
         """Push on non-adjacent target should start PushPlan."""
-        reset_event_bus_for_testing()
         controller, player, npc = _make_combat_test_world(
+            combat_controller,
             player_pos=(5, 5),
             enemy_pos=(8, 5),  # 3 tiles away
         )
@@ -260,14 +277,14 @@ class TestCombatModeIntentCreation:
         assert player.active_plan.plan.name == "Push"
         assert player.active_plan.context.target_actor == npc
 
-    def test_trip_action_starts_trip_plan(self) -> None:
+    def test_trip_action_starts_trip_plan(self, combat_controller: Controller) -> None:
         """Selected Trip action should start TripPlan for adjacent target.
 
         Trip uses the ActionPlan system which handles both adjacent and
         distant targets uniformly.
         """
-        reset_event_bus_for_testing()
         controller, player, npc = _make_combat_test_world(
+            combat_controller,
             player_pos=(5, 5),
             enemy_pos=(6, 5),  # Adjacent
         )
@@ -293,10 +310,12 @@ class TestCombatModeIntentCreation:
         assert player.active_plan.plan.name == "Trip"
         assert player.active_plan.context.target_actor == npc
 
-    def test_trip_on_distant_target_starts_trip_plan(self) -> None:
+    def test_trip_on_distant_target_starts_trip_plan(
+        self, combat_controller: Controller
+    ) -> None:
         """Trip on non-adjacent target should start TripPlan."""
-        reset_event_bus_for_testing()
         controller, player, npc = _make_combat_test_world(
+            combat_controller,
             player_pos=(5, 5),
             enemy_pos=(8, 5),  # 3 tiles away
         )
@@ -322,14 +341,14 @@ class TestCombatModeIntentCreation:
         assert player.active_plan.plan.name == "Trip"
         assert player.active_plan.context.target_actor == npc
 
-    def test_kick_action_starts_kick_plan(self) -> None:
+    def test_kick_action_starts_kick_plan(self, combat_controller: Controller) -> None:
         """Selected Kick action should start KickPlan for adjacent target.
 
         Kick uses the ActionPlan system which handles both adjacent and
         distant targets uniformly.
         """
-        reset_event_bus_for_testing()
         controller, player, npc = _make_combat_test_world(
+            combat_controller,
             player_pos=(5, 5),
             enemy_pos=(6, 5),  # Adjacent
         )
@@ -355,10 +374,12 @@ class TestCombatModeIntentCreation:
         assert player.active_plan.plan.name == "Kick"
         assert player.active_plan.context.target_actor == npc
 
-    def test_kick_on_distant_target_starts_kick_plan(self) -> None:
+    def test_kick_on_distant_target_starts_kick_plan(
+        self, combat_controller: Controller
+    ) -> None:
         """Kick on non-adjacent target should start KickPlan."""
-        reset_event_bus_for_testing()
         controller, player, npc = _make_combat_test_world(
+            combat_controller,
             player_pos=(5, 5),
             enemy_pos=(8, 5),  # 3 tiles away
         )
@@ -384,14 +405,16 @@ class TestCombatModeIntentCreation:
         assert player.active_plan.plan.name == "Kick"
         assert player.active_plan.context.target_actor == npc
 
-    def test_punch_action_starts_punch_plan(self) -> None:
+    def test_punch_action_starts_punch_plan(
+        self, combat_controller: Controller
+    ) -> None:
         """Selected Punch action should start a PunchPlan for adjacent target.
 
         Punch uses the ActionPlan system instead of creating intents directly.
         The plan handles approach, holstering, and the punch attack as separate steps.
         """
-        reset_event_bus_for_testing()
         controller, player, npc = _make_combat_test_world(
+            combat_controller,
             player_pos=(5, 5),
             enemy_pos=(6, 5),  # Adjacent
         )
@@ -418,14 +441,16 @@ class TestCombatModeIntentCreation:
         assert player.active_plan.plan.name == "Punch"
         assert player.active_plan.context.target_actor == npc
 
-    def test_punch_on_distant_target_starts_punch_plan(self) -> None:
+    def test_punch_on_distant_target_starts_punch_plan(
+        self, combat_controller: Controller
+    ) -> None:
         """Punch on non-adjacent target should start PunchPlan with approach step.
 
         The PunchPlan includes an ApproachStep that handles pathfinding internally,
         so no explicit start_actor_pathfinding call is made.
         """
-        reset_event_bus_for_testing()
         controller, player, npc = _make_combat_test_world(
+            combat_controller,
             player_pos=(5, 5),
             enemy_pos=(8, 5),  # 3 tiles away
         )
@@ -455,10 +480,13 @@ class TestCombatModeIntentCreation:
         first_step = player.active_plan.plan.steps[0]
         assert isinstance(first_step, ApproachStep)
 
-    def test_no_selected_action_falls_back_to_melee_attack_plan(self) -> None:
+    def test_no_selected_action_falls_back_to_melee_attack_plan(
+        self, combat_controller: Controller
+    ) -> None:
         """If no action is selected, should fall back to MeleeAttackPlan."""
-        reset_event_bus_for_testing()
-        controller, player, npc = _make_combat_test_world()
+        controller, player, npc = _make_combat_test_world(
+            combat_controller,
+        )
         controller.enter_combat_mode()
 
         # Force selected_action to None
@@ -473,10 +501,11 @@ class TestCombatModeIntentCreation:
 
     def test_no_selected_action_on_distant_target_starts_melee_attack_plan(
         self,
+        combat_controller: Controller,
     ) -> None:
         """Default attack on distant target should start MeleeAttackPlan."""
-        reset_event_bus_for_testing()
         controller, player, npc = _make_combat_test_world(
+            combat_controller,
             player_pos=(5, 5),
             enemy_pos=(8, 5),  # 3 tiles away
         )
@@ -500,10 +529,12 @@ class TestCombatModeIntentCreation:
 class TestCombatModeHotkeySelection:
     """Test hotkey input changes selected action."""
 
-    def test_pressing_action_hotkey_selects_action(self) -> None:
+    def test_pressing_action_hotkey_selects_action(
+        self, combat_controller: Controller
+    ) -> None:
         """Pressing an action's hotkey should select that action."""
-        reset_event_bus_for_testing()
         controller, _player, _npc = _make_combat_test_world(
+            combat_controller,
             player_pos=(5, 5),
             enemy_pos=(6, 5),  # Adjacent - so we get both Attack and Push
         )
@@ -526,10 +557,10 @@ class TestCombatModeHotkeySelection:
         assert controller.combat_mode.selected_action is not None
         assert controller.combat_mode.selected_action.id == actions[1].id
 
-    def test_invalid_hotkey_returns_false(self) -> None:
+    def test_invalid_hotkey_returns_false(self, combat_controller: Controller) -> None:
         """Pressing a key with no mapped action should return False."""
-        reset_event_bus_for_testing()
         controller, _player, _npc = _make_combat_test_world(
+            combat_controller,
             player_pos=(5, 5),
             enemy_pos=(6, 5),
         )
@@ -545,10 +576,12 @@ class TestCombatModeHotkeySelection:
 
         assert not handled
 
-    def test_first_action_hotkey_selects_first_action(self) -> None:
+    def test_first_action_hotkey_selects_first_action(
+        self, combat_controller: Controller
+    ) -> None:
         """Pressing 'a' should select the first action (Attack)."""
-        reset_event_bus_for_testing()
         controller, _player, _npc = _make_combat_test_world(
+            combat_controller,
             player_pos=(5, 5),
             enemy_pos=(6, 5),  # Adjacent - so we get multiple actions
         )
@@ -578,10 +611,12 @@ class TestCombatModeHotkeySelection:
 class TestPlayerCombatActionsDiscovery:
     """Test get_player_combat_actions returns correct action set."""
 
-    def test_returns_attack_actions_for_equipped_weapon(self) -> None:
+    def test_returns_attack_actions_for_equipped_weapon(
+        self, combat_controller: Controller
+    ) -> None:
         """Should include attack options for active weapon when enemy adjacent."""
-        reset_event_bus_for_testing()
         controller, _player, _npc = _make_combat_test_world(
+            combat_controller,
             player_pos=(5, 5),
             enemy_pos=(6, 5),  # Adjacent
         )
@@ -591,10 +626,12 @@ class TestPlayerCombatActionsDiscovery:
         attack_actions = [a for a in actions if a.category == ActionCategory.COMBAT]
         assert len(attack_actions) >= 1
 
-    def test_returns_push_stunt_when_adjacent_enemy(self) -> None:
+    def test_returns_push_stunt_when_adjacent_enemy(
+        self, combat_controller: Controller
+    ) -> None:
         """Should include Push when an enemy is adjacent."""
-        reset_event_bus_for_testing()
         controller, _player, _npc = _make_combat_test_world(
+            combat_controller,
             player_pos=(5, 5),
             enemy_pos=(6, 5),  # Adjacent
         )
@@ -604,10 +641,12 @@ class TestPlayerCombatActionsDiscovery:
         push_actions = [a for a in actions if a.id == "push"]
         assert len(push_actions) == 1
 
-    def test_push_action_has_correct_category(self) -> None:
+    def test_push_action_has_correct_category(
+        self, combat_controller: Controller
+    ) -> None:
         """Push action should be in STUNT category."""
-        reset_event_bus_for_testing()
         controller, _player, _npc = _make_combat_test_world(
+            combat_controller,
             player_pos=(5, 5),
             enemy_pos=(6, 5),  # Adjacent
         )
@@ -618,10 +657,12 @@ class TestPlayerCombatActionsDiscovery:
         assert push_action is not None
         assert push_action.category == ActionCategory.STUNT
 
-    def test_returns_trip_stunt_when_adjacent_enemy(self) -> None:
+    def test_returns_trip_stunt_when_adjacent_enemy(
+        self, combat_controller: Controller
+    ) -> None:
         """Should include Trip when an enemy is adjacent."""
-        reset_event_bus_for_testing()
         controller, _player, _npc = _make_combat_test_world(
+            combat_controller,
             player_pos=(5, 5),
             enemy_pos=(6, 5),  # Adjacent
         )
@@ -633,10 +674,12 @@ class TestPlayerCombatActionsDiscovery:
         assert trip_actions[0].category == ActionCategory.STUNT
         assert trip_actions[0].action_class == TripIntent
 
-    def test_actions_have_valid_action_class(self) -> None:
+    def test_actions_have_valid_action_class(
+        self, combat_controller: Controller
+    ) -> None:
         """Combat actions should have valid action_class set."""
-        reset_event_bus_for_testing()
         controller, _player, _npc = _make_combat_test_world(
+            combat_controller,
             player_pos=(5, 5),
             enemy_pos=(6, 5),  # Adjacent
         )
@@ -646,7 +689,9 @@ class TestPlayerCombatActionsDiscovery:
         for action in actions:
             assert action.action_class is not None
 
-    def test_preferred_attacks_come_before_improvised(self) -> None:
+    def test_preferred_attacks_come_before_improvised(
+        self, combat_controller: Controller
+    ) -> None:
         """PREFERRED attacks should be sorted before IMPROVISED attacks.
 
         For a pistol: Shoot (PREFERRED) should come before Pistol-whip (IMPROVISED).
@@ -654,8 +699,8 @@ class TestPlayerCombatActionsDiscovery:
         """
         from catley.game.items.item_types import PISTOL_TYPE
 
-        reset_event_bus_for_testing()
         controller, player, _npc = _make_combat_test_world(
+            combat_controller,
             player_pos=(5, 5),
             enemy_pos=(6, 5),  # Adjacent - both attacks available
         )
@@ -682,10 +727,13 @@ class TestPlayerCombatActionsDiscovery:
 class TestCombatModeEnterKeyExecution:
     """Test Enter key executes selected action on current target."""
 
-    def test_enter_key_queues_attack_intent(self) -> None:
+    def test_enter_key_queues_attack_intent(
+        self, combat_controller: Controller
+    ) -> None:
         """Pressing Enter with Attack selected should queue AttackIntent."""
-        reset_event_bus_for_testing()
-        controller, _player, npc = _make_combat_test_world()
+        controller, _player, npc = _make_combat_test_world(
+            combat_controller,
+        )
         controller.enter_combat_mode()
 
         # Manually set current target
@@ -707,10 +755,12 @@ class TestCombatModeEnterKeyExecution:
             queued_intent = mock_queue.call_args[0][0]
             assert isinstance(queued_intent, AttackIntent)
 
-    def test_enter_key_with_push_starts_push_plan(self) -> None:
+    def test_enter_key_with_push_starts_push_plan(
+        self, combat_controller: Controller
+    ) -> None:
         """Pressing Enter with Push selected should start PushPlan."""
-        reset_event_bus_for_testing()
         controller, player, npc = _make_combat_test_world(
+            combat_controller,
             player_pos=(5, 5),
             enemy_pos=(6, 5),  # Adjacent
         )
@@ -745,10 +795,12 @@ class TestCombatModeEnterKeyExecution:
         assert player.active_plan is not None
         assert player.active_plan.plan.name == "Push"
 
-    def test_enter_key_with_trip_starts_trip_plan(self) -> None:
+    def test_enter_key_with_trip_starts_trip_plan(
+        self, combat_controller: Controller
+    ) -> None:
         """Pressing Enter with Trip selected should start TripPlan."""
-        reset_event_bus_for_testing()
         controller, player, npc = _make_combat_test_world(
+            combat_controller,
             player_pos=(5, 5),
             enemy_pos=(6, 5),  # Adjacent
         )
@@ -783,10 +835,12 @@ class TestCombatModeEnterKeyExecution:
         assert player.active_plan is not None
         assert player.active_plan.plan.name == "Trip"
 
-    def test_enter_key_with_kick_starts_kick_plan(self) -> None:
+    def test_enter_key_with_kick_starts_kick_plan(
+        self, combat_controller: Controller
+    ) -> None:
         """Pressing Enter with Kick selected should start KickPlan."""
-        reset_event_bus_for_testing()
         controller, player, npc = _make_combat_test_world(
+            combat_controller,
             player_pos=(5, 5),
             enemy_pos=(6, 5),  # Adjacent
         )
@@ -821,10 +875,12 @@ class TestCombatModeEnterKeyExecution:
         assert player.active_plan is not None
         assert player.active_plan.plan.name == "Kick"
 
-    def test_enter_key_with_punch_starts_punch_plan(self) -> None:
+    def test_enter_key_with_punch_starts_punch_plan(
+        self, combat_controller: Controller
+    ) -> None:
         """Pressing Enter with Punch selected should start PunchPlan."""
-        reset_event_bus_for_testing()
         controller, player, npc = _make_combat_test_world(
+            combat_controller,
             player_pos=(5, 5),
             enemy_pos=(6, 5),  # Adjacent
         )
@@ -870,14 +926,16 @@ class TestCombatModeEnterKeyExecution:
 class TestCombatActionFiltering:
     """Test that only executable actions are shown in the action panel."""
 
-    def test_melee_shown_even_when_no_adjacent_enemy(self) -> None:
+    def test_melee_shown_even_when_no_adjacent_enemy(
+        self, combat_controller: Controller
+    ) -> None:
         """Melee attack should appear even when no enemy is adjacent.
 
         Melee actions are shown regardless of adjacency - approach is handled
         on execution via pathfinding.
         """
-        reset_event_bus_for_testing()
         controller, _player, _npc = _make_combat_test_world(
+            combat_controller,
             player_pos=(5, 5),
             enemy_pos=(10, 5),  # Far away (distance 5)
         )
@@ -889,14 +947,16 @@ class TestCombatActionFiltering:
         ]
         assert len(melee_actions) >= 1
 
-    def test_push_shown_even_when_no_adjacent_enemy(self) -> None:
+    def test_push_shown_even_when_no_adjacent_enemy(
+        self, combat_controller: Controller
+    ) -> None:
         """Push should appear even when no enemy is adjacent.
 
         Push is shown regardless of adjacency - approach is handled on execution
         via pathfinding.
         """
-        reset_event_bus_for_testing()
         controller, _player, _npc = _make_combat_test_world(
+            combat_controller,
             player_pos=(5, 5),
             enemy_pos=(10, 5),  # Far away (distance 5)
         )
@@ -906,10 +966,12 @@ class TestCombatActionFiltering:
         push_actions = [a for a in actions if a.id == "push"]
         assert len(push_actions) == 1
 
-    def test_melee_and_push_appear_when_adjacent(self) -> None:
+    def test_melee_and_push_appear_when_adjacent(
+        self, combat_controller: Controller
+    ) -> None:
         """Melee and Push should appear when enemy is adjacent."""
-        reset_event_bus_for_testing()
         controller, _player, _npc = _make_combat_test_world(
+            combat_controller,
             player_pos=(5, 5),
             enemy_pos=(6, 5),  # Adjacent (distance 1)
         )
@@ -923,14 +985,15 @@ class TestCombatActionFiltering:
         assert len(melee_actions) >= 1
         assert len(push_actions) == 1
 
-    def test_push_shown_even_when_no_enemies(self) -> None:
+    def test_push_shown_even_when_no_enemies(
+        self, combat_controller: Controller
+    ) -> None:
         """Push should always appear, even when no enemies exist.
 
         Actions are shown based on capability, not immediate executability.
         Push is available as a stunt option regardless of targets.
         """
-        reset_event_bus_for_testing()
-        controller = get_controller_with_player_and_map()
+        controller = combat_controller
 
         actions = controller.combat_mode.get_available_combat_actions()
 
@@ -938,13 +1001,15 @@ class TestCombatActionFiltering:
         push_actions = [a for a in actions if a.id == "push"]
         assert len(push_actions) == 1
 
-    def test_no_ranged_action_when_enemy_beyond_max_range(self) -> None:
+    def test_no_ranged_action_when_enemy_beyond_max_range(
+        self, combat_controller: Controller
+    ) -> None:
         """Ranged attack should not appear when enemy is beyond weapon's max range."""
         from catley.game.items.item_types import PISTOL_TYPE
 
-        reset_event_bus_for_testing()
         # Pistol has max_range=12. Place enemy at distance 15.
         controller, player, _npc = _make_combat_test_world(
+            combat_controller,
             player_pos=(5, 5),
             enemy_pos=(20, 5),  # Distance 15, beyond pistol max_range of 12
         )
@@ -964,13 +1029,15 @@ class TestCombatActionFiltering:
             f"Expected no ranged actions, got {ranged_actions}"
         )
 
-    def test_ranged_action_appears_when_enemy_within_max_range(self) -> None:
+    def test_ranged_action_appears_when_enemy_within_max_range(
+        self, combat_controller: Controller
+    ) -> None:
         """Ranged attack should appear when enemy is within weapon's max range."""
         from catley.game.items.item_types import PISTOL_TYPE
 
-        reset_event_bus_for_testing()
         # Pistol has max_range=12. Place enemy at distance 10.
         controller, player, _npc = _make_combat_test_world(
+            combat_controller,
             player_pos=(5, 5),
             enemy_pos=(15, 5),  # Distance 10, within pistol max_range of 12
         )
@@ -997,10 +1064,10 @@ class TestCombatActionFiltering:
 class TestCombatModeClickSelection:
     """Test clicking on actions in the action panel to select them."""
 
-    def test_click_on_action_selects_it(self) -> None:
+    def test_click_on_action_selects_it(self, combat_controller: Controller) -> None:
         """Clicking an action in the panel should select it."""
-        reset_event_bus_for_testing()
         controller, _player, _npc = _make_combat_test_world(
+            combat_controller,
             player_pos=(5, 5),
             enemy_pos=(6, 5),  # Adjacent - so actions are available
         )
@@ -1035,10 +1102,12 @@ class TestCombatModeClickSelection:
             assert controller.combat_mode.selected_action is not None
             assert controller.combat_mode.selected_action.id == second_action.id
 
-    def test_click_outside_panel_returns_false(self) -> None:
+    def test_click_outside_panel_returns_false(
+        self, combat_controller: Controller
+    ) -> None:
         """Clicks outside the action panel should not select anything."""
-        reset_event_bus_for_testing()
         controller, _player, _npc = _make_combat_test_world(
+            combat_controller,
             player_pos=(5, 5),
             enemy_pos=(6, 5),
         )
@@ -1070,10 +1139,11 @@ class TestCombatModeClickSelection:
             # Selected action should remain unchanged
             assert controller.combat_mode.selected_action == initial_action
 
-    def test_click_selection_without_frame_manager_returns_false(self) -> None:
+    def test_click_selection_without_frame_manager_returns_false(
+        self, combat_controller: Controller
+    ) -> None:
         """Guard clause should return False when frame_manager is None."""
-        reset_event_bus_for_testing()
-        controller = get_controller_with_player_and_map()
+        controller = combat_controller
         controller.enter_combat_mode()
 
         # Set frame_manager to None
@@ -1094,12 +1164,14 @@ class TestCombatModeClickSelection:
 class TestApproachAndAttack:
     """Test approach-and-attack behavior for distant targets."""
 
-    def test_melee_on_distant_target_starts_melee_attack_plan(self) -> None:
+    def test_melee_on_distant_target_starts_melee_attack_plan(
+        self, combat_controller: Controller
+    ) -> None:
         """Melee attack on non-adjacent target should start MeleeAttackPlan."""
         from catley.game.actions.combat import AttackIntent
 
-        reset_event_bus_for_testing()
         controller, player, npc = _make_combat_test_world(
+            combat_controller,
             player_pos=(5, 5),
             enemy_pos=(8, 5),  # 3 tiles away
         )
@@ -1125,7 +1197,9 @@ class TestApproachAndAttack:
         assert player.active_plan.plan.name == "Melee Attack"
         assert player.active_plan.context.target_actor == npc
 
-    def test_melee_on_adjacent_target_starts_melee_attack_plan(self) -> None:
+    def test_melee_on_adjacent_target_starts_melee_attack_plan(
+        self, combat_controller: Controller
+    ) -> None:
         """Melee attack on adjacent target should start MeleeAttackPlan.
 
         Melee attacks use the ActionPlan system uniformly for both adjacent
@@ -1133,8 +1207,8 @@ class TestApproachAndAttack:
         """
         from catley.game.actions.combat import AttackIntent
 
-        reset_event_bus_for_testing()
         controller, player, npc = _make_combat_test_world(
+            combat_controller,
             player_pos=(5, 5),
             enemy_pos=(6, 5),  # Adjacent
         )
@@ -1160,12 +1234,14 @@ class TestApproachAndAttack:
         assert player.active_plan.plan.name == "Melee Attack"
         assert player.active_plan.context.target_actor == npc
 
-    def test_ranged_on_distant_target_executes_immediately(self) -> None:
+    def test_ranged_on_distant_target_executes_immediately(
+        self, combat_controller: Controller
+    ) -> None:
         """Ranged attack should execute immediately regardless of distance."""
         from catley.game.actions.combat import AttackIntent
 
-        reset_event_bus_for_testing()
         controller, _player, npc = _make_combat_test_world(
+            combat_controller,
             player_pos=(5, 5),
             enemy_pos=(10, 5),  # 5 tiles away
         )
@@ -1194,15 +1270,17 @@ class TestApproachAndAttack:
             # start_plan should NOT have been called (ranged doesn't need approach)
             mock_start_plan.assert_not_called()
 
-    def test_push_on_target_starts_plan_regardless_of_path(self) -> None:
+    def test_push_on_target_starts_plan_regardless_of_path(
+        self, combat_controller: Controller
+    ) -> None:
         """Push should start a plan regardless of whether path exists.
 
         The ActionPlan system handles pathfinding lazily during execution,
         not at plan creation time. Path failures are handled during plan
         execution, not at intent creation time.
         """
-        reset_event_bus_for_testing()
         controller, player, npc = _make_combat_test_world(
+            combat_controller,
             player_pos=(5, 5),
             enemy_pos=(8, 5),  # 3 tiles away
         )
@@ -1238,7 +1316,9 @@ class TestAllDiscoverableActionsHaveHandlers:
     the combat mode handler is not updated to create the corresponding intent.
     """
 
-    def test_all_stunt_actions_have_combat_mode_handlers(self) -> None:
+    def test_all_stunt_actions_have_combat_mode_handlers(
+        self, combat_controller: Controller
+    ) -> None:
         """Every discoverable STUNT action must have a handler in combat mode.
 
         This test gets all stunt actions from the action discovery system and
@@ -1251,8 +1331,8 @@ class TestAllDiscoverableActionsHaveHandlers:
         All stunts now use the ActionPlan system, returning None and setting
         an active_plan on the player.
         """
-        reset_event_bus_for_testing()
         controller, player, npc = _make_combat_test_world(
+            combat_controller,
             player_pos=(5, 5),
             enemy_pos=(6, 5),  # Adjacent so all melee actions work
         )
@@ -1307,15 +1387,17 @@ class TestAllDiscoverableActionsHaveHandlers:
                     f"but expected '{expected_name}'"
                 )
 
-    def test_all_combat_actions_have_handlers(self) -> None:
+    def test_all_combat_actions_have_handlers(
+        self, combat_controller: Controller
+    ) -> None:
         """Every discoverable COMBAT action must work in combat mode.
 
         Similar to the stunt test, but for attack actions.
         Melee attacks use the ActionPlan system (return None, set active_plan).
         Ranged attacks return an AttackIntent directly.
         """
-        reset_event_bus_for_testing()
         controller, player, npc = _make_combat_test_world(
+            combat_controller,
             player_pos=(5, 5),
             enemy_pos=(6, 5),  # Adjacent
         )

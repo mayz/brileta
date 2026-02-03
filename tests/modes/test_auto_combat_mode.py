@@ -11,9 +11,10 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+import pytest
+
 from catley import colors
 from catley.controller import Controller
-from catley.events import reset_event_bus_for_testing
 from catley.game.actions.combat import AttackIntent
 from catley.game.actions.executors.combat import AttackExecutor
 from catley.game.actions.executors.stunts import PushExecutor
@@ -22,12 +23,13 @@ from catley.game.actors import NPC, Character
 from catley.game.consequences import Consequence, ConsequenceHandler
 from catley.game.enums import Disposition
 from catley.game.items.item_types import FISTS_TYPE
-from tests.helpers import get_controller_with_player_and_map
+from tests.helpers import reset_dummy_controller
 
 # --- Helper functions ---
 
 
 def _make_combat_test_world(
+    controller: Controller,
     player_pos: tuple[int, int] = (5, 5),
     enemy_pos: tuple[int, int] = (6, 5),
     *,
@@ -37,8 +39,8 @@ def _make_combat_test_world(
 
     Returns a full Controller so we can check combat mode state.
     """
-    controller = get_controller_with_player_and_map()
     player = controller.gw.player
+    assert player is not None
     # Remove any randomly spawned NPCs to keep combat tests deterministic.
     for actor in list(controller.gw.actors):
         if isinstance(actor, Character) and actor is not player:
@@ -63,13 +65,19 @@ def _make_combat_test_world(
     return controller, player, npc
 
 
+@pytest.fixture
+def auto_combat_controller(dummy_controller: Controller) -> Controller:
+    reset_dummy_controller(dummy_controller)
+    return dummy_controller
+
+
 # --- NPC Attack Tests ---
 
 
-def test_npc_attack_triggers_combat_mode() -> None:
+def test_npc_attack_triggers_combat_mode(auto_combat_controller: Controller) -> None:
     """When an NPC attacks the player (hit), combat mode should activate."""
-    reset_event_bus_for_testing()
     controller, player, npc = _make_combat_test_world(
+        auto_combat_controller,
         player_pos=(5, 5),
         enemy_pos=(6, 5),
         enemy_disposition=Disposition.HOSTILE,
@@ -89,13 +97,15 @@ def test_npc_attack_triggers_combat_mode() -> None:
     assert controller.is_combat_mode()
 
 
-def test_npc_miss_still_triggers_combat_mode() -> None:
+def test_npc_miss_still_triggers_combat_mode(
+    auto_combat_controller: Controller,
+) -> None:
     """When an NPC misses the player, combat mode should still activate.
 
     Hostile intent alone warrants combat mode - we don't wait for the outcome.
     """
-    reset_event_bus_for_testing()
     controller, player, npc = _make_combat_test_world(
+        auto_combat_controller,
         player_pos=(5, 5),
         enemy_pos=(6, 5),
         enemy_disposition=Disposition.HOSTILE,
@@ -117,10 +127,10 @@ def test_npc_miss_still_triggers_combat_mode() -> None:
 # --- Player Attack Tests ---
 
 
-def test_player_attack_triggers_combat_mode() -> None:
+def test_player_attack_triggers_combat_mode(auto_combat_controller: Controller) -> None:
     """When the player attacks a non-hostile NPC, combat mode should activate."""
-    reset_event_bus_for_testing()
     controller, player, npc = _make_combat_test_world(
+        auto_combat_controller,
         player_pos=(5, 5),
         enemy_pos=(6, 5),
         enemy_disposition=Disposition.WARY,  # Non-hostile
@@ -141,14 +151,16 @@ def test_player_attack_triggers_combat_mode() -> None:
     assert controller.is_combat_mode()
 
 
-def test_player_attack_already_hostile_no_double_event() -> None:
+def test_player_attack_already_hostile_no_double_event(
+    auto_combat_controller: Controller,
+) -> None:
     """Attacking an already-hostile NPC should still enter combat mode.
 
     This tests the NPC-attacks-player path is not triggered when the player
     attacks first (the player is the attacker, not defender).
     """
-    reset_event_bus_for_testing()
     controller, player, npc = _make_combat_test_world(
+        auto_combat_controller,
         player_pos=(5, 5),
         enemy_pos=(6, 5),
         enemy_disposition=Disposition.HOSTILE,
@@ -178,10 +190,10 @@ def test_player_attack_already_hostile_no_double_event() -> None:
 # --- Player Push Tests ---
 
 
-def test_player_push_triggers_combat_mode() -> None:
+def test_player_push_triggers_combat_mode(auto_combat_controller: Controller) -> None:
     """When the player pushes a non-hostile NPC, combat mode should activate."""
-    reset_event_bus_for_testing()
     controller, player, npc = _make_combat_test_world(
+        auto_combat_controller,
         player_pos=(5, 5),
         enemy_pos=(6, 5),
         enemy_disposition=Disposition.WARY,
@@ -201,13 +213,15 @@ def test_player_push_triggers_combat_mode() -> None:
     assert controller.is_combat_mode()
 
 
-def test_failed_push_still_triggers_combat_mode() -> None:
+def test_failed_push_still_triggers_combat_mode(
+    auto_combat_controller: Controller,
+) -> None:
     """A failed push attempt should still trigger combat mode.
 
     The attempt is aggressive regardless of outcome.
     """
-    reset_event_bus_for_testing()
     controller, player, npc = _make_combat_test_world(
+        auto_combat_controller,
         player_pos=(5, 5),
         enemy_pos=(6, 5),
         enemy_disposition=Disposition.WARY,
@@ -229,10 +243,10 @@ def test_failed_push_still_triggers_combat_mode() -> None:
 # --- Noise Alert Tests ---
 
 
-def test_noise_alert_triggers_combat_mode() -> None:
+def test_noise_alert_triggers_combat_mode(auto_combat_controller: Controller) -> None:
     """When the player's noise alerts a neutral NPC, combat mode should activate."""
-    reset_event_bus_for_testing()
     controller, player, npc = _make_combat_test_world(
+        auto_combat_controller,
         player_pos=(5, 5),
         enemy_pos=(7, 5),  # 2 tiles away, within radius 5
         enemy_disposition=Disposition.WARY,
@@ -254,10 +268,12 @@ def test_noise_alert_triggers_combat_mode() -> None:
     assert controller.is_combat_mode()
 
 
-def test_noise_from_npc_does_not_trigger_combat_mode() -> None:
+def test_noise_from_npc_does_not_trigger_combat_mode(
+    auto_combat_controller: Controller,
+) -> None:
     """Noise from an NPC should not trigger combat mode entry."""
-    reset_event_bus_for_testing()
     controller, _player, npc = _make_combat_test_world(
+        auto_combat_controller,
         player_pos=(5, 5),
         enemy_pos=(7, 5),
         enemy_disposition=Disposition.HOSTILE,
@@ -295,14 +311,14 @@ def test_noise_from_npc_does_not_trigger_combat_mode() -> None:
 # --- Idempotency Tests ---
 
 
-def test_already_in_combat_no_reentry() -> None:
+def test_already_in_combat_no_reentry(auto_combat_controller: Controller) -> None:
     """When already in combat mode, receiving another event should not crash.
 
     The handler should be idempotent - calling enter_combat_mode when already
     in combat mode should be a no-op.
     """
-    reset_event_bus_for_testing()
     controller, player, npc = _make_combat_test_world(
+        auto_combat_controller,
         player_pos=(5, 5),
         enemy_pos=(6, 5),
         enemy_disposition=Disposition.HOSTILE,
@@ -325,10 +341,10 @@ def test_already_in_combat_no_reentry() -> None:
     assert len(controller.mode_stack) == initial_stack_len
 
 
-def test_multiple_events_same_frame_handled() -> None:
+def test_multiple_events_same_frame_handled(auto_combat_controller: Controller) -> None:
     """Multiple combat events in the same frame should not cause issues."""
-    reset_event_bus_for_testing()
     controller, player, npc = _make_combat_test_world(
+        auto_combat_controller,
         player_pos=(5, 5),
         enemy_pos=(6, 5),
         enemy_disposition=Disposition.WARY,
@@ -379,10 +395,12 @@ def test_multiple_events_same_frame_handled() -> None:
 # --- Visible Hostiles Detection Tests ---
 
 
-def test_has_visible_hostiles_returns_true_when_hostile_visible() -> None:
+def test_has_visible_hostiles_returns_true_when_hostile_visible(
+    auto_combat_controller: Controller,
+) -> None:
     """has_visible_hostiles() returns True when a hostile NPC is visible."""
-    reset_event_bus_for_testing()
     controller, _player, npc = _make_combat_test_world(
+        auto_combat_controller,
         player_pos=(5, 5),
         enemy_pos=(6, 5),
         enemy_disposition=Disposition.HOSTILE,
@@ -394,10 +412,12 @@ def test_has_visible_hostiles_returns_true_when_hostile_visible() -> None:
     assert controller.has_visible_hostiles()
 
 
-def test_has_visible_hostiles_returns_false_when_no_hostiles() -> None:
+def test_has_visible_hostiles_returns_false_when_no_hostiles(
+    auto_combat_controller: Controller,
+) -> None:
     """has_visible_hostiles() returns False when no NPCs are hostile."""
-    reset_event_bus_for_testing()
     controller, _player, npc = _make_combat_test_world(
+        auto_combat_controller,
         player_pos=(5, 5),
         enemy_pos=(6, 5),
         enemy_disposition=Disposition.WARY,  # Not hostile
@@ -410,10 +430,12 @@ def test_has_visible_hostiles_returns_false_when_no_hostiles() -> None:
     assert not controller.has_visible_hostiles()
 
 
-def test_has_visible_hostiles_returns_false_when_hostile_not_visible() -> None:
+def test_has_visible_hostiles_returns_false_when_hostile_not_visible(
+    auto_combat_controller: Controller,
+) -> None:
     """has_visible_hostiles() returns False when hostile NPCs aren't visible."""
-    reset_event_bus_for_testing()
     controller, _player, npc = _make_combat_test_world(
+        auto_combat_controller,
         player_pos=(5, 5),
         enemy_pos=(6, 5),
         enemy_disposition=Disposition.HOSTILE,
@@ -426,10 +448,12 @@ def test_has_visible_hostiles_returns_false_when_hostile_not_visible() -> None:
     assert not controller.has_visible_hostiles()
 
 
-def test_has_visible_hostiles_ignores_dead_hostiles() -> None:
+def test_has_visible_hostiles_ignores_dead_hostiles(
+    auto_combat_controller: Controller,
+) -> None:
     """has_visible_hostiles() returns False when hostile NPCs are dead."""
-    reset_event_bus_for_testing()
     controller, _player, npc = _make_combat_test_world(
+        auto_combat_controller,
         player_pos=(5, 5),
         enemy_pos=(6, 5),
         enemy_disposition=Disposition.HOSTILE,
@@ -447,10 +471,12 @@ def test_has_visible_hostiles_ignores_dead_hostiles() -> None:
 # --- Combat Auto-Exit Tests ---
 
 
-def test_combat_auto_exits_when_all_enemies_dead() -> None:
+def test_combat_auto_exits_when_all_enemies_dead(
+    auto_combat_controller: Controller,
+) -> None:
     """Combat mode should auto-exit when the last visible enemy dies."""
-    reset_event_bus_for_testing()
     controller, _player, npc = _make_combat_test_world(
+        auto_combat_controller,
         player_pos=(5, 5),
         enemy_pos=(6, 5),
         enemy_disposition=Disposition.HOSTILE,
@@ -471,12 +497,14 @@ def test_combat_auto_exits_when_all_enemies_dead() -> None:
     assert not controller.is_combat_mode()
 
 
-def test_combat_ended_event_published_on_auto_exit() -> None:
+def test_combat_ended_event_published_on_auto_exit(
+    auto_combat_controller: Controller,
+) -> None:
     """CombatEndedEvent should be published with 'all_enemies_dead' reason."""
     from catley.events import CombatEndedEvent, subscribe_to_event
 
-    reset_event_bus_for_testing()
     controller, _player, npc = _make_combat_test_world(
+        auto_combat_controller,
         player_pos=(5, 5),
         enemy_pos=(6, 5),
         enemy_disposition=Disposition.HOSTILE,
@@ -503,12 +531,14 @@ def test_combat_ended_event_published_on_auto_exit() -> None:
     assert received_events[0].reason == "all_enemies_dead"
 
 
-def test_combat_ended_event_published_on_manual_exit() -> None:
+def test_combat_ended_event_published_on_manual_exit(
+    auto_combat_controller: Controller,
+) -> None:
     """CombatEndedEvent should be published with 'manual_exit' reason."""
     from catley.events import CombatEndedEvent, subscribe_to_event
 
-    reset_event_bus_for_testing()
     controller, _player, npc = _make_combat_test_world(
+        auto_combat_controller,
         player_pos=(5, 5),
         enemy_pos=(6, 5),
         enemy_disposition=Disposition.HOSTILE,
@@ -536,7 +566,9 @@ def test_combat_ended_event_published_on_manual_exit() -> None:
     assert not controller.is_combat_mode()
 
 
-def test_combat_ended_event_published_on_cancelled_exit() -> None:
+def test_combat_ended_event_published_on_cancelled_exit(
+    auto_combat_controller: Controller,
+) -> None:
     """CombatEndedEvent should be published with 'cancelled' reason.
 
     This tests the _on_target_cancelled() path in CombatMode, which is
@@ -544,8 +576,8 @@ def test_combat_ended_event_published_on_cancelled_exit() -> None:
     """
     from catley.events import CombatEndedEvent, subscribe_to_event
 
-    reset_event_bus_for_testing()
     controller, _player, npc = _make_combat_test_world(
+        auto_combat_controller,
         player_pos=(5, 5),
         enemy_pos=(6, 5),
         enemy_disposition=Disposition.HOSTILE,
@@ -576,15 +608,17 @@ def test_combat_ended_event_published_on_cancelled_exit() -> None:
 # --- Push Against Already-Hostile Tests ---
 
 
-def test_push_already_hostile_npc_no_combat_entry() -> None:
+def test_push_already_hostile_npc_no_combat_entry(
+    auto_combat_controller: Controller,
+) -> None:
     """Pushing an already-hostile NPC does NOT auto-enter combat mode.
 
     CombatInitiatedEvent is only fired when disposition changes (non-hostile
     to hostile). Pushing an NPC that's already hostile doesn't change anything,
     so no event is fired. This is consistent with attack behavior.
     """
-    reset_event_bus_for_testing()
     controller, player, npc = _make_combat_test_world(
+        auto_combat_controller,
         player_pos=(5, 5),
         enemy_pos=(6, 5),
         enemy_disposition=Disposition.HOSTILE,  # Already hostile

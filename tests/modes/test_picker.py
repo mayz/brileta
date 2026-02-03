@@ -8,15 +8,23 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pytest
 import tcod.event
 
+from catley.controller import Controller
 from catley.modes.picker import PickerResult
-from tests.helpers import get_controller_with_player_and_map
+from tests.helpers import reset_dummy_controller
 
 
-def test_start_pushes_mode_onto_stack() -> None:
+@pytest.fixture
+def picker_controller(dummy_controller: Controller) -> Controller:
+    reset_dummy_controller(dummy_controller)
+    return dummy_controller
+
+
+def test_start_pushes_mode_onto_stack(picker_controller: Controller) -> None:
     """start() pushes PickerMode onto the mode stack."""
-    controller = get_controller_with_player_and_map()
+    controller = picker_controller
 
     assert controller.picker_mode not in controller.mode_stack
 
@@ -27,9 +35,9 @@ def test_start_pushes_mode_onto_stack() -> None:
     assert controller.picker_mode.active is True
 
 
-def test_escape_calls_on_cancel_and_pops() -> None:
+def test_escape_calls_on_cancel_and_pops(picker_controller: Controller) -> None:
     """Escape key calls on_cancel callback and pops picker from stack."""
-    controller = get_controller_with_player_and_map()
+    controller = picker_controller
     on_cancel = MagicMock()
     on_select = MagicMock()
 
@@ -47,7 +55,7 @@ def test_escape_calls_on_cancel_and_pops() -> None:
     assert controller.picker_mode.active is False
 
 
-def test_t_key_not_handled_by_picker() -> None:
+def test_t_key_not_handled_by_picker(picker_controller: Controller) -> None:
     """T key is not handled by picker - it falls through to modes below.
 
     Note: T key was removed as a combat toggle in the equipment slot interaction
@@ -55,7 +63,7 @@ def test_t_key_not_handled_by_picker() -> None:
     """
     from catley.input_handler import Keys
 
-    controller = get_controller_with_player_and_map()
+    controller = picker_controller
     on_cancel = MagicMock()
     on_select = MagicMock()
 
@@ -75,9 +83,9 @@ def test_t_key_not_handled_by_picker() -> None:
     assert controller.picker_mode.active is True
 
 
-def test_escape_works_without_on_cancel() -> None:
+def test_escape_works_without_on_cancel(picker_controller: Controller) -> None:
     """Escape works even when on_cancel is not provided."""
-    controller = get_controller_with_player_and_map()
+    controller = picker_controller
     on_select = MagicMock()
 
     controller.picker_mode.start(on_select=on_select)  # No on_cancel
@@ -91,9 +99,11 @@ def test_escape_works_without_on_cancel() -> None:
     assert controller.picker_mode not in controller.mode_stack
 
 
-def test_click_on_invalid_target_consumed_but_no_callback() -> None:
+def test_click_on_invalid_target_consumed_but_no_callback(
+    picker_controller: Controller,
+) -> None:
     """Click on invalid tile is consumed but doesn't call on_select."""
-    controller = get_controller_with_player_and_map()
+    controller = picker_controller
     on_select = MagicMock()
     on_cancel = MagicMock()
 
@@ -123,9 +133,11 @@ def test_click_on_invalid_target_consumed_but_no_callback() -> None:
     assert controller.picker_mode in controller.mode_stack
 
 
-def test_click_on_valid_target_calls_on_select_and_pops() -> None:
+def test_click_on_valid_target_calls_on_select_and_pops(
+    picker_controller: Controller,
+) -> None:
     """Click on valid tile calls on_select with result and pops picker."""
-    controller = get_controller_with_player_and_map()
+    controller = picker_controller
     on_select = MagicMock()
 
     # Filter that accepts all tiles
@@ -159,9 +171,9 @@ def test_click_on_valid_target_calls_on_select_and_pops() -> None:
     assert controller.picker_mode.active is False
 
 
-def test_non_picker_input_falls_through() -> None:
+def test_non_picker_input_falls_through(picker_controller: Controller) -> None:
     """Non-picker input falls through to modes below."""
-    controller = get_controller_with_player_and_map()
+    controller = picker_controller
     on_select = MagicMock()
 
     controller.picker_mode.start(on_select=on_select)
@@ -176,9 +188,9 @@ def test_non_picker_input_falls_through() -> None:
     assert controller.picker_mode in controller.mode_stack
 
 
-def test_cursor_changes_to_crosshair_on_enter() -> None:
+def test_cursor_changes_to_crosshair_on_enter(picker_controller: Controller) -> None:
     """Cursor changes to crosshair when picker enters."""
-    controller = get_controller_with_player_and_map()
+    controller = picker_controller
 
     # Mock the cursor manager
     mock_cursor_manager = MagicMock()
@@ -189,9 +201,9 @@ def test_cursor_changes_to_crosshair_on_enter() -> None:
     mock_cursor_manager.set_active_cursor_type.assert_called_with("crosshair")
 
 
-def test_cursor_changes_to_arrow_on_exit() -> None:
+def test_cursor_changes_to_arrow_on_exit(picker_controller: Controller) -> None:
     """Cursor changes back to arrow when picker exits."""
-    controller = get_controller_with_player_and_map()
+    controller = picker_controller
 
     # Mock the cursor manager
     mock_cursor_manager = MagicMock()
@@ -207,9 +219,9 @@ def test_cursor_changes_to_arrow_on_exit() -> None:
     mock_cursor_manager.set_active_cursor_type.assert_called_with("arrow")
 
 
-def test_render_underneath_callback_invoked() -> None:
+def test_render_underneath_callback_invoked(picker_controller: Controller) -> None:
     """render_underneath callback is called during render_world."""
-    controller = get_controller_with_player_and_map()
+    controller = picker_controller
     render_underneath = MagicMock()
 
     controller.picker_mode.start(
@@ -221,9 +233,9 @@ def test_render_underneath_callback_invoked() -> None:
     render_underneath.assert_called_once()
 
 
-def test_render_world_without_callback() -> None:
+def test_render_world_without_callback(picker_controller: Controller) -> None:
     """render_world works without render_underneath callback."""
-    controller = get_controller_with_player_and_map()
+    controller = picker_controller
 
     controller.picker_mode.start(on_select=lambda r: None)
 
@@ -231,9 +243,9 @@ def test_render_world_without_callback() -> None:
     controller.picker_mode.render_world()
 
 
-def test_callbacks_cleared_on_exit() -> None:
+def test_callbacks_cleared_on_exit(picker_controller: Controller) -> None:
     """Callbacks are cleared when picker exits to avoid holding references."""
-    controller = get_controller_with_player_and_map()
+    controller = picker_controller
     on_select = MagicMock()
     on_cancel = MagicMock()
     valid_filter = MagicMock()
@@ -257,13 +269,13 @@ def test_callbacks_cleared_on_exit() -> None:
     assert controller.picker_mode._render_underneath is None
 
 
-def test_picker_auto_pushed_by_combat_mode() -> None:
+def test_picker_auto_pushed_by_combat_mode(picker_controller: Controller) -> None:
     """CombatMode automatically pushes PickerMode for target selection.
 
     This is the new behavior where CombatMode delegates click-to-select
     to PickerMode.
     """
-    controller = get_controller_with_player_and_map()
+    controller = picker_controller
 
     # Enter combat mode - picker is automatically pushed
     controller.enter_combat_mode()
@@ -285,12 +297,14 @@ def test_picker_auto_pushed_by_combat_mode() -> None:
     assert len(controller.mode_stack) == 1
 
 
-def test_combat_mode_repushes_picker_after_selection() -> None:
+def test_combat_mode_repushes_picker_after_selection(
+    picker_controller: Controller,
+) -> None:
     """After selecting a target, CombatMode re-pushes PickerMode.
 
     This keeps the player in combat mode for subsequent attacks.
     """
-    controller = get_controller_with_player_and_map()
+    controller = picker_controller
     controller.enter_combat_mode()
 
     # Verify initial state
@@ -322,9 +336,9 @@ def test_picker_result_dataclass() -> None:
     assert result.tile == (5, 10)
 
 
-def test_inactive_picker_returns_false() -> None:
+def test_inactive_picker_returns_false(picker_controller: Controller) -> None:
     """handle_input returns False when picker is not active."""
-    controller = get_controller_with_player_and_map()
+    controller = picker_controller
 
     # Picker is not started, so not active
     assert controller.picker_mode.active is False
@@ -335,9 +349,9 @@ def test_inactive_picker_returns_false() -> None:
     assert result is False
 
 
-def test_render_world_skipped_when_inactive() -> None:
+def test_render_world_skipped_when_inactive(picker_controller: Controller) -> None:
     """render_world does nothing when picker is not active."""
-    controller = get_controller_with_player_and_map()
+    controller = picker_controller
     render_underneath = MagicMock()
 
     # Set callback but don't start picker
@@ -348,13 +362,13 @@ def test_render_world_skipped_when_inactive() -> None:
     render_underneath.assert_not_called()
 
 
-def test_combat_mode_with_no_valid_targets() -> None:
+def test_combat_mode_with_no_valid_targets(picker_controller: Controller) -> None:
     """Combat mode works when there are no enemies in range.
 
     Picker should still be pushed when entering combat mode, even if there
     are no valid targets. Cancelling should exit cleanly back to explore mode.
     """
-    controller = get_controller_with_player_and_map()
+    controller = picker_controller
 
     # Remove all actors except the player to simulate "no enemies in range"
     gw = controller.gw
@@ -389,7 +403,7 @@ def test_combat_mode_with_no_valid_targets() -> None:
     assert len(controller.mode_stack) == 1
 
 
-def test_click_outside_map_bounds_falls_through() -> None:
+def test_click_outside_map_bounds_falls_through(picker_controller: Controller) -> None:
     """Click outside the game map bounds falls through to modes below.
 
     When a click is outside the map area (e.g., on UI elements like the
@@ -397,7 +411,7 @@ def test_click_outside_map_bounds_falls_through() -> None:
     handlers in modes below to process the click - for example, clicking
     the active equipment slot to toggle combat mode.
     """
-    controller = get_controller_with_player_and_map()
+    controller = picker_controller
     on_select = MagicMock()
     on_cancel = MagicMock()
 
