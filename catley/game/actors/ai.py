@@ -28,6 +28,16 @@ from catley.constants.combat import CombatConstants as Combat
 from catley.events import MessageEvent, publish_event
 from catley.game import ranges
 from catley.game.action_plan import WalkToPlan
+from catley.game.actors.utility import (
+    Action as UtilityAction,
+)
+from catley.game.actors.utility import (
+    Consideration,
+    ResponseCurve,
+    ResponseCurveType,
+    UtilityBrain,
+    UtilityContext,
+)
 from catley.game.enums import Disposition
 
 if TYPE_CHECKING:
@@ -227,6 +237,61 @@ class HostileAI(AIComponent):
     def __init__(self, aggro_radius: int = Combat.DEFAULT_AGGRO_RADIUS) -> None:
         super().__init__()
         self.aggro_radius = aggro_radius
+        self.brain = UtilityBrain(
+            [
+                AttackAction(
+                    base_score=1.0,
+                    considerations=[
+                        Consideration(
+                            "health_percent",
+                            ResponseCurve(ResponseCurveType.LINEAR),
+                        ),
+                        Consideration(
+                            "threat_level",
+                            ResponseCurve(ResponseCurveType.LINEAR),
+                        ),
+                    ],
+                    preconditions=[_is_threat_present],
+                ),
+                FleeAction(
+                    base_score=1.0,
+                    considerations=[
+                        Consideration(
+                            "health_percent",
+                            ResponseCurve(ResponseCurveType.INVERSE),
+                            weight=2.0,
+                        ),
+                        Consideration(
+                            "threat_level",
+                            ResponseCurve(ResponseCurveType.LINEAR),
+                        ),
+                        Consideration(
+                            "has_escape_route",
+                            ResponseCurve(ResponseCurveType.STEP, threshold=0.5),
+                        ),
+                    ],
+                    preconditions=[_is_threat_present],
+                ),
+                IdleAction(
+                    base_score=0.2,
+                    considerations=[
+                        Consideration(
+                            "threat_level",
+                            ResponseCurve(ResponseCurveType.INVERSE),
+                        ),
+                    ],
+                ),
+                WanderAction(
+                    base_score=0.1,
+                    considerations=[
+                        Consideration(
+                            "threat_level",
+                            ResponseCurve(ResponseCurveType.INVERSE),
+                        ),
+                    ],
+                ),
+            ]
+        )
 
     @property
     def disposition(self) -> Disposition:
@@ -238,80 +303,14 @@ class HostileAI(AIComponent):
         if not config.HOSTILE_AI_ENABLED:
             return None
 
-        player = controller.gw.player
-
-        if not actor.health.is_alive() or not player.health.is_alive():
+        context = self._build_context(controller, actor)
+        if not context.actor.health.is_alive() or not context.player.health.is_alive():
             return None
 
-        distance = ranges.calculate_distance(actor.x, actor.y, player.x, player.y)
-
-        from catley.game.actions.combat import AttackIntent
-
-        if distance == 1:
-            controller.stop_plan(actor)
-            return AttackIntent(controller, actor, player)
-
-        # Check if already walking toward a valid adjacent-to-player tile
-        plan = actor.active_plan
-        if plan is not None and plan.context.target_position is not None:
-            gx, gy = plan.context.target_position
-            if (
-                ranges.calculate_distance(player.x, player.y, gx, gy) == 1
-                and controller.gw.game_map.walkable[gx, gy]
-            ):
-                return None
-
-        # Find the best adjacent-to-player tile to path toward.
-        # Prefer tiles that are closer to the actor AND non-hazardous.
-        from catley.environment.tile_types import HAZARD_BASE_COST, get_hazard_cost
-
-        best_dest: tuple[int, int] | None = None
-        best_score = float("inf")
-        for dx in (-1, 0, 1):
-            for dy in (-1, 0, 1):
-                if dx == 0 and dy == 0:
-                    continue
-                tx = player.x + dx
-                ty = player.y + dy
-                if not (
-                    0 <= tx < controller.gw.game_map.width
-                    and 0 <= ty < controller.gw.game_map.height
-                ):
-                    continue
-                if not controller.gw.game_map.walkable[tx, ty]:
-                    continue
-                actor_at_tile = controller.gw.get_actor_at_location(tx, ty)
-                if (
-                    actor_at_tile
-                    and actor_at_tile.blocks_movement
-                    and actor_at_tile is not actor
-                ):
-                    continue
-
-                # Score combines distance and hazard cost so AI prefers
-                # non-hazardous tiles but will use them if no better option
-                dist = ranges.calculate_distance(actor.x, actor.y, tx, ty)
-                tile_id = int(controller.gw.game_map.tiles[tx, ty])
-                hazard_cost = get_hazard_cost(tile_id)
-
-                # Also check for fire actors (campfires, etc.) at this position
-                damage_per_turn = getattr(actor_at_tile, "damage_per_turn", 0)
-                if actor_at_tile and damage_per_turn > 0:
-                    fire_cost = HAZARD_BASE_COST + damage_per_turn
-                    hazard_cost = max(hazard_cost, fire_cost)
-
-                score = dist + hazard_cost
-
-                if score < best_score:
-                    best_score = score
-                    best_dest = (tx, ty)
-
-        if best_dest and controller.start_plan(
-            actor, WalkToPlan, target_position=best_dest
-        ):
+        action = self.brain.select_action(context)
+        if action is None:
             return None
-
-        return None
+        return action.get_intent(context)
 
     def _get_move_toward_player(
         self,
@@ -389,6 +388,268 @@ class HostileAI(AIComponent):
             and blocking_actor != player
             and blocking_actor.blocks_movement
         )
+
+    def _build_context(self, controller: Controller, actor: NPC) -> UtilityContext:
+        player = controller.gw.player
+        distance = ranges.calculate_distance(actor.x, actor.y, player.x, player.y)
+        health_percent = (
+            actor.health.hp / actor.health.max_hp if actor.health.max_hp > 0 else 0.0
+        )
+
+        threat_level = 0.0
+        if player.health.is_alive() and distance <= self.aggro_radius:
+            threat_level = 1.0 - (distance / self.aggro_radius)
+            threat_level = max(0.0, min(1.0, threat_level))
+
+        best_attack_destination = self._select_attack_destination(
+            controller, actor, player
+        )
+        best_flee_step = self._select_flee_step(controller, actor, player)
+
+        return UtilityContext(
+            controller=controller,
+            actor=actor,
+            player=player,
+            distance_to_player=distance,
+            health_percent=health_percent,
+            threat_level=threat_level,
+            can_attack=distance == 1,
+            has_escape_route=best_flee_step is not None,
+            best_attack_destination=best_attack_destination,
+            best_flee_step=best_flee_step,
+        )
+
+    def _select_attack_destination(
+        self, controller: Controller, actor: NPC, player: Character
+    ) -> tuple[int, int] | None:
+        from catley.environment.tile_types import HAZARD_BASE_COST, get_hazard_cost
+
+        best_dest: tuple[int, int] | None = None
+        best_score = float("inf")
+        game_map = controller.gw.game_map
+
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                if dx == 0 and dy == 0:
+                    continue
+                tx = player.x + dx
+                ty = player.y + dy
+                if not (0 <= tx < game_map.width and 0 <= ty < game_map.height):
+                    continue
+                if not game_map.walkable[tx, ty]:
+                    continue
+                actor_at_tile = controller.gw.get_actor_at_location(tx, ty)
+                if (
+                    actor_at_tile
+                    and actor_at_tile.blocks_movement
+                    and actor_at_tile is not actor
+                ):
+                    continue
+
+                dist = ranges.calculate_distance(actor.x, actor.y, tx, ty)
+                tile_id = int(game_map.tiles[tx, ty])
+                hazard_cost = get_hazard_cost(tile_id)
+
+                damage_per_turn = getattr(actor_at_tile, "damage_per_turn", 0)
+                if actor_at_tile and damage_per_turn > 0:
+                    fire_cost = HAZARD_BASE_COST + damage_per_turn
+                    hazard_cost = max(hazard_cost, fire_cost)
+
+                score = dist + hazard_cost
+
+                if score < best_score:
+                    best_score = score
+                    best_dest = (tx, ty)
+
+        return best_dest
+
+    def _select_flee_step(
+        self, controller: Controller, actor: NPC, player: Character
+    ) -> tuple[int, int] | None:
+        from catley.environment.tile_types import HAZARD_BASE_COST, get_hazard_cost
+
+        game_map = controller.gw.game_map
+        current_distance = ranges.calculate_distance(
+            actor.x, actor.y, player.x, player.y
+        )
+
+        candidates: list[tuple[int, int, int, float, int]] = []
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                if dx == 0 and dy == 0:
+                    continue
+                tx = actor.x + dx
+                ty = actor.y + dy
+                if not (0 <= tx < game_map.width and 0 <= ty < game_map.height):
+                    continue
+                if not game_map.walkable[tx, ty]:
+                    continue
+                actor_at_tile = controller.gw.get_actor_at_location(tx, ty)
+                if (
+                    actor_at_tile
+                    and actor_at_tile.blocks_movement
+                    and actor_at_tile is not actor
+                ):
+                    continue
+
+                distance_after = ranges.calculate_distance(tx, ty, player.x, player.y)
+                if distance_after <= current_distance:
+                    continue
+
+                tile_id = int(game_map.tiles[tx, ty])
+                hazard_cost = get_hazard_cost(tile_id)
+                damage_per_turn = getattr(actor_at_tile, "damage_per_turn", 0)
+                if actor_at_tile and damage_per_turn > 0:
+                    fire_cost = HAZARD_BASE_COST + damage_per_turn
+                    hazard_cost = max(hazard_cost, fire_cost)
+
+                step_cost = 1 if (dx == 0 or dy == 0) else 2
+                candidates.append(
+                    (dx, dy, distance_after, hazard_cost + step_cost, step_cost)
+                )
+
+        if not candidates:
+            return None
+
+        candidates.sort(key=lambda c: (-c[2], c[3], c[4]))
+        dx, dy, _, _, _ = candidates[0]
+        return dx, dy
+
+
+def _is_threat_present(context: UtilityContext) -> bool:
+    return context.threat_level > 0.0
+
+
+class AttackAction(UtilityAction):
+    def __init__(
+        self,
+        base_score: float,
+        considerations: list[Consideration],
+        preconditions: list,
+    ) -> None:
+        super().__init__(
+            action_id="attack",
+            base_score=base_score,
+            considerations=considerations,
+            preconditions=preconditions,
+        )
+
+    def get_intent(self, context: UtilityContext) -> GameIntent | None:
+        from catley.game.actions.combat import AttackIntent
+
+        controller = context.controller
+        actor = context.actor
+        player = context.player
+
+        if context.can_attack:
+            controller.stop_plan(actor)
+            return AttackIntent(controller, actor, player)
+
+        plan = actor.active_plan
+        if plan is not None and plan.context.target_position is not None:
+            gx, gy = plan.context.target_position
+            if (
+                ranges.calculate_distance(player.x, player.y, gx, gy) == 1
+                and controller.gw.game_map.walkable[gx, gy]
+            ):
+                return None
+
+        if context.best_attack_destination and controller.start_plan(
+            actor, WalkToPlan, target_position=context.best_attack_destination
+        ):
+            return None
+
+        return None
+
+
+class FleeAction(UtilityAction):
+    def __init__(
+        self,
+        base_score: float,
+        considerations: list[Consideration],
+        preconditions: list,
+    ) -> None:
+        super().__init__(
+            action_id="flee",
+            base_score=base_score,
+            considerations=considerations,
+            preconditions=preconditions,
+        )
+
+    def get_intent(self, context: UtilityContext) -> GameIntent | None:
+        from catley.game.actions.movement import MoveIntent
+
+        if context.best_flee_step is None:
+            return None
+
+        dx, dy = context.best_flee_step
+        context.controller.stop_plan(context.actor)
+        return MoveIntent(context.controller, context.actor, dx, dy)
+
+
+class IdleAction(UtilityAction):
+    def __init__(
+        self,
+        base_score: float,
+        considerations: list[Consideration],
+    ) -> None:
+        super().__init__(
+            action_id="idle",
+            base_score=base_score,
+            considerations=considerations,
+        )
+
+    def get_intent(self, context: UtilityContext) -> GameIntent | None:
+        return None
+
+
+class WanderAction(UtilityAction):
+    def __init__(
+        self,
+        base_score: float,
+        considerations: list[Consideration],
+    ) -> None:
+        super().__init__(
+            action_id="wander",
+            base_score=base_score,
+            considerations=considerations,
+        )
+
+    def get_intent(self, context: UtilityContext) -> GameIntent | None:
+        from random import shuffle
+
+        from catley.environment.tile_types import get_hazard_cost
+        from catley.game.actions.movement import MoveIntent
+
+        controller = context.controller
+        actor = context.actor
+        game_map = controller.gw.game_map
+
+        directions = [
+            (-1, -1),
+            (-1, 0),
+            (-1, 1),
+            (0, -1),
+            (0, 1),
+            (1, -1),
+            (1, 0),
+            (1, 1),
+        ]
+        shuffle(directions)
+        for dx, dy in directions:
+            tx = actor.x + dx
+            ty = actor.y + dy
+            if not (0 <= tx < game_map.width and 0 <= ty < game_map.height):
+                continue
+            if not game_map.walkable[tx, ty]:
+                continue
+            if get_hazard_cost(int(game_map.tiles[tx, ty])) > 0:
+                continue
+            blocking_actor = controller.gw.get_actor_at_location(tx, ty)
+            if blocking_actor and blocking_actor.blocks_movement:
+                continue
+            return MoveIntent(controller, actor, dx, dy)
+        return None
 
 
 class WaryAI(AIComponent):

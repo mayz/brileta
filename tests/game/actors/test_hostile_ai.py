@@ -65,6 +65,24 @@ def test_hostile_ai_attacks_when_adjacent() -> None:
     assert npc.active_plan is None
 
 
+def test_hostile_ai_flees_when_low_health() -> None:
+    """Low-health hostile NPCs should flee instead of attacking."""
+    from catley.game.actions.movement import MoveIntent
+
+    controller, _player, npc = make_world()
+    npc.x = 1
+    npc.y = 0
+
+    # Reduce health to make fleeing score higher than attacking
+    npc.take_damage(4)  # Max HP is 5 for default toughness
+
+    action = npc.ai.get_action(controller, npc)
+
+    assert isinstance(action, MoveIntent)
+    assert action.dx == 1
+    assert action.dy == 0
+
+
 def test_hostile_ai_avoids_hazardous_destination_tiles() -> None:
     """AI prefers non-hazardous tiles when selecting destination adjacent to player."""
     from catley.environment.tile_types import TileTypeID
