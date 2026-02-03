@@ -42,6 +42,8 @@ SCREEN_HEIGHT = 50
 SMOOTH_ACTOR_RENDERING_ENABLED = True
 # Toggle environmental overlay effects
 ENVIRONMENTAL_EFFECTS_ENABLED = True
+# Toggle atmospheric effects (cloud shadows, ground mist)
+ATMOSPHERIC_EFFECTS_ENABLED = True
 
 # Shake effect
 # Set to False to disable screen shake
@@ -50,6 +52,10 @@ SCREEN_SHAKE_ENABLED = True
 # Audio
 # Set to False to disable audio entirely
 AUDIO_ENABLED = True
+
+# Debug flags for rendering troubleshooting
+DEBUG_DISABLE_BACKGROUND_CACHE = False  # Re-render background every frame
+DEBUG_DISABLE_LIGHT_OVERLAY = False  # Show only dark/unlit background
 
 # =============================================================================
 # BACKEND CONFIGURATION

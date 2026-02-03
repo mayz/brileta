@@ -79,19 +79,9 @@ class WorldView(View):
         self.viewport_system = ViewportSystem(
             DEFAULT_VIEWPORT_WIDTH, DEFAULT_VIEWPORT_HEIGHT
         )
-        # Game map console is larger than the viewport by _SCROLL_PADDING tiles
-        # on each edge. This allows smooth sub-tile scrolling without gaps.
-        pad = self._SCROLL_PADDING
-        self.map_glyph_buffer = GlyphBuffer(
-            DEFAULT_VIEWPORT_WIDTH + 2 * pad,
-            DEFAULT_VIEWPORT_HEIGHT + 2 * pad,
-        )
-        # Particle system also operates only on the visible viewport area.
-        self.particle_system = SubTileParticleSystem(
-            DEFAULT_VIEWPORT_WIDTH, DEFAULT_VIEWPORT_HEIGHT
-        )
-        self.environmental_system = EnvironmentalEffectSystem()
-        self.decal_system = DecalSystem()
+        # Initialize dimension-dependent resources (glyph buffers, particle system,
+        # etc.) via set_bounds. This avoids duplicating the creation logic.
+        self.set_bounds(0, 0, DEFAULT_VIEWPORT_WIDTH, DEFAULT_VIEWPORT_HEIGHT)
         self.effect_library = EffectLibrary()
         self.floating_text_manager = FloatingTextManager()
         self.current_light_intensity: np.ndarray | None = None
@@ -129,6 +119,11 @@ class WorldView(View):
             # Glyph buffer includes padding for smooth scrolling.
             pad = self._SCROLL_PADDING
             self.map_glyph_buffer = GlyphBuffer(
+                self.width + 2 * pad, self.height + 2 * pad
+            )
+            # Light overlay buffer must be persistent to avoid TextureRenderer cache
+            # issues where Python reuses memory addresses for new GlyphBuffer objects.
+            self.light_overlay_glyph_buffer = GlyphBuffer(
                 self.width + 2 * pad, self.height + 2 * pad
             )
             self.particle_system = SubTileParticleSystem(self.width, self.height)
@@ -250,19 +245,17 @@ class WorldView(View):
     def _get_background_cache_key(self) -> tuple:
         """Generate a hashable key representing the state of the static background.
 
-        The camera position is rounded to integers because that's what determines
-        which tiles are rendered (see Viewport.get_world_bounds). The fractional
-        camera offset is handled at presentation time for smooth scrolling.
+        Uses the actual visible bounds computed by get_visible_bounds() to ensure
+        the cache key matches exactly what _render_map_unlit will render. The
+        fractional camera offset is handled at presentation time for smooth scrolling.
         """
         gw = self.controller.gw
         vs = self.viewport_system
 
-        camera_key = (
-            round(vs.camera.world_x),
-            round(vs.camera.world_y),
-            vs.offset_x,
-            vs.offset_y,
-        )
+        # Use actual visible bounds as the key - this is what determines
+        # which tiles are rendered in _render_map_unlit via screen_to_world.
+        bounds = vs.get_visible_bounds()
+        bounds_key = (bounds.x1, bounds.y1, bounds.x2, bounds.y2)
 
         map_key = gw.game_map.structural_revision
 
@@ -272,7 +265,7 @@ class WorldView(View):
         # source of truth for this.
         exploration_key = gw.game_map.exploration_revision
 
-        return (camera_key, map_key, exploration_key)
+        return (bounds_key, map_key, exploration_key)
 
     def draw(self, graphics: GraphicsContext, alpha: float) -> None:
         """Main drawing method for the world view."""
@@ -298,28 +291,42 @@ class WorldView(View):
         self._shake_offset = (shake_x, shake_y)
 
         # --- Cache lookup and management ---
-        cache_key = self._get_background_cache_key()
-        texture = self._texture_cache.get(cache_key)
+        # Background and light overlay use different cache_key_suffix values to
+        # ensure they get separate GPU render targets (they have the same dimensions).
+        if config.DEBUG_DISABLE_BACKGROUND_CACHE:
+            # Debug mode: always re-render (bypasses cache entirely)
+            self._render_map_unlit()
+            texture = graphics.render_glyph_buffer_to_texture(
+                self.map_glyph_buffer, cache_key_suffix="bg"
+            )
+        else:
+            cache_key = self._get_background_cache_key()
+            texture = self._texture_cache.get(cache_key)
 
-        if texture is None:
-            # CACHE MISS: Re-render the static background
-            self._render_map_unlit()  # This populates self.game_map_console
+            if texture is None:
+                # CACHE MISS: Re-render the static background
+                self._render_map_unlit()
 
-            texture = graphics.render_glyph_buffer_to_texture(self.map_glyph_buffer)
-            self._texture_cache.store(cache_key, texture)
+                texture = graphics.render_glyph_buffer_to_texture(
+                    self.map_glyph_buffer, cache_key_suffix="bg"
+                )
+                self._texture_cache.store(cache_key, texture)
 
         self._active_background_texture = texture
 
         # Generate the light overlay DATA (GlyphBuffer)
-        light_overlay_data = self._render_light_overlay(graphics)
-
-        if light_overlay_data is not None:
-            # Ask the graphics context to turn this DATA into a RENDERABLE TEXTURE
-            self._light_overlay_texture = graphics.render_glyph_buffer_to_texture(
-                light_overlay_data
-            )
-        else:
+        if config.DEBUG_DISABLE_LIGHT_OVERLAY:
             self._light_overlay_texture = None
+        else:
+            light_overlay_data = self._render_light_overlay(graphics)
+
+            if light_overlay_data is not None:
+                # Ask the graphics context to turn this DATA into a RENDERABLE TEXTURE
+                self._light_overlay_texture = graphics.render_glyph_buffer_to_texture(
+                    light_overlay_data, cache_key_suffix="light"
+                )
+            else:
+                self._light_overlay_texture = None
 
         # Update dynamic systems that need to process every frame.
         # actor.update_render_position is a legacy call from the old rendering
@@ -414,8 +421,14 @@ class WorldView(View):
                     offset_y_pixels,
                 )
 
-        # 3. Apply shake to camera for actor/particle rendering
+        # Compute visible bounds for atmospheric effects BEFORE applying shake.
+        # This ensures atmospheric effects align with the background/light overlay,
+        # which were rendered with the original (unshaken) camera position in draw().
         vs = self.viewport_system
+        visible_bounds = vs.get_visible_bounds()
+        viewport_offset = (visible_bounds.x1, visible_bounds.y1)
+
+        # 3. Apply shake to camera for actor/particle rendering
         original_cam_x = vs.camera.world_x
         original_cam_y = vs.camera.world_y
         vs.camera.world_x += shake_tile_x
@@ -425,9 +438,6 @@ class WorldView(View):
         # Include camera fractional offset in view_offset for particles/decals/etc.
         # This ensures they shift with the background during smooth scrolling.
         view_offset = (self.x - cam_frac_x, self.y - cam_frac_y)
-
-        visible_bounds = vs.get_visible_bounds()
-        viewport_offset = (visible_bounds.x1, visible_bounds.y1)
         viewport_size = (self.width, self.height)
         map_size = (
             self.controller.gw.game_map.width,
@@ -443,7 +453,7 @@ class WorldView(View):
         px_bottom += offset_y_pixels
 
         set_atmospheric_layer = getattr(graphics, "set_atmospheric_layer", None)
-        if callable(set_atmospheric_layer):
+        if config.ATMOSPHERIC_EFFECTS_ENABLED and callable(set_atmospheric_layer):
             active_layers = self.atmospheric_system.get_active_layers()
             # Render mist first, then shadows, to keep shadows readable on top.
             active_layers.sort(
@@ -1146,23 +1156,14 @@ class WorldView(View):
 
         if self.current_light_intensity is None:
             return None
-        # ---------------------------------------------------------------------
 
-        # Create a GlyphBuffer for the light overlay with padding for smooth scrolling.
-        # It's already transparent by default from its own .clear() method.
+        # Use persistent buffer to avoid TextureRenderer cache issues where Python
+        # reuses memory addresses for new objects, causing stale VBO data.
         pad = self._SCROLL_PADDING
         buf_width = self.width + 2 * pad
         buf_height = self.height + 2 * pad
-        light_glyph_buffer = GlyphBuffer(buf_width, buf_height)
-
-        # Get viewport bounds and calculate world coordinates
-        vs = self.viewport_system
-        gw = self.controller.gw
-        bounds = vs.get_visible_bounds()
-        world_left = max(0, bounds.x1)
-        world_top = max(0, bounds.y1)
-        world_right = min(gw.game_map.width - 1, bounds.x2)
-        world_bottom = min(gw.game_map.height - 1, bounds.y2)
+        light_glyph_buffer = self.light_overlay_glyph_buffer
+        light_glyph_buffer.clear()  # Reset to transparent
 
         # Get the world slice that corresponds to current light intensity
         world_slice = (
@@ -1327,14 +1328,11 @@ class WorldView(View):
                 # Combine scaled BG with a full alpha channel to get RGBA
                 bg_rgba = np.hstack((scaled_bg_rgb, alpha_channel))
 
-                # Now, do the vectorized assignment to the GlyphBuffer.
-                # The mask is for (buf_width, buf_height) indexing with XY coordinates.
-                final_mask_T = np.zeros((buf_width, buf_height), dtype=bool)
-                final_mask_T[final_buf_x, final_buf_y] = True
-
-                light_glyph_buffer.data["ch"][final_mask_T] = light_chars
-                light_glyph_buffer.data["fg"][final_mask_T] = light_fg_rgba
-                light_glyph_buffer.data["bg"][final_mask_T] = bg_rgba
+                # Direct coordinate indexing to assign tile data to buffer.
+                # This avoids boolean mask assignment which can have ordering issues.
+                light_glyph_buffer.data["ch"][final_buf_x, final_buf_y] = light_chars
+                light_glyph_buffer.data["fg"][final_buf_x, final_buf_y] = light_fg_rgba
+                light_glyph_buffer.data["bg"][final_buf_x, final_buf_y] = bg_rgba
 
         # Return the populated GlyphBuffer. The caller is responsible for rendering it.
         return light_glyph_buffer

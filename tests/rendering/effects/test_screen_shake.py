@@ -134,7 +134,8 @@ class DummyController:
             root_console=None,
             blit_console=lambda *args, **kwargs: None,
             texture_from_console=lambda console: f"mock_texture_for_{id(console)}",
-            render_glyph_buffer_to_texture=lambda gb: f"mock_texture_for_{id(gb)}",
+            render_glyph_buffer_to_texture=lambda gb,
+            **kw: f"mock_texture_for_{id(gb)}",
             present_texture=lambda *args, **kwargs: None,
         )
         self.clock = SimpleNamespace(last_delta_time=0.016)
