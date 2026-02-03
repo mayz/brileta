@@ -101,7 +101,7 @@ class DevConsoleOverlay(TextOverlay):
             "get <var>": "Gets the current value of a variable.",
             "set <var> <val>": "Sets the value of a variable.",
             "toggle <var>": "Toggles a boolean variable.",
-            "show <var>": "Toggles watching a variable in the stats overlay.",
+            "show <pattern>": "Toggle watching variable(s). Supports prefix* patterns.",
             "quit": "Quit the game.",
             "exit": "Quit the game.",
         }
@@ -268,6 +268,13 @@ class DevConsoleOverlay(TextOverlay):
                 if var is None:
                     self.history.append(f"Variable '{name}' not found.")
                     return
+                # Metric variables (with stats_var) are for recording measurements,
+                # not for direct user assignment.
+                if var.has_stats():
+                    self.history.append(
+                        f"Variable '{name}' is a metric (use 'show' to monitor it)."
+                    )
+                    return
                 current = var.get_value()
                 value = string_to_type(value_str, type(current))
                 if var.set_value(value):
@@ -294,23 +301,46 @@ class DevConsoleOverlay(TextOverlay):
                     self.history.append(f"Variable '{name}' not found.")
                     return
                 current = var.get_value()
-                if var.set_value(not bool(current)):
-                    self.history.append(f"{name} toggled to {not bool(current)}")
+                if not isinstance(current, bool):
+                    self.history.append(
+                        f"Variable '{name}' is not a boolean (use 'show' or 'watch')."
+                    )
+                    return
+                if var.set_value(not current):
+                    self.history.append(f"{name} toggled to {not current}")
                 else:
                     self.history.append(f"Variable '{name}' is read-only.")
             case "show" | "watch":
                 if len(parts) < 2:
-                    self.history.append("Usage: show <var>")
+                    self.history.append("Usage: show/watch <var> or <prefix*>")
                     return
-                name = parts[1]
-                if live_variable_registry.get_variable(name) is None:
-                    self.history.append(f"Error: Variable '{name}' not found.")
-                    return
-                live_variable_registry.toggle_watch(name)
-                if live_variable_registry.is_watched(name):
-                    self.history.append(f"Now watching: {name}")
+                pattern = parts[1]
+                # Support pattern matching with * or prefix matching
+                if (
+                    "*" in pattern
+                    or live_variable_registry.get_variable(pattern) is None
+                ):
+                    # Treat as prefix pattern (strip trailing * if present)
+                    prefix = pattern.rstrip("*")
+                    all_vars = live_variable_registry.get_all_variables()
+                    matched = [v for v in all_vars if v.name.startswith(prefix)]
+                    if not matched:
+                        self.history.append(f"No variables matching '{pattern}'.")
+                        return
+                    for var in matched:
+                        live_variable_registry.toggle_watch(var.name)
+                        status = (
+                            "+" if live_variable_registry.is_watched(var.name) else "-"
+                        )
+                        self.history.append(f"  {status} {var.name}")
+                    self.history.append(f"Toggled {len(matched)} variable(s).")
                 else:
-                    self.history.append(f"No longer watching: {name}")
+                    # Exact match
+                    live_variable_registry.toggle_watch(pattern)
+                    if live_variable_registry.is_watched(pattern):
+                        self.history.append(f"Now watching: {pattern}")
+                    else:
+                        self.history.append(f"No longer watching: {pattern}")
             case "quit" | "exit":
                 self.controller.app.quit()
             case _:

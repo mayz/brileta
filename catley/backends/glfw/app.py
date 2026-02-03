@@ -204,11 +204,12 @@ class GlfwApp(App[GraphicsContextImplClass]):
             return
 
         # Translate GLFW action to tcod event type
-        if action == glfw.PRESS:
+        if action == glfw.PRESS or action == glfw.REPEAT:
             event = tcod.event.KeyDown(
                 sym=self._glfw_key_to_tcod(key),
                 scancode=scancode,
                 mod=self._glfw_mod_to_tcod(mods),
+                repeat=action == glfw.REPEAT,
             )
             assert self.controller is not None
             self.controller.input_handler.dispatch(event)
@@ -220,7 +221,6 @@ class GlfwApp(App[GraphicsContextImplClass]):
             )
             assert self.controller is not None
             self.controller.input_handler.dispatch(event)
-        # Ignore REPEAT actions
 
     def _on_text(self, window, codepoint):
         """Handle text input events."""

@@ -296,9 +296,10 @@ class WorldView(View):
         if config.DEBUG_DISABLE_BACKGROUND_CACHE:
             # Debug mode: always re-render (bypasses cache entirely)
             self._render_map_unlit()
-            texture = graphics.render_glyph_buffer_to_texture(
-                self.map_glyph_buffer, cache_key_suffix="bg"
-            )
+            with record_time_live_variable("cpu.render.bg_texture_upload_ms"):
+                texture = graphics.render_glyph_buffer_to_texture(
+                    self.map_glyph_buffer, cache_key_suffix="bg"
+                )
         else:
             cache_key = self._get_background_cache_key()
             texture = self._texture_cache.get(cache_key)
@@ -307,9 +308,10 @@ class WorldView(View):
                 # CACHE MISS: Re-render the static background
                 self._render_map_unlit()
 
-                texture = graphics.render_glyph_buffer_to_texture(
-                    self.map_glyph_buffer, cache_key_suffix="bg"
-                )
+                with record_time_live_variable("cpu.render.bg_texture_upload_ms"):
+                    texture = graphics.render_glyph_buffer_to_texture(
+                        self.map_glyph_buffer, cache_key_suffix="bg"
+                    )
                 self._texture_cache.store(cache_key, texture)
 
         self._active_background_texture = texture
@@ -322,9 +324,12 @@ class WorldView(View):
 
             if light_overlay_data is not None:
                 # Ask the graphics context to turn this DATA into a RENDERABLE TEXTURE
-                self._light_overlay_texture = graphics.render_glyph_buffer_to_texture(
-                    light_overlay_data, cache_key_suffix="light"
-                )
+                with record_time_live_variable("cpu.render.light_texture_upload_ms"):
+                    self._light_overlay_texture = (
+                        graphics.render_glyph_buffer_to_texture(
+                            light_overlay_data, cache_key_suffix="light"
+                        )
+                    )
             else:
                 self._light_overlay_texture = None
 
@@ -454,67 +459,68 @@ class WorldView(View):
 
         set_atmospheric_layer = getattr(graphics, "set_atmospheric_layer", None)
         if config.ATMOSPHERIC_EFFECTS_ENABLED and callable(set_atmospheric_layer):
-            active_layers = self.atmospheric_system.get_active_layers()
-            # Render mist first, then shadows, to keep shadows readable on top.
-            active_layers.sort(
-                key=lambda layer_state: (
-                    0 if layer_state[0].blend_mode == "lighten" else 1
+            with record_time_live_variable("cpu.render.atmospheric_ms"):
+                active_layers = self.atmospheric_system.get_active_layers()
+                # Render mist first, then shadows, to keep shadows readable on top.
+                active_layers.sort(
+                    key=lambda layer_state: (
+                        0 if layer_state[0].blend_mode == "lighten" else 1
+                    )
                 )
-            )
-            sky_exposure_texture = None
-            explored_texture = None
-            visible_texture = None
-            if self.lighting_system is not None:
-                get_sky_exposure_texture = getattr(
-                    self.lighting_system, "get_sky_exposure_texture", None
-                )
-                if callable(get_sky_exposure_texture):
-                    sky_exposure_texture = get_sky_exposure_texture()
-                get_explored_texture = getattr(
-                    self.lighting_system, "get_explored_texture", None
-                )
-                if callable(get_explored_texture):
-                    explored_texture = get_explored_texture()
-                get_visible_texture = getattr(
-                    self.lighting_system, "get_visible_texture", None
-                )
-                if callable(get_visible_texture):
-                    visible_texture = get_visible_texture()
+                sky_exposure_texture = None
+                explored_texture = None
+                visible_texture = None
+                if self.lighting_system is not None:
+                    get_sky_exposure_texture = getattr(
+                        self.lighting_system, "get_sky_exposure_texture", None
+                    )
+                    if callable(get_sky_exposure_texture):
+                        sky_exposure_texture = get_sky_exposure_texture()
+                    get_explored_texture = getattr(
+                        self.lighting_system, "get_explored_texture", None
+                    )
+                    if callable(get_explored_texture):
+                        explored_texture = get_explored_texture()
+                    get_visible_texture = getattr(
+                        self.lighting_system, "get_visible_texture", None
+                    )
+                    if callable(get_visible_texture):
+                        visible_texture = get_visible_texture()
 
-            for layer, state in active_layers:
-                effective_strength = layer.strength
-                if layer.disable_when_overcast:
-                    coverage = self.atmospheric_system.config.cloud_coverage
-                    # Keep a baseline shadow presence while still responding to
-                    # coverage.
-                    coverage_scale = 0.35 + 0.65 * (1.0 - coverage)
-                    effective_strength *= max(0.0, min(1.0, coverage_scale))
+                for layer, state in active_layers:
+                    effective_strength = layer.strength
+                    if layer.disable_when_overcast:
+                        coverage = self.atmospheric_system.config.cloud_coverage
+                        # Keep a baseline shadow presence while still responding to
+                        # coverage.
+                        coverage_scale = 0.35 + 0.65 * (1.0 - coverage)
+                        effective_strength *= max(0.0, min(1.0, coverage_scale))
 
-                set_atmospheric_layer(
-                    viewport_offset,
-                    viewport_size,
-                    map_size,
-                    layer.sky_exposure_threshold,
-                    sky_exposure_texture,
-                    explored_texture,
-                    visible_texture,
-                    layer.noise_scale,
-                    layer.noise_threshold_low,
-                    layer.noise_threshold_high,
-                    effective_strength,
-                    layer.tint_color,
-                    (state.drift_offset_x, state.drift_offset_y),
-                    state.turbulence_offset,
-                    layer.turbulence_strength,
-                    layer.turbulence_scale,
-                    layer.blend_mode,
-                    (
-                        round(px_left),
-                        round(px_top),
-                        round(px_right),
-                        round(px_bottom),
-                    ),
-                )
+                    set_atmospheric_layer(
+                        viewport_offset,
+                        viewport_size,
+                        map_size,
+                        layer.sky_exposure_threshold,
+                        sky_exposure_texture,
+                        explored_texture,
+                        visible_texture,
+                        layer.noise_scale,
+                        layer.noise_threshold_low,
+                        layer.noise_threshold_high,
+                        effective_strength,
+                        layer.tint_color,
+                        (state.drift_offset_x, state.drift_offset_y),
+                        state.turbulence_offset,
+                        layer.turbulence_strength,
+                        layer.turbulence_scale,
+                        layer.blend_mode,
+                        (
+                            round(px_left),
+                            round(px_top),
+                            round(px_right),
+                            round(px_bottom),
+                        ),
+                    )
 
         # Render persistent decals (blood splatters, etc.) on the floor
         with record_time_live_variable("cpu.render.decals_ms"):
@@ -593,40 +599,77 @@ class WorldView(View):
         each edge. This allows smooth sub-tile scrolling: when the camera moves
         between tiles, we offset the rendered texture by the fractional amount,
         and the padding ensures there's always content at the edges.
+
+        Uses vectorized numpy operations for performance.
         """
         gw = self.controller.gw
         vs = self.viewport_system
         pad = self._SCROLL_PADDING
+        game_map = gw.game_map
 
         # Clear the console for this view to a default black background.
         self.map_glyph_buffer.clear()
 
-        # Iterate over every tile in the padded buffer.
-        for buf_y in range(self.map_glyph_buffer.height):
-            for buf_x in range(self.map_glyph_buffer.width):
-                # Convert buffer position to viewport position (accounting for padding),
-                # then to world position. Buffer (pad, pad) = viewport (0, 0).
-                vp_x = buf_x - pad
-                vp_y = buf_y - pad
-                world_x, world_y = vs.screen_to_world(vp_x, vp_y)
+        # Get world bounds for coordinate conversion.
+        # viewport_to_world formula: world = vp - offset + bounds_origin
+        # And vp = buf - pad, so: world = buf - pad - offset + bounds_origin
+        bounds = vs.viewport.get_world_bounds(vs.camera)
+        world_origin_x = bounds.x1 - vs.offset_x - pad
+        world_origin_y = bounds.y1 - vs.offset_y - pad
 
-                # Check if the world tile is within the map bounds.
-                if not (
-                    0 <= world_x < gw.game_map.width
-                    and 0 <= world_y < gw.game_map.height
-                ):
-                    continue
+        buf_width = self.map_glyph_buffer.width
+        buf_height = self.map_glyph_buffer.height
 
-                # If the world tile has been explored, draw its "dark" appearance.
-                if gw.game_map.explored[world_x, world_y]:
-                    dark_appearance = gw.game_map.dark_appearance_map[world_x, world_y]
-                    fg_rgba = (*dark_appearance["fg"], 255)
-                    bg_rgba = (*dark_appearance["bg"], 255)
-                    self.map_glyph_buffer.data[buf_x, buf_y] = (
-                        dark_appearance["ch"],
-                        fg_rgba,
-                        bg_rgba,
-                    )
+        # Create coordinate arrays for all buffer positions
+        buf_x_coords = np.arange(buf_width)
+        buf_y_coords = np.arange(buf_height)
+        buf_x_grid, buf_y_grid = np.meshgrid(buf_x_coords, buf_y_coords, indexing="ij")
+
+        # Convert buffer coords to world coords
+        world_x_grid = buf_x_grid + world_origin_x
+        world_y_grid = buf_y_grid + world_origin_y
+
+        # Mask for tiles within map bounds
+        in_bounds_mask = (
+            (world_x_grid >= 0)
+            & (world_x_grid < game_map.width)
+            & (world_y_grid >= 0)
+            & (world_y_grid < game_map.height)
+        )
+
+        # Get the valid world coordinates
+        valid_world_x = world_x_grid[in_bounds_mask]
+        valid_world_y = world_y_grid[in_bounds_mask]
+
+        # Mask for explored tiles (subset of in-bounds)
+        explored_mask = game_map.explored[valid_world_x, valid_world_y]
+
+        if not np.any(explored_mask):
+            return
+
+        # Get final coordinates for explored tiles
+        final_world_x = valid_world_x[explored_mask]
+        final_world_y = valid_world_y[explored_mask]
+        final_buf_x = buf_x_grid[in_bounds_mask][explored_mask]
+        final_buf_y = buf_y_grid[in_bounds_mask][explored_mask]
+
+        # Get dark appearance data for all explored tiles at once
+        dark_app = game_map.dark_appearance_map[final_world_x, final_world_y]
+
+        # Extract character codes and colors
+        chars = dark_app["ch"]
+        fg_rgb = dark_app["fg"]  # Shape: (N, 3)
+        bg_rgb = dark_app["bg"]  # Shape: (N, 3)
+
+        # Add alpha channel (255) to make RGBA
+        alpha = np.full((len(chars), 1), 255, dtype=np.uint8)
+        fg_rgba = np.hstack((fg_rgb, alpha))
+        bg_rgba = np.hstack((bg_rgb, alpha))
+
+        # Assign to glyph buffer using coordinate indexing
+        self.map_glyph_buffer.data["ch"][final_buf_x, final_buf_y] = chars
+        self.map_glyph_buffer.data["fg"][final_buf_x, final_buf_y] = fg_rgba
+        self.map_glyph_buffer.data["bg"][final_buf_x, final_buf_y] = bg_rgba
 
     def _render_actors(self) -> None:
         # Traditional actors are now baked into the cache during the draw phase.
@@ -1188,25 +1231,22 @@ class WorldView(View):
                     self.current_light_intensity[visible_mask_slice]
                 )
 
-            # Add spillover effects to non-visible but explored areas
+            # Add spillover effects to non-visible but explored areas.
             # This allows spillover to be seen outside FOV while maintaining FOV
-            # darkening
+            # darkening. Vectorized for performance.
             non_visible_mask = explored_mask_slice & ~visible_mask_slice
             if np.any(non_visible_mask):
-                # Sample spillover intensity for non-visible explored tiles
                 nvx, nvy = np.nonzero(non_visible_mask)
-                for _i, (rel_x, rel_y) in enumerate(zip(nvx, nvy, strict=True)):
-                    if (
-                        rel_x < self.current_light_intensity.shape[0]
-                        and rel_y < self.current_light_intensity.shape[1]
-                    ):
-                        # Get the computed spillover intensity
-                        spillover_intensity = self.current_light_intensity[rel_x, rel_y]
-                        # Apply a fraction of spillover to non-visible areas (dimmed
-                        # but visible)
-                        explored_light_intensities[rel_x, rel_y] = (
-                            spillover_intensity * 0.3
-                        )
+                # Filter to coordinates within light intensity bounds
+                light_shape = self.current_light_intensity.shape
+                in_bounds = (nvx < light_shape[0]) & (nvy < light_shape[1])
+                if np.any(in_bounds):
+                    valid_nvx = nvx[in_bounds]
+                    valid_nvy = nvy[in_bounds]
+                    # Apply 0.3 multiplier to spillover intensity
+                    explored_light_intensities[valid_nvx, valid_nvy] = (
+                        self.current_light_intensity[valid_nvx, valid_nvy] * 0.3
+                    )
 
             # Map world coordinates to buffer coordinates for all explored tiles.
             # Add padding since the buffer starts 'pad' tiles before the viewport.
@@ -1247,62 +1287,48 @@ class WorldView(View):
                 ]
 
                 # Apply animated colors for tiles that have animation enabled.
-                # This modifies light_fg_rgb, light_bg_rgb, and light_chars in place
-                # for animated tiles, using the current animation state.
+                # Vectorized for performance.
                 animation_params = gw.game_map.animation_params[world_slice]
                 animation_state = gw.game_map.animation_state[world_slice]
                 valid_exp_x = exp_x[valid_mask]
                 valid_exp_y = exp_y[valid_mask]
 
-                for i in range(len(valid_exp_x)):
-                    rel_x, rel_y = valid_exp_x[i], valid_exp_y[i]
-                    params = animation_params[rel_x, rel_y]
+                # Get animation mask for valid tiles
+                animates_mask = animation_params["animates"][valid_exp_x, valid_exp_y]
 
-                    if params["animates"]:
-                        state = animation_state[rel_x, rel_y]
-                        fg_var = params["fg_variation"]
-                        bg_var = params["bg_variation"]
-                        fg_vals = state["fg_values"]
-                        bg_vals = state["bg_values"]
+                if np.any(animates_mask):
+                    # Get indices of animated tiles within the valid arrays
+                    anim_indices = np.nonzero(animates_mask)[0]
+                    anim_rel_x = valid_exp_x[animates_mask]
+                    anim_rel_y = valid_exp_y[animates_mask]
 
-                        # Compute animated foreground color
-                        # Cast to int to avoid overflow in numpy small int types
-                        base_fg = light_fg_rgb[i]
-                        anim_fg = np.array(
-                            [
-                                max(
-                                    0,
-                                    min(
-                                        255,
-                                        int(base_fg[c])
-                                        + int(fg_var[c]) * int(fg_vals[c]) // 1000
-                                        - int(fg_var[c]) // 2,
-                                    ),
-                                )
-                                for c in range(3)
-                            ],
-                            dtype=np.uint8,
-                        )
-                        light_fg_rgb[i] = anim_fg
+                    # Extract animation parameters and state for animated tiles
+                    fg_var = animation_params["fg_variation"][
+                        anim_rel_x, anim_rel_y
+                    ].astype(np.int32)
+                    bg_var = animation_params["bg_variation"][
+                        anim_rel_x, anim_rel_y
+                    ].astype(np.int32)
+                    fg_vals = animation_state["fg_values"][
+                        anim_rel_x, anim_rel_y
+                    ].astype(np.int32)
+                    bg_vals = animation_state["bg_values"][
+                        anim_rel_x, anim_rel_y
+                    ].astype(np.int32)
 
-                        # Compute animated background color
-                        base_bg = light_bg_rgb[i]
-                        anim_bg = np.array(
-                            [
-                                max(
-                                    0,
-                                    min(
-                                        255,
-                                        int(base_bg[c])
-                                        + int(bg_var[c]) * int(bg_vals[c]) // 1000
-                                        - int(bg_var[c]) // 2,
-                                    ),
-                                )
-                                for c in range(3)
-                            ],
-                            dtype=np.uint8,
-                        )
-                        light_bg_rgb[i] = anim_bg
+                    # Compute animated colors: base + var * vals // 1000 - var // 2
+                    # Use int32 to avoid overflow, then clip to [0, 255]
+                    base_fg = light_fg_rgb[anim_indices].astype(np.int32)
+                    anim_fg = base_fg + fg_var * fg_vals // 1000 - fg_var // 2
+                    light_fg_rgb[anim_indices] = np.clip(anim_fg, 0, 255).astype(
+                        np.uint8
+                    )
+
+                    base_bg = light_bg_rgb[anim_indices].astype(np.int32)
+                    anim_bg = base_bg + bg_var * bg_vals // 1000 - bg_var // 2
+                    light_bg_rgb[anim_indices] = np.clip(anim_bg, 0, 255).astype(
+                        np.uint8
+                    )
 
                 # Per-channel scaling: warm colours stay warm
                 light_intensity_valid = explored_light_intensities[

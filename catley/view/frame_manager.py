@@ -241,6 +241,21 @@ class FrameManager:
             description="CPU time for rendering environmental effects",
             num_samples=100,
         )
+        live_variable_registry.register_metric(
+            "cpu.render.bg_texture_upload_ms",
+            description="CPU time for uploading background texture to GPU",
+            num_samples=100,
+        )
+        live_variable_registry.register_metric(
+            "cpu.render.light_texture_upload_ms",
+            description="CPU time for uploading light overlay texture to GPU",
+            num_samples=100,
+        )
+        live_variable_registry.register_metric(
+            "cpu.render.atmospheric_ms",
+            description="CPU time for atmospheric effects (clouds, shadows)",
+            num_samples=100,
+        )
 
     def on_window_resized(self) -> None:
         """Called when the game window is resized to update view layouts."""

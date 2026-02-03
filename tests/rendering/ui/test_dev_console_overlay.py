@@ -118,7 +118,8 @@ def test_show_command_invalid_var() -> None:
     ov = make_overlay()
     ov.input_buffer = "show missing"
     ov._execute_command()
-    assert ov.history[-1] == "Error: Variable 'missing' not found."
+    # With pattern matching, unknown vars are treated as prefix patterns
+    assert ov.history[-1] == "No variables matching 'missing'."
 
 
 @pytest.mark.parametrize("cmd", ["quit", "exit"])

@@ -4,13 +4,14 @@ from typing import TYPE_CHECKING
 
 import tcod.event
 
-from catley import colors
+from catley import colors, config
+from catley.backends.pillow.canvas import PillowImageCanvas
 from catley.util.live_vars import live_variable_registry
+from catley.view.render.canvas import Canvas
 from catley.view.ui.overlays import TextOverlay
 
 if TYPE_CHECKING:  # pragma: no cover - for type checking only
     from catley.controller import Controller
-    from catley.view.render.canvas import Canvas
 
 
 class DebugStatsOverlay(TextOverlay):
@@ -22,7 +23,9 @@ class DebugStatsOverlay(TextOverlay):
         self.always_dirty = True
 
     def _get_backend(self) -> Canvas:
-        return self.controller.graphics.create_canvas(transparent=True)
+        return PillowImageCanvas(
+            self.controller.graphics, font_path=config.UI_FONT_PATH, transparent=True
+        )
 
     def _calculate_dimensions(self) -> None:
         watched = live_variable_registry.get_watched_variables()
