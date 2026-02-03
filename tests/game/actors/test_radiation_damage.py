@@ -40,6 +40,9 @@ class DummyMessageLog:
 
 @dataclass
 class DummyFrameManager:
+    def get_visible_bounds(self) -> None:
+        return None
+
     def create_effect(self, *args, **kwargs) -> None:
         pass
 

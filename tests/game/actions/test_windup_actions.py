@@ -83,6 +83,9 @@ class DummyFrameManager:
         self.graphics = graphics
         self.counter = 0
 
+    def get_visible_bounds(self) -> None:
+        return None
+
     def render_frame(self, delta: float) -> None:
         self.counter += 1
         if self.counter >= getattr(self.controller, "stop_after", 1):

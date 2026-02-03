@@ -11,6 +11,7 @@ from collections import defaultdict
 from typing import Protocol, TypeVar
 
 from catley.types import WorldTileCoord
+from catley.util.coordinates import Rect
 
 # A type alias for coordinate tuples to improve readability.
 type Coord = tuple[int, int]
@@ -62,6 +63,10 @@ class SpatialIndex[T: HasPosition](abc.ABC):
     def get_in_bounds(self, x1: int, y1: int, x2: int, y2: int) -> list[T]:
         """Get all objects within a rectangular bounding box."""
         pass
+
+    def get_in_rect(self, bounds: Rect) -> list[T]:
+        """Get all objects within a Rect bounds."""
+        return self.get_in_bounds(bounds.x1, bounds.y1, bounds.x2, bounds.y2)
 
     @abc.abstractmethod
     def clear(self) -> None:

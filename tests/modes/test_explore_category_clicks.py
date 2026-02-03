@@ -24,6 +24,9 @@ class DummyFrameManager:
     def __init__(self, action_panel_view: ActionPanelView) -> None:
         self.action_panel_view = action_panel_view
 
+    def get_visible_bounds(self) -> None:
+        return None
+
     def get_world_coords_from_root_tile_coords(
         self, root_tile_pos: tuple[int, int]
     ) -> tuple[int, int] | None:

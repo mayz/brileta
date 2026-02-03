@@ -35,7 +35,6 @@ if TYPE_CHECKING:
 class LightingConfig:
     """Shared configuration defaults for lighting systems."""
 
-    fov_radius: int = 15
     ambient_light: float = AMBIENT_LIGHT_LEVEL
 
     # Global sunlight configuration

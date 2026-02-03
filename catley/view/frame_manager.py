@@ -31,6 +31,7 @@ from catley.types import (
     ViewportTileCoord,
     WorldTilePos,
 )
+from catley.util.coordinates import Rect
 from catley.util.live_vars import live_variable_registry
 
 from .render.effects.effects import EffectContext
@@ -178,6 +179,10 @@ class FrameManager:
         self.equipment_view.set_bounds(
             equipment_x1, bottom_ui_y, equipment_x2, screen_height_tiles
         )
+
+    def get_visible_bounds(self) -> Rect | None:
+        """Return the world-space bounds currently visible in the world view."""
+        return self.world_view.viewport_system.get_visible_bounds()
 
     def register_metrics(self) -> None:
         """Registers live variables specific to the App layer."""

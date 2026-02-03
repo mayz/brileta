@@ -38,7 +38,7 @@ from .modes.explore import ExploreMode
 from .modes.picker import PickerMode
 from .types import FixedTimestep, InterpolationAlpha
 from .util.clock import Clock
-from .util.coordinates import WorldTilePos
+from .util.coordinates import Rect, WorldTilePos
 from .util.live_vars import live_variable_registry, record_time_live_variable
 from .util.message_log import MessageLog
 from .view.animation import AnimationManager
@@ -198,6 +198,12 @@ class Controller:
         # If a tile is "visible" it should be added to "explored"
         self.gw.game_map.explored |= self.gw.game_map.visible
         self.gw.game_map.exploration_revision += 1
+
+    def get_visible_bounds(self) -> Rect | None:
+        """Return the world-space bounds currently visible in the world view."""
+        if self.frame_manager is None:
+            return None
+        return self.frame_manager.get_visible_bounds()
 
     def register_metrics(self) -> None:
         """Register all performance monitoring metrics with live variable registry."""
@@ -558,19 +564,23 @@ class Controller:
             self.enter_combat_mode()
 
     def has_visible_hostiles(self) -> bool:
-        """Check if any visible NPCs are hostile toward the player.
+        """Check if any on-screen visible NPCs are hostile toward the player.
 
         Used to warn when exiting combat mode with enemies still in sight.
-        Uses spatial index for efficient radius query (FOV_RADIUS).
+        Uses spatial index for efficient viewport-bounds query.
         """
         from catley.game.actors.ai import DispositionBasedAI
         from catley.game.enums import Disposition
 
         player = self.gw.player
-        # Query actors within the configured FOV radius
-        nearby_actors = self.gw.actor_spatial_index.get_in_radius(
-            player.x, player.y, radius=config.FOV_RADIUS
-        )
+        bounds = self.get_visible_bounds()
+        if bounds is not None:
+            nearby_actors = self.gw.actor_spatial_index.get_in_rect(bounds)
+        else:
+            # Fallback for headless/test contexts.
+            nearby_actors = self.gw.actor_spatial_index.get_in_radius(
+                player.x, player.y, radius=config.FOV_RADIUS
+            )
 
         for actor in nearby_actors:
             # Skip non-characters and the player

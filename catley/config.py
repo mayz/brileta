@@ -141,6 +141,10 @@ FOV_RADIUS = 50  # Player's sight radius (large enough to cover full viewport)
 FOV_ALGORITHM = tcod.constants.FOV_SYMMETRIC_SHADOWCAST
 FOV_LIGHT_WALLS = True
 
+# Action context
+# Radius for "nearby actor" queries in action discovery and combat context.
+ACTION_CONTEXT_RADIUS = 15
+
 # Combat & health
 PLAYER_BASE_STRENGTH = 3
 PLAYER_BASE_TOUGHNESS = 30  # Player's starting toughness score

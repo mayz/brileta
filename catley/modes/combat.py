@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 import tcod.event
 
-from catley import colors
+from catley import colors, config
 from catley.events import (
     ActorDeathEvent,
     MessageEvent,
@@ -208,10 +208,15 @@ class CombatMode(Mode):
         visible = gw.game_map.visible
 
         new_candidates: list[Character] = []
-        # Only consider actors within the targeting radius using the spatial index
-        potential_actors = gw.actor_spatial_index.get_in_radius(
-            player.x, player.y, radius=15
-        )
+        # Only consider actors within the visible viewport using the spatial index.
+        bounds = self.controller.get_visible_bounds()
+        if bounds is not None:
+            potential_actors = gw.actor_spatial_index.get_in_rect(bounds)
+        else:
+            # Fallback for headless/test contexts.
+            potential_actors = gw.actor_spatial_index.get_in_radius(
+                player.x, player.y, radius=config.FOV_RADIUS
+            )
         for actor in potential_actors:
             if actor is player:
                 continue

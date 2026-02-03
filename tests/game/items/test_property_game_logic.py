@@ -50,6 +50,9 @@ class DummyFrameManager:
     def __init__(self) -> None:
         self.effects = []
 
+    def get_visible_bounds(self) -> None:
+        return None
+
     def create_effect(self, name: str, *args, **kwargs) -> None:
         self.effects.append(name)
 

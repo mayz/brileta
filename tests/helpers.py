@@ -267,6 +267,9 @@ def get_controller_with_player_and_map() -> Controller:
                 set_active_cursor_type=lambda *_a, **_kw: None,
             )
 
+        def get_visible_bounds(self) -> None:
+            return None
+
         def render_frame(self, *_a, **_kw) -> None:  # pragma: no cover - stub
             pass
 
@@ -425,6 +428,9 @@ def get_controller_with_dummy_world() -> Controller:
                 update_mouse_position=lambda *_a, **_kw: None,
                 set_active_cursor_type=lambda *_a, **_kw: None,
             )
+
+        def get_visible_bounds(self) -> None:
+            return None
 
         def render_frame(self, *_a, **_kw) -> None:  # pragma: no cover - stub
             pass

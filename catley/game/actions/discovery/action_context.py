@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from catley import config
 from catley.game import ranges
 from catley.game.actors import Character
 from catley.game.enums import Disposition
@@ -32,7 +33,7 @@ class ActionContextBuilder:
     def build_context(self, controller: Controller, actor: Character) -> ActionContext:
         gm = controller.gw.game_map
         potential_actors = controller.gw.actor_spatial_index.get_in_radius(
-            actor.x, actor.y, radius=15
+            actor.x, actor.y, radius=config.ACTION_CONTEXT_RADIUS
         )
 
         nearby: list[Character] = []

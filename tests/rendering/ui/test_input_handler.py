@@ -36,6 +36,9 @@ class DummyFrameManager:
     ) -> tuple[int, int] | None:
         return pos
 
+    def get_visible_bounds(self) -> None:
+        return None
+
 
 @dataclass
 class DummyController:

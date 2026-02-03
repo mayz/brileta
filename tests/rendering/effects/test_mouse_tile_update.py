@@ -4,7 +4,7 @@ from typing import cast
 
 from catley.controller import Controller
 from catley.game.actors import Actor
-from catley.util.coordinates import RootConsoleTilePos
+from catley.util.coordinates import Rect, RootConsoleTilePos
 from catley.view.render.effects.screen_shake import ScreenShake
 from catley.view.views.world_view import WorldView
 
@@ -50,6 +50,11 @@ class DummyFrameManager:
         if not (0 <= vp_x < view.width and 0 <= vp_y < view.height):
             return None
         return view.viewport_system.screen_to_world(vp_x, vp_y)
+
+    def get_visible_bounds(self) -> Rect | None:
+        if self.world_view is None:
+            return None
+        return self.world_view.viewport_system.get_visible_bounds()
 
 
 @dataclass
