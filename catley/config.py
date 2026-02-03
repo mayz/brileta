@@ -130,8 +130,8 @@ PLAYER_BASE_TOUGHNESS = 30  # Player's starting toughness score
 # =============================================================================
 
 # Map size
-MAP_WIDTH = 80
-MAP_HEIGHT = 43
+MAP_WIDTH = 120
+MAP_HEIGHT = 80
 
 # Generator type: "dungeon" (legacy rooms+corridors) or "settlement" (pipeline-based)
 # TODO: Add "wilderness" once CellularAutomataTerrainLayer is implemented

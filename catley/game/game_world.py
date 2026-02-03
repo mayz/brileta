@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 import math
 import random
+from typing import TYPE_CHECKING
 
 from catley import colors, config
 from catley.config import PLAYER_BASE_STRENGTH, PLAYER_BASE_TOUGHNESS
@@ -29,6 +32,9 @@ from catley.types import TileCoord, WorldTileCoord, WorldTilePos
 from catley.util.coordinates import Rect
 from catley.util.spatial import SpatialHashGrid, SpatialIndex
 from catley.view.render.lighting.base import LightingConfig, LightingSystem
+
+if TYPE_CHECKING:
+    from catley.environment.generators.buildings.building import Building
 
 # Cache the default sun azimuth to avoid repeated instantiation
 _DEFAULT_SUN_AZIMUTH = LightingConfig().sun_azimuth_degrees
@@ -61,6 +67,10 @@ class GameWorld:
 
         self.generator_type = generator_type
 
+        # Settlement-specific data (populated by _generate_map for settlements)
+        self.buildings: list[Building] = []
+        self.streets: list[Rect] = []
+
         # Attempt map generation with retry if no valid spawn point exists
         for attempt in range(self.MAX_MAP_REGENERATION_ATTEMPTS):
             self._init_actor_storage()
@@ -88,9 +98,11 @@ class GameWorld:
                     ) from None
                 continue
 
-        # Note: Rooms now have random 20% chance of being outdoor (set in generator)
-
-        self._populate_npcs(rooms)
+        # Populate NPCs using generator-appropriate method
+        if self.generator_type == "settlement":
+            self._populate_settlement_npcs()
+        else:
+            self._populate_npcs(rooms)
 
         self._place_containers(rooms)
 
@@ -288,6 +300,10 @@ class GameWorld:
 
             game_map = GameMap(map_width, map_height, map_data)
             game_map.gw = self
+
+            # Store settlement data for NPC placement
+            self.buildings = map_data.buildings
+            self.streets = map_data.streets
 
             # For settlements, use building regions as spawn points
             building_regions = [
@@ -593,7 +609,7 @@ class GameWorld:
         return False
 
     def _populate_npcs(
-        self, rooms: list, num_npcs: int = 10, max_attempts_per_npc: int = 10
+        self, rooms: list, num_npcs: int = 30, max_attempts_per_npc: int = 10
     ) -> None:
         """Add NPCs to random locations in rooms.
 
@@ -663,6 +679,265 @@ class GameWorld:
             if not placed:
                 # NPC could not be placed after several attempts; skip it
                 pass
+
+    def _populate_settlement_npcs(self, max_attempts_per_npc: int = 15) -> None:
+        """Populate a settlement with NPCs in buildings, near doors, and on streets.
+
+        Uses the building data from map generation to place NPCs:
+        - Indoor NPCs: Placed inside building rooms (scaled to building count)
+        - Doorway NPCs: Placed just outside building entrances
+        - Street NPCs: Placed on street tiles for outdoor activity
+
+        The total NPC count scales with the number of buildings.
+        """
+        if not self.buildings:
+            return
+
+        num_buildings = len(self.buildings)
+
+        # Scale NPC counts to building count
+        # ~2 indoor NPCs per building, 1 near doors, 1-2 on streets
+        indoor_npcs = num_buildings * 2
+        doorway_npcs = num_buildings
+        street_npcs = max(3, num_buildings // 2)
+
+        npc_index = 0
+
+        # 1. Place indoor NPCs in building rooms
+        npc_index = self._place_indoor_npcs(
+            indoor_npcs, npc_index, max_attempts_per_npc
+        )
+
+        # 2. Place NPCs near building doors
+        npc_index = self._place_doorway_npcs(
+            doorway_npcs, npc_index, max_attempts_per_npc
+        )
+
+        # 3. Place NPCs on streets
+        self._place_street_npcs(street_npcs, npc_index, max_attempts_per_npc)
+
+    def _place_indoor_npcs(
+        self, count: int, start_index: int, max_attempts: int
+    ) -> int:
+        """Place NPCs inside building rooms.
+
+        Args:
+            count: Number of NPCs to place.
+            start_index: Starting index for NPC naming.
+            max_attempts: Max placement attempts per NPC.
+
+        Returns:
+            Next available NPC index.
+        """
+        npc_index = start_index
+
+        # Collect all room bounds from buildings
+        all_rooms: list[Rect] = [
+            room.bounds
+            for building in self.buildings
+            for room in building.rooms
+            if room.bounds.width >= 3 and room.bounds.height >= 3
+        ]
+
+        if not all_rooms:
+            return npc_index
+
+        for _ in range(count):
+            placed = False
+
+            for _ in range(max_attempts):
+                room = random.choice(all_rooms)
+
+                # Pick a position inside the room (not on walls)
+                npc_x = random.randint(room.x1, room.x2 - 1)
+                npc_y = random.randint(room.y1, room.y2 - 1)
+
+                if (
+                    self.game_map.walkable[npc_x, npc_y]
+                    and self.get_actor_at_location(npc_x, npc_y) is None
+                ):
+                    npc = self._create_settlement_npc(npc_x, npc_y, npc_index, "indoor")
+                    self.add_actor(npc)
+                    npc_index += 1
+                    placed = True
+                    break
+
+            if not placed:
+                pass  # Skip this NPC
+
+        return npc_index
+
+    def _place_doorway_npcs(
+        self, count: int, start_index: int, max_attempts: int
+    ) -> int:
+        """Place NPCs just outside building doors.
+
+        Args:
+            count: Number of NPCs to place.
+            start_index: Starting index for NPC naming.
+            max_attempts: Max placement attempts per NPC.
+
+        Returns:
+            Next available NPC index.
+        """
+        npc_index = start_index
+
+        # Collect all door positions
+        door_positions: list[tuple[int, int]] = []
+        for building in self.buildings:
+            door_positions.extend(building.door_positions)
+
+        if not door_positions:
+            return npc_index
+
+        for _ in range(count):
+            placed = False
+
+            for _ in range(max_attempts):
+                door_x, door_y = random.choice(door_positions)
+
+                # Find a position 1-2 tiles from the door (outside the building)
+                # Try all 4 directions plus diagonals
+                offsets = [
+                    (0, -1),
+                    (0, 1),
+                    (-1, 0),
+                    (1, 0),  # Cardinal
+                    (0, -2),
+                    (0, 2),
+                    (-2, 0),
+                    (2, 0),  # 2 tiles away
+                    (-1, -1),
+                    (1, -1),
+                    (-1, 1),
+                    (1, 1),  # Diagonal
+                ]
+                random.shuffle(offsets)
+
+                for dx, dy in offsets:
+                    npc_x, npc_y = door_x + dx, door_y + dy
+
+                    # Check bounds
+                    if not (
+                        0 <= npc_x < self.game_map.width
+                        and 0 <= npc_y < self.game_map.height
+                    ):
+                        continue
+
+                    # Must be walkable, outdoor, and empty
+                    if (
+                        self.game_map.walkable[npc_x, npc_y]
+                        and self._is_outdoor_tile(npc_x, npc_y)
+                        and self.get_actor_at_location(npc_x, npc_y) is None
+                    ):
+                        npc = self._create_settlement_npc(
+                            npc_x, npc_y, npc_index, "doorway"
+                        )
+                        self.add_actor(npc)
+                        npc_index += 1
+                        placed = True
+                        break
+
+                if placed:
+                    break
+
+        return npc_index
+
+    def _place_street_npcs(
+        self, count: int, start_index: int, max_attempts: int
+    ) -> int:
+        """Place NPCs on street tiles.
+
+        Args:
+            count: Number of NPCs to place.
+            start_index: Starting index for NPC naming.
+            max_attempts: Max placement attempts per NPC.
+
+        Returns:
+            Next available NPC index.
+        """
+        npc_index = start_index
+
+        # Collect walkable street positions
+        street_positions: list[tuple[int, int]] = [
+            (x, y)
+            for street in self.streets
+            for x in range(max(0, street.x1), min(self.game_map.width, street.x2))
+            for y in range(max(0, street.y1), min(self.game_map.height, street.y2))
+            if self.game_map.walkable[x, y]
+        ]
+
+        if not street_positions:
+            return npc_index
+
+        for _ in range(count):
+            for _ in range(max_attempts):
+                npc_x, npc_y = random.choice(street_positions)
+
+                if self.get_actor_at_location(npc_x, npc_y) is None:
+                    npc = self._create_settlement_npc(npc_x, npc_y, npc_index, "street")
+                    self.add_actor(npc)
+                    npc_index += 1
+                    break
+
+        return npc_index
+
+    def _is_outdoor_tile(self, x: int, y: int) -> bool:
+        """Check if a tile is an outdoor tile type."""
+        outdoor_tiles = {
+            TileTypeID.OUTDOOR_FLOOR,
+            TileTypeID.GRASS,
+            TileTypeID.DIRT_PATH,
+            TileTypeID.GRAVEL,
+        }
+        return self.game_map.tiles[x, y] in outdoor_tiles
+
+    def _create_settlement_npc(
+        self, x: int, y: int, index: int, location_type: str
+    ) -> NPC:
+        """Create an NPC appropriate for a settlement.
+
+        Args:
+            x: X position.
+            y: Y position.
+            index: NPC index for naming.
+            location_type: Where the NPC is placed ("indoor", "doorway", "street").
+
+        Returns:
+            The created NPC.
+        """
+        # Alternate between Trogs and Hackadoos
+        if index % 2 == 0:
+            # Trog: hulking mutant with melee weapon
+            return NPC(
+                x=x,
+                y=y,
+                ch="T",
+                name=f"Trog {index + 1}" if index > 0 else "Trog",
+                color=colors.DARK_GREY,
+                game_world=self,
+                blocks_movement=True,
+                weirdness=3,
+                strength=3,
+                toughness=3,
+                intelligence=-3,
+                speed=80,
+                creature_size=CreatureSize.LARGE,
+                starting_weapon=SLEDGEHAMMER_TYPE.create(),
+            )
+        # Hackadoo: standard ranged enemy
+        return NPC(
+            x=x,
+            y=y,
+            ch="H",
+            name=f"Hackadoo {index + 1}" if index > 0 else "Hackadoo",
+            color=colors.DARK_GREY,
+            game_world=self,
+            blocks_movement=True,
+            weirdness=1,
+            intelligence=2,
+            starting_weapon=REVOLVER_TYPE.create(),
+        )
 
     def _add_test_fire(self, rooms: list) -> None:
         """Add a test fire to demonstrate the fire system."""

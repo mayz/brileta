@@ -141,4 +141,6 @@ class GenerationContext:
             tiles=self.tiles,
             regions=self.regions,
             tile_to_region_id=self.tile_to_region_id,
+            buildings=self.buildings,
+            streets=self.street_data.streets,
         )
