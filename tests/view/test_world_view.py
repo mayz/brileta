@@ -6,8 +6,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from catley.config import COMBAT_OUTLINE_MAX_ALPHA, COMBAT_OUTLINE_MIN_ALPHA
-from catley.view.views.world_view import WorldView
+from catley.view.views.world_view import (
+    COMBAT_OUTLINE_MAX_ALPHA,
+    COMBAT_OUTLINE_MIN_ALPHA,
+    WorldView,
+)
 
 
 class TestGetShimmerAlpha:

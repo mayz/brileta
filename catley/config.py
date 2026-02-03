@@ -12,7 +12,7 @@ from typing import Literal
 
 import tcod.constants
 
-from catley.types import Opacity, RandomSeed
+from catley.types import RandomSeed
 
 # =============================================================================
 # GENERAL
@@ -38,30 +38,10 @@ WINDOW_TITLE = "Catley Prototype"
 SCREEN_WIDTH = 80
 SCREEN_HEIGHT = 50
 
-# Viewport defaults used when initializing views before they are resized.
-DEFAULT_VIEWPORT_WIDTH = SCREEN_WIDTH
-DEFAULT_VIEWPORT_HEIGHT = 40  # Initial height before layout adjustments
-
-# UI Layout
-HELP_HEIGHT = 1  # Lines reserved for help text at top
-
 # Use "smooth" rendering for actors (sub-tile render coordinates).
 SMOOTH_ACTOR_RENDERING_ENABLED = True
 # Toggle environmental overlay effects
 ENVIRONMENTAL_EFFECTS_ENABLED = True
-
-# Rendering effects
-PULSATION_PERIOD = 2.0  # Seconds for full pulsation cycle (selected actor)
-PULSATION_MAX_BLEND_ALPHA = Opacity(0.5)  # Maximum alpha for pulsation blending
-LUMINANCE_THRESHOLD = 127.5  # For determining light vs dark colors
-
-# Combat outline shimmer effect (shimmering glyph outlines on targetable enemies)
-COMBAT_OUTLINE_SHIMMER_PERIOD = 2.4  # Seconds for full shimmer cycle
-COMBAT_OUTLINE_MIN_ALPHA = Opacity(0.4)  # Minimum alpha during shimmer
-COMBAT_OUTLINE_MAX_ALPHA = Opacity(0.85)  # Maximum alpha during shimmer
-
-# Contextual target outline (exploration mode)
-CONTEXTUAL_OUTLINE_ALPHA = Opacity(0.70)  # Solid outline opacity
 
 # Shake effect
 # Set to False to disable screen shake
@@ -109,8 +89,6 @@ BACKEND: BackendConfig = _BACKEND_CONFIGS[BACKEND_NAME]
 # ============================================================================
 # PERFORMANCE CONFIGURATION
 # =============================================================================
-
-FPS_SAMPLE_SIZE = 256  # Number of frame time samples to track
 
 # --- Performance & Debug Toggles ---
 # These are independent flags to control debugging features.
@@ -203,13 +181,6 @@ SETTLEMENT_MAX_BUILDINGS = 12  # Maximum buildings per settlement
 # LIGHTING SYSTEM
 # =============================================================================
 
-
-# Generic light source defaults
-DEFAULT_LIGHT_COLOR = (255, 255, 255)  # Pure white
-DEFAULT_FLICKER_SPEED = 3.0
-DEFAULT_MIN_BRIGHTNESS = 1.15
-DEFAULT_MAX_BRIGHTNESS = 1.35
-
 # Torch preset values (used in LightSource.create_torch())
 TORCH_RADIUS = 10
 TORCH_COLOR = (179, 128, 77)  # Warm orange/yellow
@@ -240,9 +211,6 @@ TILE_EMISSION_ENABLED = True
 # =============================================================================
 # INPUT & CONTROLS
 # =============================================================================
-
-# Mouse and selection
-MOUSE_HIGHLIGHT_ALPHA = Opacity(0.6)  # Alpha blending for mouse cursor highlight
 
 # Movement
 MOVEMENT_KEY_REPEAT_DELAY = 0.25
@@ -293,23 +261,6 @@ PROBABILITY_DESCRIPTORS = [
     (0.60, "Even Odds", "yellow"),
     (0.80, "Very Likely", "light_green"),
     (1.00, "Almost Certain", "green"),
-]
-
-# Alternative flavor sets (easily swappable)
-PROBABILITY_DESCRIPTORS_POST_APOCALYPTIC = [
-    (0.20, "Desperate Gamble", "red"),
-    (0.40, "Risky", "orange"),
-    (0.60, "Fighting Chance", "yellow"),
-    (0.80, "Good Shot", "light_green"),
-    (1.00, "Sure Thing", "green"),
-]
-
-PROBABILITY_DESCRIPTORS_MILITARY = [
-    (0.20, "Low Confidence", "red"),
-    (0.40, "Poor Odds", "orange"),
-    (0.60, "Fifty-Fifty", "yellow"),
-    (0.80, "High Confidence", "light_green"),
-    (1.00, "Mission Critical", "green"),
 ]
 
 # =============================================================================

@@ -4,8 +4,10 @@ import statistics
 import time
 from collections import deque
 
-from catley.config import FPS_SAMPLE_SIZE
 from catley.types import DeltaTime
+
+# Number of frame time samples to track.
+_FPS_SAMPLE_SIZE = 256
 
 
 class Clock:
@@ -14,7 +16,7 @@ class Clock:
     def __init__(self) -> None:
         self.last_time = time.perf_counter()
         self.last_delta_time: DeltaTime = DeltaTime(0.0)
-        self.time_samples: deque[float] = deque(maxlen=FPS_SAMPLE_SIZE)
+        self.time_samples: deque[float] = deque(maxlen=_FPS_SAMPLE_SIZE)
         self.drift_time = 0.0
 
     def tick(self) -> DeltaTime:

@@ -12,11 +12,10 @@ import numpy as np
 import pytest
 
 from catley import colors
-from catley.config import CONTEXTUAL_OUTLINE_ALPHA
 from catley.controller import Controller
 from catley.game.actors import Actor
 from catley.view.render.effects.screen_shake import ScreenShake
-from catley.view.views.world_view import WorldView
+from catley.view.views.world_view import CONTEXTUAL_OUTLINE_ALPHA, WorldView
 
 
 class DummyActor:

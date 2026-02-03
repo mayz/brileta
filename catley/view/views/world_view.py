@@ -7,15 +7,6 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from catley import colors, config
-from catley.config import (
-    COMBAT_OUTLINE_MAX_ALPHA,
-    COMBAT_OUTLINE_MIN_ALPHA,
-    COMBAT_OUTLINE_SHIMMER_PERIOD,
-    CONTEXTUAL_OUTLINE_ALPHA,
-    LUMINANCE_THRESHOLD,
-    PULSATION_MAX_BLEND_ALPHA,
-    PULSATION_PERIOD,
-)
 from catley.types import InterpolationAlpha, Opacity
 from catley.util.caching import ResourceCache
 from catley.util.coordinates import (
@@ -46,6 +37,24 @@ if TYPE_CHECKING:
     from catley.game.actors.core import CharacterLayer
 
 
+# Viewport defaults used when initializing views before they are resized.
+DEFAULT_VIEWPORT_WIDTH = config.SCREEN_WIDTH
+DEFAULT_VIEWPORT_HEIGHT = 40  # Initial height before layout adjustments
+
+# Rendering effects
+PULSATION_PERIOD = 2.0  # Seconds for full pulsation cycle (selected actor)
+PULSATION_MAX_BLEND_ALPHA: Opacity = Opacity(0.5)  # Maximum alpha for pulsation
+LUMINANCE_THRESHOLD = 127.5  # For determining light vs dark colors
+
+# Combat outline shimmer effect (shimmering glyph outlines on targetable enemies)
+COMBAT_OUTLINE_SHIMMER_PERIOD = 2.4  # Seconds for full shimmer cycle
+COMBAT_OUTLINE_MIN_ALPHA: Opacity = Opacity(0.4)  # Minimum alpha during shimmer
+COMBAT_OUTLINE_MAX_ALPHA: Opacity = Opacity(0.85)  # Maximum alpha during shimmer
+
+# Contextual target outline (exploration mode)
+CONTEXTUAL_OUTLINE_ALPHA: Opacity = Opacity(0.70)  # Solid outline opacity
+
+
 class WorldView(View):
     """View responsible for rendering the game world (map, actors, effects)."""
 
@@ -68,18 +77,18 @@ class WorldView(View):
         # Initialize a viewport system sized using configuration defaults.
         # These defaults are replaced once resize() sets the real view bounds.
         self.viewport_system = ViewportSystem(
-            config.DEFAULT_VIEWPORT_WIDTH, config.DEFAULT_VIEWPORT_HEIGHT
+            DEFAULT_VIEWPORT_WIDTH, DEFAULT_VIEWPORT_HEIGHT
         )
         # Game map console is larger than the viewport by _SCROLL_PADDING tiles
         # on each edge. This allows smooth sub-tile scrolling without gaps.
         pad = self._SCROLL_PADDING
         self.map_glyph_buffer = GlyphBuffer(
-            config.DEFAULT_VIEWPORT_WIDTH + 2 * pad,
-            config.DEFAULT_VIEWPORT_HEIGHT + 2 * pad,
+            DEFAULT_VIEWPORT_WIDTH + 2 * pad,
+            DEFAULT_VIEWPORT_HEIGHT + 2 * pad,
         )
         # Particle system also operates only on the visible viewport area.
         self.particle_system = SubTileParticleSystem(
-            config.DEFAULT_VIEWPORT_WIDTH, config.DEFAULT_VIEWPORT_HEIGHT
+            DEFAULT_VIEWPORT_WIDTH, DEFAULT_VIEWPORT_HEIGHT
         )
         self.environmental_system = EnvironmentalEffectSystem()
         self.decal_system = DecalSystem()
