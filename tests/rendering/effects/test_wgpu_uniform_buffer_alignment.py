@@ -63,11 +63,11 @@ class TestWGPUUniformBufferAlignment:
 
         # Pack uniform data
         light_data: list[float] = []
-        shadow_casters: list[float] = []
+        actor_shadows: list[float] = []
         viewport = Rect(0, 0, 80, 43)
 
         buffer = gpu_system._pack_uniform_data(
-            light_data, 0, shadow_casters, 0, viewport
+            light_data, 0, actor_shadows, 0, viewport
         )
 
         # Calculate expected offset for sun_intensity
@@ -75,8 +75,8 @@ class TestWGPUUniformBufferAlignment:
         # - viewport_data: 16 bytes (offset 0)
         # - metadata: 16 bytes (offset 16)
         # - 8 light arrays: 8 * 32 * 16 = 4096 bytes (offset 32)
-        # - shadow metadata: 16 bytes (offset 4128)
-        # - shadow positions: 64 * 16 = 1024 bytes (offset 4144)
+        # - actor shadow metadata: 16 bytes (offset 4128)
+        # - actor shadow positions: 64 * 16 = 1024 bytes (offset 4144)
         # - sun_direction + padding: 16 bytes (offset 5168)
         # - sun_color (12 bytes) + sun_intensity (4 bytes): 16 bytes (offset 5184)
         # sun_intensity is at offset 5184 + 12 = 5196
@@ -98,11 +98,11 @@ class TestWGPUUniformBufferAlignment:
 
         # Pack uniform data
         light_data: list[float] = []
-        shadow_casters: list[float] = []
+        actor_shadows: list[float] = []
         viewport = Rect(0, 0, 80, 43)
 
         buffer = gpu_system._pack_uniform_data(
-            light_data, 0, shadow_casters, 0, viewport
+            light_data, 0, actor_shadows, 0, viewport
         )
 
         # Calculate expected offset for map_size
@@ -133,11 +133,11 @@ class TestWGPUUniformBufferAlignment:
 
         # Pack uniform data
         light_data: list[float] = []
-        shadow_casters: list[float] = []
+        actor_shadows: list[float] = []
         viewport = Rect(0, 0, 80, 43)
 
         buffer = gpu_system._pack_uniform_data(
-            light_data, 0, shadow_casters, 0, viewport
+            light_data, 0, actor_shadows, 0, viewport
         )
 
         # sky_exposure_power is at offset 5200 (right after sun_intensity)
@@ -160,11 +160,11 @@ class TestWGPUUniformBufferAlignment:
 
         # Pack uniform data
         light_data: list[float] = []
-        shadow_casters: list[float] = []
+        actor_shadows: list[float] = []
         viewport = Rect(0, 0, 80, 43)
 
         buffer = gpu_system._pack_uniform_data(
-            light_data, 0, shadow_casters, 0, viewport
+            light_data, 0, actor_shadows, 0, viewport
         )
 
         # Expected minimum size based on WGSL struct layout:
@@ -185,10 +185,10 @@ class TestWGPUUniformBufferAlignment:
 
         viewport = Rect(10, 20, 60, 40)
         light_data: list[float] = []
-        shadow_casters: list[float] = []
+        actor_shadows: list[float] = []
 
         buffer = gpu_system._pack_uniform_data(
-            light_data, 0, shadow_casters, 0, viewport
+            light_data, 0, actor_shadows, 0, viewport
         )
 
         # viewport_data is vec4f at offset 0
@@ -207,11 +207,11 @@ class TestWGPUUniformBufferAlignment:
         gpu_system = self._create_gpu_lighting_system()
 
         light_data: list[float] = []
-        shadow_casters: list[float] = []
+        actor_shadows: list[float] = []
         viewport = Rect(0, 0, 80, 43)
 
         buffer = gpu_system._pack_uniform_data(
-            light_data, 0, shadow_casters, 0, viewport
+            light_data, 0, actor_shadows, 0, viewport
         )
 
         # Metadata starts at offset 16
@@ -266,11 +266,11 @@ class TestWGPUUniformBufferEdgeCases:
         gpu_system = self._create_gpu_lighting_system()
 
         light_data: list[float] = []
-        shadow_casters: list[float] = []
+        actor_shadows: list[float] = []
         viewport = Rect(0, 0, 80, 43)
 
         buffer = gpu_system._pack_uniform_data(
-            light_data, 0, shadow_casters, 0, viewport
+            light_data, 0, actor_shadows, 0, viewport
         )
 
         # map_size should default to (1.0, 1.0)
@@ -290,11 +290,11 @@ class TestWGPUUniformBufferEdgeCases:
         gpu_system = self._create_gpu_lighting_system()
 
         light_data: list[float] = []
-        shadow_casters: list[float] = []
+        actor_shadows: list[float] = []
         viewport = Rect(0, 0, 80, 43)
 
         buffer = gpu_system._pack_uniform_data(
-            light_data, 0, shadow_casters, 0, viewport
+            light_data, 0, actor_shadows, 0, viewport
         )
 
         # sun_direction at offset 5168

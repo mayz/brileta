@@ -90,9 +90,8 @@ class GPULightingSystem(LightingSystem):
         self._cached_light_data: list[float] | None = None
         self._cached_light_revision: int = -1
 
-        # Cache for shadow casters
+        # Cache for actor shadow casters (invalidated by on_actor_moved)
         self._cached_shadow_casters: list[float] | None = None
-        self._cached_shadow_revision: int = -1
 
         # Sky exposure texture for directional lighting
         self._sky_exposure_texture: moderngl.Texture | None = None
@@ -104,6 +103,10 @@ class GPULightingSystem(LightingSystem):
 
         # Emission texture for light-emitting tiles (acid pools, hot coals, etc.)
         self._emission_texture: moderngl.Texture | None = None
+
+        # Shadow grid texture for terrain shadow casting
+        self._shadow_grid_texture: moderngl.Texture | None = None
+        self._cached_shadow_grid_revision: int = -1
 
         # Initialize GPU resources
         if not self._initialize_gpu_resources():
@@ -350,27 +353,23 @@ class GPULightingSystem(LightingSystem):
                     f"limiting to {self.MAX_LIGHTS}"
                 )
 
-            # Collect shadow casters globally (more efficient than per-light collection)
-            # Use game_map.structural_revision since shadow casters only change
-            # when map tiles change, not on every lighting update
-            game_map = self.game_world.game_map
-            structural_rev = game_map.structural_revision if game_map else -1
-            if (
-                self._cached_shadow_revision != structural_rev
-                or self._cached_shadow_casters is None
-            ):
-                self._cached_shadow_casters = self._collect_shadow_casters_global(
+            # Collect actor shadow casters (terrain shadows now use grid texture)
+            # Cache is invalidated by on_actor_moved() when actors move
+            if self._cached_shadow_casters is None:
+                self._cached_shadow_casters = self._collect_actor_shadow_casters(
                     viewport_bounds
                 )
-                self._cached_shadow_revision = structural_rev
 
-            shadow_casters = self._cached_shadow_casters
-            shadow_caster_count = len(shadow_casters) // 2  # 2 floats per caster
+            actor_shadow_casters = self._cached_shadow_casters
+            actor_shadow_count = len(actor_shadow_casters) // 2  # 2 floats per actor
 
             # Update sky exposure texture if needed
             self._update_sky_exposure_texture()
             self._update_explored_texture()
             self._update_visible_texture()
+
+            # Update shadow grid texture for terrain shadows
+            self._update_shadow_grid_texture()
 
             # Update emission texture for light-emitting tiles
             self._update_emission_texture(viewport_bounds)
@@ -395,14 +394,14 @@ class GPULightingSystem(LightingSystem):
             light_data_hash = hash(
                 (
                     tuple(light_data[: light_count * 12]),
-                    tuple(shadow_casters),
+                    tuple(actor_shadow_casters),
                     self._time,
                 )
             )
             if self._last_light_data_hash != light_data_hash:
                 self._set_lighting_uniforms(light_data, light_count, viewport_bounds)
-                self._set_shadow_uniforms(
-                    shadow_casters, shadow_caster_count, viewport_bounds
+                self._set_actor_shadow_uniforms(
+                    actor_shadow_casters, actor_shadow_count
                 )
                 self._set_directional_light_uniforms()
                 self._last_light_data_hash = light_data_hash
@@ -420,6 +419,11 @@ class GPULightingSystem(LightingSystem):
             if self._emission_texture is not None:
                 self._emission_texture.use(location=2)
                 self._uniform("u_emission_map").value = 2
+
+            # Bind shadow grid texture to texture unit 3
+            if self._shadow_grid_texture is not None:
+                self._shadow_grid_texture.use(location=3)
+                self._uniform("u_shadow_grid").value = 3
 
             # Render full-screen quad
             self._fullscreen_vao.render()
@@ -518,31 +522,36 @@ class GPULightingSystem(LightingSystem):
             viewport_bounds.height,
         )
 
-    def _set_shadow_uniforms(
+    def _set_actor_shadow_uniforms(
         self,
-        shadow_casters: list[float],
-        shadow_caster_count: int,
-        viewport_bounds: Rect,
+        actor_positions: list[float],
+        actor_count: int,
     ) -> None:
-        """Set shadow caster uniforms for the fragment shader."""
+        """Set actor shadow uniforms for the fragment shader.
+
+        Terrain shadows are handled by the shadow grid texture. This sets
+        uniforms for dynamic actor shadows (NPCs that block light).
+        """
         from catley.config import SHADOW_FALLOFF, SHADOW_INTENSITY, SHADOW_MAX_LENGTH
 
-        # Maximum number of shadow casters we can handle
-        MAX_SHADOW_CASTERS = 64
+        # Maximum actors the shader can handle (64 actors * 2 floats = 128)
+        MAX_ACTOR_SHADOWS = 64
 
-        # Prepare shadow caster position arrays (pad to MAX_SHADOW_CASTERS)
-        shadow_positions = [0.0] * (MAX_SHADOW_CASTERS * 2)
+        # Prepare actor position arrays (pad to MAX_ACTOR_SHADOWS)
+        positions = [0.0] * (MAX_ACTOR_SHADOWS * 2)
 
-        # Fill in actual shadow caster data
-        actual_count = min(shadow_caster_count, MAX_SHADOW_CASTERS)
+        # Fill in actual actor data
+        actual_count = min(actor_count, MAX_ACTOR_SHADOWS)
         for i in range(actual_count):
-            shadow_positions[i * 2] = shadow_casters[i * 2]  # x
-            shadow_positions[i * 2 + 1] = shadow_casters[i * 2 + 1]  # y
+            positions[i * 2] = actor_positions[i * 2]  # x
+            positions[i * 2 + 1] = actor_positions[i * 2 + 1]  # y
 
-        # Set shadow uniforms
+        # Set actor shadow uniforms
         assert self._fragment_program is not None
-        self._uniform("u_shadow_caster_count").value = actual_count
-        self._uniform("u_shadow_caster_positions").value = shadow_positions
+        self._uniform("u_actor_shadow_count").value = actual_count
+        self._uniform("u_actor_shadow_positions").value = positions
+
+        # Set general shadow config (used by both terrain and actor shadows)
         self._uniform("u_shadow_intensity").value = SHADOW_INTENSITY
         self._uniform("u_shadow_max_length").value = SHADOW_MAX_LENGTH
         self._uniform("u_shadow_falloff_enabled").value = SHADOW_FALLOFF
@@ -664,32 +673,27 @@ class GPULightingSystem(LightingSystem):
 
         return light_data
 
-    def _collect_shadow_casters_global(self, viewport_bounds: Rect) -> list[float]:
-        """Collect all shadow casters in the viewport globally.
+    def _collect_actor_shadow_casters(self, viewport_bounds: Rect) -> list[float]:
+        """Collect actor shadow casters in the viewport.
 
-        This method replaces the inefficient per-light approach with a single
-        global collection, letting the GPU shader handle per-light relevance.
-
-        Uses vectorized numpy operations on the cached casts_shadows map to
-        eliminate 23M per-tile lookups per session.
-
-        Shadow casters are sorted by distance from viewport center so that
-        nearby casters get priority when the shader's 64-caster limit is hit.
+        Terrain shadows are now handled by the shadow grid texture. This method
+        only collects actors (NPCs) that cast shadows, for the small actor
+        shadow uniform array in the shader.
 
         Args:
             viewport_bounds: The viewport bounds for rendering
 
         Returns:
-            Flat list of floats representing shadow caster data (2 floats per caster)
-            Format: position.xy for each shadow caster in viewport
+            Flat list of floats representing actor positions (2 floats per actor)
+            Format: position.xy for each shadow-casting actor, max 16 actors
         """
         from catley.config import SHADOW_MAX_LENGTH, SHADOWS_ENABLED
 
         if not SHADOWS_ENABLED:
             return []
 
-        # Collect all shadow casters as (x, y) tuples first, then sort by distance
-        all_casters: list[tuple[float, float]] = []
+        # Maximum actors the shader can handle
+        MAX_ACTOR_SHADOWS = 64
 
         # Expand viewport bounds to include potential shadow influence
         expanded_bounds = Rect.from_bounds(
@@ -699,7 +703,9 @@ class GPULightingSystem(LightingSystem):
             y2=viewport_bounds.y2 + SHADOW_MAX_LENGTH,
         )
 
-        # Get shadow-casting actors in expanded viewport
+        # Collect shadow-casting actors in expanded viewport
+        actor_positions: list[float] = []
+
         if self.game_world.actor_spatial_index:
             actors = self.game_world.actor_spatial_index.get_in_bounds(
                 int(expanded_bounds.x1),
@@ -708,49 +714,15 @@ class GPULightingSystem(LightingSystem):
                 int(expanded_bounds.y2),
             )
 
-            all_casters.extend(
-                (float(actor.x), float(actor.y))
-                for actor in actors
-                if hasattr(actor, "blocks_movement") and actor.blocks_movement
-            )
+            count = 0
+            for actor in actors:
+                if count >= MAX_ACTOR_SHADOWS:
+                    break
+                if hasattr(actor, "blocks_movement") and actor.blocks_movement:
+                    actor_positions.extend([float(actor.x), float(actor.y)])
+                    count += 1
 
-        # Get shadow-casting tiles using vectorized lookup on cached map
-        game_map = self.game_world.game_map
-        if game_map:
-            # Calculate tile bounds within expanded viewport
-            min_x = max(0, int(expanded_bounds.x1))
-            max_x = min(game_map.width, int(expanded_bounds.x2) + 1)
-            min_y = max(0, int(expanded_bounds.y1))
-            max_y = min(game_map.height, int(expanded_bounds.y2) + 1)
-
-            # Use cached casts_shadows map and vectorized lookup
-            casts_shadows_slice = game_map.casts_shadows[min_x:max_x, min_y:max_y]
-            shadow_coords = np.argwhere(casts_shadows_slice)
-
-            # Convert local coordinates back to world coordinates
-            for local_x, local_y in shadow_coords:
-                all_casters.append((float(min_x + local_x), float(min_y + local_y)))
-
-        # Sort by distance from viewport center so nearby casters get priority
-        # when the shader's 64-caster limit is hit.
-        # NOTE: This is O(n log n) per update.
-        #
-        # TODO: This sorting is a band-aid for the 64-caster uniform array limit.
-        # Better solutions:
-        # 1. Increase limit to 256+ (simple, most GPUs handle this fine)
-        # 2. Use SSBOs for unlimited dynamic arrays (requires OpenGL 4.3+)
-        # 3. Encode positions in a texture (textures can be huge)
-        # 4. Smarter culling based on sun direction, not just distance
-        center_x = viewport_bounds.x1 + viewport_bounds.width / 2
-        center_y = viewport_bounds.y1 + viewport_bounds.height / 2
-        all_casters.sort(key=lambda c: (c[0] - center_x) ** 2 + (c[1] - center_y) ** 2)
-
-        # Flatten to [x, y, x, y, ...] format
-        shadow_casters: list[float] = []
-        for x, y in all_casters:
-            shadow_casters.extend([x, y])
-
-        return shadow_casters
+        return actor_positions
 
     def _update_sky_exposure_texture(self) -> None:
         """Update the sky exposure texture from the game map's region data.
@@ -996,6 +968,50 @@ class GPULightingSystem(LightingSystem):
         assert self._emission_texture is not None
         self._emission_texture.write(emission_data.tobytes())
 
+    def _update_shadow_grid_texture(self) -> None:
+        """Update the shadow grid texture from the game map's casts_shadows array.
+
+        Creates a texture where each pixel indicates whether a tile blocks light.
+        Used by the shader for ray marching to determine terrain shadows.
+        Only recreates when map structure changes.
+        """
+        game_map = self.game_world.game_map
+        if game_map is None:
+            return
+
+        # Check if we need to update based on map structural revision
+        if (
+            self._cached_shadow_grid_revision == game_map.structural_revision
+            and self._shadow_grid_texture is not None
+        ):
+            return  # No update needed
+
+        # Convert boolean array to uint8 (0 or 255)
+        # Transpose to match texture coordinate system (width, height)
+        shadow_data = (game_map.casts_shadows.T * 255).astype(np.uint8)
+
+        # Release old texture if it exists
+        if self._shadow_grid_texture is not None:
+            self._shadow_grid_texture.release()
+
+        # Create new texture with shadow grid data
+        assert self.mgl_context is not None
+        self._shadow_grid_texture = self.mgl_context.texture(
+            (game_map.width, game_map.height),
+            components=1,  # Single channel (R)
+            dtype="f1",  # unsigned byte normalized to 0.0-1.0
+        )
+        # CRITICAL: Use nearest-neighbor filtering for pixel-exact shadow boundaries
+        # Linear filtering would cause shadow edges to bleed between tiles
+        self._shadow_grid_texture.filter = (
+            self.mgl_context.NEAREST,
+            self.mgl_context.NEAREST,
+        )
+        self._shadow_grid_texture.write(shadow_data.tobytes())
+
+        # Update cached revision
+        self._cached_shadow_grid_revision = game_map.structural_revision
+
     def on_light_added(self, light: LightSource) -> None:
         """Notification that a light has been added."""
         # GPU system doesn't need caching invalidation like CPU system
@@ -1041,6 +1057,8 @@ class GPULightingSystem(LightingSystem):
             self._visible_texture.release()
         if self._emission_texture is not None:
             self._emission_texture.release()
+        if self._shadow_grid_texture is not None:
+            self._shadow_grid_texture.release()
 
         # Clear cached data
         self._cached_light_data = None

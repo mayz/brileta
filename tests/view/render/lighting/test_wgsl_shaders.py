@@ -59,18 +59,14 @@ class TestWGSLLightingShaders:
         with shader_path.open() as f:
             shader_source = f.read()
 
-        # Check for critical shadow direction calculation preservation
-        # The WGPU migration plan specifically calls out sign-based direction vectors
-        expected_select = (
-            "select(select(0.0, 1.0, uniforms.sun_direction.x < 0.0), "
-            "-1.0, uniforms.sun_direction.x > 0.0)"
-        )
-        assert expected_select in shader_source, (
+        # Check for sign-based stepping in directional shadow
+        # Both terrain and actor shadows use sign-based direction vectors
+        assert "step_dir.x = select" in shader_source, (
             "Sign-based shadow direction calculation not preserved"
         )
 
         # Check for discrete tile-based stepping preservation
-        assert "discrete tile-based stepping" in shader_source, (
+        assert "discrete" in shader_source.lower(), (
             "Comment about discrete tile-based stepping missing"
         )
 
@@ -79,18 +75,22 @@ class TestWGSLLightingShaders:
             "Basic lighting distance calculation not preserved"
         )
 
-        # Check for critical algorithm preservation comments
-        assert "CRITICAL:" in shader_source, (
-            "Critical algorithm preservation markers missing"
+        # Verify texture-based terrain shadow functions exist
+        assert "computePointLightShadow" in shader_source, (
+            "Texture-based point light shadow calculation missing"
+        )
+        assert "computeDirectionalShadow" in shader_source, (
+            "Texture-based directional shadow calculation missing"
         )
 
-        # Verify shadow attenuation functions exist
-        assert "calculateShadowAttenuation" in shader_source, (
-            "Shadow attenuation calculation missing"
+        # Verify actor shadow functions exist
+        assert "computeActorShadow" in shader_source, "Actor shadow calculation missing"
+        assert "computeActorDirectionalShadow" in shader_source, (
+            "Actor directional shadow calculation missing"
         )
-        assert "calculateDirectionalShadowAttenuation" in shader_source, (
-            "Directional shadow attenuation calculation missing"
-        )
+
+        # Verify shadow grid texture is used
+        assert "shadow_grid" in shader_source, "Shadow grid texture binding missing"
 
     def test_shader_structure_matches_glsl_original(self):
         """Test that WGSL shader preserves the structure of the original GLSL."""
@@ -116,20 +116,28 @@ class TestWGSLLightingShaders:
         assert "noise2d" in wgsl_source, "noise2d function missing in WGSL"
         assert "noise2d" in glsl_frag_source, "Original GLSL should have noise2d"
 
-        # Shadow calculations
-        assert "calculateShadowAttenuation" in wgsl_source, (
-            "Shadow attenuation missing in WGSL"
+        # Shadow calculations - both backends use texture-based shadow grid
+        assert "computePointLightShadow" in glsl_frag_source, (
+            "GLSL should have texture-based point light shadows"
         )
-        assert "calculateShadowAttenuation" in glsl_frag_source, (
-            "Original GLSL should have shadow attenuation"
+        assert "computePointLightShadow" in wgsl_source, (
+            "WGSL should have texture-based point light shadows"
         )
 
-        # Directional shadows
-        assert "calculateDirectionalShadowAttenuation" in wgsl_source, (
-            "Directional shadows missing in WGSL"
+        # Directional shadows - both backends use texture marching
+        assert "computeDirectionalShadow" in glsl_frag_source, (
+            "GLSL should have texture-based directional shadows"
         )
-        assert "calculateDirectionalShadowAttenuation" in glsl_frag_source, (
-            "Original GLSL should have directional shadows"
+        assert "computeDirectionalShadow" in wgsl_source, (
+            "WGSL should have texture-based directional shadows"
+        )
+
+        # Actor shadows - both backends have actor shadow functions
+        assert "computeActorShadow" in glsl_frag_source, (
+            "GLSL should have actor shadow function"
+        )
+        assert "computeActorShadow" in wgsl_source, (
+            "WGSL should have actor shadow function"
         )
 
         # Flicker effects

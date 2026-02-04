@@ -34,12 +34,12 @@ struct LightingUniforms {
     light_min_brightness: array<vec4f, 32>,    // brightness in .x, yzw unused
     light_max_brightness: array<vec4f, 32>,    // brightness in .x, yzw unused
     
-    // Shadow casting uniforms
-    shadow_caster_count: i32,
+    // Actor shadow uniforms (terrain shadows use shadow_grid texture)
+    actor_shadow_count: i32,
     shadow_intensity: f32,
     shadow_max_length: i32,
     shadow_falloff_enabled: u32,
-    shadow_caster_positions: array<vec4f, 64>, // xy in .xy, zw unused
+    actor_shadow_positions: array<vec4f, 64>, // xy in .xy, zw unused
     
     // Directional light uniforms (sun/moon)
     sun_direction: vec2f,
@@ -57,6 +57,7 @@ struct LightingUniforms {
 @group(0) @binding(22) var sky_exposure_map: texture_2d<f32>;
 @group(0) @binding(23) var texture_sampler: sampler;
 @group(0) @binding(24) var emission_map: texture_2d<f32>;
+@group(0) @binding(25) var shadow_grid: texture_2d<f32>;
 
 @vertex
 fn vs_main(input: VertexInput) -> VertexOutput {
@@ -102,171 +103,183 @@ fn noise2d(coord: vec2f) -> f32 {
     return mix(mix(a_fract, b_fract, u.x), mix(c_fract, d_fract, u.x), u.y) * 2.0 - 1.0;  // Range [-1, 1]
 }
 
-// Calculate shadow attenuation from shadow casters - EXACT port from GLSL
-fn calculateShadowAttenuation(world_pos: vec2f, light_pos: vec2f, light_radius: f32) -> f32 {
-    var shadow_factor = 1.0;  // No shadow by default
-    
-    // Early exit: Skip shadow computation if pixel is too far from light
-    let distance_to_light = distance(world_pos, light_pos);
-    let max_shadow_influence = light_radius + f32(uniforms.shadow_max_length);
-    if (distance_to_light > max_shadow_influence) {
-        return 1.0; // No shadow influence
+// Compute point light shadow by marching toward the light and sampling shadow grid texture
+fn computePointLightShadow(tile_pos: vec2f, light_pos: vec2f, light_radius: f32) -> f32 {
+    let to_light = light_pos - tile_pos;
+    let dist_to_light = length(to_light);
+
+    // Early exit if outside light influence
+    if (dist_to_light > light_radius + f32(uniforms.shadow_max_length)) {
+        return 1.0;
     }
-    
-    // Check each shadow caster
-    for (var i = 0; i < uniforms.shadow_caster_count && i < 64; i++) {
-        let caster_pos = uniforms.shadow_caster_positions[i].xy;
-        
-        // Calculate displacement from light to caster (CPU algorithm)
-        let light_to_caster = caster_pos - light_pos;
-        let dx = light_to_caster.x;
-        let dy = light_to_caster.y;
-        
-        // Use Chebyshev distance like CPU (max of absolute values)
-        let caster_distance = max(abs(dx), abs(dy));
-        if (caster_distance < 0.1) {
+
+    // Use sign-based stepping (matches previous discrete behavior)
+    var step_dir: vec2f;
+    step_dir.x = select(select(0.0, -1.0, to_light.x < 0.0), 1.0, to_light.x > 0.0);
+    step_dir.y = select(select(0.0, -1.0, to_light.y < 0.0), 1.0, to_light.y > 0.0);
+
+    var pos = tile_pos;
+    let steps = min(i32(max(abs(to_light.x), abs(to_light.y))), uniforms.shadow_max_length);
+    let map_size = vec2i(uniforms.map_size);
+
+    for (var i = 1; i <= steps; i++) {
+        pos += step_dir;
+
+        // Stop if we've reached or passed the light
+        let to_light_now = light_pos - pos;
+        if (dot(to_light_now, to_light) <= 0.0) {
+            break;  // Passed the light, no shadow
+        }
+
+        let texel = vec2i(pos);
+        if (texel.x >= 0 && texel.x < map_size.x &&
+            texel.y >= 0 && texel.y < map_size.y) {
+            let blocks = textureLoad(shadow_grid, texel, 0).r;
+            if (blocks > 0.5) {
+                // Blocker between pixel and light - calculate shadow with falloff
+                var distance_falloff = 1.0;
+                if (uniforms.shadow_falloff_enabled != 0u) {
+                    distance_falloff = 1.0 - (f32(i - 1) / f32(uniforms.shadow_max_length));
+                }
+                return 1.0 - uniforms.shadow_intensity * distance_falloff;
+            }
+        }
+    }
+
+    return 1.0;  // No blockers found
+}
+
+// Compute actor shadow attenuation (for NPCs that block light)
+fn computeActorShadow(tile_pos: vec2f, light_pos: vec2f, light_radius: f32) -> f32 {
+    var shadow_factor = 1.0;
+
+    for (var i = 0; i < uniforms.actor_shadow_count && i < 64; i++) {
+        let actor_pos = uniforms.actor_shadow_positions[i].xy;
+
+        // Calculate displacement from light to actor
+        let light_to_actor = actor_pos - light_pos;
+        let dx = light_to_actor.x;
+        let dy = light_to_actor.y;
+
+        // Use Chebyshev distance
+        let actor_distance = max(abs(dx), abs(dy));
+        if (actor_distance < 0.1) {
             continue;  // Skip if too close
         }
-        
-        // Calculate shadow direction using step function like CPU
-        // CRITICAL: Sign-based (not normalized) direction vectors - preserved exactly
+
+        // Calculate shadow direction using step function
         var shadow_dx = 0.0;
         var shadow_dy = 0.0;
         if (dx > 0.0) { shadow_dx = 1.0; } else if (dx < 0.0) { shadow_dx = -1.0; }
         if (dy > 0.0) { shadow_dy = 1.0; } else if (dy < 0.0) { shadow_dy = -1.0; }
-        
-        // Check if world_pos is in the shadow path from caster
+
+        // Check if tile_pos is in the shadow path from actor
         let max_shadow_length = f32(uniforms.shadow_max_length);
         var in_shadow = false;
-        var shadow_intensity = 0.0;
-        
-        // Check each shadow position (matching CPU loop) - CRITICAL: discrete tile-based stepping
+        var shadow_intensity_val = 0.0;
+
         for (var j = 1; j <= i32(max_shadow_length) && j <= 3; j++) {
-            let shadow_pos = caster_pos + vec2f(shadow_dx * f32(j), shadow_dy * f32(j));
-            
-            // Check if world_pos matches this shadow position (core shadow)
-            if (abs(world_pos.x - shadow_pos.x) < 0.1 && abs(world_pos.y - shadow_pos.y) < 0.1) {
-                // Calculate falloff like CPU
+            let shadow_pos = actor_pos + vec2f(shadow_dx * f32(j), shadow_dy * f32(j));
+
+            // Check if tile_pos matches this shadow position
+            if (abs(tile_pos.x - shadow_pos.x) < 0.1 && abs(tile_pos.y - shadow_pos.y) < 0.1) {
                 var distance_falloff = 1.0;
-                if (uniforms.shadow_falloff_enabled != 0) {
+                if (uniforms.shadow_falloff_enabled != 0u) {
                     distance_falloff = 1.0 - (f32(j - 1) / max_shadow_length);
                 }
-                shadow_intensity = max(shadow_intensity, uniforms.shadow_intensity * distance_falloff);
+                shadow_intensity_val = max(shadow_intensity_val, uniforms.shadow_intensity * distance_falloff);
                 in_shadow = true;
             }
-            
-            // Check soft edges for first 2 shadow tiles (like CPU)
-            if (j <= 2) {
-                var edge_intensity = uniforms.shadow_intensity * 0.4; // 40% like CPU
-                if (uniforms.shadow_falloff_enabled != 0) {
-                    let distance_falloff = 1.0 - (f32(j - 1) / max_shadow_length);
-                    edge_intensity *= distance_falloff;
-                }
-                
-                // Check 8 adjacent/diagonal positions around core shadow
-                let edge_offsets = array<vec2f, 8>(
-                    vec2f(0.0, 1.0), vec2f(0.0, -1.0), vec2f(1.0, 0.0), vec2f(-1.0, 0.0),  // Adjacent
-                    vec2f(1.0, 1.0), vec2f(1.0, -1.0), vec2f(-1.0, 1.0), vec2f(-1.0, -1.0)   // Diagonal
-                );
-                
-                for (var k = 0; k < 8; k++) {
-                    let edge_pos = shadow_pos + edge_offsets[k];
-                    if (abs(world_pos.x - edge_pos.x) < 0.1 && abs(world_pos.y - edge_pos.y) < 0.1) {
-                        // Don't add edge if it's in the core shadow direction
-                        if (!(abs(edge_offsets[k].x - shadow_dx) < 0.1 && abs(edge_offsets[k].y - shadow_dy) < 0.1)) {
-                            shadow_intensity = max(shadow_intensity, edge_intensity);
-                            in_shadow = true;
-                        }
-                    }
-                }
-            }
         }
-        
+
         if (in_shadow) {
-            shadow_factor *= (1.0 - shadow_intensity);
+            shadow_factor *= (1.0 - shadow_intensity_val);
         }
     }
-    
+
     return shadow_factor;
 }
 
-// Calculate directional shadow attenuation (sun/moon shadows) - EXACT port preserving critical algorithm
-fn calculateDirectionalShadowAttenuation(world_pos: vec2f, sky_exposure: f32) -> f32 {
-    // Only apply directional shadows in outdoor areas
+// Compute directional shadow by marching toward sun and sampling shadow grid texture
+fn computeDirectionalShadow(tile_pos: vec2f, sky_exposure: f32) -> f32 {
     if (sky_exposure <= 0.1 || uniforms.sun_intensity <= 0.0) {
-        return 1.0; // No directional shadows
+        return 1.0;  // No shadow
     }
-    
+
+    // March toward sun (opposite of shadow cast direction)
+    // Use sign-based stepping to match discrete tile behavior
+    var step_dir: vec2f;
+    step_dir.x = select(select(0.0, -1.0, uniforms.sun_direction.x < 0.0), 1.0, uniforms.sun_direction.x > 0.0);
+    step_dir.y = select(select(0.0, -1.0, uniforms.sun_direction.y < 0.0), 1.0, uniforms.sun_direction.y > 0.0);
+
+    var pos = tile_pos;
     var shadow_factor = 1.0;
-    
-    // Get shadow direction using discrete steps (matching CPU algorithm)
-    // CRITICAL: CPU uses sign-based direction, not normalized vectors - preserved exactly
+    let map_size = vec2i(uniforms.map_size);
+
+    for (var i = 1; i <= uniforms.shadow_max_length; i++) {
+        pos += step_dir;
+
+        let texel = vec2i(pos);
+        if (texel.x < 0 || texel.x >= map_size.x || texel.y < 0 || texel.y >= map_size.y) {
+            break;
+        }
+
+        // Use textureLoad for pixel-exact sampling (no filtering)
+        let blocks = textureLoad(shadow_grid, texel, 0).r;
+        if (blocks > 0.5) {
+            // Found a blocker - calculate shadow with falloff
+            var distance_falloff = 1.0;
+            if (uniforms.shadow_falloff_enabled != 0u) {
+                distance_falloff = 1.0 - (f32(i - 1) / f32(uniforms.shadow_max_length));
+            }
+            shadow_factor *= (1.0 - uniforms.sun_shadow_intensity * distance_falloff);
+            break;  // First blocker wins for directional light
+        }
+    }
+
+    return shadow_factor;
+}
+
+// Compute actor shadows for directional (sun) light
+fn computeActorDirectionalShadow(tile_pos: vec2f, sky_exposure: f32) -> f32 {
+    if (sky_exposure <= 0.1 || uniforms.sun_intensity <= 0.0) {
+        return 1.0;
+    }
+
+    // Shadow direction is opposite of sun direction
     var shadow_dx = 0.0;
     var shadow_dy = 0.0;
-    
-    // CRITICAL: Sign-based (not normalized) direction vectors - preserved exactly from WGPU migration plan
-    shadow_dx = select(select(0.0, 1.0, uniforms.sun_direction.x < 0.0), -1.0, uniforms.sun_direction.x > 0.0);
-    shadow_dy = select(select(0.0, 1.0, uniforms.sun_direction.y < 0.0), -1.0, uniforms.sun_direction.y > 0.0);
-    
-    // Check each shadow caster for directional shadows
-    for (var i = 0; i < uniforms.shadow_caster_count && i < 64; i++) {
-        let caster_pos = uniforms.shadow_caster_positions[i].xy;
-        
-        // Check if world_pos is in the shadow path from this caster
-        let max_shadow_length = f32(uniforms.shadow_max_length); // Use actual config value
-        let base_intensity = uniforms.sun_shadow_intensity; // Sun shadows use separate intensity
-        
+    if (uniforms.sun_direction.x > 0.0) { shadow_dx = -1.0; } else if (uniforms.sun_direction.x < 0.0) { shadow_dx = 1.0; }
+    if (uniforms.sun_direction.y > 0.0) { shadow_dy = -1.0; } else if (uniforms.sun_direction.y < 0.0) { shadow_dy = 1.0; }
+
+    var shadow_factor = 1.0;
+
+    for (var i = 0; i < uniforms.actor_shadow_count && i < 64; i++) {
+        let actor_pos = uniforms.actor_shadow_positions[i].xy;
+
+        // Check if tile_pos is in the shadow path from this actor
+        let max_shadow_length = f32(uniforms.shadow_max_length);
         var in_shadow = false;
-        var shadow_intensity = 0.0;
-        
-        // Cast shadow using discrete tile steps (matching CPU) - CRITICAL: discrete tile-based stepping
+        var shadow_intensity_val = 0.0;
+
         for (var j = 1; j <= i32(max_shadow_length); j++) {
-            // Use integer steps like CPU does
-            let shadow_pos = caster_pos + vec2f(shadow_dx * f32(j), shadow_dy * f32(j));
-            
-            // Check if world_pos matches this shadow position (core shadow)
-            if (abs(world_pos.x - shadow_pos.x) < 0.1 && abs(world_pos.y - shadow_pos.y) < 0.1) {
-                // Calculate falloff with distance
+            let shadow_pos = actor_pos + vec2f(shadow_dx * f32(j), shadow_dy * f32(j));
+
+            if (abs(tile_pos.x - shadow_pos.x) < 0.1 && abs(tile_pos.y - shadow_pos.y) < 0.1) {
                 var distance_falloff = 1.0;
-                if (uniforms.shadow_falloff_enabled != 0) {
+                if (uniforms.shadow_falloff_enabled != 0u) {
                     distance_falloff = 1.0 - (f32(j - 1) / max_shadow_length);
                 }
-                shadow_intensity = max(shadow_intensity, base_intensity * distance_falloff);
+                shadow_intensity_val = max(shadow_intensity_val, uniforms.sun_shadow_intensity * distance_falloff);
                 in_shadow = true;
             }
-            
-            // Add softer edges for first 2 shadow tiles (like CPU)
-            if (j <= 2) {
-                var edge_intensity = base_intensity * 0.4; // 40% like CPU
-                if (uniforms.shadow_falloff_enabled != 0) {
-                    let distance_falloff = 1.0 - (f32(j - 1) / max_shadow_length);
-                    edge_intensity *= distance_falloff;
-                }
-                
-                // Check 8 adjacent/diagonal positions (matching CPU)
-                let edge_offsets = array<vec2f, 8>(
-                    vec2f(0.0, 1.0), vec2f(0.0, -1.0), vec2f(1.0, 0.0), vec2f(-1.0, 0.0),  // Adjacent
-                    vec2f(1.0, 1.0), vec2f(1.0, -1.0), vec2f(-1.0, 1.0), vec2f(-1.0, -1.0)   // Diagonal
-                );
-                
-                for (var k = 0; k < 8; k++) {
-                    let edge_pos = shadow_pos + edge_offsets[k];
-                    if (abs(world_pos.x - edge_pos.x) < 0.1 && abs(world_pos.y - edge_pos.y) < 0.1) {
-                        // Don't add edge if it's in the core shadow direction
-                        if (!(abs(edge_offsets[k].x - shadow_dx) < 0.1 && abs(edge_offsets[k].y - shadow_dy) < 0.1)) {
-                            shadow_intensity = max(shadow_intensity, edge_intensity);
-                            in_shadow = true;
-                        }
-                    }
-                }
-            }
         }
-        
+
         if (in_shadow) {
-            shadow_factor *= (1.0 - shadow_intensity);
+            shadow_factor *= (1.0 - shadow_intensity_val);
         }
     }
-    
+
     return shadow_factor;
 }
 
@@ -335,7 +348,7 @@ fn calculateEmissionContribution(uv: vec2f) -> vec3f {
 fn fs_main(input: VertexOutput) -> @location(0) vec4f {
     var world_pos = input.world_pos;
     let tile_pos = floor(world_pos);
-    
+
     if (uniforms.tile_aligned != 0u) {
         world_pos = tile_pos;
     }
@@ -368,9 +381,12 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4f {
         attenuation *= intensity;
         
         var light_contribution = light_color * attenuation;
-        
-        let shadow_attenuation = calculateShadowAttenuation(tile_pos, light_pos, light_radius);
-        light_contribution *= shadow_attenuation;
+
+        // Apply shadow attenuation using tile position for consistency
+        // Combine terrain shadows (from grid texture) with actor shadows
+        let terrain_shadow = computePointLightShadow(tile_pos, light_pos, light_radius);
+        let actor_shadow = computeActorShadow(tile_pos, light_pos, light_radius);
+        light_contribution *= terrain_shadow * actor_shadow;
 
         final_color = max(final_color, light_contribution);
     }
@@ -388,10 +404,13 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4f {
         if (sky_exposure > 0.1) {
             let effective_exposure = pow(sky_exposure, uniforms.sky_exposure_power);
             var sun_contribution = uniforms.sun_color * uniforms.sun_intensity * effective_exposure;
-            
-            let directional_shadow_attenuation = calculateDirectionalShadowAttenuation(tile_pos, sky_exposure);
-            sun_contribution *= directional_shadow_attenuation;
-            
+
+            // Apply directional shadows in outdoor areas
+            // Combine terrain shadows (from grid texture) with actor shadows
+            let terrain_dir_shadow = computeDirectionalShadow(tile_pos, sky_exposure);
+            let actor_dir_shadow = computeActorDirectionalShadow(tile_pos, sky_exposure);
+            sun_contribution *= terrain_dir_shadow * actor_dir_shadow;
+
             final_color = max(final_color, sun_contribution);
         } else if (sky_exposure > 0.0) {
             let spillover_multiplier = 3.0;
