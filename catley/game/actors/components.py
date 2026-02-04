@@ -1249,6 +1249,9 @@ class StatusEffectsComponent:
 
     def update_turn(self) -> None:
         """Apply per-turn logic and handle expiration for all effects."""
+        if not self._status_effects:
+            return  # Nothing to update, don't increment revision
+
         for effect in self._status_effects[:]:
             effect.apply_turn_effect(self.actor)
             if effect.duration > 0:
@@ -1256,6 +1259,9 @@ class StatusEffectsComponent:
             if effect.should_remove(self.actor):
                 effect.remove_effect(self.actor)
                 self._status_effects.remove(effect)
+
+        # Increment revision since effects were processed (duration may have
+        # ticked or effects may have been removed)
         self.actor.modifiers._increment_revision()
 
 

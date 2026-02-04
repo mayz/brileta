@@ -171,54 +171,48 @@ class ActionPanelView(TextView):
         self._previous_hotkeys = new_hotkeys
 
     def get_cache_key(self) -> tuple:
-        """Cache key for rendering invalidation."""
+        """Cache key for rendering invalidation.
+
+        This computes the derived content first, then returns a cache key based
+        on what will actually be rendered. This ensures the cache only misses
+        when the visible content changes, not when inputs change but produce
+        the same output (e.g., mouse moving between identical floor tiles).
+        """
+        # Compute the actual content that will be rendered
+        self._update_cached_data()
+
         gw = self.controller.gw
-        mouse_pos = str(gw.mouse_tile_location_on_map)
-
-        # Include selected target - this is the primary source when set
-        selected_target_key = ""
-        selected_target = self.controller.selected_target
-        if selected_target is not None:
-            selected_target_key = f"sel:{selected_target.x},{selected_target.y}"
-
-        # Include mouse target actor position - if they move, cache invalidates
-        target_actor_key = ""
-        if gw.mouse_tile_location_on_map:
-            mx, my = gw.mouse_tile_location_on_map
-            target, _items = self._resolve_hover_target(mx, my)
-            if target:
-                target_actor_key = f"{target.x},{target.y}"
-
         player = gw.player
-        player_pos = f"{player.x},{player.y}"
-        has_items_at_feet = gw.has_pickable_items_at_location(player.x, player.y)
-        current_tile_dimensions = self.controller.graphics.tile_dimensions
-        # Include inventory revision to detect weapon switches and inventory changes,
-        # ensuring the panel re-renders immediately when the player switches weapons.
-        inventory_revision = player.inventory.revision
-        # Include modifier revision to detect status effect changes (off-balance, etc.),
-        # ensuring probabilities update immediately when player state changes.
-        modifier_revision = player.modifiers.revision
 
-        # Include combat mode state for action-centric rendering
-        is_combat = self.controller.is_combat_mode()
-        selected_action_id = ""
-        if is_combat and self.controller.combat_mode.selected_action:
-            selected_action_id = self.controller.combat_mode.selected_action.id
+        # Build cache key from derived content, not raw inputs
+        # This way, two different mouse positions that produce identical
+        # panel content will have the same cache key (cache hit).
+
+        # Action IDs uniquely identify the actions list
+        action_ids = tuple(a.id for a in self._cached_actions)
+
+        # Items at player's feet affects the "At your feet" section
+        has_items_at_feet = gw.has_pickable_items_at_location(player.x, player.y)
+
+        # Countables at feet (in ItemPiles)
+        countables_key = ""
+        for actor in gw.actor_spatial_index.get_at_point(player.x, player.y):
+            if isinstance(actor, ItemPile):
+                # Include countable types and quantities
+                countables_key = str(sorted(actor.inventory.countables.items()))
+                break
 
         return (
-            mouse_pos,
-            selected_target_key,
-            target_actor_key,
-            player_pos,
+            self._cached_target_name,
+            self._cached_target_description,
+            self._cached_is_selected,
+            self._cached_default_action_id,
+            action_ids,
             has_items_at_feet,
-            current_tile_dimensions,
+            countables_key,
+            self.controller.graphics.tile_dimensions,
             self.view_width_px,
             self.view_height_px,
-            inventory_revision,
-            modifier_revision,
-            is_combat,
-            selected_action_id,
         )
 
     def set_bounds(self, x1: int, y1: int, x2: int, y2: int) -> None:
@@ -243,8 +237,8 @@ class ActionPanelView(TextView):
             0, 0, self.view_width_px, self.view_height_px, colors.BLACK, fill=True
         )
 
-        # Update cached data
-        self._update_cached_data()
+        # Note: _update_cached_data() is called in get_cache_key() before this,
+        # so _cached_target_name, _cached_actions, etc. are already current.
 
         # Get font metrics for proper line spacing
         ascent, descent = self.canvas.get_font_metrics()
