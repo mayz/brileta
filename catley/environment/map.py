@@ -155,7 +155,11 @@ class GameMap:
         return self._light_appearance_map_cache
 
     def _get_region_aware_appearance_map(self, is_light: bool) -> np.ndarray:
-        """Get appearance map with region-aware background colors for certain tiles."""
+        """Get appearance map with region-aware background colors for certain tiles.
+
+        Uses vectorized numpy operations: iterates over regions (small dict)
+        instead of tiles (large grid).
+        """
         # Start with the base appearance map from tile types
         if is_light:
             appearance_map = tile_types.get_light_appearance_map(self.tiles)
@@ -166,30 +170,22 @@ class GameMap:
         appearance_map = appearance_map.copy()
 
         # Apply region-aware background colors for specific tile types
-        for y in range(self.height):
-            for x in range(self.width):
-                tile_id = self.tiles[x, y]
+        # Boulders and floor tiles inherit ground color from their region.
+        # Doors use standard tile colors to match surrounding walls.
+        if self.regions:
+            # Mask for tiles that need regional coloring
+            special_mask = np.isin(self.tiles, [TileTypeID.BOULDER, TileTypeID.FLOOR])
 
-                # Modify boulders and floor tiles - inherit regional ground colors
-                # Doors should use their standard tile colors to match surrounding walls
-                if tile_id in (
-                    TileTypeID.BOULDER,
-                    TileTypeID.FLOOR,
-                ):
-                    region = self.get_region_at((x, y))
-                    if region:
-                        # Boulders and floor tiles inherit ground color from region
-                        ground_bg_color = self._get_region_ground_color(
-                            region, is_light
-                        )
+            # Apply colors per-region (iterate small dict, not large grid)
+            for region_id, region in self.regions.items():
+                # Combine tile type mask with region membership mask
+                region_mask = (self.tile_to_region_id == region_id) & special_mask
+                if not np.any(region_mask):
+                    continue
 
-                        # Update background color preserving char and foreground
-                        current_appearance = appearance_map[x, y]
-                        appearance_map[x, y] = (
-                            current_appearance["ch"],
-                            current_appearance["fg"],
-                            ground_bg_color,
-                        )
+                # Compute color once per region, apply to all matching tiles
+                ground_bg_color = self._get_region_ground_color(region, is_light)
+                appearance_map["bg"][region_mask] = ground_bg_color
 
         return appearance_map
 
