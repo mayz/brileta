@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import NewType
+from enum import Enum
+from typing import Literal, NewType
 
 # =============================================================================
 # TILE-BASED COORDINATE SYSTEMS (Always integers)
@@ -85,3 +86,38 @@ SoundId = str
 # Random seed for deterministic generation (map generation, etc.)
 # Can be an int for numeric seeds or a descriptive string like "burrito1".
 RandomSeed = int | str | None
+
+# =============================================================================
+# BACKEND CONFIGURATION
+# =============================================================================
+
+# Literal types for type-checked backend attributes.
+AppBackend = Literal["tcod", "glfw"]
+GraphicsBackend = Literal["tcod", "moderngl", "wgpu"]
+LightingBackend = Literal["moderngl", "wgpu"]
+
+
+class BackendConfig(Enum):
+    """Configuration for which backends to use for app, graphics, and lighting.
+
+    Options:
+    - MODERNGL: Fast startup (~350ms). Recommended for now.
+    - WGPU: Future-proof (WebGPU/Vulkan/Metal) but slow startup (~1200ms).
+    - TCOD_MODERNGL / TCOD_WGPU: Legacy tcod app backend with GPU lighting.
+    """
+
+    TCOD_MODERNGL = ("tcod", "tcod", "moderngl")
+    TCOD_WGPU = ("tcod", "tcod", "wgpu")
+    MODERNGL = ("glfw", "moderngl", "moderngl")
+    WGPU = ("glfw", "wgpu", "wgpu")
+
+    app: AppBackend
+    graphics: GraphicsBackend
+    lighting: LightingBackend
+
+    def __init__(
+        self, app: AppBackend, graphics: GraphicsBackend, lighting: LightingBackend
+    ) -> None:
+        self.app = app
+        self.graphics = graphics
+        self.lighting = lighting

@@ -6,13 +6,11 @@ Organized by functional area for easy maintenance.
 """
 
 import sys
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
 
 import tcod.constants
 
-from catley.types import RandomSeed
+from catley.types import BackendConfig, RandomSeed
 
 # =============================================================================
 # GENERAL
@@ -61,34 +59,7 @@ DEBUG_DISABLE_LIGHT_OVERLAY = False  # Show only dark/unlit background
 # BACKEND CONFIGURATION
 # =============================================================================
 
-# Options: "moderngl", "wgpu", "tcod-moderngl", "tcod-wgpu"
-# - "moderngl": Fast startup (~350ms). Recommended for now.
-# - "wgpu": Future-proof (WebGPU/Vulkan/Metal) but slow startup (~1200ms).
-# - "tcod-moderngl" / "tcod-wgpu": Legacy tcod app backend with GPU lighting.
-BackendName = Literal["moderngl", "wgpu", "tcod-moderngl", "tcod-wgpu"]
-
-BACKEND_NAME: BackendName = "moderngl"
-
-# --- Backend implementation - DO NOT CHANGE DIRECTLY ---
-
-
-@dataclass(frozen=True)
-class BackendConfig:
-    """Configuration for which backends to use for app, graphics, and lighting."""
-
-    app: Literal["tcod", "glfw"]
-    graphics: Literal["tcod", "moderngl", "wgpu"]
-    lighting: Literal["moderngl", "wgpu"]
-
-
-_BACKEND_CONFIGS: dict[BackendName, BackendConfig] = {
-    "tcod-moderngl": BackendConfig("tcod", "tcod", "moderngl"),
-    "tcod-wgpu": BackendConfig("tcod", "tcod", "wgpu"),
-    "moderngl": BackendConfig("glfw", "moderngl", "moderngl"),
-    "wgpu": BackendConfig("glfw", "wgpu", "wgpu"),
-}
-
-BACKEND: BackendConfig = _BACKEND_CONFIGS[BACKEND_NAME]
+BACKEND = BackendConfig.MODERNGL
 
 # ============================================================================
 # PERFORMANCE CONFIGURATION
