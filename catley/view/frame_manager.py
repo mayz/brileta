@@ -251,6 +251,22 @@ class FrameManager:
             description="CPU time for uploading light overlay texture to GPU",
             num_samples=100,
         )
+        # TextureRenderer breakdown metrics
+        live_variable_registry.register_metric(
+            "cpu.texture_renderer.fbo_bind_clear_ms",
+            description="Time to bind FBO and clear it",
+            num_samples=100,
+        )
+        live_variable_registry.register_metric(
+            "cpu.texture_renderer.vbo_update_ms",
+            description="Time to encode vertices and upload to VBO",
+            num_samples=100,
+        )
+        live_variable_registry.register_metric(
+            "cpu.texture_renderer.render_ms",
+            description="Time for the actual render pass",
+            num_samples=100,
+        )
         live_variable_registry.register_metric(
             "cpu.render.atmospheric_ms",
             description="CPU time for atmospheric effects (clouds, shadows)",

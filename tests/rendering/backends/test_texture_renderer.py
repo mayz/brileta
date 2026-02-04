@@ -185,14 +185,9 @@ class TestTextureRenderer:
         glyph_buffer.put_char(2, 1, ord("C"), (0, 0, 255, 255), (128, 128, 128, 255))
         renderer.render(glyph_buffer, mock_fbo)
 
-        # Buffer has changed, so partial VBO update is performed
-        # Should have exactly 1 VBO write for only the dirty tile (with offset)
+        # Buffer has changed, so full VBO update is performed
+        # (Partial updates were removed as vectorized full updates are faster)
         self.mock_vbo.write.assert_called_once()
-        # Verify that write was called with an offset (partial update)
-        call_args = self.mock_vbo.write.call_args
-        assert call_args.kwargs.get("offset") is not None, (
-            "VBO write should use offset for partial updates"
-        )
         mock_fbo.use.assert_called_once()
         mock_fbo.clear.assert_called_once()
 

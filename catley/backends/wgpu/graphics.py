@@ -248,7 +248,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         cache_key_suffix: str = "",
     ) -> wgpu.GPUTexture:
         """Render GlyphBuffer to a WGPU texture."""
-        if self.texture_renderer is None:
+        if self.texture_renderer is None or self.resource_manager is None:
             raise RuntimeError("Texture renderer not initialized")
 
         # Handle case where no CPU buffer is provided (e.g., WorldView)

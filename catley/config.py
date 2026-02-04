@@ -65,7 +65,9 @@ DEBUG_DISABLE_LIGHT_OVERLAY = False  # Show only dark/unlit background
 # - "moderngl": Fast startup (~350ms). Recommended for now.
 # - "wgpu": Future-proof (WebGPU/Vulkan/Metal) but slow startup (~1200ms).
 # - "tcod-moderngl" / "tcod-wgpu": Legacy tcod app backend with GPU lighting.
-BACKEND_NAME = "moderngl"
+BackendName = Literal["moderngl", "wgpu", "tcod-moderngl", "tcod-wgpu"]
+
+BACKEND_NAME: BackendName = "moderngl"
 
 # --- Backend implementation - DO NOT CHANGE DIRECTLY ---
 
@@ -79,16 +81,12 @@ class BackendConfig:
     lighting: Literal["moderngl", "wgpu"]
 
 
-_BACKEND_CONFIGS: dict[str, BackendConfig] = {
+_BACKEND_CONFIGS: dict[BackendName, BackendConfig] = {
     "tcod-moderngl": BackendConfig("tcod", "tcod", "moderngl"),
     "tcod-wgpu": BackendConfig("tcod", "tcod", "wgpu"),
     "moderngl": BackendConfig("glfw", "moderngl", "moderngl"),
     "wgpu": BackendConfig("glfw", "wgpu", "wgpu"),
 }
-
-if BACKEND_NAME not in _BACKEND_CONFIGS:
-    _valid = ", ".join(f'"{k}"' for k in _BACKEND_CONFIGS)
-    raise ValueError(f'Invalid BACKEND_NAME "{BACKEND_NAME}". Valid options: {_valid}')
 
 BACKEND: BackendConfig = _BACKEND_CONFIGS[BACKEND_NAME]
 

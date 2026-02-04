@@ -514,7 +514,11 @@ class ModernGLGraphicsContext(BaseGraphicsContext):
         secondary_override: moderngl.VertexArray | None = None,
         cache_key_suffix: str = "",
     ) -> Any:
-        """Renders a GlyphBuffer to a cached, correctly oriented texture."""
+        """Renders a GlyphBuffer to a cached texture.
+
+        Uses vectorized vertex encoding for fast updates. The texture is cached
+        by dimensions and cache_key_suffix to avoid per-frame allocations.
+        """
         # Calculate the pixel dimensions of the output texture
         width_px = glyph_buffer.width * self.tile_dimensions[0]
         height_px = glyph_buffer.height * self.tile_dimensions[1]
@@ -524,22 +528,20 @@ class ModernGLGraphicsContext(BaseGraphicsContext):
             empty_data = np.zeros((1, 1, 4), dtype=np.uint8)
             return self.mgl_context.texture((1, 1), 4, empty_data.tobytes())
 
-        # Get or create cached render target
-        target_fbo, target_texture = self._get_or_create_render_target(
+        # Get cached FBO for rendering
+        fbo, texture = self.resource_manager.get_or_create_simple_fbo(
             width_px, height_px, cache_key_suffix
         )
 
-        # Render into the cached FBO
-        # Pass along the optional overrides. If they are None, the
-        # TextureRenderer will use its internal defaults.
+        # Render to the FBO
         self.texture_renderer.render(
             glyph_buffer,
-            target_fbo,
+            fbo,
             vbo_override=buffer_override,
             vao_override=secondary_override,
         )
 
-        return target_texture
+        return texture
 
     def present_texture(
         self,

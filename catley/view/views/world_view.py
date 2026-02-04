@@ -248,14 +248,21 @@ class WorldView(View):
         Uses the actual visible bounds computed by get_visible_bounds() to ensure
         the cache key matches exactly what _render_map_unlit will render. The
         fractional camera offset is handled at presentation time for smooth scrolling.
+
+        IMPORTANT: The bounds must be integer tile positions, not sub-tile floats.
+        get_visible_bounds() uses round(camera.world_x/y) internally, so the bounds
+        only change when the camera crosses an integer tile boundary. This ensures
+        the cache hits during smooth sub-tile scrolling.
         """
         gw = self.controller.gw
         vs = self.viewport_system
 
         # Use actual visible bounds as the key - this is what determines
         # which tiles are rendered in _render_map_unlit via screen_to_world.
+        # Explicit int() casts document the intent and guard against any future
+        # changes that might introduce floats.
         bounds = vs.get_visible_bounds()
-        bounds_key = (bounds.x1, bounds.y1, bounds.x2, bounds.y2)
+        bounds_key = (int(bounds.x1), int(bounds.y1), int(bounds.x2), int(bounds.y2))
 
         map_key = gw.game_map.structural_revision
 
@@ -296,23 +303,22 @@ class WorldView(View):
         if config.DEBUG_DISABLE_BACKGROUND_CACHE:
             # Debug mode: always re-render (bypasses cache entirely)
             self._render_map_unlit()
-            with record_time_live_variable("cpu.render.bg_texture_upload_ms"):
-                texture = graphics.render_glyph_buffer_to_texture(
-                    self.map_glyph_buffer, cache_key_suffix="bg"
-                )
         else:
             cache_key = self._get_background_cache_key()
-            texture = self._texture_cache.get(cache_key)
+            cached = self._texture_cache.get(cache_key)
 
-            if texture is None:
-                # CACHE MISS: Re-render the static background
+            if cached is None:
+                # CACHE MISS: Re-render the static background GlyphBuffer
                 self._render_map_unlit()
+                # Store a marker (not the texture) to indicate this key was rendered
+                self._texture_cache.store(cache_key, True)
 
-                with record_time_live_variable("cpu.render.bg_texture_upload_ms"):
-                    texture = graphics.render_glyph_buffer_to_texture(
-                        self.map_glyph_buffer, cache_key_suffix="bg"
-                    )
-                self._texture_cache.store(cache_key, texture)
+        # Render the GlyphBuffer to a texture. The TextureRenderer's change
+        # detection skips re-rendering if the buffer hasn't changed.
+        with record_time_live_variable("cpu.render.bg_texture_upload_ms"):
+            texture = graphics.render_glyph_buffer_to_texture(
+                self.map_glyph_buffer, cache_key_suffix="bg"
+            )
 
         self._active_background_texture = texture
 

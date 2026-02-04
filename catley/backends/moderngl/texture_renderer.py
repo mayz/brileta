@@ -3,9 +3,9 @@
 import moderngl
 import numpy as np
 
-from catley.types import ViewportTilePos
 from catley.util.caching import ResourceCache
 from catley.util.glyph_buffer import GlyphBuffer
+from catley.util.live_vars import record_time_live_variable
 from catley.util.tilesets import unicode_to_cp437
 
 from . import get_uniform
@@ -113,6 +113,7 @@ class TextureRenderer:
     ) -> tuple[np.ndarray, int]:
         """
         Translates a GlyphBuffer into the pre-allocated vertex buffer.
+        Fully vectorized - no Python loops over cells.
 
         Args:
             glyph_buffer: The GlyphBuffer to encode
@@ -121,84 +122,113 @@ class TextureRenderer:
             Tuple of (vertex_data slice, vertex_count) for compatibility
         """
         w, h = glyph_buffer.data.shape
-        num_cells = h * w
+        num_cells = w * h
         if num_cells == 0:
             return np.array([], dtype=VERTEX_DTYPE), 0
 
-        # Verify buffer size is sufficient
-        max_vertices_needed = num_cells * 6  # 1 quad * 6 vertices per quad
-        if max_vertices_needed > len(self.cpu_vertex_buffer):
+        num_vertices = num_cells * 6
+        if num_vertices > len(self.cpu_vertex_buffer):
             raise ValueError(
-                f"GlyphBuffer too large: needs {max_vertices_needed} vertices, "
+                f"GlyphBuffer too large: needs {num_vertices} vertices, "
                 f"buffer has {len(self.cpu_vertex_buffer)}"
             )
 
         tile_w, tile_h = self.tile_dimensions
-        vertex_idx = 0
 
-        # Pre-normalize colors for all cells using vectorized operations
-        fg_colors_raw = glyph_buffer.data["fg"]
-        bg_colors_raw = glyph_buffer.data["bg"]
-        fg_colors_norm = fg_colors_raw.astype(np.float32) / 255.0
-        bg_colors_norm = bg_colors_raw.astype(np.float32) / 255.0
+        # Build coordinate grids matching original loop order (y outer, x inner).
+        # meshgrid with indexing="xy" gives (h, w) arrays where:
+        #   x_grid[y, x] = x, y_grid[y, x] = y
+        x_indices = np.arange(w, dtype=np.float32)
+        y_indices = np.arange(h, dtype=np.float32)
+        x_grid, y_grid = np.meshgrid(x_indices, y_indices, indexing="xy")
 
-        # Pre-calculate screen coordinates to avoid per-cell multiplication
-        screen_x_coords = np.arange(w) * tile_w
-        screen_y_coords = np.arange(h) * tile_h
-        screen_x2_coords = screen_x_coords + tile_w
-        screen_y2_coords = screen_y_coords + tile_h
+        # Screen coordinates for each cell corner - shape (h, w)
+        x1 = x_grid * tile_w
+        y1 = y_grid * tile_h
+        x2 = x1 + tile_w
+        y2 = y1 + tile_h
 
-        for y_console in range(h):
-            # Cache screen Y coordinates for this row
-            screen_y = screen_y_coords[y_console]
-            screen_y2 = screen_y2_coords[y_console]
+        # Swap axes from (w, h, ...) to (h, w, ...) to match grid order
+        fg_colors = (
+            np.swapaxes(glyph_buffer.data["fg"], 0, 1).astype(np.float32) / 255.0
+        )  # (h, w, 4)
+        bg_colors = (
+            np.swapaxes(glyph_buffer.data["bg"], 0, 1).astype(np.float32) / 255.0
+        )
 
-            for x_console in range(w):
-                cell = glyph_buffer.data[x_console, y_console]
-                char = cell["ch"]
+        # Convert characters to CP437 indices for UV lookup
+        chars = glyph_buffer.data["ch"].T  # (w, h) -> (h, w)
+        # Clamp to 0-255 for lookup table (rare chars > 255 become 0)
+        cp437_indices = np.where(
+            chars < 256, self.unicode_to_cp437_map[np.clip(chars, 0, 255)], 0
+        )
 
-                # Use pre-calculated screen coordinates
-                screen_x = screen_x_coords[x_console]
-                screen_x2 = screen_x2_coords[x_console]
+        # Look up UV coordinates: uv_map is (256, 4) -> (h, w, 4)
+        uvs = self.uv_map[cp437_indices]
+        u1 = uvs[..., 0]
+        v1 = uvs[..., 1]
+        u2 = uvs[..., 2]
+        v2 = uvs[..., 3]
 
-                # Get pre-normalized colors
-                fg_color_norm = fg_colors_norm[x_console, y_console]
-                bg_color_norm = bg_colors_norm[x_console, y_console]
+        # Reshape vertex buffer to (h, w, 6) - matches row-major iteration order
+        verts = self.cpu_vertex_buffer[:num_vertices].reshape(h, w, 6)
 
-                # Convert Unicode character to CP437 and get UV coordinates
-                # Fast array lookup for common characters, fallback for others
-                if char < 256:
-                    fg_char = self.unicode_to_cp437_map[char]
-                else:
-                    fg_char = unicode_to_cp437(char)  # Rare edge case
+        # Vertex 0: bottom-left
+        verts["position"][..., 0, 0] = x1
+        verts["position"][..., 0, 1] = y1
+        verts["uv"][..., 0, 0] = u1
+        verts["uv"][..., 0, 1] = v1
 
-                fg_uv = self.uv_map[fg_char]
-                u1, v1, u2, v2 = fg_uv
+        # Vertex 1: bottom-right
+        verts["position"][..., 1, 0] = x2
+        verts["position"][..., 1, 1] = y1
+        verts["uv"][..., 1, 0] = u2
+        verts["uv"][..., 1, 1] = v1
 
-                # Write ONE quad (6 vertices) with both colors
-                self.cpu_vertex_buffer[vertex_idx : vertex_idx + 6] = [
-                    ((screen_x, screen_y), (u1, v1), fg_color_norm, bg_color_norm),
-                    ((screen_x2, screen_y), (u2, v1), fg_color_norm, bg_color_norm),
-                    ((screen_x, screen_y2), (u1, v2), fg_color_norm, bg_color_norm),
-                    ((screen_x2, screen_y), (u2, v1), fg_color_norm, bg_color_norm),
-                    ((screen_x, screen_y2), (u1, v2), fg_color_norm, bg_color_norm),
-                    ((screen_x2, screen_y2), (u2, v2), fg_color_norm, bg_color_norm),
-                ]
-                vertex_idx += 6
+        # Vertex 2: top-left
+        verts["position"][..., 2, 0] = x1
+        verts["position"][..., 2, 1] = y2
+        verts["uv"][..., 2, 0] = u1
+        verts["uv"][..., 2, 1] = v2
 
-        return self.cpu_vertex_buffer[:vertex_idx], vertex_idx
+        # Vertex 3: bottom-right (same as 1)
+        verts["position"][..., 3, 0] = x2
+        verts["position"][..., 3, 1] = y1
+        verts["uv"][..., 3, 0] = u2
+        verts["uv"][..., 3, 1] = v1
+
+        # Vertex 4: top-left (same as 2)
+        verts["position"][..., 4, 0] = x1
+        verts["position"][..., 4, 1] = y2
+        verts["uv"][..., 4, 0] = u1
+        verts["uv"][..., 4, 1] = v2
+
+        # Vertex 5: top-right
+        verts["position"][..., 5, 0] = x2
+        verts["position"][..., 5, 1] = y2
+        verts["uv"][..., 5, 0] = u2
+        verts["uv"][..., 5, 1] = v2
+
+        # Colors are the same for all 6 vertices of each cell
+        # Broadcast (h, w, 4) to (h, w, 6, 4)
+        for i in range(6):
+            verts["fg_color"][..., i, :] = fg_colors
+            verts["bg_color"][..., i, :] = bg_colors
+
+        return self.cpu_vertex_buffer[:num_vertices], num_vertices
 
     def render(
         self,
         glyph_buffer: GlyphBuffer,
         target_fbo: moderngl.Framebuffer,
-        # NEW: Optional arguments for UI isolation
         vbo_override: moderngl.Buffer | None = None,
         vao_override: moderngl.VertexArray | None = None,
     ) -> None:
         """
         Renders a GlyphBuffer into the provided target framebuffer.
-        Uses TCOD-style change detection to only process dirty tiles.
+
+        Uses vectorized vertex encoding for fast updates. Skips rendering
+        if the buffer hasn't changed since last frame.
 
         Args:
             glyph_buffer: The GlyphBuffer to render
@@ -206,54 +236,39 @@ class TextureRenderer:
             vbo_override: Optional VBO to use instead of the default one
             vao_override: Optional VAO to use instead of the default one
         """
-        # --- Determine which VBO/VAO to use ---
         vbo_to_use = vbo_override if vbo_override is not None else self.vbo
         vao_to_use = vao_override if vao_override is not None else self.vao
-        # Calculate the pixel dimensions for the shader uniforms
+
         width_px = glyph_buffer.width * self.tile_dimensions[0]
         height_px = glyph_buffer.height * self.tile_dimensions[1]
 
         if width_px == 0 or height_px == 0:
-            return  # Nothing to render
+            return
 
         buffer_id = id(glyph_buffer)
         cache_buffer = self.buffer_cache.get(buffer_id)
-        needs_full_update = (
-            cache_buffer is None
-            or cache_buffer.width != glyph_buffer.width
-            or cache_buffer.height != glyph_buffer.height
-        )
 
-        if not needs_full_update:
-            dirty_tiles = self._find_dirty_tiles(glyph_buffer, cache_buffer)
-            if not dirty_tiles:
-                return  # Fast path for totally static buffers
-        else:
-            # If it's a full update, all tiles are dirty by definition.
-            dirty_tiles = [
-                (x, y)
-                for x in range(glyph_buffer.width)
-                for y in range(glyph_buffer.height)
-            ]
+        # Fast path: skip if buffer hasn't changed at all
+        if cache_buffer is not None and not self._has_changes(
+            glyph_buffer, cache_buffer
+        ):
+            return
 
-        # --- If we are here, something has changed and we need to draw ---
-        target_fbo.use()
-        # Clear to transparent black (0, 0, 0, 0) so alpha blending works correctly
-        # for overlay textures. Default clear color is opaque black which prevents
-        # transparent cells from being truly transparent.
-        target_fbo.clear(0.0, 0.0, 0.0, 0.0)
+        # --- Something changed - do a full re-render ---
+        with record_time_live_variable("cpu.texture_renderer.fbo_bind_clear_ms"):
+            target_fbo.use()
+            # Clear to transparent black (0, 0, 0, 0) so alpha blending works correctly
+            # for overlay textures. Default clear color is opaque black which prevents
+            # transparent cells from being truly transparent.
+            target_fbo.clear(0.0, 0.0, 0.0, 0.0)
 
-        if needs_full_update:
-            # A new buffer is being rendered, or dimensions changed.
-            # Do a full, single-write VBO update to overwrite any stale data.
+        with record_time_live_variable("cpu.texture_renderer.vbo_update_ms"):
             self._update_complete_vbo(glyph_buffer, vbo_to_use)
-        else:
-            # An existing buffer changed. Do a partial VBO update for performance.
-            self._update_dirty_tiles_in_vbo(glyph_buffer, dirty_tiles, vbo_to_use)
 
         # Now, render the entire buffer. The VBO is up-to-date.
         # Unchanged tiles use their old vertex data, dirty tiles have new data.
-        self._render_complete_buffer(glyph_buffer, target_fbo, vao_to_use)
+        with record_time_live_variable("cpu.texture_renderer.render_ms"):
+            self._render_complete_buffer(glyph_buffer, target_fbo, vao_to_use)
 
         # Update cache with current buffer state for the next frame's comparison.
         self._update_cache(glyph_buffer, buffer_id)
@@ -262,49 +277,36 @@ class TextureRenderer:
         if self.mgl_context.screen:
             self.mgl_context.screen.use()
 
-    def _find_dirty_tiles(
-        self, glyph_buffer: GlyphBuffer, cache_buffer: GlyphBuffer | None
-    ) -> list[ViewportTilePos]:
+    def _has_changes(
+        self, glyph_buffer: GlyphBuffer, cache_buffer: GlyphBuffer
+    ) -> bool:
         """
-        Find tiles that have changed since the last frame using vectorized comparison.
+        Check if the buffer has any changes since last frame.
 
         Args:
             glyph_buffer: Current frame's buffer
-            cache_buffer: Previous frame's buffer (None if first time)
+            cache_buffer: Previous frame's buffer
 
         Returns:
-            List of (x, y) coordinates of dirty tiles
+            True if any tiles changed, False if identical
         """
-        if cache_buffer is None:
-            # First time rendering this buffer - all tiles are dirty
-            return [
-                (x, y)
-                for x in range(glyph_buffer.width)
-                for y in range(glyph_buffer.height)
-            ]
-
-        # Check for dimension mismatch - if dimensions changed, all tiles are dirty
+        # Dimension mismatch means changes
         if (
             cache_buffer.width != glyph_buffer.width
             or cache_buffer.height != glyph_buffer.height
         ):
-            return [
-                (x, y)
-                for x in range(glyph_buffer.width)
-                for y in range(glyph_buffer.height)
-            ]
+            return True
 
-        # Vectorized comparison using NumPy - this is the key TCOD optimization
-        # Compare character, foreground, and background data
-        dirty_mask = (
-            (glyph_buffer.data["ch"] != cache_buffer.data["ch"])
-            | np.any(glyph_buffer.data["fg"] != cache_buffer.data["fg"], axis=-1)
-            | np.any(glyph_buffer.data["bg"] != cache_buffer.data["bg"], axis=-1)
-        )
+        # Vectorized comparison - check if ANY cell differs
+        has_char_diff = np.any(glyph_buffer.data["ch"] != cache_buffer.data["ch"])
+        if has_char_diff:
+            return True
 
-        # Get coordinates of dirty tiles
-        dirty_coords = np.argwhere(dirty_mask)
-        return [(int(coord[0]), int(coord[1])) for coord in dirty_coords.tolist()]
+        has_fg_diff = np.any(glyph_buffer.data["fg"] != cache_buffer.data["fg"])
+        if has_fg_diff:
+            return True
+
+        return bool(np.any(glyph_buffer.data["bg"] != cache_buffer.data["bg"]))
 
     def _update_complete_vbo(
         self, glyph_buffer: GlyphBuffer, vbo: moderngl.Buffer
@@ -317,113 +319,11 @@ class TextureRenderer:
             glyph_buffer: The GlyphBuffer to encode completely
             vbo: The VBO to update
         """
-        # Use the original complete encoding method
         vertex_data, vertex_count = self._encode_glyph_buffer_to_vertices(glyph_buffer)
 
         if vertex_count > 0:
-            # Update the entire VBO with new vertex data
+            vbo.orphan()
             vbo.write(vertex_data.tobytes())
-
-    def _update_dirty_tiles_in_vbo(
-        self,
-        glyph_buffer: GlyphBuffer,
-        dirty_tiles: list[ViewportTilePos],
-        vbo: moderngl.Buffer,
-    ) -> None:
-        """
-        Update only the dirty tiles in the VBO - the real TCOD optimization.
-        This generates vertices for only the changed tiles and updates their
-        specific sections of the VBO.
-
-        Args:
-            glyph_buffer: The current GlyphBuffer
-            dirty_tiles: List of (x, y) coordinates of tiles that changed
-            vbo: The VBO to update
-        """
-        for x, y in dirty_tiles:
-            # Generate vertices for just this one tile
-            tile_vertices = self._generate_vertices_for_single_tile(
-                x, y, glyph_buffer.data[x, y]
-            )
-
-            # Calculate VBO offset for this specific tile
-            # Each tile uses 6 vertices (1 quad * 6 vertices each)
-            tile_index = (y * glyph_buffer.width) + x
-            vbo_offset = tile_index * 6 * VERTEX_DTYPE.itemsize
-
-            # Update only this tile's section of the VBO
-            vbo.write(tile_vertices.tobytes(), offset=vbo_offset)
-
-    def _generate_vertices_for_single_tile(
-        self, x: int, y: int, tile_data: np.ndarray
-    ) -> np.ndarray:
-        """
-        Generate the 6 vertices (1 quad) for a single tile.
-        This is extracted from the main vertex generation logic.
-
-        Args:
-            x: Tile X coordinate
-            y: Tile Y coordinate
-            tile_data: Single tile's data from GlyphBuffer.data[x, y]
-
-        Returns:
-            Array of 6 vertices for this tile
-        """
-        # Extract tile data
-        char = int(tile_data["ch"])
-        fg_color = tile_data["fg"].astype(np.float32) / 255.0
-        bg_color = tile_data["bg"].astype(np.float32) / 255.0
-
-        # Convert character to CP437 for atlas lookup
-        if char < 256:
-            fg_char = self.unicode_to_cp437_map[char]
-        else:
-            fg_char = unicode_to_cp437(char)
-
-        # Get UV coordinates for foreground character
-        fg_uv = self.uv_map[fg_char]
-        u1, v1, u2, v2 = fg_uv
-
-        # Calculate screen position for this tile
-        screen_x = x * self.tile_dimensions[0]
-        screen_y = y * self.tile_dimensions[1]
-        tile_width, tile_height = self.tile_dimensions
-
-        # Create the 6 vertices for this tile (single quad with both colors)
-        vertices = np.zeros(6, dtype=VERTEX_DTYPE)
-
-        # Single quad (6 vertices) - structured assignment
-        vertices[0]["position"] = (screen_x, screen_y)
-        vertices[0]["uv"] = (u1, v1)
-        vertices[0]["fg_color"] = fg_color
-        vertices[0]["bg_color"] = bg_color
-
-        vertices[1]["position"] = (screen_x + tile_width, screen_y)
-        vertices[1]["uv"] = (u2, v1)
-        vertices[1]["fg_color"] = fg_color
-        vertices[1]["bg_color"] = bg_color
-
-        vertices[2]["position"] = (screen_x, screen_y + tile_height)
-        vertices[2]["uv"] = (u1, v2)
-        vertices[2]["fg_color"] = fg_color
-        vertices[2]["bg_color"] = bg_color
-
-        vertices[3]["position"] = (screen_x + tile_width, screen_y)
-        vertices[3]["uv"] = (u2, v1)
-        vertices[3]["fg_color"] = fg_color
-        vertices[3]["bg_color"] = bg_color
-
-        vertices[4]["position"] = (screen_x, screen_y + tile_height)
-        vertices[4]["uv"] = (u1, v2)
-        vertices[4]["fg_color"] = fg_color
-        vertices[4]["bg_color"] = bg_color
-
-        vertices[5]["position"] = (screen_x + tile_width, screen_y + tile_height)
-        vertices[5]["uv"] = (u2, v2)
-        vertices[5]["fg_color"] = fg_color
-        vertices[5]["bg_color"] = bg_color
-
-        return vertices
 
     def _render_complete_buffer(
         self,
