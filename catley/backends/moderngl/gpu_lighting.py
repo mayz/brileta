@@ -769,21 +769,33 @@ class GPULightingSystem(LightingSystem):
         ):
             return  # No update needed
 
-        # Create float32 array for sky exposure data
-        sky_exposure_data = np.zeros(
-            (game_map.height, game_map.width), dtype=np.float32
-        )
+        # Vectorized sky exposure calculation: iterate over regions (small dict)
+        # instead of tiles (large grid). Build a lookup array mapping region_id
+        # to sky_exposure, then use numpy advanced indexing.
+        if game_map.regions:
+            max_region_id = max(game_map.regions.keys())
+            # Lookup table: index = region_id, value = sky_exposure
+            exposure_lookup = np.zeros(max_region_id + 1, dtype=np.float32)
+            for region_id, region in game_map.regions.items():
+                exposure_lookup[region_id] = region.sky_exposure
 
-        # Populate sky exposure data from regions, respecting tile transparency
-        for y in range(game_map.height):
-            for x in range(game_map.width):
-                region = game_map.get_region_at((x, y))
-                if region:
-                    # Non-transparent tiles block all sunlight
-                    if game_map.transparent[x, y]:
-                        sky_exposure_data[y, x] = region.sky_exposure
-                    else:
-                        sky_exposure_data[y, x] = 0.0  # Block all sunlight
+            # Map tile_to_region_id to sky exposure values (clamp -1 to 0 for lookup)
+            region_ids = game_map.tile_to_region_id
+            clamped_ids = np.clip(region_ids, 0, max_region_id)
+            sky_values = exposure_lookup[clamped_ids]
+
+            # Tiles with no region (id < 0) get 0 exposure
+            sky_values = np.where(region_ids >= 0, sky_values, 0.0)
+
+            # Non-transparent tiles block all sunlight
+            sky_values = np.where(game_map.transparent, sky_values, 0.0)
+
+            # Transpose from (w,h) to (h,w) for texture format
+            sky_exposure_data = sky_values.T.astype(np.float32)
+        else:
+            sky_exposure_data = np.zeros(
+                (game_map.height, game_map.width), dtype=np.float32
+            )
 
         # Release old texture if it exists
         if self._sky_exposure_texture is not None:

@@ -833,6 +833,14 @@ class TestGPUDirectionalLighting:
             map_region_id=2, region_type="indoor", sky_exposure=0.0
         )
 
+        # Set up regions dict and tile_to_region_id array for vectorized lookup
+        self.game_map.regions = {1: self.outdoor_region, 2: self.indoor_region}
+        # Left half (x < 5) is outdoor (region 1), right half is indoor (region 2)
+        tile_to_region_id = np.zeros((10, 10), dtype=np.int32)
+        tile_to_region_id[:5, :] = 1  # outdoor
+        tile_to_region_id[5:, :] = 2  # indoor
+        self.game_map.tile_to_region_id = tile_to_region_id
+
         # Mock get_region_at to return appropriate regions
         def get_region_at(pos):
             x, _y = pos
@@ -1202,10 +1210,17 @@ class TestGPUDirectionalShadows:
         # Floor tiles don't cast shadows, so all False
         self.game_map.casts_shadows = np.full((10, 10), False, dtype=bool)
 
+        # Add transparent property for sky exposure texture generation
+        self.game_map.transparent = np.ones((10, 10), dtype=bool)
+
         # Create outdoor region for directional shadows
         self.outdoor_region = MapRegion.create_outdoor_region(
             map_region_id=1, region_type="outdoor", sky_exposure=1.0
         )
+
+        # Set up regions dict and tile_to_region_id array for vectorized lookup
+        self.game_map.regions = {1: self.outdoor_region}
+        self.game_map.tile_to_region_id = np.ones((10, 10), dtype=np.int32)
 
         # Mock get_region_at to return outdoor region
         self.game_map.get_region_at = Mock(return_value=self.outdoor_region)
@@ -1273,28 +1288,45 @@ class TestGPUDirectionalShadows:
         self.mock_mgl_context.vertex_array.return_value = Mock()
 
         # Create regions with different sky exposures
-        def get_region_by_exposure(pos):
-            from catley.environment.map import MapRegion
+        import numpy as np
 
+        from catley.environment.map import MapRegion
+
+        indoor_region = MapRegion.create_indoor_region(
+            map_region_id=1, region_type="indoor", sky_exposure=0.0
+        )
+        partial_region = MapRegion.create_outdoor_region(
+            map_region_id=2, region_type="partial", sky_exposure=0.05
+        )
+        outdoor_region = MapRegion.create_outdoor_region(
+            map_region_id=3, region_type="outdoor", sky_exposure=1.0
+        )
+
+        # Set up regions dict and tile_to_region_id for vectorized lookup
+        self.game_map.regions = {
+            1: indoor_region,
+            2: partial_region,
+            3: outdoor_region,
+        }
+        # x < 3: indoor (1), 3 <= x < 6: partial (2), x >= 6: outdoor (3)
+        tile_to_region_id = np.zeros((10, 10), dtype=np.int32)
+        tile_to_region_id[:3, :] = 1  # indoor
+        tile_to_region_id[3:6, :] = 2  # partial
+        tile_to_region_id[6:, :] = 3  # outdoor
+        self.game_map.tile_to_region_id = tile_to_region_id
+
+        def get_region_by_exposure(pos):
             x, _y = pos
             if x < 3:  # Left side: indoor (no sky exposure)
-                return MapRegion.create_indoor_region(
-                    map_region_id=1, region_type="indoor", sky_exposure=0.0
-                )
+                return indoor_region
             if x < 6:  # Middle: low sky exposure
-                return MapRegion.create_outdoor_region(
-                    map_region_id=2, region_type="partial", sky_exposure=0.05
-                )
+                return partial_region
             # Right side: outdoor (full sky exposure)
-            return MapRegion.create_outdoor_region(
-                map_region_id=3, region_type="outdoor", sky_exposure=1.0
-            )
+            return outdoor_region
 
         self.game_map.get_region_at = Mock(side_effect=get_region_by_exposure)
 
         # Set up transparency data for the map
-        import numpy as np
-
         transparency_map = np.ones((10, 10), dtype=bool)  # All transparent by default
         self.game_map.transparent = transparency_map
 
