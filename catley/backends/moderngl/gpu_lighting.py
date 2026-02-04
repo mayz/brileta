@@ -390,12 +390,14 @@ class GPULightingSystem(LightingSystem):
             fbo.use()
             fbo.clear(0.0, 0.0, 0.0, 1.0)
 
-            # Smart uniform updates - only update when lights or shadow casters change
+            # Only update uniforms when lights, casters, or viewport changes
             light_data_hash = hash(
                 (
                     tuple(light_data[: light_count * 12]),
                     tuple(actor_shadow_casters),
                     self._time,
+                    viewport_bounds.x1,
+                    viewport_bounds.y1,
                 )
             )
             if self._last_light_data_hash != light_data_hash:
@@ -513,13 +515,14 @@ class GPULightingSystem(LightingSystem):
         self._uniform("u_tile_aligned").value = True
 
         # Set viewport uniforms for coordinate calculation
+        # Use floats to support sub-pixel camera positions (prevents shadow flickering)
         self._uniform("u_viewport_offset").value = (
-            viewport_bounds.x1,
-            viewport_bounds.y1,
+            float(viewport_bounds.x1),
+            float(viewport_bounds.y1),
         )
         self._uniform("u_viewport_size").value = (
-            viewport_bounds.width,
-            viewport_bounds.height,
+            float(viewport_bounds.width),
+            float(viewport_bounds.height),
         )
 
     def _set_actor_shadow_uniforms(

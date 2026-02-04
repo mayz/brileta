@@ -45,7 +45,7 @@ uniform float u_sun_shadow_intensity;  // Separate shadow intensity for sun (out
 // Tile emission uniforms (for glowing tiles like acid pools, hot coals)
 // Emission texture: RGB = emission color * intensity, A = light radius
 uniform sampler2D u_emission_map;
-uniform ivec2 u_viewport_size;
+uniform vec2 u_viewport_size;  // Viewport dimensions
 uniform ivec2 u_map_size;  // Full map dimensions for sky exposure UV calculation
 
 // Noise function for flicker effects
@@ -173,7 +173,7 @@ vec3 calculateEmissionContribution(vec2 uv, vec2 tile_pos) {
     const int MAX_EMISSION_RADIUS = 4;
 
     // Size of one texel in UV space
-    vec2 texel_size = 1.0 / vec2(u_viewport_size);
+    vec2 texel_size = 1.0 / u_viewport_size;
 
     // Sample nearby tiles for emission
     for (int dy = -MAX_EMISSION_RADIUS; dy <= MAX_EMISSION_RADIUS; dy++) {
@@ -304,12 +304,10 @@ void main() {
     vec2 world_pos = v_world_pos;
 
     // For lighting calculations, use integer tile coordinates to match CPU
-    // The CPU calculates distance from light to integer tile positions
     vec2 tile_pos = floor(world_pos);
-    
-    // For tile-aligned mode, we still need to determine which tile we're in
+
+    // For tile-aligned mode, use tile position for distance calculations
     if (u_tile_aligned) {
-        // Use the tile position for distance calculations (matching CPU)
         world_pos = tile_pos;
     }
     

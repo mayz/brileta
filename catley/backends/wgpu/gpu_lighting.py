@@ -1181,12 +1181,13 @@ class GPULightingSystem(LightingSystem):
             # Update emission texture for light-emitting tiles
             self._update_emission_texture(viewport_bounds)
 
-            # Smart uniform updates - only update when lights or actor shadows change
+            # Only update uniforms when lights, casters, or viewport changes
             light_data_hash = hash(
                 (
                     tuple(light_data[: light_count * 12]),
                     tuple(actor_shadow_positions),
-                    # Note: time is excluded from hash for performance
+                    viewport_bounds.x1,
+                    viewport_bounds.y1,
                 )
             )
             if self._last_light_data_hash != light_data_hash or self._first_frame:
