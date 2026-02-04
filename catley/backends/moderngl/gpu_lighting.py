@@ -384,6 +384,9 @@ class GPULightingSystem(LightingSystem):
                 self._output_texture
             )
 
+            # Save current FBO to restore after rendering
+            previous_fbo = self.mgl_context.fbo
+
             # Set up rendering state
             fbo.use()
             fbo.clear(0.0, 0.0, 0.0, 1.0)
@@ -420,6 +423,10 @@ class GPULightingSystem(LightingSystem):
 
             # Render full-screen quad
             self._fullscreen_vao.render()
+
+            # Restore previous FBO
+            if previous_fbo is not None:
+                previous_fbo.use()
 
             # Read back results from GPU to CPU.
             # PERF: This GPU→CPU transfer is the main lighting bottleneck (~20% of
