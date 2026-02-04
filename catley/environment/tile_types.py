@@ -247,6 +247,7 @@ register_tile_type(
         transparent=False,
         display_name="Wall",
         material=ImpactMaterial.STONE,
+        casts_shadows=True,
         dark=(ord(" "), colors.DARK_GREY, colors.DARK_WALL),
         light=(ord(" "), colors.LIGHT_GREY, colors.LIGHT_WALL),
     ),

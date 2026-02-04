@@ -47,7 +47,8 @@ struct LightingUniforms {
     sun_color: vec3f,
     sun_intensity: f32,
     sky_exposure_power: f32,
-    _padding2: vec3f,  // Ensure 16-byte alignment
+    sun_shadow_intensity: f32,  // Separate shadow intensity for sun (outdoor shadows)
+    _padding2: vec2f,  // Ensure 16-byte alignment
     map_size: vec2f,  // Full map dimensions for sky exposure UV calculation
     _padding3: vec2f,  // Padding for 16-byte alignment
 }
@@ -213,7 +214,7 @@ fn calculateDirectionalShadowAttenuation(world_pos: vec2f, sky_exposure: f32) ->
         
         // Check if world_pos is in the shadow path from this caster
         let max_shadow_length = f32(uniforms.shadow_max_length); // Use actual config value
-        let base_intensity = uniforms.shadow_intensity; // Use actual config value, no multiplier
+        let base_intensity = uniforms.sun_shadow_intensity; // Sun shadows use separate intensity
         
         var in_shadow = false;
         var shadow_intensity = 0.0;

@@ -170,10 +170,10 @@ class DirectionalLight(GlobalLight):
 
     @staticmethod
     def create_sun(
-        elevation_degrees: float = 45.0,
-        azimuth_degrees: float = 135.0,  # Southeast
-        intensity: float = 0.8,
-        color: colors.Color = (255, 243, 204),  # Warm sunlight (converted to 0-255)
+        elevation_degrees: float = config.SUN_ELEVATION_DEGREES,
+        azimuth_degrees: float = config.SUN_AZIMUTH_DEGREES,
+        intensity: float = config.SUN_INTENSITY,
+        color: colors.Color = config.SUN_COLOR,
     ) -> DirectionalLight:
         """Factory method to create sunlight.
 
@@ -187,10 +187,15 @@ class DirectionalLight(GlobalLight):
         elevation_rad = math.radians(elevation_degrees)
         azimuth_rad = math.radians(azimuth_degrees)
 
-        # Convert spherical to cartesian (2D projection)
-        # Y component is negative because down is positive in screen coordinates
+        # Convert azimuth/elevation to 2D direction vector pointing toward the sun.
+        # Azimuth: 0=North, 90=East, 180=South, 270=West (compass convention)
+        # Screen coords: +X=right(east), +Y=down(south)
+        #
+        # sin(azimuth) gives east/west component (E=+, W=-)
+        # -cos(azimuth) gives north/south in screen coords (S=+, N=-)
+        # cos(elevation) scales horizontal components (overhead sun = no shadow)
         direction_x = math.sin(azimuth_rad) * math.cos(elevation_rad)
-        direction_y = -math.sin(elevation_rad)  # Negative for downward light
+        direction_y = -math.cos(azimuth_rad) * math.cos(elevation_rad)
 
         return DirectionalLight(
             direction=Vec2(direction_x, direction_y),

@@ -175,13 +175,14 @@ SUN_ENABLED = True  # Enable sunlight illumination
 SUN_COLOR = (255, 243, 204)  # Warm sunlight color (RGB 0-255)
 SUN_ELEVATION_DEGREES = 45.0  # Sun elevation above horizon (0-90 degrees)
 SUN_AZIMUTH_DEGREES = 135.0  # Sun direction (0=North, 90=East, 180=South, 270=West)
-SUN_INTENSITY = 0.4  # Base sun intensity multiplier
+SUN_INTENSITY = 0.75  # Base sun intensity multiplier
 SKY_EXPOSURE_POWER = 1.5  # Non-linear sky exposure curve (higher = more contrast)
 
 # Shadow system
 SHADOWS_ENABLED: bool = True  # Set to False to disable shadows
-SHADOW_INTENSITY = 0.17  # How dark shadows are (0.0 = no shadow, 1.0 = completely dark)
-SHADOW_MAX_LENGTH = 5  # Maximum shadow length in tiles
+SHADOW_INTENSITY = 0.25  # Point light shadow intensity (indoor torches, etc.)
+SUN_SHADOW_INTENSITY = 0.4  # Directional/sun shadow intensity
+SHADOW_MAX_LENGTH = 3  # Maximum shadow length in tiles
 SHADOW_FALLOFF = True  # Shadows get lighter with distance
 
 # Tile emission (glowing hazard tiles like acid pools, hot coals)

@@ -185,10 +185,10 @@ def test_get_casts_shadows_map_basic() -> None:
     )
     shadows = tile_types.get_casts_shadows_map(ids)
 
-    # Floor and Wall don't cast shadows, Boulder and Outdoor Wall do
+    # Floor doesn't cast shadows; Wall, Boulder, and Outdoor Wall do
     assert shadows.shape == ids.shape
     assert shadows[0, 0] is np.False_  # FLOOR
-    assert shadows[0, 1] is np.False_  # WALL
+    assert shadows[0, 1] is np.True_  # WALL
     assert shadows[1, 0] is np.True_  # BOULDER
     assert shadows[1, 1] is np.True_  # OUTDOOR_WALL
 
@@ -216,13 +216,12 @@ def test_get_casts_shadows_map_empty_array() -> None:
 
 def test_shadow_casting_tiles_are_correct() -> None:
     """Verify which tiles are expected to cast shadows."""
-    # These tiles should cast shadows (from tile_types.py definitions)
-    shadow_casters = [TileTypeID.OUTDOOR_WALL, TileTypeID.BOULDER]
+    # These tiles should cast shadows (solid objects that block light)
+    shadow_casters = [TileTypeID.WALL, TileTypeID.OUTDOOR_WALL, TileTypeID.BOULDER]
 
-    # These tiles should NOT cast shadows
+    # These tiles should NOT cast shadows (floors, transparent, or special)
     non_shadow_casters = [
         TileTypeID.FLOOR,
-        TileTypeID.WALL,
         TileTypeID.OUTDOOR_FLOOR,
         TileTypeID.DOOR_CLOSED,
         TileTypeID.DOOR_OPEN,

@@ -1245,18 +1245,20 @@ class TestGPUDirectionalShadows:
         # Sun direction is southeast (azimuth 135°), so shadows should go northwest
         expected_shadow_direction = (-sun_light.direction.x, -sun_light.direction.y)
 
-        # Verify sun direction is southeast (positive x, negative y screen coords)
+        # Verify sun direction points toward SE
+        # Screen coords: +X=east, +Y=south (down)
+        # SE has positive X (east component) and positive Y (south component)
         assert sun_light.direction.x > 0, "Sun should point southeast (positive x)"
-        assert sun_light.direction.y < 0, (
-            "Sun should point downward (negative y in screen coordinates)"
+        assert sun_light.direction.y > 0, (
+            "Sun should point southeast (positive y in screen coordinates)"
         )
 
-        # Therefore shadow direction should be northwest (negative x, positive y)
+        # Shadows go opposite to sun direction: northwest (negative x, negative y)
         assert expected_shadow_direction[0] < 0, (
-            "Shadows should point northwest (negative x)"
+            "Shadows should point northwest (negative x = west)"
         )
-        assert expected_shadow_direction[1] > 0, (
-            "Shadows should point upward (positive y)"
+        assert expected_shadow_direction[1] < 0, (
+            "Shadows should point northwest (negative y = north in screen coords)"
         )
 
     def test_directional_shadows_only_in_outdoor_areas(self):
@@ -1450,3 +1452,186 @@ class TestGPUDirectionalShadows:
 
         # This test verifies the GPU system is properly initialized
         assert gpu_system._fragment_program is not None
+
+    def test_shadow_casters_sorted_by_distance_from_viewport_center(self):
+        """Test that shadow casters are sorted by distance from viewport center.
+
+        When there are more shadow casters than the shader's 64-caster limit,
+        nearby casters should get priority. This ensures shadows near the player
+        are always rendered correctly.
+        """
+        from catley.game.lights import DirectionalLight
+
+        # Mock successful GPU initialization
+        mock_shader_manager = Mock()
+        mock_fragment_program = Mock()
+        mock_shader_manager.create_program.return_value = mock_fragment_program
+        self.mock_mgl_context.buffer.return_value = Mock()
+        self.mock_mgl_context.vertex_array.return_value = Mock()
+
+        # Set up a game map with shadow-casting tiles at known positions
+        # Place casters at various distances from viewport center
+        import numpy as np
+
+        # Create a larger map to place casters at different distances
+        self.game_map.width = 20
+        self.game_map.height = 20
+        self.game_map.tiles = np.full((20, 20), 1, dtype=int)
+
+        # Set up shadow casters at specific positions:
+        # Viewport will be centered at (10, 10), so distances are:
+        # - (10, 10): distance 0 (center)
+        # - (12, 10): distance 2
+        # - (10, 15): distance 5
+        # - (5, 5): distance ~7.07 (sqrt(25+25))
+        # - (18, 18): distance ~11.3 (sqrt(64+64))
+        casts_shadows = np.full((20, 20), False, dtype=bool)
+        casts_shadows[10, 10] = True  # At center
+        casts_shadows[12, 10] = True  # Close to center
+        casts_shadows[10, 15] = True  # Medium distance
+        casts_shadows[5, 5] = True  # Far from center
+        casts_shadows[18, 18] = True  # Farthest from center
+        self.game_map.casts_shadows = casts_shadows
+
+        # Add sun light
+        sun_light = DirectionalLight.create_sun()
+        self.game_world.lights = [sun_light]
+
+        with (
+            patch(
+                "catley.backends.moderngl.shader_manager.ShaderManager",
+                return_value=mock_shader_manager,
+            ),
+            patch(
+                "catley.environment.tile_types.get_tile_type_data_by_id",
+                return_value={"casts_shadows": False},
+            ),
+        ):
+            gpu_system = GPULightingSystem(self.game_world, self.mock_graphics_context)
+
+            # Create viewport centered at (10, 10)
+            viewport = Rect(5, 5, 10, 10)  # x1=5, y1=5, width=10, height=10
+            # Center is at (5 + 10/2, 5 + 10/2) = (10, 10)
+
+            shadow_casters = gpu_system._collect_shadow_casters_global(viewport)
+
+            # Convert flat list back to (x, y) pairs for easier verification
+            caster_positions = [
+                (shadow_casters[i], shadow_casters[i + 1])
+                for i in range(0, len(shadow_casters), 2)
+            ]
+
+            # Verify we got all 5 casters
+            assert len(caster_positions) == 5, (
+                f"Expected 5 casters, got {len(caster_positions)}"
+            )
+
+            # Calculate distances from viewport center (10, 10)
+            center_x, center_y = 10.0, 10.0
+            distances = [
+                ((x - center_x) ** 2 + (y - center_y) ** 2, (x, y))
+                for x, y in caster_positions
+            ]
+
+            # Verify casters are sorted by distance (ascending)
+            for i in range(len(distances) - 1):
+                curr_dist, curr_pos = distances[i]
+                next_dist, next_pos = distances[i + 1]
+                assert curr_dist <= next_dist, (
+                    f"Casters not sorted: {curr_pos} (dist={curr_dist:.2f}) "
+                    f"should come before {next_pos} (dist={next_dist:.2f})"
+                )
+
+            # Verify the closest caster is first (at or near center)
+            first_caster = caster_positions[0]
+            first_distance = (first_caster[0] - center_x) ** 2 + (
+                first_caster[1] - center_y
+            ) ** 2
+            assert first_distance == 0.0, (
+                f"First caster should be at center, got {first_caster}"
+            )
+
+            # Verify the farthest caster is last
+            last_caster = caster_positions[-1]
+            assert last_caster == (18.0, 18.0), (
+                f"Last caster should be farthest (18, 18), got {last_caster}"
+            )
+
+    def test_shadow_caster_sorting_with_actors(self):
+        """Test that actor shadow casters are also sorted by distance."""
+        from catley.game.lights import DirectionalLight
+
+        # Mock successful GPU initialization
+        mock_shader_manager = Mock()
+        mock_fragment_program = Mock()
+        mock_shader_manager.create_program.return_value = mock_fragment_program
+        self.mock_mgl_context.buffer.return_value = Mock()
+        self.mock_mgl_context.vertex_array.return_value = Mock()
+
+        # Set up empty tile shadow map
+        import numpy as np
+
+        self.game_map.width = 20
+        self.game_map.height = 20
+        self.game_map.casts_shadows = np.full((20, 20), False, dtype=bool)
+
+        # Create mock actors at different distances from viewport center (10, 10)
+        mock_actor_near = Mock()
+        mock_actor_near.x = 11
+        mock_actor_near.y = 10
+        mock_actor_near.blocks_movement = True
+
+        mock_actor_far = Mock()
+        mock_actor_far.x = 2
+        mock_actor_far.y = 2
+        mock_actor_far.blocks_movement = True
+
+        mock_actor_medium = Mock()
+        mock_actor_medium.x = 14
+        mock_actor_medium.y = 14
+        mock_actor_medium.blocks_movement = True
+
+        # Set up spatial index to return actors
+        mock_spatial_index = Mock()
+        mock_spatial_index.get_in_bounds.return_value = [
+            mock_actor_far,  # Return in wrong order to test sorting
+            mock_actor_medium,
+            mock_actor_near,
+        ]
+        self.game_world.actor_spatial_index = mock_spatial_index
+
+        # Add sun light
+        sun_light = DirectionalLight.create_sun()
+        self.game_world.lights = [sun_light]
+
+        with (
+            patch(
+                "catley.backends.moderngl.shader_manager.ShaderManager",
+                return_value=mock_shader_manager,
+            ),
+        ):
+            gpu_system = GPULightingSystem(self.game_world, self.mock_graphics_context)
+
+            # Viewport centered at (10, 10)
+            viewport = Rect(5, 5, 10, 10)
+
+            shadow_casters = gpu_system._collect_shadow_casters_global(viewport)
+
+            # Convert to positions
+            caster_positions = [
+                (shadow_casters[i], shadow_casters[i + 1])
+                for i in range(0, len(shadow_casters), 2)
+            ]
+
+            # Should have 3 actor casters
+            assert len(caster_positions) == 3
+
+            # First should be nearest (11, 10) - distance 1
+            assert caster_positions[0] == (11.0, 10.0), (
+                f"Nearest actor should be first, got {caster_positions[0]}"
+            )
+
+            # Last should be farthest (2, 2) - distance ~11.3
+            assert caster_positions[-1] == (2.0, 2.0), (
+                f"Farthest actor should be last, got {caster_positions[-1]}"
+            )

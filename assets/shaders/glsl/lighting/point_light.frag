@@ -37,6 +37,7 @@ uniform vec3 u_sun_color;
 uniform float u_sun_intensity;
 uniform sampler2D u_sky_exposure_map;
 uniform float u_sky_exposure_power;
+uniform float u_sun_shadow_intensity;  // Separate shadow intensity for sun (outdoor shadows)
 
 // Tile emission uniforms (for glowing tiles like acid pools, hot coals)
 // Emission texture: RGB = emission color * intensity, A = light radius
@@ -231,7 +232,7 @@ float calculateDirectionalShadowAttenuation(vec2 world_pos, float sky_exposure) 
         
         // Check if world_pos is in the shadow path from this caster
         float max_shadow_length = float(u_shadow_max_length); // Use actual config value
-        float base_intensity = u_shadow_intensity; // Use actual config value, no multiplier
+        float base_intensity = u_sun_shadow_intensity; // Sun shadows use separate intensity
         
         bool in_shadow = false;
         float shadow_intensity = 0.0;

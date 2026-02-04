@@ -44,7 +44,8 @@ OUTDOOR_DARK_WALL: Color = (40, 30, 20)  # Dark rock/stone
 OUTDOOR_LIGHT_WALL: Color = (80, 60, 40)  # Sunlit rock/stone
 
 # Actor colors
-PLAYER_COLOR: Color = WHITE
+# Player uses bright saturated gold to stand out against terrain
+PLAYER_COLOR: Color = (255, 220, 80)
 NPC_COLOR: Color = YELLOW
 HOVER_OUTLINE: Color = WHITE  # White for hover feedback
 SELECTION_OUTLINE: Color = (255, 200, 60)  # Golden outline for click-selected targets

@@ -329,14 +329,19 @@ class GPULightingSystem(LightingSystem):
         )
 
     def _create_samplers(self) -> None:
-        """Create sampler for the sky exposure texture."""
+        """Create sampler for the sky exposure texture.
+
+        Uses nearest-neighbor filtering to prevent interpolation bleeding
+        at tile boundaries (walls should have sharp sky exposure cutoff).
+        This matches the ModernGL backend's behavior.
+        """
 
         self._sky_exposure_sampler = self.device.create_sampler(
             address_mode_u=wgpu.AddressMode.clamp_to_edge,
             address_mode_v=wgpu.AddressMode.clamp_to_edge,
             address_mode_w=wgpu.AddressMode.clamp_to_edge,
-            mag_filter=wgpu.FilterMode.linear,
-            min_filter=wgpu.FilterMode.linear,
+            mag_filter=wgpu.FilterMode.nearest,
+            min_filter=wgpu.FilterMode.nearest,
             mipmap_filter=wgpu.FilterMode.nearest,
         )
 
@@ -437,7 +442,7 @@ class GPULightingSystem(LightingSystem):
         if not SHADOWS_ENABLED:
             return []
 
-        shadow_casters: list[float] = []
+        all_casters: list[tuple[float, float]] = []
 
         # Expand viewport bounds to include potential shadow influence
         expanded_bounds = Rect.from_bounds(
@@ -456,9 +461,11 @@ class GPULightingSystem(LightingSystem):
                 int(expanded_bounds.y2),
             )
 
-            for actor in actors:
-                if hasattr(actor, "blocks_movement") and actor.blocks_movement:
-                    shadow_casters.extend([float(actor.x), float(actor.y)])
+            all_casters.extend(
+                (float(actor.x), float(actor.y))
+                for actor in actors
+                if hasattr(actor, "blocks_movement") and actor.blocks_movement
+            )
 
         # Get shadow-casting tiles using vectorized lookup on cached map
         game_map = self.game_world.game_map
@@ -476,9 +483,27 @@ class GPULightingSystem(LightingSystem):
 
             # Convert local coordinates back to world coordinates
             for local_x, local_y in shadow_coords:
-                shadow_casters.extend([float(min_x + local_x), float(min_y + local_y)])
+                all_casters.append((float(min_x + local_x), float(min_y + local_y)))
 
-        return shadow_casters
+        # Sort by distance from viewport center so nearby casters get priority
+        # when the shader's 64-caster limit is hit.
+        # NOTE: This is O(n log n) per update.
+        #
+        # TODO: This sorting is a band-aid for the 64-caster uniform array limit.
+        # Better solutions:
+        # 1. Increase limit to 256+ (simple, most GPUs handle this fine)
+        # 2. Use SSBOs for unlimited dynamic arrays (requires modern WGPU)
+        # 3. Encode positions in a texture (textures can be huge)
+        # 4. Smarter culling based on sun direction, not just distance
+        center_x = viewport_bounds.x1 + viewport_bounds.width / 2
+        center_y = viewport_bounds.y1 + viewport_bounds.height / 2
+        all_casters.sort(key=lambda c: (c[0] - center_x) ** 2 + (c[1] - center_y) ** 2)
+
+        # Flatten back to list of floats for GPU uniform
+        result: list[float] = []
+        for x, y in all_casters:
+            result.extend([x, y])
+        return result
 
     def _update_sky_exposure_texture(self) -> None:
         """Update the sky exposure texture from the game map's region data.
@@ -816,6 +841,7 @@ class GPULightingSystem(LightingSystem):
             SHADOW_INTENSITY,
             SHADOW_MAX_LENGTH,
             SKY_EXPOSURE_POWER,
+            SUN_SHADOW_INTENSITY,
         )
         from catley.game.lights import DirectionalLight
 
@@ -937,12 +963,8 @@ class GPULightingSystem(LightingSystem):
             struct.pack("3ff", sun_r, sun_g, sun_b, sun_intensity)
         )  # sun_color + sun_intensity
         buffer.extend(
-            struct.pack("f3f", SKY_EXPOSURE_POWER, 0.0, 0.0, 0.0)
-        )  # sky_exposure_power + implicit padding to align _padding2
-        buffer.extend(struct.pack("3f", 0.0, 0.0, 0.0))  # _padding2 (vec3f = 12 bytes)
-        buffer.extend(
-            struct.pack("f", 0.0)
-        )  # implicit padding to align map_size (4 bytes)
+            struct.pack("ff2f", SKY_EXPOSURE_POWER, SUN_SHADOW_INTENSITY, 0.0, 0.0)
+        )  # sky_exposure_power + sun_shadow_intensity + padding to align _padding2
 
         # Map size for sky exposure UV calculation
         game_map = self.game_world.game_map

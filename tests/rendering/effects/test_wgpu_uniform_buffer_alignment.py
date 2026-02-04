@@ -4,8 +4,8 @@ These tests verify that the Python uniform buffer packing matches the WGSL
 struct layout. WGSL has strict alignment rules (vec3f requires 16-byte
 alignment, etc.) that can cause silent data corruption if not followed.
 
-This test caught a real bug where map_size was packed at offset 5216 but
-WGSL expected it at offset 5232 due to implicit padding around vec3f fields.
+This test caught a real bug where map_size was packed at the wrong offset
+after padding changes. WGSL expects map_size immediately after _padding2.
 """
 
 from __future__ import annotations
@@ -108,11 +108,10 @@ class TestWGPUUniformBufferAlignment:
         # Calculate expected offset for map_size
         # After sun_intensity (5196 + 4 = 5200):
         # - sky_exposure_power (4 bytes) at 5200
-        # - implicit padding (12 bytes) to align _padding2 at 5204-5216
-        # - _padding2 (vec3f, 12 bytes) at 5216-5228
-        # - implicit padding (4 bytes) to align map_size at 5228-5232
-        # - map_size (vec2f, 8 bytes) at 5232
-        map_size_offset = 5232
+        # - sun_shadow_intensity (4 bytes) at 5204
+        # - _padding2 (vec2f, 8 bytes) at 5208-5216
+        # - map_size (vec2f, 8 bytes) at 5216
+        map_size_offset = 5216
 
         # Unpack map_size from the buffer
         map_width, map_height = struct.unpack_from("2f", buffer, map_size_offset)
@@ -169,9 +168,9 @@ class TestWGPUUniformBufferAlignment:
         )
 
         # Expected minimum size based on WGSL struct layout:
-        # map_size ends at 5232 + 8 = 5240
-        # _padding3 ends at 5240 + 8 = 5248
-        expected_min_size = 5248
+        # map_size ends at 5216 + 8 = 5224
+        # _padding3 ends at 5224 + 8 = 5232
+        expected_min_size = 5232
 
         assert len(buffer) >= expected_min_size, (
             f"Buffer size {len(buffer)} is smaller than expected minimum "
@@ -275,7 +274,7 @@ class TestWGPUUniformBufferEdgeCases:
         )
 
         # map_size should default to (1.0, 1.0)
-        map_size_offset = 5232
+        map_size_offset = 5216
         map_width, map_height = struct.unpack_from("2f", buffer, map_size_offset)
 
         assert map_width == 1.0, f"Default map width should be 1.0, got {map_width}"

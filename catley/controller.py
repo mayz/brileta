@@ -116,19 +116,14 @@ class Controller:
         self.frame_manager = FrameManager(self, graphics)
         self.input_handler = InputHandler(app, self)
 
-        # Create the player's light now that lighting system is connected
-        player_torch = DynamicLight.create_player_torch(self.gw.player)
-        self.gw.add_light(player_torch)
+        # Create the player's torch - automatically disabled in sunlit outdoor areas
+        self._player_torch = DynamicLight.create_player_torch(self.gw.player)
+        self._player_torch_active = True
+        self.gw.add_light(self._player_torch)
 
-        # Create the sun if enabled
+        # Create the sun if enabled (uses config defaults)
         if config.SUN_ENABLED:
-            sun = DirectionalLight.create_sun(
-                elevation_degrees=config.SUN_ELEVATION_DEGREES,
-                azimuth_degrees=config.SUN_AZIMUTH_DEGREES,
-                intensity=config.SUN_INTENSITY,
-                color=config.SUN_COLOR,
-            )
-            self.gw.add_light(sun)
+            self.gw.add_light(DirectionalLight.create_sun())
 
         self.turn_manager = TurnManager(self)
 
@@ -198,6 +193,42 @@ class Controller:
         # If a tile is "visible" it should be added to "explored"
         self.gw.game_map.explored |= self.gw.game_map.visible
         self.gw.game_map.exploration_revision += 1
+
+        # Auto-toggle torch based on ambient lighting (disable in sunlit outdoor areas)
+        self._update_player_torch()
+
+    def _update_player_torch(self) -> None:
+        """Enable/disable player torch based on current location's sky exposure.
+
+        In well-lit outdoor areas (high sky exposure), the torch is unnecessary
+        and would wash out sun shadows, so we automatically disable it.
+
+        Uses hysteresis to prevent flickering at doorways: torch turns OFF when
+        sky_exposure >= 0.7 (clearly outdoors) but only turns back ON when
+        sky_exposure <= 0.3 (clearly indoors).
+        """
+        # Check sky exposure at player's position
+        get_region = getattr(self.gw.game_map, "get_region_at", None)
+        if get_region is None:
+            return  # Mock or incomplete game_map - skip torch update
+        region = get_region((self.gw.player.x, self.gw.player.y))
+        if region is None:
+            return
+
+        sky_exposure = region.sky_exposure
+
+        # Hysteresis thresholds to prevent flickering at boundaries
+        turn_off_threshold = 0.7  # Clearly outdoors
+        turn_on_threshold = 0.3  # Clearly indoors
+
+        if self._player_torch_active and sky_exposure >= turn_off_threshold:
+            # Disable torch in sunlit outdoor areas
+            self.gw.remove_light(self._player_torch)
+            self._player_torch_active = False
+        elif not self._player_torch_active and sky_exposure <= turn_on_threshold:
+            # Re-enable torch when entering dark areas
+            self.gw.add_light(self._player_torch)
+            self._player_torch_active = True
 
     def get_visible_bounds(self) -> Rect | None:
         """Return the world-space bounds currently visible in the world view."""

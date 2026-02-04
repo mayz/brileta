@@ -106,15 +106,9 @@ class RealisticPerformanceBenchmark:
         player_torch = DynamicLight.create_player_torch(self.controller.gw.player)
         self.controller.gw.add_light(player_torch)
 
-        # Add sun if enabled
+        # Add sun if enabled (uses config defaults)
         if config.SUN_ENABLED:
-            sun = DirectionalLight.create_sun(
-                elevation_degrees=config.SUN_ELEVATION_DEGREES,
-                azimuth_degrees=config.SUN_AZIMUTH_DEGREES,
-                intensity=config.SUN_INTENSITY,
-                color=config.SUN_COLOR,
-            )
-            self.controller.gw.add_light(sun)
+            self.controller.gw.add_light(DirectionalLight.create_sun())
 
         # Add realistic lights around the player's vicinity
         player_x, player_y = self.controller.gw.player.x, self.controller.gw.player.y

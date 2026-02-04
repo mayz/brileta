@@ -549,7 +549,7 @@ class GPULightingSystem(LightingSystem):
 
     def _set_directional_light_uniforms(self) -> None:
         """Set uniforms for directional lighting (sun/moon)."""
-        from catley.config import SKY_EXPOSURE_POWER
+        from catley.config import SKY_EXPOSURE_POWER, SUN_SHADOW_INTENSITY
         from catley.game.lights import DirectionalLight
 
         # Find active directional light
@@ -584,8 +584,9 @@ class GPULightingSystem(LightingSystem):
             self._uniform("u_sun_color").value = (0.0, 0.0, 0.0)
             self._uniform("u_sun_intensity").value = 0.0
 
-        # Always set sky exposure power
+        # Always set sky exposure power and sun shadow intensity
         self._uniform("u_sky_exposure_power").value = SKY_EXPOSURE_POWER
+        self._uniform("u_sun_shadow_intensity").value = SUN_SHADOW_INTENSITY
 
     def _collect_light_data(self, viewport_bounds: Rect) -> list[float]:
         """Collect light data from the game world and format for GPU uniforms.
@@ -672,6 +673,9 @@ class GPULightingSystem(LightingSystem):
         Uses vectorized numpy operations on the cached casts_shadows map to
         eliminate 23M per-tile lookups per session.
 
+        Shadow casters are sorted by distance from viewport center so that
+        nearby casters get priority when the shader's 64-caster limit is hit.
+
         Args:
             viewport_bounds: The viewport bounds for rendering
 
@@ -684,7 +688,8 @@ class GPULightingSystem(LightingSystem):
         if not SHADOWS_ENABLED:
             return []
 
-        shadow_casters: list[float] = []
+        # Collect all shadow casters as (x, y) tuples first, then sort by distance
+        all_casters: list[tuple[float, float]] = []
 
         # Expand viewport bounds to include potential shadow influence
         expanded_bounds = Rect.from_bounds(
@@ -703,9 +708,11 @@ class GPULightingSystem(LightingSystem):
                 int(expanded_bounds.y2),
             )
 
-            for actor in actors:
-                if hasattr(actor, "blocks_movement") and actor.blocks_movement:
-                    shadow_casters.extend([float(actor.x), float(actor.y)])
+            all_casters.extend(
+                (float(actor.x), float(actor.y))
+                for actor in actors
+                if hasattr(actor, "blocks_movement") and actor.blocks_movement
+            )
 
         # Get shadow-casting tiles using vectorized lookup on cached map
         game_map = self.game_world.game_map
@@ -717,13 +724,31 @@ class GPULightingSystem(LightingSystem):
             max_y = min(game_map.height, int(expanded_bounds.y2) + 1)
 
             # Use cached casts_shadows map and vectorized lookup
-            # This replaces 23M individual get_tile_type_data_by_id calls
             casts_shadows_slice = game_map.casts_shadows[min_x:max_x, min_y:max_y]
             shadow_coords = np.argwhere(casts_shadows_slice)
 
             # Convert local coordinates back to world coordinates
             for local_x, local_y in shadow_coords:
-                shadow_casters.extend([float(min_x + local_x), float(min_y + local_y)])
+                all_casters.append((float(min_x + local_x), float(min_y + local_y)))
+
+        # Sort by distance from viewport center so nearby casters get priority
+        # when the shader's 64-caster limit is hit.
+        # NOTE: This is O(n log n) per update.
+        #
+        # TODO: This sorting is a band-aid for the 64-caster uniform array limit.
+        # Better solutions:
+        # 1. Increase limit to 256+ (simple, most GPUs handle this fine)
+        # 2. Use SSBOs for unlimited dynamic arrays (requires OpenGL 4.3+)
+        # 3. Encode positions in a texture (textures can be huge)
+        # 4. Smarter culling based on sun direction, not just distance
+        center_x = viewport_bounds.x1 + viewport_bounds.width / 2
+        center_y = viewport_bounds.y1 + viewport_bounds.height / 2
+        all_casters.sort(key=lambda c: (c[0] - center_x) ** 2 + (c[1] - center_y) ** 2)
+
+        # Flatten to [x, y, x, y, ...] format
+        shadow_casters: list[float] = []
+        for x, y in all_casters:
+            shadow_casters.extend([x, y])
 
         return shadow_casters
 
@@ -770,6 +795,12 @@ class GPULightingSystem(LightingSystem):
             (game_map.width, game_map.height),
             components=1,  # Single channel (R)
             dtype="f4",  # 32-bit float
+        )
+        # Use nearest-neighbor filtering to prevent interpolation bleeding
+        # at tile boundaries (walls should have sharp sky exposure cutoff)
+        self._sky_exposure_texture.filter = (
+            self.mgl_context.NEAREST,
+            self.mgl_context.NEAREST,
         )
         assert self._sky_exposure_texture is not None
         self._sky_exposure_texture.write(sky_exposure_data.tobytes())
