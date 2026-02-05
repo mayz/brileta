@@ -48,7 +48,8 @@ struct LightingUniforms {
     sun_intensity: f32,
     sky_exposure_power: f32,
     sun_shadow_intensity: f32,  // Separate shadow intensity for sun (outdoor shadows)
-    _padding2: vec2f,  // Ensure 16-byte alignment
+    sun_shadow_length_scale: f32,  // Shadow length multiplier from sun elevation (1/tan(elev))
+    _padding2: f32,  // Ensure 16-byte alignment
     map_size: vec2f,  // Full map dimensions for sky exposure UV calculation
     _padding3: vec2f,  // Padding for 16-byte alignment
 }
@@ -221,31 +222,79 @@ fn computeDirectionalShadow(tile_pos: vec2f, sky_exposure: f32) -> f32 {
         return 1.0;  // No shadow
     }
 
-    // March toward sun (opposite of shadow cast direction)
-    // Use sign-based stepping to match discrete tile behavior
-    var step_dir: vec2f;
-    step_dir.x = select(select(0.0, -1.0, uniforms.sun_direction.x < 0.0), 1.0, uniforms.sun_direction.x > 0.0);
-    step_dir.y = select(select(0.0, -1.0, uniforms.sun_direction.y < 0.0), 1.0, uniforms.sun_direction.y > 0.0);
+    // March from tile_pos toward the sun using DDA (Digital Differential Analyzer).
+    // DDA traces through every tile the ray crosses, giving continuous shadow
+    // directions instead of the 8 compass points that sign-based stepping allows.
+    let dir = uniforms.sun_direction;
+    let abs_dir = abs(dir);
 
-    var pos = tile_pos;
-    var shadow_factor = 1.0;
+    // No shadow if sun is directly overhead (direction vector near zero)
+    if (abs_dir.x < 0.001 && abs_dir.y < 0.001) {
+        return 1.0;
+    }
+
+    // DDA setup
+    let step = vec2i(select(-1, 1, dir.x >= 0.0), select(-1, 1, dir.y >= 0.0));
+    // How far along the ray (in t) to cross one full cell in each axis.
+    // When a component is ~0, use a huge value so we never step in that axis.
+    let t_delta = vec2f(
+        select(1e30, 1.0 / abs_dir.x, abs_dir.x > 0.001),
+        select(1e30, 1.0 / abs_dir.y, abs_dir.y > 0.001)
+    );
+    // Distance to first cell boundary (0.5 cells from tile center)
+    var t_max = t_delta * 0.5;
+
+    var cell = vec2i(tile_pos);
+    let start_cell = cell;
     let map_size = vec2i(uniforms.map_size);
+    var shadow_factor = 1.0;
+    let length_scale = uniforms.sun_shadow_length_scale;
 
-    for (var i = 1; i <= uniforms.shadow_max_length; i++) {
-        pos += step_dir;
+    // Max march distance accounts for elevation: low sun stretches shadows.
+    // shadow_max_length is the base (max blocker height), scaled by elevation.
+    let max_dist = i32(f32(uniforms.shadow_max_length) * length_scale + 0.5);
 
-        let texel = vec2i(pos);
-        if (texel.x < 0 || texel.x >= map_size.x || texel.y < 0 || texel.y >= map_size.y) {
+    // Each DDA step crosses one tile boundary. For diagonal rays we need
+    // roughly 2x steps to cover the same Chebyshev distance.
+    // Worst case: max_dist up to 48 (shadow_max_length=6, scale=8),
+    // diagonal needs ~2x steps, so 128 covers all angles.
+    for (var s = 0; s < 128; s++) {
+        // Advance to whichever cell boundary is crossed first
+        if (t_max.x < t_max.y) {
+            cell.x += step.x;
+            t_max.x += t_delta.x;
+        } else {
+            cell.y += step.y;
+            t_max.y += t_delta.y;
+        }
+
+        if (cell.x < 0 || cell.x >= map_size.x || cell.y < 0 || cell.y >= map_size.y) {
+            break;
+        }
+
+        // Chebyshev distance: how many tiles away on the grid
+        let dist = max(abs(cell.x - start_cell.x), abs(cell.y - start_cell.y));
+        if (dist > max_dist) {
             break;
         }
 
         // Read shadow height (r8unorm stores height/255, recover integer)
-        let height = textureLoad(shadow_grid, texel, 0).r * 255.0;
+        let height = textureLoad(shadow_grid, cell, 0).r * 255.0;
         if (height > 0.5) {
-            // Found a blocker - only shadowed if within this blocker's height reach
-            if (i <= i32(height + 0.5)) {
-                // Uniform shadow - no distance falloff for sunlight
-                shadow_factor *= (1.0 - uniforms.sun_shadow_intensity);
+            // Shadow reach = blocker height scaled by sun elevation.
+            // Low sun (large length_scale) means shadows extend further.
+            let reach = height * length_scale;
+            if (f32(dist) <= reach) {
+                // Penumbra fade: full shadow near the blocker, fading over the
+                // last 2 tiles before the tip. Simulates the sun's angular size
+                // creating a soft edge at the end of long shadows.
+                // For short shadows (reach <= 2), skip the fade to avoid
+                // weakening or eliminating the shadow entirely.
+                var fade = 1.0;
+                if (reach > 2.0) {
+                    fade = 1.0 - smoothstep(reach - 2.0, reach, f32(dist));
+                }
+                shadow_factor *= (1.0 - uniforms.sun_shadow_intensity * fade);
                 break;  // In shadow - no need to march further
             }
             // Blocker exists but pixel is beyond its shadow reach - keep marching
@@ -258,19 +307,30 @@ fn computeDirectionalShadow(tile_pos: vec2f, sky_exposure: f32) -> f32 {
 
 // Compute actor shadows for directional (sun) light.
 // Each actor's shadow height is stored in .z of actor_shadow_positions.
-// Uses uniform intensity like terrain directional shadows (no distance falloff).
+// Uses DDA ray marching for continuous shadow directions.
 fn computeActorDirectionalShadow(tile_pos: vec2f, sky_exposure: f32) -> f32 {
     if (sky_exposure <= 0.1 || uniforms.sun_intensity <= 0.0) {
         return 1.0;
     }
 
-    // Shadow direction is opposite of sun direction
-    var shadow_dx = 0.0;
-    var shadow_dy = 0.0;
-    if (uniforms.sun_direction.x > 0.0) { shadow_dx = -1.0; } else if (uniforms.sun_direction.x < 0.0) { shadow_dx = 1.0; }
-    if (uniforms.sun_direction.y > 0.0) { shadow_dy = -1.0; } else if (uniforms.sun_direction.y < 0.0) { shadow_dy = 1.0; }
+    // Shadow is cast opposite to the sun direction
+    let shadow_dir = -uniforms.sun_direction;
+    let abs_shadow = abs(shadow_dir);
+
+    if (abs_shadow.x < 0.001 && abs_shadow.y < 0.001) {
+        return 1.0;
+    }
+
+    // DDA constants (shared across all actors since shadow direction is the same)
+    let step = vec2i(select(-1, 1, shadow_dir.x >= 0.0), select(-1, 1, shadow_dir.y >= 0.0));
+    let t_delta = vec2f(
+        select(1e30, 1.0 / abs_shadow.x, abs_shadow.x > 0.001),
+        select(1e30, 1.0 / abs_shadow.y, abs_shadow.y > 0.001)
+    );
 
     var shadow_factor = 1.0;
+    let tile_cell = vec2i(tile_pos);
+    let length_scale = uniforms.sun_shadow_length_scale;
 
     for (var i = 0; i < uniforms.actor_shadow_count && i < 64; i++) {
         let actor_pos = uniforms.actor_shadow_positions[i].xy;
@@ -280,22 +340,39 @@ fn computeActorDirectionalShadow(tile_pos: vec2f, sky_exposure: f32) -> f32 {
             continue;  // No shadow
         }
 
-        // Check if tile_pos is in the shadow path from this actor
-        var in_shadow = false;
-        var shadow_intensity_val = 0.0;
+        // Shadow reach for this actor, scaled by sun elevation
+        let reach = i32(actor_height * length_scale + 0.5);
 
-        for (var j = 1; j <= i32(actor_height); j++) {
-            let shadow_pos = actor_pos + vec2f(shadow_dx * f32(j), shadow_dy * f32(j));
+        // DDA march from actor in shadow direction, checking if we hit tile_pos
+        let actor_cell = vec2i(actor_pos);
+        var cell = actor_cell;
+        var t_max_inner = t_delta * 0.5;
 
-            if (abs(tile_pos.x - shadow_pos.x) < 0.1 && abs(tile_pos.y - shadow_pos.y) < 0.1) {
-                // Uniform shadow - no distance falloff for sunlight
-                shadow_intensity_val = max(shadow_intensity_val, uniforms.sun_shadow_intensity);
-                in_shadow = true;
+        for (var s = 0; s < 64; s++) {
+            if (t_max_inner.x < t_max_inner.y) {
+                cell.x += step.x;
+                t_max_inner.x += t_delta.x;
+            } else {
+                cell.y += step.y;
+                t_max_inner.y += t_delta.y;
             }
-        }
 
-        if (in_shadow) {
-            shadow_factor *= (1.0 - shadow_intensity_val);
+            let dist = max(abs(cell.x - actor_cell.x), abs(cell.y - actor_cell.y));
+            if (dist > reach) {
+                break;
+            }
+
+            if (cell.x == tile_cell.x && cell.y == tile_cell.y) {
+                // Penumbra fade over the last 2 tiles before the tip.
+                // Skip fade for short shadows (reach <= 2) to avoid
+                // weakening or eliminating the shadow entirely.
+                var fade = 1.0;
+                if (reach > 2) {
+                    fade = 1.0 - smoothstep(f32(reach) - 2.0, f32(reach), f32(dist));
+                }
+                shadow_factor *= (1.0 - uniforms.sun_shadow_intensity * fade);
+                break;
+            }
         }
     }
 

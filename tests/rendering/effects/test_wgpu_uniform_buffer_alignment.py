@@ -107,7 +107,8 @@ class TestWGPUUniformBufferAlignment:
         # After sun_intensity (5196 + 4 = 5200):
         # - sky_exposure_power (4 bytes) at 5200
         # - sun_shadow_intensity (4 bytes) at 5204
-        # - _padding2 (vec2f, 8 bytes) at 5208-5216
+        # - sun_shadow_length_scale (4 bytes) at 5208
+        # - _padding2 (f32, 4 bytes) at 5212
         # - map_size (vec2f, 8 bytes) at 5216
         map_size_offset = 5216
 
@@ -149,6 +150,115 @@ class TestWGPUUniformBufferAlignment:
             f"sky_exposure_power at offset {sky_exposure_power_offset} should be "
             f"{SKY_EXPOSURE_POWER}, got {actual_sky_exposure_power}"
         )
+
+    def test_shadow_length_scale_packed_correctly(self) -> None:
+        """Test that sun_shadow_length_scale is packed at offset 5208."""
+        import math
+
+        from catley.game.lights import DirectionalLight
+        from catley.util.coordinates import Rect
+
+        # Create a sun at 45-degree elevation: 1/tan(45°) = 1.0
+        sun = DirectionalLight.create_sun(elevation_degrees=45.0, intensity=0.5)
+        self.game_world.lights = [sun]
+
+        gpu_system = self._create_gpu_lighting_system()
+        light_data: list[float] = []
+        actor_shadows: list[float] = []
+        viewport = Rect(0, 0, 80, 43)
+
+        buffer = gpu_system._pack_uniform_data(
+            light_data, 0, actor_shadows, 0, viewport
+        )
+
+        # sun_shadow_length_scale is at offset 5208
+        actual_scale = struct.unpack_from("f", buffer, 5208)[0]
+        expected_scale = 1.0 / math.tan(math.radians(45.0))
+
+        assert abs(actual_scale - expected_scale) < 0.001, (
+            f"shadow_length_scale at offset 5208 should be ~{expected_scale:.3f}, "
+            f"got {actual_scale}"
+        )
+
+    def test_shadow_length_scale_clamped_near_horizon(self) -> None:
+        """Test that shadow_length_scale is clamped to 8.0 for very low sun."""
+        from catley.game.lights import DirectionalLight
+        from catley.util.coordinates import Rect
+
+        # 1-degree elevation: 1/tan(1°) ≈ 57.3, should be clamped to 8.0
+        sun = DirectionalLight.create_sun(elevation_degrees=1.0, intensity=0.5)
+        self.game_world.lights = [sun]
+
+        gpu_system = self._create_gpu_lighting_system()
+        light_data: list[float] = []
+        actor_shadows: list[float] = []
+        viewport = Rect(0, 0, 80, 43)
+
+        buffer = gpu_system._pack_uniform_data(
+            light_data, 0, actor_shadows, 0, viewport
+        )
+
+        actual_scale = struct.unpack_from("f", buffer, 5208)[0]
+
+        assert abs(actual_scale - 8.0) < 0.001, (
+            f"shadow_length_scale should be clamped to 8.0, got {actual_scale}"
+        )
+
+    def test_shadow_length_scale_with_zero_elevation(self) -> None:
+        """Test shadow_length_scale when elevation is 0 (clamped to 0.1)."""
+        from catley.game.lights import DirectionalLight
+        from catley.util.coordinates import Rect
+
+        # 0 elevation is clamped to 0.1 internally, 1/tan(0.1°) is huge,
+        # so the scale should be clamped to 8.0
+        sun = DirectionalLight.create_sun(elevation_degrees=0.0, intensity=0.5)
+        self.game_world.lights = [sun]
+
+        gpu_system = self._create_gpu_lighting_system()
+        light_data: list[float] = []
+        actor_shadows: list[float] = []
+        viewport = Rect(0, 0, 80, 43)
+
+        buffer = gpu_system._pack_uniform_data(
+            light_data, 0, actor_shadows, 0, viewport
+        )
+
+        actual_scale = struct.unpack_from("f", buffer, 5208)[0]
+
+        assert abs(actual_scale - 8.0) < 0.001, (
+            f"shadow_length_scale with zero elevation should be clamped to 8.0, "
+            f"got {actual_scale}"
+        )
+
+    def test_shadow_length_scale_at_high_elevation(self) -> None:
+        """Test shadow_length_scale near 90 degrees (nearly overhead)."""
+        import math
+
+        from catley.game.lights import DirectionalLight
+        from catley.util.coordinates import Rect
+
+        # 85-degree elevation: 1/tan(85°) ≈ 0.087 (very short shadows)
+        sun = DirectionalLight.create_sun(elevation_degrees=85.0, intensity=0.5)
+        self.game_world.lights = [sun]
+
+        gpu_system = self._create_gpu_lighting_system()
+        light_data: list[float] = []
+        actor_shadows: list[float] = []
+        viewport = Rect(0, 0, 80, 43)
+
+        buffer = gpu_system._pack_uniform_data(
+            light_data, 0, actor_shadows, 0, viewport
+        )
+
+        actual_scale = struct.unpack_from("f", buffer, 5208)[0]
+        expected_scale = 1.0 / math.tan(math.radians(85.0))
+
+        assert abs(actual_scale - expected_scale) < 0.01, (
+            f"shadow_length_scale at 85° elevation should be ~{expected_scale:.3f}, "
+            f"got {actual_scale}"
+        )
+        # Should be a small value (sun nearly overhead, short shadows)
+        assert actual_scale < 0.2
 
     def test_buffer_size_sufficient_for_struct(self) -> None:
         """Test that the buffer is large enough for the complete WGSL struct."""

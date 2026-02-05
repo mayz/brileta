@@ -10,6 +10,7 @@ Uses fragment shaders instead of compute shaders for compatibility.
 
 from __future__ import annotations
 
+import math
 import struct
 from typing import TYPE_CHECKING
 
@@ -446,6 +447,7 @@ class GPULightingSystem(LightingSystem):
             [x, y, shadow_height, x, y, shadow_height, ...]
         """
         from catley.config import SHADOW_MAX_LENGTH, SHADOWS_ENABLED
+        from catley.game.lights import DirectionalLight
 
         if not SHADOWS_ENABLED:
             return []
@@ -453,12 +455,29 @@ class GPULightingSystem(LightingSystem):
         # Maximum actors the shader can handle
         MAX_ACTOR_SHADOWS = 64
 
+        # Compute expansion that accounts for shadow stretching at low sun
+        # elevations. The shader extends shadow reach by length_scale, so we
+        # must include actors whose stretched shadows could reach the viewport.
+        shadow_expansion = SHADOW_MAX_LENGTH
+        directional_light = next(
+            (
+                light
+                for light in self.game_world.get_global_lights()
+                if isinstance(light, DirectionalLight)
+            ),
+            None,
+        )
+        if directional_light:
+            elev_rad = math.radians(max(directional_light.elevation_degrees, 0.1))
+            length_scale = min(1.0 / math.tan(elev_rad), 8.0)
+            shadow_expansion = int(SHADOW_MAX_LENGTH * length_scale + 0.5)
+
         # Expand viewport bounds to include potential shadow influence
         expanded_bounds = Rect.from_bounds(
-            x1=viewport_bounds.x1 - SHADOW_MAX_LENGTH,
-            y1=viewport_bounds.y1 - SHADOW_MAX_LENGTH,
-            x2=viewport_bounds.x2 + SHADOW_MAX_LENGTH,
-            y2=viewport_bounds.y2 + SHADOW_MAX_LENGTH,
+            x1=viewport_bounds.x1 - shadow_expansion,
+            y1=viewport_bounds.y1 - shadow_expansion,
+            x2=viewport_bounds.x2 + shadow_expansion,
+            y2=viewport_bounds.y2 + shadow_expansion,
         )
 
         # Collect shadow-casting actors in expanded viewport
@@ -995,15 +1014,16 @@ class GPULightingSystem(LightingSystem):
             )
             sun_r, sun_g, sun_b = [c / 255.0 for c in directional_light.color]
             sun_intensity = directional_light.intensity
+
+            # Shadow length scale: 1/tan(elevation). Low sun = longer shadows,
+            # high sun = shorter shadows. Clamped to max 8.0 near horizon.
+            elev_rad = math.radians(max(directional_light.elevation_degrees, 0.1))
+            shadow_length_scale = min(1.0 / math.tan(elev_rad), 8.0)
         else:
-            sun_dir_x, sun_dir_y, sun_r, sun_g, sun_b, sun_intensity = (
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-                0.0,
-            )
+            sun_dir_x, sun_dir_y = 0.0, 0.0
+            sun_r, sun_g, sun_b = 0.0, 0.0, 0.0
+            sun_intensity = 0.0
+            shadow_length_scale = 1.0
 
         buffer.extend(
             struct.pack("2f2f", sun_dir_x, sun_dir_y, 0.0, 0.0)
@@ -1012,8 +1032,14 @@ class GPULightingSystem(LightingSystem):
             struct.pack("3ff", sun_r, sun_g, sun_b, sun_intensity)
         )  # sun_color + sun_intensity
         buffer.extend(
-            struct.pack("ff2f", SKY_EXPOSURE_POWER, SUN_SHADOW_INTENSITY, 0.0, 0.0)
-        )  # sky_exposure_power + sun_shadow_intensity + padding to align _padding2
+            struct.pack(
+                "ffff",
+                SKY_EXPOSURE_POWER,
+                SUN_SHADOW_INTENSITY,
+                shadow_length_scale,
+                0.0,
+            )
+        )  # sky_exposure_power + sun_shadow_intensity + sun_shadow_length_scale + padding
 
         # Map size for sky exposure UV calculation
         game_map = self.game_world.game_map

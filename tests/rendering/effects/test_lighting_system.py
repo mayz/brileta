@@ -4,7 +4,13 @@ from unittest.mock import Mock
 from catley import config
 from catley.environment.map import MapRegion
 from catley.game.game_world import GameWorld
-from catley.game.lights import DirectionalLight, DynamicLight, StaticLight, Vec2
+from catley.game.lights import (
+    DirectionalLight,
+    DynamicLight,
+    StaticLight,
+    Vec2,
+    _angles_to_direction,
+)
 from catley.view.render.lighting.base import LightingConfig
 
 
@@ -133,6 +139,140 @@ def test_directional_light_southeast_default() -> None:
     assert sun.direction.y > 0  # South component (SE is south of E-W line)
 
 
+def test_create_sun_stores_angles() -> None:
+    """Test that create_sun() stores the source azimuth and elevation."""
+    sun = DirectionalLight.create_sun(azimuth_degrees=200.0, elevation_degrees=30.0)
+
+    assert sun.azimuth_degrees == 200.0
+    assert sun.elevation_degrees == 30.0
+
+
+def test_set_angles_updates_direction() -> None:
+    """Test that set_angles() recomputes direction from the new angles."""
+    sun = DirectionalLight.create_sun(azimuth_degrees=135.0, elevation_degrees=45.0)
+    old_x, old_y = sun.direction.x, sun.direction.y
+
+    sun.set_angles(azimuth=225.0)
+
+    # Direction should have changed
+    assert sun.direction.x != old_x or sun.direction.y != old_y
+    # Stored angle should be updated
+    assert sun.azimuth_degrees == 225.0
+    # Elevation should be unchanged
+    assert sun.elevation_degrees == 45.0
+
+
+def test_set_angles_partial_update() -> None:
+    """Test that set_angles() only updates the provided angle."""
+    sun = DirectionalLight.create_sun(azimuth_degrees=135.0, elevation_degrees=45.0)
+
+    sun.set_angles(elevation=20.0)
+
+    assert sun.azimuth_degrees == 135.0  # Unchanged
+    assert sun.elevation_degrees == 20.0
+
+
+def test_set_angles_direction_is_normalized() -> None:
+    """Test that direction stays normalized after set_angles()."""
+    sun = DirectionalLight.create_sun()
+
+    sun.set_angles(azimuth=73.0, elevation=15.0)
+
+    magnitude = math.sqrt(sun.direction.x**2 + sun.direction.y**2)
+    assert abs(magnitude - 1.0) < 1e-6
+
+
+def test_angles_to_direction_cardinal_directions() -> None:
+    """Test _angles_to_direction for the four cardinal directions at 0 elevation."""
+    # East (azimuth 90): +x, no y
+    east = _angles_to_direction(90.0, 0.0)
+    assert east.x > 0.99
+    assert abs(east.y) < 1e-6
+
+    # South (azimuth 180): no x, +y (screen coords)
+    south = _angles_to_direction(180.0, 0.0)
+    assert abs(south.x) < 1e-6
+    assert south.y > 0.99
+
+    # West (azimuth 270): -x, no y
+    west = _angles_to_direction(270.0, 0.0)
+    assert west.x < -0.99
+    assert abs(west.y) < 1e-6
+
+    # North (azimuth 0): no x, -y (screen coords)
+    north = _angles_to_direction(0.0, 0.0)
+    assert abs(north.x) < 1e-6
+    assert north.y < -0.99
+
+
+def test_angles_to_direction_high_elevation_shrinks_vector() -> None:
+    """Test that high elevation reduces the horizontal direction magnitude."""
+    low = _angles_to_direction(90.0, 10.0)
+    high = _angles_to_direction(90.0, 80.0)
+
+    low_mag = math.sqrt(low.x**2 + low.y**2)
+    high_mag = math.sqrt(high.x**2 + high.y**2)
+
+    # Higher elevation means shorter horizontal projection (sun more overhead)
+    assert high_mag < low_mag
+
+
+def test_set_angles_both_arguments() -> None:
+    """Test that set_angles() updates both angles simultaneously."""
+    sun = DirectionalLight.create_sun(azimuth_degrees=0.0, elevation_degrees=45.0)
+
+    sun.set_angles(azimuth=180.0, elevation=30.0)
+
+    assert sun.azimuth_degrees == 180.0
+    assert sun.elevation_degrees == 30.0
+    # Direction should point south (azimuth 180) in screen coords (+y)
+    assert sun.direction.y > 0
+
+
+def test_set_angles_clamps_elevation_below_zero() -> None:
+    """Test that set_angles() clamps negative elevation to 0."""
+    sun = DirectionalLight.create_sun(elevation_degrees=45.0)
+
+    sun.set_angles(elevation=-10.0)
+
+    assert sun.elevation_degrees == 0.0
+
+
+def test_set_angles_clamps_elevation_above_90() -> None:
+    """Test that set_angles() clamps elevation above 90 to 90."""
+    sun = DirectionalLight.create_sun(elevation_degrees=45.0)
+
+    sun.set_angles(elevation=120.0)
+
+    assert sun.elevation_degrees == 90.0
+
+
+def test_directional_light_init_stores_explicit_angles() -> None:
+    """Test that DirectionalLight.__init__ stores angles when provided."""
+    sun = DirectionalLight(
+        direction=Vec2(0.5, 0.5),
+        color=(255, 255, 255),
+        intensity=0.8,
+        azimuth_degrees=135.0,
+        elevation_degrees=30.0,
+    )
+
+    assert sun.azimuth_degrees == 135.0
+    assert sun.elevation_degrees == 30.0
+    assert sun.intensity == 0.8
+
+
+def test_directional_light_init_default_angles() -> None:
+    """Test that DirectionalLight.__init__ defaults angles to 0."""
+    sun = DirectionalLight(
+        direction=Vec2(1.0, 0.0),
+        color=(255, 255, 255),
+    )
+
+    assert sun.azimuth_degrees == 0.0
+    assert sun.elevation_degrees == 0.0
+
+
 # Sky Exposure and Region Tests
 def test_map_region_outdoor_factory() -> None:
     """Test MapRegion.create_outdoor_region() factory method."""
@@ -241,24 +381,6 @@ def test_static_lights_filtering() -> None:
     assert static_lights[0] is static_light
 
 
-def test_time_of_day_sun_position() -> None:
-    """Test GameWorld.set_time_of_day() updates sun elevation."""
-    gw = GameWorld(30, 30)
-    gw.lighting_system = Mock()
-
-    # Add sun
-    sun = DirectionalLight.create_sun(elevation_degrees=45.0)
-    gw.add_light(sun)
-
-    # Just test that set_time_of_day doesn't crash and updates direction
-    gw.set_time_of_day(12.0)  # Noon
-    gw.set_time_of_day(6.0)  # Sunrise
-
-    # Just verify the method works and direction is normalized
-    magnitude = math.sqrt(sun.direction.x**2 + sun.direction.y**2)
-    assert abs(magnitude - 1.0) < 1e-6
-
-
 def test_lighting_system_light_management() -> None:
     """Test adding and removing lights properly notifies the lighting system."""
     gw = GameWorld(30, 30)
@@ -325,6 +447,83 @@ def test_sun_configuration_edge_cases() -> None:
     assert abs(east_sun.direction.y) < 0.1  # -cos(90°) = 0
     assert south_sun.direction.y > 0.5  # -cos(180°) = 1 (south in screen)
     assert abs(west_sun.direction.y) < 0.1  # -cos(270°) = 0
+
+
+# Controller Sun Angle Tests
+
+
+def test_controller_get_sun_returns_directional_light() -> None:
+    """Test that Controller._get_sun() finds the DirectionalLight."""
+    from catley.controller import Controller
+
+    gw = GameWorld(30, 30)
+    sun = DirectionalLight.create_sun(azimuth_degrees=135.0)
+    gw.add_light(sun)
+
+    # Call the unbound method with a mock self that has the right .gw
+    mock_self = Mock()
+    mock_self.gw = gw
+    result = Controller._get_sun(mock_self)
+
+    assert result is sun
+
+
+def test_controller_get_sun_returns_none_without_directional() -> None:
+    """Test that _get_sun() returns None when no DirectionalLight exists."""
+    from catley.controller import Controller
+
+    gw = GameWorld(30, 30)
+    gw.add_light(StaticLight(position=(5, 5), radius=3, color=(255, 255, 255)))
+
+    mock_self = Mock()
+    mock_self.gw = gw
+    result = Controller._get_sun(mock_self)
+
+    assert result is None
+
+
+def test_controller_set_sun_angle_updates_light_and_invalidates() -> None:
+    """Test that _set_sun_angle() updates angles and invalidates lighting cache."""
+    from catley.controller import Controller
+
+    gw = GameWorld(30, 30)
+    sun = DirectionalLight.create_sun(azimuth_degrees=135.0, elevation_degrees=45.0)
+    gw.add_light(sun)
+
+    mock_lighting = Mock()
+    gw.lighting_system = mock_lighting
+
+    mock_self = Mock()
+    mock_self.gw = gw
+    mock_self._get_sun = lambda: Controller._get_sun(mock_self)
+
+    Controller._set_sun_angle(mock_self, azimuth=200.0)
+
+    assert sun.azimuth_degrees == 200.0
+    assert sun.elevation_degrees == 45.0  # Unchanged
+    mock_lighting.on_global_light_changed.assert_called_once()
+
+
+def test_controller_set_sun_angle_elevation() -> None:
+    """Test that _set_sun_angle() can update elevation."""
+    from catley.controller import Controller
+
+    gw = GameWorld(30, 30)
+    sun = DirectionalLight.create_sun(azimuth_degrees=135.0, elevation_degrees=45.0)
+    gw.add_light(sun)
+
+    mock_lighting = Mock()
+    gw.lighting_system = mock_lighting
+
+    mock_self = Mock()
+    mock_self.gw = gw
+    mock_self._get_sun = lambda: Controller._get_sun(mock_self)
+
+    Controller._set_sun_angle(mock_self, elevation=20.0)
+
+    assert sun.azimuth_degrees == 135.0  # Unchanged
+    assert sun.elevation_degrees == 20.0
+    mock_lighting.on_global_light_changed.assert_called_once()
 
 
 # Player Torch Auto-Toggle Tests

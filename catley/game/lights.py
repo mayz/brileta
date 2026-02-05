@@ -148,6 +148,10 @@ class DirectionalLight(GlobalLight):
 
     Provides illumination based on a directional vector rather than
     radiating from a point. Intensity is modulated by sky exposure.
+
+    The source azimuth and elevation angles are stored alongside the
+    derived direction vector so they can be read back and adjusted
+    at runtime (e.g. via the dev console).
     """
 
     def __init__(
@@ -155,6 +159,8 @@ class DirectionalLight(GlobalLight):
         direction: Vec2,
         color: colors.Color,
         intensity: float = 1.0,
+        azimuth_degrees: float = 0.0,
+        elevation_degrees: float = 0.0,
     ) -> None:
         """Initialize a directional light source.
 
@@ -162,11 +168,33 @@ class DirectionalLight(GlobalLight):
             direction: Normalized direction vector (e.g., Vec2(0.6, -0.8) for sun)
             color: The RGB color of the light
             intensity: Base intensity multiplier
+            azimuth_degrees: Source azimuth that produced *direction*
+            elevation_degrees: Source elevation that produced *direction*
         """
         # Global lights don't have a traditional position or radius
         super().__init__(position=(0, 0), radius=0, color=color)
         self.direction = direction.normalized()
         self.intensity = intensity
+        self.azimuth_degrees = azimuth_degrees
+        self.elevation_degrees = elevation_degrees
+
+    def set_angles(
+        self,
+        azimuth: float | None = None,
+        elevation: float | None = None,
+    ) -> None:
+        """Update stored angles and recompute the direction vector.
+
+        Elevation is clamped to [0, 90] to keep the sun above the horizon.
+        Azimuth wraps naturally via trigonometry (any float is valid).
+        """
+        if azimuth is not None:
+            self.azimuth_degrees = azimuth
+        if elevation is not None:
+            self.elevation_degrees = max(0.0, min(90.0, elevation))
+        self.direction = _angles_to_direction(
+            self.azimuth_degrees, self.elevation_degrees
+        ).normalized()
 
     @staticmethod
     def create_sun(
@@ -183,22 +211,28 @@ class DirectionalLight(GlobalLight):
             intensity: Base sun intensity
             color: Sun color (warm white by default)
         """
-        # Convert to radians
-        elevation_rad = math.radians(elevation_degrees)
-        azimuth_rad = math.radians(azimuth_degrees)
-
-        # Convert azimuth/elevation to 2D direction vector pointing toward the sun.
-        # Azimuth: 0=North, 90=East, 180=South, 270=West (compass convention)
-        # Screen coords: +X=right(east), +Y=down(south)
-        #
-        # sin(azimuth) gives east/west component (E=+, W=-)
-        # -cos(azimuth) gives north/south in screen coords (S=+, N=-)
-        # cos(elevation) scales horizontal components (overhead sun = no shadow)
-        direction_x = math.sin(azimuth_rad) * math.cos(elevation_rad)
-        direction_y = -math.cos(azimuth_rad) * math.cos(elevation_rad)
-
+        direction = _angles_to_direction(azimuth_degrees, elevation_degrees)
         return DirectionalLight(
-            direction=Vec2(direction_x, direction_y),
+            direction=direction,
             color=color,
             intensity=intensity,
+            azimuth_degrees=azimuth_degrees,
+            elevation_degrees=elevation_degrees,
         )
+
+
+def _angles_to_direction(azimuth_degrees: float, elevation_degrees: float) -> Vec2:
+    """Convert azimuth/elevation to a 2D direction vector pointing toward the sun.
+
+    Azimuth: 0=North, 90=East, 180=South, 270=West (compass convention)
+    Screen coords: +X=right(east), +Y=down(south)
+
+    sin(azimuth) gives east/west component (E=+, W=-)
+    -cos(azimuth) gives north/south in screen coords (S=+, N=-)
+    cos(elevation) scales horizontal components (overhead sun = no shadow)
+    """
+    elevation_rad = math.radians(elevation_degrees)
+    azimuth_rad = math.radians(azimuth_degrees)
+    direction_x = math.sin(azimuth_rad) * math.cos(elevation_rad)
+    direction_y = -math.cos(azimuth_rad) * math.cos(elevation_rad)
+    return Vec2(direction_x, direction_y)

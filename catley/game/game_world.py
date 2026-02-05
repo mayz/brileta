@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 from typing import TYPE_CHECKING
 
 from catley import colors, config
@@ -25,22 +24,19 @@ from catley.game.items.item_types import (
     SHOTGUN_SHELLS_TYPE,
     SLEDGEHAMMER_TYPE,
 )
-from catley.game.lights import DirectionalLight, DynamicLight, GlobalLight, LightSource
+from catley.game.lights import DynamicLight, GlobalLight, LightSource
 from catley.game.outfit import LEATHER_ARMOR_TYPE
 from catley.types import TileCoord, WorldTileCoord, WorldTilePos
 from catley.util import rng
 from catley.util.coordinates import Rect
 from catley.util.spatial import SpatialHashGrid, SpatialIndex
-from catley.view.render.lighting.base import LightingConfig, LightingSystem
+from catley.view.render.lighting.base import LightingSystem
 
 if TYPE_CHECKING:
     from catley.environment.generators.buildings.building import Building
 
 _npc_rng = rng.get("world.npc_placement")
 _container_rng = rng.get("world.containers")
-
-# Cache the default sun azimuth to avoid repeated instantiation
-_DEFAULT_SUN_AZIMUTH = LightingConfig().sun_azimuth_degrees
 
 
 class GameWorld:
@@ -176,41 +172,6 @@ class GameWorld:
             for light in self.lights
             if light.is_static() and not isinstance(light, GlobalLight)
         ]
-
-    def set_time_of_day(self, time_hours: float) -> None:
-        """Update sun position based on time of day and invalidate lighting cache.
-
-        Args:
-            time_hours: Time in 24-hour format (0.0 = midnight, 12.0 = noon)
-        """
-        # Update sun direction based on time for all directional lights
-        for light in self.get_global_lights():
-            if isinstance(light, DirectionalLight):
-                # Calculate sun elevation (peaks at noon)
-                # Simple sinusoidal model: 0° at sunrise/sunset, 90° at noon
-                time_normalized = (
-                    time_hours - 6.0
-                ) / 12.0  # -0.5 to 0.5 (sunrise to sunset)
-                if -0.5 <= time_normalized <= 0.5:
-                    # Sun is above horizon
-                    elevation_rad = math.pi * (0.5 - abs(time_normalized))  # 0 to π/2
-                    elevation_degrees = math.degrees(elevation_rad)
-
-                    # Update the light with new sun position using shared defaults.
-                    azimuth = _DEFAULT_SUN_AZIMUTH
-                    light.direction = DirectionalLight.create_sun(
-                        elevation_degrees=elevation_degrees,
-                        azimuth_degrees=azimuth,
-                        intensity=light.intensity,
-                        color=light.color,
-                    ).direction
-                else:
-                    # Sun is below horizon (night)
-                    light.intensity = 0.0
-
-        # Invalidate lighting cache since global lighting changed
-        if self.lighting_system:
-            self.lighting_system.on_global_light_changed()
 
     def set_region_sky_exposure(self, world_pos: WorldTilePos, exposure: float) -> bool:
         """Debug function to set sky exposure for a region at given position.

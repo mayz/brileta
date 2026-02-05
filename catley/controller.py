@@ -165,6 +165,22 @@ class Controller:
             description="Current world generation seed.",
         )
 
+        # Register live vars for the sun's angles. The angles live on the
+        # DirectionalLight; the controller wires them to the registry and
+        # handles lighting cache invalidation on change.
+        live_variable_registry.register(
+            "sun.azimuth",
+            getter=lambda: sun.azimuth_degrees if (sun := self._get_sun()) else 0.0,
+            setter=lambda v: self._set_sun_angle(azimuth=v),
+            description="Sun direction in degrees (0=N, 90=E, 180=S, 270=W).",
+        )
+        live_variable_registry.register(
+            "sun.elevation",
+            getter=lambda: sun.elevation_degrees if (sun := self._get_sun()) else 0.0,
+            setter=lambda v: self._set_sun_angle(elevation=v),
+            description="Sun elevation above horizon in degrees (0-90).",
+        )
+
         # Enter explore mode now that all systems are initialized
         self.explore_mode.enter()
 
@@ -270,6 +286,27 @@ class Controller:
 
         # Initialize FOV for new world
         self.update_fov()
+
+    def _get_sun(self) -> DirectionalLight | None:
+        """Return the first DirectionalLight in the game world, if any."""
+        if not hasattr(self.gw, "get_global_lights"):
+            return None
+        for light in self.gw.get_global_lights():
+            if isinstance(light, DirectionalLight):
+                return light
+        return None
+
+    def _set_sun_angle(
+        self,
+        azimuth: float | None = None,
+        elevation: float | None = None,
+    ) -> None:
+        """Update the sun's angles, recompute direction, and invalidate caches."""
+        sun = self._get_sun()
+        if sun:
+            sun.set_angles(azimuth=azimuth, elevation=elevation)
+        if self.gw.lighting_system:
+            self.gw.lighting_system.on_global_light_changed()
 
     def update_fov(self) -> None:
         """Recompute the visible area based on the player's point of view."""
