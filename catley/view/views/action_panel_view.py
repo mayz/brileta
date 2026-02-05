@@ -181,6 +181,24 @@ class ActionPanelView(TextView):
         # Compute the actual content that will be rendered
         self._update_cached_data()
 
+        # Assign hotkeys here so they're available even on cache hits.
+        # _update_cached_data() creates fresh action instances without hotkeys,
+        # and _assign_hotkeys() is normally called in draw_content(). But on a
+        # cache hit, draw_content() is skipped, so get_hotkeys() would return
+        # actions without hotkeys. Calling it here ensures hotkeys are always
+        # available for keyboard input handling.
+        if self._cached_actions:
+            default_action_id = None
+            if self._cached_default_action_id:
+                for action in self._cached_actions:
+                    if (
+                        action.id == self._cached_default_action_id
+                        or action.id.startswith(self._cached_default_action_id + "-")
+                    ):
+                        default_action_id = action.id
+                        break
+            self._assign_hotkeys(self._cached_actions, default_action_id)
+
         gw = self.controller.gw
         player = gw.player
 
@@ -237,8 +255,9 @@ class ActionPanelView(TextView):
             0, 0, self.view_width_px, self.view_height_px, colors.BLACK, fill=True
         )
 
-        # Note: _update_cached_data() is called in get_cache_key() before this,
-        # so _cached_target_name, _cached_actions, etc. are already current.
+        # Note: _update_cached_data() and _assign_hotkeys() are called in
+        # get_cache_key() before this, so _cached_actions (with hotkeys),
+        # _cached_target_name, etc. are already current.
 
         # Get font metrics for proper line spacing
         ascent, descent = self.canvas.get_font_metrics()
@@ -304,7 +323,7 @@ class ActionPanelView(TextView):
         # Actions section - flat list with default action first
         is_combat = self.controller.is_combat_mode()
         if self._cached_actions:
-            # Prefix match: "search" matches "search-container-adjacent"
+            # Find default action for sorting (hotkeys assigned in get_cache_key)
             default_action: ActionOption | None = None
             if self._cached_default_action_id:
                 for action in self._cached_actions:
@@ -314,12 +333,6 @@ class ActionPanelView(TextView):
                     ):
                         default_action = action
                         break
-
-            # Assign hotkeys to all actions (default action gets "a")
-            self._assign_hotkeys(
-                self._cached_actions,
-                default_action.id if default_action else None,
-            )
 
             # Sort actions: default first, then by priority
             sorted_actions: list[ActionOption] = []
