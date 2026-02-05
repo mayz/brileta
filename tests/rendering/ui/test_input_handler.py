@@ -220,7 +220,7 @@ def test_shift_click_starts_pathfinding(monkeypatch: Any) -> None:
     event = tcod.event.MouseButtonDown((5, 5), (5, 5), tcod.event.MouseButton.LEFT)
     result = mode._handle_mouse_click(event)
     assert result is True  # Event was consumed
-    assert calls == [(mode._p, (5, 5))]
+    assert calls == [(mode.player, (5, 5))]
 
 
 def test_right_click_distant_tile_opens_menu() -> None:

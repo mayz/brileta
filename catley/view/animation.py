@@ -136,6 +136,15 @@ class AnimationManager:
         """
         return len(self._queue) == 0
 
+    def clear(self) -> None:
+        """Clear all animations without completing them.
+
+        Use this when the game world is being regenerated and the animated
+        actors no longer exist. For normal gameplay interruption, use
+        finish_all_and_clear() instead to properly snap actors to positions.
+        """
+        self._queue.clear()
+
     def update(self, fixed_timestep: FixedTimestep) -> None:
         """Update all animations simultaneously and remove finished ones.
 

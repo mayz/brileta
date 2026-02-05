@@ -99,6 +99,13 @@ class SubTileParticleSystem:
             max_particles, ParticleLayer.UNDER_ACTORS.value, dtype=np.int8
         )
 
+    def clear(self) -> None:
+        """Clear all active particles.
+
+        Use this when the game world is being regenerated.
+        """
+        self.active_count = 0
+
     def add_particle(
         self,
         tile_x: float,

@@ -57,6 +57,7 @@ class GameWorld:
         map_width: TileCoord,
         map_height: TileCoord,
         generator_type: str = "dungeon",  # "dungeon" or "settlement"
+        seed: int | str | None = None,
     ) -> None:
         self.mouse_tile_location_on_map: WorldTilePos | None = None
         self.item_spawner = ItemSpawner(self)
@@ -66,6 +67,7 @@ class GameWorld:
         self.lighting_system: LightingSystem | None = None
 
         self.generator_type = generator_type
+        self.seed = seed
 
         # Settlement-specific data (populated by _generate_map for settlements)
         self.buildings: list[Building] = []
@@ -244,7 +246,7 @@ class GameWorld:
         # Used by floating text system to track actor positions.
         self._actor_id_registry: dict[int, Actor] = {}
 
-    def _create_player(self) -> Character:
+    def _create_player(self) -> PC:
         """Instantiate the player character and starting inventory."""
         player = PC(
             x=0,
@@ -294,7 +296,7 @@ class GameWorld:
                 "settlement",
                 map_width,
                 map_height,
-                seed=config.RANDOM_SEED,
+                seed=self.seed,
             )
             map_data = generator.generate()
 

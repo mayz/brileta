@@ -102,6 +102,7 @@ class DevConsoleOverlay(TextOverlay):
             "set <var> <val>": "Sets the value of a variable.",
             "toggle <var>": "Toggles a boolean variable.",
             "show <pattern>": "Toggle watching variable(s). Supports prefix* patterns.",
+            "world [seed]": "Shows current seed, or regenerates world with new seed.",
             "quit": "Quit the game.",
             "exit": "Quit the game.",
         }
@@ -341,6 +342,22 @@ class DevConsoleOverlay(TextOverlay):
                         self.history.append(f"Now watching: {pattern}")
                     else:
                         self.history.append(f"No longer watching: {pattern}")
+            case "world":
+                if len(parts) < 2:
+                    # No seed provided - show current seed
+                    current_seed = self.controller._current_seed
+                    self.history.append(f"Current seed: {current_seed}")
+                else:
+                    # Seed provided - regenerate world
+                    seed_str = parts[1]
+                    # Try to parse as int, otherwise use as string seed
+                    try:
+                        seed = int(seed_str)
+                    except ValueError:
+                        seed = seed_str
+                    self.history.append(f"Generating new world with seed: {seed}")
+                    self.controller.new_world(seed)
+                    self.history.append("World regenerated.")
             case "quit" | "exit":
                 self.controller.app.quit()
             case _:

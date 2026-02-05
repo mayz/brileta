@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import random
 from typing import TYPE_CHECKING
 
 import tcod.map
@@ -36,7 +37,7 @@ from .modes.base import Mode
 from .modes.combat import CombatMode
 from .modes.explore import ExploreMode
 from .modes.picker import PickerMode
-from .types import FixedTimestep, InterpolationAlpha
+from .types import FixedTimestep, InterpolationAlpha, RandomSeed
 from .util.clock import Clock
 from .util.coordinates import Rect, WorldTilePos
 from .util.live_vars import live_variable_registry, record_time_live_variable
@@ -82,36 +83,13 @@ class Controller:
 
     def __init__(self, app: App, graphics: GraphicsContext) -> None:
         self.app = app
-        self.gw = GameWorld(
-            config.MAP_WIDTH,
-            config.MAP_HEIGHT,
-            generator_type=config.MAP_GENERATOR_TYPE,
-        )
-        self.action_discovery = ActionDiscovery()
-
-        # Initialize GPU lighting system (WGPU backend)
-        from .backends.wgpu.gpu_lighting import GPULightingSystem
-
-        self.gw.lighting_system = GPULightingSystem(self.gw, graphics)
-
         self.graphics = graphics
         self.coordinate_converter = graphics.coordinate_converter
 
+        # Systems that persist across world regeneration
+        self.action_discovery = ActionDiscovery()
         self.message_log = MessageLog()
         self.overlay_system = OverlaySystem(self)
-        self.frame_manager = FrameManager(self, graphics)
-        self.input_handler = InputHandler(app, self)
-
-        # Create the player's torch - automatically disabled in sunlit outdoor areas
-        self._player_torch = DynamicLight.create_player_torch(self.gw.player)
-        self._player_torch_active = True
-        self.gw.add_light(self._player_torch)
-
-        # Create the sun if enabled (uses config defaults)
-        if config.SUN_ENABLED:
-            self.gw.add_light(DirectionalLight.create_sun())
-
-        self.turn_manager = TurnManager(self)
 
         # Animation manager for handling movement and effects
         self.animation_manager = AnimationManager()
@@ -145,15 +123,6 @@ class Controller:
         self.last_input_time: float | None = None
         self.action_count_for_latency_metric: int = 0
 
-        # Initialize mode system - game always has an active mode
-        # Modes are organized in a stack. ExploreMode is always at the bottom.
-        # Other modes (CombatMode, PickerMode, etc.) push on top and pop when done.
-        self.explore_mode = ExploreMode(self)
-        self.combat_mode = CombatMode(self)
-        self.picker_mode = PickerMode(self)
-        self.mode_stack: list[Mode] = [self.explore_mode]
-        self.explore_mode.enter()
-
         # Subscribe to combat initiation events for auto-entry
         subscribe_to_event(CombatInitiatedEvent, self._on_combat_initiated)
 
@@ -165,6 +134,142 @@ class Controller:
         # Hover target tracking for visual feedback (outline only, no game state).
         # Updated each frame based on mouse position, used for subtle hover highlight.
         self.hovered_actor: Actor | None = None
+
+        # Track the current world seed for debugging/reproducibility
+        self._current_seed: RandomSeed = None
+
+        # Create the initial game world (uses config.RANDOM_SEED)
+        # This sets self.gw, lighting_system, player torch, and sun
+        self.new_world()
+
+        # Create frame manager after world exists (needs gw.lighting_system)
+        self.frame_manager = FrameManager(self, graphics)
+        self.input_handler = InputHandler(app, self)
+
+        # Create turn manager after world exists (accesses gw.player via property)
+        self.turn_manager = TurnManager(self)
+
+        # Initialize mode system - game always has an active mode
+        # Modes are organized in a stack. ExploreMode is always at the bottom.
+        # Other modes (CombatMode, PickerMode, etc.) push on top and pop when done.
+        # Created after world exists because modes access controller.gw
+        self.explore_mode = ExploreMode(self)
+        self.combat_mode = CombatMode(self)
+        self.picker_mode = PickerMode(self)
+        self.mode_stack: list[Mode] = [self.explore_mode]
+
+        # Register game.seed live variable for debugging/reproducibility
+        live_variable_registry.register(
+            "game.seed",
+            getter=lambda: self._current_seed,
+            description="Current world generation seed.",
+        )
+
+        # Enter explore mode now that all systems are initialized
+        self.explore_mode.enter()
+
+    def new_world(self, seed: RandomSeed = None) -> None:
+        """Create or recreate the game world.
+
+        This method handles both initial world creation (called from __init__)
+        and runtime regeneration (called from dev console). It uses the same
+        code path in both cases.
+
+        Args:
+            seed: Random seed for world generation. If None on first call,
+                uses config.RANDOM_SEED. If None on subsequent calls, generates
+                a new random seed.
+        """
+        from .backends.wgpu.gpu_lighting import GPULightingSystem
+
+        # Determine the seed to use
+        if seed is None:
+            if not hasattr(self, "gw"):
+                # First call (from __init__) - use config seed
+                seed = config.RANDOM_SEED
+            else:
+                # Subsequent call with no seed - generate random one
+                seed = random.randint(0, 2**31 - 1)
+
+        # Set the global random state
+        random.seed(seed)
+        self._current_seed = seed
+
+        # Create new game world
+        self.gw = GameWorld(
+            config.MAP_WIDTH,
+            config.MAP_HEIGHT,
+            generator_type=config.MAP_GENERATOR_TYPE,
+            seed=seed,
+        )
+
+        # Initialize GPU lighting system
+        self.gw.lighting_system = GPULightingSystem(self.gw, self.graphics)
+
+        # Create the player's torch - automatically disabled in sunlit outdoor areas
+        self._player_torch = DynamicLight.create_player_torch(self.gw.player)
+        self._player_torch_active = True
+        self.gw.add_light(self._player_torch)
+
+        # Create the sun if enabled (uses config defaults)
+        if config.SUN_ENABLED:
+            self.gw.add_light(DirectionalLight.create_sun())
+
+        # Reset dependent systems if this is a regeneration (not first call)
+        if hasattr(self, "turn_manager"):
+            self._reset_for_new_world()
+
+    def _reset_for_new_world(self) -> None:
+        """Reset all systems that depend on the game world.
+
+        Called by new_world() when regenerating (not on first creation).
+        """
+        # Reset turn manager state
+        self.turn_manager.reset()
+
+        # Clear all animations (actors no longer exist)
+        self.animation_manager.clear()
+
+        # Reset presentation manager
+        self.presentation_manager.clear()
+
+        # Clear controller state
+        self.selected_target = None
+        self.hovered_actor = None
+        self.combat_intent_cache = None
+
+        # Close all menus/overlays (they hold stale references to old world objects)
+        if hasattr(self, "overlay_system"):
+            self.overlay_system.hide_all_overlays()
+
+        # Reset mode stack to just explore mode, calling _exit() on each
+        if hasattr(self, "mode_stack"):
+            while len(self.mode_stack) > 1:
+                old_mode = self.mode_stack.pop()
+                old_mode._exit()
+
+        # Reset explore mode state
+        if hasattr(self, "explore_mode"):
+            self.explore_mode.movement_keys.clear()
+
+        # Update frame manager's world view with new lighting system
+        if hasattr(self, "frame_manager") and self.frame_manager is not None:
+            wv = self.frame_manager.world_view
+            wv.lighting_system = self.gw.lighting_system
+
+            # Clear world view caches
+            wv.particle_system.clear()
+            wv.decal_system.clear()
+            wv.floating_text_manager.clear()
+            wv._texture_cache.clear()
+            wv._active_background_texture = None
+            wv._light_overlay_texture = None
+
+            # Reset viewport to follow new player
+            wv.viewport_system.camera.set_position(self.gw.player.x, self.gw.player.y)
+
+        # Initialize FOV for new world
+        self.update_fov()
 
     def update_fov(self) -> None:
         """Recompute the visible area based on the player's point of view."""

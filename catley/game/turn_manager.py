@@ -39,7 +39,7 @@ from catley.util.coordinates import WorldTilePos
 if TYPE_CHECKING:
     from catley.controller import Controller
     from catley.game.action_plan import ActivePlan, ApproachStep
-    from catley.game.actors import Actor
+    from catley.game.actors import PC, Actor
     from catley.game.actors.core import Character
 
 
@@ -72,7 +72,6 @@ class TurnManager:
             controller: The main game controller for accessing actors and world state
         """
         self.controller = controller
-        self.player = self.controller.gw.player
 
         # Player action queue (preserved for compatibility)
         self._player_action_queue: deque[GameIntent] = deque()
@@ -89,6 +88,22 @@ class TurnManager:
         # sequencing where players can follow cause and effect.
         self._last_action_completed_time: float = 0.0
         self._pending_duration_ms: int = 0
+
+    @property
+    def player(self) -> PC:
+        """The player character, accessed via controller to avoid stale references."""
+        return self.controller.gw.player
+
+    def reset(self) -> None:
+        """Reset the turn manager for a new world.
+
+        Clears all queues and caches. Called when the game world is regenerated.
+        """
+        self._player_action_queue.clear()
+        self._energy_actors_cache.clear()
+        self._cache_dirty = True
+        self._last_action_completed_time = 0.0
+        self._pending_duration_ms = 0
 
     def _update_energy_actors_cache(self) -> None:
         """Update cached list of actors with energy components for performance.

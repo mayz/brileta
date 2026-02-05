@@ -75,16 +75,23 @@ class ExploreMode(Mode):
         # Cache references for convenience (may be None in tests)
         self._cursor_manager = None
         self._fm = None
-        self._gw = controller.gw
-        self._p = controller.gw.player
         self._app = controller.app
 
         # These may not be available during __init__ (test environments)
-        # We'll access them lazily
         if controller.frame_manager is not None:
             self._fm = controller.frame_manager
             if hasattr(controller.frame_manager, "cursor_manager"):
                 self._cursor_manager = controller.frame_manager.cursor_manager
+
+    @property
+    def gw(self):
+        """Game world, accessed dynamically to avoid stale references after regen."""
+        return self.controller.gw
+
+    @property
+    def player(self):
+        """Player character, accessed dynamically to stay fresh after world regen."""
+        return self.controller.gw.player
 
     def enter(self) -> None:
         """Enter explore mode - set default cursor."""
@@ -168,7 +175,7 @@ class ExploreMode(Mode):
     def update(self) -> None:
         """Generate movement intent if keys held."""
         # Don't generate movement if player is dead
-        if self._p.health and not self._p.health.is_alive():
+        if self.player.health and not self.player.health.is_alive():
             return
 
         # Always call generate_intent to maintain timing state.
@@ -177,7 +184,7 @@ class ExploreMode(Mode):
         intent = self.move_generator.generate_intent(self.movement_keys)
         if intent:
             # Energy gate: player must afford the action
-            if self._p.energy.can_afford(config.ACTION_COST):
+            if self.player.energy.can_afford(config.ACTION_COST):
                 self.controller._execute_player_action_immediately(intent)
             else:
                 # Player tried to move but can't afford it - time passes anyway
@@ -212,7 +219,7 @@ class ExploreMode(Mode):
 
     def _reload_weapon(self) -> None:
         """Reload the active weapon."""
-        active_weapon = self._p.inventory.get_active_item()
+        active_weapon = self.player.inventory.get_active_item()
         if (
             active_weapon
             and active_weapon.ranged_attack
@@ -221,7 +228,7 @@ class ExploreMode(Mode):
         ):
             from catley.game.actions.combat import ReloadIntent
 
-            reload_action = ReloadIntent(self.controller, self._p, active_weapon)
+            reload_action = ReloadIntent(self.controller, self.player, active_weapon)
             self.controller.queue_action(reload_action)
         else:
             publish_event(MessageEvent("Nothing to reload!", colors.GREY))
@@ -230,7 +237,7 @@ class ExploreMode(Mode):
         """Switch to a weapon slot via the intent system."""
         from catley.game.actions.misc import SwitchWeaponIntent
 
-        switch_action = SwitchWeaponIntent(self.controller, self._p, slot)
+        switch_action = SwitchWeaponIntent(self.controller, self.player, slot)
         self.controller.queue_action(switch_action)
 
     # -------------------------------------------------------------------------
@@ -256,7 +263,7 @@ class ExploreMode(Mode):
             return False
 
         # Don't process hotkey actions if player is dead
-        if self._p.health and not self._p.health.is_alive():
+        if self.player.health and not self.player.health.is_alive():
             return False
 
         hotkeys = self._fm.action_panel_view.get_hotkeys()
@@ -276,7 +283,7 @@ class ExploreMode(Mode):
             # Create action instance with static params
             action_instance = action_option.action_class(
                 self.controller,
-                self._p,
+                self.player,
                 **action_option.static_params,
             )
             self.controller.queue_action(action_instance)
@@ -292,7 +299,7 @@ class ExploreMode(Mode):
         """Check if an action affects the currently hovered tile."""
         from catley.game.actions.environment import CloseDoorIntent, OpenDoorIntent
 
-        mouse_pos = self._gw.mouse_tile_location_on_map
+        mouse_pos = self.gw.mouse_tile_location_on_map
         if mouse_pos is None:
             return False
 
@@ -398,7 +405,7 @@ class ExploreMode(Mode):
         ):
             if world_tile_pos is not None:
                 self.controller.start_plan(
-                    self._p, WalkToPlan, target_position=world_tile_pos
+                    self.player, WalkToPlan, target_position=world_tile_pos
                 )
             return True
 
@@ -450,7 +457,7 @@ class ExploreMode(Mode):
             elif action_option.action_class:
                 action_instance = action_option.action_class(
                     self.controller,
-                    self._p,
+                    self.player,
                     **action_option.static_params,
                 )
                 self.controller.queue_action(action_instance)
@@ -479,7 +486,7 @@ class ExploreMode(Mode):
             return True  # Consume right click even if nothing to do
 
         world_x, world_y = world_tile_pos
-        game_map = self._gw.game_map
+        game_map = self.gw.game_map
 
         # Check bounds
         if not (0 <= world_x < game_map.width and 0 <= world_y < game_map.height):
@@ -495,7 +502,7 @@ class ExploreMode(Mode):
             # Use start_plan directly rather than execute_default_action,
             # since the latter would try to classify actors at the tile.
             self.controller.start_plan(
-                self._p, WalkToPlan, target_position=(world_x, world_y)
+                self.player, WalkToPlan, target_position=(world_x, world_y)
             )
             self.controller.deselect_target()
             return True
@@ -503,8 +510,8 @@ class ExploreMode(Mode):
         # Visible tiles - full interaction (existing code continues here)
         # Determine the target (actor at location or tile position)
         target: Actor | WorldTilePos
-        actor_at_click = self._gw.get_actor_at_location(world_x, world_y)
-        if actor_at_click is not None and actor_at_click is not self._p:
+        actor_at_click = self.gw.get_actor_at_location(world_x, world_y)
+        if actor_at_click is not None and actor_at_click is not self.player:
             # Skip dead characters
             if (
                 isinstance(actor_at_click, Character)
@@ -543,7 +550,7 @@ class ExploreMode(Mode):
             return False
 
         world_x, world_y = world_tile_pos
-        game_map = self._gw.game_map
+        game_map = self.gw.game_map
 
         # Check bounds and visibility
         if not (0 <= world_x < game_map.width and 0 <= world_y < game_map.height):
@@ -558,8 +565,8 @@ class ExploreMode(Mode):
         # Use spatial index to find all actors, since get_actor_at_location
         # prioritizes blocking actors (player) over non-blocking (ItemPile)
         actor_at_click = None
-        for actor in self._gw.actor_spatial_index.get_at_point(world_x, world_y):
-            if actor is not self._p:
+        for actor in self.gw.actor_spatial_index.get_at_point(world_x, world_y):
+            if actor is not self.player:
                 actor_at_click = actor
                 break
         if actor_at_click is not None:
@@ -607,7 +614,7 @@ class ExploreMode(Mode):
             return False
 
         world_x, world_y = target
-        game_map = self._gw.game_map
+        game_map = self.gw.game_map
         if not (0 <= world_x < game_map.width and 0 <= world_y < game_map.height):
             return False
 

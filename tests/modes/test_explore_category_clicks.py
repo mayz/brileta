@@ -129,11 +129,9 @@ def make_explore_mode_with_panel() -> tuple[
     fm = DummyFrameManager(view)
     controller.frame_manager = fm
 
-    # Create explore mode
+    # Create explore mode (uses controller.gw and controller.gw.player via properties)
     mode = ExploreMode(cast(Any, controller))
     mode._fm = fm
-    mode._gw = gw
-    mode._p = player
 
     return controller, mode, view
 
