@@ -25,6 +25,9 @@ addopts = "-ra -n auto --dist=worksteal"
 filterwarnings = []
 
 [tool.ruff.lint]
+# The formatter handles line length where it can.
+# E501 has no autofix, so enabling it just creates unfixable violations for edge cases.
+ignore = ["E501"]
 select = [
     "A",        # detect shadowed builtins
     "F",        # Pyflakes rules
