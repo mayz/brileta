@@ -459,8 +459,8 @@ def test_energy_gate_blocks_movement_when_insufficient_energy() -> None:
 
         # Make explore mode's move generator return a move intent
         move_intent = GameIntent(controller, controller.gw.player)
-        controller.explore_mode.move_generator.generate_intent = (
-            lambda keys: move_intent
+        controller.explore_mode.move_generator.generate_intent = lambda keys: (
+            move_intent
         )
 
         # Simulate movement keys pressed (now in explore_mode, not input_handler)
@@ -481,8 +481,8 @@ def test_energy_gate_allows_movement_when_sufficient_energy() -> None:
         # Make explore mode's move generator return a move intent
         move_intent = GameIntent(controller, controller.gw.player)
         move_intent.animation_type = AnimationType.INSTANT
-        controller.explore_mode.move_generator.generate_intent = (
-            lambda keys: move_intent
+        controller.explore_mode.move_generator.generate_intent = lambda keys: (
+            move_intent
         )
 
         # Simulate movement keys pressed (now in explore_mode)
@@ -512,8 +512,8 @@ def test_energy_gate_regenerates_energy_when_blocked() -> None:
 
         # Make explore mode's move generator return a move intent
         move_intent = GameIntent(controller, controller.gw.player)
-        controller.explore_mode.move_generator.generate_intent = (
-            lambda keys: move_intent
+        controller.explore_mode.move_generator.generate_intent = lambda keys: (
+            move_intent
         )
 
         # Simulate movement keys pressed (now in explore_mode)

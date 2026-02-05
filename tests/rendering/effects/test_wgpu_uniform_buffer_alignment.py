@@ -42,10 +42,8 @@ class TestWGPUUniformBufferAlignment:
         mock_system._time = 1.5
 
         # Bind the real method to our mock
-        mock_system._pack_uniform_data = (
-            lambda *args, **kwargs: GPULightingSystem._pack_uniform_data(
-                mock_system, *args, **kwargs
-            )
+        mock_system._pack_uniform_data = lambda *args, **kwargs: (
+            GPULightingSystem._pack_uniform_data(mock_system, *args, **kwargs)
         )
 
         return mock_system
@@ -249,10 +247,8 @@ class TestWGPUUniformBufferEdgeCases:
         mock_system.MAX_LIGHTS = 32
         mock_system._time = 0.0
 
-        mock_system._pack_uniform_data = (
-            lambda *args, **kwargs: GPULightingSystem._pack_uniform_data(
-                mock_system, *args, **kwargs
-            )
+        mock_system._pack_uniform_data = lambda *args, **kwargs: (
+            GPULightingSystem._pack_uniform_data(mock_system, *args, **kwargs)
         )
 
         return mock_system

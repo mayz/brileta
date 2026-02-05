@@ -505,9 +505,8 @@ class CombatActionDiscovery:
                         requirements=[ActionRequirement.TARGET_ACTOR],
                         static_params={"weapon": weapon, "attack_mode": "melee"},
                         success_probability=prob,
-                        execute=lambda w=weapon,
-                        t=target: self.factory.create_melee_attack(
-                            controller, actor, t, w
+                        execute=lambda w=weapon, t=target: (
+                            self.factory.create_melee_attack(controller, actor, t, w)
                         ),
                     )
                 )
@@ -569,9 +568,8 @@ class CombatActionDiscovery:
                         static_params={"weapon": weapon, "attack_mode": "ranged"},
                         success_probability=prob,
                         cost_description=None,
-                        execute=lambda w=weapon,
-                        t=target: self.factory.create_ranged_attack(
-                            controller, actor, t, w
+                        execute=lambda w=weapon, t=target: (
+                            self.factory.create_ranged_attack(controller, actor, t, w)
                         ),
                     )
                 )
