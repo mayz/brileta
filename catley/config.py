@@ -59,7 +59,7 @@ DEBUG_DISABLE_LIGHT_OVERLAY = False  # Show only dark/unlit background
 # BACKEND CONFIGURATION
 # =============================================================================
 
-BACKEND = BackendConfig.MODERNGL
+BACKEND = BackendConfig.WGPU
 
 # ============================================================================
 # PERFORMANCE CONFIGURATION

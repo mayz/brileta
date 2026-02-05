@@ -10,7 +10,7 @@ To create a virtual environment and install all dependencies, run `uv sync`. Eve
 
 ## Headless Linux / CI (Ubuntu)
 
-When running in a headless Linux container, ModernGL and WGPU tests require an X11 display. Install these system packages; `make` will use Xvfb automatically on headless Linux and fail fast if it is missing:
+When running in a headless Linux container, WGPU tests require an X11 display. Install these system packages; `make` will use Xvfb automatically on headless Linux and fail fast if it is missing:
 
 ```bash
 sudo apt-get update

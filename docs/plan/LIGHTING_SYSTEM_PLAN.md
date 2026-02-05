@@ -1,10 +1,10 @@
 # GPU Lighting System Implementation Plan
 
-**SHADER ASSETS LOCATION**: All shaders are organized in `assets/shaders/` with subdirectories:
-- `glyph/` - Character rendering (render.vert, render.frag)
-- `lighting/` - GPU lighting system (point_light.vert, point_light.frag)
-- `screen/` - Main screen rendering (main.vert, main.frag)
-- `ui/` - User interface rendering (texture.vert, texture.frag)
+**SHADER ASSETS LOCATION**: All shaders are organized in `assets/shaders/wgsl/` with subdirectories:
+- `glyph/` - Character rendering (render.wgsl)
+- `lighting/` - GPU lighting system (point_light.wgsl)
+- `screen/` - Main screen rendering (main.wgsl)
+- `effects/` - Atmospheric effects (cloud_layer.wgsl)
 
 ## Implementation Phases
 
@@ -61,11 +61,9 @@ Only do stuff here and below *after* the WebGPU migration.
     };
     ```
 
-**Migration & Implementation Note:**
+**Implementation Note:**
 
-This plan describes the target architecture for a highly scalable lighting system. **The full implementation of this multi-pass system should be deferred until the WebGPU migration (Roadmap Step 3.5).**
-
-For the current ModernGL prototype, a simplified single-pass approach that achieves visual parity is sufficient and more efficient from a development standpoint.
+This plan describes the target architecture for a highly scalable lighting system. The current WGPU implementation uses a simplified single-pass approach that achieves visual parity. The multi-pass system described above is a future optimization.
 
 ### Phase 3: Performance Benchmarking (High Priority)
 - **Goal**: Create comprehensive benchmarking program to compare GPU vs CPU performance
@@ -239,7 +237,7 @@ This general system would replace the current targeted spillover and provide mor
 ### Core Components
 
 #### GPULightingSystem
-- Location: `catley/backends/moderngl/gpu_lighting.py`
+- Location: `catley/backends/wgpu/gpu_lighting.py`
 - Purpose: Main class implementing LightingSystem interface
 - Key methods:
   - `compute_lightmap()` - Main API, returns numpy array
@@ -253,22 +251,22 @@ This general system would replace the current targeted spillover and provide mor
 - Composite Shader: Combine lights with ambient, apply gamma
 
 #### GPU Memory Layout
-```glsl
+```wgsl
 struct LightData {
-    vec2 position;      // World position
-    float radius;       // Light radius
-    float intensity;    // Current intensity (includes flicker)
-    vec3 color;         // RGB color (0.0-1.0)
-    uint lightType;     // 0=static, 1=dynamic, 2=directional
-    vec2 direction;     // For directional lights
-    float padding;      // Memory alignment
-};
+    position: vec2f,     // World position
+    radius: f32,         // Light radius
+    intensity: f32,      // Current intensity (includes flicker)
+    color: vec3f,        // RGB color (0.0-1.0)
+    light_type: u32,     // 0=static, 1=dynamic, 2=directional
+    direction: vec2f,    // For directional lights
+    padding: f32,        // Memory alignment
+}
 ```
 
 ### Integration Points
 
-#### ModernGLGraphicsContext Integration
-- Resource Management: Use existing FBO caching system
+#### WGPUGraphicsContext Integration
+- Resource Management: Use existing texture/buffer caching system
 - Texture Pipeline: Output compatible with existing renderers
 - Shader Management: Integrate with existing shader infrastructure
 

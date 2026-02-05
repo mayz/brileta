@@ -10,8 +10,7 @@ from catley.game.game_world import GameWorld
 from catley.game.items.item_types import FISTS_TYPE, PISTOL_TYPE
 from catley.view.render.graphics import GraphicsContext
 from catley.view.ui.dual_pane_menu import DualPaneMenu, ExternalInventory
-from tests.helpers import DummyGameWorld
-from tests.rendering.backends.test_canvases import _make_renderer
+from tests.helpers import DummyGameWorld, _make_renderer
 
 
 @dataclass

@@ -3,10 +3,6 @@
 These tests verify that texture samplers are configured correctly for the
 lighting system, particularly that sky exposure uses nearest-neighbor filtering
 to prevent bleeding at tile boundaries.
-
-This test exists because a bug was found where WGPU used linear filtering for
-sky exposure, causing shadows to incorrectly bleed into buildings. ModernGL had
-the correct nearest filtering, but WGPU was missed when the fix was applied.
 """
 
 from __future__ import annotations
@@ -73,28 +69,3 @@ class TestWGPUSamplerConfiguration:
         assert call_kwargs["address_mode_u"] == wgpu.AddressMode.clamp_to_edge
         assert call_kwargs["address_mode_v"] == wgpu.AddressMode.clamp_to_edge
         assert call_kwargs["address_mode_w"] == wgpu.AddressMode.clamp_to_edge
-
-
-class TestSamplerMatchesBetweenBackends:
-    """Tests to ensure sampler configuration matches between backends."""
-
-    def test_moderngl_sky_exposure_uses_nearest(self) -> None:
-        """Verify ModernGL sky exposure texture uses nearest filtering.
-
-        This serves as documentation and regression prevention - if someone
-        changes ModernGL's filtering, this test will fail.
-        """
-
-        # We need to verify the code sets filter to NEAREST
-        # Can't easily instantiate the full system, so we check the source
-        import inspect
-
-        from catley.backends.moderngl.gpu_lighting import GPULightingSystem
-
-        source = inspect.getsource(GPULightingSystem._update_sky_exposure_texture)
-
-        # Verify the source contains the nearest filter setting
-        assert "NEAREST" in source, "ModernGL sky exposure should use NEAREST filtering"
-        assert "sky_exposure_texture.filter" in source, (
-            "ModernGL should explicitly set sky exposure filter"
-        )

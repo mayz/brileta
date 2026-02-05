@@ -92,23 +92,23 @@ RandomSeed = int | str | None
 # =============================================================================
 
 # Literal types for type-checked backend attributes.
-AppBackend = Literal["tcod", "glfw"]
-GraphicsBackend = Literal["tcod", "moderngl", "wgpu"]
-LightingBackend = Literal["moderngl", "wgpu"]
+# Note: ModernGL (OpenGL) and TCOD backends were removed in favor of WGPU.
+# To recover the old backends, see git tag "pre-moderngl-removal".
+AppBackend = Literal["glfw"]
+GraphicsBackend = Literal["wgpu"]
+LightingBackend = Literal["wgpu"]
 
 
 class BackendConfig(Enum):
     """Configuration for which backends to use for app, graphics, and lighting.
 
-    Options:
-    - MODERNGL: Fast startup (~350ms). Recommended for now.
-    - WGPU: Future-proof (WebGPU/Vulkan/Metal) but slow startup (~1200ms).
-    - TCOD_MODERNGL / TCOD_WGPU: Legacy tcod app backend with GPU lighting.
+    WGPU uses native GPU APIs (Metal on macOS, Vulkan on Linux, D3D12 on Windows)
+    for future-proof cross-platform rendering.
+
+    Historical note: ModernGL (OpenGL 4.1) and TCOD backends were removed.
+    See git tag "pre-moderngl-removal" to recover them if needed.
     """
 
-    TCOD_MODERNGL = ("tcod", "tcod", "moderngl")
-    TCOD_WGPU = ("tcod", "tcod", "wgpu")
-    MODERNGL = ("glfw", "moderngl", "moderngl")
     WGPU = ("glfw", "wgpu", "wgpu")
 
     app: AppBackend

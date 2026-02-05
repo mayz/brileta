@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from types import SimpleNamespace
 from typing import Any, Self
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import tcod.context
@@ -20,6 +20,26 @@ from catley.game.item_spawner import ItemSpawner
 from catley.game.items.item_core import Item
 from catley.types import WorldTileCoord
 from catley.util.spatial import SpatialHashGrid
+from catley.view.render.graphics import GraphicsContext
+
+
+def _make_renderer(tile_height: int = 16) -> GraphicsContext:
+    """Create a mock GraphicsContext for testing UI components."""
+    renderer = MagicMock(spec=GraphicsContext)
+    renderer.tile_dimensions = (8, tile_height)
+    renderer.console_width_tiles = 80
+    renderer.console_height_tiles = 50
+    renderer.sdl_renderer = MagicMock()
+    renderer.root_console = MagicMock()
+
+    # Mock console_render - return new object each time
+    renderer.console_render = MagicMock()
+    renderer.console_render.render.side_effect = lambda console: MagicMock()
+
+    # Mock upload_texture - return new object each time
+    renderer.sdl_renderer.upload_texture.side_effect = lambda pixels: MagicMock()
+
+    return renderer
 
 
 class DummyGameWorld(GameWorld):

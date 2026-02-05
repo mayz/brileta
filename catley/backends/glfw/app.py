@@ -5,24 +5,14 @@ from __future__ import annotations
 import glfw
 import tcod
 
-from catley import config
 from catley.app import App, AppConfig
+from catley.backends.wgpu.graphics import WGPUGraphicsContext
 from catley.util.misc import SuppressStderr
 
 from .window import GlfwWindow
 
-match config.BACKEND.graphics:
-    case "wgpu":
-        from catley.backends.wgpu.graphics import WGPUGraphicsContext
 
-        GraphicsContextImplClass = WGPUGraphicsContext
-    case "moderngl":
-        from catley.backends.moderngl.graphics import ModernGLGraphicsContext
-
-        GraphicsContextImplClass = ModernGLGraphicsContext
-
-
-class GlfwApp(App[GraphicsContextImplClass]):
+class GlfwApp(App[WGPUGraphicsContext]):
     """
     The GLFW implementation of the application driver.
 
@@ -43,7 +33,8 @@ class GlfwApp(App[GraphicsContextImplClass]):
         if not glfw.init():
             raise RuntimeError("Failed to initialize GLFW")
 
-        # Configure OpenGL context for ModernGL
+        # Configure OpenGL context hints (GLFW requires these even though WGPU
+        # uses Metal/Vulkan/D3D12 directly - GLFW creates an OpenGL context by default)
         glfw.window_hint(glfw.CONTEXT_VERSION_MAJOR, 3)
         glfw.window_hint(glfw.CONTEXT_VERSION_MINOR, 3)
         glfw.window_hint(glfw.OPENGL_PROFILE, glfw.OPENGL_CORE_PROFILE)
@@ -99,9 +90,9 @@ class GlfwApp(App[GraphicsContextImplClass]):
         self._last_mouse_pos = glfw.get_cursor_pos(self.window)
 
     def _initialize_graphics(self) -> None:
-        """Initialize the graphics context."""
+        """Initialize the WGPU graphics context."""
         self.glfw_window = GlfwWindow(self.window)
-        self.graphics = GraphicsContextImplClass(self.glfw_window)
+        self.graphics = WGPUGraphicsContext(self.glfw_window)
 
     def _register_callbacks(self) -> None:
         """Register GLFW event callbacks."""

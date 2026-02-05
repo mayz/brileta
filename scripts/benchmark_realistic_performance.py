@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Realistic ModernGL Performance Benchmark
+Realistic WGPU Performance Benchmark
 
 This script measures performance in actual gameplay scenarios with a visible window,
-providing more realistic baseline metrics for the WGPU migration.
+providing realistic baseline metrics for performance tuning.
 
 Usage:
     uv run python scripts/benchmark_realistic_performance.py [--duration SECONDS]
@@ -287,7 +287,7 @@ class RealisticPerformanceBenchmark:
 
     def run_all_tests(self, duration_per_test: float) -> None:
         """Run realistic performance tests."""
-        print("Starting Realistic ModernGL Performance Benchmark")
+        print("Starting Realistic WGPU Performance Benchmark")
         print("=" * 60)
         print("This benchmark uses a VISIBLE window for realistic measurements")
         print(f"Each test runs for {duration_per_test}s")
@@ -328,7 +328,7 @@ class RealisticPerformanceBenchmark:
             return
 
         print("\n" + "=" * 80)
-        print("REALISTIC MODERNGL PERFORMANCE RESULTS")
+        print("REALISTIC WGPU PERFORMANCE RESULTS")
         print("=" * 80)
 
         # Print summary table
@@ -370,14 +370,9 @@ class RealisticPerformanceBenchmark:
         """Export results to JSON."""
         output_path = Path(filename)
 
-        # Get OpenGL info if using ModernGL backend
-        mgl_context = getattr(self.app.graphics, "mgl_context", None)
-        if mgl_context is not None:
-            opengl_version = mgl_context.info.get("GL_VERSION", "Unknown")
-            gpu_renderer = mgl_context.info.get("GL_RENDERER", "Unknown")
-        else:
-            opengl_version = "N/A (WGPU backend)"
-            gpu_renderer = "N/A (WGPU backend)"
+        # WGPU backend - GPU info would need wgpu adapter queries
+        gpu_backend = "WGPU (Metal/Vulkan/D3D12)"
+        gpu_renderer = "See wgpu adapter info"
 
         export_data = {
             "metadata": {
@@ -386,7 +381,7 @@ class RealisticPerformanceBenchmark:
                 "target_fps": self.target_fps,
                 "vsync_enabled": True,
                 "visible_window": True,
-                "opengl_version": opengl_version,
+                "gpu_backend": gpu_backend,
                 "gpu_renderer": gpu_renderer,
             },
             "results": [asdict(result) for result in self.results],
@@ -399,9 +394,7 @@ class RealisticPerformanceBenchmark:
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Realistic ModernGL performance benchmark"
-    )
+    parser = argparse.ArgumentParser(description="Realistic WGPU performance benchmark")
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
     parser.add_argument(
         "--duration",

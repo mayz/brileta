@@ -7,7 +7,6 @@ from typing import Any, cast
 import tcod.event
 
 from catley import colors
-from catley.backends.tcod.graphics import TCODGraphicsContext
 from catley.controller import Controller
 from catley.game.actors import Character
 from catley.game.enums import ItemCategory
@@ -21,8 +20,7 @@ from catley.game.items.item_types import (
 from catley.game.items.junk_item_types import JUNK_ITEM_TYPES
 from catley.game.turn_manager import TurnManager
 from catley.view.ui.dual_pane_menu import DualPaneMenu, ExternalInventory, PaneId
-from tests.helpers import DummyGameWorld
-from tests.rendering.backends.test_canvases import _make_renderer
+from tests.helpers import DummyGameWorld, _make_renderer
 
 
 @dataclass
@@ -36,9 +34,8 @@ class DummyController(Controller):
         self.frame_manager = None
         self.message_log = None
         self.graphics = _make_renderer()
-        tcod_renderer = cast(TCODGraphicsContext, self.graphics)
-        cast(Any, tcod_renderer.root_console).width = 100
-        cast(Any, tcod_renderer.root_console).height = 50
+        cast(Any, self.graphics).root_console.width = 100
+        cast(Any, self.graphics).root_console.height = 50
         self.coordinate_converter = SimpleNamespace(pixel_to_tile=lambda x, y: (x, y))
         self.overlay_system = None
 

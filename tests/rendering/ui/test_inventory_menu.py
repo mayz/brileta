@@ -6,7 +6,7 @@ from catley.game.actors import components
 from catley.game.items.item_types import COMBAT_KNIFE_TYPE, PISTOL_TYPE
 from catley.util.message_log import MessageLog
 from catley.view.ui.dual_pane_menu import DualPaneMenu
-from tests.rendering.backends.test_canvases import _make_renderer
+from tests.helpers import _make_renderer
 
 
 def test_dual_pane_menu_equips_to_active_slot() -> None:

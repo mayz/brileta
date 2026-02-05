@@ -92,8 +92,8 @@ class TestWGSLLightingShaders:
         # Verify shadow grid texture is used
         assert "shadow_grid" in shader_source, "Shadow grid texture binding missing"
 
-    def test_shader_structure_matches_glsl_original(self):
-        """Test that WGSL shader preserves the structure of the original GLSL."""
+    def test_shader_has_key_algorithms(self):
+        """Test that WGSL shader has the key lighting algorithms."""
 
         # Read WGSL shader
         wgsl_path = (
@@ -103,45 +103,24 @@ class TestWGSLLightingShaders:
         with wgsl_path.open() as f:
             wgsl_source = f.read()
 
-        # Read original GLSL fragment shader
-        glsl_frag_path = (
-            Path(__file__).parent.parent.parent.parent.parent
-            / "assets/shaders/glsl/lighting/point_light.frag"
-        )
-        with glsl_frag_path.open() as f:
-            glsl_frag_source = f.read()
-
-        # Check that key algorithms are preserved
+        # Check that key algorithms are present
         # Noise function
         assert "noise2d" in wgsl_source, "noise2d function missing in WGSL"
-        assert "noise2d" in glsl_frag_source, "Original GLSL should have noise2d"
 
-        # Shadow calculations - both backends use texture-based shadow grid
-        assert "computePointLightShadow" in glsl_frag_source, (
-            "GLSL should have texture-based point light shadows"
-        )
+        # Shadow calculations
         assert "computePointLightShadow" in wgsl_source, (
             "WGSL should have texture-based point light shadows"
         )
 
-        # Directional shadows - both backends use texture marching
-        assert "computeDirectionalShadow" in glsl_frag_source, (
-            "GLSL should have texture-based directional shadows"
-        )
+        # Directional shadows
         assert "computeDirectionalShadow" in wgsl_source, (
             "WGSL should have texture-based directional shadows"
         )
 
-        # Actor shadows - both backends have actor shadow functions
-        assert "computeActorShadow" in glsl_frag_source, (
-            "GLSL should have actor shadow function"
-        )
+        # Actor shadows
         assert "computeActorShadow" in wgsl_source, (
             "WGSL should have actor shadow function"
         )
 
         # Flicker effects
         assert "flicker" in wgsl_source.lower(), "Flicker effects missing in WGSL"
-        assert "flicker" in glsl_frag_source.lower(), (
-            "Original GLSL should have flicker effects"
-        )
