@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-import random
-
 from catley.game.actors.conditions import Injury
 from catley.game.enums import Disposition
+from catley.util import rng
 
 from .core import NPC
+
+_rng = rng.get("npc.barks")
 
 BARKS_BY_DISPOSITION: dict[Disposition, tuple[str, ...]] = {
     Disposition.HOSTILE: (
@@ -90,11 +91,11 @@ def pick_bump_bark(npc: NPC) -> str | None:
     if state is not None:
         candidates = BARKS_BY_STATE.get(state)
         if candidates:
-            return random.choice(candidates)
+            return _rng.choice(candidates)
 
     disposition = npc.ai.disposition
     candidates = BARKS_BY_DISPOSITION.get(disposition)
     if not candidates:
         return None
 
-    return random.choice(candidates)
+    return _rng.choice(candidates)

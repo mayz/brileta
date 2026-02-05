@@ -1,7 +1,10 @@
 import abc
-import random
 
 import numpy as np
+
+from catley.util import rng
+
+_rng = rng.get("util.metrics")
 
 
 class StatsVar(abc.ABC):
@@ -101,7 +104,7 @@ class CumulativeVar(StatsVar):
             self.samples[self.count - 1] = value
         else:
             # Random replacement
-            j = random.randint(0, self.count)
+            j = _rng.randint(0, self.count)
             if j < self.num_samples:
                 self.samples[j] = value
 

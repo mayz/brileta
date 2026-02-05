@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from catley.events import SoundEvent, publish_event, reset_event_bus_for_testing
+from catley.sound import system as sound_system
 from catley.sound.definitions import SOUND_DEFINITIONS, SoundDefinition, SoundLayer
 from catley.sound.system import SoundSystem
 
@@ -129,8 +130,8 @@ class TestOneShotSounds(unittest.TestCase):
         # A better test would mock random.choice.
         self.assertTrue(len(played_files) > 0)
 
-        # Let's try mocking random.choice to be sure
-        with patch("random.choice", return_value="var1.ogg"):
+        # Let's try mocking the RNG choice to be sure
+        with patch.object(sound_system._rng, "choice", return_value="var1.ogg"):
             self.sound_system.play_one_shot("variant_test", 0, 0)
             args, _ = self.mock_backend.play_sound.call_args
             self.assertIn("var1.ogg", str(args[0]))

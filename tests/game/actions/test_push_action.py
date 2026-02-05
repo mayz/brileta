@@ -1,8 +1,7 @@
 """Tests for the Push combat stunt action."""
 
 from dataclasses import dataclass
-from typing import cast
-from unittest.mock import patch
+from typing import TYPE_CHECKING, cast
 
 from catley import colors
 from catley.controller import Controller
@@ -19,6 +18,9 @@ from catley.game.actors.status_effects import (
 from catley.game.game_world import GameWorld
 from catley.game.resolution.d20_system import D20System
 from tests.helpers import DummyGameWorld
+
+if TYPE_CHECKING:
+    from tests.conftest import CombatRNGPatcher, D20RNGPatcher
 
 
 @dataclass
@@ -75,7 +77,9 @@ def _make_world_with_enemy(
 # --- Basic Push Tests ---
 
 
-def test_push_success_moves_target_one_tile() -> None:
+def test_push_success_moves_target_one_tile(
+    patch_d20_rng: "D20RNGPatcher",
+) -> None:
     """A successful push moves the target one tile away."""
     reset_event_bus_for_testing()
     controller, player, enemy = _make_world_with_enemy(
@@ -83,7 +87,7 @@ def test_push_success_moves_target_one_tile() -> None:
     )
 
     # Force a successful roll (not critical)
-    with patch("random.randint", return_value=15):
+    with patch_d20_rng([15]):
         intent = PushIntent(cast(Controller, controller), player, enemy)
         executor = PushExecutor()
         result = executor.execute(intent)
@@ -95,7 +99,9 @@ def test_push_success_moves_target_one_tile() -> None:
     assert enemy.y == 5
 
 
-def test_push_success_applies_staggered_effect() -> None:
+def test_push_success_applies_staggered_effect(
+    patch_d20_rng: "D20RNGPatcher",
+) -> None:
     """A successful push should apply StaggeredEffect to the defender."""
     reset_event_bus_for_testing()
     controller, player, enemy = _make_world_with_enemy(
@@ -103,7 +109,7 @@ def test_push_success_applies_staggered_effect() -> None:
     )
 
     # Force a successful roll (not critical)
-    with patch("random.randint", return_value=15):
+    with patch_d20_rng([15]):
         intent = PushIntent(cast(Controller, controller), player, enemy)
         executor = PushExecutor()
         result = executor.execute(intent)
@@ -115,7 +121,9 @@ def test_push_success_applies_staggered_effect() -> None:
     assert not enemy.status_effects.has_status_effect(TrippedEffect)
 
 
-def test_push_critical_success_trips_target() -> None:
+def test_push_critical_success_trips_target(
+    patch_d20_rng: "D20RNGPatcher",
+) -> None:
     """A critical success push moves, trips target, and TrippedEffect lasts 2 turns."""
     reset_event_bus_for_testing()
     controller, player, enemy = _make_world_with_enemy(
@@ -123,7 +131,7 @@ def test_push_critical_success_trips_target() -> None:
     )
 
     # Force a natural 20
-    with patch("random.randint", return_value=20):
+    with patch_d20_rng([20]):
         intent = PushIntent(cast(Controller, controller), player, enemy)
         executor = PushExecutor()
         result = executor.execute(intent)
@@ -137,7 +145,9 @@ def test_push_critical_success_trips_target() -> None:
     assert not enemy.status_effects.has_status_effect(StaggeredEffect)
 
 
-def test_push_partial_success_moves_but_attacker_off_balance() -> None:
+def test_push_partial_success_moves_but_attacker_off_balance(
+    patch_d20_rng: "D20RNGPatcher",
+) -> None:
     """A partial success (tie) moves target but attacker is off-balance."""
     reset_event_bus_for_testing()
     # Create characters with specific strength values for a tie scenario
@@ -168,7 +178,7 @@ def test_push_partial_success_moves_but_attacker_off_balance() -> None:
     controller = DummyController(gw=gw)
 
     # Roll of 10 + ability 10 = 20, which equals roll_to_exceed (10 + 10 = 20)
-    with patch("random.randint", return_value=10):
+    with patch_d20_rng([10]):
         intent = PushIntent(cast(Controller, controller), player, enemy)
         executor = PushExecutor()
         result = executor.execute(intent)
@@ -180,13 +190,15 @@ def test_push_partial_success_moves_but_attacker_off_balance() -> None:
     assert player.status_effects.has_status_effect(OffBalanceEffect)
 
 
-def test_push_failure_gives_attacker_off_balance() -> None:
+def test_push_failure_gives_attacker_off_balance(
+    patch_d20_rng: "D20RNGPatcher",
+) -> None:
     """A failed push gives the attacker OffBalanceEffect."""
     reset_event_bus_for_testing()
     controller, player, enemy = _make_world_with_enemy()
 
     # Force a low roll that will fail (not nat 1)
-    with patch("random.randint", return_value=2):
+    with patch_d20_rng([2]):
         intent = PushIntent(cast(Controller, controller), player, enemy)
         executor = PushExecutor()
         result = executor.execute(intent)
@@ -200,13 +212,15 @@ def test_push_failure_gives_attacker_off_balance() -> None:
     assert player.status_effects.has_status_effect(OffBalanceEffect)
 
 
-def test_push_critical_failure_trips_attacker() -> None:
+def test_push_critical_failure_trips_attacker(
+    patch_d20_rng: "D20RNGPatcher",
+) -> None:
     """A critical failure (nat 1) trips the attacker."""
     reset_event_bus_for_testing()
     controller, player, enemy = _make_world_with_enemy()
 
     # Force a natural 1
-    with patch("random.randint", return_value=1):
+    with patch_d20_rng([1]):
         intent = PushIntent(cast(Controller, controller), player, enemy)
         executor = PushExecutor()
         result = executor.execute(intent)
@@ -241,7 +255,9 @@ def test_push_fails_if_not_adjacent() -> None:
 # --- Environmental Interactions ---
 
 
-def test_push_into_wall_deals_impact_damage() -> None:
+def test_push_into_wall_deals_impact_damage(
+    patch_combat_rng: "CombatRNGPatcher",
+) -> None:
     """Pushing into a wall deals 1d4 impact damage and OffBalance."""
     reset_event_bus_for_testing()
     controller, player, enemy = _make_world_with_enemy(
@@ -253,15 +269,8 @@ def test_push_into_wall_deals_impact_damage() -> None:
 
     initial_hp = enemy.health.hp
 
-    # Force success, and fix the impact damage roll to 3
-    def fixed_randint(a: int, b: int) -> int:
-        if b == 20:  # d20 roll
-            return 15  # Success
-        if b == 4:  # d4 impact damage
-            return 3
-        return a
-
-    with patch("random.randint", fixed_randint):
+    # Force success (d20 roll 15), and fix the impact damage roll to 3
+    with patch_combat_rng([15], [3]):
         intent = PushIntent(cast(Controller, controller), player, enemy)
         executor = PushExecutor()
         result = executor.execute(intent)
@@ -277,7 +286,9 @@ def test_push_into_wall_deals_impact_damage() -> None:
     assert enemy.status_effects.has_status_effect(OffBalanceEffect)
 
 
-def test_push_into_another_actor_makes_both_off_balance() -> None:
+def test_push_into_another_actor_makes_both_off_balance(
+    patch_d20_rng: "D20RNGPatcher",
+) -> None:
     """Pushing into another actor makes both actors off-balance."""
     reset_event_bus_for_testing()
     gw = DummyGameWorld()
@@ -293,7 +304,7 @@ def test_push_into_another_actor_makes_both_off_balance() -> None:
     controller = DummyController(gw=gw)
 
     # Force success
-    with patch("random.randint", return_value=15):
+    with patch_d20_rng([15]):
         intent = PushIntent(cast(Controller, controller), player, enemy1)
         executor = PushExecutor()
         result = executor.execute(intent)
@@ -307,7 +318,9 @@ def test_push_into_another_actor_makes_both_off_balance() -> None:
     assert enemy2.status_effects.has_status_effect(OffBalanceEffect)
 
 
-def test_push_into_hazard_tile_moves_target() -> None:
+def test_push_into_hazard_tile_moves_target(
+    patch_d20_rng: "D20RNGPatcher",
+) -> None:
     """Pushing onto a hazard tile moves the target (damage via turn system)."""
     reset_event_bus_for_testing()
     controller, player, enemy = _make_world_with_enemy(
@@ -317,7 +330,7 @@ def test_push_into_hazard_tile_moves_target() -> None:
     controller.gw.game_map.tiles[7, 5] = TileTypeID.ACID_POOL
 
     # Force success
-    with patch("random.randint", return_value=15):
+    with patch_d20_rng([15]):
         intent = PushIntent(cast(Controller, controller), player, enemy)
         executor = PushExecutor()
         result = executor.execute(intent)
@@ -330,7 +343,9 @@ def test_push_into_hazard_tile_moves_target() -> None:
     # Note: Actual hazard damage is applied by the turn system, not the push
 
 
-def test_push_at_map_edge_fails_gracefully() -> None:
+def test_push_at_map_edge_fails_gracefully(
+    patch_d20_rng: "D20RNGPatcher",
+) -> None:
     """Push should handle map edge gracefully."""
     reset_event_bus_for_testing()
     controller, player, enemy = _make_world_with_enemy(
@@ -339,7 +354,7 @@ def test_push_at_map_edge_fails_gracefully() -> None:
     )
 
     # Force success
-    with patch("random.randint", return_value=15):
+    with patch_d20_rng([15]):
         intent = PushIntent(cast(Controller, controller), player, enemy)
         executor = PushExecutor()
         result = executor.execute(intent)
@@ -353,7 +368,9 @@ def test_push_at_map_edge_fails_gracefully() -> None:
 # --- Push Direction Tests ---
 
 
-def test_push_direction_up() -> None:
+def test_push_direction_up(
+    patch_d20_rng: "D20RNGPatcher",
+) -> None:
     """Push calculates direction correctly - up."""
     reset_event_bus_for_testing()
     controller, player, enemy = _make_world_with_enemy(
@@ -361,7 +378,7 @@ def test_push_direction_up() -> None:
         enemy_pos=(5, 5),  # Enemy above player
     )
 
-    with patch("random.randint", return_value=15):
+    with patch_d20_rng([15]):
         intent = PushIntent(cast(Controller, controller), player, enemy)
         executor = PushExecutor()
         executor.execute(intent)
@@ -371,7 +388,9 @@ def test_push_direction_up() -> None:
     assert enemy.y == 4
 
 
-def test_push_direction_down() -> None:
+def test_push_direction_down(
+    patch_d20_rng: "D20RNGPatcher",
+) -> None:
     """Push calculates direction correctly - down."""
     reset_event_bus_for_testing()
     controller, player, enemy = _make_world_with_enemy(
@@ -379,7 +398,7 @@ def test_push_direction_down() -> None:
         enemy_pos=(5, 5),  # Enemy below player
     )
 
-    with patch("random.randint", return_value=15):
+    with patch_d20_rng([15]):
         intent = PushIntent(cast(Controller, controller), player, enemy)
         executor = PushExecutor()
         executor.execute(intent)
@@ -389,7 +408,9 @@ def test_push_direction_down() -> None:
     assert enemy.y == 6
 
 
-def test_push_direction_left() -> None:
+def test_push_direction_left(
+    patch_d20_rng: "D20RNGPatcher",
+) -> None:
     """Push calculates direction correctly - left."""
     reset_event_bus_for_testing()
     controller, player, enemy = _make_world_with_enemy(
@@ -397,7 +418,7 @@ def test_push_direction_left() -> None:
         enemy_pos=(5, 5),  # Enemy to left of player
     )
 
-    with patch("random.randint", return_value=15):
+    with patch_d20_rng([15]):
         intent = PushIntent(cast(Controller, controller), player, enemy)
         executor = PushExecutor()
         executor.execute(intent)
@@ -410,7 +431,9 @@ def test_push_direction_left() -> None:
 # --- Diagonal Push Tests ---
 
 
-def test_push_works_diagonally() -> None:
+def test_push_works_diagonally(
+    patch_d20_rng: "D20RNGPatcher",
+) -> None:
     """Push should work on diagonally adjacent targets."""
     reset_event_bus_for_testing()
     controller, player, enemy = _make_world_with_enemy(
@@ -418,7 +441,7 @@ def test_push_works_diagonally() -> None:
         enemy_pos=(6, 6),  # Diagonal from player
     )
 
-    with patch("random.randint", return_value=15):
+    with patch_d20_rng([15]):
         intent = PushIntent(cast(Controller, controller), player, enemy)
         executor = PushExecutor()
         result = executor.execute(intent)
@@ -433,7 +456,9 @@ def test_push_works_diagonally() -> None:
 # --- Push Hostility Tests ---
 
 
-def test_push_makes_non_hostile_npc_hostile() -> None:
+def test_push_makes_non_hostile_npc_hostile(
+    patch_d20_rng: "D20RNGPatcher",
+) -> None:
     """Pushing a non-hostile NPC should make them hostile."""
     from catley.game.actors import NPC
     from catley.game.enums import Disposition
@@ -461,7 +486,7 @@ def test_push_makes_non_hostile_npc_hostile() -> None:
     assert npc.ai.disposition == Disposition.WARY
 
     # Force successful push
-    with patch("random.randint", return_value=15):
+    with patch_d20_rng([15]):
         intent = PushIntent(cast(Controller, controller), player, npc)
         executor = PushExecutor()
         result = executor.execute(intent)
@@ -471,7 +496,9 @@ def test_push_makes_non_hostile_npc_hostile() -> None:
     assert npc.ai.disposition == Disposition.HOSTILE
 
 
-def test_failed_push_still_triggers_hostility() -> None:
+def test_failed_push_still_triggers_hostility(
+    patch_d20_rng: "D20RNGPatcher",
+) -> None:
     """A failed push should still make the NPC hostile - the attempt is aggressive."""
     from catley.game.actors import NPC
     from catley.game.enums import Disposition
@@ -498,7 +525,7 @@ def test_failed_push_still_triggers_hostility() -> None:
     assert npc.ai.disposition == Disposition.WARY
 
     # Force failed push (low roll, not nat 1)
-    with patch("random.randint", return_value=2):
+    with patch_d20_rng([2]):
         intent = PushIntent(cast(Controller, controller), player, npc)
         executor = PushExecutor()
         result = executor.execute(intent)
@@ -509,7 +536,9 @@ def test_failed_push_still_triggers_hostility() -> None:
     assert npc.ai.disposition == Disposition.HOSTILE
 
 
-def test_push_does_not_change_already_hostile() -> None:
+def test_push_does_not_change_already_hostile(
+    patch_d20_rng: "D20RNGPatcher",
+) -> None:
     """Pushing an already hostile NPC should not change their disposition."""
     from catley.game.actors import NPC
     from catley.game.enums import Disposition
@@ -533,7 +562,7 @@ def test_push_does_not_change_already_hostile() -> None:
     gw.add_actor(npc)
     controller = DummyController(gw=gw)
 
-    with patch("random.randint", return_value=15):
+    with patch_d20_rng([15]):
         intent = PushIntent(cast(Controller, controller), player, npc)
         executor = PushExecutor()
         executor.execute(intent)
@@ -541,7 +570,9 @@ def test_push_does_not_change_already_hostile() -> None:
     assert npc.ai.disposition == Disposition.HOSTILE
 
 
-def test_npc_pushing_npc_does_not_trigger_hostility() -> None:
+def test_npc_pushing_npc_does_not_trigger_hostility(
+    patch_d20_rng: "D20RNGPatcher",
+) -> None:
     """NPC pushing another NPC should not change disposition toward player."""
     from catley.game.actors import NPC
     from catley.game.enums import Disposition
@@ -576,7 +607,7 @@ def test_npc_pushing_npc_does_not_trigger_hostility() -> None:
     controller = DummyController(gw=gw)
 
     # NPC1 pushes NPC2
-    with patch("random.randint", return_value=15):
+    with patch_d20_rng([15]):
         intent = PushIntent(cast(Controller, controller), npc1, npc2)
         executor = PushExecutor()
         result = executor.execute(intent)

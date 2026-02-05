@@ -1,4 +1,3 @@
-import random
 from dataclasses import dataclass
 from typing import cast
 from unittest.mock import patch
@@ -11,7 +10,7 @@ from catley.events import (
     reset_event_bus_for_testing,
     subscribe_to_event,
 )
-from catley.game import ranges
+from catley.game import consequences, ranges
 from catley.game.actions.area_effects import AreaEffectIntent
 from catley.game.actions.combat import AttackIntent
 from catley.game.actions.executors.area_effects import WeaponAreaEffectExecutor
@@ -382,7 +381,7 @@ def test_thrown_weapon_not_consumed_on_critical_failure() -> None:
         patch.object(controller, "create_resolver", return_value=mock_resolver),
         patch.object(AttackExecutor, "_apply_combat_outcome", return_value=0),
         patch.object(AttackExecutor, "_handle_post_attack_effects"),
-        patch.object(random, "random", return_value=0.20),  # Selects weapon_drop
+        patch.object(consequences._rng, "random", return_value=0.20),  # weapon_drop
     ):
         knife.ranged_attack.current_ammo = 1
         executor.execute(intent)

@@ -1,8 +1,7 @@
 """Tests for the Punch combat action."""
 
 from dataclasses import dataclass
-from typing import cast
-from unittest.mock import patch
+from typing import TYPE_CHECKING, cast
 
 from catley import colors
 from catley.controller import Controller
@@ -14,6 +13,9 @@ from catley.game.game_world import GameWorld
 from catley.game.items.item_types import COMBAT_KNIFE_TYPE, FISTS_TYPE
 from catley.game.resolution.d20_system import D20System
 from tests.helpers import DummyGameWorld
+
+if TYPE_CHECKING:
+    from tests.conftest import CombatRNGPatcher, D20RNGPatcher
 
 
 @dataclass
@@ -134,7 +136,9 @@ def test_holster_weapon_executor_succeeds_when_unarmed() -> None:
     assert result.succeeded
 
 
-def test_punch_executor_does_not_holster() -> None:
+def test_punch_executor_does_not_holster(
+    patch_combat_rng: "CombatRNGPatcher",
+) -> None:
     """PunchExecutor should not handle holstering - that's HolsterWeaponExecutor's job.
 
     In the ActionPlan system, holstering is handled by a separate step.
@@ -149,15 +153,8 @@ def test_punch_executor_does_not_holster() -> None:
     player.inventory.equip_to_slot(knife, slot_index=0)
     assert player.inventory.get_active_item() == knife
 
-    # Force a successful roll and d3 damage of 2
-    def fixed_randint(a: int, b: int) -> int:
-        if b == 20:  # d20 roll
-            return 15  # Success
-        if b == 3:  # d3 damage
-            return 2
-        return a
-
-    with patch("random.randint", fixed_randint):
+    # Force a successful roll (15) and d3 damage (2)
+    with patch_combat_rng([15], [2]):
         intent = PunchIntent(cast(Controller, controller), player, enemy)
         executor = PunchExecutor()
         result = executor.execute(intent)
@@ -176,7 +173,9 @@ def test_punch_executor_does_not_holster() -> None:
 # --- Punch Attack Tests ---
 
 
-def test_punch_unarmed_deals_damage() -> None:
+def test_punch_unarmed_deals_damage(
+    patch_combat_rng: "CombatRNGPatcher",
+) -> None:
     """Punching unarmed should deal d3 damage on hit."""
     reset_event_bus_for_testing()
     controller, player, enemy = _make_world_with_enemy()
@@ -185,15 +184,8 @@ def test_punch_unarmed_deals_damage() -> None:
     # Ensure player is unarmed
     assert player.inventory.get_active_item() is None
 
-    # Force a successful roll and d3 damage of 2
-    def fixed_randint(a: int, b: int) -> int:
-        if b == 20:  # d20 roll
-            return 15  # Success
-        if b == 3:  # d3 damage
-            return 2
-        return a
-
-    with patch("random.randint", fixed_randint):
+    # Force a successful roll (15) and d3 damage (2)
+    with patch_combat_rng([15], [2]):
         intent = PunchIntent(cast(Controller, controller), player, enemy)
         executor = PunchExecutor()
         result = executor.execute(intent)
@@ -204,14 +196,16 @@ def test_punch_unarmed_deals_damage() -> None:
     assert enemy.health.hp == initial_hp - 2
 
 
-def test_punch_miss_deals_no_damage() -> None:
+def test_punch_miss_deals_no_damage(
+    patch_d20_rng: "D20RNGPatcher",
+) -> None:
     """A missed punch deals no damage."""
     reset_event_bus_for_testing()
     controller, player, enemy = _make_world_with_enemy()
     initial_hp = enemy.health.hp
 
     # Force a low roll that will miss
-    with patch("random.randint", return_value=2):
+    with patch_d20_rng([2]):
         intent = PunchIntent(cast(Controller, controller), player, enemy)
         executor = PunchExecutor()
         result = executor.execute(intent)
@@ -222,21 +216,16 @@ def test_punch_miss_deals_no_damage() -> None:
     assert enemy.health.hp == initial_hp
 
 
-def test_punch_critical_hit() -> None:
+def test_punch_critical_hit(
+    patch_combat_rng: "CombatRNGPatcher",
+) -> None:
     """A natural 20 punch should be a critical hit."""
     reset_event_bus_for_testing()
     controller, player, enemy = _make_world_with_enemy()
     initial_hp = enemy.health.hp
 
     # Force a natural 20 and d3 damage of 3
-    def fixed_randint(a: int, b: int) -> int:
-        if b == 20:
-            return 20
-        if b == 3:
-            return 3
-        return a
-
-    with patch("random.randint", fixed_randint):
+    with patch_combat_rng([20], [3]):
         intent = PunchIntent(cast(Controller, controller), player, enemy)
         executor = PunchExecutor()
         result = executor.execute(intent)
@@ -267,7 +256,9 @@ def test_punch_fails_if_not_adjacent() -> None:
     assert result.block_reason == "not_adjacent"
 
 
-def test_punch_works_diagonally() -> None:
+def test_punch_works_diagonally(
+    patch_combat_rng: "CombatRNGPatcher",
+) -> None:
     """Punch should work on diagonally adjacent targets."""
     reset_event_bus_for_testing()
     controller, player, enemy = _make_world_with_enemy(
@@ -276,15 +267,8 @@ def test_punch_works_diagonally() -> None:
     )
     initial_hp = enemy.health.hp
 
-    # Force success
-    def fixed_randint(a: int, b: int) -> int:
-        if b == 20:
-            return 15
-        if b == 3:
-            return 2
-        return a
-
-    with patch("random.randint", fixed_randint):
+    # Force success (15), damage (2)
+    with patch_combat_rng([15], [2]):
         intent = PunchIntent(cast(Controller, controller), player, enemy)
         executor = PunchExecutor()
         result = executor.execute(intent)
@@ -297,7 +281,9 @@ def test_punch_works_diagonally() -> None:
 # --- Punch Hostility Tests ---
 
 
-def test_punch_makes_non_hostile_npc_hostile() -> None:
+def test_punch_makes_non_hostile_npc_hostile(
+    patch_combat_rng: "CombatRNGPatcher",
+) -> None:
     """Punching a non-hostile NPC should make them hostile."""
     from catley.game.actors import NPC
     from catley.game.enums import Disposition
@@ -324,15 +310,8 @@ def test_punch_makes_non_hostile_npc_hostile() -> None:
 
     assert npc.ai.disposition == Disposition.WARY
 
-    # Force successful punch
-    def fixed_randint(a: int, b: int) -> int:
-        if b == 20:
-            return 15
-        if b == 3:
-            return 2
-        return a
-
-    with patch("random.randint", fixed_randint):
+    # Force successful punch (15), damage (2)
+    with patch_combat_rng([15], [2]):
         intent = PunchIntent(cast(Controller, controller), player, npc)
         executor = PunchExecutor()
         result = executor.execute(intent)
@@ -342,7 +321,9 @@ def test_punch_makes_non_hostile_npc_hostile() -> None:
     assert npc.ai.disposition == Disposition.HOSTILE
 
 
-def test_missed_punch_still_triggers_hostility() -> None:
+def test_missed_punch_still_triggers_hostility(
+    patch_d20_rng: "D20RNGPatcher",
+) -> None:
     """A missed punch should still make the NPC hostile - the attempt is aggressive."""
     from catley.game.actors import NPC
     from catley.game.enums import Disposition
@@ -369,7 +350,7 @@ def test_missed_punch_still_triggers_hostility() -> None:
     assert npc.ai.disposition == Disposition.WARY
 
     # Force missed punch (low roll)
-    with patch("random.randint", return_value=2):
+    with patch_d20_rng([2]):
         intent = PunchIntent(cast(Controller, controller), player, npc)
         executor = PunchExecutor()
         result = executor.execute(intent)

@@ -1,16 +1,17 @@
 from __future__ import annotations
 
-import random
-
 from catley.game import outfit, ranges
 from catley.game.actors import Actor, Character, conditions
 from catley.game.enums import InjuryLocation, OutcomeTier
 from catley.game.items.capabilities import Attack
 from catley.game.items.item_core import Item
 from catley.game.items.properties import TacticalProperty, WeaponProperty
+from catley.util import rng
 
 from .base import ResolutionResult
 from .outcomes import CombatOutcome
+
+_rng = rng.get("combat.injury")
 
 INJURY_LOCATION_WEIGHTS: dict[InjuryLocation, float] = {
     # Body location hit probabilities based on combat targeting
@@ -25,7 +26,7 @@ INJURY_LOCATION_WEIGHTS: dict[InjuryLocation, float] = {
 
 def _determine_injury_location() -> InjuryLocation:
     """Randomly select an injury location using ``INJURY_LOCATION_WEIGHTS``."""
-    roll = random.random()
+    roll = _rng.random()
     cumulative = 0.0
     for location, weight in INJURY_LOCATION_WEIGHTS.items():
         cumulative += weight

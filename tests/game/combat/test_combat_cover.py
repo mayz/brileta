@@ -10,6 +10,7 @@ from catley.game.actors import Character
 from catley.game.enums import OutcomeTier
 from catley.game.game_world import GameWorld
 from catley.game.items.item_types import FISTS_TYPE
+from catley.game.resolution import d20_system
 from catley.game.resolution.d20_system import D20ResolutionResult
 from tests.helpers import DummyGameWorld
 
@@ -46,7 +47,7 @@ def test_cover_bonus_reduces_hit_chance() -> None:
     intent = AttackIntent(cast(Controller, controller), attacker, defender, weapon)
     executor = AttackExecutor()
 
-    with patch("random.randint", return_value=7):
+    with patch.object(d20_system._rng, "randint", return_value=7):
         result = cast(
             D20ResolutionResult,
             executor._execute_attack_roll(intent, attack, weapon, {}),

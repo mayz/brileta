@@ -1,8 +1,7 @@
 """Tests for the Trip combat stunt action."""
 
 from dataclasses import dataclass
-from typing import cast
-from unittest.mock import patch
+from typing import TYPE_CHECKING, cast
 
 from catley import colors
 from catley.controller import Controller
@@ -17,6 +16,9 @@ from catley.game.actors.status_effects import (
 from catley.game.game_world import GameWorld
 from catley.game.resolution.d20_system import D20System
 from tests.helpers import DummyGameWorld
+
+if TYPE_CHECKING:
+    from tests.conftest import CombatRNGPatcher, D20RNGPatcher
 
 
 @dataclass
@@ -73,7 +75,9 @@ def _make_world_with_enemy(
 # --- Basic Trip Tests ---
 
 
-def test_trip_success_applies_tripped_effect() -> None:
+def test_trip_success_applies_tripped_effect(
+    patch_d20_rng: "D20RNGPatcher",
+) -> None:
     """A successful trip applies TrippedEffect to the target."""
     reset_event_bus_for_testing()
     controller, player, enemy = _make_world_with_enemy(
@@ -82,7 +86,7 @@ def test_trip_success_applies_tripped_effect() -> None:
     original_x, original_y = enemy.x, enemy.y
 
     # Force a successful roll (not critical)
-    with patch("random.randint", return_value=15):
+    with patch_d20_rng([15]):
         intent = TripIntent(cast(Controller, controller), player, enemy)
         executor = TripExecutor()
         result = executor.execute(intent)
@@ -96,7 +100,9 @@ def test_trip_success_applies_tripped_effect() -> None:
     assert enemy.status_effects.has_status_effect(TrippedEffect)
 
 
-def test_trip_success_does_not_move_target() -> None:
+def test_trip_success_does_not_move_target(
+    patch_d20_rng: "D20RNGPatcher",
+) -> None:
     """Unlike push, trip does not move the target."""
     reset_event_bus_for_testing()
     controller, player, enemy = _make_world_with_enemy(
@@ -104,7 +110,7 @@ def test_trip_success_does_not_move_target() -> None:
     )
     original_x, original_y = enemy.x, enemy.y
 
-    with patch("random.randint", return_value=15):
+    with patch_d20_rng([15]):
         intent = TripIntent(cast(Controller, controller), player, enemy)
         executor = TripExecutor()
         executor.execute(intent)
@@ -114,7 +120,9 @@ def test_trip_success_does_not_move_target() -> None:
     assert enemy.y == original_y
 
 
-def test_trip_critical_success_deals_damage() -> None:
+def test_trip_critical_success_deals_damage(
+    patch_combat_rng: "CombatRNGPatcher",
+) -> None:
     """A critical success trip applies TrippedEffect and deals 1d4 damage."""
     reset_event_bus_for_testing()
     controller, player, enemy = _make_world_with_enemy(
@@ -122,15 +130,8 @@ def test_trip_critical_success_deals_damage() -> None:
     )
     initial_hp = enemy.health.hp
 
-    # Force a natural 20, and fix the impact damage roll to 3
-    def fixed_randint(a: int, b: int) -> int:
-        if b == 20:  # d20 roll
-            return 20  # Critical success
-        if b == 4:  # d4 impact damage
-            return 3
-        return a
-
-    with patch("random.randint", fixed_randint):
+    # Force a natural 20 for d20, and 3 for d4 impact damage
+    with patch_combat_rng([20], [3]):
         intent = TripIntent(cast(Controller, controller), player, enemy)
         executor = TripExecutor()
         result = executor.execute(intent)
@@ -143,7 +144,9 @@ def test_trip_critical_success_deals_damage() -> None:
     assert enemy.health.hp == initial_hp - 3
 
 
-def test_trip_partial_success_trips_but_attacker_off_balance() -> None:
+def test_trip_partial_success_trips_but_attacker_off_balance(
+    patch_d20_rng: "D20RNGPatcher",
+) -> None:
     """A partial success (tie) trips target but attacker is off-balance."""
     reset_event_bus_for_testing()
     # Create characters with specific agility values for a tie scenario
@@ -174,7 +177,7 @@ def test_trip_partial_success_trips_but_attacker_off_balance() -> None:
     controller = DummyController(gw=gw)
 
     # Roll of 10 + ability 10 = 20, which equals roll_to_exceed (10 + 10 = 20)
-    with patch("random.randint", return_value=10):
+    with patch_d20_rng([10]):
         intent = TripIntent(cast(Controller, controller), player, enemy)
         executor = TripExecutor()
         result = executor.execute(intent)
@@ -187,13 +190,15 @@ def test_trip_partial_success_trips_but_attacker_off_balance() -> None:
     assert player.status_effects.has_status_effect(OffBalanceEffect)
 
 
-def test_trip_failure_gives_attacker_off_balance() -> None:
+def test_trip_failure_gives_attacker_off_balance(
+    patch_d20_rng: "D20RNGPatcher",
+) -> None:
     """A failed trip gives the attacker OffBalanceEffect."""
     reset_event_bus_for_testing()
     controller, player, enemy = _make_world_with_enemy()
 
     # Force a low roll that will fail (not nat 1)
-    with patch("random.randint", return_value=2):
+    with patch_d20_rng([2]):
         intent = TripIntent(cast(Controller, controller), player, enemy)
         executor = TripExecutor()
         result = executor.execute(intent)
@@ -206,13 +211,15 @@ def test_trip_failure_gives_attacker_off_balance() -> None:
     assert player.status_effects.has_status_effect(OffBalanceEffect)
 
 
-def test_trip_critical_failure_trips_attacker() -> None:
+def test_trip_critical_failure_trips_attacker(
+    patch_d20_rng: "D20RNGPatcher",
+) -> None:
     """A critical failure (nat 1) trips the attacker instead."""
     reset_event_bus_for_testing()
     controller, player, enemy = _make_world_with_enemy()
 
     # Force a natural 1
-    with patch("random.randint", return_value=1):
+    with patch_d20_rng([1]):
         intent = TripIntent(cast(Controller, controller), player, enemy)
         executor = TripExecutor()
         result = executor.execute(intent)
@@ -245,7 +252,9 @@ def test_trip_fails_if_not_adjacent() -> None:
     assert result.block_reason == "not_adjacent"
 
 
-def test_trip_works_diagonally() -> None:
+def test_trip_works_diagonally(
+    patch_d20_rng: "D20RNGPatcher",
+) -> None:
     """Trip should work on diagonally adjacent targets."""
     reset_event_bus_for_testing()
     controller, player, enemy = _make_world_with_enemy(
@@ -253,7 +262,7 @@ def test_trip_works_diagonally() -> None:
         enemy_pos=(6, 6),  # Diagonal from player
     )
 
-    with patch("random.randint", return_value=15):
+    with patch_d20_rng([15]):
         intent = TripIntent(cast(Controller, controller), player, enemy)
         executor = TripExecutor()
         result = executor.execute(intent)
@@ -266,7 +275,9 @@ def test_trip_works_diagonally() -> None:
 # --- Trip Hostility Tests ---
 
 
-def test_trip_makes_non_hostile_npc_hostile() -> None:
+def test_trip_makes_non_hostile_npc_hostile(
+    patch_d20_rng: "D20RNGPatcher",
+) -> None:
     """Tripping a non-hostile NPC should make them hostile."""
     from catley.game.actors import NPC
     from catley.game.enums import Disposition
@@ -294,7 +305,7 @@ def test_trip_makes_non_hostile_npc_hostile() -> None:
     assert npc.ai.disposition == Disposition.WARY
 
     # Force successful trip
-    with patch("random.randint", return_value=15):
+    with patch_d20_rng([15]):
         intent = TripIntent(cast(Controller, controller), player, npc)
         executor = TripExecutor()
         result = executor.execute(intent)
@@ -304,7 +315,9 @@ def test_trip_makes_non_hostile_npc_hostile() -> None:
     assert npc.ai.disposition == Disposition.HOSTILE
 
 
-def test_failed_trip_still_triggers_hostility() -> None:
+def test_failed_trip_still_triggers_hostility(
+    patch_d20_rng: "D20RNGPatcher",
+) -> None:
     """A failed trip should still make the NPC hostile - the attempt is aggressive."""
     from catley.game.actors import NPC
     from catley.game.enums import Disposition
@@ -331,7 +344,7 @@ def test_failed_trip_still_triggers_hostility() -> None:
     assert npc.ai.disposition == Disposition.WARY
 
     # Force failed trip (low roll, not nat 1)
-    with patch("random.randint", return_value=2):
+    with patch_d20_rng([2]):
         intent = TripIntent(cast(Controller, controller), player, npc)
         executor = TripExecutor()
         result = executor.execute(intent)
@@ -342,7 +355,9 @@ def test_failed_trip_still_triggers_hostility() -> None:
     assert npc.ai.disposition == Disposition.HOSTILE
 
 
-def test_trip_does_not_change_already_hostile() -> None:
+def test_trip_does_not_change_already_hostile(
+    patch_d20_rng: "D20RNGPatcher",
+) -> None:
     """Tripping an already hostile NPC should not change their disposition."""
     from catley.game.actors import NPC
     from catley.game.enums import Disposition
@@ -366,7 +381,7 @@ def test_trip_does_not_change_already_hostile() -> None:
     gw.add_actor(npc)
     controller = DummyController(gw=gw)
 
-    with patch("random.randint", return_value=15):
+    with patch_d20_rng([15]):
         intent = TripIntent(cast(Controller, controller), player, npc)
         executor = TripExecutor()
         executor.execute(intent)
@@ -374,7 +389,9 @@ def test_trip_does_not_change_already_hostile() -> None:
     assert npc.ai.disposition == Disposition.HOSTILE
 
 
-def test_npc_tripping_npc_does_not_trigger_hostility() -> None:
+def test_npc_tripping_npc_does_not_trigger_hostility(
+    patch_d20_rng: "D20RNGPatcher",
+) -> None:
     """NPC tripping another NPC should not change disposition toward player."""
     from catley.game.actors import NPC
     from catley.game.enums import Disposition
@@ -409,7 +426,7 @@ def test_npc_tripping_npc_does_not_trigger_hostility() -> None:
     controller = DummyController(gw=gw)
 
     # NPC1 trips NPC2
-    with patch("random.randint", return_value=15):
+    with patch_d20_rng([15]):
         intent = TripIntent(cast(Controller, controller), npc1, npc2)
         executor = TripExecutor()
         result = executor.execute(intent)

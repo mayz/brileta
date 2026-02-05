@@ -10,6 +10,9 @@ from __future__ import annotations
 from catley.environment.generators.pipeline.context import GenerationContext
 from catley.environment.generators.pipeline.layer import GenerationLayer
 from catley.environment.tile_types import TileTypeID
+from catley.util import rng
+
+_rng = rng.get("map.details")
 
 
 class DetailLayer(GenerationLayer):
@@ -78,5 +81,5 @@ class DetailLayer(GenerationLayer):
                     continue
 
                 # Random chance to place boulder
-                if ctx.rng.random() < self.boulder_density:
+                if _rng.random() < self.boulder_density:
                     ctx.tiles[x, y] = TileTypeID.BOULDER

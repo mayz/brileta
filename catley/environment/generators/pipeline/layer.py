@@ -32,7 +32,7 @@ class GenerationLayer(ABC):
         - Modify tiles (ctx.tiles)
         - Add/modify regions (ctx.regions, ctx.tile_to_region_id)
         - Add buildings (ctx.buildings)
-        - Use ctx.rng for random decisions
+        - Use rng.get("map.<layer>") for random decisions
 
         Args:
             ctx: The generation context to modify.

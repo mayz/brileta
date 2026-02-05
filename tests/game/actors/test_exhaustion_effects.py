@@ -8,7 +8,9 @@ from catley.controller import Controller
 from catley.game.actors import Character, conditions
 from catley.game.enums import InjuryLocation
 from catley.game.game_world import GameWorld
+from catley.game.resolution import d20_system
 from catley.game.resolution.d20_system import D20ResolutionResult, D20System
+from tests.conftest import FixedRandom
 from tests.helpers import DummyGameWorld
 
 
@@ -59,7 +61,7 @@ def test_double_exhaustion_disadvantage_and_energy() -> None:
     target = Character(
         1, 0, "T", colors.WHITE, "Tar", game_world=cast(GameWorld, controller.gw)
     )
-    with patch("random.randint", side_effect=[4, 18]):
+    with patch.object(d20_system._rng, "randint", FixedRandom([4, 18])):
         result = D20System(0, 10).resolve(actor, target)
     assert isinstance(result, D20ResolutionResult)
     assert result.has_disadvantage

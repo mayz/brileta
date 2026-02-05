@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import logging
 import math
-import random
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from catley.events import SoundEvent, subscribe_to_event
 from catley.types import WorldTileCoord
+from catley.util import rng
 from catley.util.spatial import SpatialIndex
 
 from .audio_backend import AudioBackend, AudioChannel, LoadedSound
@@ -27,6 +27,8 @@ if TYPE_CHECKING:
     from catley.sound.emitter import SoundEmitter
 
 logger = logging.getLogger(__name__)
+
+_rng = rng.get("audio.system")
 
 
 @dataclass
@@ -363,14 +365,14 @@ class SoundSystem:
                     if not playing:
                         # Create new instance and schedule first play
                         playing = PlayingSound(emitter=emitter, layer=layer)
-                        playing.next_trigger_time = self.current_time + random.uniform(
+                        playing.next_trigger_time = self.current_time + _rng.uniform(
                             *layer.interval
                         )
                         emitter.playing_instances.append(playing)
                         self.playing_sounds.append(playing)
                     elif self.current_time >= playing.next_trigger_time:
                         # Time to play this sound again
-                        playing.next_trigger_time = self.current_time + random.uniform(
+                        playing.next_trigger_time = self.current_time + _rng.uniform(
                             *layer.interval
                         )
 
@@ -382,15 +384,13 @@ class SoundSystem:
                             if loaded_sound:
                                 # Add volume randomization for more natural variation
                                 # Vary volume by ±20% for more organic sound
-                                volume_variation = random.uniform(0.8, 1.2)
+                                volume_variation = _rng.uniform(0.8, 1.2)
                                 final_volume = volume * layer.volume * volume_variation
 
                                 # Apply pitch variation if specified
                                 sound_to_play = loaded_sound
                                 if layer.pitch_variation:
-                                    pitch_factor = random.uniform(
-                                        *layer.pitch_variation
-                                    )
+                                    pitch_factor = _rng.uniform(*layer.pitch_variation)
                                     sound_to_play = AudioLoader.pitch_shift(
                                         loaded_sound, pitch_factor
                                     )
@@ -674,7 +674,7 @@ class SoundSystem:
         else:
             available_files = all_files
 
-        file_to_play = random.choice(available_files)
+        file_to_play = _rng.choice(available_files)
         self._last_played_variant[sound_id] = file_to_play
 
         loaded_sound = self._load_sound(file_to_play)
@@ -684,7 +684,7 @@ class SoundSystem:
         # Calculate final volume with jitter
         layer_volume = volume * layer.volume
         if volume_jitter:
-            layer_volume *= random.uniform(*volume_jitter)
+            layer_volume *= _rng.uniform(*volume_jitter)
 
         # Apply pitch variation
         sound_to_play = loaded_sound
@@ -692,9 +692,9 @@ class SoundSystem:
         # Combine layer pitch variation with event pitch jitter
         pitch_factor = 1.0
         if layer.pitch_variation:
-            pitch_factor *= random.uniform(*layer.pitch_variation)
+            pitch_factor *= _rng.uniform(*layer.pitch_variation)
         if pitch_jitter:
-            pitch_factor *= random.uniform(*pitch_jitter)
+            pitch_factor *= _rng.uniform(*pitch_jitter)
 
         if pitch_factor != 1.0:
             sound_to_play = AudioLoader.pitch_shift(loaded_sound, pitch_factor)

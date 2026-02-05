@@ -1,5 +1,4 @@
 import math
-import random
 from enum import Enum
 from typing import TYPE_CHECKING
 
@@ -9,10 +8,13 @@ from catley import colors
 from catley.constants.view import ViewConstants as View
 from catley.game.enums import BlendMode
 from catley.types import DeltaTime
+from catley.util import rng
 from catley.util.coordinates import Rect
 
 if TYPE_CHECKING:
     from catley.view.render.graphics import GraphicsContext
+
+_rng = rng.get("effects.particles")
 
 
 class ParticleLayer(Enum):
@@ -144,10 +146,10 @@ class SubTileParticleSystem:
         # A small fixed sub-pixel spread (e.g., +/- 0.5 sub-pixels) is often good
         # to give a bit of volume to the emission point without precise alignment.
         spread_sub_pixels = View.PARTICLE_SPREAD
-        final_particle_sub_x = center_sub_x_of_tile + random.uniform(
+        final_particle_sub_x = center_sub_x_of_tile + _rng.uniform(
             -spread_sub_pixels, spread_sub_pixels
         )
-        final_particle_sub_y = center_sub_y_of_tile + random.uniform(
+        final_particle_sub_y = center_sub_y_of_tile + _rng.uniform(
             -spread_sub_pixels, spread_sub_pixels
         )
 
@@ -228,11 +230,11 @@ class SubTileParticleSystem:
             if self.active_count >= self.max_particles:
                 break
             # Random direction (angle in radians)
-            angle = random.uniform(0, 2 * math.pi)
+            angle = _rng.uniform(0, 2 * math.pi)
 
             # Random speed within specified range
             min_speed, max_speed = speed_range
-            speed = random.uniform(min_speed, max_speed)
+            speed = _rng.uniform(min_speed, max_speed)
 
             # Convert polar coordinates to cartesian velocity
             vel_x = math.cos(angle) * speed
@@ -240,10 +242,10 @@ class SubTileParticleSystem:
 
             # Random lifetime within specified range
             min_lifetime, max_lifetime = lifetime_range
-            lifetime = random.uniform(min_lifetime, max_lifetime)
+            lifetime = _rng.uniform(min_lifetime, max_lifetime)
 
             # Random color and character from the provided list
-            color, char = random.choice(colors_and_chars)
+            color, char = _rng.choice(colors_and_chars)
 
             center_sub_x = tile_x * self.subdivision + self.subdivision / 2.0
             center_sub_y = tile_y * self.subdivision + self.subdivision / 2.0
@@ -334,12 +336,12 @@ class SubTileParticleSystem:
                 break
 
             # Add random spread to the base angle for velocity
-            spread = random.uniform(-cone_spread, cone_spread)
+            spread = _rng.uniform(-cone_spread, cone_spread)
             angle_for_velocity = base_angle + spread  # This angle is for velocity
 
             # Random speed within specified range
             min_speed, max_speed = speed_range
-            speed = random.uniform(min_speed, max_speed)
+            speed = _rng.uniform(min_speed, max_speed)
 
             # Convert to velocity components
             vel_x = math.cos(angle_for_velocity) * speed
@@ -347,10 +349,10 @@ class SubTileParticleSystem:
 
             # Random lifetime
             min_lifetime, max_lifetime = lifetime_range
-            lifetime = random.uniform(min_lifetime, max_lifetime)
+            lifetime = _rng.uniform(min_lifetime, max_lifetime)
 
             # Random color and character
-            color, char = random.choice(colors_and_chars)
+            color, char = _rng.choice(colors_and_chars)
 
             idx = self.active_count
             self.positions[idx] = (
@@ -410,7 +412,7 @@ class SubTileParticleSystem:
 
                     # Random lifetime within range
                     min_lifetime, max_lifetime = lifetime_range
-                    lifetime = random.uniform(min_lifetime, max_lifetime)
+                    lifetime = _rng.uniform(min_lifetime, max_lifetime)
 
                     if self.active_count >= self.max_particles:
                         return
@@ -478,9 +480,9 @@ class SubTileParticleSystem:
                 break
 
             # Random drift direction and speed
-            angle = random.uniform(0, 2 * math.pi)
+            angle = _rng.uniform(0, 2 * math.pi)
             min_speed, max_speed = drift_speed
-            speed = random.uniform(min_speed, max_speed)
+            speed = _rng.uniform(min_speed, max_speed)
             vel_x = math.cos(angle) * speed
 
             # Vertical velocity includes both random drift and upward component
@@ -488,16 +490,16 @@ class SubTileParticleSystem:
 
             # Random lifetime
             min_lifetime, max_lifetime = lifetime_range
-            lifetime = random.uniform(min_lifetime, max_lifetime)
+            lifetime = _rng.uniform(min_lifetime, max_lifetime)
 
             # Random character from the list
-            char = random.choice(chars)
+            char = _rng.choice(chars)
 
             # Vary the tint color slightly for more natural effect
             varied_tint: colors.Color = (
-                max(0, min(255, tint_color[0] + random.randint(-20, 20))),
-                max(0, min(255, tint_color[1] + random.randint(-20, 20))),
-                max(0, min(255, tint_color[2] + random.randint(-20, 20))),
+                max(0, min(255, tint_color[0] + _rng.randint(-20, 20))),
+                max(0, min(255, tint_color[1] + _rng.randint(-20, 20))),
+                max(0, min(255, tint_color[2] + _rng.randint(-20, 20))),
             )
 
             # Background tint is dimmer than foreground

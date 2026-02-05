@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import random
 from collections import deque
 from typing import TYPE_CHECKING
 
@@ -10,12 +9,15 @@ import numpy as np
 
 from catley.environment.map import MapRegion
 from catley.environment.tile_types import TileTypeID
+from catley.util import rng
 from catley.util.coordinates import Rect
 
 from .base import BaseMapGenerator, GeneratedMapData
 
 if TYPE_CHECKING:
     from catley.types import TileCoord, WorldTileCoord
+
+_rng = rng.get("map.dungeon")
 
 
 class RoomsAndCorridorsGenerator(BaseMapGenerator):
@@ -96,9 +98,9 @@ class RoomsAndCorridorsGenerator(BaseMapGenerator):
                     self._place_door(tiles, x, y)
 
     def _place_cover_in_room(self, tiles: np.ndarray, room: Rect) -> None:
-        if random.random() < 0.4:
-            x = random.randint(room.x1 + 1, room.x2 - 2)
-            y = random.randint(room.y1 + 1, room.y2 - 2)
+        if _rng.random() < 0.4:
+            x = _rng.randint(room.x1 + 1, room.x2 - 2)
+            y = _rng.randint(room.y1 + 1, room.y2 - 2)
             if tiles[x, y] == TileTypeID.FLOOR:
                 tiles[x, y] = TileTypeID.BOULDER
 
@@ -120,11 +122,11 @@ class RoomsAndCorridorsGenerator(BaseMapGenerator):
         first_room = None
 
         for _ in range(self.max_rooms):
-            w = random.randint(self.min_room_size, self.max_room_size)
-            h = random.randint(self.min_room_size, self.max_room_size)
+            w = _rng.randint(self.min_room_size, self.max_room_size)
+            h = _rng.randint(self.min_room_size, self.max_room_size)
 
-            x = random.randint(0, self.map_width - w - 1)
-            y = random.randint(0, self.map_height - h - 1)
+            x = _rng.randint(0, self.map_width - w - 1)
+            y = _rng.randint(0, self.map_height - h - 1)
 
             new_room = Rect(x, y, w, h)
 
@@ -135,7 +137,7 @@ class RoomsAndCorridorsGenerator(BaseMapGenerator):
             self._carve_room(tiles, new_room)
 
             # 20% chance for each room to be outdoor
-            if random.random() < 0.2:
+            if _rng.random() < 0.2:
                 room_region = MapRegion.create_outdoor_region(
                     map_region_id=next_region_id, region_type="room", bounds=[new_room]
                 )
@@ -154,7 +156,7 @@ class RoomsAndCorridorsGenerator(BaseMapGenerator):
                 first_room = new_room
             else:
                 prev_x, prev_y = rooms[-1].center()
-                if bool(random.getrandbits(1)):
+                if bool(_rng.getrandbits(1)):
                     self._carve_h_tunnel(tiles, prev_x, new_x, prev_y)
                     self._carve_v_tunnel(tiles, prev_y, new_y, new_x)
                 else:

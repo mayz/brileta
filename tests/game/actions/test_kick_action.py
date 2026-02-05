@@ -1,7 +1,7 @@
 """Tests for the Kick combat stunt action."""
 
 from dataclasses import dataclass
-from typing import cast
+from typing import TYPE_CHECKING, cast
 from unittest.mock import patch
 
 from catley import colors
@@ -16,8 +16,14 @@ from catley.game.actors.status_effects import (
     TrippedEffect,
 )
 from catley.game.game_world import GameWorld
+from catley.game.resolution import d20_system
 from catley.game.resolution.d20_system import D20System
+from catley.util import dice
+from tests.conftest import FixedRandom
 from tests.helpers import DummyGameWorld
+
+if TYPE_CHECKING:
+    from tests.conftest import CombatRNGPatcher, D20RNGPatcher
 
 
 @dataclass
@@ -78,7 +84,9 @@ def _make_world_with_enemy(
 # --- Basic Kick Tests ---
 
 
-def test_kick_success_deals_damage_and_pushes() -> None:
+def test_kick_success_deals_damage_and_pushes(
+    patch_combat_rng: "CombatRNGPatcher",
+) -> None:
     """A successful kick deals d4 damage and pushes the target one tile."""
     reset_event_bus_for_testing()
     controller, player, enemy = _make_world_with_enemy(
@@ -87,14 +95,7 @@ def test_kick_success_deals_damage_and_pushes() -> None:
     initial_hp = enemy.health.hp
 
     # Force a successful roll (not critical) and d4 damage of 3
-    def fixed_randint(a: int, b: int) -> int:
-        if b == 20:  # d20 roll
-            return 15  # Success
-        if b == 4:  # d4 damage
-            return 3
-        return a
-
-    with patch("random.randint", fixed_randint):
+    with patch_combat_rng([15], [3]):
         intent = KickIntent(cast(Controller, controller), player, enemy)
         executor = KickExecutor()
         result = executor.execute(intent)
@@ -110,7 +111,9 @@ def test_kick_success_deals_damage_and_pushes() -> None:
     assert not enemy.status_effects.has_status_effect(TrippedEffect)
 
 
-def test_kick_critical_success_also_trips() -> None:
+def test_kick_critical_success_also_trips(
+    patch_combat_rng: "CombatRNGPatcher",
+) -> None:
     """A critical success kick deals damage, pushes, and trips the target."""
     reset_event_bus_for_testing()
     controller, player, enemy = _make_world_with_enemy(
@@ -119,14 +122,7 @@ def test_kick_critical_success_also_trips() -> None:
     initial_hp = enemy.health.hp
 
     # Force a natural 20 and d4 damage of 4
-    def fixed_randint(a: int, b: int) -> int:
-        if b == 20:  # d20 roll
-            return 20  # Critical
-        if b == 4:  # d4 damage
-            return 4
-        return a
-
-    with patch("random.randint", fixed_randint):
+    with patch_combat_rng([20], [4]):
         intent = KickIntent(cast(Controller, controller), player, enemy)
         executor = KickExecutor()
         result = executor.execute(intent)
@@ -139,7 +135,9 @@ def test_kick_critical_success_also_trips() -> None:
     assert enemy.status_effects.has_status_effect(TrippedEffect)
 
 
-def test_kick_partial_success_attacker_off_balance() -> None:
+def test_kick_partial_success_attacker_off_balance(
+    patch_combat_rng: "CombatRNGPatcher",
+) -> None:
     """A partial success kick deals damage and pushes, but attacker stumbles."""
     reset_event_bus_for_testing()
     # Create characters for a tie scenario (partial success)
@@ -153,15 +151,8 @@ def test_kick_partial_success_attacker_off_balance() -> None:
     )
     initial_hp = enemy.health.hp
 
-    # Roll of 10 gives a tie (partial success)
-    def fixed_randint(a: int, b: int) -> int:
-        if b == 20:
-            return 10
-        if b == 4:
-            return 2
-        return a
-
-    with patch("random.randint", fixed_randint):
+    # Roll of 10 gives a tie (partial success), d4 damage of 2
+    with patch_combat_rng([10], [2]):
         intent = KickIntent(cast(Controller, controller), player, enemy)
         executor = KickExecutor()
         result = executor.execute(intent)
@@ -174,14 +165,16 @@ def test_kick_partial_success_attacker_off_balance() -> None:
     assert player.status_effects.has_status_effect(OffBalanceEffect)
 
 
-def test_kick_failure_attacker_off_balance() -> None:
+def test_kick_failure_attacker_off_balance(
+    patch_d20_rng: "D20RNGPatcher",
+) -> None:
     """A failed kick gives the attacker OffBalanceEffect, no damage dealt."""
     reset_event_bus_for_testing()
     controller, player, enemy = _make_world_with_enemy()
     initial_hp = enemy.health.hp
 
     # Force a low roll that will fail (not nat 1)
-    with patch("random.randint", return_value=2):
+    with patch_d20_rng([2]):
         intent = KickIntent(cast(Controller, controller), player, enemy)
         executor = KickExecutor()
         result = executor.execute(intent)
@@ -197,14 +190,16 @@ def test_kick_failure_attacker_off_balance() -> None:
     assert player.status_effects.has_status_effect(OffBalanceEffect)
 
 
-def test_kick_critical_failure_trips_attacker() -> None:
+def test_kick_critical_failure_trips_attacker(
+    patch_d20_rng: "D20RNGPatcher",
+) -> None:
     """A critical failure (nat 1) trips the attacker."""
     reset_event_bus_for_testing()
     controller, player, enemy = _make_world_with_enemy()
     initial_hp = enemy.health.hp
 
     # Force a natural 1
-    with patch("random.randint", return_value=1):
+    with patch_d20_rng([1]):
         intent = KickIntent(cast(Controller, controller), player, enemy)
         executor = KickExecutor()
         result = executor.execute(intent)
@@ -220,7 +215,9 @@ def test_kick_critical_failure_trips_attacker() -> None:
 # --- Stat Check Tests ---
 
 
-def test_kick_uses_strength_vs_agility() -> None:
+def test_kick_uses_strength_vs_agility(
+    patch_d20_rng: "D20RNGPatcher",
+) -> None:
     """Kick should use attacker's Strength vs defender's Agility."""
     reset_event_bus_for_testing()
     # High strength attacker vs low agility defender - should succeed easily
@@ -230,7 +227,7 @@ def test_kick_uses_strength_vs_agility() -> None:
     )
 
     # Roll of 12 + 18 = 30, vs roll_to_exceed 18 - clear success
-    with patch("random.randint", return_value=12):
+    with patch_d20_rng([12]):
         intent = KickIntent(cast(Controller, controller), player, enemy)
         executor = KickExecutor()
         result = executor.execute(intent)
@@ -274,17 +271,11 @@ def test_kick_into_wall_deals_impact_damage() -> None:
 
     initial_hp = enemy.health.hp
 
-    # Force success, kick damage of 3, and wall impact damage of 2
-    damage_rolls = iter([3, 2])  # kick damage, wall impact
-
-    def fixed_randint(a: int, b: int) -> int:
-        if b == 20:  # d20 roll
-            return 15  # Success
-        if b == 4:  # d4 damage
-            return next(damage_rolls)
-        return a
-
-    with patch("random.randint", fixed_randint):
+    # Force success (15), kick damage (3), and wall impact damage (2)
+    with (
+        patch.object(d20_system._rng, "randint", FixedRandom([15])),
+        patch.object(dice._rng, "randint", FixedRandom([3, 2])),
+    ):
         intent = KickIntent(cast(Controller, controller), player, enemy)
         executor = KickExecutor()
         result = executor.execute(intent)
@@ -300,7 +291,9 @@ def test_kick_into_wall_deals_impact_damage() -> None:
     assert enemy.status_effects.has_status_effect(OffBalanceEffect)
 
 
-def test_kick_into_hazard_moves_target() -> None:
+def test_kick_into_hazard_moves_target(
+    patch_combat_rng: "CombatRNGPatcher",
+) -> None:
     """Kicking onto a hazard tile moves the target (damage via turn system)."""
     reset_event_bus_for_testing()
     controller, player, enemy = _make_world_with_enemy(
@@ -309,15 +302,8 @@ def test_kick_into_hazard_moves_target() -> None:
     # Place acid pool at destination
     controller.gw.game_map.tiles[7, 5] = TileTypeID.ACID_POOL
 
-    # Force success
-    def fixed_randint(a: int, b: int) -> int:
-        if b == 20:
-            return 15
-        if b == 4:
-            return 3
-        return a
-
-    with patch("random.randint", fixed_randint):
+    # Force success (15), kick damage (3)
+    with patch_combat_rng([15], [3]):
         intent = KickIntent(cast(Controller, controller), player, enemy)
         executor = KickExecutor()
         result = executor.execute(intent)
@@ -330,7 +316,9 @@ def test_kick_into_hazard_moves_target() -> None:
     # Note: Actual hazard damage is applied by the turn system, not the kick
 
 
-def test_kick_into_another_actor_makes_both_off_balance() -> None:
+def test_kick_into_another_actor_makes_both_off_balance(
+    patch_combat_rng: "CombatRNGPatcher",
+) -> None:
     """Kicking into another actor makes both actors off-balance."""
     reset_event_bus_for_testing()
     gw = DummyGameWorld()
@@ -345,15 +333,8 @@ def test_kick_into_another_actor_makes_both_off_balance() -> None:
     gw.add_actor(enemy2)
     controller = DummyController(gw=gw)
 
-    # Force success
-    def fixed_randint(a: int, b: int) -> int:
-        if b == 20:
-            return 15
-        if b == 4:
-            return 3
-        return a
-
-    with patch("random.randint", fixed_randint):
+    # Force success (15), kick damage (3)
+    with patch_combat_rng([15], [3]):
         intent = KickIntent(cast(Controller, controller), player, enemy1)
         executor = KickExecutor()
         result = executor.execute(intent)
@@ -370,7 +351,9 @@ def test_kick_into_another_actor_makes_both_off_balance() -> None:
 # --- Kick Hostility Tests ---
 
 
-def test_kick_makes_non_hostile_npc_hostile() -> None:
+def test_kick_makes_non_hostile_npc_hostile(
+    patch_combat_rng: "CombatRNGPatcher",
+) -> None:
     """Kicking a non-hostile NPC should make them hostile."""
     from catley.game.actors import NPC
     from catley.game.enums import Disposition
@@ -397,15 +380,8 @@ def test_kick_makes_non_hostile_npc_hostile() -> None:
 
     assert npc.ai.disposition == Disposition.WARY
 
-    # Force successful kick
-    def fixed_randint(a: int, b: int) -> int:
-        if b == 20:
-            return 15
-        if b == 4:
-            return 3
-        return a
-
-    with patch("random.randint", fixed_randint):
+    # Force successful kick (15), kick damage (3)
+    with patch_combat_rng([15], [3]):
         intent = KickIntent(cast(Controller, controller), player, npc)
         executor = KickExecutor()
         result = executor.execute(intent)
@@ -415,7 +391,9 @@ def test_kick_makes_non_hostile_npc_hostile() -> None:
     assert npc.ai.disposition == Disposition.HOSTILE
 
 
-def test_failed_kick_still_triggers_hostility() -> None:
+def test_failed_kick_still_triggers_hostility(
+    patch_d20_rng: "D20RNGPatcher",
+) -> None:
     """A failed kick should still make the NPC hostile - the attempt is aggressive."""
     from catley.game.actors import NPC
     from catley.game.enums import Disposition
@@ -442,7 +420,7 @@ def test_failed_kick_still_triggers_hostility() -> None:
     assert npc.ai.disposition == Disposition.WARY
 
     # Force failed kick (low roll, not nat 1)
-    with patch("random.randint", return_value=2):
+    with patch_d20_rng([2]):
         intent = KickIntent(cast(Controller, controller), player, npc)
         executor = KickExecutor()
         result = executor.execute(intent)

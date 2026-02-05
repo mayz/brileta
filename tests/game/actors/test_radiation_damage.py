@@ -24,6 +24,7 @@ from catley.game.game_world import GameWorld
 from catley.game.items.item_types import DIRTY_BOMB_TYPE, RADIUM_GUN_TYPE
 from catley.game.resolution.d20_system import D20ResolutionResult
 from catley.game.resolution.outcomes import CombatOutcome
+from catley.util import dice
 from tests.helpers import DummyGameWorld
 
 
@@ -139,7 +140,7 @@ def test_dirty_bomb_area_effect() -> None:
     def fixed_randint(_a: int, _b: int) -> int:
         return 6
 
-    with patch("random.randint", fixed_randint):
+    with patch.object(dice._rng, "randint", fixed_randint):
         hits = executor._apply_damage(intent, tiles, effect)
     assert hits == [(target, 4)]
     assert target.health.hp == target.health.max_hp - 4

@@ -5,10 +5,11 @@ The variety is purely for environmental flavor (different items in different loc
 All items are plausibly mechanical/useful - no pure novelty items.
 """
 
-import random
-
 from catley.game.enums import ItemCategory, ItemSize
 from catley.game.items.item_core import ItemType
+from catley.util import rng
+
+_rng = rng.get("items.junk")
 
 # Raw data: (name, description)
 _JUNK_DATA: list[tuple[str, str]] = [
@@ -137,4 +138,4 @@ JUNK_ITEM_TYPES: list[ItemType] = [
 
 def get_random_junk_type() -> ItemType:
     """Return a random junk item type for loot generation."""
-    return random.choice(JUNK_ITEM_TYPES)
+    return _rng.choice(JUNK_ITEM_TYPES)

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import math
-import random
 from typing import TYPE_CHECKING
 
 from catley import colors, config
@@ -29,12 +28,16 @@ from catley.game.items.item_types import (
 from catley.game.lights import DirectionalLight, DynamicLight, GlobalLight, LightSource
 from catley.game.outfit import LEATHER_ARMOR_TYPE
 from catley.types import TileCoord, WorldTileCoord, WorldTilePos
+from catley.util import rng
 from catley.util.coordinates import Rect
 from catley.util.spatial import SpatialHashGrid, SpatialIndex
 from catley.view.render.lighting.base import LightingConfig, LightingSystem
 
 if TYPE_CHECKING:
     from catley.environment.generators.buildings.building import Building
+
+_npc_rng = rng.get("world.npc_placement")
+_container_rng = rng.get("world.containers")
 
 # Cache the default sun azimuth to avoid repeated instantiation
 _DEFAULT_SUN_AZIMUTH = LightingConfig().sun_azimuth_degrees
@@ -628,11 +631,11 @@ class GameWorld:
 
             for _ in range(max_attempts_per_npc):
                 # Pick a random room from valid rooms
-                room = random.choice(valid_rooms)
+                room = _npc_rng.choice(valid_rooms)
 
                 # Pick a random tile within the room (avoiding walls)
-                npc_x = random.randint(room.x1 + 1, room.x2 - 2)
-                npc_y = random.randint(room.y1 + 1, room.y2 - 2)
+                npc_x = _npc_rng.randint(room.x1 + 1, room.x2 - 2)
+                npc_y = _npc_rng.randint(room.y1 + 1, room.y2 - 2)
 
                 # Check if tile is walkable and free
                 if (
@@ -748,11 +751,11 @@ class GameWorld:
             placed = False
 
             for _ in range(max_attempts):
-                room = random.choice(all_rooms)
+                room = _npc_rng.choice(all_rooms)
 
                 # Pick a position inside the room (not on walls)
-                npc_x = random.randint(room.x1, room.x2 - 1)
-                npc_y = random.randint(room.y1, room.y2 - 1)
+                npc_x = _npc_rng.randint(room.x1, room.x2 - 1)
+                npc_y = _npc_rng.randint(room.y1, room.y2 - 1)
 
                 if (
                     self.game_map.walkable[npc_x, npc_y]
@@ -796,7 +799,7 @@ class GameWorld:
             placed = False
 
             for _ in range(max_attempts):
-                door_x, door_y = random.choice(door_positions)
+                door_x, door_y = _npc_rng.choice(door_positions)
 
                 # Find a position 1-2 tiles from the door (outside the building)
                 # Try all 4 directions plus diagonals
@@ -814,7 +817,7 @@ class GameWorld:
                     (-1, 1),
                     (1, 1),  # Diagonal
                 ]
-                random.shuffle(offsets)
+                _npc_rng.shuffle(offsets)
 
                 for dx, dy in offsets:
                     npc_x, npc_y = door_x + dx, door_y + dy
@@ -874,7 +877,7 @@ class GameWorld:
 
         for _ in range(count):
             for _ in range(max_attempts):
-                npc_x, npc_y = random.choice(street_positions)
+                npc_x, npc_y = _npc_rng.choice(street_positions)
 
                 if self.get_actor_at_location(npc_x, npc_y) is None:
                     npc = self._create_settlement_npc(npc_x, npc_y, npc_index, "street")
@@ -1035,12 +1038,12 @@ class GameWorld:
                 room = (
                     valid_rooms[0]
                     if len(valid_rooms) <= 1
-                    else random.choice(valid_rooms[1:])
+                    else _container_rng.choice(valid_rooms[1:])
                 )
 
                 # Pick a random position within the room
-                container_x = random.randint(room.x1 + 1, room.x2 - 2)
-                container_y = random.randint(room.y1 + 1, room.y2 - 2)
+                container_x = _container_rng.randint(room.x1 + 1, room.x2 - 2)
+                container_y = _container_rng.randint(room.y1 + 1, room.y2 - 2)
 
                 # Check if location is valid
                 if (
@@ -1048,7 +1051,7 @@ class GameWorld:
                     and self.get_actor_at_location(container_x, container_y) is None
                 ):
                     # Generate random items for the container
-                    num_items = random.randint(1, 4)
+                    num_items = _container_rng.randint(1, 4)
                     items = [get_random_junk_type().create() for _ in range(num_items)]
 
                     # Create a bookcase

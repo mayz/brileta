@@ -9,6 +9,7 @@ from catley import colors
 from catley.controller import Controller
 from catley.environment.generators import GeneratedMapData
 from catley.environment.map import GameMap
+from catley.util import dice
 
 if TYPE_CHECKING:
     from catley.environment.map import MapRegion
@@ -134,7 +135,7 @@ def test_grenade_damage_calculation() -> None:
     def fixed_randint(_a: int, _b: int) -> int:
         return 6
 
-    with patch("random.randint", fixed_randint):
+    with patch.object(dice._rng, "randint", fixed_randint):
         hits = executor._apply_damage(intent, tiles, effect)
     assert hits == [(target, 4)]
     assert target.health.hp == target.health.max_hp - 4
@@ -149,7 +150,7 @@ def test_grenade_action_execution() -> None:
     def fixed_randint(_a: int, _b: int) -> int:
         return 6
 
-    with patch("random.randint", fixed_randint):
+    with patch.object(dice._rng, "randint", fixed_randint):
         executor.execute(intent)
     assert target.health.hp == target.health.max_hp - 4
     assert controller.message_log.messages[-1] == "Target takes 4 damage."

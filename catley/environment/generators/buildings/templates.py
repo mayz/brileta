@@ -11,10 +11,10 @@ Building variety is controlled via:
 
 from __future__ import annotations
 
-import random
 from dataclasses import dataclass
 
 from catley.util.coordinates import Rect
+from catley.util.rng import RNG
 
 from .building import Building
 
@@ -54,7 +54,7 @@ class BuildingTemplate:
     weight: float = 1.0
     max_per_settlement: int | None = None
 
-    def generate_size(self, rng: random.Random) -> tuple[int, int]:
+    def generate_size(self, rng: RNG) -> tuple[int, int]:
         """Generate random dimensions within the template's constraints.
 
         Args:
@@ -67,7 +67,7 @@ class BuildingTemplate:
         height = rng.randint(self.min_height, self.max_height)
         return width, height
 
-    def generate_room_count(self, rng: random.Random) -> int:
+    def generate_room_count(self, rng: RNG) -> int:
         """Generate random room count within the template's constraints.
 
         Args:

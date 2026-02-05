@@ -26,11 +26,13 @@ Usage Example:
 from __future__ import annotations
 
 import math
-import random
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from catley import colors
+from catley.util import rng
+
+_rng = rng.get("effects.decals")
 
 if TYPE_CHECKING:
     pass
@@ -188,20 +190,20 @@ class DecalSystem:
 
         for _ in range(decal_count):
             # Random angle within the cone spread
-            angle = base_angle + random.uniform(
+            angle = base_angle + _rng.uniform(
                 -self.CONE_SPREAD / 2, self.CONE_SPREAD / 2
             )
 
             # Random distance - uniform distribution between min and max
             # This ensures decals land BEHIND the target, forming a visible cone
-            distance = random.uniform(self.MIN_DISTANCE, max_distance)
+            distance = _rng.uniform(self.MIN_DISTANCE, max_distance)
 
             # Calculate tile offset
             dx = round(math.cos(angle) * distance)
             dy = round(math.sin(angle) * distance)
 
             # Random color and character from provided options
-            color, char = random.choice(colors_and_chars)
+            color, char = _rng.choice(colors_and_chars)
             # Vary the color slightly for natural look
             varied_color = self._vary_color(color)
 
@@ -263,22 +265,22 @@ class DecalSystem:
 
         for _ in range(num_rays):
             # Each ray has a slightly different angle within the cone spread
-            ray_angle = base_angle + random.uniform(
+            ray_angle = base_angle + _rng.uniform(
                 -self.CONE_SPREAD / 2, self.CONE_SPREAD / 2
             )
 
             # Random ray length
-            ray_length = random.uniform(self.MIN_DISTANCE, max_ray_length)
+            ray_length = _rng.uniform(self.MIN_DISTANCE, max_ray_length)
 
             # Number of decals along this ray
-            num_decals_on_ray = random.randint(
+            num_decals_on_ray = _rng.randint(
                 self.MIN_DECALS_PER_RAY, self.MAX_DECALS_PER_RAY
             )
 
             for i in range(num_decals_on_ray):
                 # Position along ray with slight randomness to avoid perfect alignment
                 # t ranges from ~0.3 to ~0.7 of each segment
-                t = (i + random.uniform(0.3, 0.7)) / num_decals_on_ray
+                t = (i + _rng.uniform(0.3, 0.7)) / num_decals_on_ray
                 distance = self.MIN_DISTANCE + t * (ray_length - self.MIN_DISTANCE)
 
                 # Sub-tile position (float coordinates)
@@ -286,13 +288,13 @@ class DecalSystem:
                 y = target_y + math.sin(ray_angle) * distance
 
                 # Choose character - mostly small streaks, occasionally larger drops
-                if random.random() < 0.15:
-                    char = random.choice(droplet_chars)
+                if _rng.random() < 0.15:
+                    char = _rng.choice(droplet_chars)
                 else:
-                    char = random.choice(streak_chars)
+                    char = _rng.choice(streak_chars)
 
                 # Get color from provided options and vary slightly
-                color, _ = random.choice(colors_and_chars)
+                color, _ = _rng.choice(colors_and_chars)
                 varied_color = self._vary_color(color)
 
                 self.add_decal(x, y, char, varied_color, game_time)
@@ -396,9 +398,9 @@ class DecalSystem:
         r, g, b = color
         # Small random variation in each channel
         variation = 20
-        r = max(0, min(255, r + random.randint(-variation, variation)))
-        g = max(0, min(255, g + random.randint(-variation, variation)))
-        b = max(0, min(255, b + random.randint(-variation, variation)))
+        r = max(0, min(255, r + _rng.randint(-variation, variation)))
+        g = max(0, min(255, g + _rng.randint(-variation, variation)))
+        b = max(0, min(255, b + _rng.randint(-variation, variation)))
         return (r, g, b)
 
     @property

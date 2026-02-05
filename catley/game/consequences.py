@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import random
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -10,7 +9,10 @@ from catley.game.actors import Actor, Character, ai
 from catley.game.actors.status_effects import OffBalanceEffect
 from catley.game.enums import Disposition, OutcomeTier
 from catley.game.items.properties import WeaponProperty
+from catley.util import rng
 from catley.util.dice import Dice, roll_d
+
+_rng = rng.get("combat.consequences")
 
 if TYPE_CHECKING:
     from catley.game.items.item_core import Item
@@ -53,7 +55,7 @@ class AttackConsequenceGenerator:
             # - weapon_drop (40%): Most punishing, drop equipped weapon
             # - self_injury (35%): Fumble causes attacker to hurt themselves
             # - off_balance (25%): Attacker has disadvantage on next action
-            roll = random.random()
+            roll = _rng.random()
             if roll < 0.40:
                 consequences.append(
                     Consequence(

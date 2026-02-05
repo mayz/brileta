@@ -19,6 +19,7 @@ from catley.environment.generators.pipeline import (
 )
 from catley.environment.map import MapRegion
 from catley.environment.tile_types import TileTypeID
+from catley.util import rng
 from catley.util.coordinates import Rect
 
 # =============================================================================
@@ -55,15 +56,11 @@ class TestGenerationContext:
 
         assert np.all(ctx.tiles == TileTypeID.FLOOR)
 
-    def test_create_empty_with_seed(self) -> None:
-        """Seed produces deterministic RNG."""
-        ctx1 = GenerationContext.create_empty(width=10, height=10, seed="42")
-        ctx2 = GenerationContext.create_empty(width=10, height=10, seed="42")
-
-        # Same seed should produce same random sequence
-        values1 = [ctx1.rng.random() for _ in range(10)]
-        values2 = [ctx2.rng.random() for _ in range(10)]
-        assert values1 == values2
+    def test_create_empty_basic(self) -> None:
+        """create_empty works without seed parameter."""
+        ctx = GenerationContext.create_empty(width=10, height=10)
+        assert ctx.width == 10
+        assert ctx.height == 10
 
     def test_next_region_id_increments(self) -> None:
         """Each call returns unique incrementing ID."""
@@ -224,6 +221,7 @@ class TestPipelineGenerator:
 
     def test_generator_with_seed(self) -> None:
         """Seed produces deterministic generation."""
+        _rng = rng.get("test.random_layer")
 
         class RandomLayer(GenerationLayer):
             """Layer that uses RNG to modify tiles."""
@@ -231,7 +229,7 @@ class TestPipelineGenerator:
             def apply(self, ctx: GenerationContext) -> None:
                 for x in range(ctx.width):
                     for y in range(ctx.height):
-                        if ctx.rng.random() < 0.5:
+                        if _rng.random() < 0.5:
                             ctx.tiles[x, y] = TileTypeID.FLOOR
                         else:
                             ctx.tiles[x, y] = TileTypeID.OUTDOOR_FLOOR

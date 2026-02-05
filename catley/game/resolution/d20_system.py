@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-import random
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from catley.game.enums import OutcomeTier
+from catley.util import rng
 
 from .base import ResolutionResult, ResolutionSystem
+
+_rng = rng.get("combat.d20")
 
 if TYPE_CHECKING:
     from catley.game.actors import Actor, Character
@@ -69,7 +71,7 @@ class D20System(ResolutionSystem):
             has_disadvantage = False
 
         num_dice_to_roll = 1 if not (has_advantage or has_disadvantage) else 2
-        rolls_made: list[int] = [random.randint(1, 20) for _ in range(num_dice_to_roll)]
+        rolls_made: list[int] = [_rng.randint(1, 20) for _ in range(num_dice_to_roll)]
 
         if has_advantage:
             final_roll_used = max(rolls_made)

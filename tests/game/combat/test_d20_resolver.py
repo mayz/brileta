@@ -3,6 +3,7 @@ from unittest.mock import patch
 from catley import colors
 from catley.game.actors import Actor, Character
 from catley.game.enums import OutcomeTier
+from catley.game.resolution import d20_system
 from catley.game.resolution.d20_system import D20ResolutionResult, D20System
 
 
@@ -22,7 +23,7 @@ def test_d20_resolver_basic_success() -> None:
     resolver = D20System(5, 12)
     actor = Character(0, 0, "@", colors.WHITE, "A")
     target = Actor(1, 0, "T", colors.WHITE)
-    with patch("random.randint", fr):
+    with patch.object(d20_system._rng, "randint", fr):
         result = resolver.resolve(actor, target)
     assert isinstance(result, D20ResolutionResult)
     assert result.outcome_tier == OutcomeTier.SUCCESS
@@ -36,7 +37,7 @@ def test_d20_resolver_critical_outcomes() -> None:
     miss_resolver = D20System(10, 5)
     actor = Character(0, 0, "@", colors.WHITE, "A")
     target = Actor(1, 0, "T", colors.WHITE)
-    with patch("random.randint", fr):
+    with patch.object(d20_system._rng, "randint", fr):
         hit = hit_resolver.resolve(actor, target)
         miss = miss_resolver.resolve(actor, target)
     assert hit.outcome_tier == OutcomeTier.CRITICAL_SUCCESS
@@ -49,7 +50,7 @@ def test_d20_resolver_advantage_disadvantage() -> None:
     dis_resolver = D20System(0, 10, has_disadvantage=True)
     actor = Character(0, 0, "@", colors.WHITE, "A")
     target = Actor(1, 0, "T", colors.WHITE)
-    with patch("random.randint", fr):
+    with patch.object(d20_system._rng, "randint", fr):
         adv = adv_resolver.resolve(actor, target)
         dis = dis_resolver.resolve(actor, target)
     assert adv.final_roll_used == 17

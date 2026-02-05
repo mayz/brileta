@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import math
-import random
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 from catley import colors, config
 from catley.types import InterpolationAlpha, Opacity
+from catley.util import rng
 from catley.util.caching import ResourceCache
 from catley.util.coordinates import (
     PixelCoord,
@@ -35,6 +35,8 @@ if TYPE_CHECKING:
     from catley.controller import Controller, FrameManager
     from catley.game.actors import Actor
     from catley.game.actors.core import CharacterLayer
+
+_rng = rng.get("effects.animation")
 
 
 # Viewport defaults used when initializing views before they are resized.
@@ -954,7 +956,7 @@ class WorldView(View):
 
         # Select a random subset of tiles to update (percent_of_cells %)
         num_to_update = max(1, len(animated_tiles) * percent_of_cells // 100)
-        tiles_to_update = random.sample(
+        tiles_to_update = _rng.sample(
             animated_tiles, min(num_to_update, len(animated_tiles))
         )
 
@@ -967,13 +969,13 @@ class WorldView(View):
 
             # Random walk for foreground RGB values
             for i in range(3):
-                offset = random.randint(-step_size, step_size)
+                offset = _rng.randint(-step_size, step_size)
                 new_val = int(state["fg_values"][i]) + offset
                 state["fg_values"][i] = max(0, min(1000, new_val))
 
             # Random walk for background RGB values
             for i in range(3):
-                offset = random.randint(-step_size, step_size)
+                offset = _rng.randint(-step_size, step_size)
                 new_val = int(state["bg_values"][i]) + offset
                 state["bg_values"][i] = max(0, min(1000, new_val))
 

@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import cast
-from unittest.mock import patch
+from typing import TYPE_CHECKING, Any, cast
 
 from catley import colors
 from catley.controller import Controller
@@ -16,6 +15,10 @@ from catley.game.items.item_types import FISTS_TYPE
 from catley.game.resolution.d20_system import D20ResolutionResult
 from catley.game.turn_manager import TurnManager
 from tests.helpers import DummyGameWorld
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+    from contextlib import AbstractContextManager
 
 
 @dataclass
@@ -86,12 +89,15 @@ def make_combat_world() -> tuple[
     return controller, attacker, defender, intent, executor
 
 
-def test_offbalance_gives_disadvantage() -> None:
+def test_offbalance_gives_disadvantage(
+    patch_d20_rng: Callable[[list[int]], AbstractContextManager[Any]],
+) -> None:
     _controller, attacker, _defender, intent, executor = make_combat_world()
     weapon = cast(Item, intent.weapon)
     attack = cast(Attack, weapon.melee_attack)
     attacker.status_effects.apply_status_effect(status_effects.OffBalanceEffect())
-    with patch("random.randint", side_effect=[2, 18]):
+    # Disadvantage takes the lower of 2 rolls: 2 and 18 -> 2
+    with patch_d20_rng([2, 18]):
         result = cast(
             D20ResolutionResult,
             executor._execute_attack_roll(intent, attack, weapon, {}),
@@ -100,12 +106,15 @@ def test_offbalance_gives_disadvantage() -> None:
     assert result.final_roll_used == 2
 
 
-def test_focused_gives_advantage() -> None:
+def test_focused_gives_advantage(
+    patch_d20_rng: Callable[[list[int]], AbstractContextManager[Any]],
+) -> None:
     _controller, attacker, _defender, intent, executor = make_combat_world()
     weapon = cast(Item, intent.weapon)
     attack = cast(Attack, weapon.melee_attack)
     attacker.status_effects.apply_status_effect(status_effects.FocusedEffect())
-    with patch("random.randint", side_effect=[5, 17]):
+    # Advantage takes the higher of 2 rolls: 5 and 17 -> 17
+    with patch_d20_rng([5, 17]):
         result = cast(
             D20ResolutionResult,
             executor._execute_attack_roll(intent, attack, weapon, {}),
@@ -114,12 +123,15 @@ def test_focused_gives_advantage() -> None:
     assert result.final_roll_used == 17
 
 
-def test_modifier_combination_cancels() -> None:
+def test_modifier_combination_cancels(
+    patch_d20_rng: Callable[[list[int]], AbstractContextManager[Any]],
+) -> None:
     _controller, attacker, _defender, intent, executor = make_combat_world()
     weapon = cast(Item, intent.weapon)
     attack = cast(Attack, weapon.melee_attack)
     attacker.status_effects.apply_status_effect(status_effects.FocusedEffect())
-    with patch("random.randint", return_value=11):
+    # Advantage + disadvantage cancel out, single roll
+    with patch_d20_rng([11]):
         result = cast(
             D20ResolutionResult,
             executor._execute_attack_roll(
@@ -134,14 +146,16 @@ def test_modifier_combination_cancels() -> None:
     assert result.final_roll_used == 11
 
 
-def test_strength_boost_applies_to_roll() -> None:
+def test_strength_boost_applies_to_roll(
+    patch_d20_rng: Callable[[list[int]], AbstractContextManager[Any]],
+) -> None:
     _controller, attacker, _defender, intent, executor = make_combat_world()
     weapon = cast(Item, intent.weapon)
     attack = cast(Attack, weapon.melee_attack)
     attacker.status_effects.apply_status_effect(
         status_effects.StrengthBoostEffect(duration=1)
     )
-    with patch("random.randint", return_value=10):
+    with patch_d20_rng([10]):
         result = cast(
             D20ResolutionResult,
             executor._execute_attack_roll(intent, attack, weapon, {}),

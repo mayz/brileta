@@ -44,17 +44,19 @@ Future Expansion:
 
 import abc
 import math
-import random
 from dataclasses import dataclass
 from typing import ClassVar
 
 from catley import colors
 from catley.constants.view import ViewConstants as View
 from catley.game.enums import BlendMode
+from catley.util import rng
 
 from .decals import DecalSystem
 from .environmental import EnvironmentalEffect, EnvironmentalEffectSystem
 from .particles import ParticleLayer, SubTileParticleSystem
+
+_rng = rng.get("effects.visual")
 
 
 @dataclass
@@ -172,7 +174,7 @@ class ContinuousEffect(Effect):
 
         for pattern in self.emission_patterns:
             # Check emission probability
-            if random.random() > pattern.emission_probability:
+            if _rng.random() > pattern.emission_probability:
                 continue
 
             self._emit_pattern(pattern, context)
@@ -198,7 +200,7 @@ class ContinuousEffect(Effect):
         elif pattern.emission_type == "background_tint":
             # Vary the smoke color slightly for natural effect
             base_gray = pattern.tint_color[0]
-            smoke_gray = base_gray + random.randint(-20, 20)
+            smoke_gray = base_gray + _rng.randint(-20, 20)
             smoke_gray = max(0, min(255, smoke_gray))
             varied_tint = (smoke_gray, smoke_gray, smoke_gray)
 
@@ -279,9 +281,9 @@ class BloodSplatterEffect(Effect):
         # Define blood color variations - darker reds with some randomness
         # Each tuple is (color, character) for visual variety
         blood_colors_chars = [
-            ((120 + random.randint(0, 40), 0, 0), "*"),  # Bright red asterisk
-            ((100 + random.randint(0, 40), 0, 0), "."),  # Medium red dot
-            ((80 + random.randint(0, 40), 0, 0), ","),  # Dark red comma
+            ((120 + _rng.randint(0, 40), 0, 0), "*"),  # Bright red asterisk
+            ((100 + _rng.randint(0, 40), 0, 0), "."),  # Medium red dot
+            ((80 + _rng.randint(0, 40), 0, 0), ","),  # Dark red comma
         ]
 
         # Scale particle count with intensity - more damage = more blood
@@ -323,10 +325,10 @@ class BloodSplatterEffect(Effect):
             else:
                 # No direction: just add a few decals at the target tile center
                 for _ in range(int(1 + context.intensity * 2)):
-                    color, char = random.choice(self.DECAL_COLORS_CHARS)
+                    color, char = _rng.choice(self.DECAL_COLORS_CHARS)
                     # Center the decal on the tile with slight offset
-                    offset_x = random.uniform(-0.3, 0.3)
-                    offset_y = random.uniform(-0.3, 0.3)
+                    offset_x = _rng.uniform(-0.3, 0.3)
+                    offset_y = _rng.uniform(-0.3, 0.3)
                     context.decal_system.add_decal(
                         context.x + 0.5 + offset_x,
                         context.y + 0.5 + offset_y,
@@ -355,9 +357,9 @@ class MuzzleFlashEffect(Effect):
         """Create muzzle flash particles in the firing direction."""
 
         flash_colors_chars = [
-            ((255, random.randint(200, 255), random.randint(0, 100)), "+"),
-            ((255, random.randint(200, 255), random.randint(0, 100)), "*"),
-            ((255, random.randint(200, 255), random.randint(0, 100)), "x"),
+            ((255, _rng.randint(200, 255), _rng.randint(0, 100)), "+"),
+            ((255, _rng.randint(200, 255), _rng.randint(0, 100)), "*"),
+            ((255, _rng.randint(200, 255), _rng.randint(0, 100)), "x"),
         ]
 
         # Create directional cone of flash particles
@@ -487,7 +489,7 @@ class SmokeCloudEffect(Effect):
 
         # Generate a random gray color for this smoke cloud
         # Varies from medium gray to light gray
-        smoke_gray = random.randint(60, 120)
+        smoke_gray = _rng.randint(60, 120)
         tint_color: colors.Color = (smoke_gray, smoke_gray, smoke_gray)
 
         # Create the background tinting smoke particles
@@ -527,7 +529,7 @@ class PoisonGasEffect(Effect):
 
         # Generate a random green color for the poison gas
         # Varies in intensity but stays green
-        green_intensity = random.randint(40, 100)
+        green_intensity = _rng.randint(40, 100)
         tint_color: colors.Color = (0, green_intensity, 0)
 
         # Create the background tinting gas particles

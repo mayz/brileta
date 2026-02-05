@@ -3,11 +3,12 @@
 The GenerationContext is a mutable container that holds all state during map
 generation. Each layer in the pipeline receives the same context and modifies
 it in place. This avoids copying large numpy arrays between layers.
+
+Layers should use rng.get("map.<layer>") to get isolated RNG streams.
 """
 
 from __future__ import annotations
 
-import random
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -16,7 +17,6 @@ import numpy as np
 from catley.environment.generators.base import GeneratedMapData
 from catley.environment.map import MapRegion
 from catley.environment.tile_types import TileTypeID
-from catley.types import RandomSeed
 from catley.util.coordinates import Rect
 
 if TYPE_CHECKING:
@@ -55,7 +55,6 @@ class GenerationContext:
             Value of -1 means no region assigned. Shape: (width, height).
         buildings: List of Building objects placed on the map.
         street_data: Street network data for building placement and door orientation.
-        rng: Random number generator for deterministic generation.
     """
 
     width: int
@@ -65,7 +64,6 @@ class GenerationContext:
     tile_to_region_id: np.ndarray
     buildings: list[Building] = field(default_factory=list)
     street_data: StreetData = field(default_factory=StreetData)
-    rng: random.Random = field(default_factory=random.Random)
     _next_region_id: int = 0
 
     @classmethod
@@ -73,7 +71,6 @@ class GenerationContext:
         cls,
         width: int,
         height: int,
-        seed: RandomSeed = None,
         fill_tile: TileTypeID = TileTypeID.WALL,
     ) -> GenerationContext:
         """Create an empty generation context with default values.
@@ -81,7 +78,6 @@ class GenerationContext:
         Args:
             width: Map width in tiles.
             height: Map height in tiles.
-            seed: Optional random seed for deterministic generation.
             fill_tile: Tile type to fill the initial map with.
 
         Returns:
@@ -101,8 +97,6 @@ class GenerationContext:
             order="F",
         )
 
-        rng = random.Random(seed)
-
         return cls(
             width=width,
             height=height,
@@ -110,7 +104,6 @@ class GenerationContext:
             regions={},
             tile_to_region_id=tile_to_region_id,
             buildings=[],
-            rng=rng,
             _next_region_id=0,
         )
 

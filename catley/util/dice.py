@@ -7,7 +7,9 @@ to get a numerical result. It handles multiple dice, modifiers, and negative dic
 outcomes. For convenience, a `roll_d()` function is provided for rolling a single die.
 """
 
-import random
+from catley.util import rng
+
+_rng = rng.get("combat.dice")
 
 
 class Dice:
@@ -93,7 +95,7 @@ class Dice:
         # Roll the dice and apply multiplier
         result = 0
         for _ in range(self.num_dice):
-            result += random.randint(1, self.sides)
+            result += _rng.randint(1, self.sides)
 
         # Apply multiplier and modifier
         return (self.multiplier * result) + self.modifier
@@ -133,6 +135,4 @@ def roll_d(sides: int) -> int:
     if not isinstance(sides, int) or sides <= 0:
         raise ValueError("Number of sides must be a positive integer.")
 
-    # Use direct random.randint for efficiency - creating a Dice object for
-    # every roll would be unnecessarily expensive
-    return random.randint(1, sides)
+    return _rng.randint(1, sides)

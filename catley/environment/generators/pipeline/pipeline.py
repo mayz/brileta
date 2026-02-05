@@ -11,13 +11,13 @@ from typing import TYPE_CHECKING
 
 from catley.environment.generators.base import BaseMapGenerator, GeneratedMapData
 from catley.environment.tile_types import TileTypeID
+from catley.types import RandomSeed, TileCoord
+from catley.util import rng
 
 from .context import GenerationContext
 
 if TYPE_CHECKING:
     from .layer import GenerationLayer
-
-from catley.types import RandomSeed, TileCoord
 
 
 class PipelineGenerator(BaseMapGenerator):
@@ -74,11 +74,13 @@ class PipelineGenerator(BaseMapGenerator):
         Returns:
             GeneratedMapData containing tiles, regions, and tile-to-region mapping.
         """
+        # Reset RNG streams with the seed before generation
+        rng.reset(self.seed)
+
         # Create empty context - layers will fill it
         ctx = GenerationContext.create_empty(
             width=self.map_width,
             height=self.map_height,
-            seed=self.seed,
             fill_tile=TileTypeID.WALL,
         )
 

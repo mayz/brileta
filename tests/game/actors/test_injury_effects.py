@@ -14,9 +14,11 @@ from catley.game.game_world import GameWorld
 from catley.game.items.capabilities import Attack
 from catley.game.items.item_core import Item
 from catley.game.items.item_types import FISTS_TYPE
+from catley.game.resolution import combat_arbiter, d20_system
 from catley.game.resolution.combat_arbiter import determine_outcome
 from catley.game.resolution.d20_system import D20ResolutionResult
 from catley.game.turn_manager import TurnManager
+from tests.conftest import FixedRandom
 from tests.helpers import DummyGameWorld
 
 
@@ -84,7 +86,7 @@ def test_arm_injury_gives_attack_disadvantage() -> None:
         attacker.conditions.add_condition(
             conditions.Injury(InjuryLocation.LEFT_ARM, "Sprain")
         )
-    with patch("random.randint", side_effect=[2, 18]):
+    with patch.object(d20_system._rng, "randint", FixedRandom([2, 18])):
         result = cast(
             D20ResolutionResult,
             executor._execute_attack_roll(intent, attack, weapon, {}),
@@ -123,7 +125,7 @@ def test_random_injury_location_assigned() -> None:
     attack = cast(Attack, weapon.melee_attack)
     assert attack is not None
     # No armor equipped - critical hit will inflict injury
-    with patch("random.random", return_value=0.8):
+    with patch.object(combat_arbiter._rng, "random", return_value=0.8):
         res = D20ResolutionResult(outcome_tier=OutcomeTier.CRITICAL_SUCCESS)
         outcome = determine_outcome(res, attacker, defender, weapon)
     assert outcome.injury_inflicted is not None

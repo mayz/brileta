@@ -17,7 +17,10 @@ from catley.environment.generators.pipeline.context import GenerationContext
 from catley.environment.generators.pipeline.layer import GenerationLayer
 from catley.environment.map import MapRegion
 from catley.environment.tile_types import TileTypeID
+from catley.util import rng
 from catley.util.coordinates import Rect
+
+_rng = rng.get("map.buildings")
 
 
 class BuildingPlacementLayer(GenerationLayer):
@@ -96,7 +99,7 @@ class BuildingPlacementLayer(GenerationLayer):
             all_lots.extend(lots)
 
         # Shuffle lots for variety
-        ctx.rng.shuffle(all_lots)
+        _rng.shuffle(all_lots)
 
         # Place buildings in lots
         for lot in all_lots:
@@ -104,7 +107,7 @@ class BuildingPlacementLayer(GenerationLayer):
                 break
 
             # Random chance to skip this lot
-            if ctx.rng.random() > self.building_density:
+            if _rng.random() > self.building_density:
                 continue
 
             # Pick a template that fits in the lot (respects weights and limits)
@@ -116,7 +119,7 @@ class BuildingPlacementLayer(GenerationLayer):
             template_counts[template.name] = template_counts.get(template.name, 0) + 1
 
             # Generate building size
-            width, height = template.generate_size(ctx.rng)
+            width, height = template.generate_size(_rng)
 
             # Shrink to fit in lot with margin
             margin = 1
@@ -129,8 +132,8 @@ class BuildingPlacementLayer(GenerationLayer):
                 continue  # Too small for a building
 
             # Position building within lot (with margin)
-            x = lot.x1 + margin + ctx.rng.randint(0, max(0, max_width - width))
-            y = lot.y1 + margin + ctx.rng.randint(0, max(0, max_height - height))
+            x = lot.x1 + margin + _rng.randint(0, max(0, max_width - width))
+            y = lot.y1 + margin + _rng.randint(0, max(0, max_height - height))
 
             # Create and place the building
             building = self._create_building(ctx, template, (x, y), width, height)
@@ -183,7 +186,7 @@ class BuildingPlacementLayer(GenerationLayer):
         # Choose split direction
         if can_split_h and can_split_v:
             split_h = rect.height > rect.width or (
-                rect.height == rect.width and ctx.rng.random() < 0.5
+                rect.height == rect.width and _rng.random() < 0.5
             )
         else:
             split_h = can_split_h
@@ -194,7 +197,7 @@ class BuildingPlacementLayer(GenerationLayer):
             if split_range <= 0:
                 split = rect.height // 2
             else:
-                split = min_dim + ctx.rng.randint(0, split_range)
+                split = min_dim + _rng.randint(0, split_range)
 
             top = Rect(rect.x1, rect.y1, rect.width, split)
             bottom = Rect(rect.x1, rect.y1 + split, rect.width, rect.height - split)
@@ -206,7 +209,7 @@ class BuildingPlacementLayer(GenerationLayer):
             if split_range <= 0:
                 split = rect.width // 2
             else:
-                split = min_dim + ctx.rng.randint(0, split_range)
+                split = min_dim + _rng.randint(0, split_range)
 
             left = Rect(rect.x1, rect.y1, split, rect.height)
             right = Rect(rect.x1 + split, rect.y1, rect.width - split, rect.height)
@@ -276,9 +279,9 @@ class BuildingPlacementLayer(GenerationLayer):
         """
         total_weight = sum(t.weight for t in templates)
         if total_weight <= 0:
-            return ctx.rng.choice(templates)
+            return _rng.choice(templates)
 
-        r = ctx.rng.random() * total_weight
+        r = _rng.random() * total_weight
         cumulative = 0.0
         for t in templates:
             cumulative += t.weight
@@ -326,7 +329,7 @@ class BuildingPlacementLayer(GenerationLayer):
                 break
 
             template = self._weighted_choice(ctx, available)
-            width, height = template.generate_size(ctx.rng)
+            width, height = template.generate_size(_rng)
             position = self._find_random_position(ctx, width, height, placed_buildings)
 
             if position is None:
@@ -360,8 +363,8 @@ class BuildingPlacementLayer(GenerationLayer):
         max_attempts = 50
 
         for _ in range(max_attempts):
-            x = ctx.rng.randint(margin, ctx.width - width - margin)
-            y = ctx.rng.randint(margin, ctx.height - height - margin)
+            x = _rng.randint(margin, ctx.width - width - margin)
+            y = _rng.randint(margin, ctx.height - height - margin)
 
             candidate = Rect(x, y, width, height)
             valid = True
@@ -417,7 +420,7 @@ class BuildingPlacementLayer(GenerationLayer):
         interior_area = interior.width * interior.height
         min_area_per_room = 25  # Each room needs at least ~5x5 of interior space
 
-        template_room_count = template.generate_room_count(ctx.rng)
+        template_room_count = template.generate_room_count(_rng)
         max_rooms_by_area = max(1, interior_area // min_area_per_room)
         room_count = min(template_room_count, max_rooms_by_area)
 
@@ -544,7 +547,7 @@ class BuildingPlacementLayer(GenerationLayer):
         if can_split_h and can_split_v:
             split_horizontal = bounds.height > bounds.width
             if bounds.height == bounds.width:
-                split_horizontal = ctx.rng.choice([True, False])
+                split_horizontal = _rng.choice([True, False])
         elif can_split_h:
             split_horizontal = True
         else:
@@ -557,7 +560,7 @@ class BuildingPlacementLayer(GenerationLayer):
             max_split = bounds.y2 - min_size - 1
             if min_split > max_split:
                 return [bounds]
-            split_pos = ctx.rng.randint(min_split, max_split)
+            split_pos = _rng.randint(min_split, max_split)
 
             top = Rect(bounds.x1, bounds.y1, bounds.width, split_pos - bounds.y1)
             bottom = Rect(
@@ -574,7 +577,7 @@ class BuildingPlacementLayer(GenerationLayer):
             max_split = bounds.x2 - min_size - 1
             if min_split > max_split:
                 return [bounds]
-            split_pos = ctx.rng.randint(min_split, max_split)
+            split_pos = _rng.randint(min_split, max_split)
 
             top = Rect(bounds.x1, bounds.y1, split_pos - bounds.x1, bounds.height)
             bottom = Rect(
@@ -761,7 +764,7 @@ class BuildingPlacementLayer(GenerationLayer):
                 )
 
         if candidates:
-            return ctx.rng.choice(candidates)
+            return _rng.choice(candidates)
         return None
 
     def _has_entry_depth(
@@ -889,7 +892,7 @@ class BuildingPlacementLayer(GenerationLayer):
         # Pick a position near the center of the best segment
         mid_idx = len(best_segment) // 2
         # Add slight randomness around the center
-        offset = ctx.rng.randint(-1, 1) if len(best_segment) > 2 else 0
+        offset = _rng.randint(-1, 1) if len(best_segment) > 2 else 0
         idx = max(0, min(len(best_segment) - 1, mid_idx + offset))
         door_pos = best_segment[idx]
         x, y = door_pos
@@ -974,7 +977,7 @@ class BuildingPlacementLayer(GenerationLayer):
         """
         # If no street data, return a random direction
         if not ctx.street_data.streets:
-            return ctx.rng.choice(["N", "S", "E", "W"])
+            return _rng.choice(["N", "S", "E", "W"])
 
         bx, by = building.footprint.center()
         min_dist = float("inf")

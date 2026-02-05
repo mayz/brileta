@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import random
 from dataclasses import dataclass
-from typing import cast
+from typing import TYPE_CHECKING, Any, cast
 from unittest.mock import patch
 
 from catley import colors
@@ -18,6 +17,10 @@ from catley.game.items.item_core import Item
 from catley.game.items.item_types import PISTOL_TYPE
 from catley.game.resolution.d20_system import D20ResolutionResult
 from tests.helpers import DummyGameWorld
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+    from contextlib import AbstractContextManager
 
 
 @dataclass
@@ -74,7 +77,9 @@ def make_world() -> tuple[
     return controller, attacker, defender, bystander, intent
 
 
-def test_weapon_drop_and_noise_alert() -> None:
+def test_weapon_drop_and_noise_alert(
+    patch_consequences_rng: Callable[[list[float]], AbstractContextManager[Any]],
+) -> None:
     controller, attacker, _defender, bystander, intent = make_world()
     executor = AttackExecutor()
 
@@ -95,7 +100,7 @@ def test_weapon_drop_and_noise_alert() -> None:
             AttackExecutor,
             "_handle_post_attack_effects",
         ),
-        patch.object(random, "random", return_value=0.20),  # Selects weapon_drop
+        patch_consequences_rng([0.20]),  # Selects weapon_drop
     ):
         result = executor.execute(intent)
 
@@ -115,7 +120,9 @@ def test_weapon_drop_and_noise_alert() -> None:
     assert bystander.ai.disposition == Disposition.HOSTILE
 
 
-def test_self_injury_consequence() -> None:
+def test_self_injury_consequence(
+    patch_consequences_rng: Callable[[list[float]], AbstractContextManager[Any]],
+) -> None:
     """Test that self_injury consequence deals damage to attacker."""
     _controller, attacker, _defender, _bystander, intent = make_world()
     executor = AttackExecutor()
@@ -139,7 +146,7 @@ def test_self_injury_consequence() -> None:
             AttackExecutor,
             "_handle_post_attack_effects",
         ),
-        patch.object(random, "random", return_value=0.50),  # Selects self_injury
+        patch_consequences_rng([0.50]),  # Selects self_injury
     ):
         result = executor.execute(intent)
 
@@ -150,7 +157,9 @@ def test_self_injury_consequence() -> None:
     assert attacker.health.hp < initial_hp
 
 
-def test_self_injury_death_handling() -> None:
+def test_self_injury_death_handling(
+    patch_consequences_rng: Callable[[list[float]], AbstractContextManager[Any]],
+) -> None:
     """Test that self_injury consequence properly handles death visuals.
 
     Regression test: When an attacker fumbles and kills themselves with
@@ -182,7 +191,7 @@ def test_self_injury_death_handling() -> None:
             AttackExecutor,
             "_handle_post_attack_effects",
         ),
-        patch.object(random, "random", return_value=0.50),  # Selects self_injury
+        patch_consequences_rng([0.50]),  # Selects self_injury
     ):
         executor.execute(intent)
 
@@ -195,7 +204,9 @@ def test_self_injury_death_handling() -> None:
     assert not attacker.blocks_movement, "Dead actors should not block movement"
 
 
-def test_off_balance_consequence() -> None:
+def test_off_balance_consequence(
+    patch_consequences_rng: Callable[[list[float]], AbstractContextManager[Any]],
+) -> None:
     """Test that off_balance consequence applies OffBalanceEffect to attacker."""
     _controller, attacker, _defender, _bystander, intent = make_world()
     executor = AttackExecutor()
@@ -220,7 +231,7 @@ def test_off_balance_consequence() -> None:
             AttackExecutor,
             "_handle_post_attack_effects",
         ),
-        patch.object(random, "random", return_value=0.80),  # Selects off_balance
+        patch_consequences_rng([0.80]),  # Selects off_balance
     ):
         result = executor.execute(intent)
 
@@ -230,7 +241,9 @@ def test_off_balance_consequence() -> None:
     assert attacker.status_effects.has_status_effect(OffBalanceEffect)
 
 
-def test_weapon_drop_consequence_still_works() -> None:
+def test_weapon_drop_consequence_still_works(
+    patch_consequences_rng: Callable[[list[float]], AbstractContextManager[Any]],
+) -> None:
     """Test that weapon_drop consequence still works with new random selection."""
     _controller, attacker, _defender, _bystander, intent = make_world()
     executor = AttackExecutor()
@@ -252,7 +265,7 @@ def test_weapon_drop_consequence_still_works() -> None:
             AttackExecutor,
             "_handle_post_attack_effects",
         ),
-        patch.object(random, "random", return_value=0.20),  # Selects weapon_drop
+        patch_consequences_rng([0.20]),  # Selects weapon_drop
     ):
         result = executor.execute(intent)
 

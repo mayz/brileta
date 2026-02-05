@@ -32,6 +32,7 @@ from catley.environment.generators.pipeline.layers.terrain import (
 )
 from catley.environment.generators.wfc_solver import DIR_OFFSETS, DIRECTIONS
 from catley.environment.tile_types import TileTypeID
+from catley.util import rng
 
 # =============================================================================
 # T4.1: OpenFieldLayer
@@ -87,7 +88,8 @@ class TestBuildingPlacementLayer:
     def test_places_buildings_without_overlap(self) -> None:
         """No building footprints intersect."""
         # Use a large map and small buildings to ensure placement
-        ctx = GenerationContext.create_empty(width=200, height=200, seed="42")
+        rng.reset("42")
+        ctx = GenerationContext.create_empty(width=200, height=200)
 
         # Fill with outdoor floor first
         ctx.tiles[:, :] = TileTypeID.OUTDOOR_FLOOR
@@ -126,7 +128,8 @@ class TestBuildingPlacementLayer:
 
     def test_buildings_have_walls_and_floors(self) -> None:
         """Perimeter is WALL, interior is FLOOR/WALL/DOOR (for multi-room)."""
-        ctx = GenerationContext.create_empty(width=100, height=100, seed="123")
+        rng.reset("123")
+        ctx = GenerationContext.create_empty(width=100, height=100)
         ctx.tiles[:, :] = TileTypeID.OUTDOOR_FLOOR
 
         layer = BuildingPlacementLayer(
@@ -170,7 +173,8 @@ class TestBuildingPlacementLayer:
 
     def test_doors_connect_interior_to_exterior(self) -> None:
         """Door tiles adjacent to both interior and exterior regions."""
-        ctx = GenerationContext.create_empty(width=80, height=80, seed="456")
+        rng.reset("456")
+        ctx = GenerationContext.create_empty(width=80, height=80)
 
         # Set up exterior region first
         ctx.tiles[:, :] = TileTypeID.OUTDOOR_FLOOR
@@ -212,7 +216,8 @@ class TestBuildingPlacementLayer:
 
     def test_creates_building_regions(self) -> None:
         """Each building has indoor region with sky_exposure=0."""
-        ctx = GenerationContext.create_empty(width=100, height=100, seed="789")
+        rng.reset("789")
+        ctx = GenerationContext.create_empty(width=100, height=100)
         ctx.tiles[:, :] = TileTypeID.OUTDOOR_FLOOR
 
         layer = BuildingPlacementLayer(
@@ -244,7 +249,8 @@ class TestBuildingPlacementLayer:
         """
         # Use many seeds to catch edge cases
         for seed in ["entry1", "entry2", "entry3", "burrito1", "vestibule"]:
-            ctx = GenerationContext.create_empty(width=100, height=100, seed=seed)
+            rng.reset(seed)
+            ctx = GenerationContext.create_empty(width=100, height=100)
             ctx.tiles[:, :] = TileTypeID.OUTDOOR_FLOOR
 
             layer = BuildingPlacementLayer(
@@ -300,7 +306,8 @@ class TestRandomTerrainLayer:
 
     def test_only_modifies_outdoor_tiles(self) -> None:
         """Building interiors unchanged by terrain layer."""
-        ctx = GenerationContext.create_empty(width=50, height=50, seed="111")
+        rng.reset("111")
+        ctx = GenerationContext.create_empty(width=50, height=50)
 
         # Set up map with some indoor and outdoor areas
         ctx.tiles[:, :] = TileTypeID.OUTDOOR_FLOOR
@@ -319,7 +326,8 @@ class TestRandomTerrainLayer:
 
     def test_uses_terrain_patterns(self) -> None:
         """Output contains GRASS, DIRT_PATH, GRAVEL."""
-        ctx = GenerationContext.create_empty(width=100, height=100, seed="222")
+        rng.reset("222")
+        ctx = GenerationContext.create_empty(width=100, height=100)
         ctx.tiles[:, :] = TileTypeID.OUTDOOR_FLOOR
 
         layer = RandomTerrainLayer(
@@ -355,7 +363,8 @@ class TestWFCTerrainLayer:
 
     def test_produces_valid_terrain(self) -> None:
         """Output contains expected tile types."""
-        ctx = GenerationContext.create_empty(width=10, height=10, seed="wfc1")
+        rng.reset("wfc1")
+        ctx = GenerationContext.create_empty(width=10, height=10)
         ctx.tiles[:, :] = TileTypeID.OUTDOOR_FLOOR
 
         layer = WFCTerrainLayer()
@@ -377,7 +386,8 @@ class TestWFCTerrainLayer:
 
     def test_only_modifies_outdoor_tiles(self) -> None:
         """Building interiors unchanged by WFC terrain layer."""
-        ctx = GenerationContext.create_empty(width=10, height=10, seed="wfc2")
+        rng.reset("wfc2")
+        ctx = GenerationContext.create_empty(width=10, height=10)
 
         ctx.tiles[:, :] = TileTypeID.OUTDOOR_FLOOR
         ctx.tiles[2:4, 2:4] = TileTypeID.FLOOR
@@ -393,7 +403,8 @@ class TestWFCTerrainLayer:
 
     def test_adjacency_respected(self) -> None:
         """No GRASS directly touching COBBLESTONE (OUTDOOR_FLOOR)."""
-        ctx = GenerationContext.create_empty(width=12, height=12, seed="wfc3")
+        rng.reset("wfc3")
+        ctx = GenerationContext.create_empty(width=12, height=12)
         ctx.tiles[:, :] = TileTypeID.OUTDOOR_FLOOR
 
         layer = WFCTerrainLayer()
@@ -414,11 +425,13 @@ class TestWFCTerrainLayer:
 
     def test_deterministic_with_seed(self) -> None:
         """Same seed produces same terrain."""
-        ctx1 = GenerationContext.create_empty(width=15, height=15, seed="determinism")
+        rng.reset("determinism")
+        ctx1 = GenerationContext.create_empty(width=15, height=15)
         ctx1.tiles[:, :] = TileTypeID.OUTDOOR_FLOOR
         WFCTerrainLayer().apply(ctx1)
 
-        ctx2 = GenerationContext.create_empty(width=15, height=15, seed="determinism")
+        rng.reset("determinism")
+        ctx2 = GenerationContext.create_empty(width=15, height=15)
         ctx2.tiles[:, :] = TileTypeID.OUTDOOR_FLOOR
         WFCTerrainLayer().apply(ctx2)
 
@@ -431,7 +444,8 @@ class TestWFCTerrainLayer:
         We can't easily force a contradiction, but we verify the layer doesn't
         raise an exception and produces valid output.
         """
-        ctx = GenerationContext.create_empty(width=12, height=12, seed="fallback")
+        rng.reset("fallback")
+        ctx = GenerationContext.create_empty(width=12, height=12)
         ctx.tiles[:, :] = TileTypeID.OUTDOOR_FLOOR
 
         # Should not raise, even if WFC internally fails
@@ -508,7 +522,8 @@ class TestDetailLayer:
 
     def test_places_boulders_in_outdoor_areas(self) -> None:
         """Boulder tiles only in exterior regions."""
-        ctx = GenerationContext.create_empty(width=80, height=80, seed="333")
+        rng.reset("333")
+        ctx = GenerationContext.create_empty(width=80, height=80)
 
         # Set up map with outdoor and indoor areas
         ctx.tiles[:, :] = TileTypeID.OUTDOOR_FLOOR
@@ -530,7 +545,8 @@ class TestDetailLayer:
 
     def test_does_not_block_doors(self) -> None:
         """No boulders adjacent to door tiles."""
-        ctx = GenerationContext.create_empty(width=100, height=100, seed="444")
+        rng.reset("444")
+        ctx = GenerationContext.create_empty(width=100, height=100)
         ctx.tiles[:, :] = TileTypeID.OUTDOOR_FLOOR
 
         # Place a door manually
@@ -572,7 +588,8 @@ class TestDetailLayer:
 
     def test_respects_boulder_density(self) -> None:
         """Boulder placement probability approximately matches density."""
-        ctx = GenerationContext.create_empty(width=100, height=100, seed="555")
+        rng.reset("555")
+        ctx = GenerationContext.create_empty(width=100, height=100)
         ctx.tiles[:, :] = TileTypeID.OUTDOOR_FLOOR
 
         density = 0.05
@@ -604,7 +621,8 @@ class TestStreetNetworkLayer:
 
     def test_creates_single_street(self) -> None:
         """Single style creates one horizontal street through the middle."""
-        ctx = GenerationContext.create_empty(width=80, height=60, seed=42)
+        rng.reset(42)
+        ctx = GenerationContext.create_empty(width=80, height=60)
         ctx.tiles[:, :] = TileTypeID.OUTDOOR_FLOOR
         layer = StreetNetworkLayer(style="single")
 
@@ -622,7 +640,8 @@ class TestStreetNetworkLayer:
 
     def test_creates_cross_streets(self) -> None:
         """Cross style creates horizontal and vertical streets."""
-        ctx = GenerationContext.create_empty(width=80, height=60, seed=42)
+        rng.reset(42)
+        ctx = GenerationContext.create_empty(width=80, height=60)
         ctx.tiles[:, :] = TileTypeID.OUTDOOR_FLOOR
         layer = StreetNetworkLayer(style="cross")
 
@@ -636,7 +655,8 @@ class TestStreetNetworkLayer:
 
     def test_street_tiles_are_outdoor_floor(self) -> None:
         """Street tiles are carved as OUTDOOR_FLOOR (cobblestone)."""
-        ctx = GenerationContext.create_empty(width=80, height=60, seed=42)
+        rng.reset(42)
+        ctx = GenerationContext.create_empty(width=80, height=60)
         ctx.tiles[:, :] = TileTypeID.GRASS  # Start with grass
         layer = StreetNetworkLayer(style="single")
 
@@ -649,7 +669,8 @@ class TestStreetNetworkLayer:
 
     def test_zones_do_not_overlap_streets_interior(self) -> None:
         """Building zone interiors should not overlap with street interiors."""
-        ctx = GenerationContext.create_empty(width=80, height=60, seed=42)
+        rng.reset(42)
+        ctx = GenerationContext.create_empty(width=80, height=60)
         ctx.tiles[:, :] = TileTypeID.OUTDOOR_FLOOR
         layer = StreetNetworkLayer(style="cross")
 
@@ -676,7 +697,8 @@ class TestBuildingPlacementWithStreets:
     def test_buildings_placed_in_zones(self) -> None:
         """Buildings are placed within street-defined zones."""
         # Use a larger map to ensure zones can fit buildings
-        ctx = GenerationContext.create_empty(width=120, height=100, seed=42)
+        rng.reset(42)
+        ctx = GenerationContext.create_empty(width=120, height=100)
         ctx.tiles[:, :] = TileTypeID.OUTDOOR_FLOOR
 
         # Create street network first
@@ -716,7 +738,8 @@ class TestBuildingPlacementWithStreets:
 
     def test_doors_face_streets(self) -> None:
         """Building doors should face the nearest street."""
-        ctx = GenerationContext.create_empty(width=80, height=60, seed=42)
+        rng.reset(42)
+        ctx = GenerationContext.create_empty(width=80, height=60)
         ctx.tiles[:, :] = TileTypeID.OUTDOOR_FLOOR
 
         # Create street network first (single horizontal street)

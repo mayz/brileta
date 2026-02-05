@@ -37,12 +37,12 @@ Performance Optimizations:
 from __future__ import annotations
 
 import heapq
-import random
 from dataclasses import dataclass, field
 
 import numpy as np
 
 from catley.environment.tile_types import TileTypeID
+from catley.util.rng import RNG
 
 
 class WFCContradiction(Exception):
@@ -106,7 +106,7 @@ class WFCSolver[PatternType]:
         width: int,
         height: int,
         patterns: dict[PatternType, WFCPattern[PatternType]],
-        rng: random.Random,
+        rng: RNG,
     ):
         """Initialize the WFC solver.
 

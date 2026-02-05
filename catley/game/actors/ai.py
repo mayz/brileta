@@ -39,6 +39,7 @@ from catley.game.actors.utility import (
     UtilityContext,
 )
 from catley.game.enums import Disposition
+from catley.util import rng
 
 if TYPE_CHECKING:
     from catley.controller import Controller
@@ -46,6 +47,8 @@ if TYPE_CHECKING:
     from catley.game.actions.movement import MoveIntent
 
     from . import NPC, Actor, Character
+
+_rng = rng.get("npc.ai")
 
 
 class AIComponent(abc.ABC):
@@ -616,8 +619,6 @@ class WanderAction(UtilityAction):
         )
 
     def get_intent(self, context: UtilityContext) -> GameIntent | None:
-        from random import shuffle
-
         from catley.environment.tile_types import get_hazard_cost
         from catley.game.actions.movement import MoveIntent
 
@@ -635,7 +636,7 @@ class WanderAction(UtilityAction):
             (1, 0),
             (1, 1),
         ]
-        shuffle(directions)
+        _rng.shuffle(directions)
         for dx, dy in directions:
             tx = actor.x + dx
             ty = actor.y + dy

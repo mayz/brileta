@@ -39,7 +39,11 @@ from catley.environment.generators.wfc_solver import (
 )
 from catley.environment.map import MapRegion
 from catley.environment.tile_types import TileTypeID
+from catley.util import rng
 from catley.util.coordinates import Rect
+
+_random_terrain_rng = rng.get("map.random_terrain")
+_wfc_terrain_rng = rng.get("map.wfc_terrain")
 
 
 class OpenFieldLayer(GenerationLayer):
@@ -115,7 +119,7 @@ class RandomTerrainLayer(GenerationLayer):
                     continue
 
                 # Simple terrain variety based on random roll
-                roll = ctx.rng.random()
+                roll = _random_terrain_rng.random()
 
                 # Normalize weights
                 total = self.grass_weight + self.path_weight + self.gravel_weight
@@ -350,7 +354,7 @@ class WFCTerrainLayer(GenerationLayer):
         Raises:
             WFCContradiction: If WFC fails to find a valid solution.
         """
-        solver = WFCSolver(ctx.width, ctx.height, self.patterns, ctx.rng)
+        solver = WFCSolver(ctx.width, ctx.height, self.patterns, _wfc_terrain_rng)
 
         # Constrain street tiles to cobblestone if street data is available
         if ctx.street_data.streets:
