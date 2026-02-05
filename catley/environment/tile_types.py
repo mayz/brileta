@@ -94,7 +94,10 @@ TileTypeData = np.dtype(
         ("walkable", bool),
         ("transparent", bool),  # FOV/line-of-sight (exploration & targeting)
         ("cover_bonus", np.int8),  # Defensive bonus from using this tile as cover
-        ("casts_shadows", bool),  # Light occlusion (visual shadows)
+        (
+            "shadow_height",
+            np.uint8,
+        ),  # Shadow height (0 = no shadow, 1+ = tiles of shadow)
         ("material", np.int8),  # ImpactMaterial enum value for impact sounds
         ("hazard_damage", "U8"),  # Dice string for damage (e.g., "1d4"), empty = safe
         ("hazard_damage_type", "U16"),  # Damage type: "acid", "fire", "electric", etc.
@@ -145,7 +148,7 @@ def make_tile_type_data(
     display_name: str,
     material: ImpactMaterial = ImpactMaterial.STONE,
     cover_bonus: int = 0,
-    casts_shadows: bool = False,
+    shadow_height: int = 0,
     hazard_damage: str = "",
     hazard_damage_type: str = "",
     dark: tuple[int, colors.Color, colors.Color],  # (char_code, fg_color, bg_color)
@@ -164,7 +167,7 @@ def make_tile_type_data(
         display_name: Human-readable name for UI display (e.g., "Wall", "Closed Door")
         material: Impact material for sound effects (default: STONE).
         cover_bonus: Defensive bonus granted when using this tile as cover.
-        casts_shadows: Does this tile block light for shadow casting?
+        shadow_height: Height for shadow casting (0 = no shadow, higher = longer shadow).
         hazard_damage: Dice string for damage (e.g., "1d4"). Empty string = safe.
         hazard_damage_type: Type of damage (e.g., "acid", "fire"). Empty string if safe.
         dark:  A (char_code, fg_color, bg_color) tuple defining
@@ -222,7 +225,7 @@ def make_tile_type_data(
             walkable,
             transparent,
             cover_bonus,
-            casts_shadows,
+            shadow_height,
             material.value,
             hazard_damage,
             hazard_damage_type,
@@ -247,7 +250,7 @@ register_tile_type(
         transparent=False,
         display_name="Wall",
         material=ImpactMaterial.STONE,
-        casts_shadows=True,
+        shadow_height=4,
         dark=(ord(" "), colors.DARK_GREY, colors.DARK_WALL),
         light=(ord(" "), colors.LIGHT_GREY, colors.LIGHT_WALL),
     ),
@@ -284,7 +287,7 @@ register_tile_type(
         transparent=False,
         display_name="Rock Wall",
         material=ImpactMaterial.STONE,
-        casts_shadows=True,
+        shadow_height=4,
         dark=(ord("#"), colors.LIGHT_GREY, colors.OUTDOOR_DARK_WALL),
         light=(ord("#"), colors.LIGHT_GREY, colors.OUTDOOR_LIGHT_WALL),
     ),
@@ -297,6 +300,7 @@ register_tile_type(
         transparent=False,
         display_name="Closed Door",
         material=ImpactMaterial.WOOD,
+        shadow_height=4,  # Door is set in a wall - casts same shadow as building
         dark=(ord("+"), colors.ORANGE, colors.DARK_WALL),
         light=(ord("+"), colors.LIGHT_ORANGE, colors.LIGHT_WALL),
     ),
@@ -309,6 +313,7 @@ register_tile_type(
         transparent=True,
         display_name="Open Door",
         material=ImpactMaterial.WOOD,
+        shadow_height=4,  # Doorframe and wall above still cast building shadow
         dark=(ord("'"), colors.ORANGE, colors.DARK_GROUND),
         light=(ord("'"), colors.LIGHT_ORANGE, colors.LIGHT_GROUND),
     ),
@@ -322,7 +327,7 @@ register_tile_type(
         display_name="Boulder",
         material=ImpactMaterial.STONE,
         cover_bonus=2,
-        casts_shadows=True,
+        shadow_height=2,
         dark=(ord("#"), colors.DARK_GREY, colors.DARK_GROUND),
         light=(ord("#"), colors.LIGHT_GREY, colors.LIGHT_GROUND),
     ),
@@ -440,8 +445,8 @@ _tile_type_properties_hazard_damage_type = np.array(
 _tile_type_properties_animation = np.array(
     [t["animation"] for t in _registered_tile_type_data_list], dtype=TileAnimationParams
 )
-_tile_type_properties_casts_shadows = np.array(
-    [t["casts_shadows"] for t in _registered_tile_type_data_list], dtype=bool
+_tile_type_properties_shadow_height = np.array(
+    [t["shadow_height"] for t in _registered_tile_type_data_list], dtype=np.uint8
 )
 _tile_type_properties_emission = np.array(
     [t["emission"] for t in _registered_tile_type_data_list], dtype=TileEmissionParams
@@ -622,23 +627,21 @@ def get_animation_map(tile_type_ids_map: np.ndarray) -> np.ndarray:
     return _tile_type_properties_animation[tile_type_ids_map]
 
 
-def get_casts_shadows_map(tile_type_ids_map: np.ndarray) -> np.ndarray:
+def get_shadow_height_map(tile_type_ids_map: np.ndarray) -> np.ndarray:
     """
-    Vectorized lookup for shadow-casting tiles.
+    Vectorized lookup for tile shadow heights.
 
-    Converts a map of TileTypeIDs into a boolean map where True means
-    the tile at that position casts shadows for lighting calculations.
-
-    This is a performance optimization that replaces per-tile lookups
-    in the shadow collection loop with a single vectorized operation.
+    Converts a map of TileTypeIDs into a uint8 map where 0 means
+    no shadow and higher values indicate taller shadow casters
+    (longer shadows).
 
     Args:
         tile_type_ids_map: A 2D numpy array of TileTypeID values.
 
     Returns:
-        A 2D boolean numpy array matching the input shape.
+        A 2D uint8 numpy array matching the input shape.
     """
-    return _tile_type_properties_casts_shadows[tile_type_ids_map]
+    return _tile_type_properties_shadow_height[tile_type_ids_map]
 
 
 def get_emission_map(tile_type_ids_map: np.ndarray) -> np.ndarray:

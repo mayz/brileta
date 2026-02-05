@@ -28,15 +28,21 @@ class ItemCategory(Enum):
 class CreatureSize(Enum):
     """Creature size categories.
 
-    Size affects animation parameters and may influence combat, movement,
-    and detection mechanics.
+    Size affects animation parameters, shadow length, and may influence
+    combat, movement, and detection mechanics.
+
+    Attributes:
+        shadow_height: How many tiles of shadow this size casts (taller = longer).
     """
 
-    TINY = auto()  # Insects, rats
-    SMALL = auto()  # Dogs, children
-    MEDIUM = auto()  # Humans - baseline
-    LARGE = auto()  # Bears, mutants
-    HUGE = auto()  # Giants, vehicles
+    TINY = (auto(), 1)  # Insects, rats
+    SMALL = (auto(), 1)  # Dogs, children
+    MEDIUM = (auto(), 2)  # Humans - baseline
+    LARGE = (auto(), 3)  # Bears, mutants
+    HUGE = (auto(), 4)  # Giants, vehicles
+
+    def __init__(self, _value: int, shadow_height: int) -> None:
+        self.shadow_height = shadow_height
 
 
 class Disposition(Enum):

@@ -11,6 +11,7 @@ These tests verify that:
 import pytest
 
 from catley import colors
+from catley.game.actors.components import HealthComponent, StatsComponent
 from catley.game.actors.core import Actor, Character
 from catley.game.actors.idle_animation import scale_for_size
 from catley.game.enums import CreatureSize
@@ -122,3 +123,90 @@ class TestCharacterVisualScale:
         )
         assert char.visual_scale > 1.0
         assert char.visual_scale == pytest.approx(1.3)
+
+
+# --- Shadow Height Tests ---
+
+
+class TestCreatureSizeShadowHeight:
+    """Tests for CreatureSize.shadow_height values."""
+
+    @pytest.mark.parametrize(
+        "size, expected_height",
+        [
+            (CreatureSize.TINY, 1),
+            (CreatureSize.SMALL, 1),
+            (CreatureSize.MEDIUM, 2),
+            (CreatureSize.LARGE, 3),
+            (CreatureSize.HUGE, 4),
+        ],
+    )
+    def test_shadow_height_values(
+        self, size: CreatureSize, expected_height: int
+    ) -> None:
+        """Each CreatureSize should map to its expected shadow height."""
+        assert size.shadow_height == expected_height
+
+    def test_larger_sizes_cast_longer_shadows(self) -> None:
+        """Shadow height should be monotonically non-decreasing with size."""
+        sizes = [
+            CreatureSize.TINY,
+            CreatureSize.SMALL,
+            CreatureSize.MEDIUM,
+            CreatureSize.LARGE,
+            CreatureSize.HUGE,
+        ]
+        heights = [s.shadow_height for s in sizes]
+        for i in range(len(heights) - 1):
+            assert heights[i] <= heights[i + 1], (
+                f"{sizes[i].name} (h={heights[i]}) should not have a taller "
+                f"shadow than {sizes[i + 1].name} (h={heights[i + 1]})"
+            )
+
+
+class TestActorShadowHeight:
+    """Tests for shadow_height on Actor and Character."""
+
+    def test_actor_default_shadow_height(self) -> None:
+        """Actor should default to shadow_height=1."""
+        actor = Actor(0, 0, "A", colors.WHITE, name="Test")
+        assert actor.shadow_height == 1
+
+    def test_actor_death_clears_shadow(self) -> None:
+        """Dead actors should not cast shadows (shadow_height=0)."""
+        stats = StatsComponent(toughness=5)  # max_hp = toughness + 5 = 10
+        actor = Actor(
+            0,
+            0,
+            "A",
+            colors.WHITE,
+            name="Test",
+            stats=stats,
+            health=HealthComponent(stats),
+            shadow_height=2,
+        )
+        assert actor.shadow_height == 2
+
+        # Deal lethal damage
+        actor.take_damage(100)
+        assert actor.shadow_height == 0
+
+    def test_character_derives_shadow_height_from_size(self) -> None:
+        """Character should derive shadow_height from creature_size."""
+        char = Character(
+            0, 0, "L", colors.WHITE, "Large", creature_size=CreatureSize.LARGE
+        )
+        assert char.shadow_height == CreatureSize.LARGE.shadow_height
+
+    def test_character_explicit_shadow_height_overrides_size(self) -> None:
+        """Explicit shadow_height should override the size-based default."""
+        char = Character(
+            0,
+            0,
+            "X",
+            colors.WHITE,
+            "Custom",
+            creature_size=CreatureSize.TINY,
+            shadow_height=5,
+        )
+        assert char.shadow_height == 5

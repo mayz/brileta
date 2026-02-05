@@ -106,7 +106,7 @@ class GameMap:
         self._dark_appearance_map_cache: np.ndarray | None = None
         self._light_appearance_map_cache: np.ndarray | None = None
         self._animation_params_cache: np.ndarray | None = None
-        self._casts_shadows_map_cache: np.ndarray | None = None
+        self._shadow_heights_map_cache: np.ndarray | None = None
 
         # Per-cell animation state for tiles that animate (color oscillation, flicker)
         self.animation_state = self._init_animation_state()
@@ -118,7 +118,7 @@ class GameMap:
         self._dark_appearance_map_cache = None
         self._light_appearance_map_cache = None
         self._animation_params_cache = None
-        self._casts_shadows_map_cache = None
+        self._shadow_heights_map_cache = None
         self.structural_revision += 1
 
     @property
@@ -239,16 +239,19 @@ class GameMap:
         return self._animation_params_cache
 
     @property
-    def casts_shadows(self) -> np.ndarray:
-        """Boolean array of shape (width, height) where True means tile casts shadows.
+    def shadow_heights(self) -> np.ndarray:
+        """uint8 array of shape (width, height) with per-tile shadow height.
 
-        Used by the lighting system to determine which tiles should block light
-        and cast shadows. This cached property avoids per-tile lookups during
-        shadow collection, reducing 23M calls to a single vectorized operation.
+        0 means the tile casts no shadow. Higher values mean the tile is taller
+        and casts a longer shadow (e.g., 4 for walls, 2 for boulders).
+
+        Used by the lighting system for height-aware shadow casting.
         """
-        if self._casts_shadows_map_cache is None:
-            self._casts_shadows_map_cache = tile_types.get_casts_shadows_map(self.tiles)
-        return self._casts_shadows_map_cache
+        if self._shadow_heights_map_cache is None:
+            self._shadow_heights_map_cache = tile_types.get_shadow_height_map(
+                self.tiles
+            )
+        return self._shadow_heights_map_cache
 
     def _init_animation_state(self) -> np.ndarray:
         """Initialize animation state array with random values.

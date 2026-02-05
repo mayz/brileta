@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -200,13 +201,13 @@ print(",".join(map(str, values)))
             [sys.executable, "-c", script],
             capture_output=True,
             text=True,
-            cwd="/Users/mayz/conductor/workspaces/catley/da-nang",
+            cwd=str(Path(__file__).resolve().parents[2]),
         )
         result2 = subprocess.run(
             [sys.executable, "-c", script],
             capture_output=True,
             text=True,
-            cwd="/Users/mayz/conductor/workspaces/catley/da-nang",
+            cwd=str(Path(__file__).resolve().parents[2]),
         )
 
         assert result1.returncode == 0, f"Process 1 failed: {result1.stderr}"

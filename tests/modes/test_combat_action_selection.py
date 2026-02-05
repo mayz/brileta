@@ -727,11 +727,11 @@ class TestPlayerCombatActionsDiscovery:
 class TestCombatModeEnterKeyExecution:
     """Test Enter key executes selected action on current target."""
 
-    def test_enter_key_queues_attack_intent(
+    def test_enter_key_starts_melee_attack_plan(
         self, combat_controller: Controller
     ) -> None:
-        """Pressing Enter with Attack selected should queue AttackIntent."""
-        controller, _player, npc = _make_combat_test_world(
+        """Pressing Enter with Attack selected should start MeleeAttackPlan."""
+        controller, player, npc = _make_combat_test_world(
             combat_controller,
         )
         controller.enter_combat_mode()
@@ -747,13 +747,11 @@ class TestCombatModeEnterKeyExecution:
             mod=tcod.event.Modifier.NONE,
         )
 
-        # Track queued actions
-        with patch.object(controller, "queue_action") as mock_queue:
-            controller.combat_mode.handle_input(event)
+        controller.combat_mode.handle_input(event)
 
-            assert mock_queue.called
-            queued_intent = mock_queue.call_args[0][0]
-            assert isinstance(queued_intent, AttackIntent)
+        # Melee attacks now use the ActionPlan system (approach + execute)
+        assert player.active_plan is not None
+        assert player.active_plan.plan.name == "Melee Attack"
 
     def test_enter_key_with_push_starts_push_plan(
         self, combat_controller: Controller

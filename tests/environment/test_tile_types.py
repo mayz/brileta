@@ -27,7 +27,7 @@ def test_get_tile_type_data_by_id():
 def test_boulder_properties() -> None:
     boulder = tile_types.get_tile_type_data_by_id(TileTypeID.BOULDER)
     assert boulder["transparent"]
-    assert boulder["casts_shadows"]
+    assert boulder["shadow_height"] == 2
     assert boulder["cover_bonus"] == 2
 
 
@@ -174,8 +174,8 @@ def test_get_hazard_cost_map_vectorized() -> None:
 # --- Shadow Casting Tests ---
 
 
-def test_get_casts_shadows_map_basic() -> None:
-    """Test vectorized shadow-casting lookup for basic tile types."""
+def test_get_shadow_height_map_basic() -> None:
+    """Test vectorized shadow height lookup for basic tile types."""
     # Create a 2D array of tile IDs
     ids = np.array(
         [
@@ -183,59 +183,66 @@ def test_get_casts_shadows_map_basic() -> None:
             [TileTypeID.BOULDER, TileTypeID.OUTDOOR_WALL],
         ]
     )
-    shadows = tile_types.get_casts_shadows_map(ids)
+    heights = tile_types.get_shadow_height_map(ids)
 
-    # Floor doesn't cast shadows; Wall, Boulder, and Outdoor Wall do
-    assert shadows.shape == ids.shape
-    assert shadows[0, 0] is np.False_  # FLOOR
-    assert shadows[0, 1] is np.True_  # WALL
-    assert shadows[1, 0] is np.True_  # BOULDER
-    assert shadows[1, 1] is np.True_  # OUTDOOR_WALL
+    # Check expected shadow heights
+    assert heights.shape == ids.shape
+    assert heights[0, 0] == 0  # FLOOR - no shadow
+    assert heights[0, 1] == 4  # WALL - tall shadow
+    assert heights[1, 0] == 2  # BOULDER - short shadow
+    assert heights[1, 1] == 4  # OUTDOOR_WALL - tall shadow
 
 
-def test_get_casts_shadows_map_all_tiles() -> None:
-    """Ensure get_casts_shadows_map works for all tile types."""
+def test_get_shadow_height_map_all_tiles() -> None:
+    """Ensure get_shadow_height_map works for all tile types."""
     all_ids = np.array([list(TileTypeID)])
-    shadows = tile_types.get_casts_shadows_map(all_ids)
+    heights = tile_types.get_shadow_height_map(all_ids)
 
     # Verify each result matches the individual lookup
     for i, tile_id in enumerate(TileTypeID):
         data = tile_types.get_tile_type_data_by_id(tile_id)
-        assert shadows[0, i] == data["casts_shadows"], (
-            f"Mismatch for {tile_id.name}: vectorized={shadows[0, i]}, "
-            f"individual={data['casts_shadows']}"
+        assert heights[0, i] == data["shadow_height"], (
+            f"Mismatch for {tile_id.name}: vectorized={heights[0, i]}, "
+            f"individual={data['shadow_height']}"
         )
 
 
-def test_get_casts_shadows_map_empty_array() -> None:
+def test_get_shadow_height_map_empty_array() -> None:
     """Empty arrays should return empty results."""
     ids = np.array([], dtype=np.uint8).reshape(0, 0)
-    shadows = tile_types.get_casts_shadows_map(ids)
-    assert shadows.shape == (0, 0)
+    heights = tile_types.get_shadow_height_map(ids)
+    assert heights.shape == (0, 0)
 
 
-def test_shadow_casting_tiles_are_correct() -> None:
-    """Verify which tiles are expected to cast shadows."""
-    # These tiles should cast shadows (solid objects that block light)
-    shadow_casters = [TileTypeID.WALL, TileTypeID.OUTDOOR_WALL, TileTypeID.BOULDER]
+def test_shadow_height_tiles_are_correct() -> None:
+    """Verify expected shadow heights for all tile types."""
+    # Tiles with specific shadow heights
+    expected_heights: dict[TileTypeID, int] = {
+        TileTypeID.WALL: 4,
+        TileTypeID.OUTDOOR_WALL: 4,
+        TileTypeID.DOOR_CLOSED: 4,  # Door is set in a wall - same shadow as building
+        TileTypeID.DOOR_OPEN: 4,  # Doorframe and wall above still cast building shadow
+        TileTypeID.BOULDER: 2,
+    }
 
-    # These tiles should NOT cast shadows (floors, transparent, or special)
-    non_shadow_casters = [
+    # These tiles should have zero shadow height
+    no_shadow_tiles = [
         TileTypeID.FLOOR,
         TileTypeID.OUTDOOR_FLOOR,
-        TileTypeID.DOOR_CLOSED,
-        TileTypeID.DOOR_OPEN,
         TileTypeID.ACID_POOL,
         TileTypeID.HOT_COALS,
     ]
 
-    for tile_id in shadow_casters:
+    for tile_id, expected in expected_heights.items():
         data = tile_types.get_tile_type_data_by_id(tile_id)
-        assert data["casts_shadows"], f"{tile_id.name} should cast shadows"
+        assert data["shadow_height"] == expected, (
+            f"{tile_id.name} should have shadow_height={expected}, "
+            f"got {data['shadow_height']}"
+        )
 
-    for tile_id in non_shadow_casters:
+    for tile_id in no_shadow_tiles:
         data = tile_types.get_tile_type_data_by_id(tile_id)
-        assert not data["casts_shadows"], f"{tile_id.name} should not cast shadows"
+        assert data["shadow_height"] == 0, f"{tile_id.name} should have shadow_height=0"
 
 
 # --- Tile Light Emission Tests ---

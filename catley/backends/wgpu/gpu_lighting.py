@@ -442,8 +442,8 @@ class GPULightingSystem(LightingSystem):
             viewport_bounds: The viewport bounds for rendering
 
         Returns:
-            Flat list of floats representing actor positions (2 floats per actor)
-            Format: position.xy for each shadow-casting actor, max 16 actors
+            Flat list of floats representing actor data (3 floats per actor):
+            [x, y, shadow_height, x, y, shadow_height, ...]
         """
         from catley.config import SHADOW_MAX_LENGTH, SHADOWS_ENABLED
 
@@ -476,8 +476,11 @@ class GPULightingSystem(LightingSystem):
             for actor in actors:
                 if count >= MAX_ACTOR_SHADOWS:
                     break
-                if hasattr(actor, "blocks_movement") and actor.blocks_movement:
-                    actor_positions.extend([float(actor.x), float(actor.y)])
+                shadow_h = getattr(actor, "shadow_height", 0)
+                if shadow_h > 0:
+                    actor_positions.extend(
+                        [float(actor.x), float(actor.y), float(shadow_h)]
+                    )
                     count += 1
 
         return actor_positions
@@ -818,10 +821,12 @@ class GPULightingSystem(LightingSystem):
         )
 
     def _update_shadow_grid_texture(self) -> None:
-        """Update the shadow grid texture from the game map's casts_shadows array.
+        """Update the shadow grid texture from the game map's shadow_heights array.
 
-        Creates a texture where each pixel indicates whether a tile blocks light.
-        Used by the shader for ray marching to determine terrain shadows.
+        Creates a texture where each pixel stores a tile's shadow height.
+        Used by the shader for height-aware ray marching to determine terrain
+        shadows. Height values are stored directly as uint8 (r8unorm format,
+        so the shader reads value/255 and multiplies by 255 to recover the int).
         Only recreates when map structure changes.
         """
         game_map = self.game_world.game_map
@@ -835,11 +840,8 @@ class GPULightingSystem(LightingSystem):
         ):
             return  # No update needed
 
-        # Convert boolean array to uint8 (0 or 255)
-        # Transpose to match texture coordinate system (width, height)
-        shadow_data = np.ascontiguousarray(
-            (game_map.casts_shadows.T * 255).astype(np.uint8)
-        )
+        # Shadow heights are already uint8. Transpose to match texture coords.
+        shadow_data = np.ascontiguousarray(game_map.shadow_heights.T.astype(np.uint8))
 
         # Release old texture if it exists
         if self._shadow_grid_texture is not None:
@@ -960,19 +962,20 @@ class GPULightingSystem(LightingSystem):
             )
         )
 
-        # Actor shadow positions (terrain shadows use texture)
+        # Actor shadow positions with height (terrain shadows use texture)
+        # Format per actor: x, y, shadow_height, padding
         MAX_ACTOR_SHADOWS = 64
         for i in range(MAX_ACTOR_SHADOWS):
             if i < actor_shadow_count:
                 buffer.extend(
                     struct.pack(
-                        "2f2f",
-                        actor_shadow_positions[i * 2],
-                        actor_shadow_positions[i * 2 + 1],
-                        0.0,
+                        "4f",
+                        actor_shadow_positions[i * 3],
+                        actor_shadow_positions[i * 3 + 1],
+                        actor_shadow_positions[i * 3 + 2],
                         0.0,
                     )
-                )  # xy, zw padding
+                )  # xy, height, padding
             else:
                 buffer.extend(struct.pack("4f", 0.0, 0.0, 0.0, 0.0))
 
@@ -1166,7 +1169,7 @@ class GPULightingSystem(LightingSystem):
                 )
 
             actor_shadow_positions = self._cached_shadow_casters
-            actor_shadow_count = len(actor_shadow_positions) // 2  # 2 floats per actor
+            actor_shadow_count = len(actor_shadow_positions) // 3  # 3 floats per actor
 
             # Update sky exposure texture if needed
             self._update_sky_exposure_texture()

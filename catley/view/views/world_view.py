@@ -48,6 +48,7 @@ PULSATION_PERIOD = 2.0  # Seconds for full pulsation cycle (selected actor)
 PULSATION_MAX_BLEND_ALPHA: Opacity = Opacity(0.5)  # Maximum alpha for pulsation
 LUMINANCE_THRESHOLD = 127.5  # For determining light vs dark colors
 
+
 # Combat outline shimmer effect (shimmering glyph outlines on targetable enemies)
 COMBAT_OUTLINE_SHIMMER_PERIOD = 2.4  # Seconds for full shimmer cycle
 COMBAT_OUTLINE_MIN_ALPHA: Opacity = Opacity(0.4)  # Minimum alpha during shimmer

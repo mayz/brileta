@@ -163,6 +163,7 @@ class Actor:
         # World and appearance
         game_world: GameWorld | None = None,
         blocks_movement: bool = True,
+        shadow_height: int = 1,
         visual_scale: float = 1.0,
         character_layers: list[CharacterLayer] | None = None,
     ) -> None:
@@ -187,7 +188,7 @@ class Actor:
         self.has_complex_visuals = False  # Flag for actors with particle effects, etc.
         self.gw = game_world
         self.blocks_movement = blocks_movement
-        # Light source removed - handled by new lighting system
+        self.shadow_height = shadow_height
 
         # === Core Data Components ===
         self.stats = stats
@@ -338,6 +339,7 @@ class Actor:
                 self.ch = "x"
                 self.color = colors.DEAD
                 self.blocks_movement = False
+                self.shadow_height = 0
 
                 # Release animation control and snap render position to logical.
                 # This prevents corpses from sliding if killed mid-animation.
@@ -467,6 +469,7 @@ class Character(Actor):
         creature_size: CreatureSize = CreatureSize.MEDIUM,
         idle_profile: IdleAnimationProfile | None = None,
         visual_scale: float | None = None,
+        shadow_height: int | None = None,
         **kwargs,
     ) -> None:
         """
@@ -487,6 +490,8 @@ class Character(Actor):
             idle_profile: Custom idle animation profile (overrides creature_size)
             visual_scale: Rendering scale factor (overrides size-based default).
                 If None, derived from creature_size via scale_for_size().
+            shadow_height: Shadow height for shadow casting. If None,
+                creature_size.shadow_height is used.
             **kwargs: Additional Actor parameters
         """
         stats = StatsComponent(
@@ -508,6 +513,11 @@ class Character(Actor):
             visual_scale if visual_scale is not None else scale_for_size(creature_size)
         )
 
+        # Derive shadow_height from creature_size if not explicitly provided
+        effective_shadow_height = (
+            shadow_height if shadow_height is not None else creature_size.shadow_height
+        )
+
         super().__init__(
             x=x,
             y=y,
@@ -522,6 +532,7 @@ class Character(Actor):
             ai=ai,
             energy=EnergyComponent(speed=speed),
             visual_scale=effective_visual_scale,
+            shadow_height=effective_shadow_height,
             **kwargs,
         )
 

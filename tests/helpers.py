@@ -530,6 +530,11 @@ def reset_dummy_controller(controller: Controller) -> None:
         queued_actions = getattr(player, "queued_actions", None)
         if queued_actions is not None:
             queued_actions.clear()
+        # Reset inventory to prevent equipped items from leaking between tests
+        player.inventory._stored_items.clear()
+        player.inventory.ready_slots = [None] * len(player.inventory.ready_slots)
+        player.inventory.active_slot = 0
+        player.inventory._equipped_outfit = None
 
     for actor in list(controller.gw.actors):
         if actor is not player:

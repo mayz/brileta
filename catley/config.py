@@ -181,8 +181,8 @@ SKY_EXPOSURE_POWER = 1.5  # Non-linear sky exposure curve (higher = more contras
 # Shadow system
 SHADOWS_ENABLED: bool = True  # Set to False to disable shadows
 SHADOW_INTENSITY = 0.25  # Point light shadow intensity (indoor torches, etc.)
-SUN_SHADOW_INTENSITY = 0.4  # Directional/sun shadow intensity
-SHADOW_MAX_LENGTH = 3  # Maximum shadow length in tiles
+SUN_SHADOW_INTENSITY = 0.55  # Directional/sun shadow intensity
+SHADOW_MAX_LENGTH = 6  # Maximum shadow march distance (accommodates tallest terrain)
 SHADOW_FALLOFF = True  # Shadows get lighter with distance
 
 # Tile emission (glowing hazard tiles like acid pools, hot coals)

@@ -39,7 +39,7 @@ struct LightingUniforms {
     shadow_intensity: f32,
     shadow_max_length: i32,
     shadow_falloff_enabled: u32,
-    actor_shadow_positions: array<vec4f, 64>, // xy in .xy, zw unused
+    actor_shadow_positions: array<vec4f, 64>, // xy in .xy, shadow_height in .z, w unused
     
     // Directional light uniforms (sun/moon)
     sun_direction: vec2f,
@@ -103,7 +103,9 @@ fn noise2d(coord: vec2f) -> f32 {
     return mix(mix(a_fract, b_fract, u.x), mix(c_fract, d_fract, u.x), u.y) * 2.0 - 1.0;  // Range [-1, 1]
 }
 
-// Compute point light shadow by marching toward the light and sampling shadow grid texture
+// Compute point light shadow by marching toward the light and sampling shadow grid texture.
+// The shadow grid stores per-tile height (r8unorm: value * 255 = integer height).
+// A blocker only shadows this pixel if the distance from pixel to blocker <= blocker height.
 fn computePointLightShadow(tile_pos: vec2f, light_pos: vec2f, light_radius: f32) -> f32 {
     let to_light = light_pos - tile_pos;
     let dist_to_light = length(to_light);
@@ -134,14 +136,18 @@ fn computePointLightShadow(tile_pos: vec2f, light_pos: vec2f, light_radius: f32)
         let texel = vec2i(pos);
         if (texel.x >= 0 && texel.x < map_size.x &&
             texel.y >= 0 && texel.y < map_size.y) {
-            let blocks = textureLoad(shadow_grid, texel, 0).r;
-            if (blocks > 0.5) {
-                // Blocker between pixel and light - calculate shadow with falloff
-                var distance_falloff = 1.0;
-                if (uniforms.shadow_falloff_enabled != 0u) {
-                    distance_falloff = 1.0 - (f32(i - 1) / f32(uniforms.shadow_max_length));
+            // Read shadow height (r8unorm stores height/255, recover integer)
+            let height = textureLoad(shadow_grid, texel, 0).r * 255.0;
+            if (height > 0.5) {
+                // Blocker found - only in shadow if within this blocker's reach
+                if (i <= i32(height + 0.5)) {
+                    var distance_falloff = 1.0;
+                    if (uniforms.shadow_falloff_enabled != 0u) {
+                        distance_falloff = 1.0 - (f32(i - 1) / height);
+                    }
+                    return 1.0 - uniforms.shadow_intensity * distance_falloff;
                 }
-                return 1.0 - uniforms.shadow_intensity * distance_falloff;
+                // Blocker exists but pixel is beyond its shadow reach - keep marching
             }
         }
     }
@@ -149,12 +155,18 @@ fn computePointLightShadow(tile_pos: vec2f, light_pos: vec2f, light_radius: f32)
     return 1.0;  // No blockers found
 }
 
-// Compute actor shadow attenuation (for NPCs that block light)
+// Compute actor shadow attenuation (for NPCs that block light).
+// Each actor's shadow height is stored in .z of actor_shadow_positions.
 fn computeActorShadow(tile_pos: vec2f, light_pos: vec2f, light_radius: f32) -> f32 {
     var shadow_factor = 1.0;
 
     for (var i = 0; i < uniforms.actor_shadow_count && i < 64; i++) {
         let actor_pos = uniforms.actor_shadow_positions[i].xy;
+        let actor_height = uniforms.actor_shadow_positions[i].z;
+
+        if (actor_height < 0.5) {
+            continue;  // No shadow
+        }
 
         // Calculate displacement from light to actor
         let light_to_actor = actor_pos - light_pos;
@@ -174,18 +186,17 @@ fn computeActorShadow(tile_pos: vec2f, light_pos: vec2f, light_radius: f32) -> f
         if (dy > 0.0) { shadow_dy = 1.0; } else if (dy < 0.0) { shadow_dy = -1.0; }
 
         // Check if tile_pos is in the shadow path from actor
-        let max_shadow_length = f32(uniforms.shadow_max_length);
         var in_shadow = false;
         var shadow_intensity_val = 0.0;
 
-        for (var j = 1; j <= i32(max_shadow_length) && j <= 3; j++) {
+        for (var j = 1; j <= i32(actor_height); j++) {
             let shadow_pos = actor_pos + vec2f(shadow_dx * f32(j), shadow_dy * f32(j));
 
             // Check if tile_pos matches this shadow position
             if (abs(tile_pos.x - shadow_pos.x) < 0.1 && abs(tile_pos.y - shadow_pos.y) < 0.1) {
                 var distance_falloff = 1.0;
                 if (uniforms.shadow_falloff_enabled != 0u) {
-                    distance_falloff = 1.0 - (f32(j - 1) / max_shadow_length);
+                    distance_falloff = 1.0 - (f32(j - 1) / actor_height);
                 }
                 shadow_intensity_val = max(shadow_intensity_val, uniforms.shadow_intensity * distance_falloff);
                 in_shadow = true;
@@ -200,7 +211,11 @@ fn computeActorShadow(tile_pos: vec2f, light_pos: vec2f, light_radius: f32) -> f
     return shadow_factor;
 }
 
-// Compute directional shadow by marching toward sun and sampling shadow grid texture
+// Compute directional shadow by marching toward sun and sampling shadow grid texture.
+// Uses per-tile height for shadow length - taller blockers cast longer shadows.
+// Unlike point light shadows, directional (sun) shadows use uniform intensity
+// with no distance falloff. Real sunlight subtends ~0.5° so shadows are binary:
+// you're in the shadow or you're not. No gradual fade.
 fn computeDirectionalShadow(tile_pos: vec2f, sky_exposure: f32) -> f32 {
     if (sky_exposure <= 0.1 || uniforms.sun_intensity <= 0.0) {
         return 1.0;  // No shadow
@@ -224,23 +239,26 @@ fn computeDirectionalShadow(tile_pos: vec2f, sky_exposure: f32) -> f32 {
             break;
         }
 
-        // Use textureLoad for pixel-exact sampling (no filtering)
-        let blocks = textureLoad(shadow_grid, texel, 0).r;
-        if (blocks > 0.5) {
-            // Found a blocker - calculate shadow with falloff
-            var distance_falloff = 1.0;
-            if (uniforms.shadow_falloff_enabled != 0u) {
-                distance_falloff = 1.0 - (f32(i - 1) / f32(uniforms.shadow_max_length));
+        // Read shadow height (r8unorm stores height/255, recover integer)
+        let height = textureLoad(shadow_grid, texel, 0).r * 255.0;
+        if (height > 0.5) {
+            // Found a blocker - only shadowed if within this blocker's height reach
+            if (i <= i32(height + 0.5)) {
+                // Uniform shadow - no distance falloff for sunlight
+                shadow_factor *= (1.0 - uniforms.sun_shadow_intensity);
+                break;  // In shadow - no need to march further
             }
-            shadow_factor *= (1.0 - uniforms.sun_shadow_intensity * distance_falloff);
-            break;  // First blocker wins for directional light
+            // Blocker exists but pixel is beyond its shadow reach - keep marching
+            // (a taller blocker further away may still shadow this pixel)
         }
     }
 
     return shadow_factor;
 }
 
-// Compute actor shadows for directional (sun) light
+// Compute actor shadows for directional (sun) light.
+// Each actor's shadow height is stored in .z of actor_shadow_positions.
+// Uses uniform intensity like terrain directional shadows (no distance falloff).
 fn computeActorDirectionalShadow(tile_pos: vec2f, sky_exposure: f32) -> f32 {
     if (sky_exposure <= 0.1 || uniforms.sun_intensity <= 0.0) {
         return 1.0;
@@ -256,21 +274,22 @@ fn computeActorDirectionalShadow(tile_pos: vec2f, sky_exposure: f32) -> f32 {
 
     for (var i = 0; i < uniforms.actor_shadow_count && i < 64; i++) {
         let actor_pos = uniforms.actor_shadow_positions[i].xy;
+        let actor_height = uniforms.actor_shadow_positions[i].z;
+
+        if (actor_height < 0.5) {
+            continue;  // No shadow
+        }
 
         // Check if tile_pos is in the shadow path from this actor
-        let max_shadow_length = f32(uniforms.shadow_max_length);
         var in_shadow = false;
         var shadow_intensity_val = 0.0;
 
-        for (var j = 1; j <= i32(max_shadow_length); j++) {
+        for (var j = 1; j <= i32(actor_height); j++) {
             let shadow_pos = actor_pos + vec2f(shadow_dx * f32(j), shadow_dy * f32(j));
 
             if (abs(tile_pos.x - shadow_pos.x) < 0.1 && abs(tile_pos.y - shadow_pos.y) < 0.1) {
-                var distance_falloff = 1.0;
-                if (uniforms.shadow_falloff_enabled != 0u) {
-                    distance_falloff = 1.0 - (f32(j - 1) / max_shadow_length);
-                }
-                shadow_intensity_val = max(shadow_intensity_val, uniforms.sun_shadow_intensity * distance_falloff);
+                // Uniform shadow - no distance falloff for sunlight
+                shadow_intensity_val = max(shadow_intensity_val, uniforms.sun_shadow_intensity);
                 in_shadow = true;
             }
         }
@@ -405,11 +424,13 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4f {
             let effective_exposure = pow(sky_exposure, uniforms.sky_exposure_power);
             var sun_contribution = uniforms.sun_color * uniforms.sun_intensity * effective_exposure;
 
-            // Apply directional shadows in outdoor areas
-            // Combine terrain shadows (from grid texture) with actor shadows
+            // Apply directional shadows in outdoor areas.
+            // Use min (not multiply) because there's only one sun - shadows
+            // don't compound. A tile in both a building and actor shadow is
+            // just "in shadow", not doubly dark.
             let terrain_dir_shadow = computeDirectionalShadow(tile_pos, sky_exposure);
             let actor_dir_shadow = computeActorDirectionalShadow(tile_pos, sky_exposure);
-            sun_contribution *= terrain_dir_shadow * actor_dir_shadow;
+            sun_contribution *= min(terrain_dir_shadow, actor_dir_shadow);
 
             final_color = max(final_color, sun_contribution);
         } else if (sky_exposure > 0.0) {
