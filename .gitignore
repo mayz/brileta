@@ -8,6 +8,9 @@
 # Python-generated files
 __pycache__/
 *.py[oc]
+*.so
+*.pyd
+*.dll
 build/
 dist/
 wheels/

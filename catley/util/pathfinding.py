@@ -4,7 +4,6 @@ from collections import deque
 from typing import TYPE_CHECKING
 
 import numpy as np
-import tcod.path
 
 if TYPE_CHECKING:
     from catley.environment.map import GameMap
@@ -15,6 +14,15 @@ from catley.types import WorldTilePos
 
 if TYPE_CHECKING:
     from catley.game.game_world import GameWorld
+
+# Native pathfinding is required at runtime.
+try:
+    from catley.util._native import astar as _c_astar
+except ImportError as exc:  # pragma: no cover - fails fast by design
+    raise ImportError(
+        "catley.util._native is required. "
+        "Build native extensions with `make` (or `uv pip install -e .`)."
+    ) from exc
 
 
 def find_closest_adjacent_tile(
@@ -200,10 +208,31 @@ def find_local_path(
             fire_cost = HAZARD_BASE_COST + damage_per_turn
             cost[actor.x, actor.y] = max(cost[actor.x, actor.y], fire_cost)
 
-    astar = tcod.path.AStar(cost=cost, diagonal=1)
-
-    path: list[WorldTilePos] = astar.get_path(
-        start_pos[0], start_pos[1], end_pos[0], end_pos[1]
-    )
-
+    path: list[WorldTilePos] = _astar(cost, start_pos, end_pos)
     return path
+
+
+def _astar(
+    cost: np.ndarray,
+    start: tuple[int, int],
+    goal: tuple[int, int],
+) -> list[WorldTilePos]:
+    """A* pathfinding on a 2D cost grid with diagonal movement.
+
+    Diagonal moves cost sqrt(2) times the destination cell weight, while
+    cardinal moves cost 1x.  This prevents the zigzag/parabola paths that
+    occur when diagonals are free.
+
+    Args:
+        cost: Array of shape (width, height) indexed as cost[x, y].
+              0 means impassable, positive values are traversal weights.
+        start: (x, y) start position.
+        goal: (x, y) goal position.
+
+    Returns:
+        List of (x, y) positions from start to goal, excluding start.
+        Empty list if no path exists or start == goal.
+    """
+    # The C extension needs a C-contiguous int16 array.
+    c_cost = np.ascontiguousarray(cost, dtype=np.int16)
+    return _c_astar(c_cost, start[0], start[1], goal[0], goal[1])

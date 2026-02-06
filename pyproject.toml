@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=80.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "catley"
 version = "0.1.0"
@@ -15,7 +19,7 @@ dependencies = [
 ]
 
 [tool.setuptools.packages.find]
-where = ["catley"]
+where = ["."]
 
 [tool.pytest.ini_options]
 pythonpath = "."

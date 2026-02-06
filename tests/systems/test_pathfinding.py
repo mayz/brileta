@@ -52,6 +52,20 @@ def test_find_path_simple_straight_line(
     assert path == [(1, 2), (1, 3), (1, 4), (1, 5)]
 
 
+def test_find_path_horizontal_stays_straight(
+    basic_setup: tuple[GameMap, SpatialHashGrid[DummyActor]],
+) -> None:
+    """A horizontal path on an open grid must not zigzag (parabola regression)."""
+    gm, index = basic_setup
+    actor = DummyActor(2, 5)
+    path = find_local_path(
+        gm, cast(SpatialIndex[Actor], index), cast(Actor, actor), (2, 5), (8, 5)
+    )
+    # Every step should stay on y=5.
+    assert all(y == 5 for _, y in path), f"Path deviated from y=5: {path}"
+    assert path[-1] == (8, 5)
+
+
 def test_find_path_simple_diagonal_line(
     basic_setup: tuple[GameMap, SpatialHashGrid[DummyActor]],
 ) -> None:

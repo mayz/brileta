@@ -3,9 +3,25 @@
 # Globally silence `make` output
 MAKEFLAGS += --silent
 
+NATIVE_STAMP := .venv/.native-build-stamp
+NATIVE_SOURCES := setup.py pyproject.toml catley/util/_native.c catley/util/_native_pathfinding.c
+
 # Default target - run all quality checks
-all: lint test
+all: native-build lint test
 	@echo "✅ All checks passed!"
+
+# Build native extension modules in editable mode.
+native-build: $(NATIVE_STAMP)
+	@if ! find catley/util -maxdepth 1 -type f \( -name "_native*.so" -o -name "_native*.pyd" -o -name "_native*.dll" \) | grep -q .; then \
+		uv pip install -e .; \
+		mkdir -p $(dir $(NATIVE_STAMP)); \
+		touch $(NATIVE_STAMP); \
+	fi
+
+$(NATIVE_STAMP): $(NATIVE_SOURCES)
+	uv pip install -e .
+	mkdir -p $(dir $@)
+	touch $@
 
 # Run all static analysis (format + ruff + types)
 lint: format ruff-check typecheck
@@ -23,7 +39,7 @@ typecheck:
 	uv run ty check
 
 # Run tests. Installs/syncs dependencies AND runs pytest in the same logical command.
-test:
+test: native-build
 	uv sync && \
 	if [ "$(shell uname)" = "Linux" ] && [ -z "$$DISPLAY" ]; then \
 		if command -v xvfb-run >/dev/null 2>&1 ; then \
@@ -41,6 +57,7 @@ check: all
 
 # Clean up cache files
 clean:
+	rm -f $(NATIVE_STAMP)
 	find . -type d -name "__pycache__" -exec rm -rf {} +
 	find . -type d -name ".pytest_cache" -exec rm -rf {} +
 	find . -type d -name "*.egg-info" -exec rm -rf {} +
