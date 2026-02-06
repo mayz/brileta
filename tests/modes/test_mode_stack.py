@@ -10,28 +10,24 @@ from __future__ import annotations
 import pytest
 
 from catley import input_events
+from catley.controller import Controller
 from catley.input_events import Keys
 from catley.modes.base import Mode
-from tests.helpers import get_controller_with_player_and_map
 
 
-def test_mode_stack_initialized_with_explore_mode() -> None:
+def test_mode_stack_initialized_with_explore_mode(controller: Controller) -> None:
     """Mode stack starts with ExploreMode as the only element."""
-    controller = get_controller_with_player_and_map()
-
     assert len(controller.mode_stack) == 1
     assert controller.mode_stack[0] is controller.explore_mode
     assert controller.active_mode is controller.explore_mode
 
 
-def test_push_mode_adds_to_stack() -> None:
+def test_push_mode_adds_to_stack(controller: Controller) -> None:
     """push_mode() adds the mode to the stack and calls enter().
 
     Note: CombatMode.enter() now pushes PickerMode, so the stack ends up
     being [Explore, Combat, Picker] and active_mode is PickerMode.
     """
-    controller = get_controller_with_player_and_map()
-
     assert len(controller.mode_stack) == 1
     assert controller.combat_mode.active is False
 
@@ -46,9 +42,8 @@ def test_push_mode_adds_to_stack() -> None:
     assert controller.active_mode is controller.picker_mode
 
 
-def test_pop_mode_removes_from_stack() -> None:
+def test_pop_mode_removes_from_stack(controller: Controller) -> None:
     """pop_mode() removes top mode and calls _exit()."""
-    controller = get_controller_with_player_and_map()
     controller.push_mode(controller.combat_mode)
 
     # After pushing combat mode, picker is on top: [Explore, Combat, Picker]
@@ -69,10 +64,8 @@ def test_pop_mode_removes_from_stack() -> None:
     assert controller.active_mode is controller.explore_mode
 
 
-def test_cannot_pop_last_mode() -> None:
+def test_cannot_pop_last_mode(controller: Controller) -> None:
     """Cannot pop ExploreMode - it's always present as the base."""
-    controller = get_controller_with_player_and_map()
-
     assert len(controller.mode_stack) == 1
 
     # Try to pop the last mode - should be a no-op
@@ -83,10 +76,8 @@ def test_cannot_pop_last_mode() -> None:
     assert controller.explore_mode.active is True
 
 
-def test_active_mode_property_returns_top_of_stack() -> None:
+def test_active_mode_property_returns_top_of_stack(controller: Controller) -> None:
     """active_mode property returns the mode at the top of the stack."""
-    controller = get_controller_with_player_and_map()
-
     assert controller.active_mode is controller.explore_mode
 
     # Pushing combat mode also pushes picker on top
@@ -102,13 +93,12 @@ def test_active_mode_property_returns_top_of_stack() -> None:
     assert controller.active_mode is controller.explore_mode
 
 
-def test_input_falls_through_stack() -> None:
+def test_input_falls_through_stack(controller: Controller) -> None:
     """Input not handled by top mode falls through to modes below.
 
     PickerMode blocks most input, but CombatMode doesn't handle 'I' for
     inventory - it falls through to ExploreMode.
     """
-    controller = get_controller_with_player_and_map()
     controller.enter_combat_mode()
 
     # Pop picker so we can test CombatMode directly
@@ -127,9 +117,8 @@ def test_input_falls_through_stack() -> None:
     assert result is True
 
 
-def test_movement_keys_handled_through_stack() -> None:
+def test_movement_keys_handled_through_stack(controller: Controller) -> None:
     """Movement keys in CombatMode fall through to ExploreMode."""
-    controller = get_controller_with_player_and_map()
     controller.enter_combat_mode()
 
     # Pop picker so we can test CombatMode directly
@@ -146,12 +135,11 @@ def test_movement_keys_handled_through_stack() -> None:
     assert input_events.KeySym.UP in controller.explore_mode.movement_keys
 
 
-def test_combat_mode_consumes_escape() -> None:
+def test_combat_mode_consumes_escape(controller: Controller) -> None:
     """CombatMode consumes Escape and pops itself from the stack.
 
     When testing CombatMode directly (with picker popped), Escape pops combat.
     """
-    controller = get_controller_with_player_and_map()
     controller.enter_combat_mode()
 
     # Pop picker so we can test CombatMode directly
@@ -166,13 +154,12 @@ def test_combat_mode_consumes_escape() -> None:
     assert len(controller.mode_stack) == 1
 
 
-def test_combat_mode_does_not_handle_t_key() -> None:
+def test_combat_mode_does_not_handle_t_key(controller: Controller) -> None:
     """CombatMode does not handle T key - it was removed as a toggle.
 
     Note: T key was removed in the equipment slot interaction rework.
     Combat is now entered/exited by clicking the active equipment slot.
     """
-    controller = get_controller_with_player_and_map()
     controller.enter_combat_mode()
 
     # Pop picker so we can test CombatMode directly
@@ -188,14 +175,12 @@ def test_combat_mode_does_not_handle_t_key() -> None:
     assert controller.active_mode is controller.combat_mode
 
 
-def test_mode_stack_preserves_explore_mode_state() -> None:
+def test_mode_stack_preserves_explore_mode_state(controller: Controller) -> None:
     """ExploreMode state persists when CombatMode is pushed on top.
 
     Movement keys are tracked by ExploreMode. When CombatMode is pushed,
     those keys should still be tracked (ExploreMode is still in the stack).
     """
-    controller = get_controller_with_player_and_map()
-
     # Start tracking a movement key in ExploreMode
     controller.explore_mode.movement_keys.add(input_events.KeySym.UP)
     assert input_events.KeySym.UP in controller.explore_mode.movement_keys
@@ -240,13 +225,12 @@ class MockPickerMode(Mode):
         return False
 
 
-def test_four_level_stack_with_mock_mode() -> None:
+def test_four_level_stack_with_mock_mode(controller: Controller) -> None:
     """Can have four modes in the stack: Explore -> Combat -> Picker -> Mock.
 
     CombatMode now auto-pushes PickerMode, so pushing a mock on top creates
     a 4-level stack.
     """
-    controller = get_controller_with_player_and_map()
     mock_mode = MockPickerMode(controller)
 
     controller.enter_combat_mode()
@@ -278,13 +262,12 @@ def test_four_level_stack_with_mock_mode() -> None:
     assert len(controller.mode_stack) == 1
 
 
-def test_input_flows_through_four_level_stack() -> None:
+def test_input_flows_through_four_level_stack(controller: Controller) -> None:
     """Input flows through all four levels until handled.
 
     CombatMode auto-pushes PickerMode, so with MockPickerMode on top
     we have a 4-level stack.
     """
-    controller = get_controller_with_player_and_map()
     mock_mode = MockPickerMode(controller)
 
     controller.enter_combat_mode()
@@ -307,9 +290,8 @@ def test_input_flows_through_four_level_stack() -> None:
     assert explore_result is True
 
 
-def test_escape_pops_correct_mode() -> None:
+def test_escape_pops_correct_mode(controller: Controller) -> None:
     """Escape in mock mode pops mock, not the modes below."""
-    controller = get_controller_with_player_and_map()
     mock_mode = MockPickerMode(controller)
 
     controller.enter_combat_mode()
@@ -329,16 +311,15 @@ def test_escape_pops_correct_mode() -> None:
     assert controller.combat_mode.active is True
 
 
-def test_push_mode_raises_if_already_in_stack() -> None:
+def test_push_mode_raises_if_already_in_stack(controller: Controller) -> None:
     """push_mode() raises error if mode is already in the stack."""
-    controller = get_controller_with_player_and_map()
     controller.push_mode(controller.combat_mode)
 
     with pytest.raises(RuntimeError, match="already in the stack"):
         controller.push_mode(controller.combat_mode)
 
 
-def test_push_mode_raises_if_same_type_in_stack() -> None:
+def test_push_mode_raises_if_same_type_in_stack(controller: Controller) -> None:
     """push_mode() raises error if a mode of the same type is in the stack.
 
     This prevents accidentally creating a new instance of a mode and pushing
@@ -346,7 +327,6 @@ def test_push_mode_raises_if_same_type_in_stack() -> None:
     """
     from catley.modes.combat import CombatMode
 
-    controller = get_controller_with_player_and_map()
     controller.push_mode(controller.combat_mode)
 
     # Create a new instance of CombatMode
@@ -426,6 +406,7 @@ def test_input_handler_dispatches_to_mode_stack_in_reverse_order() -> None:
     from unittest.mock import MagicMock
 
     from catley.input_handler import InputHandler
+    from tests.helpers import get_controller_with_player_and_map
 
     controller = get_controller_with_player_and_map()
 
@@ -470,6 +451,7 @@ def test_input_handler_input_falls_through_entire_stack() -> None:
     from unittest.mock import MagicMock
 
     from catley.input_handler import InputHandler
+    from tests.helpers import get_controller_with_player_and_map
 
     controller = get_controller_with_player_and_map()
 

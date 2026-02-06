@@ -3,12 +3,11 @@ from catley.controller import Controller
 from catley.game.actions.movement import MoveIntent
 from catley.game.actors import NPC
 from catley.game.actors.status_effects import OffBalanceEffect
-from tests.helpers import (
-    get_controller_with_player_and_map,
-)
 
 
-def test_npc_status_effect_duration_is_independent_of_player_actions():
+def test_npc_status_effect_duration_is_independent_of_player_actions(
+    controller: Controller,
+):
     """
     Asserts that an NPC's status effects do not tick down when the player acts.
 
@@ -23,7 +22,6 @@ def test_npc_status_effect_duration_is_independent_of_player_actions():
     """
     # 1. SETUP
     # Create a controller and a faster-than-normal player.
-    controller: Controller = get_controller_with_player_and_map()
     player = controller.gw.player
     player.energy.speed = 200  # Player is faster than the NPC
 

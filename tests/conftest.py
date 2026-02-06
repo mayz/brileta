@@ -171,3 +171,29 @@ def clear_live_variable_registry() -> Iterator[None]:
     live_variable_registry._variables.clear()
     yield
     live_variable_registry._variables.clear()
+
+
+@pytest.fixture(scope="module")
+def _shared_dummy_controller():
+    """Module-scoped controller backed by DummyGameWorld. Not for direct use.
+
+    Use the function-scoped ``controller`` fixture instead, which resets
+    state between tests for isolation.
+    """
+
+    from tests.helpers import get_controller_with_dummy_world
+
+    return get_controller_with_dummy_world()
+
+
+@pytest.fixture
+def controller(_shared_dummy_controller):
+    """Lightweight controller fixture reset between tests.
+
+    Backed by DummyGameWorld (no map generation). Use this for tests that
+    need a Controller with a player but don't need real pathfinding or FOV.
+    """
+    from tests.helpers import reset_dummy_controller
+
+    reset_dummy_controller(_shared_dummy_controller)
+    return _shared_dummy_controller

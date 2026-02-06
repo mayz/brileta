@@ -7,11 +7,14 @@ for common functionality like inventory access and movement.
 from __future__ import annotations
 
 from catley import input_events
+from catley.controller import Controller
 from catley.input_events import Keys
 from tests.helpers import get_controller_with_player_and_map
 
 
-def test_combat_mode_falls_back_to_explore_for_inventory() -> None:
+def test_combat_mode_falls_back_to_explore_for_inventory(
+    controller: Controller,
+) -> None:
     """I key opens inventory while in combat mode via stack fallback.
 
     CombatMode doesn't handle I key directly, so it returns False
@@ -19,7 +22,6 @@ def test_combat_mode_falls_back_to_explore_for_inventory() -> None:
 
     Note: PickerMode blocks most input, so we pop it to test CombatMode directly.
     """
-    controller = get_controller_with_player_and_map()
     controller.enter_combat_mode()
 
     # Pop picker so we can test CombatMode directly
@@ -37,12 +39,11 @@ def test_combat_mode_falls_back_to_explore_for_inventory() -> None:
     assert explore_result is True
 
 
-def test_combat_mode_handles_escape_directly() -> None:
+def test_combat_mode_handles_escape_directly(controller: Controller) -> None:
     """Escape key exits combat mode (handled by CombatMode, not fallback).
 
     Note: PickerMode blocks most input, so we pop it to test CombatMode directly.
     """
-    controller = get_controller_with_player_and_map()
     controller.enter_combat_mode()
 
     # Pop picker so we can test CombatMode directly
@@ -58,13 +59,12 @@ def test_combat_mode_handles_escape_directly() -> None:
     assert controller.active_mode is controller.explore_mode
 
 
-def test_combat_mode_does_not_handle_tab() -> None:
+def test_combat_mode_does_not_handle_tab(controller: Controller) -> None:
     """Tab key is not handled by CombatMode (TAB cycling removed).
 
     CombatMode uses pure mouse targeting - all visible enemies get shimmering
     outlines and the player clicks to select a target.
     """
-    controller = get_controller_with_player_and_map()
     controller.enter_combat_mode()
 
     # Pop picker so we can test CombatMode directly
@@ -110,12 +110,11 @@ def test_controller_updates_all_modes_in_stack() -> None:
     assert controller.explore_mode.move_generator.is_first_move_of_burst is False
 
 
-def test_combat_mode_tracks_movement_via_fallback() -> None:
+def test_combat_mode_tracks_movement_via_fallback(controller: Controller) -> None:
     """Movement key events fall through to ExploreMode via stack.
 
     Note: PickerMode blocks most input, so we pop it to test CombatMode directly.
     """
-    controller = get_controller_with_player_and_map()
     controller.enter_combat_mode()
 
     # Pop picker so we can test CombatMode directly
@@ -135,12 +134,11 @@ def test_combat_mode_tracks_movement_via_fallback() -> None:
     assert input_events.KeySym.UP in controller.explore_mode.movement_keys
 
 
-def test_combat_mode_releases_movement_via_fallback() -> None:
+def test_combat_mode_releases_movement_via_fallback(controller: Controller) -> None:
     """Movement key releases fall through to ExploreMode via stack.
 
     Note: PickerMode blocks most input, so we pop it to test CombatMode directly.
     """
-    controller = get_controller_with_player_and_map()
     controller.enter_combat_mode()
 
     # Pop picker so we can test CombatMode directly
@@ -163,7 +161,7 @@ def test_combat_mode_releases_movement_via_fallback() -> None:
     assert input_events.KeySym.UP not in controller.explore_mode.movement_keys
 
 
-def test_overlay_consumes_escape_before_mode() -> None:
+def test_overlay_consumes_escape_before_mode(controller: Controller) -> None:
     """When overlay is active, it handles Escape before mode sees it.
 
     This tests the fix for the bug where pressing Escape with a menu open
@@ -172,8 +170,6 @@ def test_overlay_consumes_escape_before_mode() -> None:
     from unittest.mock import MagicMock
 
     from catley.input_handler import InputHandler
-
-    controller = get_controller_with_player_and_map()
 
     # The test helper patches InputHandler to None, so create it manually.
     # InputHandler needs app, controller, and frame_manager with graphics/cursor.

@@ -8,13 +8,13 @@ to the target.
 from __future__ import annotations
 
 from catley import colors
+from catley.controller import Controller
 from catley.game.actions.executors.recovery import UseConsumableOnTargetExecutor
 from catley.game.actions.recovery import UseConsumableOnTargetIntent
 from catley.game.actors import Character
 from catley.game.enums import ConsumableEffectType, ItemSize
 from catley.game.items.capabilities import ConsumableEffectSpec
 from catley.game.items.item_core import Item, ItemType
-from tests.helpers import get_controller_with_player_and_map
 
 
 def make_healing_potion() -> Item:
@@ -32,9 +32,8 @@ def make_healing_potion() -> Item:
     return item_type.create()
 
 
-def test_use_consumable_on_adjacent_target() -> None:
+def test_use_consumable_on_adjacent_target(controller: Controller) -> None:
     """Using a consumable on an adjacent target succeeds."""
-    controller = get_controller_with_player_and_map()
     gw = controller.gw
     player = gw.player
 
@@ -60,9 +59,8 @@ def test_use_consumable_on_adjacent_target() -> None:
     assert potion not in player.inventory
 
 
-def test_use_consumable_on_distant_target_fails() -> None:
+def test_use_consumable_on_distant_target_fails(controller: Controller) -> None:
     """Using a consumable on a distant target fails."""
-    controller = get_controller_with_player_and_map()
     gw = controller.gw
     player = gw.player
 
@@ -85,9 +83,8 @@ def test_use_consumable_on_distant_target_fails() -> None:
     assert potion in player.inventory
 
 
-def test_use_consumable_on_dead_target_fails() -> None:
+def test_use_consumable_on_dead_target_fails(controller: Controller) -> None:
     """Using a consumable on a dead target fails."""
-    controller = get_controller_with_player_and_map()
     gw = controller.gw
     player = gw.player
 
@@ -109,9 +106,8 @@ def test_use_consumable_on_dead_target_fails() -> None:
     assert result.succeeded is False
 
 
-def test_use_non_consumable_item_fails() -> None:
+def test_use_non_consumable_item_fails(controller: Controller) -> None:
     """Using a non-consumable item on a target fails."""
-    controller = get_controller_with_player_and_map()
     gw = controller.gw
     player = gw.player
 
@@ -138,9 +134,8 @@ def test_use_non_consumable_item_fails() -> None:
     assert result.succeeded is False
 
 
-def test_use_consumable_not_in_inventory_fails() -> None:
+def test_use_consumable_not_in_inventory_fails(controller: Controller) -> None:
     """Using a consumable not in inventory fails."""
-    controller = get_controller_with_player_and_map()
     gw = controller.gw
     player = gw.player
 
@@ -160,9 +155,8 @@ def test_use_consumable_not_in_inventory_fails() -> None:
     assert result.succeeded is False
 
 
-def test_use_consumable_intent_stores_target() -> None:
+def test_use_consumable_intent_stores_target(controller: Controller) -> None:
     """UseConsumableOnTargetIntent correctly stores the target."""
-    controller = get_controller_with_player_and_map()
     gw = controller.gw
     player = gw.player
 
@@ -178,14 +172,13 @@ def test_use_consumable_intent_stores_target() -> None:
     assert intent.target is npc
 
 
-def test_use_equipped_consumable_on_adjacent_target() -> None:
+def test_use_equipped_consumable_on_adjacent_target(controller: Controller) -> None:
     """Using an equipped consumable (in ready slot) on an adjacent target succeeds.
 
     This tests the fix for the "item not found in inventory" bug where equipped
     consumables couldn't be used because the removal code only checked stored
     inventory, not ready slots.
     """
-    controller = get_controller_with_player_and_map()
     gw = controller.gw
     player = gw.player
 

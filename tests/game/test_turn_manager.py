@@ -520,7 +520,7 @@ def test_player_action_invalidates_combat_tooltip(monkeypatch: Any) -> None:
     assert invalidations == 1
 
 
-def test_staggered_player_action_blocked_by_controller() -> None:
+def test_staggered_player_action_blocked_by_controller(controller) -> None:
     """Player with StaggeredEffect should have their action blocked.
 
     Regression test: The is_action_prevented() check must happen BEFORE
@@ -528,7 +528,6 @@ def test_staggered_player_action_blocked_by_controller() -> None:
     will already be expired and removed, allowing the player to act.
     """
     reset_event_bus_for_testing()
-    controller = get_controller_with_player_and_map()
     player = controller.gw.player
 
     # Record initial position

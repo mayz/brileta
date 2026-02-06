@@ -793,7 +793,7 @@ def test_item_category_property() -> None:
 # -----------------------------------------------------------------------------
 
 
-def test_permanent_container_persists_when_emptied() -> None:
+def test_permanent_container_persists_when_emptied(controller) -> None:
     """Permanent containers like bookcases should not be removed when emptied.
 
     Permanent containers have blocks_movement=True and should remain in the
@@ -805,9 +805,7 @@ def test_permanent_container_persists_when_emptied() -> None:
     """
     from catley.game.actors.container import create_bookcase
     from catley.view.ui.dual_pane_menu import ActorInventorySource
-    from tests.helpers import get_controller_with_player_and_map
 
-    controller = get_controller_with_player_and_map()
     player = controller.gw.player
 
     # Place bookcase adjacent to player (you bump into it to interact)
@@ -834,16 +832,13 @@ def test_permanent_container_persists_when_emptied() -> None:
     assert len(bookcase.inventory) == 0
 
 
-def test_temporary_ground_pile_removed_when_emptied() -> None:
+def test_temporary_ground_pile_removed_when_emptied(controller) -> None:
     """Temporary ground item piles should be removed when emptied.
 
     Temporary ground piles (created when items are dropped) have
     blocks_movement=False and should be removed from the game world
     once all items are picked up.
     """
-    from tests.helpers import get_controller_with_player_and_map
-
-    controller = get_controller_with_player_and_map()
     player = controller.gw.player
     location = (player.x, player.y)
 
@@ -866,7 +861,7 @@ def test_temporary_ground_pile_removed_when_emptied() -> None:
     assert ground_pile not in controller.gw.actors, "Temporary pile should be removed"
 
 
-def test_empty_permanent_container_can_be_searched() -> None:
+def test_empty_permanent_container_can_be_searched(controller) -> None:
     """Empty permanent containers should still be searchable to deposit items.
 
     When bumping into an empty bookcase, the menu should open so the player
@@ -879,9 +874,7 @@ def test_empty_permanent_container_can_be_searched() -> None:
     from catley.game.actions.executors.containers import SearchContainerExecutor
     from catley.game.actors.container import create_bookcase
     from catley.view.ui.dual_pane_menu import ActorInventorySource
-    from tests.helpers import get_controller_with_player_and_map
 
-    controller = get_controller_with_player_and_map()
     player = controller.gw.player
 
     # Create an empty bookcase

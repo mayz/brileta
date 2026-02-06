@@ -19,14 +19,10 @@ from catley.game.items.capabilities import (
 from catley.game.items.item_core import Item, ItemType
 from catley.view.render.graphics import GraphicsContext
 from catley.view.views.equipment_view import EquipmentView
-from tests.helpers import get_controller_with_player_and_map
 
 
-def make_controller_with_equipment_view() -> tuple[Controller, EquipmentView]:
-    """Create a controller with an equipment view for testing."""
-    controller = get_controller_with_player_and_map()
-
-    # Create the equipment view
+def make_equipment_view(controller: Controller) -> EquipmentView:
+    """Create an EquipmentView wired to the given controller."""
     renderer = MagicMock(spec=GraphicsContext)
     renderer.create_canvas = MagicMock(return_value=MagicMock())
     # PillowImageCanvas requires tile_dimensions to return actual integers
@@ -38,7 +34,7 @@ def make_controller_with_equipment_view() -> tuple[Controller, EquipmentView]:
     # Each slot spans one line_height (approx tile_height=16 pixels).
     view._slot_pixel_bounds = {0: (0, 16), 1: (16, 32)}
 
-    return controller, view
+    return view
 
 
 def make_melee_weapon() -> Item:
@@ -68,9 +64,9 @@ def make_consumable_item() -> Item:
     return item_type.create()
 
 
-def test_click_inactive_slot_switches_weapon() -> None:
+def test_click_inactive_slot_switches_weapon(controller: Controller) -> None:
     """Clicking an inactive slot switches to it via intent system."""
-    controller, view = make_controller_with_equipment_view()
+    view = make_equipment_view(controller)
     player = controller.gw.player
 
     assert player.inventory.active_slot == 0
@@ -88,9 +84,9 @@ def test_click_inactive_slot_switches_weapon() -> None:
     assert player.inventory.active_slot == 1
 
 
-def test_click_active_slot_enters_combat_mode() -> None:
+def test_click_active_slot_enters_combat_mode(controller: Controller) -> None:
     """Clicking active slot with weapon enters combat mode."""
-    controller, view = make_controller_with_equipment_view()
+    view = make_equipment_view(controller)
     player = controller.gw.player
 
     # Equip a melee weapon in active slot
@@ -106,9 +102,9 @@ def test_click_active_slot_enters_combat_mode() -> None:
     assert controller.is_combat_mode()
 
 
-def test_click_active_slot_exits_combat_mode() -> None:
+def test_click_active_slot_exits_combat_mode(controller: Controller) -> None:
     """Clicking active slot while in combat exits combat mode."""
-    controller, view = make_controller_with_equipment_view()
+    view = make_equipment_view(controller)
     player = controller.gw.player
 
     # Equip a melee weapon and enter combat mode
@@ -125,9 +121,9 @@ def test_click_active_slot_exits_combat_mode() -> None:
     assert not controller.is_combat_mode()
 
 
-def test_click_active_consumable_slot_enters_targeting() -> None:
+def test_click_active_consumable_slot_enters_targeting(controller: Controller) -> None:
     """Clicking active slot with consumable enters picker mode for targeting."""
-    controller, view = make_controller_with_equipment_view()
+    view = make_equipment_view(controller)
     player = controller.gw.player
 
     # Equip a consumable in active slot
@@ -143,9 +139,9 @@ def test_click_active_consumable_slot_enters_targeting() -> None:
     assert controller.picker_mode.active
 
 
-def test_click_active_consumable_slot_exits_targeting() -> None:
+def test_click_active_consumable_slot_exits_targeting(controller: Controller) -> None:
     """Clicking active consumable slot while targeting exits targeting mode."""
-    controller, view = make_controller_with_equipment_view()
+    view = make_equipment_view(controller)
     player = controller.gw.player
 
     # Equip a consumable
@@ -165,9 +161,9 @@ def test_click_active_consumable_slot_exits_targeting() -> None:
     assert not controller.picker_mode.active
 
 
-def test_click_empty_active_slot_enters_combat_mode() -> None:
+def test_click_empty_active_slot_enters_combat_mode(controller: Controller) -> None:
     """Clicking active slot when empty (Fists) enters combat mode."""
-    controller, view = make_controller_with_equipment_view()
+    view = make_equipment_view(controller)
     player = controller.gw.player
 
     # Ensure active slot is empty (Fists)
@@ -182,9 +178,9 @@ def test_click_empty_active_slot_enters_combat_mode() -> None:
     assert controller.is_combat_mode()
 
 
-def test_is_row_in_active_slot() -> None:
+def test_is_row_in_active_slot(controller: Controller) -> None:
     """is_row_in_active_slot correctly identifies active slot rows."""
-    _controller, view = make_controller_with_equipment_view()
+    view = make_equipment_view(controller)
 
     # With slot 0 active: row 0 is active, row 1 is inactive.
     # Pixel bounds use 16px per slot with tile_dimensions (16, 16).
@@ -195,9 +191,9 @@ def test_is_row_in_active_slot() -> None:
     assert view.is_row_in_active_slot(2) is False
 
 
-def test_get_slot_at_row() -> None:
+def test_get_slot_at_row(controller: Controller) -> None:
     """_get_slot_at_row returns correct slot index for each row."""
-    _controller, view = make_controller_with_equipment_view()
+    view = make_equipment_view(controller)
 
     # Pixel bounds use 16px per slot with tile_dimensions (16, 16).
     view._slot_pixel_bounds = {0: (0, 16), 1: (16, 32)}

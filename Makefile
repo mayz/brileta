@@ -39,7 +39,10 @@ typecheck:
 	uv run ty check
 
 # Run tests. Installs/syncs dependencies AND runs pytest in the same logical command.
+# Reset stack size to the shell default. GNU make on macOS inflates it to ~64 MB,
+# which causes memory pressure when pytest-xdist spawns many worker processes.
 test: native-build
+	ulimit -s 8176 && \
 	uv sync && \
 	if [ "$(shell uname)" = "Linux" ] && [ -z "$$DISPLAY" ]; then \
 		if command -v xvfb-run >/dev/null 2>&1 ; then \
