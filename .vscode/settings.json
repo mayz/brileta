@@ -8,7 +8,10 @@
     ".ropeproject": true,
     ".claude": true,
     "**/*.egg-info": true,
-    "**/*.aider*" : true
+    "**/*.aider*" : true,
+    "**/*.so": true,
+    "**/*.pyd": true,
+    "**/*.dll": true
   },
 
   // Avoid unnecessary file system events
