@@ -8,8 +8,6 @@ Organized by functional area for easy maintenance.
 import sys
 from pathlib import Path
 
-import tcod.constants
-
 from catley.types import BackendConfig, RandomSeed
 
 # =============================================================================
@@ -113,8 +111,6 @@ HOSTILE_AI_ENABLED = True
 
 # Field of view
 FOV_RADIUS = 50  # Player's sight radius (large enough to cover full viewport)
-FOV_ALGORITHM = tcod.constants.FOV_SYMMETRIC_SHADOWCAST
-FOV_LIGHT_WALLS = True
 
 # Action context
 # Radius for "nearby actor" queries in action discovery and combat context.

@@ -4,8 +4,6 @@ import logging
 import random
 from typing import TYPE_CHECKING
 
-import tcod.map
-
 from catley.app import App
 from catley.game.resolution.base import ResolutionSystem
 from catley.sound import SoundSystem
@@ -16,6 +14,7 @@ if TYPE_CHECKING:
     from catley.game.items.item_core import Item
 
 from . import colors, config
+from .environment.fov import compute_fov
 from .events import (
     CombatEndedEvent,
     CombatInitiatedEvent,
@@ -322,12 +321,10 @@ class Controller:
 
     def update_fov(self) -> None:
         """Recompute the visible area based on the player's point of view."""
-        self.gw.game_map.visible[:] = tcod.map.compute_fov(
+        self.gw.game_map.visible[:] = compute_fov(
             self.gw.game_map.transparent,
             (self.gw.player.x, self.gw.player.y),
             radius=config.FOV_RADIUS,
-            light_walls=config.FOV_LIGHT_WALLS,
-            algorithm=config.FOV_ALGORITHM,
         )
 
         # If a tile is "visible" it should be added to "explored"
