@@ -9,9 +9,8 @@ from __future__ import annotations
 from unittest.mock import patch
 
 import pytest
-import tcod.event
 
-from catley import colors
+from catley import colors, input_events
 from catley.controller import Controller
 from catley.game.actions.combat import AttackIntent
 from catley.game.actions.discovery import ActionCategory, ActionOption
@@ -546,11 +545,7 @@ class TestCombatModeHotkeySelection:
 
         # First action should be 'a', second should be 'b'
         # Press 'b' to select the second action
-        event = tcod.event.KeyDown(
-            sym=ord("b"),
-            scancode=tcod.event.Scancode.B,
-            mod=tcod.event.Modifier.NONE,
-        )
+        event = input_events.KeyDown(sym=input_events.KeySym(ord("b")))
         handled = controller.combat_mode.handle_input(event)
 
         assert handled
@@ -567,11 +562,7 @@ class TestCombatModeHotkeySelection:
         controller.enter_combat_mode()
 
         # Press 'z' which should not map to any action (only 2-3 actions exist)
-        event = tcod.event.KeyDown(
-            sym=ord("z"),
-            scancode=tcod.event.Scancode.Z,
-            mod=tcod.event.Modifier.NONE,
-        )
+        event = input_events.KeyDown(sym=input_events.KeySym(ord("z")))
         handled = controller.combat_mode.handle_input(event)
 
         assert not handled
@@ -593,11 +584,7 @@ class TestCombatModeHotkeySelection:
             controller.combat_mode.select_action(actions[1])
 
         # Press 'a' to select first action
-        event = tcod.event.KeyDown(
-            sym=ord("a"),
-            scancode=tcod.event.Scancode.A,
-            mod=tcod.event.Modifier.NONE,
-        )
+        event = input_events.KeyDown(sym=input_events.KeySym(ord("a")))
         handled = controller.combat_mode.handle_input(event)
 
         assert handled
@@ -741,11 +728,7 @@ class TestCombatModeEnterKeyExecution:
         controller.combat_mode.current_index = 0
 
         # Press Enter
-        event = tcod.event.KeyDown(
-            sym=tcod.event.KeySym.RETURN,
-            scancode=tcod.event.Scancode.RETURN,
-            mod=tcod.event.Modifier.NONE,
-        )
+        event = input_events.KeyDown(sym=input_events.KeySym.RETURN)
 
         controller.combat_mode.handle_input(event)
 
@@ -781,11 +764,7 @@ class TestCombatModeEnterKeyExecution:
         controller.combat_mode.current_index = 0
 
         # Press Enter
-        event = tcod.event.KeyDown(
-            sym=tcod.event.KeySym.RETURN,
-            scancode=tcod.event.Scancode.RETURN,
-            mod=tcod.event.Modifier.NONE,
-        )
+        event = input_events.KeyDown(sym=input_events.KeySym.RETURN)
 
         # Push now uses the plan system
         controller.combat_mode.handle_input(event)
@@ -821,11 +800,7 @@ class TestCombatModeEnterKeyExecution:
         controller.combat_mode.current_index = 0
 
         # Press Enter
-        event = tcod.event.KeyDown(
-            sym=tcod.event.KeySym.RETURN,
-            scancode=tcod.event.Scancode.RETURN,
-            mod=tcod.event.Modifier.NONE,
-        )
+        event = input_events.KeyDown(sym=input_events.KeySym.RETURN)
 
         # Trip now uses the plan system
         controller.combat_mode.handle_input(event)
@@ -861,11 +836,7 @@ class TestCombatModeEnterKeyExecution:
         controller.combat_mode.current_index = 0
 
         # Press Enter
-        event = tcod.event.KeyDown(
-            sym=tcod.event.KeySym.RETURN,
-            scancode=tcod.event.Scancode.RETURN,
-            mod=tcod.event.Modifier.NONE,
-        )
+        event = input_events.KeyDown(sym=input_events.KeySym.RETURN)
 
         # Kick now uses the plan system
         controller.combat_mode.handle_input(event)
@@ -901,11 +872,7 @@ class TestCombatModeEnterKeyExecution:
         controller.combat_mode.current_index = 0
 
         # Press Enter
-        event = tcod.event.KeyDown(
-            sym=tcod.event.KeySym.RETURN,
-            scancode=tcod.event.Scancode.RETURN,
-            mod=tcod.event.Modifier.NONE,
-        )
+        event = input_events.KeyDown(sym=input_events.KeySym.RETURN)
 
         # Punch now uses the plan system, not queue_action
         controller.combat_mode.handle_input(event)
@@ -1090,8 +1057,9 @@ class TestCombatModeClickSelection:
             mock_fm.action_panel_view.get_action_at_pixel.return_value = second_action
 
             # Create a click event at position (50, 30) pixels
-            event = tcod.event.MouseButtonDown(
-                (50, 30), (50, 30), tcod.event.MouseButton.LEFT
+            event = input_events.MouseButtonDown(
+                position=input_events.Point(50, 30),
+                button=input_events.MouseButton.LEFT,
             )
 
             result = controller.combat_mode._try_select_action_by_click(event)
@@ -1127,8 +1095,9 @@ class TestCombatModeClickSelection:
             mock_fm.action_panel_view.height = 5  # 5 tiles tall
 
             # Click at (50, 50) pixels - outside the panel which starts at (1600, 1600)
-            event = tcod.event.MouseButtonDown(
-                (50, 50), (50, 50), tcod.event.MouseButton.LEFT
+            event = input_events.MouseButtonDown(
+                position=input_events.Point(50, 50),
+                button=input_events.MouseButton.LEFT,
             )
 
             result = controller.combat_mode._try_select_action_by_click(event)
@@ -1147,8 +1116,8 @@ class TestCombatModeClickSelection:
         # Set frame_manager to None
         controller.frame_manager = None
 
-        event = tcod.event.MouseButtonDown(
-            (50, 30), (50, 30), tcod.event.MouseButton.LEFT
+        event = input_events.MouseButtonDown(
+            position=input_events.Point(50, 30), button=input_events.MouseButton.LEFT
         )
 
         result = controller.combat_mode._try_select_action_by_click(event)

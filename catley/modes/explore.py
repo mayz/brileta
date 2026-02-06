@@ -18,14 +18,12 @@ import copy
 import time
 from typing import TYPE_CHECKING
 
-import tcod.event
-
-from catley import colors, config
+from catley import colors, config, input_events
 from catley.events import MessageEvent, publish_event
 from catley.game.action_plan import WalkToPlan
 from catley.game.actions.base import GameIntent
 from catley.game.actors import Actor, Character
-from catley.input_handler import Keys
+from catley.input_events import Keys
 from catley.modes.base import Mode
 from catley.move_intent_generator import MoveIntentGenerator
 from catley.types import (
@@ -54,10 +52,10 @@ class ExploreMode(Mode):
     # Movement keys that this mode tracks
     MOVEMENT_KEYS = frozenset(
         {
-            tcod.event.KeySym.UP,
-            tcod.event.KeySym.DOWN,
-            tcod.event.KeySym.LEFT,
-            tcod.event.KeySym.RIGHT,
+            input_events.KeySym.UP,
+            input_events.KeySym.DOWN,
+            input_events.KeySym.LEFT,
+            input_events.KeySym.RIGHT,
             Keys.KEY_H,
             Keys.KEY_J,
             Keys.KEY_K,
@@ -69,7 +67,7 @@ class ExploreMode(Mode):
         super().__init__(controller)
 
         # Movement state
-        self.movement_keys: set[tcod.event.KeySym] = set()
+        self.movement_keys: set[input_events.KeySym] = set()
         self.move_generator = MoveIntentGenerator(controller)
 
         # Cache references for convenience (may be None in tests)
@@ -104,13 +102,13 @@ class ExploreMode(Mode):
         self.movement_keys.clear()
         super()._exit()
 
-    def handle_input(self, event: tcod.event.Event) -> bool:
+    def handle_input(self, event: input_events.InputEvent) -> bool:
         """Handle explore mode input.
 
         Returns True if the event was consumed.
         """
         # Track movement keys
-        if isinstance(event, tcod.event.KeyDown) and event.sym in self.MOVEMENT_KEYS:
+        if isinstance(event, input_events.KeyDown) and event.sym in self.MOVEMENT_KEYS:
             if not self.movement_keys:
                 # First key press - record time for latency metric
                 self.controller.last_input_time = time.perf_counter()
@@ -118,7 +116,7 @@ class ExploreMode(Mode):
             self.movement_keys.add(event.sym)
             return True
 
-        if isinstance(event, tcod.event.KeyUp) and event.sym in self.MOVEMENT_KEYS:
+        if isinstance(event, input_events.KeyUp) and event.sym in self.MOVEMENT_KEYS:
             self.movement_keys.discard(event.sym)
             return True
 
@@ -128,46 +126,46 @@ class ExploreMode(Mode):
 
         # Handle UI commands
         match event:
-            case tcod.event.KeyDown(sym=Keys.KEY_I):
+            case input_events.KeyDown(sym=Keys.KEY_I):
                 self._open_inventory()
                 return True
 
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.GRAVE):
+            case input_events.KeyDown(sym=input_events.KeySym.GRAVE):
                 self._toggle_dev_console()
                 return True
 
-            case tcod.event.KeyDown(sym=key_sym, mod=key_mod) if (
-                key_sym == tcod.event.KeySym.QUESTION
+            case input_events.KeyDown(sym=key_sym, mod=key_mod) if (
+                key_sym == input_events.KeySym.QUESTION
                 or (
-                    key_sym == tcod.event.KeySym.SLASH
-                    and (key_mod & tcod.event.Modifier.SHIFT)
+                    key_sym == input_events.KeySym.SLASH
+                    and (key_mod & input_events.Modifier.SHIFT)
                 )
             ):
                 self._open_help()
                 return True
 
-            case tcod.event.KeyDown(sym=Keys.KEY_R):
+            case input_events.KeyDown(sym=Keys.KEY_R):
                 self._reload_weapon()
                 return True
 
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.N1):
+            case input_events.KeyDown(sym=input_events.KeySym.N1):
                 self._switch_weapon_slot(0)
                 return True
 
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.N2):
+            case input_events.KeyDown(sym=input_events.KeySym.N2):
                 self._switch_weapon_slot(1)
                 return True
 
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.RETURN, mod=mod) if (
-                mod & tcod.event.Modifier.ALT
+            case input_events.KeyDown(sym=input_events.KeySym.RETURN, mod=mod) if (
+                mod & input_events.Modifier.ALT
             ):
                 ToggleFullscreenUICommand(self._app).execute()
                 return True
 
-            case tcod.event.MouseButtonDown():
+            case input_events.MouseButtonDown():
                 return self._handle_mouse_click(event)
 
-            case tcod.event.MouseMotion():
+            case input_events.MouseMotion():
                 return self._handle_mouse_motion(event)
 
         return False
@@ -244,9 +242,9 @@ class ExploreMode(Mode):
     # Action Panel Hotkey Handling
     # -------------------------------------------------------------------------
 
-    def _handle_action_panel_hotkey(self, event: tcod.event.Event) -> bool:
+    def _handle_action_panel_hotkey(self, event: input_events.InputEvent) -> bool:
         """Check if a keypress matches an action panel hotkey."""
-        if not isinstance(event, tcod.event.KeyDown):
+        if not isinstance(event, input_events.KeyDown):
             return False
 
         if self._fm is None or not hasattr(self._fm, "action_panel_view"):
@@ -318,7 +316,7 @@ class ExploreMode(Mode):
     # -------------------------------------------------------------------------
 
     def _get_panel_relative_coords(
-        self, event: tcod.event.MouseState
+        self, event: input_events.MouseState
     ) -> tuple[int, int, bool]:
         """Convert mouse event coordinates to action panel-relative pixel coords.
 
@@ -359,7 +357,7 @@ class ExploreMode(Mode):
 
         return (-1, -1, False)
 
-    def _handle_mouse_motion(self, event: tcod.event.MouseMotion) -> bool:
+    def _handle_mouse_motion(self, event: input_events.MouseMotion) -> bool:
         """Handle mouse motion for hover state updates.
 
         Updates the action panel hover state when the mouse moves over it.
@@ -378,7 +376,7 @@ class ExploreMode(Mode):
         # Don't consume mouse motion - other handlers may need it
         return False
 
-    def _handle_mouse_click(self, event: tcod.event.MouseButtonDown) -> bool:
+    def _handle_mouse_click(self, event: input_events.MouseButtonDown) -> bool:
         """Handle mouse button down events.
 
         Click behavior:
@@ -400,8 +398,8 @@ class ExploreMode(Mode):
         )
 
         # Shift+left click for pathfinding (regardless of what's there)
-        if event.button == tcod.event.MouseButton.LEFT and (
-            tcod.event.get_modifier_state() & tcod.event.Modifier.SHIFT
+        if event.button == input_events.MouseButton.LEFT and (
+            event.mod & input_events.Modifier.SHIFT
         ):
             if world_tile_pos is not None:
                 self.controller.start_plan(
@@ -410,11 +408,11 @@ class ExploreMode(Mode):
             return True
 
         # Right click executes default action
-        if event.button == tcod.event.MouseButton.RIGHT:
+        if event.button == input_events.MouseButton.RIGHT:
             return self._handle_right_click(world_tile_pos, root_tile_pos)
 
         # Left click for selection/deselection or action panel clicks
-        if event.button == tcod.event.MouseButton.LEFT:
+        if event.button == input_events.MouseButton.LEFT:
             # Check if click is on the action panel first
             if self._try_execute_action_panel_click(event):
                 return True
@@ -423,7 +421,7 @@ class ExploreMode(Mode):
         return False
 
     def _try_execute_action_panel_click(
-        self, event: tcod.event.MouseButtonDown
+        self, event: input_events.MouseButtonDown
     ) -> bool:
         """Try to execute an action by clicking on it in the action panel.
 
@@ -621,8 +619,8 @@ class ExploreMode(Mode):
         return bool(game_map.visible[world_x, world_y])
 
     def _convert_mouse_coordinates(
-        self, event: tcod.event.MouseState
-    ) -> tcod.event.MouseState:
+        self, event: input_events.MouseState
+    ) -> input_events.MouseState:
         """Convert event pixel coordinates to root console tile coordinates."""
         px_pos: PixelPos = event.position
         px_x: PixelCoord = px_pos[0]
@@ -635,5 +633,5 @@ class ExploreMode(Mode):
         root_tile_x, root_tile_y = graphics.pixel_to_tile(scaled_px_x, scaled_px_y)
 
         event_copy = copy.copy(event)
-        event_copy.position = tcod.event.Point(root_tile_x, root_tile_y)
+        event_copy.position = input_events.Point(root_tile_x, root_tile_y)
         return event_copy

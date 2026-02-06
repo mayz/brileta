@@ -12,9 +12,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Final
 
-import tcod.event
-
-from catley import colors
+from catley import colors, input_events
 from catley.backends.pillow.canvas import PillowImageCanvas
 from catley.events import MessageEvent, publish_event
 from catley.game.actors import Actor, Character, Condition, ItemPile
@@ -109,15 +107,15 @@ class _MenuKeys:
     these as value patterns (comparison) rather than capture patterns.
     """
 
-    KEY_A: Final = tcod.event.KeySym(ord("a"))
-    KEY_D: Final = tcod.event.KeySym(ord("d"))
-    KEY_I: Final = tcod.event.KeySym(ord("i"))
-    KEY_J: Final = tcod.event.KeySym(ord("j"))
-    KEY_K: Final = tcod.event.KeySym(ord("k"))
-    KEY_P: Final = tcod.event.KeySym(ord("p"))
-    KEY_Q: Final = tcod.event.KeySym(ord("q"))
-    KEY_T: Final = tcod.event.KeySym(ord("t"))
-    KEY_U: Final = tcod.event.KeySym(ord("u"))
+    KEY_A: Final = input_events.KeySym(ord("a"))
+    KEY_D: Final = input_events.KeySym(ord("d"))
+    KEY_I: Final = input_events.KeySym(ord("i"))
+    KEY_J: Final = input_events.KeySym(ord("j"))
+    KEY_K: Final = input_events.KeySym(ord("k"))
+    KEY_P: Final = input_events.KeySym(ord("p"))
+    KEY_Q: Final = input_events.KeySym(ord("q"))
+    KEY_T: Final = input_events.KeySym(ord("t"))
+    KEY_U: Final = input_events.KeySym(ord("u"))
 
 
 @dataclass
@@ -1317,7 +1315,7 @@ class DualPaneMenu(Menu):
                         elif isinstance(option.data, CountableType):
                             self._transfer_countable_to_inventory(option.data)
 
-    def handle_input(self, event: tcod.event.Event) -> bool:
+    def handle_input(self, event: input_events.InputEvent) -> bool:
         """Handle dual-pane navigation and actions.
 
         Key mappings:
@@ -1342,7 +1340,7 @@ class DualPaneMenu(Menu):
 
         match event:
             # Tab switches panes (only if right pane exists)
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.TAB):
+            case input_events.KeyDown(sym=input_events.KeySym.TAB):
                 if self.source is not None and self.right_options:
                     # Only switch if right pane has content
                     has_selectable_right = any(
@@ -1358,46 +1356,46 @@ class DualPaneMenu(Menu):
                 return True
 
             # Up/Down arrow keys navigate within active pane
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.UP):
+            case input_events.KeyDown(sym=input_events.KeySym.UP):
                 self._move_cursor(-1)
                 return True
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.DOWN):
+            case input_events.KeyDown(sym=input_events.KeySym.DOWN):
                 self._move_cursor(1)
                 return True
 
             # Left/Right arrow keys scroll detail panel description
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.LEFT):
+            case input_events.KeyDown(sym=input_events.KeySym.LEFT):
                 if self._detail_panel and self._detail_panel.has_overflow():
                     self._detail_panel.scroll_up()
                 return True
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.RIGHT):
+            case input_events.KeyDown(sym=input_events.KeySym.RIGHT):
                 if self._detail_panel and self._detail_panel.has_overflow():
                     self._detail_panel.scroll_down()
                 return True
 
             # Vim keys for navigation (j=down, k=up)
-            case tcod.event.KeyDown(sym=_MenuKeys.KEY_J):
+            case input_events.KeyDown(sym=_MenuKeys.KEY_J):
                 self._move_cursor(1)
                 return True
-            case tcod.event.KeyDown(sym=_MenuKeys.KEY_K):
+            case input_events.KeyDown(sym=_MenuKeys.KEY_K):
                 self._move_cursor(-1)
                 return True
 
             # D/T/P keys: Drop (single-pane) or Transfer (dual-pane)
             # All three keys do the same action
-            case tcod.event.KeyDown(
+            case input_events.KeyDown(
                 sym=_MenuKeys.KEY_D | _MenuKeys.KEY_T | _MenuKeys.KEY_P
             ):
                 self._handle_drop_or_transfer()
                 return True
 
             # A key: Drop All / Transfer All for stacked items
-            case tcod.event.KeyDown(sym=_MenuKeys.KEY_A):
+            case input_events.KeyDown(sym=_MenuKeys.KEY_A):
                 self._handle_drop_or_transfer_all()
                 return True
 
             # U key: Use consumable (left pane only)
-            case tcod.event.KeyDown(sym=_MenuKeys.KEY_U):
+            case input_events.KeyDown(sym=_MenuKeys.KEY_U):
                 if self.active_pane == PaneId.LEFT and 0 <= self.left_cursor < len(
                     self.left_options
                 ):
@@ -1411,7 +1409,7 @@ class DualPaneMenu(Menu):
                 return True
 
             # Enter: Equip/unequip (left pane only)
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.RETURN):
+            case input_events.KeyDown(sym=input_events.KeySym.RETURN):
                 if self.active_pane == PaneId.LEFT and 0 <= self.left_cursor < len(
                     self.left_options
                 ):
@@ -1422,34 +1420,34 @@ class DualPaneMenu(Menu):
                 return True
 
             # Escape closes menu
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.ESCAPE):
+            case input_events.KeyDown(sym=input_events.KeySym.ESCAPE):
                 self.hide()
                 return True
 
             # I key closes menu (toggle behavior)
-            case tcod.event.KeyDown(sym=_MenuKeys.KEY_I):
+            case input_events.KeyDown(sym=_MenuKeys.KEY_I):
                 self.hide()
                 return True
 
             # Q key closes menu (instead of quitting)
-            case tcod.event.KeyDown(sym=_MenuKeys.KEY_Q):
+            case input_events.KeyDown(sym=_MenuKeys.KEY_Q):
                 self.hide()
                 return True
 
             # Space closes menu
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.SPACE):
+            case input_events.KeyDown(sym=input_events.KeySym.SPACE):
                 self.hide()
                 return True
 
             # Mouse motion updates hover state
-            case tcod.event.MouseMotion():
+            case input_events.MouseMotion():
                 return self._handle_mouse_motion(event)
 
             # Mouse click
-            case tcod.event.MouseButtonDown(button=tcod.event.MouseButton.LEFT):
+            case input_events.MouseButtonDown(button=input_events.MouseButton.LEFT):
                 return self._handle_mouse_click(event)
 
-            case tcod.event.KeyUp():
+            case input_events.KeyUp():
                 return False  # Let KeyUp events pass through to modes
 
         return True  # Consume all other input while menu is active
@@ -1540,7 +1538,7 @@ class DualPaneMenu(Menu):
         # Separator or empty area between stored and equipment
         return None
 
-    def _handle_mouse_motion(self, event: tcod.event.MouseMotion) -> bool:
+    def _handle_mouse_motion(self, event: input_events.MouseMotion) -> bool:
         """Handle mouse motion to update hover state and detect scroll zones."""
         mouse_px_x, mouse_px_y = event.position
 
@@ -1624,7 +1622,7 @@ class DualPaneMenu(Menu):
             return 1
         return 0
 
-    def _handle_mouse_click(self, event: tcod.event.MouseButtonDown) -> bool:
+    def _handle_mouse_click(self, event: input_events.MouseButtonDown) -> bool:
         """Handle mouse click to select/transfer items or scroll description.
 
         Clicking on the "..." scroll indicators scrolls one line in that

@@ -10,9 +10,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import MagicMock
 
-import tcod.event
-
-from catley import colors
+from catley import colors, input_events
 from catley.game.actors import Character
 from catley.modes.explore import ExploreMode
 from tests.helpers import DummyGameWorld
@@ -103,25 +101,25 @@ def make_explore_mode() -> tuple[ExploreMode, Any, DummyGameWorld]:
 def test_keydown_adds_to_movement_keys() -> None:
     """KeyDown for movement key adds it to the set."""
     mode, _, _ = make_explore_mode()
-    event = tcod.event.KeyDown(0, tcod.event.KeySym.UP, 0)
+    event = input_events.KeyDown(sym=input_events.KeySym.UP)
     mode.handle_input(event)
-    assert tcod.event.KeySym.UP in mode.movement_keys
+    assert input_events.KeySym.UP in mode.movement_keys
 
 
 def test_keyup_removes_from_movement_keys() -> None:
     """KeyUp for movement key removes it from the set."""
     mode, _, _ = make_explore_mode()
-    mode.movement_keys.add(tcod.event.KeySym.UP)
-    event = tcod.event.KeyUp(0, tcod.event.KeySym.UP, 0)
+    mode.movement_keys.add(input_events.KeySym.UP)
+    event = input_events.KeyUp(sym=input_events.KeySym.UP)
     mode.handle_input(event)
-    assert tcod.event.KeySym.UP not in mode.movement_keys
+    assert input_events.KeySym.UP not in mode.movement_keys
 
 
 def test_keyup_handles_missing_key_gracefully() -> None:
     """KeyUp for key not in set doesn't raise."""
     mode, _, _ = make_explore_mode()
     # movement_keys is empty, but KeyUp should not raise
-    event = tcod.event.KeyUp(0, tcod.event.KeySym.UP, 0)
+    event = input_events.KeyUp(sym=input_events.KeySym.UP)
     result = mode.handle_input(event)
     assert result is True  # Event was consumed
 
@@ -129,8 +127,8 @@ def test_keyup_handles_missing_key_gracefully() -> None:
 def test_movement_keys_cleared_on_exit() -> None:
     """Movement keys are cleared when exiting the mode."""
     mode, _, _ = make_explore_mode()
-    mode.movement_keys.add(tcod.event.KeySym.UP)
-    mode.movement_keys.add(tcod.event.KeySym.LEFT)
+    mode.movement_keys.add(input_events.KeySym.UP)
+    mode.movement_keys.add(input_events.KeySym.LEFT)
     mode._exit()
     assert len(mode.movement_keys) == 0
 
@@ -138,10 +136,10 @@ def test_movement_keys_cleared_on_exit() -> None:
 def test_multiple_movement_keys_tracked() -> None:
     """Multiple movement keys can be held simultaneously."""
     mode, _, _ = make_explore_mode()
-    mode.handle_input(tcod.event.KeyDown(0, tcod.event.KeySym.UP, 0))
-    mode.handle_input(tcod.event.KeyDown(0, tcod.event.KeySym.RIGHT, 0))
-    assert tcod.event.KeySym.UP in mode.movement_keys
-    assert tcod.event.KeySym.RIGHT in mode.movement_keys
+    mode.handle_input(input_events.KeyDown(sym=input_events.KeySym.UP))
+    mode.handle_input(input_events.KeyDown(sym=input_events.KeySym.RIGHT))
+    assert input_events.KeySym.UP in mode.movement_keys
+    assert input_events.KeySym.RIGHT in mode.movement_keys
     assert len(mode.movement_keys) == 2
 
 
@@ -180,7 +178,7 @@ def test_update_preserves_timing_when_keys_held() -> None:
     mode, _, _ = make_explore_mode()
 
     # Simulate: user holding a key
-    mode.movement_keys.add(tcod.event.KeySym.UP)
+    mode.movement_keys.add(input_events.KeySym.UP)
 
     # First update - should generate a move and set is_first_move_of_burst=False
     mode.update()

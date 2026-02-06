@@ -6,9 +6,8 @@ for common functionality like inventory access and movement.
 
 from __future__ import annotations
 
-import tcod.event
-
-from catley.input_handler import Keys
+from catley import input_events
+from catley.input_events import Keys
 from tests.helpers import get_controller_with_player_and_map
 
 
@@ -27,7 +26,7 @@ def test_combat_mode_falls_back_to_explore_for_inventory() -> None:
     controller.pop_mode()  # Pop picker
     assert controller.active_mode is controller.combat_mode
 
-    event = tcod.event.KeyDown(0, Keys.KEY_I, 0)
+    event = input_events.KeyDown(sym=Keys.KEY_I)
 
     # CombatMode returns False for unhandled input
     combat_result = controller.combat_mode.handle_input(event)
@@ -50,7 +49,7 @@ def test_combat_mode_handles_escape_directly() -> None:
     controller.pop_mode()  # Pop picker
     assert controller.active_mode is controller.combat_mode
 
-    event = tcod.event.KeyDown(0, tcod.event.KeySym.ESCAPE, 0)
+    event = input_events.KeyDown(sym=input_events.KeySym.ESCAPE)
     result = controller.combat_mode.handle_input(event)
 
     # Event handled by CombatMode directly
@@ -72,7 +71,7 @@ def test_combat_mode_does_not_handle_tab() -> None:
     controller.pop_mode()  # Pop picker
     assert controller.active_mode is controller.combat_mode
 
-    event = tcod.event.KeyDown(0, tcod.event.KeySym.TAB, 0)
+    event = input_events.KeyDown(sym=input_events.KeySym.TAB)
     result = controller.combat_mode.handle_input(event)
 
     # TAB is not handled by CombatMode - falls through to other modes
@@ -94,7 +93,7 @@ def test_controller_updates_all_modes_in_stack() -> None:
     assert len(controller.mode_stack) == 3
 
     # Add a movement key to explore mode's tracking
-    controller.explore_mode.movement_keys.add(tcod.event.KeySym.UP)
+    controller.explore_mode.movement_keys.add(input_events.KeySym.UP)
 
     # Ensure input_handler is set (test helper may not set it)
     if controller.input_handler is None:
@@ -124,7 +123,7 @@ def test_combat_mode_tracks_movement_via_fallback() -> None:
     assert controller.active_mode is controller.combat_mode
 
     # Press movement key while in combat mode
-    event = tcod.event.KeyDown(0, tcod.event.KeySym.UP, 0)
+    event = input_events.KeyDown(sym=input_events.KeySym.UP)
 
     # CombatMode doesn't handle movement keys
     combat_result = controller.combat_mode.handle_input(event)
@@ -133,7 +132,7 @@ def test_combat_mode_tracks_movement_via_fallback() -> None:
     # ExploreMode handles it (via stack fallback in production)
     explore_result = controller.explore_mode.handle_input(event)
     assert explore_result is True
-    assert tcod.event.KeySym.UP in controller.explore_mode.movement_keys
+    assert input_events.KeySym.UP in controller.explore_mode.movement_keys
 
 
 def test_combat_mode_releases_movement_via_fallback() -> None:
@@ -149,10 +148,10 @@ def test_combat_mode_releases_movement_via_fallback() -> None:
     assert controller.active_mode is controller.combat_mode
 
     # First press the key
-    controller.explore_mode.movement_keys.add(tcod.event.KeySym.UP)
+    controller.explore_mode.movement_keys.add(input_events.KeySym.UP)
 
     # Release it
-    event = tcod.event.KeyUp(0, tcod.event.KeySym.UP, 0)
+    event = input_events.KeyUp(sym=input_events.KeySym.UP)
 
     # CombatMode doesn't handle movement key releases
     combat_result = controller.combat_mode.handle_input(event)
@@ -161,7 +160,7 @@ def test_combat_mode_releases_movement_via_fallback() -> None:
     # ExploreMode handles it (via stack fallback in production)
     explore_result = controller.explore_mode.handle_input(event)
     assert explore_result is True
-    assert tcod.event.KeySym.UP not in controller.explore_mode.movement_keys
+    assert input_events.KeySym.UP not in controller.explore_mode.movement_keys
 
 
 def test_overlay_consumes_escape_before_mode() -> None:
@@ -191,19 +190,19 @@ def test_overlay_consumes_escape_before_mode() -> None:
     original_overlay_handle = controller.overlay_system.handle_input
     original_mode_handle = controller.combat_mode.handle_input
 
-    def mock_overlay_handle(event: tcod.event.Event) -> bool:
+    def mock_overlay_handle(event: input_events.InputEvent) -> bool:
         if (
-            isinstance(event, tcod.event.KeyDown)
-            and event.sym == tcod.event.KeySym.ESCAPE
+            isinstance(event, input_events.KeyDown)
+            and event.sym == input_events.KeySym.ESCAPE
         ):
             overlay_received_escape.append(True)
             return True  # Overlay consumes Escape
         return original_overlay_handle(event)
 
-    def mock_mode_handle(event: tcod.event.Event) -> bool:
+    def mock_mode_handle(event: input_events.InputEvent) -> bool:
         if (
-            isinstance(event, tcod.event.KeyDown)
-            and event.sym == tcod.event.KeySym.ESCAPE
+            isinstance(event, input_events.KeyDown)
+            and event.sym == input_events.KeySym.ESCAPE
         ):
             mode_received_escape.append(True)
         return original_mode_handle(event)
@@ -212,7 +211,7 @@ def test_overlay_consumes_escape_before_mode() -> None:
     controller.combat_mode.handle_input = mock_mode_handle
 
     # Dispatch Escape through InputHandler
-    escape_event = tcod.event.KeyDown(0, tcod.event.KeySym.ESCAPE, 0)
+    escape_event = input_events.KeyDown(sym=input_events.KeySym.ESCAPE)
     input_handler.dispatch(escape_event)
 
     # Overlay should have received and consumed Escape
@@ -245,8 +244,8 @@ def test_overlay_consumes_q_before_quit() -> None:
 
     original_overlay_handle = controller.overlay_system.handle_input
 
-    def mock_overlay_handle(event: tcod.event.Event) -> bool:
-        if isinstance(event, tcod.event.KeyDown) and event.sym == Keys.KEY_Q:
+    def mock_overlay_handle(event: input_events.InputEvent) -> bool:
+        if isinstance(event, input_events.KeyDown) and event.sym == Keys.KEY_Q:
             overlay_received_q.append(True)
             return True  # Overlay consumes Q (simulating menu close)
         return original_overlay_handle(event)
@@ -254,7 +253,7 @@ def test_overlay_consumes_q_before_quit() -> None:
     controller.overlay_system.handle_input = mock_overlay_handle
 
     # Dispatch Q through InputHandler
-    q_event = tcod.event.KeyDown(0, Keys.KEY_Q, 0)
+    q_event = input_events.KeyDown(sym=Keys.KEY_Q)
     input_handler.dispatch(q_event)
 
     # Overlay should have received and consumed Q

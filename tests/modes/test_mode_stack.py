@@ -8,9 +8,9 @@ Input flows top-to-bottom until handled.
 from __future__ import annotations
 
 import pytest
-import tcod.event
 
-from catley.input_handler import Keys
+from catley import input_events
+from catley.input_events import Keys
 from catley.modes.base import Mode
 from tests.helpers import get_controller_with_player_and_map
 
@@ -116,7 +116,7 @@ def test_input_falls_through_stack() -> None:
     assert controller.active_mode is controller.combat_mode
 
     # I key is not handled by CombatMode, should fall through to ExploreMode
-    event = tcod.event.KeyDown(0, Keys.KEY_I, 0)
+    event = input_events.KeyDown(sym=Keys.KEY_I)
     result = controller.combat_mode.handle_input(event)
 
     # CombatMode should return False for unhandled input
@@ -137,13 +137,13 @@ def test_movement_keys_handled_through_stack() -> None:
     assert controller.active_mode is controller.combat_mode
 
     # Movement key should fall through to ExploreMode
-    key_down = tcod.event.KeyDown(0, tcod.event.KeySym.UP, 0)
+    key_down = input_events.KeyDown(sym=input_events.KeySym.UP)
     combat_result = controller.combat_mode.handle_input(key_down)
     assert combat_result is False  # CombatMode doesn't handle movement
 
     explore_result = controller.explore_mode.handle_input(key_down)
     assert explore_result is True  # ExploreMode tracks it
-    assert tcod.event.KeySym.UP in controller.explore_mode.movement_keys
+    assert input_events.KeySym.UP in controller.explore_mode.movement_keys
 
 
 def test_combat_mode_consumes_escape() -> None:
@@ -158,7 +158,7 @@ def test_combat_mode_consumes_escape() -> None:
     controller.pop_mode()  # Pop picker
     assert controller.active_mode is controller.combat_mode
 
-    event = tcod.event.KeyDown(0, tcod.event.KeySym.ESCAPE, 0)
+    event = input_events.KeyDown(sym=input_events.KeySym.ESCAPE)
     result = controller.combat_mode.handle_input(event)
 
     assert result is True  # Escape was consumed
@@ -179,7 +179,7 @@ def test_combat_mode_does_not_handle_t_key() -> None:
     controller.pop_mode()  # Pop picker
     assert controller.active_mode is controller.combat_mode
 
-    event = tcod.event.KeyDown(0, Keys.KEY_T, 0)
+    event = input_events.KeyDown(sym=Keys.KEY_T)
     result = controller.combat_mode.handle_input(event)
 
     # T key should NOT be consumed - it falls through
@@ -197,20 +197,20 @@ def test_mode_stack_preserves_explore_mode_state() -> None:
     controller = get_controller_with_player_and_map()
 
     # Start tracking a movement key in ExploreMode
-    controller.explore_mode.movement_keys.add(tcod.event.KeySym.UP)
-    assert tcod.event.KeySym.UP in controller.explore_mode.movement_keys
+    controller.explore_mode.movement_keys.add(input_events.KeySym.UP)
+    assert input_events.KeySym.UP in controller.explore_mode.movement_keys
 
     # Enter combat mode
     controller.enter_combat_mode()
 
     # Movement key should still be tracked
-    assert tcod.event.KeySym.UP in controller.explore_mode.movement_keys
+    assert input_events.KeySym.UP in controller.explore_mode.movement_keys
 
     # Exit combat mode
     controller.exit_combat_mode()
 
     # Still tracked
-    assert tcod.event.KeySym.UP in controller.explore_mode.movement_keys
+    assert input_events.KeySym.UP in controller.explore_mode.movement_keys
 
 
 class MockPickerMode(Mode):
@@ -229,11 +229,11 @@ class MockPickerMode(Mode):
         self.exit_called = True
         super()._exit()
 
-    def handle_input(self, event: tcod.event.Event) -> bool:
+    def handle_input(self, event: input_events.InputEvent) -> bool:
         # Only handle Escape
         if (
-            isinstance(event, tcod.event.KeyDown)
-            and event.sym == tcod.event.KeySym.ESCAPE
+            isinstance(event, input_events.KeyDown)
+            and event.sym == input_events.KeySym.ESCAPE
         ):
             self.controller.pop_mode()
             return True
@@ -293,7 +293,7 @@ def test_input_flows_through_four_level_stack() -> None:
     # Stack: [Explore, Combat, Picker, Mock]
 
     # 'I' key is not handled by mock, picker (blocks), combat, should reach explore
-    event = tcod.event.KeyDown(0, Keys.KEY_I, 0)
+    event = input_events.KeyDown(sym=Keys.KEY_I)
 
     mock_result = mock_mode.handle_input(event)
     assert mock_result is False  # Mock doesn't handle I
@@ -320,7 +320,7 @@ def test_escape_pops_correct_mode() -> None:
     assert controller.active_mode is mock_mode
 
     # Press Escape - should pop mock, leaving picker on top
-    event = tcod.event.KeyDown(0, tcod.event.KeySym.ESCAPE, 0)
+    event = input_events.KeyDown(sym=input_events.KeySym.ESCAPE)
     mock_mode.handle_input(event)
 
     # Mock popped, picker is now on top
@@ -364,7 +364,7 @@ class InputTrackingModeA(Mode):
 
     def __init__(self, controller):
         super().__init__(controller)
-        self.received_events: list[tcod.event.Event] = []
+        self.received_events: list[input_events.InputEvent] = []
 
     def enter(self) -> None:
         super().enter()
@@ -372,11 +372,11 @@ class InputTrackingModeA(Mode):
     def _exit(self) -> None:
         super()._exit()
 
-    def handle_input(self, event: tcod.event.Event) -> bool:
+    def handle_input(self, event: input_events.InputEvent) -> bool:
         self.received_events.append(event)
-        return (
-            isinstance(event, tcod.event.KeyDown) and event.sym == tcod.event.KeySym.a  # type: ignore[unresolved-attribute]
-        )
+        return isinstance(
+            event, input_events.KeyDown
+        ) and event.sym == input_events.KeySym(ord("a"))
 
 
 class InputTrackingModeB(Mode):
@@ -384,7 +384,7 @@ class InputTrackingModeB(Mode):
 
     def __init__(self, controller):
         super().__init__(controller)
-        self.received_events: list[tcod.event.Event] = []
+        self.received_events: list[input_events.InputEvent] = []
 
     def enter(self) -> None:
         super().enter()
@@ -392,11 +392,11 @@ class InputTrackingModeB(Mode):
     def _exit(self) -> None:
         super()._exit()
 
-    def handle_input(self, event: tcod.event.Event) -> bool:
+    def handle_input(self, event: input_events.InputEvent) -> bool:
         self.received_events.append(event)
-        return (
-            isinstance(event, tcod.event.KeyDown) and event.sym == tcod.event.KeySym.b  # type: ignore[unresolved-attribute]
-        )
+        return isinstance(
+            event, input_events.KeyDown
+        ) and event.sym == input_events.KeySym(ord("b"))
 
 
 class InputTrackingModePassthrough(Mode):
@@ -404,7 +404,7 @@ class InputTrackingModePassthrough(Mode):
 
     def __init__(self, controller):
         super().__init__(controller)
-        self.received_events: list[tcod.event.Event] = []
+        self.received_events: list[input_events.InputEvent] = []
 
     def enter(self) -> None:
         super().enter()
@@ -412,7 +412,7 @@ class InputTrackingModePassthrough(Mode):
     def _exit(self) -> None:
         super()._exit()
 
-    def handle_input(self, event: tcod.event.Event) -> bool:
+    def handle_input(self, event: input_events.InputEvent) -> bool:
         self.received_events.append(event)
         return False
 
@@ -444,7 +444,7 @@ def test_input_handler_dispatches_to_mode_stack_in_reverse_order() -> None:
     input_handler = InputHandler(mock_app, controller)
 
     # Test 1: 'b' key should be handled by mode_b (top of stack)
-    event_b = tcod.event.KeyDown(0, tcod.event.KeySym.b, 0)  # type: ignore[unresolved-attribute]
+    event_b = input_events.KeyDown(sym=input_events.KeySym(ord("b")))
     input_handler.dispatch(event_b)
 
     # mode_b received the event and handled it
@@ -454,7 +454,7 @@ def test_input_handler_dispatches_to_mode_stack_in_reverse_order() -> None:
     assert len(mode_a.received_events) == 0
 
     # Test 2: 'a' key falls through mode_b to mode_a
-    event_a = tcod.event.KeyDown(0, tcod.event.KeySym.a, 0)  # type: ignore[unresolved-attribute]
+    event_a = input_events.KeyDown(sym=input_events.KeySym(ord("a")))
     input_handler.dispatch(event_a)
 
     # mode_b received it first but didn't handle it
@@ -481,7 +481,7 @@ def test_input_handler_input_falls_through_entire_stack() -> None:
     input_handler = InputHandler(mock_app, controller)
 
     # An unhandled key should pass through all modes
-    event = tcod.event.KeyDown(0, tcod.event.KeySym.F12, 0)
+    event = input_events.KeyDown(sym=input_events.KeySym.F12)
     input_handler.dispatch(event)
 
     # passthrough received it but didn't handle

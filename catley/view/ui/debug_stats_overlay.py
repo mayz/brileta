@@ -2,9 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import tcod.event
-
-from catley import colors, config
+from catley import colors, config, input_events
 from catley.backends.pillow.canvas import PillowImageCanvas
 from catley.util.live_vars import live_variable_registry
 from catley.view.render.canvas import Canvas
@@ -76,5 +74,5 @@ class DebugStatsOverlay(TextOverlay):
                 colors.YELLOW,
             )
 
-    def handle_input(self, event: tcod.event.Event) -> bool:  # pragma: no cover
+    def handle_input(self, event: input_events.InputEvent) -> bool:  # pragma: no cover
         return False

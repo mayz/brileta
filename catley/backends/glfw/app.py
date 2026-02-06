@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import glfw
-import tcod
 
+from catley import input_events
 from catley.app import App, AppConfig
 from catley.backends.wgpu.graphics import WGPUGraphicsContext
 from catley.util.misc import SuppressStderr
@@ -194,47 +194,42 @@ class GlfwApp(App[WGPUGraphicsContext]):
             self.toggle_fullscreen()
             return
 
-        # Translate GLFW action to tcod event type
+        # Translate GLFW action to input event type
         if action == glfw.PRESS or action == glfw.REPEAT:
-            event = tcod.event.KeyDown(
-                sym=self._glfw_key_to_tcod(key),
+            event = input_events.KeyDown(
+                sym=self._glfw_key_to_keysym(key),
                 scancode=scancode,
-                mod=self._glfw_mod_to_tcod(mods),
+                mod=self._glfw_mods_to_modifier(mods),
                 repeat=action == glfw.REPEAT,
             )
             assert self.controller is not None
             self.controller.input_handler.dispatch(event)
         elif action == glfw.RELEASE:
-            event = tcod.event.KeyUp(
-                sym=self._glfw_key_to_tcod(key),
+            event = input_events.KeyUp(
+                sym=self._glfw_key_to_keysym(key),
                 scancode=scancode,
-                mod=self._glfw_mod_to_tcod(mods),
+                mod=self._glfw_mods_to_modifier(mods),
             )
             assert self.controller is not None
             self.controller.input_handler.dispatch(event)
 
     def _on_text(self, window, codepoint):
         """Handle text input events."""
-        event = tcod.event.TextInput(text=chr(codepoint))
+        event = input_events.TextInput(text=chr(codepoint))
         assert self.controller is not None
         self.controller.input_handler.dispatch(event)
 
     def _on_mouse_button(self, window, button, action, mods):
         """Handle mouse button events."""
         x, y = glfw.get_cursor_pos(window)
+        pos = input_events.Point(int(x), int(y))
+        btn = self._glfw_button_to_mouse_button(button)
+        mod = self._glfw_mods_to_modifier(mods)
 
         if action == glfw.PRESS:
-            event = tcod.event.MouseButtonDown(
-                pixel=(int(x), int(y)),
-                tile=(0, 0),  # Controller will fill this
-                button=self._glfw_button_to_tcod(button),
-            )
+            event = input_events.MouseButtonDown(position=pos, button=btn, mod=mod)
         else:  # RELEASE
-            event = tcod.event.MouseButtonUp(
-                pixel=(int(x), int(y)),
-                tile=(0, 0),  # Controller will fill this
-                button=self._glfw_button_to_tcod(button),
-            )
+            event = input_events.MouseButtonUp(position=pos, button=btn, mod=mod)
 
         assert self.controller is not None
         self.controller.input_handler.dispatch(event)
@@ -246,11 +241,9 @@ class GlfwApp(App[WGPUGraphicsContext]):
         dy = y - self._last_mouse_pos[1]
         self._last_mouse_pos = (x, y)
 
-        event = tcod.event.MouseMotion(
-            position=(int(x), int(y)),
-            motion=(int(dx), int(dy)),
-            tile=(0, 0),  # Controller will fill this
-            tile_motion=(0, 0),  # Controller will fill this
+        event = input_events.MouseMotion(
+            position=input_events.Point(int(x), int(y)),
+            motion=input_events.Point(int(dx), int(dy)),
         )
 
         assert self.controller is not None
@@ -258,7 +251,7 @@ class GlfwApp(App[WGPUGraphicsContext]):
 
     def _on_scroll(self, window, x_offset, y_offset):
         """Handle scroll events."""
-        event = tcod.event.MouseWheel(
+        event = input_events.MouseWheel(
             x=int(x_offset),
             y=int(y_offset),
             flipped=False,  # GLFW doesn't support this
@@ -272,103 +265,103 @@ class GlfwApp(App[WGPUGraphicsContext]):
         if self.controller and self.controller.frame_manager:
             self.controller.frame_manager.on_window_resized()
 
-    def _glfw_key_to_tcod(self, key: int) -> tcod.event.KeySym:
-        """Converts a GLFW key code to a tcod keysym."""
+    def _glfw_key_to_keysym(self, key: int) -> input_events.KeySym:
+        """Converts a GLFW key code to a KeySym."""
         # Handle ASCII letters A-Z
         if glfw.KEY_A <= key <= glfw.KEY_Z:
-            # SDL3/tcod 19 uses lowercase KeySym values for letter keys
-            return tcod.event.KeySym(ord("a") + (key - glfw.KEY_A))
+            # SDL3 convention: letter KeySym values are lowercase ASCII
+            return input_events.KeySym(ord("a") + (key - glfw.KEY_A))
 
         # Handle number keys 0-9
         if glfw.KEY_0 <= key <= glfw.KEY_9:
-            return tcod.event.KeySym(ord("0") + (key - glfw.KEY_0))
+            return input_events.KeySym(ord("0") + (key - glfw.KEY_0))
 
         # Handle numpad keys
         if glfw.KEY_KP_0 <= key <= glfw.KEY_KP_9:
-            return tcod.event.KeySym(tcod.event.KeySym.KP_0 + (key - glfw.KEY_KP_0))
+            return input_events.KeySym(input_events.KeySym.KP_0 + (key - glfw.KEY_KP_0))
 
         # Handle function keys F1-F12
         if glfw.KEY_F1 <= key <= glfw.KEY_F12:
-            return tcod.event.KeySym(tcod.event.KeySym.F1 + (key - glfw.KEY_F1))
+            return input_events.KeySym(input_events.KeySym.F1 + (key - glfw.KEY_F1))
 
         # Map individual keys
         return {
-            glfw.KEY_SPACE: tcod.event.KeySym.SPACE,
-            glfw.KEY_APOSTROPHE: tcod.event.KeySym.APOSTROPHE,
-            glfw.KEY_COMMA: tcod.event.KeySym.COMMA,
-            glfw.KEY_MINUS: tcod.event.KeySym.MINUS,
-            glfw.KEY_PERIOD: tcod.event.KeySym.PERIOD,
-            glfw.KEY_SLASH: tcod.event.KeySym.SLASH,
-            glfw.KEY_SEMICOLON: tcod.event.KeySym.SEMICOLON,
-            glfw.KEY_EQUAL: tcod.event.KeySym.EQUALS,
-            glfw.KEY_LEFT_BRACKET: tcod.event.KeySym.LEFTBRACKET,
-            glfw.KEY_BACKSLASH: tcod.event.KeySym.BACKSLASH,
-            glfw.KEY_RIGHT_BRACKET: tcod.event.KeySym.RIGHTBRACKET,
-            glfw.KEY_GRAVE_ACCENT: tcod.event.KeySym.GRAVE,
+            glfw.KEY_SPACE: input_events.KeySym.SPACE,
+            glfw.KEY_APOSTROPHE: input_events.KeySym.APOSTROPHE,
+            glfw.KEY_COMMA: input_events.KeySym.COMMA,
+            glfw.KEY_MINUS: input_events.KeySym.MINUS,
+            glfw.KEY_PERIOD: input_events.KeySym.PERIOD,
+            glfw.KEY_SLASH: input_events.KeySym.SLASH,
+            glfw.KEY_SEMICOLON: input_events.KeySym.SEMICOLON,
+            glfw.KEY_EQUAL: input_events.KeySym.EQUALS,
+            glfw.KEY_LEFT_BRACKET: input_events.KeySym.LEFTBRACKET,
+            glfw.KEY_BACKSLASH: input_events.KeySym.BACKSLASH,
+            glfw.KEY_RIGHT_BRACKET: input_events.KeySym.RIGHTBRACKET,
+            glfw.KEY_GRAVE_ACCENT: input_events.KeySym.GRAVE,
             # Navigation keys
-            glfw.KEY_ESCAPE: tcod.event.KeySym.ESCAPE,
-            glfw.KEY_ENTER: tcod.event.KeySym.RETURN,
-            glfw.KEY_TAB: tcod.event.KeySym.TAB,
-            glfw.KEY_BACKSPACE: tcod.event.KeySym.BACKSPACE,
-            glfw.KEY_INSERT: tcod.event.KeySym.INSERT,
-            glfw.KEY_DELETE: tcod.event.KeySym.DELETE,
-            glfw.KEY_RIGHT: tcod.event.KeySym.RIGHT,
-            glfw.KEY_LEFT: tcod.event.KeySym.LEFT,
-            glfw.KEY_DOWN: tcod.event.KeySym.DOWN,
-            glfw.KEY_UP: tcod.event.KeySym.UP,
-            glfw.KEY_PAGE_UP: tcod.event.KeySym.PAGEUP,
-            glfw.KEY_PAGE_DOWN: tcod.event.KeySym.PAGEDOWN,
-            glfw.KEY_HOME: tcod.event.KeySym.HOME,
-            glfw.KEY_END: tcod.event.KeySym.END,
+            glfw.KEY_ESCAPE: input_events.KeySym.ESCAPE,
+            glfw.KEY_ENTER: input_events.KeySym.RETURN,
+            glfw.KEY_TAB: input_events.KeySym.TAB,
+            glfw.KEY_BACKSPACE: input_events.KeySym.BACKSPACE,
+            glfw.KEY_INSERT: input_events.KeySym.INSERT,
+            glfw.KEY_DELETE: input_events.KeySym.DELETE,
+            glfw.KEY_RIGHT: input_events.KeySym.RIGHT,
+            glfw.KEY_LEFT: input_events.KeySym.LEFT,
+            glfw.KEY_DOWN: input_events.KeySym.DOWN,
+            glfw.KEY_UP: input_events.KeySym.UP,
+            glfw.KEY_PAGE_UP: input_events.KeySym.PAGEUP,
+            glfw.KEY_PAGE_DOWN: input_events.KeySym.PAGEDOWN,
+            glfw.KEY_HOME: input_events.KeySym.HOME,
+            glfw.KEY_END: input_events.KeySym.END,
             # Modifier keys
-            glfw.KEY_LEFT_SHIFT: tcod.event.KeySym.LSHIFT,
-            glfw.KEY_RIGHT_SHIFT: tcod.event.KeySym.RSHIFT,
-            glfw.KEY_LEFT_CONTROL: tcod.event.KeySym.LCTRL,
-            glfw.KEY_RIGHT_CONTROL: tcod.event.KeySym.RCTRL,
-            glfw.KEY_LEFT_ALT: tcod.event.KeySym.LALT,
-            glfw.KEY_RIGHT_ALT: tcod.event.KeySym.RALT,
-            glfw.KEY_LEFT_SUPER: tcod.event.KeySym.LGUI,
-            glfw.KEY_RIGHT_SUPER: tcod.event.KeySym.RGUI,
+            glfw.KEY_LEFT_SHIFT: input_events.KeySym.LSHIFT,
+            glfw.KEY_RIGHT_SHIFT: input_events.KeySym.RSHIFT,
+            glfw.KEY_LEFT_CONTROL: input_events.KeySym.LCTRL,
+            glfw.KEY_RIGHT_CONTROL: input_events.KeySym.RCTRL,
+            glfw.KEY_LEFT_ALT: input_events.KeySym.LALT,
+            glfw.KEY_RIGHT_ALT: input_events.KeySym.RALT,
+            glfw.KEY_LEFT_SUPER: input_events.KeySym.LGUI,
+            glfw.KEY_RIGHT_SUPER: input_events.KeySym.RGUI,
             # Lock keys
-            glfw.KEY_CAPS_LOCK: tcod.event.KeySym.CAPSLOCK,
-            glfw.KEY_SCROLL_LOCK: tcod.event.KeySym.SCROLLLOCK,
-            glfw.KEY_NUM_LOCK: tcod.event.KeySym.NUMLOCKCLEAR,
-            glfw.KEY_PRINT_SCREEN: tcod.event.KeySym.PRINTSCREEN,
-            glfw.KEY_PAUSE: tcod.event.KeySym.PAUSE,
+            glfw.KEY_CAPS_LOCK: input_events.KeySym.CAPSLOCK,
+            glfw.KEY_SCROLL_LOCK: input_events.KeySym.SCROLLLOCK,
+            glfw.KEY_NUM_LOCK: input_events.KeySym.NUMLOCKCLEAR,
+            glfw.KEY_PRINT_SCREEN: input_events.KeySym.PRINTSCREEN,
+            glfw.KEY_PAUSE: input_events.KeySym.PAUSE,
             # Numpad keys
-            glfw.KEY_KP_DECIMAL: tcod.event.KeySym.KP_PERIOD,
-            glfw.KEY_KP_DIVIDE: tcod.event.KeySym.KP_DIVIDE,
-            glfw.KEY_KP_MULTIPLY: tcod.event.KeySym.KP_MULTIPLY,
-            glfw.KEY_KP_SUBTRACT: tcod.event.KeySym.KP_MINUS,
-            glfw.KEY_KP_ADD: tcod.event.KeySym.KP_PLUS,
-            glfw.KEY_KP_ENTER: tcod.event.KeySym.KP_ENTER,
-            glfw.KEY_KP_EQUAL: tcod.event.KeySym.KP_EQUALS,
+            glfw.KEY_KP_DECIMAL: input_events.KeySym.KP_PERIOD,
+            glfw.KEY_KP_DIVIDE: input_events.KeySym.KP_DIVIDE,
+            glfw.KEY_KP_MULTIPLY: input_events.KeySym.KP_MULTIPLY,
+            glfw.KEY_KP_SUBTRACT: input_events.KeySym.KP_MINUS,
+            glfw.KEY_KP_ADD: input_events.KeySym.KP_PLUS,
+            glfw.KEY_KP_ENTER: input_events.KeySym.KP_ENTER,
+            glfw.KEY_KP_EQUAL: input_events.KeySym.KP_EQUALS,
             # Other keys
-            glfw.KEY_MENU: tcod.event.KeySym.MENU,
-        }.get(key, tcod.event.KeySym.UNKNOWN)
+            glfw.KEY_MENU: input_events.KeySym.MENU,
+        }.get(key, input_events.KeySym.UNKNOWN)
 
-    def _glfw_mod_to_tcod(self, mods: int) -> tcod.event.Modifier:
-        """Converts GLFW modifier flags to tcod modifier flags."""
-        mod = tcod.event.Modifier.NONE
+    def _glfw_mods_to_modifier(self, mods: int) -> input_events.Modifier:
+        """Converts GLFW modifier flags to Modifier flags."""
+        mod = input_events.Modifier.NONE
         if mods & glfw.MOD_SHIFT:
-            mod |= tcod.event.Modifier.SHIFT
+            mod |= input_events.Modifier.SHIFT
         if mods & glfw.MOD_CONTROL:
-            mod |= tcod.event.Modifier.CTRL
+            mod |= input_events.Modifier.CTRL
         if mods & glfw.MOD_ALT:
-            mod |= tcod.event.Modifier.ALT
+            mod |= input_events.Modifier.ALT
         if mods & glfw.MOD_CAPS_LOCK:
-            mod |= tcod.event.Modifier.CAPS
+            mod |= input_events.Modifier.CAPS
         if mods & glfw.MOD_NUM_LOCK:
-            mod |= tcod.event.Modifier.NUM
+            mod |= input_events.Modifier.NUM
         return mod
 
-    def _glfw_button_to_tcod(self, button: int) -> int:
-        """Converts GLFW mouse button to tcod mouse button."""
+    def _glfw_button_to_mouse_button(self, button: int) -> input_events.MouseButton:
+        """Converts GLFW mouse button to MouseButton."""
         if button == glfw.MOUSE_BUTTON_LEFT:
-            return tcod.event.MouseButton.LEFT
+            return input_events.MouseButton.LEFT
         if button == glfw.MOUSE_BUTTON_MIDDLE:
-            return tcod.event.MouseButton.MIDDLE
+            return input_events.MouseButton.MIDDLE
         if button == glfw.MOUSE_BUTTON_RIGHT:
-            return tcod.event.MouseButton.RIGHT
-        # GLFW supports up to 8 mouse buttons, tcod only supports 3
-        return 0
+            return input_events.MouseButton.RIGHT
+        # GLFW supports up to 8 mouse buttons; return LEFT as fallback
+        return input_events.MouseButton.LEFT

@@ -11,11 +11,10 @@ from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import MagicMock
 
-import tcod.event
-
-from catley import colors
+from catley import colors, input_events
 from catley.game.actors import Character
-from catley.input_handler import InputHandler, Keys
+from catley.input_events import Keys
+from catley.input_handler import InputHandler
 from catley.modes.explore import ExploreMode
 from tests.helpers import DummyGameWorld
 
@@ -209,24 +208,25 @@ def make_explore_mode() -> tuple[ExploreMode, Any, list[tuple[Any, tuple[int, in
     return mode, controller, calls
 
 
-def test_shift_click_starts_pathfinding(monkeypatch: Any) -> None:
+def test_shift_click_starts_pathfinding() -> None:
     """Shift+click should start pathfinding to the clicked tile."""
     mode, _controller, calls = make_explore_mode()
-    monkeypatch.setattr(
-        tcod.event,
-        "get_modifier_state",
-        lambda: tcod.event.Modifier.SHIFT,
+    event = input_events.MouseButtonDown(
+        position=input_events.Point(5, 5),
+        button=input_events.MouseButton.LEFT,
+        mod=input_events.Modifier.SHIFT,
     )
-    event = tcod.event.MouseButtonDown((5, 5), (5, 5), tcod.event.MouseButton.LEFT)
     result = mode._handle_mouse_click(event)
-    assert result is True  # Event was consumed
+    assert result is True
     assert calls == [(mode.player, (5, 5))]
 
 
 def test_right_click_distant_tile_opens_menu() -> None:
     """Right-clicking a visible tile should return True (consumed)."""
     mode, _controller, _ = make_explore_mode()
-    event = tcod.event.MouseButtonDown((5, 5), (5, 5), tcod.event.MouseButton.RIGHT)
+    event = input_events.MouseButtonDown(
+        position=input_events.Point(5, 5), button=input_events.MouseButton.RIGHT
+    )
     result = mode._handle_mouse_click(event)
     # Right click is always consumed
     assert result is True
@@ -235,7 +235,7 @@ def test_right_click_distant_tile_opens_menu() -> None:
 def test_escape_does_not_quit() -> None:
     """Pressing Escape in ExploreMode should not be handled (not a quit)."""
     mode, _, _ = make_explore_mode()
-    event = tcod.event.KeyDown(0, tcod.event.KeySym.ESCAPE, 0)
+    event = input_events.KeyDown(sym=input_events.KeySym.ESCAPE)
     # ExploreMode doesn't handle Escape (it's not in the match cases)
     result = mode.handle_input(event)
     assert result is False
@@ -244,7 +244,7 @@ def test_escape_does_not_quit() -> None:
 def test_quit_key_is_handled_by_input_handler() -> None:
     """Q key should be handled by InputHandler as quit."""
     ih, _ = make_input_handler()
-    event = tcod.event.KeyDown(0, Keys.KEY_Q, 0)
+    event = input_events.KeyDown(sym=Keys.KEY_Q)
     # _is_quit_key should return True for Q key
     assert ih._is_quit_key(event) is True
 
@@ -256,7 +256,7 @@ def test_t_key_not_handled_by_explore_mode() -> None:
     Combat is now entered by clicking the active equipment slot.
     """
     mode, _, _ = make_explore_mode()
-    event = tcod.event.KeyDown(0, Keys.KEY_T, 0)
+    event = input_events.KeyDown(sym=Keys.KEY_T)
     result = mode.handle_input(event)
     assert result is False  # T key is not consumed
 
@@ -277,7 +277,9 @@ def test_mouse_motion_invalidates_combat_tooltip() -> None:
     ih.controller.frame_manager.combat_tooltip_overlay = tooltip
     ih.controller.is_combat_mode = lambda: True
 
-    event = tcod.event.MouseMotion((5, 5), (1, 1))
+    event = input_events.MouseMotion(
+        position=input_events.Point(5, 5), motion=input_events.Point(1, 1)
+    )
     ih.dispatch(event)
 
     assert tooltip.invalidated == 1

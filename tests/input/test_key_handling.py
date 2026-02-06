@@ -2,14 +2,14 @@
 
 These tests verify that:
 1. The Keys class constants are valid KeySym values
-2. GLFW key-to-tcod conversion produces valid KeySyms
+2. GLFW key-to-keysym conversion produces valid KeySyms
 3. Key constants match between different parts of the codebase
 """
 
 import pytest
-import tcod.event
 
-from catley.input_handler import Keys
+from catley import input_events
+from catley.input_events import Keys
 
 
 class TestKeysClassValidity:
@@ -29,45 +29,45 @@ class TestKeysClassValidity:
         ],
     )
     def test_key_constant_is_valid_keysym(
-        self, key_name: str, key_value: tcod.event.KeySym
+        self, key_name: str, key_value: input_events.KeySym
     ) -> None:
         """Each Keys constant should be a valid, non-zero KeySym."""
         # KeySym(invalid_value) returns 0, so check it's not 0
         assert key_value != 0, (
             f"Keys.{key_name} is 0 (invalid KeySym). "
-            f"This likely means tcod.event.KeySym() was called with an invalid value."
+            f"This likely means input_events.KeySym() was called with an invalid value."
         )
         # Verify it's actually a KeySym instance
-        assert isinstance(key_value, tcod.event.KeySym), (
+        assert isinstance(key_value, input_events.KeySym), (
             f"Keys.{key_name} should be a KeySym, got {type(key_value)}"
         )
 
     @pytest.mark.parametrize(
         "key_name,expected_keysym",
         [
-            ("KEY_H", tcod.event.KeySym.h),  # type: ignore[unresolved-attribute]
-            ("KEY_J", tcod.event.KeySym.j),  # type: ignore[unresolved-attribute]
-            ("KEY_K", tcod.event.KeySym.k),  # type: ignore[unresolved-attribute]
-            ("KEY_L", tcod.event.KeySym.l),  # type: ignore[unresolved-attribute]
-            ("KEY_Q", tcod.event.KeySym.q),  # type: ignore[unresolved-attribute]
-            ("KEY_I", tcod.event.KeySym.i),  # type: ignore[unresolved-attribute]
-            ("KEY_T", tcod.event.KeySym.t),  # type: ignore[unresolved-attribute]
-            ("KEY_R", tcod.event.KeySym.r),  # type: ignore[unresolved-attribute]
+            ("KEY_H", input_events.KeySym(ord("h"))),
+            ("KEY_J", input_events.KeySym(ord("j"))),
+            ("KEY_K", input_events.KeySym(ord("k"))),
+            ("KEY_L", input_events.KeySym(ord("l"))),
+            ("KEY_Q", input_events.KeySym(ord("q"))),
+            ("KEY_I", input_events.KeySym(ord("i"))),
+            ("KEY_T", input_events.KeySym(ord("t"))),
+            ("KEY_R", input_events.KeySym(ord("r"))),
         ],
     )
-    def test_key_constant_matches_tcod_keysym(
-        self, key_name: str, expected_keysym: tcod.event.KeySym
+    def test_key_constant_matches_keysym(
+        self, key_name: str, expected_keysym: input_events.KeySym
     ) -> None:
-        """Keys constants should match the corresponding tcod.event.KeySym values."""
+        """Keys constants should match the corresponding input_events.KeySym values."""
         actual = getattr(Keys, key_name)
         assert actual == expected_keysym, (
             f"Keys.{key_name} ({actual}) doesn't match "
-            f"tcod.event.KeySym.{key_name[-1].lower()} ({expected_keysym})"
+            f"input_events.KeySym.{key_name[-1].lower()} ({expected_keysym})"
         )
 
 
 class TestGlfwKeyConversion:
-    """Test GLFW key-to-tcod KeySym conversion.
+    """Test GLFW key-to-keysym conversion.
 
     Note: These tests import the GLFW app module which requires glfw to be available.
     """
@@ -82,7 +82,7 @@ class TestGlfwKeyConversion:
             from catley.backends.glfw.app import GlfwApp
 
             # Return the unbound method and glfw module
-            return GlfwApp._glfw_key_to_tcod, glfw
+            return GlfwApp._glfw_key_to_keysym, glfw
         except ImportError:
             pytest.skip("GLFW not available")
 
@@ -105,7 +105,7 @@ class TestGlfwKeyConversion:
             f"GLFW key {letter.upper()} (code {glfw_key}) converted to KeySym 0. "
             f"KeySym values for letters should be lowercase ASCII (97-122)."
         )
-        assert isinstance(result, tcod.event.KeySym), (
+        assert isinstance(result, input_events.KeySym), (
             f"Converter should return KeySym, got {type(result)}"
         )
 
@@ -116,16 +116,16 @@ class TestGlfwKeyConversion:
     def test_letter_key_conversion_matches_tcod_keysym(
         self, glfw_key_converter, letter: str
     ) -> None:
-        """GLFW letter key conversion should match tcod.event.KeySym values."""
+        """GLFW letter key conversion should match input_events.KeySym values."""
         converter, _glfw = glfw_key_converter
         glfw_key = ord(letter.upper())
 
         result = converter(None, glfw_key)
-        expected = getattr(tcod.event.KeySym, letter)
+        expected = input_events.KeySym(ord(letter))
 
         assert result == expected, (
             f"GLFW key {letter.upper()} converted to {result}, "
-            f"expected tcod.event.KeySym.{letter} ({expected})"
+            f"expected input_events.KeySym.{letter} ({expected})"
         )
 
     @pytest.mark.parametrize(
@@ -142,36 +142,36 @@ class TestGlfwKeyConversion:
         result = converter(None, glfw_key)
 
         assert result != 0, f"GLFW key {digit} converted to KeySym 0 (invalid)"
-        assert isinstance(result, tcod.event.KeySym)
+        assert isinstance(result, input_events.KeySym)
 
     def test_arrow_key_conversion(self, glfw_key_converter) -> None:
         """Arrow keys should convert to correct KeySym values."""
         converter, glfw = glfw_key_converter
 
-        assert converter(None, glfw.KEY_UP) == tcod.event.KeySym.UP
-        assert converter(None, glfw.KEY_DOWN) == tcod.event.KeySym.DOWN
-        assert converter(None, glfw.KEY_LEFT) == tcod.event.KeySym.LEFT
-        assert converter(None, glfw.KEY_RIGHT) == tcod.event.KeySym.RIGHT
+        assert converter(None, glfw.KEY_UP) == input_events.KeySym.UP
+        assert converter(None, glfw.KEY_DOWN) == input_events.KeySym.DOWN
+        assert converter(None, glfw.KEY_LEFT) == input_events.KeySym.LEFT
+        assert converter(None, glfw.KEY_RIGHT) == input_events.KeySym.RIGHT
 
     def test_special_key_conversion(self, glfw_key_converter) -> None:
         """Special keys should convert to correct KeySym values."""
         converter, glfw = glfw_key_converter
 
-        assert converter(None, glfw.KEY_ESCAPE) == tcod.event.KeySym.ESCAPE
-        assert converter(None, glfw.KEY_ENTER) == tcod.event.KeySym.RETURN
-        assert converter(None, glfw.KEY_SPACE) == tcod.event.KeySym.SPACE
-        assert converter(None, glfw.KEY_TAB) == tcod.event.KeySym.TAB
-        assert converter(None, glfw.KEY_BACKSPACE) == tcod.event.KeySym.BACKSPACE
+        assert converter(None, glfw.KEY_ESCAPE) == input_events.KeySym.ESCAPE
+        assert converter(None, glfw.KEY_ENTER) == input_events.KeySym.RETURN
+        assert converter(None, glfw.KEY_SPACE) == input_events.KeySym.SPACE
+        assert converter(None, glfw.KEY_TAB) == input_events.KeySym.TAB
+        assert converter(None, glfw.KEY_BACKSPACE) == input_events.KeySym.BACKSPACE
 
     def test_punctuation_key_conversion(self, glfw_key_converter) -> None:
         """Punctuation keys should convert to correct KeySym values."""
         converter, glfw = glfw_key_converter
 
-        assert converter(None, glfw.KEY_COMMA) == tcod.event.KeySym.COMMA
-        assert converter(None, glfw.KEY_PERIOD) == tcod.event.KeySym.PERIOD
-        assert converter(None, glfw.KEY_SLASH) == tcod.event.KeySym.SLASH
-        assert converter(None, glfw.KEY_SEMICOLON) == tcod.event.KeySym.SEMICOLON
-        assert converter(None, glfw.KEY_GRAVE_ACCENT) == tcod.event.KeySym.GRAVE
+        assert converter(None, glfw.KEY_COMMA) == input_events.KeySym.COMMA
+        assert converter(None, glfw.KEY_PERIOD) == input_events.KeySym.PERIOD
+        assert converter(None, glfw.KEY_SLASH) == input_events.KeySym.SLASH
+        assert converter(None, glfw.KEY_SEMICOLON) == input_events.KeySym.SEMICOLON
+        assert converter(None, glfw.KEY_GRAVE_ACCENT) == input_events.KeySym.GRAVE
 
 
 class TestKeySymConsistency:
@@ -180,30 +180,30 @@ class TestKeySymConsistency:
     def test_keys_class_uses_lowercase_keysyms(self) -> None:
         """Keys class should use lowercase KeySym values (SDL3/tcod 19 standard)."""
         # In SDL3/tcod 19, letter KeySyms are lowercase ASCII values (97-122)
-        assert tcod.event.KeySym(ord("h")) == Keys.KEY_H, (
+        assert input_events.KeySym(ord("h")) == Keys.KEY_H, (
             "KEY_H should use lowercase 'h'"
         )
-        assert tcod.event.KeySym(ord("i")) == Keys.KEY_I, (
+        assert input_events.KeySym(ord("i")) == Keys.KEY_I, (
             "KEY_I should use lowercase 'i'"
         )
 
-    def test_keysym_constructor_with_invalid_value_returns_zero(self) -> None:
-        """Verify that invalid KeySym values return 0 (our detection mechanism)."""
-        # This documents the behavior we rely on to detect invalid KeySyms
-        # Uppercase ASCII values (65-90) are NOT valid KeySym values in tcod 19
-        invalid_keysym = tcod.event.KeySym(ord("I"))  # uppercase I = 73
-        assert invalid_keysym == 0, (
-            "tcod.event.KeySym(73) should return 0 (invalid). "
-            "If this fails, the KeySym validation mechanism has changed."
+    def test_keysym_constructor_with_unlisted_value_creates_adhoc_member(self) -> None:
+        """Verify that unlisted KeySym values create ad-hoc members via _missing_."""
+        # Uppercase ASCII values (65-90) are not named in our KeySym enum
+        # but _missing_ creates ad-hoc members for them
+        adhoc_keysym = input_events.KeySym(ord("I"))  # uppercase I = 73
+        assert adhoc_keysym == 73, (
+            "input_events.KeySym(73) should create an ad-hoc member with value 73."
         )
+        assert isinstance(adhoc_keysym, input_events.KeySym)
 
     def test_keysym_constructor_with_valid_value_returns_value(self) -> None:
         """Verify that valid KeySym values are preserved."""
-        valid_keysym = tcod.event.KeySym(ord("i"))  # lowercase i = 105
+        valid_keysym = input_events.KeySym(ord("i"))  # lowercase i = 105
         assert valid_keysym == ord("i"), (
-            "tcod.event.KeySym(105) should return 105 (valid lowercase 'i')"
+            "input_events.KeySym(105) should return 105 (valid lowercase 'i')"
         )
-        assert valid_keysym == tcod.event.KeySym.i  # type: ignore[unresolved-attribute]
+        assert valid_keysym == input_events.KeySym(ord("i"))
 
 
 class TestKeyEventCreation:
@@ -223,23 +223,23 @@ class TestKeyEventCreation:
         ],
     )
     def test_can_create_keydown_event_with_keys_constant(
-        self, key_const: tcod.event.KeySym
+        self, key_const: input_events.KeySym
     ) -> None:
         """KeyDown events should be creatable with Keys class constants."""
-        event = tcod.event.KeyDown(
+        event = input_events.KeyDown(
             sym=key_const,
             scancode=0,
-            mod=tcod.event.Modifier.NONE,
+            mod=input_events.Modifier.NONE,
         )
         assert event.sym == key_const
         assert event.sym != 0, "Event sym should not be 0 (invalid)"
 
     def test_keydown_event_sym_matches_keys_constant(self) -> None:
         """KeyDown event sym should match Keys constants for proper event handling."""
-        event = tcod.event.KeyDown(
-            sym=tcod.event.KeySym.i,  # type: ignore[unresolved-attribute]
+        event = input_events.KeyDown(
+            sym=input_events.KeySym(ord("i")),
             scancode=0,
-            mod=tcod.event.Modifier.NONE,
+            mod=input_events.Modifier.NONE,
         )
         # This is how the input handler checks for the I key
         assert event.sym == Keys.KEY_I, (

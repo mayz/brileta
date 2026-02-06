@@ -257,8 +257,6 @@ def patched_controller(stop_after: int):
         stack.enter_context(patch("catley.controller.Clock", DummyClock))
         stack.enter_context(patch("catley.controller.TurnManager", DummyTurnManager))
         stack.enter_context(patch.object(Controller, "update_fov", lambda self: None))
-        stack.enter_context(patch("tcod.event.get", return_value=[]))
-        stack.enter_context(patch("tcod.sdl.mouse.show", lambda val: None))
 
         # Mock SDL renderer for TCODRenderer initialization
         sdl_renderer_mock = MagicMock()

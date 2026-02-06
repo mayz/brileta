@@ -5,9 +5,7 @@ from __future__ import annotations
 from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
-import tcod.event
-
-from catley import colors
+from catley import colors, input_events
 from catley.game.actions.discovery import ActionCategory, ActionOption
 from catley.game.actors import Character
 from catley.game.game_world import GameWorld
@@ -159,9 +157,9 @@ class TestActionClickHandling:
         view._actions_renderer._hit_areas = [((10, 130, 70, 150), 0)]
 
         # Simulate click on action area at y=140
-        event = MagicMock(spec=tcod.event.MouseButtonDown)
-        event.button = tcod.event.MouseButton.LEFT
-        event.position = tcod.event.Point(40, 140)
+        event = MagicMock(spec=input_events.MouseButtonDown)
+        event.button = input_events.MouseButton.LEFT
+        event.position = input_events.Point(40, 140)
 
         mode._try_execute_action_panel_click(event)
 
@@ -173,9 +171,9 @@ class TestActionClickHandling:
         _controller, mode, _view = make_explore_mode_with_panel()
 
         # Simulate click way outside panel bounds
-        event = MagicMock(spec=tcod.event.MouseButtonDown)
-        event.button = tcod.event.MouseButton.LEFT
-        event.position = tcod.event.Point(1000, 1000)
+        event = MagicMock(spec=input_events.MouseButtonDown)
+        event.button = input_events.MouseButton.LEFT
+        event.position = input_events.Point(1000, 1000)
 
         result = mode._try_execute_action_panel_click(event)
 
@@ -190,9 +188,9 @@ class TestActionClickHandling:
         view._actions_renderer._hit_areas = []
 
         # Simulate click within panel bounds
-        event = MagicMock(spec=tcod.event.MouseButtonDown)
-        event.button = tcod.event.MouseButton.LEFT
-        event.position = tcod.event.Point(40, 50)
+        event = MagicMock(spec=input_events.MouseButtonDown)
+        event.button = input_events.MouseButton.LEFT
+        event.position = input_events.Point(40, 50)
 
         result = mode._try_execute_action_panel_click(event)
 
@@ -223,9 +221,9 @@ class TestActionClickHandling:
         # Hit area at y=100-120
         view._actions_renderer._hit_areas = [((10, 100, 70, 120), 0)]
 
-        event = MagicMock(spec=tcod.event.MouseButtonDown)
-        event.button = tcod.event.MouseButton.LEFT
-        event.position = tcod.event.Point(40, 110)
+        event = MagicMock(spec=input_events.MouseButtonDown)
+        event.button = input_events.MouseButton.LEFT
+        event.position = input_events.Point(40, 110)
 
         mode._try_execute_action_panel_click(event)
 
@@ -283,9 +281,9 @@ class TestStaleHitAreasRegression:
         view._actions_renderer._hit_areas = [((10, 100, 70, 150), 0)]
 
         # Click in the overlapping area
-        event = MagicMock(spec=tcod.event.MouseButtonDown)
-        event.button = tcod.event.MouseButton.LEFT
-        event.position = tcod.event.Point(40, 125)
+        event = MagicMock(spec=input_events.MouseButtonDown)
+        event.button = input_events.MouseButton.LEFT
+        event.position = input_events.Point(40, 125)
 
         # This simulates what happens AFTER draw_content clears stale hit areas
         # In the real code, draw_content() would call clear_hit_areas() on

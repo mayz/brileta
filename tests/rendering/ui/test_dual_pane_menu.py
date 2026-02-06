@@ -4,9 +4,7 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any, cast
 
-import tcod.event
-
-from catley import colors
+from catley import colors, input_events
 from catley.controller import Controller
 from catley.game.actors import Character
 from catley.game.enums import ItemCategory
@@ -179,11 +177,7 @@ def test_tab_switches_panes() -> None:
     assert menu.active_pane == PaneId.LEFT
 
     # Tab should switch to right pane
-    tab_event = tcod.event.KeyDown(
-        scancode=tcod.event.Scancode.TAB,
-        sym=tcod.event.KeySym.TAB,
-        mod=tcod.event.Modifier.NONE,
-    )
+    tab_event = input_events.KeyDown(sym=input_events.KeySym.TAB)
     menu.handle_input(tab_event)
     assert menu.active_pane == PaneId.RIGHT
 
@@ -200,11 +194,7 @@ def test_tab_does_not_switch_in_inventory_only_mode() -> None:
 
     assert menu.active_pane == PaneId.LEFT
 
-    tab_event = tcod.event.KeyDown(
-        scancode=tcod.event.Scancode.TAB,
-        sym=tcod.event.KeySym.TAB,
-        mod=tcod.event.Modifier.NONE,
-    )
+    tab_event = input_events.KeyDown(sym=input_events.KeySym.TAB)
     menu.handle_input(tab_event)
 
     # Should still be on left pane
@@ -220,20 +210,12 @@ def test_arrow_keys_move_cursor() -> None:
     assert menu.left_cursor == 0
 
     # Press down arrow
-    down_event = tcod.event.KeyDown(
-        scancode=tcod.event.Scancode.DOWN,
-        sym=tcod.event.KeySym.DOWN,
-        mod=tcod.event.Modifier.NONE,
-    )
+    down_event = input_events.KeyDown(sym=input_events.KeySym.DOWN)
     menu.handle_input(down_event)
     assert menu.left_cursor == 1
 
     # Press up arrow
-    up_event = tcod.event.KeyDown(
-        scancode=tcod.event.Scancode.UP,
-        sym=tcod.event.KeySym.UP,
-        mod=tcod.event.Modifier.NONE,
-    )
+    up_event = input_events.KeyDown(sym=input_events.KeySym.UP)
     menu.handle_input(up_event)
     assert menu.left_cursor == 0
 
@@ -259,11 +241,7 @@ def test_escape_closes_menu() -> None:
     menu.show()
     assert menu.is_active
 
-    esc_event = tcod.event.KeyDown(
-        scancode=tcod.event.Scancode.ESCAPE,
-        sym=tcod.event.KeySym.ESCAPE,
-        mod=tcod.event.Modifier.NONE,
-    )
+    esc_event = input_events.KeyDown(sym=input_events.KeySym.ESCAPE)
     menu.handle_input(esc_event)
 
     assert not menu.is_active
@@ -430,11 +408,7 @@ def test_detail_panel_updates_on_cursor_move() -> None:
     assert menu.detail_item == first_item
 
     # Move cursor down
-    down_event = tcod.event.KeyDown(
-        scancode=tcod.event.Scancode.DOWN,
-        sym=tcod.event.KeySym.DOWN,
-        mod=tcod.event.Modifier.NONE,
-    )
+    down_event = input_events.KeyDown(sym=input_events.KeySym.DOWN)
     menu.handle_input(down_event)
 
     # Detail item should be second item
@@ -508,8 +482,8 @@ def test_click_outside_closes_menu() -> None:
 
     # Click far outside the menu
     outside_pos = (1000, 1000)
-    click_event = tcod.event.MouseButtonDown(
-        outside_pos, outside_pos, tcod.event.MouseButton.LEFT
+    click_event = input_events.MouseButtonDown(
+        position=input_events.Point(*outside_pos), button=input_events.MouseButton.LEFT
     )
     menu.handle_input(click_event)
 
@@ -974,22 +948,14 @@ def test_arrow_keys_scroll_detail_description() -> None:
         initial_offset = menu._detail_panel.scroll_offset
 
         # Right arrow should scroll down
-        right_event = tcod.event.KeyDown(
-            scancode=tcod.event.Scancode.RIGHT,
-            sym=tcod.event.KeySym.RIGHT,
-            mod=tcod.event.Modifier.NONE,
-        )
+        right_event = input_events.KeyDown(sym=input_events.KeySym.RIGHT)
         menu.handle_input(right_event)
         assert menu._detail_panel.scroll_offset > initial_offset, (
             "Right arrow should scroll down"
         )
 
         # Left arrow should scroll back up
-        left_event = tcod.event.KeyDown(
-            scancode=tcod.event.Scancode.LEFT,
-            sym=tcod.event.KeySym.LEFT,
-            mod=tcod.event.Modifier.NONE,
-        )
+        left_event = input_events.KeyDown(sym=input_events.KeySym.LEFT)
         menu.handle_input(left_event)
         assert menu._detail_panel.scroll_offset == initial_offset, (
             "Left arrow should scroll back up"
@@ -1013,11 +979,7 @@ def test_arrow_keys_no_effect_without_overflow() -> None:
     initial_offset = menu._detail_panel.scroll_offset
 
     # Right arrow should not crash and should not change offset
-    right_event = tcod.event.KeyDown(
-        scancode=tcod.event.Scancode.RIGHT,
-        sym=tcod.event.KeySym.RIGHT,
-        mod=tcod.event.Modifier.NONE,
-    )
+    right_event = input_events.KeyDown(sym=input_events.KeySym.RIGHT)
     menu.handle_input(right_event)
     assert menu._detail_panel.scroll_offset == initial_offset
 

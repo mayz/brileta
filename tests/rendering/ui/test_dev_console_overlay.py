@@ -3,8 +3,8 @@ from typing import cast
 from unittest.mock import MagicMock
 
 import pytest
-import tcod.event
 
+from catley import input_events
 from catley.app import App, AppConfig
 from catley.controller import Controller
 from catley.util.live_vars import live_variable_registry
@@ -242,35 +242,37 @@ def test_handle_input_typing_and_submit(monkeypatch) -> None:
     ov._execute_command = exec_mock
 
     for ch in "set":
-        e = tcod.event.TextInput(ch)
+        e = input_events.TextInput(ch)
         ov.handle_input(e)
 
     assert ov.input_buffer == "set"
 
-    e = tcod.event.TextInput("`")
+    e = input_events.TextInput("`")
     ov.handle_input(e)
     assert ov.input_buffer == "set"  # backtick ignored
 
-    e = tcod.event.KeyDown(0, tcod.event.KeySym.BACKSPACE, 0)
+    e = input_events.KeyDown(sym=input_events.KeySym.BACKSPACE)
     ov.handle_input(e)
     assert ov.input_buffer == "se"
 
-    e = tcod.event.KeyDown(0, tcod.event.KeySym.RETURN, 0)
+    e = input_events.KeyDown(sym=input_events.KeySym.RETURN)
     ov.handle_input(e)
     assert exec_mock.called
     assert ov.input_buffer == ""
 
 
-@pytest.mark.parametrize("key_sym", [tcod.event.KeySym.ESCAPE, tcod.event.KeySym.GRAVE])
+@pytest.mark.parametrize(
+    "key_sym", [input_events.KeySym.ESCAPE, input_events.KeySym.GRAVE]
+)
 def test_handle_input_escape_and_backquote_hide_console(
-    key_sym: tcod.event.KeySym,
+    key_sym: input_events.KeySym,
 ) -> None:
     ov = make_overlay()
     ov.show()
 
     assert ov.is_active
 
-    e = tcod.event.KeyDown(0, key_sym, 0)
+    e = input_events.KeyDown(sym=key_sym)
     ov.handle_input(e)
 
     assert not ov.is_active
@@ -306,7 +308,7 @@ def test_tab_completion_shows_candidates_and_common_prefix() -> None:
     ov.show()
     ov.input_buffer = "get tab."
 
-    ov.handle_input(tcod.event.KeyDown(0, tcod.event.KeySym.TAB, 0))
+    ov.handle_input(input_events.KeyDown(sym=input_events.KeySym.TAB))
 
     # Common prefix of "tab.alpha" and "tab.beta" is "tab.".
     # Input should stay at common prefix (no further common chars).
@@ -326,7 +328,7 @@ def test_tab_completion_unique_match() -> None:
     prev_history_len = len(ov.history)
     ov.input_buffer = "get uniq."
 
-    ov.handle_input(tcod.event.KeyDown(0, tcod.event.KeySym.TAB, 0))
+    ov.handle_input(input_events.KeyDown(sym=input_events.KeySym.TAB))
     assert ov.input_buffer == "get uniq.only"
     # No candidates should be printed for a unique match.
     assert len(ov.history) == prev_history_len
@@ -342,16 +344,16 @@ def test_tab_completion_cycles_after_listing() -> None:
     ov.input_buffer = "get cyc."
 
     # First Tab: show candidates, complete to common prefix.
-    ov.handle_input(tcod.event.KeyDown(0, tcod.event.KeySym.TAB, 0))
+    ov.handle_input(input_events.KeyDown(sym=input_events.KeySym.TAB))
     assert ov.input_buffer == "get cyc."
 
     # Second Tab: cycle to first candidate.
-    ov.handle_input(tcod.event.KeyDown(0, tcod.event.KeySym.TAB, 0))
+    ov.handle_input(input_events.KeyDown(sym=input_events.KeySym.TAB))
     first = ov.input_buffer
     assert first in {"get cyc.a", "get cyc.b"}
 
     # Third Tab: cycle to second candidate.
-    ov.handle_input(tcod.event.KeyDown(0, tcod.event.KeySym.TAB, 0))
+    ov.handle_input(input_events.KeyDown(sym=input_events.KeySym.TAB))
     assert ov.input_buffer != first
 
 
@@ -366,20 +368,22 @@ def test_tab_completion_reverse_with_shift_tab() -> None:
     ov.input_buffer = "get stab."
 
     # First Tab: show candidates + common prefix.
-    ov.handle_input(tcod.event.KeyDown(0, tcod.event.KeySym.TAB, 0))
+    ov.handle_input(input_events.KeyDown(sym=input_events.KeySym.TAB))
 
     # Forward to first candidate.
-    ov.handle_input(tcod.event.KeyDown(0, tcod.event.KeySym.TAB, 0))
+    ov.handle_input(input_events.KeyDown(sym=input_events.KeySym.TAB))
     first = ov.input_buffer
 
     # Forward to second.
-    ov.handle_input(tcod.event.KeyDown(0, tcod.event.KeySym.TAB, 0))
+    ov.handle_input(input_events.KeyDown(sym=input_events.KeySym.TAB))
     second = ov.input_buffer
     assert second != first
 
     # Shift+Tab back to first.
     ov.handle_input(
-        tcod.event.KeyDown(0, tcod.event.KeySym.TAB, tcod.event.Modifier.SHIFT)
+        input_events.KeyDown(
+            sym=input_events.KeySym.TAB, mod=input_events.Modifier.SHIFT
+        )
     )
     assert ov.input_buffer == first
 
@@ -393,13 +397,13 @@ def test_history_navigation_up_down() -> None:
     ov.show()
     ov.input_buffer = ""
 
-    ov.handle_input(tcod.event.KeyDown(0, tcod.event.KeySym.UP, 0))
+    ov.handle_input(input_events.KeyDown(sym=input_events.KeySym.UP))
     assert ov.input_buffer == "cmd2"
-    ov.handle_input(tcod.event.KeyDown(0, tcod.event.KeySym.UP, 0))
+    ov.handle_input(input_events.KeyDown(sym=input_events.KeySym.UP))
     assert ov.input_buffer == "cmd1"
-    ov.handle_input(tcod.event.KeyDown(0, tcod.event.KeySym.DOWN, 0))
+    ov.handle_input(input_events.KeyDown(sym=input_events.KeySym.DOWN))
     assert ov.input_buffer == "cmd2"
-    ov.handle_input(tcod.event.KeyDown(0, tcod.event.KeySym.DOWN, 0))
+    ov.handle_input(input_events.KeyDown(sym=input_events.KeySym.DOWN))
     assert ov.input_buffer == ""
 
 
@@ -414,15 +418,15 @@ def test_console_consumes_all_keydown_events() -> None:
 
     # KeyDown for 'I' should be consumed (returns True) even though
     # the console doesn't explicitly handle this key
-    key_i = tcod.event.KeySym(ord("i"))
-    event = tcod.event.KeyDown(0, key_i, 0)
+    key_i = input_events.KeySym(ord("i"))
+    event = input_events.KeyDown(sym=key_i)
     result = ov.handle_input(event)
 
     assert result is True  # Event was consumed, won't leak to mode
 
     # Same for other arbitrary keys like 'T' (targeting mode trigger)
-    key_t = tcod.event.KeySym(ord("t"))
-    event = tcod.event.KeyDown(0, key_t, 0)
+    key_t = input_events.KeySym(ord("t"))
+    event = input_events.KeyDown(sym=key_t)
     result = ov.handle_input(event)
 
     assert result is True
@@ -432,26 +436,26 @@ def test_scrollback_shift_up_down() -> None:
     """Shift+Up/Down scrolls through command history."""
     ov = make_overlay()
     ov.show()
-    shift = tcod.event.Modifier.SHIFT
+    shift = input_events.Modifier.SHIFT
 
     # Fill history with some lines.
     for i in range(20):
         ov.history.append(f"line {i}")
 
     # Shift+Up increases scroll offset.
-    ov.handle_input(tcod.event.KeyDown(0, tcod.event.KeySym.UP, shift))
+    ov.handle_input(input_events.KeyDown(sym=input_events.KeySym.UP, mod=shift))
     assert ov._scroll_offset == 3
 
-    ov.handle_input(tcod.event.KeyDown(0, tcod.event.KeySym.UP, shift))
+    ov.handle_input(input_events.KeyDown(sym=input_events.KeySym.UP, mod=shift))
     assert ov._scroll_offset == 6
 
     # Shift+Down decreases scroll offset.
-    ov.handle_input(tcod.event.KeyDown(0, tcod.event.KeySym.DOWN, shift))
+    ov.handle_input(input_events.KeyDown(sym=input_events.KeySym.DOWN, mod=shift))
     assert ov._scroll_offset == 3
 
     # Can't go below zero.
     for _ in range(5):
-        ov.handle_input(tcod.event.KeyDown(0, tcod.event.KeySym.DOWN, shift))
+        ov.handle_input(input_events.KeyDown(sym=input_events.KeySym.DOWN, mod=shift))
     assert ov._scroll_offset == 0
 
 
@@ -470,22 +474,22 @@ def test_filter_mode_navigation() -> None:
     assert len(ov._filter_results) >= 3  # at least our three vars
 
     # Type to filter.
-    ov.handle_input(tcod.event.TextInput("f"))
-    ov.handle_input(tcod.event.TextInput("l"))
-    ov.handle_input(tcod.event.TextInput("t"))
+    ov.handle_input(input_events.TextInput("f"))
+    ov.handle_input(input_events.TextInput("l"))
+    ov.handle_input(input_events.TextInput("t"))
     assert all("flt." in v.name for v in ov._filter_results)
 
     # Navigate with Down.
-    ov.handle_input(tcod.event.KeyDown(0, tcod.event.KeySym.DOWN, 0))
+    ov.handle_input(input_events.KeyDown(sym=input_events.KeySym.DOWN))
     assert ov._filter_selected == 1
 
     # Navigate with Up.
-    ov.handle_input(tcod.event.KeyDown(0, tcod.event.KeySym.UP, 0))
+    ov.handle_input(input_events.KeyDown(sym=input_events.KeySym.UP))
     assert ov._filter_selected == 0
 
     # Select with Enter.
     selected_name = ov._filter_results[0].name
-    ov.handle_input(tcod.event.KeyDown(0, tcod.event.KeySym.RETURN, 0))
+    ov.handle_input(input_events.KeyDown(sym=input_events.KeySym.RETURN))
     assert ov._filter_mode is False
     assert ov.input_buffer == selected_name
 
@@ -501,7 +505,7 @@ def test_filter_mode_escape_cancels() -> None:
     ov._enter_filter_mode()
     assert ov._filter_mode is True
 
-    ov.handle_input(tcod.event.KeyDown(0, tcod.event.KeySym.ESCAPE, 0))
+    ov.handle_input(input_events.KeyDown(sym=input_events.KeySym.ESCAPE))
     assert ov._filter_mode is False
     # Input buffer should NOT have been changed (no selection made).
     assert ov.input_buffer == "original"
@@ -516,7 +520,7 @@ def test_filter_mode_backspace() -> None:
     ov._enter_filter_mode("fbsp")
     assert ov._filter_text == "fbsp"
 
-    ov.handle_input(tcod.event.KeyDown(0, tcod.event.KeySym.BACKSPACE, 0))
+    ov.handle_input(input_events.KeyDown(sym=input_events.KeySym.BACKSPACE))
     assert ov._filter_text == "fbs"
 
 
@@ -526,7 +530,7 @@ def test_filter_mode_consumes_keydown() -> None:
     ov.show()
     ov._enter_filter_mode()
 
-    key_i = tcod.event.KeySym(ord("i"))
-    event = tcod.event.KeyDown(0, key_i, 0)
+    key_i = input_events.KeySym(ord("i"))
+    event = input_events.KeyDown(sym=key_i)
     result = ov.handle_input(event)
     assert result is True

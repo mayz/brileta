@@ -4,9 +4,7 @@ import time
 from collections import deque
 from typing import TYPE_CHECKING
 
-import tcod.event
-
-from catley import colors, config
+from catley import colors, config, input_events
 from catley.backends.pillow.canvas import PillowImageCanvas
 from catley.util.live_vars import LiveVariable, live_variable_registry
 from catley.util.misc import string_to_type
@@ -414,91 +412,91 @@ class DevConsoleOverlay(TextOverlay):
     # ------------------------------------------------------------------
     # Input handling
     # ------------------------------------------------------------------
-    def handle_input(self, event: tcod.event.Event) -> bool:
+    def handle_input(self, event: input_events.InputEvent) -> bool:
         """Handle keyboard input for the developer console."""
         if self._filter_mode:
             return self._handle_filter_input(event)
         return self._handle_command_input(event)
 
-    def _handle_command_input(self, event: tcod.event.Event) -> bool:
+    def _handle_command_input(self, event: input_events.InputEvent) -> bool:
         """Handle input in normal command mode."""
         match event:
-            case tcod.event.KeyDown(sym=sym) if sym in (
-                tcod.event.KeySym.ESCAPE,
-                tcod.event.KeySym.GRAVE,
+            case input_events.KeyDown(sym=sym) if sym in (
+                input_events.KeySym.ESCAPE,
+                input_events.KeySym.GRAVE,
             ):
                 self.hide()
                 self._reset_input_state()
                 return True
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.RETURN):
+            case input_events.KeyDown(sym=input_events.KeySym.RETURN):
                 self._execute_command()
                 self.input_buffer = ""
                 self._reset_input_state()
                 return True
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.BACKSPACE):
+            case input_events.KeyDown(sym=input_events.KeySym.BACKSPACE):
                 if self.input_buffer:
                     self.input_buffer = self.input_buffer[:-1]
                 self._reset_input_state()
                 return True
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.TAB, mod=mod):
-                if mod & tcod.event.Modifier.SHIFT:
+            case input_events.KeyDown(sym=input_events.KeySym.TAB, mod=mod):
+                if mod & input_events.Modifier.SHIFT:
                     self._handle_tab_completion(reverse=True)
                 elif mod == 0:
                     self._handle_tab_completion()
                 return True
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.UP, mod=mod):
-                if mod & tcod.event.Modifier.SHIFT:
+            case input_events.KeyDown(sym=input_events.KeySym.UP, mod=mod):
+                if mod & input_events.Modifier.SHIFT:
                     max_scroll = max(0, len(self.history) - 1)
                     self._scroll_offset = min(self._scroll_offset + 3, max_scroll)
                     self.invalidate()
                 else:
                     self._handle_history_navigation(-1)
                 return True
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.DOWN, mod=mod):
-                if mod & tcod.event.Modifier.SHIFT:
+            case input_events.KeyDown(sym=input_events.KeySym.DOWN, mod=mod):
+                if mod & input_events.Modifier.SHIFT:
                     self._scroll_offset = max(self._scroll_offset - 3, 0)
                     self.invalidate()
                 else:
                     self._handle_history_navigation(1)
                 return True
-            case tcod.event.TextInput(text=text):
+            case input_events.TextInput(text=text):
                 if text.isprintable() and text != "`":
                     self.input_buffer += text
                 self._reset_input_state()
                 return True
-            case tcod.event.KeyDown(sym=sym, mod=mod):
+            case input_events.KeyDown(sym=sym, mod=mod):
                 # Ctrl+L enters filter mode.
-                if (mod & tcod.event.Modifier.CTRL) and sym.value == ord("l"):
+                if (mod & input_events.Modifier.CTRL) and sym.value == ord("l"):
                     self._enter_filter_mode()
                 # Consume all other keyboard input while console is active.
                 return True
         return False
 
-    def _handle_filter_input(self, event: tcod.event.Event) -> bool:
+    def _handle_filter_input(self, event: input_events.InputEvent) -> bool:
         """Handle input in interactive filter mode."""
         match event:
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.ESCAPE):
+            case input_events.KeyDown(sym=input_events.KeySym.ESCAPE):
                 self._exit_filter_mode()
                 return True
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.GRAVE):
+            case input_events.KeyDown(sym=input_events.KeySym.GRAVE):
                 self._exit_filter_mode()
                 self.hide()
                 return True
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.RETURN):
+            case input_events.KeyDown(sym=input_events.KeySym.RETURN):
                 self._exit_filter_mode(selected=True)
                 return True
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.BACKSPACE):
+            case input_events.KeyDown(sym=input_events.KeySym.BACKSPACE):
                 if self._filter_text:
                     self._filter_text = self._filter_text[:-1]
                     self._update_filter_results()
                 self.invalidate()
                 return True
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.UP):
+            case input_events.KeyDown(sym=input_events.KeySym.UP):
                 if self._filter_results:
                     self._filter_selected = max(0, self._filter_selected - 1)
                 self.invalidate()
                 return True
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.DOWN):
+            case input_events.KeyDown(sym=input_events.KeySym.DOWN):
                 if self._filter_results:
                     self._filter_selected = min(
                         len(self._filter_results) - 1,
@@ -506,22 +504,22 @@ class DevConsoleOverlay(TextOverlay):
                     )
                 self.invalidate()
                 return True
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.TAB, mod=mod):
+            case input_events.KeyDown(sym=input_events.KeySym.TAB, mod=mod):
                 # Tab/Shift+Tab also cycle through results in filter mode.
                 if self._filter_results:
-                    step = -1 if (mod & tcod.event.Modifier.SHIFT) else 1
+                    step = -1 if (mod & input_events.Modifier.SHIFT) else 1
                     self._filter_selected = (self._filter_selected + step) % len(
                         self._filter_results
                     )
                 self.invalidate()
                 return True
-            case tcod.event.TextInput(text=text):
+            case input_events.TextInput(text=text):
                 if text.isprintable() and text != "`":
                     self._filter_text += text
                     self._update_filter_results()
                 self.invalidate()
                 return True
-            case tcod.event.KeyDown():
+            case input_events.KeyDown():
                 # Consume all keyboard input while filter mode is active.
                 return True
         return False

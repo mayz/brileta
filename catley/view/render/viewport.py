@@ -36,7 +36,7 @@ A strict naming convention is used to make the code self-documenting.
     -   Description: The raw pixel coordinate from the OS/SDL, used for
         mouse events and low-level SDL drawing (like the custom cursor).
     -   Origin: (0, 0) is the top-left pixel of the game window.
-    -   Example: `event.position` in a `tcod.event.MouseState` event.
+    -   Example: `event.position` in an `input_events.MouseState` event.
 
 --- TRANSFORMATION FLOW ---
 

@@ -6,8 +6,7 @@ starts in ExploreMode, and properly calls _exit()/enter() on transitions.
 
 from __future__ import annotations
 
-import tcod.event
-
+from catley import input_events
 from catley.modes.explore import ExploreMode
 from tests.helpers import get_controller_with_player_and_map
 
@@ -118,7 +117,7 @@ def test_transition_to_same_mode_is_noop() -> None:
 
     # Track if _exit was called by checking movement_keys behavior
     # If _exit were called, movement_keys would be cleared
-    test_key = tcod.event.KeySym.UP
+    test_key = input_events.KeySym.UP
     controller.explore_mode.movement_keys.add(test_key)
 
     # Transition to the same mode (explore -> explore)

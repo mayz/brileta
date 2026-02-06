@@ -2,9 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import tcod.event
-
-from catley import colors, config
+from catley import colors, config, input_events
 from catley.events import (
     ActorDeathEvent,
     MessageEvent,
@@ -127,7 +125,7 @@ class CombatMode(Mode):
         if self.active:
             self.on_actor_death(event.actor)
 
-    def handle_input(self, event: tcod.event.Event) -> bool:
+    def handle_input(self, event: input_events.InputEvent) -> bool:
         """Handle combat mode input.
 
         Combat-specific input is handled first. Click-to-attack is handled by
@@ -142,13 +140,13 @@ class CombatMode(Mode):
         # Handle targeting-specific input first
         # Note: Target selection clicks are handled by PickerMode (on top of this mode)
         match event:
-            case tcod.event.MouseButtonDown(button=tcod.event.MouseButton.LEFT):
+            case input_events.MouseButtonDown(button=input_events.MouseButton.LEFT):
                 # Check if click is on action panel to select actions
                 if self._try_select_action_by_click(event):
                     return True
                 # Otherwise let PickerMode handle target selection
 
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.ESCAPE):
+            case input_events.KeyDown(sym=input_events.KeySym.ESCAPE):
                 if self.controller.has_visible_hostiles():
                     publish_event(
                         MessageEvent(
@@ -158,7 +156,7 @@ class CombatMode(Mode):
                 self.controller.exit_combat_mode("manual_exit")
                 return True
 
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.RETURN):
+            case input_events.KeyDown(sym=input_events.KeySym.RETURN):
                 # Execute the currently selected action on the current target
                 target = self._get_current_target()
                 if target and isinstance(target, Character):
@@ -167,7 +165,7 @@ class CombatMode(Mode):
                         self.controller.queue_action(intent)
                 return True
 
-            case tcod.event.KeyDown(sym=sym):
+            case input_events.KeyDown(sym=sym):
                 # Check for action hotkey selection (a-z)
                 key_char = chr(sym) if 97 <= sym <= 122 else None  # a-z
                 if key_char and self._try_select_action_by_hotkey(key_char):
@@ -504,7 +502,7 @@ class CombatMode(Mode):
 
         return False
 
-    def _try_select_action_by_click(self, event: tcod.event.MouseButtonDown) -> bool:
+    def _try_select_action_by_click(self, event: input_events.MouseButtonDown) -> bool:
         """Try to select a combat action by clicking on it in the action panel.
 
         Args:

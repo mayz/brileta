@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import tcod.event
-
+from catley import input_events
 from catley.view.ui.scrollable_text_panel import ScrollableTextPanel
 
 
@@ -116,12 +115,12 @@ class TestScrollableTextPanel:
 class TestScrollableTextPanelInput:
     """Tests for ScrollableTextPanel input handling."""
 
-    def _make_keydown(self, sym: tcod.event.KeySym) -> tcod.event.KeyDown:
+    def _make_keydown(self, sym: input_events.KeySym) -> input_events.KeyDown:
         """Create a KeyDown event for testing."""
-        return tcod.event.KeyDown(
+        return input_events.KeyDown(
             scancode=0,
             sym=sym,
-            mod=tcod.event.Modifier.NONE,
+            mod=input_events.Modifier.NONE,
             repeat=False,
         )
 
@@ -130,7 +129,7 @@ class TestScrollableTextPanelInput:
         panel = ScrollableTextPanel(max_visible_lines=2, width_chars=40)
         panel.set_content(["A", "B", "C", "D", "E", "F"])
 
-        event = self._make_keydown(tcod.event.KeySym.PAGEDOWN)
+        event = self._make_keydown(input_events.KeySym.PAGEDOWN)
         consumed = panel.handle_input(event)
 
         assert consumed
@@ -142,7 +141,7 @@ class TestScrollableTextPanelInput:
         panel.set_content(["A", "B", "C", "D", "E", "F"])
         panel.scroll_down(4)  # Start near bottom
 
-        event = self._make_keydown(tcod.event.KeySym.PAGEUP)
+        event = self._make_keydown(input_events.KeySym.PAGEUP)
         consumed = panel.handle_input(event)
 
         assert consumed
@@ -153,7 +152,7 @@ class TestScrollableTextPanelInput:
         panel = ScrollableTextPanel(max_visible_lines=5, width_chars=40)
         panel.set_content(["A", "B"])  # No overflow
 
-        event = self._make_keydown(tcod.event.KeySym.PAGEDOWN)
+        event = self._make_keydown(input_events.KeySym.PAGEDOWN)
         consumed = panel.handle_input(event)
 
         assert not consumed  # Event not consumed
@@ -163,7 +162,7 @@ class TestScrollableTextPanelInput:
         panel = ScrollableTextPanel(max_visible_lines=2, width_chars=40)
         panel.set_content(["A", "B", "C", "D"])
 
-        event = self._make_keydown(tcod.event.KeySym.RETURN)
+        event = self._make_keydown(input_events.KeySym.RETURN)
         consumed = panel.handle_input(event)
 
         assert not consumed
@@ -173,7 +172,7 @@ class TestScrollableTextPanelInput:
         panel = ScrollableTextPanel(max_visible_lines=2, width_chars=40)
         panel.set_content(["A", "B", "C", "D"])
 
-        event = tcod.event.MouseMotion(position=(0, 0))
+        event = input_events.MouseMotion(position=input_events.Point(0, 0))
         consumed = panel.handle_input(event)
 
         assert not consumed

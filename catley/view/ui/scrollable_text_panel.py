@@ -8,9 +8,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import tcod.event
-
-from catley import colors
+from catley import colors, input_events
 
 if TYPE_CHECKING:
     from catley.backends.pillow.canvas import PillowImageCanvas
@@ -134,11 +132,11 @@ class ScrollableTextPanel:
             else:
                 canvas.draw_text(x, line_y, line, color)
 
-    def handle_input(self, event: tcod.event.Event) -> bool:
+    def handle_input(self, event: input_events.InputEvent) -> bool:
         """Handle Page Up/Down input for scrolling.
 
         Args:
-            event: The tcod event to handle.
+            event: The input event to handle.
 
         Returns:
             True if the event was consumed (scroll action occurred), False otherwise.
@@ -147,10 +145,10 @@ class ScrollableTextPanel:
             return False
 
         match event:
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.PAGEUP):
+            case input_events.KeyDown(sym=input_events.KeySym.PAGEUP):
                 self.scroll_up(self.max_visible_lines)
                 return True
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.PAGEDOWN):
+            case input_events.KeyDown(sym=input_events.KeySym.PAGEDOWN):
                 self.scroll_down(self.max_visible_lines)
                 return True
 

@@ -9,8 +9,8 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import pytest
-import tcod.event
 
+from catley import input_events
 from catley.controller import Controller
 from catley.modes.picker import PickerResult
 from tests.helpers import reset_dummy_controller
@@ -45,7 +45,7 @@ def test_escape_calls_on_cancel_and_pops(picker_controller: Controller) -> None:
     assert controller.active_mode is controller.picker_mode
 
     # Press Escape
-    event = tcod.event.KeyDown(0, tcod.event.KeySym.ESCAPE, 0)
+    event = input_events.KeyDown(sym=input_events.KeySym.ESCAPE)
     result = controller.picker_mode.handle_input(event)
 
     assert result is True
@@ -61,7 +61,7 @@ def test_t_key_not_handled_by_picker(picker_controller: Controller) -> None:
     Note: T key was removed as a combat toggle in the equipment slot interaction
     rework. Combat is now entered by clicking the active equipment slot.
     """
-    from catley.input_handler import Keys
+    from catley.input_events import Keys
 
     controller = picker_controller
     on_cancel = MagicMock()
@@ -71,7 +71,7 @@ def test_t_key_not_handled_by_picker(picker_controller: Controller) -> None:
     assert controller.active_mode is controller.picker_mode
 
     # Press T - should NOT be consumed by picker
-    event = tcod.event.KeyDown(0, Keys.KEY_T, 0)
+    event = input_events.KeyDown(sym=Keys.KEY_T)
     result = controller.picker_mode.handle_input(event)
 
     # T key should fall through (not handled)
@@ -92,7 +92,7 @@ def test_escape_works_without_on_cancel(picker_controller: Controller) -> None:
     assert controller.active_mode is controller.picker_mode
 
     # Press Escape - should not raise
-    event = tcod.event.KeyDown(0, tcod.event.KeySym.ESCAPE, 0)
+    event = input_events.KeyDown(sym=input_events.KeySym.ESCAPE)
     result = controller.picker_mode.handle_input(event)
 
     assert result is True
@@ -118,8 +118,8 @@ def test_click_on_invalid_target_consumed_but_no_callback(
     controller.picker_mode._get_tile_at_mouse = MagicMock(return_value=(5, 5))
 
     # Create a mock click event (pixel_pos, tile_pos, button)
-    event = tcod.event.MouseButtonDown(
-        (100, 100), (10, 10), tcod.event.MouseButton.LEFT
+    event = input_events.MouseButtonDown(
+        position=input_events.Point(100, 100), button=input_events.MouseButton.LEFT
     )
 
     result = controller.picker_mode.handle_input(event)
@@ -152,8 +152,8 @@ def test_click_on_valid_target_calls_on_select_and_pops(
     controller.picker_mode._get_actor_at_tile = MagicMock(return_value=None)
 
     # Create a click event
-    event = tcod.event.MouseButtonDown(
-        (100, 100), (10, 10), tcod.event.MouseButton.LEFT
+    event = input_events.MouseButtonDown(
+        position=input_events.Point(100, 100), button=input_events.MouseButton.LEFT
     )
 
     result = controller.picker_mode.handle_input(event)
@@ -179,8 +179,12 @@ def test_non_picker_input_falls_through(picker_controller: Controller) -> None:
     controller.picker_mode.start(on_select=on_select)
 
     # Keys not handled by picker should fall through (return False)
-    for sym in [tcod.event.KeySym.UP, tcod.event.KeySym.SPACE, tcod.event.KeySym.TAB]:
-        event = tcod.event.KeyDown(0, sym, 0)
+    for sym in [
+        input_events.KeySym.UP,
+        input_events.KeySym.SPACE,
+        input_events.KeySym.TAB,
+    ]:
+        event = input_events.KeyDown(sym=sym)
         result = controller.picker_mode.handle_input(event)
         assert result is False, f"Key {sym} should fall through"
 
@@ -213,7 +217,7 @@ def test_cursor_changes_to_arrow_on_exit(picker_controller: Controller) -> None:
     mock_cursor_manager.reset_mock()
 
     # Exit via Escape
-    event = tcod.event.KeyDown(0, tcod.event.KeySym.ESCAPE, 0)
+    event = input_events.KeyDown(sym=input_events.KeySym.ESCAPE)
     controller.picker_mode.handle_input(event)
 
     mock_cursor_manager.set_active_cursor_type.assert_called_with("arrow")
@@ -259,7 +263,7 @@ def test_callbacks_cleared_on_exit(picker_controller: Controller) -> None:
     )
 
     # Exit via Escape
-    event = tcod.event.KeyDown(0, tcod.event.KeySym.ESCAPE, 0)
+    event = input_events.KeyDown(sym=input_events.KeySym.ESCAPE)
     controller.picker_mode.handle_input(event)
 
     # All callbacks should be None
@@ -289,7 +293,7 @@ def test_picker_auto_pushed_by_combat_mode(picker_controller: Controller) -> Non
 
     # Escape in picker mode should exit combat entirely
     # (picker's on_cancel calls combat's pop_mode)
-    event = tcod.event.KeyDown(0, tcod.event.KeySym.ESCAPE, 0)
+    event = input_events.KeyDown(sym=input_events.KeySym.ESCAPE)
     controller.picker_mode.handle_input(event)
 
     # Should be back to explore mode (combat was also popped)
@@ -343,7 +347,7 @@ def test_inactive_picker_returns_false(picker_controller: Controller) -> None:
     # Picker is not started, so not active
     assert controller.picker_mode.active is False
 
-    event = tcod.event.KeyDown(0, tcod.event.KeySym.ESCAPE, 0)
+    event = input_events.KeyDown(sym=input_events.KeySym.ESCAPE)
     result = controller.picker_mode.handle_input(event)
 
     assert result is False
@@ -395,7 +399,7 @@ def test_combat_mode_with_no_valid_targets(picker_controller: Controller) -> Non
     assert controller.combat_mode.candidates == []
 
     # Cancel via Escape - should exit cleanly back to explore
-    event = tcod.event.KeyDown(0, tcod.event.KeySym.ESCAPE, 0)
+    event = input_events.KeyDown(sym=input_events.KeySym.ESCAPE)
     controller.picker_mode.handle_input(event)
 
     # Back to explore mode
@@ -426,8 +430,8 @@ def test_click_outside_map_bounds_falls_through(picker_controller: Controller) -
     controller.picker_mode._get_tile_at_mouse = MagicMock(return_value=None)
 
     # Create a click event
-    event = tcod.event.MouseButtonDown(
-        (100, 100), (10, 10), tcod.event.MouseButton.LEFT
+    event = input_events.MouseButtonDown(
+        position=input_events.Point(100, 100), button=input_events.MouseButton.LEFT
     )
 
     result = controller.picker_mode.handle_input(event)

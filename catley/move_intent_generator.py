@@ -20,11 +20,9 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING
 
-import tcod.event
-
-from catley import config
+from catley import config, input_events
 from catley.game.actions.movement import MoveIntent
-from catley.input_handler import Keys
+from catley.input_events import Keys
 
 if TYPE_CHECKING:
     from catley.controller import Controller
@@ -47,7 +45,7 @@ class MoveIntentGenerator:
         self.is_first_move_of_burst: bool = True
 
     def generate_intent(
-        self, movement_keys: set[tcod.event.KeySym]
+        self, movement_keys: set[input_events.KeySym]
     ) -> MoveIntent | None:
         """Generate a MoveIntent if timing conditions are met.
 
@@ -62,13 +60,13 @@ class MoveIntentGenerator:
             return None
 
         dx, dy = 0, 0
-        if tcod.event.KeySym.UP in movement_keys or Keys.KEY_K in movement_keys:
+        if input_events.KeySym.UP in movement_keys or Keys.KEY_K in movement_keys:
             dy -= 1
-        if tcod.event.KeySym.DOWN in movement_keys or Keys.KEY_J in movement_keys:
+        if input_events.KeySym.DOWN in movement_keys or Keys.KEY_J in movement_keys:
             dy += 1
-        if tcod.event.KeySym.LEFT in movement_keys or Keys.KEY_H in movement_keys:
+        if input_events.KeySym.LEFT in movement_keys or Keys.KEY_H in movement_keys:
             dx -= 1
-        if tcod.event.KeySym.RIGHT in movement_keys or Keys.KEY_L in movement_keys:
+        if input_events.KeySym.RIGHT in movement_keys or Keys.KEY_L in movement_keys:
             dx += 1
 
         if dx == 0 and dy == 0:

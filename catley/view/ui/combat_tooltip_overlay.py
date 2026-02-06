@@ -9,9 +9,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import tcod.event
-
-from catley import colors, config
+from catley import colors, config, input_events
 from catley.backends.pillow.canvas import PillowImageCanvas
 from catley.game.actors import Character
 from catley.types import PixelCoord
@@ -218,6 +216,6 @@ class CombatTooltipOverlay(TextOverlay):
             color=colors.RED,
         )
 
-    def handle_input(self, event: tcod.event.Event) -> bool:
+    def handle_input(self, event: input_events.InputEvent) -> bool:
         """Non-interactive overlay - always returns False to pass input through."""
         return False

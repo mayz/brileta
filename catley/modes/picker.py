@@ -17,8 +17,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-import tcod.event
-
+from catley import input_events
 from catley.game.actors import Actor, Character
 from catley.modes.base import Mode
 
@@ -117,7 +116,7 @@ class PickerMode(Mode):
 
         super()._exit()
 
-    def handle_input(self, event: tcod.event.Event) -> bool:
+    def handle_input(self, event: input_events.InputEvent) -> bool:
         """Handle picker input.
 
         Escape or T cancels and pops. Left click selects if valid.
@@ -127,7 +126,7 @@ class PickerMode(Mode):
             return False
 
         match event:
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.ESCAPE):
+            case input_events.KeyDown(sym=input_events.KeySym.ESCAPE):
                 # Escape cancels picking
                 callback = self._on_cancel
                 self.controller.pop_mode()
@@ -135,7 +134,7 @@ class PickerMode(Mode):
                     callback()
                 return True
 
-            case tcod.event.MouseButtonDown(button=tcod.event.MouseButton.LEFT):
+            case input_events.MouseButtonDown(button=input_events.MouseButton.LEFT):
                 tile = self._get_tile_at_mouse(event)
                 if tile and self._is_valid_selection(tile):
                     actor = self._get_actor_at_tile(tile)
@@ -165,7 +164,7 @@ class PickerMode(Mode):
             self._render_underneath()
 
     def _get_tile_at_mouse(
-        self, event: tcod.event.MouseButtonDown
+        self, event: input_events.MouseButtonDown
     ) -> tuple[int, int] | None:
         """Convert mouse click position to world tile coordinates."""
         if self.controller.frame_manager is None:

@@ -19,9 +19,7 @@ import abc
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-import tcod.event
-
-from catley import colors, config
+from catley import colors, config, input_events
 from catley.backends.pillow.canvas import PillowImageCanvas
 from catley.types import PixelCoord, PixelPos
 from catley.view.render.canvas import Canvas
@@ -52,7 +50,7 @@ class Overlay(abc.ABC):
         self.is_interactive = True  # Most overlays handle input by default
 
     @abc.abstractmethod
-    def handle_input(self, event: tcod.event.Event) -> bool:
+    def handle_input(self, event: input_events.InputEvent) -> bool:
         """Handle input. Return True if consumed (stops further processing)."""
         pass
 
@@ -217,7 +215,7 @@ class OverlaySystem:
         else:
             self.show_overlay(overlay)
 
-    def handle_input(self, event: tcod.event.Event) -> bool:
+    def handle_input(self, event: input_events.InputEvent) -> bool:
         """Handle input for the active overlays. Returns True if event was consumed."""
         if self.active_overlays:
             # Find the topmost interactive overlay
@@ -418,20 +416,20 @@ class Menu(TextOverlay):
         )
         self.hovered_option_index = self._list_renderer.hovered_index
 
-    def handle_input(self, event: tcod.event.Event) -> bool:
+    def handle_input(self, event: input_events.InputEvent) -> bool:
         """Handle input events for the menu. Returns True if event was consumed."""
         if not self.is_active:
             return False
 
         match event:
-            case tcod.event.MouseMotion():
+            case input_events.MouseMotion():
                 mouse_pixel_pos: PixelPos = event.position
                 mouse_px_x: PixelCoord = mouse_pixel_pos[0]
                 mouse_px_y: PixelCoord = mouse_pixel_pos[1]
                 self._update_mouse_state(mouse_px_x, mouse_px_y)
                 return True
 
-            case tcod.event.MouseButtonDown(button=tcod.event.MouseButton.LEFT):
+            case input_events.MouseButtonDown(button=input_events.MouseButton.LEFT):
                 mouse_pixel_pos: PixelPos = event.position
                 mouse_px_x: PixelCoord = mouse_pixel_pos[0]
                 mouse_px_y: PixelCoord = mouse_pixel_pos[1]
@@ -454,13 +452,13 @@ class Menu(TextOverlay):
                         return True
                 return True
 
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.ESCAPE):
+            case input_events.KeyDown(sym=input_events.KeySym.ESCAPE):
                 self.hide()
                 return True
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.SPACE):
+            case input_events.KeyDown(sym=input_events.KeySym.SPACE):
                 self.hide()
                 return True
-            case tcod.event.KeyDown(sym=tcod.event.KeySym.RETURN):  # Enter key
+            case input_events.KeyDown(sym=input_events.KeySym.RETURN):  # Enter key
                 if (
                     self.options
                     and self.options[0].text.startswith(REPEAT_PREFIX)
@@ -469,7 +467,7 @@ class Menu(TextOverlay):
                     self.options[0].action()
                 self.hide()
                 return True
-            case tcod.event.KeyDown() as key_event:
+            case input_events.KeyDown() as key_event:
                 # Convert key to character
                 key_char = (
                     chr(key_event.sym).lower() if 32 <= key_event.sym <= 126 else ""
@@ -488,7 +486,7 @@ class Menu(TextOverlay):
                         return True
                 return True  # Consume all KeyDown input while menu is active
 
-            case tcod.event.KeyUp():
+            case input_events.KeyUp():
                 return False  # Let KeyUp events pass through to modes
 
         return False

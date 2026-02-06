@@ -28,8 +28,7 @@ from __future__ import annotations
 import abc
 from typing import TYPE_CHECKING
 
-import tcod.event
-
+from catley import input_events
 from catley.game.actors import Character
 
 if TYPE_CHECKING:
@@ -66,7 +65,7 @@ class Mode(abc.ABC):
         self.active = False
 
     @abc.abstractmethod
-    def handle_input(self, event: tcod.event.Event) -> bool:
+    def handle_input(self, event: input_events.InputEvent) -> bool:
         """Handle input events with priority over other systems.
 
         Return True if the event was consumed, preventing it from being

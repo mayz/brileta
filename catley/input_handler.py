@@ -14,10 +14,10 @@ Movement key tracking and UI command handling have moved to ExploreMode.
 from __future__ import annotations
 
 import copy
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING
 
-import tcod.event
-
+from catley import input_events
+from catley.input_events import Keys
 from catley.types import (
     PixelCoord,
     PixelPos,
@@ -32,23 +32,6 @@ if TYPE_CHECKING:
 from .view.ui.commands import (
     QuitUICommand,
 )
-
-
-# Define KeySym constants for alphabetic keys missing from type stubs.
-class Keys:
-    """Container for letter KeySym constants used in pattern matching.
-
-    Note: SDL3/tcod 19 uses lowercase KeySym values for letter keys.
-    """
-
-    KEY_H: Final = tcod.event.KeySym(ord("h"))
-    KEY_J: Final = tcod.event.KeySym(ord("j"))
-    KEY_K: Final = tcod.event.KeySym(ord("k"))
-    KEY_L: Final = tcod.event.KeySym(ord("l"))
-    KEY_Q: Final = tcod.event.KeySym(ord("q"))
-    KEY_I: Final = tcod.event.KeySym(ord("i"))
-    KEY_T: Final = tcod.event.KeySym(ord("t"))
-    KEY_R: Final = tcod.event.KeySym(ord("r"))
 
 
 class InputHandler:
@@ -74,7 +57,7 @@ class InputHandler:
         self.cursor_manager = self.fm.cursor_manager
         self.gw = controller.gw
 
-    def dispatch(self, event: tcod.event.Event) -> None:
+    def dispatch(self, event: input_events.InputEvent) -> None:
         """Main entry point for all input events.
 
         Priority order:
@@ -86,7 +69,7 @@ class InputHandler:
         6. Mouse motion for tile tracking
         """
         # Update mouse cursor position
-        if isinstance(event, tcod.event.MouseState):
+        if isinstance(event, input_events.MouseState):
             px_pos: PixelPos = event.position
             px_x: PixelCoord = px_pos[0]
             px_y: PixelCoord = px_pos[1]
@@ -97,7 +80,7 @@ class InputHandler:
             self.cursor_manager.update_mouse_position(scaled_px_x, scaled_px_y)
 
         # Window close events always work (OS-level, can't prevent)
-        if isinstance(event, tcod.event.Quit):
+        if isinstance(event, input_events.Quit):
             QuitUICommand(self.app).execute()
             return
 
@@ -105,15 +88,15 @@ class InputHandler:
         menu_event = event
         if isinstance(
             event,
-            tcod.event.MouseButtonDown
-            | tcod.event.MouseButtonUp
-            | tcod.event.MouseMotion,
+            input_events.MouseButtonDown
+            | input_events.MouseButtonUp
+            | input_events.MouseMotion,
         ):
             scale_x, scale_y = self.graphics.get_display_scale_factor()
             scaled_x = event.position.x * scale_x
             scaled_y = event.position.y * scale_y
             menu_event = copy.copy(event)
-            menu_event.position = tcod.event.Point(int(scaled_x), int(scaled_y))
+            menu_event.position = input_events.Point(int(scaled_x), int(scaled_y))
 
         # Overlays first: Menus are modal - they consume input before anything else
         assert self.controller.overlay_system is not None
@@ -133,18 +116,18 @@ class InputHandler:
                 return  # Mode consumed the event
 
         # Handle mouse motion for tile tracking and hover effects
-        if isinstance(event, tcod.event.MouseMotion):
+        if isinstance(event, input_events.MouseMotion):
             self._update_mouse_tile_location(event)
             self._update_hover_cursor(event)
 
-    def _is_quit_key(self, event: tcod.event.Event) -> bool:
+    def _is_quit_key(self, event: input_events.InputEvent) -> bool:
         """Check if event is the Q key (quit hotkey)."""
         match event:
-            case tcod.event.KeyDown(sym=Keys.KEY_Q):
+            case input_events.KeyDown(sym=Keys.KEY_Q):
                 return True
         return False
 
-    def _update_mouse_tile_location(self, event: tcod.event.MouseMotion) -> None:
+    def _update_mouse_tile_location(self, event: input_events.MouseMotion) -> None:
         """Update the mouse tile location for hover effects."""
         assert self.fm is not None
 
@@ -172,7 +155,7 @@ class InputHandler:
                 if tooltip.is_active:
                     tooltip.invalidate()
 
-    def _update_hover_cursor(self, event: tcod.event.MouseMotion) -> None:
+    def _update_hover_cursor(self, event: input_events.MouseMotion) -> None:
         """Update cursor based on what the mouse is hovering over.
 
         Changes cursor to hand when hovering over the active equipment slot
@@ -240,8 +223,8 @@ class InputHandler:
         return is_active
 
     def _convert_mouse_coordinates(
-        self, event: tcod.event.MouseState
-    ) -> tcod.event.MouseState:
+        self, event: input_events.MouseState
+    ) -> input_events.MouseState:
         """Convert event pixel coordinates to root console tile coordinates."""
         px_pos: PixelPos = event.position
         px_x: PixelCoord = px_pos[0]
@@ -253,5 +236,5 @@ class InputHandler:
         root_tile_x, root_tile_y = self.graphics.pixel_to_tile(scaled_px_x, scaled_px_y)
 
         event_copy = copy.copy(event)
-        event_copy.position = tcod.event.Point(root_tile_x, root_tile_y)
+        event_copy.position = input_events.Point(root_tile_x, root_tile_y)
         return event_copy

@@ -71,7 +71,7 @@ class App[TGraphics: GraphicsContext](ABC):
     - Window and Context Management: Creates and manages the main application window
       and its underlying graphics context (e.g., OpenGL).
     - Input Event Translation: Captures backend-specific input events and translates
-      them into the game's internal, backend-agnostic event format (tcod.event objects).
+      them into the game's internal, backend-agnostic event format (input_events types).
     - Frame Presentation: Handles the final step of presenting rendered frames to
       screen.
     """
