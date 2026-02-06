@@ -1,12 +1,20 @@
 from __future__ import annotations
 
-from collections.abc import Callable
-from contextlib import contextmanager
+from collections.abc import Callable, Sequence
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from time import perf_counter
-from typing import Any, TypeVar
+from typing import Any, NamedTuple, TypeVar
 
 from .metrics import MostRecentNVar, StatsVar
+
+
+class MetricSpec(NamedTuple):
+    """Definition for a metric to register in batch."""
+
+    name: str
+    description: str
+    num_samples: int = 100
 
 
 @dataclass
@@ -19,6 +27,7 @@ class LiveVariable:
     setter: Callable[[Any], None] | None = None
     formatter: Callable[[Any], str] | None = None
     stats_var: StatsVar | None = None
+    metric: bool = False
 
     def get_value(self) -> Any:
         """Return the current value using the getter."""
@@ -77,6 +86,7 @@ class LiveVariableRegistry:
         description: str = "",
         formatter: Callable[[Any], str] | None = None,
         stats_var: StatsVar | None = None,
+        metric: bool = False,
     ) -> None:
         """Register a new live variable."""
         if name in self._variables:
@@ -88,6 +98,7 @@ class LiveVariableRegistry:
             setter=setter,
             formatter=formatter,
             stats_var=stats_var,
+            metric=metric,
         )
 
     def register_metric(
@@ -133,33 +144,43 @@ class LiveVariableRegistry:
             setter=setter,
             formatter=formatter,
             stats_var=stats_var,
+            metric=True,
         )
 
         self._variables[name] = live_var
         return live_var
+
+    def register_metrics(self, specs: Sequence[MetricSpec]) -> None:
+        """Register multiple metrics from a list of ``MetricSpec`` entries."""
+        for spec in specs:
+            self.register_metric(
+                spec.name, description=spec.description, num_samples=spec.num_samples
+            )
 
     def get_variable(self, name: str) -> LiveVariable | None:
         """Retrieve a registered ``LiveVariable`` by name."""
         return self._variables.get(name)
 
     def get_all_variables(self) -> list[LiveVariable]:
-        """Return all registered variables sorted alphabetically."""
-        return [self._variables[name] for name in sorted(self._variables)]
+        """Return all registered variables, vars first then metrics, each group sorted."""
+        return sorted(self._variables.values(), key=lambda v: (v.metric, v.name))
 
     def get_stats_variables(self) -> list[LiveVariable]:
         """Return all variables that track statistics."""
         return [var for var in self.get_all_variables() if var.has_stats()]
 
-    def record_metric(self, name: str, value: float) -> bool:
+    def record_metric(self, name: str, value: float) -> None:
         """Record a value to a metric variable.
 
-        Returns True if the metric was found and recorded, False otherwise.
+        Raises:
+            KeyError: If the metric name is not registered or has no stats tracker.
         """
         var = self.get_variable(name)
-        if var is None or var.stats_var is None:
-            return False
+        if var is None:
+            raise KeyError(f"Metric '{name}' is not registered")
+        if var.stats_var is None:
+            raise KeyError(f"Variable '{name}' is not a metric (has no stats tracker)")
         var.record_value(value)
-        return True
 
     # ------------------------------------------------------------------
     # Watch Management
@@ -194,12 +215,23 @@ class LiveVariableRegistry:
 live_variable_registry = LiveVariableRegistry()
 
 
-# Simple timing helper
+# Timing helper for recording wall-clock time to a metric.
+# Works as both a context manager and a decorator:
+#   with record_time_live_variable("time.render_ms"): ...
+#   @record_time_live_variable("time.render_ms")
 @contextmanager
 def record_time_live_variable(metric_name: str):
+    """Record elapsed wall-clock time (ms) to the named metric.
+
+    Silently skips recording if the metric is not registered. This avoids
+    crashing in test environments where the registry is cleared between tests.
+    The direct ``record_metric`` API still raises ``KeyError`` on miss so that
+    explicit call-sites get loud failures.
+    """
     start = perf_counter()
     try:
         yield
     finally:
         elapsed_ms = (perf_counter() - start) * 1000
-        live_variable_registry.record_metric(metric_name, elapsed_ms)
+        with suppress(KeyError):
+            live_variable_registry.record_metric(metric_name, elapsed_ms)

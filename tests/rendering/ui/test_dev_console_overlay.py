@@ -130,39 +130,109 @@ def test_quit_and_exit_commands(cmd: str) -> None:
         ov._execute_command()
 
 
-def test_execute_command_list_outputs_and_filter() -> None:
+def test_list_no_args_enters_filter_mode() -> None:
+    """'list' with no arguments enters interactive filter mode."""
+    live_variable_registry.register("filt.a", getter=lambda: 1)
+
+    ov = make_overlay()
+    ov.input_buffer = "list"
+    ov._execute_command()
+
+    assert ov._filter_mode is True
+    assert len(ov._filter_results) > 0
+
+
+def test_list_with_pattern_shows_tagged_output() -> None:
+    """'list <pattern>' uses substring matching and includes [var]/[metric] tags."""
     live_variable_registry.register(
-        "cache.size",
-        getter=lambda: 1,
-        description="Size of cache",
+        "cache.size", getter=lambda: 1, description="Size of cache"
     )
     live_variable_registry.register(
-        "cache.enabled",
-        getter=lambda: True,
-        description="Cache enabled",
+        "cache.enabled", getter=lambda: True, description="Cache enabled"
     )
     live_variable_registry.register(
-        "misc.value",
-        getter=lambda: 0,
-        description="Misc value",
+        "misc.value", getter=lambda: 0, description="Misc value"
     )
 
     ov = make_overlay()
 
-    prev_len = len(ov.history)
-    ov.input_buffer = "list"
-    ov._execute_command()
-    all_lines = list(ov.history)[prev_len + 1 :]
-    assert any("cache.size" in line for line in all_lines)
-    assert any("cache.enabled" in line for line in all_lines)
-    assert any("misc.value" in line for line in all_lines)
-
+    # Substring filter
     prev_len = len(ov.history)
     ov.input_buffer = "list cache"
     ov._execute_command()
     filtered = list(ov.history)[prev_len + 1 :]
     assert len(filtered) == 2
-    assert all(line.startswith("  cache") for line in filtered)
+    assert all("[var]" in line for line in filtered)
+    assert all("cache." in line for line in filtered)
+
+
+def test_list_vars_and_metrics_categories() -> None:
+    """'list vars' and 'list metrics' filter by kind."""
+    live_variable_registry.register("cat.var", getter=lambda: 1)
+    live_variable_registry.register_metric("cat.metric", description="A metric")
+
+    ov = make_overlay()
+
+    prev_len = len(ov.history)
+    ov.input_buffer = "list vars"
+    ov._execute_command()
+    var_lines = list(ov.history)[prev_len + 1 :]
+    assert any("cat.var" in line for line in var_lines)
+    assert not any("cat.metric" in line for line in var_lines)
+
+    prev_len = len(ov.history)
+    ov.input_buffer = "list metrics"
+    ov._execute_command()
+    metric_lines = list(ov.history)[prev_len + 1 :]
+    assert any("cat.metric" in line for line in metric_lines)
+    assert not any("cat.var" in line for line in metric_lines)
+
+
+def test_natural_syntax_get() -> None:
+    """Typing a bare variable name prints its value."""
+    store = {"v": 42}
+    live_variable_registry.register(
+        "nat.get",
+        getter=lambda: store["v"],
+    )
+
+    ov = make_overlay()
+    ov.input_buffer = "nat.get"
+    ov._execute_command()
+    assert "nat.get = 42" in ov.history[-1]
+
+
+def test_natural_syntax_set() -> None:
+    """Typing 'varname = value' sets the variable."""
+    store = {"v": 0}
+    live_variable_registry.register(
+        "nat.set",
+        getter=lambda: store["v"],
+        setter=lambda v: store.__setitem__("v", v),
+    )
+
+    ov = make_overlay()
+
+    # With spaces around =
+    ov.input_buffer = "nat.set = 7"
+    ov._execute_command()
+    assert store["v"] == 7
+    assert "nat.set = 7" in ov.history[-1]
+
+    # Without spaces
+    ov.input_buffer = "nat.set=99"
+    ov._execute_command()
+    assert store["v"] == 99
+
+
+def test_natural_syntax_set_missing_value() -> None:
+    """'varname =' without a value shows usage."""
+    live_variable_registry.register("nat.empty", getter=lambda: 0)
+
+    ov = make_overlay()
+    ov.input_buffer = "nat.empty ="
+    ov._execute_command()
+    assert "Usage:" in ov.history[-1]
 
 
 def test_handle_input_typing_and_submit(monkeypatch) -> None:
@@ -212,7 +282,8 @@ def test_draw_content_uses_tile_height() -> None:
     ov.tile_dimensions = (8, 16)
     ov.height = 3
     ov.pixel_width = 10
-    ov.pixel_height = 48
+    ov.pixel_height = 52  # 3 * 16 + 4 descender padding
+    ov.history.clear()
     ov.history.append("line")
     ov._cursor_visible = False
     ov.canvas.get_effective_line_height.return_value = 12
@@ -226,7 +297,8 @@ def test_draw_content_uses_tile_height() -> None:
     assert calls[1].args[1] == 32  # prompt y position
 
 
-def test_tab_completion_cycles_candidates() -> None:
+def test_tab_completion_shows_candidates_and_common_prefix() -> None:
+    """First Tab completes to common prefix and lists candidates in history."""
     live_variable_registry.register("tab.alpha", getter=lambda: 0)
     live_variable_registry.register("tab.beta", getter=lambda: 0)
 
@@ -234,13 +306,82 @@ def test_tab_completion_cycles_candidates() -> None:
     ov.show()
     ov.input_buffer = "get tab."
 
-    e = tcod.event.KeyDown(0, tcod.event.KeySym.TAB, 0)
-    ov.handle_input(e)
-    first = ov.input_buffer
-    assert first in {"get tab.alpha", "get tab.beta"}
+    ov.handle_input(tcod.event.KeyDown(0, tcod.event.KeySym.TAB, 0))
+
+    # Common prefix of "tab.alpha" and "tab.beta" is "tab.".
+    # Input should stay at common prefix (no further common chars).
+    assert ov.input_buffer == "get tab."
+
+    # Both candidates should be listed in history.
+    assert any("tab.alpha" in line for line in ov.history)
+    assert any("tab.beta" in line for line in ov.history)
+
+
+def test_tab_completion_unique_match() -> None:
+    """Single candidate completes immediately without listing."""
+    live_variable_registry.register("uniq.only", getter=lambda: 0)
+
+    ov = make_overlay()
+    ov.show()
+    prev_history_len = len(ov.history)
+    ov.input_buffer = "get uniq."
 
     ov.handle_input(tcod.event.KeyDown(0, tcod.event.KeySym.TAB, 0))
+    assert ov.input_buffer == "get uniq.only"
+    # No candidates should be printed for a unique match.
+    assert len(ov.history) == prev_history_len
+
+
+def test_tab_completion_cycles_after_listing() -> None:
+    """Subsequent Tabs cycle through candidates after the initial listing."""
+    live_variable_registry.register("cyc.a", getter=lambda: 0)
+    live_variable_registry.register("cyc.b", getter=lambda: 0)
+
+    ov = make_overlay()
+    ov.show()
+    ov.input_buffer = "get cyc."
+
+    # First Tab: show candidates, complete to common prefix.
+    ov.handle_input(tcod.event.KeyDown(0, tcod.event.KeySym.TAB, 0))
+    assert ov.input_buffer == "get cyc."
+
+    # Second Tab: cycle to first candidate.
+    ov.handle_input(tcod.event.KeyDown(0, tcod.event.KeySym.TAB, 0))
+    first = ov.input_buffer
+    assert first in {"get cyc.a", "get cyc.b"}
+
+    # Third Tab: cycle to second candidate.
+    ov.handle_input(tcod.event.KeyDown(0, tcod.event.KeySym.TAB, 0))
     assert ov.input_buffer != first
+
+
+def test_tab_completion_reverse_with_shift_tab() -> None:
+    """Shift+Tab cycles candidates in reverse order."""
+    live_variable_registry.register("stab.a", getter=lambda: 0)
+    live_variable_registry.register("stab.b", getter=lambda: 0)
+    live_variable_registry.register("stab.c", getter=lambda: 0)
+
+    ov = make_overlay()
+    ov.show()
+    ov.input_buffer = "get stab."
+
+    # First Tab: show candidates + common prefix.
+    ov.handle_input(tcod.event.KeyDown(0, tcod.event.KeySym.TAB, 0))
+
+    # Forward to first candidate.
+    ov.handle_input(tcod.event.KeyDown(0, tcod.event.KeySym.TAB, 0))
+    first = ov.input_buffer
+
+    # Forward to second.
+    ov.handle_input(tcod.event.KeyDown(0, tcod.event.KeySym.TAB, 0))
+    second = ov.input_buffer
+    assert second != first
+
+    # Shift+Tab back to first.
+    ov.handle_input(
+        tcod.event.KeyDown(0, tcod.event.KeySym.TAB, tcod.event.Modifier.SHIFT)
+    )
+    assert ov.input_buffer == first
 
 
 def test_history_navigation_up_down() -> None:
@@ -284,4 +425,108 @@ def test_console_consumes_all_keydown_events() -> None:
     event = tcod.event.KeyDown(0, key_t, 0)
     result = ov.handle_input(event)
 
+    assert result is True
+
+
+def test_scrollback_shift_up_down() -> None:
+    """Shift+Up/Down scrolls through command history."""
+    ov = make_overlay()
+    ov.show()
+    shift = tcod.event.Modifier.SHIFT
+
+    # Fill history with some lines.
+    for i in range(20):
+        ov.history.append(f"line {i}")
+
+    # Shift+Up increases scroll offset.
+    ov.handle_input(tcod.event.KeyDown(0, tcod.event.KeySym.UP, shift))
+    assert ov._scroll_offset == 3
+
+    ov.handle_input(tcod.event.KeyDown(0, tcod.event.KeySym.UP, shift))
+    assert ov._scroll_offset == 6
+
+    # Shift+Down decreases scroll offset.
+    ov.handle_input(tcod.event.KeyDown(0, tcod.event.KeySym.DOWN, shift))
+    assert ov._scroll_offset == 3
+
+    # Can't go below zero.
+    for _ in range(5):
+        ov.handle_input(tcod.event.KeyDown(0, tcod.event.KeySym.DOWN, shift))
+    assert ov._scroll_offset == 0
+
+
+def test_filter_mode_navigation() -> None:
+    """Filter mode supports typing, navigation, and selection."""
+    live_variable_registry.register("flt.alpha", getter=lambda: 1)
+    live_variable_registry.register("flt.beta", getter=lambda: 2)
+    live_variable_registry.register("flt.gamma", getter=lambda: 3)
+
+    ov = make_overlay()
+    ov.show()
+
+    # Enter filter mode.
+    ov._enter_filter_mode()
+    assert ov._filter_mode is True
+    assert len(ov._filter_results) >= 3  # at least our three vars
+
+    # Type to filter.
+    ov.handle_input(tcod.event.TextInput("f"))
+    ov.handle_input(tcod.event.TextInput("l"))
+    ov.handle_input(tcod.event.TextInput("t"))
+    assert all("flt." in v.name for v in ov._filter_results)
+
+    # Navigate with Down.
+    ov.handle_input(tcod.event.KeyDown(0, tcod.event.KeySym.DOWN, 0))
+    assert ov._filter_selected == 1
+
+    # Navigate with Up.
+    ov.handle_input(tcod.event.KeyDown(0, tcod.event.KeySym.UP, 0))
+    assert ov._filter_selected == 0
+
+    # Select with Enter.
+    selected_name = ov._filter_results[0].name
+    ov.handle_input(tcod.event.KeyDown(0, tcod.event.KeySym.RETURN, 0))
+    assert ov._filter_mode is False
+    assert ov.input_buffer == selected_name
+
+
+def test_filter_mode_escape_cancels() -> None:
+    """Escape in filter mode exits without selecting."""
+    live_variable_registry.register("fesc.a", getter=lambda: 0)
+
+    ov = make_overlay()
+    ov.show()
+    ov.input_buffer = "original"
+
+    ov._enter_filter_mode()
+    assert ov._filter_mode is True
+
+    ov.handle_input(tcod.event.KeyDown(0, tcod.event.KeySym.ESCAPE, 0))
+    assert ov._filter_mode is False
+    # Input buffer should NOT have been changed (no selection made).
+    assert ov.input_buffer == "original"
+
+
+def test_filter_mode_backspace() -> None:
+    """Backspace in filter mode removes characters from the filter text."""
+    live_variable_registry.register("fbsp.x", getter=lambda: 0)
+
+    ov = make_overlay()
+    ov.show()
+    ov._enter_filter_mode("fbsp")
+    assert ov._filter_text == "fbsp"
+
+    ov.handle_input(tcod.event.KeyDown(0, tcod.event.KeySym.BACKSPACE, 0))
+    assert ov._filter_text == "fbs"
+
+
+def test_filter_mode_consumes_keydown() -> None:
+    """Filter mode consumes all KeyDown events."""
+    ov = make_overlay()
+    ov.show()
+    ov._enter_filter_mode()
+
+    key_i = tcod.event.KeySym(ord("i"))
+    event = tcod.event.KeyDown(0, key_i, 0)
+    result = ov.handle_input(event)
     assert result is True

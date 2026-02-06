@@ -32,7 +32,7 @@ from catley.types import (
     WorldTilePos,
 )
 from catley.util.coordinates import Rect
-from catley.util.live_vars import live_variable_registry
+from catley.util.live_vars import MetricSpec, live_variable_registry
 
 from .render.effects.effects import EffectContext
 from .render.effects.screen_shake import ScreenShake
@@ -50,6 +50,35 @@ from .views.world_view import WorldView
 
 if TYPE_CHECKING:
     from catley.controller import Controller
+
+# Render metrics.
+_RENDER_METRICS: list[MetricSpec] = [
+    MetricSpec("time.render_ms", "Total rendering", 500),
+    MetricSpec("time.render.light_overlay_ms", "Light overlay rendering"),
+    MetricSpec("time.render.map_unlit_ms", "Unlit map rendering"),
+    MetricSpec("time.render.actors_smooth_ms", "Smooth actor rendering"),
+    MetricSpec("time.render.actors_traditional_ms", "Traditional actor rendering"),
+    MetricSpec("time.render.present_background_ms", "Presenting background texture"),
+    MetricSpec(
+        "time.render.present_light_overlay_ms", "Presenting light overlay texture"
+    ),
+    MetricSpec("time.render.particles_under_actors_ms", "Particles under actors"),
+    MetricSpec("time.render.particles_over_actors_ms", "Particles over actors"),
+    MetricSpec("time.render.active_mode_world_ms", "Active mode world elements"),
+    MetricSpec("time.render.environmental_effects_ms", "Environmental effects"),
+    MetricSpec("time.render.bg_texture_upload_ms", "Background texture GPU upload"),
+    MetricSpec(
+        "time.render.light_texture_upload_ms", "Light overlay texture GPU upload"
+    ),
+    MetricSpec("time.render.atmospheric_ms", "Atmospheric effects (clouds, shadows)"),
+    MetricSpec("time.render.decals_ms", "Decal rendering"),
+    MetricSpec("time.render.floating_text_ms", "Floating text rendering"),
+    # TextureRenderer breakdown
+    MetricSpec("time.render.texture.fbo_bind_clear_ms", "FBO bind and clear"),
+    MetricSpec("time.render.texture.vbo_update_ms", "VBO vertex encode and upload"),
+    MetricSpec("time.render.texture.render_ms", "Render pass"),
+]
+live_variable_registry.register_metrics(_RENDER_METRICS)
 
 
 class FrameManager:
@@ -117,6 +146,7 @@ class FrameManager:
             getter=lambda: self.controller.clock.mean_fps,
             formatter=lambda v: f"{v:4.0f}",
             description="Current frames per second.",
+            metric=True,
         )
 
         if config.SHOW_FPS:
@@ -183,95 +213,6 @@ class FrameManager:
     def get_visible_bounds(self) -> Rect | None:
         """Return the world-space bounds currently visible in the world view."""
         return self.world_view.viewport_system.get_visible_bounds()
-
-    def register_metrics(self) -> None:
-        """Registers live variables specific to the App layer."""
-        live_variable_registry.register_metric(
-            "cpu.render_ms",
-            description="CPU time for rendering",
-            num_samples=500,
-        )
-        live_variable_registry.register_metric(
-            "cpu.render.light_overlay_ms",
-            description="CPU time for light overlay rendering",
-            num_samples=100,
-        )
-        live_variable_registry.register_metric(
-            "cpu.render.map_unlit_ms",
-            description="CPU time for unlit map rendering",
-            num_samples=100,
-        )
-        live_variable_registry.register_metric(
-            "cpu.render.actors_smooth_ms",
-            description="CPU time for smooth actor rendering",
-            num_samples=100,
-        )
-        live_variable_registry.register_metric(
-            "cpu.render.actors_traditional_ms",
-            description="CPU time for traditional actor rendering",
-            num_samples=100,
-        )
-        live_variable_registry.register_metric(
-            "cpu.render.present_background_ms",
-            description="CPU time for presenting background texture",
-            num_samples=100,
-        )
-        live_variable_registry.register_metric(
-            "cpu.render.present_light_overlay_ms",
-            description="CPU time for presenting light overlay texture",
-            num_samples=100,
-        )
-        live_variable_registry.register_metric(
-            "cpu.render.particles_under_actors_ms",
-            description="CPU time for rendering particles under actors",
-            num_samples=100,
-        )
-        live_variable_registry.register_metric(
-            "cpu.render.particles_over_actors_ms",
-            description="CPU time for rendering particles over actors",
-            num_samples=100,
-        )
-        live_variable_registry.register_metric(
-            "cpu.render.active_mode_world_ms",
-            description="CPU time for rendering active mode world elements",
-            num_samples=100,
-        )
-        live_variable_registry.register_metric(
-            "cpu.render.environmental_effects_ms",
-            description="CPU time for rendering environmental effects",
-            num_samples=100,
-        )
-        live_variable_registry.register_metric(
-            "cpu.render.bg_texture_upload_ms",
-            description="CPU time for uploading background texture to GPU",
-            num_samples=100,
-        )
-        live_variable_registry.register_metric(
-            "cpu.render.light_texture_upload_ms",
-            description="CPU time for uploading light overlay texture to GPU",
-            num_samples=100,
-        )
-        # TextureRenderer breakdown metrics
-        live_variable_registry.register_metric(
-            "cpu.texture_renderer.fbo_bind_clear_ms",
-            description="Time to bind FBO and clear it",
-            num_samples=100,
-        )
-        live_variable_registry.register_metric(
-            "cpu.texture_renderer.vbo_update_ms",
-            description="Time to encode vertices and upload to VBO",
-            num_samples=100,
-        )
-        live_variable_registry.register_metric(
-            "cpu.texture_renderer.render_ms",
-            description="Time for the actual render pass",
-            num_samples=100,
-        )
-        live_variable_registry.register_metric(
-            "cpu.render.atmospheric_ms",
-            description="CPU time for atmospheric effects (clouds, shadows)",
-            num_samples=100,
-        )
 
     def on_window_resized(self) -> None:
         """Called when the game window is resized to update view layouts."""

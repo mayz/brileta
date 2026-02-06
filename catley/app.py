@@ -5,8 +5,18 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from catley.types import DeltaTime, InterpolationAlpha
-from catley.util.live_vars import live_variable_registry, record_time_live_variable
+from catley.util.live_vars import (
+    MetricSpec,
+    live_variable_registry,
+    record_time_live_variable,
+)
 from catley.view.render.graphics import GraphicsContext
+
+# App-level metrics.
+_APP_METRICS: list[MetricSpec] = [
+    MetricSpec("time.total_ms", "Total time for one visual frame", 1000),
+]
+live_variable_registry.register_metrics(_APP_METRICS)
 
 if TYPE_CHECKING:
     from catley.controller import Controller
@@ -80,18 +90,6 @@ class App[TGraphics: GraphicsContext](ABC):
 
         self.controller = Controller(self, self.graphics)
         self.controller.update_fov()
-
-        # Register performance metrics
-        self.register_metrics()
-        self.controller.register_metrics()
-
-    def register_metrics(self) -> None:
-        """Registers live variables for performance monitoring."""
-        live_variable_registry.register_metric(
-            "cpu.total_frame_ms",
-            description="Total CPU time for one visual frame",
-            num_samples=1000,
-        )
 
     @abstractmethod
     def run(self) -> None:
@@ -194,7 +192,7 @@ class App[TGraphics: GraphicsContext](ABC):
         """
         assert self.controller is not None
 
-        with record_time_live_variable("cpu.total_frame_ms"):
+        with record_time_live_variable("time.total_ms"):
             self.prepare_for_new_frame()
             self.controller.render_visual_frame(alpha)
             self.present_frame()

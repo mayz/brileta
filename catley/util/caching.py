@@ -64,8 +64,8 @@ class ResourceCache[KeyType, ValueType]:
         live_variable_registry.register(
             name=f"cache.{self.name}.stats",
             getter=lambda: str(self.stats),
-            setter=None,
             description=f"Live stats for the {self.name} cache.",
+            metric=True,
         )
 
     def get(self, key: KeyType) -> ValueType | None:

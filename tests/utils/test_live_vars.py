@@ -91,6 +91,30 @@ def test_toggle_watch() -> None:
     assert live_variable_registry.get_watched_variables() == []
 
 
+def test_record_metric_raises_on_unknown_name() -> None:
+    """record_metric raises KeyError when the metric is not registered."""
+    with pytest.raises(KeyError, match="not registered"):
+        live_variable_registry.record_metric("nonexistent.metric", 1.0)
+
+
+def test_record_metric_raises_on_non_metric_variable() -> None:
+    """record_metric raises KeyError when the variable has no stats tracker."""
+    live_variable_registry.register("plain.var", getter=lambda: 0)
+    with pytest.raises(KeyError, match="not a metric"):
+        live_variable_registry.record_metric("plain.var", 1.0)
+
+
+def test_record_metric_succeeds_for_registered_metric() -> None:
+    """record_metric works for properly registered metrics."""
+    live_variable_registry.register_metric("timing.test", description="Test metric")
+    # Should not raise.
+    live_variable_registry.record_metric("timing.test", 42.0)
+    var = live_variable_registry.get_variable("timing.test")
+    assert var is not None
+    assert var.stats_var is not None
+    assert var.stats_var.sample_count == 1
+
+
 def test_get_watched_variables_sorted() -> None:
     live_variable_registry.register("watch.b", getter=lambda: 1)
     live_variable_registry.register("watch.a", getter=lambda: 1)

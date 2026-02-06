@@ -318,7 +318,7 @@ class WorldView(View):
 
         # Render the GlyphBuffer to a texture. The TextureRenderer's change
         # detection skips re-rendering if the buffer hasn't changed.
-        with record_time_live_variable("cpu.render.bg_texture_upload_ms"):
+        with record_time_live_variable("time.render.bg_texture_upload_ms"):
             texture = graphics.render_glyph_buffer_to_texture(
                 self.map_glyph_buffer, cache_key_suffix="bg"
             )
@@ -333,7 +333,7 @@ class WorldView(View):
 
             if light_overlay_data is not None:
                 # Ask the graphics context to turn this DATA into a RENDERABLE TEXTURE
-                with record_time_live_variable("cpu.render.light_texture_upload_ms"):
+                with record_time_live_variable("time.render.light_texture_upload_ms"):
                     self._light_overlay_texture = (
                         graphics.render_glyph_buffer_to_texture(
                             light_overlay_data, cache_key_suffix="light"
@@ -411,7 +411,7 @@ class WorldView(View):
 
         # 1. Present the cached unlit background with combined offset
         if self._active_background_texture:
-            with record_time_live_variable("cpu.render.present_background_ms"):
+            with record_time_live_variable("time.render.present_background_ms"):
                 graphics.draw_background(
                     self._active_background_texture,
                     self.x,
@@ -424,7 +424,7 @@ class WorldView(View):
 
         # 2. Present the dynamic light overlay on top of the background
         if self._light_overlay_texture:
-            with record_time_live_variable("cpu.render.present_light_overlay_ms"):
+            with record_time_live_variable("time.render.present_light_overlay_ms"):
                 graphics.draw_background(
                     self._light_overlay_texture,
                     self.x,
@@ -468,7 +468,7 @@ class WorldView(View):
 
         set_atmospheric_layer = getattr(graphics, "set_atmospheric_layer", None)
         if config.ATMOSPHERIC_EFFECTS_ENABLED and callable(set_atmospheric_layer):
-            with record_time_live_variable("cpu.render.atmospheric_ms"):
+            with record_time_live_variable("time.render.atmospheric_ms"):
                 active_layers = self.atmospheric_system.get_active_layers()
                 # Render mist first, then shadows, to keep shadows readable on top.
                 active_layers.sort(
@@ -532,7 +532,7 @@ class WorldView(View):
                     )
 
         # Render persistent decals (blood splatters, etc.) on the floor
-        with record_time_live_variable("cpu.render.decals_ms"):
+        with record_time_live_variable("time.render.decals_ms"):
             graphics.render_decals(
                 self.decal_system,
                 viewport_bounds,
@@ -541,7 +541,7 @@ class WorldView(View):
                 self._game_time,
             )
 
-        with record_time_live_variable("cpu.render.particles_under_actors_ms"):
+        with record_time_live_variable("time.render.particles_under_actors_ms"):
             graphics.render_particles(
                 self.particle_system,
                 ParticleLayer.UNDER_ACTORS,
@@ -557,11 +557,11 @@ class WorldView(View):
 
         # Render highlights and mode-specific UI on top of actors
         # Render all modes in the stack (bottom-to-top) so higher modes draw on top
-        with record_time_live_variable("cpu.render.active_mode_world_ms"):
+        with record_time_live_variable("time.render.active_mode_world_ms"):
             for mode in self.controller.mode_stack:
                 mode.render_world()
 
-        with record_time_live_variable("cpu.render.particles_over_actors_ms"):
+        with record_time_live_variable("time.render.particles_over_actors_ms"):
             graphics.render_particles(
                 self.particle_system,
                 ParticleLayer.OVER_ACTORS,
@@ -570,7 +570,7 @@ class WorldView(View):
                 self.viewport_system,
             )
 
-        with record_time_live_variable("cpu.render.floating_text_ms"):
+        with record_time_live_variable("time.render.floating_text_ms"):
             self.floating_text_manager.render(
                 graphics,
                 self.viewport_system,
@@ -579,7 +579,7 @@ class WorldView(View):
             )
 
         if config.ENVIRONMENTAL_EFFECTS_ENABLED:
-            with record_time_live_variable("cpu.render.environmental_effects_ms"):
+            with record_time_live_variable("time.render.environmental_effects_ms"):
                 self.environmental_system.render_effects(
                     graphics,
                     viewport_bounds,
@@ -600,7 +600,7 @@ class WorldView(View):
     # Internal rendering helpers
     # ------------------------------------------------------------------
 
-    @record_time_live_variable("cpu.render.map_unlit_ms")
+    @record_time_live_variable("time.render.map_unlit_ms")
     def _render_map_unlit(self) -> None:
         """Renders the static, unlit background of the game world.
 
@@ -689,7 +689,7 @@ class WorldView(View):
             # so this method can simply be a no-op or pass.
             pass
 
-    @record_time_live_variable("cpu.render.actors_smooth_ms")
+    @record_time_live_variable("time.render.actors_smooth_ms")
     def _render_actors_smooth(
         self, graphics: GraphicsContext, alpha: InterpolationAlpha
     ) -> None:
@@ -1006,7 +1006,7 @@ class WorldView(View):
 
         return base_color
 
-    @record_time_live_variable("cpu.render.actors_traditional_ms")
+    @record_time_live_variable("time.render.actors_traditional_ms")
     def _render_actors_traditional(
         self, graphics: GraphicsContext, alpha: InterpolationAlpha
     ) -> None:
@@ -1178,7 +1178,7 @@ class WorldView(View):
 
         self.controller.gw.mouse_tile_location_on_map = world_tile_pos
 
-    @record_time_live_variable("cpu.render.light_overlay_ms")
+    @record_time_live_variable("time.render.light_overlay_ms")
     def _render_light_overlay(self, graphics: GraphicsContext) -> Any | None:
         """Render pure light world overlay with GPU alpha blending."""
         if self.lighting_system is None:

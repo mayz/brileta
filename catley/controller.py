@@ -40,7 +40,11 @@ from .modes.picker import PickerMode
 from .types import FixedTimestep, InterpolationAlpha, RandomSeed
 from .util.clock import Clock
 from .util.coordinates import Rect, WorldTilePos
-from .util.live_vars import live_variable_registry, record_time_live_variable
+from .util.live_vars import (
+    MetricSpec,
+    live_variable_registry,
+    record_time_live_variable,
+)
 from .util.message_log import MessageLog
 from .view.animation import AnimationManager
 from .view.frame_manager import FrameManager
@@ -49,6 +53,14 @@ from .view.render.graphics import GraphicsContext
 from .view.ui.overlays import OverlaySystem
 
 logger = logging.getLogger(__name__)
+
+# Controller-level metrics.
+_CONTROLLER_METRICS: list[MetricSpec] = [
+    MetricSpec("time.logic_ms", "One fixed logic step", 500),
+    MetricSpec("time.logic.animation_ms", "Animation updates", 500),
+    MetricSpec("time.logic.action_ms", "Action processing", 500),
+]
+live_variable_registry.register_metrics(_CONTROLLER_METRICS)
 
 
 class Controller:
@@ -364,27 +376,6 @@ class Controller:
             return None
         return self.frame_manager.get_visible_bounds()
 
-    def register_metrics(self) -> None:
-        """Register all performance monitoring metrics with live variable registry."""
-        live_variable_registry.register_metric(
-            "cpu.logic_step_ms",
-            description="CPU time for one fixed logic step",
-            num_samples=500,
-        )
-        live_variable_registry.register_metric(
-            "cpu.animation_update_ms",
-            description="CPU time for animation updates",
-            num_samples=500,
-        )
-        live_variable_registry.register_metric(
-            "cpu.action_processing_ms",
-            description="CPU time for action processing",
-            num_samples=500,
-        )
-
-        # Cascade the call to the FrameManager
-        self.frame_manager.register_metrics()
-
     def process_player_input(self) -> None:
         """Process all pending player input.
 
@@ -444,14 +435,14 @@ class Controller:
         Runs one fixed-step of game logic for animations and non-player actors.
         Called by the App's fixed-step loop.
         """
-        with record_time_live_variable("cpu.logic_step_ms"):
+        with record_time_live_variable("time.logic_ms"):
             # SNAPSHOT PREVIOUS STATE: Save current positions for smooth
             # This allows rendering to blend smoothly between old/new
             for actor in self.gw.actors:
                 actor.prev_x = actor.x
                 actor.prev_y = actor.y
 
-            with record_time_live_variable("cpu.animation_update_ms"):
+            with record_time_live_variable("time.logic.animation_ms"):
                 # ANIMATIONS: Update frame-independent systems
                 # Ensures consistent animation timing regardless of FPS
                 self.animation_manager.update(self.fixed_timestep)
@@ -471,7 +462,7 @@ class Controller:
             # Update presentation manager (dispatches staggered combat feedback)
             self.presentation_manager.update(self.fixed_timestep)
 
-            with record_time_live_variable("cpu.action_processing_ms"):
+            with record_time_live_variable("time.logic.action_ms"):
                 # GAME LOGIC: Process all NPC actions for this step
                 # This is where the core game simulation happens
                 self._process_all_available_npc_actions()
@@ -479,7 +470,7 @@ class Controller:
     def render_visual_frame(self, alpha: InterpolationAlpha) -> None:
         """Renders one visual frame with interpolation. Called by the App."""
         assert self.frame_manager is not None
-        with record_time_live_variable("cpu.render_ms"):
+        with record_time_live_variable("time.render_ms"):
             # Uses alpha to smoothly blend between prev_* and current
             self.frame_manager.render_frame(alpha)
 

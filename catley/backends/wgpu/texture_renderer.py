@@ -242,7 +242,7 @@ class WGPUTextureRenderer:
             self.uniform_buffer, 0, memoryview(texture_size_data)
         )
 
-        with record_time_live_variable("cpu.texture_renderer.vbo_update_ms"):
+        with record_time_live_variable("time.render.texture.vbo_update_ms"):
             vertex_count = self._build_glyph_vertices(glyph_buffer, cpu_buffer_override)
 
             # Upload vertex buffer to GPU
@@ -257,7 +257,7 @@ class WGPUTextureRenderer:
             # Return texture even if no vertices (already cleared)
             return render_texture
 
-        with record_time_live_variable("cpu.texture_renderer.render_ms"):
+        with record_time_live_variable("time.render.texture.render_ms"):
             # Create command encoder
             command_encoder = self.resource_manager.device.create_command_encoder()
 
