@@ -87,9 +87,9 @@ def main() -> None:
         ("Small radius", _make_open_field(120, 80), (60, 40), 10),
     ]
 
-    print("FOV Benchmark: ours (Python) vs tcod (C)")
+    print("FOV Benchmark: ours (native C extension) vs tcod (C)")
     print("=" * 62)
-    print(f"{'Scenario':<24} {'tcod (C)':>10} {'ours (Py)':>12} {'ratio':>8}")
+    print(f"{'Scenario':<24} {'tcod (C)':>10} {'ours (native)':>14} {'ratio':>8}")
     print("-" * 62)
 
     for name, transparent, origin, radius in scenarios:

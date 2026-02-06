@@ -4,7 +4,7 @@
 MAKEFLAGS += --silent
 
 NATIVE_STAMP := .venv/.native-build-stamp
-NATIVE_SOURCES := setup.py pyproject.toml catley/util/_native.c catley/util/_native_pathfinding.c
+NATIVE_SOURCES := setup.py pyproject.toml catley/util/_native.c catley/util/_native_pathfinding.c catley/util/_native_fov.c
 
 # Default target - run all quality checks
 all: native-build lint test

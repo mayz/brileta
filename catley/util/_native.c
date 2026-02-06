@@ -11,6 +11,8 @@
 
 /* Pathfinding entry points provided by _native_pathfinding.c. */
 PyObject *catley_native_astar(PyObject *self, PyObject *args);
+/* FOV entry point provided by _native_fov.c. */
+PyObject *catley_native_fov(PyObject *self, PyObject *args);
 
 static PyMethodDef methods[] = {
     {"astar", catley_native_astar, METH_VARARGS,
@@ -18,6 +20,9 @@ static PyMethodDef methods[] = {
      "A* pathfinding on a 2D int16 cost grid with octile diagonal costs.\n"
      "cost: numpy int16 array shape (width, height), 0=blocked.\n"
      "Returns path excluding start, or empty list if no path."},
+    {"fov", catley_native_fov, METH_VARARGS,
+     "fov(transparent, visible, origin_x, origin_y, radius) -> None\n\n"
+     "Compute symmetric shadowcasting FOV in-place into visible."},
     {NULL, NULL, 0, NULL}
 };
 

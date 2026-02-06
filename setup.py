@@ -13,6 +13,7 @@ setup(
             sources=[
                 "catley/util/_native.c",
                 "catley/util/_native_pathfinding.c",
+                "catley/util/_native_fov.c",
             ],
         ),
     ],
