@@ -40,8 +40,7 @@ from catley.util.performance import (
     get_performance_report,
     perf_tracker,
 )
-
-from .instrumented_spatial import InstrumentedSpatialHashGrid as SpatialHashGrid
+from scripts.instrumented_spatial import InstrumentedSpatialHashGrid as SpatialHashGrid
 
 
 @dataclass
