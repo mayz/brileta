@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from contextlib import ExitStack
 from types import SimpleNamespace
-from typing import Any, Self
+from typing import Any, Self, cast
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -21,6 +22,32 @@ from catley.game.items.item_core import Item
 from catley.types import WorldTileCoord
 from catley.util.spatial import SpatialHashGrid
 from catley.view.render.graphics import GraphicsContext
+
+
+class DummyOverlay:
+    """Minimal overlay stub that matches OverlaySystem expectations."""
+
+    def __init__(self, *, interactive: bool = False) -> None:
+        self.is_active = False
+        self.is_interactive = interactive
+
+    def show(self) -> None:
+        self.is_active = True
+
+    def hide(self) -> None:
+        self.is_active = False
+
+    def handle_input(self, _event: object) -> bool:
+        return False
+
+    def draw(self) -> None:
+        return None
+
+    def present(self) -> None:
+        return None
+
+    def invalidate(self) -> None:
+        return None
 
 
 def _make_renderer(tile_height: int = 16) -> GraphicsContext:
@@ -164,328 +191,239 @@ class DummyGameWorld(GameWorld):
         except ValueError:
             pass
 
+    def get_global_lights(self) -> list:
+        """Return global lights for controller sun helpers."""
+        from catley.game.lights import GlobalLight
+
+        return [light for light in self.lights if isinstance(light, GlobalLight)]
+
 
 def get_controller_with_player_and_map() -> Controller:
     """Return a fully initialized ``Controller`` using dummy SDL context."""
-
-    class DummyApp(App):
-        def __init__(self, *_args, **_kwargs) -> None:
-            pass
-
-        def run(self) -> None:  # pragma: no cover - stub
-            pass
-
-        def prepare_for_new_frame(self) -> None:  # pragma: no cover - stub
-            pass
-
-        def present_frame(self) -> None:  # pragma: no cover - stub
-            pass
-
-        def toggle_fullscreen(self) -> None:  # pragma: no cover - stub
-            pass
-
-        def _exit_backend(self) -> None:  # pragma: no cover - stub
-            pass
-
-    class DummyGraphicsContext:
-        def __init__(self, *_args, **_kwargs) -> None:
-            self._coordinate_converter = SimpleNamespace(
-                pixel_to_tile=lambda x, y: (x, y), tile_to_pixel=lambda x, y: (x, y)
-            )
-            self.root_console = SimpleNamespace(
-                width=config.SCREEN_WIDTH, height=config.SCREEN_HEIGHT
-            )
-
-        def create_canvas(self, transparent: bool = True) -> Any:
-            from unittest.mock import MagicMock
-
-            return MagicMock()
-
-        @property
-        def coordinate_converter(self):
-            return self._coordinate_converter
-
-        @property
-        def tile_dimensions(self):
-            return (16, 16)
-
-        @property
-        def console_width_tiles(self):
-            return config.SCREEN_WIDTH
-
-        @property
-        def console_height_tiles(self):
-            return config.SCREEN_HEIGHT
-
-        def clear_console(self, *_a, **_kw) -> None:  # pragma: no cover - stub
-            pass
-
-        def blit_console(self, *_a, **_kw) -> None:  # pragma: no cover - stub
-            pass
-
-        def present_frame(self, *_a, **_kw) -> None:  # pragma: no cover - stub
-            pass
-
-        # Add minimal implementations for all abstract methods
-        def get_display_scale_factor(self):
-            return (1.0, 1.0)
-
-        def render_effects_layer(self, *_a, **_kw):
-            pass
-
-        def render_particles(self, *_a, **_kw):
-            pass
-
-        def update_dimensions(self):
-            pass
-
-        def console_to_screen_coords(self, *_a):
-            return (0, 0)
-
-        def screen_to_console_coords(self, *_a):
-            return (0, 0)
-
-        def draw_actor_smooth(self, *_a, **_kw):
-            pass
-
-        def draw_particles_smooth(self, *_a, **_kw):
-            pass
-
-        def draw_texture_at_screen_pos(self, *_a, **_kw):
-            pass
-
-        def draw_texture_at_tile_pos(self, *_a, **_kw):
-            pass
-
-        def texture_from_console(self, *_a, **_kw):
-            return None
-
-        def render_glyph_buffer_to_texture(self, *_a, **_kw):
-            return None
-
-        def texture_from_numpy(self, *_a, **_kw):
-            return None
-
-        def texture_from_surface(self, *_a, **_kw):
-            return None
-
-        def reset_texture_mods(self, *_a, **_kw):
-            pass
-
-        def draw_debug_rect(self, *_a, **_kw):
-            pass
-
-        def release_texture(self, *_a, **_kw):
-            pass
-
-    class DummyFrameManager:
-        def __init__(self, controller: Controller, graphics: Any = None) -> None:
-            self.controller = controller
-            self.graphics = graphics or getattr(controller, "graphics", None)
-            self.cursor_manager = SimpleNamespace(
-                update_mouse_position=lambda *_a, **_kw: None,
-                set_active_cursor_type=lambda *_a, **_kw: None,
-            )
-
-        def get_visible_bounds(self) -> None:
-            return None
-
-        def render_frame(self, *_a, **_kw) -> None:  # pragma: no cover - stub
-            pass
-
-    class DummyAtlas:
-        def __init__(self) -> None:
-            self.p = SimpleNamespace(texture=None)
-            self.tileset = None
-            self._renderer = SimpleNamespace()
-
-    class DummyContext:
-        def __init__(self) -> None:
-            self.sdl_renderer = SimpleNamespace()
-            self.sdl_atlas = DummyAtlas()
-
-        def __enter__(self) -> Self:  # pragma: no cover - context stub
-            return self
-
-        def __exit__(self, exc_type, exc_val, exc_tb) -> None:  # pragma: no cover
-            pass
-
-    context = DummyContext()
-    root_console = Console(config.SCREEN_WIDTH, config.SCREEN_HEIGHT, order="F")
-    with (
-        patch("catley.controller.FrameManager", DummyFrameManager),
-        patch("catley.controller.InputHandler", lambda c, a: None),
-    ):
-        from typing import cast
-
-        from catley.view.render.graphics import GraphicsContext
-
-        app = DummyApp()
-        graphics = DummyGraphicsContext(
-            cast(tcod.context.Context, context), root_console, (16, 16)
-        )
-        return Controller(app, cast(GraphicsContext, graphics))
+    return _build_dummy_controller(use_dummy_world=False)
 
 
 def get_controller_with_dummy_world() -> Controller:
     """Return a Controller with a DummyGameWorld and no GPU lighting system."""
+    return _build_dummy_controller(use_dummy_world=True)
 
-    class DummyApp(App):
-        def __init__(self, *_args, **_kwargs) -> None:
-            pass
 
-        def run(self) -> None:  # pragma: no cover - stub
-            pass
+class DummyApp(App):
+    def __init__(self, *_args, **_kwargs) -> None:
+        pass
 
-        def prepare_for_new_frame(self) -> None:  # pragma: no cover - stub
-            pass
+    def run(self) -> None:  # pragma: no cover - stub
+        pass
 
-        def present_frame(self) -> None:  # pragma: no cover - stub
-            pass
+    def prepare_for_new_frame(self) -> None:  # pragma: no cover - stub
+        pass
 
-        def toggle_fullscreen(self) -> None:  # pragma: no cover - stub
-            pass
+    def present_frame(self) -> None:  # pragma: no cover - stub
+        pass
 
-        def _exit_backend(self) -> None:  # pragma: no cover - stub
-            pass
+    def toggle_fullscreen(self) -> None:  # pragma: no cover - stub
+        pass
 
-    class DummyGraphicsContext:
-        def __init__(self, *_args, **_kwargs) -> None:
-            self._coordinate_converter = SimpleNamespace(
-                pixel_to_tile=lambda x, y: (x, y), tile_to_pixel=lambda x, y: (x, y)
-            )
-            self.root_console = SimpleNamespace(
-                width=config.SCREEN_WIDTH, height=config.SCREEN_HEIGHT
-            )
+    def _exit_backend(self) -> None:  # pragma: no cover - stub
+        pass
 
-        def create_canvas(self, transparent: bool = True) -> Any:
-            from unittest.mock import MagicMock
 
-            return MagicMock()
+class DummyGraphicsContext:
+    def __init__(self, *_args, **_kwargs) -> None:
+        self._coordinate_converter = SimpleNamespace(
+            pixel_to_tile=lambda x, y: (x, y), tile_to_pixel=lambda x, y: (x, y)
+        )
+        self.resource_manager = None
+        self.root_console = SimpleNamespace(
+            width=config.SCREEN_WIDTH, height=config.SCREEN_HEIGHT
+        )
 
-        @property
-        def coordinate_converter(self):
-            return self._coordinate_converter
+    def create_canvas(self, transparent: bool = True) -> Any:
+        return MagicMock()
 
-        @property
-        def tile_dimensions(self):
-            return (16, 16)
+    @property
+    def coordinate_converter(self):
+        return self._coordinate_converter
 
-        @property
-        def console_width_tiles(self):
-            return config.SCREEN_WIDTH
+    @property
+    def tile_dimensions(self):
+        return (16, 16)
 
-        @property
-        def console_height_tiles(self):
-            return config.SCREEN_HEIGHT
+    @property
+    def console_width_tiles(self):
+        return config.SCREEN_WIDTH
 
-        def clear_console(self, *_a, **_kw) -> None:  # pragma: no cover - stub
-            pass
+    @property
+    def console_height_tiles(self):
+        return config.SCREEN_HEIGHT
 
-        def blit_console(self, *_a, **_kw) -> None:  # pragma: no cover - stub
-            pass
+    def clear_console(self, *_a, **_kw) -> None:  # pragma: no cover - stub
+        pass
 
-        def present_frame(self, *_a, **_kw) -> None:  # pragma: no cover - stub
-            pass
+    def blit_console(self, *_a, **_kw) -> None:  # pragma: no cover - stub
+        pass
 
-        # Add minimal implementations for all abstract methods
-        def get_display_scale_factor(self):
-            return (1.0, 1.0)
+    def present_frame(self, *_a, **_kw) -> None:  # pragma: no cover - stub
+        pass
 
-        def render_effects_layer(self, *_a, **_kw):
-            pass
+    # Add minimal implementations for all abstract methods
+    def get_display_scale_factor(self):
+        return (1.0, 1.0)
 
-        def render_particles(self, *_a, **_kw):
-            pass
+    def render_effects_layer(self, *_a, **_kw):
+        pass
 
-        def update_dimensions(self):
-            pass
+    def render_particles(self, *_a, **_kw):
+        pass
 
-        def console_to_screen_coords(self, *_a):
-            return (0, 0)
+    def update_dimensions(self):
+        pass
 
-        def screen_to_console_coords(self, *_a):
-            return (0, 0)
+    def console_to_screen_coords(self, *_a):
+        return (0, 0)
 
-        def draw_actor_smooth(self, *_a, **_kw):
-            pass
+    def screen_to_console_coords(self, *_a):
+        return (0, 0)
 
-        def draw_particles_smooth(self, *_a, **_kw):
-            pass
+    def draw_actor_smooth(self, *_a, **_kw):
+        pass
 
-        def draw_texture_at_screen_pos(self, *_a, **_kw):
-            pass
+    def draw_particles_smooth(self, *_a, **_kw):
+        pass
 
-        def draw_texture_at_tile_pos(self, *_a, **_kw):
-            pass
+    def draw_texture_at_screen_pos(self, *_a, **_kw):
+        pass
 
-        def texture_from_console(self, *_a, **_kw):
-            return None
+    def draw_texture_at_tile_pos(self, *_a, **_kw):
+        pass
 
-        def render_glyph_buffer_to_texture(self, *_a, **_kw):
-            return None
+    def texture_from_console(self, *_a, **_kw):
+        return None
 
-        def texture_from_numpy(self, *_a, **_kw):
-            return None
+    def render_glyph_buffer_to_texture(self, *_a, **_kw):
+        return None
 
-        def texture_from_surface(self, *_a, **_kw):
-            return None
+    def texture_from_numpy(self, *_a, **_kw):
+        return None
 
-        def reset_texture_mods(self, *_a, **_kw):
-            pass
+    def texture_from_surface(self, *_a, **_kw):
+        return None
 
-        def draw_debug_rect(self, *_a, **_kw):
-            pass
+    def reset_texture_mods(self, *_a, **_kw):
+        pass
 
-        def release_texture(self, *_a, **_kw):
-            pass
+    def draw_debug_rect(self, *_a, **_kw):
+        pass
 
-    class DummyFrameManager:
-        def __init__(self, controller: Controller, graphics: Any = None) -> None:
-            self.controller = controller
-            self.graphics = graphics or getattr(controller, "graphics", None)
-            self.cursor_manager = SimpleNamespace(
-                update_mouse_position=lambda *_a, **_kw: None,
-                set_active_cursor_type=lambda *_a, **_kw: None,
-            )
+    def release_texture(self, *_a, **_kw):
+        pass
 
-        def get_visible_bounds(self) -> None:
-            return None
 
-        def render_frame(self, *_a, **_kw) -> None:  # pragma: no cover - stub
-            pass
+class DummyFrameManager:
+    def __init__(self, controller: Controller, graphics: Any = None) -> None:
+        self.controller = controller
+        self.graphics = graphics or controller.graphics
+        self.cursor_manager = SimpleNamespace(
+            mouse_pixel_x=0,
+            mouse_pixel_y=0,
+            update_mouse_position=lambda *_a, **_kw: None,
+            set_active_cursor_type=lambda *_a, **_kw: None,
+        )
+        self.action_panel_view = SimpleNamespace(
+            x=0,
+            y=0,
+            width=0,
+            height=0,
+            get_hotkeys=lambda: self._build_hotkeys(),
+            update_hover_from_pixel=lambda *_a, **_kw: False,
+            execute_at_pixel=lambda *_a, **_kw: False,
+            get_action_at_pixel=lambda *_a, **_kw: None,
+            invalidate_cache=lambda: None,
+        )
+        self.equipment_view = SimpleNamespace(
+            x=0,
+            y=0,
+            width=0,
+            height=0,
+            set_hover_row=lambda *_a, **_kw: None,
+            is_row_in_active_slot=lambda *_a, **_kw: False,
+            handle_click=lambda *_a, **_kw: False,
+        )
+        self.dev_console_overlay = DummyOverlay()
+        self.combat_tooltip_overlay = DummyOverlay()
+        self.world_view = SimpleNamespace(
+            _render_selection_and_hover_outlines=lambda: None
+        )
 
-    class DummyAtlas:
-        def __init__(self) -> None:
-            self.p = SimpleNamespace(texture=None)
-            self.tileset = None
-            self._renderer = SimpleNamespace()
+    def _build_hotkeys(self) -> dict[str, Any]:
+        """Build a-z hotkey mappings from available combat actions."""
+        combat_mode = getattr(self.controller, "combat_mode", None)
+        if combat_mode is None:
+            return {}
 
-    class DummyContext:
-        def __init__(self) -> None:
-            self.sdl_renderer = SimpleNamespace()
-            self.sdl_atlas = DummyAtlas()
+        actions = combat_mode.get_available_combat_actions()
+        hotkey_chars = "abcdefghijklmnopqrstuvwxyz"
+        return {
+            hotkey_chars[i]: action
+            for i, action in enumerate(actions)
+            if i < len(hotkey_chars)
+        }
 
-        def __enter__(self) -> Self:  # pragma: no cover - context stub
-            return self
+    def get_visible_bounds(self) -> None:
+        return None
 
-        def __exit__(self, exc_type, exc_val, exc_tb) -> None:  # pragma: no cover
-            pass
+    def get_world_coords_from_root_tile_coords(
+        self, root_tile_pos: tuple[int, int]
+    ) -> tuple[int, int]:
+        return root_tile_pos
 
+    def render_frame(self, *_a, **_kw) -> None:  # pragma: no cover - stub
+        pass
+
+
+class DummyAtlas:
+    def __init__(self) -> None:
+        self.p = SimpleNamespace(texture=None)
+        self.tileset = None
+        self._renderer = SimpleNamespace()
+
+
+class DummyContext:
+    def __init__(self) -> None:
+        self.sdl_renderer = SimpleNamespace()
+        self.sdl_atlas = DummyAtlas()
+
+    def __enter__(self) -> Self:  # pragma: no cover - context stub
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:  # pragma: no cover
+        pass
+
+
+def _build_dummy_controller(*, use_dummy_world: bool) -> Controller:
+    """Build a controller with shared mock object classes for tests."""
     context = DummyContext()
     root_console = Console(config.SCREEN_WIDTH, config.SCREEN_HEIGHT, order="F")
-    with (
-        patch("catley.controller.FrameManager", DummyFrameManager),
-        patch("catley.controller.InputHandler", lambda c, a: None),
-        patch(
-            "catley.controller.GameWorld",
-            lambda *args, **kwargs: DummyGameWorld(*args, **kwargs, create_player=True),
-        ),
-        patch("catley.controller.config.BACKEND", SimpleNamespace(lighting="none")),
-    ):
-        from typing import cast
 
-        from catley.view.render.graphics import GraphicsContext
+    with ExitStack() as stack:
+        stack.enter_context(patch("catley.controller.FrameManager", DummyFrameManager))
+        stack.enter_context(
+            patch("catley.controller.InputHandler", lambda *_a, **_kw: None)
+        )
+        if use_dummy_world:
+            stack.enter_context(
+                patch(
+                    "catley.controller.GameWorld",
+                    lambda *args, **kwargs: DummyGameWorld(
+                        *args, **kwargs, create_player=True
+                    ),
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "catley.controller.config.BACKEND", SimpleNamespace(lighting="none")
+                )
+            )
 
         app = DummyApp()
         graphics = DummyGraphicsContext(
@@ -509,6 +447,11 @@ def reset_dummy_controller(controller: Controller) -> None:
 
     reset_event_bus_for_testing()
     subscribe_to_event(CombatInitiatedEvent, controller._on_combat_initiated)
+
+    # Some tests temporarily null this to exercise guard clauses; restore the
+    # test contract before reusing the shared controller fixture.
+    if controller.frame_manager is None:
+        controller.frame_manager = DummyFrameManager(controller, controller.graphics)
 
     controller.mode_stack = [controller.explore_mode]
     controller.explore_mode.enter()

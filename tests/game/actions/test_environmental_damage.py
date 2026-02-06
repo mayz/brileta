@@ -206,9 +206,7 @@ def test_environmental_damage_multiple_coordinates() -> None:
     controller, fire, target1, target2, _, executor = make_environmental_world()
 
     # Add another target at different location
-    target3 = Character(
-        6, 6, "V", colors.BLUE, "Target3", game_world=cast(GameWorld, controller.gw)
-    )
+    target3 = Character(6, 6, "V", colors.BLUE, "Target3", game_world=controller.gw)
     controller.gw.add_actor(target3)
 
     # No default armor - damage goes directly to HP

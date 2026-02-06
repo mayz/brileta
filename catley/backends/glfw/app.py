@@ -131,9 +131,7 @@ class GlfwApp(App[WGPUGraphicsContext]):
             # Suppress stderr during shutdown to hide harmless CoreAnimation warnings
             with SuppressStderr():
                 # Clean up WGPU resources before terminating GLFW
-                cleanup = getattr(self.graphics, "cleanup", None)
-                if callable(cleanup):
-                    cleanup()
+                self.graphics.cleanup()
 
                 # Restore system cursor when exiting
                 glfw.set_input_mode(self.window, glfw.CURSOR, glfw.CURSOR_NORMAL)

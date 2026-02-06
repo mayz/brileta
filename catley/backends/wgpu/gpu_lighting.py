@@ -169,7 +169,7 @@ class GPULightingSystem(LightingSystem):
             self._shader_manager = WGPUShaderManager(self.device)
 
             # Initialize resource manager - use shared one if available
-            resource_manager = getattr(self.graphics_context, "resource_manager", None)
+            resource_manager = self.graphics_context.resource_manager
             if isinstance(resource_manager, WGPUResourceManager):
                 self._resource_manager = resource_manager
             else:

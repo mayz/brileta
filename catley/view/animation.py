@@ -87,11 +87,7 @@ class MoveAnimation(Animation):
         # The render position was already snapped when the actor died.
         # We check health directly rather than _animation_controlled to avoid
         # interfering with queued animations for the same actor.
-        if (
-            hasattr(self.actor, "health")
-            and self.actor.health is not None
-            and not self.actor.health.is_alive()
-        ):
+        if self.actor.health is not None and not self.actor.health.is_alive():
             return True
 
         self.elapsed_time += fixed_timestep

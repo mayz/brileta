@@ -120,14 +120,8 @@ class HelpMenu(Menu):
     def _on_dev_console(self) -> None:
         """Toggle the dev console overlay."""
         fm = self.controller.frame_manager
-        if fm is not None:
-            dev_console = getattr(fm, "dev_console_overlay", None)
-            if dev_console is not None:
-                self.controller.overlay_system.toggle_overlay(dev_console)
+        self.controller.overlay_system.toggle_overlay(fm.dev_console_overlay)
 
     def _on_fullscreen(self) -> None:
         """Toggle fullscreen mode."""
-        if hasattr(self.controller, "app") and hasattr(
-            self.controller.app, "toggle_fullscreen"
-        ):
-            self.controller.app.toggle_fullscreen()
+        self.controller.app.toggle_fullscreen()

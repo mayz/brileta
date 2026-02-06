@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
@@ -20,7 +21,30 @@ class DummyFrameManager:
     """Minimal frame manager for testing."""
 
     def __init__(self, action_panel_view: ActionPanelView) -> None:
+        self.cursor_manager = SimpleNamespace(
+            mouse_pixel_x=0,
+            mouse_pixel_y=0,
+            update_mouse_position=lambda *_a, **_kw: None,
+            set_active_cursor_type=lambda *_a, **_kw: None,
+        )
         self.action_panel_view = action_panel_view
+        self.dev_console_overlay = SimpleNamespace()
+        self.world_view = SimpleNamespace(
+            _render_selection_and_hover_outlines=lambda: None
+        )
+        self.equipment_view = SimpleNamespace(
+            x=0,
+            y=0,
+            width=0,
+            height=0,
+            set_hover_row=lambda *_a, **_kw: None,
+            is_row_in_active_slot=lambda *_a, **_kw: False,
+            handle_click=lambda *_a, **_kw: False,
+        )
+        self.combat_tooltip_overlay = SimpleNamespace(
+            is_active=False,
+            invalidate=lambda: None,
+        )
 
     def get_visible_bounds(self) -> None:
         return None

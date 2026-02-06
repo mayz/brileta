@@ -466,8 +466,7 @@ class WorldView(View):
         px_top += offset_y_pixels
         px_bottom += offset_y_pixels
 
-        set_atmospheric_layer = getattr(graphics, "set_atmospheric_layer", None)
-        if config.ATMOSPHERIC_EFFECTS_ENABLED and callable(set_atmospheric_layer):
+        if config.ATMOSPHERIC_EFFECTS_ENABLED:
             with record_time_live_variable("time.render.atmospheric_ms"):
                 active_layers = self.atmospheric_system.get_active_layers()
                 # Render mist first, then shadows, to keep shadows readable on top.
@@ -505,7 +504,7 @@ class WorldView(View):
                         coverage_scale = 0.35 + 0.65 * (1.0 - coverage)
                         effective_strength *= max(0.0, min(1.0, coverage_scale))
 
-                    set_atmospheric_layer(
+                    graphics.set_atmospheric_layer(
                         viewport_offset,
                         viewport_size,
                         map_size,
@@ -1163,9 +1162,7 @@ class WorldView(View):
 
     def _update_mouse_tile_location(self) -> None:
         """Update the stored world-space mouse tile based on the current camera."""
-        fm: FrameManager | None = getattr(self.controller, "frame_manager", None)
-        if fm is None:
-            return
+        fm: FrameManager = self.controller.frame_manager
 
         # Use graphics.pixel_to_tile which correctly handles letterboxing offsets,
         # rather than coordinate_converter.pixel_to_tile which assumes no offset.

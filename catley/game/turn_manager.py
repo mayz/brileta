@@ -246,8 +246,7 @@ class TurnManager:
                         if isinstance(step, ApproachStep):
                             self._on_approach_result(actor, result)
 
-                    if hasattr(self.controller, "invalidate_combat_tooltip"):
-                        self.controller.invalidate_combat_tooltip()
+                    self.controller.invalidate_combat_tooltip()
 
                     # Process only ONE NPC per call - presentation timing
                     # will gate the next call, sequencing NPC actions
@@ -781,7 +780,7 @@ class TurnManager:
     def is_player_turn_available(self) -> bool:
         """Return True if player has pending actions or active plans."""
         has_manual_action = self.has_pending_actions()
-        has_active_plan = getattr(self.player, "active_plan", None) is not None
+        has_active_plan = self.player.active_plan is not None
         return has_manual_action or has_active_plan
 
     # Backwards compatibility for old name

@@ -149,11 +149,9 @@ class InputHandler:
         self.controller.update_hovered_actor(self.gw.mouse_tile_location_on_map)
 
         if self.controller.is_combat_mode():
-            fm = self.controller.frame_manager
-            if fm is not None and hasattr(fm, "combat_tooltip_overlay"):
-                tooltip = fm.combat_tooltip_overlay
-                if tooltip.is_active:
-                    tooltip.invalidate()
+            tooltip = self.fm.combat_tooltip_overlay
+            if tooltip.is_active:
+                tooltip.invalidate()
 
     def _update_hover_cursor(self, event: input_events.MouseMotion) -> None:
         """Update cursor based on what the mouse is hovering over.
@@ -196,9 +194,6 @@ class InputHandler:
             True if hovering over the active equipment slot, False otherwise.
         """
         assert self.fm is not None
-
-        if not hasattr(self.fm, "equipment_view"):
-            return False
 
         equipment_view = self.fm.equipment_view
         tile_x, tile_y = root_tile_pos

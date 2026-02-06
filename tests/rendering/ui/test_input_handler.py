@@ -29,6 +29,36 @@ class DummyFrameManager:
         )
     )
     combat_tooltip_overlay: Any = None
+    action_panel_view: Any = field(
+        default_factory=lambda: SimpleNamespace(
+            x=0,
+            y=0,
+            width=0,
+            height=0,
+            get_hotkeys=lambda: {},
+            update_hover_from_pixel=lambda *_a, **_kw: False,
+            execute_at_pixel=lambda *_a, **_kw: False,
+            get_action_at_pixel=lambda *_a, **_kw: None,
+            invalidate_cache=lambda: None,
+        )
+    )
+    equipment_view: Any = field(
+        default_factory=lambda: SimpleNamespace(
+            x=0,
+            y=0,
+            width=0,
+            height=0,
+            set_hover_row=lambda *_a, **_kw: None,
+            is_row_in_active_slot=lambda *_a, **_kw: False,
+            handle_click=lambda *_a, **_kw: False,
+        )
+    )
+    dev_console_overlay: Any = field(default_factory=SimpleNamespace)
+    world_view: Any = field(
+        default_factory=lambda: SimpleNamespace(
+            _render_selection_and_hover_outlines=lambda: None
+        )
+    )
 
     def get_world_coords_from_root_tile_coords(
         self, pos: tuple[int, int]

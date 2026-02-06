@@ -84,6 +84,16 @@ live_variable_registry.register_metrics(_RENDER_METRICS)
 class FrameManager:
     """Coordinates views and manages the frame lifecycle, including global effects."""
 
+    world_view: WorldView
+    message_log_view: MessageLogView
+    equipment_view: EquipmentView
+    player_status_view: PlayerStatusView
+    action_panel_view: ActionPanelView
+    views: list[View]
+    debug_stats_overlay: DebugStatsOverlay
+    dev_console_overlay: DevConsoleOverlay
+    combat_tooltip_overlay: CombatTooltipOverlay
+
     def __init__(self, controller: Controller, graphics: GraphicsContext) -> None:
         """Initialize the frame manager and supporting systems."""
         self.controller = controller

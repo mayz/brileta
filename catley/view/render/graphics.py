@@ -42,11 +42,15 @@ from catley.view.render.effects.particles import ParticleLayer, SubTileParticleS
 from catley.view.render.viewport import ViewportSystem
 
 if TYPE_CHECKING:
+    from catley.backends.wgpu.resource_manager import WGPUResourceManager
     from catley.view.ui.cursor_manager import CursorManager
 
 
 class GraphicsContext(abc.ABC):
     """Abstract base class for drawing graphics to the screen."""
+
+    # Backends without explicit resource managers inherit the default None value.
+    resource_manager: WGPUResourceManager | None = None
 
     @property
     @abc.abstractmethod
@@ -377,3 +381,37 @@ class GraphicsContext(abc.ABC):
             offset_pixels: Pixel offset for screen shake effects.
         """
         pass
+
+    def set_atmospheric_layer(
+        self,
+        viewport_offset: tuple[int, int],
+        viewport_size: tuple[int, int],
+        map_size: tuple[int, int],
+        sky_exposure_threshold: float,
+        sky_exposure_texture: Any | None,
+        explored_texture: Any | None,
+        visible_texture: Any | None,
+        noise_scale: float,
+        noise_threshold_low: float,
+        noise_threshold_high: float,
+        strength: float,
+        tint_color: tuple[int, int, int],
+        drift_offset: tuple[float, float],
+        turbulence_offset: float,
+        turbulence_strength: float,
+        turbulence_scale: float,
+        blend_mode: str,
+        pixel_bounds: tuple[int, int, int, int],
+    ) -> None:
+        """Queue or ignore atmospheric layer data.
+
+        Backends that do not support atmospheric rendering intentionally do nothing.
+        """
+        return
+
+    def cleanup(self) -> None:
+        """Release backend resources before shutdown.
+
+        Backends that do not own explicit resources intentionally do nothing.
+        """
+        return

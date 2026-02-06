@@ -92,10 +92,20 @@ class Controller:
       systems like `ResolutionSystem`.
     """
 
+    gw: GameWorld
+    frame_manager: FrameManager
+    input_handler: InputHandler
+    turn_manager: TurnManager
+    explore_mode: ExploreMode
+    combat_mode: CombatMode
+    picker_mode: PickerMode
+    mode_stack: list[Mode]
+
     def __init__(self, app: App, graphics: GraphicsContext) -> None:
         self.app = app
         self.graphics = graphics
         self.coordinate_converter = graphics.coordinate_converter
+        self._systems_initialized = False
 
         # Systems that persist across world regeneration
         self.action_discovery = ActionDiscovery()
@@ -168,6 +178,7 @@ class Controller:
         self.combat_mode = CombatMode(self)
         self.picker_mode = PickerMode(self)
         self.mode_stack: list[Mode] = [self.explore_mode]
+        self._systems_initialized = True
 
         # Register game.seed live variable for debugging/reproducibility
         live_variable_registry.register(
@@ -211,7 +222,7 @@ class Controller:
 
         # Determine the seed to use
         if seed is None:
-            if not hasattr(self, "gw"):
+            if not self._systems_initialized:
                 # First call (from __init__) - use config seed
                 seed = config.RANDOM_SEED
             else:
@@ -243,7 +254,7 @@ class Controller:
             self.gw.add_light(DirectionalLight.create_sun())
 
         # Reset dependent systems if this is a regeneration (not first call)
-        if hasattr(self, "turn_manager"):
+        if self._systems_initialized:
             self._reset_for_new_world()
 
     def _reset_for_new_world(self) -> None:
@@ -266,42 +277,36 @@ class Controller:
         self.combat_intent_cache = None
 
         # Close all menus/overlays (they hold stale references to old world objects)
-        if hasattr(self, "overlay_system"):
-            self.overlay_system.hide_all_overlays()
+        self.overlay_system.hide_all_overlays()
 
         # Reset mode stack to just explore mode, calling _exit() on each
-        if hasattr(self, "mode_stack"):
-            while len(self.mode_stack) > 1:
-                old_mode = self.mode_stack.pop()
-                old_mode._exit()
+        while len(self.mode_stack) > 1:
+            old_mode = self.mode_stack.pop()
+            old_mode._exit()
 
         # Reset explore mode state
-        if hasattr(self, "explore_mode"):
-            self.explore_mode.movement_keys.clear()
+        self.explore_mode.movement_keys.clear()
 
         # Update frame manager's world view with new lighting system
-        if hasattr(self, "frame_manager") and self.frame_manager is not None:
-            wv = self.frame_manager.world_view
-            wv.lighting_system = self.gw.lighting_system
+        wv = self.frame_manager.world_view
+        wv.lighting_system = self.gw.lighting_system
 
-            # Clear world view caches
-            wv.particle_system.clear()
-            wv.decal_system.clear()
-            wv.floating_text_manager.clear()
-            wv._texture_cache.clear()
-            wv._active_background_texture = None
-            wv._light_overlay_texture = None
+        # Clear world view caches
+        wv.particle_system.clear()
+        wv.decal_system.clear()
+        wv.floating_text_manager.clear()
+        wv._texture_cache.clear()
+        wv._active_background_texture = None
+        wv._light_overlay_texture = None
 
-            # Reset viewport to follow new player
-            wv.viewport_system.camera.set_position(self.gw.player.x, self.gw.player.y)
+        # Reset viewport to follow new player
+        wv.viewport_system.camera.set_position(self.gw.player.x, self.gw.player.y)
 
         # Initialize FOV for new world
         self.update_fov()
 
     def _get_sun(self) -> DirectionalLight | None:
         """Return the first DirectionalLight in the game world, if any."""
-        if not hasattr(self.gw, "get_global_lights"):
-            return None
         for light in self.gw.get_global_lights():
             if isinstance(light, DirectionalLight):
                 return light
@@ -345,10 +350,7 @@ class Controller:
         sky_exposure <= 0.3 (clearly indoors).
         """
         # Check sky exposure at player's position
-        get_region = getattr(self.gw.game_map, "get_region_at", None)
-        if get_region is None:
-            return  # Mock or incomplete game_map - skip torch update
-        region = get_region((self.gw.player.x, self.gw.player.y))
+        region = self.gw.game_map.get_region_at((self.gw.player.x, self.gw.player.y))
         if region is None:
             return
 
@@ -369,8 +371,6 @@ class Controller:
 
     def get_visible_bounds(self) -> Rect | None:
         """Return the world-space bounds currently visible in the world view."""
-        if self.frame_manager is None:
-            return None
         return self.frame_manager.get_visible_bounds()
 
     def process_player_input(self) -> None:
@@ -690,11 +690,7 @@ class Controller:
         if not self.is_combat_mode():
             return
 
-        fm = self.frame_manager
-        if fm is None or not hasattr(fm, "combat_tooltip_overlay"):
-            return
-
-        tooltip = fm.combat_tooltip_overlay
+        tooltip = self.frame_manager.combat_tooltip_overlay
         if tooltip.is_active:
             tooltip.invalidate()
 

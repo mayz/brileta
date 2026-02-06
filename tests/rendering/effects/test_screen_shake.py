@@ -138,6 +138,11 @@ class DummyController:
                 f"mock_texture_for_{id(gb)}"
             ),
             present_texture=lambda *args, **kwargs: None,
+            pixel_to_tile=lambda x, y: (int(x), int(y)),
+        )
+        self.frame_manager = SimpleNamespace(
+            cursor_manager=SimpleNamespace(mouse_pixel_x=0, mouse_pixel_y=0),
+            get_world_coords_from_root_tile_coords=lambda pos: pos,
         )
         self.clock = SimpleNamespace(last_delta_time=0.016)
         self.active_mode = None

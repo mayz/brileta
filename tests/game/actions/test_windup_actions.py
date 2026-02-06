@@ -82,6 +82,10 @@ class DummyFrameManager:
         self.controller = controller
         self.graphics = graphics
         self.counter = 0
+        self.combat_tooltip_overlay = SimpleNamespace(
+            is_active=False,
+            invalidate=lambda: None,
+        )
 
     def get_visible_bounds(self) -> None:
         return None
@@ -297,6 +301,7 @@ def patched_controller(stop_after: int):
                 self._coordinate_converter = SimpleNamespace(
                     pixel_to_tile=lambda x, y: (x, y), tile_to_pixel=lambda x, y: (x, y)
                 )
+                self.resource_manager = None
 
             @property
             def coordinate_converter(self):

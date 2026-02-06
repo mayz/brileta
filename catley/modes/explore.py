@@ -78,8 +78,7 @@ class ExploreMode(Mode):
         # These may not be available during __init__ (test environments)
         if controller.frame_manager is not None:
             self._fm = controller.frame_manager
-            if hasattr(controller.frame_manager, "cursor_manager"):
-                self._cursor_manager = controller.frame_manager.cursor_manager
+            self._cursor_manager = controller.frame_manager.cursor_manager
 
     @property
     def gw(self):
@@ -191,7 +190,7 @@ class ExploreMode(Mode):
     def render_world(self) -> None:
         """Render actor outlines for selection and hover feedback."""
         # This is the default rendering when no other mode is active
-        if self._fm is not None and hasattr(self._fm, "world_view"):
+        if self._fm is not None:
             self._fm.world_view._render_selection_and_hover_outlines()
 
     # -------------------------------------------------------------------------
@@ -207,9 +206,7 @@ class ExploreMode(Mode):
     def _toggle_dev_console(self) -> None:
         """Toggle the dev console overlay."""
         if self._fm is not None:
-            dev_console = getattr(self._fm, "dev_console_overlay", None)
-            if dev_console is not None:
-                self.controller.overlay_system.toggle_overlay(dev_console)
+            self.controller.overlay_system.toggle_overlay(self._fm.dev_console_overlay)
 
     def _open_help(self) -> None:
         """Open the help menu."""
@@ -247,7 +244,7 @@ class ExploreMode(Mode):
         if not isinstance(event, input_events.KeyDown):
             return False
 
-        if self._fm is None or not hasattr(self._fm, "action_panel_view"):
+        if self._fm is None:
             return False
 
         # Get the character from the key symbol
@@ -264,7 +261,8 @@ class ExploreMode(Mode):
         if self.player.health and not self.player.health.is_alive():
             return False
 
-        hotkeys = self._fm.action_panel_view.get_hotkeys()
+        action_panel_view = self._fm.action_panel_view
+        hotkeys = action_panel_view.get_hotkeys()
         if key_char not in hotkeys:
             return False
 
@@ -289,7 +287,7 @@ class ExploreMode(Mode):
 
         # If action was executed, check if it affects the hovered tile
         if action_executed and self._action_affects_hovered_tile(action_option):
-            self._fm.action_panel_view.invalidate_cache()
+            action_panel_view.invalidate_cache()
 
         return action_executed
 
@@ -327,7 +325,7 @@ class ExploreMode(Mode):
             Tuple of (rel_px_x, rel_px_y, is_inside_panel). If the mouse is
             outside the panel bounds, rel_px_x and rel_px_y are set to -1.
         """
-        if self._fm is None or not hasattr(self._fm, "action_panel_view"):
+        if self._fm is None:
             return (-1, -1, False)
 
         action_panel_view = self._fm.action_panel_view
@@ -362,7 +360,7 @@ class ExploreMode(Mode):
 
         Updates the action panel hover state when the mouse moves over it.
         """
-        if self._fm is None or not hasattr(self._fm, "action_panel_view"):
+        if self._fm is None:
             return False
 
         action_panel_view = self._fm.action_panel_view
@@ -431,7 +429,7 @@ class ExploreMode(Mode):
         Returns:
             True if click was on action panel and action executed.
         """
-        if self._fm is None or not hasattr(self._fm, "action_panel_view"):
+        if self._fm is None:
             return False
 
         rel_px_x, rel_px_y, is_inside = self._get_panel_relative_coords(event)
@@ -588,7 +586,7 @@ class ExploreMode(Mode):
 
     def _check_equipment_view_click(self, root_tile_pos: RootConsoleTilePos) -> bool:
         """Check if click is within equipment view bounds."""
-        if self._fm is None or not hasattr(self._fm, "equipment_view"):
+        if self._fm is None:
             return False
 
         equipment_view = self._fm.equipment_view

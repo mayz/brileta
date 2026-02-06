@@ -719,17 +719,16 @@ class TestPlayerTorchAutoToggle:
         self.mock_gw.add_light.assert_not_called()
         self.mock_gw.remove_light.assert_not_called()
 
-    def test_graceful_handling_missing_get_region_at(self):
-        """Should handle game_map without get_region_at method gracefully."""
+    def test_missing_get_region_at_raises_attribute_error(self):
+        """Controller expects GameMap to implement get_region_at()."""
+        import pytest
+
         mock_game_map = Mock(spec=[])  # Empty spec means no attributes
         self.mock_gw.game_map = mock_game_map
         self.mock_controller._player_torch_active = True
 
-        self._update_player_torch()
-
-        assert self.mock_controller._player_torch_active is True
-        self.mock_gw.add_light.assert_not_called()
-        self.mock_gw.remove_light.assert_not_called()
+        with pytest.raises(AttributeError):
+            self._update_player_torch()
 
     def test_graceful_handling_none_region(self):
         """Should handle None region (e.g., unexplored area) gracefully."""
