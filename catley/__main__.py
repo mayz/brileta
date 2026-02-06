@@ -22,10 +22,6 @@ def main() -> None:
     )
 
     match config.BACKEND.app:
-        case "tcod":
-            from catley.backends.tcod.app import TCODApp
-
-            _APP_CLASS = TCODApp
         case "glfw":
             from catley.backends.glfw.app import GlfwApp
 
