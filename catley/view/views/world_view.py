@@ -108,7 +108,8 @@ class WorldView(View):
         self.set_bounds(0, 0, DEFAULT_VIEWPORT_WIDTH, DEFAULT_VIEWPORT_HEIGHT)
         self.effect_library = EffectLibrary()
         self.floating_text_manager = FloatingTextManager()
-        self.current_light_intensity: np.ndarray | None = None
+        self._gpu_actor_lightmap_texture: Any | None = None
+        self._gpu_actor_lightmap_viewport_origin: tuple[int, int] | None = None
         # Per-frame multiplicative light scales for actors shadowed by other actors.
         # Keyed by id(actor) because Actor objects are mutable and not hash-stable.
         self._actor_shadow_receive_light_scale: dict[int, float] = {}
@@ -148,9 +149,9 @@ class WorldView(View):
             self.map_glyph_buffer = GlyphBuffer(
                 self.width + 2 * pad, self.height + 2 * pad
             )
-            # Light overlay buffer must be persistent to avoid TextureRenderer cache
-            # issues where Python reuses memory addresses for new GlyphBuffer objects.
-            self.light_overlay_glyph_buffer = GlyphBuffer(
+            # Source colors for the GPU compose path (light appearance + animation,
+            # before blending with dark colors and light intensity).
+            self.light_source_glyph_buffer = GlyphBuffer(
                 self.width + 2 * pad, self.height + 2 * pad
             )
             self.particle_system = SubTileParticleSystem(self.width, self.height)
@@ -352,19 +353,13 @@ class WorldView(View):
         # Generate the light overlay DATA (GlyphBuffer)
         if config.DEBUG_DISABLE_LIGHT_OVERLAY:
             self._light_overlay_texture = None
+            self._gpu_actor_lightmap_texture = None
+            self._gpu_actor_lightmap_viewport_origin = None
         else:
-            light_overlay_data = self._render_light_overlay(graphics)
-
-            if light_overlay_data is not None:
-                # Ask the graphics context to turn this DATA into a RENDERABLE TEXTURE
-                with record_time_live_variable("time.render.light_texture_upload_ms"):
-                    self._light_overlay_texture = (
-                        graphics.render_glyph_buffer_to_texture(
-                            light_overlay_data, cache_key_suffix="light"
-                        )
-                    )
-            else:
-                self._light_overlay_texture = None
+            self._light_overlay_texture = self._render_light_overlay_gpu_compose(
+                graphics,
+                texture,
+            )
 
         # Update dynamic systems that need to process every frame.
         # actor.update_render_position is a legacy call from the old rendering
@@ -581,6 +576,21 @@ class WorldView(View):
                 for actor in self._get_sorted_visible_actors(actor_bounds)
                 if self.controller.gw.game_map.visible[actor.x, actor.y]
             ]
+
+        set_gpu_actor_lighting_context = getattr(
+            graphics, "set_actor_lighting_gpu_context", None
+        )
+        if callable(set_gpu_actor_lighting_context):
+            if (
+                self._gpu_actor_lightmap_texture is not None
+                and self._gpu_actor_lightmap_viewport_origin is not None
+            ):
+                set_gpu_actor_lighting_context(
+                    self._gpu_actor_lightmap_texture,
+                    self._gpu_actor_lightmap_viewport_origin,
+                )
+            else:
+                set_gpu_actor_lighting_context(None, None)
 
         with (
             record_time_live_variable("time.render.actor_shadows_ms"),
@@ -1405,6 +1415,7 @@ class WorldView(View):
                 light_rgb,
                 interpolation_alpha,
                 visual_scale,
+                actor_world_pos=(actor.x, actor.y),
             )
         else:
             # Render single character (existing behavior) - uniform scaling
@@ -1417,6 +1428,7 @@ class WorldView(View):
                 interpolation_alpha,
                 scale_x=visual_scale,
                 scale_y=visual_scale,
+                world_pos=(actor.x, actor.y),
             )
 
     def _render_character_layers(
@@ -1428,6 +1440,7 @@ class WorldView(View):
         light_rgb: tuple,
         interpolation_alpha: InterpolationAlpha,
         visual_scale: float,
+        actor_world_pos: tuple[int, int],
     ) -> None:
         """Render multiple character layers at sub-tile offsets.
 
@@ -1465,34 +1478,13 @@ class WorldView(View):
                 interpolation_alpha,
                 scale_x=combined_scale_x,
                 scale_y=combined_scale_y,
+                world_pos=actor_world_pos,
             )
 
-    def _get_actor_lighting_intensity(self, actor: Actor, bounds: Rect) -> tuple:
-        """Get lighting intensity for actor (extracted from existing code)."""
-        light_rgb: tuple[float, float, float]
-        if self.current_light_intensity is None:
-            light_rgb = (1.0, 1.0, 1.0)
-        else:
-            world_left, world_top = bounds.x1, bounds.y1
-            light_x, light_y = actor.x - world_left, actor.y - world_top
-
-            if (
-                0 <= light_x < self.current_light_intensity.shape[0]
-                and 0 <= light_y < self.current_light_intensity.shape[1]
-            ):
-                light_rgb = tuple(self.current_light_intensity[light_x, light_y])
-            else:
-                light_rgb = (1.0, 1.0, 1.0)
-
-        receive_scale = self._actor_shadow_receive_light_scale.get(id(actor), 1.0)
-        if receive_scale >= 0.999:
-            return light_rgb
-
-        return (
-            light_rgb[0] * receive_scale,
-            light_rgb[1] * receive_scale,
-            light_rgb[2] * receive_scale,
-        )
+    def _get_actor_lighting_intensity(self, _actor: Actor, _bounds: Rect) -> tuple:
+        """Get actor lighting multiplier tuple for the screen shader path."""
+        receive_scale = self._actor_shadow_receive_light_scale.get(id(_actor), 1.0)
+        return (receive_scale, receive_scale, receive_scale)
 
     def _update_actor_particles(self) -> None:
         """Emit particles from actors with particle emitters."""
@@ -1680,6 +1672,7 @@ class WorldView(View):
                         light_rgb,
                         alpha,
                         visual_scale,
+                        actor_world_pos=(actor.x, actor.y),
                     )
                 else:
                     # Render using the renderer's smooth drawing function
@@ -1692,6 +1685,7 @@ class WorldView(View):
                         alpha,
                         scale_x=visual_scale,
                         scale_y=visual_scale,
+                        world_pos=(actor.x, actor.y),
                     )
 
     def _render_selection_and_hover_outlines(self) -> None:
@@ -1779,15 +1773,71 @@ class WorldView(View):
 
         self.controller.gw.mouse_tile_location_on_map = world_tile_pos
 
+    def _apply_tile_light_animations(
+        self,
+        light_fg_rgb: np.ndarray,
+        light_bg_rgb: np.ndarray,
+        animation_params: np.ndarray,
+        animation_state: np.ndarray,
+        valid_exp_x: np.ndarray,
+        valid_exp_y: np.ndarray,
+    ) -> None:
+        """Apply per-tile color modulation for animated terrain tiles."""
+        animates_mask = animation_params["animates"][valid_exp_x, valid_exp_y]
+        if not np.any(animates_mask):
+            return
+
+        anim_indices = np.nonzero(animates_mask)[0]
+        anim_rel_x = valid_exp_x[animates_mask]
+        anim_rel_y = valid_exp_y[animates_mask]
+
+        fg_var = animation_params["fg_variation"][anim_rel_x, anim_rel_y].astype(
+            np.int32
+        )
+        bg_var = animation_params["bg_variation"][anim_rel_x, anim_rel_y].astype(
+            np.int32
+        )
+        fg_vals = animation_state["fg_values"][anim_rel_x, anim_rel_y].astype(np.int32)
+        bg_vals = animation_state["bg_values"][anim_rel_x, anim_rel_y].astype(np.int32)
+
+        base_fg = light_fg_rgb[anim_indices].astype(np.int32)
+        anim_fg = base_fg + fg_var * fg_vals // 1000 - fg_var // 2
+        light_fg_rgb[anim_indices] = np.clip(anim_fg, 0, 255).astype(np.uint8)
+
+        base_bg = light_bg_rgb[anim_indices].astype(np.int32)
+        anim_bg = base_bg + bg_var * bg_vals // 1000 - bg_var // 2
+        light_bg_rgb[anim_indices] = np.clip(anim_bg, 0, 255).astype(np.uint8)
+
     @record_time_live_variable("time.render.light_overlay_ms")
-    def _render_light_overlay(self, graphics: GraphicsContext) -> Any | None:
-        """Render pure light world overlay with GPU alpha blending."""
+    def _render_light_overlay_gpu_compose(
+        self,
+        graphics: GraphicsContext,
+        dark_texture: Any,
+    ) -> Any:
+        """Render the light overlay via GPU compose pass (no full lightmap readback)."""
         if self.lighting_system is None:
-            return None
+            raise RuntimeError(
+                "Light overlay is enabled but no lighting system is configured."
+            )
+
+        compute_texture_fn = getattr(
+            self.lighting_system, "compute_lightmap_texture", None
+        )
+        if not callable(compute_texture_fn):
+            raise RuntimeError(
+                "Lighting system is missing compute_lightmap_texture(), required for "
+                "GPU light overlay composition."
+            )
+
+        compose_fn = getattr(graphics, "compose_light_overlay_gpu", None)
+        if not callable(compose_fn):
+            raise RuntimeError(
+                "Graphics context is missing compose_light_overlay_gpu(), required "
+                "for GPU light overlay composition."
+            )
 
         vs = self.viewport_system
         gw = self.controller.gw
-
         bounds = vs.get_visible_bounds()
         world_left, world_right = (
             max(0, bounds.x1),
@@ -1797,181 +1847,109 @@ class WorldView(View):
             max(0, bounds.y1),
             min(gw.game_map.height - 1, bounds.y2),
         )
-
         dest_width = world_right - world_left + 1
         dest_height = world_bottom - world_top + 1
+        if dest_width <= 0 or dest_height <= 0:
+            raise RuntimeError(
+                "Computed invalid overlay viewport dimensions: "
+                f"{dest_width}x{dest_height}."
+            )
 
-        # Use new lighting system to compute light intensity
         viewport_bounds = Rect(world_left, world_top, dest_width, dest_height)
-        self.current_light_intensity = self.lighting_system.compute_lightmap(
-            viewport_bounds
+        lightmap_texture = compute_texture_fn(viewport_bounds)
+        if lightmap_texture is None:
+            raise RuntimeError(
+                "Lighting system returned no lightmap texture for GPU overlay "
+                "composition."
+            )
+        # Keep GPU actor-lighting context in sync with the latest lightmap frame.
+        self._gpu_actor_lightmap_texture = lightmap_texture
+        self._gpu_actor_lightmap_viewport_origin = (
+            viewport_bounds.x1,
+            viewport_bounds.y1,
         )
 
-        if self.current_light_intensity is None:
-            return None
-
-        # Use persistent buffer to avoid TextureRenderer cache issues where Python
-        # reuses memory addresses for new objects, causing stale VBO data.
         pad = self._SCROLL_PADDING
         buf_width = self.width + 2 * pad
         buf_height = self.height + 2 * pad
-        light_glyph_buffer = self.light_overlay_glyph_buffer
-        light_glyph_buffer.clear()  # Reset to transparent
+        light_source_buffer = self.light_source_glyph_buffer
+        light_source_buffer.clear()
+        # Buffer-space visible mask used by the GPU compose shader. Keeping this
+        # in the same coordinate space as the glyph buffers avoids map/viewport
+        # axis mismatches when maps are centered in larger viewports.
+        visible_mask_buffer = np.zeros((buf_width, buf_height), dtype=np.bool_)
 
-        # Get the world slice that corresponds to current light intensity
         world_slice = (
             slice(world_left, world_right + 1),
             slice(world_top, world_bottom + 1),
         )
-        visible_mask_slice = gw.game_map.visible[world_slice]
         explored_mask_slice = gw.game_map.explored[world_slice]
-
+        visible_mask_slice = gw.game_map.visible[world_slice]
         if np.any(explored_mask_slice):
-            # Get pure light appearance for overlay
             light_app_slice = gw.game_map.light_appearance_map[world_slice]
-
-            # Create lighting intensity array for explored tiles
-            # Start with zero intensity everywhere
-            explored_light_intensities = np.zeros(
-                (*explored_mask_slice.shape, 3), dtype=np.float32
-            )
-            # Set full intensity only for visible areas (FOV)
-            if np.any(visible_mask_slice):
-                explored_light_intensities[visible_mask_slice] = (
-                    self.current_light_intensity[visible_mask_slice]
-                )
-
-            # Add spillover effects to non-visible but explored areas.
-            # This allows spillover to be seen outside FOV while maintaining FOV
-            # darkening. Vectorized for performance.
-            non_visible_mask = explored_mask_slice & ~visible_mask_slice
-            if np.any(non_visible_mask):
-                nvx, nvy = np.nonzero(non_visible_mask)
-                # Filter to coordinates within light intensity bounds
-                light_shape = self.current_light_intensity.shape
-                in_bounds = (nvx < light_shape[0]) & (nvy < light_shape[1])
-                if np.any(in_bounds):
-                    valid_nvx = nvx[in_bounds]
-                    valid_nvy = nvy[in_bounds]
-                    # Apply 0.3 multiplier to spillover intensity
-                    explored_light_intensities[valid_nvx, valid_nvy] = (
-                        self.current_light_intensity[valid_nvx, valid_nvy] * 0.3
-                    )
-
-            # Map world coordinates to buffer coordinates for all explored tiles.
-            # Add padding since the buffer starts 'pad' tiles before the viewport.
             exp_x, exp_y = np.nonzero(explored_mask_slice)
             buffer_x = vs.offset_x + exp_x + pad
             buffer_y = vs.offset_y + exp_y + pad
-
-            # Ensure coordinates are within the padded buffer bounds
             valid_mask = (
                 (buffer_x >= 0)
                 & (buffer_x < buf_width)
                 & (buffer_y >= 0)
                 & (buffer_y < buf_height)
             )
-
             if np.any(valid_mask):
                 final_buf_x = buffer_x[valid_mask]
                 final_buf_y = buffer_y[valid_mask]
-
-                # Get pure light appearance data for all explored tiles
-                light_chars = light_app_slice["ch"][
-                    exp_x[valid_mask], exp_y[valid_mask]
-                ]
-
-                # light_app_slice['fg'] is (N, 3) RGB. Apply lighting, convert to RGBA.
-                light_fg_rgb = light_app_slice["fg"][
-                    exp_x[valid_mask], exp_y[valid_mask]
-                ]
-                dark_fg_rgb = gw.game_map.dark_appearance_map[world_slice]["fg"][
-                    exp_x[valid_mask], exp_y[valid_mask]
-                ]
-
-                light_bg_rgb = light_app_slice["bg"][
-                    exp_x[valid_mask], exp_y[valid_mask]
-                ]
-                dark_bg_rgb = gw.game_map.dark_appearance_map[world_slice]["bg"][
-                    exp_x[valid_mask], exp_y[valid_mask]
-                ]
-
-                # Apply animated colors for tiles that have animation enabled.
-                # Vectorized for performance.
-                animation_params = gw.game_map.animation_params[world_slice]
-                animation_state = gw.game_map.animation_state[world_slice]
                 valid_exp_x = exp_x[valid_mask]
                 valid_exp_y = exp_y[valid_mask]
+                valid_visible = visible_mask_slice[valid_exp_x, valid_exp_y]
 
-                # Get animation mask for valid tiles
-                animates_mask = animation_params["animates"][valid_exp_x, valid_exp_y]
+                light_chars = light_app_slice["ch"][valid_exp_x, valid_exp_y]
+                light_fg_rgb = light_app_slice["fg"][valid_exp_x, valid_exp_y]
+                light_bg_rgb = light_app_slice["bg"][valid_exp_x, valid_exp_y]
 
-                if np.any(animates_mask):
-                    # Get indices of animated tiles within the valid arrays
-                    anim_indices = np.nonzero(animates_mask)[0]
-                    anim_rel_x = valid_exp_x[animates_mask]
-                    anim_rel_y = valid_exp_y[animates_mask]
+                animation_params = gw.game_map.animation_params[world_slice]
+                animation_state = gw.game_map.animation_state[world_slice]
+                self._apply_tile_light_animations(
+                    light_fg_rgb,
+                    light_bg_rgb,
+                    animation_params,
+                    animation_state,
+                    valid_exp_x,
+                    valid_exp_y,
+                )
 
-                    # Extract animation parameters and state for animated tiles
-                    fg_var = animation_params["fg_variation"][
-                        anim_rel_x, anim_rel_y
-                    ].astype(np.int32)
-                    bg_var = animation_params["bg_variation"][
-                        anim_rel_x, anim_rel_y
-                    ].astype(np.int32)
-                    fg_vals = animation_state["fg_values"][
-                        anim_rel_x, anim_rel_y
-                    ].astype(np.int32)
-                    bg_vals = animation_state["bg_values"][
-                        anim_rel_x, anim_rel_y
-                    ].astype(np.int32)
+                alpha_channel = np.full((len(light_fg_rgb), 1), 255, dtype=np.uint8)
+                light_fg_rgba = np.hstack((light_fg_rgb, alpha_channel))
+                light_bg_rgba = np.hstack((light_bg_rgb, alpha_channel))
+                light_source_buffer.data["ch"][final_buf_x, final_buf_y] = light_chars
+                light_source_buffer.data["fg"][final_buf_x, final_buf_y] = light_fg_rgba
+                light_source_buffer.data["bg"][final_buf_x, final_buf_y] = light_bg_rgba
+                if np.any(valid_visible):
+                    visible_mask_buffer[
+                        final_buf_x[valid_visible], final_buf_y[valid_visible]
+                    ] = True
 
-                    # Compute animated colors: base + var * vals // 1000 - var // 2
-                    # Use int32 to avoid overflow, then clip to [0, 255]
-                    base_fg = light_fg_rgb[anim_indices].astype(np.int32)
-                    anim_fg = base_fg + fg_var * fg_vals // 1000 - fg_var // 2
-                    light_fg_rgb[anim_indices] = np.clip(anim_fg, 0, 255).astype(
-                        np.uint8
-                    )
+        with record_time_live_variable("time.render.light_texture_upload_ms"):
+            light_source_texture = graphics.render_glyph_buffer_to_texture(
+                light_source_buffer,
+                cache_key_suffix="light_source",
+            )
 
-                    base_bg = light_bg_rgb[anim_indices].astype(np.int32)
-                    anim_bg = base_bg + bg_var * bg_vals // 1000 - bg_var // 2
-                    light_bg_rgb[anim_indices] = np.clip(anim_bg, 0, 255).astype(
-                        np.uint8
-                    )
-
-                # Per-channel scaling: warm colours stay warm
-                light_intensity_valid = explored_light_intensities[
-                    exp_x[valid_mask], exp_y[valid_mask]
-                ]  # shape (N,3)
-
-                # Apply the same lighting blend to foreground as we do to background
-                scaled_fg_rgb = (
-                    light_fg_rgb.astype(np.float32) * light_intensity_valid
-                    + dark_fg_rgb.astype(np.float32) * (1.0 - light_intensity_valid)
-                ).astype(np.uint8)
-
-                alpha_channel = np.full((len(scaled_fg_rgb), 1), 255, dtype=np.uint8)
-                light_fg_rgba = np.hstack((scaled_fg_rgb, alpha_channel))
-
-                # --- exact CPU blend to match pre-refactor appearance ---
-                # light_intensity_valid shape: (N, 3) already carries warm torch colours
-                scaled_bg_rgb = (
-                    light_bg_rgb.astype(np.float32) * light_intensity_valid
-                    + dark_bg_rgb.astype(np.float32) * (1.0 - light_intensity_valid)
-                ).astype(np.uint8)
-
-                # Combine scaled BG with a full alpha channel to get RGBA
-                bg_rgba = np.hstack((scaled_bg_rgb, alpha_channel))
-
-                # Direct coordinate indexing to assign tile data to buffer.
-                # This avoids boolean mask assignment which can have ordering issues.
-                light_glyph_buffer.data["ch"][final_buf_x, final_buf_y] = light_chars
-                light_glyph_buffer.data["fg"][final_buf_x, final_buf_y] = light_fg_rgba
-                light_glyph_buffer.data["bg"][final_buf_x, final_buf_y] = bg_rgba
-
-        # Return the populated GlyphBuffer. The caller is responsible for rendering it.
-        return light_glyph_buffer
+        composed_texture = compose_fn(
+            dark_texture=dark_texture,
+            light_texture=light_source_texture,
+            lightmap_texture=lightmap_texture,
+            visible_mask_buffer=visible_mask_buffer,
+            viewport_bounds=viewport_bounds,
+            viewport_offset=(vs.offset_x, vs.offset_y),
+            pad_tiles=pad,
+        )
+        if composed_texture is None:
+            raise RuntimeError(
+                "GPU light overlay composition produced no texture while lighting "
+                "is enabled."
+            )
+        return composed_texture
 
     def _apply_pulsating_effect(
         self, input_color: colors.Color, base_actor_color: colors.Color

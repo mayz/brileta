@@ -180,6 +180,18 @@ class WGPUTextureRenderer:
             label="texture_renderer_bind_group",
         )
 
+    def set_tile_dimensions(self, tile_dimensions: tuple[int, int]) -> None:
+        """Update tile size used for off-screen glyph rendering.
+
+        Tile dimensions can change when the window size changes. When that
+        happens, we must invalidate the glyph change-detection cache because
+        cached textures rendered at the old tile size are no longer valid.
+        """
+        if tile_dimensions == self.tile_dimensions:
+            return
+        self.tile_dimensions = tile_dimensions
+        self.buffer_cache.clear()
+
     def render(
         self,
         glyph_buffer: GlyphBuffer,

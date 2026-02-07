@@ -100,6 +100,7 @@ class GraphicsContext(abc.ABC):
         interpolation_alpha: InterpolationAlpha = InterpolationAlpha(1.0),  # noqa: B008
         scale_x: float = 1.0,
         scale_y: float = 1.0,
+        world_pos: tuple[int, int] | None = None,
     ) -> None:
         """Draw an actor character at sub-pixel screen coordinates.
 
@@ -113,6 +114,8 @@ class GraphicsContext(abc.ABC):
                 state (0.0-1.0). Used for smooth movement between updates.
             scale_x: Horizontal scale factor (1.0 = normal width).
             scale_y: Vertical scale factor (1.0 = normal height).
+            world_pos: Optional world tile coordinates used by backends that
+                sample lighting directly on GPU.
         """
         pass
 

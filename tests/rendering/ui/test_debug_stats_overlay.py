@@ -32,6 +32,7 @@ def test_calculate_dimensions() -> None:
     live_variable_registry.watch("ds.longer")
 
     overlay = DebugStatsOverlay(cast("Controller", DummyController()))
+    overlay._refresh_display_lines()
     overlay._calculate_dimensions()
 
     expected_width = max(len("ds.var1: 1"), len("ds.longer: 22.5")) + 2
@@ -62,6 +63,7 @@ def test_draw_content() -> None:
     overlay = DebugStatsOverlay(cast("Controller", DummyController()))
     overlay.canvas = MagicMock()
     overlay.tile_dimensions = (8, 16)
+    overlay._refresh_display_lines()
 
     overlay.draw_content()
 
@@ -72,3 +74,46 @@ def test_draw_content() -> None:
     assert calls[0].args[0] == 0
     assert calls[0].args[1] == 0
     assert calls[1].args[1] == 16
+
+
+def test_draw_uses_single_getter_call_per_refresh(monkeypatch) -> None:
+    getter = MagicMock(return_value=123)
+    live_variable_registry.register("ds.once", getter=getter)
+    live_variable_registry.watch("ds.once")
+
+    overlay = DebugStatsOverlay(cast("Controller", DummyController()))
+    overlay.canvas = MagicMock()
+    overlay.canvas.end_frame.return_value = object()
+    overlay.show()
+
+    monkeypatch.setattr(
+        "catley.view.ui.debug_stats_overlay.perf_counter",
+        lambda: 1.0,
+    )
+    overlay.draw()
+
+    assert getter.call_count == 1
+
+
+def test_draw_throttles_refresh_to_2hz(monkeypatch) -> None:
+    getter = MagicMock(return_value=1)
+    live_variable_registry.register("ds.throttle", getter=getter)
+    live_variable_registry.watch("ds.throttle")
+
+    overlay = DebugStatsOverlay(cast("Controller", DummyController()))
+    overlay.canvas = MagicMock()
+    overlay.canvas.end_frame.return_value = object()
+    overlay.show()
+
+    times = iter([1.0, 1.1, 1.4, 1.6])
+    monkeypatch.setattr(
+        "catley.view.ui.debug_stats_overlay.perf_counter",
+        lambda: next(times),
+    )
+
+    overlay.draw()  # refresh
+    overlay.draw()  # skip
+    overlay.draw()  # skip
+    overlay.draw()  # refresh at +0.6s
+
+    assert getter.call_count == 2

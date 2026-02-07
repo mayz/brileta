@@ -93,8 +93,10 @@ class TestWorldViewBoundaryEnforcement:
         self.view.particle_system.update = Mock()
         self.view.environmental_system.update = Mock()
 
-        # Mock overlay rendering and animation update to avoid mocking game_map arrays
-        self.view._render_light_overlay = Mock(return_value=None)
+        # Mock overlay composition and animation update to isolate boundary behavior.
+        self.view._render_light_overlay_gpu_compose = Mock(
+            return_value="mock_light_overlay_texture"
+        )
         self.view._update_tile_animations = Mock()
 
         # Call draw
@@ -119,8 +121,10 @@ class TestWorldViewBoundaryEnforcement:
         self.view.particle_system.update = Mock()
         self.view.environmental_system.update = Mock()
 
-        # Mock overlay rendering and animation update to avoid mocking game_map arrays
-        self.view._render_light_overlay = Mock(return_value=None)
+        # Mock overlay composition and animation update to isolate boundary behavior.
+        self.view._render_light_overlay_gpu_compose = Mock(
+            return_value="mock_light_overlay_texture"
+        )
         self.view._update_tile_animations = Mock()
 
         # Call draw

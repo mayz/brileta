@@ -21,12 +21,14 @@ from catley.types import (
 )
 from catley.util.coordinates import (
     CoordinateConverter,
+    Rect,
 )
 from catley.util.glyph_buffer import GlyphBuffer
 from catley.util.tilesets import derive_outlined_atlas
 from catley.view.render.base_graphics import BaseGraphicsContext
 
 from .atmospheric_renderer import WGPUAtmosphericRenderer
+from .light_overlay_composer import WGPULightOverlayComposer
 from .resource_manager import WGPUResourceManager
 from .screen_renderer import WGPUScreenRenderer
 from .shader_manager import WGPUShaderManager
@@ -35,6 +37,31 @@ from .ui_texture_renderer import WGPUUITextureRenderer
 
 if TYPE_CHECKING:
     from catley.view.ui.cursor_manager import CursorManager
+
+
+def _infer_compose_tile_dimensions(
+    texture_width: int,
+    texture_height: int,
+    mask_width: int,
+    mask_height: int,
+) -> tuple[int, int] | None:
+    """Infer per-tile pixel size from texture and mask dimensions.
+
+    The compose pass maps output pixels back to tile coordinates. To keep that
+    mapping robust across resize/reconfiguration, derive tile dimensions from
+    the textures being composed rather than unrelated global state.
+    """
+    if mask_width <= 0 or mask_height <= 0:
+        return None
+    if texture_width <= 0 or texture_height <= 0:
+        return None
+    if texture_width % mask_width != 0 or texture_height % mask_height != 0:
+        return None
+    tile_width = texture_width // mask_width
+    tile_height = texture_height // mask_height
+    if tile_width <= 0 or tile_height <= 0:
+        return None
+    return (tile_width, tile_height)
 
 
 class WGPUGraphicsContext(BaseGraphicsContext):
@@ -82,8 +109,10 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         self.environmental_effect_renderer = None
         # Atmospheric renderer for cloud shadows and mist
         self.atmospheric_renderer: WGPUAtmosphericRenderer | None = None
+        self.light_overlay_composer: WGPULightOverlayComposer | None = None
         # Queued atmospheric layers for this frame
         self._atmospheric_layers: list[tuple] = []
+        self._gpu_actor_lighting_enabled = False
 
         # Letterbox/viewport state
         self.letterbox_geometry: tuple[int, int, int, int] | None = None
@@ -173,6 +202,10 @@ class WGPUGraphicsContext(BaseGraphicsContext):
             self.resource_manager,
             self.shader_manager,
             surface_format,
+        )
+        self.light_overlay_composer = WGPULightOverlayComposer(
+            self.resource_manager,
+            self.shader_manager,
         )
 
         # Set up dimensions and coordinate converter
@@ -296,6 +329,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         interpolation_alpha: InterpolationAlpha | None = None,
         scale_x: float = 1.0,
         scale_y: float = 1.0,
+        world_pos: tuple[int, int] | None = None,
     ) -> None:
         """Draw an actor character at sub-pixel screen coordinates."""
         if interpolation_alpha is None:
@@ -306,21 +340,35 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         # Convert color to 0-1 range
         base_color = (color[0] / 255.0, color[1] / 255.0, color[2] / 255.0)
 
-        # Apply colored lighting using a blend that preserves actor color and light tint
-        # This approach ensures actors are visibly tinted by colored lights
-        # We use a mix of multiplication (for shading) and addition (for color tint)
-        final_color = (
-            min(
-                1.0, base_color[0] * light_intensity[0] * 0.7 + light_intensity[0] * 0.3
-            ),
-            min(
-                1.0, base_color[1] * light_intensity[1] * 0.7 + light_intensity[1] * 0.3
-            ),
-            min(
-                1.0, base_color[2] * light_intensity[2] * 0.7 + light_intensity[2] * 0.3
-            ),
-            1.0,  # Always fully opaque
+        use_gpu_actor_lighting = (
+            self._gpu_actor_lighting_enabled and world_pos is not None
         )
+        if use_gpu_actor_lighting:
+            final_color = (
+                base_color[0],
+                base_color[1],
+                base_color[2],
+                1.0,
+            )
+        else:
+            # Apply colored lighting using a blend that preserves actor color and light tint
+            # This approach ensures actors are visibly tinted by colored lights
+            # We use a mix of multiplication (for shading) and addition (for color tint)
+            final_color = (
+                min(
+                    1.0,
+                    base_color[0] * light_intensity[0] * 0.7 + light_intensity[0] * 0.3,
+                ),
+                min(
+                    1.0,
+                    base_color[1] * light_intensity[1] * 0.7 + light_intensity[1] * 0.3,
+                ),
+                min(
+                    1.0,
+                    base_color[2] * light_intensity[2] * 0.7 + light_intensity[2] * 0.3,
+                ),
+                1.0,  # Always fully opaque
+            )
         uv_coords = self.uv_map[ord(char)]
 
         # Use integer tile dimensions for consistent positioning
@@ -339,7 +387,36 @@ class WGPUGraphicsContext(BaseGraphicsContext):
             scaled_h,
             uv_coords,
             final_color,
+            world_pos=(float(world_pos[0]), float(world_pos[1]))
+            if world_pos is not None
+            else None,
+            actor_light_scale=max(0.0, min(1.0, float(light_intensity[0]))),
+            actor_lighting_enabled=use_gpu_actor_lighting,
         )
+
+    def set_actor_lighting_gpu_context(
+        self,
+        lightmap_texture: Any | None,
+        viewport_origin: tuple[int, int] | None,
+    ) -> None:
+        """Configure per-frame actor lighting context for GPU lightmap sampling."""
+        if self.screen_renderer is None:
+            self._gpu_actor_lighting_enabled = False
+            return
+
+        if (
+            isinstance(lightmap_texture, wgpu.GPUTexture)
+            and viewport_origin is not None
+        ):
+            self._gpu_actor_lighting_enabled = True
+            self.screen_renderer.set_actor_lighting_context(
+                lightmap_texture,
+                viewport_origin,
+            )
+            return
+
+        self._gpu_actor_lighting_enabled = False
+        self.screen_renderer.set_actor_lighting_context(None, (0, 0))
 
     def draw_actor_shadow(
         self,
@@ -631,6 +708,9 @@ class WGPUGraphicsContext(BaseGraphicsContext):
 
         # Update letterbox geometry
         self._calculate_letterbox_geometry_and_tiles()
+        # Keep off-screen glyph rendering in sync with the current tile size.
+        if self.texture_renderer is not None:
+            self.texture_renderer.set_tile_dimensions(self._tile_dimensions)
 
     def prepare_to_present(self) -> None:
         """Prepare for presenting the frame."""
@@ -941,6 +1021,53 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         # Queue the background texture for batched rendering
         self.background_renderer.add_background_quad(texture, vertices)
 
+    def compose_light_overlay_gpu(
+        self,
+        dark_texture: Any,
+        light_texture: Any,
+        lightmap_texture: Any,
+        visible_mask_buffer: np.ndarray,
+        viewport_bounds: Rect,
+        viewport_offset: tuple[int, int],
+        pad_tiles: int,
+    ) -> wgpu.GPUTexture | None:
+        """Compose a light overlay texture fully on GPU.
+
+        Returns ``None`` when required inputs are unavailable.
+        """
+        if self.light_overlay_composer is None:
+            return None
+        if not isinstance(dark_texture, wgpu.GPUTexture):
+            return None
+        if not isinstance(light_texture, wgpu.GPUTexture):
+            return None
+        if not isinstance(lightmap_texture, wgpu.GPUTexture):
+            return None
+        if not isinstance(visible_mask_buffer, np.ndarray):
+            return None
+        if visible_mask_buffer.ndim != 2:
+            return None
+
+        tile_dimensions = _infer_compose_tile_dimensions(
+            dark_texture.width,
+            dark_texture.height,
+            int(visible_mask_buffer.shape[0]),
+            int(visible_mask_buffer.shape[1]),
+        )
+        if tile_dimensions is None:
+            return None
+
+        return self.light_overlay_composer.compose(
+            dark_texture=dark_texture,
+            light_texture=light_texture,
+            lightmap_texture=lightmap_texture,
+            visible_mask_buffer=visible_mask_buffer,
+            viewport_bounds=viewport_bounds,
+            viewport_offset=viewport_offset,
+            pad_tiles=pad_tiles,
+            tile_dimensions=tile_dimensions,
+        )
+
     def create_canvas(self, transparent: bool = True) -> Any:
         """Create a WGPU canvas."""
         from catley.backends.wgpu.canvas import WGPUCanvas
@@ -1170,6 +1297,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         self.background_renderer = None
         self.environmental_effect_renderer = None
         self.atmospheric_renderer = None
+        self.light_overlay_composer = None
         self.atlas_texture = None
         self.outlined_atlas_texture = None
         self.blurred_atlas_texture = None

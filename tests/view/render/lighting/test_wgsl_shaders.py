@@ -48,6 +48,28 @@ class TestWGSLLightingShaders:
         assert shader_module is not None
 
     @pytest.mark.skipif(not WGPU_AVAILABLE, reason="wgpu-py not available")
+    def test_light_overlay_compose_shader_compilation(self):
+        """Test that the GPU light-overlay compose WGSL shader compiles."""
+        shader_path = (
+            Path(__file__).parent.parent.parent.parent.parent
+            / "assets/shaders/wgsl/lighting/light_overlay_compose.wgsl"
+        )
+
+        assert shader_path.exists(), f"Shader not found: {shader_path}"
+        with shader_path.open() as f:
+            shader_source = f.read()
+
+        assert "@vertex" in shader_source
+        assert "@fragment" in shader_source
+        assert "vs_main" in shader_source
+        assert "fs_main" in shader_source
+
+        adapter = wgpu.gpu.request_adapter()  # type: ignore[possibly-unbound]
+        device = adapter.request_device()
+        shader_module = device.create_shader_module(code=shader_source)
+        assert shader_module is not None
+
+    @pytest.mark.skipif(not WGPU_AVAILABLE, reason="wgpu-py not available")
     def test_critical_shadow_algorithms_preserved(self):
         """Verify that critical shadow algorithms are preserved in WGSL translation."""
 
@@ -117,3 +139,18 @@ class TestWGSLLightingShaders:
 
         # Flicker effects
         assert "flicker" in wgsl_source.lower(), "Flicker effects missing in WGSL"
+
+    def test_screen_shader_has_actor_lighting_blend_formula(self):
+        """Actor lighting path should preserve the intended color blend equation."""
+        screen_shader_path = (
+            Path(__file__).parent.parent.parent.parent.parent
+            / "assets/shaders/wgsl/screen/main.wgsl"
+        )
+        with screen_shader_path.open() as f:
+            screen_source = f.read()
+
+        assert "ACTOR_LIGHTING_FLAG" in screen_source
+        assert (
+            "base_rgb * light_rgb * vec3f(0.7) + light_rgb * vec3f(0.3)"
+            in screen_source
+        )

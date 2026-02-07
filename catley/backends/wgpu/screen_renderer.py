@@ -22,6 +22,9 @@ VERTEX_DTYPE = np.dtype(
         ("position", "2f4"),  # (x, y)
         ("uv", "2f4"),  # (u, v)
         ("color", "4f4"),  # (r, g, b, a) as floats 0.0-1.0
+        ("world_pos", "2f4"),  # World tile coordinates for actor lighting
+        ("actor_light_scale", "f4"),  # Shadow receiver dimming scale
+        ("flags", "u4"),  # Bitmask flags for per-quad shader behavior
     ]
 )
 
@@ -61,6 +64,9 @@ class WGPUScreenRenderer:
         self.vertex_count = 0
         self._shadow_start = 0
         self._shadow_end = 0
+        self._actor_lightmap_texture: wgpu.GPUTexture | None = None
+        self._actor_light_viewport_origin: tuple[int, int] = (0, 0)
+        self._actor_lighting_enabled = False
 
         # Create vertex buffer
         buffer_size = MAX_QUADS * 6 * VERTEX_DTYPE.itemsize
@@ -72,31 +78,65 @@ class WGPUScreenRenderer:
 
         # Create dedicated uniform buffer for letterbox parameters
         self.uniform_buffer = self.resource_manager.device.create_buffer(
-            size=16,  # vec4<f32> = 16 bytes
+            size=32,  # 2 * vec4<f32>
             usage=wgpu.BufferUsage.UNIFORM | wgpu.BufferUsage.COPY_DST,
             label="screen_renderer_uniform_buffer",
         )
 
+        self._default_lightmap_texture = self.resource_manager.device.create_texture(
+            size=(1, 1, 1),
+            format=wgpu.TextureFormat.rgba32float,
+            usage=wgpu.TextureUsage.TEXTURE_BINDING | wgpu.TextureUsage.COPY_DST,
+            label="screen_renderer_default_lightmap",
+        )
+        default_lightmap_data = np.array([1.0, 1.0, 1.0, 1.0], dtype=np.float32)
+        self.resource_manager.queue.write_texture(
+            {
+                "texture": self._default_lightmap_texture,
+                "mip_level": 0,
+                "origin": (0, 0, 0),
+            },
+            memoryview(default_lightmap_data.tobytes()),
+            {"offset": 0, "bytes_per_row": 16, "rows_per_image": 1},
+            (1, 1, 1),
+        )
+
         # Create pipeline and bind groups
         self._create_pipeline()
-
-        # Pre-create bind groups during initialization for better performance.
-        # Sharp pass uses nearest sampling; shadow pass uses linear sampling.
-        self._cached_bind_group = self._create_bind_group(
-            texture=self.atlas_texture,
-            sampler=self.resource_manager.nearest_sampler,
-            label="screen_renderer_bind_group",
-        )
-        self._shadow_bind_group = self._create_bind_group(
-            texture=self.shadow_atlas_texture,
-            sampler=self.resource_manager.linear_sampler,
-            label="screen_renderer_shadow_bind_group",
-        )
+        self._bind_group_lightmap_texture: wgpu.GPUTexture | None = None
+        self._cached_bind_group: wgpu.GPUBindGroup | None = None
+        self._shadow_bind_group: wgpu.GPUBindGroup | None = None
+        self._refresh_bind_groups()
 
     def _create_pipeline(self) -> None:
         """Create the WGPU render pipeline for screen rendering."""
-        # Use shared bind group layout from resource manager
-        self.bind_group_layout = self.resource_manager.standard_bind_group_layout
+        self.bind_group_layout = self.resource_manager.device.create_bind_group_layout(
+            entries=[
+                {
+                    "binding": 0,
+                    "visibility": wgpu.ShaderStage.VERTEX | wgpu.ShaderStage.FRAGMENT,
+                    "buffer": {"type": wgpu.BufferBindingType.uniform},
+                },
+                {
+                    "binding": 1,
+                    "visibility": wgpu.ShaderStage.FRAGMENT,
+                    "texture": {"sample_type": wgpu.TextureSampleType.float},
+                },
+                {
+                    "binding": 2,
+                    "visibility": wgpu.ShaderStage.FRAGMENT,
+                    "sampler": {"type": wgpu.SamplerBindingType.filtering},
+                },
+                {
+                    "binding": 3,
+                    "visibility": wgpu.ShaderStage.FRAGMENT,
+                    "texture": {
+                        "sample_type": wgpu.TextureSampleType.unfilterable_float
+                    },
+                },
+            ],
+            label="screen_renderer_bind_group_layout",
+        )
 
         # Define vertex buffer layout
         vertex_layout = [
@@ -118,6 +158,21 @@ class WGPUScreenRenderer:
                         "format": "float32x4",
                         "offset": 16,  # color offset (4 * 4 bytes)
                         "shader_location": 2,
+                    },
+                    {
+                        "format": "float32x2",
+                        "offset": 32,  # world_pos offset
+                        "shader_location": 3,
+                    },
+                    {
+                        "format": "float32",
+                        "offset": 40,  # actor_light_scale offset
+                        "shader_location": 4,
+                    },
+                    {
+                        "format": "uint32",
+                        "offset": 44,  # flags offset
+                        "shader_location": 5,
                     },
                 ],
             }
@@ -157,6 +212,7 @@ class WGPUScreenRenderer:
         self,
         texture: wgpu.GPUTexture,
         sampler: wgpu.GPUSampler,
+        lightmap_texture: wgpu.GPUTexture,
         label: str,
     ) -> wgpu.GPUBindGroup:
         """Create a bind group for the provided texture/sampler pair."""
@@ -175,8 +231,36 @@ class WGPUScreenRenderer:
                     "binding": 2,
                     "resource": sampler,
                 },
+                {
+                    "binding": 3,
+                    "resource": lightmap_texture.create_view(),
+                },
             ],
             label=label,
+        )
+
+    def _active_lightmap_texture(self) -> wgpu.GPUTexture:
+        if self._actor_lighting_enabled and self._actor_lightmap_texture is not None:
+            return self._actor_lightmap_texture
+        return self._default_lightmap_texture
+
+    def _refresh_bind_groups(self) -> None:
+        """Refresh bind groups when actor-lightmap binding changes."""
+        lightmap_texture = self._active_lightmap_texture()
+        if self._bind_group_lightmap_texture is lightmap_texture:
+            return
+        self._bind_group_lightmap_texture = lightmap_texture
+        self._cached_bind_group = self._create_bind_group(
+            texture=self.atlas_texture,
+            sampler=self.resource_manager.nearest_sampler,
+            lightmap_texture=lightmap_texture,
+            label="screen_renderer_bind_group",
+        )
+        self._shadow_bind_group = self._create_bind_group(
+            texture=self.shadow_atlas_texture,
+            sampler=self.resource_manager.linear_sampler,
+            lightmap_texture=lightmap_texture,
+            label="screen_renderer_shadow_bind_group",
         )
 
     def begin_frame(self) -> None:
@@ -184,6 +268,17 @@ class WGPUScreenRenderer:
         self.vertex_count = 0
         self._shadow_start = 0
         self._shadow_end = 0
+
+    def set_actor_lighting_context(
+        self,
+        lightmap_texture: wgpu.GPUTexture | None,
+        viewport_origin: tuple[int, int],
+    ) -> None:
+        """Configure GPU actor-light sampling context for this frame."""
+        self._actor_lightmap_texture = lightmap_texture
+        self._actor_light_viewport_origin = viewport_origin
+        self._actor_lighting_enabled = lightmap_texture is not None
+        self._refresh_bind_groups()
 
     def mark_shadow_start(self) -> None:
         """Record where shadow vertices begin in the shared vertex buffer."""
@@ -201,19 +296,67 @@ class WGPUScreenRenderer:
         h: float,
         uv_coords: tuple[float, float, float, float],
         color_rgba: tuple[float, float, float, float],
+        *,
+        world_pos: tuple[float, float] | None = None,
+        actor_light_scale: float = 1.0,
+        actor_lighting_enabled: bool = False,
     ) -> None:
         """Add a quad to the vertex buffer."""
         if self.vertex_count + 6 > len(self.cpu_vertex_buffer):
             return
 
         u1, v1, u2, v2 = uv_coords
+        flags = np.uint32(1 if actor_lighting_enabled else 0)
+        world_x, world_y = world_pos if world_pos is not None else (-1.0, -1.0)
         vertices = np.zeros(6, dtype=VERTEX_DTYPE)
-        vertices[0] = ((x, y), (u1, v1), color_rgba)
-        vertices[1] = ((x + w, y), (u2, v1), color_rgba)
-        vertices[2] = ((x, y + h), (u1, v2), color_rgba)
-        vertices[3] = ((x + w, y), (u2, v1), color_rgba)
-        vertices[4] = ((x, y + h), (u1, v2), color_rgba)
-        vertices[5] = ((x + w, y + h), (u2, v2), color_rgba)
+        vertices[0] = (
+            (x, y),
+            (u1, v1),
+            color_rgba,
+            (world_x, world_y),
+            actor_light_scale,
+            flags,
+        )
+        vertices[1] = (
+            (x + w, y),
+            (u2, v1),
+            color_rgba,
+            (world_x, world_y),
+            actor_light_scale,
+            flags,
+        )
+        vertices[2] = (
+            (x, y + h),
+            (u1, v2),
+            color_rgba,
+            (world_x, world_y),
+            actor_light_scale,
+            flags,
+        )
+        vertices[3] = (
+            (x + w, y),
+            (u2, v1),
+            color_rgba,
+            (world_x, world_y),
+            actor_light_scale,
+            flags,
+        )
+        vertices[4] = (
+            (x, y + h),
+            (u1, v2),
+            color_rgba,
+            (world_x, world_y),
+            actor_light_scale,
+            flags,
+        )
+        vertices[5] = (
+            (x + w, y + h),
+            (u2, v2),
+            color_rgba,
+            (world_x, world_y),
+            actor_light_scale,
+            flags,
+        )
 
         self.cpu_vertex_buffer[self.vertex_count : self.vertex_count + 6] = vertices
         self.vertex_count += 6
@@ -271,12 +414,57 @@ class WGPUScreenRenderer:
         # UV mapping projects glyph bottom onto the base edge and glyph top
         # onto the tip edge so shadows stretch outward from actor feet.
         vertices = np.zeros(6, dtype=VERTEX_DTYPE)
-        vertices[0] = (base_left, (u1, v2), c0)
-        vertices[1] = (base_right, (u2, v2), c1)
-        vertices[2] = (tip_left, (u1, v1), c2)
-        vertices[3] = (base_right, (u2, v2), c1)
-        vertices[4] = (tip_left, (u1, v1), c2)
-        vertices[5] = (tip_right, (u2, v1), c3)
+        default_world = (-1.0, -1.0)
+        default_scale = 1.0
+        default_flags = np.uint32(0)
+        vertices[0] = (
+            base_left,
+            (u1, v2),
+            c0,
+            default_world,
+            default_scale,
+            default_flags,
+        )
+        vertices[1] = (
+            base_right,
+            (u2, v2),
+            c1,
+            default_world,
+            default_scale,
+            default_flags,
+        )
+        vertices[2] = (
+            tip_left,
+            (u1, v1),
+            c2,
+            default_world,
+            default_scale,
+            default_flags,
+        )
+        vertices[3] = (
+            base_right,
+            (u2, v2),
+            c1,
+            default_world,
+            default_scale,
+            default_flags,
+        )
+        vertices[4] = (
+            tip_left,
+            (u1, v1),
+            c2,
+            default_world,
+            default_scale,
+            default_flags,
+        )
+        vertices[5] = (
+            tip_right,
+            (u2, v1),
+            c3,
+            default_world,
+            default_scale,
+            default_flags,
+        )
 
         self.cpu_vertex_buffer[self.vertex_count : self.vertex_count + 6] = vertices
         self.vertex_count += 6
@@ -306,8 +494,19 @@ class WGPUScreenRenderer:
             scaled_w, scaled_h = map(int, window_size)
 
         # Update uniform buffer with letterbox parameters (same as UI renderer)
+        actor_lighting_enabled = self._actor_lighting_enabled
+        actor_light_viewport_origin = self._actor_light_viewport_origin
+        actor_lighting_flag = 1.0 if actor_lighting_enabled else 0.0
         letterbox_data = struct.pack(
-            "4f", float(offset_x), float(offset_y), float(scaled_w), float(scaled_h)
+            "8f",
+            float(offset_x),
+            float(offset_y),
+            float(scaled_w),
+            float(scaled_h),
+            float(actor_light_viewport_origin[0]),
+            float(actor_light_viewport_origin[1]),
+            actor_lighting_flag,
+            0.0,
         )
         self.resource_manager.queue.write_buffer(
             self.uniform_buffer, 0, memoryview(letterbox_data)
@@ -338,6 +537,9 @@ class WGPUScreenRenderer:
         pre_shadow_count = shadow_start
         shadow_count = shadow_end - shadow_start
         post_shadow_count = self.vertex_count - shadow_end
+
+        assert self._cached_bind_group is not None
+        assert self._shadow_bind_group is not None
 
         if pre_shadow_count > 0:
             render_pass.set_bind_group(0, self._cached_bind_group)

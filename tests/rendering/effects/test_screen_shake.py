@@ -160,8 +160,10 @@ def test_world_view_applies_screen_shake_before_render(monkeypatch) -> None:
     view = WorldView(cast("Controller", controller), shake)
     view.set_bounds(0, 0, 10, 10)
 
-    # Mock the light overlay rendering to avoid mocking game_map.visible
-    view._render_light_overlay = lambda renderer: None
+    # Mock light overlay composition to isolate screen-shake behavior.
+    view._render_light_overlay_gpu_compose = lambda renderer, dark_texture: (
+        "mock_light_overlay_texture"
+    )
     view._update_tile_animations = lambda: None
 
     view.draw(cast(GraphicsContext, controller.graphics), InterpolationAlpha(0.0))
@@ -204,8 +206,10 @@ def test_world_view_screen_shake_does_not_overflow(monkeypatch) -> None:
 
     view._render_map_unlit = wrapped_render_map
 
-    # Mock the light overlay rendering to avoid mocking game_map.visible
-    view._render_light_overlay = lambda renderer: None
+    # Mock light overlay composition to isolate screen-shake behavior.
+    view._render_light_overlay_gpu_compose = lambda renderer, dark_texture: (
+        "mock_light_overlay_texture"
+    )
     view._update_tile_animations = lambda: None
 
     view.draw(cast(GraphicsContext, controller.graphics), InterpolationAlpha(0.0))
@@ -228,8 +232,10 @@ def test_small_map_actor_alignment(monkeypatch) -> None:
     view = WorldView(cast("Controller", controller), shake)
     view.set_bounds(0, 0, 10, 8)
 
-    # Mock the light overlay rendering to avoid mocking game_map.visible
-    view._render_light_overlay = lambda renderer: None
+    # Mock light overlay composition to isolate alignment behavior.
+    view._render_light_overlay_gpu_compose = lambda renderer, dark_texture: (
+        "mock_light_overlay_texture"
+    )
     view._update_tile_animations = lambda: None
 
     view.draw(cast(GraphicsContext, controller.graphics), InterpolationAlpha(0.0))

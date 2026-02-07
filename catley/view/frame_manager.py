@@ -55,6 +55,18 @@ if TYPE_CHECKING:
 _RENDER_METRICS: list[MetricSpec] = [
     MetricSpec("time.render_ms", "Total rendering", 500),
     MetricSpec("time.render.light_overlay_ms", "Light overlay rendering"),
+    MetricSpec(
+        "time.render.light_overlay_gpu_compose_ms",
+        "GPU light overlay composition pass",
+    ),
+    MetricSpec(
+        "time.render.light_overlay_gpu_readback_ms",
+        "GPU light overlay readback/map time",
+    ),
+    MetricSpec(
+        "time.render.actor_light_gpu_readback_ms",
+        "GPU actor-light point-sample readback/map time",
+    ),
     MetricSpec("time.render.map_unlit_ms", "Unlit map rendering"),
     MetricSpec("time.render.actor_shadows_ms", "Projected actor shadow rendering"),
     MetricSpec("time.render.actors_smooth_ms", "Smooth actor rendering"),

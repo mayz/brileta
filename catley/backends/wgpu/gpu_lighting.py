@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import math
 import struct
+from contextlib import suppress
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -20,6 +21,7 @@ import wgpu
 from catley.config import AMBIENT_LIGHT_LEVEL
 from catley.types import FixedTimestep
 from catley.util.coordinates import Rect
+from catley.util.live_vars import record_time_live_variable
 from catley.view.render.lighting.base import LightingSystem
 
 if TYPE_CHECKING:
@@ -142,7 +144,7 @@ class GPULightingSystem(LightingSystem):
         """Initialize WGPU fragment shader-based lighting.
 
         Returns:
-            True if initialization successful, False if fallback needed
+            True if initialization succeeds, False otherwise.
         """
         try:
             # Initialize fragment-based lighting
@@ -980,13 +982,29 @@ class GPULightingSystem(LightingSystem):
         if self._render_pipeline is None:
             return None
 
-        # Perform GPU computation
-        gpu_result = self._compute_lightmap_gpu(viewport_bounds)
+        if not self._compute_lightmap_gpu_to_texture(viewport_bounds):
+            return None
+
+        gpu_result = self._readback_lightmap_from_output_texture(viewport_bounds)
         if gpu_result is not None:
             self.revision += 1
             return gpu_result
 
         return None
+
+    def compute_lightmap_texture(self, viewport_bounds: Rect) -> wgpu.GPUTexture | None:
+        """Render the lightmap and keep the result on-GPU.
+
+        This path avoids the full viewport readback used by ``compute_lightmap``.
+        """
+        if self._render_pipeline is None:
+            return None
+
+        if not self._compute_lightmap_gpu_to_texture(viewport_bounds):
+            return None
+
+        self.revision += 1
+        return self._output_texture
 
     def _ensure_resources_for_viewport(self, viewport_bounds: Rect) -> bool:
         """Ensure GPU resources are sized appropriately for the viewport.
@@ -995,7 +1013,7 @@ class GPULightingSystem(LightingSystem):
             viewport_bounds: The viewport area that will be rendered
 
         Returns:
-            True if resources are ready, False if fallback needed
+            True if resources are ready, False otherwise.
         """
         if self._render_pipeline is None:
             return False
@@ -1016,9 +1034,11 @@ class GPULightingSystem(LightingSystem):
                 self._output_texture = self.device.create_texture(
                     size=(viewport_bounds.width, viewport_bounds.height, 1),
                     format=wgpu.TextureFormat.rgba32float,
-                    # to handle shader output
+                    # This texture is both a render target for the lighting pass and
+                    # a sampled input for the GPU light-overlay compose pass.
                     usage=wgpu.TextureUsage.RENDER_ATTACHMENT
-                    | wgpu.TextureUsage.COPY_SRC,
+                    | wgpu.TextureUsage.COPY_SRC
+                    | wgpu.TextureUsage.TEXTURE_BINDING,
                 )
 
                 # Create buffer for reading back results
@@ -1044,16 +1064,15 @@ class GPULightingSystem(LightingSystem):
 
         return True
 
-    def _compute_lightmap_gpu(self, viewport_bounds: Rect) -> np.ndarray | None:
-        """Perform the actual GPU lighting computation using fragment shaders."""
+    def _compute_lightmap_gpu_to_texture(self, viewport_bounds: Rect) -> bool:
+        """Render the lightmap into ``self._output_texture``."""
         try:
             # Ensure resources are ready
             if not self._ensure_resources_for_viewport(viewport_bounds):
-                return None
+                return False
 
             assert self._render_pipeline is not None
             assert self._output_texture is not None
-            assert self._output_buffer is not None
             assert self._vertex_buffer is not None
 
             # Use cached light data if revision hasn't changed
@@ -1144,82 +1163,72 @@ class GPULightingSystem(LightingSystem):
 
             render_pass.end()
 
-            # Copy render target to readback buffer (using aligned bytes_per_row)
-            command_encoder.copy_texture_to_buffer(
-                {
-                    "texture": self._output_texture,
-                    "mip_level": 0,
-                    "origin": (0, 0, 0),
-                },
-                {
-                    "buffer": self._output_buffer,
-                    "offset": 0,
-                    "bytes_per_row": self._padded_bytes_per_row,
-                    "rows_per_image": viewport_bounds.height,
-                },
-                (viewport_bounds.width, viewport_bounds.height, 1),
-            )
-
-            # Submit commands
+            # Submit render commands. Readback is performed separately by
+            # _readback_lightmap_from_output_texture() when the CPU path asks for it.
             self.queue.submit([command_encoder.finish()])
-
-            # Map buffer for reading with proper error handling.
-            # PERF: This GPU→CPU transfer (map_sync) is the main lighting bottleneck
-            # (~20% of frame time when profiled). The lightmap must come back to CPU
-            # because visibility masking, animation effects, and tile appearance
-            # blending currently happen in Python. A future optimization would move
-            # those operations to GPU shaders, keeping the lightmap on-GPU and only
-            # reading back the final composited frame for display.
-            assert self._output_buffer is not None
-            try:
-                # Map the buffer (this waits for GPU operations to complete)
-                self._output_buffer.map_sync(wgpu.MapMode.READ)
-                # Read the mapped data
-                mapped_data = self._output_buffer.read_mapped()
-                if mapped_data is None:
-                    print("Failed to read mapped buffer data")
-                    return None
-                # wgpu returns memoryview but types it as ArrayLike
-                result_data = np.frombuffer(mapped_data, dtype=np.float32)
-            finally:
-                # Always unmap the buffer, even if mapping failed
-                try:
-                    self._output_buffer.unmap()
-                except Exception as e:
-                    print(f"Error unmapping buffer: {e}")
-
-            # Handle row padding: buffer has padded rows for WGPU alignment.
-            # Each row has padded_bytes_per_row bytes; only width*4*4 are valid.
-            padded_floats_per_row = self._padded_bytes_per_row // 4
-            valid_floats_per_row = viewport_bounds.width * 4  # 4 components
-
-            # Reshape to (height, padded_floats_per_row) and extract valid columns
-            padded_image = result_data.reshape(
-                (viewport_bounds.height, padded_floats_per_row)
-            )
-            # Slice to get only valid data, then reshape to (height, width, 4)
-            result_image = padded_image[:, :valid_floats_per_row].reshape(
-                (viewport_bounds.height, viewport_bounds.width, 4)
-            )
-            rgb_result = result_image[:, :, :3]  # Extract RGB channels
-
-            # Check for invalid values that could cause overflow
-            if np.any(np.isnan(rgb_result)) or np.any(np.isinf(rgb_result)):
-                return None
-
-            if np.any(rgb_result < 0) or np.any(rgb_result > 1):
-                # Clamp to valid range
-                rgb_result = np.clip(rgb_result, 0.0, 1.0)
-
-            # Transpose to match expected (width, height, 3) format
-            return np.transpose(rgb_result, (1, 0, 2))
+            return True
 
         except Exception as e:
             print(f"Error in WGPU lightmap computation: {e}")
             import traceback
 
             traceback.print_exc()
-            return None
+            return False
+
+    def _readback_lightmap_from_output_texture(
+        self,
+        viewport_bounds: Rect,
+    ) -> np.ndarray | None:
+        """Read back the rendered lightmap texture into a NumPy array."""
+        assert self._output_texture is not None
+        assert self._output_buffer is not None
+
+        command_encoder = self.device.create_command_encoder()
+        command_encoder.copy_texture_to_buffer(
+            {
+                "texture": self._output_texture,
+                "mip_level": 0,
+                "origin": (0, 0, 0),
+            },
+            {
+                "buffer": self._output_buffer,
+                "offset": 0,
+                "bytes_per_row": self._padded_bytes_per_row,
+                "rows_per_image": viewport_bounds.height,
+            },
+            (viewport_bounds.width, viewport_bounds.height, 1),
+        )
+
+        with record_time_live_variable("time.render.light_overlay_gpu_readback_ms"):
+            self.queue.submit([command_encoder.finish()])
+            self._output_buffer.map_sync(wgpu.MapMode.READ)
+            try:
+                mapped_data = self._output_buffer.read_mapped()
+                if mapped_data is None:
+                    return None
+                result_data = np.frombuffer(mapped_data, dtype=np.float32)
+                padded_floats_per_row = self._padded_bytes_per_row // 4
+                valid_floats_per_row = viewport_bounds.width * 4  # 4 components
+
+                padded_image = result_data.reshape(
+                    (viewport_bounds.height, padded_floats_per_row)
+                )
+                result_image = padded_image[:, :valid_floats_per_row].reshape(
+                    (viewport_bounds.height, viewport_bounds.width, 4)
+                )
+                rgb_result = result_image[:, :, :3]
+
+                if np.any(np.isnan(rgb_result)) or np.any(np.isinf(rgb_result)):
+                    return None
+                if np.any(rgb_result < 0.0) or np.any(rgb_result > 1.0):
+                    rgb_result = np.clip(rgb_result, 0.0, 1.0)
+
+                return np.transpose(rgb_result, (1, 0, 2))
+            finally:
+                with suppress(Exception):
+                    self._output_buffer.unmap()
+
+        return None
 
     def _create_bind_group(self) -> None:
         """Create bind group with uniform buffer and all textures."""
@@ -1404,5 +1413,6 @@ class GPULightingSystem(LightingSystem):
         self._shadow_grid_texture = None
 
         # Clear cached data
+        self._current_viewport = None
         self._cached_light_data = None
         self._last_light_data_hash = None

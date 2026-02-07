@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from catley.types import DeltaTime, InterpolationAlpha
@@ -10,6 +11,7 @@ from catley.util.live_vars import (
     live_variable_registry,
     record_time_live_variable,
 )
+from catley.util.metric_dump import PeriodicMetricLogger
 from catley.view.render.graphics import GraphicsContext
 
 # App-level metrics.
@@ -35,6 +37,10 @@ class AppConfig:
     resizable: bool = True
     maximized: bool = True
     fullscreen: bool = False
+    # Optional periodic live-metric dump configuration.
+    metric_log_names: tuple[str, ...] = ()
+    metric_log_file: str | None = None
+    metric_log_interval_seconds: float = 5.0
 
 
 class App[TGraphics: GraphicsContext](ABC):
@@ -83,6 +89,15 @@ class App[TGraphics: GraphicsContext](ABC):
         # Will be set by subclasses after they create their graphics context
         self.graphics: TGraphics  # Subclasses must initialize this
         self.controller: Controller | None = None
+        self._metric_logger: PeriodicMetricLogger | None = None
+        self._metric_logger_disabled = False
+        if app_config.metric_log_names:
+            metric_log_path = Path(app_config.metric_log_file or "metric_samples.log")
+            self._metric_logger = PeriodicMetricLogger(
+                metric_names=app_config.metric_log_names,
+                output_path=metric_log_path,
+                interval_seconds=app_config.metric_log_interval_seconds,
+            )
 
     def _initialize_controller(self) -> None:
         """Initializes the controller after graphics context is ready."""
@@ -196,6 +211,24 @@ class App[TGraphics: GraphicsContext](ABC):
             self.prepare_for_new_frame()
             self.controller.render_visual_frame(alpha)
             self.present_frame()
+
+        self._maybe_dump_metrics()
+
+    def _maybe_dump_metrics(self) -> None:
+        """Append selected live-metric values if periodic logging is enabled."""
+        if (
+            self._metric_logger is None
+            or self._metric_logger_disabled
+            or self.controller is None
+        ):
+            return
+
+        try:
+            self._metric_logger.maybe_write()
+        except Exception as exc:  # pragma: no cover - defensive runtime guard
+            # A debug logger should never crash the game loop.
+            self._metric_logger_disabled = True
+            print(f"Warning: disabling metric logger after write failure: {exc}")
 
     @abstractmethod
     def prepare_for_new_frame(self) -> None:

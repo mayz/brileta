@@ -485,6 +485,8 @@ def _build_screen_renderer_for_split_tests(
     renderer.pipeline = Mock()
     renderer._cached_bind_group = Mock(name="cached_bind_group")
     renderer._shadow_bind_group = Mock(name="shadow_bind_group")
+    renderer._actor_lighting_enabled = False
+    renderer._actor_light_viewport_origin = (0, 0)
     return renderer
 
 
@@ -823,12 +825,13 @@ def test_actor_shadow_receiver_dimming_scales_with_caster_height() -> None:
 def test_actor_lighting_intensity_applies_shadow_receive_dimming() -> None:
     actor = _build_actor(x=1, y=1, shadow_height=1)
     view = object.__new__(WorldView)
-    view.current_light_intensity = np.full((4, 4, 3), 0.8, dtype=np.float32)
     view._actor_shadow_receive_light_scale = {id(actor): 0.5}
+    view._gpu_actor_lightmap_texture = None
+    view._gpu_actor_lightmap_viewport_origin = None
 
     light_rgb = view._get_actor_lighting_intensity(cast(Actor, actor), Rect(0, 0, 4, 4))
 
-    assert light_rgb == pytest.approx((0.4, 0.4, 0.4))
+    assert light_rgb == pytest.approx((0.5, 0.5, 0.5))
 
 
 def _build_terrain_shadow_view() -> tuple[WorldView, SimpleNamespace]:

@@ -6,6 +6,9 @@ struct VertexInput {
     @location(0) in_vert: vec2<f32>,   // Input vertex position in PIXELS
     @location(1) in_uv: vec2<f32>,
     @location(2) in_color: vec4<f32>,
+    @location(3) in_world_pos: vec2<f32>,
+    @location(4) in_actor_light_scale: f32,
+    @location(5) in_flags: u32,
 }
 
 // Vertex output structure (to fragment shader)
@@ -13,16 +16,22 @@ struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) v_uv: vec2<f32>,
     @location(1) v_color: vec4<f32>,
+    @location(2) v_world_pos: vec2<f32>,
+    @location(3) v_actor_light_scale: f32,
+    @location(4) v_flags: u32,
 }
 
 // Uniform buffer for letterbox parameters
 struct Uniforms {
     u_letterbox: vec4<f32>,   // (offset_x, offset_y, scaled_w, scaled_h)
+    // (viewport_world_x, viewport_world_y, actor_lighting_enabled, unused)
+    u_actor_light_data: vec4<f32>,
 }
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
 @group(0) @binding(1) var u_texture: texture_2d<f32>;
 @group(0) @binding(2) var u_sampler: sampler;
+@group(0) @binding(3) var u_actor_lightmap: texture_2d<f32>;
 
 // Vertex shader stage
 @vertex
@@ -45,6 +54,9 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     output.position = vec4<f32>(x, y, 0.0, 1.0);
     output.v_uv = input.in_uv;
     output.v_color = input.in_color;
+    output.v_world_pos = input.in_world_pos;
+    output.v_actor_light_scale = input.in_actor_light_scale;
+    output.v_flags = input.in_flags;
 
     return output;
 }
@@ -60,10 +72,36 @@ fn warm_color_correction(color: vec3<f32>) -> vec3<f32> {
     );
 }
 
+const ACTOR_LIGHTING_FLAG: u32 = 1u;
+
 // Fragment shader stage
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    let sampled_color = textureSample(u_texture, u_sampler, input.v_uv) * input.v_color;
+    var tint = input.v_color;
+    let actor_lighting_enabled = uniforms.u_actor_light_data.z > 0.5;
+    let actor_flag_set = (input.v_flags & ACTOR_LIGHTING_FLAG) != 0u;
+
+    if (actor_lighting_enabled && actor_flag_set) {
+        let lightmap_dims = vec2i(textureDimensions(u_actor_lightmap));
+        let viewport_origin = uniforms.u_actor_light_data.xy;
+        let local_tile = vec2i(round(input.v_world_pos - viewport_origin));
+
+        var light_rgb = vec3f(1.0);
+        if (local_tile.x >= 0 && local_tile.y >= 0 &&
+            local_tile.x < lightmap_dims.x && local_tile.y < lightmap_dims.y) {
+            light_rgb = clamp(textureLoad(u_actor_lightmap, local_tile, 0).rgb, vec3f(0.0), vec3f(1.0));
+        }
+
+        light_rgb *= input.v_actor_light_scale;
+        let base_rgb = input.v_color.rgb;
+        let actor_rgb = min(
+            vec3f(1.0),
+            base_rgb * light_rgb * vec3f(0.7) + light_rgb * vec3f(0.3),
+        );
+        tint = vec4f(actor_rgb, input.v_color.a);
+    }
+
+    let sampled_color = textureSample(u_texture, u_sampler, input.v_uv) * tint;
     let corrected_rgb = warm_color_correction(sampled_color.rgb);
     return vec4<f32>(corrected_rgb, sampled_color.a);
 }

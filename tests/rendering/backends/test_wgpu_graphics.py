@@ -18,13 +18,17 @@ from catley.util.glyph_buffer import GlyphBuffer
 try:
     import wgpu
 
-    from catley.backends.wgpu.graphics import WGPUGraphicsContext
+    from catley.backends.wgpu.graphics import (
+        WGPUGraphicsContext,
+        _infer_compose_tile_dimensions,
+    )
 
     WGPU_AVAILABLE = True
 except ImportError:
     WGPU_AVAILABLE = False
     wgpu = None
     WGPUGraphicsContext = None
+    _infer_compose_tile_dimensions = None
 
 
 class MockCursorManager:
@@ -163,6 +167,27 @@ class TestWGPUGraphicsContext:
         """Test update dimensions method."""
         # Should not raise exception (currently a no-op)
         self.graphics_ctx.update_dimensions()
+
+    def test_update_dimensions_syncs_texture_renderer_tile_dimensions(self):
+        """Resize updates off-screen renderer tile dimensions."""
+        mock_texture_renderer = Mock()
+        self.graphics_ctx.texture_renderer = mock_texture_renderer
+        self.graphics_ctx.window.get_framebuffer_size.return_value = (1680, 1050)
+
+        self.graphics_ctx.update_dimensions()
+
+        mock_texture_renderer.set_tile_dimensions.assert_called_with((21, 21))
+
+    def test_infer_compose_tile_dimensions(self):
+        """Compose tile size should be inferred from texture/mask dimensions."""
+        assert _infer_compose_tile_dimensions is not None
+
+        assert _infer_compose_tile_dimensions(1640, 1240, 82, 62) == (20, 20)
+        assert _infer_compose_tile_dimensions(1680, 1050, 80, 50) == (21, 21)
+        assert _infer_compose_tile_dimensions(100, 100, 0, 10) is None
+        assert _infer_compose_tile_dimensions(100, 100, 10, 0) is None
+        assert _infer_compose_tile_dimensions(101, 100, 10, 10) is None
+        assert _infer_compose_tile_dimensions(100, 103, 10, 10) is None
 
     @pytest.mark.skipif(not WGPU_AVAILABLE, reason="WGPU not available")
     def test_wgpu_initialization_real(self):

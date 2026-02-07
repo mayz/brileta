@@ -20,6 +20,9 @@ VERTEX_DTYPE = np.dtype(
         ("position", "2f4"),  # (x, y)
         ("uv", "2f4"),  # (u, v)
         ("color", "4f4"),  # (r, g, b, a) as floats 0.0-1.0
+        ("world_pos", "2f4"),  # Unused for environmental effects
+        ("actor_light_scale", "f4"),  # Unused for environmental effects
+        ("flags", "u4"),  # Unused for environmental effects
     ]
 )
 
@@ -59,7 +62,7 @@ class WGPUEnvironmentalEffectRenderer:
 
         # Create uniform buffer for letterbox parameters
         self.uniform_buffer = self.resource_manager.device.create_buffer(
-            size=4 * 4,  # 4 floats: offset_x, offset_y, scaled_w, scaled_h
+            size=8 * 4,  # 2 vec4<f32> (matches wgsl/screen/main.wgsl Uniforms)
             usage=wgpu.BufferUsage.UNIFORM | wgpu.BufferUsage.COPY_DST,
         )
 
@@ -68,8 +71,55 @@ class WGPUEnvironmentalEffectRenderer:
             wgpu.GPUTexture, wgpu.GPUBindGroup
         ] = weakref.WeakKeyDictionary()
 
-        # Use shared bind group layout from resource manager
-        self.bind_group_layout = self.resource_manager.standard_bind_group_layout
+        # Create a 1x1 white lightmap texture so this renderer can satisfy the
+        # shared screen shader's lightmap binding without changing visuals.
+        self._default_lightmap_texture = self.resource_manager.device.create_texture(
+            size=(1, 1, 1),
+            format=wgpu.TextureFormat.rgba32float,
+            usage=wgpu.TextureUsage.TEXTURE_BINDING | wgpu.TextureUsage.COPY_DST,
+            label="environmental_effect_default_lightmap",
+        )
+        default_lightmap_data = np.array([1.0, 1.0, 1.0, 1.0], dtype=np.float32)
+        self.resource_manager.queue.write_texture(
+            {
+                "texture": self._default_lightmap_texture,
+                "mip_level": 0,
+                "origin": (0, 0, 0),
+            },
+            memoryview(default_lightmap_data.tobytes()),
+            {"offset": 0, "bytes_per_row": 16, "rows_per_image": 1},
+            (1, 1, 1),
+        )
+
+        # This renderer reuses wgsl/screen/main.wgsl, so its bind group layout
+        # must include the actor-lightmap binding even though effects ignore it.
+        self.bind_group_layout = self.resource_manager.device.create_bind_group_layout(
+            entries=[
+                {
+                    "binding": 0,
+                    "visibility": wgpu.ShaderStage.VERTEX | wgpu.ShaderStage.FRAGMENT,
+                    "buffer": {"type": wgpu.BufferBindingType.uniform},
+                },
+                {
+                    "binding": 1,
+                    "visibility": wgpu.ShaderStage.FRAGMENT,
+                    "texture": {"sample_type": wgpu.TextureSampleType.float},
+                },
+                {
+                    "binding": 2,
+                    "visibility": wgpu.ShaderStage.FRAGMENT,
+                    "sampler": {"type": wgpu.SamplerBindingType.filtering},
+                },
+                {
+                    "binding": 3,
+                    "visibility": wgpu.ShaderStage.FRAGMENT,
+                    "texture": {
+                        "sample_type": wgpu.TextureSampleType.unfilterable_float
+                    },
+                },
+            ],
+            label="environmental_effect_bind_group_layout",
+        )
 
         # Create render pipeline
         self._create_pipeline()
@@ -102,6 +152,21 @@ class WGPUEnvironmentalEffectRenderer:
                         "format": wgpu.VertexFormat.float32x4,
                         "offset": 16,
                         "shader_location": 2,
+                    },
+                    {
+                        "format": wgpu.VertexFormat.float32x2,
+                        "offset": 32,
+                        "shader_location": 3,
+                    },
+                    {
+                        "format": wgpu.VertexFormat.float32,
+                        "offset": 40,
+                        "shader_location": 4,
+                    },
+                    {
+                        "format": wgpu.VertexFormat.uint32,
+                        "offset": 44,
+                        "shader_location": 5,
                     },
                 ],
             }
@@ -189,12 +254,58 @@ class WGPUEnvironmentalEffectRenderer:
         # Create vertices for this effect quad (use full texture UVs)
         u1, v1, u2, v2 = 0.0, 0.0, 1.0, 1.0
         vertices = np.zeros(6, dtype=VERTEX_DTYPE)
-        vertices[0] = ((x, y), (u1, v1), color_rgba)
-        vertices[1] = ((x + w, y), (u2, v1), color_rgba)
-        vertices[2] = ((x, y + h), (u1, v2), color_rgba)
-        vertices[3] = ((x + w, y), (u2, v1), color_rgba)
-        vertices[4] = ((x, y + h), (u1, v2), color_rgba)
-        vertices[5] = ((x + w, y + h), (u2, v2), color_rgba)
+        # Actor-light fields are intentionally set to inert defaults.
+        inert_world = (-1.0, -1.0)
+        inert_scale = 1.0
+        inert_flags = np.uint32(0)
+        vertices[0] = (
+            (x, y),
+            (u1, v1),
+            color_rgba,
+            inert_world,
+            inert_scale,
+            inert_flags,
+        )
+        vertices[1] = (
+            (x + w, y),
+            (u2, v1),
+            color_rgba,
+            inert_world,
+            inert_scale,
+            inert_flags,
+        )
+        vertices[2] = (
+            (x, y + h),
+            (u1, v2),
+            color_rgba,
+            inert_world,
+            inert_scale,
+            inert_flags,
+        )
+        vertices[3] = (
+            (x + w, y),
+            (u2, v1),
+            color_rgba,
+            inert_world,
+            inert_scale,
+            inert_flags,
+        )
+        vertices[4] = (
+            (x, y + h),
+            (u1, v2),
+            color_rgba,
+            inert_world,
+            inert_scale,
+            inert_flags,
+        )
+        vertices[5] = (
+            (x + w, y + h),
+            (u2, v2),
+            color_rgba,
+            inert_world,
+            inert_scale,
+            inert_flags,
+        )
 
         # Copy vertices into the CPU buffer
         self.cpu_vertex_buffer[self.vertex_count : self.vertex_count + 6] = vertices
@@ -225,7 +336,15 @@ class WGPUEnvironmentalEffectRenderer:
             offset_x, offset_y, scaled_w, scaled_h = 0, 0, 800, 600  # Fallback
 
         letterbox_data = struct.pack(
-            "4f", float(offset_x), float(offset_y), float(scaled_w), float(scaled_h)
+            "8f",
+            float(offset_x),
+            float(offset_y),
+            float(scaled_w),
+            float(scaled_h),
+            0.0,  # actor light viewport x (unused)
+            0.0,  # actor light viewport y (unused)
+            0.0,  # actor lighting enabled flag
+            0.0,
         )
         self.resource_manager.queue.write_buffer(
             self.uniform_buffer, 0, memoryview(letterbox_data)
@@ -270,6 +389,10 @@ class WGPUEnvironmentalEffectRenderer:
                 {
                     "binding": 2,
                     "resource": self.sampler,
+                },
+                {
+                    "binding": 3,
+                    "resource": self._default_lightmap_texture.create_view(),
                 },
             ],
         )

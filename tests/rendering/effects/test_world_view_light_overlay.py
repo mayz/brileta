@@ -1,136 +1,275 @@
-"""Tests for WorldView light overlay rendering logic."""
+"""Tests for WorldView GPU light overlay composition logic."""
 
 from unittest.mock import Mock
 
 import numpy as np
+import pytest
 
+from catley.environment import tile_types
+from catley.environment.map import TileAnimationState
+from catley.util.coordinates import Rect
 from catley.view.views.world_view import WorldView
 
 
 class TestWorldViewLightOverlay:
-    """Test WorldView light overlay rendering handles explored vs visible tiles."""
+    """Test GPU light overlay composition behavior."""
 
-    def test_light_overlay_returns_none_when_no_lighting_system(self):
-        """Test that light overlay returns None when lighting system is unavailable."""
+    def test_gpu_compose_raises_when_no_lighting_system(self) -> None:
+        """Composition should fail loudly when lighting is enabled but unavailable."""
+        world_view = WorldView(Mock(), Mock(), lighting_system=None)
+        with pytest.raises(RuntimeError, match="no lighting system"):
+            world_view._render_light_overlay_gpu_compose(
+                Mock(),
+                dark_texture=object(),
+            )
 
-        # Create WorldView without lighting system
+    def test_gpu_compose_uses_explored_tiles_and_visible_mask(self) -> None:
+        """Explored tiles populate source data while visibility drives mask values."""
         mock_controller = Mock()
-        mock_screen_shake = Mock()
-        world_view = WorldView(mock_controller, mock_screen_shake, lighting_system=None)
-
-        mock_renderer = Mock()
-        result = world_view._render_light_overlay(mock_renderer)
-
-        assert result is None
-
-    def test_light_overlay_processes_explored_mask_not_visible_mask(self):
-        """Test that the light overlay logic checks explored tiles, not visible ones.
-
-        This is a regression test for the bug where light overlay only processed
-        visible tiles, causing explored-but-not-visible areas to appear black.
-        """
-        from catley.environment import tile_types
-        from catley.environment.map import TileAnimationState
-        from catley.util.coordinates import Rect
-
-        # Mock controller and dependencies
-        mock_controller = Mock()
-        mock_screen_shake = Mock()
         mock_lighting_system = Mock()
-
-        # Create WorldView instance
-        world_view = WorldView(mock_controller, mock_screen_shake, mock_lighting_system)
+        world_view = WorldView(mock_controller, Mock(), mock_lighting_system)
         world_view.set_bounds(0, 0, 10, 10)
 
-        # Mock game world with maps where explored > visible
         mock_gw = Mock()
         mock_controller.gw = mock_gw
         mock_gw.game_map.width = 3
         mock_gw.game_map.height = 3
 
-        # Explored: all tiles
         explored = np.ones((3, 3), dtype=bool)
-        mock_gw.game_map.explored = explored
-
-        # Visible: only center tile
         visible = np.zeros((3, 3), dtype=bool)
         visible[1, 1] = True
+        mock_gw.game_map.explored = explored
         mock_gw.game_map.visible = visible
 
-        # Create proper appearance maps with correct dtypes
         light_app = np.zeros((3, 3), dtype=tile_types.TileTypeAppearance)
-        dark_app = np.zeros((3, 3), dtype=tile_types.TileTypeAppearance)
-        for x in range(3):
-            for y in range(3):
-                light_app[x, y] = (ord("#"), (200, 200, 200), (50, 50, 50))
-                dark_app[x, y] = (ord("#"), (100, 100, 100), (20, 20, 20))
+        light_app[:, :] = (ord("#"), (200, 200, 200), (50, 50, 50))
         mock_gw.game_map.light_appearance_map = light_app
-        mock_gw.game_map.dark_appearance_map = dark_app
+        mock_gw.game_map.animation_params = np.zeros(
+            (3, 3),
+            dtype=tile_types.TileAnimationParams,
+        )
+        mock_gw.game_map.animation_state = np.zeros((3, 3), dtype=TileAnimationState)
 
-        # Create animation arrays
-        animation_params = np.zeros((3, 3), dtype=tile_types.TileAnimationParams)
-        animation_state = np.zeros((3, 3), dtype=TileAnimationState)
-        mock_gw.game_map.animation_params = animation_params
-        mock_gw.game_map.animation_state = animation_state
-
-        # Mock viewport system
         mock_viewport_system = Mock()
         mock_viewport_system.get_visible_bounds.return_value = Rect(0, 0, 3, 3)
         mock_viewport_system.offset_x = 0
         mock_viewport_system.offset_y = 0
         world_view.viewport_system = mock_viewport_system
 
-        # Mock lighting intensity - only center tile has light
-        light_intensity = np.zeros((3, 3, 3), dtype=np.float32)
-        light_intensity[1, 1] = [0.5, 0.5, 0.5]
-        mock_lighting_system.compute_lightmap.return_value = light_intensity
+        lightmap_texture = object()
+        composed_texture = object()
+        mock_lighting_system.compute_lightmap_texture.return_value = lightmap_texture
+        mock_lighting_system.compute_lightmap = Mock()
 
-        # Run the light overlay rendering
-        result = world_view._render_light_overlay(Mock())
+        mock_graphics = Mock()
+        mock_graphics.render_glyph_buffer_to_texture.return_value = object()
+        mock_graphics.compose_light_overlay_gpu.return_value = composed_texture
 
-        # Verify we got a result (method completed successfully)
-        assert result is not None
+        result = world_view._render_light_overlay_gpu_compose(
+            mock_graphics,
+            dark_texture=object(),
+        )
 
-        # Key assertion: ALL explored tiles should have been written to the buffer,
-        # not just the visible ones. Check that corners (explored but not visible)
-        # have non-zero data in the glyph buffer.
+        assert result is composed_texture
+        mock_lighting_system.compute_lightmap_texture.assert_called_once()
+        mock_lighting_system.compute_lightmap.assert_not_called()
+
+        compose_kwargs = mock_graphics.compose_light_overlay_gpu.call_args.kwargs
+        visible_mask_buffer = compose_kwargs["visible_mask_buffer"]
         pad = world_view._SCROLL_PADDING
-        # Corner tile (0,0) is explored but not visible
-        corner_ch = world_view.light_overlay_glyph_buffer.data["ch"][pad, pad]
-        assert corner_ch == ord("#"), "Explored-but-not-visible tile should be rendered"
 
-    def test_light_overlay_handles_no_explored_tiles(self):
-        """Test that light overlay handles case where no tiles are explored."""
+        # Corner tile is explored-but-not-visible.
+        corner_ch = world_view.light_source_glyph_buffer.data["ch"][pad, pad]
+        assert corner_ch == ord("#")
+        assert bool(visible_mask_buffer[pad, pad]) is False
+        # Center tile is visible.
+        assert bool(visible_mask_buffer[pad + 1, pad + 1]) is True
 
-        # Mock dependencies
+        assert world_view._gpu_actor_lightmap_texture is lightmap_texture
+        assert world_view._gpu_actor_lightmap_viewport_origin == (0, 0)
+
+    def test_gpu_compose_handles_no_explored_tiles(self) -> None:
+        """Composition should succeed with empty explored/visible masks."""
         mock_controller = Mock()
-        mock_screen_shake = Mock()
         mock_lighting_system = Mock()
-
-        world_view = WorldView(mock_controller, mock_screen_shake, mock_lighting_system)
+        world_view = WorldView(mock_controller, Mock(), mock_lighting_system)
         world_view.set_bounds(0, 0, 10, 10)
 
-        # Mock game world with no explored tiles
         mock_gw = Mock()
         mock_controller.gw = mock_gw
         mock_gw.game_map.width = 3
         mock_gw.game_map.height = 3
-        mock_gw.game_map.explored = np.zeros((3, 3), dtype=bool)  # No explored tiles
-        mock_gw.game_map.visible = np.zeros((3, 3), dtype=bool)  # No visible tiles
-
-        # Mock viewport system
-        from catley.util.coordinates import Rect
+        mock_gw.game_map.explored = np.zeros((3, 3), dtype=bool)
+        mock_gw.game_map.visible = np.zeros((3, 3), dtype=bool)
+        mock_gw.game_map.light_appearance_map = np.zeros(
+            (3, 3),
+            dtype=tile_types.TileTypeAppearance,
+        )
+        mock_gw.game_map.animation_params = np.zeros(
+            (3, 3),
+            dtype=tile_types.TileAnimationParams,
+        )
+        mock_gw.game_map.animation_state = np.zeros((3, 3), dtype=TileAnimationState)
 
         mock_viewport_system = Mock()
         mock_viewport_system.get_visible_bounds.return_value = Rect(0, 0, 3, 3)
+        mock_viewport_system.offset_x = 0
+        mock_viewport_system.offset_y = 0
         world_view.viewport_system = mock_viewport_system
 
-        # Mock lighting intensity
-        world_view.current_light_intensity = np.zeros((3, 3, 3), dtype=np.float32)
-        mock_lighting_system.compute_lightmap.return_value = (
-            world_view.current_light_intensity
+        mock_lighting_system.compute_lightmap_texture.return_value = object()
+
+        mock_graphics = Mock()
+        mock_graphics.render_glyph_buffer_to_texture.return_value = object()
+        mock_graphics.compose_light_overlay_gpu.return_value = object()
+
+        result = world_view._render_light_overlay_gpu_compose(
+            mock_graphics,
+            dark_texture=object(),
         )
 
-        # Should complete without error and return a GlyphBuffer
-        result = world_view._render_light_overlay(Mock())
         assert result is not None
+        compose_kwargs = mock_graphics.compose_light_overlay_gpu.call_args.kwargs
+        visible_mask_buffer = compose_kwargs["visible_mask_buffer"]
+        assert not np.any(visible_mask_buffer)
+
+    def test_gpu_compose_raises_when_backend_returns_none(self) -> None:
+        """Composition should fail loudly if backend compose unexpectedly returns None."""
+        mock_controller = Mock()
+        mock_lighting_system = Mock()
+        world_view = WorldView(mock_controller, Mock(), mock_lighting_system)
+        world_view.set_bounds(0, 0, 10, 10)
+
+        mock_gw = Mock()
+        mock_controller.gw = mock_gw
+        mock_gw.game_map.width = 1
+        mock_gw.game_map.height = 1
+        mock_gw.game_map.explored = np.ones((1, 1), dtype=bool)
+        mock_gw.game_map.visible = np.ones((1, 1), dtype=bool)
+        mock_gw.game_map.light_appearance_map = np.zeros(
+            (1, 1),
+            dtype=tile_types.TileTypeAppearance,
+        )
+        mock_gw.game_map.animation_params = np.zeros(
+            (1, 1),
+            dtype=tile_types.TileAnimationParams,
+        )
+        mock_gw.game_map.animation_state = np.zeros((1, 1), dtype=TileAnimationState)
+
+        mock_viewport_system = Mock()
+        mock_viewport_system.get_visible_bounds.return_value = Rect(0, 0, 1, 1)
+        mock_viewport_system.offset_x = 0
+        mock_viewport_system.offset_y = 0
+        world_view.viewport_system = mock_viewport_system
+
+        mock_lighting_system.compute_lightmap_texture.return_value = object()
+
+        mock_graphics = Mock()
+        mock_graphics.render_glyph_buffer_to_texture.return_value = object()
+        mock_graphics.compose_light_overlay_gpu.return_value = None
+
+        with pytest.raises(RuntimeError, match="produced no texture"):
+            world_view._render_light_overlay_gpu_compose(
+                mock_graphics,
+                dark_texture=object(),
+            )
+
+    def test_gpu_compose_raises_when_lightmap_texture_missing(self) -> None:
+        """Composition should fail loudly if lightmap texture generation fails."""
+        mock_controller = Mock()
+        mock_lighting_system = Mock()
+        world_view = WorldView(mock_controller, Mock(), mock_lighting_system)
+        world_view.set_bounds(0, 0, 10, 10)
+
+        mock_gw = Mock()
+        mock_controller.gw = mock_gw
+        mock_gw.game_map.width = 1
+        mock_gw.game_map.height = 1
+        mock_gw.game_map.explored = np.ones((1, 1), dtype=bool)
+        mock_gw.game_map.visible = np.ones((1, 1), dtype=bool)
+        mock_gw.game_map.light_appearance_map = np.zeros(
+            (1, 1),
+            dtype=tile_types.TileTypeAppearance,
+        )
+        mock_gw.game_map.animation_params = np.zeros(
+            (1, 1),
+            dtype=tile_types.TileAnimationParams,
+        )
+        mock_gw.game_map.animation_state = np.zeros((1, 1), dtype=TileAnimationState)
+
+        mock_viewport_system = Mock()
+        mock_viewport_system.get_visible_bounds.return_value = Rect(0, 0, 1, 1)
+        mock_viewport_system.offset_x = 0
+        mock_viewport_system.offset_y = 0
+        world_view.viewport_system = mock_viewport_system
+
+        mock_lighting_system.compute_lightmap_texture.return_value = None
+        mock_graphics = Mock()
+        mock_graphics.compose_light_overlay_gpu.return_value = object()
+
+        with pytest.raises(RuntimeError, match="returned no lightmap texture"):
+            world_view._render_light_overlay_gpu_compose(
+                mock_graphics,
+                dark_texture=object(),
+            )
+
+    def test_apply_tile_light_animations_modulates_only_animated_tiles(self) -> None:
+        """Tile color modulation should affect only entries marked as animated."""
+        world_view = object.__new__(WorldView)
+
+        light_fg_rgb = np.array(
+            [
+                [100, 150, 200],
+                [240, 240, 240],
+            ],
+            dtype=np.uint8,
+        )
+        light_bg_rgb = np.array(
+            [
+                [50, 60, 70],
+                [10, 20, 30],
+            ],
+            dtype=np.uint8,
+        )
+
+        animation_params = np.zeros((2, 2), dtype=tile_types.TileAnimationParams)
+        animation_state = np.zeros((2, 2), dtype=TileAnimationState)
+        animation_params["animates"][1, 1] = True
+        animation_params["fg_variation"][1, 1] = (100, 100, 100)
+        animation_params["bg_variation"][1, 1] = (100, 100, 100)
+        animation_state["fg_values"][1, 1] = (1000, 0, 500)
+        animation_state["bg_values"][1, 1] = (1000, 0, 500)
+
+        valid_exp_x = np.array([0, 1], dtype=np.int32)
+        valid_exp_y = np.array([0, 1], dtype=np.int32)
+
+        world_view._apply_tile_light_animations(
+            light_fg_rgb,
+            light_bg_rgb,
+            animation_params,
+            animation_state,
+            valid_exp_x,
+            valid_exp_y,
+        )
+
+        # Non-animated entry remains untouched.
+        assert tuple(int(v) for v in light_fg_rgb[0]) == (100, 150, 200)
+        assert tuple(int(v) for v in light_bg_rgb[0]) == (50, 60, 70)
+        # Animated entry receives modulation and clamps per channel.
+        assert tuple(int(v) for v in light_fg_rgb[1]) == (255, 190, 240)
+        assert tuple(int(v) for v in light_bg_rgb[1]) == (60, 0, 30)
+
+    def test_actor_lighting_uses_shadow_receive_scale_only(self) -> None:
+        """Actor lighting intensity is now a per-actor receive-scale multiplier."""
+        mock_controller = Mock()
+        world_view = WorldView(mock_controller, Mock(), lighting_system=Mock())
+
+        actor = Mock()
+        actor.x = 1
+        actor.y = 1
+        world_view._actor_shadow_receive_light_scale[id(actor)] = 0.4
+        world_view._gpu_actor_lightmap_texture = None
+        world_view._gpu_actor_lightmap_viewport_origin = None
+
+        light_rgb = world_view._get_actor_lighting_intensity(actor, Rect(0, 0, 2, 2))
+        assert light_rgb == (0.4, 0.4, 0.4)
