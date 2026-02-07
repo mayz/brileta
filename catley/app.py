@@ -42,8 +42,8 @@ class App[TGraphics: GraphicsContext](ABC):
     Abstract base class for application drivers.
 
     An App is the top-level component responsible for bridging the abstract game
-    logic with a concrete windowing and event-handling backend (e.g., TCOD,
-    GLFW). It owns the main loop and drives the entire application.
+    logic with a concrete windowing and event-handling backend (e.g., GLFW).
+    It owns the main loop and drives the entire application.
 
     This class implements the fixed timestep with interpolation pattern that
     ensures a deterministic simulation and smooth visuals across all backends.
@@ -143,7 +143,7 @@ class App[TGraphics: GraphicsContext](ABC):
         Execute exactly one logic step at fixed 60Hz timing.
 
         This method is called by timing strategies:
-        - Accumulator-based (TCOD, GLFW):
+        - Accumulator-based (GLFW):
             0-N times per visual frame (accumulator catches up to maintain 60Hz)
         - Event-driven:
             exactly once per 1/60 second (scheduler guarantees 60Hz)
@@ -152,7 +152,7 @@ class App[TGraphics: GraphicsContext](ABC):
         """
         assert self.controller is not None
         # Note: process_player_input() is handled differently by each backend
-        # Accumulator-based (TCOD, GLFW):
+        # Accumulator-based (GLFW):
         #   calls it once per visual frame in update_game_logic()
         # Event-driven:
         #   will call it in its own timing
@@ -162,7 +162,7 @@ class App[TGraphics: GraphicsContext](ABC):
         """
         Renders a visual frame with interpolation (accumulator-based timing).
 
-        This method is used by polling backends (TCOD) that use the accumulator
+        This method is used by polling backends that use the accumulator
         pattern. It calculates interpolation alpha from the accumulator state.
         """
         assert self.controller is not None
@@ -185,7 +185,7 @@ class App[TGraphics: GraphicsContext](ABC):
         Renders a visual frame with explicit interpolation alpha.
 
         This method is called by rendering strategies:
-        - Accumulator-based (TCOD, GLFW): via render_frame() with calculated alpha
+        - Accumulator-based (GLFW): via render_frame() with calculated alpha
         - Event-driven: directly with manually-calculated alpha
 
         Shared rendering ensures identical visual output across all backends.

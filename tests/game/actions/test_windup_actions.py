@@ -262,7 +262,7 @@ def patched_controller(stop_after: int):
         stack.enter_context(patch("catley.controller.TurnManager", DummyTurnManager))
         stack.enter_context(patch.object(Controller, "update_fov", lambda self: None))
 
-        # Mock SDL renderer for TCODRenderer initialization
+        # Mock SDL renderer for GraphicsContext initialization
         sdl_renderer_mock = MagicMock()
         sdl_renderer_mock.output_size = (800, 600)
         context_mock = MagicMock()

@@ -64,7 +64,7 @@ class DummyFrameManager(FrameManager):
         # We will mock the parts we don't want to initialize.
         self.controller = controller
         # Create a mock Renderer that satisfies the type hint.
-        # We don't need a real TCOD context for this test.
+        # We don't need a real graphics context for this test.
         self.renderer = MagicMock(spec=GraphicsContext)
 
     def create_effect(

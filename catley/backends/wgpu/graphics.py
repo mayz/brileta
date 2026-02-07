@@ -317,7 +317,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         )
         uv_coords = self.uv_map[ord(char)]
 
-        # Use integer tile dimensions like TCOD backend for consistent positioning
+        # Use integer tile dimensions for consistent positioning
         tile_w, tile_h = self.tile_dimensions
 
         # Apply non-uniform scaling: scale dimensions and center on tile

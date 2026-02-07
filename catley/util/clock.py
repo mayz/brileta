@@ -37,8 +37,8 @@ class Clock:
         """
         Sync to a given framerate and return the delta time.
 
-        This method is for polling-based loops (like TCOD) that need the clock
-        to enforce an FPS cap by sleeping. It then calls tick() to perform
+        This method is for polling-based loops that need the clock to enforce
+        an FPS cap by sleeping. It then calls tick() to perform
         the time measurement.
         """
         if fps is not None and fps > 0:

@@ -217,7 +217,7 @@ class WGPUCanvas(Canvas):
                 0 <= x < self.private_glyph_buffer.width
                 and 0 <= tile_y < self.private_glyph_buffer.height
             ):
-                # Preserve existing background color, similar to TCOD behavior
+                # Preserve existing background color when printing over a tile
                 current_bg = self.private_glyph_buffer.data[x, tile_y]["bg"]
                 self.private_glyph_buffer.put_char(
                     x, tile_y, ord(char), fg_color, tuple(current_bg)

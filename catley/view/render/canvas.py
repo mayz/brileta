@@ -16,7 +16,7 @@ Key Principles:
   texture for display.
 
 This separation allows Views to be ignorant of the underlying rendering technology
-(e.g., TCOD glyphs vs. Pillow TrueType fonts).
+(e.g., glyph-based tile rendering vs. TrueType font rendering).
 """
 
 from __future__ import annotations

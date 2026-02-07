@@ -92,8 +92,8 @@ RandomSeed = int | str | None
 # =============================================================================
 
 # Literal types for type-checked backend attributes.
-# Note: ModernGL (OpenGL) and TCOD backends were removed in favor of WGPU.
-# To recover the old backends, see git tag "pre-moderngl-removal".
+# Note: legacy backends (ModernGL, TCOD) were removed in favor of WGPU.
+# To recover them, see git tag "pre-moderngl-removal".
 AppBackend = Literal["glfw"]
 GraphicsBackend = Literal["wgpu"]
 LightingBackend = Literal["wgpu"]
@@ -105,7 +105,7 @@ class BackendConfig(Enum):
     WGPU uses native GPU APIs (Metal on macOS, Vulkan on Linux, D3D12 on Windows)
     for future-proof cross-platform rendering.
 
-    Historical note: ModernGL (OpenGL 4.1) and TCOD backends were removed.
+    Historical note: legacy backends (ModernGL, TCOD) were removed.
     See git tag "pre-moderngl-removal" to recover them if needed.
     """
 

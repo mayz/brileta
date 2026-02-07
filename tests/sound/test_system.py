@@ -61,7 +61,7 @@ class MockAudioChannel(AudioChannel):
         """Update the volume of this channel."""
         self._volume = volume
         if volume <= 0.0:
-            # When volume is set to 0, stop the channel (like our TCOD fix)
+            # When volume is set to 0, stop the channel to free resources
             self.stop()
 
     def is_playing(self) -> bool:
@@ -1434,12 +1434,12 @@ class TestCampfireBugRegression:
         # Update with player at distance ~30 (well beyond max_distance of 17)
         self.system.update(player.x, player.y, create_spatial_index(actors), 0.1)
 
-        # THE CRITICAL TEST - this would fail with the original TCOD bug
+        # THE CRITICAL TEST - this would fail with the original campfire bug
         active_channels = self.mock_backend.get_active_channel_count()
         assert active_channels == 0, (
             f"ORIGINAL CAMPFIRE BUG REPRODUCED: {active_channels} audio channels "
             f"still playing when campfire is at distance ~30 (beyond max_distance 17). "
-            f"This indicates the TCOD Channel.stop() fix is not working!"
+            f"This indicates the Channel.stop() fix is not working!"
         )
 
         # Additional verification at emitter level
