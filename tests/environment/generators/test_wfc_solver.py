@@ -207,11 +207,8 @@ class TestContradictionHandling:
 
         solver = WFCSolver(3, 3, patterns, rng)
         solver.wave[1, 1] = 0  # Empty bitmask (no possibilities)
-        # Push the modified cell onto the heap so it gets processed
-        solver._push_entropy(1, 1)
 
         with pytest.raises(WFCContradiction):
-            # Call solve() which will eventually process the empty cell
             solver.solve()
 
     def test_constrain_to_empty_raises(self) -> None:

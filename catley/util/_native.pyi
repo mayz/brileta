@@ -1,3 +1,5 @@
+class WFCContradictionError(Exception): ...
+
 def astar(
     cost: object,
     start_x: int,
@@ -12,3 +14,12 @@ def fov(
     origin_y: int,
     radius: int,
 ) -> None: ...
+def wfc_solve(
+    width: int,
+    height: int,
+    num_patterns: int,
+    propagation_masks: object,
+    pattern_weights: object,
+    initial_wave: object,
+    seed: int,
+) -> list[list[int]]: ...
