@@ -1,16 +1,11 @@
 """Main entry point for the game."""
 
-import logging
-
 from . import config
 from .app import App, AppConfig
 from .util import rng
 
 
 def main() -> None:
-    # Suppress SDL3 startup info messages from tcod
-    logging.getLogger("tcod.sdl").setLevel(logging.ERROR)
-
     # Initialize the RNG stream system for deterministic randomness
     rng.init(config.RANDOM_SEED)
 

@@ -907,9 +907,9 @@ class Controller:
             try:
                 from pathlib import Path
 
-                from catley.backends.tcod.audio import TCODAudioBackend
+                from catley.backends.sounddevice_audio import SoundDeviceAudioBackend
 
-                audio_backend = TCODAudioBackend()
+                audio_backend = SoundDeviceAudioBackend()
                 audio_backend.initialize()
                 self.sound_system.set_audio_backend(audio_backend)
 
