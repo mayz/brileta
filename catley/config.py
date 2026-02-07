@@ -180,6 +180,10 @@ SHADOW_INTENSITY = 0.25  # Point light shadow intensity (indoor torches, etc.)
 SUN_SHADOW_INTENSITY = 0.55  # Directional/sun shadow intensity
 SHADOW_MAX_LENGTH = 6  # Maximum shadow march distance (accommodates tallest terrain)
 SHADOW_FALLOFF = True  # Shadows get lighter with distance
+ACTOR_SHADOW_ALPHA: float = 0.65  # Base alpha for projected actor shadow quads
+ACTOR_SHADOW_FADE_TIP: bool = True  # Fade actor shadow alpha to zero at the tip
+ACTOR_SHADOW_BLUR_RADIUS: float = 2.0  # Gaussian blur radius for shadow atlas
+TERRAIN_GLYPH_SHADOW_ALPHA: float = 0.55  # Alpha for terrain glyph shadows (boulders)
 
 # Tile emission (glowing hazard tiles like acid pools, hot coals)
 TILE_EMISSION_ENABLED = True

@@ -20,6 +20,8 @@ Key Principles:
 from __future__ import annotations
 
 import abc
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -112,6 +114,23 @@ class GraphicsContext(abc.ABC):
             scale_x: Horizontal scale factor (1.0 = normal width).
             scale_y: Vertical scale factor (1.0 = normal height).
         """
+        pass
+
+    @abc.abstractmethod
+    def draw_actor_shadow(
+        self,
+        char: str,
+        screen_x: float,
+        screen_y: float,
+        shadow_dir_x: float,
+        shadow_dir_y: float,
+        shadow_length_pixels: float,
+        shadow_alpha: float,
+        scale_x: float = 1.0,
+        scale_y: float = 1.0,
+        fade_tip: bool = True,
+    ) -> None:
+        """Draw a projected glyph shadow as a stretched parallelogram quad."""
         pass
 
     @abc.abstractmethod
@@ -415,3 +434,13 @@ class GraphicsContext(abc.ABC):
         Backends that do not own explicit resources intentionally do nothing.
         """
         return
+
+    @contextmanager
+    def shadow_pass(self) -> Iterator[None]:
+        """Context manager that brackets shadow geometry in the vertex buffer.
+
+        The default implementation is a no-op.  Backends override this to record
+        vertex-buffer offsets so that shadow quads can be drawn in a separate
+        render pass with different blend state.
+        """
+        yield

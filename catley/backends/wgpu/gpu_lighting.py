@@ -116,10 +116,6 @@ class GPULightingSystem(LightingSystem):
         # Track first frame to force uniform update
         self._first_frame = True
 
-        # Cache for shadow casters
-        self._cached_shadow_casters: list[float] | None = None
-        self._cached_shadow_revision: int = -1
-
         # Sky exposure texture for directional lighting
         self._sky_exposure_texture: wgpu.GPUTexture | None = None
         self._sky_exposure_sampler: wgpu.GPUSampler | None = None
@@ -302,9 +298,10 @@ class GPULightingSystem(LightingSystem):
             16  # viewport_data: vec4i (16 bytes)
             + 16  # light_count + ambient_light + time + tile_aligned (16 bytes)
             + 32 * 16 * 8  # 8 light arrays * 32 lights * 16 bytes each
-            + 16  # actor shadow uniforms (16 bytes)
-            + 64 * 16  # actor shadow positions: 64 actors * 16 bytes each
-            + 16  # sun uniforms (16 bytes)
+            + 16  # sun direction + padding
+            + 16  # sun color + intensity
+            + 16  # sun shadow/scaling params
+            + 16  # map size + padding
             + 64  # extra padding
         )
 
@@ -431,78 +428,6 @@ class GPULightingSystem(LightingSystem):
                 )
 
         return light_data
-
-    def _collect_actor_shadow_casters(self, viewport_bounds: Rect) -> list[float]:
-        """Collect actor shadow casters in the viewport.
-
-        Terrain shadows are now handled by the shadow grid texture. This method
-        only collects actors (NPCs) that cast shadows, for the small actor
-        shadow uniform array in the shader.
-
-        Args:
-            viewport_bounds: The viewport bounds for rendering
-
-        Returns:
-            Flat list of floats representing actor data (3 floats per actor):
-            [x, y, shadow_height, x, y, shadow_height, ...]
-        """
-        from catley.config import SHADOW_MAX_LENGTH, SHADOWS_ENABLED
-        from catley.game.lights import DirectionalLight
-
-        if not SHADOWS_ENABLED:
-            return []
-
-        # Maximum actors the shader can handle
-        MAX_ACTOR_SHADOWS = 64
-
-        # Compute expansion that accounts for shadow stretching at low sun
-        # elevations. The shader extends shadow reach by length_scale, so we
-        # must include actors whose stretched shadows could reach the viewport.
-        shadow_expansion = SHADOW_MAX_LENGTH
-        directional_light = next(
-            (
-                light
-                for light in self.game_world.get_global_lights()
-                if isinstance(light, DirectionalLight)
-            ),
-            None,
-        )
-        if directional_light:
-            elev_rad = math.radians(max(directional_light.elevation_degrees, 0.1))
-            length_scale = min(1.0 / math.tan(elev_rad), 8.0)
-            shadow_expansion = int(SHADOW_MAX_LENGTH * length_scale + 0.5)
-
-        # Expand viewport bounds to include potential shadow influence
-        expanded_bounds = Rect.from_bounds(
-            x1=viewport_bounds.x1 - shadow_expansion,
-            y1=viewport_bounds.y1 - shadow_expansion,
-            x2=viewport_bounds.x2 + shadow_expansion,
-            y2=viewport_bounds.y2 + shadow_expansion,
-        )
-
-        # Collect shadow-casting actors in expanded viewport
-        actor_positions: list[float] = []
-
-        if self.game_world.actor_spatial_index:
-            actors = self.game_world.actor_spatial_index.get_in_bounds(
-                int(expanded_bounds.x1),
-                int(expanded_bounds.y1),
-                int(expanded_bounds.x2),
-                int(expanded_bounds.y2),
-            )
-
-            count = 0
-            for actor in actors:
-                if count >= MAX_ACTOR_SHADOWS:
-                    break
-                shadow_h = getattr(actor, "shadow_height", 0)
-                if shadow_h > 0:
-                    actor_positions.extend(
-                        [float(actor.x), float(actor.y), float(shadow_h)]
-                    )
-                    count += 1
-
-        return actor_positions
 
     def _update_sky_exposure_texture(self) -> None:
         """Update the sky exposure texture from the game map's region data.
@@ -860,7 +785,10 @@ class GPULightingSystem(LightingSystem):
             return  # No update needed
 
         # Shadow heights are already uint8. Transpose to match texture coords.
+        # Heights 1-2 use CPU glyph shadows, not shader staircase shadows,
+        # so zero them out before uploading to the GPU.
         shadow_data = np.ascontiguousarray(game_map.shadow_heights.T.astype(np.uint8))
+        shadow_data[shadow_data <= 2] = 0
 
         # Release old texture if it exists
         if self._shadow_grid_texture is not None:
@@ -897,18 +825,10 @@ class GPULightingSystem(LightingSystem):
         self,
         light_data: list[float],
         light_count: int,
-        actor_shadow_positions: list[float],
-        actor_shadow_count: int,
         viewport_bounds: Rect,
     ) -> bytes:
         """Pack uniform data into a byte buffer matching the WGSL struct layout."""
-        from catley.config import (
-            SHADOW_FALLOFF,
-            SHADOW_INTENSITY,
-            SHADOW_MAX_LENGTH,
-            SKY_EXPOSURE_POWER,
-            SUN_SHADOW_INTENSITY,
-        )
+        from catley.config import SKY_EXPOSURE_POWER, SUN_SHADOW_INTENSITY
         from catley.game.lights import DirectionalLight
 
         buffer = bytearray()
@@ -970,34 +890,6 @@ class GPULightingSystem(LightingSystem):
         buffer.extend(pack_light_array(0, 9, 1))  # light_min_brightness
         buffer.extend(pack_light_array(0, 10, 1))  # light_max_brightness
 
-        # --- Actor Shadow Uniforms (terrain shadows use grid texture) ---
-        buffer.extend(
-            struct.pack(
-                "ifif",
-                actor_shadow_count,
-                SHADOW_INTENSITY,
-                SHADOW_MAX_LENGTH,
-                1.0 if SHADOW_FALLOFF else 0.0,
-            )
-        )
-
-        # Actor shadow positions with height (terrain shadows use texture)
-        # Format per actor: x, y, shadow_height, padding
-        MAX_ACTOR_SHADOWS = 64
-        for i in range(MAX_ACTOR_SHADOWS):
-            if i < actor_shadow_count:
-                buffer.extend(
-                    struct.pack(
-                        "4f",
-                        actor_shadow_positions[i * 3],
-                        actor_shadow_positions[i * 3 + 1],
-                        actor_shadow_positions[i * 3 + 2],
-                        0.0,
-                    )
-                )  # xy, height, padding
-            else:
-                buffer.extend(struct.pack("4f", 0.0, 0.0, 0.0, 0.0))
-
         # --- Directional Light Uniforms ---
         directional_light = next(
             (
@@ -1055,8 +947,6 @@ class GPULightingSystem(LightingSystem):
         self,
         light_data: list[float],
         light_count: int,
-        shadow_casters: list[float],
-        shadow_caster_count: int,
         viewport_bounds: Rect,
     ) -> None:
         """Update the uniform buffer with current lighting data."""
@@ -1066,8 +956,6 @@ class GPULightingSystem(LightingSystem):
         uniform_bytes = self._pack_uniform_data(
             light_data,
             light_count,
-            shadow_casters,
-            shadow_caster_count,
             viewport_bounds,
         )
 
@@ -1187,16 +1075,6 @@ class GPULightingSystem(LightingSystem):
                     f"limiting to {self.MAX_LIGHTS}"
                 )
 
-            # Collect actor shadow casters (terrain shadows now use grid texture)
-            # Cache is invalidated by on_actor_moved() when actors move
-            if self._cached_shadow_casters is None:
-                self._cached_shadow_casters = self._collect_actor_shadow_casters(
-                    viewport_bounds
-                )
-
-            actor_shadow_positions = self._cached_shadow_casters
-            actor_shadow_count = len(actor_shadow_positions) // 3  # 3 floats per actor
-
             # Update sky exposure texture if needed
             self._update_sky_exposure_texture()
 
@@ -1210,11 +1088,10 @@ class GPULightingSystem(LightingSystem):
             # Update emission texture for light-emitting tiles
             self._update_emission_texture(viewport_bounds)
 
-            # Only update uniforms when lights, casters, or viewport changes
+            # Only update the content hash when lights or viewport origin change.
             light_data_hash = hash(
                 (
                     tuple(light_data[: light_count * 12]),
-                    tuple(actor_shadow_positions),
                     viewport_bounds.x1,
                     viewport_bounds.y1,
                 )
@@ -1223,8 +1100,6 @@ class GPULightingSystem(LightingSystem):
                 self._update_uniform_buffer(
                     light_data,
                     light_count,
-                    actor_shadow_positions,
-                    actor_shadow_count,
                     viewport_bounds,
                 )
                 self._last_light_data_hash = light_data_hash
@@ -1235,8 +1110,6 @@ class GPULightingSystem(LightingSystem):
                 self._update_uniform_buffer(
                     light_data,
                     light_count,
-                    actor_shadow_positions,
-                    actor_shadow_count,
                     viewport_bounds,
                 )
 
@@ -1494,13 +1367,12 @@ class GPULightingSystem(LightingSystem):
         self.revision += 1
 
     def on_actor_moved(self, actor: Actor) -> None:
-        """Invalidate shadow caster cache when any actor moves.
+        """Handle actor movement notifications.
 
-        Actors cast shadows, so when they move we need to recollect shadow
-        caster positions. We invalidate the cache by clearing it, which forces
-        _compute_lightmap_gpu to rebuild it on the next frame.
+        Actor shadows are now rendered on the CPU in WorldView, so the GPU
+        lighting pass has no actor-shadow cache to invalidate.
         """
-        self._cached_shadow_casters = None
+        pass
 
     def get_sky_exposure_texture(self) -> wgpu.GPUTexture | None:
         """Return the sky exposure texture for atmospheric effects."""
@@ -1533,5 +1405,4 @@ class GPULightingSystem(LightingSystem):
 
         # Clear cached data
         self._cached_light_data = None
-        self._cached_shadow_casters = None
         self._last_light_data_hash = None

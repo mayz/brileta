@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import wgpu
 from PIL import Image as PILImage
+from PIL import ImageFilter
 
 from catley import colors, config
 from catley.backends.glfw.window import GlfwWindow
@@ -61,6 +64,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         # Atlas texture and UV mapping
         self.atlas_texture: wgpu.GPUTexture | None = None
         self.outlined_atlas_texture: wgpu.GPUTexture | None = None
+        self.blurred_atlas_texture: wgpu.GPUTexture | None = None
         self.uv_map: np.ndarray | None = None
         self._atlas_pixels: np.ndarray | None = None
 
@@ -121,6 +125,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         # Load atlas texture and prepare UV mapping
         self.atlas_texture = self._load_atlas_texture()
         self.outlined_atlas_texture = self._load_outlined_atlas_texture()
+        self.blurred_atlas_texture = self._create_blurred_atlas_texture()
         self.uv_map = self._precalculate_uv_map()
 
         # Initialize all renderers
@@ -130,6 +135,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
             self.resource_manager,
             self.shader_manager,
             self.atlas_texture,
+            self.blurred_atlas_texture,
             surface_format,
         )
 
@@ -334,6 +340,130 @@ class WGPUGraphicsContext(BaseGraphicsContext):
             uv_coords,
             final_color,
         )
+
+    def draw_actor_shadow(
+        self,
+        char: str,
+        screen_x: float,
+        screen_y: float,
+        shadow_dir_x: float,
+        shadow_dir_y: float,
+        shadow_length_pixels: float,
+        shadow_alpha: float,
+        scale_x: float = 1.0,
+        scale_y: float = 1.0,
+        fade_tip: bool = True,
+    ) -> None:
+        """Draw a projected glyph shadow as a stretched parallelogram."""
+        if self.screen_renderer is None or self.uv_map is None:
+            return
+        if shadow_length_pixels <= 0.0 or shadow_alpha <= 0.0:
+            return
+
+        direction_length = float(np.hypot(shadow_dir_x, shadow_dir_y))
+        if direction_length <= 1e-6:
+            return
+
+        dir_x = shadow_dir_x / direction_length
+        dir_y = shadow_dir_y / direction_length
+
+        uv_coords = self.uv_map[ord(char)]
+        tile_w, tile_h = self.tile_dimensions
+
+        scaled_w = tile_w * scale_x
+        scaled_h = tile_h * scale_y
+        offset_x = (tile_w - scaled_w) / 2
+        offset_y = (tile_h - scaled_h) / 2
+
+        glyph_x = screen_x + offset_x
+        glyph_y = screen_y + offset_y
+
+        base_color = (0.0, 0.0, 0.0, max(0.0, min(1.0, shadow_alpha)))
+        tip_alpha = 0.0 if fade_tip else base_color[3]
+        tip_color = (0.0, 0.0, 0.0, tip_alpha)
+
+        # For vertical / diagonal shadows the base edge is the glyph's bottom
+        # and the tip extends in the shadow direction.  The UV mapping in
+        # add_parallelogram (left/right -> u, base/tip -> v) matches screen
+        # orientation directly so the glyph texture appears upright.
+        #
+        # For horizontal shadows we arrange corners so that left/right still
+        # correspond to screen-left/right (correct u mapping) and base/tip
+        # correspond to screen-bottom/top (correct v mapping).  The alpha fade
+        # runs near-to-far instead of bottom-to-top, so we pass explicit
+        # per-vertex colours via vertex_colors.
+        per_vertex_colors = None
+        base_left = (glyph_x, glyph_y + scaled_h)
+        base_right = (glyph_x + scaled_w, glyph_y + scaled_h)
+
+        if abs(dir_y) < 0.2:
+            # Horizontal shadow: project from the glyph's side edge using a
+            # subtle band anchored to the glyph's base. Keep the band thinner
+            # than full glyph height and overlap slightly into the glyph so the
+            # projected shadow visually stays connected to the caster.
+            u1_raw, v1_raw, u2_raw, v2_raw = uv_coords
+            uv_coords = (u2_raw, v1_raw, u1_raw, v2_raw)
+            band_thickness = scaled_w * 0.5
+            # Overlap farther into the glyph to bridge atlas padding/blur so
+            # the visible shadow remains in contact with the visible glyph.
+            edge_overlap = scaled_w * 0.4
+            band_bottom = glyph_y + scaled_h
+            band_top = band_bottom - band_thickness
+            if dir_x >= 0.0:
+                # Shadow extends rightward from the glyph's right edge.
+                # Corners: left/right = screen x, base/tip = bottom/top.
+                near_x = glyph_x + scaled_w - edge_overlap
+                far_x = near_x + shadow_length_pixels
+                base_left = (near_x, band_bottom)
+                base_right = (
+                    far_x,
+                    band_bottom,
+                )
+                tip_left = (near_x, band_top)
+                tip_right = (
+                    far_x,
+                    band_top,
+                )
+                # Alpha fade: left (near char) = opaque, right (far) = faded.
+                per_vertex_colors = (base_color, tip_color, base_color, tip_color)
+            else:
+                # Shadow extends leftward from the glyph's left edge.
+                near_x = glyph_x + edge_overlap
+                far_x = near_x - shadow_length_pixels
+                base_left = (far_x, band_bottom)
+                base_right = (near_x, band_bottom)
+                tip_left = (far_x, band_top)
+                tip_right = (near_x, band_top)
+                # Alpha fade: right (near char) = opaque, left (far) = faded.
+                per_vertex_colors = (tip_color, base_color, tip_color, base_color)
+        else:
+            tip_left = (
+                base_left[0] + dir_x * shadow_length_pixels,
+                base_left[1] + dir_y * shadow_length_pixels,
+            )
+            tip_right = (
+                base_right[0] + dir_x * shadow_length_pixels,
+                base_right[1] + dir_y * shadow_length_pixels,
+            )
+
+        self.screen_renderer.add_parallelogram(
+            (base_left, base_right, tip_left, tip_right),
+            uv_coords,
+            base_color,
+            tip_color,
+            vertex_colors=per_vertex_colors,
+        )
+
+    @contextmanager
+    def shadow_pass(self) -> Iterator[None]:
+        """Bracket shadow geometry so the screen renderer can draw it separately."""
+        if self.screen_renderer is not None:
+            self.screen_renderer.mark_shadow_start()
+        try:
+            yield
+        finally:
+            if self.screen_renderer is not None:
+                self.screen_renderer.mark_shadow_end()
 
     def draw_actor_outline(
         self,
@@ -881,6 +1011,25 @@ class WGPUGraphicsContext(BaseGraphicsContext):
             texture_format="rgba8unorm",
         )
 
+    def _create_blurred_atlas_texture(self) -> wgpu.GPUTexture:
+        """Create a Gaussian-blurred copy of the tileset atlas for soft shadows."""
+        if self.resource_manager is None or self._atlas_pixels is None:
+            raise RuntimeError("Atlas pixels or resource manager not initialized")
+
+        height, width = self._atlas_pixels.shape[:2]
+        atlas_image = PILImage.fromarray(self._atlas_pixels, mode="RGBA")
+        blurred_image = atlas_image.filter(
+            ImageFilter.GaussianBlur(radius=config.ACTOR_SHADOW_BLUR_RADIUS)
+        )
+        blurred_pixels = np.array(blurred_image, dtype="u1")
+
+        return self.resource_manager.create_atlas_texture(
+            width=width,
+            height=height,
+            data=blurred_pixels.tobytes(),
+            texture_format="rgba8unorm",
+        )
+
     def _setup_coordinate_converter(self) -> None:
         """Set up the coordinate converter with letterbox scaled dimensions."""
         if self.letterbox_geometry is not None:
@@ -1023,6 +1172,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         self.atmospheric_renderer = None
         self.atlas_texture = None
         self.outlined_atlas_texture = None
+        self.blurred_atlas_texture = None
         self.shader_manager = None
         self.resource_manager = None
         self._world_view_cpu_buffer = None

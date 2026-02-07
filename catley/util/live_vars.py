@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from contextlib import contextmanager, suppress
+from contextlib import contextmanager, nullcontext, suppress
 from dataclasses import dataclass
 from time import perf_counter
 from typing import Any, NamedTuple, TypeVar
@@ -71,11 +71,18 @@ T = TypeVar("T", bound="MostRecentNVar")
 
 
 class LiveVariableRegistry:
-    """Registry for all ``LiveVariable`` instances."""
+    """Registry for all ``LiveVariable`` instances.
+
+    When ``strict`` is ``True`` (the default), attempting to record a metric
+    that has not been registered will raise immediately.  Test fixtures that
+    clear the registry should set ``strict = False`` to avoid crashes from
+    timing decorators that fire during teardown or unrelated test code.
+    """
 
     def __init__(self) -> None:
         self._variables: dict[str, LiveVariable] = {}
         self._watched_variables: set[str] = set()
+        self.strict: bool = True
 
     def register(
         self,
@@ -223,15 +230,20 @@ live_variable_registry = LiveVariableRegistry()
 def record_time_live_variable(metric_name: str):
     """Record elapsed wall-clock time (ms) to the named metric.
 
-    Silently skips recording if the metric is not registered. This avoids
-    crashing in test environments where the registry is cleared between tests.
-    The direct ``record_metric`` API still raises ``KeyError`` on miss so that
-    explicit call-sites get loud failures.
+    In strict mode (the default), raises ``KeyError`` immediately if the metric
+    is not registered.  This catches mistakes like forgetting to add a
+    ``MetricSpec`` entry - the game will crash on the first frame rather than
+    silently dropping timing data.
+
+    When the registry has ``strict`` set to ``False`` (e.g. in test fixtures
+    that clear the registry between tests), unregistered metrics are silently
+    skipped so that timing decorators in production code don't break tests.
     """
     start = perf_counter()
     try:
         yield
     finally:
         elapsed_ms = (perf_counter() - start) * 1000
-        with suppress(KeyError):
+        ctx = nullcontext() if live_variable_registry.strict else suppress(KeyError)
+        with ctx:
             live_variable_registry.record_metric(metric_name, elapsed_ms)

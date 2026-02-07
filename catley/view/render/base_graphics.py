@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 import numpy as np
 
@@ -29,6 +29,25 @@ if TYPE_CHECKING:
     pass
 
 
+@runtime_checkable
+class ScreenRenderer(Protocol):
+    """Protocol for the vertex-buffer renderer used by BaseGraphicsContext.
+
+    Any object that implements ``add_quad`` satisfies this protocol.
+    The WGPU backend's ``WGPUScreenRenderer`` is the primary implementation.
+    """
+
+    def add_quad(
+        self,
+        x: float,
+        y: float,
+        w: float,
+        h: float,
+        uv_coords: tuple[float, float, float, float],
+        color_rgba: tuple[float, float, float, float],
+    ) -> None: ...
+
+
 class BaseGraphicsContext(GraphicsContext):
     """Base implementation of GraphicsContext with common functionality.
 
@@ -49,6 +68,7 @@ class BaseGraphicsContext(GraphicsContext):
         self._coordinate_converter: CoordinateConverter | None = None
         self.letterbox_geometry: tuple[int, int, int, int] | None = None
         self.uv_map: np.ndarray | None = None
+        self.screen_renderer: ScreenRenderer | None = None
 
     @property
     def console_width_tiles(self) -> int:
@@ -91,7 +111,7 @@ class BaseGraphicsContext(GraphicsContext):
         alpha: float,
     ) -> None:
         """Draw a rectangle outline using the screen renderer."""
-        if not hasattr(self, "screen_renderer") or self.screen_renderer is None:
+        if self.screen_renderer is None:
             return
         if self.uv_map is None:
             return
@@ -105,15 +125,17 @@ class BaseGraphicsContext(GraphicsContext):
         uv_coords = self.uv_map[self.SOLID_BLOCK_CHAR]
 
         # Top edge
-        self.screen_renderer.add_quad(px_x, px_y, px_w, 1, uv_coords, color_rgba)  # type: ignore[unresolved-attribute]
-        # Bottom edge
-        self.screen_renderer.add_quad(  # type: ignore[unresolved-attribute]
+        self.screen_renderer.add_quad(
+            px_x, px_y, px_w, 1, uv_coords, color_rgba
+        )  # Bottom edge
+        self.screen_renderer.add_quad(
             px_x, px_y + px_h - 1, px_w, 1, uv_coords, color_rgba
         )
         # Left edge
-        self.screen_renderer.add_quad(px_x, px_y, 1, px_h, uv_coords, color_rgba)  # type: ignore[unresolved-attribute]
-        # Right edge
-        self.screen_renderer.add_quad(  # type: ignore[unresolved-attribute]
+        self.screen_renderer.add_quad(
+            px_x, px_y, 1, px_h, uv_coords, color_rgba
+        )  # Right edge
+        self.screen_renderer.add_quad(
             px_x + px_w - 1, px_y, 1, px_h, uv_coords, color_rgba
         )
 
@@ -124,7 +146,7 @@ class BaseGraphicsContext(GraphicsContext):
 
         This implementation is nearly identical across backends.
         """
-        if not hasattr(self, "screen_renderer") or self.screen_renderer is None:
+        if self.screen_renderer is None:
             return
         if self.uv_map is None:
             return
@@ -133,7 +155,7 @@ class BaseGraphicsContext(GraphicsContext):
         w, h = self.tile_dimensions
         uv = self.uv_map[self.SOLID_BLOCK_CHAR]
         color_rgba = (color[0] / 255, color[1] / 255, color[2] / 255, alpha)
-        self.screen_renderer.add_quad(px_x, px_y, w, h, uv, color_rgba)  # type: ignore[unresolved-attribute]
+        self.screen_renderer.add_quad(px_x, px_y, w, h, uv, color_rgba)
 
     def render_particles(
         self,
@@ -147,7 +169,7 @@ class BaseGraphicsContext(GraphicsContext):
 
         This high-level logic is identical across backends.
         """
-        if not hasattr(self, "screen_renderer") or self.screen_renderer is None:
+        if self.screen_renderer is None:
             return
         if self.uv_map is None:
             return
@@ -193,7 +215,7 @@ class BaseGraphicsContext(GraphicsContext):
         Decals have sub-tile float coordinates and are rendered at precise
         pixel positions, similar to particles.
         """
-        if not hasattr(self, "screen_renderer") or self.screen_renderer is None:
+        if self.screen_renderer is None:
             return
         if self.uv_map is None:
             return
@@ -248,7 +270,7 @@ class BaseGraphicsContext(GraphicsContext):
 
         This implementation is identical across backends.
         """
-        if not hasattr(self, "screen_renderer") or self.screen_renderer is None:
+        if self.screen_renderer is None:
             return
         if self.uv_map is None:
             return
@@ -267,7 +289,7 @@ class BaseGraphicsContext(GraphicsContext):
         w, h = self.tile_dimensions
 
         # Add the particle quad to the vertex buffer
-        self.screen_renderer.add_quad(screen_x, screen_y, w, h, uv_coords, final_color)  # type: ignore[unresolved-attribute]
+        self.screen_renderer.add_quad(screen_x, screen_y, w, h, uv_coords, final_color)
 
     def console_to_screen_coords(self, console_x: float, console_y: float) -> PixelPos:
         """Convert console coordinates to screen pixel coordinates.

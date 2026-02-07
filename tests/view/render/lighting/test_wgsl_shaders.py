@@ -59,8 +59,7 @@ class TestWGSLLightingShaders:
         with shader_path.open() as f:
             shader_source = f.read()
 
-        # Check for sign-based stepping in directional shadow
-        # Both terrain and actor shadows use sign-based direction vectors
+        # Check for sign-based stepping in point-light terrain shadow tracing.
         assert "step_dir.x = select" in shader_source, (
             "Sign-based shadow direction calculation not preserved"
         )
@@ -83,11 +82,10 @@ class TestWGSLLightingShaders:
             "Texture-based directional shadow calculation missing"
         )
 
-        # Verify actor shadow functions exist
-        assert "computeActorShadow" in shader_source, "Actor shadow calculation missing"
-        assert "computeActorDirectionalShadow" in shader_source, (
-            "Actor directional shadow calculation missing"
-        )
+        # Actor shadows are now CPU-rendered projected quads, so the shader only
+        # keeps terrain shadow functions.
+        assert "computeActorShadow" not in shader_source
+        assert "computeActorDirectionalShadow" not in shader_source
 
         # Verify shadow grid texture is used
         assert "shadow_grid" in shader_source, "Shadow grid texture binding missing"
@@ -115,11 +113,6 @@ class TestWGSLLightingShaders:
         # Directional shadows
         assert "computeDirectionalShadow" in wgsl_source, (
             "WGSL should have texture-based directional shadows"
-        )
-
-        # Actor shadows
-        assert "computeActorShadow" in wgsl_source, (
-            "WGSL should have actor shadow function"
         )
 
         # Flicker effects

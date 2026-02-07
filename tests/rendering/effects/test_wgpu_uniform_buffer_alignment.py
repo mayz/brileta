@@ -61,24 +61,19 @@ class TestWGPUUniformBufferAlignment:
 
         # Pack uniform data
         light_data: list[float] = []
-        actor_shadows: list[float] = []
         viewport = Rect(0, 0, 80, 43)
 
-        buffer = gpu_system._pack_uniform_data(
-            light_data, 0, actor_shadows, 0, viewport
-        )
+        buffer = gpu_system._pack_uniform_data(light_data, 0, viewport)
 
         # Calculate expected offset for sun_intensity
         # Based on WGSL struct layout:
         # - viewport_data: 16 bytes (offset 0)
         # - metadata: 16 bytes (offset 16)
         # - 8 light arrays: 8 * 32 * 16 = 4096 bytes (offset 32)
-        # - actor shadow metadata: 16 bytes (offset 4128)
-        # - actor shadow positions: 64 * 16 = 1024 bytes (offset 4144)
-        # - sun_direction + padding: 16 bytes (offset 5168)
-        # - sun_color (12 bytes) + sun_intensity (4 bytes): 16 bytes (offset 5184)
-        # sun_intensity is at offset 5184 + 12 = 5196
-        sun_intensity_offset = 5196
+        # - sun_direction + padding: 16 bytes (offset 4128)
+        # - sun_color (12 bytes) + sun_intensity (4 bytes): 16 bytes (offset 4144)
+        # sun_intensity is at offset 4144 + 12 = 4156
+        sun_intensity_offset = 4156
 
         # Unpack sun_intensity from the buffer
         actual_sun_intensity = struct.unpack_from("f", buffer, sun_intensity_offset)[0]
@@ -96,21 +91,18 @@ class TestWGPUUniformBufferAlignment:
 
         # Pack uniform data
         light_data: list[float] = []
-        actor_shadows: list[float] = []
         viewport = Rect(0, 0, 80, 43)
 
-        buffer = gpu_system._pack_uniform_data(
-            light_data, 0, actor_shadows, 0, viewport
-        )
+        buffer = gpu_system._pack_uniform_data(light_data, 0, viewport)
 
         # Calculate expected offset for map_size
-        # After sun_intensity (5196 + 4 = 5200):
-        # - sky_exposure_power (4 bytes) at 5200
-        # - sun_shadow_intensity (4 bytes) at 5204
-        # - sun_shadow_length_scale (4 bytes) at 5208
-        # - _padding2 (f32, 4 bytes) at 5212
-        # - map_size (vec2f, 8 bytes) at 5216
-        map_size_offset = 5216
+        # After sun_intensity (4156 + 4 = 4160):
+        # - sky_exposure_power (4 bytes) at 4160
+        # - sun_shadow_intensity (4 bytes) at 4164
+        # - sun_shadow_length_scale (4 bytes) at 4168
+        # - _padding2 (f32, 4 bytes) at 4172
+        # - map_size (vec2f, 8 bytes) at 4176
+        map_size_offset = 4176
 
         # Unpack map_size from the buffer
         map_width, map_height = struct.unpack_from("2f", buffer, map_size_offset)
@@ -132,15 +124,12 @@ class TestWGPUUniformBufferAlignment:
 
         # Pack uniform data
         light_data: list[float] = []
-        actor_shadows: list[float] = []
         viewport = Rect(0, 0, 80, 43)
 
-        buffer = gpu_system._pack_uniform_data(
-            light_data, 0, actor_shadows, 0, viewport
-        )
+        buffer = gpu_system._pack_uniform_data(light_data, 0, viewport)
 
-        # sky_exposure_power is at offset 5200 (right after sun_intensity)
-        sky_exposure_power_offset = 5200
+        # sky_exposure_power is at offset 4160 (right after sun_intensity)
+        sky_exposure_power_offset = 4160
 
         actual_sky_exposure_power = struct.unpack_from(
             "f", buffer, sky_exposure_power_offset
@@ -152,7 +141,7 @@ class TestWGPUUniformBufferAlignment:
         )
 
     def test_shadow_length_scale_packed_correctly(self) -> None:
-        """Test that sun_shadow_length_scale is packed at offset 5208."""
+        """Test that sun_shadow_length_scale is packed at offset 4168."""
         import math
 
         from catley.game.lights import DirectionalLight
@@ -164,19 +153,16 @@ class TestWGPUUniformBufferAlignment:
 
         gpu_system = self._create_gpu_lighting_system()
         light_data: list[float] = []
-        actor_shadows: list[float] = []
         viewport = Rect(0, 0, 80, 43)
 
-        buffer = gpu_system._pack_uniform_data(
-            light_data, 0, actor_shadows, 0, viewport
-        )
+        buffer = gpu_system._pack_uniform_data(light_data, 0, viewport)
 
-        # sun_shadow_length_scale is at offset 5208
-        actual_scale = struct.unpack_from("f", buffer, 5208)[0]
+        # sun_shadow_length_scale is at offset 4168
+        actual_scale = struct.unpack_from("f", buffer, 4168)[0]
         expected_scale = 1.0 / math.tan(math.radians(45.0))
 
         assert abs(actual_scale - expected_scale) < 0.001, (
-            f"shadow_length_scale at offset 5208 should be ~{expected_scale:.3f}, "
+            f"shadow_length_scale at offset 4168 should be ~{expected_scale:.3f}, "
             f"got {actual_scale}"
         )
 
@@ -191,14 +177,11 @@ class TestWGPUUniformBufferAlignment:
 
         gpu_system = self._create_gpu_lighting_system()
         light_data: list[float] = []
-        actor_shadows: list[float] = []
         viewport = Rect(0, 0, 80, 43)
 
-        buffer = gpu_system._pack_uniform_data(
-            light_data, 0, actor_shadows, 0, viewport
-        )
+        buffer = gpu_system._pack_uniform_data(light_data, 0, viewport)
 
-        actual_scale = struct.unpack_from("f", buffer, 5208)[0]
+        actual_scale = struct.unpack_from("f", buffer, 4168)[0]
 
         assert abs(actual_scale - 8.0) < 0.001, (
             f"shadow_length_scale should be clamped to 8.0, got {actual_scale}"
@@ -216,14 +199,11 @@ class TestWGPUUniformBufferAlignment:
 
         gpu_system = self._create_gpu_lighting_system()
         light_data: list[float] = []
-        actor_shadows: list[float] = []
         viewport = Rect(0, 0, 80, 43)
 
-        buffer = gpu_system._pack_uniform_data(
-            light_data, 0, actor_shadows, 0, viewport
-        )
+        buffer = gpu_system._pack_uniform_data(light_data, 0, viewport)
 
-        actual_scale = struct.unpack_from("f", buffer, 5208)[0]
+        actual_scale = struct.unpack_from("f", buffer, 4168)[0]
 
         assert abs(actual_scale - 8.0) < 0.001, (
             f"shadow_length_scale with zero elevation should be clamped to 8.0, "
@@ -243,14 +223,11 @@ class TestWGPUUniformBufferAlignment:
 
         gpu_system = self._create_gpu_lighting_system()
         light_data: list[float] = []
-        actor_shadows: list[float] = []
         viewport = Rect(0, 0, 80, 43)
 
-        buffer = gpu_system._pack_uniform_data(
-            light_data, 0, actor_shadows, 0, viewport
-        )
+        buffer = gpu_system._pack_uniform_data(light_data, 0, viewport)
 
-        actual_scale = struct.unpack_from("f", buffer, 5208)[0]
+        actual_scale = struct.unpack_from("f", buffer, 4168)[0]
         expected_scale = 1.0 / math.tan(math.radians(85.0))
 
         assert abs(actual_scale - expected_scale) < 0.01, (
@@ -268,17 +245,14 @@ class TestWGPUUniformBufferAlignment:
 
         # Pack uniform data
         light_data: list[float] = []
-        actor_shadows: list[float] = []
         viewport = Rect(0, 0, 80, 43)
 
-        buffer = gpu_system._pack_uniform_data(
-            light_data, 0, actor_shadows, 0, viewport
-        )
+        buffer = gpu_system._pack_uniform_data(light_data, 0, viewport)
 
         # Expected minimum size based on WGSL struct layout:
-        # map_size ends at 5216 + 8 = 5224
-        # _padding3 ends at 5224 + 8 = 5232
-        expected_min_size = 5232
+        # map_size ends at 4176 + 8 = 4184
+        # _padding3 ends at 4184 + 8 = 4192
+        expected_min_size = 4192
 
         assert len(buffer) >= expected_min_size, (
             f"Buffer size {len(buffer)} is smaller than expected minimum "
@@ -293,11 +267,8 @@ class TestWGPUUniformBufferAlignment:
 
         viewport = Rect(10, 20, 60, 40)
         light_data: list[float] = []
-        actor_shadows: list[float] = []
 
-        buffer = gpu_system._pack_uniform_data(
-            light_data, 0, actor_shadows, 0, viewport
-        )
+        buffer = gpu_system._pack_uniform_data(light_data, 0, viewport)
 
         # viewport_data is vec4f at offset 0
         vp_x, vp_y, vp_w, vp_h = struct.unpack_from("4f", buffer, 0)
@@ -315,12 +286,9 @@ class TestWGPUUniformBufferAlignment:
         gpu_system = self._create_gpu_lighting_system()
 
         light_data: list[float] = []
-        actor_shadows: list[float] = []
         viewport = Rect(0, 0, 80, 43)
 
-        buffer = gpu_system._pack_uniform_data(
-            light_data, 0, actor_shadows, 0, viewport
-        )
+        buffer = gpu_system._pack_uniform_data(light_data, 0, viewport)
 
         # Metadata starts at offset 16
         # Format: light_count (i32), ambient_light (f32), time (f32), tile_aligned (u32)
@@ -372,15 +340,12 @@ class TestWGPUUniformBufferEdgeCases:
         gpu_system = self._create_gpu_lighting_system()
 
         light_data: list[float] = []
-        actor_shadows: list[float] = []
         viewport = Rect(0, 0, 80, 43)
 
-        buffer = gpu_system._pack_uniform_data(
-            light_data, 0, actor_shadows, 0, viewport
-        )
+        buffer = gpu_system._pack_uniform_data(light_data, 0, viewport)
 
         # map_size should default to (1.0, 1.0)
-        map_size_offset = 5216
+        map_size_offset = 4176
         map_width, map_height = struct.unpack_from("2f", buffer, map_size_offset)
 
         assert map_width == 1.0, f"Default map width should be 1.0, got {map_width}"
@@ -396,24 +361,21 @@ class TestWGPUUniformBufferEdgeCases:
         gpu_system = self._create_gpu_lighting_system()
 
         light_data: list[float] = []
-        actor_shadows: list[float] = []
         viewport = Rect(0, 0, 80, 43)
 
-        buffer = gpu_system._pack_uniform_data(
-            light_data, 0, actor_shadows, 0, viewport
-        )
+        buffer = gpu_system._pack_uniform_data(light_data, 0, viewport)
 
-        # sun_direction at offset 5168
-        sun_dir_x, sun_dir_y = struct.unpack_from("2f", buffer, 5168)
+        # sun_direction at offset 4128
+        sun_dir_x, sun_dir_y = struct.unpack_from("2f", buffer, 4128)
         assert sun_dir_x == 0.0, f"sun_direction.x should be 0.0, got {sun_dir_x}"
         assert sun_dir_y == 0.0, f"sun_direction.y should be 0.0, got {sun_dir_y}"
 
-        # sun_color at offset 5184
-        sun_r, sun_g, sun_b = struct.unpack_from("3f", buffer, 5184)
+        # sun_color at offset 4144
+        sun_r, sun_g, sun_b = struct.unpack_from("3f", buffer, 4144)
         assert sun_r == 0.0, f"sun_color.r should be 0.0, got {sun_r}"
         assert sun_g == 0.0, f"sun_color.g should be 0.0, got {sun_g}"
         assert sun_b == 0.0, f"sun_color.b should be 0.0, got {sun_b}"
 
-        # sun_intensity at offset 5196
-        sun_intensity = struct.unpack_from("f", buffer, 5196)[0]
+        # sun_intensity at offset 4156
+        sun_intensity = struct.unpack_from("f", buffer, 4156)[0]
         assert sun_intensity == 0.0, f"sun_intensity should be 0.0, got {sun_intensity}"

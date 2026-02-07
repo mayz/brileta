@@ -56,6 +56,7 @@ _RENDER_METRICS: list[MetricSpec] = [
     MetricSpec("time.render_ms", "Total rendering", 500),
     MetricSpec("time.render.light_overlay_ms", "Light overlay rendering"),
     MetricSpec("time.render.map_unlit_ms", "Unlit map rendering"),
+    MetricSpec("time.render.actor_shadows_ms", "Projected actor shadow rendering"),
     MetricSpec("time.render.actors_smooth_ms", "Smooth actor rendering"),
     MetricSpec("time.render.actors_traditional_ms", "Traditional actor rendering"),
     MetricSpec("time.render.present_background_ms", "Presenting background texture"),

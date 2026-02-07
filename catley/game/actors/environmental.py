@@ -63,6 +63,7 @@ class ContainedFire(Actor):
             blocks_movement=False,  # Can walk through fire (but take damage)
             visual_effects=visual_effects,
             energy=EnergyComponent(speed=DEFAULT_ACTOR_SPEED),
+            shadow_height=0,  # Light sources don't cast projected shadows.
         )
 
         self.damage_per_turn = damage_per_turn

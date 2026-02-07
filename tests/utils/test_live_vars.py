@@ -5,7 +5,11 @@ from types import SimpleNamespace
 import pytest
 
 from catley.util.caching import ResourceCache
-from catley.util.live_vars import LiveVariable, live_variable_registry
+from catley.util.live_vars import (
+    LiveVariable,
+    live_variable_registry,
+    record_time_live_variable,
+)
 
 
 class DummyController:
@@ -123,3 +127,33 @@ def test_get_watched_variables_sorted() -> None:
     live_variable_registry.watch("watch.a")
     names = [v.name for v in live_variable_registry.get_watched_variables()]
     assert names == ["watch.a", "watch.b"]
+
+
+def test_record_time_raises_in_strict_mode_for_unregistered_metric() -> None:
+    """record_time_live_variable raises KeyError when strict and metric missing."""
+    live_variable_registry.strict = True
+    with (
+        pytest.raises(KeyError, match="not registered"),
+        record_time_live_variable("missing.metric"),
+    ):
+        pass  # body executes, error raised in finally
+
+
+def test_record_time_skips_silently_in_non_strict_mode() -> None:
+    """record_time_live_variable silently skips when not strict."""
+    live_variable_registry.strict = False
+    # Should not raise.
+    with record_time_live_variable("missing.metric"):
+        pass
+
+
+def test_record_time_records_in_strict_mode_for_registered_metric() -> None:
+    """record_time_live_variable records successfully in strict mode."""
+    live_variable_registry.strict = True
+    live_variable_registry.register_metric("strict.timing", description="Test")
+    with record_time_live_variable("strict.timing"):
+        pass
+    var = live_variable_registry.get_variable("strict.timing")
+    assert var is not None
+    assert var.stats_var is not None
+    assert var.stats_var.sample_count == 1

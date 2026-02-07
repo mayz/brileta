@@ -167,10 +167,18 @@ def reset_rng_for_tests() -> Iterator[None]:
 
 @pytest.fixture(autouse=True)
 def clear_live_variable_registry() -> Iterator[None]:
-    """Clear the global live variable registry before and after each test."""
+    """Clear the global live variable registry before and after each test.
+
+    Sets ``strict = False`` so that timing decorators (``record_time_live_variable``)
+    in production code don't raise ``KeyError`` when the registry is empty.
+    Strict mode is restored after the test.
+    """
+    original_strict = live_variable_registry.strict
+    live_variable_registry.strict = False
     live_variable_registry._variables.clear()
     yield
     live_variable_registry._variables.clear()
+    live_variable_registry.strict = original_strict
 
 
 @pytest.fixture(scope="module")
