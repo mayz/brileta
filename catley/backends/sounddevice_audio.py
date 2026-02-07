@@ -1,7 +1,7 @@
 """SoundDevice audio backend implementation using a single mixed output stream.
 
 This backend uses one PortAudio output stream and mixes all active channels
-inside the stream callback. It keeps the same high-level behavior as the tcod
+inside the stream callback. It keeps the same high-level behavior as the prior
 backend: channel priority/voice stealing, per-channel volume, looping, and
 master volume control.
 """

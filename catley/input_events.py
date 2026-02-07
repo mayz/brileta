@@ -4,7 +4,7 @@ Thin event types that decouple game code from any specific input backend
 (GLFW, SDL, etc.). The GLFW backend is the sole producer; all game code
 consumes these types.
 
-Integer values for KeySym, Modifier, and MouseButton match tcod/SDL3 so
+Integer values for KeySym, Modifier, and MouseButton match SDL3 so
 the GLFW backend conversion methods need only import swaps, not value remapping.
 """
 
@@ -27,7 +27,7 @@ class Point(NamedTuple):
 
 
 class Modifier(enum.IntFlag):
-    """Keyboard modifier flags. Same integer values as tcod / SDL3."""
+    """Keyboard modifier flags. Same integer values as SDL3."""
 
     NONE = 0x0000
     LSHIFT = 0x0001
@@ -47,7 +47,7 @@ class Modifier(enum.IntFlag):
 
 
 class MouseButton(enum.IntEnum):
-    """Mouse button identifiers. Same integer values as tcod / SDL3."""
+    """Mouse button identifiers. Same integer values as SDL3."""
 
     LEFT = 1
     MIDDLE = 2
@@ -55,7 +55,7 @@ class MouseButton(enum.IntEnum):
 
 
 class KeySym(enum.IntEnum):
-    """Keyboard key symbols. Same integer values as tcod / SDL3.
+    """Keyboard key symbols. Same integer values as SDL3.
 
     Only values actually used in the codebase are enumerated. The
     ``_missing_`` hook creates ad-hoc members for any unexpected values
@@ -99,7 +99,7 @@ class KeySym(enum.IntEnum):
     RIGHTBRACKET = 93
     GRAVE = 96
 
-    # Letters a-z (lowercase, matching SDL3/tcod 19 convention)
+    # Letters a-z (lowercase, matching SDL3 convention)
     # Not enumerated individually - use ``KeySym(ord("a"))`` etc.
     # The _missing_ hook handles them transparently.
 

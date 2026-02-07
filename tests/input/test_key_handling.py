@@ -113,7 +113,7 @@ class TestGlfwKeyConversion:
         "letter",
         list("abcdefghijklmnopqrstuvwxyz"),
     )
-    def test_letter_key_conversion_matches_tcod_keysym(
+    def test_letter_key_conversion_matches_keysym(
         self, glfw_key_converter, letter: str
     ) -> None:
         """GLFW letter key conversion should match input_events.KeySym values."""
@@ -178,8 +178,8 @@ class TestKeySymConsistency:
     """Test that KeySym values are consistent across the codebase."""
 
     def test_keys_class_uses_lowercase_keysyms(self) -> None:
-        """Keys class should use lowercase KeySym values (SDL3/tcod 19 standard)."""
-        # In SDL3/tcod 19, letter KeySyms are lowercase ASCII values (97-122)
+        """Keys class should use lowercase KeySym values (SDL3 standard)."""
+        # In SDL3, letter KeySyms are lowercase ASCII values (97-122)
         assert input_events.KeySym(ord("h")) == Keys.KEY_H, (
             "KEY_H should use lowercase 'h'"
         )

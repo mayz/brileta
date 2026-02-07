@@ -61,8 +61,7 @@ def get_line(
     """Return Bresenham line points from (start_x, start_y) to (end_x, end_y).
 
     Walks the grid in unit steps along the major axis, accumulating error
-    to decide when to step along the minor axis. Produces the same output
-    as tcod.los.bresenham.
+    to decide when to step along the minor axis.
     """
     points: list[tuple[int, int]] = []
     dx = abs(end_x - start_x)

@@ -7,8 +7,6 @@ from typing import Any, Self, cast
 from unittest.mock import MagicMock, patch
 
 import numpy as np
-import tcod.context
-from tcod.console import Console
 
 from catley import colors, config
 from catley.app import App
@@ -403,7 +401,6 @@ class DummyContext:
 def _build_dummy_controller(*, use_dummy_world: bool) -> Controller:
     """Build a controller with shared mock object classes for tests."""
     context = DummyContext()
-    root_console = Console(config.SCREEN_WIDTH, config.SCREEN_HEIGHT, order="F")
 
     with ExitStack() as stack:
         stack.enter_context(patch("catley.controller.FrameManager", DummyFrameManager))
@@ -426,9 +423,7 @@ def _build_dummy_controller(*, use_dummy_world: bool) -> Controller:
             )
 
         app = DummyApp()
-        graphics = DummyGraphicsContext(
-            cast(tcod.context.Context, context), root_console, (16, 16)
-        )
+        graphics = DummyGraphicsContext(context, None, (16, 16))
         return Controller(app, cast(GraphicsContext, graphics))
 
 

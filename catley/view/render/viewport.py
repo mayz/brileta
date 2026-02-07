@@ -47,8 +47,8 @@ A strict naming convention is used to make the code self-documenting.
 
 -   Output (Rendering an Actor):
     `World` -> `Viewport` (via `world_to_viewport`)
-    `Viewport` -> `Root Console` (via `tcod.console.blit`)
-    `Root Console` -> `Pixel` (via `context.present`)
+    `Viewport` -> `Root Console` (via view composition and `GraphicsContext` draw calls)
+    `Root Console` -> `Pixel` (via backend presentation in `GraphicsContext.present_frame`)
 """
 
 from __future__ import annotations

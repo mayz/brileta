@@ -22,7 +22,6 @@ dependencies = [
     { name = "rendercanvas" },
     { name = "sounddevice" },
     { name = "soundfile" },
-    { name = "tcod" },
     { name = "wgpu" },
 ]
 
@@ -44,7 +43,6 @@ requires-dist = [
     { name = "rendercanvas", specifier = ">=2.4.0" },
     { name = "sounddevice", specifier = ">=0.5.2" },
     { name = "soundfile", specifier = ">=0.13.1" },
-    { name = "tcod", specifier = ">=19.6.3" },
     { name = "wgpu", specifier = ">=0.29.0" },
 ]
 
@@ -501,24 +499,6 @@ wheels = [
 ]
 
 [[package]]
-name = "tcod"
-version = "19.6.3"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "cffi" },
-    { name = "numpy", marker = "implementation_name != 'pypy'" },
-    { name = "typing-extensions" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/ec/1c/7bf7ce6010bbec0102ce49976577d34b6d7ec94d1fb285980444ba75842d/tcod-19.6.3.tar.gz", hash = "sha256:2031a41ccddf42a1ab4d874fa5d5b2c23c75171efe2c38368fe642bcf1e2d263", size = 849561, upload-time = "2026-01-12T01:33:17.494Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/4e/e5/7538d94eaffdc163f85b9921212999e4f40203888afff09e47e050fd2cf0/tcod-19.6.3-cp310-abi3-macosx_10_13_universal2.whl", hash = "sha256:6ed9737488f948c52cb316b716ad3064c2fe3ea25081f54382f9e370e906ca90", size = 3849820, upload-time = "2026-01-12T01:32:58.078Z" },
-    { url = "https://files.pythonhosted.org/packages/c9/b3/cabd19053ca6f21ef8817dabe27ad6e0f60d13c07e4a485f5e73455cf8ac/tcod-19.6.3-cp310-abi3-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:f4245438469014b4337224a08e5af9a5705c99c101e77656ee37bdcb77aaade8", size = 8235676, upload-time = "2026-01-12T01:33:00.909Z" },
-    { url = "https://files.pythonhosted.org/packages/cc/fb/b4bf7003596b008f15ba1311b5131bd8a26771a98b9d45e46031978b274a/tcod-19.6.3-cp310-abi3-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:c040ab219b28e0ba2301162665a6ca41b6bbf9ec25619a04b2fd52b8a75678a0", size = 8572984, upload-time = "2026-01-12T01:33:03.225Z" },
-    { url = "https://files.pythonhosted.org/packages/9d/a1/cf6b8236da329857498dbba240de3d88e2d3a5fe02adfaf899bf04b8e98d/tcod-19.6.3-cp310-abi3-win32.whl", hash = "sha256:e4c05f9e13315611e1009d78806367d04e085d7e1e148afb343d2d1a04ad3fa9", size = 1598671, upload-time = "2026-01-12T01:33:05.334Z" },
-    { url = "https://files.pythonhosted.org/packages/0f/00/d8cae52a58990cedcea44f77388285184328497163b5b74aa07b4f2659fa/tcod-19.6.3-cp310-abi3-win_amd64.whl", hash = "sha256:6cba76f91158d162967216b17db6bb654df2a378650221f1260eb3104b424565", size = 1889556, upload-time = "2026-01-12T01:33:07.501Z" },
-]
-
-[[package]]
 name = "ty"
 version = "0.0.15"
 source = { registry = "https://pypi.org/simple" }
@@ -540,15 +520,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/fb/b0/2652a73c71c77296a6343217063f05745da60c67b7e8a8e25f2064167fce/ty-0.0.15-py3-none-win32.whl", hash = "sha256:9362c528ceb62c89d65c216336d28d500bc9f4c10418413f63ebc16886e16cc1", size = 9578058, upload-time = "2026-02-05T01:06:42.928Z" },
     { url = "https://files.pythonhosted.org/packages/84/6e/08a4aedebd2a6ce2784b5bc3760e43d1861f1a184734a78215c2d397c1df/ty-0.0.15-py3-none-win_amd64.whl", hash = "sha256:4db040695ae67c5524f59cb8179a8fa277112e69042d7dfdac862caa7e3b0d9c", size = 10457112, upload-time = "2026-02-05T01:06:39.885Z" },
     { url = "https://files.pythonhosted.org/packages/b3/be/1991f2bc12847ae2d4f1e3ac5dcff8bb7bc1261390645c0755bb55616355/ty-0.0.15-py3-none-win_arm64.whl", hash = "sha256:e5a98d4119e77d6136461e16ae505f8f8069002874ab073de03fbcb1a5e8bf25", size = 9937490, upload-time = "2026-02-05T01:06:32.388Z" },
-]
-
-[[package]]
-name = "typing-extensions"
-version = "4.15.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/72/94/1a15dd82efb362ac84269196e94cf00f187f7ed21c242792a923cdb1c61f/typing_extensions-4.15.0.tar.gz", hash = "sha256:0cea48d173cc12fa28ecabc3b837ea3cf6f38c6d1136f85cbaaf598984861466", size = 109391, upload-time = "2025-08-25T13:49:26.313Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/18/67/36e9267722cc04a6b9f15c7f3441c2363321a3ea07da7ae0c0707beb2a9c/typing_extensions-4.15.0-py3-none-any.whl", hash = "sha256:f0fa19c6845758ab08074a0cfa8b7aecb71c999ca73d62883bc25cc018c4e548", size = 44614, upload-time = "2025-08-25T13:49:24.86Z" },
 ]
 
 [[package]]

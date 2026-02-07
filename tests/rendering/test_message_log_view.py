@@ -3,11 +3,8 @@ import os
 os.environ["SDL_VIDEODRIVER"] = "dummy"
 os.environ["SDL_RENDER_DRIVER"] = "software"
 
-from typing import Any, cast
+from typing import cast
 from unittest.mock import MagicMock
-
-import tcod.sdl.render
-import tcod.sdl.video
 
 from catley import colors
 from catley.backends.pillow.canvas import PillowImageCanvas
@@ -41,15 +38,8 @@ class DummyRenderer:
         return DummyTexture()
 
 
-def test_message_log_view_ttf_rendering_visible(monkeypatch: Any) -> None:
-    monkeypatch.setattr(tcod.sdl.video, "new_window", lambda *a, **kw: object())
-    monkeypatch.setattr(
-        tcod.sdl.render, "new_renderer", lambda *a, **kw: DummyRenderer()
-    )
-
-    window = tcod.sdl.video.new_window(160, 80)
-    # SDL3 removed software and target_textures parameters from new_renderer
-    renderer = tcod.sdl.render.new_renderer(window)
+def test_message_log_view_ttf_rendering_visible() -> None:
+    renderer = DummyRenderer()
 
     log = MessageLog()
     log.add_message("Hello", fg=colors.WHITE)
@@ -71,16 +61,9 @@ def test_message_log_view_ttf_rendering_visible(monkeypatch: Any) -> None:
     assert pixels.max() > 0, "Expected rendered texture to have non-black pixels"
 
 
-def test_message_log_view_font_stays_fixed_on_resize(monkeypatch: Any) -> None:
+def test_message_log_view_font_stays_fixed_on_resize() -> None:
     """Font size stays fixed when MessageLogView uses explicit font_size."""
-    monkeypatch.setattr(tcod.sdl.video, "new_window", lambda *a, **kw: object())
-    monkeypatch.setattr(
-        tcod.sdl.render, "new_renderer", lambda *a, **kw: DummyRenderer()
-    )
-
-    window = tcod.sdl.video.new_window(160, 80)
-    # SDL3 removed software and target_textures parameters from new_renderer
-    renderer = tcod.sdl.render.new_renderer(window)
+    renderer = DummyRenderer()
 
     log = MessageLog()
     log.add_message("Hello", fg=colors.WHITE)
