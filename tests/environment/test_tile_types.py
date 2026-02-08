@@ -180,7 +180,7 @@ def test_get_shadow_height_map_basic() -> None:
     ids = np.array(
         [
             [TileTypeID.FLOOR, TileTypeID.WALL],
-            [TileTypeID.BOULDER, TileTypeID.OUTDOOR_WALL],
+            [TileTypeID.BOULDER, TileTypeID.DOOR_CLOSED],
         ]
     )
     heights = tile_types.get_shadow_height_map(ids)
@@ -190,7 +190,7 @@ def test_get_shadow_height_map_basic() -> None:
     assert heights[0, 0] == 0  # FLOOR - no shadow
     assert heights[0, 1] == 4  # WALL - tall shadow
     assert heights[1, 0] == 2  # BOULDER - short shadow
-    assert heights[1, 1] == 4  # OUTDOOR_WALL - tall shadow
+    assert heights[1, 1] == 4  # DOOR_CLOSED - tall shadow
 
 
 def test_get_shadow_height_map_all_tiles() -> None:
@@ -219,7 +219,6 @@ def test_shadow_height_tiles_are_correct() -> None:
     # Tiles with specific shadow heights
     expected_heights: dict[TileTypeID, int] = {
         TileTypeID.WALL: 4,
-        TileTypeID.OUTDOOR_WALL: 4,
         TileTypeID.DOOR_CLOSED: 4,  # Door is set in a wall - same shadow as building
         TileTypeID.DOOR_OPEN: 4,  # Doorframe and wall above still cast building shadow
         TileTypeID.BOULDER: 2,
@@ -228,7 +227,7 @@ def test_shadow_height_tiles_are_correct() -> None:
     # These tiles should have zero shadow height
     no_shadow_tiles = [
         TileTypeID.FLOOR,
-        TileTypeID.OUTDOOR_FLOOR,
+        TileTypeID.COBBLESTONE,
         TileTypeID.ACID_POOL,
         TileTypeID.HOT_COALS,
     ]
@@ -309,3 +308,165 @@ def test_get_emission_map_all_tiles() -> None:
         assert emissions[0, i]["emits_light"] == data["emission"]["emits_light"], (
             f"Mismatch for {tile_id.name}"
         )
+
+
+# --- Sub-tile Noise Tests ---
+
+
+def test_cobblestone_has_nonzero_sub_tile_jitter() -> None:
+    """Cobblestone should have a nonzero sub-tile jitter amplitude."""
+    ids = np.array([TileTypeID.COBBLESTONE])
+    noise = tile_types.get_sub_tile_jitter_map(ids)
+    assert noise[0] > 0.0
+
+
+def test_floor_has_zero_sub_tile_jitter() -> None:
+    """Floor tiles should have zero sub-tile jitter (smooth flagstone)."""
+    ids = np.array([TileTypeID.FLOOR])
+    jitter = tile_types.get_sub_tile_jitter_map(ids)
+    assert jitter[0] == 0.0
+
+
+def test_wall_has_nonzero_sub_tile_jitter() -> None:
+    """Wall tiles should have subtle sub-tile jitter (stone block grain)."""
+    ids = np.array([TileTypeID.WALL])
+    jitter = tile_types.get_sub_tile_jitter_map(ids)
+    assert jitter[0] > 0.0
+
+
+# --- Terrain Decoration Tests ---
+
+
+def test_decoration_deterministic() -> None:
+    """Same world coords and seed always produce the same glyph and colors."""
+    n = 10
+    tile_ids = np.full(n, TileTypeID.GRASS, dtype=np.uint8)
+    world_x = np.arange(n, dtype=np.int32)
+    world_y = np.zeros(n, dtype=np.int32)
+    seed = 42
+
+    def run() -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        chars = np.zeros(n, dtype=np.int32)
+        fg = np.full((n, 3), 100, dtype=np.uint8)
+        bg = np.full((n, 3), 50, dtype=np.uint8)
+        tile_types.apply_terrain_decoration(
+            chars, fg, bg, tile_ids, world_x, world_y, seed
+        )
+        return chars.copy(), fg.copy(), bg.copy()
+
+    ch1, fg1, bg1 = run()
+    ch2, fg2, bg2 = run()
+    np.testing.assert_array_equal(ch1, ch2)
+    np.testing.assert_array_equal(fg1, fg2)
+    np.testing.assert_array_equal(bg1, bg2)
+
+
+def test_decoration_different_seed_differs() -> None:
+    """Different decoration seeds produce different results."""
+    n = 20
+    tile_ids = np.full(n, TileTypeID.GRASS, dtype=np.uint8)
+    world_x = np.arange(n, dtype=np.int32)
+    world_y = np.zeros(n, dtype=np.int32)
+
+    chars_a = np.zeros(n, dtype=np.int32)
+    fg_a = np.full((n, 3), 100, dtype=np.uint8)
+    bg_a = np.full((n, 3), 50, dtype=np.uint8)
+    tile_types.apply_terrain_decoration(
+        chars_a, fg_a, bg_a, tile_ids, world_x, world_y, decoration_seed=1
+    )
+
+    chars_b = np.zeros(n, dtype=np.int32)
+    fg_b = np.full((n, 3), 100, dtype=np.uint8)
+    bg_b = np.full((n, 3), 50, dtype=np.uint8)
+    tile_types.apply_terrain_decoration(
+        chars_b, fg_b, bg_b, tile_ids, world_x, world_y, decoration_seed=9999
+    )
+
+    # At least some outputs should differ across 20 tiles with different seeds.
+    assert not np.array_equal(bg_a, bg_b) or not np.array_equal(chars_a, chars_b)
+
+
+def test_decoration_jitter_stays_in_bounds() -> None:
+    """Output colors stay in [0, 255] even at extreme base values and max jitter."""
+    n = 200
+    # Use GRASS (bg_jitter=4, fg_jitter=12) for the widest jitter range.
+    tile_ids = np.full(n, TileTypeID.GRASS, dtype=np.uint8)
+    world_x = np.arange(n, dtype=np.int32)
+    world_y = np.zeros(n, dtype=np.int32)
+
+    for base_val in (0, 3, 252, 255):
+        chars = np.zeros(n, dtype=np.int32)
+        fg = np.full((n, 3), base_val, dtype=np.uint8)
+        bg = np.full((n, 3), base_val, dtype=np.uint8)
+        tile_types.apply_terrain_decoration(
+            chars, fg, bg, tile_ids, world_x, world_y, decoration_seed=123
+        )
+        assert fg.min() >= 0 and fg.max() <= 255
+        assert bg.min() >= 0 and bg.max() <= 255
+
+
+def test_decoration_skips_unregistered_tiles() -> None:
+    """Tiles without a TerrainDecorationDef entry are left untouched."""
+    n = 5
+    # FLOOR has no decoration def (removed when defaults were all zero).
+    tile_ids = np.full(n, TileTypeID.FLOOR, dtype=np.uint8)
+    world_x = np.arange(n, dtype=np.int32)
+    world_y = np.zeros(n, dtype=np.int32)
+
+    chars = np.full(n, ord("X"), dtype=np.int32)
+    fg = np.full((n, 3), 100, dtype=np.uint8)
+    bg = np.full((n, 3), 50, dtype=np.uint8)
+    original_chars = chars.copy()
+    original_fg = fg.copy()
+    original_bg = bg.copy()
+
+    tile_types.apply_terrain_decoration(
+        chars, fg, bg, tile_ids, world_x, world_y, decoration_seed=42
+    )
+
+    np.testing.assert_array_equal(chars, original_chars)
+    np.testing.assert_array_equal(fg, original_fg)
+    np.testing.assert_array_equal(bg, original_bg)
+
+
+def test_decoration_independent_fg_jitter() -> None:
+    """When fg_jitter > 0, fg and bg offsets diverge (not locked together)."""
+    n = 100
+    # GRASS has fg_jitter=12, so fg gets independent hash bits.
+    tile_ids = np.full(n, TileTypeID.GRASS, dtype=np.uint8)
+    world_x = np.arange(n, dtype=np.int32)
+    world_y = np.zeros(n, dtype=np.int32)
+
+    chars = np.zeros(n, dtype=np.int32)
+    fg = np.full((n, 3), 128, dtype=np.uint8)
+    bg = np.full((n, 3), 128, dtype=np.uint8)
+    tile_types.apply_terrain_decoration(
+        chars, fg, bg, tile_ids, world_x, world_y, decoration_seed=7
+    )
+
+    # With independent jitter, fg and bg offsets from the same base (128)
+    # should differ for at least some tiles across 100 samples.
+    fg_offsets = fg[:, 0].astype(np.int16) - 128
+    bg_offsets = bg[:, 0].astype(np.int16) - 128
+    assert not np.array_equal(fg_offsets, bg_offsets)
+
+
+def test_decoration_locked_fg_when_zero_fg_jitter() -> None:
+    """When fg_jitter == 0, fg gets the same offset as bg."""
+    n = 50
+    # COBBLESTONE has fg_jitter=0, so fg is locked to bg offset.
+    tile_ids = np.full(n, TileTypeID.COBBLESTONE, dtype=np.uint8)
+    world_x = np.arange(n, dtype=np.int32)
+    world_y = np.zeros(n, dtype=np.int32)
+
+    chars = np.zeros(n, dtype=np.int32)
+    fg = np.full((n, 3), 128, dtype=np.uint8)
+    bg = np.full((n, 3), 128, dtype=np.uint8)
+    tile_types.apply_terrain_decoration(
+        chars, fg, bg, tile_ids, world_x, world_y, decoration_seed=7
+    )
+
+    # fg and bg should have identical offsets from the shared base.
+    fg_offsets = fg[:, 0].astype(np.int16) - 128
+    bg_offsets = bg[:, 0].astype(np.int16) - 128
+    np.testing.assert_array_equal(fg_offsets, bg_offsets)

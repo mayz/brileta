@@ -83,6 +83,8 @@ class DummyGameMap:
         self.light_appearance_map = np.zeros(
             (width, height), dtype=tile_types.TileTypeAppearance
         )
+        self.tiles = np.zeros((width, height), dtype=np.uint8)
+        self.decoration_seed = 0
         self.explored = np.zeros((width, height), dtype=bool)
         self.visible = np.zeros((width, height), dtype=bool)
         # Animation properties for animated tile rendering
@@ -139,6 +141,8 @@ class DummyController:
             ),
             present_texture=lambda *args, **kwargs: None,
             pixel_to_tile=lambda x, y: (int(x), int(y)),
+            set_noise_seed=lambda seed: None,
+            set_noise_tile_offset=lambda offset_x, offset_y: None,
         )
         self.frame_manager = SimpleNamespace(
             cursor_manager=SimpleNamespace(mouse_pixel_x=0, mouse_pixel_y=0),
@@ -248,7 +252,8 @@ def test_small_map_actor_alignment(monkeypatch) -> None:
     buf_x, buf_y = vp_x + pad, vp_y + pad
     # With smooth rendering enabled, actors are drawn via SDL, not console
     if config.SMOOTH_ACTOR_RENDERING_ENABLED:
-        assert view.map_glyph_buffer.data["ch"][buf_x, buf_y] == 0  # No char in console
+        # Terrain decoration fills explored tiles with glyphs (space for WALL).
+        assert view.map_glyph_buffer.data["ch"][buf_x, buf_y] == ord(" ")
     else:
         assert view.map_glyph_buffer.data["ch"][buf_x, buf_y] == ord("@")
     assert (vp_x, vp_y) == (

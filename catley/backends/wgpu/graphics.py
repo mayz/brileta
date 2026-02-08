@@ -279,6 +279,16 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         )
         return True
 
+    def set_noise_seed(self, seed: int) -> None:
+        """Forward noise seed to the texture renderer for sub-tile jitter."""
+        if self.texture_renderer is not None:
+            self.texture_renderer.set_noise_seed(seed)
+
+    def set_noise_tile_offset(self, offset_x: int, offset_y: int) -> None:
+        """Forward world-space tile offset for stable noise hashing."""
+        if self.texture_renderer is not None:
+            self.texture_renderer.set_noise_tile_offset(offset_x, offset_y)
+
     def render_glyph_buffer_to_texture(
         self,
         glyph_buffer: GlyphBuffer,

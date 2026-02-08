@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple
 import numpy as np
 
 from catley import colors, config
+from catley.environment import tile_types
 from catley.environment.tile_types import TileTypeID, get_shadow_height_map
 from catley.types import InterpolationAlpha, Opacity
 from catley.util import rng
@@ -80,7 +81,7 @@ class WorldView(View):
     )
     _SUN_SHADOW_OUTDOOR_TILE_IDS: frozenset[int] = frozenset(
         {
-            int(TileTypeID.OUTDOOR_FLOOR),
+            int(TileTypeID.COBBLESTONE),
             int(TileTypeID.GRASS),
             int(TileTypeID.DIRT_PATH),
             int(TileTypeID.GRAVEL),
@@ -340,6 +341,18 @@ class WorldView(View):
                 self._render_map_unlit()
                 # Store a marker (not the texture) to indicate this key was rendered
                 self._texture_cache.store(cache_key, True)
+
+        # Set noise parameters once per frame so the shader produces stable
+        # sub-tile brightness patterns that match the map's decoration seed.
+        # The tile offset converts buffer-space tile indices to world coordinates
+        # so the noise pattern stays anchored to world tiles during scrolling.
+        graphics.set_noise_seed(gw.game_map.decoration_seed)
+        bounds = vs.get_visible_bounds()
+        pad = self._SCROLL_PADDING
+        graphics.set_noise_tile_offset(
+            bounds.x1 - vs.offset_x - pad,
+            bounds.y1 - vs.offset_y - pad,
+        )
 
         # Render the GlyphBuffer to a texture. The TextureRenderer's change
         # detection skips re-rendering if the buffer hasn't changed.
@@ -729,6 +742,18 @@ class WorldView(View):
         fg_rgb = dark_app["fg"]  # Shape: (N, 3)
         bg_rgb = dark_app["bg"]  # Shape: (N, 3)
 
+        # Apply per-tile glyph and color decoration for terrain variety
+        unlit_tile_ids = game_map.tiles[final_world_x, final_world_y]
+        tile_types.apply_terrain_decoration(
+            chars,
+            fg_rgb,
+            bg_rgb,
+            unlit_tile_ids,
+            final_world_x,
+            final_world_y,
+            game_map.decoration_seed,
+        )
+
         # Add alpha channel (255) to make RGBA
         alpha = np.full((len(chars), 1), 255, dtype=np.uint8)
         fg_rgba = np.hstack((fg_rgb, alpha))
@@ -738,6 +763,12 @@ class WorldView(View):
         self.map_glyph_buffer.data["ch"][final_buf_x, final_buf_y] = chars
         self.map_glyph_buffer.data["fg"][final_buf_x, final_buf_y] = fg_rgba
         self.map_glyph_buffer.data["bg"][final_buf_x, final_buf_y] = bg_rgba
+
+        # Write sub-tile jitter amplitude so the fragment shader can apply
+        # per-pixel brightness variation within each tile cell.
+        self.map_glyph_buffer.data["noise"][final_buf_x, final_buf_y] = (
+            tile_types.get_sub_tile_jitter_map(unlit_tile_ids)
+        )
 
     def _render_actors(self) -> None:
         # Traditional actors are now baked into the cache during the draw phase.
@@ -1907,6 +1938,22 @@ class WorldView(View):
                 light_fg_rgb = light_app_slice["fg"][valid_exp_x, valid_exp_y]
                 light_bg_rgb = light_app_slice["bg"][valid_exp_x, valid_exp_y]
 
+                # Apply per-tile glyph and color decoration for terrain variety.
+                # valid_exp_x/y are offsets within the world slice, so add back
+                # world_left/world_top to get true world coordinates for the hash.
+                world_tile_ids = gw.game_map.tiles[world_slice][
+                    valid_exp_x, valid_exp_y
+                ]
+                tile_types.apply_terrain_decoration(
+                    light_chars,
+                    light_fg_rgb,
+                    light_bg_rgb,
+                    world_tile_ids,
+                    valid_exp_x + world_left,
+                    valid_exp_y + world_top,
+                    gw.game_map.decoration_seed,
+                )
+
                 animation_params = gw.game_map.animation_params[world_slice]
                 animation_state = gw.game_map.animation_state[world_slice]
                 self._apply_tile_light_animations(
@@ -1924,6 +1971,13 @@ class WorldView(View):
                 light_source_buffer.data["ch"][final_buf_x, final_buf_y] = light_chars
                 light_source_buffer.data["fg"][final_buf_x, final_buf_y] = light_fg_rgba
                 light_source_buffer.data["bg"][final_buf_x, final_buf_y] = light_bg_rgba
+
+                # Write sub-tile jitter amplitude for the light source buffer too,
+                # so lit tiles also get per-pixel brightness variation.
+                light_source_buffer.data["noise"][final_buf_x, final_buf_y] = (
+                    tile_types.get_sub_tile_jitter_map(world_tile_ids)
+                )
+
                 if np.any(valid_visible):
                     visible_mask_buffer[
                         final_buf_x[valid_visible], final_buf_y[valid_visible]

@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from catley import colors, config
 from catley.config import PLAYER_BASE_STRENGTH, PLAYER_BASE_TOUGHNESS
 from catley.environment.generators import RoomsAndCorridorsGenerator
-from catley.environment.map import GameMap, MapRegion
+from catley.environment.map import GameMap
 from catley.environment.tile_types import TileTypeID
 from catley.game.actors import NPC, PC, Actor, Character, ItemPile, create_bookcase
 from catley.game.actors.environmental import ContainedFire
@@ -307,53 +307,6 @@ class GameWorld:
         room_rects = [r.bounds[0] for r in room_regions if r.bounds]
 
         return game_map, room_rects
-
-    def _setup_test_outdoor_room(self) -> None:
-        """TEMPORARY: Convert starting room to outdoor for sunlight testing.
-
-        This modifies the region containing the player's starting position
-        to have sky exposure, allowing sunlight testing in an otherwise
-        indoor-only scenario.
-        """
-        if not self.game_map:
-            return
-
-        # Get the region at player's starting position
-        player_pos = (self.player.x, self.player.y)
-        region = self.game_map.get_region_at(player_pos)
-
-        if region:
-            # TEMPORARY: Simulate full outdoor area for testing
-            region.sky_exposure = 1.0  # Full outdoor exposure
-            region.region_type = "test_outdoor"  # Mark as test
-
-            # Convert floor tiles in this region to outdoor tiles
-            self._convert_region_to_outdoor_tiles(region)
-
-            # Invalidate lighting cache since global lighting conditions changed
-            if self.lighting_system:
-                self.lighting_system.on_global_light_changed()
-            # Invalidate appearance caches since region properties changed
-            self.game_map.invalidate_appearance_caches()
-
-    def _convert_region_to_outdoor_tiles(self, region: MapRegion) -> None:
-        """TEMPORARY: Convert indoor floor tiles to outdoor tiles in a region."""
-        if not self.game_map:
-            return
-
-        # Find all tiles that belong to this region
-        for x in range(self.game_map.width):
-            for y in range(self.game_map.height):
-                if self.game_map.tile_to_region_id[x, y] == region.id:
-                    current_tile_id = self.game_map.tiles[x, y]
-                    # Convert indoor tiles to outdoor variants
-                    if current_tile_id == TileTypeID.FLOOR:
-                        self.game_map.tiles[x, y] = TileTypeID.OUTDOOR_FLOOR
-                    elif current_tile_id == TileTypeID.WALL:
-                        self.game_map.tiles[x, y] = TileTypeID.OUTDOOR_WALL
-
-        # Invalidate cached property maps since tile types changed
-        self.game_map.invalidate_property_caches()
 
     def _position_player(self, room: Rect) -> None:
         """Place the player at a valid spawn point within the room.
@@ -851,7 +804,7 @@ class GameWorld:
     def _is_outdoor_tile(self, x: int, y: int) -> bool:
         """Check if a tile is an outdoor tile type."""
         outdoor_tiles = {
-            TileTypeID.OUTDOOR_FLOOR,
+            TileTypeID.COBBLESTONE,
             TileTypeID.GRASS,
             TileTypeID.DIRT_PATH,
             TileTypeID.GRAVEL,

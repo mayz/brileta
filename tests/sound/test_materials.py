@@ -39,13 +39,9 @@ class TestGetTileMaterial:
         """Test that floors return stone material."""
         assert get_tile_material(TileTypeID.FLOOR) == ImpactMaterial.STONE
 
-    def test_outdoor_floor_is_stone(self) -> None:
-        """Test that outdoor floors return stone material."""
-        assert get_tile_material(TileTypeID.OUTDOOR_FLOOR) == ImpactMaterial.STONE
-
-    def test_outdoor_wall_is_stone(self) -> None:
-        """Test that outdoor walls return stone material."""
-        assert get_tile_material(TileTypeID.OUTDOOR_WALL) == ImpactMaterial.STONE
+    def test_cobblestone_is_stone(self) -> None:
+        """Test that cobblestone returns stone material."""
+        assert get_tile_material(TileTypeID.COBBLESTONE) == ImpactMaterial.STONE
 
     def test_door_closed_is_wood(self) -> None:
         """Test that closed doors return wood material."""

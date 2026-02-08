@@ -108,6 +108,14 @@ class TestGenerationContext:
         assert map_data.regions is ctx.regions
         assert map_data.tile_to_region_id is ctx.tile_to_region_id
 
+    def test_to_generated_map_data_has_decoration_seed(self) -> None:
+        """Output should include a nonzero decoration seed for terrain variety."""
+        ctx = GenerationContext.create_empty(width=10, height=10)
+        map_data = ctx.to_generated_map_data()
+
+        assert isinstance(map_data.decoration_seed, int)
+        assert map_data.decoration_seed != 0
+
 
 # =============================================================================
 # T3.2: PipelineGenerator
@@ -196,7 +204,7 @@ class TestPipelineGenerator:
             """Layer that creates a minimal valid map."""
 
             def apply(self, ctx: GenerationContext) -> None:
-                ctx.tiles[:, :] = TileTypeID.OUTDOOR_FLOOR
+                ctx.tiles[:, :] = TileTypeID.COBBLESTONE
                 region_id = ctx.next_region_id()
                 region = MapRegion.create_outdoor_region(
                     map_region_id=region_id,
@@ -232,7 +240,7 @@ class TestPipelineGenerator:
                         if _rng.random() < 0.5:
                             ctx.tiles[x, y] = TileTypeID.FLOOR
                         else:
-                            ctx.tiles[x, y] = TileTypeID.OUTDOOR_FLOOR
+                            ctx.tiles[x, y] = TileTypeID.COBBLESTONE
 
         # Generate twice with same seed
         gen1 = PipelineGenerator(

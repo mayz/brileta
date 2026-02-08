@@ -146,7 +146,7 @@ def test_settlement_street_styles() -> None:
 
         # Should have some terrain variety (grass, dirt, gravel, or outdoor floor)
         terrain_tiles = {
-            TileTypeID.OUTDOOR_FLOOR,
+            TileTypeID.COBBLESTONE,
             TileTypeID.GRASS,
             TileTypeID.DIRT_PATH,
             TileTypeID.GRAVEL,
@@ -162,7 +162,7 @@ def test_settlement_street_styles() -> None:
 
 
 def test_settlement_building_interiors_are_floor() -> None:
-    """Building interiors should use FLOOR tile type (not OUTDOOR_FLOOR)."""
+    """Building interiors should use FLOOR tile type (not COBBLESTONE)."""
     gen = create_settlement_pipeline(80, 43, seed=42, street_style="cross")
     data = gen.generate()
 
@@ -174,7 +174,7 @@ def test_settlement_building_interiors_are_floor() -> None:
         region_mask = data.tile_to_region_id == region.id
         region_tiles = data.tiles[region_mask]
 
-        # All tiles in building region should be FLOOR (not OUTDOOR_FLOOR)
+        # All tiles in building region should be FLOOR (not COBBLESTONE)
         floor_tiles = region_tiles[region_tiles == TileTypeID.FLOOR]
         assert len(floor_tiles) > 0, f"Building region {region.id} has no FLOOR tiles"
 

@@ -88,6 +88,7 @@ class GameMap:
         self.tiles = map_data.tiles
         self.regions = map_data.regions
         self.tile_to_region_id = map_data.tile_to_region_id
+        self.decoration_seed = map_data.decoration_seed
 
         # Field of view (FOV) state tracking.
         # Which tiles are currently visible.

@@ -64,7 +64,7 @@ class DetailLayer(GenerationLayer):
 
         # Place boulders on outdoor tiles
         outdoor_tiles = {
-            TileTypeID.OUTDOOR_FLOOR,
+            TileTypeID.COBBLESTONE,
             TileTypeID.GRASS,
             TileTypeID.DIRT_PATH,
             TileTypeID.GRAVEL,

@@ -33,6 +33,7 @@ class GeneratedMapData:
     tile_to_region_id: np.ndarray
     buildings: list[Building] = field(default_factory=list)
     streets: list[Rect] = field(default_factory=list)
+    decoration_seed: int = 0
 
 
 class BaseMapGenerator(abc.ABC):

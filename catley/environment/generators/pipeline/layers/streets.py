@@ -119,7 +119,7 @@ class StreetNetworkLayer(GenerationLayer):
     def _carve_street(self, ctx: GenerationContext, street: Rect) -> None:
         """Carve a street into the tile map.
 
-        Streets are marked with OUTDOOR_FLOOR (cobblestone) to distinguish
+        Streets are marked with COBBLESTONE to distinguish
         them from other terrain. The WFC layer can then use this as a
         constraint for natural transitions.
 
@@ -129,7 +129,7 @@ class StreetNetworkLayer(GenerationLayer):
         """
         for x in range(max(0, street.x1), min(ctx.width, street.x2)):
             for y in range(max(0, street.y1), min(ctx.height, street.y2)):
-                ctx.tiles[x, y] = TileTypeID.OUTDOOR_FLOOR
+                ctx.tiles[x, y] = TileTypeID.COBBLESTONE
 
     def _define_zones(self, ctx: GenerationContext, streets: list[Rect]) -> list[Rect]:
         """Define building zones in areas between streets.

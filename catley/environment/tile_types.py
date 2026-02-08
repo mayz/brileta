@@ -13,6 +13,7 @@ This module defines:
 """
 
 from enum import IntEnum, auto
+from typing import NamedTuple
 
 import numpy as np
 
@@ -36,8 +37,7 @@ class TileTypeID(IntEnum):
 
     WALL = 0
     FLOOR = auto()
-    OUTDOOR_FLOOR = auto()
-    OUTDOOR_WALL = auto()
+    COBBLESTONE = auto()
     DOOR_CLOSED = auto()
     DOOR_OPEN = auto()
     BOULDER = auto()
@@ -63,6 +63,23 @@ TileTypeAppearance = np.dtype(
         ("bg", "3B"),  # Background RGB: 3 unsigned bytes (0-255 each)
     ]
 )
+
+# RGB drift range for animated tile color oscillation.
+# Each component specifies the maximum per-channel variation (R, G, B).
+DriftRange = tuple[int, int, int]
+
+
+class TileAnimationConfig(NamedTuple):
+    """Configuration for tile color/glyph animation effects.
+
+    Replaces the raw tuple parameter in make_tile_type_data() with named fields
+    for clarity. Unpacks identically to the old (fg_drift, bg_drift, flicker) tuple.
+    """
+
+    fg_drift_range: DriftRange
+    bg_drift_range: DriftRange
+    glyph_flicker_chance: float
+
 
 # Animation parameters for tiles that have dynamic color/glyph effects.
 # Colors oscillate via random walk, creating organic shimmer effects.
@@ -153,8 +170,7 @@ def make_tile_type_data(
     hazard_damage_type: str = "",
     dark: tuple[int, colors.Color, colors.Color],  # (char_code, fg_color, bg_color)
     light: tuple[int, colors.Color, colors.Color] | None = None,
-    animation: tuple[tuple[int, int, int], tuple[int, int, int], float]
-    | None = None,  # (fg_variation, bg_variation, glyph_flicker_chance)
+    animation: TileAnimationConfig | None = None,
     emission: tuple[colors.Color, int, float]
     | None = None,  # (light_color, light_radius, light_intensity)
 ) -> np.ndarray:  # Returns an instance of TileTypeData
@@ -269,27 +285,14 @@ register_tile_type(
 )
 
 register_tile_type(
-    TileTypeID.OUTDOOR_FLOOR,
+    TileTypeID.COBBLESTONE,
     make_tile_type_data(
         walkable=True,
         transparent=True,
-        display_name="Ground",
+        display_name="Cobblestone",
         material=ImpactMaterial.STONE,
-        dark=(ord(" "), colors.DARK_GREY, colors.OUTDOOR_DARK_GROUND),
-        light=(ord(" "), colors.LIGHT_GREY, colors.OUTDOOR_LIGHT_GROUND),
-    ),
-)
-
-register_tile_type(
-    TileTypeID.OUTDOOR_WALL,
-    make_tile_type_data(
-        walkable=False,
-        transparent=False,
-        display_name="Rock Wall",
-        material=ImpactMaterial.STONE,
-        shadow_height=4,
-        dark=(ord("#"), colors.LIGHT_GREY, colors.OUTDOOR_DARK_WALL),
-        light=(ord("#"), colors.LIGHT_GREY, colors.OUTDOOR_LIGHT_WALL),
+        dark=(ord(" "), (54, 40, 27), colors.OUTDOOR_DARK_GROUND),  # FG for pool glyphs
+        light=(ord(" "), (113, 93, 64), colors.OUTDOOR_LIGHT_GROUND),
     ),
 )
 
@@ -344,8 +347,12 @@ register_tile_type(
         transparent=True,
         display_name="Grass",
         material=ImpactMaterial.FLESH,  # Soft impact sound
-        dark=(ord(" "), colors.DARK_GREY, (30, 50, 25)),  # Dark green
-        light=(ord(" "), colors.LIGHT_GREY, (70, 110, 50)),  # Light green
+        dark=(
+            ord(" "),
+            (30, 50, 25),
+            (30, 50, 25),
+        ),  # FG ≈ BG; independent jitter creates variation
+        light=(ord(" "), (70, 110, 50), (70, 110, 50)),
     ),
 )
 
@@ -356,8 +363,8 @@ register_tile_type(
         transparent=True,
         display_name="Dirt Path",
         material=ImpactMaterial.STONE,
-        dark=(ord(" "), colors.DARK_GREY, (45, 35, 25)),  # Dark brown
-        light=(ord(" "), colors.LIGHT_GREY, (100, 80, 55)),  # Worn brown
+        dark=(ord(" "), (40, 31, 22), (45, 35, 25)),  # FG for pool glyphs (subtle)
+        light=(ord(" "), (93, 74, 49), (100, 80, 55)),
     ),
 )
 
@@ -368,8 +375,12 @@ register_tile_type(
         transparent=True,
         display_name="Gravel",
         material=ImpactMaterial.STONE,
-        dark=(ord(" "), colors.DARK_GREY, (50, 45, 40)),  # Dark grey-brown
-        light=(ord(" "), colors.LIGHT_GREY, (95, 90, 80)),  # Light grey
+        dark=(
+            ord(" "),
+            (50, 45, 40),
+            (50, 45, 40),
+        ),  # FG ≈ BG; independent jitter creates variation
+        light=(ord(" "), (95, 90, 80), (95, 90, 80)),
     ),
 )
 
@@ -387,7 +398,7 @@ register_tile_type(
         hazard_damage_type="acid",
         dark=(ord("~"), (0, 40, 0), (0, 40, 0)),
         light=(ord("~"), (50, 140, 50), (50, 140, 50)),
-        animation=((60, 100, 60), (60, 100, 60), 0.0),
+        animation=TileAnimationConfig((60, 100, 60), (60, 100, 60), 0.0),
         emission=((80, 180, 80), 2, 0.5),  # Green glow, radius 2
     ),
 )
@@ -403,7 +414,7 @@ register_tile_type(
         hazard_damage_type="fire",
         dark=(ord("."), (30, 8, 0), (30, 8, 0)),
         light=(ord("."), (150, 75, 30), (150, 75, 30)),
-        animation=((80, 60, 40), (80, 60, 40), 0.0),
+        animation=TileAnimationConfig((80, 60, 40), (80, 60, 40), 0.0),
         emission=((180, 100, 40), 2, 0.5),  # Orange/red glow, radius 2
     ),
 )
@@ -658,3 +669,198 @@ def get_emission_map(tile_type_ids_map: np.ndarray) -> np.ndarray:
         A 2D numpy array of TileEmissionParams structs matching the input shape.
     """
     return _tile_type_properties_emission[tile_type_ids_map]
+
+
+def get_sub_tile_jitter_map(tile_type_ids_map: np.ndarray) -> np.ndarray:
+    """Converts a map of TileTypeIDs into a float32 map of sub-tile jitter amplitudes.
+
+    Non-zero values tell the fragment shader to apply per-pixel brightness
+    variation within each tile cell. Currently only COBBLESTONE uses this.
+
+    Args:
+        tile_type_ids_map: A 2D numpy array of TileTypeID values.
+
+    Returns:
+        A float32 numpy array matching the input shape.
+    """
+    return _tile_type_properties_sub_tile_jitter[tile_type_ids_map]
+
+
+# --- Per-tile visual decoration (glyph pools + color jitter) ---
+#
+# Terrain tiles use glyph pools for visual variety: each tile position gets a
+# deterministic glyph chosen from its terrain type's pool via spatial hashing.
+# This is separate from TileTypeAppearance because variable-length lists can't
+# be stored in fixed numpy dtypes. The pool overrides `ch` at render time,
+# while `fg` from the registration is still used as the base glyph color.
+#
+# Each entry also specifies a brightness jitter amplitude. Jitter is applied
+# equally to all RGB channels (brightness, not hue) for both fg and bg,
+# keeping glyph contrast consistent while varying overall tile lightness.
+
+
+class TerrainDecorationDef(NamedTuple):
+    """Per-terrain-type visual decoration parameters.
+
+    Controls which glyphs appear on terrain tiles and how their colors vary.
+
+    Color variation works at two complementary scales:
+
+    - **Tile-level** (bg_jitter / fg_jitter): each tile gets a slightly
+      different brightness via spatial hash. Makes a wall look like it's built
+      from individual stone blocks rather than a single painted surface.
+
+    - **Sub-tile pixel-level** (sub_tile_jitter): the fragment shader applies
+      per-pixel brightness noise within each tile cell. Adds fine grain or
+      texture *within* a single block.
+
+    Both shift brightness (all RGB channels equally) without changing hue.
+    They can be used independently or together - bg_jitter for block-to-block
+    variation, sub_tile_jitter for surface grain within each block.
+    """
+
+    glyphs: list[str]
+    """Characters drawn on this terrain (chosen per-tile via spatial hash)."""
+
+    bg_jitter: int = 0
+    """Per-tile brightness jitter applied equally to fg and bg.
+    Each tile's background shifts by a random offset in [-bg_jitter, +bg_jitter]
+    (same offset to all RGB channels, so hue is preserved). Creates
+    tile-to-tile color variation - e.g. each stone in a wall is a slightly
+    different shade."""
+
+    fg_jitter: int = 0
+    """Independent per-tile brightness jitter applied only to fg.
+    When > 0, uses separate hash bits so some glyphs end up lighter than bg
+    and some darker (bidirectional contrast). When 0, fg is locked to the
+    same offset as bg (unidirectional - preserves the base fg-bg gap)."""
+
+    sub_tile_jitter: float = 0.0
+    """Fragment shader noise amplitude for per-pixel brightness variation
+    within each tile cell. Adds fine surface grain at a smaller scale than
+    bg_jitter's tile-level variation."""
+
+
+# Glyphs are chosen to be visually distinct between terrain types:
+#   GRASS: tall organic marks (blades), bidirectional - some catch light, some in shadow
+#   DIRT: minimal dots (packed earth), unidirectional darker
+#   GRAVEL: chunky double marks (pebbles), bidirectional - varied pebble faces
+#   COBBLESTONE: dense horizontal marks (fitted stone joints), unidirectional darker
+#   WALL/FLOOR: no visible glyph, subtle bg_jitter for stone block variation
+_TERRAIN_DECORATION_DEFS: dict[TileTypeID, TerrainDecorationDef] = {
+    TileTypeID.WALL: TerrainDecorationDef(glyphs=[" "], sub_tile_jitter=0.012),
+    TileTypeID.COBBLESTONE: TerrainDecorationDef(
+        glyphs=[" "], bg_jitter=2, sub_tile_jitter=0.015
+    ),
+    TileTypeID.GRASS: TerrainDecorationDef(
+        glyphs=['"', "'", ",", "`"], bg_jitter=4, fg_jitter=12
+    ),
+    TileTypeID.DIRT_PATH: TerrainDecorationDef(glyphs=[".", ","], bg_jitter=4),
+    TileTypeID.GRAVEL: TerrainDecorationDef(
+        glyphs=[":", ";"], bg_jitter=2, fg_jitter=8
+    ),
+}
+
+
+class TerrainGlyphPool(NamedTuple):
+    """Compiled (numpy) version of TerrainDecorationDef for vectorized render-time lookup."""
+
+    glyph_codes: np.ndarray
+    """Character codes as int32 numpy array for direct indexing."""
+
+    bg_jitter: int
+    fg_jitter: int
+    sub_tile_jitter: float
+
+
+TERRAIN_GLYPH_POOLS: dict[int, TerrainGlyphPool] = {
+    tid: TerrainGlyphPool(
+        np.array([ord(ch) for ch in dec.glyphs], dtype=np.int32),
+        dec.bg_jitter,
+        dec.fg_jitter,
+        dec.sub_tile_jitter,
+    )
+    for tid, dec in _TERRAIN_DECORATION_DEFS.items()
+}
+
+# Sub-tile jitter amplitude per tile type, built from TerrainDecorationDef.
+# Non-zero values cause the fragment shader to apply per-pixel brightness
+# variation within each tile cell using a PCG hash.
+_tile_type_properties_sub_tile_jitter = np.array(
+    [
+        _TERRAIN_DECORATION_DEFS[tid].sub_tile_jitter
+        if tid in _TERRAIN_DECORATION_DEFS
+        else 0.0
+        for tid in TileTypeID
+    ],
+    dtype=np.float32,
+)
+
+
+def apply_terrain_decoration(
+    chars: np.ndarray,
+    fg_rgb: np.ndarray,
+    bg_rgb: np.ndarray,
+    tile_ids: np.ndarray,
+    world_x: np.ndarray,
+    world_y: np.ndarray,
+    decoration_seed: int,
+) -> None:
+    """Apply per-tile glyph selection and color jitter for terrain variety.
+
+    Uses a deterministic spatial hash so the same world position always gets
+    the same glyph and color offset, producing stable visuals without storing
+    per-tile state.
+
+    Args:
+        chars: Output char codes, modified in-place. Shape: (N,).
+        fg_rgb: Output fg colors, modified in-place. Shape: (N, 3).
+        bg_rgb: Output bg colors, modified in-place. Shape: (N, 3).
+        tile_ids: TileTypeID values for each tile. Shape: (N,).
+        world_x: World x coordinates. Shape: (N,).
+        world_y: World y coordinates. Shape: (N,).
+        decoration_seed: Per-map seed for deterministic decoration.
+    """
+    # Spatial hash: deterministic per-tile value from world position and seed.
+    # Uses large primes to minimize correlation between nearby tiles.
+    h = (
+        world_x.astype(np.int64) * 73856093
+        ^ world_y.astype(np.int64) * 19349663
+        ^ np.int64(decoration_seed)
+    )
+
+    for tid, glyph_pool in TERRAIN_GLYPH_POOLS.items():
+        mask = tile_ids == tid
+        if not np.any(mask):
+            continue
+
+        tile_hash = h[mask]
+
+        # Select glyph from pool using hash (low bits).
+        codes = glyph_pool.glyph_codes
+        chars[mask] = codes[np.abs(tile_hash % len(codes)).astype(np.intp)]
+
+        # BG brightness jitter: same offset to all RGB channels (shifts
+        # lightness without shifting hue). Uses hash bits 8-15.
+        bg_jitter_range = 2 * glyph_pool.bg_jitter + 1
+        bg_brightness = (tile_hash >> 8) % bg_jitter_range - glyph_pool.bg_jitter
+        bg_offset = np.column_stack([bg_brightness, bg_brightness, bg_brightness])
+
+        bg_rgb[mask] = np.clip(
+            bg_rgb[mask].astype(np.int16) + bg_offset, 0, 255
+        ).astype(np.uint8)
+
+        # FG jitter: when fg_jitter > 0, fg gets its own independent offset
+        # from hash bits 16-23. This creates bidirectional contrast - some
+        # glyphs lighter than bg, some darker. When 0, fg is locked to the
+        # same offset as bg (preserving the base fg-bg gap).
+        if glyph_pool.fg_jitter > 0:
+            fg_jitter_range = 2 * glyph_pool.fg_jitter + 1
+            fg_brightness = (tile_hash >> 16) % fg_jitter_range - glyph_pool.fg_jitter
+            fg_offset = np.column_stack([fg_brightness, fg_brightness, fg_brightness])
+        else:
+            fg_offset = bg_offset
+
+        fg_rgb[mask] = np.clip(
+            fg_rgb[mask].astype(np.int16) + fg_offset, 0, 255
+        ).astype(np.uint8)

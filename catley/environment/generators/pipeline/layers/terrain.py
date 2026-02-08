@@ -49,7 +49,7 @@ _wfc_terrain_rng = rng.get("map.wfc_terrain")
 class OpenFieldLayer(GenerationLayer):
     """Creates a flat outdoor field as the base terrain.
 
-    This layer fills the entire map with OUTDOOR_FLOOR tiles and creates
+    This layer fills the entire map with COBBLESTONE tiles and creates
     a single outdoor region covering the whole map. This provides a base
     for subsequent layers to build upon.
 
@@ -57,13 +57,13 @@ class OpenFieldLayer(GenerationLayer):
     """
 
     def apply(self, ctx: GenerationContext) -> None:
-        """Fill the map with outdoor floor and create an outdoor region.
+        """Fill the map with cobblestone and create an outdoor region.
 
         Args:
             ctx: The generation context to modify.
         """
-        # Fill entire map with outdoor floor
-        ctx.tiles[:, :] = TileTypeID.OUTDOOR_FLOOR
+        # Fill entire map with cobblestone
+        ctx.tiles[:, :] = TileTypeID.COBBLESTONE
 
         # Create a single outdoor region covering the entire map
         region_id = ctx.next_region_id()
@@ -115,7 +115,7 @@ class RandomTerrainLayer(GenerationLayer):
         """
         for x in range(ctx.width):
             for y in range(ctx.height):
-                if ctx.tiles[x, y] != TileTypeID.OUTDOOR_FLOOR:
+                if ctx.tiles[x, y] != TileTypeID.COBBLESTONE:
                     continue
 
                 # Simple terrain variety based on random roll
@@ -130,7 +130,7 @@ class RandomTerrainLayer(GenerationLayer):
                     ctx.tiles[x, y] = TileTypeID.DIRT_PATH
                 elif roll < 1.0:
                     ctx.tiles[x, y] = TileTypeID.GRAVEL
-                # else keep as OUTDOOR_FLOOR (cobblestone)
+                # else keep as COBBLESTONE
 
 
 # =============================================================================
@@ -244,7 +244,7 @@ def create_terrain_patterns() -> dict[TerrainPatternID, WFCPattern[TerrainPatter
     # Weight: lower (roads are less frequent than natural ground)
     patterns[TerrainPatternID.COBBLESTONE] = WFCPattern(
         pattern_id=TerrainPatternID.COBBLESTONE,
-        tile_type=TileTypeID.OUTDOOR_FLOOR,
+        tile_type=TileTypeID.COBBLESTONE,
         weight=1.5,
         valid_neighbors={
             "N": {
@@ -375,6 +375,6 @@ class WFCTerrainLayer(GenerationLayer):
         for x in range(ctx.width):
             for y in range(ctx.height):
                 # Only modify outdoor floor tiles
-                if ctx.tiles[x, y] == TileTypeID.OUTDOOR_FLOOR:
+                if ctx.tiles[x, y] == TileTypeID.COBBLESTONE:
                     pattern = self.patterns[result[x][y]]
                     ctx.tiles[x, y] = pattern.tile_type

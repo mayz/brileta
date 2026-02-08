@@ -20,13 +20,14 @@ if TYPE_CHECKING:
 # Maximum number of quads for texture rendering
 MAX_TEXTURE_QUADS = 5000
 
-# Vertex structure for glyph rendering (foreground + background colors)
+# Vertex structure for glyph rendering (foreground + background colors + noise)
 TEXTURE_VERTEX_DTYPE = np.dtype(
     [
         ("position", "2f4"),  # (x, y)
         ("uv", "2f4"),  # (u, v)
         ("fg_color", "4f4"),  # (r, g, b, a) as floats 0.0-1.0
         ("bg_color", "4f4"),  # (r, g, b, a) as floats 0.0-1.0
+        ("noise_amplitude", "f4"),  # Sub-tile brightness noise amplitude
     ]
 )
 
@@ -71,6 +72,13 @@ class WGPUTextureRenderer:
             [unicode_to_cp437(i) for i in range(256)], dtype=np.uint8
         )
 
+        # Noise seed passed to the fragment shader for deterministic sub-tile
+        # brightness variation via PCG hash. Set per-frame from game_map.decoration_seed.
+        self.noise_seed: int = 0
+        # World-space tile offset so the fragment shader can convert buffer-space
+        # tile indices to world coordinates for stable noise hashing across scrolls.
+        self.noise_tile_offset: tuple[int, int] = (0, 0)
+
         # Cache for change detection - skip re-render if buffer unchanged
         self.buffer_cache: ResourceCache[int, GlyphBuffer] = ResourceCache(
             name="wgpu_texture_renderer_buffers", max_size=100
@@ -84,9 +92,11 @@ class WGPUTextureRenderer:
             label="texture_renderer_vertex_buffer",
         )
 
-        # Create uniform buffer for texture size
+        # Create uniform buffer matching WGSL Uniforms struct layout:
+        #   vec2<f32> texture_size + vec2<f32> tile_size + vec2<i32> tile_offset
+        #   + u32 noise_seed + 4 bytes implicit padding = 32 bytes
         self.uniform_buffer = self.resource_manager.get_or_create_buffer(
-            size=8,  # vec2<f32> = 8 bytes
+            size=32,
             usage=wgpu.BufferUsage.UNIFORM | wgpu.BufferUsage.COPY_DST,
             label="texture_renderer_uniform_buffer",
         )
@@ -124,6 +134,11 @@ class WGPUTextureRenderer:
                         "format": "float32x4",
                         "offset": 32,  # bg_color offset (8 * 4 bytes)
                         "shader_location": 3,
+                    },
+                    {
+                        "format": "float32",
+                        "offset": 48,  # noise_amplitude offset
+                        "shader_location": 4,
                     },
                 ],
             }
@@ -179,6 +194,23 @@ class WGPUTextureRenderer:
             ],
             label="texture_renderer_bind_group",
         )
+
+    def set_noise_seed(self, seed: int) -> None:
+        """Set the noise seed for sub-tile brightness variation.
+
+        Called once per frame from game_map.decoration_seed so each map
+        gets a unique but stable noise pattern.
+        """
+        self.noise_seed = seed
+
+    def set_noise_tile_offset(self, offset_x: int, offset_y: int) -> None:
+        """Set the world-space tile offset for stable noise hashing.
+
+        The glyph buffer uses buffer-space tile indices (0, 1, 2, ...) that
+        shift when the camera scrolls. This offset converts them to world
+        coordinates so the noise pattern stays anchored to world tiles.
+        """
+        self.noise_tile_offset = (offset_x, offset_y)
 
     def set_tile_dimensions(self, tile_dimensions: tuple[int, int]) -> None:
         """Update tile size used for off-screen glyph rendering.
@@ -246,12 +278,23 @@ class WGPUTextureRenderer:
         if vbo_to_use is None:
             raise ValueError("No vertex buffer available for rendering.")
 
-        # Update uniform buffer with texture size
-        texture_size_data = struct.pack(
-            "2f", float(texture_width), float(texture_height)
+        # Update uniform buffer matching WGSL Uniforms struct layout:
+        # texture_size (2f) + tile_size (2f) + tile_offset (2i) + noise_seed (I) + pad (4x)
+        tile_w = float(self.tile_dimensions[0])
+        tile_h = float(self.tile_dimensions[1])
+        offset_x, offset_y = self.noise_tile_offset
+        uniform_data = struct.pack(
+            "4f2iI4x",
+            float(texture_width),
+            float(texture_height),
+            tile_w,
+            tile_h,
+            offset_x,
+            offset_y,
+            self.noise_seed & 0xFFFFFFFF,
         )
         self.resource_manager.queue.write_buffer(
-            self.uniform_buffer, 0, memoryview(texture_size_data)
+            self.uniform_buffer, 0, memoryview(uniform_data)
         )
 
         with record_time_live_variable("time.render.texture.vbo_update_ms"):
@@ -412,6 +455,12 @@ class WGPUTextureRenderer:
             verts["fg_color"][..., i, :] = fg_colors
             verts["bg_color"][..., i, :] = bg_colors
 
+        # Broadcast noise amplitude from glyph buffer to all 6 vertices per cell.
+        # Swap from (w, h) to (h, w) to match grid order.
+        noise_values = glyph_buffer.data["noise"].T  # (h, w)
+        for i in range(6):
+            verts["noise_amplitude"][..., i] = noise_values
+
         return num_vertices
 
     def _has_changes(
@@ -442,7 +491,11 @@ class WGPUTextureRenderer:
         if has_fg_diff:
             return True
 
-        return bool(np.any(glyph_buffer.data["bg"] != cache_buffer.data["bg"]))
+        has_bg_diff = np.any(glyph_buffer.data["bg"] != cache_buffer.data["bg"])
+        if has_bg_diff:
+            return True
+
+        return bool(np.any(glyph_buffer.data["noise"] != cache_buffer.data["noise"]))
 
     def _update_cache(self, glyph_buffer: GlyphBuffer, buffer_id: int) -> None:
         """Update the cache with the current buffer state.

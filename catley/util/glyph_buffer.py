@@ -11,6 +11,7 @@ GLYPH_DTYPE = np.dtype(
         ("ch", np.int32),  # Character code
         ("fg", "4B"),  # Foreground RGBA (4 unsigned bytes)
         ("bg", "4B"),  # Background RGBA (4 unsigned bytes)
+        ("noise", np.float32),  # Sub-tile noise amplitude (0.0 = no noise)
     ]
 )
 
@@ -43,13 +44,20 @@ class GlyphBuffer:
         self.data["ch"] = ch
         self.data["fg"] = fg
         self.data["bg"] = bg
+        self.data["noise"] = 0.0
 
     def put_char(
-        self, x: int, y: int, ch: int, fg: colors.ColorRGBA, bg: colors.ColorRGBA
+        self,
+        x: int,
+        y: int,
+        ch: int,
+        fg: colors.ColorRGBA,
+        bg: colors.ColorRGBA,
+        noise: float = 0.0,
     ) -> None:
         """Places a single character at a given coordinate."""
         if 0 <= x < self.width and 0 <= y < self.height:
-            self.data[x, y] = (ch, fg, bg)
+            self.data[x, y] = (ch, fg, bg, noise)
 
     def print(
         self,

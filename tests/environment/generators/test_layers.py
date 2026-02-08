@@ -43,13 +43,13 @@ class TestOpenFieldLayer:
     """Tests for OpenFieldLayer."""
 
     def test_fills_with_outdoor_floor(self) -> None:
-        """All tiles are OUTDOOR_FLOOR after applying layer."""
+        """All tiles are COBBLESTONE after applying layer."""
         ctx = GenerationContext.create_empty(width=40, height=30)
         layer = OpenFieldLayer()
 
         layer.apply(ctx)
 
-        assert np.all(ctx.tiles == TileTypeID.OUTDOOR_FLOOR)
+        assert np.all(ctx.tiles == TileTypeID.COBBLESTONE)
 
     def test_creates_exterior_region(self) -> None:
         """Single region with type 'exterior' and sky_exposure=1."""
@@ -92,7 +92,7 @@ class TestBuildingPlacementLayer:
         ctx = GenerationContext.create_empty(width=200, height=200)
 
         # Fill with outdoor floor first
-        ctx.tiles[:, :] = TileTypeID.OUTDOOR_FLOOR
+        ctx.tiles[:, :] = TileTypeID.COBBLESTONE
 
         # Small buildings to fit many
         small_template = BuildingTemplate(
@@ -130,7 +130,7 @@ class TestBuildingPlacementLayer:
         """Perimeter is WALL, interior is FLOOR/WALL/DOOR (for multi-room)."""
         rng.reset("123")
         ctx = GenerationContext.create_empty(width=100, height=100)
-        ctx.tiles[:, :] = TileTypeID.OUTDOOR_FLOOR
+        ctx.tiles[:, :] = TileTypeID.COBBLESTONE
 
         layer = BuildingPlacementLayer(
             templates=[SMALL_HOUSE_TEMPLATE],
@@ -177,7 +177,7 @@ class TestBuildingPlacementLayer:
         ctx = GenerationContext.create_empty(width=80, height=80)
 
         # Set up exterior region first
-        ctx.tiles[:, :] = TileTypeID.OUTDOOR_FLOOR
+        ctx.tiles[:, :] = TileTypeID.COBBLESTONE
         exterior_id = ctx.next_region_id()
         from catley.environment.map import MapRegion
         from catley.util.coordinates import Rect
@@ -218,7 +218,7 @@ class TestBuildingPlacementLayer:
         """Each building has indoor region with sky_exposure=0."""
         rng.reset("789")
         ctx = GenerationContext.create_empty(width=100, height=100)
-        ctx.tiles[:, :] = TileTypeID.OUTDOOR_FLOOR
+        ctx.tiles[:, :] = TileTypeID.COBBLESTONE
 
         layer = BuildingPlacementLayer(
             templates=[SMALL_HOUSE_TEMPLATE],
@@ -251,7 +251,7 @@ class TestBuildingPlacementLayer:
         for seed in ["entry1", "entry2", "entry3", "burrito1", "vestibule"]:
             rng.reset(seed)
             ctx = GenerationContext.create_empty(width=100, height=100)
-            ctx.tiles[:, :] = TileTypeID.OUTDOOR_FLOOR
+            ctx.tiles[:, :] = TileTypeID.COBBLESTONE
 
             layer = BuildingPlacementLayer(
                 templates=[SMALL_HOUSE_TEMPLATE],
@@ -310,7 +310,7 @@ class TestRandomTerrainLayer:
         ctx = GenerationContext.create_empty(width=50, height=50)
 
         # Set up map with some indoor and outdoor areas
-        ctx.tiles[:, :] = TileTypeID.OUTDOOR_FLOOR
+        ctx.tiles[:, :] = TileTypeID.COBBLESTONE
         # Mark a region as indoor (floor)
         ctx.tiles[10:20, 10:20] = TileTypeID.FLOOR
         # Add some walls
@@ -328,7 +328,7 @@ class TestRandomTerrainLayer:
         """Output contains GRASS, DIRT_PATH, GRAVEL."""
         rng.reset("222")
         ctx = GenerationContext.create_empty(width=100, height=100)
-        ctx.tiles[:, :] = TileTypeID.OUTDOOR_FLOOR
+        ctx.tiles[:, :] = TileTypeID.COBBLESTONE
 
         layer = RandomTerrainLayer(
             grass_weight=0.4,
@@ -365,7 +365,7 @@ class TestWFCTerrainLayer:
         """Output contains expected tile types."""
         rng.reset("wfc1")
         ctx = GenerationContext.create_empty(width=10, height=10)
-        ctx.tiles[:, :] = TileTypeID.OUTDOOR_FLOOR
+        ctx.tiles[:, :] = TileTypeID.COBBLESTONE
 
         layer = WFCTerrainLayer()
         layer.apply(ctx)
@@ -375,7 +375,7 @@ class TestWFCTerrainLayer:
             TileTypeID.GRASS,
             TileTypeID.DIRT_PATH,
             TileTypeID.GRAVEL,
-            TileTypeID.OUTDOOR_FLOOR,
+            TileTypeID.COBBLESTONE,
         }
 
         unique_tiles = set(np.unique(ctx.tiles))
@@ -389,7 +389,7 @@ class TestWFCTerrainLayer:
         rng.reset("wfc2")
         ctx = GenerationContext.create_empty(width=10, height=10)
 
-        ctx.tiles[:, :] = TileTypeID.OUTDOOR_FLOOR
+        ctx.tiles[:, :] = TileTypeID.COBBLESTONE
         ctx.tiles[2:4, 2:4] = TileTypeID.FLOOR
         ctx.tiles[6:8, 6:8] = TileTypeID.WALL
 
@@ -402,10 +402,10 @@ class TestWFCTerrainLayer:
         assert np.all(ctx.tiles[6:8, 6:8] == TileTypeID.WALL)
 
     def test_adjacency_respected(self) -> None:
-        """No GRASS directly touching COBBLESTONE (OUTDOOR_FLOOR)."""
+        """No GRASS directly touching COBBLESTONE."""
         rng.reset("wfc3")
         ctx = GenerationContext.create_empty(width=12, height=12)
-        ctx.tiles[:, :] = TileTypeID.OUTDOOR_FLOOR
+        ctx.tiles[:, :] = TileTypeID.COBBLESTONE
 
         layer = WFCTerrainLayer()
         layer.apply(ctx)
@@ -418,7 +418,7 @@ class TestWFCTerrainLayer:
                         dx, dy = DIR_OFFSETS[direction]
                         nx, ny = x + dx, y + dy
                         if 0 <= nx < ctx.width and 0 <= ny < ctx.height:
-                            assert ctx.tiles[nx, ny] != TileTypeID.OUTDOOR_FLOOR, (
+                            assert ctx.tiles[nx, ny] != TileTypeID.COBBLESTONE, (
                                 f"GRASS at ({x},{y}) is adjacent to COBBLESTONE at "
                                 f"({nx},{ny}) - WFC should prevent this"
                             )
@@ -427,12 +427,12 @@ class TestWFCTerrainLayer:
         """Same seed produces same terrain."""
         rng.reset("determinism")
         ctx1 = GenerationContext.create_empty(width=15, height=15)
-        ctx1.tiles[:, :] = TileTypeID.OUTDOOR_FLOOR
+        ctx1.tiles[:, :] = TileTypeID.COBBLESTONE
         WFCTerrainLayer().apply(ctx1)
 
         rng.reset("determinism")
         ctx2 = GenerationContext.create_empty(width=15, height=15)
-        ctx2.tiles[:, :] = TileTypeID.OUTDOOR_FLOOR
+        ctx2.tiles[:, :] = TileTypeID.COBBLESTONE
         WFCTerrainLayer().apply(ctx2)
 
         np.testing.assert_array_equal(ctx1.tiles, ctx2.tiles)
@@ -446,7 +446,7 @@ class TestWFCTerrainLayer:
         """
         rng.reset("fallback")
         ctx = GenerationContext.create_empty(width=12, height=12)
-        ctx.tiles[:, :] = TileTypeID.OUTDOOR_FLOOR
+        ctx.tiles[:, :] = TileTypeID.COBBLESTONE
 
         # Should not raise, even if WFC internally fails
         layer = WFCTerrainLayer(max_attempts=1)
@@ -457,7 +457,7 @@ class TestWFCTerrainLayer:
             TileTypeID.GRASS,
             TileTypeID.DIRT_PATH,
             TileTypeID.GRAVEL,
-            TileTypeID.OUTDOOR_FLOOR,
+            TileTypeID.COBBLESTONE,
         }
         unique_tiles = set(np.unique(ctx.tiles))
         assert len(unique_tiles & terrain_types) >= 1
@@ -526,7 +526,7 @@ class TestDetailLayer:
         ctx = GenerationContext.create_empty(width=80, height=80)
 
         # Set up map with outdoor and indoor areas
-        ctx.tiles[:, :] = TileTypeID.OUTDOOR_FLOOR
+        ctx.tiles[:, :] = TileTypeID.COBBLESTONE
         ctx.tiles[30:40, 30:40] = TileTypeID.FLOOR  # Indoor area
 
         # Use high density to ensure some boulders are placed
@@ -547,7 +547,7 @@ class TestDetailLayer:
         """No boulders adjacent to door tiles."""
         rng.reset("444")
         ctx = GenerationContext.create_empty(width=100, height=100)
-        ctx.tiles[:, :] = TileTypeID.OUTDOOR_FLOOR
+        ctx.tiles[:, :] = TileTypeID.COBBLESTONE
 
         # Place a door manually
         door_x, door_y = 50, 50
@@ -590,7 +590,7 @@ class TestDetailLayer:
         """Boulder placement probability approximately matches density."""
         rng.reset("555")
         ctx = GenerationContext.create_empty(width=100, height=100)
-        ctx.tiles[:, :] = TileTypeID.OUTDOOR_FLOOR
+        ctx.tiles[:, :] = TileTypeID.COBBLESTONE
 
         density = 0.05
         layer = DetailLayer(boulder_density=density)
@@ -623,7 +623,7 @@ class TestStreetNetworkLayer:
         """Single style creates one horizontal street through the middle."""
         rng.reset(42)
         ctx = GenerationContext.create_empty(width=80, height=60)
-        ctx.tiles[:, :] = TileTypeID.OUTDOOR_FLOOR
+        ctx.tiles[:, :] = TileTypeID.COBBLESTONE
         layer = StreetNetworkLayer(style="single")
 
         layer.apply(ctx)
@@ -642,7 +642,7 @@ class TestStreetNetworkLayer:
         """Cross style creates horizontal and vertical streets."""
         rng.reset(42)
         ctx = GenerationContext.create_empty(width=80, height=60)
-        ctx.tiles[:, :] = TileTypeID.OUTDOOR_FLOOR
+        ctx.tiles[:, :] = TileTypeID.COBBLESTONE
         layer = StreetNetworkLayer(style="cross")
 
         layer.apply(ctx)
@@ -654,7 +654,7 @@ class TestStreetNetworkLayer:
         assert len(ctx.street_data.zones) == 4
 
     def test_street_tiles_are_outdoor_floor(self) -> None:
-        """Street tiles are carved as OUTDOOR_FLOOR (cobblestone)."""
+        """Street tiles are carved as COBBLESTONE."""
         rng.reset(42)
         ctx = GenerationContext.create_empty(width=80, height=60)
         ctx.tiles[:, :] = TileTypeID.GRASS  # Start with grass
@@ -665,13 +665,13 @@ class TestStreetNetworkLayer:
         street = ctx.street_data.streets[0]
         # Check street tiles are now outdoor floor
         for y in range(street.y1, street.y2):
-            assert ctx.tiles[ctx.width // 2, y] == TileTypeID.OUTDOOR_FLOOR
+            assert ctx.tiles[ctx.width // 2, y] == TileTypeID.COBBLESTONE
 
     def test_zones_do_not_overlap_streets_interior(self) -> None:
         """Building zone interiors should not overlap with street interiors."""
         rng.reset(42)
         ctx = GenerationContext.create_empty(width=80, height=60)
-        ctx.tiles[:, :] = TileTypeID.OUTDOOR_FLOOR
+        ctx.tiles[:, :] = TileTypeID.COBBLESTONE
         layer = StreetNetworkLayer(style="cross")
 
         layer.apply(ctx)
@@ -699,7 +699,7 @@ class TestBuildingPlacementWithStreets:
         # Use a larger map to ensure zones can fit buildings
         rng.reset(42)
         ctx = GenerationContext.create_empty(width=120, height=100)
-        ctx.tiles[:, :] = TileTypeID.OUTDOOR_FLOOR
+        ctx.tiles[:, :] = TileTypeID.COBBLESTONE
 
         # Create street network first
         street_layer = StreetNetworkLayer(style="cross")
@@ -740,7 +740,7 @@ class TestBuildingPlacementWithStreets:
         """Building doors should face the nearest street."""
         rng.reset(42)
         ctx = GenerationContext.create_empty(width=80, height=60)
-        ctx.tiles[:, :] = TileTypeID.OUTDOOR_FLOOR
+        ctx.tiles[:, :] = TileTypeID.COBBLESTONE
 
         # Create street network first (single horizontal street)
         street_layer = StreetNetworkLayer(style="single")

@@ -431,6 +431,24 @@ class GraphicsContext(abc.ABC):
         """
         return
 
+    def set_noise_seed(self, seed: int) -> None:
+        """Set the noise seed for sub-tile brightness variation.
+
+        Called once per frame before render_glyph_buffer_to_texture() so the
+        fragment shader can produce deterministic per-pixel brightness noise.
+        Backends that do not support this intentionally do nothing.
+        """
+        return
+
+    def set_noise_tile_offset(self, offset_x: int, offset_y: int) -> None:
+        """Set the world-space tile offset for stable noise hashing.
+
+        Converts buffer-space tile indices to world coordinates so the noise
+        pattern stays anchored to world tiles regardless of camera scrolling.
+        Backends that do not support this intentionally do nothing.
+        """
+        return
+
     def cleanup(self) -> None:
         """Release backend resources before shutdown.
 

@@ -31,7 +31,7 @@ class TestFullPipeline:
         # Should have walkable tiles
         walkable_tiles = {
             TileTypeID.FLOOR,
-            TileTypeID.OUTDOOR_FLOOR,
+            TileTypeID.COBBLESTONE,
             TileTypeID.GRASS,
             TileTypeID.DIRT_PATH,
             TileTypeID.GRAVEL,
@@ -109,7 +109,7 @@ class TestFullPipeline:
             TileTypeID.GRASS,
             TileTypeID.DIRT_PATH,
             TileTypeID.GRAVEL,
-            TileTypeID.OUTDOOR_FLOOR,
+            TileTypeID.COBBLESTONE,
         }
 
         unique_tiles = set(np.unique(map_data.tiles))
@@ -149,7 +149,7 @@ class TestGameWorldIntegration:
         # Find walkable tiles for potential spawn
         walkable_tiles = {
             TileTypeID.FLOOR,
-            TileTypeID.OUTDOOR_FLOOR,
+            TileTypeID.COBBLESTONE,
             TileTypeID.GRASS,
             TileTypeID.DIRT_PATH,
             TileTypeID.GRAVEL,

@@ -41,6 +41,9 @@ class TestWorldViewLightOverlay:
         mock_gw.game_map.explored = explored
         mock_gw.game_map.visible = visible
 
+        mock_gw.game_map.tiles = np.zeros((3, 3), dtype=np.uint8)
+        mock_gw.game_map.decoration_seed = 0
+
         light_app = np.zeros((3, 3), dtype=tile_types.TileTypeAppearance)
         light_app[:, :] = (ord("#"), (200, 200, 200), (50, 50, 50))
         mock_gw.game_map.light_appearance_map = light_app
@@ -78,9 +81,10 @@ class TestWorldViewLightOverlay:
         visible_mask_buffer = compose_kwargs["visible_mask_buffer"]
         pad = world_view._SCROLL_PADDING
 
-        # Corner tile is explored-but-not-visible.
+        # Corner tile is explored-but-not-visible. Terrain decoration replaces
+        # the light appearance glyph with the tile's decoration glyph (space for WALL).
         corner_ch = world_view.light_source_glyph_buffer.data["ch"][pad, pad]
-        assert corner_ch == ord("#")
+        assert corner_ch == ord(" ")
         assert bool(visible_mask_buffer[pad, pad]) is False
         # Center tile is visible.
         assert bool(visible_mask_buffer[pad + 1, pad + 1]) is True
@@ -144,6 +148,8 @@ class TestWorldViewLightOverlay:
         mock_controller.gw = mock_gw
         mock_gw.game_map.width = 1
         mock_gw.game_map.height = 1
+        mock_gw.game_map.tiles = np.zeros((1, 1), dtype=np.uint8)
+        mock_gw.game_map.decoration_seed = 0
         mock_gw.game_map.explored = np.ones((1, 1), dtype=bool)
         mock_gw.game_map.visible = np.ones((1, 1), dtype=bool)
         mock_gw.game_map.light_appearance_map = np.zeros(
@@ -185,6 +191,8 @@ class TestWorldViewLightOverlay:
         mock_controller.gw = mock_gw
         mock_gw.game_map.width = 1
         mock_gw.game_map.height = 1
+        mock_gw.game_map.tiles = np.zeros((1, 1), dtype=np.uint8)
+        mock_gw.game_map.decoration_seed = 0
         mock_gw.game_map.explored = np.ones((1, 1), dtype=bool)
         mock_gw.game_map.visible = np.ones((1, 1), dtype=bool)
         mock_gw.game_map.light_appearance_map = np.zeros(

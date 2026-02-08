@@ -163,6 +163,27 @@ def test_draw_frame_clipping():
     assert buf.data[4, 4]["ch"] == 9496  # ┘ Bottom-right
 
 
+def test_noise_defaults_to_zero():
+    """Noise field should default to 0.0 after init and clear."""
+    buf = GlyphBuffer(3, 3)
+    assert buf.data["noise"][0, 0] == 0.0
+    assert np.all(buf.data["noise"] == 0.0)
+
+
+def test_put_char_writes_noise():
+    """put_char should accept and store a noise amplitude value."""
+    buf = GlyphBuffer(3, 3)
+    buf.put_char(1, 1, ord("@"), (255, 255, 255, 255), (0, 0, 0, 255), noise=0.04)
+    assert buf.data[1, 1]["noise"] == pytest.approx(0.04)
+
+
+def test_put_char_noise_default():
+    """put_char without noise arg should default to 0.0 (backwards compat)."""
+    buf = GlyphBuffer(3, 3)
+    buf.put_char(1, 1, ord("@"), (255, 255, 255, 255), (0, 0, 0, 255))
+    assert buf.data[1, 1]["noise"] == 0.0
+
+
 def test_draw_frame_no_clear():
     buf = GlyphBuffer(10, 10)
     buf.print(3, 4, "test", (255, 255, 255, 255))

@@ -17,6 +17,7 @@ import numpy as np
 from catley.environment.generators.base import GeneratedMapData
 from catley.environment.map import MapRegion
 from catley.environment.tile_types import TileTypeID
+from catley.util import rng
 from catley.util.coordinates import Rect
 
 if TYPE_CHECKING:
@@ -127,13 +128,20 @@ class GenerationContext:
     def to_generated_map_data(self) -> GeneratedMapData:
         """Convert this context to a GeneratedMapData for use with GameMap.
 
+        Generates a decoration seed from the terrain RNG so per-tile visual
+        decoration is deterministic for a given world seed.
+
         Returns:
             A GeneratedMapData instance containing the final map data.
         """
+        _terrain_rng = rng.get("map.terrain_decoration")
+        decoration_seed = _terrain_rng.getrandbits(32)
+
         return GeneratedMapData(
             tiles=self.tiles,
             regions=self.regions,
             tile_to_region_id=self.tile_to_region_id,
             buildings=self.buildings,
             streets=self.street_data.streets,
+            decoration_seed=decoration_seed,
         )
