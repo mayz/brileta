@@ -239,6 +239,9 @@ PyObject *catley_native_fov(PyObject *self, PyObject *args) {
     Py_ssize_t v_stride_x = visible_buf.strides[0];
     Py_ssize_t v_stride_y = visible_buf.strides[1];
 
+    int fov_rc = 0;
+    Py_BEGIN_ALLOW_THREADS
+
     for (int x = 0; x < width; x++) {
         for (int y = 0; y < height; y++) {
             *(unsigned char *)(visible + x * v_stride_x + y * v_stride_y) = 0;
@@ -268,13 +271,18 @@ PyObject *catley_native_fov(PyObject *self, PyObject *args) {
             v_stride_y
         );
         if (rc < 0) {
-            PyBuffer_Release(&transparent_buf);
-            PyBuffer_Release(&visible_buf);
-            return PyErr_NoMemory();
+            fov_rc = -1;
+            break;
         }
     }
 
+    Py_END_ALLOW_THREADS
+
     PyBuffer_Release(&transparent_buf);
     PyBuffer_Release(&visible_buf);
+
+    if (fov_rc < 0) {
+        return PyErr_NoMemory();
+    }
     Py_RETURN_NONE;
 }

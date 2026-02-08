@@ -338,7 +338,10 @@ PyObject *catley_native_astar(PyObject *self, PyObject *args) {
     }
 
     int path_len;
-    int rc = astar_search(cost, w, h, sx, sy, gx, gy, path_buf, &path_len);
+    int rc;
+    Py_BEGIN_ALLOW_THREADS
+    rc = astar_search(cost, w, h, sx, sy, gx, gy, path_buf, &path_len);
+    Py_END_ALLOW_THREADS
 
     PyBuffer_Release(&buf);
 

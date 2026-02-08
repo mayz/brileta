@@ -26,11 +26,13 @@ extern PyObject *catley_native_wfc_contradiction_error;
 /* ------------------------------------------------------------------ */
 
 static uint8_t POPCOUNT_TABLE[256];
-static int POPCOUNT_READY = 0;
 
-static void ensure_popcount_table(void) {
-    if (POPCOUNT_READY) return;
-
+/*
+ * Initialize the popcount lookup table.  Called once from PyInit__native()
+ * at module load time so no synchronization is needed - module init is
+ * guaranteed single-threaded even in free-threaded Python.
+ */
+void catley_native_init_popcount_table(void) {
     for (int i = 0; i < 256; i++) {
         int v = i;
         uint8_t c = 0;
@@ -40,8 +42,6 @@ static void ensure_popcount_table(void) {
         }
         POPCOUNT_TABLE[i] = c;
     }
-
-    POPCOUNT_READY = 1;
 }
 
 static inline uint8_t popcount_u8(uint8_t mask) {
@@ -776,8 +776,6 @@ PyObject *catley_native_wfc_solve(PyObject *self, PyObject *args) {
         goto cleanup;
     }
 
-    ensure_popcount_table();
-
     WfcSolver solver;
     solver.width = width;
     solver.height = height;
@@ -792,7 +790,10 @@ PyObject *catley_native_wfc_solve(PyObject *self, PyObject *args) {
     solver.heap_counter = 0;
     rng_init(&solver.rng, (uint64_t)seed);
 
-    int rc = wfc_solve_inner(&solver);
+    int rc;
+    Py_BEGIN_ALLOW_THREADS
+    rc = wfc_solve_inner(&solver);
+    Py_END_ALLOW_THREADS
 
     heap = solver.heap;
     stack = solver.stack;

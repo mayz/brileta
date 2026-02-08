@@ -15,6 +15,8 @@ PyObject *catley_native_astar(PyObject *self, PyObject *args);
 PyObject *catley_native_fov(PyObject *self, PyObject *args);
 /* WFC entry point provided by _native_wfc.c. */
 PyObject *catley_native_wfc_solve(PyObject *self, PyObject *args);
+/* Popcount table initializer provided by _native_wfc.c. */
+void catley_native_init_popcount_table(void);
 /* Shared native WFC contradiction exception type. */
 PyObject *catley_native_wfc_contradiction_error = NULL;
 
@@ -45,6 +47,9 @@ static struct PyModuleDef module = {
 PyMODINIT_FUNC PyInit__native(void) {
     PyObject *m = PyModule_Create(&module);
     if (!m) return NULL;
+
+    /* Initialize lookup tables once at module load time (thread-safe). */
+    catley_native_init_popcount_table();
 
     catley_native_wfc_contradiction_error = PyErr_NewException(
         "catley.util._native.WFCContradictionError",
