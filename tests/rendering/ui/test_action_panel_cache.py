@@ -8,6 +8,7 @@ from unittest.mock import MagicMock
 
 from catley import colors
 from catley.controller import Controller
+from catley.game.actions.discovery import ActionCategory, ActionOption
 from catley.game.actors import Actor, Character, ItemPile
 from catley.game.countables import CountableType, get_countable_display_name
 from catley.game.enums import ItemSize
@@ -24,6 +25,13 @@ class DummyCombatMode:
 
     selected_action: Any = None
 
+    def get_available_combat_actions(self, target: Any = None) -> list[ActionOption]:
+        """Return empty actions by default."""
+        return []
+
+    def _ensure_valid_selection(self, actions: list[ActionOption]) -> None:
+        pass
+
 
 @dataclass
 class DummyController:
@@ -34,14 +42,14 @@ class DummyController:
     combat_mode: DummyCombatMode | None = None
     selected_target: Actor | None = None
     hovered_actor: Actor | None = None
+    _in_combat: bool = False
 
     def __post_init__(self) -> None:
         if self.combat_mode is None:
             self.combat_mode = DummyCombatMode()
 
     def is_combat_mode(self) -> bool:
-        """Always return False for these tests - not in combat mode."""
-        return False
+        return self._in_combat
 
 
 def make_action_panel() -> tuple[DummyController, ActionPanelView]:
@@ -277,4 +285,72 @@ class TestActionPanelHoverResolution:
 
         view._update_cached_data()
 
+        assert view._cached_is_selected is False
+
+
+class TestCombatModeCache:
+    """Tests for cache key behavior in combat mode."""
+
+    def _make_combat_action(self, action_id: str, name: str) -> ActionOption:
+        """Create a minimal combat ActionOption for testing."""
+        return ActionOption(
+            id=action_id,
+            name=name,
+            description=f"Test {name}",
+            category=ActionCategory.COMBAT,
+            action_class=None,
+            static_params={},
+        )
+
+    def test_cache_key_changes_when_selected_combat_action_changes(self) -> None:
+        """Switching the selected combat action must invalidate the cache.
+
+        Without this, the ▶ indicator stays on the old action while
+        a different action actually executes on target click.
+        """
+        controller, view = make_action_panel()
+
+        attack = self._make_combat_action("attack-melee", "Attack")
+        push = self._make_combat_action("push", "Push")
+
+        # Set up combat mode with two actions
+        controller._in_combat = True
+        controller.combat_mode.get_available_combat_actions = MagicMock(
+            return_value=[attack, push]
+        )
+        controller.combat_mode.selected_action = attack
+
+        key_with_attack = view.get_cache_key()
+
+        # Switch selected action to Push
+        controller.combat_mode.selected_action = push
+        key_with_push = view.get_cache_key()
+
+        assert key_with_attack != key_with_push
+
+    def test_combat_mode_resets_stale_explore_fields(self) -> None:
+        """Entering combat mode should clear explore-mode cached fields.
+
+        _cached_default_action_id and _cached_is_selected retain stale
+        values from explore mode if not explicitly reset.
+        """
+        controller, view = make_action_panel()
+        gw = controller.gw
+
+        # Simulate explore mode with a selected target
+        npc = Character(3, 3, "N", colors.RED, "NPC", game_world=cast(GameWorld, gw))
+        gw.add_actor(npc)
+        controller.selected_target = npc
+        view._update_cached_data()
+
+        # Verify explore-mode values are set
+        assert view._cached_is_selected is True
+
+        # Switch to combat mode
+        controller._in_combat = True
+        controller.combat_mode.get_available_combat_actions = MagicMock(return_value=[])
+        view._update_cached_data()
+
+        # Stale explore-mode values should be cleared
+        assert view._cached_default_action_id is None
         assert view._cached_is_selected is False

@@ -220,6 +220,15 @@ class ActionPanelView(TextView):
                 countables_key = str(sorted(actor.inventory.countables.items()))
                 break
 
+        # In combat mode, the selected action determines the ▶ indicator.
+        # Without this, switching actions via hotkey won't invalidate the cache
+        # and the display becomes desynced from the actual selection.
+        selected_action_id = ""
+        if self.controller.is_combat_mode():
+            selected = self.controller.combat_mode.selected_action
+            if selected is not None:
+                selected_action_id = selected.id
+
         return (
             self._cached_target_name,
             self._cached_target_description,
@@ -231,6 +240,7 @@ class ActionPanelView(TextView):
             self.controller.graphics.tile_dimensions,
             self.view_width_px,
             self.view_height_px,
+            selected_action_id,
         )
 
     def set_bounds(self, x1: int, y1: int, x2: int, y2: int) -> None:
@@ -722,6 +732,12 @@ class ActionPanelView(TextView):
         # hotkeys. This prevents the explore-mode hotkey (e.g., "B" for Talk)
         # from incorrectly selecting a combat action.
         self._previous_hotkeys.clear()
+
+        # Reset explore-mode fields that don't apply in combat mode.
+        # Without this, stale values from the last hover/selection persist
+        # and could affect hotkey assignment or display.
+        self._cached_default_action_id = None
+        self._cached_is_selected = False
 
         combat_mode = self.controller.combat_mode
 
