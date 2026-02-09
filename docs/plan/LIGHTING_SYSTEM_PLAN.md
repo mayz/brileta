@@ -391,7 +391,7 @@ The focus on high-impact phases ensures maximum return on implementation effort,
 ### Performance Benchmarks
 
 **Location**: Performance benchmarks are integrated into the comprehensive test suite at:
-- `/Users/mayz/brileta/tests/rendering/effects/test_gpu_lighting_system.py`
+- `tests/rendering/effects/test_gpu_lighting_system.py`
 - Test classes: `TestGPULightingPerformance` and `TestGPULightingVisualRegression`
 
 **Benchmark Coverage**:
