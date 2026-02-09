@@ -1,6 +1,8 @@
 # Catley
 
-Catley is an experimental post-apocalyptic game. The goal is to build interesting systems - environmental, social, tactical - and see what emerges from their interactions.
+Catley is an experimental game engine and sandbox. The goal is to build interesting systems - environmental, social, tactical - and see what emerges from their interactions.
+
+This is a personal hobby project. It's a playground for ideas, not a product. There's no release timeline, no roadmap promises, and no guarantee that anything works.
 
 The project prioritizes:
 - **Mechanical experimentation** over genre purity
@@ -26,24 +28,17 @@ The project prioritizes:
 
 **Depth through interaction:** Interesting gameplay comes from systems interacting, not from adding more systems in isolation.
 
-**Respect the Intent/Executor pattern:** All world-changing actions go through intents and executors. This architecture enables future extensibility.
-
-**Input Philosophy:** The game must be fully playable with mouse-only. Keyboard shortcuts exist for convenience and speed but are never required. Keyboard-only play is not a design goal.
+**Input Philosophy:** The game should be fully playable with mouse-only. Keyboard shortcuts exist for convenience and speed but are never required. Keyboard-only play is not a design goal.
 
 ## Getting Started
 
-1. Install **Python 3.14**.
-2. Run `uv sync` to create a virtual environment and install dependencies from `uv.lock`.
+1. Install [uv](https://docs.astral.sh/uv/getting-started/installation/).
+2. Run `uv sync`.
 3. Run `make`.
 4. Run the game with `make run`.
 
-## Game Action Architecture
+## License
 
-Catley uses an **Intent/Executor** pattern for all in-world actions.
-Actors and UI components create lightweight `GameIntent` objects that
-describe the desired action. These intents are queued through the
-`TurnManager`, which dispatches them to specialized executors. Each
-executor contains the implementation logic and returns a
-`GameActionResult` describing the outcome. Executors should only be
-created by `TurnManager` methods, and intents should never call
-`execute()` directly.
+Licensed under [AGPL-3.0](LICENSE). By submitting a pull request, you agree that your contribution may be included in future releases under different license terms, including proprietary ones. You keep your copyright.
+
+Third-party attributions are in [NOTICE](NOTICE).

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "catley"
 version = "0.1.0"
-description = "Add your description here"
+description = "An experimental game engine and sandbox."
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
