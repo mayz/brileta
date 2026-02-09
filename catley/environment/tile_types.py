@@ -750,7 +750,7 @@ class TerrainDecorationDef(NamedTuple):
 _TERRAIN_DECORATION_DEFS: dict[TileTypeID, TerrainDecorationDef] = {
     TileTypeID.WALL: TerrainDecorationDef(glyphs=[" "], sub_tile_jitter=0.012),
     TileTypeID.COBBLESTONE: TerrainDecorationDef(
-        glyphs=[" "], bg_jitter=2, sub_tile_jitter=0.015
+        glyphs=[" "], bg_jitter=2, sub_tile_jitter=0.02
     ),
     TileTypeID.GRASS: TerrainDecorationDef(
         glyphs=['"', "'", ",", "`"], bg_jitter=4, fg_jitter=12
