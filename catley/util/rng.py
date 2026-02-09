@@ -148,10 +148,15 @@ class RNGProvider:
     def _get_raw(self, domain: str) -> Random:
         """Get the raw Random instance for a domain (internal use)."""
         if domain not in self._streams:
-            # Use crc32 instead of hash() - hash() is randomized per Python session
-            # via PYTHONHASHSEED, which would break cross-session determinism
-            derived_seed = zlib.crc32(f"{self._master_seed}:{domain}".encode())
-            self._streams[domain] = Random(derived_seed)
+            if self._master_seed is None:
+                # No seed: use system entropy for non-deterministic behavior
+                self._streams[domain] = Random()
+            else:
+                # Use crc32 instead of hash() - hash() is randomized per Python
+                # session via PYTHONHASHSEED, which would break cross-session
+                # determinism
+                derived_seed = zlib.crc32(f"{self._master_seed}:{domain}".encode())
+                self._streams[domain] = Random(derived_seed)
         return self._streams[domain]
 
     def reset(self, master_seed: RandomSeed = None) -> None:

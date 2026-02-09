@@ -71,6 +71,24 @@ class TestRNGProvider:
 
         assert values1 == values2
 
+    def test_none_seed_is_non_deterministic(self) -> None:
+        """None master seed produces different sequences each time."""
+        # Create two providers with None seed - they should use system entropy
+        # and produce different sequences (not the same "None" string hash)
+        provider1 = RNGProvider(master_seed=None)
+        provider2 = RNGProvider(master_seed=None)
+
+        stream1 = provider1.get("test.domain")
+        stream2 = provider2.get("test.domain")
+
+        values1 = [stream1.randint(1, 2**31) for _ in range(10)]
+        values2 = [stream2.randint(1, 2**31) for _ in range(10)]
+
+        assert values1 != values2, (
+            "None seed should produce non-deterministic (different) sequences, "
+            "but both providers generated identical output"
+        )
+
     def test_different_seeds_produce_different_sequences(self) -> None:
         """Different master seeds produce different sequences."""
         provider1 = RNGProvider(master_seed=111)
