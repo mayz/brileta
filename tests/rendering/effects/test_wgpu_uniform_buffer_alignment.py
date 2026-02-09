@@ -13,7 +13,7 @@ from __future__ import annotations
 import struct
 from unittest.mock import Mock
 
-from catley.game.game_world import GameWorld
+from brileta.game.game_world import GameWorld
 
 
 class TestWGPUUniformBufferAlignment:
@@ -33,7 +33,7 @@ class TestWGPUUniformBufferAlignment:
     def _create_gpu_lighting_system(self) -> Mock:
         """Create a mock GPU lighting system with the real _pack_uniform_data method."""
         # Import here to avoid circular imports and allow mocking
-        from catley.backends.wgpu.gpu_lighting import GPULightingSystem
+        from brileta.backends.wgpu.gpu_lighting import GPULightingSystem
 
         # Create a partial mock that uses the real packing method
         mock_system = Mock(spec=GPULightingSystem)
@@ -50,8 +50,8 @@ class TestWGPUUniformBufferAlignment:
 
     def test_buffer_contains_expected_sun_intensity(self) -> None:
         """Test that sun_intensity is packed at the correct offset."""
-        from catley.game.lights import DirectionalLight
-        from catley.util.coordinates import Rect
+        from brileta.game.lights import DirectionalLight
+        from brileta.util.coordinates import Rect
 
         # Add a directional light with known intensity
         sun = DirectionalLight.create_sun(intensity=0.4)
@@ -85,7 +85,7 @@ class TestWGPUUniformBufferAlignment:
 
     def test_buffer_contains_expected_map_size(self) -> None:
         """Test that map_size is packed at the correct offset."""
-        from catley.util.coordinates import Rect
+        from brileta.util.coordinates import Rect
 
         gpu_system = self._create_gpu_lighting_system()
 
@@ -117,8 +117,8 @@ class TestWGPUUniformBufferAlignment:
 
     def test_buffer_contains_expected_sky_exposure_power(self) -> None:
         """Test that sky_exposure_power is packed at the correct offset."""
-        from catley.config import SKY_EXPOSURE_POWER
-        from catley.util.coordinates import Rect
+        from brileta.config import SKY_EXPOSURE_POWER
+        from brileta.util.coordinates import Rect
 
         gpu_system = self._create_gpu_lighting_system()
 
@@ -144,8 +144,8 @@ class TestWGPUUniformBufferAlignment:
         """Test that sun_shadow_length_scale is packed at offset 4168."""
         import math
 
-        from catley.game.lights import DirectionalLight
-        from catley.util.coordinates import Rect
+        from brileta.game.lights import DirectionalLight
+        from brileta.util.coordinates import Rect
 
         # Create a sun at 45-degree elevation: 1/tan(45°) = 1.0
         sun = DirectionalLight.create_sun(elevation_degrees=45.0, intensity=0.5)
@@ -168,8 +168,8 @@ class TestWGPUUniformBufferAlignment:
 
     def test_shadow_length_scale_clamped_near_horizon(self) -> None:
         """Test that shadow_length_scale is clamped to 8.0 for very low sun."""
-        from catley.game.lights import DirectionalLight
-        from catley.util.coordinates import Rect
+        from brileta.game.lights import DirectionalLight
+        from brileta.util.coordinates import Rect
 
         # 1-degree elevation: 1/tan(1°) ≈ 57.3, should be clamped to 8.0
         sun = DirectionalLight.create_sun(elevation_degrees=1.0, intensity=0.5)
@@ -189,8 +189,8 @@ class TestWGPUUniformBufferAlignment:
 
     def test_shadow_length_scale_with_zero_elevation(self) -> None:
         """Test shadow_length_scale when elevation is 0 (clamped to 0.1)."""
-        from catley.game.lights import DirectionalLight
-        from catley.util.coordinates import Rect
+        from brileta.game.lights import DirectionalLight
+        from brileta.util.coordinates import Rect
 
         # 0 elevation is clamped to 0.1 internally, 1/tan(0.1°) is huge,
         # so the scale should be clamped to 8.0
@@ -214,8 +214,8 @@ class TestWGPUUniformBufferAlignment:
         """Test shadow_length_scale near 90 degrees (nearly overhead)."""
         import math
 
-        from catley.game.lights import DirectionalLight
-        from catley.util.coordinates import Rect
+        from brileta.game.lights import DirectionalLight
+        from brileta.util.coordinates import Rect
 
         # 85-degree elevation: 1/tan(85°) ≈ 0.087 (very short shadows)
         sun = DirectionalLight.create_sun(elevation_degrees=85.0, intensity=0.5)
@@ -239,7 +239,7 @@ class TestWGPUUniformBufferAlignment:
 
     def test_buffer_size_sufficient_for_struct(self) -> None:
         """Test that the buffer is large enough for the complete WGSL struct."""
-        from catley.util.coordinates import Rect
+        from brileta.util.coordinates import Rect
 
         gpu_system = self._create_gpu_lighting_system()
 
@@ -261,7 +261,7 @@ class TestWGPUUniformBufferAlignment:
 
     def test_viewport_data_at_start_of_buffer(self) -> None:
         """Test that viewport_data is at the start of the buffer."""
-        from catley.util.coordinates import Rect
+        from brileta.util.coordinates import Rect
 
         gpu_system = self._create_gpu_lighting_system()
 
@@ -280,8 +280,8 @@ class TestWGPUUniformBufferAlignment:
 
     def test_ambient_light_at_correct_offset(self) -> None:
         """Test that ambient_light is at the correct offset in metadata."""
-        from catley.config import AMBIENT_LIGHT_LEVEL
-        from catley.util.coordinates import Rect
+        from brileta.config import AMBIENT_LIGHT_LEVEL
+        from brileta.util.coordinates import Rect
 
         gpu_system = self._create_gpu_lighting_system()
 
@@ -318,7 +318,7 @@ class TestWGPUUniformBufferEdgeCases:
 
     def _create_gpu_lighting_system(self) -> Mock:
         """Create a mock GPU lighting system."""
-        from catley.backends.wgpu.gpu_lighting import GPULightingSystem
+        from brileta.backends.wgpu.gpu_lighting import GPULightingSystem
 
         mock_system = Mock(spec=GPULightingSystem)
         mock_system.game_world = self.game_world
@@ -333,7 +333,7 @@ class TestWGPUUniformBufferEdgeCases:
 
     def test_no_game_map_uses_default_size(self) -> None:
         """Test that missing game_map defaults to 1x1 map size."""
-        from catley.util.coordinates import Rect
+        from brileta.util.coordinates import Rect
 
         self.game_world.game_map = None
 
@@ -353,7 +353,7 @@ class TestWGPUUniformBufferEdgeCases:
 
     def test_no_directional_light_zeros_sun_uniforms(self) -> None:
         """Test that missing directional light sets sun uniforms to zero."""
-        from catley.util.coordinates import Rect
+        from brileta.util.coordinates import Rect
 
         # No lights at all
         self.game_world.lights = []

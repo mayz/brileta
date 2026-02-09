@@ -4,8 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from catley.util.caching import ResourceCache
-from catley.util.live_vars import (
+from brileta.util.caching import ResourceCache
+from brileta.util.live_vars import (
     LiveVariable,
     live_variable_registry,
     record_time_live_variable,

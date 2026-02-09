@@ -11,12 +11,12 @@ from dataclasses import dataclass
 from typing import cast
 from unittest.mock import patch
 
-from catley import colors
-from catley.controller import Controller
-from catley.game.actors import Character
-from catley.game.enums import ConsumableEffectType
-from catley.game.game_world import GameWorld
-from catley.game.items.capabilities import ConsumableEffect, ConsumableEffectSpec
+from brileta import colors
+from brileta.controller import Controller
+from brileta.game.actors import Character
+from brileta.game.enums import ConsumableEffectType
+from brileta.game.game_world import GameWorld
+from brileta.game.items.capabilities import ConsumableEffect, ConsumableEffectSpec
 from tests.helpers import DummyGameWorld
 
 
@@ -61,7 +61,7 @@ class TestConsumableHealPartial:
         )
         effect = ConsumableEffect(spec)
 
-        with patch("catley.events.publish_event"):
+        with patch("brileta.events.publish_event"):
             result = effect.consume(actor, controller)
 
         assert result is True
@@ -78,7 +78,7 @@ class TestConsumableHealPartial:
         )
         effect = ConsumableEffect(spec)
 
-        with patch("catley.events.publish_event"):
+        with patch("brileta.events.publish_event"):
             effect.consume(actor, controller)
 
         assert actor.health.hp == actor.health.max_hp
@@ -98,7 +98,7 @@ class TestConsumableHealFull:
         )
         effect = ConsumableEffect(spec)
 
-        with patch("catley.events.publish_event"):
+        with patch("brileta.events.publish_event"):
             effect.consume(actor, controller)
 
         assert actor.health.hp == actor.health.max_hp
@@ -114,7 +114,7 @@ class TestConsumableHealFull:
         )
         effect = ConsumableEffect(spec)
 
-        with patch("catley.events.publish_event"):
+        with patch("brileta.events.publish_event"):
             effect.consume(actor, controller)
 
         assert actor.health.hp == actor.health.max_hp
@@ -134,7 +134,7 @@ class TestConsumableHealAlreadyFull:
         )
         effect = ConsumableEffect(spec)
 
-        with patch("catley.events.publish_event") as mock_publish:
+        with patch("brileta.events.publish_event") as mock_publish:
             effect.consume(actor, controller)
 
         # Should show "Already at full HP" message
@@ -153,7 +153,7 @@ class TestConsumableHealAlreadyFull:
         )
         effect = ConsumableEffect(spec)
 
-        with patch("catley.events.publish_event"):
+        with patch("brileta.events.publish_event"):
             effect.consume(actor, controller)
 
         assert effect.uses_remaining == 1
@@ -174,7 +174,7 @@ class TestConsumableHealTriggersFloatingText:
         effect = ConsumableEffect(spec)
 
         # Don't mock the actor.heal call - let it run
-        with patch("catley.events.publish_event"):
+        with patch("brileta.events.publish_event"):
             effect.consume(actor, controller)
 
         # The actor's visual effects should have been flashed green

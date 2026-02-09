@@ -10,9 +10,9 @@ from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import MagicMock
 
-from catley import colors, input_events
-from catley.game.actors import Character
-from catley.modes.explore import ExploreMode
+from brileta import colors, input_events
+from brileta.game.actors import Character
+from brileta.modes.explore import ExploreMode
 from tests.helpers import DummyGameWorld
 
 
@@ -49,7 +49,7 @@ def make_explore_mode() -> tuple[ExploreMode, Any, DummyGameWorld]:
         has_interactive_overlays=lambda: False,
     )
 
-    from catley.app import App
+    from brileta.app import App
 
     class DummyApp(App):
         def __init__(self, *_args, **_kwargs) -> None:
@@ -229,7 +229,7 @@ def test_exit_sets_active_false() -> None:
 
 def test_has_available_actions_returns_false_for_non_character_actor() -> None:
     """Non-Character Actors (like items) return False for available actions."""
-    from catley.game.actors import Actor
+    from brileta.game.actors import Actor
 
     mode, _, gw = make_explore_mode()
 
@@ -401,7 +401,7 @@ def test_right_click_unexplored_tile_does_nothing() -> None:
 
 def test_right_click_visible_tile_with_actor_triggers_interaction() -> None:
     """Right-clicking on a visible tile with an actor starts TalkPlan."""
-    from catley.game.actions.social import TalkPlan
+    from brileta.game.actions.social import TalkPlan
 
     mode, _controller, gw, pathfinding_calls = make_explore_mode_with_mocks()
 

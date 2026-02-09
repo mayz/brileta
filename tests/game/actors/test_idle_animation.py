@@ -9,14 +9,14 @@ These tests verify that:
 
 import pytest
 
-from catley.game.actors.components import VisualEffectsComponent
-from catley.game.actors.idle_animation import (
+from brileta.game.actors.components import VisualEffectsComponent
+from brileta.game.actors.idle_animation import (
     PROFILE_MECHANICAL,
     PROFILE_STATIC,
     IdleAnimationProfile,
     create_profile_for_size,
 )
-from catley.game.enums import CreatureSize
+from brileta.game.enums import CreatureSize
 
 
 class TestIdleAnimationProfile:

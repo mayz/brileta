@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from catley.environment.fov import compute_fov
+from brileta.environment.fov import compute_fov
 
 
 def _make_map(width: int, height: int, *, fill: bool = True) -> np.ndarray:

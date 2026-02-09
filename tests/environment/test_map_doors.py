@@ -1,8 +1,8 @@
 import random
 
-from catley.environment.generators import RoomsAndCorridorsGenerator
-from catley.environment.map import GameMap
-from catley.environment.tile_types import TileTypeID
+from brileta.environment.generators import RoomsAndCorridorsGenerator
+from brileta.environment.map import GameMap
+from brileta.environment.tile_types import TileTypeID
 
 
 def test_make_map_places_doors() -> None:

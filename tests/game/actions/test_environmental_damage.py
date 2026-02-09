@@ -4,27 +4,27 @@ from typing import TYPE_CHECKING, cast
 
 import numpy as np
 
-from catley import colors
-from catley.controller import Controller
-from catley.environment.generators import GeneratedMapData
-from catley.environment.map import GameMap
-from catley.events import (
+from brileta import colors
+from brileta.controller import Controller
+from brileta.environment.generators import GeneratedMapData
+from brileta.environment.map import GameMap
+from brileta.events import (
     ActorDeathEvent,
     MessageEvent,
     reset_event_bus_for_testing,
     subscribe_to_event,
 )
-from catley.game.actions.environmental import EnvironmentalDamageIntent
-from catley.game.actions.executors.environmental import EnvironmentalDamageExecutor
-from catley.game.actors import Character
-from catley.game.actors.environmental import ContainedFire
-from catley.game.game_world import GameWorld
-from catley.view.frame_manager import FrameManager
-from catley.view.render.graphics import GraphicsContext
+from brileta.game.actions.environmental import EnvironmentalDamageIntent
+from brileta.game.actions.executors.environmental import EnvironmentalDamageExecutor
+from brileta.game.actors import Character
+from brileta.game.actors.environmental import ContainedFire
+from brileta.game.game_world import GameWorld
+from brileta.view.frame_manager import FrameManager
+from brileta.view.render.graphics import GraphicsContext
 from tests.helpers import DummyGameWorld
 
 if TYPE_CHECKING:
-    from catley.environment.map import MapRegion
+    from brileta.environment.map import MapRegion
 
 
 class DummyMap(GameMap):

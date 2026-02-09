@@ -7,11 +7,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from catley.controller import Controller
-from catley.game.actions.base import GameIntent
-from catley.game.actions.types import AnimationType
-from catley.types import FixedTimestep, TileDimensions
-from catley.view.animation import Animation
+from brileta.controller import Controller
+from brileta.game.actions.base import GameIntent
+from brileta.game.actions.types import AnimationType
+from brileta.types import FixedTimestep, TileDimensions
+from brileta.view.animation import Animation
 
 
 class DummyAnimation(Animation):
@@ -51,7 +51,7 @@ class DummyLighting:
 
 class DummyGameWorld:
     def __init__(self, w: int, h: int, **kwargs: object) -> None:
-        from catley.util.spatial import SpatialHashGrid
+        from brileta.util.spatial import SpatialHashGrid
 
         self.player = DummyPlayer()
         self.lighting = DummyLighting()
@@ -250,16 +250,16 @@ class DummyCombatMode:
 @contextmanager
 def patched_controller(stop_after: int):
     with ExitStack() as stack:
-        stack.enter_context(patch("catley.controller.GameWorld", DummyGameWorld))
-        stack.enter_context(patch("catley.controller.InputHandler", DummyInputHandler))
-        stack.enter_context(patch("catley.controller.FrameManager", DummyFrameManager))
+        stack.enter_context(patch("brileta.controller.GameWorld", DummyGameWorld))
+        stack.enter_context(patch("brileta.controller.InputHandler", DummyInputHandler))
+        stack.enter_context(patch("brileta.controller.FrameManager", DummyFrameManager))
         stack.enter_context(
-            patch("catley.controller.OverlaySystem", DummyOverlaySystem)
+            patch("brileta.controller.OverlaySystem", DummyOverlaySystem)
         )
-        stack.enter_context(patch("catley.controller.ExploreMode", DummyExploreMode))
-        stack.enter_context(patch("catley.controller.CombatMode", DummyCombatMode))
-        stack.enter_context(patch("catley.controller.Clock", DummyClock))
-        stack.enter_context(patch("catley.controller.TurnManager", DummyTurnManager))
+        stack.enter_context(patch("brileta.controller.ExploreMode", DummyExploreMode))
+        stack.enter_context(patch("brileta.controller.CombatMode", DummyCombatMode))
+        stack.enter_context(patch("brileta.controller.Clock", DummyClock))
+        stack.enter_context(patch("brileta.controller.TurnManager", DummyTurnManager))
         stack.enter_context(patch.object(Controller, "update_fov", lambda self: None))
 
         # Mock SDL renderer for GraphicsContext initialization
@@ -275,7 +275,7 @@ def patched_controller(stop_after: int):
 
         from types import SimpleNamespace
 
-        from catley.app import App
+        from brileta.app import App
 
         class DummyApp(App):
             def __init__(self, *_args, **_kwargs) -> None:
@@ -373,7 +373,7 @@ def patched_controller(stop_after: int):
 
         from typing import cast
 
-        from catley.view.render.graphics import GraphicsContext
+        from brileta.view.render.graphics import GraphicsContext
 
         app = DummyApp()
         graphics = DummyGraphicsContext()

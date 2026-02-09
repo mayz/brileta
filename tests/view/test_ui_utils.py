@@ -6,10 +6,10 @@ from unittest.mock import MagicMock
 
 import numpy as np
 
-from catley import colors, config
-from catley.backends.pillow.canvas import PillowImageCanvas
-from catley.view.render.graphics import GraphicsContext
-from catley.view.ui.ui_utils import draw_keycap, wrap_text_by_words
+from brileta import colors, config
+from brileta.backends.pillow.canvas import PillowImageCanvas
+from brileta.view.render.graphics import GraphicsContext
+from brileta.view.ui.ui_utils import draw_keycap, wrap_text_by_words
 
 
 def _make_test_canvas(width: int = 100, height: int = 100) -> PillowImageCanvas:

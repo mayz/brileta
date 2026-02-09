@@ -13,12 +13,12 @@ from __future__ import annotations
 
 import numpy as np
 
-from catley.environment.generators.buildings.templates import (
+from brileta.environment.generators.buildings.templates import (
     SMALL_HOUSE_TEMPLATE,
     BuildingTemplate,
 )
-from catley.environment.generators.pipeline import GenerationContext
-from catley.environment.generators.pipeline.layers import (
+from brileta.environment.generators.pipeline import GenerationContext
+from brileta.environment.generators.pipeline.layers import (
     BuildingPlacementLayer,
     DetailLayer,
     OpenFieldLayer,
@@ -26,13 +26,13 @@ from catley.environment.generators.pipeline.layers import (
     StreetNetworkLayer,
     WFCTerrainLayer,
 )
-from catley.environment.generators.pipeline.layers.terrain import (
+from brileta.environment.generators.pipeline.layers.terrain import (
     TerrainPatternID,
     create_terrain_patterns,
 )
-from catley.environment.generators.wfc_solver import DIR_OFFSETS, DIRECTIONS
-from catley.environment.tile_types import TileTypeID
-from catley.util import rng
+from brileta.environment.generators.wfc_solver import DIR_OFFSETS, DIRECTIONS
+from brileta.environment.tile_types import TileTypeID
+from brileta.util import rng
 
 # =============================================================================
 # T4.1: OpenFieldLayer
@@ -179,8 +179,8 @@ class TestBuildingPlacementLayer:
         # Set up exterior region first
         ctx.tiles[:, :] = TileTypeID.COBBLESTONE
         exterior_id = ctx.next_region_id()
-        from catley.environment.map import MapRegion
-        from catley.util.coordinates import Rect
+        from brileta.environment.map import MapRegion
+        from brileta.util.coordinates import Rect
 
         exterior = MapRegion.create_outdoor_region(
             map_region_id=exterior_id,
@@ -473,7 +473,7 @@ class TestTerrainPatterns:
 
     def test_terrain_patterns_symmetric(self) -> None:
         """Adjacency rules are bidirectional."""
-        from catley.environment.generators.wfc_solver import OPPOSITE_DIR
+        from brileta.environment.generators.wfc_solver import OPPOSITE_DIR
 
         patterns = create_terrain_patterns()
 
@@ -554,8 +554,8 @@ class TestDetailLayer:
         ctx.tiles[door_x, door_y] = TileTypeID.DOOR_CLOSED
 
         # Create a fake building to establish the avoided zone
-        from catley.environment.generators.buildings import Building
-        from catley.util.coordinates import Rect
+        from brileta.environment.generators.buildings import Building
+        from brileta.util.coordinates import Rect
 
         building = Building(
             id=0,

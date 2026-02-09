@@ -1,7 +1,7 @@
 from unittest.mock import Mock
 
-from catley.backends.wgpu.gpu_lighting import GPULightingSystem
-from catley.util.coordinates import Rect
+from brileta.backends.wgpu.gpu_lighting import GPULightingSystem
+from brileta.util.coordinates import Rect
 
 
 def test_compute_lightmap_texture_path_skips_full_readback_copy() -> None:

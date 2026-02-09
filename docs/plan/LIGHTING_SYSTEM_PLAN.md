@@ -237,7 +237,7 @@ This general system would replace the current targeted spillover and provide mor
 ### Core Components
 
 #### GPULightingSystem
-- Location: `catley/backends/wgpu/gpu_lighting.py`
+- Location: `brileta/backends/wgpu/gpu_lighting.py`
 - Purpose: Main class implementing LightingSystem interface
 - Key methods:
   - `compute_lightmap()` - Main API, returns numpy array
@@ -391,7 +391,7 @@ The focus on high-impact phases ensures maximum return on implementation effort,
 ### Performance Benchmarks
 
 **Location**: Performance benchmarks are integrated into the comprehensive test suite at:
-- `/Users/mayz/catley/tests/rendering/effects/test_gpu_lighting_system.py`
+- `/Users/mayz/brileta/tests/rendering/effects/test_gpu_lighting_system.py`
 - Test classes: `TestGPULightingPerformance` and `TestGPULightingVisualRegression`
 
 **Benchmark Coverage**:
@@ -414,13 +414,13 @@ uv run pytest tests/rendering/effects/test_gpu_lighting_system.py::TestGPULighti
 
 **Enable GPU Lighting** (default):
 ```python
-# In catley/config.py
+# In brileta/config.py
 GPU_LIGHTING_ENABLED = True
 ```
 
 **Disable GPU Lighting** (force CPU):
 ```python
-# In catley/config.py
+# In brileta/config.py
 GPU_LIGHTING_ENABLED = False
 ```
 

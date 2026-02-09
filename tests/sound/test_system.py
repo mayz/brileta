@@ -5,12 +5,12 @@ from unittest.mock import MagicMock
 
 import numpy as np
 
-from catley.game.actors.core import Actor
-from catley.sound.audio_backend import AudioBackend, AudioChannel, LoadedSound
-from catley.sound.definitions import SoundDefinition, SoundLayer, get_sound_definition
-from catley.sound.emitter import SoundEmitter
-from catley.sound.system import SoundSystem
-from catley.util.spatial import SpatialHashGrid, SpatialIndex
+from brileta.game.actors.core import Actor
+from brileta.sound.audio_backend import AudioBackend, AudioChannel, LoadedSound
+from brileta.sound.definitions import SoundDefinition, SoundLayer, get_sound_definition
+from brileta.sound.emitter import SoundEmitter
+from brileta.sound.system import SoundSystem
+from brileta.util.spatial import SpatialHashGrid, SpatialIndex
 
 
 def create_spatial_index(actors: list[Actor]) -> SpatialIndex[Actor]:

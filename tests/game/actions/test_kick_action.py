@@ -4,21 +4,21 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 from unittest.mock import patch
 
-from catley import colors
-from catley.controller import Controller
-from catley.environment.tile_types import TileTypeID
-from catley.events import reset_event_bus_for_testing
-from catley.game.actions.executors.stunts import KickExecutor
-from catley.game.actions.stunts import KickIntent
-from catley.game.actors import Character
-from catley.game.actors.status_effects import (
+from brileta import colors
+from brileta.controller import Controller
+from brileta.environment.tile_types import TileTypeID
+from brileta.events import reset_event_bus_for_testing
+from brileta.game.actions.executors.stunts import KickExecutor
+from brileta.game.actions.stunts import KickIntent
+from brileta.game.actors import Character
+from brileta.game.actors.status_effects import (
     OffBalanceEffect,
     TrippedEffect,
 )
-from catley.game.game_world import GameWorld
-from catley.game.resolution import d20_system
-from catley.game.resolution.d20_system import D20System
-from catley.util import dice
+from brileta.game.game_world import GameWorld
+from brileta.game.resolution import d20_system
+from brileta.game.resolution.d20_system import D20System
+from brileta.util import dice
 from tests.conftest import FixedRandom
 from tests.helpers import DummyGameWorld
 
@@ -355,8 +355,8 @@ def test_kick_makes_non_hostile_npc_hostile(
     patch_combat_rng: "CombatRNGPatcher",
 ) -> None:
     """Kicking a non-hostile NPC should make them hostile."""
-    from catley.game.actors import NPC
-    from catley.game.enums import Disposition
+    from brileta.game.actors import NPC
+    from brileta.game.enums import Disposition
 
     reset_event_bus_for_testing()
     gw = DummyGameWorld()
@@ -395,8 +395,8 @@ def test_failed_kick_still_triggers_hostility(
     patch_d20_rng: "D20RNGPatcher",
 ) -> None:
     """A failed kick should still make the NPC hostile - the attempt is aggressive."""
-    from catley.game.actors import NPC
-    from catley.game.enums import Disposition
+    from brileta.game.actors import NPC
+    from brileta.game.enums import Disposition
 
     reset_event_bus_for_testing()
     gw = DummyGameWorld()

@@ -2,18 +2,18 @@ from dataclasses import dataclass
 from typing import cast
 from unittest.mock import MagicMock, patch
 
-from catley import colors
-from catley.controller import Controller
-from catley.environment.tile_types import TileTypeID
-from catley.events import FloatingTextEvent
-from catley.game.action_router import ActionRouter
-from catley.game.actions.base import GameActionResult
-from catley.game.actions.combat import AttackIntent
-from catley.game.actions.environment import SearchContainerIntent
-from catley.game.actions.movement import MoveIntent
-from catley.game.actors import NPC, Character
-from catley.game.actors.container import create_bookcase
-from catley.game.game_world import GameWorld
+from brileta import colors
+from brileta.controller import Controller
+from brileta.environment.tile_types import TileTypeID
+from brileta.events import FloatingTextEvent
+from brileta.game.action_router import ActionRouter
+from brileta.game.actions.base import GameActionResult
+from brileta.game.actions.combat import AttackIntent
+from brileta.game.actions.environment import SearchContainerIntent
+from brileta.game.actions.movement import MoveIntent
+from brileta.game.actors import NPC, Character
+from brileta.game.actors.container import create_bookcase
+from brileta.game.game_world import GameWorld
 from tests.helpers import DummyGameWorld
 
 
@@ -77,7 +77,7 @@ def test_player_bumping_npc_does_not_attack() -> None:
     controller.gw.add_actor(npc)
 
     with patch(
-        "catley.game.actions.executors.combat.AttackExecutor.execute",
+        "brileta.game.actions.executors.combat.AttackExecutor.execute",
         return_value=GameActionResult(),
     ) as mock_execute:
         router = ActionRouter(cast(Controller, controller))
@@ -104,9 +104,9 @@ def test_player_bump_npc_emits_bark() -> None:
     controller.gw.add_actor(npc)
 
     with (
-        patch("catley.game.action_router.pick_bump_bark", return_value="Hey"),
-        patch("catley.game.action_router.publish_event") as mock_publish,
-        patch("catley.game.action_router.time.perf_counter", return_value=1.0),
+        patch("brileta.game.action_router.pick_bump_bark", return_value="Hey"),
+        patch("brileta.game.action_router.publish_event") as mock_publish,
+        patch("brileta.game.action_router.time.perf_counter", return_value=1.0),
     ):
         router = ActionRouter(cast(Controller, controller))
         intent = MoveIntent(cast(Controller, controller), player, 1, 0)
@@ -132,9 +132,9 @@ def test_bark_respects_cooldown() -> None:
     controller.gw.add_actor(npc)
 
     with (
-        patch("catley.game.action_router.pick_bump_bark", return_value="Hey"),
-        patch("catley.game.action_router.publish_event") as mock_publish,
-        patch("catley.game.action_router.time.perf_counter", side_effect=[1.0, 1.2]),
+        patch("brileta.game.action_router.pick_bump_bark", return_value="Hey"),
+        patch("brileta.game.action_router.publish_event") as mock_publish,
+        patch("brileta.game.action_router.time.perf_counter", side_effect=[1.0, 1.2]),
     ):
         router = ActionRouter(cast(Controller, controller))
         intent = MoveIntent(cast(Controller, controller), player, 1, 0)
@@ -158,7 +158,7 @@ def test_npc_bumping_player_triggers_attack() -> None:
     # Player stays at (0, 0), NPC starts at (0, 1) and tries to move to (0, 0)
 
     with patch(
-        "catley.game.actions.executors.combat.AttackExecutor.execute",
+        "brileta.game.actions.executors.combat.AttackExecutor.execute",
         return_value=GameActionResult(),
     ) as mock_execute:
         router = ActionRouter(cast(Controller, controller))
@@ -196,7 +196,7 @@ def test_npc_bumping_npc_does_nothing() -> None:
     controller.gw.add_actor(npc2)
 
     with patch(
-        "catley.game.actions.executors.combat.AttackExecutor.execute",
+        "brileta.game.actions.executors.combat.AttackExecutor.execute",
         return_value=GameActionResult(),
     ) as mock_execute:
         router = ActionRouter(cast(Controller, controller))
@@ -222,7 +222,7 @@ def test_actor_bumping_dead_actor_does_nothing() -> None:
     controller.gw.add_actor(dead_npc)
 
     with patch(
-        "catley.game.actions.executors.combat.AttackExecutor.execute",
+        "brileta.game.actions.executors.combat.AttackExecutor.execute",
         return_value=GameActionResult(),
     ) as mock_execute:
         router = ActionRouter(cast(Controller, controller))
@@ -241,7 +241,7 @@ def test_router_searches_container_on_bump() -> None:
     controller.gw.add_actor(crate)
 
     with patch(
-        "catley.game.actions.executors.containers.SearchContainerExecutor.execute",
+        "brileta.game.actions.executors.containers.SearchContainerExecutor.execute",
         return_value=GameActionResult(),
     ) as mock_execute:
         router = ActionRouter(cast(Controller, controller))
@@ -264,7 +264,7 @@ def test_bump_into_container_opens_search_menu() -> None:
     # Create a blocking container with items
     crate = create_bookcase(x=1, y=0, game_world=cast(GameWorld, controller.gw))
     # Add an item so the search doesn't fail with "Nothing to loot"
-    from catley.game.items.item_types import ROCK_TYPE
+    from brileta.game.items.item_types import ROCK_TYPE
 
     crate.inventory.add_item(ROCK_TYPE.create())
     controller.gw.add_actor(crate)
@@ -274,7 +274,7 @@ def test_bump_into_container_opens_search_menu() -> None:
     controller.overlay_system = mock_overlay  # type: ignore[unresolved-attribute]
 
     # Patch DualPaneMenu so it doesn't need full controller setup
-    with patch("catley.view.ui.dual_pane_menu.DualPaneMenu") as mock_menu_class:
+    with patch("brileta.view.ui.dual_pane_menu.DualPaneMenu") as mock_menu_class:
         mock_menu_instance = MagicMock()
         mock_menu_class.return_value = mock_menu_instance
 
@@ -322,7 +322,7 @@ def test_execute_intent_returns_failure_for_blocked_move() -> None:
 
 def test_execute_intent_returns_failure_for_unregistered_intent() -> None:
     """ActionRouter.execute_intent returns succeeded=False for unknown intents."""
-    from catley.game.actions.base import GameIntent
+    from brileta.game.actions.base import GameIntent
 
     class UnknownIntent(GameIntent):
         pass

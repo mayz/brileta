@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from catley.util._native import WFCContradictionError, wfc_solve
+from brileta.util._native import WFCContradictionError, wfc_solve
 
 
 def _build_propagation_masks(

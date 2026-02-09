@@ -1,8 +1,8 @@
 """Unit tests for the Action Presentation Layer."""
 
-from catley.events import EffectEvent, SoundEvent, reset_event_bus_for_testing
-from catley.types import FixedTimestep
-from catley.view.presentation import PresentationEvent, PresentationManager
+from brileta.events import EffectEvent, SoundEvent, reset_event_bus_for_testing
+from brileta.types import FixedTimestep
+from brileta.view.presentation import PresentationEvent, PresentationManager
 
 
 class TestPresentationEvent:
@@ -86,7 +86,7 @@ class TestPlayerActionDispatch:
         manager = PresentationManager()
 
         # Track dispatched events
-        from catley.events import subscribe_to_event
+        from brileta.events import subscribe_to_event
 
         subscribe_to_event(EffectEvent, self.dispatched_effects.append)
         subscribe_to_event(SoundEvent, self.dispatched_sounds.append)
@@ -103,7 +103,7 @@ class TestPlayerActionDispatch:
         )
 
         # Publish the event (manager subscribes in __init__)
-        from catley.events import publish_event
+        from brileta.events import publish_event
 
         publish_event(player_event)
 
@@ -116,7 +116,7 @@ class TestPlayerActionDispatch:
         """Player action flushes pending NPC presentations by default."""
         manager = PresentationManager(flush_on_player_action=True)
 
-        from catley.events import publish_event, subscribe_to_event
+        from brileta.events import publish_event, subscribe_to_event
 
         subscribe_to_event(EffectEvent, self.dispatched_effects.append)
 
@@ -147,7 +147,7 @@ class TestPlayerActionDispatch:
         """Player action does not flush queue when flush_on_player_action=False."""
         manager = PresentationManager(flush_on_player_action=False)
 
-        from catley.events import publish_event
+        from brileta.events import publish_event
 
         # Queue some NPC presentations
         npc_event = PresentationEvent(
@@ -184,7 +184,7 @@ class TestNPCActionQueueing:
         """NPC actions are queued, not dispatched immediately."""
         manager = PresentationManager()
 
-        from catley.events import publish_event, subscribe_to_event
+        from brileta.events import publish_event, subscribe_to_event
 
         subscribe_to_event(EffectEvent, self.dispatched_effects.append)
 
@@ -205,7 +205,7 @@ class TestNPCActionQueueing:
         """NPC actions are dispatched after the base delay."""
         manager = PresentationManager(npc_base_delay=0.05, npc_stagger=0.10)
 
-        from catley.events import publish_event, subscribe_to_event
+        from brileta.events import publish_event, subscribe_to_event
 
         subscribe_to_event(EffectEvent, self.dispatched_effects.append)
 
@@ -231,7 +231,7 @@ class TestNPCActionQueueing:
         """Multiple NPC actions are staggered over time."""
         manager = PresentationManager(npc_base_delay=0.05, npc_stagger=0.10)
 
-        from catley.events import publish_event, subscribe_to_event
+        from brileta.events import publish_event, subscribe_to_event
 
         subscribe_to_event(EffectEvent, self.dispatched_effects.append)
 
@@ -273,7 +273,7 @@ class TestQueueManagement:
         """When queue exceeds max size, oldest items are dropped."""
         manager = PresentationManager(max_queue_size=3)
 
-        from catley.events import publish_event
+        from brileta.events import publish_event
 
         # Queue 5 NPC presentations (exceeds max of 3)
         for i in range(5):
@@ -292,7 +292,7 @@ class TestQueueManagement:
         """clear() removes all pending presentations."""
         manager = PresentationManager()
 
-        from catley.events import publish_event
+        from brileta.events import publish_event
 
         # Queue some presentations
         for i in range(3):
@@ -321,7 +321,7 @@ class TestQueueManagement:
             max_queue_size=10,
         )
 
-        from catley.events import publish_event, subscribe_to_event
+        from brileta.events import publish_event, subscribe_to_event
 
         subscribe_to_event(EffectEvent, self.dispatched_effects.append)
 
@@ -363,7 +363,7 @@ class TestUpdateBehavior:
         manager = PresentationManager(npc_base_delay=0.05, npc_stagger=0.10)
         dispatched: list[EffectEvent] = []
 
-        from catley.events import publish_event, subscribe_to_event
+        from brileta.events import publish_event, subscribe_to_event
 
         subscribe_to_event(EffectEvent, dispatched.append)
 
@@ -412,7 +412,7 @@ class TestMultipleEffectsAndSounds:
         # Manager subscribes to PresentationEvent in __init__
         _manager = PresentationManager()
 
-        from catley.events import publish_event, subscribe_to_event
+        from brileta.events import publish_event, subscribe_to_event
 
         subscribe_to_event(EffectEvent, self.dispatched_effects.append)
         subscribe_to_event(SoundEvent, self.dispatched_sounds.append)

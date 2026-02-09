@@ -17,12 +17,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from catley import colors
-from catley.events import FloatingTextSize, publish_event
-from catley.game.actors import Actor
-from catley.game.game_world import GameWorld
-from catley.types import DeltaTime
-from catley.view.render.effects.floating_text import (
+from brileta import colors
+from brileta.events import FloatingTextSize, publish_event
+from brileta.game.actors import Actor
+from brileta.game.game_world import GameWorld
+from brileta.types import DeltaTime
+from brileta.view.render.effects.floating_text import (
     VALENCE_COLORS,
     FloatingText,
     FloatingTextEvent,

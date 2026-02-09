@@ -5,27 +5,27 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 
-from catley import colors
-from catley.controller import Controller
-from catley.environment.generators import GeneratedMapData
-from catley.environment.map import GameMap
-from catley.util import dice
+from brileta import colors
+from brileta.controller import Controller
+from brileta.environment.generators import GeneratedMapData
+from brileta.environment.map import GameMap
+from brileta.util import dice
 
 if TYPE_CHECKING:
-    from catley.environment.map import MapRegion
-from catley.events import (
+    from brileta.environment.map import MapRegion
+from brileta.events import (
     EffectEvent,
     MessageEvent,
     reset_event_bus_for_testing,
     subscribe_to_event,
 )
-from catley.game.actions.area_effects import AreaEffectIntent
-from catley.game.actions.executors.area_effects import WeaponAreaEffectExecutor
-from catley.game.actors import Character
-from catley.game.game_world import GameWorld
-from catley.game.items.item_types import GRENADE_TYPE
-from catley.view.frame_manager import FrameManager
-from catley.view.render.graphics import GraphicsContext
+from brileta.game.actions.area_effects import AreaEffectIntent
+from brileta.game.actions.executors.area_effects import WeaponAreaEffectExecutor
+from brileta.game.actors import Character
+from brileta.game.game_world import GameWorld
+from brileta.game.items.item_types import GRENADE_TYPE
+from brileta.view.frame_manager import FrameManager
+from brileta.view.render.graphics import GraphicsContext
 from tests.helpers import DummyGameWorld
 
 

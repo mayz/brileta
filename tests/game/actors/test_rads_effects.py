@@ -4,17 +4,17 @@ from dataclasses import dataclass
 from typing import cast
 from unittest.mock import patch
 
-from catley import colors
-from catley.controller import Controller
-from catley.game.actions.combat import AttackIntent
-from catley.game.actions.executors.combat import AttackExecutor
-from catley.game.actors import Character, conditions
-from catley.game.game_world import GameWorld
-from catley.game.items.capabilities import Attack
-from catley.game.items.item_core import Item
-from catley.game.items.item_types import FISTS_TYPE
-from catley.game.resolution.d20_system import D20ResolutionResult
-from catley.game.turn_manager import TurnManager
+from brileta import colors
+from brileta.controller import Controller
+from brileta.game.actions.combat import AttackIntent
+from brileta.game.actions.executors.combat import AttackExecutor
+from brileta.game.actors import Character, conditions
+from brileta.game.game_world import GameWorld
+from brileta.game.items.capabilities import Attack
+from brileta.game.items.item_core import Item
+from brileta.game.items.item_types import FISTS_TYPE
+from brileta.game.resolution.d20_system import D20ResolutionResult
+from brileta.game.turn_manager import TurnManager
 from tests.helpers import DummyGameWorld
 
 

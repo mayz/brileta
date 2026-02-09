@@ -2,10 +2,10 @@
 
 import pytest
 
-from catley.environment.tile_types import TileTypeID, get_tile_material
-from catley.game.enums import ImpactMaterial
-from catley.sound.definitions import SOUND_DEFINITIONS, get_sound_definition
-from catley.sound.materials import (
+from brileta.environment.tile_types import TileTypeID, get_tile_material
+from brileta.game.enums import ImpactMaterial
+from brileta.sound.definitions import SOUND_DEFINITIONS, get_sound_definition
+from brileta.sound.materials import (
     IMPACT_SOUND_MAP,
     AudioMaterialResolver,
     get_impact_sound_id,

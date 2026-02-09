@@ -6,10 +6,10 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 
-from catley import colors, config
-from catley.backends.pillow.canvas import PillowImageCanvas
-from catley.view.render.graphics import GraphicsContext
-from catley.view.ui.selectable_list import (
+from brileta import colors, config
+from brileta.backends.pillow.canvas import PillowImageCanvas
+from brileta.view.render.graphics import GraphicsContext
+from brileta.view.ui.selectable_list import (
     LayoutMode,
     SelectableListRenderer,
     SelectableRow,
@@ -218,7 +218,7 @@ class TestSelectableListRendererBasics:
 class TestKeycapModeRendering:
     """Tests for KEYCAP mode rendering."""
 
-    @patch("catley.view.ui.selectable_list.draw_keycap")
+    @patch("brileta.view.ui.selectable_list.draw_keycap")
     def test_render_creates_hit_areas(self, mock_draw_keycap: MagicMock) -> None:
         """Rendering should create hit areas for each row."""
         mock_draw_keycap.return_value = 40  # Keycap width
@@ -243,7 +243,7 @@ class TestKeycapModeRendering:
         assert renderer._hit_areas[0][1] == 0
         assert renderer._hit_areas[1][1] == 1
 
-    @patch("catley.view.ui.selectable_list.draw_keycap")
+    @patch("brileta.view.ui.selectable_list.draw_keycap")
     def test_hover_draws_background(self, mock_draw_keycap: MagicMock) -> None:
         """Hovering over a row should draw a dark grey background."""
         mock_draw_keycap.return_value = 40
@@ -266,7 +266,7 @@ class TestKeycapModeRendering:
         assert len(hover_rects) == 1
         assert hover_rects[0]["color"] == colors.DARK_GREY
 
-    @patch("catley.view.ui.selectable_list.draw_keycap")
+    @patch("brileta.view.ui.selectable_list.draw_keycap")
     def test_disabled_row_no_hover_background(
         self, mock_draw_keycap: MagicMock
     ) -> None:
@@ -290,7 +290,7 @@ class TestKeycapModeRendering:
         hover_rects = [r for r in canvas.drawn_rects if r["fill"]]
         assert len(hover_rects) == 0
 
-    @patch("catley.view.ui.selectable_list.draw_keycap")
+    @patch("brileta.view.ui.selectable_list.draw_keycap")
     def test_render_advances_y_position(self, mock_draw_keycap: MagicMock) -> None:
         """Rendering should advance y position based on row count and gaps."""
         mock_draw_keycap.return_value = 40
@@ -315,7 +315,7 @@ class TestKeycapModeRendering:
         # Two rows = 42 pixels advanced
         assert y_result > 100
 
-    @patch("catley.view.ui.selectable_list.draw_keycap")
+    @patch("brileta.view.ui.selectable_list.draw_keycap")
     def test_render_with_zero_row_gap(self, mock_draw_keycap: MagicMock) -> None:
         """row_gap=0 should produce tight spacing with no extra gap."""
         mock_draw_keycap.return_value = 40
@@ -473,7 +473,7 @@ class TestColorHandling:
 class TestHitAreaDetection:
     """Tests for hit area and mouse interaction."""
 
-    @patch("catley.view.ui.selectable_list.draw_keycap")
+    @patch("brileta.view.ui.selectable_list.draw_keycap")
     def test_update_hover_from_pixel_sets_index(
         self, mock_draw_keycap: MagicMock
     ) -> None:
@@ -506,7 +506,7 @@ class TestHitAreaDetection:
         assert changed is True
         assert renderer.hovered_index == 0
 
-    @patch("catley.view.ui.selectable_list.draw_keycap")
+    @patch("brileta.view.ui.selectable_list.draw_keycap")
     def test_update_hover_returns_false_when_unchanged(
         self, mock_draw_keycap: MagicMock
     ) -> None:
@@ -535,7 +535,7 @@ class TestHitAreaDetection:
 
         assert changed is False
 
-    @patch("catley.view.ui.selectable_list.draw_keycap")
+    @patch("brileta.view.ui.selectable_list.draw_keycap")
     def test_update_hover_disabled_row_not_hovered(
         self, mock_draw_keycap: MagicMock
     ) -> None:
@@ -563,7 +563,7 @@ class TestHitAreaDetection:
 
         assert renderer.hovered_index is None
 
-    @patch("catley.view.ui.selectable_list.draw_keycap")
+    @patch("brileta.view.ui.selectable_list.draw_keycap")
     def test_get_row_at_pixel_returns_row(self, mock_draw_keycap: MagicMock) -> None:
         """get_row_at_pixel should return the row at the given position."""
         mock_draw_keycap.return_value = 40
@@ -591,7 +591,7 @@ class TestHitAreaDetection:
 
         assert result is row1
 
-    @patch("catley.view.ui.selectable_list.draw_keycap")
+    @patch("brileta.view.ui.selectable_list.draw_keycap")
     def test_get_row_at_pixel_returns_none_for_disabled(
         self, mock_draw_keycap: MagicMock
     ) -> None:
@@ -695,7 +695,7 @@ class TestHitAreaAlignment:
     catching bugs where hit areas overlap or don't cover the correct y-range.
     """
 
-    @patch("catley.view.ui.selectable_list.draw_keycap")
+    @patch("brileta.view.ui.selectable_list.draw_keycap")
     def test_hit_areas_are_contiguous_keycap_mode(
         self, mock_draw_keycap: MagicMock
     ) -> None:
@@ -755,7 +755,7 @@ class TestHitAreaAlignment:
             f"but row 1 starts at {rect1[1]}"
         )
 
-    @patch("catley.view.ui.selectable_list.draw_keycap")
+    @patch("brileta.view.ui.selectable_list.draw_keycap")
     def test_hit_area_height_equals_line_height_plus_gap(
         self, mock_draw_keycap: MagicMock
     ) -> None:
@@ -790,7 +790,7 @@ class TestHitAreaAlignment:
                 f"expected {expected_height}"
             )
 
-    @patch("catley.view.ui.selectable_list.draw_keycap")
+    @patch("brileta.view.ui.selectable_list.draw_keycap")
     def test_hovering_row_1_only_highlights_row_1(
         self, mock_draw_keycap: MagicMock
     ) -> None:
@@ -842,7 +842,7 @@ class TestHitAreaAlignment:
 class TestExecuteCallback:
     """Tests for SelectableRow execute callback functionality."""
 
-    @patch("catley.view.ui.selectable_list.draw_keycap")
+    @patch("brileta.view.ui.selectable_list.draw_keycap")
     def test_execute_at_pixel_calls_callback(self, mock_draw_keycap: MagicMock) -> None:
         """execute_at_pixel should call the row's execute callback."""
         mock_draw_keycap.return_value = 40
@@ -877,7 +877,7 @@ class TestExecuteCallback:
         assert result is True
         assert len(callback_called) == 1
 
-    @patch("catley.view.ui.selectable_list.draw_keycap")
+    @patch("brileta.view.ui.selectable_list.draw_keycap")
     def test_execute_at_pixel_returns_false_without_callback(
         self, mock_draw_keycap: MagicMock
     ) -> None:
@@ -923,7 +923,7 @@ class TestExecuteCallback:
 class TestKeycapVerticalCentering:
     """Tests for keycap vertical centering within hit areas."""
 
-    @patch("catley.view.ui.selectable_list.draw_keycap")
+    @patch("brileta.view.ui.selectable_list.draw_keycap")
     def test_keycap_centered_in_hit_area_with_gap(
         self, mock_draw_keycap: MagicMock
     ) -> None:
@@ -970,7 +970,7 @@ class TestKeycapVerticalCentering:
 
         assert keycap_pixel_y == expected_pixel_y
 
-    @patch("catley.view.ui.selectable_list.draw_keycap")
+    @patch("brileta.view.ui.selectable_list.draw_keycap")
     def test_keycap_centered_with_zero_gap(self, mock_draw_keycap: MagicMock) -> None:
         """Keycap should still be properly positioned with zero gap."""
         mock_draw_keycap.return_value = 40
@@ -1010,7 +1010,7 @@ class TestKeycapVerticalCentering:
 class TestLabelVerticalCentering:
     """Tests for label text vertical centering within hit areas."""
 
-    @patch("catley.view.ui.selectable_list.draw_keycap")
+    @patch("brileta.view.ui.selectable_list.draw_keycap")
     def test_label_vertically_centered_in_hit_area(
         self, mock_draw_keycap: MagicMock
     ) -> None:
@@ -1050,7 +1050,7 @@ class TestLabelVerticalCentering:
 
         assert label_y == expected_label_y
 
-    @patch("catley.view.ui.selectable_list.draw_keycap")
+    @patch("brileta.view.ui.selectable_list.draw_keycap")
     def test_label_at_hit_area_top_with_zero_gap(
         self, mock_draw_keycap: MagicMock
     ) -> None:
@@ -1084,7 +1084,7 @@ class TestLabelVerticalCentering:
         hit_y_start = 100 - ascent  # 88
         assert label_y == hit_y_start
 
-    @patch("catley.view.ui.selectable_list.draw_keycap")
+    @patch("brileta.view.ui.selectable_list.draw_keycap")
     def test_prefix_suffix_same_y_as_label(self, mock_draw_keycap: MagicMock) -> None:
         """Prefix segments and suffix should be at same y as label text."""
         mock_draw_keycap.return_value = 40
@@ -1118,7 +1118,7 @@ class TestLabelVerticalCentering:
 class TestRenderResetsHoverState:
     """Tests verifying that render() resets stale hover state."""
 
-    @patch("catley.view.ui.selectable_list.draw_keycap")
+    @patch("brileta.view.ui.selectable_list.draw_keycap")
     def test_render_clears_out_of_bounds_hovered_index(
         self, mock_draw_keycap: MagicMock
     ) -> None:
@@ -1167,7 +1167,7 @@ class TestRenderResetsHoverState:
         # hovered_index should be cleared because it's out of bounds
         assert renderer.hovered_index is None
 
-    @patch("catley.view.ui.selectable_list.draw_keycap")
+    @patch("brileta.view.ui.selectable_list.draw_keycap")
     def test_render_preserves_in_bounds_hovered_index(
         self, mock_draw_keycap: MagicMock
     ) -> None:
@@ -1216,7 +1216,7 @@ class TestRenderResetsHoverState:
         # hovered_index should be preserved because it's still in bounds
         assert renderer.hovered_index == 0
 
-    @patch("catley.view.ui.selectable_list.draw_keycap")
+    @patch("brileta.view.ui.selectable_list.draw_keycap")
     def test_stale_hover_does_not_affect_new_render(
         self, mock_draw_keycap: MagicMock
     ) -> None:

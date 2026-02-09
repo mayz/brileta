@@ -2,31 +2,31 @@ from dataclasses import dataclass
 from typing import cast
 from unittest.mock import patch
 
-from catley import colors
-from catley.controller import Controller
-from catley.events import (
+from brileta import colors
+from brileta.controller import Controller
+from brileta.events import (
     EffectEvent,
     MessageEvent,
     reset_event_bus_for_testing,
     subscribe_to_event,
 )
-from catley.game import consequences, ranges
-from catley.game.actions.area_effects import AreaEffectIntent
-from catley.game.actions.combat import AttackIntent
-from catley.game.actions.executors.area_effects import WeaponAreaEffectExecutor
-from catley.game.actions.executors.combat import AttackExecutor
-from catley.game.actors import Character
-from catley.game.enums import OutcomeTier
-from catley.game.game_world import GameWorld
-from catley.game.items.item_types import (
+from brileta.game import consequences, ranges
+from brileta.game.actions.area_effects import AreaEffectIntent
+from brileta.game.actions.combat import AttackIntent
+from brileta.game.actions.executors.area_effects import WeaponAreaEffectExecutor
+from brileta.game.actions.executors.combat import AttackExecutor
+from brileta.game.actors import Character
+from brileta.game.enums import OutcomeTier
+from brileta.game.game_world import GameWorld
+from brileta.game.items.item_types import (
     COMBAT_KNIFE_TYPE,
     GRENADE_TYPE,
     HUNTING_RIFLE_TYPE,
     SNIPER_RIFLE_TYPE,
     SUBMACHINE_GUN_TYPE,
 )
-from catley.game.items.properties import TacticalProperty, WeaponProperty
-from catley.game.resolution.d20_system import D20ResolutionResult
+from brileta.game.items.properties import TacticalProperty, WeaponProperty
+from brileta.game.resolution.d20_system import D20ResolutionResult
 from tests.helpers import DummyGameWorld
 
 
@@ -143,9 +143,9 @@ def test_explosive_visual_effect() -> None:
 
 def test_smoke_visual_effect() -> None:
     # Create custom smoke grenade
-    from catley.game.enums import AreaType, ItemSize
-    from catley.game.items.capabilities import AreaEffectSpec
-    from catley.game.items.item_core import ItemType
+    from brileta.game.enums import AreaType, ItemSize
+    from brileta.game.items.capabilities import AreaEffectSpec
+    from brileta.game.items.item_core import ItemType
 
     smoke_type = ItemType(
         name="Smoke",
@@ -181,7 +181,7 @@ def test_armor_piercing_bypasses_armor() -> None:
     gw.add_actor(defender)
 
     # Give defender armor
-    from catley.game.outfit import LEATHER_ARMOR_TYPE
+    from brileta.game.outfit import LEATHER_ARMOR_TYPE
 
     assert defender.health is not None
     armor_item = LEATHER_ARMOR_TYPE.create()
@@ -211,10 +211,10 @@ def test_armor_piercing_bypasses_armor() -> None:
 
 def test_silent_weapon_no_noise_alert() -> None:
     """SILENT weapons don't generate noise_alert consequences."""
-    from catley.game.consequences import AttackConsequenceGenerator
-    from catley.game.enums import ItemSize
-    from catley.game.items.capabilities import RangedAttackSpec
-    from catley.game.items.item_core import ItemType
+    from brileta.game.consequences import AttackConsequenceGenerator
+    from brileta.game.enums import ItemSize
+    from brileta.game.items.capabilities import RangedAttackSpec
+    from brileta.game.items.item_core import ItemType
 
     # Create a silent weapon
     silent_weapon_type = ItemType(
@@ -246,8 +246,8 @@ def test_silent_weapon_no_noise_alert() -> None:
 
 def test_non_silent_weapon_generates_noise_alert() -> None:
     """Non-silent weapons generate noise_alert consequences."""
-    from catley.game.consequences import AttackConsequenceGenerator
-    from catley.game.items.item_types import PISTOL_TYPE
+    from brileta.game.consequences import AttackConsequenceGenerator
+    from brileta.game.items.item_types import PISTOL_TYPE
 
     weapon = PISTOL_TYPE.create()
 

@@ -4,9 +4,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from catley.types import DeltaTime
-from catley.util.coordinates import Rect
-from catley.view.render.effects.particles import (
+from brileta.types import DeltaTime
+from brileta.util.coordinates import Rect
+from brileta.view.render.effects.particles import (
     ParticleLayer,
     SubTileParticleSystem,
 )

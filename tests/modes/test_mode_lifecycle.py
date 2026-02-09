@@ -6,9 +6,9 @@ starts in ExploreMode, and properly calls _exit()/enter() on transitions.
 
 from __future__ import annotations
 
-from catley import input_events
-from catley.controller import Controller
-from catley.modes.explore import ExploreMode
+from brileta import input_events
+from brileta.controller import Controller
+from brileta.modes.explore import ExploreMode
 
 
 def test_active_mode_never_none(controller: Controller) -> None:

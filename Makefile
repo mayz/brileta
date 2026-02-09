@@ -4,7 +4,7 @@
 MAKEFLAGS += --silent
 
 NATIVE_STAMP := .venv/.native-build-stamp
-NATIVE_SOURCES := setup.py pyproject.toml catley/util/_native.c catley/util/_native_pathfinding.c catley/util/_native_fov.c catley/util/_native_wfc.c
+NATIVE_SOURCES := setup.py pyproject.toml brileta/util/_native.c brileta/util/_native_pathfinding.c brileta/util/_native_fov.c brileta/util/_native_wfc.c
 
 # Default target - run all quality checks
 all: native-build lint test
@@ -12,7 +12,7 @@ all: native-build lint test
 
 # Build native extension modules in editable mode.
 native-build: $(NATIVE_STAMP)
-	@if ! find catley/util -maxdepth 1 -type f \( -name "_native*.so" -o -name "_native*.pyd" -o -name "_native*.dll" \) | grep -q .; then \
+	@if ! find brileta/util -maxdepth 1 -type f \( -name "_native*.so" -o -name "_native*.pyd" -o -name "_native*.dll" \) | grep -q .; then \
 		uv pip install -e .; \
 		mkdir -p $(dir $(NATIVE_STAMP)); \
 		touch $(NATIVE_STAMP); \
@@ -67,4 +67,4 @@ clean:
 
 # Run the game inside the virtual environment
 run:
-	uv run python -m catley
+	uv run python -m brileta

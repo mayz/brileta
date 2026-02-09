@@ -9,10 +9,10 @@ import random
 import time
 from pathlib import Path
 
-from catley.environment.generators.pipeline.layers.terrain import (
+from brileta.environment.generators.pipeline.layers.terrain import (
     create_terrain_patterns,
 )
-from catley.environment.generators.wfc_solver import WFCSolver
+from brileta.environment.generators.wfc_solver import WFCSolver
 
 GRID_SIZES: tuple[tuple[int, int], ...] = (
     (30, 30),

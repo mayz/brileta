@@ -2,12 +2,12 @@ from dataclasses import dataclass
 from typing import Any, cast
 from unittest.mock import MagicMock
 
-from catley import colors
-from catley.controller import Controller
-from catley.game.actors import Character
-from catley.game.game_world import GameWorld
-from catley.view.render.graphics import GraphicsContext
-from catley.view.views.equipment_view import EquipmentView
+from brileta import colors
+from brileta.controller import Controller
+from brileta.game.actors import Character
+from brileta.game.game_world import GameWorld
+from brileta.view.render.graphics import GraphicsContext
+from brileta.view.views.equipment_view import EquipmentView
 from tests.helpers import DummyGameWorld
 
 
@@ -47,7 +47,7 @@ def make_equipment_view() -> tuple[DummyController, Character, EquipmentView]:
 
 def test_handle_click_on_inactive_slot_switches() -> None:
     """Clicking on an inactive weapon slot should queue a SwitchWeaponIntent."""
-    from catley.game.actions.misc import SwitchWeaponIntent
+    from brileta.game.actions.misc import SwitchWeaponIntent
 
     controller, player, view = make_equipment_view()
 

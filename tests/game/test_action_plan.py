@@ -10,18 +10,18 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import cast
 
-from catley import colors
-from catley.controller import Controller
-from catley.game.action_plan import (
+from brileta import colors
+from brileta.controller import Controller
+from brileta.game.action_plan import (
     ActionPlan,
     ActivePlan,
     ApproachStep,
     IntentStep,
     PlanContext,
 )
-from catley.game.actions.base import GameIntent
-from catley.game.actors import Character
-from catley.game.game_world import GameWorld
+from brileta.game.actions.base import GameIntent
+from brileta.game.actors import Character
+from brileta.game.game_world import GameWorld
 from tests.helpers import DummyGameWorld
 
 
@@ -379,8 +379,8 @@ def test_approach_step_finds_path_to_adjacent_tile_when_target_occupied() -> Non
     TurnManager._handle_approach_step: when pathfinding to an occupied tile
     fails, it should try adjacent tiles.
     """
-    from catley.events import reset_event_bus_for_testing
-    from catley.game.actions.movement import MoveIntent
+    from brileta.events import reset_event_bus_for_testing
+    from brileta.game.actions.movement import MoveIntent
     from tests.helpers import get_controller_with_player_and_map
 
     reset_event_bus_for_testing()

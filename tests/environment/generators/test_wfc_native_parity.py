@@ -14,18 +14,18 @@ from enum import IntEnum
 
 import pytest
 
-from catley.environment.generators.pipeline.layers.terrain import (
+from brileta.environment.generators.pipeline.layers.terrain import (
     TerrainPatternID,
     create_terrain_patterns,
 )
-from catley.environment.generators.wfc_solver import (
+from brileta.environment.generators.wfc_solver import (
     DIR_OFFSETS,
     DIRECTIONS,
     WFCContradiction,
     WFCPattern,
     WFCSolver,
 )
-from catley.environment.tile_types import TileTypeID
+from brileta.environment.tile_types import TileTypeID
 
 
 def _assert_grid_respects_adjacency(

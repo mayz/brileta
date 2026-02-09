@@ -1,11 +1,11 @@
-from catley.view.render.effects.effects import (
+from brileta.view.render.effects.effects import (
     ExplosionEffect,
     SmokeCloudEffect,
     create_combat_effect_context,
     create_environmental_effect_context,
 )
-from catley.view.render.effects.environmental import EnvironmentalEffectSystem
-from catley.view.render.effects.particles import SubTileParticleSystem
+from brileta.view.render.effects.environmental import EnvironmentalEffectSystem
+from brileta.view.render.effects.particles import SubTileParticleSystem
 
 
 def test_smoke_cloud_creates_environmental_effect() -> None:

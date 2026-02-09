@@ -10,12 +10,12 @@ These tests verify the combat outcome determination, including:
 from typing import cast
 from unittest.mock import patch
 
-from catley.game.actors import Character
-from catley.game.enums import OutcomeTier
-from catley.game.game_world import GameWorld
-from catley.game.items.item_types import FISTS_TYPE
-from catley.game.resolution.combat_arbiter import determine_outcome
-from catley.game.resolution.d20_system import D20ResolutionResult
+from brileta.game.actors import Character
+from brileta.game.enums import OutcomeTier
+from brileta.game.game_world import GameWorld
+from brileta.game.items.item_types import FISTS_TYPE
+from brileta.game.resolution.combat_arbiter import determine_outcome
+from brileta.game.resolution.d20_system import D20ResolutionResult
 from tests.helpers import DummyGameWorld
 
 
@@ -44,7 +44,7 @@ def test_determine_consequences_basic_hit() -> None:
 
 def test_determine_consequences_critical_hit_damages_armor() -> None:
     """Critical hit bypasses armor and marks armor as penetrated."""
-    from catley.game.outfit import LEATHER_ARMOR_TYPE
+    from brileta.game.outfit import LEATHER_ARMOR_TYPE
 
     attacker, defender, _ = make_characters()
     weapon = FISTS_TYPE.create()

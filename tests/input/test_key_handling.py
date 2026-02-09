@@ -8,8 +8,8 @@ These tests verify that:
 
 import pytest
 
-from catley import input_events
-from catley.input_events import Keys
+from brileta import input_events
+from brileta.input_events import Keys
 
 
 class TestKeysClassValidity:
@@ -79,7 +79,7 @@ class TestGlfwKeyConversion:
         try:
             import glfw
 
-            from catley.backends.glfw.app import GlfwApp
+            from brileta.backends.glfw.app import GlfwApp
 
             # Return the unbound method and glfw module
             return GlfwApp._glfw_key_to_keysym, glfw

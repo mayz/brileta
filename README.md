@@ -1,6 +1,6 @@
-# Catley
+# Brileta
 
-Catley is an experimental game engine and sandbox. The goal is to build interesting systems - environmental, social, tactical - and see what emerges from their interactions.
+Brileta is an experimental game engine and sandbox. The goal is to build interesting systems - environmental, social, tactical - and see what emerges from their interactions.
 
 This is a personal hobby project. It's a playground for ideas, not a product. There's no release timeline, no roadmap promises, and no guarantee that anything works.
 

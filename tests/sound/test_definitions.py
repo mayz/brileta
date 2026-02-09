@@ -2,13 +2,13 @@
 
 import pytest
 
-from catley.sound.definitions import (
+from brileta.sound.definitions import (
     SOUND_DEFINITIONS,
     SoundDefinition,
     SoundLayer,
     get_sound_definition,
 )
-from catley.types import SoundId
+from brileta.types import SoundId
 
 
 class TestSoundLayer:

@@ -6,9 +6,9 @@ for common functionality like inventory access and movement.
 
 from __future__ import annotations
 
-from catley import input_events
-from catley.controller import Controller
-from catley.input_events import Keys
+from brileta import input_events
+from brileta.controller import Controller
+from brileta.input_events import Keys
 from tests.helpers import get_controller_with_player_and_map
 
 
@@ -169,7 +169,7 @@ def test_overlay_consumes_escape_before_mode(controller: Controller) -> None:
     """
     from unittest.mock import MagicMock
 
-    from catley.input_handler import InputHandler
+    from brileta.input_handler import InputHandler
 
     # The test helper patches InputHandler to None, so create it manually.
     # InputHandler needs app, controller, and frame_manager with graphics/cursor.
@@ -226,7 +226,7 @@ def test_overlay_consumes_q_before_quit() -> None:
     """
     from unittest.mock import MagicMock
 
-    from catley.input_handler import InputHandler
+    from brileta.input_handler import InputHandler
 
     controller = get_controller_with_player_and_map()
 

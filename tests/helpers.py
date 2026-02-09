@@ -8,18 +8,18 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 
-from catley import colors, config
-from catley.app import App
-from catley.controller import Controller, GameWorld
-from catley.environment.generators import GeneratedMapData
-from catley.environment.map import GameMap, MapRegion
-from catley.environment.tile_types import TileTypeID
-from catley.game.actors import PC, Actor, Character
-from catley.game.item_spawner import ItemSpawner
-from catley.game.items.item_core import Item
-from catley.types import WorldTileCoord
-from catley.util.spatial import SpatialHashGrid
-from catley.view.render.graphics import GraphicsContext
+from brileta import colors, config
+from brileta.app import App
+from brileta.controller import Controller, GameWorld
+from brileta.environment.generators import GeneratedMapData
+from brileta.environment.map import GameMap, MapRegion
+from brileta.environment.tile_types import TileTypeID
+from brileta.game.actors import PC, Actor, Character
+from brileta.game.item_spawner import ItemSpawner
+from brileta.game.items.item_core import Item
+from brileta.types import WorldTileCoord
+from brileta.util.spatial import SpatialHashGrid
+from brileta.view.render.graphics import GraphicsContext
 
 
 class DummyOverlay:
@@ -191,7 +191,7 @@ class DummyGameWorld(GameWorld):
 
     def get_global_lights(self) -> list:
         """Return global lights for controller sun helpers."""
-        from catley.game.lights import GlobalLight
+        from brileta.game.lights import GlobalLight
 
         return [light for light in self.lights if isinstance(light, GlobalLight)]
 
@@ -403,14 +403,14 @@ def _build_dummy_controller(*, use_dummy_world: bool) -> Controller:
     context = DummyContext()
 
     with ExitStack() as stack:
-        stack.enter_context(patch("catley.controller.FrameManager", DummyFrameManager))
+        stack.enter_context(patch("brileta.controller.FrameManager", DummyFrameManager))
         stack.enter_context(
-            patch("catley.controller.InputHandler", lambda *_a, **_kw: None)
+            patch("brileta.controller.InputHandler", lambda *_a, **_kw: None)
         )
         if use_dummy_world:
             stack.enter_context(
                 patch(
-                    "catley.controller.GameWorld",
+                    "brileta.controller.GameWorld",
                     lambda *args, **kwargs: DummyGameWorld(
                         *args, **kwargs, create_player=True
                     ),
@@ -418,7 +418,8 @@ def _build_dummy_controller(*, use_dummy_world: bool) -> Controller:
             )
             stack.enter_context(
                 patch(
-                    "catley.controller.config.BACKEND", SimpleNamespace(lighting="none")
+                    "brileta.controller.config.BACKEND",
+                    SimpleNamespace(lighting="none"),
                 )
             )
 
@@ -434,7 +435,7 @@ def reset_dummy_controller(controller: Controller) -> None:
     actors except the player. Use with module-scoped controller fixtures to
     avoid expensive re-initialization while ensuring test isolation.
     """
-    from catley.events import (
+    from brileta.events import (
         CombatInitiatedEvent,
         reset_event_bus_for_testing,
         subscribe_to_event,

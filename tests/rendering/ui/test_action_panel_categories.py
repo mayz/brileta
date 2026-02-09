@@ -5,13 +5,13 @@ from __future__ import annotations
 from typing import cast
 from unittest.mock import MagicMock
 
-from catley import colors
-from catley.controller import Controller
-from catley.game.actions.discovery import ActionCategory, ActionOption
-from catley.game.actors import Character
-from catley.game.game_world import GameWorld
-from catley.view.render.graphics import GraphicsContext
-from catley.view.views.action_panel_view import ActionPanelView
+from brileta import colors
+from brileta.controller import Controller
+from brileta.game.actions.discovery import ActionCategory, ActionOption
+from brileta.game.actors import Character
+from brileta.game.game_world import GameWorld
+from brileta.view.render.graphics import GraphicsContext
+from brileta.view.views.action_panel_view import ActionPanelView
 from tests.helpers import DummyGameWorld
 from tests.rendering.ui.test_action_panel_cache import DummyController
 

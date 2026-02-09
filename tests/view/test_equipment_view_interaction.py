@@ -10,15 +10,15 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from catley.controller import Controller
-from catley.game.enums import ConsumableEffectType, ItemSize
-from catley.game.items.capabilities import (
+from brileta.controller import Controller
+from brileta.game.enums import ConsumableEffectType, ItemSize
+from brileta.game.items.capabilities import (
     ConsumableEffectSpec,
     MeleeAttackSpec,
 )
-from catley.game.items.item_core import Item, ItemType
-from catley.view.render.graphics import GraphicsContext
-from catley.view.views.equipment_view import EquipmentView
+from brileta.game.items.item_core import Item, ItemType
+from brileta.view.render.graphics import GraphicsContext
+from brileta.view.views.equipment_view import EquipmentView
 
 
 def make_equipment_view(controller: Controller) -> EquipmentView:

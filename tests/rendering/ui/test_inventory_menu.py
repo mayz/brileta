@@ -1,11 +1,11 @@
 from types import SimpleNamespace
 from typing import cast
 
-from catley.controller import Controller
-from catley.game.actors import components
-from catley.game.items.item_types import COMBAT_KNIFE_TYPE, PISTOL_TYPE
-from catley.util.message_log import MessageLog
-from catley.view.ui.dual_pane_menu import DualPaneMenu
+from brileta.controller import Controller
+from brileta.game.actors import components
+from brileta.game.items.item_types import COMBAT_KNIFE_TYPE, PISTOL_TYPE
+from brileta.util.message_log import MessageLog
+from brileta.view.ui.dual_pane_menu import DualPaneMenu
 from tests.helpers import _make_renderer
 
 

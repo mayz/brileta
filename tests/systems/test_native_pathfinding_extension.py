@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from catley.util._native import astar
+from brileta.util._native import astar
 
 
 def test_astar_raises_type_error_for_wrong_dtype() -> None:

@@ -1,14 +1,14 @@
 from dataclasses import dataclass
 from typing import cast
 
-from catley import colors
-from catley.controller import Controller
-from catley.game.actors import Character, conditions
-from catley.game.enums import ConsumableEffectType, InjuryLocation
-from catley.game.game_world import GameWorld
-from catley.game.items.capabilities import ConsumableEffectSpec
-from catley.game.items.item_core import ItemType
-from catley.game.items.item_types import ItemSize
+from brileta import colors
+from brileta.controller import Controller
+from brileta.game.actors import Character, conditions
+from brileta.game.enums import ConsumableEffectType, InjuryLocation
+from brileta.game.game_world import GameWorld
+from brileta.game.items.capabilities import ConsumableEffectSpec
+from brileta.game.items.item_core import ItemType
+from brileta.game.items.item_types import ItemSize
 from tests.helpers import DummyGameWorld
 
 

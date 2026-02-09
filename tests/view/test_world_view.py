@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from catley.view.views.world_view import (
+from brileta.view.views.world_view import (
     COMBAT_OUTLINE_MAX_ALPHA,
     COMBAT_OUTLINE_MIN_ALPHA,
     WorldView,
@@ -110,7 +110,7 @@ class TestSmoothScrollingBuffer:
         view.width = 60
         view.height = 40
 
-        from catley.util.glyph_buffer import GlyphBuffer
+        from brileta.util.glyph_buffer import GlyphBuffer
 
         pad = view._SCROLL_PADDING
         buffer = GlyphBuffer(view.width + 2 * pad, view.height + 2 * pad)

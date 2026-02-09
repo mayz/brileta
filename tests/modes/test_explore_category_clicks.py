@@ -6,14 +6,14 @@ from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
-from catley import colors, input_events
-from catley.game.actions.discovery import ActionCategory, ActionOption
-from catley.game.actors import Character
-from catley.game.game_world import GameWorld
-from catley.modes.explore import ExploreMode
-from catley.view.render.graphics import GraphicsContext
-from catley.view.ui.selectable_list import SelectableRow
-from catley.view.views.action_panel_view import ActionPanelView
+from brileta import colors, input_events
+from brileta.game.actions.discovery import ActionCategory, ActionOption
+from brileta.game.actors import Character
+from brileta.game.game_world import GameWorld
+from brileta.modes.explore import ExploreMode
+from brileta.view.render.graphics import GraphicsContext
+from brileta.view.ui.selectable_list import SelectableRow
+from brileta.view.views.action_panel_view import ActionPanelView
 from tests.helpers import DummyGameWorld
 
 
@@ -132,7 +132,7 @@ def make_explore_mode_with_panel() -> tuple[
 
     # Create action panel view with mocked list renderers
     with patch(
-        "catley.view.views.action_panel_view.ActionPanelView.__init__",
+        "brileta.view.views.action_panel_view.ActionPanelView.__init__",
         lambda self, ctrl: None,
     ):
         view = ActionPanelView.__new__(ActionPanelView)

@@ -1,15 +1,15 @@
 from dataclasses import dataclass
 from typing import cast
 
-from catley import colors
-from catley.controller import Controller
-from catley.events import MessageEvent, reset_event_bus_for_testing, subscribe_to_event
-from catley.game.actors import Character
-from catley.game.consequences import ConsequenceHandler
-from catley.game.game_world import GameWorld
-from catley.game.items.item_types import FISTS_TYPE, PISTOL_TYPE
-from catley.view.render.graphics import GraphicsContext
-from catley.view.ui.dual_pane_menu import DualPaneMenu, ExternalInventory
+from brileta import colors
+from brileta.controller import Controller
+from brileta.events import MessageEvent, reset_event_bus_for_testing, subscribe_to_event
+from brileta.game.actors import Character
+from brileta.game.consequences import ConsequenceHandler
+from brileta.game.game_world import GameWorld
+from brileta.game.items.item_types import FISTS_TYPE, PISTOL_TYPE
+from brileta.view.render.graphics import GraphicsContext
+from brileta.view.ui.dual_pane_menu import DualPaneMenu, ExternalInventory
 from tests.helpers import DummyGameWorld, _make_renderer
 
 

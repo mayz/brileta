@@ -7,14 +7,14 @@ to the target.
 
 from __future__ import annotations
 
-from catley import colors
-from catley.controller import Controller
-from catley.game.actions.executors.recovery import UseConsumableOnTargetExecutor
-from catley.game.actions.recovery import UseConsumableOnTargetIntent
-from catley.game.actors import Character
-from catley.game.enums import ConsumableEffectType, ItemSize
-from catley.game.items.capabilities import ConsumableEffectSpec
-from catley.game.items.item_core import Item, ItemType
+from brileta import colors
+from brileta.controller import Controller
+from brileta.game.actions.executors.recovery import UseConsumableOnTargetExecutor
+from brileta.game.actions.recovery import UseConsumableOnTargetIntent
+from brileta.game.actors import Character
+from brileta.game.enums import ConsumableEffectType, ItemSize
+from brileta.game.items.capabilities import ConsumableEffectSpec
+from brileta.game.items.item_core import Item, ItemType
 
 
 def make_healing_potion() -> Item:

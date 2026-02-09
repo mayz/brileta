@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from catley.game.actions.discovery import ActionCategory, ActionOption
-from catley.game.items.properties import WeaponProperty
+from brileta.game.actions.discovery import ActionCategory, ActionOption
+from brileta.game.items.properties import WeaponProperty
 
 
 class TestActionPanelHotkeys:

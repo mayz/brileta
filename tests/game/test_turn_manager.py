@@ -2,19 +2,19 @@ import time
 from dataclasses import dataclass
 from typing import Any, cast
 
-from catley import colors, config
-from catley.controller import Controller
-from catley.environment.tile_types import TileTypeID
-from catley.events import reset_event_bus_for_testing
-from catley.game.action_plan import WalkToPlan
-from catley.game.action_router import ActionRouter
-from catley.game.actions.base import GameActionResult
-from catley.game.actions.movement import MoveIntent
-from catley.game.actors import NPC, PC, Character
-from catley.game.actors.status_effects import StaggeredEffect
-from catley.game.enums import Disposition
-from catley.game.game_world import GameWorld
-from catley.game.turn_manager import TurnManager
+from brileta import colors, config
+from brileta.controller import Controller
+from brileta.environment.tile_types import TileTypeID
+from brileta.events import reset_event_bus_for_testing
+from brileta.game.action_plan import WalkToPlan
+from brileta.game.action_router import ActionRouter
+from brileta.game.actions.base import GameActionResult
+from brileta.game.actions.movement import MoveIntent
+from brileta.game.actors import NPC, PC, Character
+from brileta.game.actors.status_effects import StaggeredEffect
+from brileta.game.enums import Disposition
+from brileta.game.game_world import GameWorld
+from brileta.game.turn_manager import TurnManager
 from tests.helpers import DummyGameWorld, get_controller_with_player_and_map
 
 
@@ -565,7 +565,7 @@ def test_npc_energy_capped_at_action_cost() -> None:
     The fix caps NPC energy at ACTION_COST (100) after each player action,
     ensuring NPCs can only ever take one action per player action.
     """
-    from catley import config
+    from brileta import config
 
     reset_event_bus_for_testing()
     gw = DummyGameWorld()
@@ -618,7 +618,7 @@ def test_slow_npc_can_still_accumulate_to_action_cost() -> None:
     They should accumulate energy over multiple player actions until they
     reach ACTION_COST, then be able to act.
     """
-    from catley import config
+    from brileta import config
 
     reset_event_bus_for_testing()
     gw = DummyGameWorld()
@@ -659,7 +659,7 @@ def test_slow_npc_can_still_accumulate_to_action_cost() -> None:
 
 def test_tripped_player_blocked_for_two_turns() -> None:
     """Player with TrippedEffect (duration=2) should be blocked for 2 turns."""
-    from catley.game.actors.status_effects import TrippedEffect
+    from brileta.game.actors.status_effects import TrippedEffect
 
     reset_event_bus_for_testing()
     controller = get_controller_with_player_and_map()
@@ -722,7 +722,7 @@ def test_tripped_player_blocked_for_two_turns() -> None:
 
 def test_is_player_turn_available_with_active_plan() -> None:
     """is_player_turn_available returns True when player has an active_plan."""
-    from catley.game.action_plan import ActivePlan, PlanContext, WalkToPlan
+    from brileta.game.action_plan import ActivePlan, PlanContext, WalkToPlan
 
     controller, player = _make_world()
     tm = controller.turn_manager
@@ -744,8 +744,8 @@ def test_is_player_turn_available_with_active_plan() -> None:
 
 def test_get_next_player_intent_from_active_plan() -> None:
     """get_next_player_intent returns intent from active_plan."""
-    from catley.game.action_plan import ActivePlan, PlanContext, WalkToPlan
-    from catley.game.actions.movement import MoveIntent
+    from brileta.game.action_plan import ActivePlan, PlanContext, WalkToPlan
+    from brileta.game.actions.movement import MoveIntent
 
     controller, player = _make_world()
     tm = controller.turn_manager
@@ -769,7 +769,7 @@ def test_get_next_player_intent_from_active_plan() -> None:
 
 def test_handle_approach_step_peeks_at_path() -> None:
     """_handle_approach_step peeks at cached_path[0] without popping."""
-    from catley.game.action_plan import (
+    from brileta.game.action_plan import (
         ActivePlan,
         ApproachStep,
         PlanContext,
@@ -808,7 +808,7 @@ def test_handle_approach_step_peeks_at_path() -> None:
 
 def test_handle_approach_step_sets_duration_based_on_distance() -> None:
     """_handle_approach_step assigns slower durations when close to the target."""
-    from catley.game.action_plan import (
+    from brileta.game.action_plan import (
         ActivePlan,
         ApproachStep,
         PlanContext,
@@ -858,8 +858,8 @@ def test_handle_approach_step_sets_duration_based_on_distance() -> None:
 
 def test_on_approach_result_pops_path_on_success() -> None:
     """_on_approach_result pops from cached_path when move succeeds."""
-    from catley.game.action_plan import ActivePlan, PlanContext, WalkToPlan
-    from catley.game.actions.base import GameActionResult
+    from brileta.game.action_plan import ActivePlan, PlanContext, WalkToPlan
+    from brileta.game.actions.base import GameActionResult
 
     controller, player = _make_world()
     tm = controller.turn_manager
@@ -887,8 +887,8 @@ def test_on_approach_result_pops_path_on_success() -> None:
 
 def test_on_approach_result_invalidates_path_on_failure() -> None:
     """_on_approach_result sets cached_path to None when move fails."""
-    from catley.game.action_plan import ActivePlan, PlanContext, WalkToPlan
-    from catley.game.actions.base import GameActionResult
+    from brileta.game.action_plan import ActivePlan, PlanContext, WalkToPlan
+    from brileta.game.actions.base import GameActionResult
 
     controller, player = _make_world()
     tm = controller.turn_manager
@@ -915,8 +915,8 @@ def test_on_approach_result_invalidates_path_on_failure() -> None:
 
 def test_plan_completes_when_destination_reached() -> None:
     """Active plan is cleared when player reaches destination."""
-    from catley.game.action_plan import ActivePlan, PlanContext, WalkToPlan
-    from catley.game.actions.base import GameActionResult
+    from brileta.game.action_plan import ActivePlan, PlanContext, WalkToPlan
+    from brileta.game.actions.base import GameActionResult
 
     controller, player = _make_world()
     tm = controller.turn_manager
@@ -947,8 +947,8 @@ def test_plan_completes_when_destination_reached() -> None:
 
 def test_execute_player_intent_handles_plan_advancement() -> None:
     """execute_player_intent calls _on_approach_result for plan advancement."""
-    from catley.game.action_plan import ActivePlan, PlanContext, WalkToPlan
-    from catley.game.actions.movement import MoveIntent
+    from brileta.game.action_plan import ActivePlan, PlanContext, WalkToPlan
+    from brileta.game.actions.movement import MoveIntent
 
     controller, player = _make_world()
     tm = controller.turn_manager
@@ -977,7 +977,7 @@ def test_execute_player_intent_handles_plan_advancement() -> None:
 
 def test_walk_to_plan_full_journey() -> None:
     """Player walks full journey using WalkToPlan."""
-    from catley.game.action_plan import ActivePlan, PlanContext, WalkToPlan
+    from brileta.game.action_plan import ActivePlan, PlanContext, WalkToPlan
 
     controller, player = _make_world()
     tm = controller.turn_manager

@@ -11,14 +11,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import cast
 
-from catley import colors
-from catley.controller import Controller
-from catley.game.actors.components import EnergyComponent
-from catley.game.actors.container import Container, create_bookcase
-from catley.game.actors.core import Actor, Character
-from catley.game.actors.environmental import ContainedFire
-from catley.game.game_world import GameWorld
-from catley.game.turn_manager import TurnManager
+from brileta import colors
+from brileta.controller import Controller
+from brileta.game.actors.components import EnergyComponent
+from brileta.game.actors.container import Container, create_bookcase
+from brileta.game.actors.core import Actor, Character
+from brileta.game.actors.environmental import ContainedFire
+from brileta.game.game_world import GameWorld
+from brileta.game.turn_manager import TurnManager
 from tests.helpers import DummyGameWorld
 
 # =============================================================================

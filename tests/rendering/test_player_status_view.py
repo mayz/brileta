@@ -4,14 +4,14 @@ from dataclasses import dataclass
 from typing import Any, cast
 from unittest.mock import MagicMock
 
-from catley import colors
-from catley.controller import Controller
-from catley.game.actors import Character, conditions, status_effects
-from catley.game.actors.status_effects import EncumberedEffect
-from catley.game.enums import InjuryLocation
-from catley.game.game_world import GameWorld
-from catley.view.render.graphics import GraphicsContext
-from catley.view.views.player_status_view import PlayerStatusView
+from brileta import colors
+from brileta.controller import Controller
+from brileta.game.actors import Character, conditions, status_effects
+from brileta.game.actors.status_effects import EncumberedEffect
+from brileta.game.enums import InjuryLocation
+from brileta.game.game_world import GameWorld
+from brileta.view.render.graphics import GraphicsContext
+from brileta.view.views.player_status_view import PlayerStatusView
 from tests.helpers import DummyGameWorld
 
 

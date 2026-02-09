@@ -4,11 +4,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from catley import input_events
-from catley.app import App, AppConfig
-from catley.controller import Controller
-from catley.util.live_vars import live_variable_registry
-from catley.view.ui.dev_console_overlay import DevConsoleOverlay
+from brileta import input_events
+from brileta.app import App, AppConfig
+from brileta.controller import Controller
+from brileta.util.live_vars import live_variable_registry
+from brileta.view.ui.dev_console_overlay import DevConsoleOverlay
 
 
 class DummyApp(App):

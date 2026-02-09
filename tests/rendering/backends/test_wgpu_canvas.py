@@ -8,15 +8,15 @@ from unittest.mock import Mock
 
 import pytest
 
-from catley import colors
-from catley.util.coordinates import TileCoord
+from brileta import colors
+from brileta.util.coordinates import TileCoord
 
 # Try to import WGPU - if not available, skip all tests
 try:
     import wgpu
 
-    from catley.backends.wgpu.canvas import WGPUCanvas
-    from catley.backends.wgpu.graphics import WGPUGraphicsContext
+    from brileta.backends.wgpu.canvas import WGPUCanvas
+    from brileta.backends.wgpu.graphics import WGPUGraphicsContext
 
     WGPU_AVAILABLE = True
 except ImportError:
@@ -197,7 +197,7 @@ class TestWGPUCanvas:
 
     def test_create_texture_implementation(self):
         """Test that create_texture works with GlyphBuffer artifacts."""
-        from catley.util.glyph_buffer import GlyphBuffer
+        from brileta.util.glyph_buffer import GlyphBuffer
 
         # Mock the renderer's render_glyph_buffer_to_texture method
         self.mock_renderer.render_glyph_buffer_to_texture = Mock(
@@ -242,7 +242,7 @@ class TestWGPUCanvas:
     def test_canvas_interface_compliance(self):
         """Test that WGPUCanvas properly implements Canvas interface."""
         # Test that all required Canvas methods exist and are callable
-        from catley.view.render.canvas import Canvas
+        from brileta.view.render.canvas import Canvas
 
         # Verify WGPUCanvas is a proper subclass
         assert issubclass(WGPUCanvas, Canvas)

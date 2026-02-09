@@ -4,18 +4,18 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 from unittest.mock import patch
 
-from catley import colors
-from catley.controller import Controller
-from catley.events import MessageEvent, reset_event_bus_for_testing, subscribe_to_event
-from catley.game.actions.combat import AttackIntent
-from catley.game.actions.executors.combat import AttackExecutor
-from catley.game.actors import Character, ai
-from catley.game.actors.status_effects import OffBalanceEffect
-from catley.game.enums import Disposition, OutcomeTier
-from catley.game.game_world import GameWorld
-from catley.game.items.item_core import Item
-from catley.game.items.item_types import PISTOL_TYPE
-from catley.game.resolution.d20_system import D20ResolutionResult
+from brileta import colors
+from brileta.controller import Controller
+from brileta.events import MessageEvent, reset_event_bus_for_testing, subscribe_to_event
+from brileta.game.actions.combat import AttackIntent
+from brileta.game.actions.executors.combat import AttackExecutor
+from brileta.game.actors import Character, ai
+from brileta.game.actors.status_effects import OffBalanceEffect
+from brileta.game.enums import Disposition, OutcomeTier
+from brileta.game.game_world import GameWorld
+from brileta.game.items.item_core import Item
+from brileta.game.items.item_types import PISTOL_TYPE
+from brileta.game.resolution.d20_system import D20ResolutionResult
 from tests.helpers import DummyGameWorld
 
 if TYPE_CHECKING:

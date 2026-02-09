@@ -11,10 +11,10 @@ from __future__ import annotations
 from typing import cast
 from unittest.mock import patch
 
-from catley import colors
-from catley.events import FloatingTextEvent, FloatingTextValence
-from catley.game.actors import Character
-from catley.game.game_world import GameWorld
+from brileta import colors
+from brileta.events import FloatingTextEvent, FloatingTextValence
+from brileta.game.actors import Character
+from brileta.game.game_world import GameWorld
 from tests.helpers import DummyGameWorld
 
 
@@ -84,7 +84,7 @@ class TestActorHeal:
         actor = make_character()
         assert actor.health.hp == actor.health.max_hp
 
-        with patch("catley.game.actors.core.publish_event") as mock_publish:
+        with patch("brileta.game.actors.core.publish_event") as mock_publish:
             healed = actor.heal(10)
 
         assert healed == 0
@@ -93,7 +93,7 @@ class TestActorHeal:
     def test_heal_without_health_component_returns_zero(self) -> None:
         """heal() on actor without health component should return 0."""
         gw = DummyGameWorld()
-        from catley.game.actors import Actor
+        from brileta.game.actors import Actor
 
         actor = Actor(
             0, 0, "A", colors.WHITE, "NoHealth", game_world=cast(GameWorld, gw)
@@ -109,7 +109,7 @@ class TestActorHeal:
         actor = make_character()
         actor.health._hp = 5
 
-        with patch("catley.game.actors.core.publish_event") as mock_publish:
+        with patch("brileta.game.actors.core.publish_event") as mock_publish:
             actor.heal(3)
 
         mock_publish.assert_called_once()
@@ -124,7 +124,7 @@ class TestActorHeal:
         actor = make_character()
         actor.health._hp = 5
 
-        with patch("catley.game.actors.core.publish_event"):
+        with patch("brileta.game.actors.core.publish_event"):
             actor.heal(3)
 
         # Check that flash was called with green
@@ -137,7 +137,7 @@ class TestActorHeal:
         actor.health._hp = 3
         expected_heal = actor.health.max_hp - 3
 
-        with patch("catley.game.actors.core.publish_event") as mock_publish:
+        with patch("brileta.game.actors.core.publish_event") as mock_publish:
             actor.heal()  # Full restore
 
         event = mock_publish.call_args[0][0]

@@ -1,6 +1,6 @@
 import pytest
 
-from catley.util import dice
+from brileta.util import dice
 
 
 def test_dice_parsing():

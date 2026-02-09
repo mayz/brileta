@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 import pytest
 
-from catley.util import performance
+from brileta.util import performance
 
 
 @pytest.fixture(autouse=True)

@@ -12,7 +12,7 @@ wheels = [
 ]
 
 [[package]]
-name = "catley"
+name = "brileta"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

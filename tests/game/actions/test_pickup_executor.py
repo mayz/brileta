@@ -7,15 +7,15 @@ from dataclasses import dataclass
 from typing import cast
 from unittest.mock import patch
 
-from catley import colors
-from catley.controller import Controller
-from catley.game.actions.executors.misc import PickupExecutor
-from catley.game.actions.misc import PickupIntent
-from catley.game.actors import Actor, Character, ItemPile
-from catley.game.enums import ItemSize
-from catley.game.game_world import GameWorld
-from catley.game.items.item_core import Item, ItemType
-from catley.game.turn_manager import TurnManager
+from brileta import colors
+from brileta.controller import Controller
+from brileta.game.actions.executors.misc import PickupExecutor
+from brileta.game.actions.misc import PickupIntent
+from brileta.game.actors import Actor, Character, ItemPile
+from brileta.game.enums import ItemSize
+from brileta.game.game_world import GameWorld
+from brileta.game.items.item_core import Item, ItemType
+from brileta.game.turn_manager import TurnManager
 from tests.helpers import DummyGameWorld
 
 
@@ -160,7 +160,7 @@ class TestPickupExecutorFeedback:
         # Capture published events
         published_events: list = []
         with patch(
-            "catley.game.actions.executors.misc.publish_event",
+            "brileta.game.actions.executors.misc.publish_event",
             side_effect=lambda e: published_events.append(e),
         ):
             executor.execute(intent)
@@ -188,7 +188,7 @@ class TestPickupExecutorFeedback:
 
         published_events: list = []
         with patch(
-            "catley.game.actions.executors.misc.publish_event",
+            "brileta.game.actions.executors.misc.publish_event",
             side_effect=lambda e: published_events.append(e),
         ):
             executor.execute(intent)
@@ -212,7 +212,7 @@ class TestPickupExecutorFeedback:
 
         published_events: list = []
         with patch(
-            "catley.game.actions.executors.misc.publish_event",
+            "brileta.game.actions.executors.misc.publish_event",
             side_effect=lambda e: published_events.append(e),
         ):
             executor.execute(intent)

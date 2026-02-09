@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from catley.util.misc import to_bool
+from brileta.util.misc import to_bool
 
 
 @pytest.mark.parametrize(

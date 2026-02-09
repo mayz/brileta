@@ -2,14 +2,14 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 from unittest.mock import MagicMock
 
-from catley.util.coordinates import RootConsoleTilePos
+from brileta.util.coordinates import RootConsoleTilePos
 
 if TYPE_CHECKING:
-    from catley.controller import Controller
-from catley.view.frame_manager import FrameManager
-from catley.view.render.effects.effects import EffectLibrary
-from catley.view.render.viewport import ViewportSystem
-from catley.view.views.world_view import WorldView
+    from brileta.controller import Controller
+from brileta.view.frame_manager import FrameManager
+from brileta.view.render.effects.effects import EffectLibrary
+from brileta.view.render.viewport import ViewportSystem
+from brileta.view.views.world_view import WorldView
 
 
 @dataclass

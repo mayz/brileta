@@ -1,1 +1,1 @@
-# Tests for catley/modes/ module
+# Tests for brileta/modes/ module

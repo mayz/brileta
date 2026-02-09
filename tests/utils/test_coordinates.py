@@ -1,4 +1,4 @@
-from catley.util.coordinates import CoordinateConverter
+from brileta.util.coordinates import CoordinateConverter
 
 
 def test_pixel_to_tile_basic():

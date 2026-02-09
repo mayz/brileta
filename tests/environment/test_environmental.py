@@ -2,10 +2,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from catley.game.enums import BlendMode
-from catley.types import DeltaTime
-from catley.util.coordinates import Rect
-from catley.view.render.effects.environmental import (
+from brileta.game.enums import BlendMode
+from brileta.types import DeltaTime
+from brileta.util.coordinates import Rect
+from brileta.view.render.effects.environmental import (
     EnvironmentalEffect,
     EnvironmentalEffectSystem,
 )

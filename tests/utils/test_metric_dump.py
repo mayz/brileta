@@ -3,9 +3,9 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 
-from catley.__main__ import _parse_metric_names
-from catley.util.live_vars import live_variable_registry
-from catley.util.metric_dump import PeriodicMetricLogger
+from brileta.__main__ import _parse_metric_names
+from brileta.util.live_vars import live_variable_registry
+from brileta.util.metric_dump import PeriodicMetricLogger
 
 
 def test_parse_metric_names() -> None:

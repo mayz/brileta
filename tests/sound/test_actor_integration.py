@@ -1,10 +1,10 @@
 """Tests for Actor-SoundEmitter integration."""
 
-from catley import colors
-from catley.game.actors.core import Actor
-from catley.game.actors.environmental import ContainedFire
-from catley.sound.emitter import SoundEmitter
-from catley.types import SoundId
+from brileta import colors
+from brileta.game.actors.core import Actor
+from brileta.game.actors.environmental import ContainedFire
+from brileta.sound.emitter import SoundEmitter
+from brileta.types import SoundId
 
 
 class TestActorSoundEmitterIntegration:

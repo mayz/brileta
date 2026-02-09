@@ -6,13 +6,13 @@ from dataclasses import dataclass
 from typing import cast
 from unittest.mock import patch
 
-from catley import colors
-from catley.controller import Controller
-from catley.game.actions.executors.misc import SwitchWeaponExecutor
-from catley.game.actions.misc import SwitchWeaponIntent
-from catley.game.actors import Character
-from catley.game.game_world import GameWorld
-from catley.game.items.item_core import Item, ItemSize, ItemType
+from brileta import colors
+from brileta.controller import Controller
+from brileta.game.actions.executors.misc import SwitchWeaponExecutor
+from brileta.game.actions.misc import SwitchWeaponIntent
+from brileta.game.actors import Character
+from brileta.game.game_world import GameWorld
+from brileta.game.items.item_core import Item, ItemSize, ItemType
 from tests.helpers import DummyGameWorld
 
 
@@ -64,7 +64,7 @@ def test_switch_weapon_executor_publishes_message_with_weapon_name() -> None:
     intent = SwitchWeaponIntent(cast(Controller, controller), player, slot=1)
     executor = SwitchWeaponExecutor()
 
-    with patch("catley.game.actions.executors.misc.publish_event") as mock_publish:
+    with patch("brileta.game.actions.executors.misc.publish_event") as mock_publish:
         executor.execute(intent)
 
         mock_publish.assert_called_once()
@@ -89,7 +89,7 @@ def test_switch_weapon_executor_shows_fists_for_empty_slot() -> None:
     intent = SwitchWeaponIntent(cast(Controller, controller), player, slot=1)
     executor = SwitchWeaponExecutor()
 
-    with patch("catley.game.actions.executors.misc.publish_event") as mock_publish:
+    with patch("brileta.game.actions.executors.misc.publish_event") as mock_publish:
         executor.execute(intent)
 
         mock_publish.assert_called_once()
@@ -107,7 +107,7 @@ def test_switch_weapon_executor_no_message_if_already_active() -> None:
     intent = SwitchWeaponIntent(cast(Controller, controller), player, slot=0)
     executor = SwitchWeaponExecutor()
 
-    with patch("catley.game.actions.executors.misc.publish_event") as mock_publish:
+    with patch("brileta.game.actions.executors.misc.publish_event") as mock_publish:
         executor.execute(intent)
 
         # No message should be published since we didn't actually switch

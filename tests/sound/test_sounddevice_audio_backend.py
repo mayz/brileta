@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import numpy as np
 
-from catley.backends.sounddevice_audio import (
+from brileta.backends.sounddevice_audio import (
     SoundDeviceAudioBackend,
     SoundDeviceAudioChannel,
 )
-from catley.sound.audio_backend import LoadedSound
+from brileta.sound.audio_backend import LoadedSound
 
 
 def _make_loaded_sound(data: np.ndarray, sample_rate: int = 44100) -> LoadedSound:

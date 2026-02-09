@@ -1,14 +1,14 @@
 from dataclasses import dataclass
 from typing import cast
 
-from catley import colors
-from catley.controller import Controller
-from catley.game import ranges
-from catley.game.actions.combat import AttackIntent
-from catley.game.actors import NPC, Character
-from catley.game.enums import Disposition
-from catley.game.game_world import GameWorld
-from catley.game.turn_manager import TurnManager
+from brileta import colors
+from brileta.controller import Controller
+from brileta.game import ranges
+from brileta.game.actions.combat import AttackIntent
+from brileta.game.actors import NPC, Character
+from brileta.game.enums import Disposition
+from brileta.game.game_world import GameWorld
+from brileta.game.turn_manager import TurnManager
 from tests.helpers import DummyGameWorld
 
 
@@ -67,7 +67,7 @@ def test_hostile_ai_attacks_when_adjacent() -> None:
 
 def test_hostile_ai_flees_when_low_health() -> None:
     """Low-health hostile NPCs should flee instead of attacking."""
-    from catley.game.actions.movement import MoveIntent
+    from brileta.game.actions.movement import MoveIntent
 
     controller, _player, npc = make_world()
     npc.x = 1
@@ -85,7 +85,7 @@ def test_hostile_ai_flees_when_low_health() -> None:
 
 def test_hostile_ai_avoids_hazardous_destination_tiles() -> None:
     """AI prefers non-hazardous tiles when selecting destination adjacent to player."""
-    from catley.environment.tile_types import TileTypeID
+    from brileta.environment.tile_types import TileTypeID
 
     controller, player, npc = make_world()
 
@@ -112,7 +112,7 @@ def test_hostile_ai_avoids_hazardous_destination_tiles() -> None:
 
 def test_hostile_ai_uses_hazardous_tile_when_no_alternative() -> None:
     """AI will use hazardous destination tile if all options are hazardous."""
-    from catley.environment.tile_types import TileTypeID
+    from brileta.environment.tile_types import TileTypeID
 
     controller, player, npc = make_world()
 
@@ -143,8 +143,8 @@ def test_hostile_ai_uses_hazardous_tile_when_no_alternative() -> None:
 
 def test_npc_escapes_hazard_before_attacking() -> None:
     """NPC on hazard should escape before pursuing player."""
-    from catley.environment.tile_types import TileTypeID
-    from catley.game.actions.movement import MoveIntent
+    from brileta.environment.tile_types import TileTypeID
+    from brileta.game.actions.movement import MoveIntent
 
     controller, _player, npc = make_world()
 
@@ -160,8 +160,8 @@ def test_npc_escapes_hazard_before_attacking() -> None:
 
 def test_npc_escapes_to_nearest_safe_tile() -> None:
     """NPC should escape to nearest non-hazardous tile, preferring orthogonal."""
-    from catley.environment.tile_types import TileTypeID
-    from catley.game.actions.movement import MoveIntent
+    from brileta.environment.tile_types import TileTypeID
+    from brileta.game.actions.movement import MoveIntent
 
     controller, _player, npc = make_world()
     npc.x, npc.y = 5, 5
@@ -190,7 +190,7 @@ def test_npc_escapes_to_nearest_safe_tile() -> None:
 
 def test_npc_stays_if_all_adjacent_hazardous() -> None:
     """NPC stays put if all adjacent tiles are also hazards."""
-    from catley.environment.tile_types import TileTypeID
+    from brileta.environment.tile_types import TileTypeID
 
     controller, _player, npc = make_world()
     npc.x, npc.y = 5, 5
@@ -212,8 +212,8 @@ def test_npc_stays_if_all_adjacent_hazardous() -> None:
 
 def test_npc_skips_blocked_safe_tile() -> None:
     """NPC should skip safe tiles blocked by other actors."""
-    from catley.environment.tile_types import TileTypeID
-    from catley.game.actions.movement import MoveIntent
+    from brileta.environment.tile_types import TileTypeID
+    from brileta.game.actions.movement import MoveIntent
 
     controller, _player, npc = make_world()
     npc.x, npc.y = 5, 5

@@ -1,11 +1,11 @@
-from catley.game.enums import AreaType, ItemSize
-from catley.game.items.capabilities import (
+from brileta.game.enums import AreaType, ItemSize
+from brileta.game.items.capabilities import (
     AreaEffectSpec,
     MeleeAttackSpec,
     RangedAttackSpec,
 )
-from catley.game.items.item_core import Item, ItemType
-from catley.game.items.properties import (
+from brileta.game.items.item_core import Item, ItemType
+from brileta.game.items.properties import (
     StatusProperty,
     TacticalProperty,
     WeaponProperty,

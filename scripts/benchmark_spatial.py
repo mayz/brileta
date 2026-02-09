@@ -6,13 +6,13 @@ Provides detailed per-operation timing and recommendations for optimization.
 
 Usage:
     # Full benchmark
-    python catley/scripts/benchmark_spatial.py
+    python brileta/scripts/benchmark_spatial.py
 
     # Save baseline
-    python catley/scripts/benchmark_spatial.py --save before.json
+    python brileta/scripts/benchmark_spatial.py --save before.json
 
     # Compare with baseline
-    python catley/scripts/benchmark_spatial.py --compare before.json
+    python brileta/scripts/benchmark_spatial.py --compare before.json
 """
 
 # ruff: noqa: E402  # Allow path setup before importing project modules
@@ -29,12 +29,12 @@ from pathlib import Path
 from typing import Any
 
 # Add the project root to Python path so running as a script works when executed
-# directly via ``python catley/scripts/benchmark_spatial.py``
+# directly via ``python brileta/scripts/benchmark_spatial.py``
 project_root = Path(__file__).resolve().parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-from catley.util.performance import (
+from brileta.util.performance import (
     disable_performance_tracking,
     enable_performance_tracking,
     get_performance_report,

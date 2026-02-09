@@ -2,14 +2,14 @@ from dataclasses import dataclass
 from typing import cast
 from unittest.mock import patch
 
-from catley import colors
-from catley.constants.movement import MovementConstants
-from catley.controller import Controller
-from catley.game.actors import Character, conditions
-from catley.game.enums import InjuryLocation
-from catley.game.game_world import GameWorld
-from catley.game.resolution import d20_system
-from catley.game.resolution.d20_system import D20ResolutionResult, D20System
+from brileta import colors
+from brileta.constants.movement import MovementConstants
+from brileta.controller import Controller
+from brileta.game.actors import Character, conditions
+from brileta.game.enums import InjuryLocation
+from brileta.game.game_world import GameWorld
+from brileta.game.resolution import d20_system
+from brileta.game.resolution.d20_system import D20ResolutionResult, D20System
 from tests.conftest import FixedRandom
 from tests.helpers import DummyGameWorld
 

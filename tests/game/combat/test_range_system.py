@@ -5,15 +5,15 @@ from typing import TYPE_CHECKING, cast
 
 import numpy as np
 
-from catley.environment.generators import GeneratedMapData
-from catley.environment.map import GameMap
+from brileta.environment.generators import GeneratedMapData
+from brileta.environment.map import GameMap
 
 if TYPE_CHECKING:
-    from catley.environment.map import MapRegion
-from catley.game import ranges
-from catley.game.items.capabilities import RangedAttack
-from catley.game.items.item_core import Item
-from catley.game.items.properties import ItemProperty, WeaponProperty
+    from brileta.environment.map import MapRegion
+from brileta.game import ranges
+from brileta.game.items.capabilities import RangedAttack
+from brileta.game.items.item_core import Item
+from brileta.game.items.properties import ItemProperty, WeaponProperty
 
 
 @dataclass

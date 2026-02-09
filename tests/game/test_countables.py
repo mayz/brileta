@@ -13,22 +13,22 @@ from __future__ import annotations
 
 import pytest
 
-from catley.game.actors.components import (
+from brileta.game.actors.components import (
     CharacterInventory,
     ContainerStorage,
     StatsComponent,
 )
-from catley.game.actors.container import ItemPile
-from catley.game.countables import (
+from brileta.game.actors.container import ItemPile
+from brileta.game.countables import (
     COUNTABLE_DEFINITIONS,
     CountableDefinition,
     CountableType,
     get_countable_definition,
     get_countable_display_name,
 )
-from catley.game.enums import ItemSize
-from catley.game.items.item_core import Item, ItemType
-from catley.view.ui.dual_pane_menu import group_items_for_display
+from brileta.game.enums import ItemSize
+from brileta.game.items.item_core import Item, ItemType
+from brileta.view.ui.dual_pane_menu import group_items_for_display
 
 # =============================================================================
 # HELPER FUNCTIONS
@@ -505,7 +505,7 @@ class TestDualPaneMenuCountableDisplay:
         """_generate_item_detail() should handle CountableType without crashing."""
         from unittest.mock import MagicMock
 
-        from catley.view.ui.dual_pane_menu import DualPaneMenu
+        from brileta.view.ui.dual_pane_menu import DualPaneMenu
 
         # Create a minimal mock controller with required attributes
         mock_controller = MagicMock()
@@ -538,7 +538,7 @@ class TestPickupCountableExecutor:
         """Executor should transfer countables from source to actor inventory."""
         from unittest.mock import MagicMock
 
-        from catley.game.actions.executors.misc import PickupCountableExecutor
+        from brileta.game.actions.executors.misc import PickupCountableExecutor
 
         # Set up source and actor inventories
         source_inv = ContainerStorage(capacity=10)
@@ -565,7 +565,7 @@ class TestPickupCountableExecutor:
         """Amount of -1 should take all countables from source."""
         from unittest.mock import MagicMock
 
-        from catley.game.actions.executors.misc import PickupCountableExecutor
+        from brileta.game.actions.executors.misc import PickupCountableExecutor
 
         source_inv = ContainerStorage(capacity=10)
         source_inv.add_countable(CountableType.COIN, 75)
@@ -590,7 +590,7 @@ class TestPickupCountableExecutor:
         """Executor should fail if actor has no inventory."""
         from unittest.mock import MagicMock
 
-        from catley.game.actions.executors.misc import PickupCountableExecutor
+        from brileta.game.actions.executors.misc import PickupCountableExecutor
 
         intent = MagicMock()
         intent.actor.inventory = None
@@ -608,7 +608,7 @@ class TestPickupCountableExecutor:
         """Executor should fail if source has no countables of that type."""
         from unittest.mock import MagicMock
 
-        from catley.game.actions.executors.misc import PickupCountableExecutor
+        from brileta.game.actions.executors.misc import PickupCountableExecutor
 
         source_inv = ContainerStorage(capacity=10)  # No coins
         actor_inv = CharacterInventory(make_stats())
@@ -629,7 +629,7 @@ class TestPickupCountableExecutor:
         """Executor should fail if source has insufficient countables."""
         from unittest.mock import MagicMock
 
-        from catley.game.actions.executors.misc import PickupCountableExecutor
+        from brileta.game.actions.executors.misc import PickupCountableExecutor
 
         source_inv = ContainerStorage(capacity=10)
         source_inv.add_countable(CountableType.COIN, 20)
@@ -658,7 +658,7 @@ class TestDropCountableExecutor:
         """Executor should remove from inventory and spawn on ground."""
         from unittest.mock import MagicMock
 
-        from catley.game.actions.executors.misc import DropCountableExecutor
+        from brileta.game.actions.executors.misc import DropCountableExecutor
 
         actor_inv = CharacterInventory(make_stats())
         actor_inv.add_countable(CountableType.COIN, 100)
@@ -691,7 +691,7 @@ class TestDropCountableExecutor:
         """Executor should fail if actor has no inventory."""
         from unittest.mock import MagicMock
 
-        from catley.game.actions.executors.misc import DropCountableExecutor
+        from brileta.game.actions.executors.misc import DropCountableExecutor
 
         intent = MagicMock()
         intent.actor.inventory = None
@@ -708,7 +708,7 @@ class TestDropCountableExecutor:
         """Executor should fail if inventory has insufficient countables."""
         from unittest.mock import MagicMock
 
-        from catley.game.actions.executors.misc import DropCountableExecutor
+        from brileta.game.actions.executors.misc import DropCountableExecutor
 
         actor_inv = CharacterInventory(make_stats())
         actor_inv.add_countable(CountableType.COIN, 20)
@@ -739,7 +739,7 @@ class TestSpawnGroundCountable:
         """Should create a new ItemPile when no pile exists at location."""
         from unittest.mock import MagicMock
 
-        from catley.game.item_spawner import ItemSpawner
+        from brileta.game.item_spawner import ItemSpawner
 
         # Mock game world with no actor at location
         mock_gw = MagicMock()
@@ -762,7 +762,7 @@ class TestSpawnGroundCountable:
         """Should add countables to existing ItemPile at location."""
         from unittest.mock import MagicMock
 
-        from catley.game.item_spawner import ItemSpawner
+        from brileta.game.item_spawner import ItemSpawner
 
         # Create an existing pile with some coins
         existing_pile = ItemPile(x=5, y=10)
@@ -784,7 +784,7 @@ class TestSpawnGroundCountable:
         """Should create new pile when existing actor is not an ItemPile."""
         from unittest.mock import MagicMock
 
-        from catley.game.item_spawner import ItemSpawner
+        from brileta.game.item_spawner import ItemSpawner
 
         # Mock a non-ItemPile actor at location (e.g., a character)
         other_actor = MagicMock()
@@ -808,7 +808,7 @@ class TestSpawnGroundCountable:
         """New pile should have correct glyph and name."""
         from unittest.mock import MagicMock
 
-        from catley.game.item_spawner import ItemSpawner
+        from brileta.game.item_spawner import ItemSpawner
 
         mock_gw = MagicMock()
         mock_gw.actor_spatial_index.get_at_point.return_value = []

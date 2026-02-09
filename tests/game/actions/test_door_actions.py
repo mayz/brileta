@@ -1,16 +1,16 @@
 from dataclasses import dataclass
 from typing import cast
 
-from catley import colors
-from catley.controller import Controller
-from catley.environment.tile_types import TileTypeID
-from catley.game.actions.environment import CloseDoorIntent, OpenDoorIntent
-from catley.game.actions.executors.doors import (
+from brileta import colors
+from brileta.controller import Controller
+from brileta.environment.tile_types import TileTypeID
+from brileta.game.actions.environment import CloseDoorIntent, OpenDoorIntent
+from brileta.game.actions.executors.doors import (
     CloseDoorExecutor,
     OpenDoorExecutor,
 )
-from catley.game.actors import Character
-from catley.game.game_world import GameWorld
+from brileta.game.actors import Character
+from brileta.game.game_world import GameWorld
 from tests.helpers import DummyGameWorld
 
 

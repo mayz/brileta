@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from catley.util import rng
-from catley.util.rng import RNGProvider, RNGStream
+from brileta.util import rng
+from brileta.util.rng import RNGProvider, RNGStream
 
 
 class TestRNGStream:
@@ -151,7 +151,7 @@ class TestModuleLevelAPI:
     def test_reset_without_init_raises(self) -> None:
         """reset() raises RuntimeError if called before init()."""
         # Save current provider state
-        import catley.util.rng as rng_module
+        import brileta.util.rng as rng_module
 
         saved_provider = rng_module._provider
 
@@ -167,7 +167,7 @@ class TestModuleLevelAPI:
 
     def test_get_auto_initializes(self) -> None:
         """get() auto-initializes if provider doesn't exist."""
-        import catley.util.rng as rng_module
+        import brileta.util.rng as rng_module
 
         saved_provider = rng_module._provider
 
@@ -208,7 +208,7 @@ class TestCrossSessionDeterminism:
         script = """
 import sys
 sys.path.insert(0, '.')
-from catley.util.rng import RNGProvider
+from brileta.util.rng import RNGProvider
 provider = RNGProvider(master_seed=12345)
 stream = provider.get("test.cross_session")
 values = [stream.randint(1, 10000) for _ in range(5)]

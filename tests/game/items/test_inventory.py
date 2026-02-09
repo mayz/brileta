@@ -1,6 +1,6 @@
-from catley.game.actors import components, conditions
-from catley.game.enums import InjuryLocation, ItemSize
-from catley.game.items.item_core import Item, ItemType
+from brileta.game.actors import components, conditions
+from brileta.game.enums import InjuryLocation, ItemSize
+from brileta.game.items.item_core import Item, ItemType
 
 
 def make_item(name: str, size: ItemSize) -> Item:
@@ -178,7 +178,7 @@ def test_try_remove_item_from_equipped_outfit() -> None:
     This ensures dropping an equipped outfit works without needing to
     unequip first - consistent with how weapons behave.
     """
-    from catley.game.outfit import LEATHER_ARMOR_TYPE
+    from brileta.game.outfit import LEATHER_ARMOR_TYPE
 
     stats = components.StatsComponent(strength=0)
     inv = components.CharacterInventory(stats)
@@ -202,7 +202,7 @@ def test_unequip_outfit_at_capacity_succeeds() -> None:
     unequipping when inventory was at capacity, even though equipped items
     already count toward used space.
     """
-    from catley.game.outfit import LEATHER_ARMOR_TYPE
+    from brileta.game.outfit import LEATHER_ARMOR_TYPE
 
     stats = components.StatsComponent(strength=0)  # 5 slots
     inv = components.CharacterInventory(stats)

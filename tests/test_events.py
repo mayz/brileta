@@ -4,7 +4,7 @@ import logging
 
 import pytest
 
-from catley.events import (
+from brileta.events import (
     EventBus,
     GameEvent,
     MessageEvent,

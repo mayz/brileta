@@ -9,12 +9,12 @@ from setuptools import Extension, setup
 setup(
     ext_modules=[
         Extension(
-            "catley.util._native",
+            "brileta.util._native",
             sources=[
-                "catley/util/_native.c",
-                "catley/util/_native_pathfinding.c",
-                "catley/util/_native_fov.c",
-                "catley/util/_native_wfc.c",
+                "brileta/util/_native.c",
+                "brileta/util/_native_pathfinding.c",
+                "brileta/util/_native_fov.c",
+                "brileta/util/_native_wfc.c",
             ],
         ),
     ],

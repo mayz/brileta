@@ -20,9 +20,6 @@ wheels/
 .venv
 .aider*
 
-# Generated LLM text bundle
-llm_bundle*.txt
-
 # PyInstaller
 dist/
 build/

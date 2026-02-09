@@ -10,9 +10,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from catley import input_events
-from catley.controller import Controller
-from catley.modes.picker import PickerResult
+from brileta import input_events
+from brileta.controller import Controller
+from brileta.modes.picker import PickerResult
 from tests.helpers import reset_dummy_controller
 
 
@@ -61,7 +61,7 @@ def test_t_key_not_handled_by_picker(picker_controller: Controller) -> None:
     Note: T key was removed as a combat toggle in the equipment slot interaction
     rework. Combat is now entered by clicking the active equipment slot.
     """
-    from catley.input_events import Keys
+    from brileta.input_events import Keys
 
     controller = picker_controller
     on_cancel = MagicMock()
@@ -322,7 +322,7 @@ def test_combat_mode_repushes_picker_after_selection(
 
     # The callback was stored before pop cleared it, so we use the initial one
     # This simulates what PickerMode does: save callback, pop, call callback
-    from catley.modes.picker import PickerResult
+    from brileta.modes.picker import PickerResult
 
     result = PickerResult(actor=None, tile=(5, 5))
     initial_on_select(result)  # type: ignore[misc]

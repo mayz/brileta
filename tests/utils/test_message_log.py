@@ -1,5 +1,5 @@
-from catley import colors, config
-from catley.util.message_log import MessageLog
+from brileta import colors, config
+from brileta.util.message_log import MessageLog
 
 
 def test_message_log_stacks_and_revisions() -> None:

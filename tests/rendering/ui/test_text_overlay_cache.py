@@ -4,11 +4,11 @@ from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import MagicMock
 
-from catley.controller import Controller
-from catley.util.coordinates import PixelCoord
-from catley.view.render.canvas import Canvas
-from catley.view.ui.dev_console_overlay import DevConsoleOverlay
-from catley.view.ui.overlays import OverlaySystem, TextOverlay
+from brileta.controller import Controller
+from brileta.util.coordinates import PixelCoord
+from brileta.view.render.canvas import Canvas
+from brileta.view.ui.dev_console_overlay import DevConsoleOverlay
+from brileta.view.ui.overlays import OverlaySystem, TextOverlay
 
 
 class FakeCanvas(Canvas):

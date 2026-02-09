@@ -1,7 +1,7 @@
 # Audio System Improvement Plan
 
 ## Overview
-This document outlines critical issues and improvements needed for the Catley audio/sound system, prioritized by importance and impact. Each item includes specific implementation details to guide development.
+This document outlines critical issues and improvements needed for the Brileta audio/sound system, prioritized by importance and impact. Each item includes specific implementation details to guide development.
 
 ## Priority 1: Critical Gameplay Features
 
@@ -306,7 +306,7 @@ class AudioEffectsManager:
 **Fix:**
 Create a new `PositionalAudioProcessor` class:
 ```python
-# New file: catley/sound/positional_audio.py
+# New file: brileta/sound/positional_audio.py
 class PositionalAudioProcessor:
     def calculate_volume(self, emitter_pos, listener_pos, sound_def):
         """Pure function for audio calculations"""
@@ -343,7 +343,7 @@ def get_audio_lod_level(self, distance, max_distance):
 ### 6. Move to Data-Driven Sound Definitions
 **Problem:** Sound definitions are hardcoded in Python.
 
-**Current:** `catley/sound/definitions.py:47-110`
+**Current:** `brileta/sound/definitions.py:47-110`
 
 **Fix:**
 Create `assets/sounds/definitions.json`:

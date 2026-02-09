@@ -10,9 +10,9 @@ from __future__ import annotations
 
 from typing import cast
 
-from catley import colors
-from catley.game.actors import Character
-from catley.game.game_world import GameWorld
+from brileta import colors
+from brileta.game.actors import Character
+from brileta.game.game_world import GameWorld
 from tests.helpers import DummyGameWorld
 
 

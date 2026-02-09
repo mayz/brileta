@@ -10,23 +10,23 @@ from typing import TYPE_CHECKING, cast
 
 import numpy as np
 
-from catley import colors
-from catley.environment.generators import GeneratedMapData
-from catley.environment.map import GameMap
-from catley.environment.tile_types import TileTypeID
-from catley.game.actions.discovery import (
+from brileta import colors
+from brileta.environment.generators import GeneratedMapData
+from brileta.environment.map import GameMap
+from brileta.environment.tile_types import TileTypeID
+from brileta.game.actions.discovery import (
     CombatIntentCache,
     TargetType,
     classify_target,
     get_default_action_id,
 )
-from catley.game.actors import Character
-from catley.game.actors.container import Container
-from catley.game.game_world import GameWorld
+from brileta.game.actors import Character
+from brileta.game.actors.container import Container
+from brileta.game.game_world import GameWorld
 from tests.helpers import DummyGameWorld
 
 if TYPE_CHECKING:
-    from catley.environment.map import MapRegion
+    from brileta.environment.map import MapRegion
 
 
 class DummyController:
@@ -39,7 +39,7 @@ class DummyController:
         self.combat_intent_cache: CombatIntentCache | None = None
 
     def create_resolver(self, **kwargs: object) -> object:
-        from catley.game.resolution.d20_system import D20System
+        from brileta.game.resolution.d20_system import D20System
 
         return D20System(**kwargs)  # type: ignore[call-arg]
 
@@ -121,7 +121,7 @@ class TestClassifyTarget:
     def test_classify_item_pile(self) -> None:
         """A tile with items should be classified as ITEM_PILE."""
         controller, _player, _ = _make_test_world()
-        from catley.game.items.item_types import COMBAT_KNIFE_TYPE
+        from brileta.game.items.item_types import COMBAT_KNIFE_TYPE
 
         knife = COMBAT_KNIFE_TYPE.create()
         controller.gw.items[(10, 10)] = [knife]
@@ -201,7 +201,7 @@ class TestExecuteDefaultActionInCombatMode:
 
     def test_npc_default_is_attack_in_combat_mode(self) -> None:
         """In combat mode, right-clicking an NPC should attack, not talk."""
-        from catley.game.actions.discovery import execute_default_action
+        from brileta.game.actions.discovery import execute_default_action
 
         controller, player, npc = _make_test_world()
 
@@ -226,13 +226,13 @@ class TestExecuteDefaultActionInCombatMode:
         assert result is True
         assert len(queued_actions) == 1
         # Should be an AttackIntent, not TalkIntent
-        from catley.game.actions.combat import AttackIntent
+        from brileta.game.actions.combat import AttackIntent
 
         assert isinstance(queued_actions[0], AttackIntent)
 
     def test_npc_default_is_talk_outside_combat_mode(self) -> None:
         """Outside combat mode, right-clicking an NPC should start TalkPlan."""
-        from catley.game.actions.discovery import execute_default_action
+        from brileta.game.actions.discovery import execute_default_action
 
         controller, player, npc = _make_test_world()
 
@@ -270,7 +270,7 @@ class TestAdjacentPositionSelection:
         The plan system handles finding the closest adjacent tile during
         execution via ApproachStep.
         """
-        from catley.game.actions.discovery import execute_default_action
+        from brileta.game.actions.discovery import execute_default_action
 
         controller, player, _ = _make_test_world()
         container = Container(
@@ -305,7 +305,7 @@ class TestAdjacentPositionSelection:
 
     def test_container_search_works_from_different_positions(self) -> None:
         """SearchContainerPlan should start regardless of player position."""
-        from catley.game.actions.discovery import execute_default_action
+        from brileta.game.actions.discovery import execute_default_action
 
         controller, player, _ = _make_test_world()
         container = Container(
@@ -342,7 +342,7 @@ class TestAdjacentPositionSelection:
         Setup: Player at (5, 3), closed door at (2, 3)
         Expected: start_plan is called with OpenDoorPlan and door coordinates.
         """
-        from catley.game.actions.discovery import execute_default_action
+        from brileta.game.actions.discovery import execute_default_action
 
         controller, player, _ = _make_test_world()
 

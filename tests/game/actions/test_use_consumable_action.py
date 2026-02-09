@@ -1,13 +1,13 @@
 from dataclasses import dataclass
 from typing import cast
 
-from catley import colors
-from catley.controller import Controller
-from catley.game.actions.executors.recovery import UseConsumableExecutor
-from catley.game.actions.recovery import UseConsumableIntent
-from catley.game.actors import Character
-from catley.game.game_world import GameWorld
-from catley.game.items.item_types import STIM_TYPE
+from brileta import colors
+from brileta.controller import Controller
+from brileta.game.actions.executors.recovery import UseConsumableExecutor
+from brileta.game.actions.recovery import UseConsumableIntent
+from brileta.game.actors import Character
+from brileta.game.game_world import GameWorld
+from brileta.game.items.item_types import STIM_TYPE
 from tests.helpers import DummyGameWorld
 
 

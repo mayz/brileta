@@ -1,13 +1,13 @@
 from dataclasses import dataclass
 from typing import cast
 
-from catley import colors
-from catley.controller import Controller
-from catley.environment.tile_types import TileTypeID
-from catley.game.actions.executors.movement import MoveExecutor
-from catley.game.actions.movement import MoveIntent
-from catley.game.actors import Character
-from catley.game.game_world import GameWorld
+from brileta import colors
+from brileta.controller import Controller
+from brileta.environment.tile_types import TileTypeID
+from brileta.game.actions.executors.movement import MoveExecutor
+from brileta.game.actions.movement import MoveIntent
+from brileta.game.actors import Character
+from brileta.game.game_world import GameWorld
 from tests.helpers import DummyGameWorld
 
 

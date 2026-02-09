@@ -27,7 +27,7 @@ class TestWGPUSamplerConfiguration:
         mock_device.create_sampler.return_value = mock_sampler
 
         # Import and create a partial system to test _create_samplers
-        from catley.backends.wgpu.gpu_lighting import GPULightingSystem
+        from brileta.backends.wgpu.gpu_lighting import GPULightingSystem
 
         system = object.__new__(GPULightingSystem)
         system.device = mock_device
@@ -57,7 +57,7 @@ class TestWGPUSamplerConfiguration:
         mock_device = MagicMock()
         mock_device.create_sampler.return_value = MagicMock()
 
-        from catley.backends.wgpu.gpu_lighting import GPULightingSystem
+        from brileta.backends.wgpu.gpu_lighting import GPULightingSystem
 
         system = object.__new__(GPULightingSystem)
         system.device = mock_device

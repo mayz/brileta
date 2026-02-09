@@ -11,11 +11,11 @@ from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import MagicMock
 
-from catley import colors, input_events
-from catley.game.actors import Character
-from catley.input_events import Keys
-from catley.input_handler import InputHandler
-from catley.modes.explore import ExploreMode
+from brileta import colors, input_events
+from brileta.game.actors import Character
+from brileta.input_events import Keys
+from brileta.input_handler import InputHandler
+from brileta.modes.explore import ExploreMode
 from tests.helpers import DummyGameWorld
 
 
@@ -119,7 +119,7 @@ def make_input_handler() -> tuple[InputHandler, list[tuple[Any, tuple[int, int],
         has_interactive_overlays=lambda: False,
     )
 
-    from catley.app import App
+    from brileta.app import App
 
     class DummyApp(App):
         def __init__(self, *_args, **_kwargs) -> None:
@@ -197,7 +197,7 @@ def make_explore_mode() -> tuple[ExploreMode, Any, list[tuple[Any, tuple[int, in
         show_menu=lambda m: None,
     )
 
-    from catley.app import App
+    from brileta.app import App
 
     class DummyApp(App):
         def __init__(self, *_args, **_kwargs) -> None:

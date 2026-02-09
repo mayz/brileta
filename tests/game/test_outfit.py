@@ -1,7 +1,7 @@
 """Unit tests for the outfit (armor/clothing) system."""
 
-from catley.game.items.capabilities import OutfitSpec
-from catley.game.outfit import (
+from brileta.game.items.capabilities import OutfitSpec
+from brileta.game.outfit import (
     LEATHER_ARMOR_TYPE,
     RAGS_TYPE,
     SHELTER_JUMPSUIT_TYPE,
@@ -324,7 +324,7 @@ class TestOutfitItemTypes:
 
     def test_is_outfit_type_false(self) -> None:
         """Non-outfit types are not recognized."""
-        from catley.game.items.item_types import PISTOL_TYPE
+        from brileta.game.items.item_types import PISTOL_TYPE
 
         assert is_outfit_type(PISTOL_TYPE) is False
 
@@ -338,7 +338,7 @@ class TestOutfitItemTypes:
 
     def test_get_outfit_spec_none_for_non_outfit(self) -> None:
         """get_outfit_spec returns None for non-outfit types."""
-        from catley.game.items.item_types import PISTOL_TYPE
+        from brileta.game.items.item_types import PISTOL_TYPE
 
         assert get_outfit_spec(PISTOL_TYPE) is None
 
@@ -381,7 +381,7 @@ class TestOutfitCapabilityPersistence:
 
     def test_non_outfit_item_has_no_capability(self) -> None:
         """Non-outfit items have outfit_capability as None."""
-        from catley.game.items.item_types import PISTOL_TYPE
+        from brileta.game.items.item_types import PISTOL_TYPE
 
         item = PISTOL_TYPE.create()
 
@@ -389,7 +389,7 @@ class TestOutfitCapabilityPersistence:
 
     def test_damage_state_persists_after_unequip_reequip(self) -> None:
         """Armor keeps damage state after unequip/re-equip cycle."""
-        from catley.game.actors.components import CharacterInventory, StatsComponent
+        from brileta.game.actors.components import CharacterInventory, StatsComponent
 
         # Setup inventory
         stats = StatsComponent(strength=5)  # Enough capacity
@@ -422,7 +422,7 @@ class TestOutfitCapabilityPersistence:
 
     def test_broken_armor_stays_broken_after_unequip_reequip(self) -> None:
         """Broken armor (0 AP) stays broken after unequip/re-equip cycle."""
-        from catley.game.actors.components import CharacterInventory, StatsComponent
+        from brileta.game.actors.components import CharacterInventory, StatsComponent
 
         # Setup inventory
         stats = StatsComponent(strength=5)
@@ -457,7 +457,7 @@ class TestOutfitCapabilityPersistence:
 
     def test_equipped_outfit_uses_item_capability(self) -> None:
         """Equipped outfit tuple references the same capability as the item."""
-        from catley.game.actors.components import CharacterInventory, StatsComponent
+        from brileta.game.actors.components import CharacterInventory, StatsComponent
 
         stats = StatsComponent(strength=5)
         inv = CharacterInventory(stats)
@@ -473,7 +473,7 @@ class TestOutfitCapabilityPersistence:
 
     def test_set_starting_outfit_uses_item_capability(self) -> None:
         """set_starting_outfit uses the item's existing capability."""
-        from catley.game.actors.components import CharacterInventory, StatsComponent
+        from brileta.game.actors.components import CharacterInventory, StatsComponent
 
         stats = StatsComponent(strength=5)
         inv = CharacterInventory(stats)

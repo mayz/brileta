@@ -12,7 +12,7 @@ from enum import IntEnum, auto
 
 import pytest
 
-from catley.environment.generators.wfc_solver import (
+from brileta.environment.generators.wfc_solver import (
     DIR_OFFSETS,
     DIRECTIONS,
     OPPOSITE_DIR,
@@ -20,7 +20,7 @@ from catley.environment.generators.wfc_solver import (
     WFCPattern,
     WFCSolver,
 )
-from catley.environment.tile_types import TileTypeID
+from brileta.environment.tile_types import TileTypeID
 
 # =============================================================================
 # Test Pattern Set

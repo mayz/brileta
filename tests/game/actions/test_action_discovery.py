@@ -6,17 +6,17 @@ from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 
-from catley import colors
-from catley.controller import Controller
-from catley.environment.generators import GeneratedMapData
-from catley.environment.map import GameMap
-from catley.environment.tile_types import TileTypeID
+from brileta import colors
+from brileta.controller import Controller
+from brileta.environment.generators import GeneratedMapData
+from brileta.environment.map import GameMap
+from brileta.environment.tile_types import TileTypeID
 
 if TYPE_CHECKING:
-    from catley.environment.map import MapRegion
-from catley.game import ranges
-from catley.game.actions.base import GameIntent
-from catley.game.actions.discovery import (
+    from brileta.environment.map import MapRegion
+from brileta.game import ranges
+from brileta.game.actions.base import GameIntent
+from brileta.game.actions.discovery import (
     ActionCategory,
     ActionContext,
     ActionDiscovery,
@@ -24,13 +24,13 @@ from catley.game.actions.discovery import (
     ActionRequirement,
     CombatIntentCache,
 )
-from catley.game.actions.environment import OpenDoorIntent, SearchContainerIntent
-from catley.game.actors import Character, status_effects
-from catley.game.actors.container import create_bookcase
-from catley.game.enums import Disposition
-from catley.game.game_world import GameWorld
-from catley.game.items.capabilities import RangedAttack
-from catley.game.items.item_types import (
+from brileta.game.actions.environment import OpenDoorIntent, SearchContainerIntent
+from brileta.game.actors import Character, status_effects
+from brileta.game.actors.container import create_bookcase
+from brileta.game.enums import Disposition
+from brileta.game.game_world import GameWorld
+from brileta.game.items.capabilities import RangedAttack
+from brileta.game.items.item_types import (
     COMBAT_KNIFE_TYPE,
     HUNTING_SHOTGUN_TYPE,
     PISTOL_TYPE,
@@ -46,7 +46,7 @@ class DummyController:
     combat_intent_cache: CombatIntentCache | None = None
 
     def create_resolver(self, **kwargs: object) -> object:
-        from catley.game.resolution.d20_system import D20System
+        from brileta.game.resolution.d20_system import D20System
 
         return D20System(**kwargs)  # type: ignore[call-arg]
 

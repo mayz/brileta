@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from catley.util.glyph_buffer import GLYPH_DTYPE, GlyphBuffer
+from brileta.util.glyph_buffer import GLYPH_DTYPE, GlyphBuffer
 
 
 def test_glyph_buffer_init():

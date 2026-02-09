@@ -4,9 +4,9 @@ from unittest.mock import Mock
 
 import pytest
 
-from catley.types import InterpolationAlpha
-from catley.view.views.base import View
-from catley.view.views.world_view import WorldView
+from brileta.types import InterpolationAlpha
+from brileta.view.views.base import View
+from brileta.view.views.world_view import WorldView
 
 
 class ConcreteTestView(View):

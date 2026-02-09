@@ -3,12 +3,12 @@ from unittest.mock import MagicMock
 
 import numpy as np
 
-from catley import config
-from catley.controller import Controller
-from catley.types import DeltaTime, InterpolationAlpha
-from catley.util.spatial import SpatialHashGrid
-from catley.view.render.effects.screen_shake import ScreenShake
-from catley.view.render.graphics import GraphicsContext
+from brileta import config
+from brileta.controller import Controller
+from brileta.types import DeltaTime, InterpolationAlpha
+from brileta.util.spatial import SpatialHashGrid
+from brileta.view.render.effects.screen_shake import ScreenShake
+from brileta.view.render.graphics import GraphicsContext
 
 
 class DummyActor:
@@ -70,8 +70,8 @@ def test_screen_shake_amplitude_bounds() -> None:
 
 class DummyGameMap:
     def __init__(self, width: int, height: int) -> None:
-        from catley.environment import tile_types
-        from catley.environment.map import TileAnimationState
+        from brileta.environment import tile_types
+        from brileta.environment.map import TileAnimationState
 
         self.width = width
         self.height = height
@@ -155,7 +155,7 @@ class DummyController:
 
 def test_world_view_applies_screen_shake_before_render(monkeypatch) -> None:
     """Test that shake offset is stored in draw() and applied in present()."""
-    from catley.view.views.world_view import WorldView
+    from brileta.view.views.world_view import WorldView
 
     controller = DummyController()
     shake = ScreenShake()
@@ -183,7 +183,7 @@ def test_world_view_applies_screen_shake_before_render(monkeypatch) -> None:
 
 def test_world_view_screen_shake_does_not_overflow(monkeypatch) -> None:
     """Ensure screen shake offsets keep rendering within console bounds."""
-    from catley.view.views.world_view import WorldView
+    from brileta.view.views.world_view import WorldView
 
     controller = DummyController()
     shake = ScreenShake()
@@ -224,7 +224,7 @@ def test_world_view_screen_shake_does_not_overflow(monkeypatch) -> None:
 
 def test_small_map_actor_alignment(monkeypatch) -> None:
     """Actors should align with the map when it is smaller than the viewport."""
-    from catley.view.views.world_view import WorldView
+    from brileta.view.views.world_view import WorldView
 
     controller = DummyController()
     controller.gw.game_map = DummyGameMap(5, 5)

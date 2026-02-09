@@ -14,26 +14,26 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import cast
 
-from catley import colors
-from catley.controller import Controller
-from catley.game.actions.movement import MoveIntent
-from catley.game.actors import NPC, Character
-from catley.game.actors.goals import (
+from brileta import colors
+from brileta.controller import Controller
+from brileta.game.actions.movement import MoveIntent
+from brileta.game.actors import NPC, Character
+from brileta.game.actors.goals import (
     _FLEE_SAFE_DISTANCE,
     ContinueGoalAction,
     FleeGoal,
     GoalState,
     PatrolGoal,
 )
-from catley.game.actors.utility import (
+from brileta.game.actors.utility import (
     Consideration,
     ResponseCurve,
     ResponseCurveType,
     UtilityContext,
 )
-from catley.game.enums import Disposition
-from catley.game.game_world import GameWorld
-from catley.game.turn_manager import TurnManager
+from brileta.game.enums import Disposition
+from brileta.game.game_world import GameWorld
+from brileta.game.turn_manager import TurnManager
 from tests.helpers import DummyGameWorld
 
 
@@ -232,8 +232,8 @@ def test_continue_goal_beats_raw_action_at_zero_progress() -> None:
     """
     import pytest
 
-    from catley.game.actors.ai import FleeAction
-    from catley.game.actors.goals import PERSISTENCE_MINIMUM
+    from brileta.game.actors.ai import FleeAction
+    from brileta.game.actors.goals import PERSISTENCE_MINIMUM
 
     controller, player, npc = make_world(npc_x=3, npc_y=0)
 
@@ -448,8 +448,8 @@ def test_completed_goal_excluded_from_continue_scoring() -> None:
     UtilityBrain.select_action guards on `not current_goal.is_complete`.
     Verify a FAILED goal is correctly excluded from scoring.
     """
-    from catley.game.actors.ai import IdleAction
-    from catley.game.actors.utility import UtilityBrain
+    from brileta.game.actors.ai import IdleAction
+    from brileta.game.actors.utility import UtilityBrain
 
     controller, player, npc = make_world(npc_x=5, npc_y=0)
 
@@ -648,7 +648,7 @@ def _override_live_variable(name: str, value: object):
     Restores the original getter on exit so that test failures don't leak
     state into other tests.
     """
-    from catley.util.live_vars import live_variable_registry
+    from brileta.util.live_vars import live_variable_registry
 
     var = live_variable_registry.get_variable(name)
     if var is None:
@@ -788,7 +788,7 @@ def test_flee_goal_avoids_blocked_tiles() -> None:
     # But should still flee (diagonal or other direction)
     new_x = npc.x + intent.dx
     new_y = npc.y + intent.dy
-    from catley.game import ranges
+    from brileta.game import ranges
 
     assert ranges.calculate_distance(new_x, new_y, player.x, player.y) > 3
 
@@ -819,8 +819,8 @@ def test_flee_goal_fails_when_fully_cornered() -> None:
 
 def test_utility_brain_includes_continue_goal_action() -> None:
     """UtilityBrain.select_action should score ContinueGoalAction alongside atomics."""
-    from catley.game.actors.ai import IdleAction
-    from catley.game.actors.utility import UtilityBrain
+    from brileta.game.actors.ai import IdleAction
+    from brileta.game.actors.utility import UtilityBrain
 
     controller, player, npc = make_world(npc_x=15, npc_y=15)
 

@@ -16,11 +16,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from catley import colors
-from catley.config import DEFAULT_ACTOR_SPEED
-from catley.constants.movement import MovementConstants
-from catley.game.actors import conditions
-from catley.game.actors.components import (
+from brileta import colors
+from brileta.config import DEFAULT_ACTOR_SPEED
+from brileta.constants.movement import MovementConstants
+from brileta.game.actors import conditions
+from brileta.game.actors.components import (
     CharacterInventory,
     ConditionsComponent,
     EnergyComponent,
@@ -30,15 +30,15 @@ from catley.game.actors.components import (
     StatusEffectsComponent,
     VisualEffectsComponent,
 )
-from catley.game.actors.status_effects import (
+from brileta.game.actors.status_effects import (
     EncumberedEffect,
     FocusedEffect,
     OffBalanceEffect,
     StatusEffect,
     StrengthBoostEffect,
 )
-from catley.game.enums import InjuryLocation, ItemSize
-from catley.game.items.item_core import Item, ItemType
+from brileta.game.enums import InjuryLocation, ItemSize
+from brileta.game.items.item_core import Item, ItemType
 
 # =============================================================================
 # HELPER FUNCTIONS
@@ -285,7 +285,7 @@ class TestInventoryComponentGaps:
 
         # Add a condition - should NOT drop any items
         injury = conditions.Injury(InjuryLocation.HEAD, "Wound")
-        with patch("catley.events.publish_event"):
+        with patch("brileta.events.publish_event"):
             dropped, message = inv.add_condition(injury)
 
         # Verify no items were dropped
@@ -332,7 +332,7 @@ class TestInventoryComponentGaps:
         for i in range(stats.inventory_slots + 1):
             inv._stored_items.append(make_item(f"item{i}"))
 
-        with patch("catley.events.publish_event"):
+        with patch("brileta.events.publish_event"):
             inv._update_encumbrance_status()
 
         assert actor.status_effects.has_status_effect(EncumberedEffect)
@@ -348,14 +348,14 @@ class TestInventoryComponentGaps:
         for i in range(stats.inventory_slots + 1):
             inv._stored_items.append(make_item(f"item{i}"))
 
-        with patch("catley.events.publish_event"):
+        with patch("brileta.events.publish_event"):
             inv._update_encumbrance_status()
 
         # Now drop below threshold
         inv._stored_items.pop()
         inv._stored_items.pop()
 
-        with patch("catley.events.publish_event"):
+        with patch("brileta.events.publish_event"):
             inv._update_encumbrance_status()
 
         assert not actor.status_effects.has_status_effect(EncumberedEffect)
@@ -972,7 +972,7 @@ class TestConditionsComponentGaps:
         # Create a mock for the actor's take_damage method
         actor.take_damage = MagicMock()
 
-        with patch("catley.game.actors.conditions.publish_event"):
+        with patch("brileta.game.actors.conditions.publish_event"):
             actor.conditions.apply_turn_effects(actor)
 
         # Poisoned deals 1 damage per turn

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from catley.util.tilesets import derive_outlined_atlas
+from brileta.util.tilesets import derive_outlined_atlas
 
 
 class TestDeriveOutlinedAtlas:

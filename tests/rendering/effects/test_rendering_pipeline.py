@@ -6,8 +6,8 @@ os.environ["SDL_RENDER_DRIVER"] = "software"
 from types import SimpleNamespace
 from typing import Self
 
-from catley import config
-from catley.util.tilesets import CHARMAP_CP437
+from brileta import config
+from brileta.util.tilesets import CHARMAP_CP437
 
 
 class DummyTexture:

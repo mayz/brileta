@@ -11,17 +11,17 @@ from dataclasses import dataclass
 from typing import cast
 from unittest.mock import patch
 
-from catley import colors
-from catley.controller import Controller
-from catley.game.actions.combat import AttackIntent
-from catley.game.actions.executors.combat import AttackExecutor
-from catley.game.actors import Character
-from catley.game.enums import ItemSize
-from catley.game.game_world import GameWorld
-from catley.game.items.capabilities import RangedAttackSpec
-from catley.game.items.item_core import Item, ItemType
-from catley.game.turn_manager import TurnManager
-from catley.view.presentation import PresentationEvent
+from brileta import colors
+from brileta.controller import Controller
+from brileta.game.actions.combat import AttackIntent
+from brileta.game.actions.executors.combat import AttackExecutor
+from brileta.game.actors import Character
+from brileta.game.enums import ItemSize
+from brileta.game.game_world import GameWorld
+from brileta.game.items.capabilities import RangedAttackSpec
+from brileta.game.items.item_core import Item, ItemType
+from brileta.game.turn_manager import TurnManager
+from brileta.view.presentation import PresentationEvent
 from tests.helpers import DummyGameWorld
 
 
@@ -106,7 +106,7 @@ class TestFireWeaponAmmoConsumption:
 
         executor = AttackExecutor()
         with patch(
-            "catley.game.actions.executors.combat.publish_event",
+            "brileta.game.actions.executors.combat.publish_event",
         ):
             result = executor._fire_weapon(intent, weapon, 10, 5)
 
@@ -129,7 +129,7 @@ class TestFireWeaponAmmoConsumption:
         executor = AttackExecutor()
         published_events: list = []
         with patch(
-            "catley.game.actions.executors.combat.publish_event",
+            "brileta.game.actions.executors.combat.publish_event",
             side_effect=lambda e: published_events.append(e),
         ):
             result = executor._fire_weapon(intent, weapon, 10, 5)
@@ -158,7 +158,7 @@ class TestFireWeaponAmmoConsumption:
 
         executor = AttackExecutor()
         with patch(
-            "catley.game.actions.executors.combat.publish_event",
+            "brileta.game.actions.executors.combat.publish_event",
         ):
             result = executor._fire_weapon(intent, weapon, 10, 5)
 
@@ -184,7 +184,7 @@ class TestFireWeaponInventoryRevision:
 
         executor = AttackExecutor()
         with patch(
-            "catley.game.actions.executors.combat.publish_event",
+            "brileta.game.actions.executors.combat.publish_event",
         ):
             executor._fire_weapon(intent, weapon, 10, 5)
 
@@ -207,7 +207,7 @@ class TestFireWeaponInventoryRevision:
 
         executor = AttackExecutor()
         with patch(
-            "catley.game.actions.executors.combat.publish_event",
+            "brileta.game.actions.executors.combat.publish_event",
         ):
             executor._fire_weapon(intent, weapon, 10, 5)
 
@@ -233,7 +233,7 @@ class TestFireWeaponEffects:
         executor = AttackExecutor()
         published_events: list = []
         with patch(
-            "catley.game.actions.executors.combat.publish_event",
+            "brileta.game.actions.executors.combat.publish_event",
             side_effect=lambda e: published_events.append(e),
         ):
             executor._fire_weapon(intent, weapon, 10, 5)
@@ -269,7 +269,7 @@ class TestFireWeaponEffects:
         executor = AttackExecutor()
         published_events: list = []
         with patch(
-            "catley.game.actions.executors.combat.publish_event",
+            "brileta.game.actions.executors.combat.publish_event",
             side_effect=lambda e: published_events.append(e),
         ):
             executor._fire_weapon(intent, weapon, 10, 5)
@@ -299,7 +299,7 @@ class TestFireWeaponEffects:
         executor = AttackExecutor()
         published_events: list = []
         with patch(
-            "catley.game.actions.executors.combat.publish_event",
+            "brileta.game.actions.executors.combat.publish_event",
             side_effect=lambda e: published_events.append(e),
         ):
             executor._fire_weapon(intent, weapon, 10, 5)
@@ -344,7 +344,7 @@ class TestFireWeaponDirection:
         executor = AttackExecutor()
         published_events: list = []
         with patch(
-            "catley.game.actions.executors.combat.publish_event",
+            "brileta.game.actions.executors.combat.publish_event",
             side_effect=lambda e: published_events.append(e),
         ):
             # Target at (10, 5) - directly to the right

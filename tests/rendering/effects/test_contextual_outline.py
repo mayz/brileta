@@ -11,11 +11,11 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
-from catley import colors
-from catley.controller import Controller
-from catley.game.actors import Actor
-from catley.view.render.effects.screen_shake import ScreenShake
-from catley.view.views.world_view import CONTEXTUAL_OUTLINE_ALPHA, WorldView
+from brileta import colors
+from brileta.controller import Controller
+from brileta.game.actors import Actor
+from brileta.view.render.effects.screen_shake import ScreenShake
+from brileta.view.views.world_view import CONTEXTUAL_OUTLINE_ALPHA, WorldView
 
 
 class DummyActor:
@@ -261,21 +261,21 @@ class TestContainedFireHasComplexVisuals:
 
     def test_campfire_has_complex_visuals(self) -> None:
         """ContainedFire (campfire) should have has_complex_visuals=True."""
-        from catley.game.actors.environmental import ContainedFire
+        from brileta.game.actors.environmental import ContainedFire
 
         campfire = ContainedFire.create_campfire(5, 5)
         assert campfire.has_complex_visuals is True
 
     def test_barrel_fire_has_complex_visuals(self) -> None:
         """ContainedFire (barrel fire) should have has_complex_visuals=True."""
-        from catley.game.actors.environmental import ContainedFire
+        from brileta.game.actors.environmental import ContainedFire
 
         barrel_fire = ContainedFire.create_barrel_fire(5, 5)
         assert barrel_fire.has_complex_visuals is True
 
     def test_torch_has_complex_visuals(self) -> None:
         """ContainedFire (torch) should have has_complex_visuals=True."""
-        from catley.game.actors.environmental import ContainedFire
+        from brileta.game.actors.environmental import ContainedFire
 
         torch = ContainedFire.create_torch(5, 5)
         assert torch.has_complex_visuals is True

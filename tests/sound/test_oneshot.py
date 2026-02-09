@@ -1,10 +1,10 @@
 import unittest
 from unittest.mock import MagicMock, patch
 
-from catley.events import SoundEvent, publish_event, reset_event_bus_for_testing
-from catley.sound import system as sound_system
-from catley.sound.definitions import SOUND_DEFINITIONS, SoundDefinition, SoundLayer
-from catley.sound.system import SoundSystem
+from brileta.events import SoundEvent, publish_event, reset_event_bus_for_testing
+from brileta.sound import system as sound_system
+from brileta.sound.definitions import SOUND_DEFINITIONS, SoundDefinition, SoundLayer
+from brileta.sound.system import SoundSystem
 
 
 class TestOneShotSounds(unittest.TestCase):

@@ -7,11 +7,11 @@ from unittest.mock import patch
 
 import pytest
 
-from catley.game import consequences
-from catley.game.resolution import d20_system
-from catley.util import dice, rng
-from catley.util.live_vars import live_variable_registry
-from catley.view.render.effects import particles
+from brileta.game import consequences
+from brileta.game.resolution import d20_system
+from brileta.util import dice, rng
+from brileta.util.live_vars import live_variable_registry
+from brileta.view.render.effects import particles
 
 if TYPE_CHECKING:
     from collections.abc import Callable

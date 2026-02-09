@@ -5,8 +5,8 @@ from unittest.mock import patch
 
 import pytest
 
-from catley.view.render.effects import decals as decals_module
-from catley.view.render.effects.decals import Decal, DecalSystem
+from brileta.view.render.effects import decals as decals_module
+from brileta.view.render.effects.decals import Decal, DecalSystem
 
 
 class TestDecalSystem:
@@ -354,7 +354,7 @@ class TestSplatterRays:
         Intensity affects max_ray_length, so high intensity decals should
         spread further from the impact point on average.
         """
-        from catley.util import rng
+        from brileta.util import rng
 
         # Reset RNG for deterministic test behavior
         rng.reset(42)

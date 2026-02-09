@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import numpy as np
 
-from catley.environment.generators.pipeline import create_pipeline
-from catley.environment.tile_types import TileTypeID
+from brileta.environment.generators.pipeline import create_pipeline
+from brileta.environment.tile_types import TileTypeID
 
 # =============================================================================
 # T5.1: Full Pipeline
@@ -131,7 +131,7 @@ class TestGameWorldIntegration:
         """generator_type='pipeline_settlement' works."""
         # Note: This tests the generator creation, not full GameWorld
         # since GameWorld has many other dependencies
-        from catley.environment.generators.pipeline import create_pipeline
+        from brileta.environment.generators.pipeline import create_pipeline
 
         generator = create_pipeline("settlement", width=80, height=43)
         map_data = generator.generate()

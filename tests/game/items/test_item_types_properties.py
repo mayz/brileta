@@ -1,11 +1,11 @@
-from catley.game.items.item_types import (
+from brileta.game.items.item_types import (
     COMBAT_KNIFE_TYPE,
     FISTS_TYPE,
     GRENADE_TYPE,
     PISTOL_TYPE,
     SNIPER_RIFLE_TYPE,
 )
-from catley.game.items.properties import TacticalProperty, WeaponProperty
+from brileta.game.items.properties import TacticalProperty, WeaponProperty
 
 
 def test_pistol_properties() -> None:

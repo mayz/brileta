@@ -1,6 +1,6 @@
 import pytest
 
-from catley.util.caching import CacheStats, ResourceCache
+from brileta.util.caching import CacheStats, ResourceCache
 
 
 class TestCacheStats:

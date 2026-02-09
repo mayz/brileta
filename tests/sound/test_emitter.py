@@ -2,8 +2,8 @@
 
 import pytest
 
-from catley.sound.emitter import SoundEmitter
-from catley.types import SoundId
+from brileta.sound.emitter import SoundEmitter
+from brileta.types import SoundId
 
 
 class TestSoundEmitterInitialization:

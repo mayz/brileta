@@ -1,17 +1,17 @@
 import math
 from unittest.mock import Mock
 
-from catley import config
-from catley.environment.map import MapRegion
-from catley.game.game_world import GameWorld
-from catley.game.lights import (
+from brileta import config
+from brileta.environment.map import MapRegion
+from brileta.game.game_world import GameWorld
+from brileta.game.lights import (
     DirectionalLight,
     DynamicLight,
     StaticLight,
     Vec2,
     _angles_to_direction,
 )
-from catley.view.render.lighting.base import LightingConfig
+from brileta.view.render.lighting.base import LightingConfig
 
 
 # Vec2 Tests
@@ -454,7 +454,7 @@ def test_sun_configuration_edge_cases() -> None:
 
 def test_controller_get_sun_returns_directional_light() -> None:
     """Test that Controller._get_sun() finds the DirectionalLight."""
-    from catley.controller import Controller
+    from brileta.controller import Controller
 
     gw = GameWorld(30, 30)
     sun = DirectionalLight.create_sun(azimuth_degrees=135.0)
@@ -470,7 +470,7 @@ def test_controller_get_sun_returns_directional_light() -> None:
 
 def test_controller_get_sun_returns_none_without_directional() -> None:
     """Test that _get_sun() returns None when no DirectionalLight exists."""
-    from catley.controller import Controller
+    from brileta.controller import Controller
 
     gw = GameWorld(30, 30)
     gw.add_light(StaticLight(position=(5, 5), radius=3, color=(255, 255, 255)))
@@ -484,7 +484,7 @@ def test_controller_get_sun_returns_none_without_directional() -> None:
 
 def test_controller_set_sun_angle_updates_light_and_invalidates() -> None:
     """Test that _set_sun_angle() updates angles and invalidates lighting cache."""
-    from catley.controller import Controller
+    from brileta.controller import Controller
 
     gw = GameWorld(30, 30)
     sun = DirectionalLight.create_sun(azimuth_degrees=135.0, elevation_degrees=45.0)
@@ -506,7 +506,7 @@ def test_controller_set_sun_angle_updates_light_and_invalidates() -> None:
 
 def test_controller_set_sun_angle_elevation() -> None:
     """Test that _set_sun_angle() can update elevation."""
-    from catley.controller import Controller
+    from brileta.controller import Controller
 
     gw = GameWorld(30, 30)
     sun = DirectionalLight.create_sun(azimuth_degrees=135.0, elevation_degrees=45.0)
@@ -556,7 +556,7 @@ class TestPlayerTorchAutoToggle:
         self.mock_controller.gw = self.mock_gw
 
         # Import the actual method and bind it to our mock
-        from catley.controller import Controller
+        from brileta.controller import Controller
 
         self._update_player_torch = Controller._update_player_torch.__get__(
             self.mock_controller, Controller

@@ -4,9 +4,9 @@ from types import SimpleNamespace
 from typing import cast
 from unittest.mock import MagicMock
 
-from catley.controller import Controller
-from catley.util.live_vars import live_variable_registry
-from catley.view.ui.debug_stats_overlay import DebugStatsOverlay
+from brileta.controller import Controller
+from brileta.util.live_vars import live_variable_registry
+from brileta.view.ui.debug_stats_overlay import DebugStatsOverlay
 
 
 class DummyController:
@@ -87,7 +87,7 @@ def test_draw_uses_single_getter_call_per_refresh(monkeypatch) -> None:
     overlay.show()
 
     monkeypatch.setattr(
-        "catley.view.ui.debug_stats_overlay.perf_counter",
+        "brileta.view.ui.debug_stats_overlay.perf_counter",
         lambda: 1.0,
     )
     overlay.draw()
@@ -107,7 +107,7 @@ def test_draw_throttles_refresh_to_2hz(monkeypatch) -> None:
 
     times = iter([1.0, 1.1, 1.4, 1.6])
     monkeypatch.setattr(
-        "catley.view.ui.debug_stats_overlay.perf_counter",
+        "brileta.view.ui.debug_stats_overlay.perf_counter",
         lambda: next(times),
     )
 

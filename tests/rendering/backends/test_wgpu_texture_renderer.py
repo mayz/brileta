@@ -2,7 +2,7 @@
 
 from unittest.mock import Mock
 
-from catley.backends.wgpu.texture_renderer import WGPUTextureRenderer
+from brileta.backends.wgpu.texture_renderer import WGPUTextureRenderer
 
 
 def test_set_tile_dimensions_clears_cache_on_change() -> None:

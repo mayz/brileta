@@ -3,13 +3,13 @@ from __future__ import annotations
 from typing import cast
 from unittest.mock import patch
 
-from catley.controller import Controller
-from catley.game.actions.combat import AttackIntent
-from catley.game.actions.executors.combat import AttackExecutor
-from catley.game.consequences import AttackConsequenceGenerator
-from catley.game.enums import OutcomeTier
-from catley.game.items.item_types import HUNTING_RIFLE_TYPE
-from catley.game.resolution.d20_system import D20ResolutionResult
+from brileta.controller import Controller
+from brileta.game.actions.combat import AttackIntent
+from brileta.game.actions.executors.combat import AttackExecutor
+from brileta.game.consequences import AttackConsequenceGenerator
+from brileta.game.enums import OutcomeTier
+from brileta.game.items.item_types import HUNTING_RIFLE_TYPE
+from brileta.game.resolution.d20_system import D20ResolutionResult
 from tests.game.actions.test_action_discovery import _make_combat_world
 
 

@@ -22,11 +22,11 @@ import numpy as np
 # Add the project root to Python path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from catley import config
-from catley.app import AppConfig
-from catley.backends.glfw.app import GlfwApp
-from catley.game.lights import DirectionalLight, DynamicLight
-from catley.types import DeltaTime
+from brileta import config
+from brileta.app import AppConfig
+from brileta.backends.glfw.app import GlfwApp
+from brileta.game.lights import DirectionalLight, DynamicLight
+from brileta.types import DeltaTime
 
 
 @dataclass

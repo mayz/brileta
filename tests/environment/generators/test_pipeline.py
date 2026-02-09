@@ -11,16 +11,16 @@ from typing import ClassVar
 
 import numpy as np
 
-from catley.environment.generators.base import GeneratedMapData
-from catley.environment.generators.pipeline import (
+from brileta.environment.generators.base import GeneratedMapData
+from brileta.environment.generators.pipeline import (
     GenerationContext,
     GenerationLayer,
     PipelineGenerator,
 )
-from catley.environment.map import MapRegion
-from catley.environment.tile_types import TileTypeID
-from catley.util import rng
-from catley.util.coordinates import Rect
+from brileta.environment.map import MapRegion
+from brileta.environment.tile_types import TileTypeID
+from brileta.util import rng
+from brileta.util.coordinates import Rect
 
 # =============================================================================
 # T3.1: GenerationContext

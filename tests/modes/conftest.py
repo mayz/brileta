@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from catley.controller import Controller
+from brileta.controller import Controller
 from tests.helpers import get_controller_with_dummy_world, reset_dummy_controller
 
 

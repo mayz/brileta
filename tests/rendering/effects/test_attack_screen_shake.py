@@ -2,22 +2,22 @@ from dataclasses import dataclass
 from typing import cast
 from unittest.mock import MagicMock
 
-from catley import colors
-from catley.controller import Controller
-from catley.events import (
+from brileta import colors
+from brileta.controller import Controller
+from brileta.events import (
     MessageEvent,
     ScreenShakeEvent,
     reset_event_bus_for_testing,
     subscribe_to_event,
 )
-from catley.game.actions.combat import AttackIntent
-from catley.game.actions.executors.combat import AttackExecutor
-from catley.game.actors import Character
-from catley.game.enums import OutcomeTier
-from catley.game.game_world import GameWorld
-from catley.game.items.item_types import FISTS_TYPE, PISTOL_TYPE
-from catley.game.resolution.combat_arbiter import determine_outcome
-from catley.game.resolution.d20_system import D20ResolutionResult
+from brileta.game.actions.combat import AttackIntent
+from brileta.game.actions.executors.combat import AttackExecutor
+from brileta.game.actors import Character
+from brileta.game.enums import OutcomeTier
+from brileta.game.game_world import GameWorld
+from brileta.game.items.item_types import FISTS_TYPE, PISTOL_TYPE
+from brileta.game.resolution.combat_arbiter import determine_outcome
+from brileta.game.resolution.d20_system import D20ResolutionResult
 from tests.helpers import DummyGameWorld
 
 

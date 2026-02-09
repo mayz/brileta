@@ -10,13 +10,13 @@ from unittest.mock import patch
 
 import pytest
 
-from catley import colors, input_events
-from catley.controller import Controller
-from catley.game.actions.combat import AttackIntent
-from catley.game.actions.discovery import ActionCategory, ActionOption
-from catley.game.actions.stunts import KickIntent, PunchIntent, PushIntent, TripIntent
-from catley.game.actors import NPC, Character
-from catley.game.enums import Disposition
+from brileta import colors, input_events
+from brileta.controller import Controller
+from brileta.game.actions.combat import AttackIntent
+from brileta.game.actions.discovery import ActionCategory, ActionOption
+from brileta.game.actions.stunts import KickIntent, PunchIntent, PushIntent, TripIntent
+from brileta.game.actors import NPC, Character
+from brileta.game.enums import Disposition
 from tests.helpers import reset_dummy_controller
 
 # --- Helper functions ---
@@ -474,7 +474,7 @@ class TestCombatModeIntentCreation:
         assert player.active_plan is not None
         assert player.active_plan.plan.name == "Punch"
         # The plan's first step should be ApproachStep
-        from catley.game.action_plan import ApproachStep
+        from brileta.game.action_plan import ApproachStep
 
         first_step = player.active_plan.plan.steps[0]
         assert isinstance(first_step, ApproachStep)
@@ -684,7 +684,7 @@ class TestPlayerCombatActionsDiscovery:
         For a pistol: Shoot (PREFERRED) should come before Pistol-whip (IMPROVISED).
         This ensures the default selection and [A] hotkey go to the primary attack.
         """
-        from catley.game.items.item_types import PISTOL_TYPE
+        from brileta.game.items.item_types import PISTOL_TYPE
 
         controller, player, _npc = _make_combat_test_world(
             combat_controller,
@@ -970,7 +970,7 @@ class TestCombatActionFiltering:
         self, combat_controller: Controller
     ) -> None:
         """Ranged attack should not appear when enemy is beyond weapon's max range."""
-        from catley.game.items.item_types import PISTOL_TYPE
+        from brileta.game.items.item_types import PISTOL_TYPE
 
         # Pistol has max_range=12. Place enemy at distance 15.
         controller, player, _npc = _make_combat_test_world(
@@ -998,7 +998,7 @@ class TestCombatActionFiltering:
         self, combat_controller: Controller
     ) -> None:
         """Ranged attack should appear when enemy is within weapon's max range."""
-        from catley.game.items.item_types import PISTOL_TYPE
+        from brileta.game.items.item_types import PISTOL_TYPE
 
         # Pistol has max_range=12. Place enemy at distance 10.
         controller, player, _npc = _make_combat_test_world(
@@ -1135,7 +1135,7 @@ class TestApproachAndAttack:
         self, combat_controller: Controller
     ) -> None:
         """Melee attack on non-adjacent target should start MeleeAttackPlan."""
-        from catley.game.actions.combat import AttackIntent
+        from brileta.game.actions.combat import AttackIntent
 
         controller, player, npc = _make_combat_test_world(
             combat_controller,
@@ -1172,7 +1172,7 @@ class TestApproachAndAttack:
         Melee attacks use the ActionPlan system uniformly for both adjacent
         and distant targets. For adjacent targets, the ApproachStep is skipped.
         """
-        from catley.game.actions.combat import AttackIntent
+        from brileta.game.actions.combat import AttackIntent
 
         controller, player, npc = _make_combat_test_world(
             combat_controller,
@@ -1205,7 +1205,7 @@ class TestApproachAndAttack:
         self, combat_controller: Controller
     ) -> None:
         """Ranged attack should execute immediately regardless of distance."""
-        from catley.game.actions.combat import AttackIntent
+        from brileta.game.actions.combat import AttackIntent
 
         controller, _player, npc = _make_combat_test_world(
             combat_controller,

@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 import pytest
 
-from catley.util.spatial import SpatialHashGrid
+from brileta.util.spatial import SpatialHashGrid
 
 
 @dataclass(frozen=True)

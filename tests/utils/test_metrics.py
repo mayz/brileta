@@ -1,6 +1,6 @@
 import pytest
 
-from catley.util.metrics import CumulativeVar, MostRecentNVar
+from brileta.util.metrics import CumulativeVar, MostRecentNVar
 
 
 class TestMostRecentNVar:

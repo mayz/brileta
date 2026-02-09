@@ -1,8 +1,8 @@
-from catley import colors
-from catley.controller import Controller
-from catley.game.actions.movement import MoveIntent
-from catley.game.actors import NPC
-from catley.game.actors.status_effects import OffBalanceEffect
+from brileta import colors
+from brileta.controller import Controller
+from brileta.game.actions.movement import MoveIntent
+from brileta.game.actors import NPC
+from brileta.game.actors.status_effects import OffBalanceEffect
 
 
 def test_npc_status_effect_duration_is_independent_of_player_actions(

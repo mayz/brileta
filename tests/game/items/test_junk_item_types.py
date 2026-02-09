@@ -1,7 +1,7 @@
 """Tests for junk item type definitions."""
 
-from catley.game.enums import ItemCategory
-from catley.game.items.junk_item_types import JUNK_ITEM_TYPES, get_random_junk_type
+from brileta.game.enums import ItemCategory
+from brileta.game.items.junk_item_types import JUNK_ITEM_TYPES, get_random_junk_type
 
 
 def test_junk_item_count() -> None:

@@ -10,15 +10,15 @@ from __future__ import annotations
 
 import random
 
-from catley.environment.generators.buildings import Building, BuildingTemplate, Room
-from catley.environment.generators.buildings.templates import (
+from brileta.environment.generators.buildings import Building, BuildingTemplate, Room
+from brileta.environment.generators.buildings.templates import (
     MEDIUM_HOUSE_TEMPLATE,
     SHOP_TEMPLATE,
     SMALL_HOUSE_TEMPLATE,
     TAVERN_TEMPLATE,
     get_default_templates,
 )
-from catley.util.coordinates import Rect
+from brileta.util.coordinates import Rect
 
 # =============================================================================
 # T2.1: Building/Room Dataclasses

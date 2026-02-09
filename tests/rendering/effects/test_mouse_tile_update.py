@@ -2,11 +2,11 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import cast
 
-from catley.controller import Controller
-from catley.game.actors import Actor
-from catley.util.coordinates import Rect, RootConsoleTilePos
-from catley.view.render.effects.screen_shake import ScreenShake
-from catley.view.views.world_view import WorldView
+from brileta.controller import Controller
+from brileta.game.actors import Actor
+from brileta.util.coordinates import Rect, RootConsoleTilePos
+from brileta.view.render.effects.screen_shake import ScreenShake
+from brileta.view.views.world_view import WorldView
 
 
 class DummyActor:

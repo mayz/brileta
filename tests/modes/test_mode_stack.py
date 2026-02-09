@@ -9,10 +9,10 @@ from __future__ import annotations
 
 import pytest
 
-from catley import input_events
-from catley.controller import Controller
-from catley.input_events import Keys
-from catley.modes.base import Mode
+from brileta import input_events
+from brileta.controller import Controller
+from brileta.input_events import Keys
+from brileta.modes.base import Mode
 
 
 def test_mode_stack_initialized_with_explore_mode(controller: Controller) -> None:
@@ -325,7 +325,7 @@ def test_push_mode_raises_if_same_type_in_stack(controller: Controller) -> None:
     This prevents accidentally creating a new instance of a mode and pushing
     it when the original instance is already active.
     """
-    from catley.modes.combat import CombatMode
+    from brileta.modes.combat import CombatMode
 
     controller.push_mode(controller.combat_mode)
 
@@ -405,7 +405,7 @@ def test_input_handler_dispatches_to_mode_stack_in_reverse_order() -> None:
     """
     from unittest.mock import MagicMock
 
-    from catley.input_handler import InputHandler
+    from brileta.input_handler import InputHandler
     from tests.helpers import get_controller_with_player_and_map
 
     controller = get_controller_with_player_and_map()
@@ -450,7 +450,7 @@ def test_input_handler_input_falls_through_entire_stack() -> None:
     """Input not handled by any mode falls through the entire stack."""
     from unittest.mock import MagicMock
 
-    from catley.input_handler import InputHandler
+    from brileta.input_handler import InputHandler
     from tests.helpers import get_controller_with_player_and_map
 
     controller = get_controller_with_player_and_map()

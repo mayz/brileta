@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from catley import input_events
-from catley.view.ui.scrollable_text_panel import ScrollableTextPanel
+from brileta import input_events
+from brileta.view.ui.scrollable_text_panel import ScrollableTextPanel
 
 
 class TestScrollableTextPanel:

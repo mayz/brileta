@@ -2,7 +2,7 @@ from unittest.mock import patch
 
 import pytest
 
-from catley.util.clock import Clock
+from brileta.util.clock import Clock
 
 
 def test_clock_sync_calculates_delta_and_fps() -> None:

@@ -8,7 +8,7 @@ main game loop.
 
 Usage:
     # In benchmark scripts only
-    from catley.scripts.instrumented_spatial import InstrumentedSpatialHashGrid
+    from brileta.scripts.instrumented_spatial import InstrumentedSpatialHashGrid
 
     grid = InstrumentedSpatialHashGrid(cell_size=16)
     # All operations will now be automatically timed
@@ -16,8 +16,8 @@ Usage:
 
 from typing import TypeVar
 
-from catley.util.performance import measure
-from catley.util.spatial import HasPosition, SpatialHashGrid
+from brileta.util.performance import measure
+from brileta.util.spatial import HasPosition, SpatialHashGrid
 
 # Re-export the TypeVar from the base module
 T = TypeVar("T", bound=HasPosition)

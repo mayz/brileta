@@ -6,15 +6,15 @@ from typing import TYPE_CHECKING, cast
 import numpy as np
 import pytest
 
-from catley.environment.generators import GeneratedMapData
-from catley.environment.map import GameMap
-from catley.environment.tile_types import TileTypeID
+from brileta.environment.generators import GeneratedMapData
+from brileta.environment.map import GameMap
+from brileta.environment.tile_types import TileTypeID
 
 if TYPE_CHECKING:
-    from catley.environment.map import MapRegion
-from catley.game.actors import Actor
-from catley.util.pathfinding import find_local_path
-from catley.util.spatial import SpatialHashGrid, SpatialIndex
+    from brileta.environment.map import MapRegion
+from brileta.game.actors import Actor
+from brileta.util.pathfinding import find_local_path
+from brileta.util.spatial import SpatialHashGrid, SpatialIndex
 
 
 @dataclass
@@ -326,7 +326,7 @@ def test_find_closest_adjacent_tile_selects_closest(
     basic_setup: tuple[GameMap, SpatialHashGrid[DummyActor]],
 ) -> None:
     """Should select the adjacent tile closest to the reference position."""
-    from catley.util.pathfinding import find_closest_adjacent_tile
+    from brileta.util.pathfinding import find_closest_adjacent_tile
 
     gm, _ = basic_setup
     gw = DummyGameWorld(actors_at_locations={})
@@ -342,7 +342,7 @@ def test_find_closest_adjacent_tile_selects_left_when_player_on_left(
     basic_setup: tuple[GameMap, SpatialHashGrid[DummyActor]],
 ) -> None:
     """When player is to the left, select the left adjacent tile."""
-    from catley.util.pathfinding import find_closest_adjacent_tile
+    from brileta.util.pathfinding import find_closest_adjacent_tile
 
     gm, _ = basic_setup
     gw = DummyGameWorld(actors_at_locations={})
@@ -358,7 +358,7 @@ def test_find_closest_adjacent_tile_skips_occupied(
     basic_setup: tuple[GameMap, SpatialHashGrid[DummyActor]],
 ) -> None:
     """Should skip tiles occupied by other actors."""
-    from catley.util.pathfinding import find_closest_adjacent_tile
+    from brileta.util.pathfinding import find_closest_adjacent_tile
 
     gm, _ = basic_setup
     # Block the closest tile (4, 3) with an actor
@@ -376,7 +376,7 @@ def test_find_closest_adjacent_tile_allows_reference_actor(
     basic_setup: tuple[GameMap, SpatialHashGrid[DummyActor]],
 ) -> None:
     """Reference actor is allowed to occupy an adjacent tile."""
-    from catley.util.pathfinding import find_closest_adjacent_tile
+    from brileta.util.pathfinding import find_closest_adjacent_tile
 
     gm, _ = basic_setup
     # The reference actor is standing on (4, 3)
@@ -401,7 +401,7 @@ def test_find_closest_adjacent_tile_skips_unwalkable(
     basic_setup: tuple[GameMap, SpatialHashGrid[DummyActor]],
 ) -> None:
     """Should skip unwalkable tiles."""
-    from catley.util.pathfinding import find_closest_adjacent_tile
+    from brileta.util.pathfinding import find_closest_adjacent_tile
 
     gm, _ = basic_setup
     # Make the closest tile (4, 3) a wall
@@ -420,7 +420,7 @@ def test_find_closest_adjacent_tile_returns_none_when_all_blocked(
     basic_setup: tuple[GameMap, SpatialHashGrid[DummyActor]],
 ) -> None:
     """Returns None when all adjacent tiles are blocked."""
-    from catley.util.pathfinding import find_closest_adjacent_tile
+    from brileta.util.pathfinding import find_closest_adjacent_tile
 
     gm, _ = basic_setup
     # Block all adjacent tiles

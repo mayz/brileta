@@ -1,13 +1,13 @@
 from dataclasses import dataclass
 from typing import cast
 
-from catley import colors
-from catley.controller import Controller
-from catley.game.actions.movement import MoveIntent
-from catley.game.actors import PC, conditions, status_effects
-from catley.game.enums import InjuryLocation
-from catley.game.game_world import GameWorld
-from catley.game.turn_manager import TurnManager
+from brileta import colors
+from brileta.controller import Controller
+from brileta.game.actions.movement import MoveIntent
+from brileta.game.actors import PC, conditions, status_effects
+from brileta.game.enums import InjuryLocation
+from brileta.game.game_world import GameWorld
+from brileta.game.turn_manager import TurnManager
 from tests.helpers import DummyGameWorld
 
 

@@ -1,6 +1,6 @@
 import pytest
 
-from catley.view.render.effects.atmospheric import (
+from brileta.view.render.effects.atmospheric import (
     AtmosphericConfig,
     AtmosphericLayerConfig,
     AtmosphericLayerSystem,

@@ -2,16 +2,16 @@ from dataclasses import dataclass
 from typing import cast
 from unittest.mock import patch
 
-from catley.controller import Controller
-from catley.environment.tile_types import TileTypeID
-from catley.game.actions.combat import AttackIntent
-from catley.game.actions.executors.combat import AttackExecutor
-from catley.game.actors import Character
-from catley.game.enums import OutcomeTier
-from catley.game.game_world import GameWorld
-from catley.game.items.item_types import FISTS_TYPE
-from catley.game.resolution import d20_system
-from catley.game.resolution.d20_system import D20ResolutionResult
+from brileta.controller import Controller
+from brileta.environment.tile_types import TileTypeID
+from brileta.game.actions.combat import AttackIntent
+from brileta.game.actions.executors.combat import AttackExecutor
+from brileta.game.actors import Character
+from brileta.game.enums import OutcomeTier
+from brileta.game.game_world import GameWorld
+from brileta.game.items.item_types import FISTS_TYPE
+from brileta.game.resolution import d20_system
+from brileta.game.resolution.d20_system import D20ResolutionResult
 from tests.helpers import DummyGameWorld
 
 
@@ -22,7 +22,7 @@ class DummyController:
     message_log: object | None = None
 
     def create_resolver(self, **kwargs: object) -> object:
-        from catley.game.resolution.d20_system import D20System
+        from brileta.game.resolution.d20_system import D20System
 
         return D20System(**kwargs)  # type: ignore[call-arg]
 

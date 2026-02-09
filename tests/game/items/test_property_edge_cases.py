@@ -1,8 +1,8 @@
-from catley.game.enums import ItemSize
-from catley.game.items.capabilities import MeleeAttackSpec, RangedAttackSpec
-from catley.game.items.item_core import Item, ItemType
-from catley.game.items.item_types import PISTOL_MAGAZINE_TYPE
-from catley.game.items.properties import (
+from brileta.game.enums import ItemSize
+from brileta.game.items.capabilities import MeleeAttackSpec, RangedAttackSpec
+from brileta.game.items.item_core import Item, ItemType
+from brileta.game.items.item_types import PISTOL_MAGAZINE_TYPE
+from brileta.game.items.properties import (
     StatusProperty,
     TacticalProperty,
     WeaponProperty,

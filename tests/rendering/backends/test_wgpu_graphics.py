@@ -10,15 +10,15 @@ from unittest.mock import Mock, patch
 import numpy as np
 import pytest
 
-from catley import colors
-from catley.game.enums import BlendMode
-from catley.util.glyph_buffer import GlyphBuffer
+from brileta import colors
+from brileta.game.enums import BlendMode
+from brileta.util.glyph_buffer import GlyphBuffer
 
 # Try to import WGPU - if not available, skip all tests
 try:
     import wgpu
 
-    from catley.backends.wgpu.graphics import (
+    from brileta.backends.wgpu.graphics import (
         WGPUGraphicsContext,
         _infer_compose_tile_dimensions,
     )
@@ -58,7 +58,7 @@ class TestWGPUGraphicsContext:
     def setup_wgpu_context(self):
         """Create WGPU context for testing."""
         # Create mock GLWindow that simulates GlfwWindow
-        from catley.backends.glfw.window import GlfwWindow
+        from brileta.backends.glfw.window import GlfwWindow
 
         mock_glfw_window_handle = Mock()
         mock_window = GlfwWindow(mock_glfw_window_handle)
@@ -209,10 +209,10 @@ class TestWGPUGraphicsContext:
             with (
                 patch("wgpu.gpu.request_adapter_sync") as mock_adapter,
                 patch(
-                    "catley.backends.wgpu.window_wrapper.get_glfw_present_methods"
+                    "brileta.backends.wgpu.window_wrapper.get_glfw_present_methods"
                 ) as mock_present_methods,
                 patch(
-                    "catley.backends.wgpu.window_wrapper.WGPUWindowWrapper.get_context"
+                    "brileta.backends.wgpu.window_wrapper.WGPUWindowWrapper.get_context"
                 ) as mock_get_context,
             ):
                 mock_device = Mock()
@@ -386,7 +386,7 @@ class TestWGPUGraphicsContext:
 @pytest.mark.skipif(not WGPU_AVAILABLE, reason="WGPU not available")
 def test_wgpu_graphics_context_window_parameters():
     """Test WGPUGraphicsContext window parameter handling."""
-    from catley.backends.glfw.window import GlfwWindow
+    from brileta.backends.glfw.window import GlfwWindow
 
     mock_glfw_window_handle = Mock()
     mock_window = GlfwWindow(mock_glfw_window_handle)
@@ -402,7 +402,7 @@ def test_wgpu_graphics_context_window_parameters():
 @pytest.mark.skipif(not WGPU_AVAILABLE, reason="WGPU not available")
 def test_wgpu_graphics_context_default_parameters():
     """Test WGPUGraphicsContext default parameter handling."""
-    from catley.backends.glfw.window import GlfwWindow
+    from brileta.backends.glfw.window import GlfwWindow
 
     mock_glfw_window_handle = Mock()
     mock_window = GlfwWindow(mock_glfw_window_handle)

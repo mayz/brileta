@@ -9,18 +9,18 @@ from unittest.mock import Mock, call
 import numpy as np
 import pytest
 
-from catley import config
-from catley.backends.wgpu.graphics import WGPUGraphicsContext
-from catley.backends.wgpu.screen_renderer import VERTEX_DTYPE, WGPUScreenRenderer
-from catley.environment.tile_types import TileTypeAppearance, TileTypeID
-from catley.game.actors import Actor
-from catley.game.actors.core import CharacterLayer
-from catley.game.lights import DirectionalLight
-from catley.types import InterpolationAlpha
-from catley.util.coordinates import Rect
-from catley.view.render.graphics import GraphicsContext
-from catley.view.render.viewport import ViewportSystem
-from catley.view.views.world_view import WorldView
+from brileta import config
+from brileta.backends.wgpu.graphics import WGPUGraphicsContext
+from brileta.backends.wgpu.screen_renderer import VERTEX_DTYPE, WGPUScreenRenderer
+from brileta.environment.tile_types import TileTypeAppearance, TileTypeID
+from brileta.game.actors import Actor
+from brileta.game.actors.core import CharacterLayer
+from brileta.game.lights import DirectionalLight
+from brileta.types import InterpolationAlpha
+from brileta.util.coordinates import Rect
+from brileta.view.render.graphics import GraphicsContext
+from brileta.view.render.viewport import ViewportSystem
+from brileta.view.views.world_view import WorldView
 
 
 def _build_actor(

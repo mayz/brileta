@@ -5,10 +5,10 @@ from unittest.mock import Mock
 import numpy as np
 import pytest
 
-from catley.environment import tile_types
-from catley.environment.map import TileAnimationState
-from catley.util.coordinates import Rect
-from catley.view.views.world_view import WorldView
+from brileta.environment import tile_types
+from brileta.environment.map import TileAnimationState
+from brileta.util.coordinates import Rect
+from brileta.view.views.world_view import WorldView
 
 
 class TestWorldViewLightOverlay:

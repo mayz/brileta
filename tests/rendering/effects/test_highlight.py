@@ -6,11 +6,11 @@ from unittest.mock import MagicMock
 
 import numpy as np
 
-from catley.controller import Controller
-from catley.game.actors import Actor
-from catley.types import Opacity
-from catley.view.render.effects.screen_shake import ScreenShake
-from catley.view.views.world_view import WorldView
+from brileta.controller import Controller
+from brileta.game.actors import Actor
+from brileta.types import Opacity
+from brileta.view.render.effects.screen_shake import ScreenShake
+from brileta.view.views.world_view import WorldView
 
 
 class DummyActor:
@@ -23,7 +23,7 @@ class DummyActor:
 
 class DummyGameMap:
     def __init__(self, width: int, height: int) -> None:
-        from catley.environment import tile_types
+        from brileta.environment import tile_types
 
         self.width = width
         self.height = height

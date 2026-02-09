@@ -8,8 +8,8 @@ This module tests the CharacterLayer system including:
 
 from __future__ import annotations
 
-from catley.game.actors.container import Container, create_bookcase
-from catley.game.actors.core import Actor, CharacterLayer
+from brileta.game.actors.container import Container, create_bookcase
+from brileta.game.actors.core import Actor, CharacterLayer
 
 # Re-export for easier test access
 
@@ -296,8 +296,8 @@ class TestCreateBookcase:
 
     def test_bookcase_with_initial_items(self) -> None:
         """Bookcase should accept initial items."""
-        from catley.game.enums import ItemSize
-        from catley.game.items.item_core import Item, ItemType
+        from brileta.game.enums import ItemSize
+        from brileta.game.items.item_core import Item, ItemType
 
         item = Item(
             ItemType(name="Old Book", description="A dusty tome", size=ItemSize.NORMAL)

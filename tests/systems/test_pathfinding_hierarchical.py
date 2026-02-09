@@ -5,11 +5,11 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from catley.environment.generators import GeneratedMapData
-from catley.environment.map import GameMap, MapRegion
-from catley.environment.tile_types import TileTypeID
-from catley.util.coordinates import Rect
-from catley.util.pathfinding import find_region_path
+from brileta.environment.generators import GeneratedMapData
+from brileta.environment.map import GameMap, MapRegion
+from brileta.environment.tile_types import TileTypeID
+from brileta.util.coordinates import Rect
+from brileta.util.pathfinding import find_region_path
 
 
 def make_connected_regions() -> dict[int, MapRegion]:

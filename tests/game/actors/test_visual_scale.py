@@ -10,11 +10,11 @@ These tests verify that:
 
 import pytest
 
-from catley import colors
-from catley.game.actors.components import HealthComponent, StatsComponent
-from catley.game.actors.core import Actor, Character
-from catley.game.actors.idle_animation import scale_for_size
-from catley.game.enums import CreatureSize
+from brileta import colors
+from brileta.game.actors.components import HealthComponent, StatsComponent
+from brileta.game.actors.core import Actor, Character
+from brileta.game.actors.idle_animation import scale_for_size
+from brileta.game.enums import CreatureSize
 
 
 class TestScaleForSize:

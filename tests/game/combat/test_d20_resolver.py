@@ -1,10 +1,10 @@
 from unittest.mock import patch
 
-from catley import colors
-from catley.game.actors import Actor, Character
-from catley.game.enums import OutcomeTier
-from catley.game.resolution import d20_system
-from catley.game.resolution.d20_system import D20ResolutionResult, D20System
+from brileta import colors
+from brileta.game.actors import Actor, Character
+from brileta.game.enums import OutcomeTier
+from brileta.game.resolution import d20_system
+from brileta.game.resolution.d20_system import D20ResolutionResult, D20System
 
 
 class FixedRandom:

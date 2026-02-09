@@ -10,13 +10,13 @@ Note: CharacterLayer tests are in test_character_layers.py
 
 from __future__ import annotations
 
-from catley.game.actors.components import CharacterInventory, ContainerStorage
-from catley.game.actors.container import (
+from brileta.game.actors.components import CharacterInventory, ContainerStorage
+from brileta.game.actors.container import (
     Container,
     create_bookcase,
 )
-from catley.game.enums import ItemSize
-from catley.game.items.item_core import Item, ItemType
+from brileta.game.enums import ItemSize
+from brileta.game.items.item_core import Item, ItemType
 
 # =============================================================================
 # HELPER FUNCTIONS
@@ -282,7 +282,7 @@ class TestInventoryPolymorphism:
 
     def test_both_have_get_items(self) -> None:
         """Both inventory types should support get_items()."""
-        from catley.game.actors.components import StatsComponent
+        from brileta.game.actors.components import StatsComponent
 
         char_inv = CharacterInventory(StatsComponent())
         container_inv = ContainerStorage()
@@ -303,7 +303,7 @@ class TestInventoryPolymorphism:
 
     def test_both_have_add_item(self) -> None:
         """Both inventory types should support add_item()."""
-        from catley.game.actors.components import StatsComponent
+        from brileta.game.actors.components import StatsComponent
 
         char_inv = CharacterInventory(StatsComponent())
         container_inv = ContainerStorage()
@@ -319,7 +319,7 @@ class TestInventoryPolymorphism:
 
     def test_both_have_remove_item(self) -> None:
         """Both inventory types should support remove_item()."""
-        from catley.game.actors.components import StatsComponent
+        from brileta.game.actors.components import StatsComponent
 
         char_inv = CharacterInventory(StatsComponent())
         container_inv = ContainerStorage()
@@ -337,7 +337,7 @@ class TestInventoryPolymorphism:
 
     def test_both_have_capacity_property(self) -> None:
         """Both inventory types should have capacity property."""
-        from catley.game.actors.components import StatsComponent
+        from brileta.game.actors.components import StatsComponent
 
         stats = StatsComponent(strength=5)  # 10 slots
         char_inv = CharacterInventory(stats)
@@ -348,7 +348,7 @@ class TestInventoryPolymorphism:
 
     def test_both_support_len(self) -> None:
         """Both inventory types should support len()."""
-        from catley.game.actors.components import StatsComponent
+        from brileta.game.actors.components import StatsComponent
 
         char_inv = CharacterInventory(StatsComponent())
         container_inv = ContainerStorage()
@@ -362,7 +362,7 @@ class TestInventoryPolymorphism:
 
     def test_both_support_contains(self) -> None:
         """Both inventory types should support 'in' operator."""
-        from catley.game.actors.components import StatsComponent
+        from brileta.game.actors.components import StatsComponent
 
         char_inv = CharacterInventory(StatsComponent())
         container_inv = ContainerStorage()
@@ -377,7 +377,7 @@ class TestInventoryPolymorphism:
 
     def test_both_support_iter(self) -> None:
         """Both inventory types should support iteration."""
-        from catley.game.actors.components import StatsComponent
+        from brileta.game.actors.components import StatsComponent
 
         char_inv = CharacterInventory(StatsComponent())
         container_inv = ContainerStorage()

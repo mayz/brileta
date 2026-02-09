@@ -2,8 +2,8 @@ from typing import cast
 
 import pytest
 
-from catley.game.actors import Actor
-from catley.view.render.viewport import ViewportSystem
+from brileta.game.actors import Actor
+from brileta.view.render.viewport import ViewportSystem
 
 
 class DummyActor:

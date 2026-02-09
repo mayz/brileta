@@ -6,16 +6,16 @@ from dataclasses import dataclass
 from typing import Any, cast
 from unittest.mock import MagicMock
 
-from catley import colors
-from catley.controller import Controller
-from catley.game.actions.discovery import ActionCategory, ActionOption
-from catley.game.actors import Actor, Character, ItemPile
-from catley.game.countables import CountableType, get_countable_display_name
-from catley.game.enums import ItemSize
-from catley.game.game_world import GameWorld
-from catley.game.items.item_core import Item, ItemType
-from catley.view.render.graphics import GraphicsContext
-from catley.view.views.action_panel_view import ActionPanelView
+from brileta import colors
+from brileta.controller import Controller
+from brileta.game.actions.discovery import ActionCategory, ActionOption
+from brileta.game.actors import Actor, Character, ItemPile
+from brileta.game.countables import CountableType, get_countable_display_name
+from brileta.game.enums import ItemSize
+from brileta.game.game_world import GameWorld
+from brileta.game.items.item_core import Item, ItemType
+from brileta.view.render.graphics import GraphicsContext
+from brileta.view.views.action_panel_view import ActionPanelView
 from tests.helpers import DummyGameWorld
 
 

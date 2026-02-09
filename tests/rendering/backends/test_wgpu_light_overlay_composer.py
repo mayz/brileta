@@ -4,8 +4,8 @@ from unittest.mock import Mock
 
 import numpy as np
 
-from catley.backends.wgpu.light_overlay_composer import WGPULightOverlayComposer
-from catley.util.coordinates import Rect
+from brileta.backends.wgpu.light_overlay_composer import WGPULightOverlayComposer
+from brileta.util.coordinates import Rect
 
 
 def _mock_texture(width: int, height: int) -> Mock:

@@ -6,12 +6,12 @@ os.environ["SDL_RENDER_DRIVER"] = "software"
 from typing import cast
 from unittest.mock import MagicMock
 
-from catley import colors
-from catley.backends.pillow.canvas import PillowImageCanvas
-from catley.types import InterpolationAlpha
-from catley.util.message_log import MessageLog
-from catley.view.render.graphics import GraphicsContext
-from catley.view.views.message_log_view import MessageLogView
+from brileta import colors
+from brileta.backends.pillow.canvas import PillowImageCanvas
+from brileta.types import InterpolationAlpha
+from brileta.util.message_log import MessageLog
+from brileta.view.render.graphics import GraphicsContext
+from brileta.view.views.message_log_view import MessageLogView
 
 
 class DummyTexture:

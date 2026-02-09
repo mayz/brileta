@@ -6,25 +6,25 @@ from unittest.mock import patch
 
 import numpy as np
 
-from catley import colors
-from catley.controller import Controller
-from catley.environment.generators import GeneratedMapData
-from catley.environment.map import GameMap
+from brileta import colors
+from brileta.controller import Controller
+from brileta.environment.generators import GeneratedMapData
+from brileta.environment.map import GameMap
 
 if TYPE_CHECKING:
-    from catley.environment.map import MapRegion
-from catley.events import reset_event_bus_for_testing
-from catley.game.actions.area_effects import AreaEffectIntent
-from catley.game.actions.combat import AttackIntent
-from catley.game.actions.executors.area_effects import WeaponAreaEffectExecutor
-from catley.game.actions.executors.combat import AttackExecutor
-from catley.game.actors import Character, conditions
-from catley.game.enums import OutcomeTier
-from catley.game.game_world import GameWorld
-from catley.game.items.item_types import DIRTY_BOMB_TYPE, RADIUM_GUN_TYPE
-from catley.game.resolution.d20_system import D20ResolutionResult
-from catley.game.resolution.outcomes import CombatOutcome
-from catley.util import dice
+    from brileta.environment.map import MapRegion
+from brileta.events import reset_event_bus_for_testing
+from brileta.game.actions.area_effects import AreaEffectIntent
+from brileta.game.actions.combat import AttackIntent
+from brileta.game.actions.executors.area_effects import WeaponAreaEffectExecutor
+from brileta.game.actions.executors.combat import AttackExecutor
+from brileta.game.actors import Character, conditions
+from brileta.game.enums import OutcomeTier
+from brileta.game.game_world import GameWorld
+from brileta.game.items.item_types import DIRTY_BOMB_TYPE, RADIUM_GUN_TYPE
+from brileta.game.resolution.d20_system import D20ResolutionResult
+from brileta.game.resolution.outcomes import CombatOutcome
+from brileta.util import dice
 from tests.helpers import DummyGameWorld
 
 

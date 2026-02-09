@@ -1,17 +1,17 @@
 from dataclasses import dataclass
 from typing import cast
 
-from catley import colors
-from catley.controller import Controller
-from catley.environment.tile_types import TileTypeID
-from catley.game.action_plan import ActivePlan, ApproachStep, WalkToPlan
-from catley.game.actions.base import GameIntent
-from catley.game.actions.environment import OpenDoorPlan
-from catley.game.actions.executors.movement import MoveExecutor
-from catley.game.actions.movement import MoveIntent
-from catley.game.actors import PC, Character
-from catley.game.game_world import GameWorld
-from catley.game.turn_manager import TurnManager
+from brileta import colors
+from brileta.controller import Controller
+from brileta.environment.tile_types import TileTypeID
+from brileta.game.action_plan import ActivePlan, ApproachStep, WalkToPlan
+from brileta.game.actions.base import GameIntent
+from brileta.game.actions.environment import OpenDoorPlan
+from brileta.game.actions.executors.movement import MoveExecutor
+from brileta.game.actions.movement import MoveIntent
+from brileta.game.actors import PC, Character
+from brileta.game.game_world import GameWorld
+from brileta.game.turn_manager import TurnManager
 from tests.helpers import DummyGameWorld
 
 

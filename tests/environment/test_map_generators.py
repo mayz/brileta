@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import numpy as np
 
-from catley.environment.generators import (
+from brileta.environment.generators import (
     RoomsAndCorridorsGenerator,
     create_settlement_pipeline,
 )
-from catley.environment.tile_types import TileTypeID
+from brileta.environment.tile_types import TileTypeID
 
 
 def test_room_region_creation() -> None:

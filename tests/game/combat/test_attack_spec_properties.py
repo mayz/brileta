@@ -1,5 +1,5 @@
-from catley.game.items.capabilities import MeleeAttackSpec
-from catley.game.items.properties import WeaponProperty
+from brileta.game.items.capabilities import MeleeAttackSpec
+from brileta.game.items.properties import WeaponProperty
 
 
 def test_has_property_true() -> None:

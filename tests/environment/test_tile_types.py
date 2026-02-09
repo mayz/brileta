@@ -1,13 +1,13 @@
 import numpy as np
 import pytest
 
-from catley.environment import tile_types
-from catley.environment.tile_types import (
+from brileta.environment import tile_types
+from brileta.environment.tile_types import (
     TileTypeID,
     get_tile_hazard_info,
     get_tile_material,
 )
-from catley.game.enums import ImpactMaterial
+from brileta.game.enums import ImpactMaterial
 
 
 def test_get_walkable_map():

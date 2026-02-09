@@ -8,13 +8,13 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from catley import colors
-from catley.controller import Controller
-from catley.events import reset_event_bus_for_testing
-from catley.game.actions.discovery import ActionCategory, ActionOption
-from catley.game.actors import NPC, Character
-from catley.game.enums import Disposition
-from catley.view.ui.combat_tooltip_overlay import CombatTooltipOverlay
+from brileta import colors
+from brileta.controller import Controller
+from brileta.events import reset_event_bus_for_testing
+from brileta.game.actions.discovery import ActionCategory, ActionOption
+from brileta.game.actors import NPC, Character
+from brileta.game.enums import Disposition
+from brileta.view.ui.combat_tooltip_overlay import CombatTooltipOverlay
 from tests.helpers import get_controller_with_player_and_map
 
 

@@ -5,13 +5,13 @@ from __future__ import annotations
 from typing import cast
 from unittest.mock import MagicMock
 
-from catley import colors
-from catley.game.actors import Actor, Character, ItemPile, components
-from catley.game.countables import CountableType
-from catley.game.enums import ItemSize
-from catley.game.game_world import GameWorld
-from catley.game.items.item_core import Item, ItemType
-from catley.game.lights import DirectionalLight, DynamicLight, GlobalLight, StaticLight
+from brileta import colors
+from brileta.game.actors import Actor, Character, ItemPile, components
+from brileta.game.countables import CountableType
+from brileta.game.enums import ItemSize
+from brileta.game.game_world import GameWorld
+from brileta.game.items.item_core import Item, ItemType
+from brileta.game.lights import DirectionalLight, DynamicLight, GlobalLight, StaticLight
 from tests.helpers import DummyGameWorld
 
 # ---------------------------------------------------------------------------

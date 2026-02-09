@@ -4,20 +4,20 @@ from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any, cast
 
-from catley import colors, input_events
-from catley.controller import Controller
-from catley.game.actors import Character
-from catley.game.enums import ItemCategory
-from catley.game.game_world import GameWorld
-from catley.game.items.item_types import (
+from brileta import colors, input_events
+from brileta.controller import Controller
+from brileta.game.actors import Character
+from brileta.game.enums import ItemCategory
+from brileta.game.game_world import GameWorld
+from brileta.game.items.item_types import (
     COMBAT_KNIFE_TYPE,
     PISTOL_MAGAZINE_TYPE,
     PISTOL_TYPE,
     STIM_TYPE,
 )
-from catley.game.items.junk_item_types import JUNK_ITEM_TYPES
-from catley.game.turn_manager import TurnManager
-from catley.view.ui.dual_pane_menu import DualPaneMenu, ExternalInventory, PaneId
+from brileta.game.items.junk_item_types import JUNK_ITEM_TYPES
+from brileta.game.turn_manager import TurnManager
+from brileta.view.ui.dual_pane_menu import DualPaneMenu, ExternalInventory, PaneId
 from tests.helpers import DummyGameWorld, _make_renderer
 
 
@@ -563,7 +563,7 @@ def test_get_hint_lines_hides_use_for_non_consumables() -> None:
     """[U] Use hint should only appear when a consumable is selected."""
     from unittest.mock import MagicMock
 
-    from catley.game.items.item_core import Item
+    from brileta.game.items.item_core import Item
 
     controller = _make_controller()
     menu = DualPaneMenu(controller, source=None)
@@ -803,8 +803,8 @@ def test_permanent_container_persists_when_emptied(controller) -> None:
     Containers are accessed via ActorInventorySource (not ExternalInventory),
     which is the path used when bumping into a container.
     """
-    from catley.game.actors.container import create_bookcase
-    from catley.view.ui.dual_pane_menu import ActorInventorySource
+    from brileta.game.actors.container import create_bookcase
+    from brileta.view.ui.dual_pane_menu import ActorInventorySource
 
     player = controller.gw.player
 
@@ -870,10 +870,10 @@ def test_empty_permanent_container_can_be_searched(controller) -> None:
     """
     from unittest.mock import MagicMock
 
-    from catley.game.actions.environment import SearchContainerIntent
-    from catley.game.actions.executors.containers import SearchContainerExecutor
-    from catley.game.actors.container import create_bookcase
-    from catley.view.ui.dual_pane_menu import ActorInventorySource
+    from brileta.game.actions.environment import SearchContainerIntent
+    from brileta.game.actions.executors.containers import SearchContainerExecutor
+    from brileta.game.actors.container import create_bookcase
+    from brileta.view.ui.dual_pane_menu import ActorInventorySource
 
     player = controller.gw.player
 
@@ -917,7 +917,7 @@ def test_empty_permanent_container_can_be_searched(controller) -> None:
 
 def test_arrow_keys_scroll_detail_description() -> None:
     """Left/Right arrows should scroll detail panel when description overflows."""
-    from catley.game.outfit import LEATHER_ARMOR_TYPE
+    from brileta.game.outfit import LEATHER_ARMOR_TYPE
 
     controller = _make_controller()
     player = controller.gw.player
@@ -984,7 +984,7 @@ def test_arrow_keys_no_effect_without_overflow() -> None:
 
 def test_generate_item_detail_for_condition() -> None:
     """Condition detail should include name and description."""
-    from catley.game.actors.conditions import Condition
+    from brileta.game.actors.conditions import Condition
 
     controller = _make_controller()
     menu = DualPaneMenu(controller)
@@ -1012,7 +1012,7 @@ def test_generate_item_detail_for_condition() -> None:
 
 def test_generate_item_detail_for_condition_without_description() -> None:
     """Condition without description should still work."""
-    from catley.game.actors.conditions import Condition
+    from brileta.game.actors.conditions import Condition
 
     controller = _make_controller()
     menu = DualPaneMenu(controller)

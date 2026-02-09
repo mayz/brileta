@@ -13,16 +13,16 @@ from unittest.mock import patch
 
 import pytest
 
-from catley import colors
-from catley.controller import Controller
-from catley.game.actions.combat import AttackIntent
-from catley.game.actions.executors.combat import AttackExecutor
-from catley.game.actions.executors.stunts import PushExecutor
-from catley.game.actions.stunts import PushIntent
-from catley.game.actors import NPC, Character
-from catley.game.consequences import Consequence, ConsequenceHandler
-from catley.game.enums import Disposition
-from catley.game.items.item_types import FISTS_TYPE
+from brileta import colors
+from brileta.controller import Controller
+from brileta.game.actions.combat import AttackIntent
+from brileta.game.actions.executors.combat import AttackExecutor
+from brileta.game.actions.executors.stunts import PushExecutor
+from brileta.game.actions.stunts import PushIntent
+from brileta.game.actors import NPC, Character
+from brileta.game.consequences import Consequence, ConsequenceHandler
+from brileta.game.enums import Disposition
+from brileta.game.items.item_types import FISTS_TYPE
 from tests.helpers import reset_dummy_controller
 
 # --- Helper functions ---
@@ -501,7 +501,7 @@ def test_combat_ended_event_published_on_auto_exit(
     auto_combat_controller: Controller,
 ) -> None:
     """CombatEndedEvent should be published with 'all_enemies_dead' reason."""
-    from catley.events import CombatEndedEvent, subscribe_to_event
+    from brileta.events import CombatEndedEvent, subscribe_to_event
 
     controller, _player, npc = _make_combat_test_world(
         auto_combat_controller,
@@ -535,7 +535,7 @@ def test_combat_ended_event_published_on_manual_exit(
     auto_combat_controller: Controller,
 ) -> None:
     """CombatEndedEvent should be published with 'manual_exit' reason."""
-    from catley.events import CombatEndedEvent, subscribe_to_event
+    from brileta.events import CombatEndedEvent, subscribe_to_event
 
     controller, _player, npc = _make_combat_test_world(
         auto_combat_controller,
@@ -574,7 +574,7 @@ def test_combat_ended_event_published_on_cancelled_exit(
     This tests the _on_target_cancelled() path in CombatMode, which is
     triggered when PickerMode cancels (e.g., right-click during targeting).
     """
-    from catley.events import CombatEndedEvent, subscribe_to_event
+    from brileta.events import CombatEndedEvent, subscribe_to_event
 
     controller, _player, npc = _make_combat_test_world(
         auto_combat_controller,

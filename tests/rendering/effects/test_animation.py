@@ -4,8 +4,8 @@ from typing import Any, cast
 
 import pytest
 
-from catley.types import FixedTimestep
-from catley.view.animation import Animation, AnimationManager, MoveAnimation
+from brileta.types import FixedTimestep
+from brileta.view.animation import Animation, AnimationManager, MoveAnimation
 
 
 class DummyActor:
@@ -254,7 +254,7 @@ class TestMoveAnimationInterruption:
         This prevents corpses from sliding to their destination when an
         NPC is killed while their move animation is in progress.
         """
-        from catley.game.actors.components import HealthComponent, StatsComponent
+        from brileta.game.actors.components import HealthComponent, StatsComponent
 
         # Create an actor with health
         actor = DummyActor(0, 0)
