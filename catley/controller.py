@@ -203,6 +203,13 @@ class Controller:
             description="Sun elevation above horizon in degrees (0-90).",
         )
 
+        # ---- AI Debug Overlay ----
+        # Toggle + hovered-actor variables for inspecting NPC utility scoring.
+        # When ai.debug is false the variables are unwatched and invisible.
+        self._ai_debug_enabled = False
+        self._ai_force_hostile = False
+        self._register_ai_debug_variables()
+
         # Enter explore mode now that all systems are initialized
         self.explore_mode.enter()
 
@@ -323,6 +330,145 @@ class Controller:
             sun.set_angles(azimuth=azimuth, elevation=elevation)
         if self.gw.lighting_system:
             self.gw.lighting_system.on_global_light_changed()
+
+    # ------------------------------------------------------------------
+    # AI Debug Overlay
+    # ------------------------------------------------------------------
+
+    def _register_ai_debug_variables(self) -> None:
+        """Register live variables for inspecting NPC utility scoring.
+
+        Registers ai.debug (toggle), ai.hovered.action, ai.hovered.scores,
+        and ai.hovered.goal. When ai.debug is toggled on, the three display
+        variables are automatically watched so they appear in the debug stats
+        overlay. When toggled off, they are unwatched.
+        """
+        from catley.game.actors.ai import DispositionBasedAI, HostileAI
+        from catley.game.actors.core import NPC
+        from catley.game.enums import Disposition
+
+        _AI_VAR_NAMES = ("ai.hovered.action", "ai.hovered.scores", "ai.hovered.goal")
+
+        def _get_hostile_ai() -> HostileAI | None:
+            """Navigate from hovered_actor to its HostileAI, if applicable.
+
+            Returns None for dead actors (stale cached scores are irrelevant).
+            When ai.force_hostile is on, returns the HostileAI behavior
+            regardless of the NPC's actual disposition.
+            """
+            actor = self.hovered_actor
+            if not isinstance(actor, NPC):
+                return None
+            if not actor.health.is_alive():
+                return None
+            ai = actor.ai
+            if isinstance(ai, DispositionBasedAI):
+                # When force_hostile is on, always show the HostileAI debug info
+                if self._ai_force_hostile:
+                    behavior = ai._behaviors.get(Disposition.HOSTILE)
+                else:
+                    behavior = ai.active_behavior
+                if isinstance(behavior, HostileAI):
+                    return behavior
+            return None
+
+        # -- ai.debug toggle --
+
+        def _set_ai_debug(value: object) -> None:
+            self._ai_debug_enabled = bool(value)
+            for name in _AI_VAR_NAMES:
+                if self._ai_debug_enabled:
+                    live_variable_registry.watch(name)
+                else:
+                    live_variable_registry.unwatch(name)
+
+        live_variable_registry.register(
+            "ai.debug",
+            getter=lambda: self._ai_debug_enabled,
+            setter=_set_ai_debug,
+            formatter=lambda v: "on" if v else "off",
+            description="Toggle AI debug overlay for hovered NPC.",
+        )
+
+        # -- ai.force_hostile toggle --
+        # When true, DispositionBasedAI delegates to the hostile behavior
+        # regardless of the NPC's actual disposition. Useful for testing
+        # hostile behaviors (patrol, flee, attack) on any NPC.
+
+        live_variable_registry.register(
+            "ai.force_hostile",
+            getter=lambda: self._ai_force_hostile,
+            setter=lambda v: setattr(self, "_ai_force_hostile", bool(v)),
+            formatter=lambda v: "on" if v else "off",
+            description="Force all NPCs to use hostile AI regardless of disposition.",
+        )
+
+        # -- ai.hovered.action --
+
+        def _get_action() -> str:
+            if not self._ai_debug_enabled:
+                return "---"
+            hostile = _get_hostile_ai()
+            if hostile is None or hostile.last_chosen_action is None:
+                return "---"
+            return hostile.last_chosen_action
+
+        live_variable_registry.register(
+            "ai.hovered.action",
+            getter=_get_action,
+            description="Action the hovered NPC chose this tick.",
+        )
+
+        # -- ai.hovered.scores --
+        # Indent for continuation lines so they're visually grouped
+        # under the variable name.
+        _SCORE_INDENT = "  "
+
+        def _get_scores() -> str:
+            if not self._ai_debug_enabled:
+                return "---"
+            hostile = _get_hostile_ai()
+            if hostile is None or not hostile.last_scores:
+                return "---"
+            parts: list[str] = []
+            for s in sorted(hostile.last_scores, key=lambda x: -x.final_score):
+                if s.persistence_bonus > 0:
+                    parts.append(
+                        f"{s.display_name}: {s.final_score:.2f} "
+                        f"(base {s.base_score:.2f} + persist {s.persistence_bonus:.2f})"
+                    )
+                else:
+                    parts.append(f"{s.display_name}: {s.final_score:.2f}")
+            # First entry on the same line as the variable name,
+            # remaining entries indented on their own lines.
+            return ("\n" + _SCORE_INDENT).join(parts)
+
+        live_variable_registry.register(
+            "ai.hovered.scores",
+            getter=_get_scores,
+            description="All action scores for the hovered NPC, sorted descending.",
+        )
+
+        # -- ai.hovered.goal --
+
+        def _get_goal() -> str:
+            if not self._ai_debug_enabled:
+                return "---"
+            actor = self.hovered_actor
+            if not isinstance(actor, NPC):
+                return "---"
+            goal = actor.current_goal
+            if goal is None:
+                return "None"
+            return (
+                f"{type(goal).__name__} {goal.state.name} progress={goal.progress:.1f}"
+            )
+
+        live_variable_registry.register(
+            "ai.hovered.goal",
+            getter=_get_goal,
+            description="Active goal of the hovered NPC.",
+        )
 
     def update_fov(self) -> None:
         """Recompute the visible area based on the player's point of view."""

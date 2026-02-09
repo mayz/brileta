@@ -71,6 +71,7 @@ if TYPE_CHECKING:
     from catley.controller import Controller
     from catley.game.actions.base import GameIntent
     from catley.game.actions.discovery import ActionOption
+    from catley.game.actors.goals import Goal
     from catley.game.game_world import GameWorld
 
 
@@ -761,6 +762,19 @@ class NPC(Character):
 
         # Type narrowing - these are guaranteed to exist.
         self.ai: AIComponent
+
+        # Goal system: the NPC's current multi-turn objective (flee, patrol, etc).
+        # Goals sit above ActionPlans and manage behavioral state transitions.
+        # The UtilityBrain scores ContinueGoalAction alongside atomic actions
+        # every tick, so goals are naturally interrupted when something more
+        # urgent arises.
+        self.current_goal: Goal | None = None
+
+    def take_damage(self, amount: int, damage_type: str = "normal") -> None:
+        """Handle damage, clearing the active goal on death."""
+        super().take_damage(amount, damage_type)
+        if not self.health.is_alive():
+            self.current_goal = None
 
     def get_next_action(self, controller: Controller) -> GameIntent | None:
         """Return the next action for this NPC, including autopilot goals."""

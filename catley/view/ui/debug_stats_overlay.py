@@ -39,16 +39,22 @@ class DebugStatsOverlay(TextOverlay):
         return f"{var.name}: {display_value}"
 
     def _refresh_display_lines(self, watched: list[LiveVariable] | None = None) -> None:
-        """Snapshot watched variable values for this refresh tick."""
+        """Snapshot watched variable values for this refresh tick.
+
+        Formatted values may contain newlines for multi-line display (e.g.
+        score breakdowns). Each ``\\n`` becomes a separate display line.
+        """
         active_watched = (
             watched
             if watched is not None
             else live_variable_registry.get_watched_variables()
         )
         self._watched_names = tuple(var.name for var in active_watched)
-        self._display_lines = [
-            self._format_live_variable_line(var) for var in active_watched
-        ]
+        lines: list[str] = []
+        for var in active_watched:
+            formatted = self._format_live_variable_line(var)
+            lines.extend(formatted.split("\n"))
+        self._display_lines = lines
 
     def show(self) -> None:
         """Show overlay and force an immediate snapshot refresh."""
@@ -96,7 +102,11 @@ class DebugStatsOverlay(TextOverlay):
         self.width = max_width + 2  # small padding
         self.height = len(self._display_lines)
 
-        self.x_tiles = self.controller.graphics.console_width_tiles - self.width
+        # Right-aligned at a fixed column offset from the screen edge so
+        # the overlay doesn't jump horizontally when line widths change.
+        _FIXED_WIDTH = 60  # reserve enough columns for the widest score display
+        console_w = self.controller.graphics.console_width_tiles
+        self.x_tiles = max(0, console_w - _FIXED_WIDTH)
         self.y_tiles = 1
 
         self.pixel_width = self.width * self.tile_dimensions[0]

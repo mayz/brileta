@@ -35,6 +35,7 @@ from catley.game.actors.utility import (
     Consideration,
     ResponseCurve,
     ResponseCurveType,
+    ScoredAction,
     UtilityBrain,
     UtilityContext,
 )
@@ -206,16 +207,33 @@ class DispositionBasedAI(AIComponent):
     def disposition(self, value: Disposition) -> None:
         self._disposition = value
 
+    @property
+    def active_behavior(self) -> AIComponent | None:
+        """Return the behavior component for the current disposition."""
+        return self._behaviors.get(self._disposition)
+
     def get_action(self, controller: Controller, actor: NPC) -> GameIntent | None:
         """Delegate to the appropriate behavior based on the current disposition.
 
         Priority: If standing on a hazardous tile, attempt to escape before
         any other action. Self-preservation overrides disposition behavior.
+
+        When the ai.force_hostile live variable is true, delegates to the
+        hostile behavior regardless of actual disposition.
         """
+        from catley.util.live_vars import live_variable_registry
+
         # Priority: Escape hazards before any other action
         escape_intent = self._try_escape_hazard(controller, actor)
         if escape_intent is not None:
             return escape_intent
+
+        # If force_hostile is on, always use hostile behavior
+        force_var = live_variable_registry.get_variable("ai.force_hostile")
+        if force_var is not None and force_var.get_value():
+            hostile = self._behaviors.get(Disposition.HOSTILE)
+            if hostile:
+                return hostile.get_action(controller, actor)
 
         # Normal disposition-based behavior
         behavior = self._behaviors.get(self.disposition)
@@ -240,6 +258,12 @@ class HostileAI(AIComponent):
     def __init__(self, aggro_radius: int = Combat.DEFAULT_AGGRO_RADIUS) -> None:
         super().__init__()
         self.aggro_radius = aggro_radius
+
+        # Debug: cached results from the last utility evaluation.
+        # Read by AI debug live variables for the debug stats overlay.
+        self.last_chosen_action: str | None = None
+        self.last_scores: list[ScoredAction] = []
+
         self.brain = UtilityBrain(
             [
                 AttackAction(
@@ -293,6 +317,15 @@ class HostileAI(AIComponent):
                         ),
                     ],
                 ),
+                PatrolAction(
+                    base_score=0.25,
+                    considerations=[
+                        Consideration(
+                            "threat_level",
+                            ResponseCurve(ResponseCurveType.INVERSE),
+                        ),
+                    ],
+                ),
             ]
         )
 
@@ -302,17 +335,54 @@ class HostileAI(AIComponent):
 
     def get_action(self, controller: Controller, actor: NPC) -> GameIntent | None:
         from catley import config
+        from catley.game.actors.goals import ContinueGoalAction
 
         if not config.HOSTILE_AI_ENABLED:
             return None
+
+        # Evaluate goal completion before any early exits. This ensures goals
+        # are cleaned up even when the threat dies (player dead = no action
+        # needed, but the goal should still be marked complete).
+        if actor.current_goal is not None:
+            actor.current_goal.evaluate_completion(actor, controller)
+            if actor.current_goal.is_complete:
+                actor.current_goal = None
 
         context = self._build_context(controller, actor)
         if not context.actor.health.is_alive() or not context.player.health.is_alive():
             return None
 
-        action = self.brain.select_action(context)
+        # Score all actions including "continue current goal"
+        action, scored = self.brain.select_action(context, actor.current_goal)
+
+        # Cache debug info for the debug stats overlay
+        self.last_scores = scored
         if action is None:
+            self.last_chosen_action = None
             return None
+        if isinstance(action, ContinueGoalAction):
+            self.last_chosen_action = f"ContinueGoal({action.goal.goal_id.title()})"
+        else:
+            self.last_chosen_action = action.action_id.title()
+
+        # ContinueGoalAction won - delegate to the goal for the next intent
+        if isinstance(action, ContinueGoalAction):
+            goal = action.goal
+            goal.tick()
+            return goal.get_next_action(actor, controller)
+
+        # A different action won - abandon the current goal if active
+        if actor.current_goal is not None and not actor.current_goal.is_complete:
+            actor.current_goal.abandon()
+            actor.current_goal = None
+
+        # FleeAction and PatrolAction create goals instead of returning a
+        # single move step
+        if isinstance(action, FleeAction):
+            return action.get_intent_with_goal(context, actor)
+        if isinstance(action, PatrolAction):
+            return action.get_intent_with_goal(context, actor)
+
         return action.get_intent(context)
 
     def _get_move_toward_player(
@@ -580,6 +650,7 @@ class FleeAction(UtilityAction):
         )
 
     def get_intent(self, context: UtilityContext) -> GameIntent | None:
+        """Single-step flee fallback (used when goal system isn't active)."""
         from catley.game.actions.movement import MoveIntent
 
         if context.best_flee_step is None:
@@ -588,6 +659,33 @@ class FleeAction(UtilityAction):
         dx, dy = context.best_flee_step
         context.controller.stop_plan(context.actor)
         return MoveIntent(context.controller, context.actor, dx, dy)
+
+    def get_intent_with_goal(
+        self, context: UtilityContext, actor: NPC
+    ) -> GameIntent | None:
+        """Create a FleeGoal and return the first flee action.
+
+        Called by HostileAI when FleeAction wins scoring. Creates a persistent
+        FleeGoal so the NPC continues fleeing across multiple turns until safe,
+        rather than re-evaluating from scratch each tick.
+        """
+        from catley.game.actors.goals import FleeGoal
+
+        # Create and assign a flee goal targeting the player
+        goal = FleeGoal(threat_actor_id=id(context.player))
+        actor.current_goal = goal
+
+        # Evaluate completion once (sets initial distance tracking)
+        goal.evaluate_completion(actor, context.controller)
+        goal.tick()
+        intent = goal.get_next_action(actor, context.controller)
+
+        # If the goal immediately failed (e.g., cornered), clear it so the
+        # NPC doesn't waste a tick holding a dead goal.
+        if goal.is_complete:
+            actor.current_goal = None
+
+        return intent
 
 
 class IdleAction(UtilityAction):
@@ -651,6 +749,94 @@ class WanderAction(UtilityAction):
                 continue
             return MoveIntent(controller, actor, dx, dy)
         return None
+
+
+# How far from the NPC's current position to pick patrol waypoints.
+_PATROL_RADIUS = 6
+
+# How many candidate waypoints to pick for a patrol route.
+_PATROL_WAYPOINT_COUNT = 3
+
+
+class PatrolAction(UtilityAction):
+    """Patrol nearby when no threat is present.
+
+    When this action wins scoring and the NPC has no active PatrolGoal,
+    creates one with random walkable waypoints near the NPC. If a
+    PatrolGoal already exists, ContinueGoalAction handles continuation
+    so this action won't create duplicates.
+    """
+
+    def __init__(
+        self,
+        base_score: float,
+        considerations: list[Consideration],
+    ) -> None:
+        super().__init__(
+            action_id="patrol",
+            base_score=base_score,
+            considerations=considerations,
+        )
+
+    def get_intent(self, context: UtilityContext) -> GameIntent | None:
+        # Intent generation is handled via get_intent_with_goal in HostileAI.
+        # This fallback should not be reached in normal flow.
+        return None
+
+    def get_intent_with_goal(
+        self, context: UtilityContext, actor: NPC
+    ) -> GameIntent | None:
+        """Create a PatrolGoal with random nearby waypoints and start patrolling.
+
+        Picks 2-3 random walkable tiles within _PATROL_RADIUS of the NPC's
+        current position as waypoints. Uses the game_map.walkable array to
+        validate tiles.
+        """
+        from catley.game.actors.goals import PatrolGoal
+
+        waypoints = _pick_patrol_waypoints(context.controller, actor)
+        if len(waypoints) < 2:
+            # Not enough walkable space - fall back to doing nothing
+            return None
+
+        goal = PatrolGoal(waypoints)
+        actor.current_goal = goal
+        goal.tick()
+        intent = goal.get_next_action(actor, context.controller)
+
+        # If the goal immediately failed, clear it so the NPC doesn't
+        # waste a tick holding a dead goal.
+        if goal.is_complete:
+            actor.current_goal = None
+
+        return intent
+
+
+def _pick_patrol_waypoints(controller: Controller, actor: NPC) -> list[tuple[int, int]]:
+    """Pick random walkable tiles near the actor for patrol waypoints.
+
+    Collects all walkable tiles within _PATROL_RADIUS of the actor,
+    then samples _PATROL_WAYPOINT_COUNT of them.
+    """
+    game_map = controller.gw.game_map
+    candidates: list[tuple[int, int]] = []
+
+    for dx in range(-_PATROL_RADIUS, _PATROL_RADIUS + 1):
+        for dy in range(-_PATROL_RADIUS, _PATROL_RADIUS + 1):
+            if dx == 0 and dy == 0:
+                continue
+            tx = actor.x + dx
+            ty = actor.y + dy
+            if not (0 <= tx < game_map.width and 0 <= ty < game_map.height):
+                continue
+            if not game_map.walkable[tx, ty]:
+                continue
+            candidates.append((tx, ty))
+
+    if len(candidates) <= _PATROL_WAYPOINT_COUNT:
+        return candidates
+
+    return _rng.sample(candidates, _PATROL_WAYPOINT_COUNT)
 
 
 class WaryAI(AIComponent):

@@ -87,7 +87,18 @@ class UtilityContext:
 
 
 class Action(abc.ABC):
-    """Base class for utility actions."""
+    """Base class for utility actions.
+
+    An Action is a single-tick, stateless operation scored by the UtilityBrain
+    every tick. Most NPC behaviors are actions: Attack, Avoid, Watch, Wander,
+    Idle. If the same action keeps winning scoring each tick, the behavior
+    sustains naturally without any memory between ticks.
+
+    When a behavior requires memory across ticks (patrol waypoint sequence,
+    flee distance tracking, request-help state machine), the action creates
+    a Goal on its first tick. After that, ContinueGoalAction competes in
+    scoring to keep the goal alive. See goals.py for the Goal system.
+    """
 
     def __init__(
         self,
@@ -115,24 +126,87 @@ class Action(abc.ABC):
         ...
 
 
+@dataclass(slots=True)
+class ScoredAction:
+    """Debug snapshot of one action's scoring result."""
+
+    display_name: str
+    final_score: float
+    base_score: float = 0.0
+    persistence_bonus: float = 0.0
+
+
 class UtilityBrain:
-    """Evaluate utility actions and select the best one."""
+    """Evaluate utility actions and select the best one.
+
+    When the NPC has an active goal, the brain also scores a
+    ContinueGoalAction alongside all other actions. Goals compete in the
+    same scoring system as atomic actions every tick - no special
+    interruption logic is needed.
+    """
 
     def __init__(self, actions: list[Action]) -> None:
         self.actions = actions
 
-    def select_action(self, context: UtilityContext) -> Action | None:
+    def select_action(
+        self, context: UtilityContext, current_goal: Goal | None = None
+    ) -> tuple[Action | None, list[ScoredAction]]:
+        """Score all actions (including goal continuation) and return the best.
+
+        Args:
+            context: The current utility evaluation context.
+            current_goal: The NPC's active goal, if any. If present and not
+                complete, a ContinueGoalAction is scored alongside other actions.
+
+        Returns:
+            A tuple of (best_action, scored_actions) where scored_actions is
+            the full scoring breakdown for debug display.
+        """
         best_action: Action | None = None
         best_score = -1.0
+        scored: list[ScoredAction] = []
+
         for action in self.actions:
             score = action.score(context)
+            scored.append(
+                ScoredAction(
+                    display_name=action.action_id.title(),
+                    final_score=score,
+                    base_score=score,
+                )
+            )
             if score > best_score:
                 best_score = score
                 best_action = action
-        return best_action
+
+        # Score "continue current goal" alongside atomic actions
+        if current_goal is not None and not current_goal.is_complete:
+            from catley.game.actors.goals import (
+                PERSISTENCE_MINIMUM,
+                PERSISTENCE_WEIGHT,
+                ContinueGoalAction,
+            )
+
+            continue_action = ContinueGoalAction(current_goal)
+            final = continue_action.score(context)
+            persist = PERSISTENCE_MINIMUM + current_goal.progress * PERSISTENCE_WEIGHT
+            scored.append(
+                ScoredAction(
+                    display_name=f"ContinueGoal({current_goal.goal_id.title()})",
+                    final_score=final,
+                    base_score=final - persist,
+                    persistence_bonus=persist,
+                )
+            )
+            if final > best_score:
+                best_score = final
+                best_action = continue_action
+
+        return best_action, scored
 
 
 if TYPE_CHECKING:
     from catley.controller import Controller
     from catley.game.actions.base import GameIntent
     from catley.game.actors import NPC, Character
+    from catley.game.actors.goals import Goal

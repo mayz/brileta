@@ -38,7 +38,7 @@ def test_calculate_dimensions() -> None:
     expected_width = max(len("ds.var1: 1"), len("ds.longer: 22.5")) + 2
     assert overlay.width == expected_width
     assert overlay.height == 2
-    assert overlay.x_tiles == 80 - overlay.width
+    assert overlay.x_tiles == 80 - 60  # Right-aligned at fixed column offset
     assert overlay.y_tiles == 1
     assert overlay.pixel_width == overlay.width * 8
     assert overlay.pixel_height == overlay.height * 16
