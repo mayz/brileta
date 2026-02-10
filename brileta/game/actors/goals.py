@@ -25,7 +25,9 @@ Key classes:
     ContinueGoalAction: Utility action that competes in scoring to continue
         the current goal, with a persistence bonus scaled by goal.progress.
     FleeGoal: Flee from a threat to a safe distance, then reassess.
-    PatrolGoal: Cycle between waypoints.
+    WaypointRouteGoal: Shared core for route-following waypoint goals.
+    PatrolGoal: Cycle between fixed waypoints.
+    WanderGoal: Wander via heading + step-budget segments with stuck recovery.
 """
 
 from __future__ import annotations
@@ -43,6 +45,7 @@ from brileta.game.actors.utility import (
     ResponseCurveType,
     UtilityContext,
 )
+from brileta.util import rng
 
 if TYPE_CHECKING:
     from brileta.controller import Controller
@@ -59,6 +62,8 @@ PERSISTENCE_MINIMUM = 0.01
 # This is added to the ContinueGoalAction's base score so that goals
 # already in progress aren't easily interrupted by marginal score differences.
 PERSISTENCE_WEIGHT = 0.3
+
+_rng = rng.get("npc.goals")
 
 
 class GoalState(Enum):
@@ -194,7 +199,7 @@ class ContinueGoalAction(UtilityAction):
 # ---------------------------------------------------------------------------
 
 # How far the NPC should be from the threat before considering itself safe.
-_FLEE_SAFE_DISTANCE = 8
+_FLEE_SAFE_DISTANCE = 50
 
 
 class FleeGoal(Goal):
@@ -331,74 +336,88 @@ class FleeGoal(Goal):
         return MoveIntent(controller, npc, dx, dy)
 
 
-class PatrolGoal(Goal):
-    """Patrol between a set of waypoints in a cycle.
+class WaypointRouteGoal(Goal):
+    """Shared route-following core for patrol-style waypoint goals.
 
-    The NPC walks to each waypoint in order, cycling back to the first
-    after reaching the last. Uses ActionPlans for pathfinding to each
-    waypoint.
+    This centralizes waypoint memory, progression, progress tracking, and
+    ActionPlan reuse so waypoint-route goals differ only by route policy.
     """
 
-    def __init__(self, waypoints: list[tuple[int, int]]) -> None:
-        super().__init__(goal_id="patrol")
-        if len(waypoints) < 2:
-            msg = "PatrolGoal requires at least 2 waypoints"
+    def __init__(
+        self,
+        goal_id: str,
+        waypoints: list[tuple[int, int]],
+        *,
+        minimum_waypoints: int = 2,
+    ) -> None:
+        super().__init__(goal_id=goal_id)
+        if len(waypoints) < minimum_waypoints:
+            msg = (
+                f"{self.__class__.__name__} requires at least "
+                f"{minimum_waypoints} waypoints"
+            )
             raise ValueError(msg)
         self.waypoints = waypoints
         self._current_waypoint_index: int = 0
         self._laps_completed: int = 0
 
         # Cached for progress calculation. Set on first get_next_action /
-        # evaluate_completion call so the progress property can compute
-        # spatial distance without method arguments.
+        # evaluate_completion call so progress can include spatial approach.
         self._npc: NPC | None = None
         self._initial_waypoint_distance: float = 0.0
 
     @property
     def progress(self) -> float:
-        """Progress through current lap, including spatial approach to waypoint.
-
-        Combines waypoint-level progress (which waypoint are we heading to)
-        with spatial progress (how close are we to that waypoint). This gives
-        smooth 0.0-1.0 values instead of jumping in discrete steps.
-        """
+        """Progress through the current waypoint lap, including approach."""
         from brileta.game import ranges
 
         total = len(self.waypoints)
         if self._npc is None or self._initial_waypoint_distance <= 0:
-            # No spatial info yet - fall back to waypoint index only
             return self._current_waypoint_index / total
 
         target = self.waypoints[self._current_waypoint_index]
         current_dist = ranges.calculate_distance(
             self._npc.x, self._npc.y, target[0], target[1]
         )
-        # How far through the current waypoint leg (0.0 = just started, 1.0 = arrived)
         leg_progress = 1.0 - min(1.0, current_dist / self._initial_waypoint_distance)
         return (self._current_waypoint_index + leg_progress) / total
 
-    def get_base_score(self) -> float:
-        return 0.25
-
-    def get_considerations(self) -> list[Consideration]:
-        """Patrol scores inversely to threat - patrol when safe."""
-        return [
-            Consideration(
-                "threat_level",
-                ResponseCurve(ResponseCurveType.INVERSE),
-            ),
-        ]
-
     def evaluate_completion(self, npc: NPC, controller: Controller) -> None:
-        """Patrols don't complete on their own - they run until interrupted.
-
-        Caches the NPC reference so the progress property can compute spatial
-        distance to the current waypoint without method arguments.
-        """
+        """Waypoint-route goals don't auto-complete; cache NPC for progress."""
         self._npc = npc
 
+    def _advance_waypoint(self) -> bool:
+        """Advance to the next waypoint and return True when a lap completes."""
+        self._current_waypoint_index = (self._current_waypoint_index + 1) % len(
+            self.waypoints
+        )
+        completed_lap = self._current_waypoint_index == 0
+        if completed_lap:
+            self._laps_completed += 1
+        self._initial_waypoint_distance = 0.0
+        return completed_lap
+
+    def _replace_route(self, waypoints: list[tuple[int, int]]) -> None:
+        """Swap to a newly generated route and reset waypoint-leg state."""
+        if len(waypoints) < 2:
+            self.state = GoalState.FAILED
+            return
+        self.waypoints = waypoints
+        self._current_waypoint_index = 0
+        self._initial_waypoint_distance = 0.0
+
+    def _on_waypoint_advanced(
+        self,
+        npc: NPC,
+        controller: Controller,
+        *,
+        completed_lap: bool,
+    ) -> None:
+        """Optional hook for subclasses when waypoint progression changes."""
+        return
+
     def get_next_action(self, npc: NPC, controller: Controller) -> GameIntent | None:
-        """Move toward the current waypoint, advance when reached."""
+        """Move toward current waypoint and advance/refresh route when reached."""
         from brileta.game import ranges
         from brileta.game.action_plan import WalkToPlan
 
@@ -408,27 +427,286 @@ class PatrolGoal(Goal):
         distance = ranges.calculate_distance(npc.x, npc.y, target[0], target[1])
 
         if distance == 0:
-            # Reached waypoint - advance to next
-            self._current_waypoint_index = (self._current_waypoint_index + 1) % len(
-                self.waypoints
-            )
-            if self._current_waypoint_index == 0:
-                self._laps_completed += 1
-            target = self.waypoints[self._current_waypoint_index]
-            # Record starting distance for the new leg so progress is smooth
-            distance = ranges.calculate_distance(npc.x, npc.y, target[0], target[1])
-            self._initial_waypoint_distance = float(distance)
+            completed_lap = self._advance_waypoint()
+            self._on_waypoint_advanced(npc, controller, completed_lap=completed_lap)
+            if self.state is not GoalState.ACTIVE:
+                return None
 
-        # First time heading to this waypoint - record the starting distance
+            target = self.waypoints[self._current_waypoint_index]
+            distance = ranges.calculate_distance(npc.x, npc.y, target[0], target[1])
+
         if self._initial_waypoint_distance <= 0:
             self._initial_waypoint_distance = float(distance) if distance > 0 else 1.0
 
-        # Use the ActionPlan system to pathfind to the waypoint.
-        # If an active plan already targets this waypoint, let it continue.
         plan = npc.active_plan
         if plan is not None and plan.context.target_position == target:
-            return None  # Let the existing plan continue via TurnManager
+            return None
 
-        # Start a new plan to walk to the current waypoint
         controller.start_plan(npc, WalkToPlan, target_position=target)
-        return None  # Plan will generate intents via TurnManager
+        return None
+
+
+class PatrolGoal(WaypointRouteGoal):
+    """Patrol between a fixed set of waypoints in a cycle."""
+
+    def __init__(self, waypoints: list[tuple[int, int]]) -> None:
+        super().__init__(goal_id="patrol", waypoints=waypoints, minimum_waypoints=2)
+
+    def get_base_score(self) -> float:
+        return 0.25
+
+    def get_considerations(self) -> list[Consideration]:
+        """Patrol scores inversely to threat: patrol when safe."""
+        return [
+            Consideration(
+                "threat_level",
+                ResponseCurve(ResponseCurveType.INVERSE),
+            ),
+        ]
+
+
+class WanderGoal(Goal):
+    """Wander using heading segments instead of precomputed waypoint routes.
+
+    The goal picks a heading and a random step budget ``N`` for that segment.
+    Each tick it tries to move forward; if blocked it attempts sidesteps and
+    shallow turns. When the budget is exhausted or the actor is repeatedly
+    stuck, it repicks heading + budget.
+    """
+
+    _DIRECTIONS: tuple[tuple[int, int], ...] = (
+        (1, 0),  # East
+        (1, 1),  # Southeast
+        (0, 1),  # South
+        (-1, 1),  # Southwest
+        (-1, 0),  # West
+        (-1, -1),  # Northwest
+        (0, -1),  # North
+        (1, -1),  # Northeast
+    )
+
+    def __init__(
+        self,
+        *,
+        minimum_segment_steps: int = 4,
+        maximum_segment_steps: int = 12,
+        max_stuck_turns: int = 2,
+        heading_jitter_chance: float = 0.15,
+    ) -> None:
+        super().__init__(goal_id="wander")
+        if minimum_segment_steps <= 0:
+            msg = "minimum_segment_steps must be positive"
+            raise ValueError(msg)
+        if maximum_segment_steps < minimum_segment_steps:
+            msg = "maximum_segment_steps must be >= minimum_segment_steps"
+            raise ValueError(msg)
+        if max_stuck_turns <= 0:
+            msg = "max_stuck_turns must be positive"
+            raise ValueError(msg)
+        if not 0.0 <= heading_jitter_chance <= 1.0:
+            msg = "heading_jitter_chance must be in [0.0, 1.0]"
+            raise ValueError(msg)
+
+        self._minimum_segment_steps = minimum_segment_steps
+        self._maximum_segment_steps = maximum_segment_steps
+        self._max_stuck_turns = max_stuck_turns
+        self._heading_jitter_chance = heading_jitter_chance
+
+        self._heading: tuple[int, int] | None = None
+        self._segment_length: int = 0
+        self._steps_remaining: int = 0
+        self._segment_steps_taken: int = 0
+        self._stuck_turns: int = 0
+        self._last_attempt_origin: tuple[int, int] | None = None
+
+    def get_base_score(self) -> float:
+        return 0.18
+
+    def get_considerations(self) -> list[Consideration]:
+        """Wander scores when threat is absent and disposition is approachable."""
+        return [
+            Consideration(
+                "threat_level",
+                ResponseCurve(ResponseCurveType.INVERSE),
+            ),
+            Consideration(
+                "disposition",
+                ResponseCurve(ResponseCurveType.LINEAR),
+            ),
+        ]
+
+    @property
+    def progress(self) -> float:
+        """Progress through the current heading segment."""
+        if self._segment_length <= 0:
+            return 0.0
+        return min(1.0, self._segment_steps_taken / self._segment_length)
+
+    def evaluate_completion(self, npc: NPC, controller: Controller) -> None:
+        """Wander is open-ended and does not auto-complete."""
+        return
+
+    @classmethod
+    def _rotate_heading(cls, heading: tuple[int, int], offset: int) -> tuple[int, int]:
+        """Return heading rotated by ``offset`` steps in the direction wheel."""
+        idx = cls._DIRECTIONS.index(heading)
+        return cls._DIRECTIONS[(idx + offset) % len(cls._DIRECTIONS)]
+
+    def _is_step_walkable(
+        self, npc: NPC, controller: Controller, dx: int, dy: int
+    ) -> bool:
+        """Return True when a step destination is in bounds, walkable, and unblocked."""
+        game_map = controller.gw.game_map
+        tx = npc.x + dx
+        ty = npc.y + dy
+        if not (0 <= tx < game_map.width and 0 <= ty < game_map.height):
+            return False
+        if not game_map.walkable[tx, ty]:
+            return False
+        blocker = controller.gw.get_actor_at_location(tx, ty)
+        return blocker is None or blocker is npc or not blocker.blocks_movement
+
+    def _pick_segment_heading(
+        self, npc: NPC, controller: Controller
+    ) -> tuple[int, int] | None:
+        """Pick a random walkable heading, preferring safe tiles."""
+        from brileta.environment.tile_types import get_hazard_cost
+
+        safe: list[tuple[int, int]] = []
+        hazardous: list[tuple[int, int]] = []
+        game_map = controller.gw.game_map
+
+        for dx, dy in self._DIRECTIONS:
+            if not self._is_step_walkable(npc, controller, dx, dy):
+                continue
+            tile_id = int(game_map.tiles[npc.x + dx, npc.y + dy])
+            if get_hazard_cost(tile_id) > 1:
+                hazardous.append((dx, dy))
+            else:
+                safe.append((dx, dy))
+
+        pool = safe if safe else hazardous
+        if not pool:
+            return None
+        return _rng.choice(pool)
+
+    def _start_new_segment(self, npc: NPC, controller: Controller) -> bool:
+        """Pick a new heading and segment budget.
+
+        Returns:
+            True if a valid segment was started, False otherwise.
+        """
+        heading = self._pick_segment_heading(npc, controller)
+        if heading is None:
+            self._heading = None
+            self._segment_length = 0
+            self._steps_remaining = 0
+            self._segment_steps_taken = 0
+            return False
+
+        self._heading = heading
+        self._segment_length = _rng.randint(
+            self._minimum_segment_steps, self._maximum_segment_steps
+        )
+        self._steps_remaining = self._segment_length
+        self._segment_steps_taken = 0
+        self._stuck_turns = 0
+        return True
+
+    def _apply_heading_jitter(self) -> None:
+        """Occasionally nudge heading by 45 degrees to avoid straight-line drift."""
+        if self._heading is None:
+            return
+        if _rng.random() >= self._heading_jitter_chance:
+            return
+        offset = _rng.choice((-1, 1))
+        self._heading = self._rotate_heading(self._heading, offset)
+
+    def _choose_step(self, npc: NPC, controller: Controller) -> tuple[int, int] | None:
+        """Choose the next step from forward/sidestep/turn fallback candidates."""
+        from brileta.environment.tile_types import get_hazard_cost
+
+        if self._heading is None:
+            return None
+
+        game_map = controller.gw.game_map
+
+        side_offsets = [-2, 2]  # 90-degree sidesteps
+        _rng.shuffle(side_offsets)
+        shallow_turn_offsets = [-1, 1]  # 45-degree turns
+        _rng.shuffle(shallow_turn_offsets)
+
+        # Priority order:
+        # 1) Forward
+        # 2) Sidestep left/right
+        # 3) Shallow turn left/right
+        # 4) Wider turns then reverse as a last resort
+        groups: list[list[int]] = [
+            [0],
+            side_offsets,
+            shallow_turn_offsets,
+            [-3, 3],
+            [4],
+        ]
+
+        for offsets in groups:
+            candidates: list[tuple[tuple[int, int], int]] = []
+            for offset in offsets:
+                direction = self._rotate_heading(self._heading, offset)
+                dx, dy = direction
+                if not self._is_step_walkable(npc, controller, dx, dy):
+                    continue
+                tile_id = int(game_map.tiles[npc.x + dx, npc.y + dy])
+                hazard_cost = get_hazard_cost(tile_id)
+                candidates.append((direction, hazard_cost))
+
+            if not candidates:
+                continue
+
+            # Within a priority group, prefer lower hazard; randomize ties.
+            min_cost = min(cost for _, cost in candidates)
+            safest = [direction for direction, cost in candidates if cost == min_cost]
+            return _rng.choice(safest)
+
+        return None
+
+    def get_next_action(self, npc: NPC, controller: Controller) -> GameIntent | None:
+        """Return a one-step movement intent for the current wander segment."""
+        from brileta.game.actions.movement import MoveIntent
+
+        # Wander now uses direct step intents, not ActionPlans.
+        controller.stop_plan(npc)
+
+        current_pos = (npc.x, npc.y)
+
+        # Resolve whether last tick's attempted move changed position.
+        if self._last_attempt_origin is not None:
+            if current_pos == self._last_attempt_origin:
+                self._stuck_turns += 1
+            else:
+                self._stuck_turns = 0
+            self._last_attempt_origin = None
+
+        needs_new_segment = (
+            self._heading is None
+            or self._steps_remaining <= 0
+            or self._stuck_turns >= self._max_stuck_turns
+        )
+        if needs_new_segment and not self._start_new_segment(npc, controller):
+            return None
+
+        self._apply_heading_jitter()
+        step = self._choose_step(npc, controller)
+        if step is None:
+            self._stuck_turns += 1
+            if self._stuck_turns >= self._max_stuck_turns:
+                self._heading = None
+                self._steps_remaining = 0
+            return None
+
+        dx, dy = step
+        self._heading = (dx, dy)
+        self._steps_remaining = max(0, self._steps_remaining - 1)
+        self._segment_steps_taken += 1
+        self._last_attempt_origin = current_pos
+        return MoveIntent(controller, npc, dx, dy)

@@ -16,7 +16,6 @@ from brileta.game.actions.combat import AttackIntent
 from brileta.game.actions.discovery import ActionCategory, ActionOption
 from brileta.game.actions.stunts import KickIntent, PunchIntent, PushIntent, TripIntent
 from brileta.game.actors import NPC, Character
-from brileta.game.enums import Disposition
 from tests.helpers import reset_dummy_controller
 
 # --- Helper functions ---
@@ -27,9 +26,14 @@ def _make_combat_test_world(
     player_pos: tuple[int, int] = (5, 5),
     enemy_pos: tuple[int, int] = (6, 5),
     *,
-    enemy_disposition: Disposition = Disposition.HOSTILE,
+    enemy_disposition: int = -75,
 ) -> tuple[Controller, Character, NPC]:
-    """Create a test world with player and NPC at specified positions."""
+    """Create a test world with player and NPC at specified positions.
+
+    Args:
+        enemy_disposition: Numeric disposition toward the player.
+            Common values: -75 (hostile), -10 (wary), 0 (neutral).
+    """
     player = controller.gw.player
     assert player is not None
     gm = controller.gw.game_map
@@ -38,7 +42,7 @@ def _make_combat_test_world(
     player.x = player_pos[0]
     player.y = player_pos[1]
 
-    # Create an NPC with the specified disposition
+    # Create an NPC and set per-relationship disposition toward the player
     npc = NPC(
         enemy_pos[0],
         enemy_pos[1],
@@ -46,9 +50,10 @@ def _make_combat_test_world(
         colors.RED,
         "Raider",
         game_world=controller.gw,
-        disposition=enemy_disposition,
     )
     controller.gw.add_actor(npc)
+    if enemy_disposition != 0:
+        npc.ai.modify_disposition(player, enemy_disposition)
 
     # Make all tiles visible and transparent for line of sight
     gm.visible[:] = True
@@ -966,60 +971,35 @@ class TestCombatActionFiltering:
         push_actions = [a for a in actions if a.id == "push"]
         assert len(push_actions) == 1
 
-    def test_no_ranged_action_when_enemy_beyond_max_range(
+    def test_ranged_action_always_listed_with_ammo(
         self, combat_controller: Controller
     ) -> None:
-        """Ranged attack should not appear when enemy is beyond weapon's max range."""
+        """Ranged attack should always appear when the weapon has ammo.
+
+        Range validation happens at targeting time, not at listing time,
+        so the player can select Shoot before finding a target.
+        """
         from brileta.game.items.item_types import PISTOL_TYPE
 
-        # Pistol has max_range=12. Place enemy at distance 15.
+        # Place enemy far away - beyond weapon max_range.
         controller, player, _npc = _make_combat_test_world(
             combat_controller,
             player_pos=(5, 5),
             enemy_pos=(20, 5),  # Distance 15, beyond pistol max_range of 12
         )
 
-        # Equip player with a pistol
+        # Equip player with a pistol that has ammo
         pistol = PISTOL_TYPE.create()
         pistol.ranged_attack.current_ammo = 6
         player.inventory.equip_to_slot(pistol, slot_index=0)
 
         actions = controller.combat_mode.get_available_combat_actions()
 
-        # Should have no ranged actions (enemy is out of range)
         ranged_actions = [
             a for a in actions if a.static_params.get("attack_mode") == "ranged"
         ]
-        assert len(ranged_actions) == 0, (
-            f"Expected no ranged actions, got {ranged_actions}"
-        )
-
-    def test_ranged_action_appears_when_enemy_within_max_range(
-        self, combat_controller: Controller
-    ) -> None:
-        """Ranged attack should appear when enemy is within weapon's max range."""
-        from brileta.game.items.item_types import PISTOL_TYPE
-
-        # Pistol has max_range=12. Place enemy at distance 10.
-        controller, player, _npc = _make_combat_test_world(
-            combat_controller,
-            player_pos=(5, 5),
-            enemy_pos=(15, 5),  # Distance 10, within pistol max_range of 12
-        )
-
-        # Equip player with a pistol
-        pistol = PISTOL_TYPE.create()
-        pistol.ranged_attack.current_ammo = 6
-        player.inventory.equip_to_slot(pistol, slot_index=0)
-
-        actions = controller.combat_mode.get_available_combat_actions()
-
-        # Should have a ranged action (enemy is in range)
-        ranged_actions = [
-            a for a in actions if a.static_params.get("attack_mode") == "ranged"
-        ]
-        assert len(ranged_actions) >= 1, (
-            "Expected ranged action when enemy is within range"
+        assert len(ranged_actions) == 1, (
+            "Expected Shoot to appear regardless of enemy distance"
         )
 
 

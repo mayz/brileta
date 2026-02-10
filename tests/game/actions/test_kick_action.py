@@ -356,7 +356,6 @@ def test_kick_makes_non_hostile_npc_hostile(
 ) -> None:
     """Kicking a non-hostile NPC should make them hostile."""
     from brileta.game.actors import NPC
-    from brileta.game.enums import Disposition
 
     reset_event_bus_for_testing()
     gw = DummyGameWorld()
@@ -371,14 +370,14 @@ def test_kick_makes_non_hostile_npc_hostile(
         colors.YELLOW,
         "Wary NPC",
         game_world=cast(GameWorld, gw),
-        disposition=Disposition.WARY,
     )
     gw.player = player
     gw.add_actor(player)
     gw.add_actor(npc)
+    npc.ai.modify_disposition(player, -10)  # Wary
     controller = DummyController(gw=gw)
 
-    assert npc.ai.disposition == Disposition.WARY
+    assert npc.ai.disposition_toward(player) == -10
 
     # Force successful kick (15), kick damage (3)
     with patch_combat_rng([15], [3]):
@@ -388,7 +387,7 @@ def test_kick_makes_non_hostile_npc_hostile(
 
     assert result is not None
     assert result.succeeded
-    assert npc.ai.disposition == Disposition.HOSTILE
+    assert npc.ai.disposition_toward(player) == -75
 
 
 def test_failed_kick_still_triggers_hostility(
@@ -396,7 +395,6 @@ def test_failed_kick_still_triggers_hostility(
 ) -> None:
     """A failed kick should still make the NPC hostile - the attempt is aggressive."""
     from brileta.game.actors import NPC
-    from brileta.game.enums import Disposition
 
     reset_event_bus_for_testing()
     gw = DummyGameWorld()
@@ -410,14 +408,14 @@ def test_failed_kick_still_triggers_hostility(
         colors.YELLOW,
         "Wary NPC",
         game_world=cast(GameWorld, gw),
-        disposition=Disposition.WARY,
     )
     gw.player = player
     gw.add_actor(player)
     gw.add_actor(npc)
+    npc.ai.modify_disposition(player, -10)  # Wary
     controller = DummyController(gw=gw)
 
-    assert npc.ai.disposition == Disposition.WARY
+    assert npc.ai.disposition_toward(player) == -10
 
     # Force failed kick (low roll, not nat 1)
     with patch_d20_rng([2]):
@@ -428,4 +426,4 @@ def test_failed_kick_still_triggers_hostility(
     assert result is not None
     assert not result.succeeded
     # The attempt was aggressive, so NPC becomes hostile
-    assert npc.ai.disposition == Disposition.HOSTILE
+    assert npc.ai.disposition_toward(player) == -75

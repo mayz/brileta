@@ -204,23 +204,10 @@ class ActionRouter:
                 self._emit_bump_bark(bumpee)
                 return
 
-            # An NPC ramming another actor should ONLY trigger an attack
-            # if the target is the player. This prevents friendly fire from
-            # pathfinding traffic jams.
-            if bumpee is self.controller.gw.player:
-                new_intent = AttackIntent(
-                    self.controller,
-                    bumper,
-                    bumpee,
-                    weapon=None,
-                    attack_mode="melee",
-                )
-                self.execute_intent(new_intent)
-                return
-
-            # In all other cases (NPC bumping into another NPC), do nothing.
-            # The NPC will just wait its turn and the AI will reroute on its
-            # next action.
+            # NPC bumping into any actor does nothing. Attack intent must come
+            # from utility scoring rather than collision side effects. This also
+            # prevents wandering/pathing traffic from causing combat. The NPC will
+            # just wait its turn and the AI will reroute on its next action.
 
         elif result.block_reason == "door" and result.blocked_by:
             # Rule: Bumping into a closed door means you try to open it.
@@ -246,7 +233,11 @@ class ActionRouter:
         if block_until is not None and now < block_until:
             return
 
-        bark = pick_bump_bark(target)
+        player = self.controller.gw.player
+        if player is None:
+            return
+
+        bark = pick_bump_bark(target, player)
         if not bark:
             return
 

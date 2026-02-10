@@ -5,8 +5,9 @@ from brileta import colors
 from brileta.controller import Controller
 from brileta.game import ranges
 from brileta.game.actions.combat import AttackIntent
+from brileta.game.actions.movement import MoveIntent
 from brileta.game.actors import NPC, Character
-from brileta.game.enums import Disposition
+from brileta.game.actors.ai import escalate_hostility
 from brileta.game.game_world import GameWorld
 from brileta.game.turn_manager import TurnManager
 from tests.helpers import DummyGameWorld
@@ -23,7 +24,9 @@ class DummyController(Controller):
         self.action_cost = 100
 
 
-def make_world() -> tuple[DummyController, Character, NPC]:
+def make_world(
+    disposition: int = -75,
+) -> tuple[DummyController, Character, NPC]:
     gw = DummyGameWorld()
     player = Character(
         0, 0, "@", colors.WHITE, "Player", game_world=cast(GameWorld, gw)
@@ -35,17 +38,18 @@ def make_world() -> tuple[DummyController, Character, NPC]:
         colors.RED,
         "Enemy",
         game_world=cast(GameWorld, gw),
-        disposition=Disposition.HOSTILE,
     )
     gw.player = player
     gw.add_actor(player)
     gw.add_actor(npc)
+    if disposition != 0:
+        npc.ai.modify_disposition(player, disposition)
     controller = DummyController(gw)
     return controller, player, npc
 
 
 def test_hostile_ai_sets_active_plan() -> None:
-    """HostileAI creates an active_plan to walk toward player."""
+    """UnifiedAI creates an active_plan to walk toward player."""
     controller, player, npc = make_world()
     action = npc.ai.get_action(controller, npc)
     assert action is None  # Returns None because plan was set
@@ -226,9 +230,10 @@ def test_npc_skips_blocked_safe_tile() -> None:
         colors.RED,
         "Blocker",
         game_world=cast(GameWorld, controller.gw),
-        disposition=Disposition.HOSTILE,
     )
     controller.gw.add_actor(blocker)
+    assert controller.gw.player is not None
+    blocker.ai.set_hostile(controller.gw.player)
 
     # Place NPC on hazard
     controller.gw.game_map.tiles[5, 5] = TileTypeID.ACID_POOL
@@ -249,3 +254,174 @@ def test_npc_skips_blocked_safe_tile() -> None:
     # Should escape to (5, 4), not blocked (4, 5)
     assert action.dx == 0
     assert action.dy == -1
+
+
+def test_neutral_npc_in_range_does_not_attack() -> None:
+    """Disposition 0 should not trigger attack behavior on proximity alone."""
+    from brileta.game.actors.goals import WanderGoal
+
+    controller, _player, npc = make_world(disposition=0)
+    npc.x = 1
+    npc.y = 0
+
+    action = npc.ai.get_action(controller, npc)
+
+    assert not isinstance(action, AttackIntent)
+    assert isinstance(npc.current_goal, WanderGoal)
+    assert isinstance(action, MoveIntent)
+
+
+def test_numeric_hostile_disposition_attacks_in_range() -> None:
+    """Numeric hostile disposition should attack when adjacent."""
+    controller, _player, npc = make_world(disposition=-75)  # Hostile
+    npc.x = 1
+    npc.y = 0
+
+    action = npc.ai.get_action(controller, npc)
+
+    assert isinstance(action, AttackIntent)
+
+
+def test_avoid_action_moves_unfriendly_npc_away() -> None:
+    """Unfriendly NPCs should choose AvoidAction and step away from player."""
+    from brileta.game.actions.movement import MoveIntent
+
+    controller, _player, npc = make_world(disposition=-35)  # Unfriendly
+    npc.x = 1
+    npc.y = 0
+
+    action = npc.ai.get_action(controller, npc)
+
+    assert isinstance(action, MoveIntent)
+    assert (action.dx, action.dy) == (1, 0)
+
+
+def test_watch_action_returns_none_for_wary_npc() -> None:
+    """Wary NPCs should specifically pick WatchAction."""
+    controller, _player, npc = make_world(disposition=-20)  # Wary boundary
+    npc.x = 1
+    npc.y = 0
+
+    # Remove avoid options so Watch vs Idle is the relevant decision.
+    gm = controller.gw.game_map
+    gm.walkable[2, 0] = False
+    gm.walkable[2, 1] = False
+
+    action = npc.ai.get_action(controller, npc)
+
+    assert action is None
+    assert npc.active_plan is None
+    assert npc.ai.last_chosen_action is not None
+    assert "Watch" in npc.ai.last_chosen_action
+
+
+def test_avoid_action_returns_none_when_cornered() -> None:
+    """Cornered unfriendly NPCs should fall back cleanly when avoid has no step."""
+    controller, _player, npc = make_world(disposition=-35)  # Unfriendly
+    npc.x = 1
+    npc.y = 0
+
+    # Block all tiles that would increase distance from player at (0, 0).
+    gm = controller.gw.game_map
+    gm.walkable[2, 0] = False
+    gm.walkable[2, 1] = False
+
+    action = npc.ai.get_action(controller, npc)
+
+    assert action is None
+    assert npc.ai.last_chosen_action in {"Watch", "Idle"}
+
+
+def test_wander_creates_goal_when_no_threat() -> None:
+    """Neutral NPC should start wander as a persistent goal when safe."""
+    from brileta.game.actors.goals import WanderGoal
+
+    controller, player, npc = make_world(disposition=0)
+    player.teleport(20, 20)
+    npc.teleport(5, 5)
+
+    action = npc.ai.get_action(controller, npc)
+
+    assert isinstance(action, MoveIntent)
+    assert isinstance(npc.current_goal, WanderGoal)
+
+
+def test_wander_goal_continues_across_ticks() -> None:
+    """Existing WanderGoal should be continued instead of recreated each tick."""
+    from brileta.game.actors.goals import WanderGoal
+
+    controller, player, npc = make_world(disposition=0)
+    player.teleport(20, 20)
+    npc.teleport(5, 5)
+
+    npc.ai.get_action(controller, npc)
+    assert isinstance(npc.current_goal, WanderGoal)
+    first_goal = npc.current_goal
+
+    npc.ai.get_action(controller, npc)
+
+    assert npc.current_goal is first_goal
+
+
+def test_set_hostile_transitions_passive_to_aggressive() -> None:
+    """set_hostile() should switch a non-hostile NPC into attack behavior."""
+    controller, player, npc = make_world(disposition=40)  # Friendly
+    npc.x = 1
+    npc.y = 0
+
+    first_action = npc.ai.get_action(controller, npc)
+    assert not isinstance(first_action, AttackIntent)
+
+    npc.ai.set_hostile(player)
+    second_action = npc.ai.get_action(controller, npc)
+    assert isinstance(second_action, AttackIntent)
+
+
+def test_modify_disposition_clamps_to_valid_range() -> None:
+    """modify_disposition() should clamp numeric disposition to [-100, 100]."""
+    _controller, player, npc = make_world(disposition=0)
+
+    npc.ai.modify_disposition(player, 999)
+    assert npc.ai.disposition_toward(player) == 100
+
+    npc.ai.modify_disposition(player, -999)
+    assert npc.ai.disposition_toward(player) == -100
+
+
+def test_hostile_npc_can_target_another_npc() -> None:
+    """Hostile relationship should allow NPC-vs-NPC targeting."""
+    controller, player, npc = make_world(disposition=40)  # Friendly
+    npc2 = NPC(
+        1,
+        0,
+        "r",
+        colors.RED,
+        "Rival",
+        game_world=cast(GameWorld, controller.gw),
+    )
+    controller.gw.add_actor(npc2)
+    npc2.ai.modify_disposition(player, 40)  # Friendly toward player
+
+    player.teleport(10, 10)
+    npc.teleport(2, 0)
+
+    npc.ai.set_hostile(npc2)
+
+    action = npc.ai.get_action(controller, npc)
+
+    assert isinstance(action, AttackIntent)
+    assert action.defender is npc2
+
+
+def test_escalate_hostility_noop_when_defender_has_no_ai() -> None:
+    """Escalation should no-op when the defender is the AI-less player."""
+    controller, player, npc = make_world(disposition=-75)
+    assert player.ai is None
+
+    attacker_awareness_before = npc.ai._last_attacker_id
+    disposition_before = npc.ai.disposition_toward(player)
+
+    escalate_hostility(npc, player, controller)
+
+    assert npc.ai._last_attacker_id == attacker_awareness_before
+    assert npc.ai.disposition_toward(player) == disposition_before

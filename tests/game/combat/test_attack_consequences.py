@@ -9,9 +9,9 @@ from brileta.controller import Controller
 from brileta.events import MessageEvent, reset_event_bus_for_testing, subscribe_to_event
 from brileta.game.actions.combat import AttackIntent
 from brileta.game.actions.executors.combat import AttackExecutor
-from brileta.game.actors import Character, ai
+from brileta.game.actors import NPC, Character
 from brileta.game.actors.status_effects import OffBalanceEffect
-from brileta.game.enums import Disposition, OutcomeTier
+from brileta.game.enums import OutcomeTier
 from brileta.game.game_world import GameWorld
 from brileta.game.items.item_core import Item
 from brileta.game.items.item_types import PISTOL_TYPE
@@ -54,15 +54,12 @@ class DummyController(Controller):
     frame_manager: DummyFrameManager
 
 
-def make_world() -> tuple[
-    DummyController, Character, Character, Character, AttackIntent
-]:
+def make_world() -> tuple[DummyController, Character, Character, NPC, AttackIntent]:
     reset_event_bus_for_testing()
     gw = DummyGameWorld()
     attacker = Character(1, 1, "A", colors.WHITE, "Att", game_world=cast(GameWorld, gw))
     defender = Character(2, 1, "D", colors.WHITE, "Def", game_world=cast(GameWorld, gw))
-    bystander = Character(3, 1, "B", colors.WHITE, "By", game_world=cast(GameWorld, gw))
-    bystander.ai = ai.DispositionBasedAI(disposition=Disposition.WARY)
+    bystander = NPC(3, 1, "B", colors.WHITE, "By", game_world=cast(GameWorld, gw))
     gw.add_actor(attacker)
     gw.add_actor(defender)
     gw.add_actor(bystander)
@@ -116,8 +113,7 @@ def test_weapon_drop_and_noise_alert(
     assert any(
         it.name == cast(Item, intent.weapon).name for it in ground_actor.inventory
     )
-    assert isinstance(bystander.ai, ai.DispositionBasedAI)
-    assert bystander.ai.disposition == Disposition.HOSTILE
+    assert bystander.ai.disposition_toward(attacker) == -75
 
 
 def test_self_injury_consequence(

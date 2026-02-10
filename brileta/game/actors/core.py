@@ -42,13 +42,13 @@ from brileta.events import (
 )
 from brileta.game.action_plan import ActivePlan
 from brileta.game.actors import conditions
-from brileta.game.enums import CreatureSize, Disposition, InjuryLocation
+from brileta.game.enums import CreatureSize, InjuryLocation
 from brileta.game.items.item_core import Item
 from brileta.sound.emitter import SoundEmitter
 from brileta.types import TileCoord, WorldTileCoord
 from brileta.view.animation import MoveAnimation
 
-from .ai import AIComponent, DispositionBasedAI
+from .ai import AIComponent, UnifiedAI, disposition_label
 from .components import (
     CharacterInventory,
     ConditionsComponent,
@@ -148,6 +148,10 @@ class Actor:
     unified and clear interface for game systems.
     """
 
+    _next_actor_id: int = 1
+
+    ai: AIComponent | None
+
     def __init__(
         self,
         x: WorldTileCoord,
@@ -169,6 +173,9 @@ class Actor:
         character_layers: list[CharacterLayer] | None = None,
     ) -> None:
         # === Core Identity & World Presence ===
+        self.actor_id: int = Actor._next_actor_id
+        Actor._next_actor_id += 1
+
         self.x: WorldTileCoord = x
         self.y: WorldTileCoord = y
 
@@ -427,7 +434,7 @@ class Actor:
         """
         return None
 
-    def get_target_description(self) -> str | None:
+    def get_target_description(self, viewer: Character | None = None) -> str | None:
         """Return a short description for the action panel."""
         return None
 
@@ -578,15 +585,15 @@ class Character(Actor):
         """
         return None
 
-    def get_target_description(self) -> str | None:
+    def get_target_description(self, viewer: Character | None = None) -> str | None:
         """Return a descriptive label for this character."""
         if not self.health.is_alive():
             return "Deceased"
 
         parts = [f"HP: {self.health.hp}/{self.health.max_hp}"]
-        if isinstance(self.ai, DispositionBasedAI):
-            label = self.ai.disposition.name.replace("_", " ").lower()
-            parts.append(label.title())
+        if isinstance(self.ai, UnifiedAI) and viewer is not None:
+            relationship = self.ai.disposition_toward(viewer)
+            parts.append(disposition_label(relationship))
 
         return " | ".join(parts)
 
@@ -702,6 +709,8 @@ class NPC(Character):
     functionality still comes from the components.
     """
 
+    ai: UnifiedAI
+
     def __init__(
         self,
         x: int,
@@ -719,7 +728,6 @@ class NPC(Character):
         weirdness: int = 0,
         starting_weapon: Item | None = None,
         num_ready_slots: int = 2,
-        disposition: Disposition = Disposition.WARY,
         speed: int = DEFAULT_ACTOR_SPEED,
         **kwargs,
     ) -> None:
@@ -732,10 +740,8 @@ class NPC(Character):
             name: Character name
             game_world: World to exist in
             strength, toughness, etc.: Ability scores
-            light_source: Optional light source
             starting_weapon: Initial equipped weapon
             num_ready_slots: The number of ready slots this character should have
-            disposition: Starting disposition toward player
             speed: Action speed (higher = more frequent actions)
             **kwargs: Additional Actor parameters
         """
@@ -753,15 +759,15 @@ class NPC(Character):
             intelligence=intelligence,
             demeanor=demeanor,
             weirdness=weirdness,
-            ai=DispositionBasedAI(disposition=disposition),
+            ai=UnifiedAI(),
             starting_weapon=starting_weapon,
             num_ready_slots=num_ready_slots,
             speed=speed,
             **kwargs,
         )
 
-        # Type narrowing - these are guaranteed to exist.
-        self.ai: AIComponent
+        # Type narrowing: NPC always has UnifiedAI.
+        self.ai: UnifiedAI
 
         # Goal system: the NPC's current multi-turn objective (flee, patrol, etc).
         # Goals sit above ActionPlans and manage behavioral state transitions.

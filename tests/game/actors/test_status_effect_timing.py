@@ -25,9 +25,16 @@ def test_npc_status_effect_duration_is_independent_of_player_actions(
     player = controller.gw.player
     player.energy.speed = 200  # Player is faster than the NPC
 
-    # Create an NPC with default speed (100).
+    # Create an NPC with slower speed (50), so one player action is not enough
+    # for the NPC to afford a turn.
     npc = NPC(
-        x=1, y=1, ch="N", color=colors.WHITE, name="Test NPC", game_world=controller.gw
+        x=1,
+        y=1,
+        ch="N",
+        color=colors.WHITE,
+        name="Test NPC",
+        game_world=controller.gw,
+        speed=50,
     )
     controller.gw.add_actor(npc)
     # Ensure the new NPC is added to the TurnManager cache.
@@ -46,8 +53,8 @@ def test_npc_status_effect_duration_is_independent_of_player_actions(
     player_action = MoveIntent(controller, player, 1, 0)
     controller._execute_player_action_immediately(player_action)
 
-    # All NPCs that can act now do so. Since the NPC's speed is 100 and the
-    # player's is 200, the NPC will not have enough energy to act yet.
+    # All NPCs that can act now do so. Since the NPC's speed is 50 and the
+    # action cost is 100, the NPC will not have enough energy to act yet.
     controller._process_all_available_npc_actions()
 
     # 3. ASSERTION

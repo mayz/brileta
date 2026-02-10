@@ -497,8 +497,8 @@ class TestActorIdRegistry:
 
         gw.add_actor(actor)
 
-        assert id(actor) in gw._actor_id_registry
-        assert gw._actor_id_registry[id(actor)] is actor
+        assert actor.actor_id in gw._actor_id_registry
+        assert gw._actor_id_registry[actor.actor_id] is actor
 
     def test_remove_actor_unregisters_from_id_registry(self) -> None:
         gw = make_world()
@@ -507,7 +507,7 @@ class TestActorIdRegistry:
 
         gw.remove_actor(actor)
 
-        assert id(actor) not in gw._actor_id_registry
+        assert actor.actor_id not in gw._actor_id_registry
 
     def test_get_actor_by_id_returns_correct_actor(self) -> None:
         gw = make_world()
@@ -516,7 +516,7 @@ class TestActorIdRegistry:
         gw.add_actor(actor1)
         gw.add_actor(actor2)
 
-        result = gw.get_actor_by_id(id(actor1))
+        result = gw.get_actor_by_id(actor1.actor_id)
 
         assert result is actor1
 
@@ -533,7 +533,7 @@ class TestActorIdRegistry:
         gw = make_world()
         actor = make_actor(gw, x=5, y=5)
         gw.add_actor(actor)
-        actor_id = id(actor)
+        actor_id = actor.actor_id
 
         gw.remove_actor(actor)
         result = gw.get_actor_by_id(actor_id)
@@ -549,7 +549,7 @@ class TestActorIdRegistry:
         # actor2 was never added - removing it should not affect actor1
         gw.remove_actor(actor2)
 
-        assert gw.get_actor_by_id(id(actor1)) is actor1
+        assert gw.get_actor_by_id(actor1.actor_id) is actor1
 
     def test_multiple_actors_in_registry(self) -> None:
         gw = make_world()
@@ -559,7 +559,7 @@ class TestActorIdRegistry:
 
         # All actors should be retrievable
         for actor in actors:
-            assert gw.get_actor_by_id(id(actor)) is actor
+            assert gw.get_actor_by_id(actor.actor_id) is actor
 
     def test_registry_empty_initially(self) -> None:
         gw = make_world()

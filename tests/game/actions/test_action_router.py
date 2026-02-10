@@ -8,7 +8,6 @@ from brileta.environment.tile_types import TileTypeID
 from brileta.events import FloatingTextEvent
 from brileta.game.action_router import ActionRouter
 from brileta.game.actions.base import GameActionResult
-from brileta.game.actions.combat import AttackIntent
 from brileta.game.actions.environment import SearchContainerIntent
 from brileta.game.actions.movement import MoveIntent
 from brileta.game.actors import NPC, Character
@@ -144,8 +143,8 @@ def test_bark_respects_cooldown() -> None:
         assert mock_publish.call_count == 1
 
 
-def test_npc_bumping_player_triggers_attack() -> None:
-    controller, player = _make_world()
+def test_npc_bumping_player_does_nothing() -> None:
+    controller, _player = _make_world()
     npc = Character(
         0,
         1,
@@ -167,11 +166,7 @@ def test_npc_bumping_player_triggers_attack() -> None:
         intent = MoveIntent(cast(Controller, controller), npc, 0, -1)
         router.execute_intent(intent)
 
-        assert mock_execute.called
-        call_args = mock_execute.call_args[0][0]
-        assert isinstance(call_args, AttackIntent)
-        assert call_args.attacker is npc
-        assert call_args.defender is player
+        assert not mock_execute.called
 
 
 def test_npc_bumping_npc_does_nothing() -> None:

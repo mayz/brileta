@@ -21,7 +21,6 @@ from brileta.game.actions.executors.stunts import PushExecutor
 from brileta.game.actions.stunts import PushIntent
 from brileta.game.actors import NPC, Character
 from brileta.game.consequences import Consequence, ConsequenceHandler
-from brileta.game.enums import Disposition
 from brileta.game.items.item_types import FISTS_TYPE
 from tests.helpers import reset_dummy_controller
 
@@ -33,11 +32,15 @@ def _make_combat_test_world(
     player_pos: tuple[int, int] = (5, 5),
     enemy_pos: tuple[int, int] = (6, 5),
     *,
-    enemy_disposition: Disposition = Disposition.HOSTILE,
+    enemy_disposition: int = -75,
 ) -> tuple[Controller, Character, NPC]:
     """Create a test world with player and NPC at specified positions.
 
     Returns a full Controller so we can check combat mode state.
+
+    Args:
+        enemy_disposition: Numeric disposition toward the player.
+            Common values: -75 (hostile), -10 (wary), 0 (neutral).
     """
     player = controller.gw.player
     assert player is not None
@@ -50,7 +53,7 @@ def _make_combat_test_world(
     player.x = player_pos[0]
     player.y = player_pos[1]
 
-    # Create an NPC with the specified disposition
+    # Create an NPC and set per-relationship disposition toward the player
     npc = NPC(
         enemy_pos[0],
         enemy_pos[1],
@@ -58,9 +61,10 @@ def _make_combat_test_world(
         colors.RED,
         "Raider",
         game_world=controller.gw,
-        disposition=enemy_disposition,
     )
     controller.gw.add_actor(npc)
+    if enemy_disposition != 0:
+        npc.ai.modify_disposition(player, enemy_disposition)
 
     return controller, player, npc
 
@@ -80,7 +84,7 @@ def test_npc_attack_triggers_combat_mode(auto_combat_controller: Controller) -> 
         auto_combat_controller,
         player_pos=(5, 5),
         enemy_pos=(6, 5),
-        enemy_disposition=Disposition.HOSTILE,
+        enemy_disposition=-75,  # Hostile
     )
 
     # Verify we start in explore mode
@@ -108,7 +112,7 @@ def test_npc_miss_still_triggers_combat_mode(
         auto_combat_controller,
         player_pos=(5, 5),
         enemy_pos=(6, 5),
-        enemy_disposition=Disposition.HOSTILE,
+        enemy_disposition=-75,  # Hostile
     )
 
     assert not controller.is_combat_mode()
@@ -133,11 +137,11 @@ def test_player_attack_triggers_combat_mode(auto_combat_controller: Controller) 
         auto_combat_controller,
         player_pos=(5, 5),
         enemy_pos=(6, 5),
-        enemy_disposition=Disposition.WARY,  # Non-hostile
+        enemy_disposition=-10,  # Wary  # Non-hostile
     )
 
     assert not controller.is_combat_mode()
-    assert npc.ai.disposition == Disposition.WARY
+    assert npc.ai.disposition_toward(player) == -10
 
     # Player attacks non-hostile NPC with fists
     weapon = FISTS_TYPE.create()
@@ -147,7 +151,7 @@ def test_player_attack_triggers_combat_mode(auto_combat_controller: Controller) 
         executor.execute(intent)
 
     # NPC should become hostile and combat mode should activate
-    assert npc.ai.disposition == Disposition.HOSTILE
+    assert npc.ai.disposition_toward(player) == -75
     assert controller.is_combat_mode()
 
 
@@ -163,7 +167,7 @@ def test_player_attack_already_hostile_no_double_event(
         auto_combat_controller,
         player_pos=(5, 5),
         enemy_pos=(6, 5),
-        enemy_disposition=Disposition.HOSTILE,
+        enemy_disposition=-75,  # Hostile
     )
 
     assert not controller.is_combat_mode()
@@ -175,8 +179,8 @@ def test_player_attack_already_hostile_no_double_event(
         executor = AttackExecutor()
         executor.execute(intent)
 
-    # No event should fire (NPC was already hostile, so _update_ai_disposition
-    # doesn't trigger, and the NPC-attacks-player branch doesn't trigger either).
+    # No event should fire (NPC was already hostile, so hostility escalation is
+    # a no-op, and the NPC-attacks-player branch doesn't trigger either).
     # However, the first combat action should ideally enter combat mode.
     # This test verifies no crash from duplicate events.
     # The player attacking an NPC doesn't auto-enter combat - that's intentional.
@@ -196,11 +200,11 @@ def test_player_push_triggers_combat_mode(auto_combat_controller: Controller) ->
         auto_combat_controller,
         player_pos=(5, 5),
         enemy_pos=(6, 5),
-        enemy_disposition=Disposition.WARY,
+        enemy_disposition=-10,  # Wary
     )
 
     assert not controller.is_combat_mode()
-    assert npc.ai.disposition == Disposition.WARY
+    assert npc.ai.disposition_toward(player) == -10
 
     # Player pushes non-hostile NPC
     with patch("random.randint", return_value=15):  # Force success
@@ -209,7 +213,7 @@ def test_player_push_triggers_combat_mode(auto_combat_controller: Controller) ->
         executor.execute(intent)
 
     # NPC should become hostile and combat mode should activate
-    assert npc.ai.disposition == Disposition.HOSTILE
+    assert npc.ai.disposition_toward(player) == -75
     assert controller.is_combat_mode()
 
 
@@ -224,7 +228,7 @@ def test_failed_push_still_triggers_combat_mode(
         auto_combat_controller,
         player_pos=(5, 5),
         enemy_pos=(6, 5),
-        enemy_disposition=Disposition.WARY,
+        enemy_disposition=-10,  # Wary
     )
 
     assert not controller.is_combat_mode()
@@ -236,7 +240,7 @@ def test_failed_push_still_triggers_combat_mode(
         executor.execute(intent)
 
     # Combat mode should activate despite the failed push
-    assert npc.ai.disposition == Disposition.HOSTILE
+    assert npc.ai.disposition_toward(player) == -75
     assert controller.is_combat_mode()
 
 
@@ -249,11 +253,11 @@ def test_noise_alert_triggers_combat_mode(auto_combat_controller: Controller) ->
         auto_combat_controller,
         player_pos=(5, 5),
         enemy_pos=(7, 5),  # 2 tiles away, within radius 5
-        enemy_disposition=Disposition.WARY,
+        enemy_disposition=-10,  # Wary
     )
 
     assert not controller.is_combat_mode()
-    assert npc.ai.disposition == Disposition.WARY
+    assert npc.ai.disposition_toward(player) == -10
 
     # Simulate noise alert from player firing a weapon
     handler = ConsequenceHandler()
@@ -264,7 +268,7 @@ def test_noise_alert_triggers_combat_mode(auto_combat_controller: Controller) ->
     handler.apply_consequence(consequence)
 
     # NPC should become hostile and combat mode should activate
-    assert npc.ai.disposition == Disposition.HOSTILE
+    assert npc.ai.disposition_toward(player) == -75
     assert controller.is_combat_mode()
 
 
@@ -272,11 +276,11 @@ def test_noise_from_npc_does_not_trigger_combat_mode(
     auto_combat_controller: Controller,
 ) -> None:
     """Noise from an NPC should not trigger combat mode entry."""
-    controller, _player, npc = _make_combat_test_world(
+    controller, player, npc = _make_combat_test_world(
         auto_combat_controller,
         player_pos=(5, 5),
         enemy_pos=(7, 5),
-        enemy_disposition=Disposition.HOSTILE,
+        enemy_disposition=-75,  # Hostile
     )
 
     # Create another NPC that's not hostile
@@ -287,12 +291,12 @@ def test_noise_from_npc_does_not_trigger_combat_mode(
         colors.YELLOW,
         "Bystander",
         game_world=controller.gw,
-        disposition=Disposition.WARY,
     )
     controller.gw.add_actor(bystander)
+    bystander.ai.modify_disposition(player, -10)  # Wary
 
     assert not controller.is_combat_mode()
-    assert bystander.ai.disposition == Disposition.WARY
+    assert bystander.ai.disposition_toward(player) == -10
 
     # Simulate noise alert from NPC (not player)
     handler = ConsequenceHandler()
@@ -302,9 +306,10 @@ def test_noise_from_npc_does_not_trigger_combat_mode(
     )
     handler.apply_consequence(consequence)
 
-    # Bystander becomes hostile but combat mode should NOT activate
-    # (only player-caused noise triggers combat mode)
-    assert bystander.ai.disposition == Disposition.HOSTILE
+    # NPC-generated noise should not trigger relationship hostility changes
+    # or combat mode transitions for the player.
+    assert bystander.ai.disposition_toward(npc) == 0
+    assert bystander.ai.disposition_toward(player) == -10
     assert not controller.is_combat_mode()
 
 
@@ -321,7 +326,7 @@ def test_already_in_combat_no_reentry(auto_combat_controller: Controller) -> Non
         auto_combat_controller,
         player_pos=(5, 5),
         enemy_pos=(6, 5),
-        enemy_disposition=Disposition.HOSTILE,
+        enemy_disposition=-75,  # Hostile
     )
 
     # Manually enter combat mode first
@@ -347,7 +352,7 @@ def test_multiple_events_same_frame_handled(auto_combat_controller: Controller) 
         auto_combat_controller,
         player_pos=(5, 5),
         enemy_pos=(6, 5),
-        enemy_disposition=Disposition.WARY,
+        enemy_disposition=-10,  # Wary
     )
 
     # Create a second NPC
@@ -358,9 +363,9 @@ def test_multiple_events_same_frame_handled(auto_combat_controller: Controller) 
         colors.RED,
         "Raider 2",
         game_world=controller.gw,
-        disposition=Disposition.WARY,
     )
     controller.gw.add_actor(npc2)
+    npc2.ai.modify_disposition(player, -10)  # Wary
 
     # Make both NPCs visible so they become combat candidates
     controller.gw.game_map.visible[npc.x, npc.y] = True
@@ -388,8 +393,8 @@ def test_multiple_events_same_frame_handled(auto_combat_controller: Controller) 
     # Should still be in combat mode without issues
     assert controller.is_combat_mode()
     # Both NPCs should be hostile
-    assert npc.ai.disposition == Disposition.HOSTILE
-    assert npc2.ai.disposition == Disposition.HOSTILE
+    assert npc.ai.disposition_toward(player) == -75
+    assert npc2.ai.disposition_toward(player) == -75
 
 
 # --- Visible Hostiles Detection Tests ---
@@ -403,7 +408,7 @@ def test_has_visible_hostiles_returns_true_when_hostile_visible(
         auto_combat_controller,
         player_pos=(5, 5),
         enemy_pos=(6, 5),
-        enemy_disposition=Disposition.HOSTILE,
+        enemy_disposition=-75,  # Hostile
     )
 
     # Make the NPC's tile visible
@@ -416,17 +421,17 @@ def test_has_visible_hostiles_returns_false_when_no_hostiles(
     auto_combat_controller: Controller,
 ) -> None:
     """has_visible_hostiles() returns False when no NPCs are hostile."""
-    controller, _player, npc = _make_combat_test_world(
+    controller, player, npc = _make_combat_test_world(
         auto_combat_controller,
         player_pos=(5, 5),
         enemy_pos=(6, 5),
-        enemy_disposition=Disposition.WARY,  # Not hostile
+        enemy_disposition=-10,  # Wary  # Not hostile
     )
 
     # Make the NPC's tile visible (still shouldn't count as hostile)
     controller.gw.game_map.visible[npc.x, npc.y] = True
 
-    assert npc.ai.disposition == Disposition.WARY
+    assert npc.ai.disposition_toward(player) == -10
     assert not controller.has_visible_hostiles()
 
 
@@ -434,17 +439,17 @@ def test_has_visible_hostiles_returns_false_when_hostile_not_visible(
     auto_combat_controller: Controller,
 ) -> None:
     """has_visible_hostiles() returns False when hostile NPCs aren't visible."""
-    controller, _player, npc = _make_combat_test_world(
+    controller, player, npc = _make_combat_test_world(
         auto_combat_controller,
         player_pos=(5, 5),
         enemy_pos=(6, 5),
-        enemy_disposition=Disposition.HOSTILE,
+        enemy_disposition=-75,  # Hostile
     )
 
     # Make the NPC's tile not visible
     controller.gw.game_map.visible[npc.x, npc.y] = False
 
-    assert npc.ai.disposition == Disposition.HOSTILE
+    assert npc.ai.disposition_toward(player) == -75
     assert not controller.has_visible_hostiles()
 
 
@@ -452,18 +457,18 @@ def test_has_visible_hostiles_ignores_dead_hostiles(
     auto_combat_controller: Controller,
 ) -> None:
     """has_visible_hostiles() returns False when hostile NPCs are dead."""
-    controller, _player, npc = _make_combat_test_world(
+    controller, player, npc = _make_combat_test_world(
         auto_combat_controller,
         player_pos=(5, 5),
         enemy_pos=(6, 5),
-        enemy_disposition=Disposition.HOSTILE,
+        enemy_disposition=-75,  # Hostile
     )
 
     # Make the NPC visible and then kill them
     controller.gw.game_map.visible[npc.x, npc.y] = True
     npc.health._hp = 0
 
-    assert npc.ai.disposition == Disposition.HOSTILE
+    assert npc.ai.disposition_toward(player) == -75
     assert not npc.health.is_alive()
     assert not controller.has_visible_hostiles()
 
@@ -479,7 +484,7 @@ def test_combat_auto_exits_when_all_enemies_dead(
         auto_combat_controller,
         player_pos=(5, 5),
         enemy_pos=(6, 5),
-        enemy_disposition=Disposition.HOSTILE,
+        enemy_disposition=-75,  # Hostile
     )
 
     # Make NPC visible
@@ -507,7 +512,7 @@ def test_combat_ended_event_published_on_auto_exit(
         auto_combat_controller,
         player_pos=(5, 5),
         enemy_pos=(6, 5),
-        enemy_disposition=Disposition.HOSTILE,
+        enemy_disposition=-75,  # Hostile
     )
 
     # Track received events
@@ -541,7 +546,7 @@ def test_combat_ended_event_published_on_manual_exit(
         auto_combat_controller,
         player_pos=(5, 5),
         enemy_pos=(6, 5),
-        enemy_disposition=Disposition.HOSTILE,
+        enemy_disposition=-75,  # Hostile
     )
 
     # Track received events
@@ -580,7 +585,7 @@ def test_combat_ended_event_published_on_cancelled_exit(
         auto_combat_controller,
         player_pos=(5, 5),
         enemy_pos=(6, 5),
-        enemy_disposition=Disposition.HOSTILE,
+        enemy_disposition=-75,  # Hostile
     )
 
     # Track received events
@@ -621,11 +626,11 @@ def test_push_already_hostile_npc_no_combat_entry(
         auto_combat_controller,
         player_pos=(5, 5),
         enemy_pos=(6, 5),
-        enemy_disposition=Disposition.HOSTILE,  # Already hostile
+        enemy_disposition=-75,  # Hostile  # Already hostile
     )
 
     assert not controller.is_combat_mode()
-    assert npc.ai.disposition == Disposition.HOSTILE
+    assert npc.ai.disposition_toward(player) == -75
 
     # Player pushes already-hostile NPC
     with patch("random.randint", return_value=15):  # Force success
@@ -636,5 +641,5 @@ def test_push_already_hostile_npc_no_combat_entry(
     # NPC disposition unchanged (was already hostile)
     # No event fired, so combat mode NOT entered
     # (Combat auto-entry is triggered by disposition changes only)
-    assert npc.ai.disposition == Disposition.HOSTILE
+    assert npc.ai.disposition_toward(player) == -75
     assert not controller.is_combat_mode()

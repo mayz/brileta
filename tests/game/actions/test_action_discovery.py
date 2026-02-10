@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import types
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 
@@ -26,8 +25,8 @@ from brileta.game.actions.discovery import (
 )
 from brileta.game.actions.environment import OpenDoorIntent, SearchContainerIntent
 from brileta.game.actors import Character, status_effects
+from brileta.game.actors.ai import UnifiedAI
 from brileta.game.actors.container import create_bookcase
-from brileta.game.enums import Disposition
 from brileta.game.game_world import GameWorld
 from brileta.game.items.capabilities import RangedAttack
 from brileta.game.items.item_types import (
@@ -51,6 +50,17 @@ class DummyController:
         return D20System(**kwargs)  # type: ignore[call-arg]
 
 
+def _set_disposition_toward(
+    source: Character,
+    target: Character,
+    value: int,
+) -> None:
+    """Set relationship disposition exactly for tests using UnifiedAI."""
+    assert isinstance(source.ai, UnifiedAI)
+    delta = value - source.ai.disposition_toward(target)
+    source.ai.modify_disposition(target, delta)
+
+
 def _make_context_world():
     gw = DummyGameWorld()
     tiles = np.full((30, 30), TileTypeID.FLOOR, dtype=np.uint8, order="F")
@@ -70,7 +80,8 @@ def _make_context_world():
     hostile = Character(
         5, 5, "H", colors.RED, "Hostile", game_world=cast(GameWorld, gw)
     )
-    hostile.ai = cast(Any, types.SimpleNamespace(disposition=Disposition.HOSTILE))
+    hostile.ai = UnifiedAI()
+    hostile.ai.actor = hostile
     friend = Character(
         20, 20, "F", colors.WHITE, "Friend", game_world=cast(GameWorld, gw)
     )
@@ -79,6 +90,7 @@ def _make_context_world():
     gw.add_actor(hostile)
     gw.add_actor(friend)
     gw.player = player
+    _set_disposition_toward(hostile, player, -75)
     gw.selected_actor = hostile
     knife = COMBAT_KNIFE_TYPE.create()
     gw.items[(0, 0)] = [knife]
@@ -752,7 +764,7 @@ def test_get_options_for_target_outside_combat_shows_attack_gateway() -> None:
     """Outside combat, targeting a character shows Attack gateway and Talk action."""
     controller, player, hostile, _, _ = _make_context_world()
     # Make hostile non-hostile so we're out of combat
-    cast(Any, hostile.ai).disposition = Disposition.FRIENDLY
+    _set_disposition_toward(hostile, player, 40)
 
     disc = ActionDiscovery()
 
@@ -802,7 +814,7 @@ def test_attack_gateway_not_shown_for_dead_targets() -> None:
     """Attack gateway should not appear for dead targets."""
     controller, player, hostile, _, _ = _make_context_world()
     hostile.health._hp = 0  # Kill the target
-    cast(Any, hostile.ai).disposition = Disposition.FRIENDLY
+    _set_disposition_toward(hostile, player, 40)
 
     disc = ActionDiscovery()
     controller.is_combat_mode = lambda: False
@@ -818,7 +830,7 @@ def test_get_options_for_target_outside_combat_shows_stunts() -> None:
     """Outside combat, targeting a character shows Push and Trip stunts."""
     controller, player, hostile, _, _ = _make_context_world()
     # Make hostile non-hostile so we're out of combat
-    cast(Any, hostile.ai).disposition = Disposition.FRIENDLY
+    _set_disposition_toward(hostile, player, 40)
 
     disc = ActionDiscovery()
     controller.is_combat_mode = lambda: False
@@ -847,7 +859,7 @@ def test_stunts_not_shown_for_dead_targets() -> None:
     """Push and Trip should not appear for dead targets."""
     controller, player, hostile, _, _ = _make_context_world()
     hostile.health._hp = 0  # Kill the target
-    cast(Any, hostile.ai).disposition = Disposition.FRIENDLY
+    _set_disposition_toward(hostile, player, 40)
 
     disc = ActionDiscovery()
     controller.is_combat_mode = lambda: False

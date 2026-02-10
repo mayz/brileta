@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING
 
 from brileta import colors
 from brileta.events import (
-    CombatInitiatedEvent,
     FloatingTextEvent,
     FloatingTextValence,
     MessageEvent,
@@ -19,6 +18,7 @@ from brileta.events import (
 )
 from brileta.game.actions.base import GameActionResult
 from brileta.game.actions.executors.base import ActionExecutor
+from brileta.game.actors.ai import escalate_hostility
 from brileta.game.actors.status_effects import (
     OffBalanceEffect,
     StaggeredEffect,
@@ -104,7 +104,7 @@ class PushExecutor(ActionExecutor):
                     # Couldn't push (edge of map), but still trip them
                     msg = f"Critical! {atk_name} knocks {def_name} to the ground!"
                 publish_event(MessageEvent(msg, colors.YELLOW))
-                self._update_ai_disposition(intent)
+                escalate_hostility(intent.attacker, intent.defender, intent.controller)
                 return GameActionResult(succeeded=True, duration_ms=400)
 
             case OutcomeTier.SUCCESS:
@@ -130,7 +130,7 @@ class PushExecutor(ActionExecutor):
                 else:
                     msg = f"{atk_name} pushes {def_name} but they have nowhere to go!"
                     publish_event(MessageEvent(msg, colors.LIGHT_GREY))
-                self._update_ai_disposition(intent)
+                escalate_hostility(intent.attacker, intent.defender, intent.controller)
                 return GameActionResult(succeeded=True, duration_ms=400)
 
             case OutcomeTier.PARTIAL_SUCCESS:
@@ -143,7 +143,7 @@ class PushExecutor(ActionExecutor):
                 else:
                     msg = f"{atk_name} pushes {def_name} but both end up off-balance!"
                 publish_event(MessageEvent(msg, colors.LIGHT_BLUE))
-                self._update_ai_disposition(intent)
+                escalate_hostility(intent.attacker, intent.defender, intent.controller)
                 return GameActionResult(succeeded=True, duration_ms=400)
 
             case OutcomeTier.FAILURE:
@@ -161,7 +161,7 @@ class PushExecutor(ActionExecutor):
                 )
                 msg = f"{atk_name} fails to push {def_name} and stumbles off-balance!"
                 publish_event(MessageEvent(msg, colors.GREY))
-                self._update_ai_disposition(intent)
+                escalate_hostility(intent.attacker, intent.defender, intent.controller)
                 return GameActionResult(succeeded=False, duration_ms=400)
 
             case OutcomeTier.CRITICAL_FAILURE:
@@ -170,7 +170,7 @@ class PushExecutor(ActionExecutor):
                 def_name = intent.defender.name
                 msg = f"Critical miss! {atk_name} trips trying to push {def_name}!"
                 publish_event(MessageEvent(msg, colors.ORANGE))
-                self._update_ai_disposition(intent)
+                escalate_hostility(intent.attacker, intent.defender, intent.controller)
                 return GameActionResult(succeeded=False, duration_ms=400)
 
         # Fallback (should never reach)
@@ -286,44 +286,6 @@ class PushExecutor(ActionExecutor):
                 )
             )
 
-    def _update_ai_disposition(self, intent: PushIntent) -> None:
-        """Update AI disposition if player pushed an NPC.
-
-        Being pushed (or having someone attempt to push you) is treated as an
-        aggressive act. Non-hostile NPCs become hostile when the player attempts
-        to push them, regardless of whether the push succeeds.
-        """
-        from brileta.game.actors import ai
-        from brileta.game.enums import Disposition
-
-        # Only trigger for player pushing NPC
-        if intent.attacker != intent.controller.gw.player:
-            return
-
-        # Check if defender has disposition-based AI
-        if not isinstance(intent.defender.ai, ai.DispositionBasedAI):
-            return
-
-        # Only change disposition if not already hostile
-        if intent.defender.ai.disposition == Disposition.HOSTILE:
-            return
-
-        # Make hostile
-        intent.defender.ai.disposition = Disposition.HOSTILE
-        publish_event(
-            MessageEvent(
-                f"{intent.defender.name} turns hostile!",
-                colors.ORANGE,
-            )
-        )
-        # Trigger auto-entry into combat mode
-        publish_event(
-            CombatInitiatedEvent(
-                attacker=intent.attacker,
-                defender=intent.defender,
-            )
-        )
-
 
 class TripExecutor(ActionExecutor):
     """Executes trip stunt intents.
@@ -394,7 +356,7 @@ class TripExecutor(ActionExecutor):
                     f"{def_name} hits the ground hard for {impact_damage} damage!"
                 )
                 publish_event(MessageEvent(msg, colors.YELLOW))
-                self._update_ai_disposition(intent)
+                escalate_hostility(intent.attacker, intent.defender, intent.controller)
                 return GameActionResult(succeeded=True, duration_ms=400)
 
             case OutcomeTier.SUCCESS:
@@ -410,7 +372,7 @@ class TripExecutor(ActionExecutor):
                 )
                 msg = f"{atk_name} trips {def_name}! They fall prone!"
                 publish_event(MessageEvent(msg, colors.WHITE))
-                self._update_ai_disposition(intent)
+                escalate_hostility(intent.attacker, intent.defender, intent.controller)
                 return GameActionResult(succeeded=True, duration_ms=400)
 
             case OutcomeTier.PARTIAL_SUCCESS:
@@ -428,7 +390,7 @@ class TripExecutor(ActionExecutor):
                 )
                 msg = f"{atk_name} trips {def_name} but stumbles in the process!"
                 publish_event(MessageEvent(msg, colors.LIGHT_BLUE))
-                self._update_ai_disposition(intent)
+                escalate_hostility(intent.attacker, intent.defender, intent.controller)
                 return GameActionResult(succeeded=True, duration_ms=400)
 
             case OutcomeTier.FAILURE:
@@ -445,7 +407,7 @@ class TripExecutor(ActionExecutor):
                 )
                 msg = f"{atk_name} fails to trip {def_name} and stumbles!"
                 publish_event(MessageEvent(msg, colors.GREY))
-                self._update_ai_disposition(intent)
+                escalate_hostility(intent.attacker, intent.defender, intent.controller)
                 return GameActionResult(succeeded=False, duration_ms=400)
 
             case OutcomeTier.CRITICAL_FAILURE:
@@ -453,49 +415,11 @@ class TripExecutor(ActionExecutor):
                 intent.attacker.status_effects.apply_status_effect(TrippedEffect())
                 msg = f"Critical miss! {atk_name} trips over their own feet!"
                 publish_event(MessageEvent(msg, colors.ORANGE))
-                self._update_ai_disposition(intent)
+                escalate_hostility(intent.attacker, intent.defender, intent.controller)
                 return GameActionResult(succeeded=False, duration_ms=400)
 
         # Fallback (should never reach)
         return GameActionResult(succeeded=False, duration_ms=400)
-
-    def _update_ai_disposition(self, intent: TripIntent) -> None:
-        """Update AI disposition if player tripped an NPC.
-
-        Attempting to trip someone is treated as an aggressive act.
-        Non-hostile NPCs become hostile when the player attempts to trip them,
-        regardless of whether the trip succeeds.
-        """
-        from brileta.game.actors import ai
-        from brileta.game.enums import Disposition
-
-        # Only trigger for player tripping NPC
-        if intent.attacker != intent.controller.gw.player:
-            return
-
-        # Check if defender has disposition-based AI
-        if not isinstance(intent.defender.ai, ai.DispositionBasedAI):
-            return
-
-        # Only change disposition if not already hostile
-        if intent.defender.ai.disposition == Disposition.HOSTILE:
-            return
-
-        # Make hostile
-        intent.defender.ai.disposition = Disposition.HOSTILE
-        publish_event(
-            MessageEvent(
-                f"{intent.defender.name} turns hostile!",
-                colors.ORANGE,
-            )
-        )
-        # Trigger auto-entry into combat mode
-        publish_event(
-            CombatInitiatedEvent(
-                attacker=intent.attacker,
-                defender=intent.defender,
-            )
-        )
 
 
 class KickExecutor(ActionExecutor):
@@ -574,7 +498,7 @@ class KickExecutor(ActionExecutor):
                         f"for {damage} damage!"
                     )
                 publish_event(MessageEvent(msg, colors.YELLOW))
-                self._update_ai_disposition(intent)
+                escalate_hostility(intent.attacker, intent.defender, intent.controller)
                 return GameActionResult(succeeded=True, duration_ms=400)
 
             case OutcomeTier.SUCCESS:
@@ -596,7 +520,7 @@ class KickExecutor(ActionExecutor):
                 else:
                     msg = f"{atk_name} kicks {def_name} for {damage} damage!"
                 publish_event(MessageEvent(msg, colors.WHITE))
-                self._update_ai_disposition(intent)
+                escalate_hostility(intent.attacker, intent.defender, intent.controller)
                 return GameActionResult(succeeded=True, duration_ms=400)
 
             case OutcomeTier.PARTIAL_SUCCESS:
@@ -625,7 +549,7 @@ class KickExecutor(ActionExecutor):
                         f"but loses balance!"
                     )
                 publish_event(MessageEvent(msg, colors.LIGHT_BLUE))
-                self._update_ai_disposition(intent)
+                escalate_hostility(intent.attacker, intent.defender, intent.controller)
                 return GameActionResult(succeeded=True, duration_ms=400)
 
             case OutcomeTier.FAILURE:
@@ -642,7 +566,7 @@ class KickExecutor(ActionExecutor):
                 )
                 msg = f"{atk_name} misses the kick and stumbles off-balance!"
                 publish_event(MessageEvent(msg, colors.GREY))
-                self._update_ai_disposition(intent)
+                escalate_hostility(intent.attacker, intent.defender, intent.controller)
                 return GameActionResult(succeeded=False, duration_ms=400)
 
             case OutcomeTier.CRITICAL_FAILURE:
@@ -650,7 +574,7 @@ class KickExecutor(ActionExecutor):
                 intent.attacker.status_effects.apply_status_effect(TrippedEffect())
                 msg = f"Critical miss! {atk_name} slips and falls trying to kick!"
                 publish_event(MessageEvent(msg, colors.ORANGE))
-                self._update_ai_disposition(intent)
+                escalate_hostility(intent.attacker, intent.defender, intent.controller)
                 return GameActionResult(succeeded=False, duration_ms=400)
 
         # Fallback (should never reach)
@@ -765,44 +689,6 @@ class KickExecutor(ActionExecutor):
                     colors.ORANGE,
                 )
             )
-
-    def _update_ai_disposition(self, intent: KickIntent) -> None:
-        """Update AI disposition if player kicked an NPC.
-
-        Kicking someone is treated as an aggressive act.
-        Non-hostile NPCs become hostile when the player attempts to kick them,
-        regardless of whether the kick succeeds.
-        """
-        from brileta.game.actors import ai
-        from brileta.game.enums import Disposition
-
-        # Only trigger for player kicking NPC
-        if intent.attacker != intent.controller.gw.player:
-            return
-
-        # Check if defender has disposition-based AI
-        if not isinstance(intent.defender.ai, ai.DispositionBasedAI):
-            return
-
-        # Only change disposition if not already hostile
-        if intent.defender.ai.disposition == Disposition.HOSTILE:
-            return
-
-        # Make hostile
-        intent.defender.ai.disposition = Disposition.HOSTILE
-        publish_event(
-            MessageEvent(
-                f"{intent.defender.name} turns hostile!",
-                colors.ORANGE,
-            )
-        )
-        # Trigger auto-entry into combat mode
-        publish_event(
-            CombatInitiatedEvent(
-                attacker=intent.attacker,
-                defender=intent.defender,
-            )
-        )
 
 
 class HolsterWeaponExecutor(ActionExecutor):
@@ -921,7 +807,7 @@ class PunchExecutor(ActionExecutor):
                 msg = f"{atk_name} punches {def_name} for {damage} damage!"
                 publish_event(MessageEvent(msg, colors.WHITE))
 
-            self._update_ai_disposition(intent)
+            escalate_hostility(intent.attacker, intent.defender, intent.controller)
             return GameActionResult(succeeded=True, duration_ms=350)
 
         # Miss
@@ -937,42 +823,5 @@ class PunchExecutor(ActionExecutor):
         msg = f"{atk_name} swings at {def_name} but misses!"
         publish_event(MessageEvent(msg, colors.GREY))
 
-        self._update_ai_disposition(intent)
+        escalate_hostility(intent.attacker, intent.defender, intent.controller)
         return GameActionResult(succeeded=False, duration_ms=350)
-
-    def _update_ai_disposition(self, intent: PunchIntent) -> None:
-        """Update AI disposition if player punched an NPC.
-
-        Punching someone is treated as an aggressive act.
-        Non-hostile NPCs become hostile when the player attempts to punch them.
-        """
-        from brileta.game.actors import ai
-        from brileta.game.enums import Disposition
-
-        # Only trigger for player punching NPC
-        if intent.attacker != intent.controller.gw.player:
-            return
-
-        # Check if defender has disposition-based AI
-        if not isinstance(intent.defender.ai, ai.DispositionBasedAI):
-            return
-
-        # Only change disposition if not already hostile
-        if intent.defender.ai.disposition == Disposition.HOSTILE:
-            return
-
-        # Make hostile
-        intent.defender.ai.disposition = Disposition.HOSTILE
-        publish_event(
-            MessageEvent(
-                f"{intent.defender.name} turns hostile!",
-                colors.ORANGE,
-            )
-        )
-        # Trigger auto-entry into combat mode
-        publish_event(
-            CombatInitiatedEvent(
-                attacker=intent.attacker,
-                defender=intent.defender,
-            )
-        )

@@ -20,12 +20,13 @@ from brileta.events import (
 from brileta.game import ranges
 from brileta.game.actions.base import GameActionResult
 from brileta.game.actions.executors.base import ActionExecutor
-from brileta.game.actors import Character, ai, status_effects
+from brileta.game.actors import Character, status_effects
+from brileta.game.actors.ai import escalate_hostility
 from brileta.game.consequences import (
     AttackConsequenceGenerator,
     ConsequenceHandler,
 )
-from brileta.game.enums import Disposition, OutcomeTier
+from brileta.game.enums import OutcomeTier
 from brileta.game.items.capabilities import Attack
 from brileta.game.items.item_core import Item
 from brileta.game.items.item_types import FISTS_TYPE
@@ -850,8 +851,8 @@ class AttackExecutor(ActionExecutor):
         ):
             self._apply_screen_shake(intent, attack_result, attack, weapon, damage)
 
-        # Update AI disposition if player attacked an NPC
-        self._update_ai_disposition(intent)
+        # Update relationship hostility after aggressive attacks.
+        escalate_hostility(intent.attacker, intent.defender, intent.controller)
 
     def _apply_screen_shake(
         self,
@@ -894,33 +895,6 @@ class AttackExecutor(ActionExecutor):
             shake_duration *= Combat.CRIT_SHAKE_DURATION_MULT
 
         publish_event(ScreenShakeEvent(shake_intensity, DeltaTime(shake_duration)))
-
-    def _update_ai_disposition(self, intent: AttackIntent) -> None:
-        """Update AI disposition if player attacked an NPC."""
-        assert intent.defender is not None  # Tile shots handled separately
-        if (
-            intent.attacker == intent.controller.gw.player
-            and intent.defender != intent.controller.gw.player
-            and isinstance(intent.defender.ai, ai.DispositionBasedAI)
-            and intent.defender.ai.disposition != Disposition.HOSTILE
-        ):
-            intent.defender.ai.disposition = Disposition.HOSTILE
-            publish_event(
-                MessageEvent(
-                    (
-                        f"{intent.defender.name} becomes hostile towards "
-                        f"{intent.attacker.name} due to the attack!"
-                    ),
-                    colors.ORANGE,
-                )
-            )
-            # Trigger auto-entry into combat mode
-            publish_event(
-                CombatInitiatedEvent(
-                    attacker=intent.attacker,
-                    defender=intent.defender,
-                )
-            )
 
 
 class ReloadExecutor(ActionExecutor):

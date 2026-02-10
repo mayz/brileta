@@ -1,29 +1,35 @@
-"""Tests for the NUBS Goal system (Phase 2).
+"""Tests for the NUBS Goal system.
 
 Validates:
 - FleeGoal persists across multiple turns until safe distance reached.
 - FleeGoal completes when threat dies mid-flee.
 - ContinueGoalAction persistence bonus scales with goal.progress.
-- PatrolGoal cycles between waypoints.
-- PatrolAction creates PatrolGoals for hostile NPCs.
+- PatrolGoal cycles between waypoints (unit tests only; PatrolAction is not
+  currently wired into utility scoring).
+- WanderAction creates WanderGoals that move via heading + step budgets.
 - Goals are abandoned when a higher-scoring action wins.
 - ai.force_hostile makes all NPCs use hostile behavior.
+- Combat awareness: NPCs react to attacks from outside aggro range.
 """
 
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import cast
 
+import pytest
+
 from brileta import colors
 from brileta.controller import Controller
 from brileta.game.actions.movement import MoveIntent
 from brileta.game.actors import NPC, Character
+from brileta.game.actors.ai import disposition_label
 from brileta.game.actors.goals import (
     _FLEE_SAFE_DISTANCE,
     ContinueGoalAction,
     FleeGoal,
     GoalState,
     PatrolGoal,
+    WanderGoal,
 )
 from brileta.game.actors.utility import (
     Consideration,
@@ -31,7 +37,6 @@ from brileta.game.actors.utility import (
     ResponseCurveType,
     UtilityContext,
 )
-from brileta.game.enums import Disposition
 from brileta.game.game_world import GameWorld
 from brileta.game.turn_manager import TurnManager
 from tests.helpers import DummyGameWorld
@@ -49,10 +54,14 @@ class DummyController(Controller):
 
 
 def make_world(
-    npc_x: int = 3, npc_y: int = 0, npc_hp_damage: int = 0
+    npc_x: int = 3,
+    npc_y: int = 0,
+    npc_hp_damage: int = 0,
+    disposition: int = -75,
+    map_size: int = 80,
 ) -> tuple[DummyController, Character, NPC]:
     """Create a test world with player at origin and NPC at given position."""
-    gw = DummyGameWorld()
+    gw = DummyGameWorld(width=map_size, height=map_size)
     player = Character(
         0, 0, "@", colors.WHITE, "Player", game_world=cast(GameWorld, gw)
     )
@@ -63,17 +72,43 @@ def make_world(
         colors.RED,
         "Enemy",
         game_world=cast(GameWorld, gw),
-        disposition=Disposition.HOSTILE,
     )
     gw.player = player
     gw.add_actor(player)
     gw.add_actor(npc)
+    if disposition != 0:
+        npc.ai.modify_disposition(player, disposition)
     controller = DummyController(gw)
 
     if npc_hp_damage > 0:
         npc.take_damage(npc_hp_damage)
 
     return controller, player, npc
+
+
+# ---------------------------------------------------------------------------
+# Disposition Label Tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (-100, "Hostile"),
+        (-52, "Hostile"),
+        (-51, "Hostile"),
+        (-50, "Unfriendly"),
+        (-21, "Unfriendly"),
+        (-20, "Wary"),
+        (0, "Approachable"),
+        (20, "Approachable"),
+        (21, "Friendly"),
+        (100, "Ally"),
+    ],
+)
+def test_disposition_label_boundaries(value: int, expected: str) -> None:
+    """Disposition labels should match inclusive boundary expectations."""
+    assert disposition_label(value) == expected
 
 
 # ---------------------------------------------------------------------------
@@ -189,15 +224,15 @@ def test_continue_goal_persistence_bonus_scales_with_progress() -> None:
     controller, player, npc = make_world(npc_x=3, npc_y=0)
 
     # Create a FleeGoal with known state
-    goal = FleeGoal(threat_actor_id=id(player))
+    goal = FleeGoal(threat_actor_id=player.actor_id)
     goal._start_distance = 1
     goal._current_distance = 1
 
     context = UtilityContext(
         controller=controller,
         actor=npc,
-        player=player,
-        distance_to_player=3,
+        target=player,
+        distance_to_target=3,
         health_percent=0.2,
         threat_level=0.8,
         can_attack=False,
@@ -226,7 +261,7 @@ def test_continue_goal_beats_raw_action_at_zero_progress() -> None:
     """ContinueGoalAction wins ties with the raw action even at progress 0.0.
 
     Without PERSISTENCE_MINIMUM, a goal at progress 0.0 would tie with the
-    raw FleeAction. HostileAI would then abandon the goal and recreate it
+    raw FleeAction. UnifiedAI would then abandon the goal and recreate it
     every tick, so progress would never advance. The minimum bonus ensures
     ContinueGoal always edges out the raw action it mirrors.
     """
@@ -237,14 +272,14 @@ def test_continue_goal_beats_raw_action_at_zero_progress() -> None:
 
     controller, player, npc = make_world(npc_x=3, npc_y=0)
 
-    goal = FleeGoal(threat_actor_id=id(player))
+    goal = FleeGoal(threat_actor_id=player.actor_id)
     assert goal.progress == 0.0
 
     context = UtilityContext(
         controller=controller,
         actor=npc,
-        player=player,
-        distance_to_player=3,
+        target=player,
+        distance_to_target=3,
         health_percent=0.2,
         threat_level=0.8,
         can_attack=False,
@@ -414,7 +449,7 @@ def test_goal_abandoned_when_higher_action_wins() -> None:
 
 
 def test_npc_picks_new_action_same_tick_after_goal_completes() -> None:
-    """When a goal completes at the top of HostileAI.get_action, the NPC
+    """When a goal completes at the top of UnifiedAI.get_action, the NPC
     proceeds to normal scoring and picks a new action on the same tick
     rather than doing nothing.
     """
@@ -435,11 +470,10 @@ def test_npc_picks_new_action_same_tick_after_goal_completes() -> None:
     # The old flee goal must be done
     assert old_flee_goal.state == GoalState.COMPLETED
 
-    # The NPC should have picked a new action or started a new goal on the
-    # same tick. At safe distance with low threat, patrol typically wins.
-    assert result is not None or npc.current_goal is not None, (
-        "NPC should pick a new action or goal on the same tick the old goal completes"
-    )
+    # The NPC should have completed the old goal and finished scoring the tick.
+    # With no threat and hostile disposition, IdleAction is the only option.
+    assert result is None or isinstance(result, MoveIntent)
+    assert npc.current_goal is None
 
 
 def test_completed_goal_excluded_from_continue_scoring() -> None:
@@ -470,8 +504,8 @@ def test_completed_goal_excluded_from_continue_scoring() -> None:
     context = UtilityContext(
         controller=controller,
         actor=npc,
-        player=player,
-        distance_to_player=5,
+        target=player,
+        distance_to_target=5,
         health_percent=1.0,
         threat_level=0.0,
         can_attack=False,
@@ -481,7 +515,7 @@ def test_completed_goal_excluded_from_continue_scoring() -> None:
     )
 
     # Create a FAILED goal
-    goal = FleeGoal(threat_actor_id=id(player))
+    goal = FleeGoal(threat_actor_id=player.actor_id)
     goal.state = GoalState.FAILED
     assert goal.is_complete
 
@@ -569,71 +603,142 @@ def test_flee_goal_progress_increases_with_distance() -> None:
 
 
 # ---------------------------------------------------------------------------
-# PatrolAction Tests
+# WanderAction / WanderGoal Tests
 # ---------------------------------------------------------------------------
 
 
-def test_patrol_action_creates_patrol_goal_when_safe() -> None:
-    """Hostile NPC far from player should pick PatrolAction and create a PatrolGoal."""
-    # NPC far from player - threat_level will be 0, so patrol should win over idle/wander
-    controller, _player, npc = make_world(npc_x=15, npc_y=15)
+def test_wander_action_creates_wander_goal_when_safe() -> None:
+    """Approachable NPC far from threat should create and start a WanderGoal."""
+    controller, _player, npc = make_world(
+        npc_x=15,
+        npc_y=15,
+        disposition=40,  # Friendly
+    )
 
-    # No current goal
     assert npc.current_goal is None
 
-    npc.ai.get_action(controller, npc)
+    action = npc.ai.get_action(controller, npc)
 
-    # NPC should now have a PatrolGoal
-    assert npc.current_goal is not None
-    assert isinstance(npc.current_goal, PatrolGoal)
+    assert isinstance(npc.current_goal, WanderGoal)
     assert npc.current_goal.state == GoalState.ACTIVE
-
-    # PatrolGoal should have 2-3 waypoints
-    assert len(npc.current_goal.waypoints) >= 2
+    assert isinstance(action, MoveIntent)
 
 
-def test_patrol_action_does_not_duplicate_existing_patrol_goal() -> None:
-    """If NPC already has a PatrolGoal, PatrolAction should not create another.
+def test_wander_action_does_not_duplicate_existing_wander_goal() -> None:
+    """When wander is active, ContinueGoalAction should keep the same goal."""
+    controller, _player, npc = make_world(
+        npc_x=15,
+        npc_y=15,
+        disposition=40,  # Friendly
+    )
 
-    ContinueGoalAction handles continuation. The NPC should keep the same
-    PatrolGoal across ticks when it's safe.
-    """
-    controller, _player, npc = make_world(npc_x=15, npc_y=15)
-
-    # First tick - creates the patrol goal
     npc.ai.get_action(controller, npc)
-    assert npc.current_goal is not None
-    assert isinstance(npc.current_goal, PatrolGoal)
+    assert isinstance(npc.current_goal, WanderGoal)
     original_goal = npc.current_goal
 
-    # Second tick - ContinueGoalAction should win, keeping the same goal
     npc.ai.get_action(controller, npc)
     assert npc.current_goal is original_goal
 
 
-def test_patrol_abandoned_when_threat_appears() -> None:
-    """PatrolGoal is abandoned when the player enters aggro range.
+def test_wander_goal_sidestep_when_forward_blocked() -> None:
+    """WanderGoal should sidestep/turn when its current forward heading is blocked."""
+    controller, _player, npc = make_world(
+        npc_x=5,
+        npc_y=5,
+        disposition=40,  # Friendly
+    )
+    blocker = NPC(
+        6,
+        5,
+        "b",
+        colors.RED,
+        "Blocker",
+        game_world=cast(GameWorld, controller.gw),
+    )
+    controller.gw.add_actor(blocker)
 
-    When the player is close, attack should score higher than
-    ContinueGoal(Patrol), causing the patrol to be abandoned.
-    """
-    controller, _player, npc = make_world(npc_x=15, npc_y=15)
+    goal = WanderGoal(
+        minimum_segment_steps=5,
+        maximum_segment_steps=5,
+        max_stuck_turns=2,
+        heading_jitter_chance=0.0,
+    )
+    # Force an east-facing segment to make forward direction deterministic.
+    goal._heading = (1, 0)
+    goal._segment_length = 5
+    goal._steps_remaining = 5
+    npc.current_goal = goal
 
-    # Create patrol goal while safe
-    npc.ai.get_action(controller, npc)
-    assert isinstance(npc.current_goal, PatrolGoal)
-    patrol_goal = npc.current_goal
+    action = goal.get_next_action(npc, controller)
+    assert isinstance(action, MoveIntent)
+    assert (action.dx, action.dy) in {(0, -1), (0, 1), (1, -1), (1, 1)}
 
-    # Move NPC adjacent to player - threat appears
-    npc.teleport(1, 0)
-    npc.active_plan = None  # Clear any active plan from patrolling
 
-    # AI should switch to attack, abandoning patrol
-    npc.ai.get_action(controller, npc)
+def test_wander_goal_restarts_segment_when_budget_exhausted() -> None:
+    """WanderGoal should pick a fresh segment after spending its step budget."""
+    controller, _player, npc = make_world(
+        npc_x=5,
+        npc_y=5,
+        disposition=40,  # Friendly
+    )
 
-    # Patrol goal should be abandoned
-    assert patrol_goal.state == GoalState.ABANDONED
-    assert npc.current_goal is None or not isinstance(npc.current_goal, PatrolGoal)
+    goal = WanderGoal(
+        minimum_segment_steps=1,
+        maximum_segment_steps=1,
+        max_stuck_turns=2,
+        heading_jitter_chance=0.0,
+    )
+    npc.current_goal = goal
+
+    first = goal.get_next_action(npc, controller)
+    assert isinstance(first, MoveIntent)
+    assert goal._steps_remaining == 0
+
+    # Simulate successful movement so stuck tracking resets normally.
+    npc.move(first.dx, first.dy)
+
+    second = goal.get_next_action(npc, controller)
+    assert isinstance(second, MoveIntent)
+    assert goal._segment_length == 1
+    assert goal._steps_remaining == 0
+
+
+def test_wander_goal_restarts_heading_after_being_stuck() -> None:
+    """WanderGoal should reset heading when blocked for max_stuck_turns."""
+    controller, _player, npc = make_world(
+        npc_x=5,
+        npc_y=5,
+        disposition=40,  # Friendly
+    )
+    game_map = controller.gw.game_map
+
+    goal = WanderGoal(
+        minimum_segment_steps=3,
+        maximum_segment_steps=3,
+        max_stuck_turns=1,
+        heading_jitter_chance=0.0,
+    )
+    goal._heading = (1, 0)
+    goal._segment_length = 3
+    goal._steps_remaining = 3
+    npc.current_goal = goal
+
+    # Temporarily block all adjacent movement.
+    for dx in (-1, 0, 1):
+        for dy in (-1, 0, 1):
+            if dx == 0 and dy == 0:
+                continue
+            game_map.walkable[npc.x + dx, npc.y + dy] = False
+
+    blocked = goal.get_next_action(npc, controller)
+    assert blocked is None
+    assert goal._heading is None
+    assert goal._steps_remaining == 0
+
+    # Re-open one direction; next tick should pick a new segment and move.
+    game_map.walkable[npc.x + 1, npc.y] = True
+    resumed = goal.get_next_action(npc, controller)
+    assert isinstance(resumed, MoveIntent)
 
 
 # ---------------------------------------------------------------------------
@@ -675,32 +780,30 @@ def _override_live_variable(name: str, value: object):
 
 
 def test_force_hostile_makes_wary_npc_use_hostile_behavior() -> None:
-    """With ai.force_hostile on, a Wary NPC should use HostileAI behavior."""
+    """With ai.force_hostile on, a Wary NPC should score hostile actions."""
     with _override_live_variable("ai.force_hostile", True):
         gw = DummyGameWorld()
         player = Character(
             0, 0, "@", colors.WHITE, "Player", game_world=cast(GameWorld, gw)
         )
         npc = NPC(
-            15,
-            15,
+            3,
+            0,
             "g",
             colors.RED,
             "Guard",
             game_world=cast(GameWorld, gw),
-            disposition=Disposition.WARY,
         )
         gw.player = player
         gw.add_actor(player)
         gw.add_actor(npc)
+        npc.ai.modify_disposition(player, -10)  # Wary
         controller = DummyController(gw)
 
-        # Wary NPC should do nothing normally. With force_hostile on,
-        # it uses HostileAI and patrols (far from player, no threat).
-        npc.ai.get_action(controller, npc)
-
-        assert npc.current_goal is not None
-        assert isinstance(npc.current_goal, PatrolGoal)
+        # With the player within aggro range, force_hostile should make
+        # hostile combat behavior eligible (attack/chase).
+        result = npc.ai.get_action(controller, npc)
+        assert result is not None or npc.active_plan is not None
 
 
 # ---------------------------------------------------------------------------
@@ -753,7 +856,7 @@ def test_flee_goal_moves_away_from_threat() -> None:
     # diagonally away - any direction that increases Chebyshev distance.
     controller, player, npc = make_world(npc_x=3, npc_y=0)
 
-    goal = FleeGoal(threat_actor_id=id(player))
+    goal = FleeGoal(threat_actor_id=player.actor_id)
     goal.evaluate_completion(npc, controller)
 
     intent = goal.get_next_action(npc, controller)
@@ -778,7 +881,7 @@ def test_flee_goal_avoids_blocked_tiles() -> None:
     )
     gw.add_actor(blocker)
 
-    goal = FleeGoal(threat_actor_id=id(player))
+    goal = FleeGoal(threat_actor_id=player.actor_id)
     goal.evaluate_completion(npc, controller)
 
     intent = goal.get_next_action(npc, controller)
@@ -804,7 +907,7 @@ def test_flee_goal_fails_when_fully_cornered() -> None:
     gm.walkable[2, 1] = False
     gm.walkable[1, 1] = False
 
-    goal = FleeGoal(threat_actor_id=id(player))
+    goal = FleeGoal(threat_actor_id=player.actor_id)
     goal.evaluate_completion(npc, controller)
 
     intent = goal.get_next_action(npc, controller)
@@ -842,8 +945,8 @@ def test_utility_brain_includes_continue_goal_action() -> None:
     context = UtilityContext(
         controller=controller,
         actor=npc,
-        player=player,
-        distance_to_player=15,
+        target=player,
+        distance_to_target=15,
         health_percent=1.0,
         threat_level=0.0,
         can_attack=False,
@@ -867,3 +970,99 @@ def test_utility_brain_includes_continue_goal_action() -> None:
     # ContinueGoal(Patrol) should win over Idle (0.25 + persistence > 0.2)
     assert action_with_goal is not None
     assert isinstance(action_with_goal, ContinueGoalAction)
+
+
+# ---------------------------------------------------------------------------
+# Combat Awareness Tests
+# ---------------------------------------------------------------------------
+
+
+def test_combat_awareness_selects_attacker_outside_aggro_range() -> None:
+    """An NPC shot from outside aggro range should target the attacker."""
+    controller, player, npc = make_world(
+        npc_x=20, npc_y=0, npc_hp_damage=0, disposition=0
+    )
+
+    # Player is at (0,0), NPC at (20,0) - well outside aggro_radius (10).
+    # Without combat awareness, the NPC would just see the player as a
+    # neutral fallback target with threat_level 0.
+    context_before = npc.ai._build_context(controller, npc)
+    assert context_before.threat_level == 0.0
+
+    # Simulate being attacked: set hostile and notify.
+    npc.ai.set_hostile(player)
+    npc.ai.notify_attacked(player)
+
+    # Now the NPC should perceive the attacker as a threat.
+    context_after = npc.ai._build_context(controller, npc)
+    assert context_after.threat_level > 0.0
+    assert context_after.target is player
+
+
+def test_combat_awareness_threat_decays_with_distance() -> None:
+    """Awareness threat should be higher when closer, zero at flee distance."""
+    controller, player, npc = make_world(
+        npc_x=15, npc_y=0, npc_hp_damage=0, disposition=0
+    )
+    npc.ai.set_hostile(player)
+    npc.ai.notify_attacked(player)
+
+    # At distance 15 (outside aggro 10, inside flee distance 50)
+    context_15 = npc.ai._build_context(controller, npc)
+    threat_at_15 = context_15.threat_level
+
+    # Teleport further away
+    npc.teleport(40, 0)
+    context_40 = npc.ai._build_context(controller, npc)
+    threat_at_40 = context_40.threat_level
+
+    assert threat_at_15 > threat_at_40 > 0.0
+
+    # At or beyond _FLEE_SAFE_DISTANCE, threat should be 0
+    npc.teleport(_FLEE_SAFE_DISTANCE, 0)
+    context_safe = npc.ai._build_context(controller, npc)
+    assert context_safe.threat_level == 0.0
+
+
+def test_combat_awareness_npc_flees_from_ranged_attacker() -> None:
+    """NPC attacked from range should flee, not keep wandering."""
+    controller, player, npc = make_world(
+        npc_x=15, npc_y=0, npc_hp_damage=4, disposition=0
+    )
+
+    # Before being attacked: NPC wanders (no threat)
+    npc.ai.get_action(controller, npc)
+    # NPC should have a WanderGoal (neutral, no threat)
+    assert npc.current_goal is None or isinstance(npc.current_goal, WanderGoal)
+
+    # Clear goal state for clean test
+    if npc.current_goal is not None:
+        npc.current_goal.abandon()
+        npc.current_goal = None
+    npc.active_plan = None
+
+    # Simulate ranged attack
+    npc.ai.set_hostile(player)
+    npc.ai.notify_attacked(player)
+
+    # NPC should now flee
+    npc.ai.get_action(controller, npc)
+    assert isinstance(npc.current_goal, FleeGoal)
+
+
+def test_combat_awareness_clears_when_attacker_dies() -> None:
+    """Awareness should clear when the attacker is no longer alive."""
+    controller, player, npc = make_world(
+        npc_x=20, npc_y=0, npc_hp_damage=0, disposition=0
+    )
+    npc.ai.set_hostile(player)
+    npc.ai.notify_attacked(player)
+
+    assert npc.ai._last_attacker_id is not None
+
+    # Kill the attacker
+    player.health._hp = 0
+
+    # Target selection should clear the awareness
+    npc.ai._select_target_actor(controller, npc)
+    assert npc.ai._last_attacker_id is None

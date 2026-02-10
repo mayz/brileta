@@ -5,9 +5,10 @@ from typing import TYPE_CHECKING, Any
 
 from brileta import colors
 from brileta.events import CombatInitiatedEvent, MessageEvent, publish_event
-from brileta.game.actors import Actor, Character, ai
+from brileta.game.actors import NPC, Actor, Character
+from brileta.game.actors.ai import HOSTILE_UPPER
 from brileta.game.actors.status_effects import OffBalanceEffect
-from brileta.game.enums import Disposition, OutcomeTier
+from brileta.game.enums import OutcomeTier
 from brileta.game.items.properties import WeaponProperty
 from brileta.util import rng
 from brileta.util.dice import Dice, roll_d
@@ -130,25 +131,28 @@ class ConsequenceHandler:
         for actor in nearby_actors:
             if actor is source:
                 continue
-            if not isinstance(actor, Character):
+            if not isinstance(actor, NPC):
                 continue
-            if not isinstance(actor.ai, ai.DispositionBasedAI):
+            # Only player-generated noise should alter social hostility.
+            # NPC-generated noise causing NPC-vs-NPC hostility leads to unstable
+            # "friendly fire" cascades and confusing behavior from the player's
+            # perspective.
+            if source != gw.player:
                 continue
-            if actor.ai.disposition != Disposition.HOSTILE:
-                actor.ai.disposition = Disposition.HOSTILE
+
+            if actor.ai.disposition_toward(source) > HOSTILE_UPPER:
+                actor.ai.set_hostile(source)
                 publish_event(
                     MessageEvent(
                         f"{actor.name} is alerted by the noise!", colors.ORANGE
                     )
                 )
-                # Trigger combat mode if player caused the noise
-                if source == gw.player:
-                    publish_event(
-                        CombatInitiatedEvent(
-                            attacker=source,
-                            defender=actor,
-                        )
+                publish_event(
+                    CombatInitiatedEvent(
+                        attacker=source,
+                        defender=actor,
                     )
+                )
 
     def _apply_self_injury(self, target: Actor | None, weapon: Item | None) -> None:
         """Apply self-injury consequence from a fumbled attack.

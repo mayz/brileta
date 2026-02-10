@@ -96,7 +96,7 @@ class Container(Actor):
     # Type narrowing - inventory is always ContainerStorage for containers
     inventory: ContainerStorage
 
-    def get_target_description(self) -> str | None:
+    def get_target_description(self, viewer: Character | None = None) -> str | None:
         """Return a short description for the action panel."""
         return "A container"
 
@@ -180,7 +180,7 @@ class ItemPile(Actor):
     # Type narrowing - inventory is always ContainerStorage for item piles
     inventory: ContainerStorage
 
-    def get_target_description(self) -> str | None:
+    def get_target_description(self, viewer: Character | None = None) -> str | None:
         """Return a short description for the action panel."""
         items = list(self.inventory)
         has_countables = bool(self.inventory.countables)

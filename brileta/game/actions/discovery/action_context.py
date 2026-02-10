@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 from brileta import config
 from brileta.game import ranges
 from brileta.game.actors import Character
-from brileta.game.enums import Disposition
+from brileta.game.actors.ai import HOSTILE_UPPER, UnifiedAI
 
 if TYPE_CHECKING:
     from brileta.controller import Controller
@@ -52,7 +52,8 @@ class ActionContextBuilder:
 
         items_on_ground = controller.gw.get_pickable_items_at_location(actor.x, actor.y)
         in_combat = any(
-            getattr(getattr(o, "ai", None), "disposition", None) == Disposition.HOSTILE
+            isinstance(o.ai, UnifiedAI)
+            and o.ai.disposition_toward(actor) <= HOSTILE_UPPER
             for o in nearby
         )
         selected_actor = controller.gw.selected_actor

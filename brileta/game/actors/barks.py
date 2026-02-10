@@ -2,46 +2,46 @@
 
 from __future__ import annotations
 
+from brileta.game.actors.ai import disposition_label
 from brileta.game.actors.conditions import Injury
-from brileta.game.enums import Disposition
 from brileta.util import rng
 
-from .core import NPC
+from .core import NPC, Character
 
 _rng = rng.get("npc.barks")
 
-BARKS_BY_DISPOSITION: dict[Disposition, tuple[str, ...]] = {
-    Disposition.HOSTILE: (
+BARKS_BY_DISPOSITION: dict[str, tuple[str, ...]] = {
+    "Hostile": (
         "Back off.",
         "Move.",
         "Outta my way.",
         "Touch me and die.",
     ),
-    Disposition.UNFRIENDLY: (
+    "Unfriendly": (
         "Don't touch me.",
         "Watch it.",
         "Keep your distance.",
         "You lost?",
     ),
-    Disposition.WARY: (
+    "Wary": (
         "Easy.",
         "Careful.",
         "Whoa.",
         "Mind yourself.",
     ),
-    Disposition.APPROACHABLE: (
+    "Approachable": (
         "Hey.",
-        "Oh—sorry.",
+        "Oh - sorry.",
         "Need something?",
         "Yeah?",
     ),
-    Disposition.FRIENDLY: (
+    "Friendly": (
         "Hi there.",
         "You okay?",
         "All good.",
         "Hey, friend.",
     ),
-    Disposition.ALLY: (
+    "Ally": (
         "We're good.",
         "You alright?",
         "Got your back.",
@@ -52,9 +52,9 @@ BARKS_BY_DISPOSITION: dict[Disposition, tuple[str, ...]] = {
 BARKS_BY_STATE: dict[str, tuple[str, ...]] = {
     "wounded": (
         "I'm hurt...",
-        "Easy—I'm wounded.",
+        "Easy - I'm wounded.",
         "Not now.",
-        "Careful—I'm bleeding.",
+        "Careful - I'm bleeding.",
     ),
     "exhausted": (
         "Need a breather.",
@@ -66,7 +66,7 @@ BARKS_BY_STATE: dict[str, tuple[str, ...]] = {
         "That stings.",
         "Mind the limp.",
         "Not my best day.",
-        "Ow—watch it.",
+        "Ow - watch it.",
     ),
 }
 
@@ -85,7 +85,7 @@ def _get_bark_state(npc: NPC) -> str | None:
     return None
 
 
-def pick_bump_bark(npc: NPC) -> str | None:
+def pick_bump_bark(npc: NPC, player: Character) -> str | None:
     """Pick a short bark when the player bumps this NPC."""
     state = _get_bark_state(npc)
     if state is not None:
@@ -93,8 +93,8 @@ def pick_bump_bark(npc: NPC) -> str | None:
         if candidates:
             return _rng.choice(candidates)
 
-    disposition = npc.ai.disposition
-    candidates = BARKS_BY_DISPOSITION.get(disposition)
+    label = disposition_label(npc.ai.disposition_toward(player))
+    candidates = BARKS_BY_DISPOSITION.get(label)
     if not candidates:
         return None
 

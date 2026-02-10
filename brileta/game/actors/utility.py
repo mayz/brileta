@@ -64,14 +64,16 @@ class Consideration:
 class UtilityContext:
     controller: Controller
     actor: NPC
-    player: Character
-    distance_to_player: int
+    target: Character
+    distance_to_target: int
     health_percent: float
     threat_level: float
     can_attack: bool
     has_escape_route: bool
     best_attack_destination: tuple[int, int] | None
     best_flee_step: tuple[int, int] | None
+    # Normalized disposition: 0.0 maps to -100 (hostile), 1.0 maps to +100 (ally).
+    disposition: float = 0.5
 
     def get_input(self, key: str) -> float | None:
         match key:
@@ -83,6 +85,8 @@ class UtilityContext:
                 return 1.0 if self.has_escape_route else 0.0
             case "can_attack":
                 return 1.0 if self.can_attack else 0.0
+            case "disposition":
+                return self.disposition
         return None
 
 

@@ -36,7 +36,7 @@ ruff-check:
 
 # Run type checking
 typecheck:
-	uv run ty check
+	uv run ty check --error-on-warning
 
 # Run tests. Installs/syncs dependencies AND runs pytest in the same logical command.
 # Reset stack size to the shell default. GNU make on macOS inflates it to ~64 MB,

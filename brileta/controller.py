@@ -339,38 +339,35 @@ class Controller:
         """Register live variables for inspecting NPC utility scoring.
 
         Registers ai.debug (toggle), ai.hovered.action, ai.hovered.scores,
-        and ai.hovered.goal. When ai.debug is toggled on, the three display
-        variables are automatically watched so they appear in the debug stats
-        overlay. When toggled off, they are unwatched.
+        ai.hovered.goal, ai.hovered.disposition_to_player,
+        ai.hovered.disposition_to_target, and ai.hovered.threat_level.
+        When ai.debug is toggled on, the display variables are automatically
+        watched so they appear in the debug stats overlay. When toggled off,
+        they are unwatched.
         """
-        from brileta.game.actors.ai import DispositionBasedAI, HostileAI
+        from brileta.game.actors.ai import UnifiedAI
         from brileta.game.actors.core import NPC
-        from brileta.game.enums import Disposition
 
-        _AI_VAR_NAMES = ("ai.hovered.action", "ai.hovered.scores", "ai.hovered.goal")
+        _AI_VAR_NAMES = (
+            "ai.hovered.action",
+            "ai.hovered.scores",
+            "ai.hovered.goal",
+            "ai.hovered.disposition_to_player",
+            "ai.hovered.disposition_to_target",
+            "ai.hovered.threat_level",
+        )
 
-        def _get_hostile_ai() -> HostileAI | None:
-            """Navigate from hovered_actor to its HostileAI, if applicable.
+        def _get_unified_ai() -> UnifiedAI | None:
+            """Get the UnifiedAI for the hovered actor, if applicable.
 
             Returns None for dead actors (stale cached scores are irrelevant).
-            When ai.force_hostile is on, returns the HostileAI behavior
-            regardless of the NPC's actual disposition.
             """
             actor = self.hovered_actor
             if not isinstance(actor, NPC):
                 return None
             if not actor.health.is_alive():
                 return None
-            ai = actor.ai
-            if isinstance(ai, DispositionBasedAI):
-                # When force_hostile is on, always show the HostileAI debug info
-                if self._ai_force_hostile:
-                    behavior = ai._behaviors.get(Disposition.HOSTILE)
-                else:
-                    behavior = ai.active_behavior
-                if isinstance(behavior, HostileAI):
-                    return behavior
-            return None
+            return actor.ai
 
         # -- ai.debug toggle --
 
@@ -391,9 +388,8 @@ class Controller:
         )
 
         # -- ai.force_hostile toggle --
-        # When true, DispositionBasedAI delegates to the hostile behavior
-        # regardless of the NPC's actual disposition. Useful for testing
-        # hostile behaviors (patrol, flee, attack) on any NPC.
+        # When true, UnifiedAI overrides disposition to hostile for all NPCs.
+        # Useful for testing hostile behaviors (patrol, flee, attack) on any NPC.
 
         live_variable_registry.register(
             "ai.force_hostile",
@@ -408,10 +404,10 @@ class Controller:
         def _get_action() -> str:
             if not self._ai_debug_enabled:
                 return "---"
-            hostile = _get_hostile_ai()
-            if hostile is None or hostile.last_chosen_action is None:
+            unified = _get_unified_ai()
+            if unified is None or unified.last_chosen_action is None:
                 return "---"
-            return hostile.last_chosen_action
+            return unified.last_chosen_action
 
         live_variable_registry.register(
             "ai.hovered.action",
@@ -427,11 +423,11 @@ class Controller:
         def _get_scores() -> str:
             if not self._ai_debug_enabled:
                 return "---"
-            hostile = _get_hostile_ai()
-            if hostile is None or not hostile.last_scores:
+            unified = _get_unified_ai()
+            if unified is None or not unified.last_scores:
                 return "---"
             parts: list[str] = []
-            for s in sorted(hostile.last_scores, key=lambda x: -x.final_score):
+            for s in sorted(unified.last_scores, key=lambda x: -x.final_score):
                 if s.persistence_bonus > 0:
                     parts.append(
                         f"{s.display_name}: {s.final_score:.2f} "
@@ -468,6 +464,66 @@ class Controller:
             "ai.hovered.goal",
             getter=_get_goal,
             description="Active goal of the hovered NPC.",
+        )
+
+        # -- ai.hovered.disposition_to_player --
+
+        def _get_disposition_to_player() -> str:
+            if not self._ai_debug_enabled:
+                return "---"
+            unified = _get_unified_ai()
+            if unified is None:
+                return "---"
+            return str(unified.disposition_toward(self.gw.player))
+
+        live_variable_registry.register(
+            "ai.hovered.disposition_to_player",
+            getter=_get_disposition_to_player,
+            description=("Numeric disposition (-100 to +100) toward the player."),
+        )
+
+        # -- ai.hovered.disposition_to_target --
+
+        def _get_disposition_to_target() -> str:
+            if not self._ai_debug_enabled:
+                return "---"
+            unified = _get_unified_ai()
+            if unified is None:
+                return "---"
+            target = (
+                self.gw.get_actor_by_id(unified.last_target_actor_id)
+                if unified.last_target_actor_id is not None
+                else None
+            )
+            if target is None:
+                return "---"
+            return str(unified.disposition_toward(target))
+
+        live_variable_registry.register(
+            "ai.hovered.disposition_to_target",
+            getter=_get_disposition_to_target,
+            description=(
+                "Numeric disposition (-100 to +100) toward the NPC's current AI target."
+            ),
+        )
+
+        # -- ai.hovered.threat_level --
+
+        def _get_threat_level() -> str:
+            if not self._ai_debug_enabled:
+                return "---"
+            unified = _get_unified_ai()
+            if unified is None or unified.last_threat_level is None:
+                return "---"
+            return f"{unified.last_threat_level:.2f}"
+
+        live_variable_registry.register(
+            "ai.hovered.threat_level",
+            getter=_get_threat_level,
+            description=(
+                "Relationship-aware threat level (proximity * hostility) "
+                "for hovered NPC's current AI target."
+            ),
         )
 
     def update_fov(self) -> None:
@@ -849,6 +905,15 @@ class Controller:
         - Player pushes non-hostile NPC
         - Player's noise alerts nearby NPCs
         """
+        player = self.gw.player
+        if player is None:
+            return
+
+        # Defensive guard: combat mode is a player-facing state, so events that
+        # don't involve the player should never force mode transitions.
+        if event.attacker is not player and event.defender is not player:
+            return
+
         if not self.is_combat_mode():
             self.enter_combat_mode()
 
@@ -858,10 +923,12 @@ class Controller:
         Used to warn when exiting combat mode with enemies still in sight.
         Uses spatial index for efficient viewport-bounds query.
         """
-        from brileta.game.actors.ai import DispositionBasedAI
-        from brileta.game.enums import Disposition
+        from brileta.game.actors.ai import HOSTILE_UPPER
+        from brileta.game.actors.core import NPC
 
         player = self.gw.player
+        if player is None:
+            return False
         bounds = self.get_visible_bounds()
         if bounds is not None:
             nearby_actors = self.gw.actor_spatial_index.get_in_rect(bounds)
@@ -872,20 +939,13 @@ class Controller:
             )
 
         for actor in nearby_actors:
-            # Skip non-characters and the player
-            if not isinstance(actor, Character) or actor == player:
+            if not isinstance(actor, NPC) or actor == player:
                 continue
-            # Skip dead actors
             if not actor.health.is_alive():
                 continue
-            # Skip actors not visible to the player
             if not self.gw.game_map.visible[actor.x, actor.y]:
                 continue
-            # Check if hostile
-            if (
-                isinstance(actor.ai, DispositionBasedAI)
-                and actor.ai.disposition == Disposition.HOSTILE
-            ):
+            if actor.ai.disposition_toward(player) <= HOSTILE_UPPER:
                 return True
         return False
 

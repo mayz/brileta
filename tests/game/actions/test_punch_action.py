@@ -286,7 +286,6 @@ def test_punch_makes_non_hostile_npc_hostile(
 ) -> None:
     """Punching a non-hostile NPC should make them hostile."""
     from brileta.game.actors import NPC
-    from brileta.game.enums import Disposition
 
     reset_event_bus_for_testing()
     gw = DummyGameWorld()
@@ -301,14 +300,14 @@ def test_punch_makes_non_hostile_npc_hostile(
         colors.YELLOW,
         "Wary NPC",
         game_world=cast(GameWorld, gw),
-        disposition=Disposition.WARY,
     )
     gw.player = player
     gw.add_actor(player)
     gw.add_actor(npc)
+    npc.ai.modify_disposition(player, -10)  # Wary
     controller = DummyController(gw=gw)
 
-    assert npc.ai.disposition == Disposition.WARY
+    assert npc.ai.disposition_toward(player) == -10
 
     # Force successful punch (15), damage (2)
     with patch_combat_rng([15], [2]):
@@ -318,7 +317,7 @@ def test_punch_makes_non_hostile_npc_hostile(
 
     assert result is not None
     assert result.succeeded
-    assert npc.ai.disposition == Disposition.HOSTILE
+    assert npc.ai.disposition_toward(player) == -75
 
 
 def test_missed_punch_still_triggers_hostility(
@@ -326,7 +325,6 @@ def test_missed_punch_still_triggers_hostility(
 ) -> None:
     """A missed punch should still make the NPC hostile - the attempt is aggressive."""
     from brileta.game.actors import NPC
-    from brileta.game.enums import Disposition
 
     reset_event_bus_for_testing()
     gw = DummyGameWorld()
@@ -340,14 +338,14 @@ def test_missed_punch_still_triggers_hostility(
         colors.YELLOW,
         "Wary NPC",
         game_world=cast(GameWorld, gw),
-        disposition=Disposition.WARY,
     )
     gw.player = player
     gw.add_actor(player)
     gw.add_actor(npc)
+    npc.ai.modify_disposition(player, -10)  # Wary
     controller = DummyController(gw=gw)
 
-    assert npc.ai.disposition == Disposition.WARY
+    assert npc.ai.disposition_toward(player) == -10
 
     # Force missed punch (low roll)
     with patch_d20_rng([2]):
@@ -358,4 +356,4 @@ def test_missed_punch_still_triggers_hostility(
     assert result is not None
     assert not result.succeeded
     # The attempt was aggressive, so NPC becomes hostile
-    assert npc.ai.disposition == Disposition.HOSTILE
+    assert npc.ai.disposition_toward(player) == -75

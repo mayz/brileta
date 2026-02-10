@@ -5,8 +5,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from brileta.game.action_plan import ActionPlan, ApproachStep, IntentStep
-from brileta.game.actors import Character
-from brileta.game.enums import Disposition
+from brileta.game.actors import NPC, Character
+from brileta.game.actors.ai import HOSTILE_UPPER
 from brileta.game.items.item_core import Item
 
 from .base import GameIntent
@@ -26,10 +26,9 @@ def is_safe_location(actor: Character, radius: int = 10) -> tuple[bool, str | No
     for other in nearby:
         if other is actor:
             continue
-        if not isinstance(other, Character):
+        if not isinstance(other, NPC):
             continue
-        disposition = getattr(getattr(other, "ai", None), "disposition", None)
-        if disposition == Disposition.HOSTILE:
+        if other.ai.disposition_toward(actor) <= HOSTILE_UPPER:
             return False, f"Hostile {other.name} nearby"
 
     # Future: check environmental hazards here

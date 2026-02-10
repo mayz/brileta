@@ -48,6 +48,11 @@ class DummyOverlay:
         return None
 
 
+def reset_actor_id_counter(start: int = 1) -> None:
+    """Reset Actor._next_actor_id for test isolation."""
+    Actor._next_actor_id = start
+
+
 def _make_renderer(tile_height: int = 16) -> GraphicsContext:
     """Create a mock GraphicsContext for testing UI components."""
     renderer = MagicMock(spec=GraphicsContext)
@@ -101,7 +106,7 @@ class DummyGameWorld(GameWorld):
 
         self.actor_spatial_index = SpatialHashGrid(cell_size=16)
         self.actors: list[Actor] = []
-        # Registry for O(1) actor lookup by Python object id.
+        # Registry for O(1) actor lookup by actor_id.
         self._actor_id_registry: dict[int, Actor] = {}
 
         self.item_spawner = ItemSpawner(self)
@@ -131,7 +136,7 @@ class DummyGameWorld(GameWorld):
         """Adds an actor to the list and the spatial index."""
         self.actors.append(actor)
         self.actor_spatial_index.add(actor)
-        self._actor_id_registry[id(actor)] = actor
+        self._actor_id_registry[actor.actor_id] = actor
 
     def remove_actor(self, actor: Actor) -> None:
         """Removes an actor from the list and the spatial index."""
@@ -140,10 +145,10 @@ class DummyGameWorld(GameWorld):
             self.actor_spatial_index.remove(actor)
         except ValueError:
             pass
-        self._actor_id_registry.pop(id(actor), None)
+        self._actor_id_registry.pop(actor.actor_id, None)
 
     def get_actor_by_id(self, actor_id: int) -> Actor | None:
-        """Look up an actor by its Python object ID in O(1) time."""
+        """Look up an actor by its ``actor_id`` in O(1) time."""
         return self._actor_id_registry.get(actor_id)
 
     def get_pickable_items_at_location(

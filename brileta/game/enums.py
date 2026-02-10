@@ -45,15 +45,6 @@ class CreatureSize(Enum):
         self.shadow_height = shadow_height
 
 
-class Disposition(Enum):
-    HOSTILE = auto()  # Will attack/flee.
-    UNFRIENDLY = auto()
-    WARY = auto()
-    APPROACHABLE = auto()
-    FRIENDLY = auto()
-    ALLY = auto()
-
-
 class OutcomeTier(Enum):
     """Represents the broad outcome tiers for action resolution.
 

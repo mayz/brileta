@@ -13,7 +13,6 @@ from brileta.controller import Controller
 from brileta.events import reset_event_bus_for_testing
 from brileta.game.actions.discovery import ActionCategory, ActionOption
 from brileta.game.actors import NPC, Character
-from brileta.game.enums import Disposition
 from brileta.view.ui.combat_tooltip_overlay import CombatTooltipOverlay
 from tests.helpers import get_controller_with_player_and_map
 
@@ -39,7 +38,7 @@ def _make_tooltip_test_world(
     if existing is not None:
         controller.gw.remove_actor(existing)
 
-    # Create an NPC with hostile disposition
+    # Create an NPC with hostile disposition toward the player
     npc = NPC(
         enemy_pos[0],
         enemy_pos[1],
@@ -47,9 +46,9 @@ def _make_tooltip_test_world(
         colors.RED,
         "Raider",
         game_world=controller.gw,
-        disposition=Disposition.HOSTILE,
     )
     controller.gw.add_actor(npc)
+    npc.ai.set_hostile(player)
 
     # If enemy should be dead, kill it
     if not enemy_alive and npc.health:

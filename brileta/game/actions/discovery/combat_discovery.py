@@ -69,21 +69,10 @@ class CombatActionDiscovery:
         options: list[ActionOption] = []
         context = self.context_builder.build_context(controller, actor)
 
-        # Get all attack actions and filter by type
-        all_attacks = self.get_all_combat_actions(controller, actor, context, target)
-        for attack in all_attacks:
-            attack_mode = attack.static_params.get("attack_mode")
-            weapon = attack.static_params.get("weapon")
-            if attack_mode == "melee":
-                # Melee always shown - approach handled on execution
-                options.append(attack)
-            elif (
-                attack_mode == "ranged"
-                and weapon is not None
-                and self._has_enemy_in_weapon_range(actor, weapon, context)
-            ):
-                # Ranged only shown if any target is within weapon range
-                options.append(attack)
+        # All attacks always shown. Range/adjacency is validated at targeting
+        # time, not at listing time, so the player can select an action before
+        # finding a target.
+        options = list(self.get_all_combat_actions(controller, actor, context, target))
 
         # Always add Push - approach handled on execution
         # Calculate push probability if target is provided (regardless of distance,

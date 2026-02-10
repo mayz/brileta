@@ -280,7 +280,6 @@ def test_trip_makes_non_hostile_npc_hostile(
 ) -> None:
     """Tripping a non-hostile NPC should make them hostile."""
     from brileta.game.actors import NPC
-    from brileta.game.enums import Disposition
 
     reset_event_bus_for_testing()
     gw = DummyGameWorld()
@@ -295,14 +294,14 @@ def test_trip_makes_non_hostile_npc_hostile(
         colors.YELLOW,
         "Wary NPC",
         game_world=cast(GameWorld, gw),
-        disposition=Disposition.WARY,
     )
     gw.player = player
     gw.add_actor(player)
     gw.add_actor(npc)
+    npc.ai.modify_disposition(player, -10)  # Wary
     controller = DummyController(gw=gw)
 
-    assert npc.ai.disposition == Disposition.WARY
+    assert npc.ai.disposition_toward(player) == -10
 
     # Force successful trip
     with patch_d20_rng([15]):
@@ -312,7 +311,7 @@ def test_trip_makes_non_hostile_npc_hostile(
 
     assert result is not None
     assert result.succeeded
-    assert npc.ai.disposition == Disposition.HOSTILE
+    assert npc.ai.disposition_toward(player) == -75
 
 
 def test_failed_trip_still_triggers_hostility(
@@ -320,7 +319,6 @@ def test_failed_trip_still_triggers_hostility(
 ) -> None:
     """A failed trip should still make the NPC hostile - the attempt is aggressive."""
     from brileta.game.actors import NPC
-    from brileta.game.enums import Disposition
 
     reset_event_bus_for_testing()
     gw = DummyGameWorld()
@@ -334,14 +332,14 @@ def test_failed_trip_still_triggers_hostility(
         colors.YELLOW,
         "Wary NPC",
         game_world=cast(GameWorld, gw),
-        disposition=Disposition.WARY,
     )
     gw.player = player
     gw.add_actor(player)
     gw.add_actor(npc)
+    npc.ai.modify_disposition(player, -10)  # Wary
     controller = DummyController(gw=gw)
 
-    assert npc.ai.disposition == Disposition.WARY
+    assert npc.ai.disposition_toward(player) == -10
 
     # Force failed trip (low roll, not nat 1)
     with patch_d20_rng([2]):
@@ -352,7 +350,7 @@ def test_failed_trip_still_triggers_hostility(
     assert result is not None
     assert not result.succeeded
     # The attempt was aggressive, so NPC becomes hostile
-    assert npc.ai.disposition == Disposition.HOSTILE
+    assert npc.ai.disposition_toward(player) == -75
 
 
 def test_trip_does_not_change_already_hostile(
@@ -360,7 +358,6 @@ def test_trip_does_not_change_already_hostile(
 ) -> None:
     """Tripping an already hostile NPC should not change their disposition."""
     from brileta.game.actors import NPC
-    from brileta.game.enums import Disposition
 
     reset_event_bus_for_testing()
     gw = DummyGameWorld()
@@ -374,11 +371,11 @@ def test_trip_does_not_change_already_hostile(
         colors.RED,
         "Hostile NPC",
         game_world=cast(GameWorld, gw),
-        disposition=Disposition.HOSTILE,
     )
     gw.player = player
     gw.add_actor(player)
     gw.add_actor(npc)
+    npc.ai.set_hostile(player)
     controller = DummyController(gw=gw)
 
     with patch_d20_rng([15]):
@@ -386,15 +383,14 @@ def test_trip_does_not_change_already_hostile(
         executor = TripExecutor()
         executor.execute(intent)
 
-    assert npc.ai.disposition == Disposition.HOSTILE
+    assert npc.ai.disposition_toward(player) == -75
 
 
-def test_npc_tripping_npc_does_not_trigger_hostility(
+def test_npc_tripping_npc_updates_hostility_between_npcs(
     patch_d20_rng: "D20RNGPatcher",
 ) -> None:
-    """NPC tripping another NPC should not change disposition toward player."""
+    """NPC tripping another NPC should create hostility toward the attacker only."""
     from brileta.game.actors import NPC
-    from brileta.game.enums import Disposition
 
     reset_event_bus_for_testing()
     gw = DummyGameWorld()
@@ -408,7 +404,6 @@ def test_npc_tripping_npc_does_not_trigger_hostility(
         colors.RED,
         "Attacker NPC",
         game_world=cast(GameWorld, gw),
-        disposition=Disposition.HOSTILE,
     )
     npc2 = NPC(
         6,
@@ -417,12 +412,13 @@ def test_npc_tripping_npc_does_not_trigger_hostility(
         colors.YELLOW,
         "Defender NPC",
         game_world=cast(GameWorld, gw),
-        disposition=Disposition.WARY,
     )
     gw.player = player
     gw.add_actor(player)
     gw.add_actor(npc1)
     gw.add_actor(npc2)
+    npc1.ai.set_hostile(player)
+    npc2.ai.modify_disposition(player, -10)  # Wary toward player
     controller = DummyController(gw=gw)
 
     # NPC1 trips NPC2
@@ -433,5 +429,7 @@ def test_npc_tripping_npc_does_not_trigger_hostility(
 
     assert result is not None
     assert result.succeeded
-    # NPC2 should still be wary (NPC-vs-NPC doesn't trigger hostility toward player)
-    assert npc2.ai.disposition == Disposition.WARY
+    # NPC-vs-NPC aggression should not alter NPC2's relationship to the player.
+    assert npc2.ai.disposition_toward(player) == -10
+    # But NPC2 should become hostile toward the attacking NPC.
+    assert npc2.ai.disposition_toward(npc1) == -75

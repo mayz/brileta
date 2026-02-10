@@ -688,7 +688,7 @@ class ActionPanelView(TextView):
             target_type
         )
 
-        self._cached_target_description = target_actor.get_target_description()
+        self._cached_target_description = target_actor.get_target_description(gw.player)
         self._cached_actions = target_actor.get_contextual_actions(
             self.controller, gw.player
         )

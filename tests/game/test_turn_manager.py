@@ -12,7 +12,6 @@ from brileta.game.actions.base import GameActionResult
 from brileta.game.actions.movement import MoveIntent
 from brileta.game.actors import NPC, PC, Character
 from brileta.game.actors.status_effects import StaggeredEffect
-from brileta.game.enums import Disposition
 from brileta.game.game_world import GameWorld
 from brileta.game.turn_manager import TurnManager
 from tests.helpers import DummyGameWorld, get_controller_with_player_and_map
@@ -162,11 +161,11 @@ def make_world() -> tuple[DummyController, Character, NPC]:
         colors.RED,
         "Enemy",
         game_world=cast(GameWorld, gw),
-        disposition=Disposition.HOSTILE,
     )
     gw.player = player
     gw.add_actor(player)
     gw.add_actor(npc)
+    npc.ai.set_hostile(player)
     controller = DummyController(gw=gw)
     return controller, player, npc
 
@@ -344,11 +343,11 @@ def test_npc_on_hazard_takes_damage_once_per_player_action() -> None:
         colors.RED,
         "Raider",
         game_world=cast(GameWorld, gw),
-        disposition=Disposition.HOSTILE,
         toughness=20,  # max_hp = 25, survives several 1d6 hits
         speed=0,  # No energy accumulation, so NPC can never afford an action
     )
     gw.add_actor(npc)
+    npc.ai.set_hostile(player)
 
     # Place hot coals under the NPC
     gw.game_map.tiles[3, 3] = TileTypeID.HOT_COALS
@@ -403,11 +402,11 @@ def test_staggered_npc_action_blocked_by_turn_manager() -> None:
         colors.RED,
         "Raider",
         game_world=cast(GameWorld, gw),
-        disposition=Disposition.HOSTILE,
     )
     gw.player = player
     gw.add_actor(player)
     gw.add_actor(npc)
+    npc.ai.set_hostile(player)
 
     controller = DummyController(gw=gw)
 
@@ -455,11 +454,11 @@ def test_npc_action_invalidates_combat_tooltip() -> None:
         colors.RED,
         "Raider",
         game_world=cast(GameWorld, gw),
-        disposition=Disposition.HOSTILE,
     )
     gw.player = player
     gw.add_actor(player)
     gw.add_actor(npc)
+    npc.ai.set_hostile(player)
 
     controller = DummyController(gw=gw)
     controller.turn_manager.on_player_action()
@@ -582,9 +581,9 @@ def test_npc_energy_capped_at_action_cost() -> None:
         colors.RED,
         "Raider",
         game_world=cast(GameWorld, gw),
-        disposition=Disposition.HOSTILE,
     )
     gw.add_actor(npc)
+    npc.ai.set_hostile(player)
 
     controller = DummyController(gw=gw)
 
@@ -636,10 +635,10 @@ def test_slow_npc_can_still_accumulate_to_action_cost() -> None:
         colors.DARK_GREY,
         "Trog",
         game_world=cast(GameWorld, gw),
-        disposition=Disposition.HOSTILE,
         speed=80,
     )
     gw.add_actor(slow_npc)
+    slow_npc.ai.set_hostile(player)
 
     controller = DummyController(gw=gw)
 

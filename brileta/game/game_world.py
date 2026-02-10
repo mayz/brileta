@@ -115,8 +115,7 @@ class GameWorld:
         """Adds an actor to the world and registers it with the spatial index."""
         self.actors.append(actor)
         self.actor_spatial_index.add(actor)
-        # Register actor by its Python object id for O(1) lookup.
-        self._actor_id_registry[id(actor)] = actor
+        self._actor_id_registry[actor.actor_id] = actor
 
     def remove_actor(self, actor: Actor) -> None:
         """Removes an actor from the world and spatial index."""
@@ -127,7 +126,7 @@ class GameWorld:
             # Actor was not in the list; ignore.
             pass
         # Always attempt to unregister from the id registry.
-        self._actor_id_registry.pop(id(actor), None)
+        self._actor_id_registry.pop(actor.actor_id, None)
 
     def add_light(self, light: LightSource) -> None:
         """Add a light source to the world and notify the lighting system.
@@ -206,7 +205,7 @@ class GameWorld:
         """Initialize the collections used to track actors."""
         self.actors: list[Actor] = []
         self.actor_spatial_index: SpatialIndex[Actor] = SpatialHashGrid(cell_size=16)
-        # Registry for O(1) actor lookup by Python object id.
+        # Registry for O(1) actor lookup by actor_id.
         # Used by floating text system to track actor positions.
         self._actor_id_registry: dict[int, Actor] = {}
 
@@ -506,7 +505,7 @@ class GameWorld:
         return actors_at_point[0]
 
     def get_actor_by_id(self, actor_id: int) -> Actor | None:
-        """Look up an actor by its Python object ID in O(1) time.
+        """Look up an actor by its ``actor_id`` in O(1) time.
 
         Uses the internal actor registry for constant-time lookup.
         Used by floating text system to track actor positions.
