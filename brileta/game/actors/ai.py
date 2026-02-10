@@ -21,10 +21,6 @@ from brileta import colors
 from brileta.constants.combat import CombatConstants as Combat
 from brileta.events import CombatInitiatedEvent, MessageEvent, publish_event
 from brileta.game import ranges
-from brileta.game.action_plan import WalkToPlan
-from brileta.game.actors.utility import (
-    Action as UtilityAction,
-)
 from brileta.game.actors.utility import (
     Consideration,
     ResponseCurve,
@@ -35,6 +31,20 @@ from brileta.game.actors.utility import (
 )
 from brileta.types import ActorId
 from brileta.util import rng
+
+from .ai_actions import (
+    AttackAction,
+    AvoidAction,
+    FleeAction,
+    IdleAction,
+    WanderAction,
+    WatchAction,
+    _has_escape_route,
+    _is_hostile,
+    _is_no_threat,
+    _is_not_hostile,
+    _is_threat_present,
+)
 
 if TYPE_CHECKING:
     from brileta.controller import Controller
@@ -67,6 +77,9 @@ DISPOSITION_BANDS: list[tuple[int, str]] = [
 # Threshold below which an NPC is considered hostile. Derived from
 # DISPOSITION_BANDS so there is exactly one source of truth.
 HOSTILE_UPPER = DISPOSITION_BANDS[0][0]
+
+# How far combat awareness extends after an NPC is attacked.
+_COMBAT_AWARENESS_RADIUS = 50
 
 
 def disposition_label(value: int) -> str:
@@ -279,7 +292,7 @@ class AIComponent:
                 ),
                 # PatrolAction is defined but not scored here. It will be
                 # wired up when guards / soldiers with assigned patrol routes
-                # are implemented. See PatrolAction class below.
+                # are implemented. See PatrolAction in ai_actions.py.
             ]
         )
 
@@ -717,404 +730,3 @@ class AIComponent:
         candidates.sort(key=lambda c: (-c[2], c[3], c[4]))
         dx, dy, _, _, _ = candidates[0]
         return dx, dy
-
-
-# ---------------------------------------------------------------------------
-# Precondition helpers
-# ---------------------------------------------------------------------------
-
-
-def _is_threat_present(context: UtilityContext) -> bool:
-    """Precondition: returns True when relationship-aware threat is non-zero."""
-    return context.threat_level > 0.0
-
-
-def _is_no_threat(context: UtilityContext) -> bool:
-    """Precondition: returns True when relationship-aware threat is zero."""
-    return context.threat_level <= 0.0
-
-
-def _has_escape_route(context: UtilityContext) -> bool:
-    """Precondition: returns True when a valid flee step exists."""
-    return context.has_escape_route
-
-
-def _is_hostile(context: UtilityContext) -> bool:
-    """Precondition: only initiate combat when hostile toward target.
-
-    This is a game rule, not a scoring gate. Non-hostile NPCs do not start
-    fights regardless of other considerations. Disposition scoring curves
-    handle the intensity of hostile behavior (e.g., attack vs flee).
-    """
-    return context.disposition <= disposition_to_normalized(HOSTILE_UPPER)
-
-
-def _is_not_hostile(context: UtilityContext) -> bool:
-    """Precondition: only allow non-hostile social behaviors."""
-    return context.disposition > disposition_to_normalized(HOSTILE_UPPER)
-
-
-# ---------------------------------------------------------------------------
-# Utility Actions
-# ---------------------------------------------------------------------------
-
-
-class AttackAction(UtilityAction):
-    """Attack the target when adjacent, or pathfind toward them."""
-
-    def __init__(
-        self,
-        base_score: float,
-        considerations: list[Consideration],
-        preconditions: list,
-    ) -> None:
-        super().__init__(
-            action_id="attack",
-            base_score=base_score,
-            considerations=considerations,
-            preconditions=preconditions,
-        )
-
-    def get_intent(self, context: UtilityContext) -> GameIntent | None:
-        from brileta.game.actions.combat import AttackIntent
-
-        controller = context.controller
-        actor = context.actor
-        target = context.target
-
-        if context.can_attack:
-            controller.stop_plan(actor)
-            return AttackIntent(controller, actor, target)
-
-        plan = actor.active_plan
-        if plan is not None and plan.context.target_position is not None:
-            gx, gy = plan.context.target_position
-            if (
-                ranges.calculate_distance(target.x, target.y, gx, gy) == 1
-                and controller.gw.game_map.walkable[gx, gy]
-            ):
-                return None
-
-        if context.best_attack_destination and controller.start_plan(
-            actor, WalkToPlan, target_position=context.best_attack_destination
-        ):
-            return None
-
-        return None
-
-
-class FleeAction(UtilityAction):
-    """Flee from the target when health is low."""
-
-    def __init__(
-        self,
-        base_score: float,
-        considerations: list[Consideration],
-        preconditions: list,
-    ) -> None:
-        super().__init__(
-            action_id="flee",
-            base_score=base_score,
-            considerations=considerations,
-            preconditions=preconditions,
-        )
-
-    def get_intent(self, context: UtilityContext) -> GameIntent | None:
-        """Single-step flee fallback (used when goal system isn't active)."""
-        from brileta.game.actions.movement import MoveIntent
-
-        if context.best_flee_step is None:
-            return None
-
-        dx, dy = context.best_flee_step
-        context.controller.stop_plan(context.actor)
-        return MoveIntent(context.controller, context.actor, dx, dy)
-
-    def get_intent_with_goal(
-        self, context: UtilityContext, actor: NPC
-    ) -> GameIntent | None:
-        """Create a FleeGoal and return the first flee action.
-
-        Called by AIComponent when FleeAction wins scoring. Creates a persistent
-        FleeGoal so the NPC continues fleeing across multiple turns until safe,
-        rather than re-evaluating from scratch each tick.
-        """
-        from brileta.game.actors.goals import FleeGoal
-
-        # Create and assign a flee goal targeting the current threat.
-        goal = FleeGoal(threat_actor_id=context.target.actor_id)
-        actor.current_goal = goal
-
-        # Evaluate completion once (sets initial distance tracking)
-        goal.evaluate_completion(actor, context.controller)
-        goal.tick()
-        intent = goal.get_next_action(actor, context.controller)
-
-        # If the goal immediately failed (e.g., cornered), clear it so the
-        # NPC doesn't waste a tick holding a dead goal.
-        if goal.is_complete:
-            actor.current_goal = None
-
-        return intent
-
-
-class AvoidAction(UtilityAction):
-    """Move one step away from the target. Used by unfriendly NPCs."""
-
-    def __init__(
-        self,
-        base_score: float,
-        considerations: list[Consideration],
-        preconditions: list,
-    ) -> None:
-        super().__init__(
-            action_id="avoid",
-            base_score=base_score,
-            considerations=considerations,
-            preconditions=preconditions,
-        )
-
-    def get_intent(self, context: UtilityContext) -> GameIntent | None:
-        """Move away from the target using the best flee step."""
-        from brileta.game.actions.movement import MoveIntent
-
-        if context.best_flee_step is None:
-            return None
-
-        dx, dy = context.best_flee_step
-        context.controller.stop_plan(context.actor)
-        return MoveIntent(context.controller, context.actor, dx, dy)
-
-
-class WatchAction(UtilityAction):
-    """Stay put, facing the target. Used by wary/unfriendly NPCs."""
-
-    def __init__(
-        self,
-        base_score: float,
-        considerations: list[Consideration],
-        preconditions: list,
-    ) -> None:
-        super().__init__(
-            action_id="watch",
-            base_score=base_score,
-            considerations=considerations,
-            preconditions=preconditions,
-        )
-
-    def get_intent(self, context: UtilityContext) -> GameIntent | None:
-        # Do nothing - stay in place, watching.
-        return None
-
-
-class IdleAction(UtilityAction):
-    """Do nothing this turn. Always a baseline fallback."""
-
-    def __init__(
-        self,
-        base_score: float,
-        considerations: list[Consideration],
-    ) -> None:
-        super().__init__(
-            action_id="idle",
-            base_score=base_score,
-            considerations=considerations,
-        )
-
-    def get_intent(self, context: UtilityContext) -> GameIntent | None:
-        return None
-
-
-class WanderAction(UtilityAction):
-    """Create/continue a wandering route goal when no threat is present."""
-
-    def __init__(
-        self,
-        base_score: float,
-        considerations: list[Consideration],
-        preconditions: list,
-    ) -> None:
-        super().__init__(
-            action_id="wander",
-            base_score=base_score,
-            considerations=considerations,
-            preconditions=preconditions,
-        )
-
-    def get_intent(self, context: UtilityContext) -> GameIntent | None:
-        # Intent generation is handled via get_intent_with_goal in AIComponent.
-        # This fallback should not be reached in normal flow.
-        return None
-
-    def get_intent_with_goal(
-        self, context: UtilityContext, actor: NPC
-    ) -> GameIntent | None:
-        """Create a heading-driven WanderGoal and return the first move intent."""
-        from brileta.game.actors.goals import WanderGoal
-
-        goal = WanderGoal(
-            minimum_segment_steps=_WANDER_MIN_SEGMENT_STEPS,
-            maximum_segment_steps=_WANDER_MAX_SEGMENT_STEPS,
-            max_stuck_turns=_WANDER_MAX_STUCK_TURNS,
-            heading_jitter_chance=_WANDER_HEADING_JITTER_CHANCE,
-        )
-        actor.current_goal = goal
-        goal.tick()
-        intent = goal.get_next_action(actor, context.controller)
-
-        if goal.is_complete:
-            actor.current_goal = None
-
-        return intent
-
-
-# How far from the NPC's current position to pick patrol waypoints.
-_PATROL_RADIUS = 6
-
-# How far combat awareness extends after an NPC is attacked.
-_COMBAT_AWARENESS_RADIUS = 50
-
-# How many candidate waypoints to pick for a patrol route.
-_PATROL_WAYPOINT_COUNT = 3
-
-# Wander segment tuning: heading is kept for a random budget of steps, then
-# repicked. Blocked movement can force earlier heading resets.
-_WANDER_MIN_SEGMENT_STEPS = 4
-_WANDER_MAX_SEGMENT_STEPS = 12
-_WANDER_MAX_STUCK_TURNS = 2
-_WANDER_HEADING_JITTER_CHANCE = 0.15
-
-
-class PatrolAction(UtilityAction):
-    """Patrol nearby when no threat is present.
-
-    When this action wins scoring and the NPC has no active PatrolGoal,
-    creates one with random walkable waypoints near the NPC. If a
-    PatrolGoal already exists, ContinueGoalAction handles continuation
-    so this action won't create duplicates.
-    """
-
-    def __init__(
-        self,
-        base_score: float,
-        considerations: list[Consideration],
-        preconditions: list,
-    ) -> None:
-        super().__init__(
-            action_id="patrol",
-            base_score=base_score,
-            considerations=considerations,
-            preconditions=preconditions,
-        )
-
-    def get_intent(self, context: UtilityContext) -> GameIntent | None:
-        # Intent generation is handled via get_intent_with_goal in AIComponent.
-        # This fallback should not be reached in normal flow.
-        return None
-
-    def get_intent_with_goal(
-        self, context: UtilityContext, actor: NPC
-    ) -> GameIntent | None:
-        """Create a PatrolGoal with random nearby waypoints and start patrolling.
-
-        Picks 2-3 random walkable tiles within _PATROL_RADIUS of the NPC's
-        current position as waypoints. Uses the game_map.walkable array to
-        validate tiles.
-        """
-        from brileta.game.actors.goals import PatrolGoal
-
-        waypoints = _pick_patrol_waypoints(context.controller, actor)
-        if len(waypoints) < 2:
-            # Not enough walkable space - fall back to doing nothing
-            return None
-
-        goal = PatrolGoal(waypoints)
-        actor.current_goal = goal
-        goal.tick()
-        intent = goal.get_next_action(actor, context.controller)
-
-        # If the goal immediately failed, clear it so the NPC doesn't
-        # waste a tick holding a dead goal.
-        if goal.is_complete:
-            actor.current_goal = None
-
-        return intent
-
-
-def _pick_patrol_waypoints(controller: Controller, actor: NPC) -> list[tuple[int, int]]:
-    """Pick random walkable tiles near the actor for patrol waypoints.
-
-    Collects all walkable tiles within _PATROL_RADIUS of the actor,
-    then samples _PATROL_WAYPOINT_COUNT of them.
-    """
-    return _pick_roam_waypoints(
-        controller,
-        actor,
-        radius=_PATROL_RADIUS,
-        waypoint_count=_PATROL_WAYPOINT_COUNT,
-        require_unblocked=True,
-    )
-
-
-def _sample_roam_waypoints(
-    candidates: list[tuple[int, int]], waypoint_count: int
-) -> list[tuple[int, int]]:
-    """Return up to ``waypoint_count`` sampled candidate waypoints."""
-    if len(candidates) <= waypoint_count:
-        return list(candidates)
-    return _rng.sample(candidates, waypoint_count)
-
-
-def _pick_roam_waypoints(
-    controller: Controller,
-    actor: NPC,
-    *,
-    radius: int,
-    waypoint_count: int,
-    require_unblocked: bool,
-) -> list[tuple[int, int]]:
-    """Pick walkable roam waypoints, preferring safe tiles when possible."""
-    safe_candidates, hazardous_candidates = _collect_roam_candidates(
-        controller, actor, radius=radius, require_unblocked=require_unblocked
-    )
-    candidates = safe_candidates + hazardous_candidates
-    return _sample_roam_waypoints(candidates, waypoint_count)
-
-
-def _collect_roam_candidates(
-    controller: Controller,
-    actor: NPC,
-    radius: int,
-    *,
-    require_unblocked: bool,
-) -> tuple[list[tuple[int, int]], list[tuple[int, int]]]:
-    """Collect nearby walkable roam candidates, partitioned by hazard.
-
-    ``get_hazard_cost()`` returns 1 for safe tiles and >1 for hazardous tiles.
-    """
-    from brileta.environment.tile_types import get_hazard_cost
-
-    game_map = controller.gw.game_map
-    safe_candidates: list[tuple[int, int]] = []
-    hazardous_candidates: list[tuple[int, int]] = []
-
-    for dx in range(-radius, radius + 1):
-        for dy in range(-radius, radius + 1):
-            if dx == 0 and dy == 0:
-                continue
-            tx = actor.x + dx
-            ty = actor.y + dy
-            if not (0 <= tx < game_map.width and 0 <= ty < game_map.height):
-                continue
-            if not game_map.walkable[tx, ty]:
-                continue
-            if require_unblocked:
-                blocker = controller.gw.get_actor_at_location(tx, ty)
-                if blocker and blocker.blocks_movement and blocker is not actor:
-                    continue
-            if get_hazard_cost(int(game_map.tiles[tx, ty])) > 1:
-                hazardous_candidates.append((tx, ty))
-            else:
-                safe_candidates.append((tx, ty))
-
-    return safe_candidates, hazardous_candidates

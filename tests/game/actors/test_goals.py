@@ -268,7 +268,7 @@ def test_continue_goal_beats_raw_action_at_zero_progress() -> None:
     """
     import pytest
 
-    from brileta.game.actors.ai import FleeAction
+    from brileta.game.actors.ai_actions import FleeAction
     from brileta.game.actors.goals import PERSISTENCE_MINIMUM
 
     controller, player, npc = make_world(npc_x=3, npc_y=0)
@@ -483,7 +483,7 @@ def test_completed_goal_excluded_from_continue_scoring() -> None:
     UtilityBrain.select_action guards on `not current_goal.is_complete`.
     Verify a FAILED goal is correctly excluded from scoring.
     """
-    from brileta.game.actors.ai import IdleAction
+    from brileta.game.actors.ai_actions import IdleAction
     from brileta.game.actors.utility import UtilityBrain
 
     controller, player, npc = make_world(npc_x=5, npc_y=0)
@@ -923,7 +923,7 @@ def test_flee_goal_fails_when_fully_cornered() -> None:
 
 def test_utility_brain_includes_continue_goal_action() -> None:
     """UtilityBrain.select_action should score ContinueGoalAction alongside atomics."""
-    from brileta.game.actors.ai import IdleAction
+    from brileta.game.actors.ai_actions import IdleAction
     from brileta.game.actors.utility import UtilityBrain
 
     controller, player, npc = make_world(npc_x=15, npc_y=15)
