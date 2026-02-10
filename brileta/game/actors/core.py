@@ -152,6 +152,12 @@ class Actor:
 
     ai: AIComponent | None
 
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, Actor) and self.actor_id == other.actor_id
+
+    def __hash__(self) -> int:
+        return hash(self.actor_id)
+
     def __init__(
         self,
         x: WorldTileCoord,

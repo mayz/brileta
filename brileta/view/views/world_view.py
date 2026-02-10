@@ -112,8 +112,8 @@ class WorldView(View):
         self._gpu_actor_lightmap_texture: Any | None = None
         self._gpu_actor_lightmap_viewport_origin: tuple[int, int] | None = None
         # Per-frame multiplicative light scales for actors shadowed by other actors.
-        # Keyed by id(actor) because Actor objects are mutable and not hash-stable.
-        self._actor_shadow_receive_light_scale: dict[int, float] = {}
+        # Rebuilt every frame during shadow rendering.
+        self._actor_shadow_receive_light_scale: dict[Actor, float] = {}
         # Note: No on_evict callback here because _active_background_texture keeps
         # an external reference to cached textures. Releasing on eviction would
         # invalidate that reference. Textures are cleaned up by GC instead.
@@ -1369,10 +1369,9 @@ class WorldView(View):
             if attenuation <= 0.0:
                 continue
 
-            receiver_id = id(receiver)
-            current_scale = self._actor_shadow_receive_light_scale.get(receiver_id, 1.0)
+            current_scale = self._actor_shadow_receive_light_scale.get(receiver, 1.0)
             next_scale = current_scale * (1.0 - min(0.95, attenuation))
-            self._actor_shadow_receive_light_scale[receiver_id] = max(0.05, next_scale)
+            self._actor_shadow_receive_light_scale[receiver] = max(0.05, next_scale)
 
     @record_time_live_variable("time.render.actors_smooth_ms")
     def _render_actors_smooth(
@@ -1514,7 +1513,7 @@ class WorldView(View):
 
     def _get_actor_lighting_intensity(self, _actor: Actor, _bounds: Rect) -> tuple:
         """Get actor lighting multiplier tuple for the screen shader path."""
-        receive_scale = self._actor_shadow_receive_light_scale.get(id(_actor), 1.0)
+        receive_scale = self._actor_shadow_receive_light_scale.get(_actor, 1.0)
         return (receive_scale, receive_scale, receive_scale)
 
     def _update_actor_particles(self) -> None:

@@ -86,6 +86,7 @@ from brileta.game.actions.stunts import (
 from brileta.game.actors import NPC, Character
 from brileta.game.actors.barks import pick_bump_bark
 from brileta.game.actors.container import Container
+from brileta.types import ActorId
 
 if TYPE_CHECKING:
     from brileta.controller import Controller
@@ -111,7 +112,7 @@ class ActionRouter:
 
     def __init__(self, controller: Controller):
         self.controller = controller
-        self._bark_block_until: dict[int, float] = {}
+        self._bark_block_until: dict[ActorId, float] = {}
         self._bark_cooldown_seconds = 0.25
         # This registry is the heart of the dispatcher.
         self._executor_registry: dict[type, ActionExecutor] = {
@@ -229,9 +230,13 @@ class ActionRouter:
             return
 
         now = time.perf_counter()
-        block_until = self._bark_block_until.get(id(target))
-        if block_until is not None and now < block_until:
-            return
+        target_id = target.actor_id
+        block_until = self._bark_block_until.get(target_id)
+        if block_until is not None:
+            if now < block_until:
+                return
+            # Expired - clean up the stale entry.
+            del self._bark_block_until[target_id]
 
         player = self.controller.gw.player
         if player is None:
@@ -242,9 +247,7 @@ class ActionRouter:
             return
 
         duration = 1.1
-        self._bark_block_until[id(target)] = (
-            now + duration + self._bark_cooldown_seconds
-        )
+        self._bark_block_until[target_id] = now + duration + self._bark_cooldown_seconds
 
         publish_event(
             FloatingTextEvent(

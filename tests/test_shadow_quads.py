@@ -28,21 +28,14 @@ def _build_actor(
     y: int = 0,
     shadow_height: int = 1,
     character_layers: list[CharacterLayer] | None = None,
-) -> SimpleNamespace:
-    return SimpleNamespace(
+) -> Actor:
+    return Actor(
         x=x,
         y=y,
-        prev_x=x,
-        prev_y=y,
-        render_x=float(x),
-        render_y=float(y),
-        _animation_controlled=False,
-        visual_effects=None,
-        health=None,
-        shadow_height=shadow_height,
-        visual_scale=1.0,
-        character_layers=character_layers,
         ch="@",
+        color=(255, 255, 255),
+        shadow_height=shadow_height,
+        character_layers=character_layers,
     )
 
 
@@ -265,7 +258,7 @@ def test_shadow_geometry_point_light() -> None:
     view._render_point_light_actor_shadows(
         cast(GraphicsContext, graphics),
         cast(ViewportSystem, viewport),
-        [cast(Actor, actor)],
+        [actor],
         InterpolationAlpha(1.0),
         20.0,
     )
@@ -291,7 +284,7 @@ def test_point_light_shadow_direction_ignores_idle_drift() -> None:
     view._render_point_light_actor_shadows(
         cast(GraphicsContext, graphics),
         cast(ViewportSystem, viewport),
-        [cast(Actor, actor)],
+        [actor],
         InterpolationAlpha(1.0),
         20.0,
     )
@@ -337,7 +330,7 @@ def test_point_light_shadow_attenuation() -> None:
     view._render_point_light_actor_shadows(
         cast(GraphicsContext, graphics),
         cast(ViewportSystem, viewport),
-        [cast(Actor, actor)],
+        [actor],
         InterpolationAlpha(1.0),
         20.0,
     )
@@ -359,7 +352,7 @@ def test_composite_layers_shadow() -> None:
     )
 
     view._emit_actor_shadow_quads(
-        actor=cast(Actor, actor),
+        actor=actor,
         graphics=cast(GraphicsContext, graphics),
         root_x=10.0,
         root_y=20.0,
@@ -393,7 +386,7 @@ def test_no_shadow_zero_height() -> None:
     view._render_point_light_actor_shadows(
         cast(GraphicsContext, graphics),
         cast(ViewportSystem, viewport),
-        [cast(Actor, actor)],
+        [actor],
         InterpolationAlpha(1.0),
         20.0,
     )
@@ -561,7 +554,7 @@ def test_sun_shadow_skips_indoor_regions() -> None:
     view._render_sun_actor_shadows(
         cast(GraphicsContext, graphics),
         cast(ViewportSystem, viewport),
-        [cast(Actor, actor)],
+        [actor],
         InterpolationAlpha(1.0),
         20.0,
     )
@@ -586,7 +579,7 @@ def test_sun_shadow_renders_outdoor_regions() -> None:
     view._render_sun_actor_shadows(
         cast(GraphicsContext, graphics),
         cast(ViewportSystem, viewport),
-        [cast(Actor, actor)],
+        [actor],
         InterpolationAlpha(1.0),
         20.0,
     )
@@ -612,7 +605,7 @@ def test_sun_shadow_skips_room_regions_even_with_high_exposure() -> None:
     view._render_sun_actor_shadows(
         cast(GraphicsContext, graphics),
         cast(ViewportSystem, viewport),
-        [cast(Actor, actor)],
+        [actor],
         InterpolationAlpha(1.0),
         20.0,
     )
@@ -634,7 +627,7 @@ def test_point_light_skips_owned_light_shadow() -> None:
     view._render_point_light_actor_shadows(
         cast(GraphicsContext, graphics),
         cast(ViewportSystem, viewport),
-        [cast(Actor, actor)],
+        [actor],
         InterpolationAlpha(1.0),
         20.0,
     )
@@ -661,7 +654,7 @@ def test_point_light_skips_same_tile_drift_jitter() -> None:
     view._render_point_light_actor_shadows(
         cast(GraphicsContext, graphics),
         cast(ViewportSystem, viewport),
-        [cast(Actor, actor)],
+        [actor],
         InterpolationAlpha(1.0),
         20.0,
     )
@@ -774,8 +767,8 @@ def test_actor_shadow_receiver_dimming_for_overlap() -> None:
     view._actor_shadow_receive_light_scale = {}
 
     view._accumulate_actor_shadow_receiver_dimming(
-        caster=cast(Actor, caster),
-        receivers=[cast(Actor, caster), cast(Actor, receiver)],
+        caster=caster,
+        receivers=[caster, receiver],
         shadow_dir_x=1.0,
         shadow_dir_y=0.0,
         shadow_length_tiles=4.0,
@@ -783,9 +776,9 @@ def test_actor_shadow_receiver_dimming_for_overlap() -> None:
         fade_tip=False,
     )
 
-    receiver_scale = view._actor_shadow_receive_light_scale[id(receiver)]
+    receiver_scale = view._actor_shadow_receive_light_scale[receiver]
     assert receiver_scale < 1.0
-    assert id(caster) not in view._actor_shadow_receive_light_scale
+    assert caster not in view._actor_shadow_receive_light_scale
 
 
 def test_actor_shadow_receiver_dimming_scales_with_caster_height() -> None:
@@ -797,27 +790,27 @@ def test_actor_shadow_receiver_dimming_scales_with_caster_height() -> None:
     view = object.__new__(WorldView)
     view._actor_shadow_receive_light_scale = {}
     view._accumulate_actor_shadow_receiver_dimming(
-        caster=cast(Actor, short_caster),
-        receivers=[cast(Actor, receiver_short)],
+        caster=short_caster,
+        receivers=[receiver_short],
         shadow_dir_x=1.0,
         shadow_dir_y=0.0,
         shadow_length_tiles=4.0,
         shadow_alpha=config.ACTOR_SHADOW_ALPHA,
         fade_tip=False,
     )
-    short_scale = view._actor_shadow_receive_light_scale[id(receiver_short)]
+    short_scale = view._actor_shadow_receive_light_scale[receiver_short]
 
     view._actor_shadow_receive_light_scale = {}
     view._accumulate_actor_shadow_receiver_dimming(
-        caster=cast(Actor, tall_caster),
-        receivers=[cast(Actor, receiver_tall)],
+        caster=tall_caster,
+        receivers=[receiver_tall],
         shadow_dir_x=1.0,
         shadow_dir_y=0.0,
         shadow_length_tiles=4.0,
         shadow_alpha=config.ACTOR_SHADOW_ALPHA,
         fade_tip=False,
     )
-    tall_scale = view._actor_shadow_receive_light_scale[id(receiver_tall)]
+    tall_scale = view._actor_shadow_receive_light_scale[receiver_tall]
 
     assert tall_scale < short_scale
 
@@ -825,11 +818,11 @@ def test_actor_shadow_receiver_dimming_scales_with_caster_height() -> None:
 def test_actor_lighting_intensity_applies_shadow_receive_dimming() -> None:
     actor = _build_actor(x=1, y=1, shadow_height=1)
     view = object.__new__(WorldView)
-    view._actor_shadow_receive_light_scale = {id(actor): 0.5}
+    view._actor_shadow_receive_light_scale = {actor: 0.5}
     view._gpu_actor_lightmap_texture = None
     view._gpu_actor_lightmap_viewport_origin = None
 
-    light_rgb = view._get_actor_lighting_intensity(cast(Actor, actor), Rect(0, 0, 4, 4))
+    light_rgb = view._get_actor_lighting_intensity(actor, Rect(0, 0, 4, 4))
 
     assert light_rgb == pytest.approx((0.5, 0.5, 0.5))
 

@@ -275,7 +275,7 @@ class TestWorldViewLightOverlay:
         actor = Mock()
         actor.x = 1
         actor.y = 1
-        world_view._actor_shadow_receive_light_scale[id(actor)] = 0.4
+        world_view._actor_shadow_receive_light_scale[actor] = 0.4
         world_view._gpu_actor_lightmap_texture = None
         world_view._gpu_actor_lightmap_viewport_origin = None
 
