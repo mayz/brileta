@@ -19,6 +19,7 @@ from brileta.game.lights import DirectionalLight
 from brileta.types import InterpolationAlpha
 from brileta.util.coordinates import Rect
 from brileta.view.render.graphics import GraphicsContext
+from brileta.view.render.shadow_renderer import ShadowRenderer
 from brileta.view.render.viewport import ViewportSystem
 from brileta.view.views.world_view import WorldView
 
@@ -39,28 +40,49 @@ def _build_actor(
     )
 
 
-def _build_shadow_view(lights: list[object]) -> WorldView:
-    view = object.__new__(WorldView)
+def _build_shadow_renderer(lights: list[object]) -> ShadowRenderer:
     default_shadow_grid = np.zeros((16, 16), dtype=np.uint8)
     default_tiles = np.full((16, 16), int(TileTypeID.FLOOR), dtype=np.uint8)
+    default_visible = np.zeros((16, 16), dtype=bool)
+    default_light_appearance = np.zeros((16, 16), dtype=TileTypeAppearance)
     game_map = SimpleNamespace(
         width=16,
         height=16,
         tiles=default_tiles,
+        visible=default_visible,
+        light_appearance_map=default_light_appearance,
         shadow_heights=default_shadow_grid,
         get_region_at=lambda _pos: SimpleNamespace(
             sky_exposure=1.0, region_type="exterior"
         ),
     )
-    game_world = SimpleNamespace(lights=lights, game_map=game_map)
-    game_world.get_global_lights = lambda: [
-        light for light in lights if isinstance(light, DirectionalLight)
-    ]
-    view.controller = SimpleNamespace(gw=game_world)
-    view.x = 0
-    view.y = 0
-    view._camera_frac_offset = (0.0, 0.0)
-    return view
+    viewport = SimpleNamespace(
+        get_visible_bounds=lambda: SimpleNamespace(x1=0, y1=0, x2=15, y2=15),
+        world_to_screen=lambda x, y: (x, y),
+        world_to_screen_float=lambda x, y: (x, y),
+    )
+    graphics = SimpleNamespace(
+        tile_dimensions=(20, 20),
+        draw_actor_shadow=Mock(),
+        console_to_screen_coords=lambda x, y: (x, y),
+    )
+    renderer = ShadowRenderer(
+        game_map=game_map,
+        viewport_system=cast(ViewportSystem, viewport),
+        graphics=cast(GraphicsContext, graphics),
+    )
+    renderer.set_view_transform(
+        view_origin=(0.0, 0.0),
+        camera_frac_offset=(0.0, 0.0),
+    )
+    renderer.set_frame_lighting(
+        directional_light=next(
+            (light for light in lights if isinstance(light, DirectionalLight)),
+            None,
+        ),
+        lights=lights,
+    )
+    return renderer
 
 
 def test_add_parallelogram_vertices() -> None:
@@ -247,7 +269,7 @@ def test_shadow_geometry_respects_non_unit_scale() -> None:
 def test_shadow_geometry_point_light() -> None:
     actor = _build_actor(x=2, y=2, shadow_height=1)
     light = SimpleNamespace(position=(1, 2), radius=6)
-    view = _build_shadow_view([light])
+    renderer = _build_shadow_renderer([light])
     graphics = SimpleNamespace(
         tile_dimensions=(20, 20),
         draw_actor_shadow=Mock(),
@@ -255,9 +277,9 @@ def test_shadow_geometry_point_light() -> None:
     )
     viewport = SimpleNamespace(world_to_screen_float=lambda x, y: (x, y))
 
-    view._render_point_light_actor_shadows(
-        cast(GraphicsContext, graphics),
-        cast(ViewportSystem, viewport),
+    renderer.graphics = cast(GraphicsContext, graphics)
+    renderer.viewport_system = cast(ViewportSystem, viewport)
+    renderer._render_point_light_actor_shadows(
         [actor],
         InterpolationAlpha(1.0),
         20.0,
@@ -273,7 +295,7 @@ def test_point_light_shadow_direction_ignores_idle_drift() -> None:
     actor.visual_effects = SimpleNamespace(get_idle_drift_offset=lambda: (0.0, 0.45))
     actor.health = SimpleNamespace(is_alive=lambda: True)
     light = SimpleNamespace(position=(4, 2), radius=6)
-    view = _build_shadow_view([light])
+    renderer = _build_shadow_renderer([light])
     graphics = SimpleNamespace(
         tile_dimensions=(20, 20),
         draw_actor_shadow=Mock(),
@@ -281,9 +303,9 @@ def test_point_light_shadow_direction_ignores_idle_drift() -> None:
     )
     viewport = SimpleNamespace(world_to_screen_float=lambda x, y: (x, y))
 
-    view._render_point_light_actor_shadows(
-        cast(GraphicsContext, graphics),
-        cast(ViewportSystem, viewport),
+    renderer.graphics = cast(GraphicsContext, graphics)
+    renderer.viewport_system = cast(ViewportSystem, viewport)
+    renderer._render_point_light_actor_shadows(
         [actor],
         InterpolationAlpha(1.0),
         20.0,
@@ -319,7 +341,7 @@ def test_shadow_fade_alpha() -> None:
 def test_point_light_shadow_attenuation() -> None:
     actor = _build_actor(x=3, y=4, shadow_height=1)
     light = SimpleNamespace(position=(0, 0), radius=10)
-    view = _build_shadow_view([light])
+    renderer = _build_shadow_renderer([light])
     graphics = SimpleNamespace(
         tile_dimensions=(20, 20),
         draw_actor_shadow=Mock(),
@@ -327,9 +349,9 @@ def test_point_light_shadow_attenuation() -> None:
     )
     viewport = SimpleNamespace(world_to_screen_float=lambda x, y: (x, y))
 
-    view._render_point_light_actor_shadows(
-        cast(GraphicsContext, graphics),
-        cast(ViewportSystem, viewport),
+    renderer.graphics = cast(GraphicsContext, graphics)
+    renderer.viewport_system = cast(ViewportSystem, viewport)
+    renderer._render_point_light_actor_shadows(
         [actor],
         InterpolationAlpha(1.0),
         20.0,
@@ -345,15 +367,15 @@ def test_composite_layers_shadow() -> None:
         CharacterLayer("B", (255, 255, 255), offset_x=0.3, offset_y=-0.1),
     ]
     actor = _build_actor(character_layers=layers)
-    view = _build_shadow_view([])
+    renderer = _build_shadow_renderer([])
     graphics = SimpleNamespace(
         draw_actor_shadow=Mock(),
         console_to_screen_coords=lambda x, y: (x, y),
     )
+    renderer.graphics = cast(GraphicsContext, graphics)
 
-    view._emit_actor_shadow_quads(
+    renderer._emit_actor_shadow_quads(
         actor=actor,
-        graphics=cast(GraphicsContext, graphics),
         root_x=10.0,
         root_y=20.0,
         screen_x=100.0,
@@ -375,7 +397,7 @@ def test_composite_layers_shadow() -> None:
 def test_no_shadow_zero_height() -> None:
     actor = _build_actor(x=3, y=4, shadow_height=0)
     light = SimpleNamespace(position=(0, 0), radius=10)
-    view = _build_shadow_view([light])
+    renderer = _build_shadow_renderer([light])
     graphics = SimpleNamespace(
         tile_dimensions=(20, 20),
         draw_actor_shadow=Mock(),
@@ -383,9 +405,9 @@ def test_no_shadow_zero_height() -> None:
     )
     viewport = SimpleNamespace(world_to_screen_float=lambda x, y: (x, y))
 
-    view._render_point_light_actor_shadows(
-        cast(GraphicsContext, graphics),
-        cast(ViewportSystem, viewport),
+    renderer.graphics = cast(GraphicsContext, graphics)
+    renderer.viewport_system = cast(ViewportSystem, viewport)
+    renderer._render_point_light_actor_shadows(
         [actor],
         InterpolationAlpha(1.0),
         20.0,
@@ -395,14 +417,12 @@ def test_no_shadow_zero_height() -> None:
 
 
 def test_shadow_wall_clipping() -> None:
-    view = _build_shadow_view([])
+    renderer = _build_shadow_renderer([])
     shadow_grid = np.zeros((10, 10), dtype=np.uint8)
     shadow_grid[4, 2] = 4  # Blocking wall tile two steps from actor in +X
-    view.controller.gw.game_map = SimpleNamespace(
-        width=10, height=10, shadow_heights=shadow_grid
-    )
+    renderer.game_map = SimpleNamespace(width=10, height=10, shadow_heights=shadow_grid)
 
-    clipped = view._clip_shadow_length_by_walls(
+    clipped = renderer._clip_shadow_length_by_walls(
         actor_x=2,
         actor_y=2,
         shadow_dir_x=1.0,
@@ -414,14 +434,12 @@ def test_shadow_wall_clipping() -> None:
 
 
 def test_shadow_wall_clipping_ignores_low_shadow_heights() -> None:
-    view = _build_shadow_view([])
+    renderer = _build_shadow_renderer([])
     shadow_grid = np.zeros((10, 10), dtype=np.uint8)
     shadow_grid[4, 2] = 2  # Boulder/glyph height should not clip projected shadows.
-    view.controller.gw.game_map = SimpleNamespace(
-        width=10, height=10, shadow_heights=shadow_grid
-    )
+    renderer.game_map = SimpleNamespace(width=10, height=10, shadow_heights=shadow_grid)
 
-    clipped = view._clip_shadow_length_by_walls(
+    clipped = renderer._clip_shadow_length_by_walls(
         actor_x=2,
         actor_y=2,
         shadow_dir_x=1.0,
@@ -540,8 +558,8 @@ def test_render_to_screen_clamps_shadow_range_to_empty_shadow_pass() -> None:
 def test_sun_shadow_skips_indoor_regions() -> None:
     actor = _build_actor(x=2, y=2, shadow_height=1)
     sun = DirectionalLight.create_sun(elevation_degrees=45.0, intensity=0.8)
-    view = _build_shadow_view([sun])
-    view.controller.gw.game_map.get_region_at = lambda _pos: SimpleNamespace(
+    renderer = _build_shadow_renderer([sun])
+    renderer.game_map.get_region_at = lambda _pos: SimpleNamespace(
         sky_exposure=0.0, region_type="room"
     )
     graphics = SimpleNamespace(
@@ -551,9 +569,9 @@ def test_sun_shadow_skips_indoor_regions() -> None:
     )
     viewport = SimpleNamespace(world_to_screen_float=lambda x, y: (x, y))
 
-    view._render_sun_actor_shadows(
-        cast(GraphicsContext, graphics),
-        cast(ViewportSystem, viewport),
+    renderer.graphics = cast(GraphicsContext, graphics)
+    renderer.viewport_system = cast(ViewportSystem, viewport)
+    renderer._render_sun_actor_shadows(
         [actor],
         InterpolationAlpha(1.0),
         20.0,
@@ -565,8 +583,8 @@ def test_sun_shadow_skips_indoor_regions() -> None:
 def test_sun_shadow_renders_outdoor_regions() -> None:
     actor = _build_actor(x=2, y=2, shadow_height=1)
     sun = DirectionalLight.create_sun(elevation_degrees=45.0, intensity=0.8)
-    view = _build_shadow_view([sun])
-    view.controller.gw.game_map.get_region_at = lambda _pos: SimpleNamespace(
+    renderer = _build_shadow_renderer([sun])
+    renderer.game_map.get_region_at = lambda _pos: SimpleNamespace(
         sky_exposure=1.0, region_type="exterior"
     )
     graphics = SimpleNamespace(
@@ -576,9 +594,9 @@ def test_sun_shadow_renders_outdoor_regions() -> None:
     )
     viewport = SimpleNamespace(world_to_screen_float=lambda x, y: (x, y))
 
-    view._render_sun_actor_shadows(
-        cast(GraphicsContext, graphics),
-        cast(ViewportSystem, viewport),
+    renderer.graphics = cast(GraphicsContext, graphics)
+    renderer.viewport_system = cast(ViewportSystem, viewport)
+    renderer._render_sun_actor_shadows(
         [actor],
         InterpolationAlpha(1.0),
         20.0,
@@ -590,9 +608,9 @@ def test_sun_shadow_renders_outdoor_regions() -> None:
 def test_sun_shadow_skips_room_regions_even_with_high_exposure() -> None:
     actor = _build_actor(x=2, y=2, shadow_height=1)
     sun = DirectionalLight.create_sun(elevation_degrees=45.0, intensity=0.8)
-    view = _build_shadow_view([sun])
-    view.controller.gw.game_map.tiles[2, 2] = int(TileTypeID.FLOOR)
-    view.controller.gw.game_map.get_region_at = lambda _pos: SimpleNamespace(
+    renderer = _build_shadow_renderer([sun])
+    renderer.game_map.tiles[2, 2] = int(TileTypeID.FLOOR)
+    renderer.game_map.get_region_at = lambda _pos: SimpleNamespace(
         sky_exposure=1.0, region_type="room"
     )
     graphics = SimpleNamespace(
@@ -602,9 +620,9 @@ def test_sun_shadow_skips_room_regions_even_with_high_exposure() -> None:
     )
     viewport = SimpleNamespace(world_to_screen_float=lambda x, y: (x, y))
 
-    view._render_sun_actor_shadows(
-        cast(GraphicsContext, graphics),
-        cast(ViewportSystem, viewport),
+    renderer.graphics = cast(GraphicsContext, graphics)
+    renderer.viewport_system = cast(ViewportSystem, viewport)
+    renderer._render_sun_actor_shadows(
         [actor],
         InterpolationAlpha(1.0),
         20.0,
@@ -616,7 +634,7 @@ def test_sun_shadow_skips_room_regions_even_with_high_exposure() -> None:
 def test_point_light_skips_owned_light_shadow() -> None:
     actor = _build_actor(x=3, y=4, shadow_height=1)
     owned_light = SimpleNamespace(position=(0, 0), radius=10, owner=actor)
-    view = _build_shadow_view([owned_light])
+    renderer = _build_shadow_renderer([owned_light])
     graphics = SimpleNamespace(
         tile_dimensions=(20, 20),
         draw_actor_shadow=Mock(),
@@ -624,9 +642,9 @@ def test_point_light_skips_owned_light_shadow() -> None:
     )
     viewport = SimpleNamespace(world_to_screen_float=lambda x, y: (x, y))
 
-    view._render_point_light_actor_shadows(
-        cast(GraphicsContext, graphics),
-        cast(ViewportSystem, viewport),
+    renderer.graphics = cast(GraphicsContext, graphics)
+    renderer.viewport_system = cast(ViewportSystem, viewport)
+    renderer._render_point_light_actor_shadows(
         [actor],
         InterpolationAlpha(1.0),
         20.0,
@@ -643,7 +661,7 @@ def test_point_light_skips_same_tile_drift_jitter() -> None:
     )
     actor.health = SimpleNamespace(is_alive=lambda: True)
     colocated_light = SimpleNamespace(position=(3, 4), radius=10)
-    view = _build_shadow_view([colocated_light])
+    renderer = _build_shadow_renderer([colocated_light])
     graphics = SimpleNamespace(
         tile_dimensions=(20, 20),
         draw_actor_shadow=Mock(),
@@ -651,9 +669,9 @@ def test_point_light_skips_same_tile_drift_jitter() -> None:
     )
     viewport = SimpleNamespace(world_to_screen_float=lambda x, y: (x, y))
 
-    view._render_point_light_actor_shadows(
-        cast(GraphicsContext, graphics),
-        cast(ViewportSystem, viewport),
+    renderer.graphics = cast(GraphicsContext, graphics)
+    renderer.viewport_system = cast(ViewportSystem, viewport)
+    renderer._render_point_light_actor_shadows(
         [actor],
         InterpolationAlpha(1.0),
         20.0,
@@ -763,10 +781,10 @@ def test_leftward_horizontal_shadow_projects_from_left_edge() -> None:
 def test_actor_shadow_receiver_dimming_for_overlap() -> None:
     caster = _build_actor(x=2, y=2, shadow_height=4)
     receiver = _build_actor(x=3, y=2, shadow_height=1)
-    view = object.__new__(WorldView)
-    view._actor_shadow_receive_light_scale = {}
+    renderer = _build_shadow_renderer([])
+    renderer.actor_shadow_receive_light_scale.clear()
 
-    view._accumulate_actor_shadow_receiver_dimming(
+    renderer._accumulate_actor_shadow_receiver_dimming(
         caster=caster,
         receivers=[caster, receiver],
         shadow_dir_x=1.0,
@@ -776,9 +794,9 @@ def test_actor_shadow_receiver_dimming_for_overlap() -> None:
         fade_tip=False,
     )
 
-    receiver_scale = view._actor_shadow_receive_light_scale[receiver]
+    receiver_scale = renderer.actor_shadow_receive_light_scale[receiver]
     assert receiver_scale < 1.0
-    assert caster not in view._actor_shadow_receive_light_scale
+    assert caster not in renderer.actor_shadow_receive_light_scale
 
 
 def test_actor_shadow_receiver_dimming_scales_with_caster_height() -> None:
@@ -787,9 +805,9 @@ def test_actor_shadow_receiver_dimming_scales_with_caster_height() -> None:
     short_caster = _build_actor(x=2, y=2, shadow_height=1)
     tall_caster = _build_actor(x=2, y=2, shadow_height=4)
 
-    view = object.__new__(WorldView)
-    view._actor_shadow_receive_light_scale = {}
-    view._accumulate_actor_shadow_receiver_dimming(
+    renderer = _build_shadow_renderer([])
+    renderer.actor_shadow_receive_light_scale.clear()
+    renderer._accumulate_actor_shadow_receiver_dimming(
         caster=short_caster,
         receivers=[receiver_short],
         shadow_dir_x=1.0,
@@ -798,10 +816,10 @@ def test_actor_shadow_receiver_dimming_scales_with_caster_height() -> None:
         shadow_alpha=config.ACTOR_SHADOW_ALPHA,
         fade_tip=False,
     )
-    short_scale = view._actor_shadow_receive_light_scale[receiver_short]
+    short_scale = renderer.actor_shadow_receive_light_scale[receiver_short]
 
-    view._actor_shadow_receive_light_scale = {}
-    view._accumulate_actor_shadow_receiver_dimming(
+    renderer.actor_shadow_receive_light_scale.clear()
+    renderer._accumulate_actor_shadow_receiver_dimming(
         caster=tall_caster,
         receivers=[receiver_tall],
         shadow_dir_x=1.0,
@@ -810,41 +828,33 @@ def test_actor_shadow_receiver_dimming_scales_with_caster_height() -> None:
         shadow_alpha=config.ACTOR_SHADOW_ALPHA,
         fade_tip=False,
     )
-    tall_scale = view._actor_shadow_receive_light_scale[receiver_tall]
+    tall_scale = renderer.actor_shadow_receive_light_scale[receiver_tall]
 
     assert tall_scale < short_scale
 
 
-def test_actor_lighting_intensity_applies_shadow_receive_dimming() -> None:
+def test_world_view_actor_lighting_reads_shadow_renderer_scale() -> None:
     actor = _build_actor(x=1, y=1, shadow_height=1)
     view = object.__new__(WorldView)
-    view._actor_shadow_receive_light_scale = {actor: 0.5}
-    view._gpu_actor_lightmap_texture = None
-    view._gpu_actor_lightmap_viewport_origin = None
+    view.shadow_renderer = SimpleNamespace(
+        actor_shadow_receive_light_scale={actor: 0.5}
+    )
 
     light_rgb = view._get_actor_lighting_intensity(actor, Rect(0, 0, 4, 4))
-
     assert light_rgb == pytest.approx((0.5, 0.5, 0.5))
 
 
-def _build_terrain_shadow_view() -> tuple[WorldView, SimpleNamespace]:
-    """Build a WorldView wired for terrain glyph shadow tests.
+def _build_terrain_shadow_view() -> tuple[ShadowRenderer, SimpleNamespace]:
+    """Build a ShadowRenderer wired for terrain glyph shadow tests.
 
-    Returns the view and a mock graphics object.  The 16x16 game map defaults
-    to FLOOR tiles (no glyph shadows) with an outdoor region and a directional
-    sun light.
+    Returns the renderer and a mock graphics object. The 16x16 game map defaults
+    to FLOOR tiles (no glyph shadows) with an outdoor region and a directional sun.
     """
     sun = DirectionalLight.create_sun(elevation_degrees=45.0, intensity=0.8)
-    view = _build_shadow_view([sun])
-    game_map = view.controller.gw.game_map
-
-    # Visibility and appearance maps needed by _render_terrain_glyph_shadows
-    game_map.visible = np.zeros((16, 16), dtype=bool)
-    light_app = np.zeros((16, 16), dtype=TileTypeAppearance)
-    game_map.light_appearance_map = light_app
+    renderer = _build_shadow_renderer([sun])
 
     # Viewport system with simple identity transforms
-    view.viewport_system = SimpleNamespace(
+    viewport = SimpleNamespace(
         get_visible_bounds=lambda: SimpleNamespace(x1=0, y1=0, x2=15, y2=15),
         world_to_screen=lambda x, y: (x, y),
     )
@@ -854,23 +864,22 @@ def _build_terrain_shadow_view() -> tuple[WorldView, SimpleNamespace]:
         draw_actor_shadow=Mock(),
         console_to_screen_coords=lambda x, y: (float(x) * 20.0, float(y) * 20.0),
     )
-    return view, graphics
+    renderer.viewport_system = cast(ViewportSystem, viewport)
+    renderer.graphics = cast(GraphicsContext, graphics)
+    return renderer, graphics
 
 
 def test_terrain_glyph_shadow_for_boulder() -> None:
     """Boulder tiles (shadow_height=2) emit glyph shadow quads."""
-    view, graphics = _build_terrain_shadow_view()
-    game_map = view.controller.gw.game_map
+    renderer, graphics = _build_terrain_shadow_view()
+    game_map = renderer.game_map
 
     # Place a boulder at (5, 5) and make it visible
     game_map.tiles[5, 5] = int(TileTypeID.BOULDER)
     game_map.visible[5, 5] = True
     game_map.light_appearance_map[5, 5]["ch"] = ord("#")
 
-    view._render_terrain_glyph_shadows(
-        cast(GraphicsContext, graphics),
-        tile_height=20.0,
-    )
+    renderer._render_terrain_glyph_shadows(tile_height=20.0)
 
     graphics.draw_actor_shadow.assert_called_once()
     call_kwargs = graphics.draw_actor_shadow.call_args.kwargs
@@ -880,26 +889,23 @@ def test_terrain_glyph_shadow_for_boulder() -> None:
 
 def test_no_terrain_glyph_shadow_for_walls() -> None:
     """Wall tiles (shadow_height > 2) don't emit terrain glyph shadows."""
-    view, graphics = _build_terrain_shadow_view()
-    game_map = view.controller.gw.game_map
+    renderer, graphics = _build_terrain_shadow_view()
+    game_map = renderer.game_map
 
     # Place a wall at (5, 5) - shadow_height=4, above the glyph shadow threshold
     game_map.tiles[5, 5] = int(TileTypeID.WALL)
     game_map.visible[5, 5] = True
     game_map.light_appearance_map[5, 5]["ch"] = ord("#")
 
-    view._render_terrain_glyph_shadows(
-        cast(GraphicsContext, graphics),
-        tile_height=20.0,
-    )
+    renderer._render_terrain_glyph_shadows(tile_height=20.0)
 
     graphics.draw_actor_shadow.assert_not_called()
 
 
 def test_terrain_glyph_shadow_clipped_by_walls() -> None:
     """Terrain glyph shadows shorten when a tall blocker is directly ahead."""
-    view, graphics = _build_terrain_shadow_view()
-    game_map = view.controller.gw.game_map
+    renderer, graphics = _build_terrain_shadow_view()
+    game_map = renderer.game_map
 
     # Force deterministic right-to-left projection: sun in the east.
     sun = DirectionalLight.create_sun(
@@ -907,8 +913,7 @@ def test_terrain_glyph_shadow_clipped_by_walls() -> None:
         azimuth_degrees=90.0,
         intensity=0.8,
     )
-    view.controller.gw.lights = [sun]
-    view.controller.gw.get_global_lights = lambda: [sun]
+    renderer.set_frame_lighting(directional_light=sun, lights=[sun])
 
     # Boulder caster at (5,5), tall blocker directly west at (4,5).
     game_map.tiles[5, 5] = int(TileTypeID.BOULDER)
@@ -916,10 +921,7 @@ def test_terrain_glyph_shadow_clipped_by_walls() -> None:
     game_map.light_appearance_map[5, 5]["ch"] = ord("#")
     game_map.shadow_heights[4, 5] = 4
 
-    view._render_terrain_glyph_shadows(
-        cast(GraphicsContext, graphics),
-        tile_height=20.0,
-    )
+    renderer._render_terrain_glyph_shadows(tile_height=20.0)
 
     graphics.draw_actor_shadow.assert_called_once()
     shadow_length_pixels = graphics.draw_actor_shadow.call_args.kwargs[
