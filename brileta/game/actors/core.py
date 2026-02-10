@@ -48,7 +48,7 @@ from brileta.sound.emitter import SoundEmitter
 from brileta.types import ActorId, TileCoord, WorldTileCoord
 from brileta.view.animation import MoveAnimation
 
-from .ai import AIComponent, UnifiedAI, disposition_label
+from .ai import AIComponent, disposition_label
 from .components import (
     CharacterInventory,
     ConditionsComponent,
@@ -597,7 +597,7 @@ class Character(Actor):
             return "Deceased"
 
         parts = [f"HP: {self.health.hp}/{self.health.max_hp}"]
-        if isinstance(self.ai, UnifiedAI) and viewer is not None:
+        if self.ai is not None and viewer is not None:
             relationship = self.ai.disposition_toward(viewer)
             parts.append(disposition_label(relationship))
 
@@ -715,7 +715,7 @@ class NPC(Character):
     functionality still comes from the components.
     """
 
-    ai: UnifiedAI
+    ai: AIComponent
 
     def __init__(
         self,
@@ -765,15 +765,15 @@ class NPC(Character):
             intelligence=intelligence,
             demeanor=demeanor,
             weirdness=weirdness,
-            ai=UnifiedAI(),
+            ai=AIComponent(),
             starting_weapon=starting_weapon,
             num_ready_slots=num_ready_slots,
             speed=speed,
             **kwargs,
         )
 
-        # Type narrowing: NPC always has UnifiedAI.
-        self.ai: UnifiedAI
+        # Type narrowing: NPC always has AI.
+        self.ai: AIComponent
 
         # Goal system: the NPC's current multi-turn objective (flee, patrol, etc).
         # Goals sit above ActionPlans and manage behavioral state transitions.

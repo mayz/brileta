@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING, Any
 from brileta import colors
 from brileta.events import CombatInitiatedEvent, MessageEvent, publish_event
 from brileta.game.actors import NPC, Actor, Character
-from brileta.game.actors.ai import HOSTILE_UPPER
 from brileta.game.actors.status_effects import OffBalanceEffect
 from brileta.game.enums import OutcomeTier
 from brileta.game.items.properties import WeaponProperty
@@ -140,7 +139,7 @@ class ConsequenceHandler:
             if source != gw.player:
                 continue
 
-            if actor.ai.disposition_toward(source) > HOSTILE_UPPER:
+            if not actor.ai.is_hostile_toward(source):
                 actor.ai.set_hostile(source)
                 publish_event(
                     MessageEvent(

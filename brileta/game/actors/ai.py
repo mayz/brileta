@@ -6,10 +6,6 @@ NPCs should take each turn based on their personality, situation,
 and goals.
 
 AIComponent:
-    Base class for all AI behavior. Determines what action an actor
-    should take on their turn and handles any AI state updates.
-
-UnifiedAI:
     Single AI component for all NPC dispositions. Owns a UtilityBrain
     that scores all possible behaviors (attack, flee, avoid, watch,
     idle, wander, patrol) every tick. Disposition is a numeric value
@@ -19,7 +15,6 @@ UnifiedAI:
 
 from __future__ import annotations
 
-import abc
 from typing import TYPE_CHECKING
 
 from brileta import colors
@@ -105,7 +100,7 @@ def escalate_hostility(
     defender_ai.notify_attacked(attacker)
 
     # Only escalate if not already hostile.
-    if defender_ai.disposition_toward(attacker) <= HOSTILE_UPPER:
+    if defender_ai.is_hostile_toward(attacker):
         return
 
     defender_ai.set_hostile(attacker)
@@ -120,140 +115,7 @@ def escalate_hostility(
         publish_event(CombatInitiatedEvent(attacker=attacker, defender=defender))
 
 
-class AIComponent(abc.ABC):
-    """Base class for AI decision-making components.
-
-    Each AI component is responsible for determining what action
-    an actor should take on their turn, based on the current game
-    state and the actor's goals/personality.
-    """
-
-    def __init__(self) -> None:
-        self.actor: Actor | None = None
-
-    @abc.abstractmethod
-    def get_action(self, controller: Controller, actor: NPC) -> GameIntent | None:
-        """Determine what action this AI wants to perform this turn.
-
-        Args:
-            controller: Game controller with access to world state
-            actor: Actor this AI is controlling
-
-        Returns:
-            GameIntent to perform, or None to do nothing this turn
-        """
-        pass
-
-    def update(self, controller: Controller) -> None:  # noqa: B027
-        """Called each turn to update AI internal state.
-
-        Base implementation does nothing. Override for AI that needs
-        to track state between turns.
-
-        Args:
-            controller: Game controller with access to world state
-        """
-        pass
-
-    @abc.abstractmethod
-    def set_hostile(self, target: Actor) -> None:
-        """Mark ``target`` as hostile for relationship-aware AI systems."""
-        pass
-
-    @abc.abstractmethod
-    def disposition_toward(self, target: Actor) -> int:
-        """Return numeric disposition toward ``target``."""
-        pass
-
-    @abc.abstractmethod
-    def modify_disposition(self, target: Actor, delta: int) -> None:
-        """Adjust disposition toward ``target`` by ``delta``."""
-        pass
-
-    @abc.abstractmethod
-    def notify_attacked(self, attacker: Actor) -> None:
-        """Record that ``attacker`` initiated aggression."""
-        pass
-
-    def _try_escape_hazard(
-        self, controller: Controller, actor: NPC
-    ) -> MoveIntent | None:
-        """Check if standing on hazard and return escape move if possible.
-
-        Finds the nearest safe adjacent tile and returns a MoveIntent to it.
-        Returns None if not on a hazard or if no safe escape exists.
-
-        Args:
-            controller: Game controller with access to world state.
-            actor: Actor to check for hazard escape.
-
-        Returns:
-            MoveIntent to escape, or None if no escape needed/possible.
-        """
-        from brileta.environment.tile_types import get_tile_hazard_info
-        from brileta.game.actions.movement import MoveIntent
-
-        # Check if currently standing on a hazard
-        tile_id = int(controller.gw.game_map.tiles[actor.x, actor.y])
-        damage_dice, _ = get_tile_hazard_info(tile_id)
-
-        if not damage_dice:
-            return None  # Not on a hazard, no escape needed
-
-        # Find safe adjacent tiles (orthogonal and diagonal).
-        # Track (dx, dy, distance) - prefer orthogonal (1) over diagonal (2).
-        safe_tiles: list[tuple[int, int, int]] = []
-        game_map = controller.gw.game_map
-
-        for dx in (-1, 0, 1):
-            for dy in (-1, 0, 1):
-                if dx == 0 and dy == 0:
-                    continue
-
-                nx, ny = actor.x + dx, actor.y + dy
-
-                # Check map boundaries
-                if not (0 <= nx < game_map.width and 0 <= ny < game_map.height):
-                    continue
-
-                # Check if walkable
-                if not game_map.walkable[nx, ny]:
-                    continue
-
-                # Check for blocking actors
-                blocking_actor = controller.gw.get_actor_at_location(nx, ny)
-                if blocking_actor and blocking_actor.blocks_movement:
-                    continue
-
-                # Check if this tile is also hazardous
-                adj_tile_id = int(game_map.tiles[nx, ny])
-                adj_damage, _ = get_tile_hazard_info(adj_tile_id)
-                if adj_damage:
-                    continue  # Skip hazardous tiles
-
-                # This is a valid safe tile - track with distance preference
-                dist = 1 if (dx == 0 or dy == 0) else 2
-                safe_tiles.append((dx, dy, dist))
-
-        if not safe_tiles:
-            return None  # No safe escape exists
-
-        # Pick the closest safe tile (prefer orthogonal)
-        safe_tiles.sort(key=lambda t: t[2])
-        dx, dy, _ = safe_tiles[0]
-
-        # Publish escape message
-        publish_event(
-            MessageEvent(
-                f"{actor.name} scrambles to escape the hazard!",
-                colors.ORANGE,
-            )
-        )
-
-        return MoveIntent(controller, actor, dx, dy)
-
-
-class UnifiedAI(AIComponent):
+class AIComponent:
     """Single AI component for all NPC dispositions.
 
     Owns a UtilityBrain that scores all possible behaviors every tick.
@@ -268,7 +130,7 @@ class UnifiedAI(AIComponent):
         self,
         aggro_radius: int = Combat.DEFAULT_AGGRO_RADIUS,
     ) -> None:
-        super().__init__()
+        self.actor: Actor | None = None
         # Per-relationship disposition values keyed by ``target.actor_id``.
         # Unknown actors default to 0 (neutral).
         self._dispositions: dict[ActorId, int] = {}
@@ -421,6 +283,13 @@ class UnifiedAI(AIComponent):
             ]
         )
 
+    def update(self, controller: Controller) -> None:
+        """Update per-turn AI state.
+
+        AI state is currently event-driven, so no periodic updates are needed.
+        """
+        return
+
     def set_hostile(self, target: Actor) -> None:
         """Set hostility toward ``target`` to hostile (-75)."""
         self._dispositions[target.actor_id] = -75
@@ -433,6 +302,10 @@ class UnifiedAI(AIComponent):
     def disposition_toward(self, target: Actor) -> int:
         """Return numeric disposition toward ``target``."""
         return self._dispositions.get(target.actor_id, 0)
+
+    def is_hostile_toward(self, target: Actor) -> bool:
+        """Return True if disposition toward target is at or below hostile threshold."""
+        return self.disposition_toward(target) <= HOSTILE_UPPER
 
     def notify_attacked(self, attacker: Actor) -> None:
         """Record attacker for combat awareness.
@@ -516,6 +389,83 @@ class UnifiedAI(AIComponent):
         if isinstance(action, WanderAction):
             return action.get_intent_with_goal(context, actor)
         return action.get_intent(context)
+
+    def _try_escape_hazard(
+        self, controller: Controller, actor: NPC
+    ) -> MoveIntent | None:
+        """Check if standing on hazard and return escape move if possible.
+
+        Finds the nearest safe adjacent tile and returns a MoveIntent to it.
+        Returns None if not on a hazard or if no safe escape exists.
+
+        Args:
+            controller: Game controller with access to world state.
+            actor: Actor to check for hazard escape.
+
+        Returns:
+            MoveIntent to escape, or None if no escape needed/possible.
+        """
+        from brileta.environment.tile_types import get_tile_hazard_info
+        from brileta.game.actions.movement import MoveIntent
+
+        # Check if currently standing on a hazard
+        tile_id = int(controller.gw.game_map.tiles[actor.x, actor.y])
+        damage_dice, _ = get_tile_hazard_info(tile_id)
+
+        if not damage_dice:
+            return None  # Not on a hazard, no escape needed
+
+        # Find safe adjacent tiles (orthogonal and diagonal).
+        # Track (dx, dy, distance) - prefer orthogonal (1) over diagonal (2).
+        safe_tiles: list[tuple[int, int, int]] = []
+        game_map = controller.gw.game_map
+
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                if dx == 0 and dy == 0:
+                    continue
+
+                nx, ny = actor.x + dx, actor.y + dy
+
+                # Check map boundaries
+                if not (0 <= nx < game_map.width and 0 <= ny < game_map.height):
+                    continue
+
+                # Check if walkable
+                if not game_map.walkable[nx, ny]:
+                    continue
+
+                # Check for blocking actors
+                blocking_actor = controller.gw.get_actor_at_location(nx, ny)
+                if blocking_actor and blocking_actor.blocks_movement:
+                    continue
+
+                # Check if this tile is also hazardous
+                adj_tile_id = int(game_map.tiles[nx, ny])
+                adj_damage, _ = get_tile_hazard_info(adj_tile_id)
+                if adj_damage:
+                    continue  # Skip hazardous tiles
+
+                # This is a valid safe tile - track with distance preference
+                dist = 1 if (dx == 0 or dy == 0) else 2
+                safe_tiles.append((dx, dy, dist))
+
+        if not safe_tiles:
+            return None  # No safe escape exists
+
+        # Pick the closest safe tile (prefer orthogonal)
+        safe_tiles.sort(key=lambda t: t[2])
+        dx, dy, _ = safe_tiles[0]
+
+        # Publish escape message
+        publish_event(
+            MessageEvent(
+                f"{actor.name} scrambles to escape the hazard!",
+                colors.ORANGE,
+            )
+        )
+
+        return MoveIntent(controller, actor, dx, dy)
 
     def _build_context(
         self,
@@ -885,7 +835,7 @@ class FleeAction(UtilityAction):
     ) -> GameIntent | None:
         """Create a FleeGoal and return the first flee action.
 
-        Called by UnifiedAI when FleeAction wins scoring. Creates a persistent
+        Called by AIComponent when FleeAction wins scoring. Creates a persistent
         FleeGoal so the NPC continues fleeing across multiple turns until safe,
         rather than re-evaluating from scratch each tick.
         """
@@ -992,7 +942,7 @@ class WanderAction(UtilityAction):
         )
 
     def get_intent(self, context: UtilityContext) -> GameIntent | None:
-        # Intent generation is handled via get_intent_with_goal in UnifiedAI.
+        # Intent generation is handled via get_intent_with_goal in AIComponent.
         # This fallback should not be reached in normal flow.
         return None
 
@@ -1058,7 +1008,7 @@ class PatrolAction(UtilityAction):
         )
 
     def get_intent(self, context: UtilityContext) -> GameIntent | None:
-        # Intent generation is handled via get_intent_with_goal in UnifiedAI.
+        # Intent generation is handled via get_intent_with_goal in AIComponent.
         # This fallback should not be reached in normal flow.
         return None
 

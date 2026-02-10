@@ -2,7 +2,7 @@ from typing import cast
 
 from brileta import colors
 from brileta.game.actors import NPC, Character
-from brileta.game.actors.ai import UnifiedAI, disposition_label
+from brileta.game.actors.ai import AIComponent, disposition_label
 from brileta.game.actors.barks import (
     BARKS_BY_DISPOSITION,
     BARKS_BY_STATE,
@@ -35,7 +35,7 @@ def test_pick_bump_bark_uses_disposition() -> None:
     gw.add_actor(npc)
 
     bark = pick_bump_bark(npc, player)
-    assert isinstance(npc.ai, UnifiedAI)
+    assert isinstance(npc.ai, AIComponent)
     assert (
         bark
         in BARKS_BY_DISPOSITION[disposition_label(npc.ai.disposition_toward(player))]

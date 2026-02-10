@@ -262,7 +262,7 @@ def test_continue_goal_beats_raw_action_at_zero_progress() -> None:
     """ContinueGoalAction wins ties with the raw action even at progress 0.0.
 
     Without PERSISTENCE_MINIMUM, a goal at progress 0.0 would tie with the
-    raw FleeAction. UnifiedAI would then abandon the goal and recreate it
+    raw FleeAction. AIComponent would then abandon the goal and recreate it
     every tick, so progress would never advance. The minimum bonus ensures
     ContinueGoal always edges out the raw action it mirrors.
     """
@@ -450,7 +450,7 @@ def test_goal_abandoned_when_higher_action_wins() -> None:
 
 
 def test_npc_picks_new_action_same_tick_after_goal_completes() -> None:
-    """When a goal completes at the top of UnifiedAI.get_action, the NPC
+    """When a goal completes at the top of AIComponent.get_action, the NPC
     proceeds to normal scoring and picks a new action on the same tick
     rather than doing nothing.
     """

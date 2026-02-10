@@ -25,7 +25,7 @@ from brileta.game.actions.discovery import (
 )
 from brileta.game.actions.environment import OpenDoorIntent, SearchContainerIntent
 from brileta.game.actors import Character, status_effects
-from brileta.game.actors.ai import UnifiedAI
+from brileta.game.actors.ai import AIComponent
 from brileta.game.actors.container import create_bookcase
 from brileta.game.game_world import GameWorld
 from brileta.game.items.capabilities import RangedAttack
@@ -55,8 +55,8 @@ def _set_disposition_toward(
     target: Character,
     value: int,
 ) -> None:
-    """Set relationship disposition exactly for tests using UnifiedAI."""
-    assert isinstance(source.ai, UnifiedAI)
+    """Set relationship disposition exactly for tests using AIComponent."""
+    assert isinstance(source.ai, AIComponent)
     delta = value - source.ai.disposition_toward(target)
     source.ai.modify_disposition(target, delta)
 
@@ -80,7 +80,7 @@ def _make_context_world():
     hostile = Character(
         5, 5, "H", colors.RED, "Hostile", game_world=cast(GameWorld, gw)
     )
-    hostile.ai = UnifiedAI()
+    hostile.ai = AIComponent()
     hostile.ai.actor = hostile
     friend = Character(
         20, 20, "F", colors.WHITE, "Friend", game_world=cast(GameWorld, gw)

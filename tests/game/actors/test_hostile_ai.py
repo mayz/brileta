@@ -7,7 +7,7 @@ from brileta.game import ranges
 from brileta.game.actions.combat import AttackIntent
 from brileta.game.actions.movement import MoveIntent
 from brileta.game.actors import NPC, Character
-from brileta.game.actors.ai import escalate_hostility
+from brileta.game.actors.ai import HOSTILE_UPPER, escalate_hostility
 from brileta.game.game_world import GameWorld
 from brileta.game.turn_manager import TurnManager
 from tests.helpers import DummyGameWorld
@@ -49,7 +49,7 @@ def make_world(
 
 
 def test_hostile_ai_sets_active_plan() -> None:
-    """UnifiedAI creates an active_plan to walk toward player."""
+    """AIComponent creates an active_plan to walk toward player."""
     controller, player, npc = make_world()
     action = npc.ai.get_action(controller, npc)
     assert action is None  # Returns None because plan was set
@@ -386,6 +386,24 @@ def test_modify_disposition_clamps_to_valid_range() -> None:
 
     npc.ai.modify_disposition(player, -999)
     assert npc.ai.disposition_toward(player) == -100
+
+
+def test_is_hostile_toward_uses_hostile_threshold_boundary() -> None:
+    """is_hostile_toward() should flip exactly at HOSTILE_UPPER."""
+    _controller, player, npc = make_world(disposition=0)
+
+    # Neutral should not be hostile.
+    assert not npc.ai.is_hostile_toward(player)
+
+    # Typical hostile value should be hostile.
+    npc.ai.set_hostile(player)
+    assert npc.ai.is_hostile_toward(player)
+
+    # Exact threshold is hostile; one above is not.
+    npc.ai.modify_disposition(player, HOSTILE_UPPER - npc.ai.disposition_toward(player))
+    assert npc.ai.is_hostile_toward(player)
+    npc.ai.modify_disposition(player, 1)
+    assert not npc.ai.is_hostile_toward(player)
 
 
 def test_hostile_npc_can_target_another_npc() -> None:
