@@ -30,7 +30,7 @@ from enum import Enum, auto
 from typing import Any
 
 from brileta import colors
-from brileta.types import DeltaTime
+from brileta.types import ActorId, DeltaTime
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +94,7 @@ class FloatingTextEvent(GameEvent):
 
     Attributes:
         text: The text to display (e.g., "-3", "TRIPPED", "💀")
-        target_actor_id: Python id() of the actor the text should follow
+        target_actor_id: ActorId of the actor the text should follow
         valence: Semantic meaning for color selection
         size: Font size preset (NORMAL or LARGE)
         duration: How long the text should display (None = use default)
@@ -105,7 +105,7 @@ class FloatingTextEvent(GameEvent):
     """
 
     text: str
-    target_actor_id: int
+    target_actor_id: ActorId
     valence: FloatingTextValence = FloatingTextValence.NEUTRAL
     size: FloatingTextSize = FloatingTextSize.NORMAL
     duration: float | None = None  # None = use default (0.7s)

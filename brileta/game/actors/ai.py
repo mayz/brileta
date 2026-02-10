@@ -38,6 +38,7 @@ from brileta.game.actors.utility import (
     UtilityBrain,
     UtilityContext,
 )
+from brileta.types import ActorId
 from brileta.util import rng
 
 if TYPE_CHECKING:
@@ -270,7 +271,7 @@ class UnifiedAI(AIComponent):
         super().__init__()
         # Per-relationship disposition values keyed by ``target.actor_id``.
         # Unknown actors default to 0 (neutral).
-        self._dispositions: dict[int, int] = {}
+        self._dispositions: dict[ActorId, int] = {}
         self.aggro_radius = aggro_radius
 
         # Combat awareness: identity of the most recent attacker. Allows the
@@ -278,14 +279,14 @@ class UnifiedAI(AIComponent):
         # Cleared when the attacker dies or is no longer reachable.
         # TODO: An NPC attacked by an *unseen* attacker (e.g., hidden sniper)
         # should panic/flee directionally rather than targeting the exact actor.
-        self._last_attacker_id: int | None = None
+        self._last_attacker_id: ActorId | None = None
 
         # Debug: cached results from the last utility evaluation.
         # Read by AI debug live variables for the debug stats overlay.
         self.last_chosen_action: str | None = None
         self.last_scores: list[ScoredAction] = []
         self.last_threat_level: float | None = None
-        self.last_target_actor_id: int | None = None
+        self.last_target_actor_id: ActorId | None = None
 
         # Preconditions only gate physical impossibility (threat present,
         # escape route exists). Disposition influences behavior entirely

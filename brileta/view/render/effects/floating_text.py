@@ -21,7 +21,7 @@ from brileta.events import (
     FloatingTextValence,
     subscribe_to_event,
 )
-from brileta.types import DeltaTime, Opacity, ViewOffset
+from brileta.types import ActorId, DeltaTime, Opacity, ViewOffset
 
 if TYPE_CHECKING:
     from brileta.game.game_world import GameWorld
@@ -49,7 +49,7 @@ class FloatingText:
     """
 
     text: str
-    target_actor_id: int
+    target_actor_id: ActorId
     valence: FloatingTextValence
     size: FloatingTextSize
     world_x: float

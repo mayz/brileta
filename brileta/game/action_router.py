@@ -249,7 +249,7 @@ class ActionRouter:
         publish_event(
             FloatingTextEvent(
                 text=bark,
-                target_actor_id=id(target),
+                target_actor_id=target.actor_id,
                 valence=FloatingTextValence.NEUTRAL,
                 size=FloatingTextSize.NORMAL,
                 duration=duration,

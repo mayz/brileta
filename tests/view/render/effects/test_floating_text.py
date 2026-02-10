@@ -21,7 +21,7 @@ from brileta import colors
 from brileta.events import FloatingTextSize, publish_event
 from brileta.game.actors import Actor
 from brileta.game.game_world import GameWorld
-from brileta.types import DeltaTime
+from brileta.types import ActorId, DeltaTime
 from brileta.view.render.effects.floating_text import (
     VALENCE_COLORS,
     FloatingText,
@@ -51,7 +51,7 @@ def make_floating_text(
     """Create a FloatingText instance for testing."""
     ft = FloatingText(
         text=text,
-        target_actor_id=12345,
+        target_actor_id=ActorId(12345),
         valence=valence,
         size=size,
         world_x=world_x,
@@ -235,7 +235,7 @@ class TestFloatingTextColor:
         custom_color = (100, 150, 200)
         ft = FloatingText(
             text="Override",
-            target_actor_id=1,
+            target_actor_id=ActorId(1),
             valence=FloatingTextValence.NEGATIVE,  # Would be red
             size=FloatingTextSize.NORMAL,
             world_x=0,
@@ -318,7 +318,7 @@ class TestFloatingTextManagerEventHandling:
 
         event = FloatingTextEvent(
             text="-5 HP",
-            target_actor_id=12345,
+            target_actor_id=ActorId(12345),
             valence=FloatingTextValence.NEGATIVE,
             world_x=10,
             world_y=20,
@@ -333,7 +333,7 @@ class TestFloatingTextManagerEventHandling:
 
         event = FloatingTextEvent(
             text="TRIPPED",
-            target_actor_id=99999,
+            target_actor_id=ActorId(99999),
             valence=FloatingTextValence.POSITIVE,
             world_x=15,
             world_y=25,
@@ -342,7 +342,7 @@ class TestFloatingTextManagerEventHandling:
 
         ft = manager._texts[0]
         assert ft.text == "TRIPPED"
-        assert ft.target_actor_id == 99999
+        assert ft.target_actor_id == ActorId(99999)
         assert ft.valence == FloatingTextValence.POSITIVE
         assert ft.world_x == 15.0
         assert ft.world_y == 25.0
@@ -355,7 +355,7 @@ class TestFloatingTextManagerEventHandling:
         for i in range(4):
             event = FloatingTextEvent(
                 text=f"Text{i}",
-                target_actor_id=i,
+                target_actor_id=ActorId(i),
                 valence=FloatingTextValence.NEUTRAL,
                 world_x=0,
                 world_y=0,
@@ -374,21 +374,21 @@ class TestFloatingTextManagerEventHandling:
 
         event1 = FloatingTextEvent(
             text="First",
-            target_actor_id=1,
+            target_actor_id=ActorId(1),
             valence=FloatingTextValence.NEUTRAL,
             world_x=0,
             world_y=0,
         )
         event2 = FloatingTextEvent(
             text="Second",
-            target_actor_id=2,
+            target_actor_id=ActorId(2),
             valence=FloatingTextValence.NEUTRAL,
             world_x=0,
             world_y=0,
         )
         event3 = FloatingTextEvent(
             text="Third",
-            target_actor_id=3,
+            target_actor_id=ActorId(3),
             valence=FloatingTextValence.NEUTRAL,
             world_x=0,
             world_y=0,
@@ -409,7 +409,7 @@ class TestFloatingTextManagerEventHandling:
         # Emit an event through the event system
         event = FloatingTextEvent(
             text="Event System Test",
-            target_actor_id=42,
+            target_actor_id=ActorId(42),
             valence=FloatingTextValence.NEUTRAL,
             world_x=5,
             world_y=5,
@@ -425,7 +425,7 @@ class TestFloatingTextManagerEventHandling:
 
         event = FloatingTextEvent(
             text="Long Duration",
-            target_actor_id=1,
+            target_actor_id=ActorId(1),
             valence=FloatingTextValence.NEUTRAL,
             world_x=0,
             world_y=0,
@@ -442,7 +442,7 @@ class TestFloatingTextManagerEventHandling:
         custom_color = (128, 64, 255)
         event = FloatingTextEvent(
             text="Custom Color",
-            target_actor_id=1,
+            target_actor_id=ActorId(1),
             valence=FloatingTextValence.NEGATIVE,  # Would normally be red
             world_x=0,
             world_y=0,
@@ -461,7 +461,7 @@ class TestFloatingTextManagerEventHandling:
 
         event = FloatingTextEvent(
             text="Big Text",
-            target_actor_id=1,
+            target_actor_id=ActorId(1),
             valence=FloatingTextValence.NEUTRAL,
             size=FloatingTextSize.LARGE,
             world_x=0,
@@ -484,7 +484,7 @@ class TestFloatingTextEvent:
         """Default valence should be NEUTRAL."""
         event = FloatingTextEvent(
             text="Test",
-            target_actor_id=1,
+            target_actor_id=ActorId(1),
         )
 
         assert event.valence == FloatingTextValence.NEUTRAL
@@ -493,7 +493,7 @@ class TestFloatingTextEvent:
         """Default world position should be (0, 0)."""
         event = FloatingTextEvent(
             text="Test",
-            target_actor_id=1,
+            target_actor_id=ActorId(1),
         )
 
         assert event.world_x == 0
@@ -503,14 +503,14 @@ class TestFloatingTextEvent:
         """All event fields should be settable."""
         event = FloatingTextEvent(
             text="Custom",
-            target_actor_id=999,
+            target_actor_id=ActorId(999),
             valence=FloatingTextValence.NEGATIVE,
             world_x=100,
             world_y=200,
         )
 
         assert event.text == "Custom"
-        assert event.target_actor_id == 999
+        assert event.target_actor_id == ActorId(999)
         assert event.valence == FloatingTextValence.NEGATIVE
         assert event.world_x == 100
         assert event.world_y == 200
@@ -612,14 +612,14 @@ class TestFloatingTextTextureCleanup:
         # Add first two texts
         event1 = FloatingTextEvent(
             text="First",
-            target_actor_id=1,
+            target_actor_id=ActorId(1),
             valence=FloatingTextValence.NEUTRAL,
             world_x=0,
             world_y=0,
         )
         event2 = FloatingTextEvent(
             text="Second",
-            target_actor_id=2,
+            target_actor_id=ActorId(2),
             valence=FloatingTextValence.NEUTRAL,
             world_x=0,
             world_y=0,
@@ -634,7 +634,7 @@ class TestFloatingTextTextureCleanup:
         # Add third text - should trigger removal of first
         event3 = FloatingTextEvent(
             text="Third",
-            target_actor_id=3,
+            target_actor_id=ActorId(3),
             valence=FloatingTextValence.NEUTRAL,
             world_x=0,
             world_y=0,

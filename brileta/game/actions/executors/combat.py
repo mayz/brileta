@@ -686,7 +686,7 @@ class AttackExecutor(ActionExecutor):
         publish_event(
             FloatingTextEvent(
                 text="MISS",
-                target_actor_id=id(intent.attacker),
+                target_actor_id=intent.attacker.actor_id,
                 valence=FloatingTextValence.NEUTRAL,
                 world_x=intent.attacker.x,
                 world_y=intent.attacker.y,

@@ -12,6 +12,7 @@ from brileta.game.enums import ItemSize
 from brileta.game.game_world import GameWorld
 from brileta.game.items.item_core import Item, ItemType
 from brileta.game.lights import DirectionalLight, DynamicLight, GlobalLight, StaticLight
+from brileta.types import ActorId
 from tests.helpers import DummyGameWorld
 
 # ---------------------------------------------------------------------------
@@ -525,7 +526,7 @@ class TestActorIdRegistry:
         actor = make_actor(gw, x=5, y=5)
         gw.add_actor(actor)
 
-        result = gw.get_actor_by_id(999999999)
+        result = gw.get_actor_by_id(ActorId(999999999))
 
         assert result is None
 

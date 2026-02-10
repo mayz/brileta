@@ -39,6 +39,7 @@ from brileta.game.actors.utility import (
 )
 from brileta.game.game_world import GameWorld
 from brileta.game.turn_manager import TurnManager
+from brileta.types import ActorId
 from tests.helpers import DummyGameWorld
 
 
@@ -570,13 +571,13 @@ def test_flee_goal_returns_none_when_cornered_midgoal() -> None:
 
 def test_flee_goal_progress_starts_at_zero() -> None:
     """FleeGoal progress is 0 before first evaluation."""
-    goal = FleeGoal(threat_actor_id=12345)
+    goal = FleeGoal(threat_actor_id=ActorId(12345))
     assert goal.progress == 0.0
 
 
 def test_flee_goal_progress_already_at_safe_distance() -> None:
     """FleeGoal progress is 1.0 if start distance is already at safe distance."""
-    goal = FleeGoal(threat_actor_id=12345)
+    goal = FleeGoal(threat_actor_id=ActorId(12345))
     goal._start_distance = _FLEE_SAFE_DISTANCE
     goal._current_distance = _FLEE_SAFE_DISTANCE
     assert goal.progress == 1.0
@@ -589,7 +590,7 @@ def test_flee_goal_progress_already_at_safe_distance() -> None:
 
 def test_flee_goal_progress_increases_with_distance() -> None:
     """FleeGoal progress increases as NPC moves away from threat."""
-    goal = FleeGoal(threat_actor_id=12345)
+    goal = FleeGoal(threat_actor_id=ActorId(12345))
     goal._start_distance = 2
     goal._current_distance = 2
     assert goal.progress == 0.0
@@ -814,7 +815,7 @@ def test_force_hostile_makes_wary_npc_use_hostile_behavior() -> None:
 def test_npc_death_clears_current_goal() -> None:
     """Killing an NPC with an active goal should clear current_goal."""
     _controller, _player, npc = make_world(npc_x=3, npc_y=0)
-    npc.current_goal = FleeGoal(threat_actor_id=123)
+    npc.current_goal = FleeGoal(threat_actor_id=ActorId(123))
 
     npc.take_damage(999)
     assert not npc.health.is_alive()

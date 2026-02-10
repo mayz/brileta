@@ -45,7 +45,7 @@ from brileta.game.actors import conditions
 from brileta.game.enums import CreatureSize, InjuryLocation
 from brileta.game.items.item_core import Item
 from brileta.sound.emitter import SoundEmitter
-from brileta.types import TileCoord, WorldTileCoord
+from brileta.types import ActorId, TileCoord, WorldTileCoord
 from brileta.view.animation import MoveAnimation
 
 from .ai import AIComponent, UnifiedAI, disposition_label
@@ -148,7 +148,7 @@ class Actor:
     unified and clear interface for game systems.
     """
 
-    _next_actor_id: int = 1
+    _next_actor_id: ActorId = ActorId(1)
 
     ai: AIComponent | None
 
@@ -173,8 +173,8 @@ class Actor:
         character_layers: list[CharacterLayer] | None = None,
     ) -> None:
         # === Core Identity & World Presence ===
-        self.actor_id: int = Actor._next_actor_id
-        Actor._next_actor_id += 1
+        self.actor_id: ActorId = Actor._next_actor_id
+        Actor._next_actor_id = ActorId(Actor._next_actor_id + 1)
 
         self.x: WorldTileCoord = x
         self.y: WorldTileCoord = y
@@ -330,7 +330,7 @@ class Actor:
                 publish_event(
                     FloatingTextEvent(
                         text="💀" if died else f"-{actual_damage}",
-                        target_actor_id=id(self),
+                        target_actor_id=self.actor_id,
                         valence=FloatingTextValence.NEGATIVE,
                         size=FloatingTextSize.LARGE
                         if died
@@ -394,7 +394,7 @@ class Actor:
             publish_event(
                 FloatingTextEvent(
                     text=f"+{healed}",
-                    target_actor_id=id(self),
+                    target_actor_id=self.actor_id,
                     valence=FloatingTextValence.POSITIVE,
                     world_x=self.x,
                     world_y=self.y,

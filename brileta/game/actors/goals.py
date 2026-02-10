@@ -45,6 +45,7 @@ from brileta.game.actors.utility import (
     ResponseCurveType,
     UtilityContext,
 )
+from brileta.types import ActorId
 from brileta.util import rng
 
 if TYPE_CHECKING:
@@ -214,7 +215,7 @@ class FleeGoal(Goal):
     the safe distance threshold.
     """
 
-    def __init__(self, threat_actor_id: int) -> None:
+    def __init__(self, threat_actor_id: ActorId) -> None:
         super().__init__(goal_id="flee")
         self.threat_actor_id = threat_actor_id
         self._start_distance: int | None = None

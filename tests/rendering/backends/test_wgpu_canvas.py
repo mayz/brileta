@@ -9,7 +9,6 @@ from unittest.mock import Mock
 import pytest
 
 from brileta import colors
-from brileta.util.coordinates import TileCoord
 
 # Try to import WGPU - if not available, skip all tests
 try:
@@ -177,10 +176,10 @@ class TestWGPUCanvas:
         """Test that draw_frame records operations."""
         self.canvas.begin_frame()
         self.canvas.draw_frame(
-            TileCoord(2),
-            TileCoord(3),
-            TileCoord(10),
-            TileCoord(8),
+            2,
+            3,
+            10,
+            8,
             colors.BLUE,
             colors.BLACK,
         )

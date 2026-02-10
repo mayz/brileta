@@ -92,7 +92,7 @@ class PushExecutor(ActionExecutor):
                 publish_event(
                     FloatingTextEvent(
                         text="PUSHED",
-                        target_actor_id=id(intent.defender),
+                        target_actor_id=intent.defender.actor_id,
                         valence=FloatingTextValence.NEGATIVE,
                         world_x=intent.defender.x,
                         world_y=intent.defender.y,
@@ -118,7 +118,7 @@ class PushExecutor(ActionExecutor):
                 publish_event(
                     FloatingTextEvent(
                         text="PUSHED",
-                        target_actor_id=id(intent.defender),
+                        target_actor_id=intent.defender.actor_id,
                         valence=FloatingTextValence.NEGATIVE,
                         world_x=intent.defender.x,
                         world_y=intent.defender.y,
@@ -153,7 +153,7 @@ class PushExecutor(ActionExecutor):
                 publish_event(
                     FloatingTextEvent(
                         text="FAILED",
-                        target_actor_id=id(intent.attacker),
+                        target_actor_id=intent.attacker.actor_id,
                         valence=FloatingTextValence.NEGATIVE,
                         world_x=intent.attacker.x,
                         world_y=intent.attacker.y,
@@ -343,7 +343,7 @@ class TripExecutor(ActionExecutor):
                 publish_event(
                     FloatingTextEvent(
                         text="TRIPPED",
-                        target_actor_id=id(intent.defender),
+                        target_actor_id=intent.defender.actor_id,
                         valence=FloatingTextValence.NEGATIVE,
                         world_x=intent.defender.x,
                         world_y=intent.defender.y,
@@ -364,7 +364,7 @@ class TripExecutor(ActionExecutor):
                 publish_event(
                     FloatingTextEvent(
                         text="TRIPPED",
-                        target_actor_id=id(intent.defender),
+                        target_actor_id=intent.defender.actor_id,
                         valence=FloatingTextValence.NEGATIVE,
                         world_x=intent.defender.x,
                         world_y=intent.defender.y,
@@ -382,7 +382,7 @@ class TripExecutor(ActionExecutor):
                 publish_event(
                     FloatingTextEvent(
                         text="TRIPPED",
-                        target_actor_id=id(intent.defender),
+                        target_actor_id=intent.defender.actor_id,
                         valence=FloatingTextValence.NEGATIVE,
                         world_x=intent.defender.x,
                         world_y=intent.defender.y,
@@ -399,7 +399,7 @@ class TripExecutor(ActionExecutor):
                 publish_event(
                     FloatingTextEvent(
                         text="FAILED",
-                        target_actor_id=id(intent.attacker),
+                        target_actor_id=intent.attacker.actor_id,
                         valence=FloatingTextValence.NEGATIVE,
                         world_x=intent.attacker.x,
                         world_y=intent.attacker.y,
@@ -481,7 +481,7 @@ class KickExecutor(ActionExecutor):
                 publish_event(
                     FloatingTextEvent(
                         text="KICKED",
-                        target_actor_id=id(intent.defender),
+                        target_actor_id=intent.defender.actor_id,
                         valence=FloatingTextValence.NEGATIVE,
                         world_x=intent.defender.x,
                         world_y=intent.defender.y,
@@ -509,7 +509,7 @@ class KickExecutor(ActionExecutor):
                 publish_event(
                     FloatingTextEvent(
                         text="KICKED",
-                        target_actor_id=id(intent.defender),
+                        target_actor_id=intent.defender.actor_id,
                         valence=FloatingTextValence.NEGATIVE,
                         world_x=intent.defender.x,
                         world_y=intent.defender.y,
@@ -532,7 +532,7 @@ class KickExecutor(ActionExecutor):
                 publish_event(
                     FloatingTextEvent(
                         text="KICKED",
-                        target_actor_id=id(intent.defender),
+                        target_actor_id=intent.defender.actor_id,
                         valence=FloatingTextValence.NEGATIVE,
                         world_x=intent.defender.x,
                         world_y=intent.defender.y,
@@ -558,7 +558,7 @@ class KickExecutor(ActionExecutor):
                 publish_event(
                     FloatingTextEvent(
                         text="MISSED",
-                        target_actor_id=id(intent.attacker),
+                        target_actor_id=intent.attacker.actor_id,
                         valence=FloatingTextValence.NEGATIVE,
                         world_x=intent.attacker.x,
                         world_y=intent.attacker.y,
@@ -791,7 +791,7 @@ class PunchExecutor(ActionExecutor):
             publish_event(
                 FloatingTextEvent(
                     text=f"-{damage}",
-                    target_actor_id=id(intent.defender),
+                    target_actor_id=intent.defender.actor_id,
                     valence=FloatingTextValence.NEGATIVE,
                     world_x=intent.defender.x,
                     world_y=intent.defender.y,
@@ -814,7 +814,7 @@ class PunchExecutor(ActionExecutor):
         publish_event(
             FloatingTextEvent(
                 text="MISS",
-                target_actor_id=id(intent.defender),
+                target_actor_id=intent.defender.actor_id,
                 valence=FloatingTextValence.NEUTRAL,
                 world_x=intent.defender.x,
                 world_y=intent.defender.y,

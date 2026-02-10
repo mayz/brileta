@@ -26,7 +26,7 @@ from brileta.game.items.item_types import (
 )
 from brileta.game.lights import DynamicLight, GlobalLight, LightSource
 from brileta.game.outfit import LEATHER_ARMOR_TYPE
-from brileta.types import TileCoord, WorldTileCoord, WorldTilePos
+from brileta.types import ActorId, TileCoord, WorldTileCoord, WorldTilePos
 from brileta.util import rng
 from brileta.util.coordinates import Rect
 from brileta.util.spatial import SpatialHashGrid, SpatialIndex
@@ -207,7 +207,7 @@ class GameWorld:
         self.actor_spatial_index: SpatialIndex[Actor] = SpatialHashGrid(cell_size=16)
         # Registry for O(1) actor lookup by actor_id.
         # Used by floating text system to track actor positions.
-        self._actor_id_registry: dict[int, Actor] = {}
+        self._actor_id_registry: dict[ActorId, Actor] = {}
 
     def _create_player(self) -> PC:
         """Instantiate the player character and starting inventory."""
@@ -504,7 +504,7 @@ class GameWorld:
         # If no blocking actor exists, return whichever actor is found first.
         return actors_at_point[0]
 
-    def get_actor_by_id(self, actor_id: int) -> Actor | None:
+    def get_actor_by_id(self, actor_id: ActorId) -> Actor | None:
         """Look up an actor by its ``actor_id`` in O(1) time.
 
         Uses the internal actor registry for constant-time lookup.

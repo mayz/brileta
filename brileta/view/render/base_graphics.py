@@ -298,11 +298,9 @@ class BaseGraphicsContext(GraphicsContext):
         """
         if self.letterbox_geometry is None:
             # Fallback calculation if letterbox not initialized
-            return PixelPos(
-                (
-                    int(console_x * self._tile_dimensions[0]),
-                    int(console_y * self._tile_dimensions[1]),
-                )
+            return (
+                int(console_x * self._tile_dimensions[0]),
+                int(console_y * self._tile_dimensions[1]),
             )
 
         # Use letterbox geometry for accurate conversion
@@ -320,11 +318,9 @@ class BaseGraphicsContext(GraphicsContext):
         """
         if self._coordinate_converter is None:
             # Fallback calculation if coordinate converter not initialized
-            return RootConsoleTilePos(
-                (
-                    int(pixel_x // self._tile_dimensions[0]),
-                    int(pixel_y // self._tile_dimensions[1]),
-                )
+            return (
+                int(pixel_x // self._tile_dimensions[0]),
+                int(pixel_y // self._tile_dimensions[1]),
             )
 
         # Adjust for letterboxing offsets before passing to the converter

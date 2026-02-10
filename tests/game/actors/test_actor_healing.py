@@ -117,7 +117,7 @@ class TestActorHeal:
         assert isinstance(event, FloatingTextEvent)
         assert event.text == "+3"
         assert event.valence == FloatingTextValence.POSITIVE
-        assert event.target_actor_id == id(actor)
+        assert event.target_actor_id == actor.actor_id
 
     def test_heal_triggers_green_flash(self) -> None:
         """heal() should trigger a green flash on visual effects."""

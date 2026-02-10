@@ -17,7 +17,7 @@ from brileta.environment.tile_types import TileTypeID
 from brileta.game.actors import PC, Actor, Character
 from brileta.game.item_spawner import ItemSpawner
 from brileta.game.items.item_core import Item
-from brileta.types import WorldTileCoord
+from brileta.types import ActorId, WorldTileCoord
 from brileta.util.spatial import SpatialHashGrid
 from brileta.view.render.graphics import GraphicsContext
 
@@ -50,7 +50,7 @@ class DummyOverlay:
 
 def reset_actor_id_counter(start: int = 1) -> None:
     """Reset Actor._next_actor_id for test isolation."""
-    Actor._next_actor_id = start
+    Actor._next_actor_id = ActorId(start)
 
 
 def _make_renderer(tile_height: int = 16) -> GraphicsContext:
@@ -107,7 +107,7 @@ class DummyGameWorld(GameWorld):
         self.actor_spatial_index = SpatialHashGrid(cell_size=16)
         self.actors: list[Actor] = []
         # Registry for O(1) actor lookup by actor_id.
-        self._actor_id_registry: dict[int, Actor] = {}
+        self._actor_id_registry: dict[ActorId, Actor] = {}
 
         self.item_spawner = ItemSpawner(self)
 
@@ -147,7 +147,7 @@ class DummyGameWorld(GameWorld):
             pass
         self._actor_id_registry.pop(actor.actor_id, None)
 
-    def get_actor_by_id(self, actor_id: int) -> Actor | None:
+    def get_actor_by_id(self, actor_id: ActorId) -> Actor | None:
         """Look up an actor by its ``actor_id`` in O(1) time."""
         return self._actor_id_registry.get(actor_id)
 
