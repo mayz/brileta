@@ -168,15 +168,15 @@ class TestWGPUGraphicsContext:
         # Should not raise exception (currently a no-op)
         self.graphics_ctx.update_dimensions()
 
-    def test_update_dimensions_syncs_texture_renderer_tile_dimensions(self):
+    def test_update_dimensions_syncs_glyph_renderer_tile_dimensions(self):
         """Resize updates off-screen renderer tile dimensions."""
-        mock_texture_renderer = Mock()
-        self.graphics_ctx.texture_renderer = mock_texture_renderer
+        mock_glyph_renderer = Mock()
+        self.graphics_ctx.glyph_renderer = mock_glyph_renderer
         self.graphics_ctx.window.get_framebuffer_size.return_value = (1680, 1050)
 
         self.graphics_ctx.update_dimensions()
 
-        mock_texture_renderer.set_tile_dimensions.assert_called_with((21, 21))
+        mock_glyph_renderer.set_tile_dimensions.assert_called_with((21, 21))
 
     def test_infer_compose_tile_dimensions(self):
         """Compose tile size should be inferred from texture/mask dimensions."""
@@ -239,7 +239,7 @@ class TestWGPUGraphicsContext:
 
                 # Verify initialization completed successfully with required components
                 assert self.graphics_ctx.screen_renderer is not None
-                assert self.graphics_ctx.ui_texture_renderer is not None
+                assert self.graphics_ctx.ui_renderer is not None
                 assert self.graphics_ctx.letterbox_geometry is not None
                 assert self.graphics_ctx.atlas_texture is not None
                 assert self.graphics_ctx.uv_map is not None
@@ -253,7 +253,7 @@ class TestWGPUGraphicsContext:
         # draw_actor_smooth should handle None screen_renderer gracefully
         self.graphics_ctx.draw_actor_smooth("@", colors.WHITE, 10.0, 10.0)
 
-        # draw_mouse_cursor should handle None ui_texture_renderer gracefully
+        # draw_mouse_cursor should handle None ui_renderer gracefully
         mock_cursor = MockCursorManager()
         self.graphics_ctx.draw_mouse_cursor(mock_cursor)  # type: ignore[arg-type]
 
@@ -316,11 +316,11 @@ class TestWGPUGraphicsContext:
 
     def test_render_glyph_buffer_to_texture(self):
         """Test rendering a GlyphBuffer to texture."""
-        # Mock the texture renderer directly (can't initialize WGPU in tests)
-        mock_texture_renderer = Mock()
+        # Mock the glyph renderer directly (can't initialize WGPU in tests)
+        mock_glyph_renderer = Mock()
         mock_texture = Mock()  # Mock WGPU texture
-        mock_texture_renderer.render = Mock(return_value=mock_texture)
-        self.graphics_ctx.texture_renderer = mock_texture_renderer
+        mock_glyph_renderer.render = Mock(return_value=mock_texture)
+        self.graphics_ctx.glyph_renderer = mock_glyph_renderer
 
         # Create a small glyph buffer for testing
         glyph_buffer = GlyphBuffer(5, 3)
@@ -341,9 +341,9 @@ class TestWGPUGraphicsContext:
         result = self.graphics_ctx.render_glyph_buffer_to_texture(glyph_buffer)
         assert result is mock_texture
 
-        # Verify that the texture renderer was called with expected parameters
+        # Verify that the glyph renderer was called with expected parameters
         # Note: secondary_override (cpu buffer) will be created as a temporary buffer
-        call_args = mock_texture_renderer.render.call_args
+        call_args = mock_glyph_renderer.render.call_args
         assert call_args[0][0] is glyph_buffer  # First arg is glyph_buffer
         assert (
             call_args[0][1] is not None

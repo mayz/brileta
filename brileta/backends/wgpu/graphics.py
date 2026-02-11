@@ -28,12 +28,12 @@ from brileta.util.tilesets import derive_outlined_atlas
 from brileta.view.render.base_graphics import BaseGraphicsContext
 
 from .atmospheric_renderer import WGPUAtmosphericRenderer
+from .glyph_renderer import WGPUGlyphRenderer
 from .light_overlay_composer import WGPULightOverlayComposer
 from .resource_manager import WGPUResourceManager
 from .screen_renderer import WGPUScreenRenderer
 from .shader_manager import WGPUShaderManager
-from .texture_renderer import WGPUTextureRenderer
-from .ui_texture_renderer import WGPUUITextureRenderer
+from .textured_quad_renderer import WGPUTexturedQuadRenderer
 
 if TYPE_CHECKING:
     from brileta.view.ui.cursor_manager import CursorManager
@@ -97,15 +97,14 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         # Screen renderer
         self.screen_renderer: WGPUScreenRenderer | None = None
 
-        # Texture renderer for off-screen rendering
-        self.texture_renderer: WGPUTextureRenderer | None = None
+        # Glyph renderer for off-screen rendering
+        self.glyph_renderer: WGPUGlyphRenderer | None = None
 
-        # UI texture renderer for arbitrary textures
-        self.ui_texture_renderer: WGPUUITextureRenderer | None = None
-        # Background renderer for immediate texture rendering
-        self.background_renderer = None
-        # Environmental effect renderer for batched effect rendering
-        self.environmental_effect_renderer = None
+        # Textured quad renderers share one implementation with pass-specific config.
+        self.ui_renderer: WGPUTexturedQuadRenderer | None = None
+        self.background_renderer: WGPUTexturedQuadRenderer | None = None
+        self.effect_renderer: WGPUTexturedQuadRenderer | None = None
+        self._radial_gradient_texture: wgpu.GPUTexture | None = None
         # Atmospheric renderer for cloud shadows and mist
         self.atmospheric_renderer: WGPUAtmosphericRenderer | None = None
         self.light_overlay_composer: WGPULightOverlayComposer | None = None
@@ -167,7 +166,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
             surface_format,
         )
 
-        self.texture_renderer = WGPUTextureRenderer(
+        self.glyph_renderer = WGPUGlyphRenderer(
             self.resource_manager,
             self.shader_manager,
             self.atlas_texture,
@@ -175,27 +174,29 @@ class WGPUGraphicsContext(BaseGraphicsContext):
             self.uv_map,
         )
 
-        self.ui_texture_renderer = WGPUUITextureRenderer(
+        self.background_renderer = WGPUTexturedQuadRenderer(
             self.resource_manager,
             self.shader_manager,
             surface_format,
+            max_quads=100,
+            label="background",
         )
-
-        from .background_renderer import WGPUBackgroundRenderer
-
-        self.background_renderer = WGPUBackgroundRenderer(
+        self.effect_renderer = WGPUTexturedQuadRenderer(
             self.resource_manager,
             self.shader_manager,
             surface_format,
+            max_quads=200,
+            sampler=self.resource_manager.linear_sampler,
+            label="effect",
         )
-
-        from .environmental_effect_renderer import WGPUEnvironmentalEffectRenderer
-
-        self.environmental_effect_renderer = WGPUEnvironmentalEffectRenderer(
+        self.ui_renderer = WGPUTexturedQuadRenderer(
             self.resource_manager,
             self.shader_manager,
             surface_format,
+            max_quads=500,
+            label="ui",
         )
+        self._radial_gradient_texture = self._create_radial_gradient_texture(256)
 
         self.atmospheric_renderer = WGPUAtmosphericRenderer(
             self.resource_manager,
@@ -227,7 +228,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         # Pre-load commonly used shaders
         shaders_to_precompile = [
             "wgsl/screen/main.wgsl",  # Main screen rendering (particles, actors)
-            "wgsl/glyph/render.wgsl",  # Glyph buffer rendering
+            "wgsl/glyph/main.wgsl",  # Glyph buffer rendering
             "wgsl/ui/texture.wgsl",  # UI texture rendering
         ]
 
@@ -279,14 +280,14 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         return True
 
     def set_noise_seed(self, seed: int) -> None:
-        """Forward noise seed to the texture renderer for sub-tile jitter."""
-        if self.texture_renderer is not None:
-            self.texture_renderer.set_noise_seed(seed)
+        """Forward noise seed to the glyph renderer for sub-tile jitter."""
+        if self.glyph_renderer is not None:
+            self.glyph_renderer.set_noise_seed(seed)
 
     def set_noise_tile_offset(self, offset_x: int, offset_y: int) -> None:
         """Forward world-space tile offset for stable noise hashing."""
-        if self.texture_renderer is not None:
-            self.texture_renderer.set_noise_tile_offset(offset_x, offset_y)
+        if self.glyph_renderer is not None:
+            self.glyph_renderer.set_noise_tile_offset(offset_x, offset_y)
 
     def render_glyph_buffer_to_texture(
         self,
@@ -296,13 +297,13 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         cache_key_suffix: str = "",
     ) -> wgpu.GPUTexture:
         """Render GlyphBuffer to a WGPU texture."""
-        if self.texture_renderer is None or self.resource_manager is None:
-            raise RuntimeError("Texture renderer not initialized")
+        if self.glyph_renderer is None or self.resource_manager is None:
+            raise RuntimeError("Glyph renderer not initialized")
 
         # Handle case where no CPU buffer is provided (e.g., WorldView)
         if secondary_override is None:
             # This is the WorldView case. Reuse our internal buffer.
-            from .texture_renderer import TEXTURE_VERTEX_DTYPE
+            from .glyph_renderer import TEXTURE_VERTEX_DTYPE
 
             max_vertices = glyph_buffer.width * glyph_buffer.height * 6
 
@@ -321,7 +322,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
             cpu_buffer_to_use = secondary_override
 
         # Pass the chosen buffer and cache key to the renderer
-        return self.texture_renderer.render(
+        return self.glyph_renderer.render(
             glyph_buffer,
             cpu_buffer_to_use,
             buffer_override=buffer_override,
@@ -567,7 +568,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         parameter and rendered with the specified alpha for shimmer effects.
         """
         if (
-            self.ui_texture_renderer is None
+            self.ui_renderer is None
             or self.uv_map is None
             or self.outlined_atlas_texture is None
         ):
@@ -596,7 +597,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         y = screen_y + offset_y
 
         # Create vertices for the outlined quad
-        vertices = np.zeros(6, dtype=self.ui_texture_renderer.VERTEX_DTYPE)
+        vertices = np.zeros(6, dtype=WGPUTexturedQuadRenderer.VERTEX_DTYPE)
         vertices[0] = ((x, y), (u1, v1), final_color)
         vertices[1] = ((x + scaled_w, y), (u2, v1), final_color)
         vertices[2] = ((x, y + scaled_h), (u1, v2), final_color)
@@ -605,9 +606,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         vertices[5] = ((x + scaled_w, y + scaled_h), (u2, v2), final_color)
 
         # Queue the outlined texture for batched rendering
-        self.ui_texture_renderer.add_textured_quad(
-            self.outlined_atlas_texture, vertices
-        )
+        self.ui_renderer.add_textured_quad(self.outlined_atlas_texture, vertices)
 
     def get_display_scale_factor(self) -> tuple[float, float]:
         """Get display scale factor for high-DPI displays."""
@@ -623,7 +622,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
 
     def draw_mouse_cursor(self, cursor_manager: CursorManager) -> None:
         """Draw the mouse cursor."""
-        if self.ui_texture_renderer is None or self.resource_manager is None:
+        if self.ui_renderer is None or self.resource_manager is None:
             return
 
         cursor_data = cursor_manager.cursors.get(cursor_manager.active_cursor_type)
@@ -650,7 +649,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         dest_h = texture.height * scale_factor
 
         # Create vertices for the cursor quad
-        vertices = np.zeros(6, dtype=self.ui_texture_renderer.VERTEX_DTYPE)
+        vertices = np.zeros(6, dtype=WGPUTexturedQuadRenderer.VERTEX_DTYPE)
         u1, v1, u2, v2 = 0.0, 0.0, 1.0, 1.0  # Standard UV coordinates
         color_rgba = (1.0, 1.0, 1.0, 1.0)  # White color, no tint
 
@@ -667,7 +666,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         vertices[5] = ((px_x2, px_y2), (u2, v2), color_rgba)
 
         # Queue the cursor for batched rendering
-        self.ui_texture_renderer.add_textured_quad(texture, vertices)
+        self.ui_renderer.add_textured_quad(texture, vertices)
 
     def apply_environmental_effect(
         self,
@@ -678,7 +677,12 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         blend_mode: BlendMode,
     ) -> None:
         """Apply a circular environmental effect like lighting or fog."""
-        if radius <= 0 or intensity <= 0 or self.environmental_effect_renderer is None:
+        if (
+            radius <= 0
+            or intensity <= 0
+            or self.effect_renderer is None
+            or self._radial_gradient_texture is None
+        ):
             return
 
         # Convert tile coordinates to screen coordinates
@@ -700,10 +704,16 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         dest_x = screen_x - px_radius
         dest_y = screen_y - px_radius
 
-        # Add to the batched environmental effect renderer
-        self.environmental_effect_renderer.add_effect_quad(
-            dest_x, dest_y, size, size, final_color
-        )
+        # Build the standard two-triangle quad and queue it for the effect pass.
+        vertices = np.zeros(6, dtype=WGPUTexturedQuadRenderer.VERTEX_DTYPE)
+        u1, v1, u2, v2 = 0.0, 0.0, 1.0, 1.0
+        vertices[0] = ((dest_x, dest_y), (u1, v1), final_color)
+        vertices[1] = ((dest_x + size, dest_y), (u2, v1), final_color)
+        vertices[2] = ((dest_x, dest_y + size), (u1, v2), final_color)
+        vertices[3] = ((dest_x + size, dest_y), (u2, v1), final_color)
+        vertices[4] = ((dest_x, dest_y + size), (u1, v2), final_color)
+        vertices[5] = ((dest_x + size, dest_y + size), (u2, v2), final_color)
+        self.effect_renderer.add_textured_quad(self._radial_gradient_texture, vertices)
 
     def update_dimensions(self) -> None:
         """Update dimensions when window size changes."""
@@ -718,22 +728,22 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         # Update letterbox geometry
         self._calculate_letterbox_geometry_and_tiles()
         # Keep off-screen glyph rendering in sync with the current tile size.
-        if self.texture_renderer is not None:
-            self.texture_renderer.set_tile_dimensions(self._tile_dimensions)
+        if self.glyph_renderer is not None:
+            self.glyph_renderer.set_tile_dimensions(self._tile_dimensions)
 
     def prepare_to_present(self) -> None:
         """Prepare for presenting the frame."""
         if (
             self.screen_renderer is None
-            or self.ui_texture_renderer is None
+            or self.ui_renderer is None
             or self.background_renderer is None
-            or self.environmental_effect_renderer is None
+            or self.effect_renderer is None
         ):
             return
         self.screen_renderer.begin_frame()
-        self.ui_texture_renderer.begin_frame()
+        self.ui_renderer.begin_frame()
         self.background_renderer.begin_frame()
-        self.environmental_effect_renderer.begin_frame()
+        self.effect_renderer.begin_frame()
         if self.atmospheric_renderer is not None:
             self.atmospheric_renderer.begin_frame()
         self._atmospheric_layers = []
@@ -843,19 +853,16 @@ class WGPUGraphicsContext(BaseGraphicsContext):
 
             # Then render environmental effects (discrete effects like smoke puffs)
             if (
-                self.environmental_effect_renderer is not None
-                and self.environmental_effect_renderer.vertex_count > 0
+                self.effect_renderer is not None
+                and self.effect_renderer.vertex_count > 0
             ):
-                self.environmental_effect_renderer.render(
+                self.effect_renderer.render(
                     render_pass, window_size, self.letterbox_geometry
                 )
 
             # Finally render UI content on top (menus, dialogs, etc.)
-            if (
-                self.ui_texture_renderer is not None
-                and self.ui_texture_renderer.vertex_count > 0
-            ):
-                self.ui_texture_renderer.render(
+            if self.ui_renderer is not None and self.ui_renderer.vertex_count > 0:
+                self.ui_renderer.render(
                     render_pass, window_size, self.letterbox_geometry
                 )
 
@@ -929,7 +936,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         height_tiles: int,
     ) -> None:
         """Present a texture to the screen."""
-        if not isinstance(texture, wgpu.GPUTexture) or self.ui_texture_renderer is None:
+        if not isinstance(texture, wgpu.GPUTexture) or self.ui_renderer is None:
             return
 
         # Convert tile coordinates to pixel coordinates
@@ -939,7 +946,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         )
 
         # Create vertices for this texture quad
-        vertices = np.zeros(6, dtype=self.ui_texture_renderer.VERTEX_DTYPE)
+        vertices = np.zeros(6, dtype=WGPUTexturedQuadRenderer.VERTEX_DTYPE)
         u1, v1, u2, v2 = 0.0, 0.0, 1.0, 1.0  # Use non-flipped UVs
         color_rgba = (1.0, 1.0, 1.0, 1.0)
 
@@ -951,7 +958,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         vertices[5] = ((px_x2, px_y2), (u2, v2), color_rgba)
 
         # Queue the texture and vertices for batched rendering
-        self.ui_texture_renderer.add_textured_quad(texture, vertices)
+        self.ui_renderer.add_textured_quad(texture, vertices)
 
     def draw_texture_alpha(
         self,
@@ -963,7 +970,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         """Draw a texture at pixel coordinates with alpha modulation."""
         if alpha <= 0.0 or not isinstance(texture, wgpu.GPUTexture):
             return
-        if self.ui_texture_renderer is None:
+        if self.ui_renderer is None:
             return
 
         px_x1 = float(screen_x)
@@ -972,7 +979,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         px_y2 = px_y1 + texture.height
 
         # Create vertices with alpha in the color
-        vertices = np.zeros(6, dtype=self.ui_texture_renderer.VERTEX_DTYPE)
+        vertices = np.zeros(6, dtype=WGPUTexturedQuadRenderer.VERTEX_DTYPE)
         u1, v1, u2, v2 = 0.0, 0.0, 1.0, 1.0
         color_rgba = (1.0, 1.0, 1.0, float(alpha))
 
@@ -983,7 +990,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         vertices[4] = ((px_x1, px_y2), (u1, v2), color_rgba)
         vertices[5] = ((px_x2, px_y2), (u2, v2), color_rgba)
 
-        self.ui_texture_renderer.add_textured_quad(texture, vertices)
+        self.ui_renderer.add_textured_quad(texture, vertices)
 
     def draw_background(
         self,
@@ -1011,10 +1018,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         px_y1 += offset_y_pixels
         px_y2 += offset_y_pixels
 
-        # Create vertices for background quad using background renderer's VERTEX_DTYPE
-        from .background_renderer import VERTEX_DTYPE
-
-        vertices = np.zeros(6, dtype=VERTEX_DTYPE)
+        vertices = np.zeros(6, dtype=WGPUTexturedQuadRenderer.VERTEX_DTYPE)
         u1, v1, u2, v2 = 0.0, 0.0, 1.0, 1.0  # Use non-flipped UVs
         color_rgba = (1.0, 1.0, 1.0, 1.0)  # White, no tint
 
@@ -1026,7 +1030,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         vertices[5] = ((px_x2, px_y2), (u2, v2), color_rgba)
 
         # Queue the background texture for batched rendering
-        self.background_renderer.add_background_quad(texture, vertices)
+        self.background_renderer.add_textured_quad(texture, vertices)
 
     def compose_light_overlay_gpu(
         self,
@@ -1082,6 +1086,27 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         # Pass the resource_manager to the canvas constructor
         assert self.resource_manager is not None
         return WGPUCanvas(self, self.resource_manager, transparent)
+
+    def _create_radial_gradient_texture(self, resolution: int) -> wgpu.GPUTexture:
+        """Create a reusable white radial gradient texture for effect quads."""
+        if self.resource_manager is None:
+            raise RuntimeError("Resource manager not initialized")
+
+        center = resolution // 2
+        y_coords, x_coords = np.ogrid[:resolution, :resolution]
+        distances = np.sqrt((x_coords - center) ** 2 + (y_coords - center) ** 2)
+        alpha = np.clip(1.0 - distances / center, 0.0, 1.0)
+
+        effect_data = np.zeros((resolution, resolution, 4), dtype=np.uint8)
+        effect_data[:, :, :3] = 255
+        effect_data[:, :, 3] = (alpha * 255).astype(np.uint8)
+
+        return self.resource_manager.create_atlas_texture(
+            width=resolution,
+            height=resolution,
+            data=effect_data.tobytes(),
+            texture_format="rgba8unorm",
+        )
 
     # --- Atlas Texture Loading Methods ---
 
@@ -1299,12 +1324,13 @@ class WGPUGraphicsContext(BaseGraphicsContext):
 
         # Clear references to help with cleanup order
         self.screen_renderer = None
-        self.texture_renderer = None
-        self.ui_texture_renderer = None
+        self.glyph_renderer = None
+        self.ui_renderer = None
         self.background_renderer = None
-        self.environmental_effect_renderer = None
+        self.effect_renderer = None
         self.atmospheric_renderer = None
         self.light_overlay_composer = None
+        self._radial_gradient_texture = None
         self.atlas_texture = None
         self.outlined_atlas_texture = None
         self.blurred_atlas_texture = None

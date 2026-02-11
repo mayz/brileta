@@ -1,4 +1,4 @@
-"""WGPU background renderer for immediate texture rendering."""
+"""WGPU textured quad renderer for batched texture rendering."""
 
 from __future__ import annotations
 
@@ -24,89 +24,98 @@ VERTEX_DTYPE = np.dtype(
 )
 
 
-class WGPUBackgroundRenderer:
-    """WGPU background renderer for batched texture rendering.
+class WGPUTexturedQuadRenderer:
+    """Batched textured-quad renderer with configurable capacity and sampling."""
 
-    Queues background textures for rendering in the main render pass
-    instead of immediate rendering to improve performance.
-    """
-
-    # Maximum number of background quads per frame
-    MAX_BACKGROUND_QUADS = 100
+    VERTEX_DTYPE = VERTEX_DTYPE
 
     def __init__(
         self,
         resource_manager: WGPUResourceManager,
         shader_manager: WGPUShaderManager,
         surface_format: str,
+        *,
+        max_quads: int = 500,
+        sampler: wgpu.GPUSampler | None = None,
+        label: str = "textured_quad",
     ) -> None:
-        """Initialize WGPU background renderer."""
+        """Initialize a configurable textured quad renderer.
+
+        Args:
+            resource_manager: WGPU resource manager for buffer/texture caching
+            shader_manager: WGPU shader manager for pipeline creation
+            surface_format: The surface format for render targets
+            max_quads: Maximum number of quads to batch each frame
+            sampler: Optional sampler override (defaults to nearest sampler)
+            label: Debug label prefix for GPU resources
+        """
         self.resource_manager = resource_manager
         self.shader_manager = shader_manager
         self.surface_format = surface_format
-
-        # Batched rendering queue and vertex buffer
+        self.max_quads = max_quads
+        self.label = label
+        self.sampler = sampler or self.resource_manager.nearest_sampler
         self.render_queue: list[tuple[wgpu.GPUTexture, int]] = []
-        self.cpu_vertex_buffer = np.zeros(
-            self.MAX_BACKGROUND_QUADS * 6, dtype=VERTEX_DTYPE
-        )
+
+        # Create CPU-side buffer to aggregate all vertex data
+        self.cpu_vertex_buffer = np.zeros(self.max_quads * 6, dtype=VERTEX_DTYPE)
         self.vertex_count = 0
 
-        # Create vertex buffer for batched rendering
-        buffer_size = self.MAX_BACKGROUND_QUADS * 6 * VERTEX_DTYPE.itemsize
+        # Each renderer instance owns its vertex buffer; sharing would corrupt
+        # per-pass batch data if capacities ever collide.
+        buffer_size = self.max_quads * 6 * VERTEX_DTYPE.itemsize
         self.vertex_buffer = self.resource_manager.device.create_buffer(
             size=buffer_size,
             usage=wgpu.BufferUsage.VERTEX | wgpu.BufferUsage.COPY_DST,
+            label=f"{self.label}_vertex_buffer",
         )
 
-        # Create uniform buffer for letterbox parameters
+        # Create dedicated uniform buffer for letterbox parameters
         self.uniform_buffer = self.resource_manager.device.create_buffer(
-            size=4 * 4,  # 4 floats: offset_x, offset_y, scaled_w, scaled_h
+            size=16,  # vec4<f32> = 16 bytes
             usage=wgpu.BufferUsage.UNIFORM | wgpu.BufferUsage.COPY_DST,
+            label=f"{self.label}_uniform_buffer",
         )
 
-        # Cache bind groups using weak references for automatic cleanup
-        self._bind_group_cache: weakref.WeakKeyDictionary[
+        # Create pipeline and bind groups
+        self._create_pipeline()
+
+        # Cache for texture bind groups using weak references for automatic cleanup
+        self.texture_bind_groups: weakref.WeakKeyDictionary[
             wgpu.GPUTexture, wgpu.GPUBindGroup
         ] = weakref.WeakKeyDictionary()
 
+    def _create_pipeline(self) -> None:
+        """Create the WGPU render pipeline for textured quad rendering."""
         # Use shared bind group layout from resource manager
         self.bind_group_layout = self.resource_manager.standard_bind_group_layout
 
-        # Create render pipeline
-        self._create_pipeline()
-
-        # Use shared nearest sampler from resource manager
-        self.sampler = self.resource_manager.nearest_sampler
-
-    def _create_pipeline(self) -> None:
-        """Create the render pipeline for background rendering."""
-        # Vertex layout
+        # Define vertex buffer layout
         vertex_layout = [
             {
                 "array_stride": VERTEX_DTYPE.itemsize,
-                "step_mode": wgpu.VertexStepMode.vertex,
+                "step_mode": "vertex",
                 "attributes": [
                     {
-                        "format": wgpu.VertexFormat.float32x2,
-                        "offset": 0,
+                        "format": "float32x2",
+                        "offset": 0,  # position offset
                         "shader_location": 0,
                     },
                     {
-                        "format": wgpu.VertexFormat.float32x2,
-                        "offset": 8,
+                        "format": "float32x2",
+                        "offset": 8,  # uv offset (2 * 4 bytes)
                         "shader_location": 1,
                     },
                     {
-                        "format": wgpu.VertexFormat.float32x4,
-                        "offset": 16,
+                        "format": "float32x4",
+                        "offset": 16,  # color offset (4 * 4 bytes)
                         "shader_location": 2,
                     },
                 ],
             }
         ]
 
-        # Render targets with alpha blending
+        # Create render pipeline with correct surface format
         targets = [
             {
                 "format": self.surface_format,
@@ -122,39 +131,58 @@ class WGPUBackgroundRenderer:
                         "dst_factor": wgpu.BlendFactor.one_minus_src_alpha,
                     },
                 },
+                "write_mask": wgpu.ColorWrite.ALL,
             }
         ]
 
-        # Create pipeline (reuse UI shaders since they're similar)
         self.pipeline = self.shader_manager.create_render_pipeline(
             vertex_shader_path="wgsl/ui/texture.wgsl",
-            fragment_shader_path="wgsl/ui/texture.wgsl",
+            fragment_shader_path="wgsl/ui/texture.wgsl",  # Same file
             vertex_layout=vertex_layout,
             bind_group_layouts=[self.bind_group_layout],
             targets=targets,
-            cache_key="background_renderer_pipeline",
+            cache_key="textured_quad_renderer_pipeline",
         )
 
     def begin_frame(self) -> None:
-        """Clear the render queue at the start of a new frame."""
+        """Clear the internal queue of textures to be rendered for the new frame."""
         self.render_queue.clear()
         self.vertex_count = 0
 
-    def add_background_quad(
-        self,
-        texture: wgpu.GPUTexture,
-        vertices: np.ndarray,
-    ) -> None:
-        """Add a background texture quad to the render queue."""
+    def add_textured_quad(self, texture: wgpu.GPUTexture, vertices: np.ndarray) -> None:
+        """Add texture and vertex data to the internal render queue."""
         if self.vertex_count + 6 > len(self.cpu_vertex_buffer):
-            return  # Skip if buffer is full
+            return
 
         # Copy vertices into the CPU buffer
         self.cpu_vertex_buffer[self.vertex_count : self.vertex_count + 6] = vertices
         self.vertex_count += 6
 
-        # Queue the texture and vertex count for this quad
+        # Queue only the texture and vertex count for this quad
         self.render_queue.append((texture, 6))
+
+    def _get_or_create_bind_group(self, texture: wgpu.GPUTexture) -> wgpu.GPUBindGroup:
+        """Get or create a bind group for the given texture."""
+        if texture not in self.texture_bind_groups:
+            self.texture_bind_groups[texture] = self.shader_manager.create_bind_group(
+                layout=self.bind_group_layout,
+                entries=[
+                    {
+                        "binding": 0,
+                        "resource": {"buffer": self.uniform_buffer},
+                    },
+                    {
+                        "binding": 1,
+                        "resource": self.resource_manager.get_texture_view(texture),
+                    },
+                    {
+                        "binding": 2,
+                        "resource": self.sampler,
+                    },
+                ],
+                label=f"{self.label}_bind_group_{id(texture)}",
+            )
+        return self.texture_bind_groups[texture]
 
     def render(
         self,
@@ -162,11 +190,11 @@ class WGPUBackgroundRenderer:
         window_size: PixelPos,
         letterbox_geometry: tuple[int, int, int, int] | None,
     ) -> None:
-        """Render all queued background textures in the current render pass."""
+        """Render all queued textured quads."""
         if not self.render_queue or self.vertex_count == 0:
             return
 
-        # Set the viewport to ensure the background renders correctly after a resize.
+        # Set the viewport to ensure UI renders correctly after a resize.
         render_pass.set_viewport(
             0.0, 0.0, float(window_size[0]), float(window_size[1]), 0.0, 1.0
         )
@@ -191,40 +219,20 @@ class WGPUBackgroundRenderer:
             memoryview(self.cpu_vertex_buffer[: self.vertex_count].tobytes()),
         )
 
+        # Set up render pass
+        render_pass.set_pipeline(self.pipeline)
+        render_pass.set_vertex_buffer(0, self.vertex_buffer)
+
         # Render each quad with the correct texture binding
         vertex_offset = 0
         for texture, vertex_count in self.render_queue:
-            # Get or create cached bind group for this texture
-            if texture not in self._bind_group_cache:
-                self._bind_group_cache[texture] = self._create_bind_group(texture)
-            bind_group = self._bind_group_cache[texture]
-
-            # Set up render pass and draw this quad
-            render_pass.set_pipeline(self.pipeline)
+            # Get or create bind group for this texture
+            bind_group = self._get_or_create_bind_group(texture)
             render_pass.set_bind_group(0, bind_group)
-            render_pass.set_vertex_buffer(0, self.vertex_buffer)
+
+            # Render this quad using the correct slice of vertices
             render_pass.draw(vertex_count, 1, vertex_offset)
 
             vertex_offset += vertex_count
-
-    def _create_bind_group(self, texture: wgpu.GPUTexture) -> wgpu.GPUBindGroup:
-        """Create a bind group for the given texture."""
-        return self.shader_manager.create_bind_group(
-            layout=self.bind_group_layout,
-            entries=[
-                {
-                    "binding": 0,
-                    "resource": {"buffer": self.uniform_buffer},
-                },
-                {
-                    "binding": 1,
-                    "resource": texture.create_view(),
-                },
-                {
-                    "binding": 2,
-                    "resource": self.sampler,
-                },
-            ],
-        )
 
     # No explicit cleanup needed - WeakKeyDictionary handles it automatically

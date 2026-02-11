@@ -1,4 +1,4 @@
-"""WGPU texture rendering - port of ModernGL version for off-screen rendering."""
+"""WGPU glyph rendering - port of ModernGL version for off-screen rendering."""
 
 from __future__ import annotations
 
@@ -32,8 +32,8 @@ TEXTURE_VERTEX_DTYPE = np.dtype(
 )
 
 
-class WGPUTextureRenderer:
-    """WGPU texture renderer for rendering GlyphBuffer objects to off-screen textures.
+class WGPUGlyphRenderer:
+    """WGPU glyph renderer for rendering GlyphBuffer objects to off-screen textures.
 
     This is the WGPU equivalent of ModernGL's TextureRenderer class.
     It handles render-to-texture functionality for creating textures from glyph buffers.
@@ -51,7 +51,7 @@ class WGPUTextureRenderer:
         tile_dimensions: tuple[int, int],
         uv_map: np.ndarray,
     ) -> None:
-        """Initialize WGPU texture renderer.
+        """Initialize WGPU glyph renderer.
 
         Args:
             resource_manager: WGPU resource manager for buffer/texture caching
@@ -81,7 +81,7 @@ class WGPUTextureRenderer:
 
         # Cache for change detection - skip re-render if buffer unchanged
         self.buffer_cache: ResourceCache[int, GlyphBuffer] = ResourceCache(
-            name="wgpu_texture_renderer_buffers", max_size=100
+            name="wgpu_glyph_renderer_buffers", max_size=100
         )
 
         # Create vertex buffer
@@ -89,7 +89,7 @@ class WGPUTextureRenderer:
         self.vertex_buffer = self.resource_manager.get_or_create_buffer(
             size=buffer_size,
             usage=wgpu.BufferUsage.VERTEX | wgpu.BufferUsage.COPY_DST,
-            label="texture_renderer_vertex_buffer",
+            label="glyph_renderer_vertex_buffer",
         )
 
         # Create uniform buffer matching WGSL Uniforms struct layout:
@@ -98,14 +98,14 @@ class WGPUTextureRenderer:
         self.uniform_buffer = self.resource_manager.get_or_create_buffer(
             size=32,
             usage=wgpu.BufferUsage.UNIFORM | wgpu.BufferUsage.COPY_DST,
-            label="texture_renderer_uniform_buffer",
+            label="glyph_renderer_uniform_buffer",
         )
 
         # Create pipeline and bind groups
         self._create_pipeline()
 
     def _create_pipeline(self) -> None:
-        """Create the WGPU render pipeline for texture rendering."""
+        """Create the WGPU render pipeline for glyph rendering."""
         # Use shared bind group layout from resource manager
         bind_group_layout = self.resource_manager.standard_bind_group_layout
 
@@ -165,12 +165,12 @@ class WGPUTextureRenderer:
         ]
 
         self.pipeline = self.shader_manager.create_render_pipeline(
-            vertex_shader_path="wgsl/glyph/render.wgsl",
-            fragment_shader_path="wgsl/glyph/render.wgsl",  # Same file
+            vertex_shader_path="wgsl/glyph/main.wgsl",
+            fragment_shader_path="wgsl/glyph/main.wgsl",  # Same file
             vertex_layout=vertex_layout,
             bind_group_layouts=[bind_group_layout],
             targets=targets,
-            cache_key="texture_renderer_pipeline",
+            cache_key="glyph_renderer_pipeline",
         )
 
         # Create bind group using shared sampler
@@ -192,7 +192,7 @@ class WGPUTextureRenderer:
                     "resource": self.resource_manager.nearest_sampler,
                 },
             ],
-            label="texture_renderer_bind_group",
+            label="glyph_renderer_bind_group",
         )
 
     def set_noise_seed(self, seed: int) -> None:

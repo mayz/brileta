@@ -150,7 +150,7 @@ class WGPUCanvas(Canvas):
 
     def configure_dimensions(self, width: PixelCoord, height: PixelCoord) -> None:
         """Create or resize the canvas's private glyph buffer and GPU vertex buffer."""
-        from brileta.backends.wgpu.texture_renderer import TEXTURE_VERTEX_DTYPE
+        from brileta.backends.wgpu.glyph_renderer import TEXTURE_VERTEX_DTYPE
 
         super().configure_dimensions(width, height)
 
