@@ -4,12 +4,11 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import wgpu
-from PIL import Image as PILImage
-from PIL import ImageFilter
 
 from brileta import colors, config
 from brileta.backends.glfw.window import GlfwWindow
@@ -24,9 +23,9 @@ from brileta.util.coordinates import (
     Rect,
 )
 from brileta.util.glyph_buffer import GlyphBuffer
-from brileta.util.tilesets import derive_outlined_atlas
 from brileta.view.render.base_graphics import BaseGraphicsContext
 
+from .atlas_manager import WGPUAtlasManager
 from .atmospheric_renderer import WGPUAtmosphericRenderer
 from .glyph_renderer import WGPUGlyphRenderer
 from .light_overlay_composer import WGPULightOverlayComposer
@@ -37,6 +36,34 @@ from .textured_quad_renderer import WGPUTexturedQuadRenderer
 
 if TYPE_CHECKING:
     from brileta.view.ui.cursor_manager import CursorManager
+
+
+@dataclass(frozen=True, slots=True)
+class AtmosphericLayerState:
+    """Per-frame snapshot of one atmospheric layer's parameters.
+
+    Queued by set_atmospheric_layer() and consumed by finalize_present()
+    to drive WGPUAtmosphericRenderer.render() calls.
+    """
+
+    viewport_offset: tuple[int, int]
+    viewport_size: tuple[int, int]
+    map_size: tuple[int, int]
+    sky_exposure_threshold: float
+    sky_exposure_texture: wgpu.GPUTexture | None
+    explored_texture: wgpu.GPUTexture | None
+    visible_texture: wgpu.GPUTexture | None
+    noise_scale: float
+    noise_threshold_low: float
+    noise_threshold_high: float
+    strength: float
+    tint_color: tuple[int, int, int]
+    drift_offset: tuple[float, float]
+    turbulence_offset: float
+    turbulence_strength: float
+    turbulence_scale: float
+    blend_mode: str
+    pixel_bounds: tuple[int, int, int, int]
 
 
 def _infer_compose_tile_dimensions(
@@ -87,12 +114,13 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         self.resource_manager: WGPUResourceManager | None = None
         self.shader_manager: WGPUShaderManager | None = None
 
-        # Atlas texture and UV mapping
+        # Atlas texture manager (initialized after resource manager).
+        # The three texture attributes below are copied from the manager in
+        # _initialize() so the rest of the class can access them directly.
+        self._atlas_manager: WGPUAtlasManager | None = None
         self.atlas_texture: wgpu.GPUTexture | None = None
         self.outlined_atlas_texture: wgpu.GPUTexture | None = None
         self.blurred_atlas_texture: wgpu.GPUTexture | None = None
-        self.uv_map: np.ndarray | None = None
-        self._atlas_pixels: np.ndarray | None = None
 
         # Screen renderer
         self.screen_renderer: WGPUScreenRenderer | None = None
@@ -109,7 +137,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         self.atmospheric_renderer: WGPUAtmosphericRenderer | None = None
         self.light_overlay_composer: WGPULightOverlayComposer | None = None
         # Queued atmospheric layers for this frame
-        self._atmospheric_layers: list[tuple] = []
+        self._atmospheric_layers: list[AtmosphericLayerState] = []
         self._gpu_actor_lighting_enabled = False
 
         # Letterbox/viewport state
@@ -149,10 +177,11 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         # Define surface format for renderer initialization
         surface_format = wgpu.TextureFormat.bgra8unorm
 
-        # Load atlas texture and prepare UV mapping
-        self.atlas_texture = self._load_atlas_texture()
-        self.outlined_atlas_texture = self._load_outlined_atlas_texture()
-        self.blurred_atlas_texture = self._create_blurred_atlas_texture()
+        # Load atlas textures and prepare UV mapping
+        self._atlas_manager = WGPUAtlasManager(self.resource_manager)
+        self.atlas_texture = self._atlas_manager.atlas_texture
+        self.outlined_atlas_texture = self._atlas_manager.outlined_atlas_texture
+        self.blurred_atlas_texture = self._atlas_manager.blurred_atlas_texture
         self.uv_map = self._precalculate_uv_map()
 
         # Initialize all renderers
@@ -806,49 +835,29 @@ class WGPUGraphicsContext(BaseGraphicsContext):
                     int(window_size[0]),
                     int(window_size[1]),
                 )
-                for layer_state in self._atmospheric_layers:
-                    (
-                        viewport_offset,
-                        viewport_size,
-                        map_size,
-                        sky_exposure_threshold,
-                        sky_exposure_texture,
-                        explored_texture,
-                        visible_texture,
-                        noise_scale,
-                        noise_threshold_low,
-                        noise_threshold_high,
-                        strength,
-                        tint_color,
-                        drift_offset,
-                        turbulence_offset,
-                        turbulence_strength,
-                        turbulence_scale,
-                        blend_mode,
-                        pixel_bounds,
-                    ) = layer_state
+                for layer in self._atmospheric_layers:
                     self.atmospheric_renderer.render(
                         render_pass,
                         window_size,
                         letterbox,
-                        viewport_offset,
-                        viewport_size,
-                        map_size,
-                        sky_exposure_threshold,
-                        sky_exposure_texture,
-                        explored_texture,
-                        visible_texture,
-                        noise_scale,
-                        noise_threshold_low,
-                        noise_threshold_high,
-                        strength,
-                        tint_color,
-                        drift_offset,
-                        turbulence_offset,
-                        turbulence_strength,
-                        turbulence_scale,
-                        blend_mode,
-                        pixel_bounds,
+                        layer.viewport_offset,
+                        layer.viewport_size,
+                        layer.map_size,
+                        layer.sky_exposure_threshold,
+                        layer.sky_exposure_texture,
+                        layer.explored_texture,
+                        layer.visible_texture,
+                        layer.noise_scale,
+                        layer.noise_threshold_low,
+                        layer.noise_threshold_high,
+                        layer.strength,
+                        layer.tint_color,
+                        layer.drift_offset,
+                        layer.turbulence_offset,
+                        layer.turbulence_strength,
+                        layer.turbulence_scale,
+                        layer.blend_mode,
+                        layer.pixel_bounds,
                     )
 
             # Then render environmental effects (discrete effects like smoke puffs)
@@ -1108,87 +1117,6 @@ class WGPUGraphicsContext(BaseGraphicsContext):
             texture_format="rgba8unorm",
         )
 
-    # --- Atlas Texture Loading Methods ---
-
-    def _load_atlas_texture(self) -> wgpu.GPUTexture:
-        """Loads the tileset PNG and creates a WGPU texture."""
-        if self.resource_manager is None:
-            raise RuntimeError("Resource manager not initialized")
-
-        img = PILImage.open(str(config.TILESET_PATH)).convert("RGBA")
-        pixels = np.array(img, dtype="u1")
-
-        # Handle magenta transparency (same as ModernGL version)
-        magenta_mask = (
-            (pixels[:, :, 0] == 255) & (pixels[:, :, 1] == 0) & (pixels[:, :, 2] == 255)
-        )
-        pixels[magenta_mask, 3] = 0
-
-        # Store pixels for outlined atlas generation
-        self._atlas_pixels = pixels
-
-        # Create WGPU texture using resource manager
-        return self.resource_manager.create_atlas_texture(
-            width=img.size[0],
-            height=img.size[1],
-            data=pixels.tobytes(),
-            texture_format="rgba8unorm",
-        )
-
-    def _load_outlined_atlas_texture(self) -> wgpu.GPUTexture | None:
-        """Creates an outlined version of the tileset atlas.
-
-        Uses the derive_outlined_atlas utility to create a tileset where each
-        glyph is replaced with just its 1-pixel outline. The outline is white
-        so it can be tinted to any color at render time.
-
-        Returns None if required resources are not available (e.g., in tests).
-        """
-        if self.resource_manager is None or self._atlas_pixels is None:
-            return None
-
-        # Calculate tile dimensions from the atlas
-        height, width = self._atlas_pixels.shape[:2]
-        tile_width = width // config.TILESET_COLUMNS
-        tile_height = height // config.TILESET_ROWS
-
-        # Generate the outlined atlas in white so it can be tinted to any color
-        outlined_pixels = derive_outlined_atlas(
-            self._atlas_pixels,
-            tile_width,
-            tile_height,
-            config.TILESET_COLUMNS,
-            config.TILESET_ROWS,
-            color=(255, 255, 255, 255),
-        )
-
-        # Create WGPU texture using resource manager
-        return self.resource_manager.create_atlas_texture(
-            width=width,
-            height=height,
-            data=outlined_pixels.tobytes(),
-            texture_format="rgba8unorm",
-        )
-
-    def _create_blurred_atlas_texture(self) -> wgpu.GPUTexture:
-        """Create a Gaussian-blurred copy of the tileset atlas for soft shadows."""
-        if self.resource_manager is None or self._atlas_pixels is None:
-            raise RuntimeError("Atlas pixels or resource manager not initialized")
-
-        height, width = self._atlas_pixels.shape[:2]
-        atlas_image = PILImage.fromarray(self._atlas_pixels, mode="RGBA")
-        blurred_image = atlas_image.filter(
-            ImageFilter.GaussianBlur(radius=config.ACTOR_SHADOW_BLUR_RADIUS)
-        )
-        blurred_pixels = np.array(blurred_image, dtype="u1")
-
-        return self.resource_manager.create_atlas_texture(
-            width=width,
-            height=height,
-            data=blurred_pixels.tobytes(),
-            texture_format="rgba8unorm",
-        )
-
     def _setup_coordinate_converter(self) -> None:
         """Set up the coordinate converter with letterbox scaled dimensions."""
         if self.letterbox_geometry is not None:
@@ -1248,25 +1176,25 @@ class WGPUGraphicsContext(BaseGraphicsContext):
     ) -> None:
         """Store atmospheric layer data for rendering this frame."""
         self._atmospheric_layers.append(
-            (
-                viewport_offset,
-                viewport_size,
-                map_size,
-                sky_exposure_threshold,
-                sky_exposure_texture,
-                explored_texture,
-                visible_texture,
-                noise_scale,
-                noise_threshold_low,
-                noise_threshold_high,
-                strength,
-                tint_color,
-                drift_offset,
-                turbulence_offset,
-                turbulence_strength,
-                turbulence_scale,
-                blend_mode,
-                pixel_bounds,
+            AtmosphericLayerState(
+                viewport_offset=viewport_offset,
+                viewport_size=viewport_size,
+                map_size=map_size,
+                sky_exposure_threshold=sky_exposure_threshold,
+                sky_exposure_texture=sky_exposure_texture,
+                explored_texture=explored_texture,
+                visible_texture=visible_texture,
+                noise_scale=noise_scale,
+                noise_threshold_low=noise_threshold_low,
+                noise_threshold_high=noise_threshold_high,
+                strength=strength,
+                tint_color=tint_color,
+                drift_offset=drift_offset,
+                turbulence_offset=turbulence_offset,
+                turbulence_strength=turbulence_strength,
+                turbulence_scale=turbulence_scale,
+                blend_mode=blend_mode,
+                pixel_bounds=pixel_bounds,
             )
         )
 
@@ -1334,10 +1262,10 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         self.atlas_texture = None
         self.outlined_atlas_texture = None
         self.blurred_atlas_texture = None
+        self._atlas_manager = None
         self.shader_manager = None
         self.resource_manager = None
         self._world_view_cpu_buffer = None
-        self._atlas_pixels = None
 
         # Let WGPU context cleanup happen naturally
         self.wgpu_context = None
