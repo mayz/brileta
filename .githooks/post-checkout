@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# post-checkout hook: auto-create venv in new worktrees.
+#
+# Args from git:
+#   $1 = previous HEAD
+#   $2 = new HEAD
+#   $3 = checkout type (1 = branch, 0 = file)
+#
+# When a worktree is created, $3 is 1 (branch checkout) and there's
+# typically no .venv yet. We run `uv sync` to bootstrap it.
+
+checkout_type="$3"
+
+# Only act on branch checkouts (not file checkouts).
+if [ "$checkout_type" != "1" ]; then
+    exit 0
+fi
+
+# Only run if there's no .venv yet (i.e., fresh worktree).
+if [ -d ".venv" ]; then
+    exit 0
+fi
+
+# Check that uv is available.
+if ! command -v uv >/dev/null 2>&1; then
+    echo "post-checkout: uv not found, skipping venv setup."
+    exit 0
+fi
+
+echo "post-checkout: No .venv found - running 'uv sync' to bootstrap..."
+uv sync
