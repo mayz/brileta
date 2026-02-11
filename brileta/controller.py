@@ -669,7 +669,7 @@ class Controller:
     def render_visual_frame(self, alpha: InterpolationAlpha) -> None:
         """Renders one visual frame with interpolation. Called by the App."""
         assert self.frame_manager is not None
-        with record_time_live_variable("time.render_ms"):
+        with record_time_live_variable("time.render.cpu_ms"):
             # Uses alpha to smoothly blend between prev_* and current
             self.frame_manager.render_frame(alpha)
 

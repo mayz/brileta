@@ -11,9 +11,9 @@ from brileta.util.metric_dump import PeriodicMetricLogger
 def test_parse_metric_names() -> None:
     assert _parse_metric_names(None) == ()
     assert _parse_metric_names("") == ()
-    assert _parse_metric_names("time.render_ms,time.total_ms") == (
+    assert _parse_metric_names("time.render.cpu_ms,time.render_ms") == (
+        "time.render.cpu_ms",
         "time.render_ms",
-        "time.total_ms",
     )
     assert _parse_metric_names(" a, , b ") == ("a", "b")
 

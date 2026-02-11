@@ -23,7 +23,7 @@ def main() -> None:
         default=None,
         help=(
             "Comma-separated live variable/metric names to append periodically, "
-            "e.g. 'time.render_ms,time.total_ms'."
+            "e.g. 'time.render.cpu_ms,time.render_ms'."
         ),
     )
     parser.add_argument(

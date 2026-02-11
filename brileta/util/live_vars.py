@@ -224,8 +224,8 @@ live_variable_registry = LiveVariableRegistry()
 
 # Timing helper for recording wall-clock time to a metric.
 # Works as both a context manager and a decorator:
-#   with record_time_live_variable("time.render_ms"): ...
-#   @record_time_live_variable("time.render_ms")
+#   with record_time_live_variable("time.render.cpu_ms"): ...
+#   @record_time_live_variable("time.render.cpu_ms")
 @contextmanager
 def record_time_live_variable(metric_name: str):
     """Record elapsed wall-clock time (ms) to the named metric.

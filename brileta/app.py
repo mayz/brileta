@@ -14,11 +14,33 @@ from brileta.util.live_vars import (
 from brileta.util.metric_dump import PeriodicMetricLogger
 from brileta.view.render.graphics import GraphicsContext
 
-# App-level metrics.
-_APP_METRICS: list[MetricSpec] = [
-    MetricSpec("time.total_ms", "Total time for one visual frame", 1000),
+# Timing metric hierarchy:
+#
+# time.total_ms                   = full loop iteration (logic + render + sync sleep)
+#   dev.fps                       = 1000 / mean(time.total_ms)
+# time.render_ms                  = visual frame (prepare + cpu + gpu)
+#   time.render.prepare_ms        = buffer resets
+#   time.render.cpu_ms            = CPU scene assembly
+#     time.render.light_overlay_ms, time.render.actors_smooth_ms, ...
+#                                   (sub-metrics declared in frame_manager.py)
+#   time.render.present_ms        = compositor present + buffer swap
+# time.logic_ms                   = game simulation (declared in controller.py)
+#   time.logic.animation_ms
+#   time.logic.action_ms
+#
+# Frame-phase metrics declared here. Sub-metrics live in their respective modules.
+_FRAME_METRICS: list[MetricSpec] = [
+    MetricSpec("time.total_ms", "Full loop iteration including sync sleep", 1000),
+    MetricSpec("time.render_ms", "Total visual frame time", 1000),
+    MetricSpec("time.render.prepare_ms", "Frame setup (buffer resets)", 500),
+    MetricSpec("time.render.cpu_ms", "CPU-side scene assembly", 500),
+    MetricSpec(
+        "time.render.present_ms",
+        "Compositor present and buffer swap",
+        500,
+    ),
 ]
-live_variable_registry.register_metrics(_APP_METRICS)
+live_variable_registry.register_metrics(_FRAME_METRICS)
 
 if TYPE_CHECKING:
     from brileta.controller import Controller
@@ -122,6 +144,9 @@ class App[TGraphics: GraphicsContext](ABC):
         """
         assert self.controller is not None
 
+        # Record total loop time from Clock's measured delta (includes sync sleep).
+        live_variable_registry.record_metric("time.total_ms", delta_time * 1000)
+
         # --- Player Action Processing (once per frame) ---
         # This ensures player actions are processed with zero latency,
         # independent of the fixed logic timestep.
@@ -207,10 +232,12 @@ class App[TGraphics: GraphicsContext](ABC):
         """
         assert self.controller is not None
 
-        with record_time_live_variable("time.total_ms"):
-            self.prepare_for_new_frame()
-            self.controller.render_visual_frame(alpha)
-            self.present_frame()
+        with record_time_live_variable("time.render_ms"):
+            with record_time_live_variable("time.render.prepare_ms"):
+                self.prepare_for_new_frame()
+            self.controller.render_visual_frame(alpha)  # wraps time.render.cpu_ms
+            with record_time_live_variable("time.render.present_ms"):
+                self.present_frame()
 
         self._maybe_dump_metrics()
 

@@ -51,9 +51,8 @@ from .views.world_view import WorldView
 if TYPE_CHECKING:
     from brileta.controller import Controller
 
-# Render metrics.
+# Render sub-metrics (time.render.cpu_ms parent is declared in app.py).
 _RENDER_METRICS: list[MetricSpec] = [
-    MetricSpec("time.render_ms", "Total rendering", 500),
     MetricSpec("time.render.light_overlay_ms", "Light overlay rendering"),
     MetricSpec(
         "time.render.light_overlay_gpu_compose_ms",
