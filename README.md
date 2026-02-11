@@ -1,6 +1,6 @@
 # Brileta
 
-Brileta is a Python game engine and sandbox for experimenting with game mechanics, graphics, and procedural generation. It has roguelike bones - glyph-based rendering, turn-based play, procedural worlds - backed by layered systems.
+Brileta is a Python game engine and sandbox for experimenting with game mechanics, graphics, and procedural generation. It has roguelike bones - glyph-based rendering, turn-based play, procedural worlds - backed by layered systems: WGPU-driven lighting, utility AI, composable world generation, and more.
 
 The current sandbox generates a settlement and drops you into it. Everything is deterministic from a single seed.
 
