@@ -1,28 +1,24 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from brileta import colors
 from brileta.events import MessageEvent, publish_event
 from brileta.game.actions.base import GameActionResult
 from brileta.game.actions.executors.base import ActionExecutor
+from brileta.game.actions.recovery import (
+    ComfortableSleepIntent,
+    RestIntent,
+    SleepIntent,
+    UseConsumableIntent,
+    UseConsumableOnTargetIntent,
+)
 from brileta.game.actors import Character, conditions
 from brileta.game.actors.components import CharacterInventory
 
-if TYPE_CHECKING:
-    from brileta.game.actions.recovery import (
-        ComfortableSleepIntent,
-        RestIntent,
-        SleepIntent,
-        UseConsumableIntent,
-        UseConsumableOnTargetIntent,
-    )
 
-
-class UseConsumableExecutor(ActionExecutor):
+class UseConsumableExecutor(ActionExecutor[UseConsumableIntent]):
     """Executes consumable item usage intents."""
 
-    def execute(self, intent: UseConsumableIntent) -> GameActionResult | None:  # type: ignore[override]
+    def execute(self, intent: UseConsumableIntent) -> GameActionResult | None:
         if not intent.item.consumable_effect:
             publish_event(
                 MessageEvent(f"{intent.item.name} cannot be used", colors.RED)
@@ -47,14 +43,14 @@ class UseConsumableExecutor(ActionExecutor):
         return GameActionResult()
 
 
-class UseConsumableOnTargetExecutor(ActionExecutor):
+class UseConsumableOnTargetExecutor(ActionExecutor[UseConsumableOnTargetIntent]):
     """Executes consumable item usage on another character.
 
     Similar to UseConsumableExecutor but applies the effect to a target character
     rather than the actor themselves. Validates adjacency before use.
     """
 
-    def execute(self, intent: UseConsumableOnTargetIntent) -> GameActionResult | None:  # type: ignore[override]
+    def execute(self, intent: UseConsumableOnTargetIntent) -> GameActionResult | None:
         from brileta.game import ranges
 
         if not intent.item.consumable_effect:
@@ -109,7 +105,7 @@ class UseConsumableOnTargetExecutor(ActionExecutor):
         return GameActionResult()
 
 
-class RestExecutor(ActionExecutor):
+class RestExecutor(ActionExecutor[RestIntent]):
     """Executes rest intents for outfit AP recovery.
 
     Rest recovers 1 AP if:
@@ -120,7 +116,7 @@ class RestExecutor(ActionExecutor):
     Broken armor requires repair, not rest.
     """
 
-    def execute(self, intent: RestIntent) -> GameActionResult | None:  # type: ignore[override]
+    def execute(self, intent: RestIntent) -> GameActionResult | None:
         from brileta.game import outfit
         from brileta.game.actions.recovery import is_safe_location
 
@@ -165,10 +161,10 @@ class RestExecutor(ActionExecutor):
         return GameActionResult()
 
 
-class SleepExecutor(ActionExecutor):
+class SleepExecutor(ActionExecutor[SleepIntent]):
     """Executes sleep intents for HP restoration and exhaustion removal."""
 
-    def execute(self, intent: SleepIntent) -> GameActionResult | None:  # type: ignore[override]
+    def execute(self, intent: SleepIntent) -> GameActionResult | None:
         from brileta.game.actions.recovery import is_safe_location
 
         assert isinstance(intent.actor, Character)
@@ -192,10 +188,10 @@ class SleepExecutor(ActionExecutor):
         return GameActionResult()
 
 
-class ComfortableSleepExecutor(ActionExecutor):
+class ComfortableSleepExecutor(ActionExecutor[ComfortableSleepIntent]):
     """Executes comfortable sleep intents for full exhaustion removal."""
 
-    def execute(self, intent: ComfortableSleepIntent) -> GameActionResult | None:  # type: ignore[override]
+    def execute(self, intent: ComfortableSleepIntent) -> GameActionResult | None:
         from brileta.game.actions.recovery import is_safe_location
 
         assert isinstance(intent.actor, Character)

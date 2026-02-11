@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from brileta import colors
 from brileta.constants.combat import CombatConstants as Combat
@@ -19,6 +19,7 @@ from brileta.events import (
 )
 from brileta.game import ranges
 from brileta.game.actions.base import GameActionResult
+from brileta.game.actions.combat import AttackIntent, ReloadIntent
 from brileta.game.actions.executors.base import ActionExecutor
 from brileta.game.actors import Character, status_effects
 from brileta.game.actors.ai import escalate_hostility
@@ -39,14 +40,11 @@ from brileta.sound.weapon_sounds import get_reload_sound_id, get_weapon_sound_id
 from brileta.types import DeltaTime
 from brileta.view.presentation import PresentationEvent
 
-if TYPE_CHECKING:
-    from brileta.game.actions.combat import AttackIntent, ReloadIntent
 
-
-class AttackExecutor(ActionExecutor):
+class AttackExecutor(ActionExecutor[AttackIntent]):
     """Executes attack intents by applying all combat logic."""
 
-    def execute(self, intent: AttackIntent) -> GameActionResult | None:  # type: ignore[override]
+    def execute(self, intent: AttackIntent) -> GameActionResult | None:
         # Check for tile shot (no defender, but target coordinates set)
         if (
             intent.defender is None
@@ -901,10 +899,10 @@ class AttackExecutor(ActionExecutor):
         publish_event(ScreenShakeEvent(shake_intensity, DeltaTime(shake_duration)))
 
 
-class ReloadExecutor(ActionExecutor):
+class ReloadExecutor(ActionExecutor[ReloadIntent]):
     """Executes reload intents."""
 
-    def execute(self, intent: ReloadIntent) -> GameActionResult | None:  # type: ignore[override]
+    def execute(self, intent: ReloadIntent) -> GameActionResult | None:
         ranged_attack = intent.weapon.ranged_attack
         if not ranged_attack:
             return GameActionResult(succeeded=False)

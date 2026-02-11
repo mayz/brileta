@@ -2,20 +2,16 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from brileta import colors
 from brileta.events import ActorDeathEvent, MessageEvent, publish_event
 from brileta.game.actions.base import GameActionResult
+from brileta.game.actions.environmental import EnvironmentalDamageIntent
 from brileta.game.actions.executors.base import ActionExecutor
 from brileta.game.actors import Character
 from brileta.types import WorldTilePos
 
-if TYPE_CHECKING:
-    from brileta.game.actions.environmental import EnvironmentalDamageIntent
 
-
-class EnvironmentalDamageExecutor(ActionExecutor):
+class EnvironmentalDamageExecutor(ActionExecutor[EnvironmentalDamageIntent]):
     """Executes environmental damage intents from hazards like fire and radiation.
 
     This executor handles passive environmental damage sources that don't have
@@ -23,7 +19,7 @@ class EnvironmentalDamageExecutor(ActionExecutor):
     falling damage. For weapon-based area effects, use WeaponAreaEffectExecutor.
     """
 
-    def execute(self, intent: EnvironmentalDamageIntent) -> GameActionResult | None:  # type: ignore[override]
+    def execute(self, intent: EnvironmentalDamageIntent) -> GameActionResult | None:
         """Execute environmental damage by finding actors at coordinates."""
         if intent.damage_amount <= 0:
             return GameActionResult(succeeded=False)

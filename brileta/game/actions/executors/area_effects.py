@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from brileta import colors
 from brileta.constants.combat import CombatConstants as Combat
 from brileta.events import EffectEvent, MessageEvent, publish_event
 from brileta.game import ranges
+from brileta.game.actions.area_effects import AreaEffectIntent
 from brileta.game.actions.base import GameActionResult
 from brileta.game.actions.executors.base import ActionExecutor
 from brileta.game.actors import Character
@@ -14,16 +13,13 @@ from brileta.game.items.capabilities import AreaEffect, RangedAttack
 from brileta.game.items.properties import TacticalProperty, WeaponProperty
 from brileta.types import WorldTilePos
 
-if TYPE_CHECKING:
-    from brileta.game.actions.area_effects import AreaEffectIntent
-
 # Convenience type aliases for area-effect calculations
 Coord = WorldTilePos
 # Maps an (x, y) tile coordinate to the distance from the effect's origin.
 DistanceByTile = dict[Coord, int]
 
 
-class WeaponAreaEffectExecutor(ActionExecutor):
+class WeaponAreaEffectExecutor(ActionExecutor[AreaEffectIntent]):
     """Executes weapon-based area effect intents like grenades and flamethrowers.
 
     This executor handles area-of-effect attacks that originate from weapons,
@@ -31,7 +27,7 @@ class WeaponAreaEffectExecutor(ActionExecutor):
     For environmental damage (fire, radiation zones), use EnvironmentalDamageExecutor.
     """
 
-    def execute(self, intent: AreaEffectIntent) -> GameActionResult | None:  # type: ignore[override]
+    def execute(self, intent: AreaEffectIntent) -> GameActionResult | None:
         effect = intent.weapon.area_effect
         if effect is None:
             return GameActionResult(succeeded=False)

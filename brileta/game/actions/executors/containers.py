@@ -2,16 +2,12 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from brileta.game.actions.base import GameActionResult
+from brileta.game.actions.environment import SearchContainerIntent
 from brileta.game.actions.executors.base import ActionExecutor
 
-if TYPE_CHECKING:
-    from brileta.game.actions.environment import SearchContainerIntent
 
-
-class SearchContainerExecutor(ActionExecutor):
+class SearchContainerExecutor(ActionExecutor[SearchContainerIntent]):
     """Opens the loot UI for searching a container or corpse.
 
     This executor handles the SearchContainerIntent by opening the DualPaneMenu
@@ -19,7 +15,7 @@ class SearchContainerExecutor(ActionExecutor):
     item transfer between the player's inventory and the container/corpse.
     """
 
-    def execute(self, intent: SearchContainerIntent) -> GameActionResult:  # type: ignore[override]
+    def execute(self, intent: SearchContainerIntent) -> GameActionResult:
         """Execute the search action by opening the loot UI.
 
         Args:

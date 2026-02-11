@@ -7,8 +7,6 @@ using opposed stat checks rather than weapon attacks.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from brileta import colors
 from brileta.constants.combat import CombatConstants as Combat
 from brileta.events import (
@@ -19,6 +17,14 @@ from brileta.events import (
 )
 from brileta.game.actions.base import GameActionResult
 from brileta.game.actions.executors.base import ActionExecutor
+from brileta.game.actions.executors.displacement import attempt_displacement
+from brileta.game.actions.stunts import (
+    HolsterWeaponIntent,
+    KickIntent,
+    PunchIntent,
+    PushIntent,
+    TripIntent,
+)
 from brileta.game.actors.ai import escalate_hostility
 from brileta.game.actors.status_effects import (
     OffBalanceEffect,
@@ -28,17 +34,8 @@ from brileta.game.actors.status_effects import (
 from brileta.game.enums import OutcomeTier
 from brileta.util.dice import roll_d
 
-if TYPE_CHECKING:
-    from brileta.game.actions.stunts import (
-        HolsterWeaponIntent,
-        KickIntent,
-        PunchIntent,
-        PushIntent,
-        TripIntent,
-    )
 
-
-class PushExecutor(ActionExecutor):
+class PushExecutor(ActionExecutor[PushIntent]):
     """Executes push stunt intents.
 
     Push is a Strength vs Strength opposed check that moves an adjacent target
@@ -46,7 +43,7 @@ class PushExecutor(ActionExecutor):
     when pushed into walls, hazards, or other actors.
     """
 
-    def execute(self, intent: PushIntent) -> GameActionResult | None:  # type: ignore[override]
+    def execute(self, intent: PushIntent) -> GameActionResult | None:
         """Execute a push attempt.
 
         Resolution:
@@ -86,7 +83,9 @@ class PushExecutor(ActionExecutor):
         # 3. Handle outcome tiers
         match result.outcome_tier:
             case OutcomeTier.CRITICAL_SUCCESS:
-                pushed = self._attempt_push(intent, dx, dy)
+                pushed = attempt_displacement(
+                    intent.controller, intent.defender, dx, dy
+                )
                 intent.defender.status_effects.apply_status_effect(TrippedEffect())
                 atk_name = intent.attacker.name
                 def_name = intent.defender.name
@@ -111,7 +110,9 @@ class PushExecutor(ActionExecutor):
                 )
 
             case OutcomeTier.SUCCESS:
-                pushed = self._attempt_push(intent, dx, dy)
+                pushed = attempt_displacement(
+                    intent.controller, intent.defender, dx, dy
+                )
                 # Apply StaggeredEffect - defender is disoriented and skips
                 # their next action. This prevents them from immediately
                 # walking back to their original position.
@@ -139,7 +140,9 @@ class PushExecutor(ActionExecutor):
                 )
 
             case OutcomeTier.PARTIAL_SUCCESS:
-                pushed = self._attempt_push(intent, dx, dy)
+                pushed = attempt_displacement(
+                    intent.controller, intent.defender, dx, dy
+                )
                 intent.attacker.status_effects.apply_status_effect(OffBalanceEffect())
                 atk_name = intent.attacker.name
                 def_name = intent.defender.name
@@ -187,117 +190,8 @@ class PushExecutor(ActionExecutor):
         # Fallback (should never reach)
         return GameActionResult(succeeded=False, duration_ms=Combat.STUNT_DURATION_MS)
 
-    def _attempt_push(self, intent: PushIntent, dx: int, dy: int) -> bool:
-        """Attempt to push the defender in the given direction.
 
-        Handles environmental interactions based on probe_step result:
-        - WALL / CLOSED_DOOR: 1d4 impact damage + OffBalanceEffect, no movement
-        - BLOCKED_BY_ACTOR / BLOCKED_BY_CONTAINER: Both actors get OffBalanceEffect
-        - OUT_OF_BOUNDS: No movement, no side effects
-        - None (clear): Movement succeeds, hazard damage applied via turn system
-
-        Args:
-            intent: The push intent with attacker, defender, and controller.
-            dx: X direction of push (from attacker to defender).
-            dy: Y direction of push (from attacker to defender).
-
-        Returns:
-            True if the defender was moved, False otherwise.
-        """
-        from brileta.game.enums import StepBlock
-        from brileta.util.pathfinding import probe_step
-
-        game_map = intent.controller.gw.game_map
-        dest_x = intent.defender.x + dx
-        dest_y = intent.defender.y + dy
-
-        block = probe_step(game_map, intent.controller.gw, dest_x, dest_y)
-        match block:
-            case None:
-                # Clear destination - execute the push
-                intent.defender.move(dx, dy, intent.controller)
-                self._check_hazard_landing(intent, dest_x, dest_y)
-                return True
-            case StepBlock.WALL | StepBlock.CLOSED_DOOR:
-                self._handle_wall_impact(intent)
-                return False
-            case StepBlock.BLOCKED_BY_ACTOR | StepBlock.BLOCKED_BY_CONTAINER:
-                blocking_actor = intent.controller.gw.get_actor_at_location(
-                    dest_x, dest_y
-                )
-                self._handle_actor_collision(intent, blocking_actor)
-                return False
-            case _:  # OUT_OF_BOUNDS or any future variant
-                return False
-
-    def _handle_wall_impact(self, intent: PushIntent) -> None:
-        """Handle a defender being pushed into a wall.
-
-        Deals 1d4 impact damage and applies OffBalanceEffect.
-        """
-        impact_damage = roll_d(4)
-        intent.defender.take_damage(impact_damage, damage_type="impact")
-        intent.defender.status_effects.apply_status_effect(OffBalanceEffect())
-
-        def_name = intent.defender.name
-        msg = f"{def_name} slams into the wall for {impact_damage} damage!"
-        publish_event(MessageEvent(msg, colors.WHITE))
-
-    def _handle_actor_collision(
-        self, intent: PushIntent, blocking_actor: object
-    ) -> None:
-        """Handle a defender being pushed into another actor.
-
-        Both the defender and the blocking actor become Off-Balance.
-        """
-        from brileta.game.actors import Character
-
-        intent.defender.status_effects.apply_status_effect(OffBalanceEffect())
-
-        # Apply OffBalance to the blocking actor if it's a Character
-        if isinstance(blocking_actor, Character):
-            blocking_actor.status_effects.apply_status_effect(OffBalanceEffect())
-            publish_event(
-                MessageEvent(
-                    f"{intent.defender.name} collides with {blocking_actor.name}! "
-                    f"Both are off-balance!",
-                    colors.LIGHT_BLUE,
-                )
-            )
-        else:
-            publish_event(
-                MessageEvent(
-                    f"{intent.defender.name} is pushed but collides with something!",
-                    colors.LIGHT_BLUE,
-                )
-            )
-
-    def _check_hazard_landing(self, intent: PushIntent, x: int, y: int) -> None:
-        """Log a message if the defender landed on a hazard tile.
-
-        The actual hazard damage is applied by the turn system when
-        the defender's turn ends on the hazard tile.
-        """
-        from brileta.environment.tile_types import (
-            get_tile_hazard_info,
-            get_tile_type_name_by_id,
-        )
-
-        game_map = intent.controller.gw.game_map
-        tile_id = int(game_map.tiles[x, y])
-        damage_dice, _damage_type = get_tile_hazard_info(tile_id)
-
-        if damage_dice:
-            tile_name = get_tile_type_name_by_id(tile_id)
-            publish_event(
-                MessageEvent(
-                    f"{intent.defender.name} lands in the {tile_name.lower()}!",
-                    colors.ORANGE,
-                )
-            )
-
-
-class TripExecutor(ActionExecutor):
+class TripExecutor(ActionExecutor[TripIntent]):
     """Executes trip stunt intents.
 
     Trip is an Agility vs Agility opposed check that causes the target to
@@ -305,7 +199,7 @@ class TripExecutor(ActionExecutor):
     applies TrippedEffect on any success (not just critical).
     """
 
-    def execute(self, intent: TripIntent) -> GameActionResult | None:  # type: ignore[override]
+    def execute(self, intent: TripIntent) -> GameActionResult | None:
         """Execute a trip attempt.
 
         Resolution:
@@ -442,7 +336,7 @@ class TripExecutor(ActionExecutor):
         return GameActionResult(succeeded=False, duration_ms=Combat.STUNT_DURATION_MS)
 
 
-class KickExecutor(ActionExecutor):
+class KickExecutor(ActionExecutor[KickIntent]):
     """Executes kick stunt intents.
 
     Kick is a Strength vs Agility opposed check that deals damage and pushes
@@ -450,7 +344,7 @@ class KickExecutor(ActionExecutor):
     It's the offensive alternative to Push - trading control for damage.
     """
 
-    def execute(self, intent: KickIntent) -> GameActionResult | None:  # type: ignore[override]
+    def execute(self, intent: KickIntent) -> GameActionResult | None:
         """Execute a kick attempt.
 
         Resolution:
@@ -496,7 +390,9 @@ class KickExecutor(ActionExecutor):
                 # Damage + push + trip
                 damage = roll_d(4)
                 intent.defender.take_damage(damage, damage_type="impact")
-                pushed = self._attempt_push(intent, dx, dy)
+                pushed = attempt_displacement(
+                    intent.controller, intent.defender, dx, dy
+                )
                 intent.defender.status_effects.apply_status_effect(TrippedEffect())
                 publish_event(
                     FloatingTextEvent(
@@ -527,7 +423,9 @@ class KickExecutor(ActionExecutor):
                 # Damage + push
                 damage = roll_d(4)
                 intent.defender.take_damage(damage, damage_type="impact")
-                pushed = self._attempt_push(intent, dx, dy)
+                pushed = attempt_displacement(
+                    intent.controller, intent.defender, dx, dy
+                )
                 publish_event(
                     FloatingTextEvent(
                         text="KICKED",
@@ -551,7 +449,9 @@ class KickExecutor(ActionExecutor):
                 # Damage + push, but attacker stumbles
                 damage = roll_d(4)
                 intent.defender.take_damage(damage, damage_type="impact")
-                pushed = self._attempt_push(intent, dx, dy)
+                pushed = attempt_displacement(
+                    intent.controller, intent.defender, dx, dy
+                )
                 intent.attacker.status_effects.apply_status_effect(OffBalanceEffect())
                 publish_event(
                     FloatingTextEvent(
@@ -610,124 +510,15 @@ class KickExecutor(ActionExecutor):
         # Fallback (should never reach)
         return GameActionResult(succeeded=False, duration_ms=Combat.STUNT_DURATION_MS)
 
-    def _attempt_push(self, intent: KickIntent, dx: int, dy: int) -> bool:
-        """Attempt to push the defender in the given direction.
 
-        Handles environmental interactions based on probe_step result:
-        - WALL / CLOSED_DOOR: 1d4 impact damage + OffBalanceEffect, no movement
-        - BLOCKED_BY_ACTOR / BLOCKED_BY_CONTAINER: Both actors get OffBalanceEffect
-        - OUT_OF_BOUNDS: No movement, no side effects
-        - None (clear): Movement succeeds, hazard damage applied via turn system
-
-        Args:
-            intent: The kick intent with attacker, defender, and controller.
-            dx: X direction of push (from attacker to defender).
-            dy: Y direction of push (from attacker to defender).
-
-        Returns:
-            True if the defender was moved, False otherwise.
-        """
-        from brileta.game.enums import StepBlock
-        from brileta.util.pathfinding import probe_step
-
-        game_map = intent.controller.gw.game_map
-        dest_x = intent.defender.x + dx
-        dest_y = intent.defender.y + dy
-
-        block = probe_step(game_map, intent.controller.gw, dest_x, dest_y)
-        match block:
-            case None:
-                # Clear destination - execute the push
-                intent.defender.move(dx, dy, intent.controller)
-                self._check_hazard_landing(intent, dest_x, dest_y)
-                return True
-            case StepBlock.WALL | StepBlock.CLOSED_DOOR:
-                self._handle_wall_impact(intent)
-                return False
-            case StepBlock.BLOCKED_BY_ACTOR | StepBlock.BLOCKED_BY_CONTAINER:
-                blocking_actor = intent.controller.gw.get_actor_at_location(
-                    dest_x, dest_y
-                )
-                self._handle_actor_collision(intent, blocking_actor)
-                return False
-            case _:  # OUT_OF_BOUNDS or any future variant
-                return False
-
-    def _handle_wall_impact(self, intent: KickIntent) -> None:
-        """Handle a defender being kicked into a wall.
-
-        Deals 1d4 impact damage and applies OffBalanceEffect.
-        """
-        impact_damage = roll_d(4)
-        intent.defender.take_damage(impact_damage, damage_type="impact")
-        intent.defender.status_effects.apply_status_effect(OffBalanceEffect())
-
-        def_name = intent.defender.name
-        msg = f"{def_name} slams into the wall for {impact_damage} damage!"
-        publish_event(MessageEvent(msg, colors.WHITE))
-
-    def _handle_actor_collision(
-        self, intent: KickIntent, blocking_actor: object
-    ) -> None:
-        """Handle a defender being kicked into another actor.
-
-        Both the defender and the blocking actor become Off-Balance.
-        """
-        from brileta.game.actors import Character
-
-        intent.defender.status_effects.apply_status_effect(OffBalanceEffect())
-
-        # Apply OffBalance to the blocking actor if it's a Character
-        if isinstance(blocking_actor, Character):
-            blocking_actor.status_effects.apply_status_effect(OffBalanceEffect())
-            publish_event(
-                MessageEvent(
-                    f"{intent.defender.name} collides with {blocking_actor.name}! "
-                    f"Both are off-balance!",
-                    colors.LIGHT_BLUE,
-                )
-            )
-        else:
-            publish_event(
-                MessageEvent(
-                    f"{intent.defender.name} is kicked but collides with something!",
-                    colors.LIGHT_BLUE,
-                )
-            )
-
-    def _check_hazard_landing(self, intent: KickIntent, x: int, y: int) -> None:
-        """Log a message if the defender landed on a hazard tile.
-
-        The actual hazard damage is applied by the turn system when
-        the defender's turn ends on the hazard tile.
-        """
-        from brileta.environment.tile_types import (
-            get_tile_hazard_info,
-            get_tile_type_name_by_id,
-        )
-
-        game_map = intent.controller.gw.game_map
-        tile_id = int(game_map.tiles[x, y])
-        damage_dice, _damage_type = get_tile_hazard_info(tile_id)
-
-        if damage_dice:
-            tile_name = get_tile_type_name_by_id(tile_id)
-            publish_event(
-                MessageEvent(
-                    f"{intent.defender.name} lands in the {tile_name.lower()}!",
-                    colors.ORANGE,
-                )
-            )
-
-
-class HolsterWeaponExecutor(ActionExecutor):
+class HolsterWeaponExecutor(ActionExecutor[HolsterWeaponIntent]):
     """Executes holster weapon intents.
 
     Moves the active weapon from the equipment slot to inventory. Used as a
     preparatory step in action plans requiring unarmed combat (e.g., PunchPlan).
     """
 
-    def execute(self, intent: HolsterWeaponIntent) -> GameActionResult | None:  # type: ignore[override]
+    def execute(self, intent: HolsterWeaponIntent) -> GameActionResult | None:
         """Execute a holster weapon action.
 
         If a weapon is equipped, unequips it to inventory and emits a message.
@@ -752,7 +543,7 @@ class HolsterWeaponExecutor(ActionExecutor):
         return GameActionResult(succeeded=True, duration_ms=Combat.HOLSTER_DURATION_MS)
 
 
-class PunchExecutor(ActionExecutor):
+class PunchExecutor(ActionExecutor[PunchIntent]):
     """Executes punch intents.
 
     Performs an unarmed punch attack using Fists (d3 damage). When used via
@@ -760,7 +551,7 @@ class PunchExecutor(ActionExecutor):
     step that precedes the punch.
     """
 
-    def execute(self, intent: PunchIntent) -> GameActionResult | None:  # type: ignore[override]
+    def execute(self, intent: PunchIntent) -> GameActionResult | None:
         """Execute a punch attack with Fists.
 
         Holstering is handled by a separate HolsterWeaponIntent step when using

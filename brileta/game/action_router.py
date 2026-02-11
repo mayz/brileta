@@ -8,7 +8,7 @@ pattern. It is the single point of entry for all game actions.
 from __future__ import annotations
 
 import time
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from brileta import colors
 from brileta.events import (
@@ -115,7 +115,7 @@ class ActionRouter:
         self._bark_block_until: dict[ActorId, float] = {}
         self._bark_cooldown_seconds = 0.25
         # This registry is the heart of the dispatcher.
-        self._executor_registry: dict[type, ActionExecutor] = {
+        self._executor_registry: dict[type[GameIntent], ActionExecutor[Any]] = {
             MoveIntent: MoveExecutor(),
             AttackIntent: AttackExecutor(),
             ReloadIntent: ReloadExecutor(),

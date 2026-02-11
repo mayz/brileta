@@ -1,21 +1,17 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from brileta import config
 from brileta.game.actions.base import GameActionResult
 from brileta.game.actions.executors.base import ActionExecutor
+from brileta.game.actions.movement import MoveIntent
 from brileta.game.enums import StepBlock
 from brileta.util.pathfinding import probe_step
 
-if TYPE_CHECKING:
-    from brileta.game.actions.movement import MoveIntent
 
-
-class MoveExecutor(ActionExecutor):
+class MoveExecutor(ActionExecutor[MoveIntent]):
     """Executes movement intents by reporting movement results and collisions."""
 
-    def execute(self, intent: MoveIntent) -> GameActionResult | None:  # type: ignore[override]
+    def execute(self, intent: MoveIntent) -> GameActionResult | None:
         game_map = intent.controller.gw.game_map
         game_world = intent.controller.gw
 

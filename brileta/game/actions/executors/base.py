@@ -1,15 +1,11 @@
 from __future__ import annotations
 
 import abc
-from typing import TYPE_CHECKING
 
-from brileta.game.actions.base import GameActionResult
-
-if TYPE_CHECKING:
-    from brileta.game.actions.base import GameIntent
+from brileta.game.actions.base import GameActionResult, GameIntent
 
 
-class ActionExecutor(abc.ABC):
+class ActionExecutor[IntentT: GameIntent](abc.ABC):
     """
     Base class for action executors.
 
@@ -28,7 +24,7 @@ class ActionExecutor(abc.ABC):
     """
 
     @abc.abstractmethod
-    def execute(self, intent: GameIntent) -> GameActionResult | None:
+    def execute(self, intent: IntentT) -> GameActionResult | None:
         """Execute the given intent.
 
         Args:

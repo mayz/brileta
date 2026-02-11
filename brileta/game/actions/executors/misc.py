@@ -1,31 +1,27 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from brileta import colors
 from brileta.events import MessageEvent, publish_event
 from brileta.game.actions.base import GameActionResult
 from brileta.game.actions.executors.base import ActionExecutor
+from brileta.game.actions.misc import (
+    DropCountableIntent,
+    DropItemIntent,
+    PickupCountableIntent,
+    PickupIntent,
+    PickupItemsAtLocationIntent,
+    SwitchWeaponIntent,
+)
 from brileta.game.actors import Character, ItemPile
 from brileta.game.countables import get_countable_definition
 from brileta.game.items.item_core import Item
 from brileta.game.items.properties import WeaponProperty
 
-if TYPE_CHECKING:
-    from brileta.game.actions.misc import (
-        DropCountableIntent,
-        DropItemIntent,
-        PickupCountableIntent,
-        PickupIntent,
-        PickupItemsAtLocationIntent,
-        SwitchWeaponIntent,
-    )
 
-
-class PickupExecutor(ActionExecutor):
+class PickupExecutor(ActionExecutor[PickupIntent]):
     """Executes pickup intents by adding items to actor inventory."""
 
-    def execute(self, intent: PickupIntent) -> GameActionResult | None:  # type: ignore[override]
+    def execute(self, intent: PickupIntent) -> GameActionResult | None:
         """Pick up items from the ground, removing them from source actors."""
         actor_inv = getattr(intent.actor, "inventory", None)
         if actor_inv is None:
@@ -105,10 +101,10 @@ class PickupExecutor(ActionExecutor):
         return False
 
 
-class PickupItemsAtLocationExecutor(ActionExecutor):
+class PickupItemsAtLocationExecutor(ActionExecutor[PickupItemsAtLocationIntent]):
     """Executes pickup at location intents by opening the pickup menu."""
 
-    def execute(self, intent: PickupItemsAtLocationIntent) -> GameActionResult | None:  # type: ignore[override]
+    def execute(self, intent: PickupItemsAtLocationIntent) -> GameActionResult | None:
         """Open the pickup menu UI for items at the actor's location."""
         from brileta.game.actors.container import ItemPile
         from brileta.view.ui.commands import OpenExistingMenuUICommand
@@ -138,10 +134,10 @@ class PickupItemsAtLocationExecutor(ActionExecutor):
         return GameActionResult()
 
 
-class SwitchWeaponExecutor(ActionExecutor):
+class SwitchWeaponExecutor(ActionExecutor[SwitchWeaponIntent]):
     """Executes weapon switching intents."""
 
-    def execute(self, intent: SwitchWeaponIntent) -> GameActionResult | None:  # type: ignore[override]
+    def execute(self, intent: SwitchWeaponIntent) -> GameActionResult | None:
         inventory = getattr(intent.actor, "inventory", None)
         if inventory is not None and inventory.switch_to_slot(intent.slot):
             item = inventory.get_active_item()
@@ -150,13 +146,13 @@ class SwitchWeaponExecutor(ActionExecutor):
         return GameActionResult()
 
 
-class DropItemExecutor(ActionExecutor):
+class DropItemExecutor(ActionExecutor[DropItemIntent]):
     """Executes drop item intents.
 
     Removes items from inventory and places them on the ground.
     """
 
-    def execute(self, intent: DropItemIntent) -> GameActionResult | None:  # type: ignore[override]
+    def execute(self, intent: DropItemIntent) -> GameActionResult | None:
         """Drop an item from inventory to the ground at actor's location."""
         inventory = getattr(intent.actor, "inventory", None)
         if inventory is None:
@@ -174,10 +170,10 @@ class DropItemExecutor(ActionExecutor):
         return GameActionResult()
 
 
-class PickupCountableExecutor(ActionExecutor):
+class PickupCountableExecutor(ActionExecutor[PickupCountableIntent]):
     """Executes pickup countable intents."""
 
-    def execute(self, intent: PickupCountableIntent) -> GameActionResult | None:  # type: ignore[override]
+    def execute(self, intent: PickupCountableIntent) -> GameActionResult | None:
         """Pick up countables from the source inventory."""
         actor_inv = getattr(intent.actor, "inventory", None)
         if actor_inv is None:
@@ -202,10 +198,10 @@ class PickupCountableExecutor(ActionExecutor):
         return GameActionResult(succeeded=False)
 
 
-class DropCountableExecutor(ActionExecutor):
+class DropCountableExecutor(ActionExecutor[DropCountableIntent]):
     """Executes drop countable intents by placing countables on the ground."""
 
-    def execute(self, intent: DropCountableIntent) -> GameActionResult | None:  # type: ignore[override]
+    def execute(self, intent: DropCountableIntent) -> GameActionResult | None:
         """Drop countables from inventory to the ground at actor's location."""
         inventory = getattr(intent.actor, "inventory", None)
         if inventory is None:
