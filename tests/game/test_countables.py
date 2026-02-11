@@ -29,6 +29,7 @@ from brileta.game.countables import (
 from brileta.game.enums import ItemSize
 from brileta.game.items.item_core import Item, ItemType
 from brileta.view.ui.inventory.dual_pane_menu import group_items_for_display
+from tests.helpers import make_item
 
 # =============================================================================
 # HELPER FUNCTIONS
@@ -38,12 +39,6 @@ from brileta.view.ui.inventory.dual_pane_menu import group_items_for_display
 def make_stats(strength: int = 5, toughness: int = 5) -> StatsComponent:
     """Create a StatsComponent with specified or default stats."""
     return StatsComponent(strength=strength, toughness=toughness)
-
-
-def make_item(name: str = "Test Item", size: ItemSize = ItemSize.NORMAL) -> Item:
-    """Create a test item with the given name and size."""
-    item_type = ItemType(name=name, description="A test item", size=size)
-    return Item(item_type)
 
 
 def make_tiny_item(name: str = "Shell") -> Item:

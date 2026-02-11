@@ -38,7 +38,7 @@ from brileta.game.actors.status_effects import (
     StrengthBoostEffect,
 )
 from brileta.game.enums import InjuryLocation, ItemSize
-from brileta.game.items.item_core import Item, ItemType
+from tests.helpers import make_item
 
 # =============================================================================
 # HELPER FUNCTIONS
@@ -64,11 +64,6 @@ def make_stats(
         demeanor=demeanor,
         weirdness=weirdness,
     )
-
-
-def make_item(name: str = "Test Item", size: ItemSize = ItemSize.NORMAL) -> Item:
-    """Create a test item with the given name and size."""
-    return Item(ItemType(name=name, description="A test item", size=size))
 
 
 def make_mock_actor(

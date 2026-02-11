@@ -15,8 +15,9 @@ from brileta.environment.generators import GeneratedMapData
 from brileta.environment.map import GameMap, MapRegion
 from brileta.environment.tile_types import TileTypeID
 from brileta.game.actors import PC, Actor, Character
+from brileta.game.enums import ItemSize
 from brileta.game.item_spawner import ItemSpawner
-from brileta.game.items.item_core import Item
+from brileta.game.items.item_core import Item, ItemType
 from brileta.types import ActorId, WorldTileCoord
 from brileta.util.spatial import SpatialHashGrid
 from brileta.view.render.graphics import GraphicsContext
@@ -51,6 +52,11 @@ class DummyOverlay:
 def reset_actor_id_counter(start: int = 1) -> None:
     """Reset Actor._next_actor_id for test isolation."""
     Actor._next_actor_id = ActorId(start)
+
+
+def make_item(name: str = "Test Item", size: ItemSize = ItemSize.NORMAL) -> Item:
+    """Create a simple test item with the given name and size."""
+    return Item(ItemType(name=name, description="A test item", size=size))
 
 
 def _make_renderer(tile_height: int = 16) -> GraphicsContext:

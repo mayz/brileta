@@ -12,11 +12,10 @@ from brileta.controller import Controller
 from brileta.game.actions.executors.misc import PickupExecutor
 from brileta.game.actions.misc import PickupIntent
 from brileta.game.actors import Actor, Character, ItemPile
-from brileta.game.enums import ItemSize
 from brileta.game.game_world import GameWorld
-from brileta.game.items.item_core import Item, ItemType
+from brileta.game.items.item_core import Item
 from brileta.game.turn_manager import TurnManager
-from tests.helpers import DummyGameWorld
+from tests.helpers import DummyGameWorld, make_item
 
 
 @dataclass
@@ -30,12 +29,6 @@ class DummyController:
         self.frame_manager = None
         self.message_log = None
         self.action_cost = 100
-
-
-def make_test_item(name: str = "Test Item") -> Item:
-    """Create a simple test item."""
-    item_type = ItemType(name=name, description="A test item", size=ItemSize.NORMAL)
-    return Item(item_type)
 
 
 def make_world_with_ground_item() -> tuple[DummyController, Character, Item, Character]:
@@ -54,7 +47,7 @@ def make_world_with_ground_item() -> tuple[DummyController, Character, Item, Cha
     gw.add_actor(player)
 
     # Create item
-    item = make_test_item("Rusty Knife")
+    item = make_item("Rusty Knife")
 
     # Create dead character holding the item at player's location
     dead_char = Character(
@@ -126,7 +119,7 @@ class TestPickupExecutorRemovesItemsFromSource:
 
         # Add a second item
         assert dead_actor.inventory is not None
-        item2 = make_test_item("Bent Fork")
+        item2 = make_item("Bent Fork")
         dead_actor.inventory.add_to_inventory(item2)
 
         # Verify both items are in dead actor's inventory
@@ -176,8 +169,8 @@ class TestPickupExecutorFeedback:
 
         # Add more items
         assert dead_actor.inventory is not None
-        item2 = make_test_item("Bent Fork")
-        item3 = make_test_item("Broken Glass")
+        item2 = make_item("Bent Fork")
+        item3 = make_item("Broken Glass")
         dead_actor.inventory.add_to_inventory(item2)
         dead_actor.inventory.add_to_inventory(item3)
 
@@ -204,7 +197,7 @@ class TestPickupExecutorFeedback:
         # Fill player's inventory
         player.stats.strength = 0  # Minimal slots (5)
         for i in range(player.inventory.total_inventory_slots + 1):
-            filler = make_test_item(f"Filler {i}")
+            filler = make_item(f"Filler {i}")
             player.inventory.add_to_inventory(filler)
 
         intent = PickupIntent(cast(Controller, controller), player, [item])
@@ -236,7 +229,7 @@ class TestPickupExecutorEdgeCases:
         gw.add_actor(actor)
 
         controller = DummyController(gw)
-        item = make_test_item()
+        item = make_item()
 
         # Note: PickupIntent expects Character but we're testing Actor edge case
         intent = PickupIntent(
@@ -255,12 +248,12 @@ class TestPickupExecutorEdgeCases:
         # Fill player's inventory almost completely
         player.stats.strength = 0  # Minimal slots (5)
         for i in range(4):  # Fill 4 of 5 slots
-            filler = make_test_item(f"Filler {i}")
+            filler = make_item(f"Filler {i}")
             player.inventory.add_to_inventory(filler)
 
         # Try to pick up two items when only one can fit
         assert dead_actor.inventory is not None
-        item2 = make_test_item("Second Item")
+        item2 = make_item("Second Item")
         dead_actor.inventory.add_to_inventory(item2)
 
         intent = PickupIntent(cast(Controller, controller), player, [item1, item2])
@@ -302,7 +295,7 @@ class TestPickupExecutorEdgeCases:
         gw.player = player
         gw.add_actor(player)
 
-        item = make_test_item()
+        item = make_item()
 
         # Create an item pile
         ground_container = ItemPile(

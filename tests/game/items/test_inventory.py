@@ -1,10 +1,6 @@
 from brileta.game.actors import components, conditions
 from brileta.game.enums import InjuryLocation, ItemSize
-from brileta.game.items.item_core import Item, ItemType
-
-
-def make_item(name: str, size: ItemSize) -> Item:
-    return Item(ItemType(name=name, description="", size=size))
+from tests.helpers import make_item
 
 
 def test_get_used_inventory_slots_and_tiny_sharing():

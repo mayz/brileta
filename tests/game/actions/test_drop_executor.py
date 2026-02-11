@@ -12,11 +12,10 @@ from brileta.controller import Controller
 from brileta.game.actions.executors.misc import DropItemExecutor
 from brileta.game.actions.misc import DropItemIntent
 from brileta.game.actors import Actor, Character
-from brileta.game.enums import ItemSize
 from brileta.game.game_world import GameWorld
-from brileta.game.items.item_core import Item, ItemType
+from brileta.game.items.item_core import Item
 from brileta.game.turn_manager import TurnManager
-from tests.helpers import DummyGameWorld
+from tests.helpers import DummyGameWorld, make_item
 
 
 @dataclass
@@ -30,12 +29,6 @@ class DummyController:
         self.frame_manager = None
         self.message_log = None
         self.action_cost = 100
-
-
-def make_test_item(name: str = "Test Item") -> Item:
-    """Create a simple test item."""
-    item_type = ItemType(name=name, description="A test item", size=ItemSize.NORMAL)
-    return Item(item_type)
 
 
 def make_player_with_item() -> tuple[DummyController, Character, Item]:
@@ -54,7 +47,7 @@ def make_player_with_item() -> tuple[DummyController, Character, Item]:
     gw.add_actor(player)
 
     # Create item and add to player's inventory
-    item = make_test_item("Rusty Knife")
+    item = make_item("Rusty Knife")
     player.inventory.add_to_inventory(item)
 
     controller = DummyController(gw)
@@ -153,7 +146,7 @@ class TestDropItemExecutorFeedback:
         controller, player, _item = make_player_with_item()
 
         # Create a different item that's not in inventory
-        missing_item = make_test_item("Ghost Item")
+        missing_item = make_item("Ghost Item")
 
         intent = DropItemIntent(cast(Controller, controller), player, missing_item)
         executor = DropItemExecutor()
@@ -186,7 +179,7 @@ class TestDropItemExecutorEdgeCases:
         gw.add_actor(actor)
 
         controller = DummyController(gw)
-        item = make_test_item()
+        item = make_item()
 
         # Note: DropItemIntent expects Character but we're testing Actor edge case
         intent = DropItemIntent(
@@ -209,7 +202,7 @@ class TestDropItemExecutorEdgeCases:
         gw.player = player
         gw.add_actor(player)
 
-        item = make_test_item("Position Test Item")
+        item = make_item("Position Test Item")
         player.inventory.add_to_inventory(item)
 
         controller = DummyController(gw)

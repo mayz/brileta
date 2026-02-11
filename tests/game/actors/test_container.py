@@ -15,18 +15,7 @@ from brileta.game.actors.container import (
     Container,
     create_bookcase,
 )
-from brileta.game.enums import ItemSize
-from brileta.game.items.item_core import Item, ItemType
-
-# =============================================================================
-# HELPER FUNCTIONS
-# =============================================================================
-
-
-def make_item(name: str = "Test Item", size: ItemSize = ItemSize.NORMAL) -> Item:
-    """Create a test item with the given name and size."""
-    return Item(ItemType(name=name, description="A test item", size=size))
-
+from tests.helpers import make_item
 
 # =============================================================================
 # CONTAINER STORAGE TESTS
