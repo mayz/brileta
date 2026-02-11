@@ -9,6 +9,7 @@ from brileta.events import reset_event_bus_for_testing
 from brileta.game.actions.executors.stunts import HolsterWeaponExecutor, PunchExecutor
 from brileta.game.actions.stunts import HolsterWeaponIntent, PunchIntent
 from brileta.game.actors import Character
+from brileta.game.enums import ActionBlockReason
 from brileta.game.game_world import GameWorld
 from brileta.game.items.item_types import COMBAT_KNIFE_TYPE, FISTS_TYPE
 from brileta.game.resolution.d20_system import D20System
@@ -253,7 +254,7 @@ def test_punch_fails_if_not_adjacent() -> None:
 
     assert result is not None
     assert not result.succeeded
-    assert result.block_reason == "not_adjacent"
+    assert result.block_reason == ActionBlockReason.NOT_ADJACENT
 
 
 def test_punch_works_diagonally(

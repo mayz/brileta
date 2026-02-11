@@ -27,7 +27,7 @@ from brileta.game.consequences import (
     AttackConsequenceGenerator,
     ConsequenceHandler,
 )
-from brileta.game.enums import OutcomeTier
+from brileta.game.enums import ActionBlockReason, OutcomeTier
 from brileta.game.items.capabilities import Attack
 from brileta.game.items.item_core import Item
 from brileta.game.items.item_types import FISTS_TYPE
@@ -60,6 +60,24 @@ class AttackExecutor(ActionExecutor[AttackIntent]):
         attack, weapon = self._determine_attack_method(intent)
         if not attack:
             return GameActionResult(succeeded=False)
+
+        # Melee plans rely on this explicit signal to rewind to ApproachStep
+        # when targets move away between approach and intent execution.
+        distance = ranges.calculate_distance(
+            intent.attacker.x,
+            intent.attacker.y,
+            intent.defender.x,
+            intent.defender.y,
+        )
+        if attack == weapon.melee_attack and distance > 1:
+            publish_event(
+                MessageEvent(
+                    f"Too far away for melee attack with {weapon.name}!", colors.RED
+                )
+            )
+            return GameActionResult(
+                succeeded=False, block_reason=ActionBlockReason.NOT_ADJACENT
+            )
 
         # 2. Validate the attack can be performed
         range_modifiers = self._validate_attack(intent, attack, weapon)
@@ -400,14 +418,6 @@ class AttackExecutor(ActionExecutor[AttackIntent]):
         )
 
         range_modifiers: dict[str, bool] = {}
-
-        if attack == weapon.melee_attack and distance > 1:
-            publish_event(
-                MessageEvent(
-                    f"Too far away for melee attack with {weapon.name}!", colors.RED
-                )
-            )
-            return None
 
         ranged_attack = weapon.ranged_attack
         if attack == ranged_attack and ranged_attack is not None:

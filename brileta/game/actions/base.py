@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING, Any
 
 from brileta.game.actions.types import AnimationType
 from brileta.game.consequences import Consequence
+from brileta.game.enums import ActionBlockReason, StepBlock
 
 if TYPE_CHECKING:
     from brileta.controller import Controller
@@ -58,12 +59,26 @@ class GameActionResult:
     succeeded: bool = True
     should_update_fov: bool = False
     blocked_by: Any | None = None
-    block_reason: str | None = None
+    block_reason: ActionBlockReason | None = None
+    step_block: StepBlock | None = None
     consequences: list[Consequence] = field(default_factory=list)
 
     # Action duration: how long (in milliseconds) before the next action
     # should be processed. 0 means immediate (no delay).
     duration_ms: int = 0
+
+    def __post_init__(self) -> None:
+        """Validate cross-field invariants for block metadata."""
+        if self.block_reason == ActionBlockReason.STEP_BLOCKED:
+            if self.step_block is None:
+                raise ValueError(
+                    "GameActionResult with STEP_BLOCKED requires step_block."
+                )
+            return
+        if self.step_block is not None:
+            raise ValueError(
+                "GameActionResult.step_block is only valid with STEP_BLOCKED."
+            )
 
 
 class GameIntent:

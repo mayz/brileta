@@ -35,6 +35,7 @@ from brileta import config
 from brileta.constants.movement import MovementConstants as Movement
 from brileta.game.action_router import ActionRouter
 from brileta.game.actions.base import GameActionResult, GameIntent
+from brileta.game.enums import ActionBlockReason
 from brileta.util.coordinates import WorldTilePos
 
 if TYPE_CHECKING:
@@ -66,6 +67,9 @@ class TurnManager:
        scheduling logic is encapsulated here.
     """
 
+    _MAX_ADJACENCY_REWINDS = 3
+    """Maximum chase rewinds for adjacency-required plans."""
+
     def __init__(self, controller: Controller) -> None:
         """Initialize the action scheduler with performance optimizations.
 
@@ -90,6 +94,10 @@ class TurnManager:
         self._last_action_completed_time: float = 0.0
         self._pending_duration_ms: int = 0
 
+        # Per-(actor, plan) retry counters for adjacency-chase rewinds.
+        # This keeps retry policy in TurnManager instead of ActivePlan.
+        self._adjacency_rewind_counts: dict[tuple[int, int], int] = {}
+
     @property
     def player(self) -> PC:
         """The player character, accessed via controller to avoid stale references."""
@@ -105,6 +113,7 @@ class TurnManager:
         self._cache_dirty = True
         self._last_action_completed_time = 0.0
         self._pending_duration_ms = 0
+        self._adjacency_rewind_counts.clear()
 
     def _update_energy_actors_cache(self) -> None:
         """Update cached list of actors with energy components for performance.
@@ -246,6 +255,11 @@ class TurnManager:
                         step = plan.get_current_step()
                         if isinstance(step, ApproachStep):
                             self._on_approach_result(actor, result)
+                        if (
+                            not result.succeeded
+                            and result.block_reason == ActionBlockReason.NOT_ADJACENT
+                        ):
+                            self._handle_intent_step_result(actor, result)
 
                     self.controller.invalidate_combat_tooltip()
 
@@ -299,6 +313,11 @@ class TurnManager:
                         step = plan.get_current_step()
                         if isinstance(step, ApproachStep):
                             self._on_approach_result(actor, result)
+                        if (
+                            not result.succeeded
+                            and result.block_reason == ActionBlockReason.NOT_ADJACENT
+                        ):
+                            self._handle_intent_step_result(actor, result)
 
                     # Continue to next NPC (don't return)
 
@@ -401,6 +420,11 @@ class TurnManager:
         # Handle plan advancement for ApproachStep moves
         if self.player.active_plan is not None:
             self._on_approach_result(self.player, result)
+            if (
+                not result.succeeded
+                and result.block_reason == ActionBlockReason.NOT_ADJACENT
+            ):
+                self._handle_intent_step_result(self.player, result)
 
         return result
 
@@ -421,11 +445,13 @@ class TurnManager:
         plan = actor.active_plan
         if plan is None:
             return None
+        self._prune_actor_retry_state(actor, plan)
 
         step = plan.get_current_step()
 
         # Plan complete?
         if step is None:
+            self._clear_plan_retry_state(actor, plan)
             actor.active_plan = None
             return None
 
@@ -437,6 +463,7 @@ class TurnManager:
             step = plan.get_current_step()
 
         if step is None:
+            self._clear_plan_retry_state(actor, plan)
             actor.active_plan = None
             return None
 
@@ -494,8 +521,25 @@ class TurnManager:
             target_pos = plan.context.target_position
         else:
             # No target - can't approach
+            self._clear_plan_retry_state(actor, plan)
             actor.active_plan = None
             return None
+
+        # If a target actor moved since path computation, invalidate stale path.
+        # This forces re-pathing toward the target's current location.
+        if (
+            plan.cached_path
+            and plan.context.target_actor is not None
+            and plan.cached_hierarchical_path is None
+        ):
+            endpoint = plan.cached_path[-1]
+            endpoint_distance = max(
+                abs(target_pos[0] - endpoint[0]),
+                abs(target_pos[1] - endpoint[1]),
+            )
+            if endpoint_distance > step.stop_distance:
+                plan.cached_path = None
+                plan.cached_hierarchical_path = None
 
         # Check if we've arrived (based on stop_distance)
         dx_to_target = target_pos[0] - actor.x
@@ -573,6 +617,7 @@ class TurnManager:
 
         if not plan.cached_path:
             # Can't reach target - cancel plan
+            self._clear_plan_retry_state(actor, plan)
             actor.active_plan = None
             return None
 
@@ -615,6 +660,37 @@ class TurnManager:
 
         clamped = max(min_ms, min(max_ms, duration_ms))
         return round(clamped)
+
+    def _handle_intent_step_result(
+        self, actor: Character, result: GameActionResult
+    ) -> None:
+        """Handle IntentStep failures that should rewind plans to approach.
+
+        For adjacency-required plans, a ``not_adjacent`` failure means the
+        target moved after approach but before intent execution. Rewinding to
+        the nearest ApproachStep resumes chase. If retry budget is exhausted,
+        the plan is cancelled.
+        """
+        if result.succeeded or result.block_reason != ActionBlockReason.NOT_ADJACENT:
+            return
+
+        plan = actor.active_plan
+        if plan is None or not plan.plan.requires_adjacency:
+            return
+
+        key = self._plan_retry_key(actor, plan)
+        retries = self._adjacency_rewind_counts.get(key, 0)
+        if retries >= self._MAX_ADJACENCY_REWINDS:
+            self._clear_plan_retry_state(actor, plan)
+            actor.active_plan = None
+            return
+
+        if not plan.rewind_to_previous_approach_step():
+            self._clear_plan_retry_state(actor, plan)
+            actor.active_plan = None
+            return
+
+        self._adjacency_rewind_counts[key] = retries + 1
 
     def _on_approach_result(self, actor: Character, result: GameActionResult) -> None:
         """Handle the result of a MoveIntent or OpenDoorIntent from an ApproachStep.
@@ -665,6 +741,7 @@ class TurnManager:
                 # Arrived - advance to next step (or complete plan)
                 plan.advance()
                 if plan.is_complete():
+                    self._clear_plan_retry_state(actor, plan)
                     actor.active_plan = None
         else:
             # Move failed (blocked) - invalidate path for recalculation
@@ -784,6 +861,7 @@ class TurnManager:
         elif plan.context.target_position is not None:
             target_pos = plan.context.target_position
         else:
+            self._clear_plan_retry_state(actor, plan)
             actor.active_plan = None
             return
 
@@ -792,11 +870,13 @@ class TurnManager:
             next_region_id = plan.cached_hierarchical_path[0]
             current_region = gm.regions.get(current_region_id)
             if current_region is None:
+                self._clear_plan_retry_state(actor, plan)
                 actor.active_plan = None
                 return
 
             connection_point = current_region.connections.get(next_region_id)
             if connection_point is None:
+                self._clear_plan_retry_state(actor, plan)
                 actor.active_plan = None
                 return
 
@@ -813,6 +893,7 @@ class TurnManager:
                 plan.cached_path = new_path
             else:
                 # Can't reach connection - clear plan
+                self._clear_plan_retry_state(actor, plan)
                 actor.active_plan = None
         else:
             # We're in the final region - path to target
@@ -827,6 +908,25 @@ class TurnManager:
             if new_path:
                 plan.cached_path = new_path
             # If no path, leave cached_path empty - plan will handle it next turn
+
+    @staticmethod
+    def _plan_retry_key(actor: Character, plan: ActivePlan) -> tuple[int, int]:
+        """Build a stable key for retry bookkeeping of a specific active plan."""
+        return (actor.actor_id, id(plan))
+
+    def _clear_plan_retry_state(self, actor: Character, plan: ActivePlan) -> None:
+        """Remove retry counters associated with a specific active plan."""
+        self._adjacency_rewind_counts.pop(self._plan_retry_key(actor, plan), None)
+
+    def _prune_actor_retry_state(
+        self, actor: Character, active_plan: ActivePlan
+    ) -> None:
+        """Drop stale retry entries from prior plans for this actor."""
+        current_plan_id = id(active_plan)
+        for key in list(self._adjacency_rewind_counts):
+            actor_id, plan_id = key
+            if actor_id == actor.actor_id and plan_id != current_plan_id:
+                self._adjacency_rewind_counts.pop(key, None)
 
     # === Preserved Methods for Compatibility ===
     # These methods are kept to maintain compatibility with existing code

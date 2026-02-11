@@ -5,6 +5,7 @@ from __future__ import annotations
 from brileta.game.actions.base import GameActionResult
 from brileta.game.actions.environment import SearchContainerIntent
 from brileta.game.actions.executors.base import ActionExecutor
+from brileta.game.enums import ActionBlockReason
 
 
 class SearchContainerExecutor(ActionExecutor[SearchContainerIntent]):
@@ -28,12 +29,16 @@ class SearchContainerExecutor(ActionExecutor[SearchContainerIntent]):
 
         # Validate target has an inventory to search
         if target.inventory is None:
-            return GameActionResult(succeeded=False, block_reason="Nothing to search")
+            return GameActionResult(
+                succeeded=False, block_reason=ActionBlockReason.NOTHING_TO_SEARCH
+            )
 
         # For temporary containers (corpses, ground piles), block if empty
         # For permanent containers (bookcases, crates), allow opening to deposit items
         if len(target.inventory) == 0 and not target.blocks_movement:
-            return GameActionResult(succeeded=False, block_reason="Nothing to loot")
+            return GameActionResult(
+                succeeded=False, block_reason=ActionBlockReason.NOTHING_TO_LOOT
+            )
 
         # Import here to avoid circular imports
         from brileta.view.ui.inventory import ActorInventorySource, DualPaneMenu

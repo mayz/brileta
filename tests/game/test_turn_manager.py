@@ -12,6 +12,7 @@ from brileta.game.actions.base import GameActionResult
 from brileta.game.actions.movement import MoveIntent
 from brileta.game.actors import NPC, PC, Character
 from brileta.game.actors.status_effects import StaggeredEffect
+from brileta.game.enums import ActionBlockReason
 from brileta.game.game_world import GameWorld
 from brileta.game.turn_manager import TurnManager
 from tests.helpers import DummyGameWorld, get_controller_with_player_and_map
@@ -1054,6 +1055,345 @@ def test_execute_player_intent_handles_plan_advancement() -> None:
 
     # Path should be popped (handled by execute_player_intent)
     assert len(active_plan.cached_path) == 2
+
+
+def test_execute_player_intent_rewinds_on_not_adjacent() -> None:
+    """IntentStep failure with not_adjacent rewinds to the plan's ApproachStep."""
+    from brileta.game.action_plan import (
+        ActionPlan,
+        ActivePlan,
+        ApproachStep,
+        IntentStep,
+        PlanContext,
+    )
+
+    controller, player = _make_world()
+    tm = controller.turn_manager
+
+    chase_plan = ActionPlan(
+        name="Chase",
+        requires_target=True,
+        requires_adjacency=True,
+        steps=[
+            ApproachStep(stop_distance=1),
+            IntentStep(
+                intent_class=MoveIntent,
+                params=lambda ctx: {"actor": ctx.actor, "dx": 0, "dy": 0},
+            ),
+        ],
+    )
+    context = PlanContext(
+        actor=player,
+        controller=cast(Controller, controller),
+        target_position=(3, 0),
+    )
+    active_plan = ActivePlan(
+        plan=chase_plan,
+        context=context,
+        current_step_index=2,  # Simulates an advanced IntentStep
+    )
+    active_plan.cached_path = [(1, 0)]
+    player.active_plan = active_plan
+
+    def failed_not_adjacent(_intent) -> GameActionResult:
+        return GameActionResult(
+            succeeded=False,
+            block_reason=ActionBlockReason.NOT_ADJACENT,
+        )
+
+    tm.execute_intent = failed_not_adjacent
+    result = tm.execute_player_intent(
+        MoveIntent(cast(Controller, controller), player, dx=0, dy=0)
+    )
+
+    assert result.succeeded is False
+    assert player.active_plan is not None
+    assert player.active_plan.current_step_index == 0
+    assert isinstance(player.active_plan.get_current_step(), ApproachStep)
+    assert player.active_plan.cached_path is None
+
+
+def test_execute_player_intent_cancels_plan_when_rewind_limit_exhausted() -> None:
+    """Plan is cancelled when not_adjacent occurs after max rewinds."""
+    from brileta.game.action_plan import (
+        ActionPlan,
+        ActivePlan,
+        ApproachStep,
+        IntentStep,
+        PlanContext,
+    )
+
+    controller, player = _make_world()
+    tm = controller.turn_manager
+
+    chase_plan = ActionPlan(
+        name="Chase",
+        requires_target=True,
+        requires_adjacency=True,
+        steps=[
+            ApproachStep(stop_distance=1),
+            IntentStep(
+                intent_class=MoveIntent,
+                params=lambda ctx: {"actor": ctx.actor, "dx": 0, "dy": 0},
+            ),
+        ],
+    )
+    context = PlanContext(
+        actor=player,
+        controller=cast(Controller, controller),
+        target_position=(3, 0),
+    )
+    active_plan = ActivePlan(
+        plan=chase_plan,
+        context=context,
+        current_step_index=2,
+    )
+    tm._adjacency_rewind_counts[(player.actor_id, id(active_plan))] = (
+        tm._MAX_ADJACENCY_REWINDS
+    )
+    player.active_plan = active_plan
+
+    def failed_not_adjacent(_intent) -> GameActionResult:
+        return GameActionResult(
+            succeeded=False,
+            block_reason=ActionBlockReason.NOT_ADJACENT,
+        )
+
+    tm.execute_intent = failed_not_adjacent
+    tm.execute_player_intent(MoveIntent(cast(Controller, controller), player, 0, 0))
+
+    assert player.active_plan is None
+
+
+def test_execute_player_intent_does_not_rewind_when_plan_not_adjacency_required() -> (
+    None
+):
+    """NOT_ADJACENT should not rewind plans that don't require adjacency."""
+    from brileta.game.action_plan import (
+        ActionPlan,
+        ActivePlan,
+        ApproachStep,
+        IntentStep,
+        PlanContext,
+    )
+
+    controller, player = _make_world()
+    tm = controller.turn_manager
+
+    non_adjacency_plan = ActionPlan(
+        name="Non-Adjacency Plan",
+        requires_target=True,
+        requires_adjacency=False,
+        steps=[
+            ApproachStep(stop_distance=1),
+            IntentStep(
+                intent_class=MoveIntent,
+                params=lambda ctx: {"actor": ctx.actor, "dx": 0, "dy": 0},
+            ),
+        ],
+    )
+    context = PlanContext(
+        actor=player,
+        controller=cast(Controller, controller),
+        target_position=(3, 0),
+    )
+    active_plan = ActivePlan(
+        plan=non_adjacency_plan,
+        context=context,
+        current_step_index=2,
+    )
+    active_plan.cached_path = [(1, 0)]
+    player.active_plan = active_plan
+
+    def failed_not_adjacent(_intent) -> GameActionResult:
+        return GameActionResult(
+            succeeded=False,
+            block_reason=ActionBlockReason.NOT_ADJACENT,
+        )
+
+    tm.execute_intent = failed_not_adjacent
+    tm.execute_player_intent(MoveIntent(cast(Controller, controller), player, 0, 0))
+
+    assert player.active_plan is active_plan
+    assert player.active_plan.current_step_index == 2
+    assert player.active_plan.cached_path == [(1, 0)]
+
+
+def test_handle_approach_step_invalidates_stale_path_when_target_moves(
+    monkeypatch: Any,
+) -> None:
+    """Existing cached path is discarded when target actor moved away from endpoint."""
+    from brileta.game.action_plan import (
+        ActionPlan,
+        ActivePlan,
+        ApproachStep,
+        PlanContext,
+    )
+
+    controller, player = _make_world()
+    tm = controller.turn_manager
+
+    enemy = Character(
+        2,
+        0,
+        "r",
+        colors.RED,
+        "Raider",
+        game_world=cast(GameWorld, controller.gw),
+    )
+    controller.gw.add_actor(enemy)
+
+    context = PlanContext(
+        actor=player,
+        controller=cast(Controller, controller),
+        target_actor=enemy,
+    )
+    approach_plan = ActionPlan(
+        name="Approach",
+        steps=[ApproachStep(stop_distance=1)],
+        requires_target=True,
+    )
+    active_plan = ActivePlan(plan=approach_plan, context=context)
+    active_plan.cached_path = [(1, 0), (2, 0)]
+    player.active_plan = active_plan
+
+    # Target moved after path was cached; endpoint is now stale.
+    enemy.x, enemy.y = 9, 9
+
+    find_calls: list[tuple[tuple[int, int], tuple[int, int]]] = []
+
+    def fake_find_local_path(
+        _gm,
+        _asi,
+        _actor,
+        start_pos: tuple[int, int],
+        target_pos: tuple[int, int],
+        *,
+        can_open_doors: bool = False,
+    ) -> list[tuple[int, int]]:
+        del can_open_doors
+        find_calls.append((start_pos, target_pos))
+        return [(0, 1)]
+
+    monkeypatch.setattr(
+        "brileta.util.pathfinding.find_local_path", fake_find_local_path
+    )
+
+    step = active_plan.get_current_step()
+    assert isinstance(step, ApproachStep)
+    intent = tm._handle_approach_step(player, active_plan, step)
+
+    assert isinstance(intent, MoveIntent)
+    assert find_calls == [((0, 0), (9, 9))]
+    assert active_plan.cached_path == [(0, 1)]
+
+
+def test_process_all_npc_reactions_rewinds_npc_plan_on_not_adjacent() -> None:
+    """NPC active plans rewind to approach when intent returns not_adjacent."""
+    from brileta.game.action_plan import (
+        ActionPlan,
+        ActivePlan,
+        ApproachStep,
+        IntentStep,
+        PlanContext,
+    )
+
+    controller, player, npc = make_world()
+    tm = controller.turn_manager
+
+    tm.on_player_action()
+    assert npc.energy is not None
+    npc.energy.accumulated_energy = config.ACTION_COST
+    npc.get_next_action = lambda _controller: None
+
+    chase_plan = ActionPlan(
+        name="NPC Chase",
+        requires_target=True,
+        requires_adjacency=True,
+        steps=[
+            ApproachStep(stop_distance=1),
+            IntentStep(
+                intent_class=MoveIntent,
+                params=lambda ctx: {"actor": ctx.actor, "dx": 0, "dy": 0},
+            ),
+        ],
+    )
+    npc.active_plan = ActivePlan(
+        plan=chase_plan,
+        context=PlanContext(
+            actor=npc,
+            controller=cast(Controller, controller),
+            target_actor=player,
+        ),
+        current_step_index=1,
+    )
+
+    def failed_not_adjacent(_intent) -> GameActionResult:
+        return GameActionResult(
+            succeeded=False,
+            block_reason=ActionBlockReason.NOT_ADJACENT,
+        )
+
+    tm.execute_intent = failed_not_adjacent
+    tm.process_all_npc_reactions()
+
+    assert npc.active_plan is not None
+    assert npc.active_plan.current_step_index == 0
+    assert isinstance(npc.active_plan.get_current_step(), ApproachStep)
+
+
+def test_process_all_ready_npcs_immediately_rewinds_npc_plan_on_not_adjacent() -> None:
+    """Held-key NPC path should also rewind on NOT_ADJACENT intent failure."""
+    from brileta.game.action_plan import (
+        ActionPlan,
+        ActivePlan,
+        ApproachStep,
+        IntentStep,
+        PlanContext,
+    )
+
+    controller, player, npc = make_world()
+    tm = controller.turn_manager
+
+    tm.on_player_action()
+    assert npc.energy is not None
+    npc.energy.accumulated_energy = config.ACTION_COST
+    npc.get_next_action = lambda _controller: None
+
+    chase_plan = ActionPlan(
+        name="NPC Chase Immediate",
+        requires_target=True,
+        requires_adjacency=True,
+        steps=[
+            ApproachStep(stop_distance=1),
+            IntentStep(
+                intent_class=MoveIntent,
+                params=lambda ctx: {"actor": ctx.actor, "dx": 0, "dy": 0},
+            ),
+        ],
+    )
+    npc.active_plan = ActivePlan(
+        plan=chase_plan,
+        context=PlanContext(
+            actor=npc,
+            controller=cast(Controller, controller),
+            target_actor=player,
+        ),
+        current_step_index=1,
+    )
+
+    def failed_not_adjacent(_intent) -> GameActionResult:
+        return GameActionResult(
+            succeeded=False,
+            block_reason=ActionBlockReason.NOT_ADJACENT,
+        )
+
+    tm.action_router.execute_intent = failed_not_adjacent
+    tm.process_all_ready_npcs_immediately()
+
+    assert npc.active_plan is not None
+    assert npc.active_plan.current_step_index == 0
+    assert isinstance(npc.active_plan.get_current_step(), ApproachStep)
 
 
 def test_walk_to_plan_full_journey() -> None:

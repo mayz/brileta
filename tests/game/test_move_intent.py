@@ -9,7 +9,7 @@ from brileta.environment.tile_types import TileTypeID
 from brileta.game.actions.executors.movement import MoveExecutor
 from brileta.game.actions.movement import MoveIntent
 from brileta.game.actors import Character
-from brileta.game.enums import StepBlock
+from brileta.game.enums import ActionBlockReason, StepBlock
 from brileta.game.game_world import GameWorld
 from tests.helpers import DummyGameWorld
 
@@ -43,7 +43,8 @@ def test_move_blocks_at_map_edges() -> None:
     result = MoveExecutor().execute(intent)
     assert result is not None
     assert not result.succeeded
-    assert result.block_reason == "out_of_bounds"
+    assert result.block_reason == ActionBlockReason.STEP_BLOCKED
+    assert result.step_block == StepBlock.OUT_OF_BOUNDS
     assert (player.x, player.y) == (0, 0)
 
     player.x = controller.gw.game_map.width - 1
@@ -51,7 +52,8 @@ def test_move_blocks_at_map_edges() -> None:
     result = MoveExecutor().execute(intent)
     assert result is not None
     assert not result.succeeded
-    assert result.block_reason == "out_of_bounds"
+    assert result.block_reason == ActionBlockReason.STEP_BLOCKED
+    assert result.step_block == StepBlock.OUT_OF_BOUNDS
     assert player.x == controller.gw.game_map.width - 1
 
 
@@ -66,7 +68,8 @@ def test_move_checks_walkable_tiles() -> None:
     result = MoveExecutor().execute(intent)
     assert result is not None
     assert not result.succeeded
-    assert result.block_reason == "wall"
+    assert result.block_reason == ActionBlockReason.STEP_BLOCKED
+    assert result.step_block == StepBlock.WALL
     assert (player.x, player.y) == (2, 2)
 
     # Move to empty floor
@@ -85,7 +88,8 @@ def test_move_checks_closed_door() -> None:
     result = MoveExecutor().execute(intent)
     assert result is not None
     assert not result.succeeded
-    assert result.block_reason == "door"
+    assert result.block_reason == ActionBlockReason.STEP_BLOCKED
+    assert result.step_block == StepBlock.CLOSED_DOOR
     assert (player.x, player.y) == (0, 0)
 
 
@@ -127,7 +131,8 @@ def test_queued_moves_use_updated_position() -> None:
     result_right = MoveExecutor().execute(move_right)
     assert result_right is not None
     assert not result_right.succeeded
-    assert result_right.block_reason == "wall"
+    assert result_right.block_reason == ActionBlockReason.STEP_BLOCKED
+    assert result_right.step_block == StepBlock.WALL
     # Player should remain at (1, 0) because the diagonal tile is a wall.
     assert (player.x, player.y) == (1, 0)
 
@@ -135,30 +140,21 @@ def test_queued_moves_use_updated_position() -> None:
 # --- _blocked_result mapping tests ---
 
 
-@pytest.mark.parametrize(
-    ("step_block", "expected_reason"),
-    [
-        (StepBlock.OUT_OF_BOUNDS, "out_of_bounds"),
-        (StepBlock.WALL, "wall"),
-        (StepBlock.CLOSED_DOOR, "door"),
-        (StepBlock.BLOCKED_BY_ACTOR, "actor"),
-        (StepBlock.BLOCKED_BY_CONTAINER, "container"),
-    ],
-)
-def test_blocked_result_maps_step_block_to_reason(
+@pytest.mark.parametrize("step_block", list(StepBlock))
+def test_blocked_result_maps_step_block_to_step_block_detail(
     step_block: StepBlock,
-    expected_reason: str,
 ) -> None:
-    """Each StepBlock variant produces the correct block_reason string."""
+    """Each StepBlock variant is reported as STEP_BLOCKED with detail."""
     controller, player = make_world()
     intent = MoveIntent(cast(Controller, controller), player, dx=1, dy=0)
     result = MoveExecutor._blocked_result(step_block, intent)
     assert not result.succeeded
-    assert result.block_reason == expected_reason
+    assert result.block_reason == ActionBlockReason.STEP_BLOCKED
+    assert result.step_block == step_block
 
 
 def test_move_blocked_by_container() -> None:
-    """Moving into a container produces block_reason='container'."""
+    """Moving into a container reports STEP_BLOCKED/BLOCKED_BY_CONTAINER."""
     from brileta.game.actors.container import Container
 
     controller, player = make_world()
@@ -169,5 +165,6 @@ def test_move_blocked_by_container() -> None:
     result = MoveExecutor().execute(intent)
     assert result is not None
     assert not result.succeeded
-    assert result.block_reason == "container"
+    assert result.block_reason == ActionBlockReason.STEP_BLOCKED
+    assert result.step_block == StepBlock.BLOCKED_BY_CONTAINER
     assert result.blocked_by is container

@@ -120,6 +120,20 @@ class StepBlock(Enum):
     BLOCKED_BY_CONTAINER = auto()
 
 
+class ActionBlockReason(Enum):
+    """Top-level reason an action failed to execute.
+
+    This enum models action-level failure categories. When the reason is
+    ``STEP_BLOCKED``, callers can inspect ``GameActionResult.step_block`` for
+    the precise tile-passability detail from :class:`StepBlock`.
+    """
+
+    STEP_BLOCKED = auto()
+    NOT_ADJACENT = auto()
+    NOTHING_TO_SEARCH = auto()
+    NOTHING_TO_LOOT = auto()
+
+
 class ImpactMaterial(Enum):
     """Material types for impact sound selection.
 

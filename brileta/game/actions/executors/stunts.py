@@ -31,7 +31,7 @@ from brileta.game.actors.status_effects import (
     StaggeredEffect,
     TrippedEffect,
 )
-from brileta.game.enums import OutcomeTier
+from brileta.game.enums import ActionBlockReason, OutcomeTier
 from brileta.util.dice import roll_d
 
 
@@ -63,7 +63,9 @@ class PushExecutor(ActionExecutor[PushIntent]):
                     colors.RED,
                 )
             )
-            return GameActionResult(succeeded=False, block_reason="not_adjacent")
+            return GameActionResult(
+                succeeded=False, block_reason=ActionBlockReason.NOT_ADJACENT
+            )
 
         # 2. Perform opposed Strength check
         attacker_strength = intent.attacker.stats.strength
@@ -219,7 +221,9 @@ class TripExecutor(ActionExecutor[TripIntent]):
                     colors.RED,
                 )
             )
-            return GameActionResult(succeeded=False, block_reason="not_adjacent")
+            return GameActionResult(
+                succeeded=False, block_reason=ActionBlockReason.NOT_ADJACENT
+            )
 
         # 2. Perform opposed Agility check
         attacker_agility = intent.attacker.stats.agility
@@ -364,7 +368,9 @@ class KickExecutor(ActionExecutor[KickIntent]):
                     colors.RED,
                 )
             )
-            return GameActionResult(succeeded=False, block_reason="not_adjacent")
+            return GameActionResult(
+                succeeded=False, block_reason=ActionBlockReason.NOT_ADJACENT
+            )
 
         # 2. Perform opposed Strength vs Agility check
         attacker_strength = intent.attacker.stats.strength
@@ -572,7 +578,9 @@ class PunchExecutor(ActionExecutor[PunchIntent]):
                     colors.RED,
                 )
             )
-            return GameActionResult(succeeded=False, block_reason="not_adjacent")
+            return GameActionResult(
+                succeeded=False, block_reason=ActionBlockReason.NOT_ADJACENT
+            )
 
         # 2. Get Fists weapon
         fists = FISTS_TYPE.create()

@@ -217,6 +217,25 @@ class ActivePlan:
         """
         return self.current_step_index >= len(self.plan.steps)
 
+    def rewind_to_previous_approach_step(self) -> bool:
+        """Rewind to the nearest prior ``ApproachStep`` and clear path caches.
+
+        Returns:
+            True if rewind succeeded, False when no approach step exists.
+        """
+        if not self.plan.steps:
+            return False
+
+        start_index = min(self.current_step_index, len(self.plan.steps) - 1)
+        for index in range(start_index, -1, -1):
+            if isinstance(self.plan.steps[index], ApproachStep):
+                self.current_step_index = index
+                self.cached_path = None
+                self.cached_hierarchical_path = None
+                return True
+
+        return False
+
 
 # =============================================================================
 # Pre-defined Action Plans

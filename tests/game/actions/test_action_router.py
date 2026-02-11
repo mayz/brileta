@@ -12,6 +12,7 @@ from brileta.game.actions.environment import SearchContainerIntent
 from brileta.game.actions.movement import MoveIntent
 from brileta.game.actors import NPC, Character
 from brileta.game.actors.container import create_bookcase
+from brileta.game.enums import ActionBlockReason, StepBlock
 from brileta.game.game_world import GameWorld
 from tests.helpers import DummyGameWorld
 
@@ -312,7 +313,8 @@ def test_execute_intent_returns_failure_for_blocked_move() -> None:
 
     assert isinstance(result, GameActionResult)
     assert result.succeeded is False
-    assert result.block_reason == "wall"
+    assert result.block_reason == ActionBlockReason.STEP_BLOCKED
+    assert result.step_block == StepBlock.WALL
 
 
 def test_execute_intent_returns_failure_for_unregistered_intent() -> None:

@@ -4,7 +4,7 @@ from brileta import config
 from brileta.game.actions.base import GameActionResult
 from brileta.game.actions.executors.base import ActionExecutor
 from brileta.game.actions.movement import MoveIntent
-from brileta.game.enums import StepBlock
+from brileta.game.enums import ActionBlockReason, StepBlock
 from brileta.util.pathfinding import probe_step
 
 
@@ -45,28 +45,42 @@ class MoveExecutor(ActionExecutor[MoveIntent]):
         """Convert a StepBlock into the appropriate failed GameActionResult."""
         match block:
             case StepBlock.OUT_OF_BOUNDS:
-                return GameActionResult(succeeded=False, block_reason="out_of_bounds")
+                return GameActionResult(
+                    succeeded=False,
+                    block_reason=ActionBlockReason.STEP_BLOCKED,
+                    step_block=StepBlock.OUT_OF_BOUNDS,
+                )
             case StepBlock.CLOSED_DOOR:
                 return GameActionResult(
                     succeeded=False,
                     blocked_by=(intent.newx, intent.newy),
-                    block_reason="door",
+                    block_reason=ActionBlockReason.STEP_BLOCKED,
+                    step_block=StepBlock.CLOSED_DOOR,
                 )
             case StepBlock.WALL:
-                return GameActionResult(succeeded=False, block_reason="wall")
+                return GameActionResult(
+                    succeeded=False,
+                    block_reason=ActionBlockReason.STEP_BLOCKED,
+                    step_block=StepBlock.WALL,
+                )
             case StepBlock.BLOCKED_BY_CONTAINER:
                 blocker = intent.controller.gw.get_actor_at_location(
                     intent.newx, intent.newy
                 )
                 return GameActionResult(
-                    succeeded=False, blocked_by=blocker, block_reason="container"
+                    succeeded=False,
+                    blocked_by=blocker,
+                    block_reason=ActionBlockReason.STEP_BLOCKED,
+                    step_block=StepBlock.BLOCKED_BY_CONTAINER,
                 )
             case StepBlock.BLOCKED_BY_ACTOR:
                 blocker = intent.controller.gw.get_actor_at_location(
                     intent.newx, intent.newy
                 )
                 return GameActionResult(
-                    succeeded=False, blocked_by=blocker, block_reason="actor"
+                    succeeded=False,
+                    blocked_by=blocker,
+                    block_reason=ActionBlockReason.STEP_BLOCKED,
+                    step_block=StepBlock.BLOCKED_BY_ACTOR,
                 )
-            case _:  # Defensive: treat unknown blocks as impassable
-                return GameActionResult(succeeded=False, block_reason="blocked")
+        raise ValueError(f"Unhandled StepBlock in MoveExecutor: {block!r}")

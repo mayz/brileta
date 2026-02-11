@@ -333,6 +333,62 @@ def test_active_plan_cached_path() -> None:
     assert active.cached_path[0] == (1, 1)
 
 
+def test_active_plan_rewind_to_previous_approach_step_resets_step_and_caches() -> None:
+    """rewind_to_previous_approach_step rewinds and clears path caches."""
+    _, _, context = make_test_context()
+
+    plan = ActionPlan(
+        name="Rewind Test",
+        steps=[
+            ApproachStep(stop_distance=1),
+            IntentStep(intent_class=DummyIntent, params=lambda ctx: {}),
+        ],
+    )
+    active = ActivePlan(plan=plan, context=context, current_step_index=2)
+    active.cached_path = [(1, 1), (2, 2)]
+    active.cached_hierarchical_path = [1, 2]
+
+    rewound = active.rewind_to_previous_approach_step()
+
+    assert rewound is True
+    assert active.current_step_index == 0
+    assert isinstance(active.get_current_step(), ApproachStep)
+    assert active.cached_path is None
+    assert active.cached_hierarchical_path is None
+
+
+def test_active_plan_rewind_to_previous_approach_step_returns_false_without_approach_step() -> (
+    None
+):
+    """rewind_to_previous_approach_step fails without an ApproachStep."""
+    _, _, context = make_test_context()
+
+    plan = ActionPlan(
+        name="No Approach",
+        steps=[
+            IntentStep(intent_class=DummyIntent, params=lambda ctx: {}),
+            IntentStep(intent_class=DummyIntent, params=lambda ctx: {}),
+        ],
+    )
+    active = ActivePlan(plan=plan, context=context, current_step_index=1)
+
+    assert active.rewind_to_previous_approach_step() is False
+
+
+def test_punch_plan_rewind_from_post_punch_returns_to_approach() -> None:
+    """PunchPlan rewinds from post-intent index back to its ApproachStep."""
+    from brileta.game.actions.stunts import PunchPlan
+
+    _, _, context = make_test_context()
+    active = ActivePlan(plan=PunchPlan, context=context, current_step_index=3)
+
+    rewound = active.rewind_to_previous_approach_step()
+
+    assert rewound is True
+    assert active.current_step_index == 0
+    assert isinstance(active.get_current_step(), ApproachStep)
+
+
 # -----------------------------------------------------------------------------
 # Character.active_plan integration
 # -----------------------------------------------------------------------------

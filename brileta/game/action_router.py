@@ -86,6 +86,7 @@ from brileta.game.actions.stunts import (
 from brileta.game.actors import NPC, Character
 from brileta.game.actors.barks import pick_bump_bark
 from brileta.game.actors.container import Container
+from brileta.game.enums import ActionBlockReason, StepBlock
 from brileta.types import ActorId
 
 if TYPE_CHECKING:
@@ -187,7 +188,10 @@ class ActionRouter:
 
     def _handle_failed_move(self, intent: MoveIntent, result: GameActionResult) -> None:
         """Rulebook for what happens after a failed move."""
-        if result.block_reason == "actor" and result.blocked_by:
+        if result.block_reason != ActionBlockReason.STEP_BLOCKED:
+            return
+
+        if result.step_block == StepBlock.BLOCKED_BY_ACTOR and result.blocked_by:
             # The actor who tried to move.
             bumper = intent.actor
             # The actor who was in the way.
@@ -210,7 +214,7 @@ class ActionRouter:
             # prevents wandering/pathing traffic from causing combat. The NPC will
             # just wait its turn and the AI will reroute on its next action.
 
-        elif result.block_reason == "door" and result.blocked_by:
+        elif result.step_block == StepBlock.CLOSED_DOOR and result.blocked_by:
             # Rule: Bumping into a closed door means you try to open it.
             door_pos = cast(tuple[int, int], result.blocked_by)
             new_intent = OpenDoorIntent(
@@ -218,7 +222,7 @@ class ActionRouter:
             )
             self.execute_intent(new_intent)  # Recursive call
 
-        elif result.block_reason == "container" and result.blocked_by:
+        elif result.step_block == StepBlock.BLOCKED_BY_CONTAINER and result.blocked_by:
             # Rule: Bumping into a container means you try to search it.
             container = cast(Container, result.blocked_by)
             new_intent = SearchContainerIntent(self.controller, intent.actor, container)

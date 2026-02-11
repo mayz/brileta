@@ -15,6 +15,7 @@ from brileta.game.actors.status_effects import (
     OffBalanceEffect,
     TrippedEffect,
 )
+from brileta.game.enums import ActionBlockReason
 from brileta.game.game_world import GameWorld
 from brileta.game.resolution import d20_system
 from brileta.game.resolution.d20_system import D20System
@@ -253,7 +254,7 @@ def test_kick_fails_if_not_adjacent() -> None:
 
     assert result is not None
     assert not result.succeeded
-    assert result.block_reason == "not_adjacent"
+    assert result.block_reason == ActionBlockReason.NOT_ADJACENT
 
 
 # --- Environmental Interactions ---

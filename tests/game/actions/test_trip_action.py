@@ -13,6 +13,7 @@ from brileta.game.actors.status_effects import (
     OffBalanceEffect,
     TrippedEffect,
 )
+from brileta.game.enums import ActionBlockReason
 from brileta.game.game_world import GameWorld
 from brileta.game.resolution.d20_system import D20System
 from tests.helpers import DummyGameWorld
@@ -249,7 +250,7 @@ def test_trip_fails_if_not_adjacent() -> None:
 
     assert result is not None
     assert not result.succeeded
-    assert result.block_reason == "not_adjacent"
+    assert result.block_reason == ActionBlockReason.NOT_ADJACENT
 
 
 def test_trip_works_diagonally(

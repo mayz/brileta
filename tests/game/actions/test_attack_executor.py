@@ -16,9 +16,9 @@ from brileta.controller import Controller
 from brileta.game.actions.combat import AttackIntent
 from brileta.game.actions.executors.combat import AttackExecutor
 from brileta.game.actors import Character
-from brileta.game.enums import ItemSize
+from brileta.game.enums import ActionBlockReason, ItemSize
 from brileta.game.game_world import GameWorld
-from brileta.game.items.capabilities import RangedAttackSpec
+from brileta.game.items.capabilities import MeleeAttackSpec, RangedAttackSpec
 from brileta.game.items.item_core import Item, ItemType
 from brileta.game.turn_manager import TurnManager
 from brileta.view.presentation import PresentationEvent
@@ -62,6 +62,17 @@ def make_ranged_weapon(
     if current_ammo is not None and weapon.ranged_attack is not None:
         weapon.ranged_attack.current_ammo = current_ammo
     return weapon
+
+
+def make_melee_weapon(name: str = "Test Baton") -> Item:
+    """Create a melee weapon for testing."""
+    item_type = ItemType(
+        name=name,
+        description="A test melee weapon",
+        size=ItemSize.NORMAL,
+        melee_attack=MeleeAttackSpec(damage_die="1d4"),
+    )
+    return Item(item_type)
 
 
 def make_attacker_with_weapon(weapon: Item) -> tuple[DummyController, Character]:
@@ -373,3 +384,33 @@ class TestFireWeaponDirection:
 # - Weapon removal on successful throw
 # - Spawning at target location
 # - Critical failure behavior (weapon_drop consequence)
+
+
+def test_execute_melee_out_of_range_returns_not_adjacent_block_reason() -> None:
+    """Out-of-range melee attacks should return the not_adjacent block reason."""
+    weapon = make_melee_weapon()
+    controller, attacker = make_attacker_with_weapon(weapon)
+    defender = Character(
+        9,
+        5,
+        "r",
+        colors.RED,
+        "Defender",
+        game_world=cast(GameWorld, controller.gw),
+    )
+    controller.gw.add_actor(defender)
+
+    intent = AttackIntent(
+        cast(Controller, controller),
+        attacker,
+        defender=defender,
+        weapon=weapon,
+        attack_mode="melee",
+    )
+
+    executor = AttackExecutor()
+    result = executor.execute(intent)
+
+    assert result is not None
+    assert result.succeeded is False
+    assert result.block_reason == ActionBlockReason.NOT_ADJACENT
