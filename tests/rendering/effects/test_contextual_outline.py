@@ -1,9 +1,8 @@
-"""Tests for actor outline rendering in WorldView."""
+"""Tests for actor outline rendering via ActorRenderer (delegated from WorldView)."""
 
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import cast
 from unittest.mock import MagicMock
@@ -14,8 +13,9 @@ import pytest
 from brileta import colors
 from brileta.controller import Controller
 from brileta.game.actors import Actor
+from brileta.view.render.actor_renderer import CONTEXTUAL_OUTLINE_ALPHA
 from brileta.view.render.effects.screen_shake import ScreenShake
-from brileta.view.views.world_view import CONTEXTUAL_OUTLINE_ALPHA, WorldView
+from brileta.view.views.world_view import WorldView
 
 
 class DummyActor:
@@ -48,17 +48,27 @@ class DummyGW:
         self.game_map = DummyGameMap(20, 20)
 
 
-@dataclass
 class DummyController:
     """Test controller stub."""
 
-    gw: DummyGW
-    graphics: MagicMock
-    clock: object
-    active_mode: object | None
-    is_combat_mode: Callable[[], bool]
-    selected_target: DummyActor | None = None
-    hovered_actor: DummyActor | None = None
+    def __init__(
+        self,
+        gw: DummyGW,
+        graphics: MagicMock,
+        clock: object,
+        active_mode: object | None,
+        is_combat_mode_fn: Callable[[], bool],
+    ) -> None:
+        self.gw = gw
+        self.graphics = graphics
+        self.clock = clock
+        self.active_mode = active_mode
+        self._is_combat_mode_fn = is_combat_mode_fn
+        self.selected_target: DummyActor | None = None
+        self.hovered_actor: DummyActor | None = None
+
+    def is_combat_mode(self) -> bool:
+        return self._is_combat_mode_fn()
 
 
 def make_controller(*, is_combat: bool) -> DummyController:
@@ -74,7 +84,7 @@ def make_controller(*, is_combat: bool) -> DummyController:
         graphics=graphics,
         clock=clock,
         active_mode=None,
-        is_combat_mode=lambda: is_combat,
+        is_combat_mode_fn=lambda: is_combat,
     )
 
 
@@ -94,6 +104,16 @@ def _setup_view(controller: DummyController) -> WorldView:
     return view
 
 
+def _outline_kwargs(view: WorldView) -> dict:
+    """Return common keyword arguments for outline rendering calls."""
+    return {
+        "game_world": view.controller.gw,
+        "controller": view.controller,
+        "camera_frac_offset": view.camera_frac_offset,
+        "view_origin": (float(view.x), float(view.y)),
+    }
+
+
 class TestSelectionOutline:
     """Tests for selected target outline rendering."""
 
@@ -106,7 +126,7 @@ class TestSelectionOutline:
         controller.gw.actors.append(target)
         controller.selected_target = target
 
-        view._render_selection_and_hover_outlines()
+        view.actor_renderer.render_selection_and_hover_outlines(**_outline_kwargs(view))
 
         vp_x, vp_y = view.viewport_system.world_to_screen(target.x, target.y)
         expected_root_x = view.x + vp_x
@@ -130,7 +150,7 @@ class TestSelectionOutline:
         controller.gw.actors.append(target)
         controller.selected_target = target
 
-        view._render_selection_and_hover_outlines()
+        view.actor_renderer.render_selection_and_hover_outlines(**_outline_kwargs(view))
 
         controller.graphics.draw_actor_outline.assert_not_called()
 
@@ -144,7 +164,7 @@ class TestSelectionOutline:
         controller.selected_target = target
         controller.gw.game_map.visible[target.x, target.y] = False
 
-        view._render_selection_and_hover_outlines()
+        view.actor_renderer.render_selection_and_hover_outlines(**_outline_kwargs(view))
 
         controller.graphics.draw_actor_outline.assert_not_called()
 
@@ -161,7 +181,7 @@ class TestHoverOutline:
         controller.gw.actors.append(target)
         controller.hovered_actor = target
 
-        view._render_selection_and_hover_outlines()
+        view.actor_renderer.render_selection_and_hover_outlines(**_outline_kwargs(view))
 
         vp_x, vp_y = view.viewport_system.world_to_screen(target.x, target.y)
         expected_root_x = view.x + vp_x
@@ -186,7 +206,7 @@ class TestHoverOutline:
         controller.selected_target = target
         controller.hovered_actor = target  # Same actor is both selected and hovered
 
-        view._render_selection_and_hover_outlines()
+        view.actor_renderer.render_selection_and_hover_outlines(**_outline_kwargs(view))
 
         # Should only render once (selected takes priority)
         controller.graphics.draw_actor_outline.assert_called_once()
@@ -215,7 +235,7 @@ def test_hover_outline_skips_when_combat_or_not_visible(
     controller.hovered_actor = target
     controller.gw.game_map.visible[target.x, target.y] = is_visible
 
-    view._render_selection_and_hover_outlines()
+    view.actor_renderer.render_selection_and_hover_outlines(**_outline_kwargs(view))
 
     controller.graphics.draw_actor_outline.assert_not_called()
 
@@ -233,7 +253,7 @@ class TestComplexVisualsOutline:
         controller.gw.actors.append(target)
         controller.selected_target = target
 
-        view._render_selection_and_hover_outlines()
+        view.actor_renderer.render_selection_and_hover_outlines(**_outline_kwargs(view))
 
         # Should call draw_rect_outline for full-tile outline, not draw_actor_outline
         controller.graphics.draw_rect_outline.assert_called_once()
@@ -249,7 +269,7 @@ class TestComplexVisualsOutline:
         controller.gw.actors.append(target)
         controller.selected_target = target
 
-        view._render_selection_and_hover_outlines()
+        view.actor_renderer.render_selection_and_hover_outlines(**_outline_kwargs(view))
 
         # Should call draw_actor_outline for glyph-based outline
         controller.graphics.draw_actor_outline.assert_called_once()

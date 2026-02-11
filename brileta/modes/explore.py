@@ -191,7 +191,13 @@ class ExploreMode(Mode):
         """Render actor outlines for selection and hover feedback."""
         # This is the default rendering when no other mode is active
         if self._fm is not None:
-            self._fm.world_view._render_selection_and_hover_outlines()
+            wv = self._fm.world_view
+            wv.actor_renderer.render_selection_and_hover_outlines(
+                game_world=self.controller.gw,
+                controller=self.controller,
+                camera_frac_offset=wv.camera_frac_offset,
+                view_origin=(float(wv.x), float(wv.y)),
+            )
 
     # -------------------------------------------------------------------------
     # UI Command Helpers

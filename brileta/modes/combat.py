@@ -356,13 +356,24 @@ class CombatMode(Mode):
             return
 
         gw_view = self.controller.frame_manager.world_view
-        alpha = gw_view.get_shimmer_alpha()
+        game_time = self.controller.clock.last_time
+        alpha = gw_view.actor_renderer.get_shimmer_alpha(game_time)
         outline_color = colors.COMBAT_OUTLINE[:3]  # Extract RGB from RGBA
+        game_map = self.controller.gw.game_map
+        camera_frac_offset = gw_view.camera_frac_offset
+        view_origin = (float(gw_view.x), float(gw_view.y))
 
         for actor in self.candidates:
-            if not self.controller.gw.game_map.visible[actor.x, actor.y]:
+            if not game_map.visible[actor.x, actor.y]:
                 continue
-            gw_view.render_actor_outline(actor, outline_color, alpha)
+            gw_view.actor_renderer.render_actor_outline(
+                actor,
+                outline_color,
+                alpha,
+                game_map=game_map,
+                camera_frac_offset=camera_frac_offset,
+                view_origin=view_origin,
+            )
 
     # --- Action-centric combat UI ---
 

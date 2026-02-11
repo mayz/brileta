@@ -18,10 +18,10 @@ from brileta.game.actors.core import CharacterLayer
 from brileta.game.lights import DirectionalLight
 from brileta.types import InterpolationAlpha
 from brileta.util.coordinates import Rect
+from brileta.view.render.actor_renderer import ActorRenderer
 from brileta.view.render.graphics import GraphicsContext
 from brileta.view.render.shadow_renderer import ShadowRenderer
 from brileta.view.render.viewport import ViewportSystem
-from brileta.view.views.world_view import WorldView
 
 
 def _build_actor(
@@ -835,12 +835,12 @@ def test_actor_shadow_receiver_dimming_scales_with_caster_height() -> None:
 
 def test_world_view_actor_lighting_reads_shadow_renderer_scale() -> None:
     actor = _build_actor(x=1, y=1, shadow_height=1)
-    view = object.__new__(WorldView)
-    view.shadow_renderer = SimpleNamespace(
+    renderer = object.__new__(ActorRenderer)
+    renderer.shadow_renderer = SimpleNamespace(
         actor_shadow_receive_light_scale={actor: 0.5}
     )
 
-    light_rgb = view._get_actor_lighting_intensity(actor, Rect(0, 0, 4, 4))
+    light_rgb = renderer._get_actor_lighting_intensity(actor, Rect(0, 0, 4, 4))
     assert light_rgb == pytest.approx((0.5, 0.5, 0.5))
 
 

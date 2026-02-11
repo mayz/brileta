@@ -279,5 +279,7 @@ class TestWorldViewLightOverlay:
         world_view._gpu_actor_lightmap_texture = None
         world_view._gpu_actor_lightmap_viewport_origin = None
 
-        light_rgb = world_view._get_actor_lighting_intensity(actor, Rect(0, 0, 2, 2))
+        light_rgb = world_view.actor_renderer._get_actor_lighting_intensity(
+            actor, Rect(0, 0, 2, 2)
+        )
         assert light_rgb == (0.4, 0.4, 0.4)
