@@ -441,8 +441,18 @@ class AIComponent:
 
                 nx, ny = actor.x + dx, actor.y + dy
 
-                # Passability check (bounds + walkable + actor blocking)
-                if probe_step(game_map, controller.gw, nx, ny) is not None:
+                # Passability check (bounds + walkable + actor blocking).
+                # Door-capable NPCs can escape through closed doors.
+                if (
+                    probe_step(
+                        game_map,
+                        controller.gw,
+                        nx,
+                        ny,
+                        can_open_doors=actor.can_open_doors,
+                    )
+                    is not None
+                ):
                     continue
 
                 # Check if this tile is also hazardous
@@ -643,7 +653,14 @@ class AIComponent:
                 tx = target.x + dx
                 ty = target.y + dy
                 if (
-                    probe_step(game_map, controller.gw, tx, ty, exclude_actor=actor)
+                    probe_step(
+                        game_map,
+                        controller.gw,
+                        tx,
+                        ty,
+                        exclude_actor=actor,
+                        can_open_doors=actor.can_open_doors,
+                    )
                     is not None
                 ):
                     continue
@@ -686,7 +703,14 @@ class AIComponent:
                 tx = actor.x + dx
                 ty = actor.y + dy
                 if (
-                    probe_step(game_map, controller.gw, tx, ty, exclude_actor=actor)
+                    probe_step(
+                        game_map,
+                        controller.gw,
+                        tx,
+                        ty,
+                        exclude_actor=actor,
+                        can_open_doors=actor.can_open_doors,
+                    )
                     is not None
                 ):
                     continue

@@ -540,3 +540,132 @@ def test_probe_step_exclude_actor(
     assert probe_step(gm, gw, 3, 3) is StepBlock.BLOCKED_BY_ACTOR  # type: ignore[arg-type]
     # With exclusion: passable
     assert probe_step(gm, gw, 3, 3, exclude_actor=actor) is None  # type: ignore[arg-type]
+
+
+def test_probe_step_closed_door_passable_when_can_open(
+    basic_setup: tuple[GameMap, SpatialHashGrid[DummyActor]],
+) -> None:
+    """A closed door is passable when can_open_doors=True."""
+    gm, _ = basic_setup
+    gm.tiles[3, 3] = TileTypeID.DOOR_CLOSED
+    gm.invalidate_property_caches()
+    gw = DummyGameWorld(actors_at_locations={})
+    # Default (no flag): blocked
+    assert probe_step(gm, gw, 3, 3) is StepBlock.CLOSED_DOOR  # type: ignore[arg-type]
+    # Explicit can_open_doors=False: blocked
+    assert probe_step(gm, gw, 3, 3, can_open_doors=False) is StepBlock.CLOSED_DOOR  # type: ignore[arg-type]
+    # can_open_doors=True: passable
+    assert probe_step(gm, gw, 3, 3, can_open_doors=True) is None  # type: ignore[arg-type]
+
+
+# --- Door-Aware Pathfinding Tests ---
+
+
+def test_find_path_through_door_when_can_open(
+    basic_setup: tuple[GameMap, SpatialHashGrid[DummyActor]],
+) -> None:
+    """Door-capable actors can pathfind through closed doors."""
+    gm, index = basic_setup
+    # Create a wall with a single door - forces path through the door
+    for x in range(10):
+        if x != 1:
+            gm.tiles[x, 3] = TileTypeID.WALL
+    gm.tiles[1, 3] = TileTypeID.DOOR_CLOSED
+    gm.invalidate_property_caches()
+
+    actor = DummyActor(1, 1)
+    path = find_local_path(
+        gm,
+        cast(SpatialIndex[Actor], index),
+        cast(Actor, actor),
+        (1, 1),
+        (1, 5),
+        can_open_doors=True,
+    )
+
+    assert path
+    assert path[-1] == (1, 5)
+    # The door tile should be part of the path since the actor can open it
+    assert (1, 3) in path
+
+
+def test_find_path_blocked_by_door_when_cannot_open(
+    basic_setup: tuple[GameMap, SpatialHashGrid[DummyActor]],
+) -> None:
+    """Non-door-capable actors treat closed doors as walls (default behavior)."""
+    gm, index = basic_setup
+    # Create a wall with a door that forces routing through it
+    for x in range(10):
+        if x != 1:
+            gm.tiles[x, 3] = TileTypeID.WALL
+    gm.tiles[1, 3] = TileTypeID.DOOR_CLOSED
+    gm.invalidate_property_caches()
+
+    actor = DummyActor(1, 1)
+    # Default can_open_doors=False - door blocks like a wall
+    path = find_local_path(
+        gm,
+        cast(SpatialIndex[Actor], index),
+        cast(Actor, actor),
+        (1, 1),
+        (1, 5),
+    )
+
+    assert path == []  # No path through the door
+
+
+def test_find_path_prefers_open_route_over_door(
+    basic_setup: tuple[GameMap, SpatialHashGrid[DummyActor]],
+) -> None:
+    """Door-capable actors prefer open paths over routing through doors.
+
+    The door's extra cost should make the pathfinder choose an open
+    alternative when one exists at similar distance.
+    """
+    gm, index = basic_setup
+    # Place a door on the direct path at (1, 3)
+    gm.tiles[1, 3] = TileTypeID.DOOR_CLOSED
+    gm.invalidate_property_caches()
+
+    actor = DummyActor(1, 1)
+    path = find_local_path(
+        gm,
+        cast(SpatialIndex[Actor], index),
+        cast(Actor, actor),
+        (1, 1),
+        (1, 5),
+        can_open_doors=True,
+    )
+
+    assert path
+    assert path[-1] == (1, 5)
+    # On an open 10x10 grid, there are plenty of alternative routes.
+    # The pathfinder should route around the door rather than through it.
+    assert (1, 3) not in path
+
+
+def test_find_path_through_door_when_only_option(
+    basic_setup: tuple[GameMap, SpatialHashGrid[DummyActor]],
+) -> None:
+    """Door-capable actors go through a door when it's the only path."""
+    gm, index = basic_setup
+    # Create a corridor where the door is the only way through
+    for x in range(10):
+        if x != 1:
+            gm.tiles[x, 3] = TileTypeID.WALL
+    gm.tiles[1, 3] = TileTypeID.DOOR_CLOSED
+    gm.invalidate_property_caches()
+
+    actor = DummyActor(1, 1)
+    path = find_local_path(
+        gm,
+        cast(SpatialIndex[Actor], index),
+        cast(Actor, actor),
+        (1, 1),
+        (1, 5),
+        can_open_doors=True,
+    )
+
+    assert path
+    assert (1, 3) in path  # Had to go through the door
+    assert path[-1] == (1, 5)

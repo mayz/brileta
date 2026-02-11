@@ -553,6 +553,10 @@ class Character(Actor):
         # ActionPlan system for multi-step actions (approach + execute)
         self.active_plan: ActivePlan | None = None
 
+        # Whether this character can plan routes through closed doors and
+        # open them. Defaults to False; NPC overrides via its constructor.
+        self.can_open_doors: bool = False
+
         # Type narrowing - these are guaranteed to exist for Characters.
         self.stats: StatsComponent
         self.health: HealthComponent
@@ -689,6 +693,9 @@ class PC(Character):
             speed=speed,
         )
 
+        # The player can always open doors (click-to-walk routes through them).
+        self.can_open_doors = True
+
         # Give player starting energy so they can act immediately on game start.
         # NPCs don't need this - they get energy from on_player_action() before acting.
         self.energy.accumulated_energy = float(self.energy.speed)
@@ -735,6 +742,7 @@ class NPC(Character):
         starting_weapon: Item | None = None,
         num_ready_slots: int = 2,
         speed: int = DEFAULT_ACTOR_SPEED,
+        can_open_doors: bool = False,
         **kwargs,
     ) -> None:
         """Instantiate NPC.
@@ -749,6 +757,9 @@ class NPC(Character):
             starting_weapon: Initial equipped weapon
             num_ready_slots: The number of ready slots this character should have
             speed: Action speed (higher = more frequent actions)
+            can_open_doors: Whether this NPC can open closed doors during
+                pathfinding. Humanoid NPCs should be True, animals/creatures
+                should be False.
             **kwargs: Additional Actor parameters
         """
         super().__init__(
@@ -774,6 +785,10 @@ class NPC(Character):
 
         # Type narrowing: NPC always has AI.
         self.ai: AIComponent
+
+        # Whether this NPC can plan routes through closed doors and open them.
+        # Humanoid NPCs can open doors; animals and creatures cannot.
+        self.can_open_doors = can_open_doors
 
         # Goal system: the NPC's current multi-turn objective (flee, patrol, etc).
         # Goals sit above ActionPlans and manage behavioral state transitions.

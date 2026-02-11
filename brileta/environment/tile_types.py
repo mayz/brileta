@@ -21,11 +21,17 @@ from brileta import colors
 from brileta.game.enums import ImpactMaterial
 from brileta.util.dice import Dice
 
-# --- Hazard Cost Constants ---
+# --- Pathfinding Cost Constants ---
 # Used by pathfinding to make AI avoid hazardous tiles.
 # Cost formula: HAZARD_BASE_COST + (avg_damage * HAZARD_DAMAGE_SCALING)
 HAZARD_BASE_COST = 5
 HAZARD_DAMAGE_SCALING = 2
+
+# Extra cost assigned to closed doors for NPCs that can open them.
+# High enough that the pathfinder prefers open routes when available,
+# but low enough that it will still route through a door when no
+# cheaper alternative exists.
+DOOR_TRAVERSAL_COST = 5
 
 
 class TileTypeID(IntEnum):

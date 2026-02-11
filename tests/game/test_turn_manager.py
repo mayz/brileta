@@ -873,7 +873,8 @@ def test_on_approach_result_pops_path_on_success() -> None:
     active_plan.cached_path = [(1, 0), (2, 0), (3, 0)]
     player.active_plan = active_plan
 
-    # Simulate a successful move result
+    # Simulate a successful move: the actor is now at path[0]
+    player.x, player.y = 1, 0
     result = GameActionResult(succeeded=True)
 
     # Call _on_approach_result
@@ -910,6 +911,87 @@ def test_on_approach_result_invalidates_path_on_failure() -> None:
 
     # Path should be invalidated (set to None for recalculation)
     assert active_plan.cached_path is None
+
+
+def test_pc_can_open_doors_by_default() -> None:
+    """PC defaults to can_open_doors=True so click-to-walk routes through doors."""
+    pc = PC(0, 0, "@", colors.WHITE, "Player")
+    assert pc.can_open_doors is True
+
+
+def test_npc_cannot_open_doors_by_default() -> None:
+    """NPC defaults to can_open_doors=False (must opt in)."""
+    npc = NPC(0, 0, "g", colors.RED, "Guard")
+    assert npc.can_open_doors is False
+
+
+def test_handle_approach_step_returns_open_door_intent() -> None:
+    """_handle_approach_step returns OpenDoorIntent when path[0] is a closed door."""
+    from brileta.game.action_plan import (
+        ActivePlan,
+        ApproachStep,
+        PlanContext,
+        WalkToPlan,
+    )
+    from brileta.game.actions.environment import OpenDoorIntent
+
+    controller, player = _make_world()
+    tm = controller.turn_manager
+
+    # Give the player door-opening capability.
+    player.can_open_doors = True
+
+    # Place a closed door at (1, 0) on the path.
+    controller.gw.game_map.tiles[1, 0] = TileTypeID.DOOR_CLOSED
+    controller.gw.game_map.invalidate_property_caches()
+
+    context = PlanContext(
+        actor=player,
+        controller=cast(Controller, controller),
+        target_position=(3, 0),
+    )
+    active_plan = ActivePlan(plan=WalkToPlan, context=context)
+    active_plan.cached_path = [(1, 0), (2, 0), (3, 0)]
+    player.active_plan = active_plan
+
+    step = active_plan.get_current_step()
+    assert isinstance(step, ApproachStep)
+
+    intent = tm._handle_approach_step(player, active_plan, step)
+
+    assert isinstance(intent, OpenDoorIntent)
+    assert intent.x == 1
+    assert intent.y == 0
+    # Path should still be intact (peeked, not popped).
+    assert len(active_plan.cached_path) == 3
+
+
+def test_on_approach_result_keeps_path_on_door_open() -> None:
+    """Path entry is NOT popped when a door open succeeds (actor didn't move)."""
+    from brileta.game.action_plan import ActivePlan, PlanContext, WalkToPlan
+    from brileta.game.actions.base import GameActionResult
+
+    controller, player = _make_world()
+    tm = controller.turn_manager
+
+    context = PlanContext(
+        actor=player,
+        controller=cast(Controller, controller),
+        target_position=(3, 0),
+    )
+    active_plan = ActivePlan(plan=WalkToPlan, context=context)
+    active_plan.cached_path = [(1, 0), (2, 0), (3, 0)]
+    player.active_plan = active_plan
+
+    # Simulate a successful door open: result.succeeded=True but the
+    # actor is still at the origin (didn't move through the door yet).
+    assert (player.x, player.y) == (0, 0)
+    result = GameActionResult(succeeded=True)
+    tm._on_approach_result(player, result)
+
+    # Path should be unchanged - the entry stays for the follow-up move.
+    assert len(active_plan.cached_path) == 3
+    assert active_plan.cached_path[0] == (1, 0)
 
 
 def test_plan_completes_when_destination_reached() -> None:

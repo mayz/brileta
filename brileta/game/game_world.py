@@ -573,6 +573,7 @@ class GameWorld:
                             speed=80,
                             creature_size=CreatureSize.LARGE,
                             starting_weapon=SLEDGEHAMMER_TYPE.create(),
+                            can_open_doors=True,
                         )
                     else:
                         # Hackadoo: standard ranged enemy
@@ -589,6 +590,7 @@ class GameWorld:
                             weirdness=1,
                             intelligence=2,
                             starting_weapon=REVOLVER_TYPE.create(),
+                            can_open_doors=True,
                         )
                     self.add_actor(npc)
                     placed = True
@@ -842,6 +844,7 @@ class GameWorld:
                 speed=80,
                 creature_size=CreatureSize.LARGE,
                 starting_weapon=SLEDGEHAMMER_TYPE.create(),
+                can_open_doors=True,
             )
         # Hackadoo: standard ranged enemy
         return NPC(
@@ -855,6 +858,7 @@ class GameWorld:
             weirdness=1,
             intelligence=2,
             starting_weapon=REVOLVER_TYPE.create(),
+            can_open_doors=True,
         )
 
     def _add_test_fire(self, rooms: list) -> None:

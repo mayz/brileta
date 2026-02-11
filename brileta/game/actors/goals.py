@@ -305,7 +305,14 @@ class FleeGoal(Goal):
                 tx = npc.x + dx
                 ty = npc.y + dy
                 if (
-                    probe_step(game_map, controller.gw, tx, ty, exclude_actor=npc)
+                    probe_step(
+                        game_map,
+                        controller.gw,
+                        tx,
+                        ty,
+                        exclude_actor=npc,
+                        can_open_doors=npc.can_open_doors,
+                    )
                     is not None
                 ):
                     continue
@@ -556,13 +563,25 @@ class WanderGoal(Goal):
     def _is_step_walkable(
         self, npc: NPC, controller: Controller, dx: int, dy: int
     ) -> bool:
-        """Return True when a step destination is in bounds, walkable, and unblocked."""
+        """Return True when a step destination is in bounds, walkable, and unblocked.
+
+        Door-capable NPCs treat closed doors as passable here. The actual
+        door-opening is handled by ActionRouter's bump-to-open fallback
+        when the resulting MoveIntent collides with the door.
+        """
         from brileta.util.pathfinding import probe_step
 
         tx = npc.x + dx
         ty = npc.y + dy
         return (
-            probe_step(controller.gw.game_map, controller.gw, tx, ty, exclude_actor=npc)
+            probe_step(
+                controller.gw.game_map,
+                controller.gw,
+                tx,
+                ty,
+                exclude_actor=npc,
+                can_open_doors=npc.can_open_doors,
+            )
             is None
         )
 

@@ -458,15 +458,18 @@ class TurnManager:
         plan: ActivePlan,
         step: ApproachStep,
     ) -> GameIntent | None:
-        """Handle an ApproachStep by generating the next MoveIntent.
+        """Handle an ApproachStep by generating the next MoveIntent or OpenDoorIntent.
 
         This method:
         1. Checks if we've arrived (based on stop_distance)
-        2. Calculates path if needed
+        2. Calculates path if needed (door-capable NPCs can route through doors)
         3. PEEKs at the next position (does NOT pop)
-        4. Returns a MoveIntent
+        4. If the next tile is a closed door, returns an OpenDoorIntent
+        5. Otherwise returns a MoveIntent
 
-        The path is only popped after the move succeeds, in _on_approach_result().
+        The path is only popped after a successful move, in _on_approach_result().
+        Door opens don't pop the path - the NPC opens the door this turn and
+        moves through it on the next turn.
 
         Args:
             actor: The character executing the plan.
@@ -474,10 +477,14 @@ class TurnManager:
             step: The ApproachStep to handle.
 
         Returns:
-            A MoveIntent for the next step, or None if arrived/blocked.
+            A MoveIntent or OpenDoorIntent for the next step, or None if
+            arrived/blocked.
         """
+        from brileta.game.actions.environment import OpenDoorIntent
         from brileta.game.actions.movement import MoveIntent
         from brileta.util.pathfinding import find_local_path
+
+        actor_can_open_doors = actor.can_open_doors
 
         # Determine target position
         if plan.context.target_actor is not None:
@@ -506,12 +513,26 @@ class TurnManager:
             asi = self.controller.gw.actor_spatial_index
             start_pos: tuple[int, int] = (actor.x, actor.y)
 
-            # First try direct path to target
-            plan.cached_path = find_local_path(gm, asi, actor, start_pos, target_pos)
+            # First try direct path to target. Door-capable NPCs treat
+            # closed doors as high-cost passable tiles so they can plan
+            # routes through indoor/outdoor boundaries.
+            plan.cached_path = find_local_path(
+                gm,
+                asi,
+                actor,
+                start_pos,
+                target_pos,
+                can_open_doors=actor_can_open_doors,
+            )
 
             # If direct path fails, try hierarchical (cross-region) pathfinding
             if not plan.cached_path:
-                hierarchical = self._try_hierarchical_path(actor, start_pos, target_pos)
+                hierarchical = self._try_hierarchical_path(
+                    actor,
+                    start_pos,
+                    target_pos,
+                    can_open_doors=actor_can_open_doors,
+                )
                 if hierarchical:
                     plan.cached_path, plan.cached_hierarchical_path = hierarchical
 
@@ -534,7 +555,14 @@ class TurnManager:
                             is not None
                         ):
                             continue
-                        candidate = find_local_path(gm, asi, actor, start_pos, (tx, ty))
+                        candidate = find_local_path(
+                            gm,
+                            asi,
+                            actor,
+                            start_pos,
+                            (tx, ty),
+                            can_open_doors=actor_can_open_doors,
+                        )
                         if candidate and (
                             best_path is None or len(candidate) < len(best_path)
                         ):
@@ -550,6 +578,19 @@ class TurnManager:
         # PEEK at next position - don't pop yet!
         # We only pop after confirming the move succeeded.
         next_pos = plan.cached_path[0]
+
+        # If the next tile is a closed door and the actor can open it,
+        # emit an OpenDoorIntent instead of a MoveIntent. The NPC spends
+        # this turn opening the door, then moves through on the next turn.
+        if actor_can_open_doors:
+            from brileta.environment.tile_types import TileTypeID
+
+            gm = self.controller.gw.game_map
+            if gm.tiles[next_pos[0], next_pos[1]] == TileTypeID.DOOR_CLOSED:
+                return OpenDoorIntent(
+                    plan.context.controller, actor, next_pos[0], next_pos[1]
+                )
+
         dx = next_pos[0] - actor.x
         dy = next_pos[1] - actor.y
 
@@ -576,16 +617,16 @@ class TurnManager:
         return round(clamped)
 
     def _on_approach_result(self, actor: Character, result: GameActionResult) -> None:
-        """Handle the result of an approach move.
+        """Handle the result of a MoveIntent or OpenDoorIntent from an ApproachStep.
 
-        Called after executing a MoveIntent from an ApproachStep. Updates the
-        plan state based on whether the move succeeded:
-        - Success: Pop the path entry we just moved to
-        - Failure: Invalidate path for recalculation on next turn
+        Updates the plan state based on whether the action succeeded:
+        - Move success: Pop the path entry the actor moved to.
+        - Door open success: Keep the path entry (actor didn't move yet).
+        - Failure: Invalidate path for recalculation on next turn.
 
         Args:
-            actor: The character who attempted the move.
-            result: The result from executing the MoveIntent.
+            actor: The character who attempted the action.
+            result: The result from executing the intent.
         """
         from brileta.game.action_plan import ApproachStep
 
@@ -598,8 +639,10 @@ class TurnManager:
             return
 
         if result.succeeded:
-            # Move succeeded - now safe to pop the path
-            if plan.cached_path:
+            # Only pop the path entry if the actor actually moved to the
+            # expected position. Door opens succeed without moving the actor,
+            # so the path entry stays for the follow-up move next turn.
+            if plan.cached_path and (actor.x, actor.y) == plan.cached_path[0]:
                 plan.cached_path.pop(0)
 
             # After popping, check if we need to compute the next hierarchical segment
@@ -633,6 +676,8 @@ class TurnManager:
         actor: Character,
         start_pos: WorldTilePos,
         target_pos: WorldTilePos,
+        *,
+        can_open_doors: bool = False,
     ) -> tuple[list[WorldTilePos], list[int] | None] | None:
         """Attempt hierarchical pathfinding across regions.
 
@@ -643,6 +688,7 @@ class TurnManager:
             actor: The character pathfinding.
             start_pos: Starting position.
             target_pos: Target position.
+            can_open_doors: Whether the actor can open closed doors.
 
         Returns:
             Tuple of (local_path, high_level_path) or None.
@@ -683,8 +729,16 @@ class TurnManager:
         if connection_point is None:
             return None
 
-        # Compute local path to the connection point
-        local_path = find_local_path(gm, asi, actor, start_pos, connection_point)
+        # Compute local path to the connection point. Door-capable actors can
+        # route through closed doors (e.g., building entrances between regions).
+        local_path = find_local_path(
+            gm,
+            asi,
+            actor,
+            start_pos,
+            connection_point,
+            can_open_doors=can_open_doors,
+        )
         if not local_path:
             return None
 
@@ -716,6 +770,7 @@ class TurnManager:
 
         gm = self.controller.gw.game_map
         asi = self.controller.gw.actor_spatial_index
+        actor_can_open_doors = actor.can_open_doors
 
         # Pop the region we just entered
         current_region_id = plan.cached_hierarchical_path.pop(0)
@@ -747,7 +802,12 @@ class TurnManager:
 
             # Compute local path to connection point
             new_path = find_local_path(
-                gm, asi, actor, (actor.x, actor.y), connection_point
+                gm,
+                asi,
+                actor,
+                (actor.x, actor.y),
+                connection_point,
+                can_open_doors=actor_can_open_doors,
             )
             if new_path:
                 plan.cached_path = new_path
@@ -756,7 +816,14 @@ class TurnManager:
                 actor.active_plan = None
         else:
             # We're in the final region - path to target
-            new_path = find_local_path(gm, asi, actor, (actor.x, actor.y), target_pos)
+            new_path = find_local_path(
+                gm,
+                asi,
+                actor,
+                (actor.x, actor.y),
+                target_pos,
+                can_open_doors=actor_can_open_doors,
+            )
             if new_path:
                 plan.cached_path = new_path
             # If no path, leave cached_path empty - plan will handle it next turn

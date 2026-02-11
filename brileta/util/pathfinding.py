@@ -33,6 +33,7 @@ def probe_step(
     y: int,
     *,
     exclude_actor: Actor | None = None,
+    can_open_doors: bool = False,
 ) -> StepBlock | None:
     """Check whether a single tile is passable and return the reason if not.
 
@@ -51,6 +52,9 @@ def probe_step(
         y: Tile Y coordinate to test.
         exclude_actor: An actor to ignore for occupancy (typically the
             moving actor itself, who is allowed to "stand on" the tile).
+        can_open_doors: If True, treat closed doors as passable. The
+            actual door-opening is handled downstream by ActionRouter
+            when the move intent bumps the door.
 
     Returns:
         ``None`` if the tile is passable, or a :class:`StepBlock` value
@@ -64,12 +68,17 @@ def probe_step(
         return StepBlock.OUT_OF_BOUNDS
 
     # 2. Closed door (checked before walkable because doors are non-walkable
-    #    tiles that require special handling - opening, not rerouting)
-    if game_map.tiles[x, y] == TileTypeID.DOOR_CLOSED:
+    #    tiles that require special handling - opening, not rerouting).
+    #    Door-capable actors treat closed doors as passable; the actual
+    #    opening happens via ActionRouter's bump-to-open fallback.
+    is_closed_door = game_map.tiles[x, y] == TileTypeID.DOOR_CLOSED
+    if is_closed_door and not can_open_doors:
         return StepBlock.CLOSED_DOOR
 
-    # 3. Static walkability (walls, deep water, etc.)
-    if not game_map.walkable[x, y]:
+    # 3. Static walkability (walls, deep water, etc.).
+    # Closed doors are non-walkable but already handled above for
+    # door-capable actors, so skip them here.
+    if not game_map.walkable[x, y] and not is_closed_door:
         return StepBlock.WALL
 
     # 4. Dynamic actor occupancy
@@ -196,6 +205,8 @@ def find_local_path(
     pathing_actor: Actor,
     start_pos: WorldTilePos,
     end_pos: WorldTilePos,
+    *,
+    can_open_doors: bool = False,
 ) -> list[WorldTilePos]:
     """
     Calculate a path from a start to an end position using A*.
@@ -214,6 +225,11 @@ def find_local_path(
     costs so the pathfinder prefers to route around them when alternatives
     exist, but will still traverse them if no other path is available.
 
+    When ``can_open_doors`` is True, closed doors are treated as passable
+    with extra cost (DOOR_TRAVERSAL_COST) instead of being impassable.
+    This lets door-capable NPCs plan routes through closed doors while
+    still preferring open paths when they exist.
+
     Args:
         game_map: The GameMap instance, used for static terrain checks.
         actor_spatial_index: The spatial index, used for dynamic obstacle checks.
@@ -221,19 +237,33 @@ def find_local_path(
             obstacle.
         start_pos: The (x, y) starting coordinate for the path.
         end_pos: The (x, y) target coordinate for the path.
+        can_open_doors: If True, treat closed doors as high-cost passable
+            tiles rather than walls. Defaults to False.
 
     Returns:
         A list of (x, y) tuples representing the path from start to end.
         The list does not include the start point. Returns an empty list
         if no path is found.
     """
-    from brileta.environment.tile_types import HAZARD_BASE_COST, get_hazard_cost_map
+    from brileta.environment.tile_types import (
+        DOOR_TRAVERSAL_COST,
+        HAZARD_BASE_COST,
+        TileTypeID,
+        get_hazard_cost_map,
+    )
 
     # Build cost array: start with hazard costs for all tiles, then mask
     # non-walkable tiles to 0. This ensures hazards anywhere on the map
     # are considered, not just within the start-end bounding box.
     hazard_costs = get_hazard_cost_map(game_map.tiles)
     cost = np.where(game_map.walkable, hazard_costs, 0).astype(np.int16)
+
+    # Door-capable actors can pathfind through closed doors at extra cost.
+    # Doors are non-walkable (cost 0 after the mask above), so we overlay
+    # them with DOOR_TRAVERSAL_COST to make them passable but expensive.
+    if can_open_doors:
+        door_mask = game_map.tiles == TileTypeID.DOOR_CLOSED
+        cost[door_mask] = DOOR_TRAVERSAL_COST
 
     # Bounding box for spatial index queries (actors near the path)
     x1 = max(0, min(start_pos[0], end_pos[0]))
