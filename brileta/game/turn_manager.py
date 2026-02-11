@@ -32,6 +32,7 @@ from collections import deque
 from typing import TYPE_CHECKING
 
 from brileta import config
+from brileta.constants.movement import MovementConstants as Movement
 from brileta.game.action_router import ActionRouter
 from brileta.game.actions.base import GameActionResult, GameIntent
 from brileta.util.coordinates import WorldTilePos
@@ -604,16 +605,15 @@ class TurnManager:
         deliberate approach near the target while keeping long-distance travel
         snappy. The duration is clamped to [70, 140] ms.
         """
-        min_duration_ms = 70
-        max_duration_ms = 140
-        far_distance = 4
-        distance_span = 3
+        min_ms = Movement.APPROACH_MIN_DURATION_MS
+        max_ms = Movement.APPROACH_MAX_DURATION_MS
+        far = Movement.APPROACH_FAR_DISTANCE
+        span = Movement.APPROACH_DISTANCE_SPAN
 
-        progress = (far_distance - distance) / distance_span
-        duration_range = max_duration_ms - min_duration_ms
-        duration_ms = min_duration_ms + duration_range * progress
+        progress = (far - distance) / span
+        duration_ms = min_ms + (max_ms - min_ms) * progress
 
-        clamped = max(min_duration_ms, min(max_duration_ms, duration_ms))
+        clamped = max(min_ms, min(max_ms, duration_ms))
         return round(clamped)
 
     def _on_approach_result(self, actor: Character, result: GameActionResult) -> None:

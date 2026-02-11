@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, cast
 
+from brileta.constants.combat import CombatConstants as Combat
 from brileta.game import ranges
 from brileta.game.actions.combat import AttackIntent
 from brileta.game.actions.stunts import KickIntent, PunchIntent, PushIntent, TripIntent
@@ -343,7 +344,7 @@ class CombatActionDiscovery:
 
         resolver = controller.create_resolver(
             ability_score=attacker_score,
-            roll_to_exceed=defender_score + 10,
+            roll_to_exceed=defender_score + Combat.D20_DC_BASE,
             has_advantage=has_advantage,
             has_disadvantage=has_disadvantage,
         )

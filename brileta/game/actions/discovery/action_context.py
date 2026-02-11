@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from brileta import config
+from brileta.constants.combat import CombatConstants as Combat
 from brileta.game import ranges
 from brileta.game.actors import Character
 
@@ -90,7 +91,7 @@ class ActionContextBuilder:
 
         resolver = controller.create_resolver(
             ability_score=getattr(actor.stats, stat_name),
-            roll_to_exceed=target.stats.agility + 10,
+            roll_to_exceed=target.stats.agility + Combat.D20_DC_BASE,
             has_advantage=has_advantage,
             has_disadvantage=has_disadvantage,
         )

@@ -4,6 +4,25 @@
 class CombatConstants:
     """Constants for combat calculations and mechanics."""
 
+    # --- d20 Resolution ---
+    # Difficulty class base: roll_to_exceed = defender_stat + D20_DC_BASE
+    D20_DC_BASE = 10
+
+    # --- Action presentation durations (milliseconds) ---
+    # How long the game pauses after each action type to let the
+    # player read the outcome before the next action fires.
+    MELEE_DURATION_MS = 300
+    RANGED_DURATION_MS = 350
+    STUNT_DURATION_MS = 400
+    RELOAD_DURATION_MS = 300
+    HOLSTER_DURATION_MS = 300
+    PUNCH_DURATION_MS = 350
+
+    # --- Damage-to-VFX intensity ---
+    # Divides raw damage to produce a 0..~1 intensity for blood splatter, etc.
+    # Typical damage 1-20 becomes intensity 0.05-1.0.
+    DAMAGE_INTENSITY_DIVISOR = 20.0
+
     # Area effects
     CONE_SPREAD_COSINE = 0.707  # ~45 degrees spread
 

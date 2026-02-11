@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from brileta import colors
+from brileta.constants.combat import CombatConstants as Combat
 from brileta.events import (
     FloatingTextEvent,
     FloatingTextValence,
@@ -76,7 +77,7 @@ class PushExecutor(ActionExecutor):
 
         resolver = intent.controller.create_resolver(
             ability_score=attacker_strength,
-            roll_to_exceed=defender_strength + 10,
+            roll_to_exceed=defender_strength + Combat.D20_DC_BASE,
             has_advantage=resolution_args.get("has_advantage", False),
             has_disadvantage=resolution_args.get("has_disadvantage", False),
         )
@@ -105,7 +106,9 @@ class PushExecutor(ActionExecutor):
                     msg = f"Critical! {atk_name} knocks {def_name} to the ground!"
                 publish_event(MessageEvent(msg, colors.YELLOW))
                 escalate_hostility(intent.attacker, intent.defender, intent.controller)
-                return GameActionResult(succeeded=True, duration_ms=400)
+                return GameActionResult(
+                    succeeded=True, duration_ms=Combat.STUNT_DURATION_MS
+                )
 
             case OutcomeTier.SUCCESS:
                 pushed = self._attempt_push(intent, dx, dy)
@@ -131,7 +134,9 @@ class PushExecutor(ActionExecutor):
                     msg = f"{atk_name} pushes {def_name} but they have nowhere to go!"
                     publish_event(MessageEvent(msg, colors.LIGHT_GREY))
                 escalate_hostility(intent.attacker, intent.defender, intent.controller)
-                return GameActionResult(succeeded=True, duration_ms=400)
+                return GameActionResult(
+                    succeeded=True, duration_ms=Combat.STUNT_DURATION_MS
+                )
 
             case OutcomeTier.PARTIAL_SUCCESS:
                 pushed = self._attempt_push(intent, dx, dy)
@@ -144,7 +149,9 @@ class PushExecutor(ActionExecutor):
                     msg = f"{atk_name} pushes {def_name} but both end up off-balance!"
                 publish_event(MessageEvent(msg, colors.LIGHT_BLUE))
                 escalate_hostility(intent.attacker, intent.defender, intent.controller)
-                return GameActionResult(succeeded=True, duration_ms=400)
+                return GameActionResult(
+                    succeeded=True, duration_ms=Combat.STUNT_DURATION_MS
+                )
 
             case OutcomeTier.FAILURE:
                 intent.attacker.status_effects.apply_status_effect(OffBalanceEffect())
@@ -162,7 +169,9 @@ class PushExecutor(ActionExecutor):
                 msg = f"{atk_name} fails to push {def_name} and stumbles off-balance!"
                 publish_event(MessageEvent(msg, colors.GREY))
                 escalate_hostility(intent.attacker, intent.defender, intent.controller)
-                return GameActionResult(succeeded=False, duration_ms=400)
+                return GameActionResult(
+                    succeeded=False, duration_ms=Combat.STUNT_DURATION_MS
+                )
 
             case OutcomeTier.CRITICAL_FAILURE:
                 intent.attacker.status_effects.apply_status_effect(TrippedEffect())
@@ -171,10 +180,12 @@ class PushExecutor(ActionExecutor):
                 msg = f"Critical miss! {atk_name} trips trying to push {def_name}!"
                 publish_event(MessageEvent(msg, colors.ORANGE))
                 escalate_hostility(intent.attacker, intent.defender, intent.controller)
-                return GameActionResult(succeeded=False, duration_ms=400)
+                return GameActionResult(
+                    succeeded=False, duration_ms=Combat.STUNT_DURATION_MS
+                )
 
         # Fallback (should never reach)
-        return GameActionResult(succeeded=False, duration_ms=400)
+        return GameActionResult(succeeded=False, duration_ms=Combat.STUNT_DURATION_MS)
 
     def _attempt_push(self, intent: PushIntent, dx: int, dy: int) -> bool:
         """Attempt to push the defender in the given direction.
@@ -325,7 +336,7 @@ class TripExecutor(ActionExecutor):
 
         resolver = intent.controller.create_resolver(
             ability_score=attacker_agility,
-            roll_to_exceed=defender_agility + 10,
+            roll_to_exceed=defender_agility + Combat.D20_DC_BASE,
             has_advantage=resolution_args.get("has_advantage", False),
             has_disadvantage=resolution_args.get("has_disadvantage", False),
         )
@@ -356,7 +367,9 @@ class TripExecutor(ActionExecutor):
                 )
                 publish_event(MessageEvent(msg, colors.YELLOW))
                 escalate_hostility(intent.attacker, intent.defender, intent.controller)
-                return GameActionResult(succeeded=True, duration_ms=400)
+                return GameActionResult(
+                    succeeded=True, duration_ms=Combat.STUNT_DURATION_MS
+                )
 
             case OutcomeTier.SUCCESS:
                 intent.defender.status_effects.apply_status_effect(TrippedEffect())
@@ -372,7 +385,9 @@ class TripExecutor(ActionExecutor):
                 msg = f"{atk_name} trips {def_name}! They fall prone!"
                 publish_event(MessageEvent(msg, colors.WHITE))
                 escalate_hostility(intent.attacker, intent.defender, intent.controller)
-                return GameActionResult(succeeded=True, duration_ms=400)
+                return GameActionResult(
+                    succeeded=True, duration_ms=Combat.STUNT_DURATION_MS
+                )
 
             case OutcomeTier.PARTIAL_SUCCESS:
                 # Target tripped but attacker stumbles
@@ -390,7 +405,9 @@ class TripExecutor(ActionExecutor):
                 msg = f"{atk_name} trips {def_name} but stumbles in the process!"
                 publish_event(MessageEvent(msg, colors.LIGHT_BLUE))
                 escalate_hostility(intent.attacker, intent.defender, intent.controller)
-                return GameActionResult(succeeded=True, duration_ms=400)
+                return GameActionResult(
+                    succeeded=True, duration_ms=Combat.STUNT_DURATION_MS
+                )
 
             case OutcomeTier.FAILURE:
                 # Trip attempt fails - attacker stumbles
@@ -407,7 +424,9 @@ class TripExecutor(ActionExecutor):
                 msg = f"{atk_name} fails to trip {def_name} and stumbles!"
                 publish_event(MessageEvent(msg, colors.GREY))
                 escalate_hostility(intent.attacker, intent.defender, intent.controller)
-                return GameActionResult(succeeded=False, duration_ms=400)
+                return GameActionResult(
+                    succeeded=False, duration_ms=Combat.STUNT_DURATION_MS
+                )
 
             case OutcomeTier.CRITICAL_FAILURE:
                 # Attacker overextends and falls
@@ -415,10 +434,12 @@ class TripExecutor(ActionExecutor):
                 msg = f"Critical miss! {atk_name} trips over their own feet!"
                 publish_event(MessageEvent(msg, colors.ORANGE))
                 escalate_hostility(intent.attacker, intent.defender, intent.controller)
-                return GameActionResult(succeeded=False, duration_ms=400)
+                return GameActionResult(
+                    succeeded=False, duration_ms=Combat.STUNT_DURATION_MS
+                )
 
         # Fallback (should never reach)
-        return GameActionResult(succeeded=False, duration_ms=400)
+        return GameActionResult(succeeded=False, duration_ms=Combat.STUNT_DURATION_MS)
 
 
 class KickExecutor(ActionExecutor):
@@ -460,7 +481,7 @@ class KickExecutor(ActionExecutor):
 
         resolver = intent.controller.create_resolver(
             ability_score=attacker_strength,
-            roll_to_exceed=defender_agility + 10,
+            roll_to_exceed=defender_agility + Combat.D20_DC_BASE,
             has_advantage=resolution_args.get("has_advantage", False),
             has_disadvantage=resolution_args.get("has_disadvantage", False),
         )
@@ -498,7 +519,9 @@ class KickExecutor(ActionExecutor):
                     )
                 publish_event(MessageEvent(msg, colors.YELLOW))
                 escalate_hostility(intent.attacker, intent.defender, intent.controller)
-                return GameActionResult(succeeded=True, duration_ms=400)
+                return GameActionResult(
+                    succeeded=True, duration_ms=Combat.STUNT_DURATION_MS
+                )
 
             case OutcomeTier.SUCCESS:
                 # Damage + push
@@ -520,7 +543,9 @@ class KickExecutor(ActionExecutor):
                     msg = f"{atk_name} kicks {def_name} for {damage} damage!"
                 publish_event(MessageEvent(msg, colors.WHITE))
                 escalate_hostility(intent.attacker, intent.defender, intent.controller)
-                return GameActionResult(succeeded=True, duration_ms=400)
+                return GameActionResult(
+                    succeeded=True, duration_ms=Combat.STUNT_DURATION_MS
+                )
 
             case OutcomeTier.PARTIAL_SUCCESS:
                 # Damage + push, but attacker stumbles
@@ -549,7 +574,9 @@ class KickExecutor(ActionExecutor):
                     )
                 publish_event(MessageEvent(msg, colors.LIGHT_BLUE))
                 escalate_hostility(intent.attacker, intent.defender, intent.controller)
-                return GameActionResult(succeeded=True, duration_ms=400)
+                return GameActionResult(
+                    succeeded=True, duration_ms=Combat.STUNT_DURATION_MS
+                )
 
             case OutcomeTier.FAILURE:
                 # Miss - attacker stumbles
@@ -566,7 +593,9 @@ class KickExecutor(ActionExecutor):
                 msg = f"{atk_name} misses the kick and stumbles off-balance!"
                 publish_event(MessageEvent(msg, colors.GREY))
                 escalate_hostility(intent.attacker, intent.defender, intent.controller)
-                return GameActionResult(succeeded=False, duration_ms=400)
+                return GameActionResult(
+                    succeeded=False, duration_ms=Combat.STUNT_DURATION_MS
+                )
 
             case OutcomeTier.CRITICAL_FAILURE:
                 # Attacker falls
@@ -574,10 +603,12 @@ class KickExecutor(ActionExecutor):
                 msg = f"Critical miss! {atk_name} slips and falls trying to kick!"
                 publish_event(MessageEvent(msg, colors.ORANGE))
                 escalate_hostility(intent.attacker, intent.defender, intent.controller)
-                return GameActionResult(succeeded=False, duration_ms=400)
+                return GameActionResult(
+                    succeeded=False, duration_ms=Combat.STUNT_DURATION_MS
+                )
 
         # Fallback (should never reach)
-        return GameActionResult(succeeded=False, duration_ms=400)
+        return GameActionResult(succeeded=False, duration_ms=Combat.STUNT_DURATION_MS)
 
     def _attempt_push(self, intent: KickIntent, dx: int, dy: int) -> bool:
         """Attempt to push the defender in the given direction.
@@ -718,7 +749,7 @@ class HolsterWeaponExecutor(ActionExecutor):
                 colors.WHITE,
             )
         )
-        return GameActionResult(succeeded=True, duration_ms=300)
+        return GameActionResult(succeeded=True, duration_ms=Combat.HOLSTER_DURATION_MS)
 
 
 class PunchExecutor(ActionExecutor):
@@ -768,7 +799,7 @@ class PunchExecutor(ActionExecutor):
 
         resolver = intent.controller.create_resolver(
             ability_score=attacker_stat,
-            roll_to_exceed=defender_defense + 10,
+            roll_to_exceed=defender_defense + Combat.D20_DC_BASE,
             has_advantage=resolution_args.get("has_advantage", False),
             has_disadvantage=resolution_args.get("has_disadvantage", False),
         )
@@ -806,7 +837,9 @@ class PunchExecutor(ActionExecutor):
                 publish_event(MessageEvent(msg, colors.WHITE))
 
             escalate_hostility(intent.attacker, intent.defender, intent.controller)
-            return GameActionResult(succeeded=True, duration_ms=350)
+            return GameActionResult(
+                succeeded=True, duration_ms=Combat.PUNCH_DURATION_MS
+            )
 
         # Miss
         publish_event(
@@ -822,4 +855,4 @@ class PunchExecutor(ActionExecutor):
         publish_event(MessageEvent(msg, colors.GREY))
 
         escalate_hostility(intent.attacker, intent.defender, intent.controller)
-        return GameActionResult(succeeded=False, duration_ms=350)
+        return GameActionResult(succeeded=False, duration_ms=Combat.PUNCH_DURATION_MS)

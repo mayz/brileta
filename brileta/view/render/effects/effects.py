@@ -48,6 +48,7 @@ from dataclasses import dataclass
 from typing import ClassVar
 
 from brileta import colors
+from brileta.constants.combat import CombatConstants as Combat
 from brileta.constants.view import ViewConstants as View
 from brileta.game.enums import BlendMode
 from brileta.util import rng
@@ -805,8 +806,8 @@ def create_combat_effect_context(
         direction_y = 0.0
 
     # Scale damage to reasonable intensity range (0.1 to 1.0+)
-    # Typical damage values of 1-20 become intensities of 0.1-1.0
-    intensity = max(0.1, min(2.0, damage / 20.0))
+    # Typical damage values of 1-20 become intensities of 0.05-1.0
+    intensity = max(0.1, min(2.0, damage / Combat.DAMAGE_INTENSITY_DIVISOR))
 
     return EffectContext(
         particle_system=particle_system,

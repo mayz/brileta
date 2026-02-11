@@ -123,8 +123,11 @@ class AttackExecutor(ActionExecutor):
                     break
 
         # Determine presentation timing based on attack type.
-        # Ranged attacks: 350ms, Melee attacks: 300ms
-        duration_ms = 350 if attack == weapon.ranged_attack else 300
+        duration_ms = (
+            Combat.RANGED_DURATION_MS
+            if attack == weapon.ranged_attack
+            else Combat.MELEE_DURATION_MS
+        )
 
         return GameActionResult(consequences=consequences, duration_ms=duration_ms)
 
@@ -274,8 +277,9 @@ class AttackExecutor(ActionExecutor):
         for consequence in consequences:
             handler.apply_consequence(consequence)
 
-        # Ranged attack timing: 350ms
-        return GameActionResult(consequences=consequences, duration_ms=350)
+        return GameActionResult(
+            consequences=consequences, duration_ms=Combat.RANGED_DURATION_MS
+        )
 
     def _determine_attack_method(
         self, intent: AttackIntent
@@ -491,7 +495,7 @@ class AttackExecutor(ActionExecutor):
 
         resolver = intent.controller.create_resolver(
             ability_score=attacker_score,
-            roll_to_exceed=defender_score + 10,
+            roll_to_exceed=defender_score + Combat.D20_DC_BASE,
             has_advantage=final_advantage,
             has_disadvantage=final_disadvantage,
         )
@@ -611,7 +615,7 @@ class AttackExecutor(ActionExecutor):
                                 "blood_splatter",
                                 intent.defender.x,
                                 intent.defender.y,
-                                intensity=damage / 20.0,
+                                intensity=damage / Combat.DAMAGE_INTENSITY_DIVISOR,
                                 direction_x=dir_x,
                                 direction_y=dir_y,
                                 ray_count=ray_count,
@@ -941,8 +945,7 @@ class ReloadExecutor(ActionExecutor):
                     colors.GREEN,
                 )
             )
-            # Reload takes 300ms presentation time
-            return GameActionResult(duration_ms=300)
+            return GameActionResult(duration_ms=Combat.RELOAD_DURATION_MS)
 
         publish_event(
             MessageEvent(
