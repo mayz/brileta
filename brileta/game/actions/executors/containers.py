@@ -40,7 +40,7 @@ class SearchContainerExecutor(ActionExecutor):
             return GameActionResult(succeeded=False, block_reason="Nothing to loot")
 
         # Import here to avoid circular imports
-        from brileta.view.ui.dual_pane_menu import ActorInventorySource, DualPaneMenu
+        from brileta.view.ui.inventory import ActorInventorySource, DualPaneMenu
 
         # Create the source descriptor for the target
         source = ActorInventorySource(actor=target, label=target.name)

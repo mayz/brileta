@@ -20,7 +20,7 @@ from brileta.game.items.item_types import (
     PISTOL_TYPE,
     STIM_TYPE,
 )
-from brileta.view.ui.item_transfer import (
+from brileta.view.ui.inventory import (
     ActorInventorySource,
     ExternalInventory,
     ItemTransferHandler,

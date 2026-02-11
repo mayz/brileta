@@ -28,7 +28,7 @@ from brileta.game.countables import (
 )
 from brileta.game.enums import ItemSize
 from brileta.game.items.item_core import Item, ItemType
-from brileta.view.ui.dual_pane_menu import group_items_for_display
+from brileta.view.ui.inventory.dual_pane_menu import group_items_for_display
 
 # =============================================================================
 # HELPER FUNCTIONS
@@ -505,7 +505,7 @@ class TestDualPaneMenuCountableDisplay:
         """_generate_item_detail() should handle CountableType without crashing."""
         from unittest.mock import MagicMock
 
-        from brileta.view.ui.dual_pane_menu import DualPaneMenu
+        from brileta.view.ui.inventory import DualPaneMenu
 
         # Create a minimal mock controller with required attributes
         mock_controller = MagicMock()

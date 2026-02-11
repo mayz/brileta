@@ -112,7 +112,7 @@ class PickupItemsAtLocationExecutor(ActionExecutor):
         """Open the pickup menu UI for items at the actor's location."""
         from brileta.game.actors.container import ItemPile
         from brileta.view.ui.commands import OpenExistingMenuUICommand
-        from brileta.view.ui.dual_pane_menu import DualPaneMenu, ExternalInventory
+        from brileta.view.ui.inventory import DualPaneMenu, ExternalInventory
 
         gw = intent.controller.gw
         actor_x, actor_y = intent.actor.x, intent.actor.y

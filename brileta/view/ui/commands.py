@@ -100,7 +100,7 @@ def open_inventory_or_loot(controller: Controller) -> None:
     Args:
         controller: The game controller.
     """
-    from brileta.view.ui.dual_pane_menu import DualPaneMenu, ExternalInventory
+    from brileta.view.ui.inventory import DualPaneMenu, ExternalInventory
 
     player = controller.gw.player
     if controller.gw.has_pickable_items_at_location(player.x, player.y):

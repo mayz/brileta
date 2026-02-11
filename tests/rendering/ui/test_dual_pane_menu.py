@@ -17,7 +17,7 @@ from brileta.game.items.item_types import (
 )
 from brileta.game.items.junk_item_types import JUNK_ITEM_TYPES
 from brileta.game.turn_manager import TurnManager
-from brileta.view.ui.dual_pane_menu import DualPaneMenu, ExternalInventory, PaneId
+from brileta.view.ui.inventory import DualPaneMenu, ExternalInventory, PaneId
 from tests.helpers import DummyGameWorld, _make_renderer
 
 
@@ -91,10 +91,10 @@ def test_dual_pane_menu_inventory_only_mode() -> None:
 
     # Left pane should have items: 2 stored + 3 equipment slots
     # (Equipment slots always shown even when empty, separator is visual only)
-    assert len(menu.left_options) == 5
+    assert len(menu.left_pane.options) == 5
 
     # Right pane should be empty
-    assert len(menu.right_options) == 0
+    assert len(menu.right_pane.options) == 0
 
     # Title should indicate inventory mode
     assert menu.title == "Inventory"
@@ -110,7 +110,7 @@ def test_dual_pane_menu_loot_mode() -> None:
     menu.show()
 
     # Right pane should have ground items
-    assert len(menu.right_options) == 2
+    assert len(menu.right_pane.options) == 2
 
     # Title should indicate loot mode
     assert menu.title == "Loot"
@@ -122,7 +122,7 @@ def test_dual_pane_menu_shows_player_inventory() -> None:
     menu = DualPaneMenu(controller)
     menu.show()
 
-    option_names = [opt.text for opt in menu.left_options]
+    option_names = [opt.text for opt in menu.left_pane.options]
     assert "Pistol" in option_names
     assert "Combat Knife" in option_names
 
@@ -136,7 +136,7 @@ def test_dual_pane_menu_shows_ground_items() -> None:
     menu = DualPaneMenu(controller, source=ExternalInventory(location, "On the ground"))
     menu.show()
 
-    option_names = [opt.text for opt in menu.right_options]
+    option_names = [opt.text for opt in menu.right_pane.options]
     assert "Stimpack" in option_names
     assert "Combat Knife" in option_names
 
@@ -148,9 +148,9 @@ def test_dual_pane_menu_empty_inventory() -> None:
     menu.show()
 
     # Equipment slots always shown even when empty (2 weapon + 1 outfit)
-    assert len(menu.left_options) == 3
+    assert len(menu.left_pane.options) == 3
     # All should show "(empty)" and be disabled
-    for opt in menu.left_options:
+    for opt in menu.left_pane.options:
         assert opt.text == "(empty)"
         assert not opt.enabled
 
@@ -207,17 +207,17 @@ def test_arrow_keys_move_cursor() -> None:
     menu = DualPaneMenu(controller)
     menu.show()
 
-    assert menu.left_cursor == 0
+    assert menu.left_pane.cursor == 0
 
     # Press down arrow
     down_event = input_events.KeyDown(sym=input_events.KeySym.DOWN)
     menu.handle_input(down_event)
-    assert menu.left_cursor == 1
+    assert menu.left_pane.cursor == 1
 
     # Press up arrow
     up_event = input_events.KeyDown(sym=input_events.KeySym.UP)
     menu.handle_input(up_event)
-    assert menu.left_cursor == 0
+    assert menu.left_pane.cursor == 0
 
 
 def test_ensure_valid_cursor_handles_empty_options() -> None:
@@ -226,12 +226,12 @@ def test_ensure_valid_cursor_handles_empty_options() -> None:
     menu = DualPaneMenu(controller)
     menu.show()
 
-    menu.left_cursor = 5
-    menu.left_options = []
+    menu.left_pane.cursor = 5
+    menu.left_pane.options = []
 
-    menu._ensure_valid_cursor(PaneId.LEFT)
+    menu.left_pane.ensure_valid_cursor()
 
-    assert menu.left_cursor == 0
+    assert menu.left_pane.cursor == 0
 
 
 def test_escape_closes_menu() -> None:
@@ -265,10 +265,10 @@ def test_transfer_item_to_inventory() -> None:
     menu.show()
 
     # Right pane should have items
-    assert len(menu.right_options) == initial_ground_items
+    assert len(menu.right_pane.options) == initial_ground_items
 
     # Transfer first item
-    first_item = menu.right_options[0].data
+    first_item = menu.right_pane.options[0].data
     assert first_item is not None
     menu._transfer_to_inventory(first_item)
 
@@ -296,8 +296,8 @@ def test_transfer_removes_item_from_ground() -> None:
     menu = DualPaneMenu(controller, source=ExternalInventory(location, "On the ground"))
     menu.show()
 
-    assert len(menu.right_options) == 1, "Menu should show 1 item"
-    menu_item = menu.right_options[0].data
+    assert len(menu.right_pane.options) == 1, "Menu should show 1 item"
+    menu_item = menu.right_pane.options[0].data
     assert menu_item is not None, "Menu item data should not be None"
     assert menu_item is item, "Menu should reference the same item object"
 
@@ -312,8 +312,8 @@ def test_transfer_removes_item_from_ground() -> None:
     assert item in player.inventory, "Item should be in player inventory"
 
     # Verify menu updated to show no items
-    assert len(menu.right_options) == 1, "Menu should have 1 option (placeholder)"
-    assert menu.right_options[0].text == "(no items)", (
+    assert len(menu.right_pane.options) == 1, "Menu should have 1 option (placeholder)"
+    assert menu.right_pane.options[0].text == "(no items)", (
         "Menu should show no items placeholder"
     )
 
@@ -334,7 +334,7 @@ def test_transfer_fails_when_inventory_full() -> None:
     menu.show()
 
     # Try to transfer (should fail)
-    first_item = menu.right_options[0].data
+    first_item = menu.right_pane.options[0].data
     assert first_item is not None
     menu._transfer_to_inventory(first_item)
 
@@ -404,16 +404,16 @@ def test_detail_panel_updates_on_cursor_move() -> None:
     menu.show()
 
     # Initial detail item should be first item
-    first_item = menu.left_options[0].data
-    assert menu.detail_item == first_item
+    first_item = menu.left_pane.options[0].data
+    assert menu.detail.detail_item == first_item
 
     # Move cursor down
     down_event = input_events.KeyDown(sym=input_events.KeySym.DOWN)
     menu.handle_input(down_event)
 
     # Detail item should be second item
-    second_item = menu.left_options[1].data
-    assert menu.detail_item == second_item
+    second_item = menu.left_pane.options[1].data
+    assert menu.detail.detail_item == second_item
 
 
 def test_generate_item_detail_includes_name() -> None:
@@ -457,7 +457,9 @@ def test_equipped_items_show_slot_prefix() -> None:
     menu.show()
 
     # Find the pistol option
-    pistol_option = next((opt for opt in menu.left_options if opt.data == pistol), None)
+    pistol_option = next(
+        (opt for opt in menu.left_pane.options if opt.data == pistol), None
+    )
     assert pistol_option is not None
 
     # Check prefix_segments contains slot indicator
@@ -577,20 +579,20 @@ def test_get_hint_lines_hides_use_for_non_consumables() -> None:
     consumable.consumable_effect = MagicMock()  # Has effect
 
     # Manually set up menu state without calling show()
-    menu.left_options = [
+    menu.left_pane.options = [
         MagicMock(data=weapon, enabled=True),
         MagicMock(data=consumable, enabled=True),
     ]
     menu.active_pane = PaneId.LEFT
 
     # Select weapon - should NOT show Use
-    menu.left_cursor = 0
+    menu.left_pane.cursor = 0
     lines = menu._get_hint_lines()
     combined = " ".join(lines)
     assert "Use" not in combined
 
     # Select consumable - should show Use
-    menu.left_cursor = 1
+    menu.left_pane.cursor = 1
     lines = menu._get_hint_lines()
     combined = " ".join(lines)
     assert "Use" in combined
@@ -631,7 +633,9 @@ def test_weapon_items_show_category_prefix() -> None:
     menu.show()
 
     # Find the pistol option
-    pistol_option = next((opt for opt in menu.left_options if opt.data == pistol), None)
+    pistol_option = next(
+        (opt for opt in menu.left_pane.options if opt.data == pistol), None
+    )
     assert pistol_option is not None
 
     # Check prefix_segments contains category dot indicator
@@ -652,7 +656,9 @@ def test_consumable_items_show_category_prefix() -> None:
     menu.show()
 
     # Find the stim option
-    stim_option = next((opt for opt in menu.left_options if opt.data == stim), None)
+    stim_option = next(
+        (opt for opt in menu.left_pane.options if opt.data == stim), None
+    )
     assert stim_option is not None
 
     # Check prefix_segments contains category dot indicator
@@ -673,7 +679,9 @@ def test_junk_items_show_category_prefix() -> None:
     menu.show()
 
     # Find the junk option
-    junk_option = next((opt for opt in menu.left_options if opt.data == junk), None)
+    junk_option = next(
+        (opt for opt in menu.left_pane.options if opt.data == junk), None
+    )
     assert junk_option is not None
 
     # Check prefix_segments contains category dot indicator
@@ -694,7 +702,9 @@ def test_munitions_items_show_category_prefix() -> None:
     menu.show()
 
     # Find the ammo option
-    ammo_option = next((opt for opt in menu.left_options if opt.data == ammo), None)
+    ammo_option = next(
+        (opt for opt in menu.left_pane.options if opt.data == ammo), None
+    )
     assert ammo_option is not None
 
     # Check prefix_segments contains category dot indicator
@@ -715,7 +725,9 @@ def test_category_prefix_has_correct_color() -> None:
     menu.show()
 
     # Find the pistol option
-    pistol_option = next((opt for opt in menu.left_options if opt.data == pistol), None)
+    pistol_option = next(
+        (opt for opt in menu.left_pane.options if opt.data == pistol), None
+    )
     assert pistol_option is not None
     assert pistol_option.prefix_segments is not None
 
@@ -739,7 +751,9 @@ def test_equipped_item_shows_both_slot_and_category() -> None:
     menu.show()
 
     # Find the pistol option
-    pistol_option = next((opt for opt in menu.left_options if opt.data == pistol), None)
+    pistol_option = next(
+        (opt for opt in menu.left_pane.options if opt.data == pistol), None
+    )
     assert pistol_option is not None
     assert pistol_option.prefix_segments is not None
 
@@ -763,7 +777,7 @@ def test_right_pane_items_show_category_prefix() -> None:
 
     # Find the stim option in right pane
     stim_option = next(
-        (opt for opt in menu.right_options if opt.text == "Stimpack"), None
+        (opt for opt in menu.right_pane.options if opt.text == "Stimpack"), None
     )
     assert stim_option is not None
 
@@ -804,7 +818,7 @@ def test_permanent_container_persists_when_emptied(controller) -> None:
     which is the path used when bumping into a container.
     """
     from brileta.game.actors.container import create_bookcase
-    from brileta.view.ui.dual_pane_menu import ActorInventorySource
+    from brileta.view.ui.inventory import ActorInventorySource
 
     player = controller.gw.player
 
@@ -873,7 +887,7 @@ def test_empty_permanent_container_can_be_searched(controller) -> None:
     from brileta.game.actions.environment import SearchContainerIntent
     from brileta.game.actions.executors.containers import SearchContainerExecutor
     from brileta.game.actors.container import create_bookcase
-    from brileta.view.ui.dual_pane_menu import ActorInventorySource
+    from brileta.view.ui.inventory import ActorInventorySource
 
     player = controller.gw.player
 
@@ -931,26 +945,26 @@ def test_arrow_keys_scroll_detail_description() -> None:
     menu._calculate_dimensions()  # Initialize _detail_panel
 
     # Verify the panel exists and has overflow after showing the menu
-    assert menu._detail_panel is not None, "Detail panel should be initialized"
+    assert menu.detail.scroll_panel is not None, "Detail panel should be initialized"
 
     # The menu should show the armor as the only item, so it should be selected
-    assert menu.detail_item is armor, "Armor should be selected"
+    assert menu.detail.detail_item is armor, "Armor should be selected"
 
     # Check if there's overflow (may depend on description length)
-    if menu._detail_panel.has_overflow():
-        initial_offset = menu._detail_panel.scroll_offset
+    if menu.detail.scroll_panel.has_overflow():
+        initial_offset = menu.detail.scroll_panel.scroll_offset
 
         # Right arrow should scroll down
         right_event = input_events.KeyDown(sym=input_events.KeySym.RIGHT)
         menu.handle_input(right_event)
-        assert menu._detail_panel.scroll_offset > initial_offset, (
+        assert menu.detail.scroll_panel.scroll_offset > initial_offset, (
             "Right arrow should scroll down"
         )
 
         # Left arrow should scroll back up
         left_event = input_events.KeyDown(sym=input_events.KeySym.LEFT)
         menu.handle_input(left_event)
-        assert menu._detail_panel.scroll_offset == initial_offset, (
+        assert menu.detail.scroll_panel.scroll_offset == initial_offset, (
             "Left arrow should scroll back up"
         )
 
@@ -968,13 +982,13 @@ def test_arrow_keys_no_effect_without_overflow() -> None:
     menu.show()
     menu._calculate_dimensions()  # Initialize _detail_panel
 
-    assert menu._detail_panel is not None
-    initial_offset = menu._detail_panel.scroll_offset
+    assert menu.detail.scroll_panel is not None
+    initial_offset = menu.detail.scroll_panel.scroll_offset
 
     # Right arrow should not crash and should not change offset
     right_event = input_events.KeyDown(sym=input_events.KeySym.RIGHT)
     menu.handle_input(right_event)
-    assert menu._detail_panel.scroll_offset == initial_offset
+    assert menu.detail.scroll_panel.scroll_offset == initial_offset
 
 
 # -----------------------------------------------------------------------------
@@ -1137,8 +1151,8 @@ def test_map_left_pane_line_to_index_stored_items() -> None:
 
     # Stored items are at the beginning of left_options
     # Lines 0, 1 should map to indices 0, 1
-    assert menu._map_left_pane_line_to_index(0) == 0
-    assert menu._map_left_pane_line_to_index(1) == 1
+    assert menu.left_pane.map_line_to_index(0, menu.ITEM_LIST_HEIGHT) == 0
+    assert menu.left_pane.map_line_to_index(1, menu.ITEM_LIST_HEIGHT) == 1
 
 
 def test_map_left_pane_line_to_index_equipment_slots() -> None:
@@ -1157,25 +1171,32 @@ def test_map_left_pane_line_to_index_equipment_slots() -> None:
 
     # left_options layout: [stored0, stored1, equip0, equip1, outfit]
     # Equipment is pinned at bottom of ITEM_LIST_HEIGHT
-    num_equipment = menu._equipment_slot_count  # Should be 3
-    num_stored = len(menu.left_options) - num_equipment  # 2 stored items
+    num_equipment = menu.left_pane.equipment_slot_count  # Should be 3
+    num_stored = len(menu.left_pane.options) - num_equipment  # 2 stored items
 
     # Equipment starts at line (ITEM_LIST_HEIGHT - num_equipment)
     equipment_start_line = menu.ITEM_LIST_HEIGHT - num_equipment
 
     # Click on first equipment slot
     expected_index = num_stored  # Equipment starts after stored items
-    assert menu._map_left_pane_line_to_index(equipment_start_line) == expected_index
+    assert (
+        menu.left_pane.map_line_to_index(equipment_start_line, menu.ITEM_LIST_HEIGHT)
+        == expected_index
+    )
 
     # Click on second equipment slot
     assert (
-        menu._map_left_pane_line_to_index(equipment_start_line + 1)
+        menu.left_pane.map_line_to_index(
+            equipment_start_line + 1, menu.ITEM_LIST_HEIGHT
+        )
         == expected_index + 1
     )
 
     # Click on outfit slot (third equipment slot)
     assert (
-        menu._map_left_pane_line_to_index(equipment_start_line + 2)
+        menu.left_pane.map_line_to_index(
+            equipment_start_line + 2, menu.ITEM_LIST_HEIGHT
+        )
         == expected_index + 2
     )
 
@@ -1193,11 +1214,13 @@ def test_map_left_pane_line_to_index_separator_not_selectable() -> None:
     menu.show()
 
     # The separator is one line above equipment
-    num_equipment = menu._equipment_slot_count
+    num_equipment = menu.left_pane.equipment_slot_count
     separator_line = menu.ITEM_LIST_HEIGHT - num_equipment - 1
 
     # Separator should not be selectable
-    assert menu._map_left_pane_line_to_index(separator_line) is None
+    assert (
+        menu.left_pane.map_line_to_index(separator_line, menu.ITEM_LIST_HEIGHT) is None
+    )
 
 
 def test_map_left_pane_line_to_index_gap_not_selectable() -> None:
@@ -1214,16 +1237,16 @@ def test_map_left_pane_line_to_index_gap_not_selectable() -> None:
 
     # With 1 stored item, there's a gap from line 1 to separator
     # Lines in the gap should not be selectable
-    num_equipment = menu._equipment_slot_count
+    num_equipment = menu.left_pane.equipment_slot_count
     separator_line = menu.ITEM_LIST_HEIGHT - num_equipment - 1
 
     # Line 1 (right after the single stored item) should be in the gap
-    assert menu._map_left_pane_line_to_index(1) is None
+    assert menu.left_pane.map_line_to_index(1, menu.ITEM_LIST_HEIGHT) is None
 
     # Line halfway through the gap should also not be selectable
     mid_gap = separator_line // 2
     if mid_gap > 0:
-        assert menu._map_left_pane_line_to_index(mid_gap) is None
+        assert menu.left_pane.map_line_to_index(mid_gap, menu.ITEM_LIST_HEIGHT) is None
 
 
 def test_equipment_slot_count_matches_inventory_structure() -> None:
@@ -1235,9 +1258,9 @@ def test_equipment_slot_count_matches_inventory_structure() -> None:
     # Should be ready_slots (2) + outfit (1) = 3
     player = controller.gw.player
     expected = len(player.inventory.ready_slots) + 1
-    assert menu._equipment_slot_count == expected
+    assert menu.left_pane.equipment_slot_count == expected
     assert (
-        menu._equipment_slot_count == 3
+        menu.left_pane.equipment_slot_count == 3
     )  # Current inventory has 2 weapon slots + 1 outfit
 
 
@@ -1254,8 +1277,8 @@ def test_left_options_ends_with_equipment_slots() -> None:
     menu.show()
 
     # Last 3 options should be equipment slots (2 weapons + 1 outfit)
-    num_equipment = menu._equipment_slot_count
-    equipment_options = menu.left_options[-num_equipment:]
+    num_equipment = menu.left_pane.equipment_slot_count
+    equipment_options = menu.left_pane.options[-num_equipment:]
 
     # Empty equipment slots show "(empty)" text
     for opt in equipment_options:

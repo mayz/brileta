@@ -9,7 +9,7 @@ from brileta.game.consequences import ConsequenceHandler
 from brileta.game.game_world import GameWorld
 from brileta.game.items.item_types import FISTS_TYPE, PISTOL_TYPE
 from brileta.view.render.graphics import GraphicsContext
-from brileta.view.ui.dual_pane_menu import DualPaneMenu, ExternalInventory
+from brileta.view.ui.inventory import DualPaneMenu, ExternalInventory
 from tests.helpers import DummyGameWorld, _make_renderer
 
 
