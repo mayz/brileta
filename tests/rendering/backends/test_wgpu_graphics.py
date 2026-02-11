@@ -209,11 +209,8 @@ class TestWGPUGraphicsContext:
             with (
                 patch("wgpu.gpu.request_adapter_sync") as mock_adapter,
                 patch(
-                    "brileta.backends.wgpu.window_wrapper.get_glfw_present_methods"
-                ) as mock_present_methods,
-                patch(
-                    "brileta.backends.wgpu.window_wrapper.WGPUWindowWrapper.get_context"
-                ) as mock_get_context,
+                    "brileta.backends.wgpu.window_wrapper.create_wgpu_context"
+                ) as mock_create_ctx,
             ):
                 mock_device = Mock()
                 mock_queue = Mock()
@@ -222,13 +219,10 @@ class TestWGPUGraphicsContext:
                 mock_adapter_instance = Mock()
                 mock_adapter_instance.request_device_sync.return_value = mock_device
                 mock_adapter.return_value = mock_adapter_instance
-                mock_present_methods.return_value = {
-                    "screen": {"platform": "test", "window": 123}
-                }
 
                 mock_context = Mock()
                 mock_context.get_preferred_format.return_value = "bgra8unorm"
-                mock_get_context.return_value = mock_context
+                mock_create_ctx.return_value = mock_context
 
                 # Mock window framebuffer size for update_dimensions() call
                 self.graphics_ctx.window.get_framebuffer_size.return_value = (

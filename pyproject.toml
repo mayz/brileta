@@ -15,7 +15,6 @@ dependencies = [
     "sounddevice>=0.5.2",
     "soundfile>=0.13.1",
     "wgpu>=0.29.0",
-    "rendercanvas>=2.4.0",
 ]
 
 [tool.setuptools.packages.find]

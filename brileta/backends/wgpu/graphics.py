@@ -80,8 +80,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
 
         self.device: wgpu.GPUDevice | None = None
         self.queue: wgpu.GPUQueue | None = None
-        self.window_wrapper: Any = None  # WGPUWindowWrapper
-        self.wgpu_context: Any = None  # GPUCanvasContext
+        self.wgpu_context: wgpu.GPUCanvasContext | None = None
         self.swap_chain: Any = None
 
         # Resource managers (initialized after device)
@@ -255,7 +254,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         Returns:
             bool: True if the surface was created successfully, False otherwise.
         """
-        from .window_wrapper import WGPUWindowWrapper
+        from .window_wrapper import create_wgpu_context
 
         # CRITICAL: Prevent configuring a zero-size surface, which is an error.
         # This happens when the window is minimized.
@@ -263,16 +262,16 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         if width == 0 or height == 0:
             return False  # Skip creation/recreation until we have a valid size
 
-        # Create WGPU window wrapper from our existing GLFW window
-        # Pass vsync setting so WGPU uses the correct present mode (fifo vs immediate)
-        self.window_wrapper = WGPUWindowWrapper(self.window, vsync=self.vsync)
-
-        # Get WGPU context (GPUSurface) from the window wrapper
-        self.wgpu_context = self.window_wrapper.get_context("wgpu")
+        # Create WGPU canvas context (surface) directly from our GLFW window.
+        # We must set the physical size before configuring - without rendercanvas
+        # managing the canvas lifecycle, this is our responsibility.
+        self.wgpu_context = create_wgpu_context(self.window, vsync=self.vsync)
+        self.wgpu_context.set_physical_size(width, height)
 
         # Configure the WGPU context
+        assert self.device is not None
         surface_format = wgpu.TextureFormat.bgra8unorm
-        self.wgpu_context.configure(  # type: ignore[unresolved-attribute]
+        self.wgpu_context.configure(
             device=self.device,
             format=surface_format,
             usage=wgpu.TextureUsage.RENDER_ATTACHMENT,
@@ -867,9 +866,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
 
         finally:
             # Always present the frame, even if rendering failed.
-            # rendercanvas wraps wgpu's GPUCanvasContext - access the underlying
-            # context to call present() since we manage our own render loop.
-            self.wgpu_context._wgpu_context.present()
+            self.wgpu_context.present()
 
     def add_tile_to_screen(
         self,
@@ -1318,7 +1315,6 @@ class WGPUGraphicsContext(BaseGraphicsContext):
 
         # Let WGPU context cleanup happen naturally
         self.wgpu_context = None
-        self.window_wrapper = None
 
     def release_texture(self, texture: Any) -> None:
         """Release WGPU texture resources."""
