@@ -4,6 +4,10 @@ The hovered_actor field tracks which actor is under the mouse for visual
 feedback (subtle hover outline). It must be updated in two scenarios:
 1. When the mouse moves (via update_hovered_actor called from InputHandler)
 2. When actors move (via update_hovered_actor called after turn processing)
+
+The DummyController tests below verify the core logic in isolation.
+TestHoveredActorOnRealController at the bottom exercises the actual Controller
+method, which includes deterministic _actor_sort_key ordering.
 """
 
 from __future__ import annotations
@@ -13,7 +17,7 @@ from typing import cast
 from brileta import colors
 from brileta.game.actors import Character
 from brileta.game.game_world import GameWorld
-from tests.helpers import DummyGameWorld
+from tests.helpers import DummyGameWorld, get_controller_with_dummy_world
 
 
 class DummyController:
@@ -202,3 +206,28 @@ class TestHoveredActorAfterActorMovement:
         # Simulate turn completion refresh
         controller.update_hovered_actor(gw.mouse_tile_location_on_map)
         assert controller.hovered_actor is None
+
+
+class TestHoveredActorOnRealController:
+    """Exercise _actor_sort_key deterministic ordering on the real Controller.
+
+    The DummyController tests above cover the core hover logic. This test
+    exercises the sorted() call in the real _get_visible_actor_at_tile, which
+    the DummyController copy omits.
+    """
+
+    def test_deterministic_sort_with_multiple_actors(self) -> None:
+        """When multiple non-player actors share a tile, sort order is deterministic."""
+        controller = get_controller_with_dummy_world()
+        gw = controller.gw
+
+        # Place two NPCs at the same tile - add in reverse name order
+        npc_b = Character(5, 5, "B", colors.RED, "Bravo", game_world=gw)
+        npc_a = Character(5, 5, "A", colors.RED, "Alpha", game_world=gw)
+        gw.add_actor(npc_b)
+        gw.add_actor(npc_a)
+
+        controller.update_hovered_actor((5, 5))
+
+        # _actor_sort_key sorts by (y, x, name) - both at (5,5) so name breaks tie
+        assert controller.hovered_actor is npc_a
