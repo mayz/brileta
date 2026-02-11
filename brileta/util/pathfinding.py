@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from brileta.game.actors import Actor
     from brileta.util.spatial import SpatialIndex
 
+from brileta.game.enums import StepBlock
 from brileta.types import WorldTilePos
 
 if TYPE_CHECKING:
@@ -23,6 +24,62 @@ except ImportError as exc:  # pragma: no cover - fails fast by design
         "brileta.util._native is required. "
         "Build native extensions with `make` (or `uv pip install -e .`)."
     ) from exc
+
+
+def probe_step(
+    game_map: GameMap,
+    game_world: GameWorld,
+    x: int,
+    y: int,
+    *,
+    exclude_actor: Actor | None = None,
+) -> StepBlock | None:
+    """Check whether a single tile is passable and return the reason if not.
+
+    This is the authoritative definition of "what blocks a tile" for all
+    per-tile movement checks (AI planning, movement execution, stunt
+    destination validation, etc.).  Adding a new blocking condition here
+    automatically propagates to every call site.
+
+    The check order matches MoveExecutor so the probe and the executor
+    always agree: bounds -> door -> walkable -> actor occupancy.
+
+    Args:
+        game_map: The GameMap for bounds, tile type, and walkability.
+        game_world: The GameWorld for actor occupancy lookups.
+        x: Tile X coordinate to test.
+        y: Tile Y coordinate to test.
+        exclude_actor: An actor to ignore for occupancy (typically the
+            moving actor itself, who is allowed to "stand on" the tile).
+
+    Returns:
+        ``None`` if the tile is passable, or a :class:`StepBlock` value
+        explaining why the tile is blocked.
+    """
+    from brileta.environment.tile_types import TileTypeID
+    from brileta.game.actors.container import Container
+
+    # 1. Bounds
+    if not (0 <= x < game_map.width and 0 <= y < game_map.height):
+        return StepBlock.OUT_OF_BOUNDS
+
+    # 2. Closed door (checked before walkable because doors are non-walkable
+    #    tiles that require special handling - opening, not rerouting)
+    if game_map.tiles[x, y] == TileTypeID.DOOR_CLOSED:
+        return StepBlock.CLOSED_DOOR
+
+    # 3. Static walkability (walls, deep water, etc.)
+    if not game_map.walkable[x, y]:
+        return StepBlock.WALL
+
+    # 4. Dynamic actor occupancy
+    blocker = game_world.get_actor_at_location(x, y)
+    if blocker is not None and blocker is not exclude_actor and blocker.blocks_movement:
+        if isinstance(blocker, Container):
+            return StepBlock.BLOCKED_BY_CONTAINER
+        return StepBlock.BLOCKED_BY_ACTOR
+
+    return None
 
 
 def find_closest_adjacent_tile(
@@ -62,15 +119,12 @@ def find_closest_adjacent_tile(
     adjacent.sort(key=lambda p: abs(p[0] - reference_x) + abs(p[1] - reference_y))
 
     for adj_x, adj_y in adjacent:
-        # Bounds check
-        if not (0 <= adj_x < game_map.width and 0 <= adj_y < game_map.height):
-            continue
-        # Walkability check
-        if not game_map.walkable[adj_x, adj_y]:
-            continue
-        # Occupancy check
-        blocker = game_world.get_actor_at_location(adj_x, adj_y)
-        if blocker is not None and blocker is not reference_actor:
+        if (
+            probe_step(
+                game_map, game_world, adj_x, adj_y, exclude_actor=reference_actor
+            )
+            is not None
+        ):
             continue
         return (adj_x, adj_y)
 

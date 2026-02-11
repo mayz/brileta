@@ -3,10 +3,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from brileta import config
-from brileta.environment.tile_types import TileTypeID
 from brileta.game.actions.base import GameActionResult
 from brileta.game.actions.executors.base import ActionExecutor
-from brileta.game.actors.container import Container
+from brileta.game.enums import StepBlock
+from brileta.util.pathfinding import probe_step
 
 if TYPE_CHECKING:
     from brileta.game.actions.movement import MoveIntent
@@ -17,39 +17,11 @@ class MoveExecutor(ActionExecutor):
 
     def execute(self, intent: MoveIntent) -> GameActionResult | None:  # type: ignore[override]
         game_map = intent.controller.gw.game_map
+        game_world = intent.controller.gw
 
-        # Check map boundaries first
-        if not (
-            0 <= intent.newx < game_map.width and 0 <= intent.newy < game_map.height
-        ):
-            return GameActionResult(succeeded=False, block_reason="out_of_bounds")
-
-        # Check for doors
-        tile_id = game_map.tiles[intent.newx, intent.newy]
-        if tile_id == TileTypeID.DOOR_CLOSED:
-            return GameActionResult(
-                succeeded=False,
-                blocked_by=(intent.newx, intent.newy),
-                block_reason="door",
-            )
-
-        # Check if tile is walkable (walls, etc.)
-        if not game_map.walkable[intent.newx, intent.newy]:
-            return GameActionResult(succeeded=False, block_reason="wall")
-
-        # Check for blocking actors
-        blocking_actor = intent.controller.gw.get_actor_at_location(
-            intent.newx, intent.newy
-        )
-        if blocking_actor and blocking_actor.blocks_movement:
-            # Distinguish containers from other blocking actors
-            if isinstance(blocking_actor, Container):
-                return GameActionResult(
-                    succeeded=False, blocked_by=blocking_actor, block_reason="container"
-                )
-            return GameActionResult(
-                succeeded=False, blocked_by=blocking_actor, block_reason="actor"
-            )
+        block = probe_step(game_map, game_world, intent.newx, intent.newy)
+        if block is not None:
+            return self._blocked_result(block, intent)
 
         # Use intent's duration, or fall back to autopilot default.
         duration_ms = (
@@ -71,3 +43,34 @@ class MoveExecutor(ActionExecutor):
         return GameActionResult(
             succeeded=True, should_update_fov=True, duration_ms=duration_ms
         )
+
+    @staticmethod
+    def _blocked_result(block: StepBlock, intent: MoveIntent) -> GameActionResult:
+        """Convert a StepBlock into the appropriate failed GameActionResult."""
+        match block:
+            case StepBlock.OUT_OF_BOUNDS:
+                return GameActionResult(succeeded=False, block_reason="out_of_bounds")
+            case StepBlock.CLOSED_DOOR:
+                return GameActionResult(
+                    succeeded=False,
+                    blocked_by=(intent.newx, intent.newy),
+                    block_reason="door",
+                )
+            case StepBlock.WALL:
+                return GameActionResult(succeeded=False, block_reason="wall")
+            case StepBlock.BLOCKED_BY_CONTAINER:
+                blocker = intent.controller.gw.get_actor_at_location(
+                    intent.newx, intent.newy
+                )
+                return GameActionResult(
+                    succeeded=False, blocked_by=blocker, block_reason="container"
+                )
+            case StepBlock.BLOCKED_BY_ACTOR:
+                blocker = intent.controller.gw.get_actor_at_location(
+                    intent.newx, intent.newy
+                )
+                return GameActionResult(
+                    succeeded=False, blocked_by=blocker, block_reason="actor"
+                )
+            case _:  # Defensive: treat unknown blocks as impassable
+                return GameActionResult(succeeded=False, block_reason="blocked")

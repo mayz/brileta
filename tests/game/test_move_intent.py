@@ -1,12 +1,15 @@
 from dataclasses import dataclass
 from typing import cast
 
+import pytest
+
 from brileta import colors
 from brileta.controller import Controller
 from brileta.environment.tile_types import TileTypeID
 from brileta.game.actions.executors.movement import MoveExecutor
 from brileta.game.actions.movement import MoveIntent
 from brileta.game.actors import Character
+from brileta.game.enums import StepBlock
 from brileta.game.game_world import GameWorld
 from tests.helpers import DummyGameWorld
 
@@ -127,3 +130,44 @@ def test_queued_moves_use_updated_position() -> None:
     assert result_right.block_reason == "wall"
     # Player should remain at (1, 0) because the diagonal tile is a wall.
     assert (player.x, player.y) == (1, 0)
+
+
+# --- _blocked_result mapping tests ---
+
+
+@pytest.mark.parametrize(
+    ("step_block", "expected_reason"),
+    [
+        (StepBlock.OUT_OF_BOUNDS, "out_of_bounds"),
+        (StepBlock.WALL, "wall"),
+        (StepBlock.CLOSED_DOOR, "door"),
+        (StepBlock.BLOCKED_BY_ACTOR, "actor"),
+        (StepBlock.BLOCKED_BY_CONTAINER, "container"),
+    ],
+)
+def test_blocked_result_maps_step_block_to_reason(
+    step_block: StepBlock,
+    expected_reason: str,
+) -> None:
+    """Each StepBlock variant produces the correct block_reason string."""
+    controller, player = make_world()
+    intent = MoveIntent(cast(Controller, controller), player, dx=1, dy=0)
+    result = MoveExecutor._blocked_result(step_block, intent)
+    assert not result.succeeded
+    assert result.block_reason == expected_reason
+
+
+def test_move_blocked_by_container() -> None:
+    """Moving into a container produces block_reason='container'."""
+    from brileta.game.actors.container import Container
+
+    controller, player = make_world()
+    container = Container(1, 0, name="Crate", game_world=cast(GameWorld, controller.gw))
+    controller.gw.add_actor(container)
+
+    intent = MoveIntent(cast(Controller, controller), player, dx=1, dy=0)
+    result = MoveExecutor().execute(intent)
+    assert result is not None
+    assert not result.succeeded
+    assert result.block_reason == "container"
+    assert result.blocked_by is container

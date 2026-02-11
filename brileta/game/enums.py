@@ -105,6 +105,21 @@ class InjuryLocation(Enum):
     RIGHT_LEG = auto()
 
 
+class StepBlock(Enum):
+    """Reason a tile is impassable, returned by ``probe_step()``.
+
+    Used throughout the AI, movement, and stunt systems to decide
+    *why* a tile is blocked so callers can branch on the result
+    (e.g., wall impact vs. actor collision vs. door interaction).
+    """
+
+    OUT_OF_BOUNDS = auto()
+    WALL = auto()
+    CLOSED_DOOR = auto()
+    BLOCKED_BY_ACTOR = auto()
+    BLOCKED_BY_CONTAINER = auto()
+
+
 class ImpactMaterial(Enum):
     """Material types for impact sound selection.
 

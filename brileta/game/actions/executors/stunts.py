@@ -179,11 +179,11 @@ class PushExecutor(ActionExecutor):
     def _attempt_push(self, intent: PushIntent, dx: int, dy: int) -> bool:
         """Attempt to push the defender in the given direction.
 
-        Handles environmental interactions:
-        - Wall collision: 1d4 impact damage + OffBalanceEffect, no movement
-        - Actor collision: Both actors get OffBalanceEffect, no movement
-        - Hazard tile: Movement succeeds, hazard damage applied via turn system
-        - Clear tile: Movement succeeds
+        Handles environmental interactions based on probe_step result:
+        - WALL / CLOSED_DOOR: 1d4 impact damage + OffBalanceEffect, no movement
+        - BLOCKED_BY_ACTOR / BLOCKED_BY_CONTAINER: Both actors get OffBalanceEffect
+        - OUT_OF_BOUNDS: No movement, no side effects
+        - None (clear): Movement succeeds, hazard damage applied via turn system
 
         Args:
             intent: The push intent with attacker, defender, and controller.
@@ -193,32 +193,31 @@ class PushExecutor(ActionExecutor):
         Returns:
             True if the defender was moved, False otherwise.
         """
+        from brileta.game.enums import StepBlock
+        from brileta.util.pathfinding import probe_step
+
         game_map = intent.controller.gw.game_map
         dest_x = intent.defender.x + dx
         dest_y = intent.defender.y + dy
 
-        # Check map boundaries
-        if not (0 <= dest_x < game_map.width and 0 <= dest_y < game_map.height):
-            return False
-
-        # Check for wall collision
-        if not game_map.walkable[dest_x, dest_y]:
-            self._handle_wall_impact(intent)
-            return False
-
-        # Check for actor collision
-        blocking_actor = intent.controller.gw.get_actor_at_location(dest_x, dest_y)
-        if blocking_actor and blocking_actor.blocks_movement:
-            self._handle_actor_collision(intent, blocking_actor)
-            return False
-
-        # Clear destination - execute the push
-        intent.defender.move(dx, dy, intent.controller)
-
-        # Check if pushed onto hazard and log a message
-        self._check_hazard_landing(intent, dest_x, dest_y)
-
-        return True
+        block = probe_step(game_map, intent.controller.gw, dest_x, dest_y)
+        match block:
+            case None:
+                # Clear destination - execute the push
+                intent.defender.move(dx, dy, intent.controller)
+                self._check_hazard_landing(intent, dest_x, dest_y)
+                return True
+            case StepBlock.WALL | StepBlock.CLOSED_DOOR:
+                self._handle_wall_impact(intent)
+                return False
+            case StepBlock.BLOCKED_BY_ACTOR | StepBlock.BLOCKED_BY_CONTAINER:
+                blocking_actor = intent.controller.gw.get_actor_at_location(
+                    dest_x, dest_y
+                )
+                self._handle_actor_collision(intent, blocking_actor)
+                return False
+            case _:  # OUT_OF_BOUNDS or any future variant
+                return False
 
     def _handle_wall_impact(self, intent: PushIntent) -> None:
         """Handle a defender being pushed into a wall.
@@ -583,11 +582,11 @@ class KickExecutor(ActionExecutor):
     def _attempt_push(self, intent: KickIntent, dx: int, dy: int) -> bool:
         """Attempt to push the defender in the given direction.
 
-        Handles environmental interactions:
-        - Wall collision: 1d4 impact damage + OffBalanceEffect, no movement
-        - Actor collision: Both actors get OffBalanceEffect, no movement
-        - Hazard tile: Movement succeeds, hazard damage applied via turn system
-        - Clear tile: Movement succeeds
+        Handles environmental interactions based on probe_step result:
+        - WALL / CLOSED_DOOR: 1d4 impact damage + OffBalanceEffect, no movement
+        - BLOCKED_BY_ACTOR / BLOCKED_BY_CONTAINER: Both actors get OffBalanceEffect
+        - OUT_OF_BOUNDS: No movement, no side effects
+        - None (clear): Movement succeeds, hazard damage applied via turn system
 
         Args:
             intent: The kick intent with attacker, defender, and controller.
@@ -597,32 +596,31 @@ class KickExecutor(ActionExecutor):
         Returns:
             True if the defender was moved, False otherwise.
         """
+        from brileta.game.enums import StepBlock
+        from brileta.util.pathfinding import probe_step
+
         game_map = intent.controller.gw.game_map
         dest_x = intent.defender.x + dx
         dest_y = intent.defender.y + dy
 
-        # Check map boundaries
-        if not (0 <= dest_x < game_map.width and 0 <= dest_y < game_map.height):
-            return False
-
-        # Check for wall collision
-        if not game_map.walkable[dest_x, dest_y]:
-            self._handle_wall_impact(intent)
-            return False
-
-        # Check for actor collision
-        blocking_actor = intent.controller.gw.get_actor_at_location(dest_x, dest_y)
-        if blocking_actor and blocking_actor.blocks_movement:
-            self._handle_actor_collision(intent, blocking_actor)
-            return False
-
-        # Clear destination - execute the push
-        intent.defender.move(dx, dy, intent.controller)
-
-        # Check if pushed onto hazard and log a message
-        self._check_hazard_landing(intent, dest_x, dest_y)
-
-        return True
+        block = probe_step(game_map, intent.controller.gw, dest_x, dest_y)
+        match block:
+            case None:
+                # Clear destination - execute the push
+                intent.defender.move(dx, dy, intent.controller)
+                self._check_hazard_landing(intent, dest_x, dest_y)
+                return True
+            case StepBlock.WALL | StepBlock.CLOSED_DOOR:
+                self._handle_wall_impact(intent)
+                return False
+            case StepBlock.BLOCKED_BY_ACTOR | StepBlock.BLOCKED_BY_CONTAINER:
+                blocking_actor = intent.controller.gw.get_actor_at_location(
+                    dest_x, dest_y
+                )
+                self._handle_actor_collision(intent, blocking_actor)
+                return False
+            case _:  # OUT_OF_BOUNDS or any future variant
+                return False
 
     def _handle_wall_impact(self, intent: KickIntent) -> None:
         """Handle a defender being kicked into a wall.

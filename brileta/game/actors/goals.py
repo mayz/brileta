@@ -283,6 +283,7 @@ class FleeGoal(Goal):
         from brileta.environment.tile_types import HAZARD_BASE_COST, get_hazard_cost
         from brileta.game import ranges
         from brileta.game.actions.movement import MoveIntent
+        from brileta.util.pathfinding import probe_step
 
         threat = controller.gw.get_actor_by_id(self.threat_actor_id)
         if threat is None:
@@ -303,12 +304,10 @@ class FleeGoal(Goal):
                     continue
                 tx = npc.x + dx
                 ty = npc.y + dy
-                if not (0 <= tx < game_map.width and 0 <= ty < game_map.height):
-                    continue
-                if not game_map.walkable[tx, ty]:
-                    continue
-                actor_at = controller.gw.get_actor_at_location(tx, ty)
-                if actor_at and actor_at.blocks_movement and actor_at is not npc:
+                if (
+                    probe_step(game_map, controller.gw, tx, ty, exclude_actor=npc)
+                    is not None
+                ):
                     continue
 
                 dist = ranges.calculate_distance(tx, ty, threat.x, threat.y)
@@ -318,6 +317,7 @@ class FleeGoal(Goal):
                 tile_id = int(game_map.tiles[tx, ty])
                 hazard_cost = get_hazard_cost(tile_id)
 
+                actor_at = controller.gw.get_actor_at_location(tx, ty)
                 damage_per_turn = getattr(actor_at, "damage_per_turn", 0)
                 if actor_at and damage_per_turn > 0:
                     fire_cost = HAZARD_BASE_COST + damage_per_turn
@@ -557,15 +557,14 @@ class WanderGoal(Goal):
         self, npc: NPC, controller: Controller, dx: int, dy: int
     ) -> bool:
         """Return True when a step destination is in bounds, walkable, and unblocked."""
-        game_map = controller.gw.game_map
+        from brileta.util.pathfinding import probe_step
+
         tx = npc.x + dx
         ty = npc.y + dy
-        if not (0 <= tx < game_map.width and 0 <= ty < game_map.height):
-            return False
-        if not game_map.walkable[tx, ty]:
-            return False
-        blocker = controller.gw.get_actor_at_location(tx, ty)
-        return blocker is None or blocker is npc or not blocker.blocks_movement
+        return (
+            probe_step(controller.gw.game_map, controller.gw, tx, ty, exclude_actor=npc)
+            is None
+        )
 
     def _pick_segment_heading(
         self, npc: NPC, controller: Controller

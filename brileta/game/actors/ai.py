@@ -420,6 +420,7 @@ class AIComponent:
         """
         from brileta.environment.tile_types import get_tile_hazard_info
         from brileta.game.actions.movement import MoveIntent
+        from brileta.util.pathfinding import probe_step
 
         # Check if currently standing on a hazard
         tile_id = int(controller.gw.game_map.tiles[actor.x, actor.y])
@@ -440,17 +441,8 @@ class AIComponent:
 
                 nx, ny = actor.x + dx, actor.y + dy
 
-                # Check map boundaries
-                if not (0 <= nx < game_map.width and 0 <= ny < game_map.height):
-                    continue
-
-                # Check if walkable
-                if not game_map.walkable[nx, ny]:
-                    continue
-
-                # Check for blocking actors
-                blocking_actor = controller.gw.get_actor_at_location(nx, ny)
-                if blocking_actor and blocking_actor.blocks_movement:
+                # Passability check (bounds + walkable + actor blocking)
+                if probe_step(game_map, controller.gw, nx, ny) is not None:
                     continue
 
                 # Check if this tile is also hazardous
@@ -638,6 +630,7 @@ class AIComponent:
     ) -> tuple[int, int] | None:
         """Find the best tile adjacent to the target for attacking from."""
         from brileta.environment.tile_types import HAZARD_BASE_COST, get_hazard_cost
+        from brileta.util.pathfinding import probe_step
 
         best_dest: tuple[int, int] | None = None
         best_score = float("inf")
@@ -649,15 +642,9 @@ class AIComponent:
                     continue
                 tx = target.x + dx
                 ty = target.y + dy
-                if not (0 <= tx < game_map.width and 0 <= ty < game_map.height):
-                    continue
-                if not game_map.walkable[tx, ty]:
-                    continue
-                actor_at_tile = controller.gw.get_actor_at_location(tx, ty)
                 if (
-                    actor_at_tile
-                    and actor_at_tile.blocks_movement
-                    and actor_at_tile is not actor
+                    probe_step(game_map, controller.gw, tx, ty, exclude_actor=actor)
+                    is not None
                 ):
                     continue
 
@@ -665,6 +652,7 @@ class AIComponent:
                 tile_id = int(game_map.tiles[tx, ty])
                 hazard_cost = get_hazard_cost(tile_id)
 
+                actor_at_tile = controller.gw.get_actor_at_location(tx, ty)
                 damage_per_turn = getattr(actor_at_tile, "damage_per_turn", 0)
                 if actor_at_tile and damage_per_turn > 0:
                     fire_cost = HAZARD_BASE_COST + damage_per_turn
@@ -683,6 +671,7 @@ class AIComponent:
     ) -> tuple[int, int] | None:
         """Find the best adjacent tile that moves away from the target."""
         from brileta.environment.tile_types import HAZARD_BASE_COST, get_hazard_cost
+        from brileta.util.pathfinding import probe_step
 
         game_map = controller.gw.game_map
         current_distance = ranges.calculate_distance(
@@ -696,15 +685,9 @@ class AIComponent:
                     continue
                 tx = actor.x + dx
                 ty = actor.y + dy
-                if not (0 <= tx < game_map.width and 0 <= ty < game_map.height):
-                    continue
-                if not game_map.walkable[tx, ty]:
-                    continue
-                actor_at_tile = controller.gw.get_actor_at_location(tx, ty)
                 if (
-                    actor_at_tile
-                    and actor_at_tile.blocks_movement
-                    and actor_at_tile is not actor
+                    probe_step(game_map, controller.gw, tx, ty, exclude_actor=actor)
+                    is not None
                 ):
                     continue
 
@@ -714,6 +697,7 @@ class AIComponent:
 
                 tile_id = int(game_map.tiles[tx, ty])
                 hazard_cost = get_hazard_cost(tile_id)
+                actor_at_tile = controller.gw.get_actor_at_location(tx, ty)
                 damage_per_turn = getattr(actor_at_tile, "damage_per_turn", 0)
                 if actor_at_tile and damage_per_turn > 0:
                     fire_cost = HAZARD_BASE_COST + damage_per_turn
