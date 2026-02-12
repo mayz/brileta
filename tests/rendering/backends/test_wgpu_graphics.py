@@ -12,6 +12,7 @@ import pytest
 
 from brileta import colors
 from brileta.game.enums import BlendMode
+from brileta.types import Opacity
 from brileta.util.glyph_buffer import GlyphBuffer
 
 # Try to import WGPU - if not available, skip all tests
@@ -269,7 +270,7 @@ class TestWGPUGraphicsContext:
         self.graphics_ctx.present_texture(Mock(), 0, 0, 10, 10)
         self.graphics_ctx.draw_background(Mock(), 0, 0, 10, 10)
 
-        self.graphics_ctx.draw_rect_outline(0, 0, 100, 100, colors.GREEN, 1.0)
+        self.graphics_ctx.draw_rect_outline(0, 0, 100, 100, colors.GREEN, Opacity(1.0))
 
         # create_canvas should now work and return a WGPUCanvas
         canvas = self.graphics_ctx.create_canvas()

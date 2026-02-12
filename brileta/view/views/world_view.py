@@ -6,14 +6,16 @@ import numpy as np
 
 from brileta import colors, config
 from brileta.environment import tile_types
-from brileta.types import InterpolationAlpha, Opacity
+from brileta.types import (
+    InterpolationAlpha,
+    Opacity,
+    PixelCoord,
+    ViewOffset,
+    WorldTilePos,
+)
 from brileta.util import rng
 from brileta.util.caching import ResourceCache
-from brileta.util.coordinates import (
-    PixelCoord,
-    Rect,
-    RootConsoleTilePos,
-)
+from brileta.util.coordinates import Rect, RootConsoleTilePos
 from brileta.util.glyph_buffer import GlyphBuffer
 from brileta.util.live_vars import record_time_live_variable
 from brileta.view.render.actor_renderer import ActorRenderer
@@ -76,7 +78,7 @@ class WorldView(View):
         self.effect_library = EffectLibrary()
         self.floating_text_manager = FloatingTextManager()
         self._gpu_actor_lightmap_texture: Any | None = None
-        self._gpu_actor_lightmap_viewport_origin: tuple[int, int] | None = None
+        self._gpu_actor_lightmap_viewport_origin: WorldTilePos | None = None
         # Note: No on_evict callback here because _active_background_texture keeps
         # an external reference to cached textures. Releasing on eviction would
         # invalidate that reference. Textures are cleaned up by GC instead.
@@ -87,9 +89,9 @@ class WorldView(View):
         self._active_background_texture: Any | None = None
         self._light_overlay_texture: Any | None = None
         # Screen shake offset in tiles for sub-tile rendering
-        self._shake_offset: tuple[float, float] = (0.0, 0.0)
+        self._shake_offset: ViewOffset = (0.0, 0.0)
         # Camera fractional offset for smooth scrolling (set each frame in present())
-        self.camera_frac_offset: tuple[float, float] = (0.0, 0.0)
+        self.camera_frac_offset: ViewOffset = (0.0, 0.0)
         self.shadow_renderer = ShadowRenderer(
             game_map=controller.gw.game_map,
             viewport_system=self.viewport_system,
@@ -208,7 +210,7 @@ class WorldView(View):
 
         return (bounds_key, map_key, exploration_key)
 
-    def draw(self, graphics: GraphicsContext, alpha: float) -> None:
+    def draw(self, graphics: GraphicsContext, alpha: InterpolationAlpha) -> None:
         """Main drawing method for the world view."""
         if not self.visible:
             return

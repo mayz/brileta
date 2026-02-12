@@ -192,7 +192,7 @@ class GameMap:
 
     def _get_region_ground_color(
         self, region: MapRegion, is_light: bool
-    ) -> tuple[int, int, int]:
+    ) -> colors.Color:
         """Get the appropriate ground background color for a region."""
         # Determine if this is an outdoor region based on sky exposure
         is_outdoor = region.sky_exposure > 0.5
@@ -203,9 +203,7 @@ class GameMap:
             )
         return colors.LIGHT_GROUND if is_light else colors.DARK_GROUND
 
-    def _get_region_wall_color(
-        self, region: MapRegion, is_light: bool
-    ) -> tuple[int, int, int]:
+    def _get_region_wall_color(self, region: MapRegion, is_light: bool) -> colors.Color:
         """Get the appropriate wall background color for a region."""
         # Determine if this is an outdoor region based on sky exposure
         is_outdoor = region.sky_exposure > 0.5

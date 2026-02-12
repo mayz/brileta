@@ -10,6 +10,7 @@ from __future__ import annotations
 from brileta.environment.generators.pipeline.context import GenerationContext
 from brileta.environment.generators.pipeline.layer import GenerationLayer
 from brileta.environment.tile_types import TileTypeID
+from brileta.types import WorldTilePos
 from brileta.util import rng
 
 _rng = rng.get("map.details")
@@ -47,7 +48,7 @@ class DetailLayer(GenerationLayer):
             ctx: The generation context to modify.
         """
         # Build a set of tiles near buildings to avoid
-        avoided_tiles: set[tuple[int, int]] = set()
+        avoided_tiles: set[WorldTilePos] = set()
 
         for building in ctx.buildings:
             fp = building.footprint

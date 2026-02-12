@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from brileta import colors
 from brileta.config import (
     AMBIENT_LIGHT_LEVEL,
     SKY_EXPOSURE_POWER,
@@ -39,7 +40,7 @@ class LightingConfig:
 
     # Global sunlight configuration
     sun_enabled: bool = SUN_ENABLED
-    sun_color: tuple[int, int, int] = SUN_COLOR
+    sun_color: colors.Color = SUN_COLOR
     sun_elevation_degrees: float = SUN_ELEVATION_DEGREES
     sun_azimuth_degrees: float = SUN_AZIMUTH_DEGREES
     sun_intensity: float = SUN_INTENSITY

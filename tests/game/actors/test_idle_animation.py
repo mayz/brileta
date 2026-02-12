@@ -17,6 +17,7 @@ from brileta.game.actors.idle_animation import (
     create_profile_for_size,
 )
 from brileta.game.enums import CreatureSize
+from tests.helpers import dt
 
 
 class TestIdleAnimationProfile:
@@ -116,7 +117,7 @@ class TestVisualEffectsIdleAnimation:
         component = VisualEffectsComponent()
 
         offset1 = component.get_idle_drift_offset()
-        component.update(0.5)  # Advance 500ms
+        component.update(dt(0.5))  # Advance 500ms
         offset2 = component.get_idle_drift_offset()
 
         assert offset1 != offset2
@@ -128,7 +129,7 @@ class TestVisualEffectsIdleAnimation:
 
         # Sample many time points
         for _ in range(100):
-            component.update(0.1)
+            component.update(dt(0.1))
             x, y = component.get_idle_drift_offset()
             assert abs(x) <= 0.05
             assert abs(y) <= 0.05

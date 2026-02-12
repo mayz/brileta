@@ -316,7 +316,7 @@ class GameWorld:
         spawn_point = self._get_spawn_point(room)
         self.player.teleport(*spawn_point)
 
-    def _get_spawn_point(self, room: Rect) -> tuple[int, int]:
+    def _get_spawn_point(self, room: Rect) -> WorldTilePos:
         """Find a spawn point with at least 3x3 walkable tiles around it.
 
         Searches within the room bounds first, then falls back to searching
@@ -358,7 +358,7 @@ class GameWorld:
                     return False
         return True
 
-    def _find_spawn_in_room(self, room: Rect) -> tuple[int, int] | None:
+    def _find_spawn_in_room(self, room: Rect) -> WorldTilePos | None:
         """Search within room bounds for a spawn point with 3x3 open space."""
         center_x, center_y = room.center()
 
@@ -388,7 +388,7 @@ class GameWorld:
 
         return None
 
-    def _find_spawn_on_map(self) -> tuple[int, int] | None:
+    def _find_spawn_on_map(self) -> WorldTilePos | None:
         """Search the entire map for a spawn point with 3x3 open space."""
         width = self.game_map.width
         height = self.game_map.height
@@ -703,7 +703,7 @@ class GameWorld:
         npc_index = start_index
 
         # Collect all door positions
-        door_positions: list[tuple[int, int]] = []
+        door_positions: list[WorldTilePos] = []
         for building in self.buildings:
             door_positions.extend(building.door_positions)
 
@@ -779,7 +779,7 @@ class GameWorld:
         npc_index = start_index
 
         # Collect walkable street positions
-        street_positions: list[tuple[int, int]] = [
+        street_positions: list[WorldTilePos] = [
             (x, y)
             for street in self.streets
             for x in range(max(0, street.x1), min(self.game_map.width, street.x2))

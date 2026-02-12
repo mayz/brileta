@@ -5,6 +5,7 @@ from brileta.view.render.effects.atmospheric import (
     AtmosphericLayerConfig,
     AtmosphericLayerSystem,
 )
+from tests.helpers import dt
 
 
 def test_default_config_values() -> None:
@@ -53,7 +54,7 @@ def test_update_advances_drift_offsets() -> None:
     )
     system = AtmosphericLayerSystem(AtmosphericConfig(layers=[layer]))
 
-    system.update(1.0)
+    system.update(dt(1.0))
     (_, state) = system.get_active_layers()[0]
 
     assert state.drift_offset_x == pytest.approx(0.6)
@@ -70,7 +71,7 @@ def test_offsets_wrap_at_100() -> None:
     )
     system = AtmosphericLayerSystem(AtmosphericConfig(layers=[layer]))
 
-    system.update(1.0)
+    system.update(dt(1.0))
     (_, state) = system.get_active_layers()[0]
 
     assert state.drift_offset_x == pytest.approx(0.0)

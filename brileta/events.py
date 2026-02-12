@@ -30,7 +30,7 @@ from enum import Enum, auto
 from typing import Any
 
 from brileta import colors
-from brileta.types import ActorId, DeltaTime
+from brileta.types import ActorId, DeltaTime, FloatRange
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +109,7 @@ class FloatingTextEvent(GameEvent):
     valence: FloatingTextValence = FloatingTextValence.NEUTRAL
     size: FloatingTextSize = FloatingTextSize.NORMAL
     duration: float | None = None  # None = use default (0.7s)
-    color: tuple[int, int, int] | None = None  # None = use valence color
+    color: colors.Color | None = None  # None = use valence color
     world_x: int = 0
     world_y: int = 0
     bubble: bool = False
@@ -142,8 +142,8 @@ class SoundEvent(GameEvent):
     x: int
     y: int
     layer: int | None = None
-    volume_jitter: tuple[float, float] | None = None
-    pitch_jitter: tuple[float, float] | None = None
+    volume_jitter: FloatRange | None = None
+    pitch_jitter: FloatRange | None = None
     delay: float = 0.0
     params: dict[str, int | float] | None = None
 

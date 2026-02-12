@@ -29,10 +29,12 @@ import numpy as np
 from brileta import colors
 from brileta.game.enums import BlendMode
 from brileta.types import (
+    ColorRGBf,
     InterpolationAlpha,
     Opacity,
     PixelCoord,
     PixelPos,
+    PixelRect,
     RootConsoleTilePos,
     TileDimensions,
     ViewOffset,
@@ -97,7 +99,7 @@ class GraphicsContext(abc.ABC):
         color: colors.Color,
         screen_x: float,
         screen_y: float,
-        light_intensity: tuple[float, float, float] = (1.0, 1.0, 1.0),
+        light_intensity: ColorRGBf = (1.0, 1.0, 1.0),
         interpolation_alpha: InterpolationAlpha = InterpolationAlpha(1.0),  # noqa: B008
         scale_x: float = 1.0,
         scale_y: float = 1.0,
@@ -147,7 +149,7 @@ class GraphicsContext(abc.ABC):
         screen_x: float,
         screen_y: float,
         color: colors.Color,
-        alpha: float,
+        alpha: Opacity,
         scale_x: float = 1.0,
         scale_y: float = 1.0,
     ) -> None:
@@ -363,7 +365,7 @@ class GraphicsContext(abc.ABC):
         px_w: int,
         px_h: int,
         color: colors.Color,
-        alpha: float,
+        alpha: Opacity,
     ) -> None:
         """Draws an unfilled rectangle outline directly to the screen."""
         pass
@@ -395,9 +397,9 @@ class GraphicsContext(abc.ABC):
     @abc.abstractmethod
     def draw_debug_tile_grid(
         self,
-        view_origin: tuple[int, int],
+        view_origin: WorldTilePos,
         view_size: tuple[int, int],
-        offset_pixels: tuple[float, float],
+        offset_pixels: ViewOffset,
     ) -> None:
         """Render a debug tile grid overlay for the given view bounds.
 
@@ -410,7 +412,7 @@ class GraphicsContext(abc.ABC):
 
     def set_atmospheric_layer(
         self,
-        viewport_offset: tuple[int, int],
+        viewport_offset: WorldTilePos,
         viewport_size: tuple[int, int],
         map_size: tuple[int, int],
         sky_exposure_threshold: float,
@@ -421,13 +423,13 @@ class GraphicsContext(abc.ABC):
         noise_threshold_low: float,
         noise_threshold_high: float,
         strength: float,
-        tint_color: tuple[int, int, int],
-        drift_offset: tuple[float, float],
+        tint_color: colors.Color,
+        drift_offset: ViewOffset,
         turbulence_offset: float,
         turbulence_strength: float,
         turbulence_scale: float,
         blend_mode: str,
-        pixel_bounds: tuple[int, int, int, int],
+        pixel_bounds: PixelRect,
     ) -> None:
         """Queue or ignore atmospheric layer data.
 

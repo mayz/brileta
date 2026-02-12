@@ -18,7 +18,7 @@ from brileta.game.actors import PC, Actor, Character
 from brileta.game.enums import ItemSize
 from brileta.game.item_spawner import ItemSpawner
 from brileta.game.items.item_core import Item, ItemType
-from brileta.types import ActorId, WorldTileCoord
+from brileta.types import ActorId, DeltaTime, WorldTileCoord
 from brileta.util.spatial import SpatialHashGrid
 from brileta.view.render.graphics import GraphicsContext
 
@@ -47,6 +47,11 @@ class DummyOverlay:
 
     def invalidate(self) -> None:
         return None
+
+
+def dt(seconds: float) -> DeltaTime:
+    """Build a ``DeltaTime`` value for test call sites."""
+    return DeltaTime(seconds)
 
 
 def reset_actor_id_counter(start: int = 1) -> None:

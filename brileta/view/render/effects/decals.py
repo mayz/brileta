@@ -30,6 +30,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from brileta import colors
+from brileta.types import DeltaTime, WorldTilePos
 from brileta.util import rng
 
 _rng = rng.get("effects.decals")
@@ -92,7 +93,7 @@ class DecalSystem:
     MAX_DECAL_COUNT: int = 10
 
     # Storage: flat list of all decals (sub-tile positions)
-    decals: dict[tuple[int, int], list[Decal]] = field(default_factory=dict)
+    decals: dict[WorldTilePos, list[Decal]] = field(default_factory=dict)
     # Track total count for efficient limit checking
     _total_count: int = field(default=0, repr=False)
     # Track creation order for LRU eviction
@@ -299,7 +300,7 @@ class DecalSystem:
 
                 self.add_decal(x, y, char, varied_color, game_time)
 
-    def update(self, delta_time: float, game_time: float) -> None:
+    def update(self, delta_time: DeltaTime, game_time: float) -> None:
         """Update the system and remove fully expired decals.
 
         Args:
@@ -310,7 +311,7 @@ class DecalSystem:
         max_age = self.DECAL_LIFETIME + self.FADE_DURATION
 
         # Find and remove expired decals
-        keys_to_remove: list[tuple[int, int]] = []
+        keys_to_remove: list[WorldTilePos] = []
         for key, decal_list in self.decals.items():
             # Filter out expired decals
             remaining = [d for d in decal_list if (game_time - d.created_at) < max_age]

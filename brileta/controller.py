@@ -36,7 +36,7 @@ from .modes.base import Mode
 from .modes.combat import CombatMode
 from .modes.explore import ExploreMode
 from .modes.picker import PickerMode
-from .types import FixedTimestep, InterpolationAlpha, RandomSeed
+from .types import DeltaTime, FixedTimestep, InterpolationAlpha, RandomSeed
 from .util.clock import Clock
 from .util.coordinates import Rect, WorldTilePos
 from .util.live_vars import (
@@ -660,7 +660,7 @@ class Controller:
                     self.gw.player.x,
                     self.gw.player.y,
                     self.gw.actor_spatial_index,
-                    self.fixed_timestep,
+                    DeltaTime(self.fixed_timestep),
                 )
 
             # Update presentation manager (dispatches staggered combat feedback)

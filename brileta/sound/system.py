@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from brileta.events import SoundEvent, subscribe_to_event
-from brileta.types import WorldTileCoord
+from brileta.types import DeltaTime, FloatRange, WorldTileCoord
 from brileta.util import rng
 from brileta.util.spatial import SpatialIndex
 
@@ -109,7 +109,7 @@ class SoundSystem:
         listener_x: WorldTileCoord,
         listener_y: WorldTileCoord,
         actor_spatial_index: SpatialIndex[Actor],
-        delta_time: float,
+        delta_time: DeltaTime,
     ) -> None:
         """Update all sounds based on listener position and active emitters.
 
@@ -639,8 +639,8 @@ class SoundSystem:
         layer: SoundLayer,
         sound_id: str,
         volume: float,
-        volume_jitter: tuple[float, float] | None,
-        pitch_jitter: tuple[float, float] | None,
+        volume_jitter: FloatRange | None,
+        pitch_jitter: FloatRange | None,
     ) -> None:
         """Play a single instance of a sound layer.
 
@@ -708,8 +708,8 @@ class SoundSystem:
         x: int,
         y: int,
         layer_index: int | None = None,
-        volume_jitter: tuple[float, float] | None = None,
-        pitch_jitter: tuple[float, float] | None = None,
+        volume_jitter: FloatRange | None = None,
+        pitch_jitter: FloatRange | None = None,
         params: dict[str, int | float] | None = None,
     ) -> None:
         """Play a one-shot sound effect at a specific location.

@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from brileta import colors, config, input_events
 from brileta.backends.pillow.canvas import PillowImageCanvas
+from brileta.types import PixelRect
 from brileta.util.live_vars import LiveVariable, live_variable_registry
 from brileta.util.misc import string_to_type
 from brileta.view.render.canvas import Canvas
@@ -91,7 +92,7 @@ class DevConsoleOverlay(TextOverlay):
         # Slider state for ranged writable live variables.
         self._slider_var: LiveVariable | None = None
         self._slider_dragging: bool = False
-        self._slider_track_rect: tuple[int, int, int, int] | None = None
+        self._slider_track_rect: PixelRect | None = None
         self._slider_track_y_center: int | None = None
         self._slider_tile_h: int = 0
         self._slider_last_value: float | None = None

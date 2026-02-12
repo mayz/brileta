@@ -56,9 +56,12 @@ from brileta.events import MessageEvent, publish_event
 from brileta.game.countables import CountableType
 from brileta.game.enums import ItemSize
 from brileta.game.items.item_core import Item
+from brileta.types import DeltaTime, ViewOffset
 
 from .conditions import Condition, Exhaustion
 from .status_effects import EncumberedEffect, StatusEffect
+
+_DEFAULT_VISUAL_EFFECTS_DELTA_TIME = DeltaTime(0.016)
 
 
 @dataclass(slots=True)
@@ -960,7 +963,7 @@ class VisualEffectsComponent:
         """
         self._idle_profile = profile
 
-    def get_idle_drift_offset(self) -> tuple[float, float]:
+    def get_idle_drift_offset(self) -> ViewOffset:
         """Get the current positional drift offset for rendering.
 
         Returns the weight-shifting offset that makes characters subtly sway.
@@ -1015,7 +1018,9 @@ class VisualEffectsComponent:
         """Add a continuous effect (like fire, aura, etc) to this component."""
         self.continuous_effects.append(effect)
 
-    def update(self, delta_time: float = 0.016) -> None:
+    def update(
+        self, delta_time: DeltaTime = _DEFAULT_VISUAL_EFFECTS_DELTA_TIME
+    ) -> None:
         """Update visual effects. Call this each frame.
 
         Args:

@@ -8,7 +8,14 @@ from typing import TYPE_CHECKING
 import numpy as np
 import wgpu
 
-from brileta.types import PixelPos
+from brileta.types import (
+    ColorRGBAf,
+    ColorRGBf,
+    PixelPos,
+    PixelRect,
+    UVRect,
+    WorldTilePos,
+)
 
 if TYPE_CHECKING:
     from .resource_manager import WGPUResourceManager
@@ -66,7 +73,7 @@ class WGPUScreenRenderer:
         self._shadow_start = 0
         self._shadow_end = 0
         self._actor_lightmap_texture: wgpu.GPUTexture | None = None
-        self._actor_light_viewport_origin: tuple[int, int] = (0, 0)
+        self._actor_light_viewport_origin: WorldTilePos = (0, 0)
         self._actor_lighting_enabled = False
 
         # Create vertex buffer
@@ -278,7 +285,7 @@ class WGPUScreenRenderer:
     def set_actor_lighting_context(
         self,
         lightmap_texture: wgpu.GPUTexture | None,
-        viewport_origin: tuple[int, int],
+        viewport_origin: WorldTilePos,
     ) -> None:
         """Configure GPU actor-light sampling context for this frame."""
         self._actor_lightmap_texture = lightmap_texture
@@ -300,13 +307,13 @@ class WGPUScreenRenderer:
         y: float,
         w: float,
         h: float,
-        uv_coords: tuple[float, float, float, float],
-        color_rgba: tuple[float, float, float, float],
+        uv_coords: UVRect,
+        color_rgba: ColorRGBAf,
         *,
         world_pos: tuple[float, float] | None = None,
         actor_light_scale: float = 1.0,
         actor_lighting_enabled: bool = False,
-        tile_bg: tuple[float, float, float] = (0.0, 0.0, 0.0),
+        tile_bg: ColorRGBf = (0.0, 0.0, 0.0),
     ) -> None:
         """Add a quad to the vertex buffer."""
         if self.vertex_count + 6 > len(self.cpu_vertex_buffer):
@@ -377,21 +384,21 @@ class WGPUScreenRenderer:
     def add_parallelogram(
         self,
         corners: tuple[
-            tuple[float, float],
-            tuple[float, float],
-            tuple[float, float],
-            tuple[float, float],
+            PixelPos,
+            PixelPos,
+            PixelPos,
+            PixelPos,
         ],
-        uv_coords: tuple[float, float, float, float],
-        base_color: tuple[float, float, float, float],
-        tip_color: tuple[float, float, float, float],
+        uv_coords: UVRect,
+        base_color: ColorRGBAf,
+        tip_color: ColorRGBAf,
         *,
         vertex_colors: (
             tuple[
-                tuple[float, float, float, float],
-                tuple[float, float, float, float],
-                tuple[float, float, float, float],
-                tuple[float, float, float, float],
+                ColorRGBAf,
+                ColorRGBAf,
+                ColorRGBAf,
+                ColorRGBAf,
             ]
             | None
         ) = None,
@@ -493,7 +500,7 @@ class WGPUScreenRenderer:
         self,
         render_pass: wgpu.GPURenderPassEncoder,
         window_size: PixelPos,
-        letterbox_geometry: tuple[int, int, int, int] | None = None,
+        letterbox_geometry: PixelRect | None = None,
     ) -> None:
         """Main drawing method that renders all batched vertex data to the screen.
 

@@ -12,7 +12,7 @@ from brileta.environment.map import GameMap
 from brileta.environment.tile_types import TileTypeAppearance
 from brileta.game.actors import Actor
 from brileta.game.game_world import GameWorld
-from brileta.types import InterpolationAlpha
+from brileta.types import InterpolationAlpha, Opacity
 from brileta.view.render.actor_renderer import ActorRenderer
 from brileta.view.render.shadow_renderer import ShadowRenderer
 from brileta.view.render.viewport import ViewportSystem
@@ -279,7 +279,7 @@ class TestRenderActorOutline:
         renderer.render_actor_outline(
             cast(Actor, actor),
             (255, 0, 0),
-            0.8,
+            Opacity(0.8),
             game_map=cast(GameMap, game_map),
             camera_frac_offset=(0.0, 0.0),
             view_origin=(0.0, 0.0),
@@ -301,7 +301,7 @@ class TestRenderActorOutline:
         renderer.render_actor_outline(
             cast(Actor, actor),
             (255, 0, 0),
-            0.8,
+            Opacity(0.8),
             game_map=cast(GameMap, game_map),
             camera_frac_offset=(0.0, 0.0),
             view_origin=(0.0, 0.0),
@@ -323,7 +323,7 @@ class TestRenderActorOutline:
         renderer.render_actor_outline(
             cast(Actor, actor),
             (255, 0, 0),
-            0.8,
+            Opacity(0.8),
             game_map=cast(GameMap, game_map),
             camera_frac_offset=(0.0, 0.0),
             view_origin=(0.0, 0.0),
@@ -350,7 +350,7 @@ class TestRenderActorOutline:
         renderer.render_actor_outline(
             cast(Actor, actor),
             (255, 0, 0),
-            0.8,
+            Opacity(0.8),
             game_map=cast(GameMap, game_map),
             camera_frac_offset=(0.0, 0.0),
             view_origin=(0.0, 0.0),
@@ -363,7 +363,7 @@ class TestRenderActorOutline:
         renderer.render_actor_outline(
             cast(Actor, actor),
             (255, 0, 0),
-            0.8,
+            Opacity(0.8),
             game_map=cast(GameMap, game_map),
             camera_frac_offset=(0.5, 0.0),
             view_origin=(0.0, 0.0),

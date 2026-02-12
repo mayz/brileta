@@ -4,17 +4,21 @@ from enum import Enum
 from typing import Literal, NewType
 
 # =============================================================================
-# TILE-BASED COORDINATE SYSTEMS (Always integers)
+# SPATIAL TYPES
 # =============================================================================
-
 
 type TileCoord = int  # Always integer tile position
 
-# Game world coordinates - absolute positions on the game map
+# World coordinates - absolute positions on the game map
 type WorldTileCoord = TileCoord  # Example: x=5, y=3
 type WorldTilePos = tuple[
     WorldTileCoord, WorldTileCoord
 ]  # Example: (5, 3) = tile 5,3 on map
+
+# Directions - discrete grid steps and continuous vectors
+type UnitStep = Literal[-1, 0, 1]
+type Direction = tuple[UnitStep, UnitStep]  # Example: (-1, 0) = westward step
+type Heading = tuple[float, float]  # Example: (1.0, 0.3) = continuous drift direction
 
 # Viewport coordinates - relative to the visible area
 type ViewportTileCoord = TileCoord  # Example: vp_x=0, vp_y=0
@@ -28,25 +32,16 @@ type RootConsoleTilePos = tuple[
     RootConsoleTileCoord, RootConsoleTileCoord
 ]  # Example: (10, 5) = tile 10,5 on UI
 
-# Float-capable view offset for smooth scrolling (camera fractional offset)
+# View/camera offset for smooth scrolling (fractional tile offset)
 type ViewOffset = tuple[float, float]
 
-# =============================================================================
-# PIXEL-BASED COORDINATE SYSTEMS (Can be float in SDL3)
-# =============================================================================
-
-# Raw SDL pixel coordinates (SDL3-ready for float precision)
+# Pixel coordinates
 type PixelCoord = int | float  # Example: px_x=123.5
 type PixelPos = tuple[PixelCoord, PixelCoord]  # Example: (123.5, 456.7)
 type PixelRect = tuple[int, int, int, int]  # Example: (x1, y1, x2, y2) for hit areas
 
-# =============================================================================
-# UTILITY TYPES
-# =============================================================================
-
-# Individual tile dimensions in pixels (for working with tilesets)
+# Dimensions
 type TileDimensions = tuple[int, int]  # Example: (16, 16) = 16x16 pixel tiles
-
 
 # =============================================================================
 # TIME-RELATED TYPES
@@ -76,6 +71,15 @@ FixedTimestep = NewType("FixedTimestep", float)
 # used for transparency effects like highlights, overlays, and particle alpha.
 Opacity = NewType("Opacity", float)
 
+# Float RGB color in 0.0-1.0 space (GPU-facing color math).
+type ColorRGBf = tuple[float, float, float]
+
+# Float RGBA color in 0.0-1.0 space (GPU vertex colors).
+type ColorRGBAf = tuple[float, float, float, float]
+
+# UV rectangle for texture coordinates: (u1, v1, u2, v2).
+type UVRect = tuple[float, float, float, float]
+
 # =============================================================================
 # GAME-RELATED TYPES
 # =============================================================================
@@ -90,6 +94,13 @@ type SoundId = str
 # Random seed for deterministic generation (map generation, etc.)
 # Can be an int for numeric seeds or a descriptive string like "burrito1".
 type RandomSeed = int | str | None
+
+# =============================================================================
+# UTILITY TYPES
+# =============================================================================
+
+# Generic min/max float range (e.g., speed/lifetime jitter ranges)
+type FloatRange = tuple[float, float]
 
 # =============================================================================
 # BACKEND CONFIGURATION

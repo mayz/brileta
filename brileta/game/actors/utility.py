@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING
 
+from brileta.types import Direction, WorldTilePos
+
 
 def _clamp(value: float, min_value: float = 0.0, max_value: float = 1.0) -> float:
     return max(min_value, min(max_value, value))
@@ -70,8 +72,8 @@ class UtilityContext:
     threat_level: float
     can_attack: bool
     has_escape_route: bool
-    best_attack_destination: tuple[int, int] | None
-    best_flee_step: tuple[int, int] | None
+    best_attack_destination: WorldTilePos | None
+    best_flee_step: Direction | None
     # Normalized disposition: 0.0 maps to -100 (hostile), 1.0 maps to +100 (ally).
     disposition: float = 0.5
 

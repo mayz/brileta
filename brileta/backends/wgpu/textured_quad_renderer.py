@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import wgpu
 
-from brileta.types import PixelPos
+from brileta.types import PixelPos, PixelRect
 
 if TYPE_CHECKING:
     from .resource_manager import WGPUResourceManager
@@ -188,7 +188,7 @@ class WGPUTexturedQuadRenderer:
         self,
         render_pass: wgpu.GPURenderPassEncoder,
         window_size: PixelPos,
-        letterbox_geometry: tuple[int, int, int, int] | None,
+        letterbox_geometry: PixelRect | None,
     ) -> None:
         """Render all queued textured quads."""
         if not self.render_queue or self.vertex_count == 0:

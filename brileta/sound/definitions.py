@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from brileta.types import SoundId
+from brileta.types import FloatRange, SoundId
 
 
 @dataclass
@@ -28,12 +28,8 @@ class SoundLayer:
     file: str  # Path to the sound file relative to assets/sounds/
     volume: float = 1.0  # Volume multiplier for this layer (0.0-1.0)
     loop: bool = True  # Whether this sound loops continuously
-    interval: tuple[float, float] | None = (
-        None  # Random interval for non-looping sounds
-    )
-    pitch_variation: tuple[float, float] | None = (
-        None  # Random pitch variation range (e.g., (0.9, 1.1) for ±10%)
-    )
+    interval: FloatRange | None = None  # Random interval for non-looping sounds
+    pitch_variation: FloatRange | None = None  # Random pitch variation range
     variants: list[str] | None = None  # List of alternative files for random variation
     delay: float = 0.0  # Delay in seconds before playing this layer
 

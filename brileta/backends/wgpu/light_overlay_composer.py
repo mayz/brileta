@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import wgpu
 
+from brileta.types import TileDimensions, WorldTilePos
 from brileta.util.coordinates import Rect
 from brileta.util.live_vars import record_time_live_variable
 
@@ -101,7 +102,7 @@ class WGPULightOverlayComposer:
             cache_key="light_overlay_compose_pipeline",
         )
         self._visible_mask_texture: wgpu.GPUTexture | None = None
-        self._visible_mask_size: tuple[int, int] | None = None
+        self._visible_mask_size: TileDimensions | None = None
 
     def _write_fullscreen_quad_vertices(self) -> None:
         vertices = np.array(
@@ -129,9 +130,9 @@ class WGPULightOverlayComposer:
         lightmap_texture: wgpu.GPUTexture,
         visible_mask_buffer: np.ndarray,
         viewport_bounds: Rect,
-        viewport_offset: tuple[int, int],
+        viewport_offset: WorldTilePos,
         pad_tiles: int,
-        tile_dimensions: tuple[int, int],
+        tile_dimensions: TileDimensions,
     ) -> wgpu.GPUTexture:
         """Compose a light overlay texture fully on the GPU."""
         output_texture = self.resource_manager.get_or_create_render_texture(

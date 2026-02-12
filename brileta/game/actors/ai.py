@@ -15,6 +15,7 @@ AIComponent:
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from brileta import colors
@@ -29,7 +30,7 @@ from brileta.game.actors.utility import (
     UtilityBrain,
     UtilityContext,
 )
-from brileta.types import ActorId
+from brileta.types import ActorId, Direction, WorldTilePos
 from brileta.util import rng
 
 from .ai_actions import (
@@ -80,6 +81,16 @@ HOSTILE_UPPER = DISPOSITION_BANDS[0][0]
 
 # How far combat awareness extends after an NPC is attacked.
 _COMBAT_AWARENESS_RADIUS = 50
+
+
+@dataclass(slots=True)
+class FleeCandidate:
+    """One potential flee step scored for tactical desirability."""
+
+    direction: Direction
+    distance_after: float
+    hazard_score: int
+    step_cost: int
 
 
 def disposition_label(value: int) -> str:
@@ -637,12 +648,12 @@ class AIComponent:
 
     def _select_attack_destination(
         self, controller: Controller, actor: NPC, target: Character
-    ) -> tuple[int, int] | None:
+    ) -> WorldTilePos | None:
         """Find the best tile adjacent to the target for attacking from."""
         from brileta.environment.tile_types import HAZARD_BASE_COST, get_hazard_cost
         from brileta.util.pathfinding import probe_step
 
-        best_dest: tuple[int, int] | None = None
+        best_dest: WorldTilePos | None = None
         best_score = float("inf")
         game_map = controller.gw.game_map
 
@@ -685,7 +696,7 @@ class AIComponent:
 
     def _select_flee_step(
         self, controller: Controller, actor: NPC, target: Character
-    ) -> tuple[int, int] | None:
+    ) -> Direction | None:
         """Find the best adjacent tile that moves away from the target."""
         from brileta.environment.tile_types import HAZARD_BASE_COST, get_hazard_cost
         from brileta.util.pathfinding import probe_step
@@ -695,7 +706,7 @@ class AIComponent:
             actor.x, actor.y, target.x, target.y
         )
 
-        candidates: list[tuple[int, int, int, float, int]] = []
+        candidates: list[FleeCandidate] = []
         for dx in (-1, 0, 1):
             for dy in (-1, 0, 1):
                 if dx == 0 and dy == 0:
@@ -729,12 +740,22 @@ class AIComponent:
 
                 step_cost = 1 if (dx == 0 or dy == 0) else 2
                 candidates.append(
-                    (dx, dy, distance_after, hazard_cost + step_cost, step_cost)
+                    FleeCandidate(
+                        direction=(dx, dy),
+                        distance_after=distance_after,
+                        hazard_score=hazard_cost + step_cost,
+                        step_cost=step_cost,
+                    )
                 )
 
         if not candidates:
             return None
 
-        candidates.sort(key=lambda c: (-c[2], c[3], c[4]))
-        dx, dy, _, _, _ = candidates[0]
-        return dx, dy
+        candidates.sort(
+            key=lambda candidate: (
+                -candidate.distance_after,
+                candidate.hazard_score,
+                candidate.step_cost,
+            )
+        )
+        return candidates[0].direction

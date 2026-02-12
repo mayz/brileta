@@ -14,9 +14,13 @@ from brileta import colors, config
 from brileta.backends.glfw.window import GlfwWindow
 from brileta.game.enums import BlendMode
 from brileta.types import (
+    ColorRGBf,
     InterpolationAlpha,
     Opacity,
     PixelCoord,
+    PixelRect,
+    TileDimensions,
+    ViewOffset,
     WorldTilePos,
 )
 from brileta.util.coordinates import (
@@ -47,7 +51,7 @@ class AtmosphericLayerState:
     to drive WGPUAtmosphericRenderer.render() calls.
     """
 
-    viewport_offset: tuple[int, int]
+    viewport_offset: WorldTilePos
     viewport_size: tuple[int, int]
     map_size: tuple[int, int]
     sky_exposure_threshold: float
@@ -58,13 +62,13 @@ class AtmosphericLayerState:
     noise_threshold_low: float
     noise_threshold_high: float
     strength: float
-    tint_color: tuple[int, int, int]
-    drift_offset: tuple[float, float]
+    tint_color: colors.Color
+    drift_offset: ViewOffset
     turbulence_offset: float
     turbulence_strength: float
     turbulence_scale: float
     blend_mode: str
-    pixel_bounds: tuple[int, int, int, int]
+    pixel_bounds: PixelRect
 
 
 def _infer_compose_tile_dimensions(
@@ -72,7 +76,7 @@ def _infer_compose_tile_dimensions(
     texture_height: int,
     mask_width: int,
     mask_height: int,
-) -> tuple[int, int] | None:
+) -> TileDimensions | None:
     """Infer per-tile pixel size from texture and mask dimensions.
 
     The compose pass maps output pixels back to tile coordinates. To keep that
@@ -142,7 +146,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         self._gpu_actor_lighting_enabled = False
 
         # Letterbox/viewport state
-        self.letterbox_geometry: tuple[int, int, int, int] | None = None
+        self.letterbox_geometry: PixelRect | None = None
 
         # Reusable CPU buffer for WorldView (to avoid per-frame allocations)
         self._world_view_cpu_buffer: np.ndarray | None = None
@@ -365,7 +369,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         color: colors.Color,
         screen_x: float,
         screen_y: float,
-        light_intensity: tuple[float, float, float] = (1.0, 1.0, 1.0),
+        light_intensity: ColorRGBf = (1.0, 1.0, 1.0),
         interpolation_alpha: InterpolationAlpha | None = None,
         scale_x: float = 1.0,
         scale_y: float = 1.0,
@@ -447,7 +451,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
     def set_actor_lighting_gpu_context(
         self,
         lightmap_texture: Any | None,
-        viewport_origin: tuple[int, int] | None,
+        viewport_origin: WorldTilePos | None,
     ) -> None:
         """Configure per-frame actor lighting context for GPU lightmap sampling."""
         if self.screen_renderer is None:
@@ -598,7 +602,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         screen_x: float,
         screen_y: float,
         color: colors.Color,
-        alpha: float,
+        alpha: Opacity,
         scale_x: float = 1.0,
         scale_y: float = 1.0,
     ) -> None:
@@ -1059,7 +1063,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         lightmap_texture: Any,
         visible_mask_buffer: np.ndarray,
         viewport_bounds: Rect,
-        viewport_offset: tuple[int, int],
+        viewport_offset: WorldTilePos,
         pad_tiles: int,
     ) -> wgpu.GPUTexture | None:
         """Compose a light overlay texture fully on GPU.
@@ -1166,7 +1170,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
 
     def set_atmospheric_layer(
         self,
-        viewport_offset: tuple[int, int],
+        viewport_offset: WorldTilePos,
         viewport_size: tuple[int, int],
         map_size: tuple[int, int],
         sky_exposure_threshold: float,
@@ -1177,13 +1181,13 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         noise_threshold_low: float,
         noise_threshold_high: float,
         strength: float,
-        tint_color: tuple[int, int, int],
-        drift_offset: tuple[float, float],
+        tint_color: colors.Color,
+        drift_offset: ViewOffset,
         turbulence_offset: float,
         turbulence_strength: float,
         turbulence_scale: float,
         blend_mode: str,
-        pixel_bounds: tuple[int, int, int, int],
+        pixel_bounds: PixelRect,
     ) -> None:
         """Store atmospheric layer data for rendering this frame."""
         self._atmospheric_layers.append(
@@ -1211,9 +1215,9 @@ class WGPUGraphicsContext(BaseGraphicsContext):
 
     def draw_debug_tile_grid(
         self,
-        view_origin: tuple[int, int],
+        view_origin: WorldTilePos,
         view_size: tuple[int, int],
-        offset_pixels: tuple[float, float],
+        offset_pixels: ViewOffset,
     ) -> None:
         """Render a 1-pixel cyan tile grid overlay for the given view bounds."""
         if self.screen_renderer is None or self.uv_map is None:

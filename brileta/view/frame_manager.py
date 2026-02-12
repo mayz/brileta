@@ -27,6 +27,7 @@ from brileta.events import (
 from brileta.types import (
     DeltaTime,
     InterpolationAlpha,
+    Opacity,
     RootConsoleTilePos,
     ViewportTileCoord,
     WorldTilePos,
@@ -303,7 +304,7 @@ class FrameManager:
                 color = debug_colors.DEBUG_COLORS[i % len(debug_colors.DEBUG_COLORS)]
 
                 self.graphics.draw_rect_outline(
-                    int(px_x), int(px_y), int(px_w), int(px_h), color, 1.0
+                    int(px_x), int(px_y), int(px_w), int(px_h), color, Opacity(1.0)
                 )
 
         # Draw the mouse cursor on top of all overlays

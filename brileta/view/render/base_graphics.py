@@ -8,11 +8,14 @@ import numpy as np
 
 from brileta import colors, config
 from brileta.types import (
+    ColorRGBAf,
     Opacity,
     PixelCoord,
     PixelPos,
+    PixelRect,
     RootConsoleTilePos,
     TileDimensions,
+    UVRect,
     ViewOffset,
 )
 from brileta.util.coordinates import (
@@ -43,8 +46,8 @@ class ScreenRenderer(Protocol):
         y: float,
         w: float,
         h: float,
-        uv_coords: tuple[float, float, float, float],
-        color_rgba: tuple[float, float, float, float],
+        uv_coords: UVRect,
+        color_rgba: ColorRGBAf,
     ) -> None: ...
 
 
@@ -66,7 +69,7 @@ class BaseGraphicsContext(GraphicsContext):
         # Common state that will be set by subclasses
         self._tile_dimensions: TileDimensions = (20, 20)  # Default
         self._coordinate_converter: CoordinateConverter | None = None
-        self.letterbox_geometry: tuple[int, int, int, int] | None = None
+        self.letterbox_geometry: PixelRect | None = None
         self.uv_map: np.ndarray | None = None
         self.screen_renderer: ScreenRenderer | None = None
 
@@ -108,7 +111,7 @@ class BaseGraphicsContext(GraphicsContext):
         px_w: int,
         px_h: int,
         color: colors.Color,
-        alpha: float,
+        alpha: Opacity,
     ) -> None:
         """Draw a rectangle outline using the screen renderer."""
         if self.screen_renderer is None:
@@ -199,7 +202,7 @@ class BaseGraphicsContext(GraphicsContext):
                 tuple(particle_system.colors[i]),
                 screen_x,
                 screen_y,
-                alpha,
+                Opacity(alpha),
             )
 
     def render_decals(
@@ -255,7 +258,7 @@ class BaseGraphicsContext(GraphicsContext):
                     decal.color,
                     pixel_x,
                     pixel_y,
-                    alpha,
+                    Opacity(alpha),
                 )
 
     def _draw_particle_to_buffer(
@@ -264,7 +267,7 @@ class BaseGraphicsContext(GraphicsContext):
         color: colors.Color,
         screen_x: float,
         screen_y: float,
-        alpha: float,
+        alpha: Opacity,
     ) -> None:
         """Draw a single particle by adding its quad to the vertex buffer.
 
@@ -338,7 +341,7 @@ class BaseGraphicsContext(GraphicsContext):
 
     def _calculate_letterbox_geometry(
         self, window_width: int, window_height: int
-    ) -> tuple[int, int, int, int]:
+    ) -> PixelRect:
         """Calculate letterbox geometry for the current window size.
 
         This calculation is identical across backends.

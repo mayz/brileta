@@ -5,6 +5,7 @@ from brileta.events import SoundEvent, publish_event, reset_event_bus_for_testin
 from brileta.sound import system as sound_system
 from brileta.sound.definitions import SOUND_DEFINITIONS, SoundDefinition, SoundLayer
 from brileta.sound.system import SoundSystem
+from tests.helpers import dt
 
 
 class TestOneShotSounds(unittest.TestCase):
@@ -36,7 +37,7 @@ class TestOneShotSounds(unittest.TestCase):
     def test_play_one_shot_direct(self):
         """Test calling play_one_shot directly."""
         # Set listener position
-        self.sound_system.update(0, 0, MagicMock(), 0.1)
+        self.sound_system.update(0, 0, MagicMock(), dt(0.1))
 
         # Play sound at listener position (full volume)
         self.sound_system.play_one_shot(self.test_sound_id, 0, 0)
@@ -55,7 +56,7 @@ class TestOneShotSounds(unittest.TestCase):
     def test_play_one_shot_via_event(self):
         """Test triggering sound via SoundEvent."""
         # Set listener position
-        self.sound_system.update(0, 0, MagicMock(), 0.1)
+        self.sound_system.update(0, 0, MagicMock(), dt(0.1))
 
         # Publish event
         event = SoundEvent(sound_id=self.test_sound_id, x=0, y=0)
@@ -67,7 +68,7 @@ class TestOneShotSounds(unittest.TestCase):
     def test_distance_attenuation(self):
         """Test that volume decreases with distance."""
         # Set listener at 0,0
-        self.sound_system.update(0, 0, MagicMock(), 0.1)
+        self.sound_system.update(0, 0, MagicMock(), dt(0.1))
 
         # Play sound at distance (5 units away)
         # Falloff start is 2.0 by default, max is 10.0
@@ -84,7 +85,7 @@ class TestOneShotSounds(unittest.TestCase):
     def test_out_of_range(self):
         """Test that sounds beyond max_distance are not played."""
         # Set listener at 0,0
-        self.sound_system.update(0, 0, MagicMock(), 0.1)
+        self.sound_system.update(0, 0, MagicMock(), dt(0.1))
 
         # Play sound at 15 units (max is 10)
         self.sound_system.play_one_shot(self.test_sound_id, 15, 0)
@@ -105,7 +106,7 @@ class TestOneShotSounds(unittest.TestCase):
         )
         SOUND_DEFINITIONS["variant_test"] = variant_def
 
-        self.sound_system.update(0, 0, MagicMock(), 0.1)
+        self.sound_system.update(0, 0, MagicMock(), dt(0.1))
 
         # Mock load_sound to return a dummy object so we can check what was passed
         self.mock_backend.load_sound.side_effect = lambda p: str(p)
@@ -147,7 +148,7 @@ class TestParameterizedSounds(unittest.TestCase):
         self.sound_system.set_audio_backend(self.mock_backend)
 
         # Set listener at origin
-        self.sound_system.update(0, 0, MagicMock(), 0.1)
+        self.sound_system.update(0, 0, MagicMock(), dt(0.1))
 
         # Create a parameterized sound definition (like shotgun reload)
         self.param_sound_id = "test_reload"

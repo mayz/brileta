@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from time import perf_counter
 from typing import Any, NamedTuple, TypeVar
 
+from brileta.types import FloatRange
+
 from .metrics import MostRecentNVar, StatsVar
 
 
@@ -29,7 +31,7 @@ class LiveVariable:
     display_decimals: int | None = None
     stats_var: StatsVar | None = None
     metric: bool = False
-    value_range: tuple[float, float] | None = None
+    value_range: FloatRange | None = None
 
     def get_value(self) -> Any:
         """Return the current value using the getter."""
@@ -103,7 +105,7 @@ class LiveVariableRegistry:
         display_decimals: int | None = None,
         stats_var: StatsVar | None = None,
         metric: bool = False,
-        value_range: tuple[float, float] | None = None,
+        value_range: FloatRange | None = None,
     ) -> None:
         """Register a new live variable."""
         if name in self._variables:

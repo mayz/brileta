@@ -5,6 +5,9 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 
+from brileta import colors
+from brileta.types import DeltaTime, Heading
+
 
 @dataclass
 class AtmosphericLayerConfig:
@@ -14,11 +17,11 @@ class AtmosphericLayerConfig:
     enabled: bool = True
     blend_mode: str = "darken"
     strength: float = 0.2
-    tint_color: tuple[int, int, int] = (180, 190, 210)
+    tint_color: colors.Color = (180, 190, 210)
     noise_scale: float = 0.08
     noise_threshold_low: float = 0.25
     noise_threshold_high: float = 0.75
-    drift_direction: tuple[float, float] = (1.0, 0.3)
+    drift_direction: Heading = (1.0, 0.3)
     # Direction the visible pattern should move in world tiles (+x = right, +y = down).
     drift_speed: float = 0.15
     # Drift speed in tiles per second (pattern motion in world space).
@@ -98,7 +101,7 @@ class AtmosphericLayerSystem:
         for layer in config.layers:
             self._animation_states[layer.name] = LayerAnimationState()
 
-    def update(self, delta_time: float) -> None:
+    def update(self, delta_time: DeltaTime) -> None:
         """Update animation state for all layers."""
         self._total_time += delta_time
 

@@ -38,7 +38,7 @@ from brileta.game.actors.status_effects import (
     StrengthBoostEffect,
 )
 from brileta.game.enums import InjuryLocation, ItemSize
-from tests.helpers import make_item
+from tests.helpers import dt, make_item
 
 # =============================================================================
 # HELPER FUNCTIONS
@@ -523,8 +523,8 @@ class TestVisualEffectsComponentGaps:
         component = VisualEffectsComponent()
         component.flash(colors.RED, duration_frames=2)
 
-        component.update(0.016)  # Frame 1
-        component.update(0.016)  # Frame 2 - expires
+        component.update(dt(0.016))  # Frame 1
+        component.update(dt(0.016))  # Frame 2 - expires
 
         assert component.get_flash_color() is None
 
@@ -533,7 +533,7 @@ class TestVisualEffectsComponentGaps:
         component = VisualEffectsComponent()
         component.flash(colors.RED, duration_frames=5)
 
-        component.update(0.016)
+        component.update(dt(0.016))
 
         assert component._flash_duration_frames == 4
 
@@ -542,7 +542,7 @@ class TestVisualEffectsComponentGaps:
         component = VisualEffectsComponent()
         component.flash(colors.RED, duration_frames=1)
 
-        component.update(0.016)
+        component.update(dt(0.016))
 
         assert component._flash_color is None
 
@@ -593,9 +593,9 @@ class TestVisualEffectsComponentGaps:
         effect = MagicMock()
         component.add_continuous_effect(effect)
 
-        component.update(0.016)
+        component.update(dt(0.016))
 
-        effect.update.assert_called_once_with(0.016)
+        effect.update.assert_called_once_with(dt(0.016))
 
 
 # =============================================================================

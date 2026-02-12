@@ -10,7 +10,13 @@ import math
 from typing import TYPE_CHECKING
 
 from brileta import colors
-from brileta.types import InterpolationAlpha, Opacity
+from brileta.types import (
+    ColorRGBf,
+    InterpolationAlpha,
+    Opacity,
+    ViewOffset,
+    WorldTilePos,
+)
 from brileta.util.coordinates import Rect
 from brileta.util.live_vars import record_time_live_variable
 
@@ -66,8 +72,8 @@ class ActorRenderer:
         interpolation_alpha: InterpolationAlpha,
         *,
         game_world: GameWorld,
-        camera_frac_offset: tuple[float, float],
-        view_origin: tuple[float, float],
+        camera_frac_offset: ViewOffset,
+        view_origin: ViewOffset,
         visible_actors: list[Actor] | None = None,
         viewport_bounds: Rect | None = None,
         smooth: bool = True,
@@ -109,11 +115,11 @@ class ActorRenderer:
         self,
         actor: Actor,
         color: colors.Color,
-        alpha: float,
+        alpha: Opacity,
         *,
         game_map: GameMap,
-        camera_frac_offset: tuple[float, float],
-        view_origin: tuple[float, float],
+        camera_frac_offset: ViewOffset,
+        view_origin: ViewOffset,
     ) -> None:
         """Render a glyph-shaped outline for an actor at its current position.
 
@@ -169,8 +175,8 @@ class ActorRenderer:
         *,
         game_world: GameWorld,
         controller: Controller,
-        camera_frac_offset: tuple[float, float],
-        view_origin: tuple[float, float],
+        camera_frac_offset: ViewOffset,
+        view_origin: ViewOffset,
     ) -> None:
         """Render contextual outlines for selected/hovered actors.
 
@@ -201,7 +207,7 @@ class ActorRenderer:
             self._draw_actor_outline(
                 selected,
                 colors.SELECTION_OUTLINE,
-                float(CONTEXTUAL_OUTLINE_ALPHA),
+                CONTEXTUAL_OUTLINE_ALPHA,
                 game_map=game_map,
                 camera_frac_offset=camera_frac_offset,
                 view_origin=view_origin,
@@ -217,7 +223,7 @@ class ActorRenderer:
         self._draw_actor_outline(
             hovered,
             colors.HOVER_OUTLINE,
-            0.50,
+            Opacity(0.50),
             game_map=game_map,
             camera_frac_offset=camera_frac_offset,
             view_origin=view_origin,
@@ -227,7 +233,7 @@ class ActorRenderer:
         self,
         game_time: float,
         period: float = COMBAT_OUTLINE_SHIMMER_PERIOD,
-    ) -> float:
+    ) -> Opacity:
         """Calculate oscillating alpha for shimmer effect.
 
         Returns an alpha value that smoothly oscillates between configured
@@ -244,7 +250,7 @@ class ActorRenderer:
         t = (game_time % period) / period
         # Sinusoidal oscillation from min to max alpha
         normalized = (math.sin(t * 2 * math.pi) + 1) / 2
-        return (
+        return Opacity(
             COMBAT_OUTLINE_MIN_ALPHA
             + (COMBAT_OUTLINE_MAX_ALPHA - COMBAT_OUTLINE_MIN_ALPHA) * normalized
         )
@@ -320,8 +326,8 @@ class ActorRenderer:
         self,
         actor: Actor,
         interpolation_alpha: InterpolationAlpha,
-        camera_frac_offset: tuple[float, float],
-        view_origin: tuple[float, float],
+        camera_frac_offset: ViewOffset,
+        view_origin: ViewOffset,
     ) -> tuple[float, float, float, float, float, float]:
         """Compute interpolated screen coordinates for an actor."""
         return compute_actor_screen_position(
@@ -339,8 +345,8 @@ class ActorRenderer:
         alpha: InterpolationAlpha,
         *,
         game_world: GameWorld,
-        camera_frac_offset: tuple[float, float],
-        view_origin: tuple[float, float],
+        camera_frac_offset: ViewOffset,
+        view_origin: ViewOffset,
         visible_actors: list[Actor] | None = None,
         viewport_bounds: Rect | None = None,
     ) -> None:
@@ -379,8 +385,8 @@ class ActorRenderer:
         interpolation_alpha: InterpolationAlpha,
         *,
         game_map: GameMap,
-        camera_frac_offset: tuple[float, float],
-        view_origin: tuple[float, float],
+        camera_frac_offset: ViewOffset,
+        view_origin: ViewOffset,
     ) -> None:
         """Render a single actor with smooth positioning and lighting.
 
@@ -449,10 +455,10 @@ class ActorRenderer:
         layers: list[CharacterLayer],
         root_x: float,
         root_y: float,
-        light_rgb: tuple,
+        light_rgb: ColorRGBf,
         interpolation_alpha: InterpolationAlpha,
         visual_scale: float,
-        actor_world_pos: tuple[int, int],
+        actor_world_pos: WorldTilePos,
     ) -> None:
         """Render multiple character layers at sub-tile offsets.
 
@@ -494,14 +500,14 @@ class ActorRenderer:
                 world_pos=actor_world_pos,
             )
 
-    def _get_actor_lighting_intensity(self, actor: Actor, _bounds: Rect) -> tuple:
+    def _get_actor_lighting_intensity(self, actor: Actor, _bounds: Rect) -> ColorRGBf:
         """Get actor lighting multiplier tuple for the screen shader path."""
         receive_scale = self.shadow_renderer.actor_shadow_receive_light_scale.get(
             actor, 1.0
         )
         return (receive_scale, receive_scale, receive_scale)
 
-    def _get_actor_display_color(self, actor: Actor) -> tuple:
+    def _get_actor_display_color(self, actor: Actor) -> colors.Color:
         """Get actor's final display color with visual effects.
 
         This applies flash effects (from damage, etc.) when active.
@@ -526,7 +532,7 @@ class ActorRenderer:
         alpha: InterpolationAlpha,
         *,
         game_world: GameWorld,
-        view_origin: tuple[float, float],
+        view_origin: ViewOffset,
         game_time: float = 0.0,
         is_combat: bool = False,
     ) -> None:
@@ -627,11 +633,11 @@ class ActorRenderer:
         self,
         actor: Actor,
         color: colors.Color,
-        alpha: float,
+        alpha: Opacity,
         *,
         game_map: GameMap,
-        camera_frac_offset: tuple[float, float],
-        view_origin: tuple[float, float],
+        camera_frac_offset: ViewOffset,
+        view_origin: ViewOffset,
     ) -> None:
         """Draw an outline around an actor, handling content layers properly.
 
@@ -664,9 +670,9 @@ class ActorRenderer:
         self,
         actor: Actor,
         color: colors.Color,
-        alpha: float,
+        alpha: Opacity,
         *,
-        view_origin: tuple[float, float],
+        view_origin: ViewOffset,
     ) -> None:
         """Render a full-tile rectangle outline for actors with complex visuals."""
         vs = self.viewport_system

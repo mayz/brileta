@@ -54,7 +54,7 @@ class FloatingText:
     size: FloatingTextSize
     world_x: float
     world_y: float
-    color_override: tuple[int, int, int] | None = None  # Overrides valence color
+    color_override: colors.Color | None = None  # Overrides valence color
     bubble: bool = False
 
     # Cached texture (created on first render)

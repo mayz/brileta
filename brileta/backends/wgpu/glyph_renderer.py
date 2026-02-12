@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import wgpu
 
+from brileta.types import TileDimensions, WorldTilePos
 from brileta.util.caching import ResourceCache
 from brileta.util.glyph_buffer import GlyphBuffer
 from brileta.util.live_vars import record_time_live_variable
@@ -48,7 +49,7 @@ class WGPUGlyphRenderer:
         resource_manager: WGPUResourceManager,
         shader_manager: WGPUShaderManager,
         atlas_texture: wgpu.GPUTexture,
-        tile_dimensions: tuple[int, int],
+        tile_dimensions: TileDimensions,
         uv_map: np.ndarray,
     ) -> None:
         """Initialize WGPU glyph renderer.
@@ -77,7 +78,7 @@ class WGPUGlyphRenderer:
         self.noise_seed: int = 0
         # World-space tile offset so the fragment shader can convert buffer-space
         # tile indices to world coordinates for stable noise hashing across scrolls.
-        self.noise_tile_offset: tuple[int, int] = (0, 0)
+        self.noise_tile_offset: WorldTilePos = (0, 0)
 
         # Cache for change detection - skip re-render if buffer unchanged
         self.buffer_cache: ResourceCache[int, GlyphBuffer] = ResourceCache(
@@ -212,7 +213,7 @@ class WGPUGlyphRenderer:
         """
         self.noise_tile_offset = (offset_x, offset_y)
 
-    def set_tile_dimensions(self, tile_dimensions: tuple[int, int]) -> None:
+    def set_tile_dimensions(self, tile_dimensions: TileDimensions) -> None:
         """Update tile size used for off-screen glyph rendering.
 
         Tile dimensions can change when the window size changes. When that

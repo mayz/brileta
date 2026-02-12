@@ -40,6 +40,7 @@ from dataclasses import dataclass, field
 import numpy as np
 
 from brileta.environment.tile_types import TileTypeID
+from brileta.types import WorldTilePos
 from brileta.util.rng import RNG
 
 try:
@@ -291,7 +292,7 @@ class WFCSolver[PatternType]:
         Args:
             cells: List of (x, y, allowed_patterns) tuples.
         """
-        changed_cells: list[tuple[int, int]] = []
+        changed_cells: list[WorldTilePos] = []
 
         for x, y, allowed in cells:
             # Convert set to bitmask
@@ -318,7 +319,7 @@ class WFCSolver[PatternType]:
 
         self._batch_propagate(changed_cells)
 
-    def _batch_propagate(self, cells: list[tuple[int, int]]) -> None:
+    def _batch_propagate(self, cells: list[WorldTilePos]) -> None:
         """Propagate constraints from multiple cells efficiently."""
         if not cells:
             return

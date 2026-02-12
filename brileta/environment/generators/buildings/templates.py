@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from brileta.types import TileDimensions, WorldTilePos
 from brileta.util.coordinates import Rect
 from brileta.util.rng import RNG
 
@@ -54,7 +55,7 @@ class BuildingTemplate:
     weight: float = 1.0
     max_per_settlement: int | None = None
 
-    def generate_size(self, rng: RNG) -> tuple[int, int]:
+    def generate_size(self, rng: RNG) -> TileDimensions:
         """Generate random dimensions within the template's constraints.
 
         Args:
@@ -81,7 +82,7 @@ class BuildingTemplate:
     def create_building(
         self,
         building_id: int,
-        position: tuple[int, int],
+        position: WorldTilePos,
         width: int,
         height: int,
     ) -> Building:

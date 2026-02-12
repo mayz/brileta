@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING
 from brileta import input_events
 from brileta.game.actors import Actor, Character
 from brileta.modes.base import Mode
+from brileta.types import WorldTilePos
 
 if TYPE_CHECKING:
     from brileta.controller import Controller
@@ -35,7 +36,7 @@ class PickerResult:
     """
 
     actor: Actor | None
-    tile: tuple[int, int]
+    tile: WorldTilePos
 
 
 class PickerMode(Mode):
@@ -165,7 +166,7 @@ class PickerMode(Mode):
 
     def _get_tile_at_mouse(
         self, event: input_events.MouseButtonDown
-    ) -> tuple[int, int] | None:
+    ) -> WorldTilePos | None:
         """Convert mouse click position to world tile coordinates."""
         if self.controller.frame_manager is None:
             return None
@@ -195,13 +196,13 @@ class PickerMode(Mode):
 
         return (world_x, world_y)
 
-    def _is_valid_selection(self, tile: tuple[int, int]) -> bool:
+    def _is_valid_selection(self, tile: WorldTilePos) -> bool:
         """Check if a tile is a valid selection target."""
         if self._valid_filter is None:
             return True
         return self._valid_filter(tile[0], tile[1])
 
-    def _get_actor_at_tile(self, tile: tuple[int, int]) -> Actor | None:
+    def _get_actor_at_tile(self, tile: WorldTilePos) -> Actor | None:
         """Get the actor at a tile position, if any."""
         world_x, world_y = tile
         gw = self.controller.gw

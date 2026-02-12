@@ -19,7 +19,7 @@ of rendering, making the system more modular and maintainable.
 import abc
 from typing import Any
 
-from brileta.types import InterpolationAlpha
+from brileta.types import InterpolationAlpha, TileDimensions
 from brileta.util.caching import ResourceCache
 from brileta.view.render.canvas import Canvas
 from brileta.view.render.graphics import GraphicsContext
@@ -41,7 +41,7 @@ class View(abc.ABC):
         self.width = 0
         self.height = 0
         self.visible = True
-        self.tile_dimensions: tuple[int, int] = (0, 0)
+        self.tile_dimensions: TileDimensions = (0, 0)
         # Cache the most recently rendered texture if the backend provides one.
         self._cached_texture: Any | None = None
 

@@ -10,6 +10,7 @@ from brileta.game.actors.utility import (
     Action as UtilityAction,
 )
 from brileta.game.actors.utility import Consideration, UtilityContext
+from brileta.types import WorldTilePos
 from brileta.util import rng
 
 if TYPE_CHECKING:
@@ -343,7 +344,7 @@ class PatrolAction(UtilityAction):
         return intent
 
 
-def _pick_patrol_waypoints(controller: Controller, actor: NPC) -> list[tuple[int, int]]:
+def _pick_patrol_waypoints(controller: Controller, actor: NPC) -> list[WorldTilePos]:
     """Pick random walkable tiles near the actor for patrol waypoints.
 
     Collects all walkable tiles within _PATROL_RADIUS of the actor,
@@ -359,8 +360,8 @@ def _pick_patrol_waypoints(controller: Controller, actor: NPC) -> list[tuple[int
 
 
 def _sample_roam_waypoints(
-    candidates: list[tuple[int, int]], waypoint_count: int
-) -> list[tuple[int, int]]:
+    candidates: list[WorldTilePos], waypoint_count: int
+) -> list[WorldTilePos]:
     """Return up to ``waypoint_count`` sampled candidate waypoints."""
     if len(candidates) <= waypoint_count:
         return list(candidates)
@@ -374,7 +375,7 @@ def _pick_roam_waypoints(
     radius: int,
     waypoint_count: int,
     require_unblocked: bool,
-) -> list[tuple[int, int]]:
+) -> list[WorldTilePos]:
     """Pick walkable roam waypoints, preferring safe tiles when possible."""
     safe_candidates, hazardous_candidates = _collect_roam_candidates(
         controller, actor, radius=radius, require_unblocked=require_unblocked
@@ -389,7 +390,7 @@ def _collect_roam_candidates(
     radius: int,
     *,
     require_unblocked: bool,
-) -> tuple[list[tuple[int, int]], list[tuple[int, int]]]:
+) -> tuple[list[WorldTilePos], list[WorldTilePos]]:
     """Collect nearby walkable roam candidates, partitioned by hazard.
 
     ``get_hazard_cost()`` returns 1 for safe tiles and >1 for hazardous tiles.
@@ -401,8 +402,8 @@ def _collect_roam_candidates(
     from brileta.util.pathfinding import probe_step
 
     game_map = controller.gw.game_map
-    safe_candidates: list[tuple[int, int]] = []
-    hazardous_candidates: list[tuple[int, int]] = []
+    safe_candidates: list[WorldTilePos] = []
+    hazardous_candidates: list[WorldTilePos] = []
 
     # Actor-occupancy blocks that can be ignored when require_unblocked is False
     _ACTOR_BLOCKS = (StepBlock.BLOCKED_BY_ACTOR, StepBlock.BLOCKED_BY_CONTAINER)

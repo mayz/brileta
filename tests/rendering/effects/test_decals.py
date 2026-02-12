@@ -7,6 +7,7 @@ import pytest
 
 from brileta.view.render.effects import decals as decals_module
 from brileta.view.render.effects.decals import Decal, DecalSystem
+from tests.helpers import dt
 
 
 class TestDecalSystem:
@@ -108,11 +109,11 @@ class TestDecalSystem:
         ds.add_decal(5.0, 5.0, "*", (100, 0, 0), game_time=0.0)
 
         # At time 14, still visible
-        ds.update(0.0, game_time=14.0)
+        ds.update(dt(0.0), game_time=14.0)
         assert ds.total_count == 1
 
         # At time 16, should be removed (past 15)
-        ds.update(0.0, game_time=16.0)
+        ds.update(dt(0.0), game_time=16.0)
         assert ds.total_count == 0
 
     def test_get_alpha_full_before_lifetime(self) -> None:

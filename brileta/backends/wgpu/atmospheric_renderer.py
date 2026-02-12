@@ -10,8 +10,8 @@ import numpy as np
 import wgpu
 from PIL import Image as PILImage
 
-from brileta import config
-from brileta.types import PixelPos
+from brileta import colors, config
+from brileta.types import PixelPos, PixelRect, ViewOffset, WorldTilePos
 
 if TYPE_CHECKING:
     from .resource_manager import WGPUResourceManager
@@ -313,8 +313,8 @@ class WGPUAtmosphericRenderer:
         self,
         render_pass: wgpu.GPURenderPassEncoder,
         window_size: PixelPos,
-        letterbox_geometry: tuple[int, int, int, int] | None,
-        viewport_offset: tuple[int, int],
+        letterbox_geometry: PixelRect | None,
+        viewport_offset: WorldTilePos,
         viewport_size: tuple[int, int],
         map_size: tuple[int, int],
         sky_exposure_threshold: float,
@@ -325,13 +325,13 @@ class WGPUAtmosphericRenderer:
         noise_threshold_low: float,
         noise_threshold_high: float,
         strength: float,
-        tint_color: tuple[int, int, int],
-        drift_offset: tuple[float, float],
+        tint_color: colors.Color,
+        drift_offset: ViewOffset,
         turbulence_offset: float,
         turbulence_strength: float,
         turbulence_scale: float,
         blend_mode: str,
-        pixel_bounds: tuple[int, int, int, int],
+        pixel_bounds: PixelRect,
     ) -> None:
         """Render an atmospheric layer.
 
@@ -450,17 +450,17 @@ class WGPUAtmosphericRenderer:
 
     def _build_uniforms(
         self,
-        letterbox_geometry: tuple[int, int, int, int],
-        viewport_offset: tuple[int, int],
+        letterbox_geometry: PixelRect,
+        viewport_offset: WorldTilePos,
         viewport_size: tuple[int, int],
         map_size: tuple[int, int],
         blend_mode: str,
         strength: float,
-        tint_color: tuple[int, int, int],
+        tint_color: colors.Color,
         noise_scale: float,
         noise_threshold_low: float,
         noise_threshold_high: float,
-        drift_offset: tuple[float, float],
+        drift_offset: ViewOffset,
         turbulence_offset: float,
         turbulence_strength: float,
         turbulence_scale: float,

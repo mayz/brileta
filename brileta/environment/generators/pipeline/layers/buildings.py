@@ -17,6 +17,7 @@ from brileta.environment.generators.pipeline.context import GenerationContext
 from brileta.environment.generators.pipeline.layer import GenerationLayer
 from brileta.environment.map import MapRegion
 from brileta.environment.tile_types import TileTypeID
+from brileta.types import WorldTilePos
 from brileta.util import rng
 from brileta.util.coordinates import Rect
 
@@ -347,7 +348,7 @@ class BuildingPlacementLayer(GenerationLayer):
         width: int,
         height: int,
         placed_buildings: list[Building],
-    ) -> tuple[int, int] | None:
+    ) -> WorldTilePos | None:
         """Find a random valid position for a building.
 
         Args:
@@ -389,7 +390,7 @@ class BuildingPlacementLayer(GenerationLayer):
         self,
         ctx: GenerationContext,
         template: BuildingTemplate,
-        position: tuple[int, int],
+        position: WorldTilePos,
         width: int,
         height: int,
     ) -> Building:
@@ -700,7 +701,7 @@ class BuildingPlacementLayer(GenerationLayer):
         ctx: GenerationContext,
         bounds_a: Rect,
         bounds_b: Rect,
-    ) -> tuple[int, int] | None:
+    ) -> WorldTilePos | None:
         """Find a valid door position on the wall between two rooms.
 
         Args:
@@ -711,7 +712,7 @@ class BuildingPlacementLayer(GenerationLayer):
         Returns:
             (x, y) position for a door, or None if no shared wall.
         """
-        candidates: list[tuple[int, int]] = []
+        candidates: list[WorldTilePos] = []
 
         # Check for horizontal wall (rooms stacked vertically)
         # Room A above Room B: A.y2 == wall_y, B.y1 == wall_y + 1
@@ -828,7 +829,7 @@ class BuildingPlacementLayer(GenerationLayer):
         self,
         ctx: GenerationContext,
         building: Building,
-    ) -> tuple[int, int] | None:
+    ) -> WorldTilePos | None:
         """Place a door on the wall facing the nearest street.
 
         When street data is available, orients the door toward the nearest
@@ -849,7 +850,7 @@ class BuildingPlacementLayer(GenerationLayer):
         # Collect door positions on the chosen wall, filtering out positions
         # where the interior tile is blocked by an internal wall OR where
         # there's insufficient entry depth (would create awkward vestibule).
-        candidates: list[tuple[int, int]] = []
+        candidates: list[WorldTilePos] = []
 
         if direction == "N":
             # North wall (y = fp.y1), interior is y+1, opposite wall is fp.y2 - 1
@@ -906,9 +907,9 @@ class BuildingPlacementLayer(GenerationLayer):
 
     def _find_largest_contiguous_segment(
         self,
-        candidates: list[tuple[int, int]],
+        candidates: list[WorldTilePos],
         direction: str,
-    ) -> list[tuple[int, int]]:
+    ) -> list[WorldTilePos]:
         """Find the largest contiguous segment of door candidates.
 
         When internal walls divide a building, candidates on the exterior wall
@@ -935,8 +936,8 @@ class BuildingPlacementLayer(GenerationLayer):
             sorted_candidates = sorted(candidates, key=lambda p: p[1])
 
         # Find contiguous segments (adjacent positions differ by 1)
-        segments: list[list[tuple[int, int]]] = []
-        current_segment: list[tuple[int, int]] = [sorted_candidates[0]]
+        segments: list[list[WorldTilePos]] = []
+        current_segment: list[WorldTilePos] = [sorted_candidates[0]]
 
         for i in range(1, len(sorted_candidates)):
             prev = sorted_candidates[i - 1]
@@ -1021,7 +1022,7 @@ class BuildingPlacementLayer(GenerationLayer):
     def _record_door_connection(
         self,
         ctx: GenerationContext,
-        door_pos: tuple[int, int],
+        door_pos: WorldTilePos,
         interior_region_id: int,
     ) -> None:
         """Record the connection between regions via this door.

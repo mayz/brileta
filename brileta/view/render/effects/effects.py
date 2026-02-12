@@ -51,6 +51,7 @@ from brileta import colors
 from brileta.constants.combat import CombatConstants as Combat
 from brileta.constants.view import ViewConstants as View
 from brileta.game.enums import BlendMode
+from brileta.types import DeltaTime, FloatRange
 from brileta.util import rng
 
 from .decals import DecalSystem
@@ -77,8 +78,8 @@ class ContinuousEmissionPattern:
     direction_y: float = -1.0  # Default upward
     cone_spread: float = 0.3
     # Speed and lifetime
-    speed_range: tuple[float, float] = (1.0, 2.0)
-    lifetime_range: tuple[float, float] = (0.1, 0.3)
+    speed_range: FloatRange = (1.0, 2.0)
+    lifetime_range: FloatRange = (0.1, 0.3)
     # Background tint parameters
     tint_color: colors.Color = (100, 100, 100)
     blend_mode: BlendMode = BlendMode.TINT
@@ -229,7 +230,7 @@ class ContinuousEffect(Effect):
                 layer=pattern.layer,
             )
 
-    def update(self, delta_time: float) -> None:
+    def update(self, delta_time: DeltaTime) -> None:
         """Update the effect's timer."""
         self.emission_timer += delta_time
 

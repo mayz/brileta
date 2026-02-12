@@ -7,7 +7,7 @@ import numpy as np
 from brileta import colors
 from brileta.constants.view import ViewConstants as View
 from brileta.game.enums import BlendMode
-from brileta.types import DeltaTime
+from brileta.types import DeltaTime, FloatRange, ViewOffset
 from brileta.util import rng
 from brileta.util.coordinates import Rect
 
@@ -191,11 +191,11 @@ class SubTileParticleSystem:
         tile_x: float,
         tile_y: float,
         count: int,
-        speed_range: tuple[float, float] = (
+        speed_range: FloatRange = (
             View.RADIAL_SPEED_MIN,
             View.RADIAL_SPEED_MAX,
         ),
-        lifetime_range: tuple[float, float] = (
+        lifetime_range: FloatRange = (
             View.RADIAL_LIFETIME_MIN,
             View.RADIAL_LIFETIME_MAX,
         ),
@@ -280,8 +280,8 @@ class SubTileParticleSystem:
         direction_y: float,
         count: int,
         cone_spread: float = 0.3,
-        speed_range: tuple[float, float] = (3.0, 6.0),
-        lifetime_range: tuple[float, float] = (0.05, 0.15),
+        speed_range: FloatRange = (3.0, 6.0),
+        lifetime_range: FloatRange = (0.05, 0.15),
         colors_and_chars: list[tuple[colors.Color, str]] | None = None,
         gravity: float = 0.0,
         origin_offset_tiles: float = 0.0,
@@ -379,7 +379,7 @@ class SubTileParticleSystem:
         tile_y: float,
         radius: int,
         flash_color: colors.Color = (255, 255, 200),
-        lifetime_range: tuple[float, float] = (0.1, 0.2),
+        lifetime_range: FloatRange = (0.1, 0.2),
         intensity_falloff: bool = True,
         layer: ParticleLayer = ParticleLayer.OVER_ACTORS,
     ) -> None:
@@ -440,11 +440,11 @@ class SubTileParticleSystem:
         tile_x: float,
         tile_y: float,
         count: int,
-        drift_speed: tuple[float, float] = (
+        drift_speed: FloatRange = (
             View.SMOKE_DRIFT_MIN,
             View.SMOKE_DRIFT_MAX,
         ),
-        lifetime_range: tuple[float, float] = (
+        lifetime_range: FloatRange = (
             View.SMOKE_LIFE_MIN,
             View.SMOKE_LIFE_MAX,
         ),
@@ -592,7 +592,7 @@ class SubTileParticleSystem:
         self,
         particle_index: int,
         viewport_bounds: Rect,
-        view_offset: tuple[int, int],
+        view_offset: ViewOffset,
         renderer: "GraphicsContext",
     ) -> tuple[float, float] | None:
         """Convert particle index to screen coordinates, or None if off-screen."""

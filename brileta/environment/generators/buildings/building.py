@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from brileta.types import WorldTilePos
 from brileta.util.coordinates import Rect
 
 
@@ -51,7 +52,7 @@ class Building:
     building_type: str
     footprint: Rect
     rooms: list[Room] = field(default_factory=list)
-    door_positions: list[tuple[int, int]] = field(default_factory=list)
+    door_positions: list[WorldTilePos] = field(default_factory=list)
 
     @property
     def interior_bounds(self) -> Rect:

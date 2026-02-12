@@ -45,7 +45,7 @@ from brileta.game.actors.utility import (
     ResponseCurveType,
     UtilityContext,
 )
-from brileta.types import ActorId
+from brileta.types import ActorId, Direction, WorldTilePos
 from brileta.util import rng
 
 if TYPE_CHECKING:
@@ -354,7 +354,7 @@ class WaypointRouteGoal(Goal):
     def __init__(
         self,
         goal_id: str,
-        waypoints: list[tuple[int, int]],
+        waypoints: list[WorldTilePos],
         *,
         minimum_waypoints: int = 2,
     ) -> None:
@@ -405,7 +405,7 @@ class WaypointRouteGoal(Goal):
         self._initial_waypoint_distance = 0.0
         return completed_lap
 
-    def _replace_route(self, waypoints: list[tuple[int, int]]) -> None:
+    def _replace_route(self, waypoints: list[WorldTilePos]) -> None:
         """Swap to a newly generated route and reset waypoint-leg state."""
         if len(waypoints) < 2:
             self.state = GoalState.FAILED
@@ -457,7 +457,7 @@ class WaypointRouteGoal(Goal):
 class PatrolGoal(WaypointRouteGoal):
     """Patrol between a fixed set of waypoints in a cycle."""
 
-    def __init__(self, waypoints: list[tuple[int, int]]) -> None:
+    def __init__(self, waypoints: list[WorldTilePos]) -> None:
         super().__init__(goal_id="patrol", waypoints=waypoints, minimum_waypoints=2)
 
     def get_base_score(self) -> float:
@@ -482,7 +482,7 @@ class WanderGoal(Goal):
     stuck, it repicks heading + budget.
     """
 
-    _DIRECTIONS: tuple[tuple[int, int], ...] = (
+    _DIRECTIONS: tuple[Direction, ...] = (
         (1, 0),  # East
         (1, 1),  # Southeast
         (0, 1),  # South
@@ -520,12 +520,12 @@ class WanderGoal(Goal):
         self._max_stuck_turns = max_stuck_turns
         self._heading_jitter_chance = heading_jitter_chance
 
-        self._heading: tuple[int, int] | None = None
+        self._heading: Direction | None = None
         self._segment_length: int = 0
         self._steps_remaining: int = 0
         self._segment_steps_taken: int = 0
         self._stuck_turns: int = 0
-        self._last_attempt_origin: tuple[int, int] | None = None
+        self._last_attempt_origin: WorldTilePos | None = None
 
     def get_base_score(self) -> float:
         return 0.18
@@ -555,7 +555,7 @@ class WanderGoal(Goal):
         return
 
     @classmethod
-    def _rotate_heading(cls, heading: tuple[int, int], offset: int) -> tuple[int, int]:
+    def _rotate_heading(cls, heading: Direction, offset: int) -> Direction:
         """Return heading rotated by ``offset`` steps in the direction wheel."""
         idx = cls._DIRECTIONS.index(heading)
         return cls._DIRECTIONS[(idx + offset) % len(cls._DIRECTIONS)]
@@ -587,12 +587,12 @@ class WanderGoal(Goal):
 
     def _pick_segment_heading(
         self, npc: NPC, controller: Controller
-    ) -> tuple[int, int] | None:
+    ) -> Direction | None:
         """Pick a random walkable heading, preferring safe tiles."""
         from brileta.environment.tile_types import get_hazard_cost
 
-        safe: list[tuple[int, int]] = []
-        hazardous: list[tuple[int, int]] = []
+        safe: list[Direction] = []
+        hazardous: list[Direction] = []
         game_map = controller.gw.game_map
 
         for dx, dy in self._DIRECTIONS:
@@ -641,7 +641,7 @@ class WanderGoal(Goal):
         offset = _rng.choice((-1, 1))
         self._heading = self._rotate_heading(self._heading, offset)
 
-    def _choose_step(self, npc: NPC, controller: Controller) -> tuple[int, int] | None:
+    def _choose_step(self, npc: NPC, controller: Controller) -> Direction | None:
         """Choose the next step from forward/sidestep/turn fallback candidates."""
         from brileta.environment.tile_types import get_hazard_cost
 
@@ -669,7 +669,7 @@ class WanderGoal(Goal):
         ]
 
         for offsets in groups:
-            candidates: list[tuple[tuple[int, int], int]] = []
+            candidates: list[tuple[Direction, int]] = []
             for offset in offsets:
                 direction = self._rotate_heading(self._heading, offset)
                 dx, dy = direction
@@ -684,7 +684,9 @@ class WanderGoal(Goal):
 
             # Within a priority group, prefer lower hazard; randomize ties.
             min_cost = min(cost for _, cost in candidates)
-            safest = [direction for direction, cost in candidates if cost == min_cost]
+            safest: list[Direction] = [
+                direction for direction, cost in candidates if cost == min_cost
+            ]
             return _rng.choice(safest)
 
         return None

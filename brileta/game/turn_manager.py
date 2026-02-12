@@ -36,6 +36,7 @@ from brileta.constants.movement import MovementConstants as Movement
 from brileta.game.action_router import ActionRouter
 from brileta.game.actions.base import GameActionResult, GameIntent
 from brileta.game.enums import ActionBlockReason
+from brileta.types import ActorId
 from brileta.util.coordinates import WorldTilePos
 
 if TYPE_CHECKING:
@@ -43,6 +44,11 @@ if TYPE_CHECKING:
     from brileta.game.action_plan import ActivePlan, ApproachStep
     from brileta.game.actors import PC, Actor
     from brileta.game.actors.core import Character
+
+# The ephemeral identity of one live ActivePlan instance.
+# AdjacencyRetryKey is the key for adjacency-rewind retry counts.
+type PlanInstanceId = int
+type AdjacencyRetryKey = tuple[ActorId, PlanInstanceId]
 
 
 class TurnManager:
@@ -96,7 +102,7 @@ class TurnManager:
 
         # Per-(actor, plan) retry counters for adjacency-chase rewinds.
         # This keeps retry policy in TurnManager instead of ActivePlan.
-        self._adjacency_rewind_counts: dict[tuple[int, int], int] = {}
+        self._adjacency_rewind_counts: dict[AdjacencyRetryKey, int] = {}
 
     @property
     def player(self) -> PC:
@@ -556,7 +562,7 @@ class TurnManager:
         if plan.cached_path is None or not plan.cached_path:
             gm = self.controller.gw.game_map
             asi = self.controller.gw.actor_spatial_index
-            start_pos: tuple[int, int] = (actor.x, actor.y)
+            start_pos: WorldTilePos = (actor.x, actor.y)
 
             # First try direct path to target. Door-capable NPCs treat
             # closed doors as high-cost passable tiles so they can plan
@@ -586,7 +592,7 @@ class TurnManager:
             if not plan.cached_path and step.stop_distance > 0:
                 from brileta.util.pathfinding import probe_step
 
-                best_path: list[tuple[int, int]] | None = None
+                best_path: list[WorldTilePos] | None = None
                 for dx in (-1, 0, 1):
                     for dy in (-1, 0, 1):
                         if dx == 0 and dy == 0:
@@ -910,7 +916,7 @@ class TurnManager:
             # If no path, leave cached_path empty - plan will handle it next turn
 
     @staticmethod
-    def _plan_retry_key(actor: Character, plan: ActivePlan) -> tuple[int, int]:
+    def _plan_retry_key(actor: Character, plan: ActivePlan) -> AdjacencyRetryKey:
         """Build a stable key for retry bookkeeping of a specific active plan."""
         return (actor.actor_id, id(plan))
 
@@ -922,7 +928,7 @@ class TurnManager:
         self, actor: Character, active_plan: ActivePlan
     ) -> None:
         """Drop stale retry entries from prior plans for this actor."""
-        current_plan_id = id(active_plan)
+        current_plan_id: PlanInstanceId = id(active_plan)
         for key in list(self._adjacency_rewind_counts):
             actor_id, plan_id = key
             if actor_id == actor.actor_id and plan_id != current_plan_id:

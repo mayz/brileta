@@ -39,6 +39,7 @@ Do NOT run individual tools (pytest, ty, ruff) separately first. Just run `make`
 
 - All new code must be fully type-hinted and pass static analysis.
 - Good Documentation: Comments should describe what code is doing and (if particularly complex) why it is doing it.
+- Use semantic type aliases from `brileta.types` instead of raw tuples for coordinates, positions, dimensions, and time values. For example, use `WorldTilePos` not `tuple[int, int]`, `DeltaTime` not `float`, `PixelRect` not `tuple[int, int, int, int]`. Check `brileta/types.py` for the full set. Only use a raw tuple when no existing alias fits semantically.
 
 ## Testing
 
