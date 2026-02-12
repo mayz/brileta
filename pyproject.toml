@@ -53,11 +53,6 @@ select = [
     "LOG",      # Checks for issues using the standard library logging module.
 ]
 
-[tool.ty.rules]
-# ty bugs/limitations (remove as ty matures)
-invalid-base = "ignore"            # Protocol inheritance false positive
-invalid-context-manager = "ignore" # nullcontext false positive
-
 [[tool.ty.overrides]]
 include = ["tests/**"]
 
