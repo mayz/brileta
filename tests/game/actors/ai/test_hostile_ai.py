@@ -1,56 +1,42 @@
-from dataclasses import dataclass
+"""Tests for hostile AI behavior, disposition, and combat awareness.
+
+Validates:
+- Hostile NPCs chase, attack, and flee based on utility scoring.
+- Hazard escape overrides normal combat behavior.
+- Disposition labels, thresholds, and modification clamping.
+- Neutral, unfriendly, and wary NPC behavior tiers.
+- Wander goal lifecycle for non-hostile NPCs.
+- set_hostile transitions and NPC-vs-NPC targeting.
+- ai.force_hostile live variable override.
+- Combat awareness: NPCs react to attacks from outside aggro range.
+- Threat disappearance and attacker death clear combat state.
+"""
+
+from contextlib import contextmanager
 from typing import cast
 
+import pytest
+
 from brileta import colors
-from brileta.controller import Controller
 from brileta.game import ranges
 from brileta.game.actions.combat import AttackIntent
 from brileta.game.actions.movement import MoveIntent
 from brileta.game.actors import NPC, Character
-from brileta.game.actors.ai import HOSTILE_UPPER, escalate_hostility
+from brileta.game.actors.ai import HOSTILE_UPPER, disposition_label, escalate_hostility
+from brileta.game.actors.ai.behaviors.flee import _FLEE_SAFE_DISTANCE, FleeGoal
+from brileta.game.actors.ai.behaviors.wander import WanderGoal
+from brileta.game.actors.ai.goals import GoalState
 from brileta.game.game_world import GameWorld
-from brileta.game.turn_manager import TurnManager
-from tests.helpers import DummyGameWorld
+from tests.helpers import DummyController, DummyGameWorld, make_ai_world
 
-
-@dataclass
-class DummyController(Controller):
-    gw: DummyGameWorld
-
-    def __post_init__(self) -> None:
-        self.turn_manager = TurnManager(self)
-        self.frame_manager = None
-        self.message_log = None
-        self.action_cost = 100
-
-
-def make_world(
-    disposition: int = -75,
-) -> tuple[DummyController, Character, NPC]:
-    gw = DummyGameWorld()
-    player = Character(
-        0, 0, "@", colors.WHITE, "Player", game_world=cast(GameWorld, gw)
-    )
-    npc = NPC(
-        3,
-        0,
-        "g",
-        colors.RED,
-        "Enemy",
-        game_world=cast(GameWorld, gw),
-    )
-    gw.player = player
-    gw.add_actor(player)
-    gw.add_actor(npc)
-    if disposition != 0:
-        npc.ai.modify_disposition(player, disposition)
-    controller = DummyController(gw)
-    return controller, player, npc
+# ---------------------------------------------------------------------------
+# Core Hostile Behavior Tests
+# ---------------------------------------------------------------------------
 
 
 def test_hostile_ai_sets_active_plan() -> None:
     """AIComponent creates an active_plan to walk toward player."""
-    controller, player, npc = make_world()
+    controller, player, npc = make_ai_world()
     action = npc.ai.get_action(controller, npc)
     assert action is None  # Returns None because plan was set
     plan = npc.active_plan
@@ -61,7 +47,7 @@ def test_hostile_ai_sets_active_plan() -> None:
 
 
 def test_hostile_ai_attacks_when_adjacent() -> None:
-    controller, _player, npc = make_world()
+    controller, _player, npc = make_ai_world()
     npc.x = 1
     npc.y = 0
     action = npc.ai.get_action(controller, npc)
@@ -71,9 +57,7 @@ def test_hostile_ai_attacks_when_adjacent() -> None:
 
 def test_hostile_ai_flees_when_low_health() -> None:
     """Low-health hostile NPCs should flee instead of attacking."""
-    from brileta.game.actions.movement import MoveIntent
-
-    controller, _player, npc = make_world()
+    controller, _player, npc = make_ai_world()
     npc.x = 1
     npc.y = 0
 
@@ -91,7 +75,7 @@ def test_hostile_ai_avoids_hazardous_destination_tiles() -> None:
     """AI prefers non-hazardous tiles when selecting destination adjacent to player."""
     from brileta.environment.tile_types import TileTypeID
 
-    controller, player, npc = make_world()
+    controller, player, npc = make_ai_world()
 
     # Player at (0, 0), NPC at (3, 0)
     # The closest adjacent tile to player from NPC's perspective is (1, 0)
@@ -118,7 +102,7 @@ def test_hostile_ai_uses_hazardous_tile_when_no_alternative() -> None:
     """AI will use hazardous destination tile if all options are hazardous."""
     from brileta.environment.tile_types import TileTypeID
 
-    controller, player, npc = make_world()
+    controller, player, npc = make_ai_world()
 
     # Make ALL tiles adjacent to the player hazardous
     for dx in (-1, 0, 1):
@@ -126,7 +110,7 @@ def test_hostile_ai_uses_hazardous_tile_when_no_alternative() -> None:
             if dx == 0 and dy == 0:
                 continue
             tx, ty = player.x + dx, player.y + dy
-            if 0 <= tx < 30 and 0 <= ty < 30:
+            if 0 <= tx < 80 and 0 <= ty < 80:
                 controller.gw.game_map.tiles[tx, ty] = TileTypeID.ACID_POOL
     controller.gw.game_map.invalidate_property_caches()
 
@@ -142,15 +126,16 @@ def test_hostile_ai_uses_hazardous_tile_when_no_alternative() -> None:
     assert ranges.calculate_distance(player.x, player.y, tx, ty) == 1
 
 
-# --- Hazard Escape Tests ---
+# ---------------------------------------------------------------------------
+# Hazard Escape Tests
+# ---------------------------------------------------------------------------
 
 
 def test_npc_escapes_hazard_before_attacking() -> None:
     """NPC on hazard should escape before pursuing player."""
     from brileta.environment.tile_types import TileTypeID
-    from brileta.game.actions.movement import MoveIntent
 
-    controller, _player, npc = make_world()
+    controller, _player, npc = make_ai_world()
 
     # Place NPC on acid pool
     controller.gw.game_map.tiles[npc.x, npc.y] = TileTypeID.ACID_POOL
@@ -165,9 +150,8 @@ def test_npc_escapes_hazard_before_attacking() -> None:
 def test_npc_escapes_to_nearest_safe_tile() -> None:
     """NPC should escape to nearest non-hazardous tile, preferring orthogonal."""
     from brileta.environment.tile_types import TileTypeID
-    from brileta.game.actions.movement import MoveIntent
 
-    controller, _player, npc = make_world()
+    controller, _player, npc = make_ai_world()
     npc.x, npc.y = 5, 5
 
     # Place NPC on hazard
@@ -196,7 +180,7 @@ def test_npc_stays_if_all_adjacent_hazardous() -> None:
     """NPC stays put if all adjacent tiles are also hazards."""
     from brileta.environment.tile_types import TileTypeID
 
-    controller, _player, npc = make_world()
+    controller, _player, npc = make_ai_world()
     npc.x, npc.y = 5, 5
 
     # Surround entirely with hazards (including the NPC's tile)
@@ -217,9 +201,8 @@ def test_npc_stays_if_all_adjacent_hazardous() -> None:
 def test_npc_skips_blocked_safe_tile() -> None:
     """NPC should skip safe tiles blocked by other actors."""
     from brileta.environment.tile_types import TileTypeID
-    from brileta.game.actions.movement import MoveIntent
 
-    controller, _player, npc = make_world()
+    controller, _player, npc = make_ai_world()
     npc.x, npc.y = 5, 5
 
     # Place a blocking actor at (4, 5) - would be the closest safe tile
@@ -256,11 +239,34 @@ def test_npc_skips_blocked_safe_tile() -> None:
     assert action.dy == -1
 
 
+# ---------------------------------------------------------------------------
+# Disposition & Behavior Tier Tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (-100, "Hostile"),
+        (-52, "Hostile"),
+        (-51, "Hostile"),
+        (-50, "Unfriendly"),
+        (-21, "Unfriendly"),
+        (-20, "Wary"),
+        (0, "Approachable"),
+        (20, "Approachable"),
+        (21, "Friendly"),
+        (100, "Ally"),
+    ],
+)
+def test_disposition_label_boundaries(value: int, expected: str) -> None:
+    """Disposition labels should match inclusive boundary expectations."""
+    assert disposition_label(value) == expected
+
+
 def test_neutral_npc_in_range_does_not_attack() -> None:
     """Disposition 0 should not trigger attack behavior on proximity alone."""
-    from brileta.game.actors.ai.behaviors.wander import WanderGoal
-
-    controller, _player, npc = make_world(disposition=0)
+    controller, _player, npc = make_ai_world(disposition=0)
     npc.x = 1
     npc.y = 0
 
@@ -273,7 +279,7 @@ def test_neutral_npc_in_range_does_not_attack() -> None:
 
 def test_numeric_hostile_disposition_attacks_in_range() -> None:
     """Numeric hostile disposition should attack when adjacent."""
-    controller, _player, npc = make_world(disposition=-75)  # Hostile
+    controller, _player, npc = make_ai_world(disposition=-75)  # Hostile
     npc.x = 1
     npc.y = 0
 
@@ -284,9 +290,7 @@ def test_numeric_hostile_disposition_attacks_in_range() -> None:
 
 def test_avoid_action_moves_unfriendly_npc_away() -> None:
     """Unfriendly NPCs should choose AvoidAction and step away from player."""
-    from brileta.game.actions.movement import MoveIntent
-
-    controller, _player, npc = make_world(disposition=-35)  # Unfriendly
+    controller, _player, npc = make_ai_world(disposition=-35)  # Unfriendly
     npc.x = 1
     npc.y = 0
 
@@ -298,7 +302,7 @@ def test_avoid_action_moves_unfriendly_npc_away() -> None:
 
 def test_watch_action_returns_none_for_wary_npc() -> None:
     """Wary NPCs should specifically pick WatchAction."""
-    controller, _player, npc = make_world(disposition=-20)  # Wary boundary
+    controller, _player, npc = make_ai_world(disposition=-20)  # Wary boundary
     npc.x = 1
     npc.y = 0
 
@@ -317,7 +321,7 @@ def test_watch_action_returns_none_for_wary_npc() -> None:
 
 def test_avoid_action_returns_none_when_cornered() -> None:
     """Cornered unfriendly NPCs should fall back cleanly when avoid has no step."""
-    controller, _player, npc = make_world(disposition=-35)  # Unfriendly
+    controller, _player, npc = make_ai_world(disposition=-35)  # Unfriendly
     npc.x = 1
     npc.y = 0
 
@@ -332,11 +336,14 @@ def test_avoid_action_returns_none_when_cornered() -> None:
     assert npc.ai.last_chosen_action in {"Watch", "Idle"}
 
 
+# ---------------------------------------------------------------------------
+# Wander Goal (Non-Hostile NPC) Tests
+# ---------------------------------------------------------------------------
+
+
 def test_wander_creates_goal_when_no_threat() -> None:
     """Neutral NPC should start wander as a persistent goal when safe."""
-    from brileta.game.actors.ai.behaviors.wander import WanderGoal
-
-    controller, player, npc = make_world(disposition=0)
+    controller, player, npc = make_ai_world(disposition=0)
     player.teleport(20, 20)
     npc.teleport(5, 5)
 
@@ -348,9 +355,7 @@ def test_wander_creates_goal_when_no_threat() -> None:
 
 def test_wander_goal_continues_across_ticks() -> None:
     """Existing WanderGoal should be continued instead of recreated each tick."""
-    from brileta.game.actors.ai.behaviors.wander import WanderGoal
-
-    controller, player, npc = make_world(disposition=0)
+    controller, player, npc = make_ai_world(disposition=0)
     player.teleport(20, 20)
     npc.teleport(5, 5)
 
@@ -363,9 +368,14 @@ def test_wander_goal_continues_across_ticks() -> None:
     assert npc.current_goal is first_goal
 
 
+# ---------------------------------------------------------------------------
+# set_hostile / Disposition Modification Tests
+# ---------------------------------------------------------------------------
+
+
 def test_set_hostile_transitions_passive_to_aggressive() -> None:
     """set_hostile() should switch a non-hostile NPC into attack behavior."""
-    controller, player, npc = make_world(disposition=40)  # Friendly
+    controller, player, npc = make_ai_world(disposition=40)  # Friendly
     npc.x = 1
     npc.y = 0
 
@@ -379,7 +389,7 @@ def test_set_hostile_transitions_passive_to_aggressive() -> None:
 
 def test_modify_disposition_clamps_to_valid_range() -> None:
     """modify_disposition() should clamp numeric disposition to [-100, 100]."""
-    _controller, player, npc = make_world(disposition=0)
+    _controller, player, npc = make_ai_world(disposition=0)
 
     npc.ai.modify_disposition(player, 999)
     assert npc.ai.disposition_toward(player) == 100
@@ -390,7 +400,7 @@ def test_modify_disposition_clamps_to_valid_range() -> None:
 
 def test_is_hostile_toward_uses_hostile_threshold_boundary() -> None:
     """is_hostile_toward() should flip exactly at HOSTILE_UPPER."""
-    _controller, player, npc = make_world(disposition=0)
+    _controller, player, npc = make_ai_world(disposition=0)
 
     # Neutral should not be hostile.
     assert not npc.ai.is_hostile_toward(player)
@@ -408,7 +418,7 @@ def test_is_hostile_toward_uses_hostile_threshold_boundary() -> None:
 
 def test_hostile_npc_can_target_another_npc() -> None:
     """Hostile relationship should allow NPC-vs-NPC targeting."""
-    controller, player, npc = make_world(disposition=40)  # Friendly
+    controller, player, npc = make_ai_world(disposition=40)  # Friendly
     npc2 = NPC(
         1,
         0,
@@ -433,7 +443,7 @@ def test_hostile_npc_can_target_another_npc() -> None:
 
 def test_escalate_hostility_noop_when_defender_has_no_ai() -> None:
     """Escalation should no-op when the defender is the AI-less player."""
-    controller, player, npc = make_world(disposition=-75)
+    controller, player, npc = make_ai_world(disposition=-75)
     assert player.ai is None
 
     attacker_awareness_before = npc.ai._last_attacker_id
@@ -443,3 +453,218 @@ def test_escalate_hostility_noop_when_defender_has_no_ai() -> None:
 
     assert npc.ai._last_attacker_id == attacker_awareness_before
     assert npc.ai.disposition_toward(player) == disposition_before
+
+
+# ---------------------------------------------------------------------------
+# ai.force_hostile Tests
+# ---------------------------------------------------------------------------
+
+
+@contextmanager
+def _override_live_variable(name: str, value: object):
+    """Temporarily override (or register) a live variable to return *value*.
+
+    Restores the original getter on exit so that test failures don't leak
+    state into other tests.
+    """
+    from brileta.util.live_vars import live_variable_registry
+
+    var = live_variable_registry.get_variable(name)
+    if var is None:
+        live_variable_registry.register(
+            name,
+            getter=lambda: value,
+            setter=lambda v: None,
+            description=f"Test override for {name}",
+        )
+        original_getter = None
+    else:
+        original_getter = var.getter
+        var.getter = lambda: value
+
+    try:
+        yield
+    finally:
+        var = live_variable_registry.get_variable(name)
+        if var is not None:
+            if original_getter is not None:
+                var.getter = original_getter
+            else:
+                var.getter = lambda: False
+
+
+def test_force_hostile_makes_wary_npc_use_hostile_behavior() -> None:
+    """With ai.force_hostile on, a Wary NPC should score hostile actions."""
+    with _override_live_variable("ai.force_hostile", True):
+        gw = DummyGameWorld()
+        player = Character(
+            0, 0, "@", colors.WHITE, "Player", game_world=cast(GameWorld, gw)
+        )
+        npc = NPC(
+            3,
+            0,
+            "g",
+            colors.RED,
+            "Guard",
+            game_world=cast(GameWorld, gw),
+        )
+        gw.player = player
+        gw.add_actor(player)
+        gw.add_actor(npc)
+        npc.ai.modify_disposition(player, -10)  # Wary
+        controller = DummyController(gw)
+
+        # With the player within aggro range, force_hostile should make
+        # hostile combat behavior eligible (attack/chase).
+        result = npc.ai.get_action(controller, npc)
+        assert result is not None or npc.active_plan is not None
+
+
+# ---------------------------------------------------------------------------
+# Combat Awareness Tests
+# ---------------------------------------------------------------------------
+
+
+def test_combat_awareness_selects_attacker_outside_aggro_range() -> None:
+    """An NPC shot from outside aggro range should target the attacker."""
+    controller, player, npc = make_ai_world(
+        npc_x=20, npc_y=0, npc_hp_damage=0, disposition=0
+    )
+
+    # Player is at (0,0), NPC at (20,0) - well outside aggro_radius (10).
+    # Without combat awareness, the NPC would just see the player as a
+    # neutral fallback target with threat_level 0.
+    context_before = npc.ai._build_context(controller, npc)
+    assert context_before.threat_level == 0.0
+
+    # Simulate being attacked: set hostile and notify.
+    npc.ai.set_hostile(player)
+    npc.ai.notify_attacked(player)
+
+    # Now the NPC should perceive the attacker as a threat.
+    context_after = npc.ai._build_context(controller, npc)
+    assert context_after.threat_level > 0.0
+    assert context_after.target is player
+
+
+def test_combat_awareness_threat_decays_with_distance() -> None:
+    """Awareness threat should be higher when closer, zero at flee distance."""
+    controller, player, npc = make_ai_world(
+        npc_x=15, npc_y=0, npc_hp_damage=0, disposition=0
+    )
+    npc.ai.set_hostile(player)
+    npc.ai.notify_attacked(player)
+
+    # At distance 15 (outside aggro 10, inside flee distance 50)
+    context_15 = npc.ai._build_context(controller, npc)
+    threat_at_15 = context_15.threat_level
+
+    # Teleport further away
+    npc.teleport(40, 0)
+    context_40 = npc.ai._build_context(controller, npc)
+    threat_at_40 = context_40.threat_level
+
+    assert threat_at_15 > threat_at_40 > 0.0
+
+    # At or beyond _FLEE_SAFE_DISTANCE, threat should be 0
+    npc.teleport(_FLEE_SAFE_DISTANCE, 0)
+    context_safe = npc.ai._build_context(controller, npc)
+    assert context_safe.threat_level == 0.0
+
+
+def test_combat_awareness_npc_flees_from_ranged_attacker() -> None:
+    """NPC attacked from range should flee, not keep wandering."""
+    controller, player, npc = make_ai_world(
+        npc_x=15, npc_y=0, npc_hp_damage=4, disposition=0
+    )
+
+    # Before being attacked: NPC wanders (no threat)
+    npc.ai.get_action(controller, npc)
+    # NPC should have a WanderGoal (neutral, no threat)
+    assert npc.current_goal is None or isinstance(npc.current_goal, WanderGoal)
+
+    # Clear goal state for clean test
+    if npc.current_goal is not None:
+        npc.current_goal.abandon()
+        npc.current_goal = None
+    npc.active_plan = None
+
+    # Simulate ranged attack
+    npc.ai.set_hostile(player)
+    npc.ai.notify_attacked(player)
+
+    # NPC should now flee
+    npc.ai.get_action(controller, npc)
+    assert isinstance(npc.current_goal, FleeGoal)
+
+
+def test_hostile_flip_abandons_existing_wander_goal() -> None:
+    """A hostile transition should invalidate an active wander goal immediately."""
+    controller, player, npc = make_ai_world(
+        npc_x=_FLEE_SAFE_DISTANCE + 10,
+        npc_y=0,
+        npc_hp_damage=0,
+        disposition=0,
+    )
+
+    # Start in neutral/no-threat state so wander begins.
+    npc.ai.get_action(controller, npc)
+    assert isinstance(npc.current_goal, WanderGoal)
+    initial_goal = npc.current_goal
+
+    # Simulate a ranged aggression event that flips disposition to hostile.
+    npc.ai.set_hostile(player)
+    npc.ai.notify_attacked(player)
+
+    npc.ai.get_action(controller, npc)
+
+    # Wander must be dropped immediately after hostility flip.
+    assert initial_goal.state == GoalState.ABANDONED
+    assert npc.current_goal is None
+
+
+def test_threat_disappearance_abandons_flee_goal() -> None:
+    """FleeGoal should be abandoned when threat precondition no longer holds.
+
+    When the player moves far enough away that threat_level drops to zero,
+    ContinueGoalAction's precondition (is_threat_present) fails and the flee
+    goal should be replaced by a non-combat action on the next tick.
+    """
+    controller, player, npc = make_ai_world(
+        npc_x=3,
+        npc_y=0,
+        npc_hp_damage=4,
+        disposition=-75,
+    )
+
+    # Hostile NPC near the player should start fleeing (low health).
+    npc.ai.get_action(controller, npc)
+    assert isinstance(npc.current_goal, FleeGoal)
+    flee_goal = npc.current_goal
+
+    # Move the player beyond safe distance so threat drops to zero.
+    player.teleport(_FLEE_SAFE_DISTANCE + 20, _FLEE_SAFE_DISTANCE + 20)
+
+    npc.ai.get_action(controller, npc)
+
+    # Flee goal should have been abandoned via precondition failure.
+    assert flee_goal.state in (GoalState.ABANDONED, GoalState.COMPLETED)
+    assert not isinstance(npc.current_goal, FleeGoal)
+
+
+def test_combat_awareness_clears_when_attacker_dies() -> None:
+    """Awareness should clear when the attacker is no longer alive."""
+    controller, player, npc = make_ai_world(
+        npc_x=20, npc_y=0, npc_hp_damage=0, disposition=0
+    )
+    npc.ai.set_hostile(player)
+    npc.ai.notify_attacked(player)
+
+    assert npc.ai._last_attacker_id is not None
+
+    # Kill the attacker
+    player.health._hp = 0
+
+    # Target selection should clear the awareness
+    npc.ai._select_target_actor(controller, npc)
+    assert npc.ai._last_attacker_id is None

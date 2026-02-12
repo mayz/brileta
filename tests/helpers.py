@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from contextlib import ExitStack
+from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any, Self, cast
 from unittest.mock import MagicMock, patch
@@ -14,10 +15,11 @@ from brileta.controller import Controller, GameWorld
 from brileta.environment.generators import GeneratedMapData
 from brileta.environment.map import GameMap, MapRegion
 from brileta.environment.tile_types import TileTypeID
-from brileta.game.actors import PC, Actor, Character
+from brileta.game.actors import NPC, PC, Actor, Character
 from brileta.game.enums import ItemSize
 from brileta.game.item_spawner import ItemSpawner
 from brileta.game.items.item_core import Item, ItemType
+from brileta.game.turn_manager import TurnManager
 from brileta.types import ActorId, DeltaTime, WorldTileCoord
 from brileta.util.spatial import SpatialHashGrid
 from brileta.view.render.graphics import GraphicsContext
@@ -210,6 +212,52 @@ class DummyGameWorld(GameWorld):
         from brileta.game.lights import GlobalLight
 
         return [light for light in self.lights if isinstance(light, GlobalLight)]
+
+
+@dataclass
+class DummyController(Controller):
+    """Lightweight controller for AI tests that bypasses full Controller init."""
+
+    gw: DummyGameWorld
+
+    def __post_init__(self) -> None:
+        self.turn_manager = TurnManager(self)
+        self.frame_manager = None
+        self.message_log = None
+        self.action_cost = 100
+
+
+def make_ai_world(
+    npc_x: int = 3,
+    npc_y: int = 0,
+    npc_hp_damage: int = 0,
+    disposition: int = -75,
+    map_size: int = 80,
+) -> tuple[DummyController, Character, NPC]:
+    """Create a test world with player at origin and NPC at given position."""
+    gw = DummyGameWorld(width=map_size, height=map_size)
+    player = Character(
+        0, 0, "@", colors.WHITE, "Player", game_world=cast(GameWorld, gw)
+    )
+    npc = NPC(
+        npc_x,
+        npc_y,
+        "g",
+        colors.RED,
+        "Enemy",
+        game_world=cast(GameWorld, gw),
+    )
+    gw.player = player
+    gw.add_actor(player)
+    gw.add_actor(npc)
+    if disposition != 0:
+        npc.ai.modify_disposition(player, disposition)
+    controller = DummyController(gw)
+
+    if npc_hp_damage > 0:
+        npc.take_damage(npc_hp_damage)
+
+    return controller, player, npc
 
 
 def get_controller_with_player_and_map() -> Controller:
