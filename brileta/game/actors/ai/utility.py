@@ -10,6 +10,9 @@ from typing import TYPE_CHECKING
 
 from brileta.types import Direction, WorldTilePos
 
+# Callable signature shared by all precondition helpers and Goal.preconditions.
+type Precondition = Callable[[UtilityContext], bool]
+
 
 def _clamp(value: float, min_value: float = 0.0, max_value: float = 1.0) -> float:
     return max(min_value, min(max_value, value))
@@ -92,13 +95,52 @@ class UtilityContext:
         return None
 
 
-class Action(abc.ABC):
+# ---------------------------------------------------------------------------
+# Precondition helpers
+# ---------------------------------------------------------------------------
+
+# Hostile precondition threshold in normalized disposition space.
+# Matches the current ai.HOSTILE_UPPER of -51 mapped via (value + 100) / 200.
+_HOSTILE_DISPOSITION_THRESHOLD = (-51 + 100) / 200.0
+
+
+def is_threat_present(context: UtilityContext) -> bool:
+    """Precondition: returns True when relationship-aware threat is non-zero."""
+    return context.threat_level > 0.0
+
+
+def is_no_threat(context: UtilityContext) -> bool:
+    """Precondition: returns True when relationship-aware threat is zero."""
+    return context.threat_level <= 0.0
+
+
+def has_escape_route(context: UtilityContext) -> bool:
+    """Precondition: returns True when a valid flee step exists."""
+    return context.has_escape_route
+
+
+def is_hostile(context: UtilityContext) -> bool:
+    """Precondition: only initiate combat when hostile toward target.
+
+    This is a game rule, not a scoring gate. Non-hostile NPCs do not start
+    fights regardless of other considerations. Disposition scoring curves
+    handle the intensity of hostile behavior (e.g., attack vs flee).
+    """
+    return context.disposition <= _HOSTILE_DISPOSITION_THRESHOLD
+
+
+def is_not_hostile(context: UtilityContext) -> bool:
+    """Precondition: only allow non-hostile social behaviors."""
+    return context.disposition > _HOSTILE_DISPOSITION_THRESHOLD
+
+
+class UtilityAction(abc.ABC):
     """Base class for utility actions.
 
-    An Action is a single-tick, stateless operation scored by the UtilityBrain
-    every tick. Most NPC behaviors are actions: Attack, Avoid, Watch, Wander,
-    Idle. If the same action keeps winning scoring each tick, the behavior
-    sustains naturally without any memory between ticks.
+    A UtilityAction is a single-tick, stateless operation scored by the
+    UtilityBrain every tick. Most NPC behaviors are actions: Attack, Avoid,
+    Watch, Wander, Idle. If the same action keeps winning scoring each tick,
+    the behavior sustains naturally without any memory between ticks.
 
     When a behavior requires memory across ticks (patrol waypoint sequence,
     flee distance tracking, request-help state machine), the action creates
@@ -111,12 +153,12 @@ class Action(abc.ABC):
         action_id: str,
         base_score: float,
         considerations: list[Consideration] | None = None,
-        preconditions: list[Callable[[UtilityContext], bool]] | None = None,
+        preconditions: list[Precondition] | None = None,
     ) -> None:
         self.action_id = action_id
         self.base_score = base_score
         self.considerations = considerations or []
-        self.preconditions = preconditions or []
+        self.preconditions: list[Precondition] = preconditions or []
 
     def score(self, context: UtilityContext) -> float:
         if any(not pre(context) for pre in self.preconditions):
@@ -151,12 +193,12 @@ class UtilityBrain:
     interruption logic is needed.
     """
 
-    def __init__(self, actions: list[Action]) -> None:
+    def __init__(self, actions: list[UtilityAction]) -> None:
         self.actions = actions
 
     def select_action(
         self, context: UtilityContext, current_goal: Goal | None = None
-    ) -> tuple[Action | None, list[ScoredAction]]:
+    ) -> tuple[UtilityAction | None, list[ScoredAction]]:
         """Score all actions (including goal continuation) and return the best.
 
         Args:
@@ -168,7 +210,7 @@ class UtilityBrain:
             A tuple of (best_action, scored_actions) where scored_actions is
             the full scoring breakdown for debug display.
         """
-        best_action: Action | None = None
+        best_action: UtilityAction | None = None
         best_score = -1.0
         scored: list[ScoredAction] = []
 
@@ -187,7 +229,7 @@ class UtilityBrain:
 
         # Score "continue current goal" alongside atomic actions
         if current_goal is not None and not current_goal.is_complete:
-            from brileta.game.actors.goals import (
+            from .goals import (
                 PERSISTENCE_MINIMUM,
                 PERSISTENCE_WEIGHT,
                 ContinueGoalAction,
@@ -215,4 +257,5 @@ if TYPE_CHECKING:
     from brileta.controller import Controller
     from brileta.game.actions.base import GameIntent
     from brileta.game.actors import NPC, Character
-    from brileta.game.actors.goals import Goal
+
+    from .goals import Goal

@@ -71,7 +71,7 @@ if TYPE_CHECKING:
     from brileta.controller import Controller
     from brileta.game.actions.base import GameIntent
     from brileta.game.actions.discovery import ActionOption
-    from brileta.game.actors.goals import Goal
+    from brileta.game.actors.ai.goals import Goal
     from brileta.game.game_world import GameWorld
 
 

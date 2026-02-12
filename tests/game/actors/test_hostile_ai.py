@@ -258,7 +258,7 @@ def test_npc_skips_blocked_safe_tile() -> None:
 
 def test_neutral_npc_in_range_does_not_attack() -> None:
     """Disposition 0 should not trigger attack behavior on proximity alone."""
-    from brileta.game.actors.goals import WanderGoal
+    from brileta.game.actors.ai.behaviors.wander import WanderGoal
 
     controller, _player, npc = make_world(disposition=0)
     npc.x = 1
@@ -334,7 +334,7 @@ def test_avoid_action_returns_none_when_cornered() -> None:
 
 def test_wander_creates_goal_when_no_threat() -> None:
     """Neutral NPC should start wander as a persistent goal when safe."""
-    from brileta.game.actors.goals import WanderGoal
+    from brileta.game.actors.ai.behaviors.wander import WanderGoal
 
     controller, player, npc = make_world(disposition=0)
     player.teleport(20, 20)
@@ -348,7 +348,7 @@ def test_wander_creates_goal_when_no_threat() -> None:
 
 def test_wander_goal_continues_across_ticks() -> None:
     """Existing WanderGoal should be continued instead of recreated each tick."""
-    from brileta.game.actors.goals import WanderGoal
+    from brileta.game.actors.ai.behaviors.wander import WanderGoal
 
     controller, player, npc = make_world(disposition=0)
     player.teleport(20, 20)

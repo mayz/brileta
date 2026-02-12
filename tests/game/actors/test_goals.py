@@ -24,20 +24,14 @@ from brileta.controller import Controller
 from brileta.game.actions.movement import MoveIntent
 from brileta.game.actors import NPC, Character
 from brileta.game.actors.ai import disposition_label
-from brileta.game.actors.goals import (
-    _FLEE_SAFE_DISTANCE,
+from brileta.game.actors.ai.behaviors.flee import _FLEE_SAFE_DISTANCE, FleeGoal
+from brileta.game.actors.ai.behaviors.patrol import PatrolGoal
+from brileta.game.actors.ai.behaviors.wander import WanderGoal
+from brileta.game.actors.ai.goals import (
     ContinueGoalAction,
-    FleeGoal,
     GoalState,
-    PatrolGoal,
-    WanderGoal,
 )
-from brileta.game.actors.utility import (
-    Consideration,
-    ResponseCurve,
-    ResponseCurveType,
-    UtilityContext,
-)
+from brileta.game.actors.ai.utility import UtilityContext
 from brileta.game.game_world import GameWorld
 from brileta.game.turn_manager import TurnManager
 from brileta.types import ActorId
@@ -260,17 +254,18 @@ def test_continue_goal_persistence_bonus_scales_with_progress() -> None:
 
 
 def test_continue_goal_beats_raw_action_at_zero_progress() -> None:
-    """ContinueGoalAction wins ties with the raw action even at progress 0.0.
+    """ContinueGoalAction has a persistence bonus even at progress 0.0.
 
     Without PERSISTENCE_MINIMUM, a goal at progress 0.0 would tie with the
-    raw FleeAction. AIComponent would then abandon the goal and recreate it
-    every tick, so progress would never advance. The minimum bonus ensures
-    ContinueGoal always edges out the raw action it mirrors.
+    raw action and get recreated every tick (progress never advances). The
+    minimum bonus ensures ContinueGoal always edges ahead.
+
+    We verify this by computing the raw consideration score (without bonus)
+    and checking ContinueGoalAction adds exactly PERSISTENCE_MINIMUM on top.
     """
     import pytest
 
-    from brileta.game.actors.ai_actions import FleeAction
-    from brileta.game.actors.goals import PERSISTENCE_MINIMUM
+    from brileta.game.actors.ai.goals import PERSISTENCE_MINIMUM
 
     controller, player, npc = make_world(npc_x=3, npc_y=0)
 
@@ -290,19 +285,16 @@ def test_continue_goal_beats_raw_action_at_zero_progress() -> None:
         best_flee_step=(1, 0),
     )
 
-    # FleeAction with the same considerations and base_score as FleeGoal
-    flee_action = FleeAction(
-        base_score=goal.get_base_score(),
-        considerations=goal.get_considerations(),
-        preconditions=[],
-    )
+    # Compute the raw consideration score the goal would get without bonus.
+    raw_score = goal.get_base_score()
+    for c in goal.get_considerations():
+        raw_score *= c.evaluate(context)
 
-    flee_score = flee_action.score(context)
     continue_score = ContinueGoalAction(goal).score(context)
 
-    # ContinueGoal should beat the raw action by exactly PERSISTENCE_MINIMUM
-    assert continue_score > flee_score
-    assert continue_score - flee_score == pytest.approx(PERSISTENCE_MINIMUM)
+    # ContinueGoal should exceed the raw score by exactly PERSISTENCE_MINIMUM
+    assert continue_score > raw_score
+    assert continue_score - raw_score == pytest.approx(PERSISTENCE_MINIMUM)
 
 
 # ---------------------------------------------------------------------------
@@ -484,24 +476,12 @@ def test_completed_goal_excluded_from_continue_scoring() -> None:
     UtilityBrain.select_action guards on `not current_goal.is_complete`.
     Verify a FAILED goal is correctly excluded from scoring.
     """
-    from brileta.game.actors.ai_actions import IdleAction
-    from brileta.game.actors.utility import UtilityBrain
+    from brileta.game.actors.ai.actions import IdleAction
+    from brileta.game.actors.ai.utility import UtilityBrain
 
     controller, player, npc = make_world(npc_x=5, npc_y=0)
 
-    brain = UtilityBrain(
-        [
-            IdleAction(
-                base_score=0.2,
-                considerations=[
-                    Consideration(
-                        "threat_level",
-                        ResponseCurve(ResponseCurveType.INVERSE),
-                    ),
-                ],
-            ),
-        ]
-    )
+    brain = UtilityBrain([IdleAction(base_score=0.2)])
 
     context = UtilityContext(
         controller=controller,
@@ -611,7 +591,7 @@ def test_flee_goal_progress_increases_with_distance() -> None:
 
 def test_wander_action_creates_wander_goal_when_safe() -> None:
     """Approachable NPC far from threat should create and start a WanderGoal."""
-    import brileta.game.actors.goals as goals_module
+    import brileta.game.actors.ai.behaviors.wander as wander_module
 
     controller, _player, npc = make_world(
         npc_x=15,
@@ -621,7 +601,7 @@ def test_wander_action_creates_wander_goal_when_safe() -> None:
 
     assert npc.current_goal is None
 
-    with patch.object(goals_module._rng, "random", return_value=1.0):
+    with patch.object(wander_module._rng, "random", return_value=1.0):
         action = npc.ai.get_action(controller, npc)
 
     assert isinstance(npc.current_goal, WanderGoal)
@@ -631,7 +611,7 @@ def test_wander_action_creates_wander_goal_when_safe() -> None:
 
 def test_wander_action_does_not_duplicate_existing_wander_goal() -> None:
     """When wander is active, ContinueGoalAction should keep the same goal."""
-    import brileta.game.actors.goals as goals_module
+    import brileta.game.actors.ai.behaviors.wander as wander_module
 
     controller, _player, npc = make_world(
         npc_x=15,
@@ -639,12 +619,12 @@ def test_wander_action_does_not_duplicate_existing_wander_goal() -> None:
         disposition=40,  # Friendly
     )
 
-    with patch.object(goals_module._rng, "random", return_value=1.0):
+    with patch.object(wander_module._rng, "random", return_value=1.0):
         npc.ai.get_action(controller, npc)
     assert isinstance(npc.current_goal, WanderGoal)
     original_goal = npc.current_goal
 
-    with patch.object(goals_module._rng, "random", return_value=1.0):
+    with patch.object(wander_module._rng, "random", return_value=1.0):
         npc.ai.get_action(controller, npc)
     assert npc.current_goal is original_goal
 
@@ -719,7 +699,7 @@ def test_wander_goal_can_linger_then_resume() -> None:
 
 def test_wander_goal_does_not_retrigger_pause_while_lingering() -> None:
     """When already lingering, pause RNG should not be consulted again."""
-    import brileta.game.actors.goals as goals_module
+    import brileta.game.actors.ai.behaviors.wander as wander_module
 
     controller, _player, npc = make_world(
         npc_x=5,
@@ -738,7 +718,7 @@ def test_wander_goal_does_not_retrigger_pause_while_lingering() -> None:
     goal._heading = (1, 0)
     goal._linger_remaining = 2
 
-    with patch.object(goals_module._rng, "random") as random_mock:
+    with patch.object(wander_module._rng, "random") as random_mock:
         action = goal.get_next_action(npc, controller)
 
     assert action is None
@@ -815,7 +795,7 @@ def test_wander_goal_restarts_heading_after_being_stuck() -> None:
 
 def test_wander_action_reduces_speed_on_goal_activation() -> None:
     """WanderAction should apply a reduced stroll speed when goal starts."""
-    import brileta.game.actors.goals as goals_module
+    import brileta.game.actors.ai.behaviors.wander as wander_module
 
     controller, _player, npc = make_world(
         npc_x=15,
@@ -825,8 +805,8 @@ def test_wander_action_reduces_speed_on_goal_activation() -> None:
     original_speed = npc.energy.speed
 
     with (
-        patch.object(goals_module._rng, "uniform", return_value=0.60),
-        patch.object(goals_module._rng, "random", return_value=1.0),
+        patch.object(wander_module._rng, "uniform", return_value=0.60),
+        patch.object(wander_module._rng, "random", return_value=1.0),
     ):
         npc.ai.get_action(controller, npc)
 
@@ -1079,25 +1059,13 @@ def test_flee_goal_fails_when_fully_cornered() -> None:
 
 def test_utility_brain_includes_continue_goal_action() -> None:
     """UtilityBrain.select_action should score ContinueGoalAction alongside atomics."""
-    from brileta.game.actors.ai_actions import IdleAction
-    from brileta.game.actors.utility import UtilityBrain
+    from brileta.game.actors.ai.actions import IdleAction
+    from brileta.game.actors.ai.utility import UtilityBrain
 
     controller, player, npc = make_world(npc_x=15, npc_y=15)
 
     # Create a simple brain with just Idle
-    brain = UtilityBrain(
-        [
-            IdleAction(
-                base_score=0.2,
-                considerations=[
-                    Consideration(
-                        "threat_level",
-                        ResponseCurve(ResponseCurveType.INVERSE),
-                    ),
-                ],
-            ),
-        ]
-    )
+    brain = UtilityBrain([IdleAction(base_score=0.2)])
 
     context = UtilityContext(
         controller=controller,
@@ -1205,6 +1173,60 @@ def test_combat_awareness_npc_flees_from_ranged_attacker() -> None:
     # NPC should now flee
     npc.ai.get_action(controller, npc)
     assert isinstance(npc.current_goal, FleeGoal)
+
+
+def test_hostile_flip_abandons_existing_wander_goal() -> None:
+    """A hostile transition should invalidate an active wander goal immediately."""
+    controller, player, npc = make_world(
+        npc_x=_FLEE_SAFE_DISTANCE + 10,
+        npc_y=0,
+        npc_hp_damage=0,
+        disposition=0,
+    )
+
+    # Start in neutral/no-threat state so wander begins.
+    npc.ai.get_action(controller, npc)
+    assert isinstance(npc.current_goal, WanderGoal)
+    initial_goal = npc.current_goal
+
+    # Simulate a ranged aggression event that flips disposition to hostile.
+    npc.ai.set_hostile(player)
+    npc.ai.notify_attacked(player)
+
+    npc.ai.get_action(controller, npc)
+
+    # Wander must be dropped immediately after hostility flip.
+    assert initial_goal.state == GoalState.ABANDONED
+    assert npc.current_goal is None
+
+
+def test_threat_disappearance_abandons_flee_goal() -> None:
+    """FleeGoal should be abandoned when threat precondition no longer holds.
+
+    When the player moves far enough away that threat_level drops to zero,
+    ContinueGoalAction's precondition (is_threat_present) fails and the flee
+    goal should be replaced by a non-combat action on the next tick.
+    """
+    controller, player, npc = make_world(
+        npc_x=3,
+        npc_y=0,
+        npc_hp_damage=4,
+        disposition=-75,
+    )
+
+    # Hostile NPC near the player should start fleeing (low health).
+    npc.ai.get_action(controller, npc)
+    assert isinstance(npc.current_goal, FleeGoal)
+    flee_goal = npc.current_goal
+
+    # Move the player beyond safe distance so threat drops to zero.
+    player.teleport(_FLEE_SAFE_DISTANCE + 20, _FLEE_SAFE_DISTANCE + 20)
+
+    npc.ai.get_action(controller, npc)
+
+    # Flee goal should have been abandoned via precondition failure.
+    assert flee_goal.state in (GoalState.ABANDONED, GoalState.COMPLETED)
+    assert not isinstance(npc.current_goal, FleeGoal)
 
 
 def test_combat_awareness_clears_when_attacker_dies() -> None:

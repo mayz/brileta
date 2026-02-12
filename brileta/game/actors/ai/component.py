@@ -1,9 +1,8 @@
 """
-AI system for autonomous actor behavior.
+AIComponent: the core NPC decision-making driver.
 
-Implements decision-making components that determine what actions
-NPCs should take each turn based on their personality, situation,
-and goals.
+Implements the AIComponent that determines what actions NPCs should take
+each turn based on their personality, situation, and goals.
 
 AIComponent:
     Single AI component for all NPC dispositions. Owns a UtilityBrain
@@ -22,37 +21,19 @@ from brileta import colors
 from brileta.constants.combat import CombatConstants as Combat
 from brileta.events import CombatInitiatedEvent, MessageEvent, publish_event
 from brileta.game import ranges
-from brileta.game.actors.utility import (
-    Consideration,
-    ResponseCurve,
-    ResponseCurveType,
-    ScoredAction,
-    UtilityBrain,
-    UtilityContext,
-)
 from brileta.types import ActorId, Direction, WorldTilePos
 from brileta.util import rng
 
-from .ai_actions import (
-    AttackAction,
-    AvoidAction,
-    FleeAction,
-    IdleAction,
-    WanderAction,
-    WatchAction,
-    _has_escape_route,
-    _is_hostile,
-    _is_no_threat,
-    _is_not_hostile,
-    _is_threat_present,
-)
+from .actions import AttackAction, AvoidAction, IdleAction, WatchAction
+from .behaviors.flee import FleeAction
+from .behaviors.wander import WanderAction
+from .utility import ScoredAction, UtilityBrain, UtilityContext
 
 if TYPE_CHECKING:
     from brileta.controller import Controller
     from brileta.game.actions.base import GameIntent
     from brileta.game.actions.movement import MoveIntent
-
-    from . import NPC, Actor, Character
+    from brileta.game.actors import NPC, Actor, Character
 
 _rng = rng.get("npc.ai")
 
@@ -174,136 +155,21 @@ class AIComponent:
         self.last_threat_level: float | None = None
         self.last_target_actor_id: ActorId | None = None
 
-        # Preconditions only gate physical impossibility (threat present,
-        # escape route exists). Disposition influences behavior entirely
-        # through scoring curves, enabling emergent behavior like a friendly
-        # NPC fleeing when attacked rather than being locked out by a
-        # disposition band check.
+        # Each action owns its own preconditions and considerations
+        # internally. base_score is the per-archetype tuning knob: bump it
+        # up to make this NPC type favor the action, lower it to suppress.
+        # See each action class for its full scoring config.
         self.brain = UtilityBrain(
             [
-                # Attack: only when hostile (game rule) and threat present.
-                # Disposition INVERSE curve ensures more hostile = higher score.
-                AttackAction(
-                    base_score=1.0,
-                    considerations=[
-                        Consideration(
-                            "health_percent",
-                            ResponseCurve(ResponseCurveType.LINEAR),
-                        ),
-                        Consideration(
-                            "threat_level",
-                            ResponseCurve(ResponseCurveType.LINEAR),
-                        ),
-                        # Within the hostile band, more hostile values score higher.
-                        Consideration(
-                            "disposition",
-                            ResponseCurve(ResponseCurveType.INVERSE),
-                        ),
-                    ],
-                    preconditions=[_is_threat_present, _is_hostile],
-                ),
-                # Flee: scores higher when hostile and low health.
-                FleeAction(
-                    base_score=1.0,
-                    considerations=[
-                        Consideration(
-                            "health_percent",
-                            ResponseCurve(ResponseCurveType.INVERSE),
-                            weight=2.0,
-                        ),
-                        Consideration(
-                            "threat_level",
-                            ResponseCurve(ResponseCurveType.LINEAR),
-                        ),
-                        Consideration(
-                            "has_escape_route",
-                            ResponseCurve(ResponseCurveType.STEP, threshold=0.5),
-                        ),
-                        # Flee scores higher when hostile (in danger of combat).
-                        Consideration(
-                            "disposition",
-                            ResponseCurve(ResponseCurveType.INVERSE),
-                        ),
-                    ],
-                    preconditions=[_is_threat_present],
-                ),
-                # Avoid: move away from the target when unfriendly.
-                AvoidAction(
-                    base_score=0.7,
-                    considerations=[
-                        Consideration(
-                            "disposition",
-                            ResponseCurve(ResponseCurveType.INVERSE),
-                        ),
-                        # Avoid peaks when the target is nearby, not at max aggro range.
-                        Consideration(
-                            "threat_level",
-                            ResponseCurve(
-                                ResponseCurveType.BELL,
-                                peak=0.7,
-                                width=0.5,
-                            ),
-                        ),
-                    ],
-                    preconditions=[
-                        _is_threat_present,
-                        _has_escape_route,
-                        _is_not_hostile,
-                    ],
-                ),
-                # Watch: stay put facing threat (INVERSE disposition curve).
-                WatchAction(
-                    base_score=0.35,
-                    considerations=[
-                        Consideration(
-                            "disposition",
-                            ResponseCurve(ResponseCurveType.INVERSE),
-                        ),
-                        Consideration(
-                            "threat_level",
-                            ResponseCurve(ResponseCurveType.LINEAR),
-                        ),
-                    ],
-                    preconditions=[_is_threat_present, _is_not_hostile],
-                ),
-                # Idle: always a fallback, no disposition dependency.
-                IdleAction(
-                    base_score=0.1,
-                    considerations=[
-                        Consideration(
-                            "threat_level",
-                            ResponseCurve(ResponseCurveType.INVERSE),
-                        ),
-                        # Idle favors cautious/neutral dispositions and fades out
-                        # for friendlier NPCs that should keep moving.
-                        Consideration(
-                            "disposition",
-                            ResponseCurve(
-                                ResponseCurveType.BELL,
-                                peak=0.45,
-                                width=0.35,
-                            ),
-                        ),
-                    ],
-                ),
-                # Wander: more when neutral/positive disposition (LINEAR curve).
-                WanderAction(
-                    base_score=0.18,
-                    considerations=[
-                        Consideration(
-                            "threat_level",
-                            ResponseCurve(ResponseCurveType.INVERSE),
-                        ),
-                        Consideration(
-                            "disposition",
-                            ResponseCurve(ResponseCurveType.LINEAR),
-                        ),
-                    ],
-                    preconditions=[_is_no_threat, _is_not_hostile],
-                ),
+                AttackAction(base_score=1.0),
+                FleeAction(base_score=1.0),
+                AvoidAction(base_score=0.7),
+                WatchAction(base_score=0.35),
+                IdleAction(base_score=0.1),
+                WanderAction(base_score=0.18),
                 # PatrolAction is defined but not scored here. It will be
                 # wired up when guards / soldiers with assigned patrol routes
-                # are implemented. See PatrolAction in ai_actions.py.
+                # are implemented. See PatrolAction in behaviors/patrol.py.
             ]
         )
 
@@ -350,7 +216,7 @@ class AIComponent:
         to -100 in the context so combat actions dominate scoring.
         """
         from brileta import config
-        from brileta.game.actors.goals import ContinueGoalAction
+        from brileta.game.actors.ai.goals import ContinueGoalAction
         from brileta.util.live_vars import live_variable_registry
 
         if not config.HOSTILE_AI_ENABLED:
