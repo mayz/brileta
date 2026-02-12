@@ -154,3 +154,5 @@ class TestWGSLLightingShaders:
             "base_rgb * light_rgb * vec3f(0.7) + light_rgb * vec3f(0.3)"
             in screen_source
         )
+        assert "base_rgb_dist" in screen_source
+        assert "input.v_color.rgb - input.v_tile_bg" in screen_source

@@ -36,6 +36,7 @@ from brileta.types import (
     RootConsoleTilePos,
     TileDimensions,
     ViewOffset,
+    WorldTilePos,
 )
 from brileta.util.coordinates import CoordinateConverter, Rect
 from brileta.util.glyph_buffer import GlyphBuffer
@@ -100,7 +101,8 @@ class GraphicsContext(abc.ABC):
         interpolation_alpha: InterpolationAlpha = InterpolationAlpha(1.0),  # noqa: B008
         scale_x: float = 1.0,
         scale_y: float = 1.0,
-        world_pos: tuple[int, int] | None = None,
+        world_pos: WorldTilePos | None = None,
+        tile_bg: colors.Color | None = None,
     ) -> None:
         """Draw an actor character at sub-pixel screen coordinates.
 
@@ -116,6 +118,8 @@ class GraphicsContext(abc.ABC):
             scale_y: Vertical scale factor (1.0 = normal height).
             world_pos: Optional world tile coordinates used by backends that
                 sample lighting directly on GPU.
+            tile_bg: Optional tile background RGB in 0-255 format. Backends that
+                perform actor contrast checks in shader space can use this value.
         """
         pass
 

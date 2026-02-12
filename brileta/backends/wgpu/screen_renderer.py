@@ -25,6 +25,7 @@ VERTEX_DTYPE = np.dtype(
         ("world_pos", "2f4"),  # World tile coordinates for actor lighting
         ("actor_light_scale", "f4"),  # Shadow receiver dimming scale
         ("flags", "u4"),  # Bitmask flags for per-quad shader behavior
+        ("tile_bg", "3f4"),  # Base tile background RGB for actor contrast checks
     ]
 )
 
@@ -174,6 +175,11 @@ class WGPUScreenRenderer:
                         "offset": 44,  # flags offset
                         "shader_location": 5,
                     },
+                    {
+                        "format": "float32x3",
+                        "offset": 48,  # tile_bg offset
+                        "shader_location": 6,
+                    },
                 ],
             }
         ]
@@ -300,6 +306,7 @@ class WGPUScreenRenderer:
         world_pos: tuple[float, float] | None = None,
         actor_light_scale: float = 1.0,
         actor_lighting_enabled: bool = False,
+        tile_bg: tuple[float, float, float] = (0.0, 0.0, 0.0),
     ) -> None:
         """Add a quad to the vertex buffer."""
         if self.vertex_count + 6 > len(self.cpu_vertex_buffer):
@@ -316,6 +323,7 @@ class WGPUScreenRenderer:
             (world_x, world_y),
             actor_light_scale,
             flags,
+            tile_bg,
         )
         vertices[1] = (
             (x + w, y),
@@ -324,6 +332,7 @@ class WGPUScreenRenderer:
             (world_x, world_y),
             actor_light_scale,
             flags,
+            tile_bg,
         )
         vertices[2] = (
             (x, y + h),
@@ -332,6 +341,7 @@ class WGPUScreenRenderer:
             (world_x, world_y),
             actor_light_scale,
             flags,
+            tile_bg,
         )
         vertices[3] = (
             (x + w, y),
@@ -340,6 +350,7 @@ class WGPUScreenRenderer:
             (world_x, world_y),
             actor_light_scale,
             flags,
+            tile_bg,
         )
         vertices[4] = (
             (x, y + h),
@@ -348,6 +359,7 @@ class WGPUScreenRenderer:
             (world_x, world_y),
             actor_light_scale,
             flags,
+            tile_bg,
         )
         vertices[5] = (
             (x + w, y + h),
@@ -356,6 +368,7 @@ class WGPUScreenRenderer:
             (world_x, world_y),
             actor_light_scale,
             flags,
+            tile_bg,
         )
 
         self.cpu_vertex_buffer[self.vertex_count : self.vertex_count + 6] = vertices
@@ -417,6 +430,7 @@ class WGPUScreenRenderer:
         default_world = (-1.0, -1.0)
         default_scale = 1.0
         default_flags = np.uint32(0)
+        default_tile_bg = (0.0, 0.0, 0.0)
         vertices[0] = (
             base_left,
             (u1, v2),
@@ -424,6 +438,7 @@ class WGPUScreenRenderer:
             default_world,
             default_scale,
             default_flags,
+            default_tile_bg,
         )
         vertices[1] = (
             base_right,
@@ -432,6 +447,7 @@ class WGPUScreenRenderer:
             default_world,
             default_scale,
             default_flags,
+            default_tile_bg,
         )
         vertices[2] = (
             tip_left,
@@ -440,6 +456,7 @@ class WGPUScreenRenderer:
             default_world,
             default_scale,
             default_flags,
+            default_tile_bg,
         )
         vertices[3] = (
             base_right,
@@ -448,6 +465,7 @@ class WGPUScreenRenderer:
             default_world,
             default_scale,
             default_flags,
+            default_tile_bg,
         )
         vertices[4] = (
             tip_left,
@@ -456,6 +474,7 @@ class WGPUScreenRenderer:
             default_world,
             default_scale,
             default_flags,
+            default_tile_bg,
         )
         vertices[5] = (
             tip_right,
@@ -464,6 +483,7 @@ class WGPUScreenRenderer:
             default_world,
             default_scale,
             default_flags,
+            default_tile_bg,
         )
 
         self.cpu_vertex_buffer[self.vertex_count : self.vertex_count + 6] = vertices

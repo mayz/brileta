@@ -359,12 +359,14 @@ class ActorRenderer:
         if not visible_actors:
             return
 
+        game_map = game_world.game_map
         for actor in visible_actors:
             self._render_single_actor_smooth(
                 actor,
                 viewport_bounds,
                 vs,
                 alpha,
+                game_map=game_map,
                 camera_frac_offset=camera_frac_offset,
                 view_origin=view_origin,
             )
@@ -376,6 +378,7 @@ class ActorRenderer:
         vs: ViewportSystem,
         interpolation_alpha: InterpolationAlpha,
         *,
+        game_map: GameMap,
         camera_frac_offset: tuple[float, float],
         view_origin: tuple[float, float],
     ) -> None:
@@ -390,6 +393,7 @@ class ActorRenderer:
             bounds: Viewport bounds for culling.
             vs: Viewport system for coordinate conversion.
             interpolation_alpha: Interpolation factor (0.0=previous, 1.0=current).
+            game_map: The game map (for per-tile background color sampling).
             camera_frac_offset: Fractional camera offset for smooth scrolling.
             view_origin: Root console origin of the viewport (x, y).
         """
@@ -418,6 +422,14 @@ class ActorRenderer:
                 actor_world_pos=(actor.x, actor.y),
             )
         else:
+            # Send tile background to GPU shader for actor-vs-tile contrast checks.
+            tile_bg_np = game_map.light_appearance_map[actor.x, actor.y]["bg"]
+            tile_bg = (
+                int(tile_bg_np[0]),
+                int(tile_bg_np[1]),
+                int(tile_bg_np[2]),
+            )
+
             # Render single character (existing behavior) - uniform scaling
             self.graphics.draw_actor_smooth(
                 actor.ch,
@@ -429,6 +441,7 @@ class ActorRenderer:
                 scale_x=visual_scale,
                 scale_y=visual_scale,
                 world_pos=(actor.x, actor.y),
+                tile_bg=tile_bg,
             )
 
     def _render_character_layers(
@@ -586,6 +599,16 @@ class ActorRenderer:
                         actor_world_pos=(actor.x, actor.y),
                     )
                 else:
+                    # Send tile background to GPU shader for contrast checks.
+                    tile_bg_np = game_world.game_map.light_appearance_map[
+                        actor.x, actor.y
+                    ]["bg"]
+                    tile_bg = (
+                        int(tile_bg_np[0]),
+                        int(tile_bg_np[1]),
+                        int(tile_bg_np[2]),
+                    )
+
                     # Render using the renderer's smooth drawing function
                     graphics.draw_actor_smooth(
                         actor.ch,
@@ -597,6 +620,7 @@ class ActorRenderer:
                         scale_x=visual_scale,
                         scale_y=visual_scale,
                         world_pos=(actor.x, actor.y),
+                        tile_bg=tile_bg,
                     )
 
     def _draw_actor_outline(

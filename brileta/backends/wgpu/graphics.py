@@ -17,6 +17,7 @@ from brileta.types import (
     InterpolationAlpha,
     Opacity,
     PixelCoord,
+    WorldTilePos,
 )
 from brileta.util.coordinates import (
     CoordinateConverter,
@@ -368,7 +369,8 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         interpolation_alpha: InterpolationAlpha | None = None,
         scale_x: float = 1.0,
         scale_y: float = 1.0,
-        world_pos: tuple[int, int] | None = None,
+        world_pos: WorldTilePos | None = None,
+        tile_bg: colors.Color | None = None,
     ) -> None:
         """Draw an actor character at sub-pixel screen coordinates."""
         if interpolation_alpha is None:
@@ -382,6 +384,14 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         use_gpu_actor_lighting = (
             self._gpu_actor_lighting_enabled and world_pos is not None
         )
+        normalized_tile_bg = (0.0, 0.0, 0.0)
+        if use_gpu_actor_lighting and tile_bg is not None:
+            normalized_tile_bg = (
+                max(0.0, min(1.0, float(tile_bg[0]) / 255.0)),
+                max(0.0, min(1.0, float(tile_bg[1]) / 255.0)),
+                max(0.0, min(1.0, float(tile_bg[2]) / 255.0)),
+            )
+
         if use_gpu_actor_lighting:
             final_color = (
                 base_color[0],
@@ -431,6 +441,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
             else None,
             actor_light_scale=max(0.0, min(1.0, float(light_intensity[0]))),
             actor_lighting_enabled=use_gpu_actor_lighting,
+            tile_bg=normalized_tile_bg,
         )
 
     def set_actor_lighting_gpu_context(

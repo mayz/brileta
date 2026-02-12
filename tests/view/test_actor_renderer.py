@@ -9,6 +9,7 @@ from unittest.mock import MagicMock
 import numpy as np
 
 from brileta.environment.map import GameMap
+from brileta.environment.tile_types import TileTypeAppearance
 from brileta.game.actors import Actor
 from brileta.game.game_world import GameWorld
 from brileta.types import InterpolationAlpha
@@ -57,12 +58,14 @@ class DummySpatialIndex:
 
 
 class DummyGameMap:
-    """Stub game map with a visibility array."""
+    """Stub game map with a visibility array and light appearance map."""
 
     def __init__(self, width: int, height: int) -> None:
         self.width = width
         self.height = height
         self.visible = np.ones((width, height), dtype=bool)
+        # Default light appearance: black bg (high contrast with bright actors)
+        self.light_appearance_map = np.zeros((width, height), dtype=TileTypeAppearance)
 
 
 class DummyGameWorld:
@@ -372,3 +375,81 @@ class TestRenderActorOutline:
             "Camera frac offset should shift outline position"
         )
         assert offset_x < no_offset_x, "Positive frac offset should shift position left"
+
+
+class TestTileBgForwarding:
+    """Tile background should be forwarded only for single-glyph actors."""
+
+    def test_smooth_path_passes_tile_bg_for_single_char_actor(self) -> None:
+        renderer, graphics = _make_renderer()
+        player = DummyActor(5, 5, color=(100, 100, 100))
+        gw = DummyGameWorld([player], player)
+        gw.game_map.light_appearance_map[5, 5]["bg"] = (123, 124, 125)
+
+        renderer.viewport_system.update_camera(cast(Actor, player), 20, 20)
+        renderer.viewport_system.camera.set_position(5.0, 5.0)
+
+        renderer.render_actors(
+            InterpolationAlpha(1.0),
+            game_world=cast(GameWorld, gw),
+            camera_frac_offset=(0.0, 0.0),
+            view_origin=(0.0, 0.0),
+            smooth=True,
+        )
+
+        call_args = graphics.draw_actor_smooth.call_args
+        assert call_args is not None
+        assert call_args.kwargs["tile_bg"] == (123, 124, 125)
+
+    def test_traditional_path_passes_tile_bg_for_single_char_actor(self) -> None:
+        renderer, graphics = _make_renderer()
+        player = DummyActor(5, 5, color=(100, 100, 100))
+        gw = DummyGameWorld([player], player)
+        gw.game_map.light_appearance_map[5, 5]["bg"] = (140, 141, 142)
+
+        renderer.viewport_system.update_camera(cast(Actor, player), 20, 20)
+        renderer.viewport_system.camera.set_position(5.0, 5.0)
+
+        renderer.render_actors(
+            InterpolationAlpha(1.0),
+            game_world=cast(GameWorld, gw),
+            camera_frac_offset=(0.0, 0.0),
+            view_origin=(0.0, 0.0),
+            smooth=False,
+            game_time=0.0,
+            is_combat=False,
+        )
+
+        call_args = graphics.draw_actor_smooth.call_args
+        assert call_args is not None
+        assert call_args.kwargs["tile_bg"] == (140, 141, 142)
+
+    def test_character_layers_do_not_pass_tile_bg(self) -> None:
+        renderer, graphics = _make_renderer()
+        actor = DummyActor(6, 5, ch="X")
+        actor.character_layers = [
+            SimpleNamespace(
+                char="A",
+                color=(255, 0, 0),
+                offset_x=0.0,
+                offset_y=0.0,
+                scale_x=1.0,
+                scale_y=1.0,
+            )
+        ]
+        gw = DummyGameWorld([actor], actor)
+        gw.game_map.light_appearance_map[6, 5]["bg"] = (200, 201, 202)
+
+        renderer.viewport_system.update_camera(cast(Actor, actor), 20, 20)
+        renderer.viewport_system.camera.set_position(5.0, 5.0)
+
+        renderer.render_actors(
+            InterpolationAlpha(1.0),
+            game_world=cast(GameWorld, gw),
+            camera_frac_offset=(0.0, 0.0),
+            view_origin=(0.0, 0.0),
+            smooth=True,
+        )
+
+        for call in graphics.draw_actor_smooth.call_args_list:
+            assert "tile_bg" not in call.kwargs

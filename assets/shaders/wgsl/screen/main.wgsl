@@ -9,6 +9,7 @@ struct VertexInput {
     @location(3) in_world_pos: vec2<f32>,
     @location(4) in_actor_light_scale: f32,
     @location(5) in_flags: u32,
+    @location(6) in_tile_bg: vec3<f32>,
 }
 
 // Vertex output structure (to fragment shader)
@@ -19,6 +20,7 @@ struct VertexOutput {
     @location(2) v_world_pos: vec2<f32>,
     @location(3) v_actor_light_scale: f32,
     @location(4) v_flags: u32,
+    @location(5) v_tile_bg: vec3<f32>,
 }
 
 // Uniform buffer for letterbox parameters
@@ -57,6 +59,7 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     output.v_world_pos = input.in_world_pos;
     output.v_actor_light_scale = input.in_actor_light_scale;
     output.v_flags = input.in_flags;
+    output.v_tile_bg = input.in_tile_bg;
 
     return output;
 }
@@ -73,6 +76,15 @@ fn warm_color_correction(color: vec3<f32>) -> vec3<f32> {
 }
 
 const ACTOR_LIGHTING_FLAG: u32 = 1u;
+const CONTRAST_TILE_BG_SENTINEL_EPS: f32 = 0.001;
+const CONTRAST_LIT_DIST_MIN: f32 = 0.15;
+const CONTRAST_LIT_DIST_MAX: f32 = 0.21;
+const CONTRAST_BASE_DIST_MIN: f32 = 0.20;
+const CONTRAST_BASE_DIST_MAX: f32 = 0.26;
+const CONTRAST_TARGET_LUM_DELTA: f32 = 0.14;
+const CONTRAST_SAFE_FG_LUM_FLOOR: f32 = 0.01;
+const CONTRAST_BRIGHTEN_SCALE_MAX: f32 = 2.2;
+const CONTRAST_NUDGE_EPS: f32 = 0.001;
 
 // Fragment shader stage
 @fragment
@@ -94,10 +106,77 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 
         light_rgb *= input.v_actor_light_scale;
         let base_rgb = input.v_color.rgb;
-        let actor_rgb = min(
+        var actor_rgb = min(
             vec3f(1.0),
             base_rgb * light_rgb * vec3f(0.7) + light_rgb * vec3f(0.3),
         );
+
+        // Contrast nudge goals:
+        // 1) improve readability when lit actor and lit tile are too similar,
+        // 2) avoid frame-to-frame popping under flicker (soft gates),
+        // 3) protect distinct color pairs (e.g., gold on warm brown) from muddying.
+        //
+        // Note: tile_bg comes from light_appearance_map base bg and is re-lit here.
+        // This is a first-order approximation of visible tile bg, not a direct sample
+        // of the final rendered scene color behind the actor.
+        //
+        // tile_bg > 0 means the caller provided bg data (zero = sentinel, skip check).
+        let has_tile_bg = any(input.v_tile_bg > vec3f(CONTRAST_TILE_BG_SENTINEL_EPS));
+        if (has_tile_bg) {
+            // Approximate the lit tile bg using the same lightmap lighting.
+            let lit_bg = min(
+                vec3f(1.0),
+                input.v_tile_bg * light_rgb * vec3f(0.7) + light_rgb * vec3f(0.3),
+            );
+            let lit_delta = actor_rgb - lit_bg;
+            let lit_rgb_dist = sqrt(dot(lit_delta, lit_delta));
+            let base_delta = input.v_color.rgb - input.v_tile_bg;
+            let base_rgb_dist = sqrt(dot(base_delta, base_delta));
+
+            // Use a soft activation band to avoid flickering when firelight makes
+            // the color distance hover around a hard threshold.
+            let bg_lum = dot(lit_bg, vec3f(0.2126, 0.7152, 0.0722));
+            let fg_lum = dot(actor_rgb, vec3f(0.2126, 0.7152, 0.0722));
+            let brighten = fg_lum <= bg_lum;
+
+            // Require base-color similarity only for darkening so distinct pairs
+            // (like gold glyph on brown floor) keep their original color, while
+            // still allowing low-contrast dark glyphs to brighten.
+            let lit_similarity = 1.0 - smoothstep(
+                CONTRAST_LIT_DIST_MIN,
+                CONTRAST_LIT_DIST_MAX,
+                lit_rgb_dist,
+            );
+            let base_similarity = 1.0 - smoothstep(
+                CONTRAST_BASE_DIST_MIN,
+                CONTRAST_BASE_DIST_MAX,
+                base_rgb_dist,
+            );
+            // Guard darkening with base-color similarity.
+            // Brightening remains available so dark glyphs on mid-gray tiles
+            // don't disappear (e.g. "T" in low-light interiors).
+            let direction_gate = select(base_similarity, 1.0, brighten);
+            let nudge_strength = lit_similarity * direction_gate;
+            if (nudge_strength > CONTRAST_NUDGE_EPS) {
+                // Preserve hue by scaling RGB toward target luminance instead of
+                // blending to white/black, which can wash chroma to gray.
+                let desired_lum = select(
+                    bg_lum - CONTRAST_TARGET_LUM_DELTA,
+                    bg_lum + CONTRAST_TARGET_LUM_DELTA,
+                    brighten,
+                );
+                let safe_fg_lum = max(fg_lum, CONTRAST_SAFE_FG_LUM_FLOOR);
+                let scale_raw = desired_lum / safe_fg_lum;
+                let scale = select(
+                    clamp(scale_raw, 0.0, 1.0),
+                    clamp(scale_raw, 1.0, CONTRAST_BRIGHTEN_SCALE_MAX),
+                    brighten,
+                );
+                let target_rgb = min(vec3f(1.0), actor_rgb * scale);
+                actor_rgb = mix(actor_rgb, target_rgb, nudge_strength);
+            }
+        }
+
         tint = vec4f(actor_rgb, input.v_color.a);
     }
 
