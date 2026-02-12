@@ -4,7 +4,7 @@
 MAKEFLAGS += --silent
 
 NATIVE_STAMP := .venv/.native-build-stamp
-NATIVE_SOURCES := setup.py pyproject.toml brileta/util/_native.c brileta/util/_native_pathfinding.c brileta/util/_native_fov.c brileta/util/_native_wfc.c
+NATIVE_SOURCES := setup.py pyproject.toml $(wildcard brileta/util/native/*.c brileta/util/native/*.h)
 
 # Point git at the version-controlled hooks directory.
 $(shell git config core.hooksPath .githooks)
