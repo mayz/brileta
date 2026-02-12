@@ -1,9 +1,11 @@
-"""SoundDevice audio backend implementation using a single mixed output stream.
+"""Miniaudio audio backend implementation using a single mixed output stream.
 
-This backend uses one PortAudio output stream and mixes all active channels
-inside the stream callback. It keeps the same high-level behavior as the prior
-backend: channel priority/voice stealing, per-channel volume, looping, and
-master volume control.
+This backend uses one miniaudio PlaybackDevice and mixes all active channels
+inside a generator callback. It provides channel priority/voice stealing,
+per-channel volume, looping, and master volume control.
+
+Miniaudio requires no system-level audio libraries (no PortAudio, no libsndfile).
+The C library is compiled into the Python extension at install time.
 """
 
 from __future__ import annotations
@@ -14,8 +16,8 @@ import threading
 from pathlib import Path
 from typing import Any
 
+import miniaudio
 import numpy as np
-import sounddevice as sd
 
 from brileta.sound.audio_backend import AudioBackend, AudioChannel, LoadedSound
 from brileta.sound.loader import AudioLoader
@@ -23,10 +25,10 @@ from brileta.sound.loader import AudioLoader
 logger = logging.getLogger(__name__)
 
 
-class SoundDeviceAudioChannel(AudioChannel):
-    """Per-sound playback channel used by the mixed SoundDevice backend."""
+class MiniaudioChannel(AudioChannel):
+    """Per-sound playback channel used by the mixed miniaudio backend."""
 
-    def __init__(self, backend: SoundDeviceAudioBackend) -> None:
+    def __init__(self, backend: MiniaudioBackend) -> None:
         """Initialize a channel.
 
         Args:
@@ -92,7 +94,7 @@ class SoundDeviceAudioChannel(AudioChannel):
     def mix_into(self, outdata: np.ndarray, master_volume: float) -> None:
         """Mix this channel's audio into an output buffer.
 
-        This is called from the audio callback while the backend lock is held.
+        Called from the audio callback while the backend lock is held.
 
         Args:
             outdata: Output buffer with shape (frames, output_channels).
@@ -173,25 +175,29 @@ class SoundDeviceAudioChannel(AudioChannel):
         self._playing = False
 
 
-class SoundDeviceAudioBackend(AudioBackend):
-    """Audio backend using sounddevice's PortAudio output stream."""
+class MiniaudioBackend(AudioBackend):
+    """Audio backend using miniaudio's PlaybackDevice.
+
+    Uses a generator-based callback to mix all active channels into the
+    output buffer. No system-level audio libraries are required beyond
+    the miniaudio C header compiled into the Python extension.
+    """
 
     def __init__(self, max_channels: int = 16) -> None:
-        """Initialize the sounddevice backend.
+        """Initialize the miniaudio backend.
 
         Args:
             max_channels: Maximum number of simultaneous audio channels.
         """
         self._max_channels = max_channels
-        self._stream: sd.OutputStream | None = None
-        self._channels: list[SoundDeviceAudioChannel] = []
+        self._device: miniaudio.PlaybackDevice | None = None
+        self._channels: list[MiniaudioChannel] = []
         self._master_volume = 1.0
-        self._audio_loader = AudioLoader()
         self._initialized = False
         self._sample_rate = 44100
         self._num_channels = 2
         self._lock = threading.RLock()
-        self._pending_callback_status: sd.CallbackFlags | None = None
+        self._loader = AudioLoader()
 
     def initialize(self, sample_rate: int = 44100, channels: int = 2) -> None:
         """Initialize the audio backend."""
@@ -203,19 +209,20 @@ class SoundDeviceAudioBackend(AudioBackend):
         self._num_channels = channels
 
         try:
-            self._channels = [
-                SoundDeviceAudioChannel(self) for _ in range(self._max_channels)
-            ]
-            self._stream = sd.OutputStream(
-                samplerate=sample_rate,
-                channels=channels,
-                dtype=np.float32,
-                callback=self._audio_callback,
+            self._channels = [MiniaudioChannel(self) for _ in range(self._max_channels)]
+            self._device = miniaudio.PlaybackDevice(
+                output_format=miniaudio.SampleFormat.FLOAT32,
+                nchannels=channels,
+                sample_rate=sample_rate,
+                buffersize_msec=0,  # 0 = let miniaudio pick platform default
             )
-            self._stream.start()
+            # Create and start the callback generator
+            generator = self._audio_generator()
+            next(generator)  # Prime the generator
+            self._device.start(generator)
             self._initialized = True
             logger.info(
-                "Sounddevice audio initialized: %sHz, %s channels, %s streams",
+                "Miniaudio backend initialized: %sHz, %s channels, %s streams",
                 sample_rate,
                 channels,
                 self._max_channels,
@@ -223,10 +230,10 @@ class SoundDeviceAudioBackend(AudioBackend):
         except Exception:
             self._channels.clear()
             with contextlib.suppress(Exception):
-                if self._stream is not None:
-                    self._stream.close()
-            self._stream = None
-            logger.exception("Failed to initialize sounddevice audio")
+                if self._device is not None:
+                    self._device.close()
+            self._device = None
+            logger.exception("Failed to initialize miniaudio backend")
             raise
 
     def shutdown(self) -> None:
@@ -237,18 +244,15 @@ class SoundDeviceAudioBackend(AudioBackend):
         self.stop_all_sounds()
 
         with contextlib.suppress(Exception):
-            if self._stream is not None:
-                self._stream.stop()
-        with contextlib.suppress(Exception):
-            if self._stream is not None:
-                self._stream.close()
+            if self._device is not None:
+                self._device.close()
 
         with self._lock:
-            self._stream = None
+            self._device = None
             self._channels.clear()
             self._initialized = False
 
-        logger.info("Sounddevice audio shut down")
+        logger.info("Miniaudio backend shut down")
 
     def get_channel(self, priority: int = 5) -> AudioChannel | None:
         """Get an available audio channel."""
@@ -302,15 +306,9 @@ class SoundDeviceAudioBackend(AudioBackend):
     def update(self) -> None:
         """Update the audio backend.
 
-        The sounddevice backend is callback-driven. This method only reports
-        deferred callback status so callback code can stay realtime-safe.
+        The miniaudio backend is callback-driven. This method is a no-op
+        since the generator callback handles all mixing.
         """
-        callback_status: sd.CallbackFlags | None = None
-        with self._lock:
-            callback_status = self._pending_callback_status
-            self._pending_callback_status = None
-        if callback_status:
-            logger.debug("Sounddevice callback status: %s", callback_status)
 
     def get_active_channel_count(self) -> int:
         """Get the number of channels currently playing audio."""
@@ -318,37 +316,42 @@ class SoundDeviceAudioBackend(AudioBackend):
             return sum(1 for channel in self._channels if channel._playing)
 
     def load_sound(self, file_path: Path) -> LoadedSound:
-        """Load a sound file into memory."""
-        return self._audio_loader.load(file_path)
+        """Load a sound file into memory using miniaudio's native decoders.
 
-    def set_assets_path(self, assets_path: Path) -> None:
-        """Set the base path for audio assets.
+        Delegates to AudioLoader, which handles decoding, numpy conversion,
+        and caching. Supports WAV, OGG/Vorbis, MP3, and FLAC natively.
 
         Args:
-            assets_path: Base path for audio assets.
+            file_path: Path to the sound file.
+
+        Returns:
+            LoadedSound object containing the audio data.
+
+        Raises:
+            OSError: If the file cannot be loaded.
         """
-        self._audio_loader.assets_path = assets_path
+        return self._loader.load(file_path)
 
-    def _audio_callback(
-        self,
-        outdata: np.ndarray,
-        frames: int,
-        _time: Any,
-        status: sd.CallbackFlags,
-    ) -> None:
-        """PortAudio callback that mixes all active channels."""
-        outdata.fill(0.0)
-        with self._lock:
-            # Never log from the realtime callback thread.
-            if status:
-                self._pending_callback_status = status
-            if self._master_volume <= 0.0:
-                return
+    def _audio_generator(self) -> Any:
+        """Generator that mixes all active channels for the PlaybackDevice.
 
-            for channel in self._channels:
-                channel.mix_into(outdata, self._master_volume)
+        The device sends the required number of frames via .send(), and
+        the generator yields raw bytes (float32 interleaved) for each callback.
+        """
+        # First yield is a no-op to prime the generator
+        required_frames = yield b""
 
-        np.clip(outdata, -1.0, 1.0, out=outdata)
+        while True:
+            # Create a silence buffer for this callback
+            outdata = np.zeros((required_frames, self._num_channels), dtype=np.float32)
+
+            with self._lock:
+                if self._master_volume > 0.0:
+                    for channel in self._channels:
+                        channel.mix_into(outdata, self._master_volume)
+
+            np.clip(outdata, -1.0, 1.0, out=outdata)
+            required_frames = yield outdata.tobytes()
 
     def _prepare_audio_data(self, sound: LoadedSound) -> np.ndarray:
         """Convert sound data to output sample rate/channels as float32."""
@@ -379,14 +382,14 @@ class SoundDeviceAudioBackend(AudioBackend):
         expanded = np.tile(data, (1, repeats))
         return expanded[:, : self._num_channels]
 
-    def _get_channel_locked(self, priority: int) -> SoundDeviceAudioChannel | None:
+    def _get_channel_locked(self, priority: int) -> MiniaudioChannel | None:
         """Get or steal a channel while holding the backend lock."""
         for channel in self._channels:
             if not channel._playing:
                 return channel
 
         lowest_priority = priority
-        steal_candidate: SoundDeviceAudioChannel | None = None
+        steal_candidate: MiniaudioChannel | None = None
         for channel in self._channels:
             if channel._playing and channel._current_priority < lowest_priority:
                 lowest_priority = channel._current_priority

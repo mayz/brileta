@@ -1,8 +1,8 @@
 """Audio file loading utilities.
 
 This module provides utilities for loading audio files into memory using
-the soundfile library. It handles format conversion and caching of loaded
-sounds.
+miniaudio's native decoders. Supports WAV, OGG/Vorbis, MP3, and FLAC
+formats without any system-level audio library dependencies.
 """
 
 from __future__ import annotations
@@ -11,8 +11,8 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import miniaudio
 import numpy as np
-import soundfile as sf
 
 from .audio_backend import LoadedSound
 
@@ -26,7 +26,7 @@ class AudioLoader:
     """Handles loading and caching of audio files.
 
     The AudioLoader is responsible for:
-    - Loading audio files from disk using soundfile
+    - Loading audio files from disk using miniaudio
     - Converting audio to the required format
     - Caching loaded sounds to avoid redundant disk I/O
     - Handling different audio file formats (.ogg, .wav, etc.)
@@ -66,16 +66,26 @@ class AudioLoader:
             logger.debug(f"Returning cached sound: {path}")
             return self._cache[path]
 
-        # Load the audio file
+        # Load the audio file using miniaudio's native decoders.
+        # decode_file requires explicit channel/sample-rate values (0 is not
+        # a valid sentinel), so we probe the file first to preserve its
+        # native format.
         try:
-            data, sample_rate = sf.read(path, dtype="float32")
+            file_info = miniaudio.get_file_info(str(path))
+            decoded = miniaudio.decode_file(
+                str(path),
+                output_format=miniaudio.SampleFormat.FLOAT32,
+                nchannels=file_info.nchannels,
+                sample_rate=file_info.sample_rate,
+            )
+            # Convert interleaved array.array to numpy
+            samples = np.frombuffer(decoded.samples, dtype=np.float32)
+            channels = decoded.nchannels
+            sample_rate = decoded.sample_rate
+            data = samples.reshape(-1, channels) if channels > 1 else samples.copy()
             logger.info(f"Loaded sound: {path} ({sample_rate}Hz, shape={data.shape})")
         except Exception as e:
             raise OSError(f"Failed to load audio file {path}: {e}") from e
-
-        # Ensure data is in the correct shape
-        # soundfile returns (frames,) for mono or (frames, channels) for multi-channel
-        channels = 1 if data.ndim == 1 else data.shape[1]
 
         # Create LoadedSound object
         sound = LoadedSound(

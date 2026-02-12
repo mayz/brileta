@@ -62,7 +62,6 @@ class SoundSystem:
         self.playing_sounds: list[PlayingSound] = []
         self.audio_backend: AudioBackend | None = None
         self.current_time: float = 0.0
-        self._sound_cache: dict[str, LoadedSound] = {}  # Cache loaded sounds
         self._assets_path: Path | None = None
         self._max_audio_distance: float | None = None  # Cached maximum audio distance
 
@@ -477,7 +476,10 @@ class SoundSystem:
             )
 
     def _load_sound(self, file_name: str) -> LoadedSound | None:
-        """Load a sound file, using cache if available.
+        """Load a sound file via the audio backend.
+
+        The backend's AudioLoader handles caching internally, so repeated
+        calls for the same file are O(1) after the first decode.
 
         Args:
             file_name: Name of the sound file
@@ -488,21 +490,13 @@ class SoundSystem:
         if not self.audio_backend:
             return None
 
-        # Check cache first
-        if file_name in self._sound_cache:
-            return self._sound_cache[file_name]
-
-        # Determine full path
         if self._assets_path:
             file_path = self._assets_path / "sounds" / file_name
         else:
             file_path = Path("assets/sounds") / file_name
 
         try:
-            loaded_sound = self.audio_backend.load_sound(file_path)
-            self._sound_cache[file_name] = loaded_sound
-            logger.info(f"Loaded sound: {file_name}")
-            return loaded_sound
+            return self.audio_backend.load_sound(file_path)
         except Exception as e:
             logger.error(f"Failed to load sound {file_name}: {e}")
             return None
@@ -526,7 +520,6 @@ class SoundSystem:
 
         self.audio_backend = backend
         self.playing_sounds.clear()
-        self._sound_cache.clear()
 
         logger.info(
             f"Audio backend set: {type(backend).__name__ if backend else 'None'}"
@@ -550,7 +543,6 @@ class SoundSystem:
 
         # Reset state
         self.playing_sounds.clear()
-        self._sound_cache.clear()
         self._last_played_variant.clear()
         self._delayed_sounds.clear()
         self.current_time = 0.0

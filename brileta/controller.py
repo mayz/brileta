@@ -1112,9 +1112,9 @@ class Controller:
             try:
                 from pathlib import Path
 
-                from brileta.backends.sounddevice_audio import SoundDeviceAudioBackend
+                from brileta.backends.miniaudio_audio import MiniaudioBackend
 
-                audio_backend = SoundDeviceAudioBackend()
+                audio_backend = MiniaudioBackend()
                 audio_backend.initialize()
                 self.sound_system.set_audio_backend(audio_backend)
 
