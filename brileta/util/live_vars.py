@@ -26,8 +26,10 @@ class LiveVariable:
     getter: Callable[[], Any]
     setter: Callable[[Any], None] | None = None
     formatter: Callable[[Any], str] | None = None
+    display_decimals: int | None = None
     stats_var: StatsVar | None = None
     metric: bool = False
+    value_range: tuple[float, float] | None = None
 
     def get_value(self) -> Any:
         """Return the current value using the getter."""
@@ -66,6 +68,12 @@ class LiveVariable:
         """Return True if this variable tracks statistics."""
         return self.stats_var is not None
 
+    def supports_slider(self) -> bool:
+        """Return ``True`` when this variable can be controlled by a slider."""
+        return (
+            self.setter is not None and self.value_range is not None and not self.metric
+        )
+
 
 T = TypeVar("T", bound="MostRecentNVar")
 
@@ -92,8 +100,10 @@ class LiveVariableRegistry:
         *,
         description: str = "",
         formatter: Callable[[Any], str] | None = None,
+        display_decimals: int | None = None,
         stats_var: StatsVar | None = None,
         metric: bool = False,
+        value_range: tuple[float, float] | None = None,
     ) -> None:
         """Register a new live variable."""
         if name in self._variables:
@@ -104,8 +114,10 @@ class LiveVariableRegistry:
             getter=getter,
             setter=setter,
             formatter=formatter,
+            display_decimals=display_decimals,
             stats_var=stats_var,
             metric=metric,
+            value_range=value_range,
         )
 
     def register_metric(

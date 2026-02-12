@@ -313,3 +313,97 @@ def test_mouse_motion_invalidates_combat_tooltip() -> None:
     ih.dispatch(event)
 
     assert tooltip.invalidated == 1
+
+
+def test_overlay_mouse_events_are_converted_from_screen_to_root_console_pixels() -> (
+    None
+):
+    """Overlay mouse input should account for letterbox + screen tile scale."""
+    ih, _ = make_input_handler()
+
+    ih.graphics.tile_dimensions = (20, 20)
+    ih.graphics.letterbox_geometry = (100, 50, 800, 600)
+    ih.graphics.coordinate_converter = SimpleNamespace(
+        tile_width_screen_px=16.0,
+        tile_height_screen_px=16.0,
+    )
+    ih.graphics.get_display_scale_factor = lambda: (1.0, 1.0)
+
+    captured_events: list[input_events.InputEvent] = []
+
+    def capture_overlay_event(event: input_events.InputEvent) -> bool:
+        captured_events.append(event)
+        return False
+
+    ih.controller.overlay_system.handle_input = capture_overlay_event
+
+    ih.dispatch(
+        input_events.MouseButtonDown(
+            position=input_events.Point(180, 82), button=input_events.MouseButton.LEFT
+        )
+    )
+
+    assert len(captured_events) == 1
+    captured_event = captured_events[0]
+    assert isinstance(captured_event, input_events.MouseButtonDown)
+    assert captured_event.position.x == 100.0
+    assert captured_event.position.y == 40.0
+
+
+def test_overlay_mouse_event_conversion_without_letterbox() -> None:
+    """Overlay conversion should work without letterbox geometry."""
+    ih, _ = make_input_handler()
+    ih.graphics.tile_dimensions = (20, 20)
+    ih.graphics.letterbox_geometry = None
+    ih.graphics.coordinate_converter = SimpleNamespace(
+        tile_width_screen_px=16.0,
+        tile_height_screen_px=16.0,
+    )
+    ih.graphics.get_display_scale_factor = lambda: (1.0, 1.0)
+
+    event = input_events.MouseButtonDown(
+        position=input_events.Point(32, 48), button=input_events.MouseButton.LEFT
+    )
+    converted = ih._convert_mouse_coordinates_for_overlay_event(event)
+
+    assert converted.position.x == 40.0
+    assert converted.position.y == 60.0
+
+
+def test_overlay_mouse_event_conversion_falls_back_without_converter() -> None:
+    """Missing coordinate converter should fall back to adjusted screen pixels."""
+    ih, _ = make_input_handler()
+    ih.graphics.tile_dimensions = (20, 20)
+    ih.graphics.letterbox_geometry = (10, 5, 800, 600)
+    ih.graphics.coordinate_converter = None
+    ih.graphics.get_display_scale_factor = lambda: (1.0, 1.0)
+
+    event = input_events.MouseMotion(
+        position=input_events.Point(30, 25), motion=input_events.Point(0, 0)
+    )
+    converted = ih._convert_mouse_coordinates_for_overlay_event(event)
+
+    assert converted.position.x == 20.0
+    assert converted.position.y == 20.0
+
+
+def test_overlay_mouse_event_conversion_falls_back_with_zero_converter_tile_size() -> (
+    None
+):
+    """Zero screen-tile dimensions should use adjusted screen-pixel fallback."""
+    ih, _ = make_input_handler()
+    ih.graphics.tile_dimensions = (20, 20)
+    ih.graphics.letterbox_geometry = (10, 5, 800, 600)
+    ih.graphics.coordinate_converter = SimpleNamespace(
+        tile_width_screen_px=0.0,
+        tile_height_screen_px=0.0,
+    )
+    ih.graphics.get_display_scale_factor = lambda: (1.0, 1.0)
+
+    event = input_events.MouseButtonUp(
+        position=input_events.Point(30, 25), button=input_events.MouseButton.LEFT
+    )
+    converted = ih._convert_mouse_coordinates_for_overlay_event(event)
+
+    assert converted.position.x == 20.0
+    assert converted.position.y == 20.0

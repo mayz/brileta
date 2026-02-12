@@ -1,6 +1,7 @@
+import time
 from types import SimpleNamespace
 from typing import cast
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -9,6 +10,7 @@ from brileta.app import App, AppConfig
 from brileta.controller import Controller
 from brileta.util.live_vars import live_variable_registry
 from brileta.view.ui.dev_console_overlay import DevConsoleOverlay
+from brileta.view.ui.overlays import TextOverlay
 
 
 class DummyApp(App):
@@ -202,6 +204,604 @@ def test_natural_syntax_get() -> None:
     assert "nat.get = 42" in ov.history[-1]
 
 
+def test_get_uses_live_variable_formatter() -> None:
+    """Value output in command mode uses the variable formatter when available."""
+    store = {"v": 135.0}
+    live_variable_registry.register(
+        "fmt.get",
+        getter=lambda: store["v"],
+        formatter=lambda v: f"{float(v):.1f} deg",
+    )
+
+    ov = make_overlay()
+    ov.input_buffer = "get fmt.get"
+    ov._execute_command()
+    assert ov.history[-1] == "fmt.get = 135.0 deg"
+
+
+def test_get_uses_default_float_format_when_no_formatter() -> None:
+    """Float values use the built-in compact formatter when unset."""
+    store = {"v": 0.85}
+    live_variable_registry.register(
+        "fmt.default.float",
+        getter=lambda: store["v"],
+    )
+
+    ov = make_overlay()
+    ov.input_buffer = "get fmt.default.float"
+    ov._execute_command()
+    assert ov.history[-1] == "fmt.default.float = 0.85"
+
+
+def test_get_uses_display_decimals_when_configured() -> None:
+    """display_decimals overrides default float precision for console output."""
+    store = {"v": 0.8567}
+    live_variable_registry.register(
+        "fmt.decimals.get",
+        getter=lambda: store["v"],
+        display_decimals=3,
+    )
+
+    ov = make_overlay()
+    ov.input_buffer = "get fmt.decimals.get"
+    ov._execute_command()
+    assert ov.history[-1] == "fmt.decimals.get = 0.857"
+
+
+def test_get_display_decimals_preserves_trailing_zeros_when_explicitly_set() -> None:
+    """Explicit display_decimals should keep fixed-width decimal formatting."""
+    store = {"v": 10.0}
+    live_variable_registry.register(
+        "fmt.decimals.fixed",
+        getter=lambda: store["v"],
+        display_decimals=1,
+    )
+
+    ov = make_overlay()
+    ov.input_buffer = "get fmt.decimals.fixed"
+    ov._execute_command()
+    assert ov.history[-1] == "fmt.decimals.fixed = 10.0"
+
+
+def test_get_display_decimals_zero_preserves_significant_integer_zeros() -> None:
+    """display_decimals=0 should not collapse values like 400 into 4."""
+    store = {"v": 400.0}
+    live_variable_registry.register(
+        "fmt.decimals.zero",
+        getter=lambda: store["v"],
+        display_decimals=0,
+    )
+
+    ov = make_overlay()
+    ov.input_buffer = "get fmt.decimals.zero"
+    ov._execute_command()
+    assert ov.history[-1] == "fmt.decimals.zero = 400"
+
+
+def test_get_uses_default_bool_int_and_repr_formatting() -> None:
+    """Default formatting path should handle bool, int, and repr fallback values."""
+    live_variable_registry.register("fmt.default.bool", getter=lambda: True)
+    live_variable_registry.register("fmt.default.int", getter=lambda: 42)
+    live_variable_registry.register("fmt.default.repr", getter=lambda: [1, 2])
+
+    ov = make_overlay()
+
+    ov.input_buffer = "get fmt.default.bool"
+    ov._execute_command()
+    assert ov.history[-1] == "fmt.default.bool = True"
+
+    ov.input_buffer = "get fmt.default.int"
+    ov._execute_command()
+    assert ov.history[-1] == "fmt.default.int = 42"
+
+    ov.input_buffer = "get fmt.default.repr"
+    ov._execute_command()
+    assert ov.history[-1] == "fmt.default.repr = [1, 2]"
+
+
+def test_slider_activates_on_ranged_var_get() -> None:
+    """Bare variable get activates slider for ranged writable variables."""
+    store = {"v": 42.0}
+    live_variable_registry.register(
+        "slider.ranged",
+        getter=lambda: store["v"],
+        setter=lambda v: store.__setitem__("v", float(v)),
+        value_range=(0.0, 100.0),
+    )
+
+    ov = make_overlay()
+    ov.input_buffer = "slider.ranged"
+    ov._execute_command()
+
+    assert ov._slider_var is not None
+    assert ov._slider_var.name == "slider.ranged"
+
+
+def test_get_for_slider_var_does_not_duplicate_static_value_output() -> None:
+    """Ranged vars should show slider UI without adding a duplicate value line."""
+    store = {"v": 42.0}
+    live_variable_registry.register(
+        "slider.get.nodup",
+        getter=lambda: store["v"],
+        setter=lambda v: store.__setitem__("v", float(v)),
+        value_range=(0.0, 100.0),
+    )
+
+    ov = make_overlay()
+    prev_len = len(ov.history)
+    ov.input_buffer = "get slider.get.nodup"
+    ov._execute_command()
+
+    appended = list(ov.history)[prev_len:]
+    assert appended == ["> get slider.get.nodup"]
+    assert ov._slider_var is not None
+    assert ov._slider_var.name == "slider.get.nodup"
+
+
+def test_slider_activates_on_ranged_var_set() -> None:
+    """Explicit set command should activate slider for ranged writable vars."""
+    store = {"v": 10.0}
+    live_variable_registry.register(
+        "slider.setcmd",
+        getter=lambda: store["v"],
+        setter=lambda v: store.__setitem__("v", float(v)),
+        value_range=(0.0, 100.0),
+    )
+
+    ov = make_overlay()
+    ov.input_buffer = "set slider.setcmd 45"
+    ov._execute_command()
+
+    assert store["v"] == 45.0
+    assert ov._slider_var is not None
+    assert ov._slider_var.name == "slider.setcmd"
+
+
+def test_set_for_slider_var_does_not_duplicate_static_value_output() -> None:
+    """Set command should keep history concise when slider UI is active."""
+    store = {"v": 10.0}
+    live_variable_registry.register(
+        "slider.set.nodup",
+        getter=lambda: store["v"],
+        setter=lambda v: store.__setitem__("v", float(v)),
+        value_range=(0.0, 100.0),
+    )
+
+    ov = make_overlay()
+    prev_len = len(ov.history)
+    ov.input_buffer = "set slider.set.nodup 45"
+    ov._execute_command()
+
+    appended = list(ov.history)[prev_len:]
+    assert appended == ["> set slider.set.nodup 45"]
+    assert store["v"] == 45.0
+    assert ov._slider_var is not None
+    assert ov._slider_var.name == "slider.set.nodup"
+
+
+def test_slider_not_activated_without_range() -> None:
+    """Writable vars without value_range should not get a slider."""
+    store = {"v": 1.0}
+    live_variable_registry.register(
+        "slider.norange",
+        getter=lambda: store["v"],
+        setter=lambda v: store.__setitem__("v", float(v)),
+    )
+
+    ov = make_overlay()
+    ov.input_buffer = "slider.norange"
+    ov._execute_command()
+
+    assert ov._slider_var is None
+
+
+def test_slider_not_activated_for_readonly_var() -> None:
+    """Read-only vars should not get a slider, even with a range."""
+    store = {"v": 10.0}
+    live_variable_registry.register(
+        "slider.readonly",
+        getter=lambda: store["v"],
+        value_range=(0.0, 20.0),
+    )
+
+    ov = make_overlay()
+    ov.input_buffer = "slider.readonly"
+    ov._execute_command()
+
+    assert ov._slider_var is None
+
+
+def test_slider_not_activated_for_metric() -> None:
+    """Metric vars are excluded from slider controls."""
+    store = {"v": 0.0}
+    live_variable_registry.register(
+        "slider.metric",
+        getter=lambda: store["v"],
+        setter=lambda v: store.__setitem__("v", float(v)),
+        metric=True,
+        value_range=(0.0, 1.0),
+    )
+
+    ov = make_overlay()
+    ov.input_buffer = "slider.metric"
+    ov._execute_command()
+
+    assert ov._slider_var is None
+
+
+def test_slider_cleared_on_new_command() -> None:
+    """Submitting a new command clears an active slider unless reactivated."""
+    store = {"v": 10.0}
+    live_variable_registry.register(
+        "slider.clear",
+        getter=lambda: store["v"],
+        setter=lambda v: store.__setitem__("v", float(v)),
+        value_range=(0.0, 100.0),
+    )
+
+    ov = make_overlay()
+    ov.input_buffer = "slider.clear"
+    ov._execute_command()
+    assert ov._slider_var is not None
+
+    ov.input_buffer = "help"
+    ov._execute_command()
+    assert ov._slider_var is None
+
+
+def test_slider_persists_across_hide_show() -> None:
+    """Active slider variable persists when console is hidden and shown again."""
+    store = {"v": 10.0}
+    live_variable_registry.register(
+        "slider.persist",
+        getter=lambda: store["v"],
+        setter=lambda v: store.__setitem__("v", float(v)),
+        value_range=(0.0, 100.0),
+    )
+
+    ov = make_overlay()
+    ov.show()
+    ov.input_buffer = "slider.persist"
+    ov._execute_command()
+    assert ov._slider_var is not None
+
+    ov.hide()
+    ov.show()
+
+    assert ov._slider_var is not None
+    assert ov._slider_var.name == "slider.persist"
+
+
+def test_hide_clears_slider_dragging_state() -> None:
+    """Hiding the console should end an in-progress slider drag."""
+    ov = make_overlay()
+    ov.show()
+    ov._slider_dragging = True
+
+    ov.hide()
+
+    assert ov._slider_dragging is False
+
+
+def test_get_slider_numeric_value_returns_none_for_bool_and_non_numeric() -> None:
+    """_get_slider_numeric_value should reject non-numeric slider values."""
+    live_variable_registry.register("slider.bool", getter=lambda: True)
+    live_variable_registry.register("slider.text", getter=lambda: "abc")
+
+    ov = make_overlay()
+
+    bool_var = live_variable_registry.get_variable("slider.bool")
+    assert bool_var is not None
+    ov._slider_var = bool_var
+    assert ov._get_slider_numeric_value() is None
+
+    text_var = live_variable_registry.get_variable("slider.text")
+    assert text_var is not None
+    ov._slider_var = text_var
+    assert ov._get_slider_numeric_value() is None
+
+
+def test_slider_hit_test() -> None:
+    """Slider row hit testing uses geometry captured during draw."""
+    store = {"v": 20.0}
+    live_variable_registry.register(
+        "slider.hit",
+        getter=lambda: store["v"],
+        setter=lambda v: store.__setitem__("v", float(v)),
+        value_range=(0.0, 100.0),
+    )
+    var = live_variable_registry.get_variable("slider.hit")
+    assert var is not None
+
+    ov = make_overlay()
+    ov.pixel_width = 640
+    ov.canvas = MagicMock()
+    ov.canvas.get_text_metrics.return_value = (120, 16, 16)
+    ov._slider_var = var
+    ov._draw_slider(row_y=48, tile_h=16)
+
+    assert ov._hit_test_slider(10, 72) is True
+    assert ov._hit_test_slider(10, 20) is False
+
+
+def test_slider_label_uses_live_variable_formatter() -> None:
+    """Slider label uses the same formatter path as command output."""
+    store = {"v": 135.0}
+    live_variable_registry.register(
+        "fmt.slider",
+        getter=lambda: store["v"],
+        setter=lambda v: store.__setitem__("v", float(v)),
+        formatter=lambda v: f"{float(v):.1f} deg",
+        value_range=(0.0, 360.0),
+    )
+    var = live_variable_registry.get_variable("fmt.slider")
+    assert var is not None
+
+    ov = make_overlay()
+    ov.pixel_width = 640
+    ov.canvas = MagicMock()
+    ov.canvas.get_text_metrics.return_value = (140, 16, 16)
+    ov._slider_var = var
+    ov._draw_slider(row_y=48, tile_h=16)
+
+    first_text_call = ov.canvas.draw_text.call_args_list[0]
+    assert first_text_call.args[2] == "fmt.slider = 135.0 deg"
+
+
+def test_slider_label_uses_default_float_format_when_no_formatter() -> None:
+    """Slider label falls back to compact float formatting by default."""
+    store = {"v": 0.85}
+    live_variable_registry.register(
+        "fmt.slider.default",
+        getter=lambda: store["v"],
+        setter=lambda v: store.__setitem__("v", float(v)),
+        value_range=(0.0, 360.0),
+    )
+    var = live_variable_registry.get_variable("fmt.slider.default")
+    assert var is not None
+
+    ov = make_overlay()
+    ov.pixel_width = 640
+    ov.canvas = MagicMock()
+    ov.canvas.get_text_metrics.return_value = (140, 16, 16)
+    ov._slider_var = var
+    ov._draw_slider(row_y=48, tile_h=16)
+
+    first_text_call = ov.canvas.draw_text.call_args_list[0]
+    assert first_text_call.args[2] == "fmt.slider.default = 0.85"
+
+
+def test_slider_label_uses_display_decimals_when_configured() -> None:
+    """display_decimals overrides default float precision for slider labels."""
+    store = {"v": 0.8567}
+    live_variable_registry.register(
+        "fmt.slider.decimals",
+        getter=lambda: store["v"],
+        setter=lambda v: store.__setitem__("v", float(v)),
+        display_decimals=3,
+        value_range=(0.0, 1.0),
+    )
+    var = live_variable_registry.get_variable("fmt.slider.decimals")
+    assert var is not None
+
+    ov = make_overlay()
+    ov.pixel_width = 640
+    ov.canvas = MagicMock()
+    ov.canvas.get_text_metrics.return_value = (140, 16, 16)
+    ov._slider_var = var
+    ov._draw_slider(row_y=48, tile_h=16)
+
+    first_text_call = ov.canvas.draw_text.call_args_list[0]
+    assert first_text_call.args[2] == "fmt.slider.decimals = 0.857"
+
+
+def test_draw_slider_reads_live_value_once_per_frame() -> None:
+    """Slider draw should call the getter once and reuse the value."""
+    store = {"v": 0.5}
+    calls = {"count": 0}
+
+    def getter() -> float:
+        calls["count"] += 1
+        return store["v"]
+
+    live_variable_registry.register(
+        "slider.once",
+        getter=getter,
+        setter=lambda v: store.__setitem__("v", float(v)),
+        value_range=(0.0, 1.0),
+    )
+    var = live_variable_registry.get_variable("slider.once")
+    assert var is not None
+
+    ov = make_overlay()
+    ov.pixel_width = 640
+    ov.canvas = MagicMock()
+    ov.canvas.get_text_metrics.return_value = (140, 16, 16)
+    ov._slider_var = var
+    ov._draw_slider(row_y=48, tile_h=16)
+
+    assert calls["count"] == 1
+
+
+def test_draw_slider_track_is_left_aligned_and_width_capped() -> None:
+    """Track should stay left-aligned while respecting the width cap."""
+    store = {"v": 0.5}
+    live_variable_registry.register(
+        "slider.widthcap",
+        getter=lambda: store["v"],
+        setter=lambda v: store.__setitem__("v", float(v)),
+        value_range=(0.0, 1.0),
+    )
+    var = live_variable_registry.get_variable("slider.widthcap")
+    assert var is not None
+
+    ov = make_overlay()
+    ov.pixel_width = 2000
+    ov.canvas = MagicMock()
+    ov.canvas.get_text_metrics.return_value = (100, 16, 16)
+    ov._slider_var = var
+    ov._draw_slider(row_y=48, tile_h=16)
+
+    assert ov._slider_track_rect is not None
+    track_x, _track_y, track_w, _track_h = ov._slider_track_rect
+    assert track_x == 8
+    assert track_w == 520
+
+
+def test_draw_slider_track_is_rendered_on_row_below_label() -> None:
+    """Track geometry should be on the row beneath the label text row."""
+    store = {"v": 135.0}
+    live_variable_registry.register(
+        "sun.azimuth",
+        getter=lambda: store["v"],
+        setter=lambda v: store.__setitem__("v", float(v)),
+        display_decimals=1,
+        value_range=(0.0, 360.0),
+    )
+    var = live_variable_registry.get_variable("sun.azimuth")
+    assert var is not None
+
+    ov = make_overlay()
+    ov.pixel_width = 640
+    ov.canvas = MagicMock()
+    ov.canvas.get_text_metrics.side_effect = lambda text: (len(str(text)) * 8, 16, 16)
+    ov._slider_var = var
+    ov._draw_slider(row_y=48, tile_h=16)
+
+    assert ov._slider_track_rect is not None
+    _track_x, track_y, _track_w, _track_h = ov._slider_track_rect
+    assert track_y >= 64
+
+
+def test_draw_slider_track_geometry_is_stable_when_value_text_width_changes() -> None:
+    """Track geometry should not shift as formatted value text length changes."""
+    store = {"v": 99.9}
+    live_variable_registry.register(
+        "slider.stable",
+        getter=lambda: store["v"],
+        setter=lambda v: store.__setitem__("v", float(v)),
+        value_range=(0.0, 200.0),
+    )
+    var = live_variable_registry.get_variable("slider.stable")
+    assert var is not None
+
+    ov = make_overlay()
+    ov.pixel_width = 640
+    ov.canvas = MagicMock()
+    ov.canvas.get_text_metrics.side_effect = lambda text: (len(str(text)) * 8, 16, 16)
+    ov._slider_var = var
+
+    ov._draw_slider(row_y=48, tile_h=16)
+    first_rect = ov._slider_track_rect
+
+    store["v"] = 100.0  # One more digit in the formatted value.
+    ov._draw_slider(row_y=48, tile_h=16)
+    second_rect = ov._slider_track_rect
+
+    assert first_rect == second_rect
+
+
+def test_draw_slider_thumb_is_centered_on_value_ratio() -> None:
+    """Thumb should be centered on the same ratio used for fill/value mapping."""
+    store = {"v": 50.0}
+    live_variable_registry.register(
+        "slider.thumb.center",
+        getter=lambda: store["v"],
+        setter=lambda v: store.__setitem__("v", float(v)),
+        value_range=(0.0, 100.0),
+    )
+    var = live_variable_registry.get_variable("slider.thumb.center")
+    assert var is not None
+
+    ov = make_overlay()
+    ov.pixel_width = 640
+    ov.canvas = MagicMock()
+    ov.canvas.get_text_metrics.return_value = (120, 16, 16)
+    ov._slider_var = var
+    ov._draw_slider(row_y=48, tile_h=16)
+
+    assert ov._slider_track_rect is not None
+    track_x, _track_y, track_w, _track_h = ov._slider_track_rect
+    thumb_call = ov.canvas.draw_rect.call_args_list[2]
+    thumb_x, _thumb_y, thumb_w, _thumb_h = thumb_call.args[:4]
+
+    thumb_center_x = thumb_x + (thumb_w / 2)
+    expected_center_x = track_x + ((track_w - 1) / 2)
+    assert thumb_center_x == pytest.approx(expected_center_x, abs=1.0)
+
+
+def test_slider_apply_from_pixel() -> None:
+    """Slider pixel mapping converts x position into ranged variable values."""
+    store = {"v": 0.0}
+    live_variable_registry.register(
+        "slider.apply",
+        getter=lambda: store["v"],
+        setter=lambda v: store.__setitem__("v", float(v)),
+        value_range=(0.0, 100.0),
+    )
+    var = live_variable_registry.get_variable("slider.apply")
+    assert var is not None
+
+    ov = make_overlay()
+    ov._slider_var = var
+    ov._slider_track_rect = (100, 0, 200, 8)
+
+    ov._apply_slider_from_pixel(100)
+    assert store["v"] == pytest.approx(0.0)
+
+    ov._apply_slider_from_pixel(200)
+    assert store["v"] == pytest.approx(50.0)
+
+    ov._apply_slider_from_pixel(300)
+    assert store["v"] == pytest.approx(100.0)
+
+
+def test_slider_mouse_drag_sequence_applies_values() -> None:
+    """Mouse down/move/up should drag slider and update values continuously."""
+    store = {"v": 0.0}
+    live_variable_registry.register(
+        "slider.drag",
+        getter=lambda: store["v"],
+        setter=lambda v: store.__setitem__("v", float(v)),
+        value_range=(0.0, 100.0),
+    )
+    var = live_variable_registry.get_variable("slider.drag")
+    assert var is not None
+
+    ov = make_overlay()
+    ov.show()
+    ov.pixel_width = 640
+    ov._slider_var = var
+    ov._slider_track_rect = (100, 46, 200, 8)
+    ov._slider_track_y_center = 50
+    ov._slider_tile_h = 16
+
+    consumed_down = ov.handle_input(
+        input_events.MouseButtonDown(
+            position=input_events.Point(120, 50), button=input_events.MouseButton.LEFT
+        )
+    )
+    assert consumed_down is True
+    assert ov._slider_dragging is True
+    assert store["v"] == pytest.approx(10.0)
+
+    consumed_move = ov.handle_input(
+        input_events.MouseMotion(
+            position=input_events.Point(250, 50), motion=input_events.Point(0, 0)
+        )
+    )
+    assert consumed_move is True
+    assert store["v"] == pytest.approx(75.0)
+
+    consumed_up = ov.handle_input(
+        input_events.MouseButtonUp(
+            position=input_events.Point(250, 50), button=input_events.MouseButton.LEFT
+        )
+    )
+    assert consumed_up is True
+    assert ov._slider_dragging is False
+
+
 def test_natural_syntax_set() -> None:
     """Typing 'varname = value' sets the variable."""
     store = {"v": 0}
@@ -223,6 +823,55 @@ def test_natural_syntax_set() -> None:
     ov.input_buffer = "nat.set=99"
     ov._execute_command()
     assert store["v"] == 99
+
+
+def test_natural_syntax_prefix_single_match_activates_slider() -> None:
+    """A single prefix-pattern match should activate slider for ranged vars."""
+    store = {"v": 42.0}
+    live_variable_registry.register(
+        "prefix.single",
+        getter=lambda: store["v"],
+        setter=lambda v: store.__setitem__("v", float(v)),
+        value_range=(0.0, 100.0),
+    )
+
+    ov = make_overlay()
+    ov.input_buffer = "prefix.*"
+    ov._execute_command()
+
+    assert ov._slider_var is not None
+    assert ov._slider_var.name == "prefix.single"
+
+
+def test_draw_invalidates_when_slider_value_changes_externally() -> None:
+    """draw() should invalidate when active slider value changes outside drag."""
+    store = {"v": 10.0}
+    live_variable_registry.register(
+        "slider.external.change",
+        getter=lambda: store["v"],
+        setter=lambda v: store.__setitem__("v", float(v)),
+        value_range=(0.0, 100.0),
+    )
+    var = live_variable_registry.get_variable("slider.external.change")
+    assert var is not None
+
+    ov = make_overlay()
+    ov.show()
+    ov._slider_var = var
+    ov._slider_dragging = False
+    ov._slider_last_value = 10.0
+    ov._filter_mode = False
+    ov._last_blink_time = time.perf_counter()
+    invalidate_mock = MagicMock()
+    ov.invalidate = invalidate_mock
+
+    # Simulate an external update to the controlled variable.
+    store["v"] = 20.0
+    with patch.object(TextOverlay, "draw", autospec=True, return_value=None):
+        ov.draw()
+
+    assert ov._slider_last_value == 20.0
+    invalidate_mock.assert_called()
 
 
 def test_natural_syntax_set_missing_value() -> None:

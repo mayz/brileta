@@ -84,7 +84,9 @@ class InputHandler:
             QuitUICommand(self.app).execute()
             return
 
-        # Scale mouse events for overlay system
+        # Convert mouse events to root-console pixel coordinates for overlays.
+        # This keeps overlay hit testing aligned with rendered UI even when
+        # letterboxing or non-1.0 display scale is active.
         menu_event = event
         if isinstance(
             event,
@@ -92,11 +94,7 @@ class InputHandler:
             | input_events.MouseButtonUp
             | input_events.MouseMotion,
         ):
-            scale_x, scale_y = self.graphics.get_display_scale_factor()
-            scaled_x = event.position.x * scale_x
-            scaled_y = event.position.y * scale_y
-            menu_event = copy.copy(event)
-            menu_event.position = input_events.Point(int(scaled_x), int(scaled_y))
+            menu_event = self._convert_mouse_coordinates_for_overlay_event(event)
 
         # Overlays first: Menus are modal - they consume input before anything else
         assert self.controller.overlay_system is not None
@@ -232,4 +230,40 @@ class InputHandler:
 
         event_copy = copy.copy(event)
         event_copy.position = input_events.Point(root_tile_x, root_tile_y)
+        return event_copy
+
+    def _convert_mouse_coordinates_for_overlay_event(
+        self, event: input_events.MouseState
+    ) -> input_events.MouseState:
+        """Convert screen pixel coordinates to root-console pixel coordinates.
+
+        Overlays render in root-console pixel space (tile dimensions) while
+        input arrives in screen/framebuffer pixels. This conversion removes
+        letterbox offsets and maps through the coordinate converter's tile
+        scale so overlay hit tests align with rendered UI.
+        """
+        scale_x, scale_y = self.graphics.get_display_scale_factor()
+        screen_x = float(event.position.x * scale_x)
+        screen_y = float(event.position.y * scale_y)
+
+        letterbox = getattr(self.graphics, "letterbox_geometry", None)
+        if letterbox is not None:
+            offset_x, offset_y, _scaled_w, _scaled_h = letterbox
+            screen_x -= float(offset_x)
+            screen_y -= float(offset_y)
+
+        converter = getattr(self.graphics, "coordinate_converter", None)
+        tile_w_screen = float(getattr(converter, "tile_width_screen_px", 0.0))
+        tile_h_screen = float(getattr(converter, "tile_height_screen_px", 0.0))
+        tile_w_internal, tile_h_internal = self.graphics.tile_dimensions
+
+        if tile_w_screen <= 0.0 or tile_h_screen <= 0.0:
+            root_px_x = screen_x
+            root_px_y = screen_y
+        else:
+            root_px_x = (screen_x / tile_w_screen) * float(tile_w_internal)
+            root_px_y = (screen_y / tile_h_screen) * float(tile_h_internal)
+
+        event_copy = copy.copy(event)
+        event_copy.position = input_events.Point(root_px_x, root_px_y)
         return event_copy

@@ -20,6 +20,13 @@ _HIGHLIGHT_BG = (40, 60, 90, 255)
 _TAG_COLOR = (140, 140, 140)
 # Subtle border color for the console frame.
 _BORDER_COLOR = (80, 80, 80)
+_SLIDER_TRACK_COLOR = (64, 64, 64)
+_SLIDER_FILL_COLOR = (70, 130, 210)
+_SLIDER_THUMB_COLOR = (190, 190, 190)
+_SLIDER_TRACK_PADDING_PX = 8
+_SLIDER_TRACK_MIN_WIDTH_PX = 140
+_SLIDER_TRACK_MAX_WIDTH_PX = 520
+_SLIDER_TRACK_WIDTH_RATIO = 0.6
 
 
 def _common_prefix(strings: list[str]) -> str:
@@ -81,6 +88,14 @@ class DevConsoleOverlay(TextOverlay):
         self._filter_selected: int = 0
         self._filter_scroll: int = 0
 
+        # Slider state for ranged writable live variables.
+        self._slider_var: LiveVariable | None = None
+        self._slider_dragging: bool = False
+        self._slider_track_rect: tuple[int, int, int, int] | None = None
+        self._slider_track_y_center: int | None = None
+        self._slider_tile_h: int = 0
+        self._slider_last_value: float | None = None
+
         self.is_interactive = True
 
     # ------------------------------------------------------------------
@@ -94,6 +109,28 @@ class DevConsoleOverlay(TextOverlay):
         self.history_index = -1
         self._saved_input = ""
         self._scroll_offset = 0
+
+    def _format_live_value(self, var: LiveVariable, value: object) -> str:
+        """Format a variable value for display across console and slider UI."""
+        if var.formatter is not None:
+            return var.formatter(value)
+        # Default display style keeps numeric readouts compact for interactive
+        # tweaking while preserving precise custom formats when provided.
+        if isinstance(value, bool):
+            return repr(value)
+        if isinstance(value, int):
+            return str(value)
+        if isinstance(value, float):
+            decimals = var.display_decimals if var.display_decimals is not None else 3
+            decimals = max(0, decimals)
+            formatted = f"{value:.{decimals}f}"
+            # Explicit display_decimals means fixed precision formatting.
+            if var.display_decimals is not None:
+                return formatted
+            if "." in formatted:
+                formatted = formatted.rstrip("0").rstrip(".")
+            return formatted
+        return repr(value)
 
     def _handle_tab_completion(self, *, reverse: bool = False) -> None:
         """Perform or cycle tab completion for variable names.
@@ -175,7 +212,7 @@ class DevConsoleOverlay(TextOverlay):
             "list <p>": "List variables matching pattern <p> (substring).",
             "list vars": "List only settable variables.",
             "list metrics": "List only metrics.",
-            "<var>": "Print the current value of a variable.",
+            "<var>": "Print the current value of a variable (opens slider if ranged).",
             "<var> = <val>": "Set the value of a variable.",
             "set <var> <val>": "Set the value of a variable.",
             "get <var>": "Get the current value of a variable.",
@@ -237,6 +274,90 @@ class DevConsoleOverlay(TextOverlay):
         else:
             self._filter_selected = 0
 
+    def _activate_slider(self, var: LiveVariable) -> None:
+        """Activate the slider for ``var`` if it supports slider control."""
+        if not var.supports_slider():
+            return
+
+        self._slider_var = var
+        self._slider_dragging = False
+        self._slider_last_value = None
+        self.invalidate()
+
+    def _print_or_activate_slider(self, var: LiveVariable) -> None:
+        """Print the value for normal vars or activate slider for ranged vars."""
+        if var.supports_slider():
+            self._activate_slider(var)
+            return
+        self.history.append(
+            f"{var.name} = {self._format_live_value(var, var.get_value())}"
+        )
+
+    def _clear_slider(self) -> None:
+        """Clear active slider state and drag interaction state."""
+        had_slider = self._slider_var is not None
+        self._slider_var = None
+        self._slider_dragging = False
+        self._slider_track_rect = None
+        self._slider_track_y_center = None
+        self._slider_tile_h = 0
+        self._slider_last_value = None
+        if had_slider:
+            self.invalidate()
+
+    def _get_slider_numeric_value(self) -> float | None:
+        """Return the active slider variable's value as ``float`` if possible."""
+        if self._slider_var is None:
+            return None
+        value = self._slider_var.get_value()
+        return self._coerce_slider_numeric_value(value)
+
+    def _coerce_slider_numeric_value(self, value: object) -> float | None:
+        """Convert a candidate slider value to float when possible."""
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, int | float):
+            return float(value)
+        if isinstance(value, str):
+            try:
+                return float(value)
+            except ValueError:
+                return None
+        return None
+
+    def _hit_test_slider(self, px_x: float, px_y: float) -> bool:
+        """Return ``True`` when a pixel coordinate is inside the slider row."""
+        if self._slider_var is None or self._slider_track_y_center is None:
+            return False
+        if self._slider_tile_h <= 0:
+            return False
+        row_y = self._slider_track_y_center - (self._slider_tile_h / 2)
+        return (
+            0 <= px_x < self.pixel_width and row_y <= px_y < row_y + self._slider_tile_h
+        )
+
+    def _apply_slider_from_pixel(self, px_x: float) -> None:
+        """Map ``px_x`` to slider value and apply it to the active variable."""
+        var = self._slider_var
+        rect = self._slider_track_rect
+        if var is None or rect is None or var.value_range is None:
+            return
+
+        track_x, _track_y, track_w, _track_h = rect
+        if track_w <= 0:
+            return
+
+        lo, hi = var.value_range
+        if hi <= lo:
+            value = lo
+        else:
+            normalized = (px_x - track_x) / track_w
+            normalized = max(0.0, min(1.0, normalized))
+            value = lo + normalized * (hi - lo)
+
+        var.set_value(value)
+        self._slider_last_value = float(value)
+
     # ------------------------------------------------------------------
     # Overlay interface
     # ------------------------------------------------------------------
@@ -258,6 +379,11 @@ class DevConsoleOverlay(TextOverlay):
         self.pixel_height = self.height * self.tile_dimensions[1] + _descender_pad
         self.x_tiles = 0
         self.y_tiles = 0
+
+    def hide(self) -> None:
+        """Hide the console and stop any in-progress slider drag."""
+        super().hide()
+        self._slider_dragging = False
 
     def draw_content(self) -> None:
         assert self.canvas is not None
@@ -303,6 +429,17 @@ class DevConsoleOverlay(TextOverlay):
         """Draw the normal command-mode view with history and prompt."""
         assert self.canvas is not None
 
+        bottom_y = prompt_y - tile_h
+        if self._slider_var is not None:
+            # Slider takes two rows: label then track.
+            slider_label_y = prompt_y - (2 * tile_h)
+            self._draw_slider(slider_label_y, tile_h)
+            bottom_y = slider_label_y - tile_h
+        else:
+            self._slider_track_rect = None
+            self._slider_track_y_center = None
+            self._slider_tile_h = 0
+
         history_list = list(self.history)
         visible_end = len(history_list) - self._scroll_offset
 
@@ -310,7 +447,6 @@ class DevConsoleOverlay(TextOverlay):
         # Top row (y=0) is reserved when there are clipped lines above.
         # Bottom history row (prompt_y - tile_h) is reserved when scrolled up.
         top_limit = tile_h  # always reserve top row for potential indicator
-        bottom_y = prompt_y - tile_h
         if self._scroll_offset > 0:
             bottom_y -= tile_h  # reserve a row for the "below" indicator
 
@@ -327,8 +463,11 @@ class DevConsoleOverlay(TextOverlay):
             self.canvas.draw_text(0, 0, "  [Shift+Up to scroll]", _TAG_COLOR)
 
         if self._scroll_offset > 0:
+            indicator_y = prompt_y - tile_h
+            if self._slider_var is not None:
+                indicator_y -= 2 * tile_h
             self.canvas.draw_text(
-                0, prompt_y - tile_h, "  [Shift+Down to scroll]", _TAG_COLOR
+                0, indicator_y, "  [Shift+Down to scroll]", _TAG_COLOR
             )
 
         prompt = f"> {self.input_buffer}"
@@ -338,9 +477,71 @@ class DevConsoleOverlay(TextOverlay):
             _ascent, _ = self.canvas.get_font_metrics()
             self.canvas.draw_text(cursor_x, prompt_y, "|", colors.WHITE)
 
+    def _draw_slider(self, row_y: int, tile_h: int) -> None:
+        """Draw the current slider row and update hit-test geometry."""
+        assert self.canvas is not None
+
+        var = self._slider_var
+        if var is None or var.value_range is None:
+            self._slider_track_rect = None
+            self._slider_track_y_center = None
+            self._slider_tile_h = 0
+            return
+
+        lo, hi = var.value_range
+        # Read once so expensive getters do not run twice per draw.
+        raw_value = var.get_value()
+        current_value = self._coerce_slider_numeric_value(raw_value)
+        if current_value is None:
+            self._slider_track_rect = None
+            self._slider_track_y_center = None
+            self._slider_tile_h = 0
+            return
+
+        ratio = (current_value - lo) / (hi - lo) if hi > lo else 0.0
+        ratio = max(0.0, min(1.0, ratio))
+
+        label = f"{var.name} = {self._format_live_value(var, raw_value)}"
+        track_row_y = row_y + tile_h
+        track_x = _SLIDER_TRACK_PADDING_PX
+        desired_track_w = int(self.pixel_width * _SLIDER_TRACK_WIDTH_RATIO)
+        base_track_w = max(
+            _SLIDER_TRACK_MIN_WIDTH_PX,
+            min(_SLIDER_TRACK_MAX_WIDTH_PX, desired_track_w),
+        )
+        available_w = self.pixel_width - (_SLIDER_TRACK_PADDING_PX * 2)
+        track_w = max(8, min(base_track_w, available_w))
+        track_h = max(4, tile_h // 4)
+        track_y = track_row_y + (tile_h - track_h) // 2
+
+        fill_w = int(track_w * ratio)
+        thumb_size = max(8, min(tile_h - 2, 12))
+        thumb_center_x = track_x + int((track_w - 1) * ratio)
+        thumb_x = round(thumb_center_x - (thumb_size / 2))
+        thumb_x = max(track_x, min(track_x + track_w - thumb_size, thumb_x))
+        thumb_y = track_row_y + (tile_h - thumb_size) // 2
+
+        self.canvas.draw_text(0, row_y, label, colors.WHITE)
+        self.canvas.draw_rect(
+            track_x, track_y, track_w, track_h, _SLIDER_TRACK_COLOR, True
+        )
+        self.canvas.draw_rect(
+            track_x, track_y, fill_w, track_h, _SLIDER_FILL_COLOR, True
+        )
+        self.canvas.draw_rect(
+            thumb_x, thumb_y, thumb_size, thumb_size, _SLIDER_THUMB_COLOR, True
+        )
+
+        self._slider_track_rect = (track_x, track_y, track_w, track_h)
+        self._slider_track_y_center = track_row_y + (tile_h // 2)
+        self._slider_tile_h = tile_h
+
     def _draw_filter_mode(self, tile_h: int, prompt_y: int) -> None:
         """Draw the interactive filter-mode view with a scrollable variable list."""
         assert self.canvas is not None
+        self._slider_track_rect = None
+        self._slider_track_y_center = None
+        self._slider_tile_h = 0
 
         # Available rows for displaying results (above the prompt line).
         visible_rows = max(1, (prompt_y // tile_h) - 1)
@@ -396,6 +597,14 @@ class DevConsoleOverlay(TextOverlay):
         """Update cursor blink state and draw when needed."""
         if not self.is_active:
             return
+
+        if self._slider_var is not None and not self._filter_mode:
+            slider_value = self._get_slider_numeric_value()
+            if self._slider_dragging:
+                self.invalidate()
+            elif slider_value is not None and slider_value != self._slider_last_value:
+                self._slider_last_value = slider_value
+                self.invalidate()
 
         now = time.perf_counter()
         if now - self._last_blink_time >= 0.5:
@@ -464,6 +673,34 @@ class DevConsoleOverlay(TextOverlay):
                     self.input_buffer += text
                 self._reset_input_state()
                 return True
+            case input_events.MouseButtonDown(
+                button=input_events.MouseButton.LEFT, position=position
+            ):
+                if self._hit_test_slider(position.x, position.y):
+                    rect = self._slider_track_rect
+                    if rect is not None:
+                        track_x, _track_y, track_w, _track_h = rect
+                        if track_x <= position.x <= track_x + track_w:
+                            self._slider_dragging = True
+                            self._apply_slider_from_pixel(position.x)
+                            self.invalidate()
+                # Consume mouse while console is active to avoid leaking to gameplay.
+                return True
+            case input_events.MouseMotion(position=position):
+                if self._slider_dragging:
+                    self._apply_slider_from_pixel(position.x)
+                    self.invalidate()
+                return True
+            case input_events.MouseButtonUp(button=input_events.MouseButton.LEFT):
+                self._slider_dragging = False
+                return True
+            case (
+                input_events.MouseButtonDown()
+                | input_events.MouseButtonUp()
+                | input_events.MouseWheel()
+            ):
+                # Consume all mouse input while console is active.
+                return True
             case input_events.KeyDown(sym=sym, mod=mod):
                 # Ctrl+L enters filter mode.
                 if (mod & input_events.Modifier.CTRL) and sym.value == ord("l"):
@@ -522,6 +759,14 @@ class DevConsoleOverlay(TextOverlay):
             case input_events.KeyDown():
                 # Consume all keyboard input while filter mode is active.
                 return True
+            case (
+                input_events.MouseButtonDown()
+                | input_events.MouseButtonUp()
+                | input_events.MouseMotion()
+                | input_events.MouseWheel()
+            ):
+                # Consume all mouse input while console is active.
+                return True
         return False
 
     # ------------------------------------------------------------------
@@ -532,6 +777,9 @@ class DevConsoleOverlay(TextOverlay):
         command = self.input_buffer.strip()
         if not command:
             return
+        # A newly submitted command dismisses any active slider, then command
+        # handlers may reactivate it for a ranged variable.
+        self._clear_slider()
 
         parts = command.split()
         cmd = parts[0].lower()
@@ -552,7 +800,7 @@ class DevConsoleOverlay(TextOverlay):
                 if var is None:
                     self.history.append(f"Variable '{name}' not found.")
                 else:
-                    self.history.append(f"{var.name} = {var.get_value()!r}")
+                    self._print_or_activate_slider(var)
             case "toggle":
                 if len(parts) < 2:
                     self.history.append("Usage: toggle <var>")
@@ -688,7 +936,7 @@ class DevConsoleOverlay(TextOverlay):
         stripped = command.strip()
         var = live_variable_registry.get_variable(stripped)
         if var is not None:
-            self.history.append(f"{var.name} = {var.get_value()!r}")
+            self._print_or_activate_slider(var)
             return
 
         # Prefix pattern: "sun.*" or "sun." prints all matching values.
@@ -700,8 +948,13 @@ class DevConsoleOverlay(TextOverlay):
                 if v.name.startswith(prefix)
             ]
             if matched:
-                for v in matched:
-                    self.history.append(f"{v.name} = {v.get_value()!r}")
+                if len(matched) == 1:
+                    self._print_or_activate_slider(matched[0])
+                else:
+                    for v in matched:
+                        self.history.append(
+                            f"{v.name} = {self._format_live_value(v, v.get_value())}"
+                        )
                 return
 
         self.history.append(f"Unknown command: '{cmd}'")
@@ -722,6 +975,6 @@ class DevConsoleOverlay(TextOverlay):
         current = var.get_value()
         value = string_to_type(value_str, type(current))
         if var.set_value(value):
-            self.history.append(f"{name} = {value!r}")
+            self._print_or_activate_slider(var)
         else:
             self.history.append(f"Variable '{name}' is read-only.")

@@ -66,6 +66,44 @@ def test_live_variable_read_only() -> None:
     assert var.get_value() == 3
 
 
+def test_supports_slider() -> None:
+    store: dict[str, float] = {"value": 1.0}
+    writable_with_range = LiveVariable(
+        name="slider.ok",
+        description="",
+        getter=lambda: store["value"],
+        setter=lambda v: store.__setitem__("value", float(v)),
+        value_range=(0.0, 2.0),
+    )
+    assert writable_with_range.supports_slider() is True
+
+    read_only = LiveVariable(
+        name="slider.ro",
+        description="",
+        getter=lambda: store["value"],
+        value_range=(0.0, 2.0),
+    )
+    assert read_only.supports_slider() is False
+
+    no_range = LiveVariable(
+        name="slider.norange",
+        description="",
+        getter=lambda: store["value"],
+        setter=lambda v: store.__setitem__("value", float(v)),
+    )
+    assert no_range.supports_slider() is False
+
+    metric_var = LiveVariable(
+        name="slider.metric",
+        description="",
+        getter=lambda: store["value"],
+        setter=lambda v: store.__setitem__("value", float(v)),
+        value_range=(0.0, 2.0),
+        metric=True,
+    )
+    assert metric_var.supports_slider() is False
+
+
 def test_resource_cache_registers_stats_variable() -> None:
     ResourceCache("TestCache")
     var = live_variable_registry.get_variable("cache.TestCache.stats")

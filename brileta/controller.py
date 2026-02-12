@@ -53,6 +53,7 @@ from .view.ui.overlays import OverlaySystem
 
 logger = logging.getLogger(__name__)
 
+
 # Controller-level metrics.
 _CONTROLLER_METRICS: list[MetricSpec] = [
     MetricSpec("time.logic_ms", "One fixed logic step", 500),
@@ -195,12 +196,16 @@ class Controller:
             getter=lambda: sun.azimuth_degrees if (sun := self._get_sun()) else 0.0,
             setter=lambda v: self._set_sun_angle(azimuth=v),
             description="Sun direction in degrees (0=N, 90=E, 180=S, 270=W).",
+            display_decimals=1,
+            value_range=(0.0, 360.0),
         )
         live_variable_registry.register(
             "sun.elevation",
             getter=lambda: sun.elevation_degrees if (sun := self._get_sun()) else 0.0,
             setter=lambda v: self._set_sun_angle(elevation=v),
             description="Sun elevation above horizon in degrees (0-90).",
+            display_decimals=1,
+            value_range=(0.0, 90.0),
         )
 
         # ---- AI Debug Overlay ----
