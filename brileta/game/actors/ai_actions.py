@@ -31,12 +31,15 @@ _PATROL_RADIUS = 6
 # How many candidate waypoints to pick for a patrol route.
 _PATROL_WAYPOINT_COUNT = 3
 
-# Wander segment tuning: heading is kept for a random budget of steps, then
-# repicked. Blocked movement can force earlier heading resets.
-_WANDER_MIN_SEGMENT_STEPS = 4
-_WANDER_MAX_SEGMENT_STEPS = 12
+# Wander tuning: sustained stroll with occasional pauses and direction changes.
 _WANDER_MAX_STUCK_TURNS = 2
 _WANDER_HEADING_JITTER_CHANCE = 0.15
+_WANDER_PAUSE_CHANCE = 0.20
+_WANDER_MIN_LINGER_TURNS = 2
+_WANDER_MAX_LINGER_TURNS = 6
+_WANDER_NEW_HEADING_CHANCE = 0.05
+_WANDER_SPEED_MIN = 0.60
+_WANDER_SPEED_MAX = 0.90
 
 
 # ---------------------------------------------------------------------------
@@ -246,7 +249,7 @@ class IdleAction(UtilityAction):
 
 
 class WanderAction(UtilityAction):
-    """Create/continue a wandering route goal when no threat is present."""
+    """Create/continue a strolling wander goal when no threat is present."""
 
     def __init__(
         self,
@@ -269,16 +272,21 @@ class WanderAction(UtilityAction):
     def get_intent_with_goal(
         self, context: UtilityContext, actor: NPC
     ) -> GameIntent | None:
-        """Create a heading-driven WanderGoal and return the first move intent."""
+        """Create a stroll-style WanderGoal and return the first intent."""
         from brileta.game.actors.goals import WanderGoal
 
         goal = WanderGoal(
-            minimum_segment_steps=_WANDER_MIN_SEGMENT_STEPS,
-            maximum_segment_steps=_WANDER_MAX_SEGMENT_STEPS,
+            pause_chance=_WANDER_PAUSE_CHANCE,
+            minimum_linger_turns=_WANDER_MIN_LINGER_TURNS,
+            maximum_linger_turns=_WANDER_MAX_LINGER_TURNS,
+            new_heading_chance=_WANDER_NEW_HEADING_CHANCE,
             max_stuck_turns=_WANDER_MAX_STUCK_TURNS,
             heading_jitter_chance=_WANDER_HEADING_JITTER_CHANCE,
+            speed_min_multiplier=_WANDER_SPEED_MIN,
+            speed_max_multiplier=_WANDER_SPEED_MAX,
         )
         actor.current_goal = goal
+        goal.apply_wander_speed(actor)
         goal.tick()
         intent = goal.get_next_action(actor, context.controller)
 

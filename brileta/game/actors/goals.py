@@ -27,7 +27,7 @@ Key classes:
     FleeGoal: Flee from a threat to a safe distance, then reassess.
     WaypointRouteGoal: Shared core for route-following waypoint goals.
     PatrolGoal: Cycle between fixed waypoints.
-    WanderGoal: Wander via heading + step-budget segments with stuck recovery.
+    WanderGoal: Continuous stroll with heading drift, pauses, and stuck recovery.
 """
 
 from __future__ import annotations
@@ -96,8 +96,28 @@ class Goal(abc.ABC):
 
     def __init__(self, goal_id: str) -> None:
         self.goal_id = goal_id
-        self.state = GoalState.ACTIVE
+        self._state = GoalState.ACTIVE
         self._ticks_active: int = 0
+
+    @property
+    def state(self) -> GoalState:
+        """Current lifecycle state for this goal."""
+        return self._state
+
+    @state.setter
+    def state(self, new_state: GoalState) -> None:
+        """Set lifecycle state and run subclass transition hooks."""
+        previous_state = self._state
+        self._state = new_state
+        if previous_state is not new_state:
+            self._on_state_changed(previous_state, new_state)
+
+    def _on_state_changed(
+        self, previous_state: GoalState, new_state: GoalState
+    ) -> None:
+        """Hook for subclasses that need state-transition cleanup."""
+        _ = previous_state, new_state
+        return
 
     @property
     def progress(self) -> float:
@@ -474,12 +494,11 @@ class PatrolGoal(WaypointRouteGoal):
 
 
 class WanderGoal(Goal):
-    """Wander using heading segments instead of precomputed waypoint routes.
+    """Wander with a continuous strolling model.
 
-    The goal picks a heading and a random step budget ``N`` for that segment.
-    Each tick it tries to move forward; if blocked it attempts sidesteps and
-    shallow turns. When the budget is exhausted or the actor is repeatedly
-    stuck, it repicks heading + budget.
+    Rather than finite step-budget segments, this goal keeps a heading over
+    time and occasionally pauses, drifts, or repicks direction. Movement still
+    uses the same directional fallback logic (forward -> sidestep -> turns).
     """
 
     _DIRECTIONS: tuple[Direction, ...] = (
@@ -496,17 +515,27 @@ class WanderGoal(Goal):
     def __init__(
         self,
         *,
-        minimum_segment_steps: int = 4,
-        maximum_segment_steps: int = 12,
+        pause_chance: float = 0.20,
+        minimum_linger_turns: int = 1,
+        maximum_linger_turns: int = 3,
+        new_heading_chance: float = 0.05,
         max_stuck_turns: int = 2,
         heading_jitter_chance: float = 0.15,
+        speed_min_multiplier: float = 0.60,
+        speed_max_multiplier: float = 0.90,
     ) -> None:
         super().__init__(goal_id="wander")
-        if minimum_segment_steps <= 0:
-            msg = "minimum_segment_steps must be positive"
+        if not 0.0 <= pause_chance <= 1.0:
+            msg = "pause_chance must be in [0.0, 1.0]"
             raise ValueError(msg)
-        if maximum_segment_steps < minimum_segment_steps:
-            msg = "maximum_segment_steps must be >= minimum_segment_steps"
+        if minimum_linger_turns <= 0:
+            msg = "minimum_linger_turns must be positive"
+            raise ValueError(msg)
+        if maximum_linger_turns < minimum_linger_turns:
+            msg = "maximum_linger_turns must be >= minimum_linger_turns"
+            raise ValueError(msg)
+        if not 0.0 <= new_heading_chance <= 1.0:
+            msg = "new_heading_chance must be in [0.0, 1.0]"
             raise ValueError(msg)
         if max_stuck_turns <= 0:
             msg = "max_stuck_turns must be positive"
@@ -514,18 +543,29 @@ class WanderGoal(Goal):
         if not 0.0 <= heading_jitter_chance <= 1.0:
             msg = "heading_jitter_chance must be in [0.0, 1.0]"
             raise ValueError(msg)
+        if speed_min_multiplier <= 0.0:
+            msg = "speed_min_multiplier must be positive"
+            raise ValueError(msg)
+        if speed_max_multiplier < speed_min_multiplier:
+            msg = "speed_max_multiplier must be >= speed_min_multiplier"
+            raise ValueError(msg)
 
-        self._minimum_segment_steps = minimum_segment_steps
-        self._maximum_segment_steps = maximum_segment_steps
+        self._pause_chance = pause_chance
+        self._minimum_linger_turns = minimum_linger_turns
+        self._maximum_linger_turns = maximum_linger_turns
+        self._new_heading_chance = new_heading_chance
         self._max_stuck_turns = max_stuck_turns
         self._heading_jitter_chance = heading_jitter_chance
 
         self._heading: Direction | None = None
-        self._segment_length: int = 0
-        self._steps_remaining: int = 0
-        self._segment_steps_taken: int = 0
+        self._linger_remaining: int = 0
         self._stuck_turns: int = 0
         self._last_attempt_origin: WorldTilePos | None = None
+        self._speed_multiplier = _rng.uniform(
+            speed_min_multiplier, speed_max_multiplier
+        )
+        self._original_speed: int | None = None
+        self._actor_ref: NPC | None = None
 
     def get_base_score(self) -> float:
         return 0.18
@@ -545,14 +585,43 @@ class WanderGoal(Goal):
 
     @property
     def progress(self) -> float:
-        """Progress through the current heading segment."""
-        if self._segment_length <= 0:
-            return 0.0
-        return min(1.0, self._segment_steps_taken / self._segment_length)
+        """Wander is open-ended; return a moderate persistence signal."""
+        return 0.35
 
     def evaluate_completion(self, npc: NPC, controller: Controller) -> None:
         """Wander is open-ended and does not auto-complete."""
         return
+
+    def _on_state_changed(
+        self, previous_state: GoalState, new_state: GoalState
+    ) -> None:
+        """Restore actor speed whenever wander enters a terminal state."""
+        _ = previous_state
+        if new_state in (
+            GoalState.COMPLETED,
+            GoalState.FAILED,
+            GoalState.ABANDONED,
+        ):
+            self._restore_speed()
+
+    def apply_wander_speed(self, actor: NPC) -> None:
+        """Apply wander speed once and cache original speed for restoration."""
+        if self._original_speed is not None:
+            return
+        self._actor_ref = actor
+        self._original_speed = actor.energy.speed
+        actor.energy.speed = max(
+            1,
+            round(self._original_speed * self._speed_multiplier),
+        )
+
+    def _restore_speed(self) -> None:
+        """Restore original actor speed if it was modified by wander."""
+        if self._actor_ref is None or self._original_speed is None:
+            return
+        self._actor_ref.energy.speed = self._original_speed
+        self._actor_ref = None
+        self._original_speed = None
 
     @classmethod
     def _rotate_heading(cls, heading: Direction, offset: int) -> Direction:
@@ -608,29 +677,6 @@ class WanderGoal(Goal):
         if not pool:
             return None
         return _rng.choice(pool)
-
-    def _start_new_segment(self, npc: NPC, controller: Controller) -> bool:
-        """Pick a new heading and segment budget.
-
-        Returns:
-            True if a valid segment was started, False otherwise.
-        """
-        heading = self._pick_segment_heading(npc, controller)
-        if heading is None:
-            self._heading = None
-            self._segment_length = 0
-            self._steps_remaining = 0
-            self._segment_steps_taken = 0
-            return False
-
-        self._heading = heading
-        self._segment_length = _rng.randint(
-            self._minimum_segment_steps, self._maximum_segment_steps
-        )
-        self._steps_remaining = self._segment_length
-        self._segment_steps_taken = 0
-        self._stuck_turns = 0
-        return True
 
     def _apply_heading_jitter(self) -> None:
         """Occasionally nudge heading by 45 degrees to avoid straight-line drift."""
@@ -692,7 +738,7 @@ class WanderGoal(Goal):
         return None
 
     def get_next_action(self, npc: NPC, controller: Controller) -> GameIntent | None:
-        """Return a one-step movement intent for the current wander segment."""
+        """Return the next wander step for a continuous stroll."""
         from brileta.game.actions.movement import MoveIntent
 
         # Wander now uses direct step intents, not ActionPlans.
@@ -708,26 +754,38 @@ class WanderGoal(Goal):
                 self._stuck_turns = 0
             self._last_attempt_origin = None
 
-        needs_new_segment = (
-            self._heading is None
-            or self._steps_remaining <= 0
-            or self._stuck_turns >= self._max_stuck_turns
-        )
-        if needs_new_segment and not self._start_new_segment(npc, controller):
+        if self._linger_remaining > 0:
+            self._linger_remaining = max(0, self._linger_remaining - 1)
             return None
+
+        if _rng.random() < self._pause_chance:
+            linger_turns = _rng.randint(
+                self._minimum_linger_turns, self._maximum_linger_turns
+            )
+            # Current tick already pauses; track only remaining linger ticks.
+            self._linger_remaining = max(0, linger_turns - 1)
+            return None
+
+        needs_new_heading = (
+            self._heading is None
+            or self._stuck_turns >= self._max_stuck_turns
+            or _rng.random() < self._new_heading_chance
+        )
+        if needs_new_heading:
+            heading = self._pick_segment_heading(npc, controller)
+            if heading is None:
+                self._heading = None
+                return None
+            self._heading = heading
+            self._stuck_turns = 0
 
         self._apply_heading_jitter()
         step = self._choose_step(npc, controller)
         if step is None:
             self._stuck_turns += 1
-            if self._stuck_turns >= self._max_stuck_turns:
-                self._heading = None
-                self._steps_remaining = 0
             return None
 
         dx, dy = step
         self._heading = (dx, dy)
-        self._steps_remaining = max(0, self._steps_remaining - 1)
-        self._segment_steps_taken += 1
         self._last_attempt_origin = current_pos
         return MoveIntent(controller, npc, dx, dy)
