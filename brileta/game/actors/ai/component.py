@@ -27,7 +27,15 @@ from brileta.util import rng
 from .actions import AttackAction, AvoidAction, IdleAction, WatchAction
 from .behaviors.flee import FleeAction
 from .behaviors.wander import WanderAction
-from .utility import ScoredAction, UtilityAction, UtilityBrain, UtilityContext
+from .perception import PerceivedActor, PerceptionComponent
+from .utility import (
+    ScoredAction,
+    UtilityAction,
+    UtilityBrain,
+    UtilityContext,
+    is_target_nearby,
+    resolve_flee_from,
+)
 
 if TYPE_CHECKING:
     from brileta.controller import Controller
@@ -136,6 +144,7 @@ class AIComponent:
         aggro_radius: int = Combat.DEFAULT_AGGRO_RADIUS,
         default_disposition: int = 0,
         actions: list[UtilityAction] | None = None,
+        perception: PerceptionComponent | None = None,
     ) -> None:
         self.actor: Actor | None = None
         # Per-relationship disposition values keyed by ``target.actor_id``.
@@ -143,6 +152,9 @@ class AIComponent:
         self._dispositions: dict[ActorId, int] = {}
         self.aggro_radius = aggro_radius
         self.default_disposition = default_disposition
+        # Perception gates awareness behind range + LOS checks. When None,
+        # a default PerceptionComponent is created with radius 12.
+        self.perception = perception or PerceptionComponent()
 
         # Combat awareness: identity of the most recent attacker. Allows the
         # NPC to treat that actor as a threat even outside normal aggro range.
@@ -177,6 +189,17 @@ class AIComponent:
             ]
 
         self.brain = UtilityBrain(brain_actions)
+        # Some archetypes (e.g., skittish/predator) react to nearby actors
+        # regardless of hostility. Those profiles need a non-hostile
+        # proximity fallback target so target_proximity can be evaluated.
+        self._uses_proximity_targeting = any(
+            any(pre is is_target_nearby for pre in action.preconditions)
+            or any(
+                consideration.input_key == "target_proximity"
+                for consideration in action.considerations
+            )
+            for action in brain_actions
+        )
 
     def update(self, controller: Controller) -> None:
         """Update per-turn AI state.
@@ -246,8 +269,12 @@ class AIComponent:
 
         context = self._build_context(controller, actor, force_hostile=force_hostile)
         self.last_threat_level = context.threat_level
-        self.last_target_actor_id = context.target.actor_id
-        if not context.actor.health.is_alive() or not context.target.health.is_alive():
+        self.last_target_actor_id = (
+            context.target.actor_id if context.target is not None else None
+        )
+        if not context.actor.health.is_alive():
+            return None
+        if context.target is not None and not context.target.health.is_alive():
             return None
 
         # Score all actions including "continue current goal"
@@ -369,50 +396,56 @@ class AIComponent:
     ) -> UtilityContext:
         """Build the utility evaluation context for this tick.
 
+        Three independent queries feed into context construction:
+        1. Target selection - who is this NPC focused on? (may be None)
+        2. Outgoing threat - how dangerous is the target to me?
+        3. Incoming threat - is anything hostile approaching me?
+
         Args:
             controller: Game controller with access to world state.
             actor: NPC being evaluated.
             force_hostile: When True, override disposition to -100.
         """
-        target_actor = self._select_target_actor(controller, actor)
-        distance = ranges.calculate_distance(
-            actor.x, actor.y, target_actor.x, target_actor.y
+        # Shared perception snapshot for this tick. Target selection and
+        # incoming-threat scans both consume the same actor list so we only
+        # pay range/LOS cost once per NPC decision.
+        perceived = self._get_perceived_actors(controller, actor)
+
+        # 1. Target selection and outgoing threat signals.
+        target_actor = self._select_target_actor(
+            controller,
+            actor,
+            perceived=perceived,
+            allow_proximity_fallback=self._uses_proximity_targeting,
         )
+        distance, threat_level, target_proximity, effective_disposition = (
+            self._compute_outgoing_threat(
+                controller, actor, target_actor, force_hostile
+            )
+        )
+
+        # 2. Incoming threat: scans all perceived actors for hostility toward
+        # this NPC. Independent of target - a neutral NPC can detect an
+        # approaching predator even with no outgoing-threat target.
+        incoming_threat, threat_source = self._compute_incoming_threat(
+            controller, actor, perceived=perceived
+        )
+
+        # 3. Tactical decisions that depend on the above.
         health_percent = (
             actor.health.hp / actor.health.max_hp if actor.health.max_hp > 0 else 0.0
         )
-
-        # Disposition for context: force_hostile overrides to -100
-        effective_disposition = (
-            -100 if force_hostile else self.disposition_toward(target_actor)
+        flee_from = resolve_flee_from(target_actor, threat_level, threat_source)
+        best_attack_destination = (
+            self._select_attack_destination(controller, actor, target_actor)
+            if target_actor is not None
+            else None
         )
-
-        threat_level = 0.0
-        target_proximity = 0.0
-        if self.aggro_radius > 0:
-            target_proximity = max(0.0, 1.0 - distance / self.aggro_radius)
-
-        if target_actor.health.is_alive():
-            threat_level = self._compute_relationship_threat(
-                distance=distance, disposition=effective_disposition
-            )
-
-        # Combat awareness: if the target is a known attacker outside normal
-        # aggro range, compute an extended threat using
-        # _COMBAT_AWARENESS_RADIUS as the effective radius.
-        if (
-            threat_level == 0.0
-            and self._last_attacker_id == target_actor.actor_id
-            and distance < _COMBAT_AWARENESS_RADIUS
-        ):
-            proximity = 1.0 - (distance / _COMBAT_AWARENESS_RADIUS)
-            hostility = max(0.0, min(1.0, -effective_disposition / 50.0))
-            threat_level = proximity * hostility
-
-        best_attack_destination = self._select_attack_destination(
-            controller, actor, target_actor
+        best_flee_step = (
+            self._select_flee_step(controller, actor, flee_from)
+            if flee_from is not None
+            else None
         )
-        best_flee_step = self._select_flee_step(controller, actor, target_actor)
 
         return UtilityContext(
             controller=controller,
@@ -421,13 +454,59 @@ class AIComponent:
             distance_to_target=distance,
             health_percent=health_percent,
             threat_level=threat_level,
-            can_attack=distance == 1,
+            can_attack=target_actor is not None and distance == 1,
             has_escape_route=best_flee_step is not None,
             best_attack_destination=best_attack_destination,
             best_flee_step=best_flee_step,
+            threat_source=threat_source,
+            flee_from=flee_from,
             disposition=disposition_to_normalized(effective_disposition),
             target_proximity=target_proximity,
+            incoming_threat=incoming_threat,
         )
+
+    def _compute_outgoing_threat(
+        self,
+        controller: Controller,
+        actor: NPC,
+        target: Character | None,
+        force_hostile: bool,
+    ) -> tuple[int, float, float, int]:
+        """Compute outgoing threat signals toward a specific target.
+
+        Returns (distance, threat_level, target_proximity, effective_disposition).
+        When target is None, returns safe defaults indicating no threat.
+        """
+        if target is None:
+            return 0, 0.0, 0.0, 0
+
+        distance = ranges.calculate_distance(actor.x, actor.y, target.x, target.y)
+        effective_disposition = (
+            -100 if force_hostile else self.disposition_toward(target)
+        )
+
+        target_proximity = 0.0
+        if self.aggro_radius > 0:
+            target_proximity = max(0.0, 1.0 - distance / self.aggro_radius)
+
+        threat_level = 0.0
+        if target.health.is_alive():
+            threat_level = self._compute_relationship_threat(
+                distance=distance, disposition=effective_disposition
+            )
+
+        # Combat awareness: if the target is a known attacker outside normal
+        # aggro range, compute an extended threat.
+        if (
+            threat_level == 0.0
+            and self._last_attacker_id == target.actor_id
+            and distance < _COMBAT_AWARENESS_RADIUS
+        ):
+            proximity = 1.0 - (distance / _COMBAT_AWARENESS_RADIUS)
+            hostility = max(0.0, min(1.0, -effective_disposition / 50.0))
+            threat_level = proximity * hostility
+
+        return distance, threat_level, target_proximity, effective_disposition
 
     def _compute_relationship_threat(self, distance: int, disposition: int) -> float:
         """Compute threat from proximity and relationship hostility."""
@@ -442,52 +521,122 @@ class AIComponent:
         hostility_signal = max(0.0, min(1.0, -disposition / 50.0))
         return proximity_signal * hostility_signal
 
-    def _select_target_actor(self, controller: Controller, actor: NPC) -> Character:
-        """Select the most threatening relationship target for this tick.
+    def _compute_incoming_threat(
+        self,
+        controller: Controller,
+        actor: NPC,
+        *,
+        perceived: list[PerceivedActor] | None = None,
+    ) -> tuple[float, Character | None]:
+        """Compute the strongest incoming danger this NPC perceives.
 
-        Prefers living characters with non-zero relationship threat
-        (proximity * hostility), which allows NPC-vs-NPC interactions when
-        dispositions warrant it. Falls back to the player, then nearest living
-        character, so context construction always has a concrete target.
+        Scans ALL perceived actors to find any that are hostile toward this
+        NPC (via their AI disposition). Returns the highest threat signal
+        found (hostility * perception_strength) and the actor producing it.
+
+        This is the "I can see something hostile approaching me" signal. It
+        is separate from threat_level, which measures our own hostility toward
+        a specific target. A neutral resident can have zero threat_level
+        toward a scorpion while still perceiving high incoming_threat from it.
         """
-        from brileta.game.actors.core import Character
+        if perceived is None:
+            perceived = self._get_perceived_actors(controller, actor)
+        max_threat = 0.0
+        source: Character | None = None
 
+        for p in perceived:
+            other_ai = getattr(p.actor, "ai", None)
+            if other_ai is None:
+                continue
+
+            # Check the other actor's disposition toward this NPC.
+            their_disposition = other_ai.disposition_toward(actor)
+            if their_disposition >= 0:
+                continue  # Neutral or friendly toward us.
+
+            if p.perception_strength <= 0.0:
+                continue
+
+            # Hostility signal: maps disposition [-100, 0] to [1.0, 0.0].
+            hostility = min(1.0, -their_disposition / 100.0)
+            threat = hostility * p.perception_strength
+            if threat > max_threat:
+                max_threat = threat
+                source = p.actor
+
+        return max_threat, source
+
+    def _get_perceived_actors(
+        self, controller: Controller, actor: NPC
+    ) -> list[PerceivedActor]:
+        """Return actors this NPC can currently perceive.
+
+        Uses the spatial index for candidate collection, then filters
+        through the PerceptionComponent's range + LOS checks.
+        """
+        # Query a radius large enough to cover perception awareness.
+        radius = self.perception.awareness_radius
+        nearby = controller.gw.actor_spatial_index.get_in_radius(
+            actor.x, actor.y, radius
+        )
+        return self.perception.get_perceived_actors(
+            actor, controller.gw.game_map, nearby
+        )
+
+    def _select_target_actor(
+        self,
+        controller: Controller,
+        actor: NPC,
+        *,
+        perceived: list[PerceivedActor] | None = None,
+        allow_proximity_fallback: bool = False,
+    ) -> Character | None:
+        """Select the most threatening perceived target for this tick.
+
+        Only actors that pass the perception filter (range + LOS) are
+        considered as threat candidates. This means NPCs cannot target
+        actors they cannot actually detect.
+
+        Returns None when no threat is perceived and no combat awareness
+        exists, unless allow_proximity_fallback is True and at least one
+        actor is perceived. Proximity fallback is used by behavior profiles
+        that score on raw nearness rather than hostility.
+        """
         best_target: Character | None = None
         best_threat = -1.0
         best_distance = float("inf")
         best_disposition = 101
 
-        nearby_actors = controller.gw.actor_spatial_index.get_in_radius(
-            actor.x, actor.y, self.aggro_radius
-        )
-        for other in nearby_actors:
-            if other is actor or not isinstance(other, Character):
-                continue
-            if not other.health.is_alive():
-                continue
-            distance = ranges.calculate_distance(actor.x, actor.y, other.x, other.y)
+        # Only consider actors that pass perception checks (range + LOS).
+        if perceived is None:
+            perceived = self._get_perceived_actors(controller, actor)
+        for p in perceived:
+            other = p.actor
             disposition = self.disposition_toward(other)
-            threat = self._compute_relationship_threat(distance, disposition)
+            threat = self._compute_relationship_threat(p.distance, disposition)
             if threat <= 0.0:
                 continue
             if threat > best_threat or (
                 threat == best_threat
                 and (
-                    distance < best_distance
-                    or (distance == best_distance and disposition < best_disposition)
+                    p.distance < best_distance
+                    or (p.distance == best_distance and disposition < best_disposition)
                 )
             ):
                 best_target = other
                 best_threat = threat
-                best_distance = float(distance)
+                best_distance = float(p.distance)
                 best_disposition = disposition
 
         if best_target is not None:
             return best_target
 
-        # Combat awareness fallback: if no threat within aggro range but the
-        # NPC was recently attacked, target the attacker regardless of distance.
+        # Combat awareness fallback: if no threat within perception range
+        # but the NPC was recently attacked, target the attacker regardless
+        # of distance (they know who hit them).
         if self._last_attacker_id is not None:
+            from brileta.game.actors.core import Character
+
             attacker = controller.gw.get_actor_by_id(self._last_attacker_id)
             if (
                 attacker is not None
@@ -498,25 +647,14 @@ class AIComponent:
             # Attacker is dead or gone - clear awareness.
             self._last_attacker_id = None
 
-        player = controller.gw.player
-        if player is not actor and player.health.is_alive():
-            return player
+        # Proximity fallback: when an archetype uses proximity-only scoring
+        # (e.g., skittish/predator), provide the nearest perceived actor so
+        # target_proximity and is_target_nearby can function without requiring
+        # a hostile relationship.
+        if allow_proximity_fallback and perceived:
+            return perceived[0].actor
 
-        nearest_other: Character | None = None
-        nearest_distance = float("inf")
-        # TODO: Add a broader spatial-index nearest query so this fallback
-        # doesn't scan all actors when no bounded threat exists.
-        for other in controller.gw.actors:
-            if other is actor or not isinstance(other, Character):
-                continue
-            if not other.health.is_alive():
-                continue
-            distance = ranges.calculate_distance(actor.x, actor.y, other.x, other.y)
-            if distance < nearest_distance:
-                nearest_other = other
-                nearest_distance = float(distance)
-
-        return nearest_other if nearest_other is not None else player
+        return None
 
     def _select_attack_destination(
         self, controller: Controller, actor: NPC, target: Character
@@ -590,7 +728,12 @@ class AIComponent:
         actor: NPC,
         target: Character,
     ) -> list[FleeCandidate]:
-        """Enumerate passable adjacent tiles that increase distance to threat."""
+        """Enumerate passable adjacent tiles that don't move toward the threat.
+
+        Prefers tiles that increase distance. If none exist (e.g., against a
+        wall), includes lateral tiles (same distance) so the NPC can slide
+        along obstacles to find an opening.
+        """
         from brileta.environment.tile_types import HAZARD_BASE_COST, get_hazard_cost
         from brileta.util.pathfinding import probe_step
 
@@ -598,7 +741,8 @@ class AIComponent:
         current_distance = ranges.calculate_distance(
             actor.x, actor.y, target.x, target.y
         )
-        candidates: list[FleeCandidate] = []
+        increasing: list[FleeCandidate] = []
+        lateral: list[FleeCandidate] = []
 
         for dx, dy in DIRECTIONS:
             tx = actor.x + dx
@@ -615,8 +759,8 @@ class AIComponent:
                 continue
 
             distance_after = ranges.calculate_distance(tx, ty, target.x, target.y)
-            if distance_after <= current_distance:
-                continue
+            if distance_after < current_distance:
+                continue  # Moving toward threat is never acceptable.
 
             tile_id = int(game_map.tiles[tx, ty])
             hazard_cost = get_hazard_cost(tile_id)
@@ -627,13 +771,15 @@ class AIComponent:
                 hazard_cost = max(hazard_cost, fire_cost)
 
             step_cost = 1 if (dx == 0 or dy == 0) else 2
-            candidates.append(
-                FleeCandidate(
-                    direction=(dx, dy),
-                    distance_after=distance_after,
-                    hazard_score=hazard_cost + step_cost,
-                    step_cost=step_cost,
-                )
+            candidate = FleeCandidate(
+                direction=(dx, dy),
+                distance_after=distance_after,
+                hazard_score=hazard_cost + step_cost,
+                step_cost=step_cost,
             )
+            if distance_after > current_distance:
+                increasing.append(candidate)
+            else:
+                lateral.append(candidate)
 
-        return candidates
+        return increasing or lateral

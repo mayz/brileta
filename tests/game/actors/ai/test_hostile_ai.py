@@ -297,10 +297,13 @@ def test_watch_action_returns_none_for_wary_npc() -> None:
     npc.x = 1
     npc.y = 0
 
-    # Remove avoid options so Watch vs Idle is the relevant decision.
+    # Remove all flee/avoid options (including lateral tiles at same distance)
+    # so Watch vs Idle is the relevant decision.
     gm = controller.gw.game_map
     gm.walkable[2, 0] = False
     gm.walkable[2, 1] = False
+    gm.walkable[1, 1] = False
+    gm.walkable[0, 1] = False
 
     action = npc.ai.get_action(controller, npc)
 
@@ -316,10 +319,12 @@ def test_avoid_action_returns_none_when_cornered() -> None:
     npc.x = 1
     npc.y = 0
 
-    # Block all tiles that would increase distance from player at (0, 0).
+    # Block all tiles that would increase or maintain distance from player.
     gm = controller.gw.game_map
     gm.walkable[2, 0] = False
     gm.walkable[2, 1] = False
+    gm.walkable[1, 1] = False
+    gm.walkable[0, 1] = False
 
     action = npc.ai.get_action(controller, npc)
 

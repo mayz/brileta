@@ -8,11 +8,16 @@ from unittest.mock import MagicMock
 import pytest
 
 from brileta import colors
+from brileta.game.actions.combat import AttackIntent
 from brileta.game.actions.movement import MoveIntent
 from brileta.game.actors import NPC, Character
 from brileta.game.actors.ai.actions import AttackAction
 from brileta.game.actors.ai.behaviors.flee import FleeAction, FleeGoal
-from brileta.game.actors.ai.utility import has_escape_route, is_target_nearby
+from brileta.game.actors.ai.utility import (
+    has_escape_route,
+    is_any_threat_perceived,
+    is_target_nearby,
+)
 from brileta.game.actors.npc_core import NPCType, StatDistribution, compose_actions
 from brileta.game.actors.npc_types import (
     BRIGAND_TYPE,
@@ -65,7 +70,14 @@ def test_brigand_action_pool_contains_combat_and_sapient_actions() -> None:
     npc = BRIGAND_TYPE.create(0, 0, "Brigand")
     action_ids = set(_actions_by_id(npc))
 
-    assert action_ids == {"attack", "flee", "watch", "avoid", "idle", "wander"}
+    assert action_ids == {
+        "attack",
+        "flee",
+        "watch",
+        "avoid",
+        "idle",
+        "wander",
+    }
 
 
 def test_trog_action_pool_is_base_plus_combatant_only() -> None:
@@ -102,10 +114,54 @@ def test_dog_is_skittish_and_never_attacks() -> None:
     flee = actions["flee"]
     assert isinstance(flee, FleeAction)
     assert flee.preconditions == [is_target_nearby, has_escape_route]
-    assert [c.input_key for c in flee.considerations] == [
-        "target_proximity",
-        "has_escape_route",
-    ]
+    assert [c.input_key for c in flee.considerations] == ["target_proximity"]
+
+
+def test_dog_flees_from_nearby_actor_even_when_friendly() -> None:
+    """Skittish dogs should flee on proximity, not hostility."""
+    gw = DummyGameWorld(width=40, height=40)
+    player = Character(
+        5, 5, "@", colors.WHITE, "Player", game_world=cast(GameWorld, gw)
+    )
+    dog = DOG_TYPE.create(6, 5, "Dog", game_world=cast(GameWorld, gw))
+    gw.player = player
+    gw.add_actor(player)
+    gw.add_actor(dog)
+    controller = DummyController(gw)
+
+    # Dog defaults to friendly (+20), so this regression catches missing
+    # proximity fallback when no hostile relationship exists.
+    assert dog.ai.disposition_toward(player) > 0
+    action = dog.ai.get_action(controller, dog)
+
+    assert isinstance(action, MoveIntent)
+    assert isinstance(dog.current_goal, FleeGoal)
+
+
+def test_neutral_predator_attacks_on_proximity() -> None:
+    """Predator tag should work even when default disposition is non-hostile."""
+    neutral_predator = NPCType(
+        id="neutral_predator",
+        tags=("base", "combatant", "predator"),
+        glyph="n",
+        color=colors.TAN,
+        creature_size=CreatureSize.MEDIUM,
+        default_disposition=20,
+        can_open_doors=False,
+    )
+    gw = DummyGameWorld(width=20, height=20)
+    player = Character(
+        5, 5, "@", colors.WHITE, "Player", game_world=cast(GameWorld, gw)
+    )
+    predator = neutral_predator.create(6, 5, "Predator", game_world=cast(GameWorld, gw))
+    gw.player = player
+    gw.add_actor(player)
+    gw.add_actor(predator)
+    controller = DummyController(gw)
+
+    action = predator.ai.get_action(controller, predator)
+
+    assert isinstance(action, AttackIntent)
 
 
 def test_resident_action_pool_is_combatant_sapient_profile() -> None:
@@ -113,7 +169,35 @@ def test_resident_action_pool_is_combatant_sapient_profile() -> None:
     npc = RESIDENT_TYPE.create(0, 0, "Resident")
     action_ids = set(_actions_by_id(npc))
 
-    assert action_ids == {"attack", "flee", "watch", "avoid", "idle", "wander"}
+    assert action_ids == {
+        "attack",
+        "flee",
+        "watch",
+        "avoid",
+        "idle",
+        "wander",
+    }
+
+    flee = _actions_by_id(npc)["flee"]
+    assert isinstance(flee, FleeAction)
+    assert flee.preconditions == [is_any_threat_perceived, has_escape_route]
+    assert [c.input_key for c in flee.considerations] == ["sapient_flee_urgency"]
+
+
+def test_brigand_adjacent_at_full_health_attacks_instead_of_fleeing() -> None:
+    """Hostile sapient combatants should not flee when uninjured."""
+    gw = DummyGameWorld(width=40, height=40)
+    player = Character(
+        5, 5, "@", colors.WHITE, "Player", game_world=cast(GameWorld, gw)
+    )
+    brigand = BRIGAND_TYPE.create(6, 5, "Brigand", game_world=cast(GameWorld, gw))
+    gw.player = player
+    gw.add_actor(player)
+    gw.add_actor(brigand)
+    controller = DummyController(gw)
+
+    action = brigand.ai.get_action(controller, brigand)
+    assert isinstance(action, AttackIntent)
 
 
 def test_resident_flees_when_hostile_and_hurt() -> None:
@@ -136,6 +220,71 @@ def test_resident_flees_when_hostile_and_hurt() -> None:
 
     assert isinstance(action, MoveIntent)
     assert isinstance(resident.current_goal, FleeGoal)
+
+
+def test_resident_sapient_flee_triggers_from_incoming_threat_only() -> None:
+    """Sapient flee should trigger with incoming_threat even at threat_level 0."""
+    gw = DummyGameWorld(width=40, height=40)
+    player = Character(
+        0, 0, "@", colors.WHITE, "Player", game_world=cast(GameWorld, gw)
+    )
+    resident = RESIDENT_TYPE.create(5, 5, "Resident", game_world=cast(GameWorld, gw))
+    attacker = NPC(
+        6,
+        5,
+        "s",
+        colors.TAN,
+        "Attacker",
+        game_world=cast(GameWorld, gw),
+    )
+    gw.player = player
+    gw.add_actor(player)
+    gw.add_actor(resident)
+    gw.add_actor(attacker)
+    attacker.ai.set_hostile(resident)
+    controller = DummyController(gw)
+
+    context = resident.ai._build_context(controller, resident)
+    assert context.threat_level == 0.0
+    assert context.incoming_threat > 0.0
+
+    action = resident.ai.get_action(controller, resident)
+    assert isinstance(action, MoveIntent)
+    assert isinstance(resident.current_goal, FleeGoal)
+
+
+def test_resident_sapient_flee_goal_persists_on_second_tick() -> None:
+    """Sapient flee continuation should use sapient_flee_urgency and persist."""
+    gw = DummyGameWorld(width=40, height=40)
+    player = Character(
+        0, 0, "@", colors.WHITE, "Player", game_world=cast(GameWorld, gw)
+    )
+    resident = RESIDENT_TYPE.create(5, 5, "Resident", game_world=cast(GameWorld, gw))
+    attacker = NPC(
+        6,
+        5,
+        "s",
+        colors.TAN,
+        "Attacker",
+        game_world=cast(GameWorld, gw),
+    )
+    gw.player = player
+    gw.add_actor(player)
+    gw.add_actor(resident)
+    gw.add_actor(attacker)
+    attacker.ai.set_hostile(resident)
+    controller = DummyController(gw)
+
+    action1 = resident.ai.get_action(controller, resident)
+    assert isinstance(action1, MoveIntent)
+    assert isinstance(resident.current_goal, FleeGoal)
+    flee_goal = resident.current_goal
+
+    resident.move(action1.dx, action1.dy)
+
+    action2 = resident.ai.get_action(controller, resident)
+    assert isinstance(action2, MoveIntent)
+    assert resident.current_goal is flee_goal
 
 
 def test_resident_attacks_when_cornered() -> None:

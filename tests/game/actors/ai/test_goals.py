@@ -13,7 +13,11 @@ import pytest
 
 from brileta.game.actions.movement import MoveIntent
 from brileta.game.actors.ai.actions import IdleAction
-from brileta.game.actors.ai.behaviors.flee import _FLEE_SAFE_DISTANCE, FleeGoal
+from brileta.game.actors.ai.behaviors.flee import (
+    _FLEE_SAFE_DISTANCE,
+    FleeAction,
+    FleeGoal,
+)
 from brileta.game.actors.ai.behaviors.patrol import PatrolGoal
 from brileta.game.actors.ai.goals import (
     PERSISTENCE_MINIMUM,
@@ -107,6 +111,55 @@ def test_continue_goal_beats_raw_action_at_zero_progress() -> None:
     assert continue_score - raw_score == pytest.approx(PERSISTENCE_MINIMUM)
 
 
+def test_flee_goal_continuation_inherits_action_disposition_scoring() -> None:
+    """Continuation should preserve originating flee action considerations.
+
+    Regression coverage: when a flee goal is created from a combatant
+    FleeAction, ContinueGoalAction should include disposition INVERSE in
+    its score, not drop that factor on tick 2+.
+    """
+    controller, player, npc = make_ai_world(npc_x=3, npc_y=0)
+    flee_action = FleeAction()
+    goal = FleeGoal(
+        threat_actor_id=player.actor_id,
+        preconditions=flee_action.preconditions,
+        considerations=flee_action.considerations,
+        base_score=flee_action.base_score,
+    )
+    assert any(c.input_key == "disposition" for c in goal.get_considerations())
+
+    hostile_context = UtilityContext(
+        controller=controller,
+        actor=npc,
+        target=player,
+        distance_to_target=3,
+        health_percent=0.2,
+        threat_level=0.8,
+        can_attack=False,
+        has_escape_route=True,
+        best_attack_destination=None,
+        best_flee_step=(1, 0),
+        disposition=0.125,  # normalized -75
+    )
+    neutral_context = UtilityContext(
+        controller=controller,
+        actor=npc,
+        target=player,
+        distance_to_target=3,
+        health_percent=0.2,
+        threat_level=0.8,
+        can_attack=False,
+        has_escape_route=True,
+        best_attack_destination=None,
+        best_flee_step=(1, 0),
+        disposition=0.5,  # normalized 0
+    )
+
+    hostile_score = ContinueGoalAction(goal).score(hostile_context)
+    neutral_score = ContinueGoalAction(goal).score(neutral_context)
+    assert hostile_score > neutral_score
+
+
 # ---------------------------------------------------------------------------
 # Goal Abandonment Tests
 # ---------------------------------------------------------------------------
@@ -171,9 +224,9 @@ def test_npc_picks_new_action_same_tick_after_goal_completes() -> None:
     assert old_flee_goal.state == GoalState.COMPLETED
 
     # The NPC should have completed the old goal and finished scoring the tick.
-    # With no threat and hostile disposition, IdleAction is the only option.
+    # With no threat it may pick up a new goal (e.g., WanderGoal).
     assert result is None or isinstance(result, MoveIntent)
-    assert npc.current_goal is None
+    assert not isinstance(npc.current_goal, FleeGoal)
 
 
 def test_completed_goal_excluded_from_continue_scoring() -> None:

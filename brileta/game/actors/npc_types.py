@@ -32,6 +32,7 @@ TROG_TYPE = NPCType(
     can_open_doors=True,
     starting_weapon=SLEDGEHAMMER_TYPE,
     speed=80,
+    awareness_radius=10,  # Dumb brute, limited awareness
     strength_dist=StatDistribution(mean=3, std_dev=1.0),
     toughness_dist=StatDistribution(mean=3, std_dev=1.0),
     agility_dist=StatDistribution(mean=-1, std_dev=1.0),
@@ -56,6 +57,7 @@ BRIGAND_TYPE = NPCType(
     can_open_doors=True,
     starting_weapon=REVOLVER_TYPE,
     speed=105,
+    awareness_radius=14,  # Alert human, above-average perception
     strength_dist=StatDistribution(mean=1, std_dev=1.2),
     toughness_dist=StatDistribution(mean=1, std_dev=1.1),
     agility_dist=StatDistribution(mean=1, std_dev=1.0),
@@ -80,6 +82,7 @@ GIANT_SCORPION_TYPE = NPCType(
     can_open_doors=False,
     starting_weapon=SCORPION_STING_TYPE,
     speed=85,
+    awareness_radius=6,  # Arachnid, relies on vibration at short range
     strength_dist=StatDistribution(mean=2, std_dev=1.0),
     toughness_dist=StatDistribution(mean=4, std_dev=0.7),
     agility_dist=StatDistribution(mean=1, std_dev=1.0),
@@ -104,6 +107,7 @@ DOG_TYPE = NPCType(
     can_open_doors=False,
     starting_weapon=DOG_BITE_TYPE,
     speed=110,
+    awareness_radius=18,  # Keen hearing and smell, large detection range
     strength_dist=StatDistribution(mean=-2, std_dev=1.0),
     toughness_dist=StatDistribution(mean=0, std_dev=1.0),
     agility_dist=StatDistribution(mean=3, std_dev=1.0),

@@ -69,7 +69,11 @@ class Consideration:
 class UtilityContext:
     controller: Controller
     actor: NPC
-    target: Character
+    # The actor this NPC is focused on. Usually this is a hostile target via
+    # perception/combat-awareness, but proximity-driven archetypes can use a
+    # non-hostile fallback target so target_proximity stays meaningful.
+    # None when no relevant target is available.
+    target: Character | None
     distance_to_target: int
     health_percent: float
     threat_level: float
@@ -77,10 +81,22 @@ class UtilityContext:
     has_escape_route: bool
     best_attack_destination: WorldTilePos | None
     best_flee_step: Direction | None
+    # The perceived actor generating the highest incoming_threat signal
+    # (hostile toward this NPC). May differ from target. Used by
+    # sapient_flee to know who to run from. None when no incoming threat.
+    threat_source: Character | None = None
+    # Resolved actor this NPC should flee from this tick. Priority:
+    # outgoing-threat target > incoming threat source > proximity fallback.
+    # Filled during context build so consumers don't duplicate selection logic.
+    flee_from: Character | None = None
     # Normalized disposition: 0.0 maps to -100 (hostile), 1.0 maps to +100 (ally).
     disposition: float = 0.5
     # Pure proximity signal in [0, 1], independent of relationship hostility.
     target_proximity: float = 0.0
+    # Incoming threat: how much danger this NPC perceives approaching it.
+    # Scans all perceived actors for hostility toward this NPC, returns the
+    # strongest signal. 0.0 means no perceived incoming danger.
+    incoming_threat: float = 0.0
 
     def get_input(self, key: str) -> float | None:
         match key:
@@ -96,6 +112,29 @@ class UtilityContext:
                 return 1.0 if self.can_attack else 0.0
             case "disposition":
                 return self.disposition
+            case "incoming_threat":
+                return self.incoming_threat
+            case "max_threat":
+                # Combined danger signal: the stronger of outgoing threat
+                # (I'm hostile toward the target) and incoming threat
+                # (something hostile is approaching me).
+                return max(self.threat_level, self.incoming_threat)
+            case "sapient_flee_urgency":
+                # Sapient flee handles two scenarios with different intent:
+                # 1) Non-hostile panic: react to incoming danger regardless of hp.
+                # 2) Hostile retreat: only disengage when sufficiently injured.
+                max_threat = max(self.threat_level, self.incoming_threat)
+                if max_threat <= 0.0:
+                    return 0.0
+
+                if self.disposition <= _HOSTILE_DISPOSITION_THRESHOLD:
+                    health_deficit = 1.0 - _clamp(self.health_percent)
+                    # Quadratic ramp mirrors combatant flee's stronger
+                    # low-health bias while still allowing sapients to panic
+                    # when non-hostile.
+                    return max_threat * (health_deficit**2)
+
+                return max_threat
         return None
 
 
@@ -141,6 +180,36 @@ def is_hostile(context: UtilityContext) -> bool:
 def is_not_hostile(context: UtilityContext) -> bool:
     """Precondition: only allow non-hostile social behaviors."""
     return context.disposition > _HOSTILE_DISPOSITION_THRESHOLD
+
+
+def is_any_threat_perceived(context: UtilityContext) -> bool:
+    """Precondition: returns True when any threat signal is non-zero.
+
+    Combines outgoing threat_level (I'm hostile toward the target) with
+    incoming_threat (the target is hostile toward me). Sapient NPCs use
+    this to react to approaching hostiles even when they themselves are
+    not hostile toward the target.
+    """
+    return context.threat_level > 0.0 or context.incoming_threat > 0.0
+
+
+def resolve_flee_from(
+    target: Character | None,
+    threat_level: float,
+    threat_source: Character | None,
+) -> Character | None:
+    """Resolve the actor this NPC should flee from this tick.
+
+    Priority:
+    1. Outgoing-threat target when threat_level is active.
+    2. Incoming threat source.
+    3. Proximity fallback target (for proximity-driven archetypes).
+    """
+    if threat_level > 0.0 and target is not None:
+        return target
+    if threat_source is not None:
+        return threat_source
+    return target
 
 
 class UtilityAction(abc.ABC):

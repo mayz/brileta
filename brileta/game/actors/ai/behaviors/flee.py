@@ -17,6 +17,7 @@ from brileta.game.actors.ai.utility import (
     UtilityAction,
     UtilityContext,
     is_threat_present,
+    resolve_flee_from,
 )
 from brileta.types import DIRECTIONS, ActorId
 
@@ -84,12 +85,24 @@ class FleeAction(UtilityAction):
         FleeGoal so the NPC continues fleeing across multiple turns until safe,
         rather than re-evaluating from scratch each tick.
         """
-        # Create and assign a flee goal targeting the current threat.
+        # Context usually provides flee_from directly; the fallback keeps
+        # manually-constructed test contexts working.
+        flee_from = context.flee_from or resolve_flee_from(
+            context.target, context.threat_level, context.threat_source
+        )
+        if flee_from is None:
+            return None
+
+        # Create and assign a flee goal targeting the threat.
         # Pass our preconditions so ContinueGoalAction enforces the same
-        # eligibility rules (e.g., threat must still be present).
+        # eligibility rules (e.g., threat must still be present). Also pass
+        # considerations/base_score so continuation scoring mirrors the
+        # originating flee action (e.g., sapient flee uses its custom urgency).
         goal = FleeGoal(
-            threat_actor_id=context.target.actor_id,
+            threat_actor_id=flee_from.actor_id,
             preconditions=self.preconditions,
+            considerations=self.considerations,
+            base_score=self.base_score,
         )
         actor.current_goal = goal
 
@@ -118,15 +131,29 @@ class FleeGoal(Goal):
     the safe distance threshold.
     """
 
+    # Fallback profile used when a goal is constructed directly rather than
+    # created from a winning FleeAction (mostly tests).
+    DEFAULT_CONSIDERATIONS: ClassVar[list[Consideration]] = list(
+        FleeAction.CONSIDERATIONS
+    )
+
     def __init__(
         self,
         threat_actor_id: ActorId,
-        preconditions: list | None = None,
+        preconditions: list[Precondition] | None = None,
+        considerations: list[Consideration] | None = None,
+        base_score: float = 1.0,
     ) -> None:
         super().__init__(goal_id="flee", preconditions=preconditions)
         self.threat_actor_id = threat_actor_id
         self._start_distance: int | None = None
         self._current_distance: int | None = None
+        self._considerations = (
+            list(considerations)
+            if considerations is not None
+            else list(self.DEFAULT_CONSIDERATIONS)
+        )
+        self._base_score = base_score
 
     @property
     def progress(self) -> float:
@@ -145,19 +172,11 @@ class FleeGoal(Goal):
         return max(0.0, min(1.0, distance_gained / distance_needed))
 
     def get_base_score(self) -> float:
-        return 1.0
+        return self._base_score
 
     def get_considerations(self) -> list[Consideration]:
-        """Flee scores high when health is low and threat is present."""
-        return [
-            Consideration(
-                "health_percent",
-                ResponseCurve(ResponseCurveType.INVERSE),
-                weight=2.0,
-            ),
-            Consideration("threat_level", ResponseCurve(ResponseCurveType.LINEAR)),
-            Consideration("has_escape_route", ResponseCurve(ResponseCurveType.STEP)),
-        ]
+        """Return the continuation scoring profile for this flee goal."""
+        return self._considerations
 
     def evaluate_completion(self, npc: NPC, controller: Controller) -> None:
         """Complete if threat is gone/dead or we're at safe distance."""
@@ -196,9 +215,12 @@ class FleeGoal(Goal):
         game_map = controller.gw.game_map
         current_distance = ranges.calculate_distance(npc.x, npc.y, threat.x, threat.y)
 
-        # Evaluate all adjacent tiles, pick the one that maximizes distance
-        # from threat while minimizing hazard cost.
-        candidates: list[tuple[int, int, int, float]] = []
+        # Evaluate all adjacent tiles. Prefer tiles that increase distance
+        # from the threat. If none exist (e.g., against a wall), accept
+        # lateral tiles (same distance) so the NPC can slide along obstacles
+        # to find an opening rather than giving up immediately.
+        increasing: list[tuple[int, int, int, float]] = []
+        lateral: list[tuple[int, int, int, float]] = []
         for dx, dy in DIRECTIONS:
             tx = npc.x + dx
             ty = npc.y + dy
@@ -216,8 +238,8 @@ class FleeGoal(Goal):
                 continue
 
             dist = ranges.calculate_distance(tx, ty, threat.x, threat.y)
-            if dist <= current_distance:
-                continue  # Must increase distance
+            if dist < current_distance:
+                continue  # Moving toward the threat is never acceptable.
 
             tile_id = int(game_map.tiles[tx, ty])
             hazard_cost = get_hazard_cost(tile_id)
@@ -229,14 +251,19 @@ class FleeGoal(Goal):
                 hazard_cost = max(hazard_cost, fire_cost)
 
             step_cost = 1 if (dx == 0 or dy == 0) else 2
-            candidates.append((dx, dy, dist, hazard_cost + step_cost))
+            entry = (dx, dy, dist, hazard_cost + step_cost)
+            if dist > current_distance:
+                increasing.append(entry)
+            else:
+                lateral.append(entry)
 
+        candidates = increasing or lateral
         if not candidates:
-            # No escape route - goal fails
+            # Truly cornered - no passable tile that doesn't move closer.
             self.state = GoalState.FAILED
             return None
 
-        # Sort: maximize distance, minimize hazard cost
+        # Sort: maximize distance, minimize hazard cost.
         candidates.sort(key=lambda c: (-c[2], c[3]))
         dx, dy, _, _ = candidates[0]
         return MoveIntent(controller, npc, dx, dy)

@@ -18,12 +18,14 @@ from brileta.game.actors.ai.actions import (
 )
 from brileta.game.actors.ai.behaviors.flee import FleeAction
 from brileta.game.actors.ai.behaviors.wander import WanderAction
+from brileta.game.actors.ai.perception import PerceptionComponent
 from brileta.game.actors.ai.utility import (
     Consideration,
     ResponseCurve,
     ResponseCurveType,
     UtilityAction,
     has_escape_route,
+    is_any_threat_perceived,
     is_target_nearby,
 )
 from brileta.game.enums import CreatureSize
@@ -69,8 +71,28 @@ TAG_ACTIONS: dict[NPCTag, list[UtilityAction]] = {
     "base": [IdleAction(0.1), WanderAction(0.18)],
     # Combat-capable behavior package.
     "combatant": [AttackAction(1.0), FleeAction(1.0)],
-    # Basic social awareness for intelligent NPCs.
-    "sapient": [WatchAction(0.35), AvoidAction(0.7)],
+    # Social awareness for intelligent NPCs. Overrides the combatant flee
+    # with a version that also responds to incoming threats (hostile actors
+    # approaching), not just outgoing combat danger.
+    "sapient": [
+        WatchAction(0.35),
+        AvoidAction(0.7),
+        # Replaces combatant flee (same action_id="flee"). Triggers on
+        # either outgoing threat (I'm hostile and hurt) or incoming threat
+        # (something hostile is approaching me). Uses sapient_flee_urgency
+        # to preserve panic fleeing for non-hostile NPCs while keeping
+        # hostile combatants from fleeing at full health.
+        FleeAction(
+            base_score=1.0,
+            preconditions=[is_any_threat_perceived, has_escape_route],
+            considerations=[
+                Consideration(
+                    "sapient_flee_urgency",
+                    ResponseCurve(ResponseCurveType.LINEAR),
+                ),
+            ],
+        ),
+    ],
     # Predator package: attack by proximity instead of hostility.
     "predator": [
         AttackAction(
@@ -98,10 +120,6 @@ TAG_ACTIONS: dict[NPCTag, list[UtilityAction]] = {
                     "target_proximity",
                     ResponseCurve(ResponseCurveType.LINEAR),
                     weight=2.0,
-                ),
-                Consideration(
-                    "has_escape_route",
-                    ResponseCurve(ResponseCurveType.STEP),
                 ),
             ],
         ),
@@ -139,6 +157,9 @@ class NPCType:
     can_open_doors: bool = True
     starting_weapon: ItemType | None = None
     speed: int = DEFAULT_ACTOR_SPEED
+    # Omnidirectional detection range in tiles (Chebyshev distance).
+    # Controls how far the NPC can perceive other actors via range + LOS.
+    awareness_radius: int = 12
     role: str | None = None
     display_name: str = ""
     strength_dist: StatDistribution = StatDistribution()
@@ -168,6 +189,7 @@ class NPCType:
         npc_ai = AIComponent(
             actions=compose_actions(self.tags),
             default_disposition=self.default_disposition,
+            perception=PerceptionComponent(awareness_radius=self.awareness_radius),
         )
         starting_weapon = (
             self.starting_weapon.create() if self.starting_weapon is not None else None

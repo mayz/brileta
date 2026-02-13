@@ -94,9 +94,11 @@ def test_flee_goal_abandoned_when_threat_dies() -> None:
     player.take_damage(999)
     assert not player.health.is_alive()
 
-    # Next evaluation: goal should complete because threat is dead
+    # Next evaluation: goal should complete because threat is dead.
+    # The NPC may immediately pick up a new goal (e.g., WanderGoal) on
+    # the same tick, so just verify the flee goal is gone.
     npc.ai.get_action(controller, npc)
-    assert npc.current_goal is None
+    assert not isinstance(npc.current_goal, FleeGoal)
 
 
 def test_npc_attacks_when_no_escape_route() -> None:
@@ -108,11 +110,13 @@ def test_npc_attacks_when_no_escape_route() -> None:
     """
     controller, _player, npc = make_ai_world(npc_x=1, npc_y=0, npc_hp_damage=4)
 
-    # Block all tiles away from the player
+    # Block all tiles that increase or maintain distance from the player.
+    # This includes lateral tiles (same distance) to truly corner the NPC.
     gm = controller.gw.game_map
     gm.walkable[2, 0] = False
     gm.walkable[2, 1] = False
     gm.walkable[1, 1] = False
+    gm.walkable[0, 1] = False  # lateral (same distance as current)
 
     # NPC at (1,0), player at (0,0). The only open tiles are toward
     # the player, so has_escape_route is False and flee scores 0.
@@ -213,14 +217,15 @@ def test_flee_goal_avoids_blocked_tiles() -> None:
 
 def test_flee_goal_fails_when_fully_cornered() -> None:
     """FleeGoal.get_next_action should set FAILED when no escape tile exists."""
-    # NPC at (1,0), player at (0,0). Block all tiles that increase distance.
+    # NPC at (1,0), player at (0,0). Block all non-approaching tiles.
     controller, player, npc = make_ai_world(npc_x=1, npc_y=0)
     gm = controller.gw.game_map
 
-    # Wall off everything to the right and diagonal
+    # Wall off everything that increases or maintains distance.
     gm.walkable[2, 0] = False
     gm.walkable[2, 1] = False
     gm.walkable[1, 1] = False
+    gm.walkable[0, 1] = False  # lateral (same distance as current)
 
     goal = FleeGoal(threat_actor_id=player.actor_id)
     goal.evaluate_completion(npc, controller)

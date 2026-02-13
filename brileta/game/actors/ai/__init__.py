@@ -11,6 +11,7 @@ Package structure:
     goals       - Goal framework: Goal ABC, GoalState, ContinueGoalAction.
     actions     - Simple stateless actions: Attack, Avoid, Watch, Idle.
     behaviors/  - Goal-backed behaviors: Wander, Flee, Patrol.
+    perception  - PerceptionComponent: range + LOS awareness gating.
     component   - AIComponent that wires it all together.
 """
 
@@ -25,12 +26,15 @@ from .component import (
     disposition_to_normalized,
     escalate_hostility,
 )
+from .perception import PerceivedActor, PerceptionComponent
 
 __all__ = [
     "DISPOSITION_BANDS",
     "HOSTILE_UPPER",
     "AIComponent",
     "FleeCandidate",
+    "PerceivedActor",
+    "PerceptionComponent",
     "disposition_label",
     "disposition_to_normalized",
     "escalate_hostility",

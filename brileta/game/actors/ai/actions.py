@@ -66,6 +66,8 @@ class AttackAction(UtilityAction):
         controller = context.controller
         actor = context.actor
         target = context.target
+        if target is None:
+            return None
 
         if context.can_attack:
             controller.stop_plan(actor)
