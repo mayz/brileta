@@ -36,7 +36,7 @@ from brileta.constants.movement import MovementConstants as Movement
 from brileta.game.action_router import ActionRouter
 from brileta.game.actions.base import GameActionResult, GameIntent
 from brileta.game.enums import ActionBlockReason
-from brileta.types import ActorId
+from brileta.types import DIRECTIONS, ActorId
 from brileta.util.coordinates import WorldTilePos
 
 if TYPE_CHECKING:
@@ -593,31 +593,26 @@ class TurnManager:
                 from brileta.util.pathfinding import probe_step
 
                 best_path: list[WorldTilePos] | None = None
-                for dx in (-1, 0, 1):
-                    for dy in (-1, 0, 1):
-                        if dx == 0 and dy == 0:
-                            continue
-                        tx = target_pos[0] + dx
-                        ty = target_pos[1] + dy
-                        if (
-                            probe_step(
-                                gm, self.controller.gw, tx, ty, exclude_actor=actor
-                            )
-                            is not None
-                        ):
-                            continue
-                        candidate = find_local_path(
-                            gm,
-                            asi,
-                            actor,
-                            start_pos,
-                            (tx, ty),
-                            can_open_doors=actor_can_open_doors,
-                        )
-                        if candidate and (
-                            best_path is None or len(candidate) < len(best_path)
-                        ):
-                            best_path = candidate
+                for dx, dy in DIRECTIONS:
+                    tx = target_pos[0] + dx
+                    ty = target_pos[1] + dy
+                    if (
+                        probe_step(gm, self.controller.gw, tx, ty, exclude_actor=actor)
+                        is not None
+                    ):
+                        continue
+                    candidate = find_local_path(
+                        gm,
+                        asi,
+                        actor,
+                        start_pos,
+                        (tx, ty),
+                        can_open_doors=actor_can_open_doors,
+                    )
+                    if candidate and (
+                        best_path is None or len(candidate) < len(best_path)
+                    ):
+                        best_path = candidate
                 if best_path is not None:
                     plan.cached_path = best_path
 

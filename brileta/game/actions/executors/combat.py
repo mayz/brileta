@@ -37,7 +37,7 @@ from brileta.game.resolution.base import ResolutionResult
 from brileta.game.resolution.outcomes import CombatOutcome
 from brileta.sound.materials import AudioMaterialResolver, get_impact_sound_id
 from brileta.sound.weapon_sounds import get_reload_sound_id, get_weapon_sound_id
-from brileta.types import DeltaTime
+from brileta.types import DIRECTIONS, DeltaTime
 from brileta.view.presentation import PresentationEvent
 
 
@@ -465,16 +465,13 @@ class AttackExecutor(ActionExecutor[AttackIntent]):
         # Cover checks are infrequent, so we prioritize memory usage over
         # lookup speed by querying tile types directly rather than caching a
         # full map of bonuses.
-        for dx in (-1, 0, 1):
-            for dy in (-1, 0, 1):
-                if dx == 0 and dy == 0:
-                    continue
-                nx, ny = x + dx, y + dy
-                if 0 <= nx < game_map.width and 0 <= ny < game_map.height:
-                    tile_id = game_map.tiles[nx, ny]
-                    tile_data = tile_types.get_tile_type_data_by_id(int(tile_id))
-                    bonus = int(tile_data["cover_bonus"])
-                    max_bonus = max(max_bonus, bonus)
+        for dx, dy in DIRECTIONS:
+            nx, ny = x + dx, y + dy
+            if 0 <= nx < game_map.width and 0 <= ny < game_map.height:
+                tile_id = game_map.tiles[nx, ny]
+                tile_data = tile_types.get_tile_type_data_by_id(int(tile_id))
+                bonus = int(tile_data["cover_bonus"])
+                max_bonus = max(max_bonus, bonus)
 
         return max_bonus
 

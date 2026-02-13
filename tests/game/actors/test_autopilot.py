@@ -12,6 +12,7 @@ from brileta.game.actions.movement import MoveIntent
 from brileta.game.actors import PC, Character
 from brileta.game.game_world import GameWorld
 from brileta.game.turn_manager import TurnManager
+from brileta.types import DIRECTIONS_AND_CENTER
 from tests.helpers import DummyGameWorld
 
 
@@ -145,11 +146,10 @@ def test_plan_unreachable_target() -> None:
 
     # Surround the target position with walls to make it unreachable
     target = (5, 5)
-    for dx in (-1, 0, 1):
-        for dy in (-1, 0, 1):
-            tx, ty = target[0] + dx, target[1] + dy
-            if 0 <= tx < gm.width and 0 <= ty < gm.height:
-                gm.tiles[tx, ty] = TileTypeID.WALL
+    for dx, dy in DIRECTIONS_AND_CENTER:
+        tx, ty = target[0] + dx, target[1] + dy
+        if 0 <= tx < gm.width and 0 <= ty < gm.height:
+            gm.tiles[tx, ty] = TileTypeID.WALL
     gm.invalidate_property_caches()
 
     # Create plan to unreachable target

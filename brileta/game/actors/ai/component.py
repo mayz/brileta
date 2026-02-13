@@ -21,7 +21,7 @@ from brileta import colors
 from brileta.constants.combat import CombatConstants as Combat
 from brileta.events import CombatInitiatedEvent, MessageEvent, publish_event
 from brileta.game import ranges
-from brileta.types import ActorId, Direction, WorldTilePos
+from brileta.types import DIRECTIONS, ActorId, Direction, WorldTilePos
 from brileta.util import rng
 
 from .actions import AttackAction, AvoidAction, IdleAction, WatchAction
@@ -311,36 +311,32 @@ class AIComponent:
         safe_tiles: list[tuple[int, int, int]] = []
         game_map = controller.gw.game_map
 
-        for dx in (-1, 0, 1):
-            for dy in (-1, 0, 1):
-                if dx == 0 and dy == 0:
-                    continue
+        for dx, dy in DIRECTIONS:
+            nx, ny = actor.x + dx, actor.y + dy
 
-                nx, ny = actor.x + dx, actor.y + dy
+            # Passability check (bounds + walkable + actor blocking).
+            # Door-capable NPCs can escape through closed doors.
+            if (
+                probe_step(
+                    game_map,
+                    controller.gw,
+                    nx,
+                    ny,
+                    can_open_doors=actor.can_open_doors,
+                )
+                is not None
+            ):
+                continue
 
-                # Passability check (bounds + walkable + actor blocking).
-                # Door-capable NPCs can escape through closed doors.
-                if (
-                    probe_step(
-                        game_map,
-                        controller.gw,
-                        nx,
-                        ny,
-                        can_open_doors=actor.can_open_doors,
-                    )
-                    is not None
-                ):
-                    continue
+            # Check if this tile is also hazardous
+            adj_tile_id = int(game_map.tiles[nx, ny])
+            adj_damage, _ = get_tile_hazard_info(adj_tile_id)
+            if adj_damage:
+                continue  # Skip hazardous tiles
 
-                # Check if this tile is also hazardous
-                adj_tile_id = int(game_map.tiles[nx, ny])
-                adj_damage, _ = get_tile_hazard_info(adj_tile_id)
-                if adj_damage:
-                    continue  # Skip hazardous tiles
-
-                # This is a valid safe tile - track with distance preference
-                dist = 1 if (dx == 0 or dy == 0) else 2
-                safe_tiles.append((dx, dy, dist))
+            # This is a valid safe tile - track with distance preference
+            dist = 1 if (dx == 0 or dy == 0) else 2
+            safe_tiles.append((dx, dy, dist))
 
         if not safe_tiles:
             return None  # No safe escape exists
@@ -523,40 +519,37 @@ class AIComponent:
         best_score = float("inf")
         game_map = controller.gw.game_map
 
-        for dx in (-1, 0, 1):
-            for dy in (-1, 0, 1):
-                if dx == 0 and dy == 0:
-                    continue
-                tx = target.x + dx
-                ty = target.y + dy
-                if (
-                    probe_step(
-                        game_map,
-                        controller.gw,
-                        tx,
-                        ty,
-                        exclude_actor=actor,
-                        can_open_doors=actor.can_open_doors,
-                    )
-                    is not None
-                ):
-                    continue
+        for dx, dy in DIRECTIONS:
+            tx = target.x + dx
+            ty = target.y + dy
+            if (
+                probe_step(
+                    game_map,
+                    controller.gw,
+                    tx,
+                    ty,
+                    exclude_actor=actor,
+                    can_open_doors=actor.can_open_doors,
+                )
+                is not None
+            ):
+                continue
 
-                dist = ranges.calculate_distance(actor.x, actor.y, tx, ty)
-                tile_id = int(game_map.tiles[tx, ty])
-                hazard_cost = get_hazard_cost(tile_id)
+            dist = ranges.calculate_distance(actor.x, actor.y, tx, ty)
+            tile_id = int(game_map.tiles[tx, ty])
+            hazard_cost = get_hazard_cost(tile_id)
 
-                actor_at_tile = controller.gw.get_actor_at_location(tx, ty)
-                damage_per_turn = getattr(actor_at_tile, "damage_per_turn", 0)
-                if actor_at_tile and damage_per_turn > 0:
-                    fire_cost = HAZARD_BASE_COST + damage_per_turn
-                    hazard_cost = max(hazard_cost, fire_cost)
+            actor_at_tile = controller.gw.get_actor_at_location(tx, ty)
+            damage_per_turn = getattr(actor_at_tile, "damage_per_turn", 0)
+            if actor_at_tile and damage_per_turn > 0:
+                fire_cost = HAZARD_BASE_COST + damage_per_turn
+                hazard_cost = max(hazard_cost, fire_cost)
 
-                score = dist + hazard_cost
+            score = dist + hazard_cost
 
-                if score < best_score:
-                    best_score = score
-                    best_dest = (tx, ty)
+            if score < best_score:
+                best_score = score
+                best_dest = (tx, ty)
 
         return best_dest
 
@@ -573,46 +566,43 @@ class AIComponent:
         )
 
         candidates: list[FleeCandidate] = []
-        for dx in (-1, 0, 1):
-            for dy in (-1, 0, 1):
-                if dx == 0 and dy == 0:
-                    continue
-                tx = actor.x + dx
-                ty = actor.y + dy
-                if (
-                    probe_step(
-                        game_map,
-                        controller.gw,
-                        tx,
-                        ty,
-                        exclude_actor=actor,
-                        can_open_doors=actor.can_open_doors,
-                    )
-                    is not None
-                ):
-                    continue
-
-                distance_after = ranges.calculate_distance(tx, ty, target.x, target.y)
-                if distance_after <= current_distance:
-                    continue
-
-                tile_id = int(game_map.tiles[tx, ty])
-                hazard_cost = get_hazard_cost(tile_id)
-                actor_at_tile = controller.gw.get_actor_at_location(tx, ty)
-                damage_per_turn = getattr(actor_at_tile, "damage_per_turn", 0)
-                if actor_at_tile and damage_per_turn > 0:
-                    fire_cost = HAZARD_BASE_COST + damage_per_turn
-                    hazard_cost = max(hazard_cost, fire_cost)
-
-                step_cost = 1 if (dx == 0 or dy == 0) else 2
-                candidates.append(
-                    FleeCandidate(
-                        direction=(dx, dy),
-                        distance_after=distance_after,
-                        hazard_score=hazard_cost + step_cost,
-                        step_cost=step_cost,
-                    )
+        for dx, dy in DIRECTIONS:
+            tx = actor.x + dx
+            ty = actor.y + dy
+            if (
+                probe_step(
+                    game_map,
+                    controller.gw,
+                    tx,
+                    ty,
+                    exclude_actor=actor,
+                    can_open_doors=actor.can_open_doors,
                 )
+                is not None
+            ):
+                continue
+
+            distance_after = ranges.calculate_distance(tx, ty, target.x, target.y)
+            if distance_after <= current_distance:
+                continue
+
+            tile_id = int(game_map.tiles[tx, ty])
+            hazard_cost = get_hazard_cost(tile_id)
+            actor_at_tile = controller.gw.get_actor_at_location(tx, ty)
+            damage_per_turn = getattr(actor_at_tile, "damage_per_turn", 0)
+            if actor_at_tile and damage_per_turn > 0:
+                fire_cost = HAZARD_BASE_COST + damage_per_turn
+                hazard_cost = max(hazard_cost, fire_cost)
+
+            step_cost = 1 if (dx == 0 or dy == 0) else 2
+            candidates.append(
+                FleeCandidate(
+                    direction=(dx, dy),
+                    distance_after=distance_after,
+                    hazard_score=hazard_cost + step_cost,
+                    step_cost=step_cost,
+                )
+            )
 
         if not candidates:
             return None

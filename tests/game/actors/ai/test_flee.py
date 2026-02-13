@@ -17,7 +17,7 @@ from brileta.game.actors import NPC
 from brileta.game.actors.ai.behaviors.flee import _FLEE_SAFE_DISTANCE, FleeGoal
 from brileta.game.actors.ai.goals import GoalState
 from brileta.game.game_world import GameWorld
-from brileta.types import ActorId
+from brileta.types import DIRECTIONS, ActorId
 from tests.helpers import make_ai_world
 
 # ---------------------------------------------------------------------------
@@ -245,13 +245,10 @@ def test_flee_goal_returns_none_when_cornered_midgoal() -> None:
 
     # Now wall off all escape routes so the goal can't flee further
     gm = controller.gw.game_map
-    for dx in (-1, 0, 1):
-        for dy in (-1, 0, 1):
-            if dx == 0 and dy == 0:
-                continue
-            tx, ty = npc.x + dx, npc.y + dy
-            if 0 <= tx < gm.width and 0 <= ty < gm.height:
-                gm.walkable[tx, ty] = False
+    for dx, dy in DIRECTIONS:
+        tx, ty = npc.x + dx, npc.y + dy
+        if 0 <= tx < gm.width and 0 <= ty < gm.height:
+            gm.walkable[tx, ty] = False
 
     # Next tick: flee has no escape route. The NPC should not crash.
     # The flee goal should no longer be ACTIVE (either failed, abandoned, or

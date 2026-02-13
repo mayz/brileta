@@ -9,6 +9,7 @@ import pytest
 from brileta.environment.generators import GeneratedMapData
 from brileta.environment.map import GameMap
 from brileta.environment.tile_types import TileTypeID
+from brileta.types import DIRECTIONS
 
 if TYPE_CHECKING:
     from brileta.environment.map import MapRegion
@@ -82,11 +83,8 @@ def test_find_path_no_path_exists(
     basic_setup: tuple[GameMap, SpatialHashGrid[DummyActor]],
 ) -> None:
     gm, index = basic_setup
-    for dx in (-1, 0, 1):
-        for dy in (-1, 0, 1):
-            if dx == 0 and dy == 0:
-                continue
-            gm.tiles[5 + dx, 5 + dy] = TileTypeID.WALL
+    for dx, dy in DIRECTIONS:
+        gm.tiles[5 + dx, 5 + dy] = TileTypeID.WALL
     gm.invalidate_property_caches()
     actor = DummyActor(1, 1)
     path = find_local_path(

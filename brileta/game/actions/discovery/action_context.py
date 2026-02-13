@@ -7,6 +7,7 @@ from brileta import config
 from brileta.constants.combat import CombatConstants as Combat
 from brileta.game import ranges
 from brileta.game.actors import Character
+from brileta.types import DIRECTIONS
 
 if TYPE_CHECKING:
     from brileta.controller import Controller
@@ -110,15 +111,12 @@ class ActionContextBuilder:
         # Cover checks are infrequent, so we prioritize memory usage over
         # lookup speed by querying tile types directly rather than caching a
         # full map of bonuses.
-        for dx in (-1, 0, 1):
-            for dy in (-1, 0, 1):
-                if dx == 0 and dy == 0:
-                    continue
-                nx, ny = x + dx, y + dy
-                if 0 <= nx < game_map.width and 0 <= ny < game_map.height:
-                    tile_id = game_map.tiles[nx, ny]
-                    tile_data = tile_types.get_tile_type_data_by_id(int(tile_id))
-                    bonus = int(tile_data["cover_bonus"])
-                    max_bonus = max(max_bonus, bonus)
+        for dx, dy in DIRECTIONS:
+            nx, ny = x + dx, y + dy
+            if 0 <= nx < game_map.width and 0 <= ny < game_map.height:
+                tile_id = game_map.tiles[nx, ny]
+                tile_data = tile_types.get_tile_type_data_by_id(int(tile_id))
+                bonus = int(tile_data["cover_bonus"])
+                max_bonus = max(max_bonus, bonus)
 
         return max_bonus

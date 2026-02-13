@@ -27,6 +27,7 @@ from brileta.game.actors.ai.behaviors.flee import _FLEE_SAFE_DISTANCE, FleeGoal
 from brileta.game.actors.ai.behaviors.wander import WanderGoal
 from brileta.game.actors.ai.goals import GoalState
 from brileta.game.game_world import GameWorld
+from brileta.types import DIRECTIONS, DIRECTIONS_AND_CENTER
 from tests.helpers import DummyController, DummyGameWorld, make_ai_world
 
 # ---------------------------------------------------------------------------
@@ -105,13 +106,10 @@ def test_hostile_ai_uses_hazardous_tile_when_no_alternative() -> None:
     controller, player, npc = make_ai_world()
 
     # Make ALL tiles adjacent to the player hazardous
-    for dx in (-1, 0, 1):
-        for dy in (-1, 0, 1):
-            if dx == 0 and dy == 0:
-                continue
-            tx, ty = player.x + dx, player.y + dy
-            if 0 <= tx < 80 and 0 <= ty < 80:
-                controller.gw.game_map.tiles[tx, ty] = TileTypeID.ACID_POOL
+    for dx, dy in DIRECTIONS:
+        tx, ty = player.x + dx, player.y + dy
+        if 0 <= tx < 80 and 0 <= ty < 80:
+            controller.gw.game_map.tiles[tx, ty] = TileTypeID.ACID_POOL
     controller.gw.game_map.invalidate_property_caches()
 
     action = npc.ai.get_action(controller, npc)
@@ -158,13 +156,10 @@ def test_npc_escapes_to_nearest_safe_tile() -> None:
     controller.gw.game_map.tiles[5, 5] = TileTypeID.ACID_POOL
 
     # Surround with hazards except one safe tile at (4, 5)
-    for dx in (-1, 0, 1):
-        for dy in (-1, 0, 1):
-            if dx == 0 and dy == 0:
-                continue
-            tx, ty = npc.x + dx, npc.y + dy
-            if (tx, ty) != (4, 5):
-                controller.gw.game_map.tiles[tx, ty] = TileTypeID.ACID_POOL
+    for dx, dy in DIRECTIONS:
+        tx, ty = npc.x + dx, npc.y + dy
+        if (tx, ty) != (4, 5):
+            controller.gw.game_map.tiles[tx, ty] = TileTypeID.ACID_POOL
 
     controller.gw.game_map.invalidate_property_caches()
 
@@ -184,10 +179,9 @@ def test_npc_stays_if_all_adjacent_hazardous() -> None:
     npc.x, npc.y = 5, 5
 
     # Surround entirely with hazards (including the NPC's tile)
-    for dx in (-1, 0, 1):
-        for dy in (-1, 0, 1):
-            tx, ty = npc.x + dx, npc.y + dy
-            controller.gw.game_map.tiles[tx, ty] = TileTypeID.ACID_POOL
+    for dx, dy in DIRECTIONS_AND_CENTER:
+        tx, ty = npc.x + dx, npc.y + dy
+        controller.gw.game_map.tiles[tx, ty] = TileTypeID.ACID_POOL
     controller.gw.game_map.invalidate_property_caches()
 
     action = npc.ai.get_action(controller, npc)
@@ -222,13 +216,10 @@ def test_npc_skips_blocked_safe_tile() -> None:
     controller.gw.game_map.tiles[5, 5] = TileTypeID.ACID_POOL
 
     # Surround with hazards except blocked (4, 5) and one other safe tile (5, 4)
-    for dx in (-1, 0, 1):
-        for dy in (-1, 0, 1):
-            if dx == 0 and dy == 0:
-                continue
-            tx, ty = npc.x + dx, npc.y + dy
-            if (tx, ty) not in [(4, 5), (5, 4)]:
-                controller.gw.game_map.tiles[tx, ty] = TileTypeID.ACID_POOL
+    for dx, dy in DIRECTIONS:
+        tx, ty = npc.x + dx, npc.y + dy
+        if (tx, ty) not in [(4, 5), (5, 4)]:
+            controller.gw.game_map.tiles[tx, ty] = TileTypeID.ACID_POOL
     controller.gw.game_map.invalidate_property_caches()
 
     action = npc.ai.get_action(controller, npc)

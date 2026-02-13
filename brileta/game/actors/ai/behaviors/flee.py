@@ -18,7 +18,7 @@ from brileta.game.actors.ai.utility import (
     UtilityContext,
     is_threat_present,
 )
-from brileta.types import ActorId
+from brileta.types import DIRECTIONS, ActorId
 
 if TYPE_CHECKING:
     from brileta.controller import Controller
@@ -190,40 +190,37 @@ class FleeGoal(Goal):
         # Evaluate all adjacent tiles, pick the one that maximizes distance
         # from threat while minimizing hazard cost.
         candidates: list[tuple[int, int, int, float]] = []
-        for dx in (-1, 0, 1):
-            for dy in (-1, 0, 1):
-                if dx == 0 and dy == 0:
-                    continue
-                tx = npc.x + dx
-                ty = npc.y + dy
-                if (
-                    probe_step(
-                        game_map,
-                        controller.gw,
-                        tx,
-                        ty,
-                        exclude_actor=npc,
-                        can_open_doors=npc.can_open_doors,
-                    )
-                    is not None
-                ):
-                    continue
+        for dx, dy in DIRECTIONS:
+            tx = npc.x + dx
+            ty = npc.y + dy
+            if (
+                probe_step(
+                    game_map,
+                    controller.gw,
+                    tx,
+                    ty,
+                    exclude_actor=npc,
+                    can_open_doors=npc.can_open_doors,
+                )
+                is not None
+            ):
+                continue
 
-                dist = ranges.calculate_distance(tx, ty, threat.x, threat.y)
-                if dist <= current_distance:
-                    continue  # Must increase distance
+            dist = ranges.calculate_distance(tx, ty, threat.x, threat.y)
+            if dist <= current_distance:
+                continue  # Must increase distance
 
-                tile_id = int(game_map.tiles[tx, ty])
-                hazard_cost = get_hazard_cost(tile_id)
+            tile_id = int(game_map.tiles[tx, ty])
+            hazard_cost = get_hazard_cost(tile_id)
 
-                actor_at = controller.gw.get_actor_at_location(tx, ty)
-                damage_per_turn = getattr(actor_at, "damage_per_turn", 0)
-                if actor_at and damage_per_turn > 0:
-                    fire_cost = HAZARD_BASE_COST + damage_per_turn
-                    hazard_cost = max(hazard_cost, fire_cost)
+            actor_at = controller.gw.get_actor_at_location(tx, ty)
+            damage_per_turn = getattr(actor_at, "damage_per_turn", 0)
+            if actor_at and damage_per_turn > 0:
+                fire_cost = HAZARD_BASE_COST + damage_per_turn
+                hazard_cost = max(hazard_cost, fire_cost)
 
-                step_cost = 1 if (dx == 0 or dy == 0) else 2
-                candidates.append((dx, dy, dist, hazard_cost + step_cost))
+            step_cost = 1 if (dx == 0 or dy == 0) else 2
+            candidates.append((dx, dy, dist, hazard_cost + step_cost))
 
         if not candidates:
             # No escape route - goal fails

@@ -18,6 +18,13 @@ type WorldTilePos = tuple[
 # Directions - discrete grid steps and continuous vectors
 type UnitStep = Literal[-1, 0, 1]
 type Direction = tuple[UnitStep, UnitStep]  # Example: (-1, 0) = westward step
+# All 8 neighbor offsets and the 9-offset variant including (0, 0)
+DIRECTIONS_AND_CENTER: tuple[Direction, ...] = tuple(
+    (dx, dy) for dx in (-1, 0, 1) for dy in (-1, 0, 1)
+)
+DIRECTIONS: tuple[Direction, ...] = tuple(
+    d for d in DIRECTIONS_AND_CENTER if d != (0, 0)
+)
 type Heading = tuple[float, float]  # Example: (1.0, 0.3) = continuous drift direction
 
 # Viewport coordinates - relative to the visible area

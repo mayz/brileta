@@ -17,6 +17,7 @@ from brileta.game.actors import NPC
 from brileta.game.actors.ai.behaviors.wander import WanderGoal
 from brileta.game.actors.ai.goals import GoalState
 from brileta.game.game_world import GameWorld
+from brileta.types import DIRECTIONS
 from tests.helpers import make_ai_world
 
 
@@ -204,11 +205,8 @@ def test_wander_goal_restarts_heading_after_being_stuck() -> None:
     npc.current_goal = goal
 
     # Temporarily block all adjacent movement.
-    for dx in (-1, 0, 1):
-        for dy in (-1, 0, 1):
-            if dx == 0 and dy == 0:
-                continue
-            game_map.walkable[npc.x + dx, npc.y + dy] = False
+    for dx, dy in DIRECTIONS:
+        game_map.walkable[npc.x + dx, npc.y + dy] = False
 
     blocked = goal.get_next_action(npc, controller)
     assert blocked is None
