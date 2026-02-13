@@ -628,6 +628,15 @@ def get_hazard_cost(tile_type_id: int) -> int:
     return 1
 
 
+def is_tile_hazardous(tile_type_id: int) -> bool:
+    """Return True when a tile deals environmental damage (acid, fire, etc.).
+
+    Use this for binary avoidance decisions (wander, patrol). For weighted
+    path-cost scoring, use ``get_hazard_cost`` instead.
+    """
+    return get_hazard_cost(tile_type_id) > 1
+
+
 def get_animation_map(tile_type_ids_map: np.ndarray) -> np.ndarray:
     """
     Converts a map of TileTypeIDs into a map of TileAnimationParams structs.

@@ -54,12 +54,21 @@ class WanderAction(UtilityAction):
         Consideration("disposition", ResponseCurve(ResponseCurveType.LINEAR)),
     ]
 
-    def __init__(self, base_score: float = 0.18) -> None:
+    def __init__(
+        self,
+        base_score: float = 0.18,
+        preconditions: list[Precondition] | None = None,
+        considerations: list[Consideration] | None = None,
+    ) -> None:
         super().__init__(
             action_id="wander",
             base_score=base_score,
-            considerations=self.CONSIDERATIONS,
-            preconditions=self.PRECONDITIONS,
+            considerations=(
+                considerations if considerations is not None else self.CONSIDERATIONS
+            ),
+            preconditions=(
+                preconditions if preconditions is not None else self.PRECONDITIONS
+            ),
         )
 
     def get_intent(self, context: UtilityContext) -> GameIntent | None:
@@ -264,7 +273,7 @@ class WanderGoal(Goal):
         self, npc: NPC, controller: Controller
     ) -> Direction | None:
         """Pick a random walkable heading, preferring safe tiles."""
-        from brileta.environment.tile_types import get_hazard_cost
+        from brileta.environment.tile_types import is_tile_hazardous
 
         safe: list[Direction] = []
         hazardous: list[Direction] = []
@@ -274,7 +283,7 @@ class WanderGoal(Goal):
             if not self._is_step_walkable(npc, controller, dx, dy):
                 continue
             tile_id = int(game_map.tiles[npc.x + dx, npc.y + dy])
-            if get_hazard_cost(tile_id) > 1:
+            if is_tile_hazardous(tile_id):
                 hazardous.append((dx, dy))
             else:
                 safe.append((dx, dy))
@@ -294,8 +303,15 @@ class WanderGoal(Goal):
         self._heading = self._rotate_heading(self._heading, offset)
 
     def _choose_step(self, npc: NPC, controller: Controller) -> Direction | None:
-        """Choose the next step from forward/sidestep/turn fallback candidates."""
-        from brileta.environment.tile_types import get_hazard_cost
+        """Choose the next safe step from forward/sidestep/turn fallback candidates.
+
+        Hazardous tiles (acid, fire, hot coals) are rejected outright. A
+        wandering NPC has no urgency and should never step into environmental
+        damage voluntarily. If every reachable direction is hazardous the
+        method returns None, which triggers a linger/pause and eventually a
+        new heading pick.
+        """
+        from brileta.environment.tile_types import is_tile_hazardous
 
         if self._heading is None:
             return None
@@ -321,25 +337,19 @@ class WanderGoal(Goal):
         ]
 
         for offsets in groups:
-            candidates: list[tuple[Direction, int]] = []
+            safe: list[Direction] = []
             for offset in offsets:
                 direction = self._rotate_heading(self._heading, offset)
                 dx, dy = direction
                 if not self._is_step_walkable(npc, controller, dx, dy):
                     continue
                 tile_id = int(game_map.tiles[npc.x + dx, npc.y + dy])
-                hazard_cost = get_hazard_cost(tile_id)
-                candidates.append((direction, hazard_cost))
+                if is_tile_hazardous(tile_id):
+                    continue
+                safe.append(direction)
 
-            if not candidates:
-                continue
-
-            # Within a priority group, prefer lower hazard; randomize ties.
-            min_cost = min(cost for _, cost in candidates)
-            safest: list[Direction] = [
-                direction for direction, cost in candidates if cost == min_cost
-            ]
-            return _rng.choice(safest)
+            if safe:
+                return _rng.choice(safe)
 
         return None
 

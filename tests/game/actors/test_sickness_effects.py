@@ -85,3 +85,35 @@ def test_radiation_sickness_death_handling() -> None:
     assert actor.ch == "x", "Death handling should change glyph to 'x'"
     assert actor.color == colors.DEAD, "Death handling should change color to DEAD"
     assert not actor.blocks_movement, "Dead actors should not block movement"
+
+
+def test_sickness_expires_after_remaining_turns() -> None:
+    """A sickness with remaining_turns removes itself when the timer hits zero."""
+    actor = make_actor()
+    venom = conditions.Sickness(sickness_type="Venom", remaining_turns=2)
+    actor.inventory.add_to_inventory(venom)
+
+    # Turn 1: damage dealt, 1 turn left.
+    hp_before = actor.health.hp
+    venom.apply_turn_effect(actor)
+    assert actor.health.hp == hp_before - 2
+    assert venom.remaining_turns == 1
+    assert venom in list(actor.conditions)
+
+    # Turn 2: damage dealt, timer expires, condition removed.
+    hp_before = actor.health.hp
+    venom.apply_turn_effect(actor)
+    assert actor.health.hp == hp_before - 2
+    assert venom not in list(actor.conditions)
+
+
+def test_sickness_without_duration_persists_indefinitely() -> None:
+    """A sickness with remaining_turns=None never expires on its own."""
+    actor = make_actor()
+    disease = conditions.Sickness(sickness_type="Disease", remaining_turns=None)
+    actor.inventory.add_to_inventory(disease)
+
+    # Tick several turns - should still be present.
+    for _ in range(10):
+        disease.apply_turn_effect(actor)
+    assert disease in list(actor.conditions)

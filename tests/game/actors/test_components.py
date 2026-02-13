@@ -970,7 +970,7 @@ class TestConditionsComponentGaps:
         with patch("brileta.game.actors.conditions.publish_event"):
             actor.conditions.apply_turn_effects(actor)
 
-        # Poisoned deals 1 damage per turn
+        # Poisoned uses default damage handling.
         actor.take_damage.assert_called_once_with(1)
 
     def test_iter_yields_all_conditions(self) -> None:

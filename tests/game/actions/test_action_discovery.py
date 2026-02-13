@@ -872,6 +872,21 @@ def test_stunts_not_shown_for_dead_targets() -> None:
     assert "trip" not in action_ids, "Trip should not appear for dead target"
 
 
+def test_talk_not_shown_for_dead_targets() -> None:
+    """Talk should not appear for dead targets."""
+    controller, player, hostile, _, _ = _make_context_world()
+    hostile.health._hp = 0  # Kill the target
+    _set_disposition_toward(hostile, player, 40)
+
+    disc = ActionDiscovery()
+    controller.is_combat_mode = lambda: False
+
+    opts = disc.get_options_for_target(cast(Controller, controller), player, hostile)
+
+    action_ids = {o.id for o in opts}
+    assert "talk" not in action_ids, "Talk should not appear for dead target"
+
+
 def test_stunts_not_shown_in_combat_mode_explore_path() -> None:
     """In combat mode, get_options_for_target returns combat actions instead.
 

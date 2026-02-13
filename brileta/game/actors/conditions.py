@@ -1,5 +1,5 @@
 import abc
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 if TYPE_CHECKING:
     from . import Actor
@@ -111,53 +111,75 @@ class Rads(Condition):
 
 
 class Sickness(Condition):
-    """Represents one slot filled by a sickness like poison, venom, or disease."""
+    """Represents one slot filled by a sickness like poison, venom, or disease.
+
+    Sickness conditions deal damage each turn and impose stat disadvantages.
+    They can optionally expire after a set number of turns (``remaining_turns``).
+    When ``remaining_turns`` is ``None`` the sickness persists until cured.
+    """
+
+    # Per-turn damage and message color for each sickness type.
+    _EFFECTS: ClassVar[dict[str, tuple[int, str | None, colors.Color]]] = {
+        #                    dmg  damage_type   msg_color
+        # damage_type=None uses Character.take_damage() default handling.
+        "Poisoned": (1, None, colors.GREEN),
+        "Venom": (2, None, colors.GREEN),
+        "Radiation Sickness": (1, "radiation", colors.YELLOW),
+    }
 
     def __init__(
         self,
         sickness_type: str = "General Sickness",
         description: str = "Afflicted by an illness.",
+        remaining_turns: int | None = None,
     ) -> None:
-        """Create a sickness condition with a specific type."""
-        # sickness_type could be "Poisoned", "Diseased", "Venom"
+        """Create a sickness condition with a specific type.
+
+        Args:
+            sickness_type: Label like "Poisoned", "Venom", or "Disease".
+            description: Flavor text shown in the UI.
+            remaining_turns: Turns until the sickness expires on its own.
+                ``None`` means permanent (must be cured).
+        """
         super().__init__(
             name=f"Sickness: {sickness_type}",
             description=description,
             display_color=colors.GREEN,
         )  # A sickly green
         self.sickness_type = sickness_type
+        self.remaining_turns = remaining_turns
 
     def apply_turn_effect(self, actor: "Actor") -> None:
-        """Apply ongoing sickness effects each turn."""
-        damage = 0
-        if self.sickness_type == "Poisoned":
-            damage = 1
-            actor.take_damage(damage)
+        """Apply ongoing sickness effects each turn.
+
+        Deals type-specific damage, then decrements the remaining duration.
+        When the duration reaches zero the sickness is removed automatically.
+        """
+        effect = self._EFFECTS.get(self.sickness_type)
+        if effect is not None:
+            damage, damage_type, msg_color = effect
+            if damage_type is None:
+                actor.take_damage(damage)
+            else:
+                actor.take_damage(damage, damage_type=damage_type)
             publish_event(
                 MessageEvent(
                     f"{actor.name} suffers from {self.sickness_type}! (-{damage} HP)",
-                    colors.GREEN,
+                    msg_color,
                 )
             )
-        elif self.sickness_type == "Venom":
-            damage = 2
-            actor.take_damage(damage)
-            publish_event(
-                MessageEvent(
-                    f"{actor.name} suffers from {self.sickness_type}! (-{damage} HP)",
-                    colors.GREEN,
+
+        # Tick down duration and auto-remove when expired.
+        if self.remaining_turns is not None:
+            self.remaining_turns -= 1
+            if self.remaining_turns <= 0 and actor.conditions is not None:
+                actor.conditions.remove_condition(self)
+                publish_event(
+                    MessageEvent(
+                        f"{actor.name} recovers from {self.sickness_type}.",
+                        colors.WHITE,
+                    )
                 )
-            )
-        elif self.sickness_type == "Radiation Sickness":
-            damage = 1
-            # Use take_damage() to properly handle death visuals if this kills them
-            actor.take_damage(damage, damage_type="radiation")
-            publish_event(
-                MessageEvent(
-                    f"{actor.name} suffers from {self.sickness_type}! (-{damage} HP)",
-                    colors.YELLOW,
-                )
-            )
 
     def apply_to_resolution(
         self, resolution_args: dict[str, bool | str]

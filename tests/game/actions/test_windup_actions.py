@@ -180,6 +180,10 @@ class DummyTurnManager:
     def process_all_npc_turns(self) -> None:
         pass
 
+    def invalidate_cache(self) -> None:
+        """Dummy implementation - no cache to invalidate."""
+        pass
+
     # RAF methods
     def on_player_action(self) -> None:
         """Dummy implementation of RAF on_player_action method."""

@@ -47,12 +47,21 @@ class FleeAction(UtilityAction):
         Consideration("disposition", ResponseCurve(ResponseCurveType.INVERSE)),
     ]
 
-    def __init__(self, base_score: float = 1.0) -> None:
+    def __init__(
+        self,
+        base_score: float = 1.0,
+        preconditions: list[Precondition] | None = None,
+        considerations: list[Consideration] | None = None,
+    ) -> None:
         super().__init__(
             action_id="flee",
             base_score=base_score,
-            considerations=self.CONSIDERATIONS,
-            preconditions=self.PRECONDITIONS,
+            considerations=(
+                considerations if considerations is not None else self.CONSIDERATIONS
+            ),
+            preconditions=(
+                preconditions if preconditions is not None else self.PRECONDITIONS
+            ),
         )
 
     def get_intent(self, context: UtilityContext) -> GameIntent | None:

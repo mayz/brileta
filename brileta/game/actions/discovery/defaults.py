@@ -55,8 +55,8 @@ def classify_target(
 
     # Handle Actor targets
     if isinstance(target, Character):
-        # Any character (player excluded) is an NPC
-        if target is not gw.player:
+        # Any living non-player character is an NPC.
+        if target is not gw.player and target.health and target.health.is_alive():
             return TargetType.NPC
         return None
 
@@ -90,7 +90,12 @@ def classify_target(
         # Check for other actors at the tile
         actor_at_tile = gw.get_actor_at_location(x, y)
         if actor_at_tile is not None:
-            if isinstance(actor_at_tile, Character) and actor_at_tile is not gw.player:
+            if (
+                isinstance(actor_at_tile, Character)
+                and actor_at_tile is not gw.player
+                and actor_at_tile.health
+                and actor_at_tile.health.is_alive()
+            ):
                 return TargetType.NPC
             if isinstance(actor_at_tile, Container):
                 return TargetType.CONTAINER

@@ -43,6 +43,19 @@ class DummyController:
 
         return D20System(**kwargs)  # type: ignore[call-arg]
 
+    def queue_action(self, intent: object) -> None:
+        """Stub queue action used by default-action tests."""
+        _ = intent
+
+    def start_plan(self, *args: object, **kwargs: object) -> bool:
+        """Stub plan starter used by default-action tests."""
+        _ = (args, kwargs)
+        return False
+
+    def is_combat_mode(self) -> bool:
+        """Default test stub for combat-mode checks."""
+        return False
+
 
 def _make_test_world() -> tuple[DummyController, Character, Character]:
     """Create a test world with a player and NPC."""
@@ -80,6 +93,13 @@ class TestClassifyTarget:
         controller, _player, npc = _make_test_world()
         target_type = classify_target(controller, npc)  # type: ignore[arg-type]
         assert target_type == TargetType.NPC
+
+    def test_classify_dead_npc_as_none(self) -> None:
+        """A dead character should not be classified as an NPC target."""
+        controller, _player, npc = _make_test_world()
+        npc.health._hp = 0
+        target_type = classify_target(controller, npc)  # type: ignore[arg-type]
+        assert target_type is None
 
     def test_classify_player_as_none(self) -> None:
         """The player should not be classifiable (returns None)."""
@@ -214,8 +234,8 @@ class TestExecuteDefaultActionInCombatMode:
         def mock_is_combat_mode():
             return True
 
-        controller.queue_action = mock_queue_action  # type: ignore[attr-defined]
-        controller.is_combat_mode = mock_is_combat_mode  # type: ignore[attr-defined]
+        controller.queue_action = mock_queue_action
+        controller.is_combat_mode = mock_is_combat_mode
 
         # Move player adjacent to NPC for immediate action
         player.x = 4
@@ -246,8 +266,8 @@ class TestExecuteDefaultActionInCombatMode:
             plan_calls.append((actor, plan, target_actor, target_position))
             return True
 
-        controller.is_combat_mode = mock_is_combat_mode  # type: ignore[attr-defined]
-        controller.start_plan = mock_start_plan  # type: ignore[attr-defined]
+        controller.is_combat_mode = mock_is_combat_mode
+        controller.start_plan = mock_start_plan
 
         # Position player (distant or adjacent - plan handles both)
         player.x = 4
@@ -259,6 +279,29 @@ class TestExecuteDefaultActionInCombatMode:
         assert len(plan_calls) == 1
         assert plan_calls[0][0] == player  # actor
         assert plan_calls[0][2] == npc  # target_actor
+
+    def test_dead_npc_default_action_returns_false(self) -> None:
+        """Dead NPCs should not trigger Talk or Attack defaults."""
+        from brileta.game.actions.discovery import execute_default_action
+
+        controller, _player, npc = _make_test_world()
+        npc.health._hp = 0
+
+        # Track unexpected calls
+        queued_actions: list = []
+        plan_calls: list = []
+
+        controller.queue_action = queued_actions.append
+        controller.start_plan = lambda *args, **kwargs: plan_calls.append(
+            (args, kwargs)
+        )
+        controller.is_combat_mode = lambda: False
+
+        result = execute_default_action(controller, npc)  # type: ignore[arg-type]
+
+        assert result is False
+        assert queued_actions == []
+        assert plan_calls == []
 
 
 class TestAdjacentPositionSelection:
@@ -293,8 +336,8 @@ class TestAdjacentPositionSelection:
         def mock_is_combat_mode():
             return False
 
-        controller.start_plan = mock_start_plan  # type: ignore
-        controller.is_combat_mode = mock_is_combat_mode  # type: ignore
+        controller.start_plan = mock_start_plan
+        controller.is_combat_mode = mock_is_combat_mode
 
         result = execute_default_action(controller, container)  # type: ignore[arg-type]
 
@@ -327,8 +370,8 @@ class TestAdjacentPositionSelection:
         def mock_is_combat_mode():
             return False
 
-        controller.start_plan = mock_start_plan  # type: ignore
-        controller.is_combat_mode = mock_is_combat_mode  # type: ignore
+        controller.start_plan = mock_start_plan
+        controller.is_combat_mode = mock_is_combat_mode
 
         result = execute_default_action(controller, container)  # type: ignore[arg-type]
 
@@ -363,8 +406,8 @@ class TestAdjacentPositionSelection:
         def mock_is_combat_mode():
             return False
 
-        controller.start_plan = mock_start_plan  # type: ignore
-        controller.is_combat_mode = mock_is_combat_mode  # type: ignore
+        controller.start_plan = mock_start_plan
+        controller.is_combat_mode = mock_is_combat_mode
 
         result = execute_default_action(controller, (2, 3))  # type: ignore[arg-type]
 

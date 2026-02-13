@@ -29,6 +29,28 @@ FISTS_TYPE = ItemType(
     can_materialize=False,
 )
 
+# === Natural Weapons (non-materializable creature attacks) ===
+
+SCORPION_STING_TYPE = ItemType(
+    name="Stinger",
+    description="A venomous barbed stinger.",
+    size=ItemSize.TINY,
+    category=ItemCategory.WEAPON,
+    melee_attack=MeleeAttackSpec(
+        "d6", {WeaponProperty.UNARMED, StatusProperty.POISONING}, verb="sting"
+    ),
+    can_materialize=False,
+)
+
+DOG_BITE_TYPE = ItemType(
+    name="Jaws",
+    description="Sharp teeth and a strong bite.",
+    size=ItemSize.TINY,
+    category=ItemCategory.WEAPON,
+    melee_attack=MeleeAttackSpec("d4", {WeaponProperty.UNARMED}, verb="bite"),
+    can_materialize=False,
+)
+
 SLEDGEHAMMER_TYPE = ItemType(
     name="Sledgehammer",
     description="Heavy two-handed weapon",

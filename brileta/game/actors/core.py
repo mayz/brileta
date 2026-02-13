@@ -743,6 +743,7 @@ class NPC(Character):
         num_ready_slots: int = 2,
         speed: int = DEFAULT_ACTOR_SPEED,
         can_open_doors: bool = False,
+        ai: AIComponent | None = None,
         **kwargs,
     ) -> None:
         """Instantiate NPC.
@@ -760,6 +761,8 @@ class NPC(Character):
             can_open_doors: Whether this NPC can open closed doors during
                 pathfinding. Humanoid NPCs should be True, animals/creatures
                 should be False.
+            ai: Optional pre-configured AI component. When omitted, a default
+                AIComponent is created.
             **kwargs: Additional Actor parameters
         """
         super().__init__(
@@ -776,7 +779,7 @@ class NPC(Character):
             intelligence=intelligence,
             demeanor=demeanor,
             weirdness=weirdness,
-            ai=AIComponent(),
+            ai=ai if ai is not None else AIComponent(),
             starting_weapon=starting_weapon,
             num_ready_slots=num_ready_slots,
             speed=speed,

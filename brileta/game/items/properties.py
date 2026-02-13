@@ -41,7 +41,7 @@ class StatusProperty(Enum):
     """Properties that apply status effects to targets."""
 
     BLINDING = auto()  # Temporary vision loss
-    POISONING = auto()  # Damage over time from toxins
+    POISONING = auto()  # Damage over time from toxins or venom
     BURNING = auto()  # Fire damage over time
     STUNNING = auto()  # Skip next turn from shock/impact
     BLEEDING = auto()  # Gradual health loss from wounds

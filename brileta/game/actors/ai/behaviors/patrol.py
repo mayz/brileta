@@ -291,11 +291,10 @@ def _collect_roam_candidates(
 ) -> tuple[list[WorldTilePos], list[WorldTilePos]]:
     """Collect nearby walkable roam candidates, partitioned by hazard.
 
-    ``get_hazard_cost()`` returns 1 for safe tiles and >1 for hazardous tiles.
     When ``require_unblocked`` is False, actor-occupied tiles are still included
     (only structural blocks like walls and doors are filtered).
     """
-    from brileta.environment.tile_types import get_hazard_cost
+    from brileta.environment.tile_types import is_tile_hazardous
     from brileta.game.enums import StepBlock
     from brileta.util.pathfinding import probe_step
 
@@ -315,7 +314,7 @@ def _collect_roam_candidates(
             block = probe_step(game_map, controller.gw, tx, ty, exclude_actor=actor)
             if block is not None and (require_unblocked or block not in _ACTOR_BLOCKS):
                 continue
-            if get_hazard_cost(int(game_map.tiles[tx, ty])) > 1:
+            if is_tile_hazardous(int(game_map.tiles[tx, ty])):
                 hazardous_candidates.append((tx, ty))
             else:
                 safe_candidates.append((tx, ty))

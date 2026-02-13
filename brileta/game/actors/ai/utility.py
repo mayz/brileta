@@ -79,6 +79,8 @@ class UtilityContext:
     best_flee_step: Direction | None
     # Normalized disposition: 0.0 maps to -100 (hostile), 1.0 maps to +100 (ally).
     disposition: float = 0.5
+    # Pure proximity signal in [0, 1], independent of relationship hostility.
+    target_proximity: float = 0.0
 
     def get_input(self, key: str) -> float | None:
         match key:
@@ -86,6 +88,8 @@ class UtilityContext:
                 return self.health_percent
             case "threat_level":
                 return self.threat_level
+            case "target_proximity":
+                return self.target_proximity
             case "has_escape_route":
                 return 1.0 if self.has_escape_route else 0.0
             case "can_attack":
@@ -112,6 +116,11 @@ def is_threat_present(context: UtilityContext) -> bool:
 def is_no_threat(context: UtilityContext) -> bool:
     """Precondition: returns True when relationship-aware threat is zero."""
     return context.threat_level <= 0.0
+
+
+def is_target_nearby(context: UtilityContext) -> bool:
+    """Precondition: returns True when target is inside aggro radius."""
+    return context.target_proximity > 0.0
 
 
 def has_escape_route(context: UtilityContext) -> bool:

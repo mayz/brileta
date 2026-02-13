@@ -134,8 +134,9 @@ class ActionDiscovery:
                 options.append(self._create_push_action(controller, actor, target))
                 options.append(self._create_trip_action(controller, actor, target))
 
-            # Add social actions (Talk)
-            options.append(self._create_talk_action(controller, actor, target))
+            # Add social actions (Talk) only for living non-self targets.
+            if target.health and target.health.is_alive() and target is not actor:
+                options.append(self._create_talk_action(controller, actor, target))
 
         return options
 

@@ -27,7 +27,7 @@ from brileta.util import rng
 from .actions import AttackAction, AvoidAction, IdleAction, WatchAction
 from .behaviors.flee import FleeAction
 from .behaviors.wander import WanderAction
-from .utility import ScoredAction, UtilityBrain, UtilityContext
+from .utility import ScoredAction, UtilityAction, UtilityBrain, UtilityContext
 
 if TYPE_CHECKING:
     from brileta.controller import Controller
@@ -128,18 +128,21 @@ class AIComponent:
     as an input, not a selector for which class runs.
 
     Dispositions are relationship-scoped and keyed by target actor identity.
-    Unknown relationships default to neutral (0).
+    Unknown relationships default to ``default_disposition``.
     """
 
     def __init__(
         self,
         aggro_radius: int = Combat.DEFAULT_AGGRO_RADIUS,
+        default_disposition: int = 0,
+        actions: list[UtilityAction] | None = None,
     ) -> None:
         self.actor: Actor | None = None
         # Per-relationship disposition values keyed by ``target.actor_id``.
-        # Unknown actors default to 0 (neutral).
+        # Unknown actors default to self.default_disposition.
         self._dispositions: dict[ActorId, int] = {}
         self.aggro_radius = aggro_radius
+        self.default_disposition = default_disposition
 
         # Combat awareness: identity of the most recent attacker. Allows the
         # NPC to treat that actor as a threat even outside normal aggro range.
@@ -159,8 +162,9 @@ class AIComponent:
         # internally. base_score is the per-archetype tuning knob: bump it
         # up to make this NPC type favor the action, lower it to suppress.
         # See each action class for its full scoring config.
-        self.brain = UtilityBrain(
-            [
+        brain_actions = actions
+        if brain_actions is None:
+            brain_actions = [
                 AttackAction(base_score=1.0),
                 FleeAction(base_score=1.0),
                 AvoidAction(base_score=0.7),
@@ -171,7 +175,8 @@ class AIComponent:
                 # wired up when guards / soldiers with assigned patrol routes
                 # are implemented. See PatrolAction in behaviors/patrol.py.
             ]
-        )
+
+        self.brain = UtilityBrain(brain_actions)
 
     def update(self, controller: Controller) -> None:
         """Update per-turn AI state.
@@ -191,7 +196,7 @@ class AIComponent:
 
     def disposition_toward(self, target: Actor) -> int:
         """Return numeric disposition toward ``target``."""
-        return self._dispositions.get(target.actor_id, 0)
+        return self._dispositions.get(target.actor_id, self.default_disposition)
 
     def is_hostile_toward(self, target: Actor) -> bool:
         """Return True if disposition toward target is at or below hostile threshold."""
@@ -383,6 +388,10 @@ class AIComponent:
         )
 
         threat_level = 0.0
+        target_proximity = 0.0
+        if self.aggro_radius > 0:
+            target_proximity = max(0.0, 1.0 - distance / self.aggro_radius)
+
         if target_actor.health.is_alive():
             threat_level = self._compute_relationship_threat(
                 distance=distance, disposition=effective_disposition
@@ -417,6 +426,7 @@ class AIComponent:
             best_attack_destination=best_attack_destination,
             best_flee_step=best_flee_step,
             disposition=disposition_to_normalized(effective_disposition),
+            target_proximity=target_proximity,
         )
 
     def _compute_relationship_threat(self, distance: int, disposition: int) -> float:
@@ -557,6 +567,30 @@ class AIComponent:
         self, controller: Controller, actor: NPC, target: Character
     ) -> Direction | None:
         """Find the best adjacent tile that moves away from the target."""
+        candidates = self._collect_flee_candidates(
+            controller,
+            actor,
+            target,
+        )
+        if not candidates:
+            return None
+
+        candidates.sort(
+            key=lambda candidate: (
+                -candidate.distance_after,
+                candidate.hazard_score,
+                candidate.step_cost,
+            )
+        )
+        return candidates[0].direction
+
+    def _collect_flee_candidates(
+        self,
+        controller: Controller,
+        actor: NPC,
+        target: Character,
+    ) -> list[FleeCandidate]:
+        """Enumerate passable adjacent tiles that increase distance to threat."""
         from brileta.environment.tile_types import HAZARD_BASE_COST, get_hazard_cost
         from brileta.util.pathfinding import probe_step
 
@@ -564,22 +598,20 @@ class AIComponent:
         current_distance = ranges.calculate_distance(
             actor.x, actor.y, target.x, target.y
         )
-
         candidates: list[FleeCandidate] = []
+
         for dx, dy in DIRECTIONS:
             tx = actor.x + dx
             ty = actor.y + dy
-            if (
-                probe_step(
-                    game_map,
-                    controller.gw,
-                    tx,
-                    ty,
-                    exclude_actor=actor,
-                    can_open_doors=actor.can_open_doors,
-                )
-                is not None
-            ):
+            block_reason = probe_step(
+                game_map,
+                controller.gw,
+                tx,
+                ty,
+                exclude_actor=actor,
+                can_open_doors=actor.can_open_doors,
+            )
+            if block_reason is not None:
                 continue
 
             distance_after = ranges.calculate_distance(tx, ty, target.x, target.y)
@@ -604,14 +636,4 @@ class AIComponent:
                 )
             )
 
-        if not candidates:
-            return None
-
-        candidates.sort(
-            key=lambda candidate: (
-                -candidate.distance_after,
-                candidate.hazard_score,
-                candidate.step_cost,
-            )
-        )
-        return candidates[0].direction
+        return candidates

@@ -117,6 +117,12 @@ class Attack[SpecType: AttackSpec](abc.ABC):
         """Get the name of the ability score to use for this attack."""
         return self._spec.stat_name
 
+    @property
+    def verb(self) -> str:
+        """Get the action verb used for combat messages."""
+        spec_verb = getattr(self._spec, "verb", None)
+        return spec_verb if isinstance(spec_verb, str) else "hit"
+
 
 class MeleeAttack(Attack[MeleeAttackSpec]):
     """Handles melee attacks for a specific item instance."""

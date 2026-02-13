@@ -2,17 +2,21 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from typing import cast
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from brileta import colors
+from brileta.environment.map import MapRegion
 from brileta.game.actors import Actor, Character, ItemPile, components
+from brileta.game.actors.npc_types import DOG_TYPE, RESIDENT_TYPE, TROG_TYPE
 from brileta.game.countables import CountableType
 from brileta.game.enums import ItemSize
 from brileta.game.game_world import GameWorld
 from brileta.game.items.item_core import Item, ItemType
 from brileta.game.lights import DirectionalLight, DynamicLight, GlobalLight, StaticLight
 from brileta.types import ActorId
+from brileta.util.coordinates import Rect
 from tests.helpers import DummyGameWorld
 
 # ---------------------------------------------------------------------------
@@ -148,6 +152,28 @@ class TestActorManagement:
         actor = make_actor(gw)
         # Actor was never added - should not raise.
         gw.remove_actor(actor)
+
+    def test_add_actor_invokes_on_actors_changed_callback(self) -> None:
+        gw = make_world()
+        actor = make_actor(gw)
+        callback = MagicMock()
+        gw.on_actors_changed = callback
+
+        GameWorld.add_actor(gw, actor)
+
+        callback.assert_called_once()
+
+    def test_remove_actor_invokes_on_actors_changed_callback(self) -> None:
+        gw = make_world()
+        actor = make_actor(gw)
+        callback = MagicMock()
+        gw.on_actors_changed = callback
+        GameWorld.add_actor(gw, actor)
+        callback.reset_mock()
+
+        GameWorld.remove_actor(gw, actor)
+
+        callback.assert_called_once()
 
     def test_get_actor_at_location_returns_none_for_empty_tile(self) -> None:
         gw = make_world()
@@ -567,3 +593,98 @@ class TestActorIdRegistry:
 
         # DummyGameWorld starts with empty registry
         assert len(gw._actor_id_registry) == 0
+
+
+class TestNPCSpawnPlan:
+    """Tests for resident-heavy NPC spawn planning."""
+
+    def test_spawn_plan_uses_resident_heavy_mix_and_caps_dogs(self) -> None:
+        gw = make_world()
+
+        spawn_plan = gw._build_npc_spawn_plan(100)
+        counts = Counter(npc_type.id for npc_type in spawn_plan)
+
+        assert len(spawn_plan) == 100
+        assert counts[RESIDENT_TYPE.id] == 90
+        assert counts[TROG_TYPE.id] == 5
+        assert counts[DOG_TYPE.id] == 5
+
+    def test_spawn_plan_never_includes_raiders(self) -> None:
+        gw = make_world()
+
+        spawn_plan = gw._build_npc_spawn_plan(200)
+        spawned_type_ids = {npc_type.id for npc_type in spawn_plan}
+
+        assert "raider" not in spawned_type_ids
+        assert "brigand" not in spawned_type_ids
+
+    def test_spawn_plan_limits_dogs_to_global_cap(self) -> None:
+        gw = make_world()
+
+        spawn_plan = gw._build_npc_spawn_plan(1_000)
+        counts = Counter(npc_type.id for npc_type in spawn_plan)
+
+        assert counts[DOG_TYPE.id] <= gw._DOG_SPAWN_CAP
+
+    def test_next_spawn_name_appends_sequential_suffixes_per_type(self) -> None:
+        gw = make_world()
+        spawn_name_counts: dict[str, int] = {}
+
+        first = gw._next_spawn_name(TROG_TYPE, spawn_name_counts)
+        second = gw._next_spawn_name(TROG_TYPE, spawn_name_counts)
+        third = gw._next_spawn_name(TROG_TYPE, spawn_name_counts)
+
+        assert first == "Trog"
+        assert second == "Trog 2"
+        assert third == "Trog 3"
+
+
+class TestNPCSpawnHelpers:
+    """Tests for dev-console NPC spawning and spawn-point helpers."""
+
+    def test_spawn_npc_returns_none_for_unknown_type(self) -> None:
+        gw = make_world()
+
+        result = gw.spawn_npc("unknown_npc_type")
+
+        assert result is None
+
+    def test_find_spawn_in_player_region_returns_walkable_unoccupied_tile(self) -> None:
+        gw = make_world()
+        player = make_character(gw, x=5, y=5)
+        gw.player = player
+        gw.add_actor(player)
+
+        region = MapRegion(id=1, region_type="room", bounds=[Rect(0, 0, 12, 12)])
+        gw.game_map.regions = {region.id: region}
+        gw.game_map.tile_to_region_id[:, :] = -1
+        gw.game_map.tile_to_region_id[0:12, 0:12] = region.id
+
+        # Exclude one nearby tile to verify occupancy filtering.
+        blocker = make_actor(gw, x=6, y=5)
+        gw.add_actor(blocker)
+
+        with patch(
+            "brileta.game.game_world._npc_rng.choice", side_effect=lambda s: s[0]
+        ):
+            pos = gw._find_spawn_in_player_region(max_distance=2)
+
+        assert pos is not None
+        assert gw.game_map.tile_to_region_id[pos[0], pos[1]] == region.id
+        assert gw.get_actor_at_location(pos[0], pos[1]) is None
+
+    def test_find_spawn_near_player_tries_inward_when_target_distance_fails(
+        self,
+    ) -> None:
+        gw = make_world()
+        player = make_character(gw, x=10, y=10)
+        gw.player = player
+        gw.add_actor(player)
+
+        gw.game_map.walkable[:, :] = False
+        gw.game_map.walkable[13, 10] = True
+
+        with patch("brileta.game.game_world._npc_rng.random", return_value=0.0):
+            pos = gw._find_spawn_near_player(target_distance=4, max_attempts=1)
+
+        assert pos == (13, 10)

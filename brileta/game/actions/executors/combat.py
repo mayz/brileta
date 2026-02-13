@@ -23,6 +23,7 @@ from brileta.game.actions.combat import AttackIntent, ReloadIntent
 from brileta.game.actions.executors.base import ActionExecutor
 from brileta.game.actors import Character, status_effects
 from brileta.game.actors.ai import escalate_hostility
+from brileta.game.actors.conditions import Sickness
 from brileta.game.consequences import (
     AttackConsequenceGenerator,
     ConsequenceHandler,
@@ -31,14 +32,21 @@ from brileta.game.enums import ActionBlockReason, OutcomeTier
 from brileta.game.items.capabilities import Attack
 from brileta.game.items.item_core import Item
 from brileta.game.items.item_types import FISTS_TYPE
-from brileta.game.items.properties import TacticalProperty, WeaponProperty
+from brileta.game.items.properties import (
+    StatusProperty,
+    TacticalProperty,
+    WeaponProperty,
+)
 from brileta.game.resolution import combat_arbiter
 from brileta.game.resolution.base import ResolutionResult
 from brileta.game.resolution.outcomes import CombatOutcome
 from brileta.sound.materials import AudioMaterialResolver, get_impact_sound_id
 from brileta.sound.weapon_sounds import get_reload_sound_id, get_weapon_sound_id
 from brileta.types import DIRECTIONS, DeltaTime
+from brileta.util import rng
 from brileta.view.presentation import PresentationEvent
+
+_status_effect_rng = rng.get("combat.status_effects")
 
 
 class AttackExecutor(ActionExecutor[AttackIntent]):
@@ -639,7 +647,10 @@ class AttackExecutor(ActionExecutor[AttackIntent]):
                         is_player_action=is_player,
                     )
                 )
-                self._log_hit_message(intent, attack_result, weapon, damage)
+                self._log_hit_message(intent, attack_result, attack, weapon, damage)
+
+                # Apply on-hit status effects (e.g., venom from scorpion sting)
+                self._apply_on_hit_effects(intent, attack)
 
                 if not intent.defender.health.is_alive():
                     publish_event(
@@ -787,14 +798,15 @@ class AttackExecutor(ActionExecutor[AttackIntent]):
         self,
         intent: AttackIntent,
         attack_result: ResolutionResult,
+        attack: Attack,
         weapon: Item,
         damage: int,
     ) -> None:
         """Log appropriate hit message based on critical status."""
         assert intent.defender is not None  # Tile shots handled separately
 
-        # Get verb from weapon based on attack mode
-        verb = self._get_attack_verb(weapon, intent.attack_mode)
+        # Get verb from the actual attack handler that was used.
+        verb = self._get_attack_verb(attack, weapon, intent.attack_mode)
         verb_conjugated = self._conjugate_verb(verb)
 
         # Include weapon name for non-unarmed attacks
@@ -820,13 +832,24 @@ class AttackExecutor(ActionExecutor[AttackIntent]):
         )
         publish_event(MessageEvent(message + hp_message_part, hit_color))
 
-    def _get_attack_verb(self, weapon: Item, attack_mode: str | None) -> str:
-        """Get the verb for an attack based on weapon and attack mode."""
+    def _get_attack_verb(
+        self, attack: Attack, weapon: Item, attack_mode: str | None
+    ) -> str:
+        """Get the verb for an attack from the attack spec that was used.
+
+        Prefers the actual attack handler's verb. Falls back to the explicit
+        attack_mode hint, then to a generic "hit".
+        """
+        # Derive verb from the selected attack capability.
+        if isinstance(attack.verb, str):
+            return attack.verb
+
+        # Fallback: use the explicit mode hint from the intent.
         if attack_mode == "melee" and weapon.melee_attack:
-            return weapon.melee_attack._spec.verb
+            return weapon.melee_attack.verb
         if attack_mode == "ranged" and weapon.ranged_attack:
-            return weapon.ranged_attack._spec.verb
-        # Fallback for weapons without explicit verb
+            return weapon.ranged_attack.verb
+
         return "hit"
 
     def _conjugate_verb(self, verb: str) -> str:
@@ -837,6 +860,46 @@ class AttackExecutor(ActionExecutor[AttackIntent]):
         if verb.endswith(("s", "x", "z", "ch", "sh")):
             return verb + "es"
         return verb + "s"
+
+    def _apply_on_hit_effects(self, intent: AttackIntent, attack: Attack) -> None:
+        """Apply status effects from weapon properties on a successful hit.
+
+        Checks the attack's properties for POISONING and rolls a toughness-based
+        save. On a failed save, a Sickness condition is added to the defender.
+
+        Natural weapons (UNARMED) inject Venom (2 dmg/turn, agility disadvantage).
+        Manufactured weapons apply Poisoned (1 dmg/turn, toughness disadvantage).
+        """
+        assert intent.defender is not None
+        defender = intent.defender
+
+        if StatusProperty.POISONING not in attack.properties:
+            return
+
+        # Toughness-based save: base 50%, shifted by 5% per toughness point.
+        # Toughness ranges [-5, 5] so the chance ranges [75%, 25%].
+        toughness = defender.stats.toughness if defender.stats else 0
+        apply_chance = max(0.1, min(0.9, 0.5 - toughness * 0.05))
+
+        if _status_effect_rng.random() > apply_chance:
+            return
+
+        # Natural weapons inject venom, manufactured weapons apply poison.
+        is_natural = WeaponProperty.UNARMED in attack.properties
+        sickness_type = "Venom" if is_natural else "Poisoned"
+
+        # Duration averages ~5 turns (gaussian, clamped to 3-8).
+        duration = round(_status_effect_rng.gauss(5, 1.0))
+        duration = max(3, min(8, duration))
+
+        condition = Sickness(sickness_type, remaining_turns=duration)
+        defender.inventory.add_to_inventory(condition)
+        publish_event(
+            MessageEvent(
+                f"{defender.name} is afflicted with {sickness_type}!",
+                colors.GREEN,
+            )
+        )
 
     def _handle_post_attack_effects(
         self,

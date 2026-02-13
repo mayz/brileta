@@ -9,8 +9,13 @@ from brileta.environment.map import GameMap
 from brileta.environment.tile_types import TileTypeID
 from brileta.game.actors import NPC, PC, Actor, Character, ItemPile, create_bookcase
 from brileta.game.actors.environmental import ContainedFire
+from brileta.game.actors.npc_types import (
+    DOG_TYPE,
+    NPC_TYPE_REGISTRY,
+    RESIDENT_TYPE,
+    TROG_TYPE,
+)
 from brileta.game.countables import CountableType
-from brileta.game.enums import CreatureSize
 from brileta.game.item_spawner import ItemSpawner
 from brileta.game.items.item_core import Item
 from brileta.game.items.item_types import (
@@ -20,9 +25,7 @@ from brileta.game.items.item_types import (
     HUNTING_SHOTGUN_TYPE,
     PISTOL_MAGAZINE_TYPE,
     PISTOL_TYPE,
-    REVOLVER_TYPE,
     SHOTGUN_SHELLS_TYPE,
-    SLEDGEHAMMER_TYPE,
 )
 from brileta.game.lights import DynamicLight, GlobalLight, LightSource
 from brileta.game.outfit import LEATHER_ARMOR_TYPE
@@ -33,7 +36,10 @@ from brileta.util.spatial import SpatialHashGrid, SpatialIndex
 from brileta.view.render.lighting.base import LightingSystem
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from brileta.environment.generators.buildings.building import Building
+    from brileta.game.actors.npc_core import NPCType
 
 _npc_rng = rng.get("world.npc_placement")
 _container_rng = rng.get("world.containers")
@@ -50,6 +56,10 @@ class GameWorld:
     """
 
     MAX_MAP_REGENERATION_ATTEMPTS = 10
+    _RESIDENT_SPAWN_RATIO = 0.90
+    _TROG_SPAWN_RATIO = 0.05
+    _DOG_SPAWN_RATIO = 0.05
+    _DOG_SPAWN_CAP = 5
 
     def __init__(
         self,
@@ -64,6 +74,11 @@ class GameWorld:
 
         self.lights: list[LightSource] = []  # All light sources in the world
         self.lighting_system: LightingSystem | None = None
+
+        # Optional callback invoked when the actor list changes (add/remove).
+        # The Controller wires this to TurnManager.invalidate_cache so that
+        # dynamically spawned NPCs are included in the energy tick loop.
+        self.on_actors_changed: Callable[[], None] | None = None
 
         self.generator_type = generator_type
         self.seed = seed
@@ -116,6 +131,8 @@ class GameWorld:
         self.actors.append(actor)
         self.actor_spatial_index.add(actor)
         self._actor_id_registry[actor.actor_id] = actor
+        if self.on_actors_changed is not None:
+            self.on_actors_changed()
 
     def remove_actor(self, actor: Actor) -> None:
         """Removes an actor from the world and spatial index."""
@@ -127,6 +144,8 @@ class GameWorld:
             pass
         # Always attempt to unregister from the id registry.
         self._actor_id_registry.pop(actor.actor_id, None)
+        if self.on_actors_changed is not None:
+            self.on_actors_changed()
 
     def add_light(self, light: LightSource) -> None:
         """Add a light source to the world and notify the lighting system.
@@ -423,6 +442,101 @@ class GameWorld:
         """Spawn multiple items efficiently as a single pile."""
         return self.item_spawner.spawn_multiple(items, x, y)
 
+    def spawn_npc(self, npc_type_id: str) -> NPC | None:
+        """Spawn an NPC of the given type near the player.
+
+        Prefers spawning within the player's current region (room/building).
+        Falls back to a distance-based search if no valid tile is found in
+        the region. Used by the dev console ``spawn`` command for quick
+        testing of NPC archetypes.
+
+        Returns the spawned NPC, or None if no valid position was found
+        or the type id is unknown.
+        """
+
+        npc_type: NPCType | None = NPC_TYPE_REGISTRY.get(npc_type_id)
+        if npc_type is None:
+            return None
+
+        # Try the player's region first, then fall back to distance-based.
+        pos = self._find_spawn_in_player_region()
+        if pos is None:
+            pos = self._find_spawn_near_player(target_distance=10)
+        if pos is None:
+            return None
+
+        name = npc_type.display_name
+
+        npc = npc_type.create(pos[0], pos[1], name, game_world=self)
+        self.add_actor(npc)
+        return npc
+
+    def _find_spawn_in_player_region(
+        self, max_distance: int = 10
+    ) -> WorldTilePos | None:
+        """Find a random walkable, unoccupied tile in the player's region.
+
+        Collects all valid tiles within the region's bounds that share the
+        same region ID, then prefers tiles within ``max_distance`` of the
+        player (Chebyshev distance). Falls back to any region tile if none
+        are close enough. Returns None if the player isn't in a region or
+        no suitable tile exists.
+        """
+        px, py = self.player.x, self.player.y
+        region = self.game_map.get_region_at((px, py))
+        if region is None:
+            return None
+
+        region_id = region.id
+        candidates: list[WorldTilePos] = [
+            (x, y)
+            for rect in region.bounds
+            for x in range(rect.x1, rect.x2)
+            for y in range(rect.y1, rect.y2)
+            if self.game_map.tile_to_region_id[x, y] == region_id
+            and self.game_map.walkable[x, y]
+            and self.get_actor_at_location(x, y) is None
+        ]
+
+        if not candidates:
+            return None
+
+        # Prefer tiles close to the player so dev-spawned NPCs are visible.
+        nearby = [
+            pos
+            for pos in candidates
+            if max(abs(pos[0] - px), abs(pos[1] - py)) <= max_distance
+        ]
+        return _npc_rng.choice(nearby if nearby else candidates)
+
+    def _find_spawn_near_player(
+        self,
+        target_distance: int = 10,
+        max_attempts: int = 40,
+    ) -> WorldTilePos | None:
+        """Find a random walkable, unoccupied tile near the player.
+
+        Tries random angles at the target distance, then shrinks inward
+        if the exact distance doesn't work.
+        """
+        import math
+
+        px, py = self.player.x, self.player.y
+        for _ in range(max_attempts):
+            angle = _npc_rng.random() * 2 * math.pi
+            # Try target_distance first, then closer if needed.
+            for dist in range(target_distance, 2, -1):
+                x = px + round(math.cos(angle) * dist)
+                y = py + round(math.sin(angle) * dist)
+                if (
+                    0 <= x < self.game_map.width
+                    and 0 <= y < self.game_map.height
+                    and self.game_map.walkable[x, y]
+                    and self.get_actor_at_location(x, y) is None
+                ):
+                    return (x, y)
+        return None
+
     def on_actor_moved(self, actor: Actor) -> None:
         """Notify the lighting system when an actor moves.
 
@@ -539,7 +653,10 @@ class GameWorld:
         if not valid_rooms:
             return  # No rooms large enough for NPCs
 
-        for npc_index in range(num_npcs):
+        spawn_plan = self._build_npc_spawn_plan(num_npcs)
+        spawn_name_counts: dict[str, int] = {}
+
+        for npc_type in spawn_plan:
             placed = False
 
             for _ in range(max_attempts_per_npc):
@@ -555,43 +672,8 @@ class GameWorld:
                     self.game_map.walkable[npc_x, npc_y]
                     and self.get_actor_at_location(npc_x, npc_y) is None
                 ):
-                    # Place the NPC - alternate between Trogs and Hackadoos
-                    if npc_index % 2 == 0:
-                        # Trog: hulking mutant with melee weapon
-                        npc = NPC(
-                            x=npc_x,
-                            y=npc_y,
-                            ch="T",
-                            name=f"Trog {npc_index + 1}" if npc_index > 0 else "Trog",
-                            color=colors.DARK_GREY,
-                            game_world=self,
-                            blocks_movement=True,
-                            weirdness=3,
-                            strength=3,
-                            toughness=3,
-                            intelligence=-3,
-                            speed=80,
-                            creature_size=CreatureSize.LARGE,
-                            starting_weapon=SLEDGEHAMMER_TYPE.create(),
-                            can_open_doors=True,
-                        )
-                    else:
-                        # Hackadoo: standard ranged enemy
-                        npc = NPC(
-                            x=npc_x,
-                            y=npc_y,
-                            ch="H",
-                            name=f"Hackadoo {npc_index + 1}"
-                            if npc_index > 0
-                            else "Hackadoo",
-                            color=colors.DARK_GREY,
-                            game_world=self,
-                            blocks_movement=True,
-                            weirdness=1,
-                            intelligence=2,
-                            starting_weapon=REVOLVER_TYPE.create(),
-                            can_open_doors=True,
-                        )
+                    npc_name = self._next_spawn_name(npc_type, spawn_name_counts)
+                    npc = npc_type.create(npc_x, npc_y, npc_name, game_world=self)
                     self.add_actor(npc)
                     placed = True
                     break
@@ -620,24 +702,46 @@ class GameWorld:
         indoor_npcs = num_buildings * 2
         doorway_npcs = num_buildings
         street_npcs = max(3, num_buildings // 2)
+        total_npcs = indoor_npcs + doorway_npcs + street_npcs
+        spawn_plan = self._build_npc_spawn_plan(total_npcs)
+        spawn_name_counts: dict[str, int] = {}
 
         npc_index = 0
 
         # 1. Place indoor NPCs in building rooms
         npc_index = self._place_indoor_npcs(
-            indoor_npcs, npc_index, max_attempts_per_npc
+            indoor_npcs,
+            npc_index,
+            max_attempts_per_npc,
+            spawn_plan,
+            spawn_name_counts,
         )
 
         # 2. Place NPCs near building doors
         npc_index = self._place_doorway_npcs(
-            doorway_npcs, npc_index, max_attempts_per_npc
+            doorway_npcs,
+            npc_index,
+            max_attempts_per_npc,
+            spawn_plan,
+            spawn_name_counts,
         )
 
         # 3. Place NPCs on streets
-        self._place_street_npcs(street_npcs, npc_index, max_attempts_per_npc)
+        self._place_street_npcs(
+            street_npcs,
+            npc_index,
+            max_attempts_per_npc,
+            spawn_plan,
+            spawn_name_counts,
+        )
 
     def _place_indoor_npcs(
-        self, count: int, start_index: int, max_attempts: int
+        self,
+        count: int,
+        start_index: int,
+        max_attempts: int,
+        spawn_plan: list[NPCType],
+        spawn_name_counts: dict[str, int],
     ) -> int:
         """Place NPCs inside building rooms.
 
@@ -676,7 +780,13 @@ class GameWorld:
                     self.game_map.walkable[npc_x, npc_y]
                     and self.get_actor_at_location(npc_x, npc_y) is None
                 ):
-                    npc = self._create_settlement_npc(npc_x, npc_y, npc_index, "indoor")
+                    npc = self._create_settlement_npc(
+                        npc_x,
+                        npc_y,
+                        npc_index,
+                        spawn_plan,
+                        spawn_name_counts,
+                    )
                     self.add_actor(npc)
                     npc_index += 1
                     placed = True
@@ -688,7 +798,12 @@ class GameWorld:
         return npc_index
 
     def _place_doorway_npcs(
-        self, count: int, start_index: int, max_attempts: int
+        self,
+        count: int,
+        start_index: int,
+        max_attempts: int,
+        spawn_plan: list[NPCType],
+        spawn_name_counts: dict[str, int],
     ) -> int:
         """Place NPCs just outside building doors.
 
@@ -751,7 +866,11 @@ class GameWorld:
                         and self.get_actor_at_location(npc_x, npc_y) is None
                     ):
                         npc = self._create_settlement_npc(
-                            npc_x, npc_y, npc_index, "doorway"
+                            npc_x,
+                            npc_y,
+                            npc_index,
+                            spawn_plan,
+                            spawn_name_counts,
                         )
                         self.add_actor(npc)
                         npc_index += 1
@@ -764,7 +883,12 @@ class GameWorld:
         return npc_index
 
     def _place_street_npcs(
-        self, count: int, start_index: int, max_attempts: int
+        self,
+        count: int,
+        start_index: int,
+        max_attempts: int,
+        spawn_plan: list[NPCType],
+        spawn_name_counts: dict[str, int],
     ) -> int:
         """Place NPCs on street tiles.
 
@@ -795,7 +919,13 @@ class GameWorld:
                 npc_x, npc_y = _npc_rng.choice(street_positions)
 
                 if self.get_actor_at_location(npc_x, npc_y) is None:
-                    npc = self._create_settlement_npc(npc_x, npc_y, npc_index, "street")
+                    npc = self._create_settlement_npc(
+                        npc_x,
+                        npc_y,
+                        npc_index,
+                        spawn_plan,
+                        spawn_name_counts,
+                    )
                     self.add_actor(npc)
                     npc_index += 1
                     break
@@ -813,53 +943,63 @@ class GameWorld:
         return self.game_map.tiles[x, y] in outdoor_tiles
 
     def _create_settlement_npc(
-        self, x: int, y: int, index: int, location_type: str
+        self,
+        x: int,
+        y: int,
+        index: int,
+        spawn_plan: list[NPCType],
+        spawn_name_counts: dict[str, int],
     ) -> NPC:
-        """Create an NPC appropriate for a settlement.
+        """Create a settlement NPC from the precomputed spawn plan.
 
         Args:
             x: X position.
             y: Y position.
-            index: NPC index for naming.
-            location_type: Where the NPC is placed ("indoor", "doorway", "street").
+            index: Spawn index used to select the NPC type.
+            spawn_plan: Ordered list of NPC types to place.
+            spawn_name_counts: Per-type counters for deterministic naming.
 
         Returns:
             The created NPC.
         """
-        # Alternate between Trogs and Hackadoos
-        if index % 2 == 0:
-            # Trog: hulking mutant with melee weapon
-            return NPC(
-                x=x,
-                y=y,
-                ch="T",
-                name=f"Trog {index + 1}" if index > 0 else "Trog",
-                color=colors.DARK_GREY,
-                game_world=self,
-                blocks_movement=True,
-                weirdness=3,
-                strength=3,
-                toughness=3,
-                intelligence=-3,
-                speed=80,
-                creature_size=CreatureSize.LARGE,
-                starting_weapon=SLEDGEHAMMER_TYPE.create(),
-                can_open_doors=True,
-            )
-        # Hackadoo: standard ranged enemy
-        return NPC(
-            x=x,
-            y=y,
-            ch="H",
-            name=f"Hackadoo {index + 1}" if index > 0 else "Hackadoo",
-            color=colors.DARK_GREY,
-            game_world=self,
-            blocks_movement=True,
-            weirdness=1,
-            intelligence=2,
-            starting_weapon=REVOLVER_TYPE.create(),
-            can_open_doors=True,
+        npc_type = spawn_plan[index] if index < len(spawn_plan) else RESIDENT_TYPE
+        npc_name = self._next_spawn_name(npc_type, spawn_name_counts)
+        return npc_type.create(x, y, npc_name, game_world=self)
+
+    def _build_npc_spawn_plan(self, total_npcs: int) -> list[NPCType]:
+        """Build a resident-heavy spawn plan with low hostile pressure.
+
+        The current test-focused mix is:
+        - Residents: dominant population (~90% baseline)
+        - Trogs: rare hostile presence (~5%)
+        - Dogs: minor ambient population (~5%), capped to a small fixed count
+        """
+        if total_npcs <= 0:
+            return []
+
+        trog_count = int(total_npcs * self._TROG_SPAWN_RATIO)
+        dog_count = min(
+            self._DOG_SPAWN_CAP,
+            int(total_npcs * self._DOG_SPAWN_RATIO),
         )
+        resident_count = max(0, total_npcs - trog_count - dog_count)
+
+        spawn_plan: list[NPCType] = (
+            [RESIDENT_TYPE] * resident_count
+            + [TROG_TYPE] * trog_count
+            + [DOG_TYPE] * dog_count
+        )
+        _npc_rng.shuffle(spawn_plan)
+        return spawn_plan
+
+    def _next_spawn_name(
+        self, npc_type: NPCType, spawn_name_counts: dict[str, int]
+    ) -> str:
+        """Return the next sequential display name for the given NPC type."""
+        next_sequence = spawn_name_counts.get(npc_type.id, 0) + 1
+        spawn_name_counts[npc_type.id] = next_sequence
+        base = npc_type.display_name
+        return base if next_sequence == 1 else f"{base} {next_sequence}"
 
     def _add_test_fire(self, rooms: list) -> None:
         """Add a test fire to demonstrate the fire system."""

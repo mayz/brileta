@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import time
 from collections import deque
+from collections.abc import Callable
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from brileta import colors, config, input_events
@@ -46,6 +48,22 @@ def _common_prefix(strings: list[str]) -> str:
 def _var_tag(var: LiveVariable) -> str:
     """Return a short tag indicating the variable's kind."""
     return "[metric]" if var.metric else "[var]   "
+
+
+@dataclass(frozen=True, slots=True)
+class ConsoleCommand:
+    """A registered dev console command with co-located help and tab completion.
+
+    Each command bundles its help text, execution handler, and optional
+    tab-completion logic in one place so adding a new command only requires
+    a single entry in the command registry.
+    """
+
+    # (usage_string, description) pairs shown by the ``help`` command.
+    # Aliases use an empty tuple so they don't clutter help output.
+    help_entries: tuple[tuple[str, str], ...]
+    execute: Callable[[list[str]], None]
+    tab_complete: Callable[[str], list[str]] | None = None
 
 
 class DevConsoleOverlay(TextOverlay):
@@ -99,6 +117,94 @@ class DevConsoleOverlay(TextOverlay):
 
         self.is_interactive = True
 
+        # Command registry - each command defines its help, handler, and
+        # optional tab completer in one place.
+        self._commands = self._build_commands()
+
+    def _build_commands(self) -> dict[str, ConsoleCommand]:
+        """Build the command registry.
+
+        To add a new command, add a single entry here. Help text, execution
+        logic, and tab completion are all co-located per command. Aliases
+        (``?`` for ``help``, ``watch`` for ``show``, ``exit`` for ``quit``)
+        use empty ``help_entries`` so they stay out of the help listing.
+        """
+        return {
+            "help": ConsoleCommand(
+                help_entries=(("help", "Shows this list of commands."),),
+                execute=lambda _: self._show_help(),
+            ),
+            "?": ConsoleCommand(
+                help_entries=(),
+                execute=lambda _: self._show_help(),
+            ),
+            "list": ConsoleCommand(
+                help_entries=(
+                    ("list", "Interactive variable browser (also Ctrl+L)."),
+                    ("list <p>", "List variables matching pattern <p> (substring)."),
+                    ("list vars", "List only settable variables."),
+                    ("list metrics", "List only metrics."),
+                ),
+                execute=self._handle_list_command,
+            ),
+            "set": ConsoleCommand(
+                help_entries=(("set <var> <val>", "Set the value of a variable."),),
+                execute=self._handle_set_command,
+            ),
+            "get": ConsoleCommand(
+                help_entries=(("get <var>", "Get the current value of a variable."),),
+                execute=self._handle_get_command,
+            ),
+            "toggle": ConsoleCommand(
+                help_entries=(("toggle <var>", "Toggle a boolean variable."),),
+                execute=self._handle_toggle_command,
+            ),
+            "show": ConsoleCommand(
+                help_entries=(
+                    (
+                        "show <pattern>",
+                        "Toggle watching variable(s). Supports prefix* patterns.",
+                    ),
+                ),
+                execute=self._handle_show_command,
+            ),
+            "watch": ConsoleCommand(
+                help_entries=(),
+                execute=self._handle_show_command,
+            ),
+            "spawn": ConsoleCommand(
+                help_entries=(
+                    (
+                        "spawn <id>",
+                        "Spawn an NPC near the player by type id (e.g. spawn trog).",
+                    ),
+                ),
+                execute=self._handle_spawn_command,
+                tab_complete=self._complete_spawn_types,
+            ),
+            "world": ConsoleCommand(
+                help_entries=(
+                    (
+                        "world [seed]",
+                        "Show current seed, or regenerate world with new seed.",
+                    ),
+                ),
+                execute=self._handle_world_command,
+            ),
+            "clear": ConsoleCommand(
+                help_entries=(("clear", "Clear console history."),),
+                execute=self._handle_clear_command,
+            ),
+            "quit": ConsoleCommand(
+                help_entries=(("quit", "Quit the game."),),
+                execute=lambda _: self.controller.app.quit(),
+            ),
+            "exit": ConsoleCommand(
+                help_entries=(),
+                execute=lambda _: self.controller.app.quit(),
+            ),
+        }
+
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
@@ -134,8 +240,10 @@ class DevConsoleOverlay(TextOverlay):
         return repr(value)
 
     def _handle_tab_completion(self, *, reverse: bool = False) -> None:
-        """Perform or cycle tab completion for variable names.
+        """Perform or cycle tab completion.
 
+        Uses command-specific completers when available (e.g. NPC type ids
+        after ``spawn``), falling back to live variable names otherwise.
         First Tab press: complete to the longest common prefix among candidates.
         If ambiguous, print all candidates. Subsequent presses cycle through them.
 
@@ -146,20 +254,24 @@ class DevConsoleOverlay(TextOverlay):
             return
 
         if not self.tab_completion_candidates:
-            # First press: build the candidate list from the last token.
-            prefix = self.input_buffer.split()[-1]
+            # First press: build the candidate list from the current token.
+            # A trailing space means the user is starting a new argument,
+            # so the prefix is empty (show all candidates for that position).
+            if self.input_buffer.endswith(" "):
+                prefix = ""
+            else:
+                prefix = self.input_buffer.split()[-1]
             self.tab_completion_prefix = prefix
-            candidates = [
-                v.name
-                for v in live_variable_registry.get_all_variables()
-                if v.name.startswith(prefix)
-            ]
+            candidates = self._build_tab_candidates(prefix)
             if not candidates:
                 return
             self.tab_completion_candidates = candidates
             self.tab_completion_index = -1
 
             # Complete to the longest common prefix.
+            # Re-read prefix after _build_tab_candidates, which may have
+            # mutated it (e.g. appending a space for bare command completion).
+            prefix = self.tab_completion_prefix
             common = _common_prefix(candidates)
             start = self.input_buffer.rfind(prefix)
             self.input_buffer = self.input_buffer[:start] + common
@@ -182,6 +294,40 @@ class DevConsoleOverlay(TextOverlay):
         completion = self.tab_completion_candidates[self.tab_completion_index]
         start = self.input_buffer.rfind(self.tab_completion_prefix)
         self.input_buffer = self.input_buffer[:start] + completion
+
+    def _build_tab_candidates(self, prefix: str) -> list[str]:
+        """Return tab-completion candidates for the current input context.
+
+        If the first token matches a registered command with a ``tab_complete``
+        callback, delegates to it. When the command name is the only token
+        (no space yet), adds a trailing space and completes with an empty
+        prefix so all argument candidates are shown.
+        """
+        parts = self.input_buffer.split()
+        if len(parts) >= 1:
+            cmd = self._commands.get(parts[0].lower())
+            if cmd is not None and cmd.tab_complete is not None:
+                if len(parts) == 1 and not self.input_buffer.endswith(" "):
+                    # Bare command with no space yet - add the space and
+                    # show all candidates for the argument position.
+                    self.input_buffer += " "
+                    self.tab_completion_prefix = ""
+                    return cmd.tab_complete("")
+                return cmd.tab_complete(prefix)
+
+        # Single token that didn't match a registered command: complete
+        # against both command names and live variable names.
+        candidates: list[str] = []
+        if len(parts) <= 1 and not self.input_buffer.endswith(" "):
+            candidates.extend(
+                name for name in self._commands if name.startswith(prefix)
+            )
+        candidates.extend(
+            v.name
+            for v in live_variable_registry.get_all_variables()
+            if v.name.startswith(prefix)
+        )
+        return candidates
 
     def _handle_history_navigation(self, direction: int) -> None:
         """Navigate command history with ``direction`` of ``-1`` or ``1``."""
@@ -206,26 +352,21 @@ class DevConsoleOverlay(TextOverlay):
         self.input_buffer = commands[self.history_index]
 
     def _show_help(self) -> None:
-        """Append the list of available commands to the history."""
-        commands = {
-            "help": "Shows this list of commands.",
-            "list": "Interactive variable browser (also Ctrl+L).",
-            "list <p>": "List variables matching pattern <p> (substring).",
-            "list vars": "List only settable variables.",
-            "list metrics": "List only metrics.",
-            "<var>": "Print the current value of a variable (opens slider if ranged).",
-            "<var> = <val>": "Set the value of a variable.",
-            "set <var> <val>": "Set the value of a variable.",
-            "get <var>": "Get the current value of a variable.",
-            "toggle <var>": "Toggle a boolean variable.",
-            "show <pattern>": "Toggle watching variable(s). Supports prefix* patterns.",
-            "world [seed]": "Show current seed, or regenerate world with new seed.",
-            "clear": "Clear console history.",
-            "quit": "Quit the game.",
-        }
+        """Append the list of available commands to the history.
+
+        Help text is generated from the command registry so adding a new
+        command automatically updates the help listing.
+        """
         self.history.append("Available Commands:")
-        for cmd, desc in commands.items():
-            self.history.append(f"  {cmd:<20} - {desc}")
+        for cmd in self._commands.values():
+            for usage, desc in cmd.help_entries:
+                self.history.append(f"  {usage:<20} - {desc}")
+        # Natural-syntax entries aren't registered commands.
+        self.history.append(
+            f"  {'<var>':<20} - Print the current value of a variable"
+            " (opens slider if ranged)."
+        )
+        self.history.append(f"  {'<var> = <val>':<20} - Set the value of a variable.")
         self.history.append("")
         self.history.append("Vars are game state you can read and set.")
         self.history.append("Metrics are diagnostic data (use 'show' to watch).")
@@ -785,96 +926,41 @@ class DevConsoleOverlay(TextOverlay):
         parts = command.split()
         cmd = parts[0].lower()
 
-        match cmd:
-            case "?" | "help":
-                self._show_help()
-            case "list":
-                self._handle_list_command(parts)
-            case "set":
-                self._handle_set_command(parts)
-            case "get":
-                if len(parts) < 2:
-                    self.history.append("Usage: get <var>")
-                    return
-                name = parts[1]
-                var = live_variable_registry.get_variable(name)
-                if var is None:
-                    self.history.append(f"Variable '{name}' not found.")
-                else:
-                    self._print_or_activate_slider(var)
-            case "toggle":
-                if len(parts) < 2:
-                    self.history.append("Usage: toggle <var>")
-                    return
-                name = parts[1]
-                var = live_variable_registry.get_variable(name)
-                if var is None:
-                    self.history.append(f"Variable '{name}' not found.")
-                    return
-                current = var.get_value()
-                if not isinstance(current, bool):
-                    self.history.append(
-                        f"Variable '{name}' is not a boolean (use 'show' or 'watch')."
-                    )
-                    return
-                if var.set_value(not current):
-                    self.history.append(f"{name} toggled to {not current}")
-                else:
-                    self.history.append(f"Variable '{name}' is read-only.")
-            case "show" | "watch":
-                if len(parts) < 2:
-                    self.history.append("Usage: show/watch <var> or <prefix*>")
-                    return
-                pattern = parts[1]
-                # Support pattern matching with * or prefix matching
-                if (
-                    "*" in pattern
-                    or live_variable_registry.get_variable(pattern) is None
-                ):
-                    # Treat as prefix pattern (strip trailing * if present)
-                    prefix = pattern.rstrip("*")
-                    all_vars = live_variable_registry.get_all_variables()
-                    matched = [v for v in all_vars if v.name.startswith(prefix)]
-                    if not matched:
-                        self.history.append(f"No variables matching '{pattern}'.")
-                        return
-                    for var in matched:
-                        live_variable_registry.toggle_watch(var.name)
-                        status = (
-                            "+" if live_variable_registry.is_watched(var.name) else "-"
-                        )
-                        self.history.append(f"  {status} {var.name}")
-                    self.history.append(f"Toggled {len(matched)} variable(s).")
-                else:
-                    # Exact match
-                    live_variable_registry.toggle_watch(pattern)
-                    if live_variable_registry.is_watched(pattern):
-                        self.history.append(f"Now watching: {pattern}")
-                    else:
-                        self.history.append(f"No longer watching: {pattern}")
-            case "world":
-                if len(parts) < 2:
-                    # No seed provided - show current seed
-                    current_seed = self.controller._current_seed
-                    self.history.append(f"Current seed: {current_seed}")
-                else:
-                    # Seed provided - regenerate world
-                    seed_str = parts[1]
-                    # Try to parse as int, otherwise use as string seed
-                    try:
-                        seed = int(seed_str)
-                    except ValueError:
-                        seed = seed_str
-                    self.history.append(f"Generating new world with seed: {seed}")
-                    self.controller.new_world(seed)
-                    self.history.append("World regenerated.")
-            case "clear":
-                self.history.clear()
-                self._scroll_offset = 0
-            case "quit" | "exit":
-                self.controller.app.quit()
-            case _:
-                self._handle_natural_syntax(command, cmd)
+        registered = self._commands.get(cmd)
+        if registered is not None:
+            registered.execute(parts)
+        else:
+            self._handle_natural_syntax(command, cmd)
+
+    # ------------------------------------------------------------------
+    # Command handlers
+    # ------------------------------------------------------------------
+    def _handle_spawn_command(self, parts: list[str]) -> None:
+        """Handle the ``spawn <id>`` command to place an NPC near the player."""
+        from brileta.game.actors.npc_types import NPC_TYPE_REGISTRY
+
+        if len(parts) < 2:
+            type_ids = ", ".join(sorted(NPC_TYPE_REGISTRY))
+            self.history.append(f"Usage: spawn <type>  ({type_ids})")
+            return
+
+        type_id = parts[1].lower()
+        if type_id not in NPC_TYPE_REGISTRY:
+            type_ids = ", ".join(sorted(NPC_TYPE_REGISTRY))
+            self.history.append(f"Unknown type '{type_id}'. Available: {type_ids}")
+            return
+
+        npc = self.controller.gw.spawn_npc(type_id)
+        if npc is None:
+            self.history.append("Could not find a walkable tile near the player.")
+        else:
+            self.history.append(f"Spawned {npc.name}.")
+
+    def _complete_spawn_types(self, prefix: str) -> list[str]:
+        """Tab-complete NPC type ids for the ``spawn`` command."""
+        from brileta.game.actors.npc_types import NPC_TYPE_REGISTRY
+
+        return sorted(tid for tid in NPC_TYPE_REGISTRY if tid.startswith(prefix))
 
     def _handle_list_command(self, parts: list[str]) -> None:
         """Handle the 'list' command with its various forms.
@@ -917,6 +1003,93 @@ class DevConsoleOverlay(TextOverlay):
         value_str = " ".join(parts[2:])
         self._set_variable(name, value_str)
 
+    def _handle_get_command(self, parts: list[str]) -> None:
+        """Handle the ``get <var>`` command."""
+        if len(parts) < 2:
+            self.history.append("Usage: get <var>")
+            return
+        name = parts[1]
+        var = live_variable_registry.get_variable(name)
+        if var is None:
+            self.history.append(f"Variable '{name}' not found.")
+        else:
+            self._print_or_activate_slider(var)
+
+    def _handle_toggle_command(self, parts: list[str]) -> None:
+        """Handle the ``toggle <var>`` command for boolean variables."""
+        if len(parts) < 2:
+            self.history.append("Usage: toggle <var>")
+            return
+        name = parts[1]
+        var = live_variable_registry.get_variable(name)
+        if var is None:
+            self.history.append(f"Variable '{name}' not found.")
+            return
+        current = var.get_value()
+        if not isinstance(current, bool):
+            self.history.append(
+                f"Variable '{name}' is not a boolean (use 'show' or 'watch')."
+            )
+            return
+        if var.set_value(not current):
+            self.history.append(f"{name} toggled to {not current}")
+        else:
+            self.history.append(f"Variable '{name}' is read-only.")
+
+    def _handle_show_command(self, parts: list[str]) -> None:
+        """Handle the ``show``/``watch`` command to toggle variable watching."""
+        if len(parts) < 2:
+            self.history.append("Usage: show/watch <var> or <prefix*>")
+            return
+        pattern = parts[1]
+        # Support pattern matching with * or prefix matching
+        if "*" in pattern or live_variable_registry.get_variable(pattern) is None:
+            # Treat as prefix pattern (strip trailing * if present)
+            prefix = pattern.rstrip("*")
+            all_vars = live_variable_registry.get_all_variables()
+            matched = [v for v in all_vars if v.name.startswith(prefix)]
+            if not matched:
+                self.history.append(f"No variables matching '{pattern}'.")
+                return
+            for var in matched:
+                live_variable_registry.toggle_watch(var.name)
+                status = "+" if live_variable_registry.is_watched(var.name) else "-"
+                self.history.append(f"  {status} {var.name}")
+            self.history.append(f"Toggled {len(matched)} variable(s).")
+        else:
+            # Exact match
+            live_variable_registry.toggle_watch(pattern)
+            if live_variable_registry.is_watched(pattern):
+                self.history.append(f"Now watching: {pattern}")
+            else:
+                self.history.append(f"No longer watching: {pattern}")
+
+    def _handle_world_command(self, parts: list[str]) -> None:
+        """Handle the ``world`` command to show or change the world seed."""
+        if len(parts) < 2:
+            # No seed provided - show current seed
+            current_seed = self.controller._current_seed
+            self.history.append(f"Current seed: {current_seed}")
+        else:
+            # Seed provided - regenerate world
+            seed_str = parts[1]
+            # Try to parse as int, otherwise use as string seed
+            try:
+                seed = int(seed_str)
+            except ValueError:
+                seed = seed_str
+            self.history.append(f"Generating new world with seed: {seed}")
+            self.controller.new_world(seed)
+            self.history.append("World regenerated.")
+
+    def _handle_clear_command(self, _parts: list[str]) -> None:
+        """Handle the ``clear`` command to wipe console history."""
+        self.history.clear()
+        self._scroll_offset = 0
+
+    # ------------------------------------------------------------------
+    # Natural syntax fallback
+    # ------------------------------------------------------------------
     def _handle_natural_syntax(self, command: str, cmd: str) -> None:
         """Handle natural syntax: bare variable name to get, ``var = val`` to set.
 

@@ -171,6 +171,9 @@ class Controller:
         # Create turn manager after world exists (accesses gw.player via property)
         self.turn_manager = TurnManager(self)
 
+        # Wire up the actor-change callback now that turn_manager exists.
+        self.gw.on_actors_changed = self.turn_manager.invalidate_cache
+
         # Initialize mode system - game always has an active mode
         # Modes are organized in a stack. ExploreMode is always at the bottom.
         # Other modes (CombatMode, PickerMode, etc.) push on top and pop when done.
@@ -252,6 +255,14 @@ class Controller:
             generator_type=config.MAP_GENERATOR_TYPE,
             seed=seed,
         )
+
+        # Invalidate the turn manager's energy cache when actors are added/removed
+        # so dynamically spawned NPCs participate in the action economy.
+        # The turn manager doesn't exist yet on the very first call from __init__,
+        # but actors added during world construction are picked up by the initial
+        # cache build anyway.
+        if self._systems_initialized:
+            self.gw.on_actors_changed = self.turn_manager.invalidate_cache
 
         # Initialize GPU lighting system
         self.gw.lighting_system = GPULightingSystem(self.gw, self.graphics)

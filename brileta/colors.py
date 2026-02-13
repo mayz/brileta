@@ -18,6 +18,8 @@ GREY: Color = (128, 128, 128)
 MEDIUM_GREY: Color = (170, 170, 170)
 LIGHT_GREY: Color = (200, 200, 200)
 DARK_GREY: Color = (50, 50, 50)
+BROWN: Color = (139, 69, 19)
+TAN: Color = (180, 150, 80)
 LIGHT_BLUE: Color = (173, 216, 230)
 MAGENTA: Color = (255, 0, 255)
 
