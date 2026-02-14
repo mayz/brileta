@@ -31,15 +31,46 @@ Domain naming convention (hierarchical):
 
 from __future__ import annotations
 
+import gzip
 import zlib
 from collections.abc import Sequence
 from random import Random
 from typing import TYPE_CHECKING, TypeVar
 
+from brileta import config
+
 if TYPE_CHECKING:
     from brileta.types import RandomSeed
 
 T = TypeVar("T")
+
+# Path to the gzipped EFF short word list (1,296 common short words).
+_WORDLIST_PATH = config.ASSETS_BASE_DIR / "data" / "eff_short_wordlist.txt.gz"
+_wordlist: list[str] | None = None
+
+# Number of words to join for a generated seed (3 words from 1,296 = ~2.2B combos).
+_SEED_WORD_COUNT = 3
+
+
+def _load_wordlist() -> list[str]:
+    """Load the EFF short word list, caching on first call."""
+    global _wordlist
+    if _wordlist is None:
+        with gzip.open(_WORDLIST_PATH, "rt") as f:
+            _wordlist = [line.strip() for line in f if line.strip()]
+    return _wordlist
+
+
+def generate_seed() -> str:
+    """Generate a human-readable seed like ``acid-helm-pivot``.
+
+    Uses system entropy to pick words so every call produces a unique seed.
+    The returned string can be passed directly to ``rng.init()`` or
+    ``random.seed()`` as a deterministic seed.
+    """
+    words = _load_wordlist()
+    sys_rng = Random()  # seeded from OS entropy
+    return "-".join(sys_rng.choice(words) for _ in range(_SEED_WORD_COUNT))
 
 
 class RNGStream:

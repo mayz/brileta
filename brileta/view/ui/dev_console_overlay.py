@@ -1065,22 +1065,23 @@ class DevConsoleOverlay(TextOverlay):
                 self.history.append(f"No longer watching: {pattern}")
 
     def _handle_world_command(self, parts: list[str]) -> None:
-        """Handle the ``world`` command to show or change the world seed."""
+        """Handle the ``world`` command to regenerate the world.
+
+        With no arguments, generates a new world with a random seed.
+        With a seed argument, regenerates the world with that specific seed.
+        """
         if len(parts) < 2:
-            # No seed provided - show current seed
-            current_seed = self.controller._current_seed
-            self.history.append(f"Current seed: {current_seed}")
+            # No seed provided - regenerate with a random seed
+            self.controller.new_world()
         else:
-            # Seed provided - regenerate world
+            # Seed provided - regenerate world with that seed
             seed_str = parts[1]
             # Try to parse as int, otherwise use as string seed
             try:
                 seed = int(seed_str)
             except ValueError:
                 seed = seed_str
-            self.history.append(f"Generating new world with seed: {seed}")
             self.controller.new_world(seed)
-            self.history.append("World regenerated.")
 
     def _handle_clear_command(self, _parts: list[str]) -> None:
         """Handle the ``clear`` command to wipe console history."""

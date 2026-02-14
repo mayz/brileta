@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import random
+import time
 from typing import TYPE_CHECKING
 
 from brileta.app import App
@@ -37,6 +38,7 @@ from .modes.combat import CombatMode
 from .modes.explore import ExploreMode
 from .modes.picker import PickerMode
 from .types import DeltaTime, FixedTimestep, InterpolationAlpha, RandomSeed
+from .util import rng
 from .util.clock import Clock
 from .util.coordinates import Rect, WorldTilePos
 from .util.live_vars import (
@@ -242,13 +244,20 @@ class Controller:
                 seed = config.RANDOM_SEED
             else:
                 # Subsequent call with no seed - generate random one
-                seed = random.randint(0, 2**31 - 1)
+                seed = rng.generate_seed()
+
+        # If seed is still None (config.RANDOM_SEED is None), generate a
+        # human-readable seed so game.seed always shows a reproducible value.
+        if seed is None:
+            seed = rng.generate_seed()
 
         # Set the global random state
         random.seed(seed)
         self._current_seed = seed
 
-        # Create new game world
+        # Create new game world and set up lighting
+        gen_start = time.perf_counter()
+
         self.gw = GameWorld(
             config.MAP_WIDTH,
             config.MAP_HEIGHT,
@@ -275,6 +284,16 @@ class Controller:
         # Create the sun if enabled (uses config defaults)
         if config.SUN_ENABLED:
             self.gw.add_light(DirectionalLight.create_sun())
+
+        gen_elapsed = time.perf_counter() - gen_start
+
+        # Log seed and generation time so the player can see it without the dev console
+        publish_event(
+            MessageEvent(
+                f"World generated in {gen_elapsed:.2f}s. Seed: {seed}",
+                colors.WHITE,
+            )
+        )
 
         # Reset dependent systems if this is a regeneration (not first call)
         if self._systems_initialized:

@@ -18,7 +18,7 @@ PROJECT_ROOT_PATH = Path(__file__).resolve().parent.parent
 
 # Master seed for all randomness (map generation, gameplay, etc.)
 # Set to None for non-deterministic behavior.
-RANDOM_SEED: RandomSeed = "burrito1"
+RANDOM_SEED: RandomSeed = None
 
 # Test environment detection
 IS_TEST_ENVIRONMENT = "pytest" in sys.modules
