@@ -197,13 +197,15 @@ class FrameManager:
         # World view starts after left sidebar
         world_view_x = left_sidebar_width
 
-        # Bottom bar components - dynamic equipment width based on content
+        # Bottom bar components - dynamic equipment width based on content.
+        # Equipment panel extends to the right screen edge to avoid uncovered
+        # gap columns where the world texture would bleed through.
         equipment_width = self.equipment_view.calculate_min_width()
-        equipment_x1 = screen_width_tiles - equipment_width - 1
-        equipment_x2 = equipment_x1 + equipment_width
+        equipment_x2 = screen_width_tiles
+        equipment_x1 = equipment_x2 - equipment_width
 
-        # Message log spans bottom bar from left to equipment
-        message_log_x2 = equipment_x1 - 1
+        # Message log spans bottom bar from left to equipment (no gap)
+        message_log_x2 = equipment_x1
 
         # Set view bounds
         self.world_view.tile_dimensions = tile_dimensions
