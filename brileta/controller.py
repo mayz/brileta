@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import random
-import time
 from typing import TYPE_CHECKING
 
 from brileta.app import App
@@ -256,8 +255,6 @@ class Controller:
         self._current_seed = seed
 
         # Create new game world and set up lighting
-        gen_start = time.perf_counter()
-
         self.gw = GameWorld(
             config.MAP_WIDTH,
             config.MAP_HEIGHT,
@@ -285,15 +282,8 @@ class Controller:
         if config.SUN_ENABLED:
             self.gw.add_light(DirectionalLight.create_sun())
 
-        gen_elapsed = time.perf_counter() - gen_start
-
-        # Log seed and generation time so the player can see it without the dev console
-        publish_event(
-            MessageEvent(
-                f"World generated in {gen_elapsed:.2f}s. Seed: {seed}",
-                colors.WHITE,
-            )
-        )
+        # Show seed so the player can reproduce this world
+        publish_event(MessageEvent(f"Seed: {seed}", colors.WHITE))
 
         # Reset dependent systems if this is a regeneration (not first call)
         if self._systems_initialized:
