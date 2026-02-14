@@ -113,9 +113,11 @@ class GlfwApp(App[WGPUGraphicsContext]):
                 # Process events via callbacks
                 glfw.poll_events()
 
-                # Re-assert hidden cursor every frame. The OS can reset cursor
-                # visibility after resizes, focus changes, app-switches, and
-                # other system events, so a one-time set is not sufficient.
+                # Force GLFW to re-apply cursor hiding every frame. We must
+                # transition through CURSOR_NORMAL first because GLFW skips
+                # the call when the mode is already CURSOR_HIDDEN, which fails
+                # to re-hide after OS-level cursor changes.
+                glfw.set_input_mode(self.window, glfw.CURSOR, glfw.CURSOR_NORMAL)
                 glfw.set_input_mode(self.window, glfw.CURSOR, glfw.CURSOR_HIDDEN)
 
                 # --- Time and Logic Phase ---
