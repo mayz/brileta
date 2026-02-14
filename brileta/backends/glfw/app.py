@@ -108,13 +108,15 @@ class GlfwApp(App[WGPUGraphicsContext]):
         assert self.controller is not None
 
         try:
-            # Hide system cursor since we draw our own
-            glfw.set_input_mode(self.window, glfw.CURSOR, glfw.CURSOR_HIDDEN)
-
             while not glfw.window_should_close(self.window):
                 # --- Input Phase ---
                 # Process events via callbacks
                 glfw.poll_events()
+
+                # Re-assert hidden cursor every frame. The OS can reset cursor
+                # visibility after resizes, focus changes, app-switches, and
+                # other system events, so a one-time set is not sufficient.
+                glfw.set_input_mode(self.window, glfw.CURSOR, glfw.CURSOR_HIDDEN)
 
                 # --- Time and Logic Phase ---
                 # Use clock.sync() for frame rate limiting
