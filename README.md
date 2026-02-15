@@ -6,7 +6,7 @@ The current sandbox generates a settlement and drops you into it. Everything is 
 
 This is a personal hobby project. There's no release timeline, no roadmap promises, and no guarantee that anything works.
 
-<img src="media/brileta2.jpg" width="600">
+<img src="media/brileta1.jpg" width="600">
 
 ## Notable Systems
 
