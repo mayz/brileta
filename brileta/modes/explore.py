@@ -392,13 +392,20 @@ class ExploreMode(Mode):
         if self._fm is None:
             return False
 
+        # Root tile coords are still needed for UI hit testing (equipment view,
+        # action panel) since those elements are fixed on screen.
         event_with_tile_coords = self._convert_mouse_coordinates(event)
         root_tile_pos: RootConsoleTilePos = (
             int(event_with_tile_coords.position.x),
             int(event_with_tile_coords.position.y),
         )
-        world_tile_pos: WorldTilePos | None = (
-            self._fm.get_world_coords_from_root_tile_coords(root_tile_pos)
+
+        # Use pixel_to_world_tile for the game-world tile so the camera's
+        # fractional scroll offset is compensated before integer truncation.
+        graphics = self.controller.graphics
+        scale_x, scale_y = graphics.get_display_scale_factor()
+        world_tile_pos: WorldTilePos | None = self._fm.pixel_to_world_tile(
+            event.position[0] * scale_x, event.position[1] * scale_y
         )
 
         # Shift+left click for pathfinding (regardless of what's there)

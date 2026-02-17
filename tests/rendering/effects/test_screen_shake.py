@@ -147,6 +147,7 @@ class DummyController:
         self.frame_manager = SimpleNamespace(
             cursor_manager=SimpleNamespace(mouse_pixel_x=0, mouse_pixel_y=0),
             get_world_coords_from_root_tile_coords=lambda pos: pos,
+            pixel_to_world_tile=lambda px_x, px_y: (int(px_x), int(px_y)),
         )
         self.clock = SimpleNamespace(last_delta_time=0.016)
         self.active_mode = None

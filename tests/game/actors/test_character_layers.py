@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from brileta.game.actors.container import Container, create_bookcase
 from brileta.game.actors.core import Actor, CharacterLayer
+from brileta.game.actors.trees import Tree, create_conifer_tree, create_deciduous_tree
 
 # Re-export for easier test access
 
@@ -312,3 +313,47 @@ class TestCreateBookcase:
 
         assert bookcase.x == 15
         assert bookcase.y == 20
+
+
+class TestTreeFactories:
+    """Tests for actor-based tree factory functions."""
+
+    def test_deciduous_tree_defaults(self) -> None:
+        """Deciduous trees should be blocking actors with shadows."""
+        tree = create_deciduous_tree(x=5, y=6)
+
+        assert isinstance(tree, Tree)
+        assert tree.name == "Tree"
+        assert tree.blocks_movement is True
+        assert tree.shadow_height == 3
+        assert tree.character_layers is not None
+        # Trunk + center fill + inner canopy + left/right lobes + crown peak
+        assert len(tree.character_layers) == 6
+        assert tree.character_layers[0].char == "|"  # trunk
+
+    def test_conifer_tree_defaults(self) -> None:
+        """Conifer trees should use stacked carets for a triangular shape."""
+        tree = create_conifer_tree(x=7, y=9)
+
+        assert isinstance(tree, Tree)
+        assert tree.blocks_movement is True
+        assert tree.shadow_height == 3
+        assert tree.character_layers is not None
+        # Trunk + 2 lower carets + 1 upper caret, plus optional peak (4 or 5)
+        assert len(tree.character_layers) in (4, 5)
+        assert tree.character_layers[0].char == "|"  # trunk
+        # All non-trunk layers should be carets
+        for layer in tree.character_layers[1:]:
+            assert layer.char == "^"
+
+    def test_tree_canopy_color_is_deterministic_by_position(self) -> None:
+        """Tree canopy jitter should be stable for the same tile position."""
+        tree_a = create_deciduous_tree(x=12, y=15)
+        tree_b = create_deciduous_tree(x=12, y=15)
+
+        assert tree_a.color == tree_b.color
+        assert tree_a.character_layers is not None
+        assert tree_b.character_layers is not None
+        # All layers should match for the same position.
+        for i in range(len(tree_a.character_layers)):
+            assert tree_a.character_layers[i].color == tree_b.character_layers[i].color

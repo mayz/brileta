@@ -54,6 +54,11 @@ class DummyFrameManager:
     ) -> tuple[int, int] | None:
         return None
 
+    def pixel_to_world_tile(
+        self, pixel_x: float, pixel_y: float
+    ) -> tuple[int, int] | None:
+        return None
+
 
 class DummyController:
     """Minimal controller for testing ExploreMode."""

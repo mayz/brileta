@@ -151,6 +151,12 @@ SETTLEMENT_BUILDING_DENSITY = (
 )
 SETTLEMENT_MAX_BUILDINGS = 12  # Maximum buildings per settlement
 
+# Tree placement
+# Wild trees: sparse lone trees in open land far from streets.
+# Keep low to avoid obstacle-course navigation.
+SETTLEMENT_WILD_TREE_DENSITY = 0.03  # Probability per eligible tile in wild areas
+SETTLEMENT_YARD_TREE_DENSITY = 0.04  # Probability per eligible tile near buildings
+
 
 # =============================================================================
 # LIGHTING SYSTEM

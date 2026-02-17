@@ -65,6 +65,11 @@ class DummyFrameManager:
     ) -> tuple[int, int] | None:
         return pos
 
+    def pixel_to_world_tile(
+        self, pixel_x: float, pixel_y: float
+    ) -> tuple[int, int] | None:
+        return self.get_world_coords_from_root_tile_coords((int(pixel_x), int(pixel_y)))
+
     def get_visible_bounds(self) -> None:
         return None
 

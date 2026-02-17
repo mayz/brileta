@@ -12,7 +12,7 @@ from brileta.environment.map import MapRegion
 
 if TYPE_CHECKING:
     from brileta.environment.generators.buildings.building import Building
-    from brileta.types import TileCoord
+    from brileta.types import TileCoord, WorldTilePos
     from brileta.util.coordinates import Rect
 
 
@@ -26,6 +26,7 @@ class GeneratedMapData:
         tile_to_region_id: 2D numpy array mapping tiles to region IDs.
         buildings: List of Building objects (for settlement maps).
         streets: List of Rect objects representing street areas (for settlement maps).
+        tree_positions: World positions where tree actors should be spawned.
     """
 
     tiles: np.ndarray
@@ -33,6 +34,7 @@ class GeneratedMapData:
     tile_to_region_id: np.ndarray
     buildings: list[Building] = field(default_factory=list)
     streets: list[Rect] = field(default_factory=list)
+    tree_positions: list[WorldTilePos] = field(default_factory=list)
     decoration_seed: int = 0
 
 

@@ -28,6 +28,7 @@ from brileta.util.coordinates import (
     Rect,
 )
 from brileta.util.glyph_buffer import GlyphBuffer
+from brileta.util.tilesets import unicode_to_cp437
 from brileta.view.render.base_graphics import BaseGraphicsContext
 
 from .atlas_manager import WGPUAtlasManager
@@ -422,7 +423,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
                 ),
                 1.0,  # Always fully opaque
             )
-        uv_coords = self.uv_map[ord(char)]
+        uv_coords = self.uv_map[self._cp437_index_for_char(char)]
 
         # Use integer tile dimensions for consistent positioning
         tile_w, tile_h = self.tile_dimensions
@@ -498,7 +499,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         dir_x = shadow_dir_x / direction_length
         dir_y = shadow_dir_y / direction_length
 
-        uv_coords = self.uv_map[ord(char)]
+        uv_coords = self.uv_map[self._cp437_index_for_char(char)]
         tile_w, tile_h = self.tile_dimensions
 
         scaled_w = tile_w * scale_x
@@ -626,7 +627,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
             max(0.0, min(1.0, alpha)),
         )
 
-        uv_coords = self.uv_map[ord(char)]
+        uv_coords = self.uv_map[self._cp437_index_for_char(char)]
         u1, v1, u2, v2 = uv_coords
         tile_w, tile_h = self.tile_dimensions
 
@@ -651,6 +652,14 @@ class WGPUGraphicsContext(BaseGraphicsContext):
 
         # Queue the outlined texture for batched rendering
         self.ui_renderer.add_textured_quad(self.outlined_atlas_texture, vertices)
+
+    @staticmethod
+    def _cp437_index_for_char(char: str) -> int:
+        """Map a Python character to a CP437 atlas index."""
+        codepoint = ord(char) if char else ord(" ")
+        if 0 <= codepoint <= 255:
+            return codepoint
+        return unicode_to_cp437(codepoint)
 
     def get_display_scale_factor(self) -> tuple[float, float]:
         """Get display scale factor for high-DPI displays."""

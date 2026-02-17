@@ -7,7 +7,16 @@ from brileta.config import PLAYER_BASE_STRENGTH, PLAYER_BASE_TOUGHNESS
 from brileta.environment.generators import RoomsAndCorridorsGenerator
 from brileta.environment.map import GameMap
 from brileta.environment.tile_types import TileTypeID
-from brileta.game.actors import NPC, PC, Actor, Character, ItemPile, create_bookcase
+from brileta.game.actors import (
+    NPC,
+    PC,
+    Actor,
+    Character,
+    ItemPile,
+    create_bookcase,
+    create_conifer_tree,
+    create_deciduous_tree,
+)
 from brileta.game.actors.environmental import ContainedFire
 from brileta.game.actors.npc_types import (
     DOG_TYPE,
@@ -86,6 +95,7 @@ class GameWorld:
         # Settlement-specific data (populated by _generate_map for settlements)
         self.buildings: list[Building] = []
         self.streets: list[Rect] = []
+        self.tree_positions: list[WorldTilePos] = []
 
         # Attempt map generation with retry if no valid spawn point exists
         for attempt in range(self.MAX_MAP_REGENERATION_ATTEMPTS):
@@ -121,6 +131,7 @@ class GameWorld:
             self._populate_npcs(rooms)
 
         self._place_containers(rooms)
+        self._place_tree_actors()
 
         if not config.IS_TEST_ENVIRONMENT:
             self._add_test_fire(rooms)
@@ -288,6 +299,7 @@ class GameWorld:
             # Store settlement data for NPC placement
             self.buildings = map_data.buildings
             self.streets = map_data.streets
+            self.tree_positions = map_data.tree_positions
 
             # For settlements, use building regions as spawn points
             building_regions = [
@@ -323,6 +335,7 @@ class GameWorld:
 
         room_regions = [r for r in map_data.regions.values() if r.region_type == "room"]
         room_rects = [r.bounds[0] for r in room_regions if r.bounds]
+        self.tree_positions = []
 
         return game_map, room_rects
 
@@ -1125,6 +1138,33 @@ class GameWorld:
             if not placed:
                 # Container could not be placed; skip it
                 pass
+
+    def _place_tree_actors(self) -> None:
+        """Spawn tree actors from generator output positions.
+
+        Trees are represented as actors so they inherit terrain backgrounds
+        and can later gain interactive behavior (chop, climb, storage).
+        """
+        if not self.tree_positions:
+            return
+
+        map_seed = int(self.game_map.decoration_seed)
+        for x, y in self.tree_positions:
+            if not (0 <= x < self.game_map.width and 0 <= y < self.game_map.height):
+                continue
+            if not self.game_map.walkable[x, y]:
+                continue
+            if self.get_actor_at_location(x, y) is not None:
+                continue
+
+            # 75% deciduous, 25% conifer using deterministic spatial hash.
+            tree_hash = ((x * 73856093) ^ (y * 19349663) ^ map_seed) & 0xFFFFFFFF
+            if tree_hash % 4 == 0:
+                tree_actor = create_conifer_tree(x=x, y=y, game_world=self)
+            else:
+                tree_actor = create_deciduous_tree(x=x, y=y, game_world=self)
+
+            self.add_actor(tree_actor)
 
     def _add_starting_room_items(self, room: Rect) -> None:
         """Place discoverable items in the starting room.

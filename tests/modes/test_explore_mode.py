@@ -41,6 +41,7 @@ def make_explore_mode() -> tuple[ExploreMode, Any, DummyGameWorld]:
             set_active_cursor_type=lambda *a: None,
         ),
         get_world_coords_from_root_tile_coords=lambda pos: pos,
+        pixel_to_world_tile=lambda px_x, px_y: (int(px_x), int(px_y)),
     )
     overlay_system = SimpleNamespace(
         handle_input=lambda e: False,

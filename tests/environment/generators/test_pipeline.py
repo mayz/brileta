@@ -47,6 +47,7 @@ class TestGenerationContext:
 
         # Regions start at -1 (unassigned)
         assert np.all(ctx.tile_to_region_id == -1)
+        assert ctx.tree_positions == []
 
     def test_create_empty_custom_fill_tile(self) -> None:
         """create_empty respects fill_tile parameter."""
@@ -100,6 +101,7 @@ class TestGenerationContext:
         )
         ctx.add_region(region)
         ctx.tile_to_region_id[:, :] = region_id
+        ctx.tree_positions.append((3, 4))
 
         map_data = ctx.to_generated_map_data()
 
@@ -107,6 +109,7 @@ class TestGenerationContext:
         assert map_data.tiles is ctx.tiles
         assert map_data.regions is ctx.regions
         assert map_data.tile_to_region_id is ctx.tile_to_region_id
+        assert map_data.tree_positions is ctx.tree_positions
 
     def test_to_generated_map_data_has_decoration_seed(self) -> None:
         """Output should include a nonzero decoration seed for terrain variety."""

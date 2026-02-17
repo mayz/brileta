@@ -654,7 +654,11 @@ class ActorRenderer:
         """
         if actor.character_layers or actor.has_complex_visuals:
             self._render_layered_tile_outline(
-                actor, color, alpha, view_origin=view_origin
+                actor,
+                color,
+                alpha,
+                camera_frac_offset=camera_frac_offset,
+                view_origin=view_origin,
             )
         else:
             self.render_actor_outline(
@@ -672,6 +676,7 @@ class ActorRenderer:
         color: colors.Color,
         alpha: Opacity,
         *,
+        camera_frac_offset: ViewOffset,
         view_origin: ViewOffset,
     ) -> None:
         """Render a full-tile rectangle outline for actors with complex visuals."""
@@ -680,6 +685,15 @@ class ActorRenderer:
             return
 
         vp_x, vp_y = vs.world_to_screen(actor.x, actor.y)
+
+        # Apply camera fractional offset for smooth scrolling alignment.
+        # Without this, the outline snaps to integer tile boundaries while the
+        # actor layers render at fractionally-offset positions, causing the
+        # outline to straddle tiles or jitter during camera panning.
+        cam_frac_x, cam_frac_y = camera_frac_offset
+        vp_x -= cam_frac_x
+        vp_y -= cam_frac_y
+
         root_x = view_origin[0] + vp_x
         root_y = view_origin[1] + vp_y
         screen_x, screen_y = self.graphics.console_to_screen_coords(root_x, root_y)

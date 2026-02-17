@@ -24,6 +24,7 @@ from brileta.environment.generators.pipeline.layers import (
     OpenFieldLayer,
     RandomTerrainLayer,
     StreetNetworkLayer,
+    TreePlacementLayer,
     WFCTerrainLayer,
 )
 from brileta.environment.generators.pipeline.layers.terrain import (
@@ -778,3 +779,193 @@ class TestBuildingPlacementWithStreets:
                     f"Building below street should have door on north wall, "
                     f"but door at ({door_x}, {door_y}), building at {fp}"
                 )
+
+
+# =============================================================================
+# T4.7: TreePlacementLayer
+# =============================================================================
+
+
+class TestTreePlacementLayer:
+    """Tests for TreePlacementLayer."""
+
+    def test_places_trees_on_plantable_terrain(self) -> None:
+        """Trees appear only on grass, dirt, or gravel tiles."""
+        rng.reset("tree1")
+        ctx = GenerationContext.create_empty(width=60, height=60)
+        ctx.tiles[:, :] = TileTypeID.GRASS
+
+        layer = TreePlacementLayer(wild_density=0.15, yard_density=0.0)
+        layer.apply(ctx)
+
+        tree_positions = ctx.tree_positions
+        assert len(tree_positions) > 0, "Expected some trees to be placed"
+
+        plantable = {TileTypeID.GRASS, TileTypeID.DIRT_PATH, TileTypeID.GRAVEL}
+        assert all(ctx.tiles[x, y] in plantable for x, y in tree_positions)
+        assert len(tree_positions) == len(set(tree_positions))
+
+    def test_no_trees_on_streets(self) -> None:
+        """Trees are never placed on street tiles."""
+        rng.reset("tree2")
+        ctx = GenerationContext.create_empty(width=80, height=60)
+        ctx.tiles[:, :] = TileTypeID.GRASS
+
+        # Create a street through the middle
+        street_layer = StreetNetworkLayer(style="single")
+        street_layer.apply(ctx)
+
+        # High density to maximize chance of misplacement
+        layer = TreePlacementLayer(wild_density=0.5, yard_density=0.5, street_buffer=2)
+        layer.apply(ctx)
+
+        tree_positions = set(ctx.tree_positions)
+
+        # Verify no trees on street tiles
+        for street in ctx.street_data.streets:
+            for x in range(max(0, street.x1), min(ctx.width, street.x2)):
+                for y in range(max(0, street.y1), min(ctx.height, street.y2)):
+                    assert (x, y) not in tree_positions, (
+                        f"Tree placed on street tile at ({x},{y})"
+                    )
+
+    def test_no_trees_inside_buildings(self) -> None:
+        """Trees are never placed inside building footprints."""
+        rng.reset("tree3")
+        ctx = GenerationContext.create_empty(width=80, height=80)
+        ctx.tiles[:, :] = TileTypeID.GRASS
+
+        # Place a building manually
+        from brileta.environment.generators.buildings import Building
+        from brileta.util.coordinates import Rect
+
+        building = Building(
+            id=0,
+            building_type="test",
+            footprint=Rect(20, 20, 15, 15),
+            door_positions=[(27, 20)],
+        )
+        ctx.buildings.append(building)
+
+        # Set building interior to walls/floors (as building layer would)
+        fp = building.footprint
+        for x in range(fp.x1, fp.x2):
+            for y in range(fp.y1, fp.y2):
+                ctx.tiles[x, y] = TileTypeID.WALL
+
+        layer = TreePlacementLayer(wild_density=0.5, yard_density=0.5)
+        layer.apply(ctx)
+
+        tree_positions = set(ctx.tree_positions)
+
+        # Verify no trees in building footprint
+        for x in range(fp.x1, fp.x2):
+            for y in range(fp.y1, fp.y2):
+                assert (x, y) not in tree_positions, (
+                    f"Tree placed inside building at ({x},{y})"
+                )
+
+    def test_wild_vs_settlement_zones(self) -> None:
+        """Wild trees are denser than settlement trees."""
+        rng.reset("tree4")
+        ctx = GenerationContext.create_empty(width=100, height=80)
+        ctx.tiles[:, :] = TileTypeID.GRASS
+
+        # Create streets to define settlement vs wild zones
+        street_layer = StreetNetworkLayer(style="single")
+        street_layer.apply(ctx)
+
+        # Use distinct densities to verify zone separation
+        layer = TreePlacementLayer(
+            wild_density=0.3,
+            yard_density=0.02,
+            street_buffer=8,
+        )
+        layer.apply(ctx)
+
+        # Count trees near streets (settlement) vs far from streets (wild)
+        street = ctx.street_data.streets[0]
+        street_center_y = (street.y1 + street.y2) // 2
+        tree_positions = set(ctx.tree_positions)
+
+        near_count = 0
+        near_total = 0
+        far_count = 0
+        far_total = 0
+
+        for x in range(ctx.width):
+            for y in range(ctx.height):
+                dist = abs(y - street_center_y)
+                if dist <= 8:
+                    near_total += 1
+                    if (x, y) in tree_positions:
+                        near_count += 1
+                elif dist > 15:
+                    far_total += 1
+                    if (x, y) in tree_positions:
+                        far_count += 1
+
+        # Wild (far) density should be noticeably higher than settlement (near)
+        if near_total > 0 and far_total > 0:
+            near_density = near_count / near_total
+            far_density = far_count / far_total
+            assert far_density > near_density, (
+                f"Wild density ({far_density:.3f}) should exceed settlement "
+                f"density ({near_density:.3f})"
+            )
+
+    def test_respects_density_parameter(self) -> None:
+        """Tree count roughly matches the configured density."""
+        rng.reset("tree5")
+        ctx = GenerationContext.create_empty(width=80, height=80)
+        ctx.tiles[:, :] = TileTypeID.GRASS
+
+        # No streets or buildings - all tiles are wild
+        density = 0.08
+        layer = TreePlacementLayer(wild_density=density, yard_density=0.0)
+        layer.apply(ctx)
+
+        tree_count = len(ctx.tree_positions)
+        total_tiles = ctx.width * ctx.height
+        expected = density * total_tiles
+
+        # Allow 50% variance due to randomness
+        assert tree_count > expected * 0.5, (
+            f"Too few trees: {tree_count} < {expected * 0.5:.0f}"
+        )
+        assert tree_count < expected * 1.5, (
+            f"Too many trees: {tree_count} > {expected * 1.5:.0f}"
+        )
+
+    def test_deterministic_with_seed(self) -> None:
+        """Same seed produces same tree placement."""
+        rng.reset("tree_det")
+        ctx1 = GenerationContext.create_empty(width=50, height=50)
+        ctx1.tiles[:, :] = TileTypeID.GRASS
+        TreePlacementLayer(wild_density=0.1, yard_density=0.0).apply(ctx1)
+
+        rng.reset("tree_det")
+        ctx2 = GenerationContext.create_empty(width=50, height=50)
+        ctx2.tiles[:, :] = TileTypeID.GRASS
+        TreePlacementLayer(wild_density=0.1, yard_density=0.0).apply(ctx2)
+
+        assert ctx1.tree_positions == ctx2.tree_positions
+
+    def test_trees_not_placed_on_boulders(self) -> None:
+        """Trees don't overwrite existing boulder tiles."""
+        rng.reset("tree6")
+        ctx = GenerationContext.create_empty(width=40, height=40)
+        ctx.tiles[:, :] = TileTypeID.GRASS
+
+        # Place some boulders first
+        ctx.tiles[10, 10] = TileTypeID.BOULDER
+        ctx.tiles[20, 20] = TileTypeID.BOULDER
+
+        layer = TreePlacementLayer(wild_density=0.5, yard_density=0.0)
+        layer.apply(ctx)
+
+        # Boulders should still be boulders (BOULDER is not in plantable terrain)
+        assert ctx.tiles[10, 10] == TileTypeID.BOULDER
+        assert ctx.tiles[20, 20] == TileTypeID.BOULDER
+        assert (10, 10) not in set(ctx.tree_positions)
+        assert (20, 20) not in set(ctx.tree_positions)

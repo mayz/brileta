@@ -22,7 +22,6 @@ from brileta.types import (
     PixelCoord,
     PixelPos,
     RootConsoleTilePos,
-    WorldTilePos,
 )
 
 if TYPE_CHECKING:
@@ -129,14 +128,12 @@ class InputHandler:
         """Update the mouse tile location for hover effects."""
         assert self.fm is not None
 
-        event_with_tile_coords = self._convert_mouse_coordinates(event)
-        root_tile_pos: RootConsoleTilePos = (
-            int(event_with_tile_coords.position.x),
-            int(event_with_tile_coords.position.y),
-        )
-        world_tile_pos: WorldTilePos | None = (
-            self.fm.get_world_coords_from_root_tile_coords(root_tile_pos)
-        )
+        # Use pixel_to_world_tile which compensates for the camera's fractional
+        # scroll offset, so the detected tile matches the visually rendered grid.
+        scale_x, scale_y = self.graphics.get_display_scale_factor()
+        scaled_px_x = event.position[0] * scale_x
+        scaled_px_y = event.position[1] * scale_y
+        world_tile_pos = self.fm.pixel_to_world_tile(scaled_px_x, scaled_px_y)
 
         if world_tile_pos is not None:
             self.gw.mouse_tile_location_on_map = world_tile_pos

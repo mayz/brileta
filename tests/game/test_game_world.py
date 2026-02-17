@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 from brileta import colors
 from brileta.environment.map import MapRegion
-from brileta.game.actors import Actor, Character, ItemPile, components
+from brileta.game.actors import Actor, Character, ItemPile, Tree, components
 from brileta.game.actors.npc_types import DOG_TYPE, RESIDENT_TYPE, TROG_TYPE
 from brileta.game.countables import CountableType
 from brileta.game.enums import ItemSize
@@ -508,6 +508,55 @@ class TestEnvironmentMethods:
 
         # Should return False since no region exists at that position.
         assert result is False
+
+
+# ---------------------------------------------------------------------------
+# TestTreeActors
+# ---------------------------------------------------------------------------
+
+
+class TestTreeActors:
+    """Tests for tree actor placement from generated map positions."""
+
+    def test_place_tree_actors_spawns_trees(self) -> None:
+        gw = make_world()
+        gw.tree_positions = [(3, 4), (8, 9)]
+
+        GameWorld._place_tree_actors(gw)
+
+        trees = [actor for actor in gw.actors if isinstance(actor, Tree)]
+        assert len(trees) == 2
+        assert isinstance(gw.get_actor_at_location(3, 4), Tree)
+        assert isinstance(gw.get_actor_at_location(8, 9), Tree)
+
+    def test_place_tree_actors_skips_occupied_tiles(self) -> None:
+        gw = make_world()
+        blocker = make_actor(gw, x=6, y=6)
+        gw.add_actor(blocker)
+        gw.tree_positions = [(6, 6)]
+
+        GameWorld._place_tree_actors(gw)
+
+        trees = [actor for actor in gw.actors if isinstance(actor, Tree)]
+        assert len(trees) == 0
+        assert gw.get_actor_at_location(6, 6) is blocker
+
+    def test_tree_variant_selection_is_deterministic(self) -> None:
+        gw1 = make_world()
+        gw1.tree_positions = [(11, 13)]
+        gw1.game_map.decoration_seed = 12345
+        GameWorld._place_tree_actors(gw1)
+        tree1 = gw1.get_actor_at_location(11, 13)
+
+        gw2 = make_world()
+        gw2.tree_positions = [(11, 13)]
+        gw2.game_map.decoration_seed = 12345
+        GameWorld._place_tree_actors(gw2)
+        tree2 = gw2.get_actor_at_location(11, 13)
+
+        assert isinstance(tree1, Tree)
+        assert isinstance(tree2, Tree)
+        assert tree1.ch == tree2.ch
 
 
 # ---------------------------------------------------------------------------

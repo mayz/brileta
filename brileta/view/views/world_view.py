@@ -15,7 +15,7 @@ from brileta.types import (
 )
 from brileta.util import rng
 from brileta.util.caching import ResourceCache
-from brileta.util.coordinates import Rect, RootConsoleTilePos
+from brileta.util.coordinates import Rect
 from brileta.util.glyph_buffer import GlyphBuffer
 from brileta.util.live_vars import record_time_live_variable
 from brileta.view.render.actor_renderer import ActorRenderer
@@ -802,16 +802,13 @@ class WorldView(View):
         """Update the stored world-space mouse tile based on the current camera."""
         fm: FrameManager = self.controller.frame_manager
 
-        # Use graphics.pixel_to_tile which correctly handles letterboxing offsets,
-        # rather than coordinate_converter.pixel_to_tile which assumes no offset.
+        # Use pixel_to_world_tile which compensates for the camera's fractional
+        # scroll offset, so the detected tile matches the visually rendered grid.
         px_x: PixelCoord = fm.cursor_manager.mouse_pixel_x
         px_y: PixelCoord = fm.cursor_manager.mouse_pixel_y
-        root_tile_pos: RootConsoleTilePos = self.controller.graphics.pixel_to_tile(
+        self.controller.gw.mouse_tile_location_on_map = fm.pixel_to_world_tile(
             px_x, px_y
         )
-        world_tile_pos = fm.get_world_coords_from_root_tile_coords(root_tile_pos)
-
-        self.controller.gw.mouse_tile_location_on_map = world_tile_pos
 
     def _apply_tile_light_animations(
         self,

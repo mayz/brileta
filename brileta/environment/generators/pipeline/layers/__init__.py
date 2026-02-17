@@ -11,6 +11,7 @@ from .buildings import BuildingPlacementLayer
 from .details import DetailLayer
 from .streets import StreetNetworkLayer
 from .terrain import OpenFieldLayer, RandomTerrainLayer, WFCTerrainLayer
+from .trees import TreePlacementLayer
 
 __all__ = [
     "BuildingPlacementLayer",
@@ -18,5 +19,6 @@ __all__ = [
     "OpenFieldLayer",
     "RandomTerrainLayer",
     "StreetNetworkLayer",
+    "TreePlacementLayer",
     "WFCTerrainLayer",
 ]

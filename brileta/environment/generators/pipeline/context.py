@@ -17,6 +17,7 @@ import numpy as np
 from brileta.environment.generators.base import GeneratedMapData
 from brileta.environment.map import MapRegion
 from brileta.environment.tile_types import TileTypeID
+from brileta.types import WorldTilePos
 from brileta.util import rng
 from brileta.util.coordinates import Rect
 
@@ -56,6 +57,7 @@ class GenerationContext:
             Value of -1 means no region assigned. Shape: (width, height).
         buildings: List of Building objects placed on the map.
         street_data: Street network data for building placement and door orientation.
+        tree_positions: World positions where tree actors should be spawned.
     """
 
     width: int
@@ -65,6 +67,7 @@ class GenerationContext:
     tile_to_region_id: np.ndarray
     buildings: list[Building] = field(default_factory=list)
     street_data: StreetData = field(default_factory=StreetData)
+    tree_positions: list[WorldTilePos] = field(default_factory=list)
     _next_region_id: int = 0
 
     @classmethod
@@ -143,5 +146,6 @@ class GenerationContext:
             tile_to_region_id=self.tile_to_region_id,
             buildings=self.buildings,
             streets=self.street_data.streets,
+            tree_positions=self.tree_positions,
             decoration_seed=decoration_seed,
         )

@@ -171,17 +171,14 @@ class PickerMode(Mode):
         if self.controller.frame_manager is None:
             return None
 
+        # Use pixel_to_world_tile which compensates for the camera's fractional
+        # scroll offset, so clicks align with the visually rendered tile grid.
         graphics = self.controller.graphics
         scale_x, scale_y = graphics.get_display_scale_factor()
         scaled_px_x = event.position.x * scale_x
         scaled_px_y = event.position.y * scale_y
-        root_tile_x, root_tile_y = graphics.pixel_to_tile(scaled_px_x, scaled_px_y)
-
-        root_tile_pos = (int(root_tile_x), int(root_tile_y))
-        world_tile_pos = (
-            self.controller.frame_manager.get_world_coords_from_root_tile_coords(
-                root_tile_pos
-            )
+        world_tile_pos = self.controller.frame_manager.pixel_to_world_tile(
+            scaled_px_x, scaled_px_y
         )
 
         if world_tile_pos is None:

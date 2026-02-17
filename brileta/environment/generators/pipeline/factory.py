@@ -24,6 +24,7 @@ from .layers import (
     DetailLayer,
     OpenFieldLayer,
     StreetNetworkLayer,
+    TreePlacementLayer,
     WFCTerrainLayer,
 )
 from .pipeline import PipelineGenerator
@@ -70,7 +71,8 @@ def create_settlement_pipeline(
     2. Street network with building zones (StreetNetworkLayer)
     3. Terrain variety with WFC around streets (WFCTerrainLayer)
     4. Buildings in zones with doors facing streets (BuildingPlacementLayer)
-    5. Environmental details like boulders (DetailLayer)
+    5. Trees in wild areas and settlement yards (TreePlacementLayer)
+    6. Environmental details like boulders (DetailLayer)
 
     Args:
         width: Map width in tiles.
@@ -100,7 +102,9 @@ def create_settlement_pipeline(
             building_density=config.SETTLEMENT_BUILDING_DENSITY,
             max_buildings=config.SETTLEMENT_MAX_BUILDINGS,
         ),
-        # 5. Add environmental details
+        # 5. Place trees (wild forests + settlement yard trees)
+        TreePlacementLayer(),
+        # 6. Add environmental details (boulders, etc.)
         DetailLayer(),
     ]
 

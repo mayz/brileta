@@ -28,6 +28,7 @@ from brileta.types import (
     DeltaTime,
     InterpolationAlpha,
     Opacity,
+    PixelCoord,
     RootConsoleTilePos,
     ViewportTileCoord,
     WorldTilePos,
@@ -337,6 +338,42 @@ class FrameManager:
         if 0 <= world_x < gw.game_map.width and 0 <= world_y < gw.game_map.height:
             return world_x, world_y
         return None
+
+    def pixel_to_world_tile(
+        self, pixel_x: PixelCoord, pixel_y: PixelCoord
+    ) -> WorldTilePos | None:
+        """Convert display-scaled pixel coordinates to world tile coordinates.
+
+        Unlike the raw ``pixel_to_tile`` -> ``get_world_coords`` pipeline, this
+        method compensates for the camera's fractional scroll offset so that
+        click and hover detection align with the visually rendered tile grid.
+
+        Args:
+            pixel_x: X position in display-scaled pixels (after applying
+                ``get_display_scale_factor``).
+            pixel_y: Y position in display-scaled pixels.
+
+        Returns:
+            The world tile coordinate under the cursor, or None if the pixel
+            falls outside the game map area.
+        """
+        graphics = self.graphics
+
+        # Compute the camera fractional offset in pixel space.
+        # Smooth scrolling shifts all visual content by -cam_frac tiles during
+        # presentation. Adding the equivalent pixel shift to the click position
+        # undoes this before pixel_to_tile truncates to integer tiles.
+        cam_frac_x, cam_frac_y = (
+            self.world_view.viewport_system.get_camera_fractional_offset()
+        )
+        base_px_x, base_px_y = graphics.console_to_screen_coords(0.0, 0.0)
+        frac_px_x, frac_px_y = graphics.console_to_screen_coords(cam_frac_x, cam_frac_y)
+
+        adjusted_x = pixel_x + (frac_px_x - base_px_x)
+        adjusted_y = pixel_y + (frac_px_y - base_px_y)
+
+        root_tile_pos = graphics.pixel_to_tile(adjusted_x, adjusted_y)
+        return self.get_world_coords_from_root_tile_coords(root_tile_pos)
 
     def trigger_screen_shake(self, intensity: float, duration: DeltaTime) -> None:
         """Trigger screen shake effect.

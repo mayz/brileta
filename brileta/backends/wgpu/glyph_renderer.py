@@ -12,7 +12,7 @@ from brileta.types import TileDimensions, WorldTilePos
 from brileta.util.caching import ResourceCache
 from brileta.util.glyph_buffer import GlyphBuffer
 from brileta.util.live_vars import record_time_live_variable
-from brileta.util.tilesets import unicode_to_cp437
+from brileta.util.tilesets import CHARMAP_CP437, unicode_to_cp437
 
 if TYPE_CHECKING:
     from .resource_manager import WGPUResourceManager
@@ -67,11 +67,14 @@ class WGPUGlyphRenderer:
         self.tile_dimensions = tile_dimensions
         self.uv_map = uv_map
 
-        # Pre-compute unicode_to_cp437 mapping for common characters (0-255)
-        # This eliminates thousands of Python function calls per frame
-        self.unicode_to_cp437_map = np.array(
-            [unicode_to_cp437(i) for i in range(256)], dtype=np.uint8
-        )
+        # Pre-compute unicode_to_cp437 lookup table covering all CP437 codepoints.
+        # Many classic roguelike glyphs (♣ ♠ ♥ ♦ ☺ etc.) have Unicode codepoints
+        # well above 255 (e.g., ♣ = U+2663 = 9827), so the table must extend to
+        # the highest codepoint in the CP437 mapping. ~10KB for the full range.
+        max_codepoint = max(CHARMAP_CP437) + 1
+        self.unicode_to_cp437_map = np.full(max_codepoint, ord("?"), dtype=np.uint8)
+        for i in range(max_codepoint):
+            self.unicode_to_cp437_map[i] = unicode_to_cp437(i)
 
         # Noise seed passed to the fragment shader for deterministic sub-tile
         # brightness variation via PCG hash. Set per-frame from game_map.decoration_seed.
@@ -399,10 +402,9 @@ class WGPUGlyphRenderer:
 
         # Convert characters to CP437 indices for UV lookup
         chars = glyph_buffer.data["ch"].T  # (w, h) -> (h, w)
-        # Clamp to 0-255 for lookup table (rare chars > 255 become 0)
-        cp437_indices = np.where(
-            chars < 256, self.unicode_to_cp437_map[np.clip(chars, 0, 255)], 0
-        )
+        # Clamp to lookup table range (chars outside the table map to '?')
+        table_size = len(self.unicode_to_cp437_map)
+        cp437_indices = self.unicode_to_cp437_map[np.clip(chars, 0, table_size - 1)]
 
         # Look up UV coordinates: uv_map is (256, 4) -> (h, w, 4)
         uvs = self.uv_map[cp437_indices]
