@@ -5,11 +5,14 @@ from unittest.mock import MagicMock
 
 import numpy as np
 
+from brileta.environment.generators import GeneratedMapData
+from brileta.environment.map import GameMap, MapRegion
+from brileta.environment.tile_types import TileTypeID
 from brileta.game.actors.core import Actor
 from brileta.sound.audio_backend import AudioBackend, AudioChannel, LoadedSound
 from brileta.sound.definitions import SoundDefinition, SoundLayer, get_sound_definition
 from brileta.sound.emitter import SoundEmitter
-from brileta.sound.system import SoundSystem
+from brileta.sound.system import CLOSED_DOOR_OCCLUSION, OPEN_DOOR_OCCLUSION, SoundSystem
 from brileta.util.spatial import SpatialHashGrid, SpatialIndex
 from tests.helpers import dt
 
@@ -1544,3 +1547,298 @@ class TestCampfireBugRegression:
             "CAMPFIRE BUG: After restart, campfire should remain silent when "
             "player is far away, but ghost audio was detected!"
         )
+
+
+def _make_occlusion_map(
+    width: int = 30,
+    height: int = 30,
+) -> GameMap:
+    """Create a small test map with three rooms connected by doors.
+
+    Layout (not to scale):
+        Room 0 (tiles 1-9, y 1-9) -- door at (10, 5) -- Room 1 (tiles 11-19, y 1-9)
+                                                           |
+                                                      door at (15, 10)
+                                                           |
+                                                     Room 2 (tiles 11-19, y 11-19)
+
+    Room 0 and Room 2 are NOT directly connected. Sound must pass through two doors.
+    """
+    tiles = np.full((width, height), TileTypeID.WALL, dtype=np.uint8, order="F")
+    tile_to_region_id = np.full((width, height), -1, dtype=np.int16, order="F")
+
+    # Carve out Room 0 (interior: x=1..9, y=1..9)
+    tiles[1:10, 1:10] = TileTypeID.FLOOR
+    tile_to_region_id[1:10, 1:10] = 0
+
+    # Carve out Room 1 (interior: x=11..19, y=1..9)
+    tiles[11:20, 1:10] = TileTypeID.FLOOR
+    tile_to_region_id[11:20, 1:10] = 1
+
+    # Carve out Room 2 (interior: x=11..19, y=11..19)
+    tiles[11:20, 11:20] = TileTypeID.FLOOR
+    tile_to_region_id[11:20, 11:20] = 2
+
+    # Place door between Room 0 and Room 1 at (10, 5)
+    tiles[10, 5] = TileTypeID.DOOR_CLOSED
+    tile_to_region_id[10, 5] = 0  # Assign to a region so it's not -1
+
+    # Place door between Room 1 and Room 2 at (15, 10)
+    tiles[15, 10] = TileTypeID.DOOR_CLOSED
+    tile_to_region_id[15, 10] = 1
+
+    # Build regions with connections
+    regions: dict[int, MapRegion] = {
+        0: MapRegion(id=0, region_type="room", connections={1: (10, 5)}),
+        1: MapRegion(id=1, region_type="room", connections={0: (10, 5), 2: (15, 10)}),
+        2: MapRegion(id=2, region_type="room", connections={1: (15, 10)}),
+    }
+
+    map_data = GeneratedMapData(
+        tiles=tiles, regions=regions, tile_to_region_id=tile_to_region_id
+    )
+    return GameMap(width, height, map_data)
+
+
+class TestSoundOcclusion:
+    """Test region-based sound occlusion through walls and doors."""
+
+    def setup_method(self) -> None:
+        """Set up test fixtures."""
+        self.system = SoundSystem()
+        self.system.audio_listener_x = 0.0
+        self.system.audio_listener_y = 0.0
+        self.system._listener_initialized = True
+
+        # A sound definition with generous range so distance never clips in tests
+        self.sound_def = SoundDefinition(
+            sound_id="test_occlusion",
+            layers=[SoundLayer(file="test.ogg")],
+            base_volume=1.0,
+            falloff_start=50.0,
+            max_distance=100.0,
+            rolloff_factor=1.0,
+        )
+
+    def test_no_game_map_means_no_occlusion(self) -> None:
+        """When no game_map is provided, occlusion is 1.0 (full volume)."""
+        # _current_game_map defaults to None
+        result = self.system._calculate_occlusion(5, 5)
+        assert result == 1.0
+
+    def test_same_region_no_occlusion(self) -> None:
+        """Emitter and listener in the same room hear full volume."""
+        game_map = _make_occlusion_map()
+        self.system._current_game_map = game_map
+
+        # Listener and emitter both in Room 0
+        self.system.audio_listener_x = 5.0
+        self.system.audio_listener_y = 5.0
+        result = self.system._calculate_occlusion(3, 3)
+        assert result == 1.0
+
+    def test_no_region_assigned_no_occlusion(self) -> None:
+        """Outdoor/unregioned tiles get no occlusion."""
+        game_map = _make_occlusion_map()
+        self.system._current_game_map = game_map
+
+        # Listener on a wall tile (region_id = -1)
+        self.system.audio_listener_x = 0.0
+        self.system.audio_listener_y = 0.0
+        result = self.system._calculate_occlusion(5, 5)
+        assert result == 1.0
+
+        # Emitter on a wall tile
+        self.system.audio_listener_x = 5.0
+        self.system.audio_listener_y = 5.0
+        result = self.system._calculate_occlusion(0, 0)
+        assert result == 1.0
+
+    def test_adjacent_room_closed_door(self) -> None:
+        """Sound through one closed door is heavily attenuated."""
+        game_map = _make_occlusion_map()
+        self.system._current_game_map = game_map
+
+        # Listener in Room 0, emitter in Room 1, door at (10,5) is closed
+        self.system.audio_listener_x = 5.0
+        self.system.audio_listener_y = 5.0
+        result = self.system._calculate_occlusion(15, 5)
+        assert result == CLOSED_DOOR_OCCLUSION
+
+    def test_adjacent_room_open_door(self) -> None:
+        """Sound through one open door is partially attenuated."""
+        game_map = _make_occlusion_map()
+        # Open the door
+        game_map.tiles[10, 5] = TileTypeID.DOOR_OPEN
+        game_map.invalidate_property_caches()
+        self.system._current_game_map = game_map
+
+        self.system.audio_listener_x = 5.0
+        self.system.audio_listener_y = 5.0
+        result = self.system._calculate_occlusion(15, 5)
+        assert result == OPEN_DOOR_OCCLUSION
+
+    def test_two_closed_doors(self) -> None:
+        """Sound through two closed doors compounds the attenuation."""
+        game_map = _make_occlusion_map()
+        self.system._current_game_map = game_map
+
+        # Listener in Room 0, emitter in Room 2 (two doors away, both closed)
+        self.system.audio_listener_x = 5.0
+        self.system.audio_listener_y = 5.0
+        result = self.system._calculate_occlusion(15, 15)
+        expected = CLOSED_DOOR_OCCLUSION * CLOSED_DOOR_OCCLUSION
+        assert abs(result - expected) < 1e-10
+
+    def test_two_open_doors(self) -> None:
+        """Sound through two open doors compounds the attenuation."""
+        game_map = _make_occlusion_map()
+        game_map.tiles[10, 5] = TileTypeID.DOOR_OPEN
+        game_map.tiles[15, 10] = TileTypeID.DOOR_OPEN
+        game_map.invalidate_property_caches()
+        self.system._current_game_map = game_map
+
+        self.system.audio_listener_x = 5.0
+        self.system.audio_listener_y = 5.0
+        result = self.system._calculate_occlusion(15, 15)
+        expected = OPEN_DOOR_OCCLUSION * OPEN_DOOR_OCCLUSION
+        assert abs(result - expected) < 1e-10
+
+    def test_mixed_open_and_closed_doors(self) -> None:
+        """One open door + one closed door compounds correctly."""
+        game_map = _make_occlusion_map()
+        game_map.tiles[10, 5] = TileTypeID.DOOR_OPEN  # Room 0 -> Room 1
+        # Room 1 -> Room 2 stays closed
+        game_map.invalidate_property_caches()
+        self.system._current_game_map = game_map
+
+        self.system.audio_listener_x = 5.0
+        self.system.audio_listener_y = 5.0
+        result = self.system._calculate_occlusion(15, 15)
+        expected = OPEN_DOOR_OCCLUSION * CLOSED_DOOR_OCCLUSION
+        assert abs(result - expected) < 1e-10
+
+    def test_no_path_between_regions(self) -> None:
+        """Disconnected regions result in full blockage."""
+        game_map = _make_occlusion_map()
+        self.system._current_game_map = game_map
+
+        # Add an isolated Room 3 with no connections
+        game_map.tiles[25:29, 25:29] = TileTypeID.FLOOR
+        game_map.tile_to_region_id[25:29, 25:29] = 3
+        game_map.regions[3] = MapRegion(id=3, region_type="room", connections={})
+
+        self.system.audio_listener_x = 5.0
+        self.system.audio_listener_y = 5.0
+        result = self.system._calculate_occlusion(26, 26)
+        assert result == 0.0
+
+    def test_cache_invalidation_on_door_toggle(self) -> None:
+        """Cache is invalidated when structural_revision changes (door toggle)."""
+        game_map = _make_occlusion_map()
+        self.system._current_game_map = game_map
+
+        self.system.audio_listener_x = 5.0
+        self.system.audio_listener_y = 5.0
+
+        # First call with closed door - caches the result
+        result_closed = self.system._calculate_occlusion(15, 5)
+        assert result_closed == CLOSED_DOOR_OCCLUSION
+        assert len(self.system._occlusion_cache) == 1
+
+        # Open the door (this bumps structural_revision)
+        game_map.tiles[10, 5] = TileTypeID.DOOR_OPEN
+        game_map.invalidate_property_caches()
+
+        # Second call should pick up the new door state
+        result_open = self.system._calculate_occlusion(15, 5)
+        assert result_open == OPEN_DOOR_OCCLUSION
+
+    def test_occlusion_applied_to_volume_calculation(self) -> None:
+        """Verify that _calculate_volume integrates occlusion correctly."""
+        game_map = _make_occlusion_map()
+        self.system._current_game_map = game_map
+
+        # Listener in Room 0, emitter in Room 1 (closed door between them)
+        self.system.audio_listener_x = 5.0
+        self.system.audio_listener_y = 5.0
+
+        volume_with_occlusion = self.system._calculate_volume(
+            15, 5, self.sound_def, 1.0
+        )
+
+        # Without occlusion (same region)
+        volume_without_occlusion = self.system._calculate_volume(
+            3, 3, self.sound_def, 1.0
+        )
+
+        # The occluded volume should be the un-occluded volume * CLOSED_DOOR_OCCLUSION
+        # (both are within falloff_start, so distance attenuation is ~1.0)
+        assert (
+            abs(
+                volume_with_occlusion - volume_without_occlusion * CLOSED_DOOR_OCCLUSION
+            )
+            < 0.01
+        )
+
+    def test_occlusion_symmetry(self) -> None:
+        """Occlusion is the same regardless of direction."""
+        game_map = _make_occlusion_map()
+        self.system._current_game_map = game_map
+
+        # Listener in Room 0, emitter in Room 1
+        self.system.audio_listener_x = 5.0
+        self.system.audio_listener_y = 5.0
+        forward = self.system._calculate_occlusion(15, 5)
+
+        # Listener in Room 1, emitter in Room 0
+        self.system.audio_listener_x = 15.0
+        self.system.audio_listener_y = 5.0
+        # Clear cache since listener moved to a different region
+        self.system._occlusion_cache.clear()
+        backward = self.system._calculate_occlusion(5, 5)
+
+        assert forward == backward
+
+    def test_out_of_bounds_coordinates(self) -> None:
+        """Out-of-bounds emitter or listener coordinates return no occlusion."""
+        game_map = _make_occlusion_map()
+        self.system._current_game_map = game_map
+
+        # Listener out of bounds
+        self.system.audio_listener_x = -5.0
+        self.system.audio_listener_y = 3.0
+        assert self.system._calculate_occlusion(5, 5) == 1.0
+
+        # Emitter out of bounds
+        self.system.audio_listener_x = 5.0
+        self.system.audio_listener_y = 5.0
+        assert self.system._calculate_occlusion(50, 50) == 1.0
+
+    def test_archway_at_door_position(self) -> None:
+        """A transparent non-door tile at a connection point acts like an open door."""
+        game_map = _make_occlusion_map()
+        self.system._current_game_map = game_map
+
+        # Replace the door with a floor tile (archway - transparent, not a door)
+        game_map.tiles[10, 5] = TileTypeID.FLOOR
+        game_map.invalidate_property_caches()
+
+        self.system.audio_listener_x = 5.0
+        self.system.audio_listener_y = 5.0
+        result = self.system._calculate_occlusion(15, 5)
+        assert result == OPEN_DOOR_OCCLUSION
+
+    def test_wall_at_door_position(self) -> None:
+        """A non-transparent non-door tile at a connection point fully blocks sound."""
+        game_map = _make_occlusion_map()
+        self.system._current_game_map = game_map
+
+        # Replace the door with a wall (opaque, not a door)
+        game_map.tiles[10, 5] = TileTypeID.WALL
+        game_map.invalidate_property_caches()
+
+        self.system.audio_listener_x = 5.0
+        self.system.audio_listener_y = 5.0
+        result = self.system._calculate_occlusion(15, 5)
+        assert result == 0.0

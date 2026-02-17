@@ -681,6 +681,7 @@ class Controller:
                     self.gw.player.y,
                     self.gw.actor_spatial_index,
                     DeltaTime(self.fixed_timestep),
+                    game_map=self.gw.game_map,
                 )
 
             # Update presentation manager (dispatches staggered combat feedback)

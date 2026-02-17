@@ -8,9 +8,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from brileta.environment.tile_types import TileTypeID
 from brileta.events import SoundEvent, subscribe_to_event
 from brileta.types import DeltaTime, FloatRange, WorldTileCoord
 from brileta.util import rng
+from brileta.util.pathfinding import find_region_path
 from brileta.util.spatial import SpatialIndex
 
 from .audio_backend import AudioBackend, AudioChannel, LoadedSound
@@ -23,12 +25,18 @@ from .definitions import (
 from .loader import AudioLoader
 
 if TYPE_CHECKING:
+    from brileta.environment.map import GameMap
     from brileta.game.actors.core import Actor
     from brileta.sound.emitter import SoundEmitter
 
 logger = logging.getLogger(__name__)
 
 _rng = rng.get("audio.system")
+
+# Volume multipliers applied per wall/door boundary between emitter and listener.
+# These compound multiplicatively: two open doors = 0.6 * 0.6 = 0.36x.
+OPEN_DOOR_OCCLUSION = 0.6  # Each open door reduces volume to 60%
+CLOSED_DOOR_OCCLUSION = 0.15  # Each closed door reduces volume to 15%
 
 
 @dataclass
@@ -84,6 +92,13 @@ class SoundSystem:
         # Track delayed sounds as (play_at_time, event) tuples
         self._delayed_sounds: list[tuple[float, SoundEvent]] = []
 
+        # Occlusion: region-based sound attenuation through walls/doors.
+        # Cache is keyed on (emitter_region_id, listener_region_id) and
+        # invalidated when structural_revision changes (door open/close).
+        self._current_game_map: GameMap | None = None
+        self._occlusion_cache: dict[tuple[int, int], float] = {}
+        self._occlusion_cache_revision: int = -1
+
         # Subscribe to sound events
         subscribe_to_event(SoundEvent, self.handle_sound_event)
 
@@ -110,6 +125,7 @@ class SoundSystem:
         listener_y: WorldTileCoord,
         actor_spatial_index: SpatialIndex[Actor],
         delta_time: DeltaTime,
+        game_map: GameMap | None = None,
     ) -> None:
         """Update all sounds based on listener position and active emitters.
 
@@ -118,7 +134,11 @@ class SoundSystem:
             listener_y: Y position of the listener
             actor_spatial_index: Spatial index of all actors in the game world
             delta_time: Time elapsed since last update in seconds
+            game_map: The game map for region-based sound occlusion. When
+                provided, sounds are attenuated by walls and doors between
+                the emitter and listener.
         """
+        self._current_game_map = game_map
         self.current_time += delta_time
 
         # Initialize or interpolate audio listener position
@@ -261,7 +281,11 @@ class SoundSystem:
         sound_def: SoundDefinition,
         volume_multiplier: float,
     ) -> float:
-        """Calculate volume based on distance using inverse square law.
+        """Calculate volume based on distance and wall/door occlusion.
+
+        Combines distance-based attenuation with region-based occlusion.
+        If a game_map was provided to update(), sounds passing through walls
+        and doors are attenuated accordingly.
 
         Args:
             emitter_x: X position of the sound source
@@ -285,29 +309,133 @@ class SoundSystem:
         if distance > sound_def.max_distance:
             return 0.0
 
-        # Within falloff start distance, full volume
+        # Distance-based attenuation
         if distance <= sound_def.falloff_start:
-            return sound_def.base_volume * volume_multiplier
-
-        # Apply industry-standard distance attenuation model
-        falloff_distance = distance - sound_def.falloff_start
-        reference_distance = sound_def.falloff_start
-        rolloff_factor = sound_def.rolloff_factor
-
-        # Industry-standard rolloff formula used by Unity, Unreal, FMOD, Wwise
-        # This provides predictable, tunable falloff that designers understand
-        if falloff_distance <= 0:
-            volume_factor = 1.0
+            # Within falloff start distance, full volume
+            volume = sound_def.base_volume * volume_multiplier
         else:
-            # Defensive check: ensure we don't divide by zero
-            # This should never happen with valid sound definitions, but better safe
-            denominator = reference_distance + rolloff_factor * falloff_distance
-            if denominator <= 0:
-                volume_factor = 0.0  # Fallback to silence if invalid configuration
-            else:
-                volume_factor = reference_distance / denominator
+            # Apply industry-standard distance attenuation model
+            falloff_distance = distance - sound_def.falloff_start
+            reference_distance = sound_def.falloff_start
+            rolloff_factor = sound_def.rolloff_factor
 
-        return sound_def.base_volume * volume_multiplier * volume_factor
+            # Industry-standard rolloff formula used by Unity, Unreal, FMOD, Wwise
+            # This provides predictable, tunable falloff that designers understand
+            if falloff_distance <= 0:
+                volume_factor = 1.0
+            else:
+                # Defensive check: ensure we don't divide by zero
+                denominator = reference_distance + rolloff_factor * falloff_distance
+                if denominator <= 0:
+                    volume_factor = 0.0
+                else:
+                    volume_factor = reference_distance / denominator
+
+            volume = sound_def.base_volume * volume_multiplier * volume_factor
+
+        # Apply region-based occlusion (walls and doors between emitter/listener)
+        volume *= self._calculate_occlusion(emitter_x, emitter_y)
+
+        return volume
+
+    def _calculate_occlusion(
+        self,
+        emitter_x: WorldTileCoord,
+        emitter_y: WorldTileCoord,
+    ) -> float:
+        """Calculate how much walls and doors attenuate sound between emitter and listener.
+
+        Uses the MapRegion connectivity graph to find the path sound must travel
+        through doors. Each door boundary applies a volume multiplier depending
+        on whether the door is open or closed.
+
+        Args:
+            emitter_x: X tile position of the sound source.
+            emitter_y: Y tile position of the sound source.
+
+        Returns:
+            Occlusion multiplier (0.0 = fully blocked, 1.0 = no occlusion).
+        """
+        game_map = self._current_game_map
+        if game_map is None:
+            return 1.0
+
+        # Look up regions for listener and emitter
+        listener_ix = int(self.audio_listener_x)
+        listener_iy = int(self.audio_listener_y)
+        emitter_ix = int(emitter_x)
+        emitter_iy = int(emitter_y)
+
+        # Bounds check
+        if not (
+            0 <= listener_ix < game_map.width and 0 <= listener_iy < game_map.height
+        ):
+            return 1.0
+        if not (0 <= emitter_ix < game_map.width and 0 <= emitter_iy < game_map.height):
+            return 1.0
+
+        listener_region_id = int(game_map.tile_to_region_id[listener_ix, listener_iy])
+        emitter_region_id = int(game_map.tile_to_region_id[emitter_ix, emitter_iy])
+
+        # No region assigned (outdoor/unregioned tiles) - no occlusion
+        if listener_region_id < 0 or emitter_region_id < 0:
+            return 1.0
+
+        # Same region - no occlusion
+        if listener_region_id == emitter_region_id:
+            return 1.0
+
+        # Invalidate cache if map structure changed (door opened/closed)
+        if game_map.structural_revision != self._occlusion_cache_revision:
+            self._occlusion_cache.clear()
+            self._occlusion_cache_revision = game_map.structural_revision
+
+        cache_key = (emitter_region_id, listener_region_id)
+        cached = self._occlusion_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        # Find a path through connected regions (BFS through door graph)
+        region_path = find_region_path(game_map, emitter_region_id, listener_region_id)
+        if region_path is None:
+            # No connected route - completely blocked by walls
+            self._occlusion_cache[cache_key] = 0.0
+            return 0.0
+
+        # Walk the path and accumulate occlusion from each door boundary
+        occlusion = 1.0
+        for i in range(len(region_path) - 1):
+            from_region_id = region_path[i]
+            to_region_id = region_path[i + 1]
+
+            from_region = game_map.regions.get(from_region_id)
+            if from_region is None:
+                occlusion = 0.0
+                break
+
+            door_pos = from_region.connections.get(to_region_id)
+            if door_pos is None:
+                # No connection stored - treat as wall
+                occlusion = 0.0
+                break
+
+            door_x, door_y = door_pos
+            tile = game_map.tiles[door_x, door_y]
+            if tile == TileTypeID.DOOR_OPEN:
+                occlusion *= OPEN_DOOR_OCCLUSION
+            elif tile == TileTypeID.DOOR_CLOSED:
+                occlusion *= CLOSED_DOOR_OCCLUSION
+            else:
+                # Not a door tile (e.g. wall, or archway converted to floor)
+                # Treat open archways as open doors
+                if game_map.transparent[door_x, door_y]:
+                    occlusion *= OPEN_DOOR_OCCLUSION
+                else:
+                    occlusion = 0.0
+                    break
+
+        self._occlusion_cache[cache_key] = occlusion
+        return occlusion
 
     def _ensure_sound_playing(
         self, emitter: SoundEmitter, sound_def: SoundDefinition, volume: float
