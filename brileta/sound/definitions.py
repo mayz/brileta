@@ -92,10 +92,10 @@ SOUND_DEFINITIONS = {
             ),
         ],
         base_volume=0.7,
-        falloff_start=2.8,
-        max_distance=17.0,
+        falloff_start=1.5,
+        max_distance=8.0,
         priority=6,
-        rolloff_factor=0.7,  # Gentle falloff for ambient sounds
+        rolloff_factor=1.0,
     ),
     "waterfall_ambient": SoundDefinition(
         sound_id="waterfall_ambient",

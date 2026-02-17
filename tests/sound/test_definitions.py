@@ -144,8 +144,8 @@ class TestBuiltInSoundDefinitions:
         assert fire_def.sound_id == "fire_ambient"
         assert len(fire_def.layers) == 4  # Loop + 3 interval layers for variation
         assert fire_def.base_volume == 0.7
-        assert fire_def.falloff_start == 2.8
-        assert fire_def.max_distance == 17.0
+        assert fire_def.falloff_start == 1.5
+        assert fire_def.max_distance == 8.0
         assert fire_def.priority == 6
 
         # Check layers

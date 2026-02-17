@@ -100,8 +100,8 @@ class SoundSystem:
         for sound_def in SOUND_DEFINITIONS.values():
             max_dist = max(max_dist, sound_def.max_distance)
 
-        # Add buffer for smooth transitions (currently max is 17.0 for campfire)
-        self._max_audio_distance = max_dist + 5.0  # ~22.0 tiles
+        # Add buffer for smooth transitions
+        self._max_audio_distance = max_dist + 5.0
         return self._max_audio_distance
 
     def update(

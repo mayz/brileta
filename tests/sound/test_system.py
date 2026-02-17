@@ -586,16 +586,16 @@ class TestSoundSystemIntegration:
         actor = self.create_mock_actor(2, 2, [emitter])
 
         # Position actor at different distances and check volume calculations
-        # fire_ambient has: base_volume=0.7, falloff_start=2.8, rolloff_factor=0.7
+        # fire_ambient has: base_volume=0.7, falloff_start=1.5, rolloff_factor=1.0
         positions_and_expected_volumes = [
             (0, 0, 0.7),  # At origin, within falloff_start, should get base_volume
-            (1, 1, 0.7),  # Still within falloff_start (distance ~1.41 < 2.8)
+            (1, 1, 0.7),  # Still within falloff_start (distance ~1.41 < 1.5)
             (
                 3,
                 4,
-                # Distance = 5, falloff_distance = 5 - 2.8 = 2.2
-                # volume_factor = 2.8 / (2.8 + 0.7 * 2.2) = 2.8 / 4.34
-                0.7 * (2.8 / (2.8 + 0.7 * 2.2)),
+                # Distance = 5, falloff_distance = 5 - 1.5 = 3.5
+                # volume_factor = 1.5 / (1.5 + 1.0 * 3.5) = 1.5 / 5.0
+                0.7 * (1.5 / (1.5 + 1.0 * 3.5)),
             ),
         ]
 
@@ -670,7 +670,7 @@ class TestSoundSystemAudioStopping:
         assert len(emitter.playing_instances) > 0
         assert self.mock_backend.get_active_channel_count() > 0
 
-        # Move actor far beyond max_distance (fire_ambient max_distance = 17.0)
+        # Move actor far beyond max_distance (fire_ambient max_distance = 8.0)
         actor.x, actor.y = 25, 25  # Distance ~35, well beyond max_distance
 
         # Update - sound should stop
@@ -714,9 +714,9 @@ class TestSoundSystemAudioStopping:
         """Test behavior exactly at max distance boundary."""
         emitter = SoundEmitter("fire_ambient", active=True)
 
-        # fire_ambient has max_distance = 17.0
+        # fire_ambient has max_distance = 8.0
         # Position exactly at max distance
-        actor = self.create_mock_actor(17, 0, [emitter])  # Distance = 17.0
+        actor = self.create_mock_actor(8, 0, [emitter])  # Distance = 8.0
 
         self.system.update(0, 0, create_spatial_index([actor]), dt(0.1))
 
@@ -726,7 +726,7 @@ class TestSoundSystemAudioStopping:
         )
 
         # Move just beyond max distance
-        actor.x = 17.1  # Distance = 17.1, just beyond max_distance
+        actor.x = 8.1  # Distance = 8.1, just beyond max_distance
 
         self.system.update(0, 0, create_spatial_index([actor]), dt(0.1))
 
@@ -878,24 +878,24 @@ class TestSoundSystemAudioStopping:
         assert initial_instances > 0
 
         # Simulate the exact campfire bug scenario:
-        # Move from distance 10 to distance 28 (beyond max_distance of 17)
-        actor.x, actor.y = 10, 10  # Distance ~14, should still play
+        # Move from distance 5 to distance 28 (beyond max_distance of 8)
+        actor.x, actor.y = 3, 4  # Distance = 5, should still play
         self.system.update(0, 0, create_spatial_index([actor]), dt(0.1))
 
-        # Should still be playing at distance 14
+        # Should still be playing at distance 5
         assert self.mock_backend.get_active_channel_count() > 0, (
-            "Sound should still play at distance 14 (within max_distance 17)"
+            "Sound should still play at distance 5 (within max_distance 8)"
         )
 
         # Now move to the problematic distance from the original bug
-        actor.x, actor.y = 28, 0  # Distance 28, well beyond max_distance 17
+        actor.x, actor.y = 28, 0  # Distance 28, well beyond max_distance 8
         self.system.update(0, 0, create_spatial_index([actor]), dt(0.1))
 
         # This is the critical test - NO channels should remain active
         active_channels = self.mock_backend.get_active_channel_count()
         assert active_channels == 0, (
             f"CAMPFIRE BUG DETECTED: {active_channels} channels still playing "
-            f"at distance 28 (beyond max_distance 17). This indicates ghost audio!"
+            f"at distance 28 (beyond max_distance 8). This indicates ghost audio!"
         )
 
         # Double-check at the emitter level
@@ -1092,7 +1092,7 @@ class TestStaleEmitterPosition:
         # This simulates the window between when an emitter goes out of range
         # and when the cleanup happens
 
-        # Move actor far away (beyond max_distance of 17 for fire_ambient)
+        # Move actor far away (beyond max_distance of 8 for fire_ambient)
         actor.x, actor.y = 50, 50
 
         # Update - this should stop the sound
@@ -1122,14 +1122,14 @@ class TestStaleEmitterPosition:
         emitter = SoundEmitter("fire_ambient", active=True)
         # Place emitter at a position where (0,0) would give different volume
         # than actual position
-        actor = self.create_mock_actor(10, 10, [emitter])
+        actor = self.create_mock_actor(5, 5, [emitter])
 
-        # Start playing
+        # Start playing (distance ~7, within max_distance 8)
         self.system.update(0, 0, create_spatial_index([actor]), dt(0.1))
         assert self.mock_backend.get_active_channel_count() > 0
 
         # Now update with listener at a different position where:
-        # - Distance from listener to (10, 10) is large (sound should be quiet/stopped)
+        # - Distance from listener to (5, 5) is large (sound should be quiet/stopped)
         # - Distance from listener to (0, 0) would be small (sound would be loud)
         # If bug #3 exists, volume would be calculated from (0,0) incorrectly
 
@@ -1137,10 +1137,10 @@ class TestStaleEmitterPosition:
         self.system.update(30, 30, create_spatial_index([actor]), dt(0.1))
 
         # Sound should be stopped or very quiet (emitter is ~28 tiles away)
-        # fire_ambient max_distance is 17, so it should be silent
+        # fire_ambient max_distance is 8, so it should be silent
         final_count = self.mock_backend.get_active_channel_count()
         assert final_count == 0, (
-            f"Emitter at distance ~28 should be silent (max_distance=17), "
+            f"Emitter at distance ~28 should be silent (max_distance=8), "
             f"but {final_count} channels playing. "
             f"Bug #3 might be causing volume calculation from wrong position."
         )
@@ -1156,10 +1156,10 @@ class TestStaleEmitterPosition:
         incorrectly calculate volume from (0, 0).
         """
         emitter = SoundEmitter("fire_ambient", active=True)
-        # Place emitter at (15, 0) - within range of listener at origin
-        actor = self.create_mock_actor(15, 0, [emitter])
+        # Place emitter at (5, 0) - within range of listener at origin
+        actor = self.create_mock_actor(5, 0, [emitter])
 
-        # Start with listener at origin - emitter is 15 tiles away (within max 17)
+        # Start with listener at origin - emitter is 5 tiles away (within max 8)
         self.system.update(0, 0, create_spatial_index([actor]), dt(0.1))
         assert self.mock_backend.get_active_channel_count() > 0, (
             "Sound should be playing when emitter is within range"
@@ -1178,7 +1178,7 @@ class TestStaleEmitterPosition:
         # If not found (emitter out of range), volume update is skipped
         self.system.update(0, 0, create_spatial_index([actor]), dt(0.1))
 
-        # Sound should be stopped (emitter at distance 50, beyond max 17)
+        # Sound should be stopped (emitter at distance 50, beyond max 8)
         final_count = self.mock_backend.get_active_channel_count()
         assert final_count == 0, (
             f"Sound position fallback regression: emitter at distance 50 should be "
@@ -1417,12 +1417,12 @@ class TestCampfireBugRegression:
         self.campfire_actor.x = 10
         self.campfire_actor.y = 10
 
-        # Start with player close to campfire (distance ~14, within max_distance 17)
-        player = self.create_player_actor(0, 0)
+        # Start with player close to campfire (distance ~5, within max_distance 8)
+        player = self.create_player_actor(6, 7)
         actors = [self.campfire_actor, player]
 
         # Update with player near campfire - sound should start
-        self.system.update(0, 0, create_spatial_index(actors), dt(0.1))
+        self.system.update(6, 7, create_spatial_index(actors), dt(0.1))
 
         # Verify campfire is audible
         assert len(self.campfire_emitter.playing_instances) > 0, (
@@ -1433,21 +1433,17 @@ class TestCampfireBugRegression:
         )
 
         # Now move player to the problematic distance from the original bug report
-        # "even when the player is way more than 17 tiles away from the campfire,
-        # I still hear it at a fairly audible level"
-        player.x = (
-            38  # Distance from campfire (10,10) = sqrt((38-10)^2 + (0-10)^2) = ~30
-        )
+        player.x = 38  # Distance from campfire (10,10) = sqrt((38-6)^2 + (0-7)^2) = ~30
         player.y = 0
 
-        # Update with player at distance ~30 (well beyond max_distance of 17)
+        # Update with player at distance ~30 (well beyond max_distance of 8)
         self.system.update(player.x, player.y, create_spatial_index(actors), dt(0.1))
 
         # THE CRITICAL TEST - this would fail with the original campfire bug
         active_channels = self.mock_backend.get_active_channel_count()
         assert active_channels == 0, (
             f"ORIGINAL CAMPFIRE BUG REPRODUCED: {active_channels} audio channels "
-            f"still playing when campfire is at distance ~30 (beyond max_distance 17). "
+            f"still playing when campfire is at distance ~30 (beyond max_distance 8). "
             f"This indicates the Channel.stop() fix is not working!"
         )
 
@@ -1467,10 +1463,10 @@ class TestCampfireBugRegression:
 
         # Test distances: within range -> at boundary -> beyond range -> way beyond
         test_distances = [
-            (5, True, "Close: should be audible"),
-            (16, True, "Near max_distance: should still be audible"),
-            (17, True, "At max_distance: should still be audible"),
-            (18, False, "Just beyond max_distance: should be silent"),
+            (3, True, "Close: should be audible"),
+            (7, True, "Near max_distance: should still be audible"),
+            (8, True, "At max_distance: should still be audible"),
+            (10, False, "Beyond max_distance: should be silent"),
             (28, False, "Far beyond (original bug distance): should be silent"),
             (50, False, "Very far: should be silent"),
         ]
@@ -1483,7 +1479,10 @@ class TestCampfireBugRegression:
             player.x = distance
             player.y = 0
 
-            # Update audio system
+            # Update audio system (two ticks to allow cleanup of stopped channels)
+            self.system.update(
+                player.x, player.y, create_spatial_index(actors), dt(0.1)
+            )
             self.system.update(
                 player.x, player.y, create_spatial_index(actors), dt(0.1)
             )
