@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from brileta import colors
 from brileta.types import WorldTileCoord
 
 from .core import Actor, CharacterLayer
+from .tree_sprites import TreeArchetype
 
 if TYPE_CHECKING:
     from brileta.game.game_world import GameWorld
@@ -68,7 +69,23 @@ def _hash_offset(h: int, bits: int, amplitude: float) -> float:
 
 
 class Tree(Actor):
-    """A static tree actor with shared defaults for world behavior."""
+    """A static tree actor with shared defaults for world behavior.
+
+    The *tree_type* field identifies the archetype used for procedural sprite
+    generation.  When the sprite atlas is populated (by the controller after
+    world creation), each tree's *sprite_uv* is set and rendering switches
+    from glyph compositing to the pre-baked sprite path. Trees also override
+    the sprite ground anchor so scaled variants still root naturally in-tile.
+    """
+
+    tree_type: TreeArchetype
+    _TREE_SHADOW_HEIGHTS: ClassVar[dict[TreeArchetype, int]] = {
+        TreeArchetype.DECIDUOUS: 3,
+        TreeArchetype.CONIFER: 3,
+        TreeArchetype.DEAD: 3,
+        TreeArchetype.SAPLING: 2,
+    }
+    _TREE_GROUND_ANCHOR_Y = 0.62
 
     def __init__(
         self,
@@ -78,7 +95,10 @@ class Tree(Actor):
         color: colors.Color,
         game_world: GameWorld | None = None,
         character_layers: list[CharacterLayer] | None = None,
+        tree_type: TreeArchetype = TreeArchetype.DECIDUOUS,
+        visual_scale: float = 1.0,
     ) -> None:
+        physical_shadow_height = self._TREE_SHADOW_HEIGHTS.get(tree_type, 3)
         super().__init__(
             x=x,
             y=y,
@@ -87,9 +107,14 @@ class Tree(Actor):
             name="Tree",
             game_world=game_world,
             blocks_movement=True,
-            shadow_height=3,
+            shadow_height=physical_shadow_height,
             character_layers=character_layers,
+            visual_scale=visual_scale,
+            # Trees look better when their trunk root is anchored above the
+            # tile bottom in our angled top-down perspective.
+            sprite_ground_anchor_y=self._TREE_GROUND_ANCHOR_Y,
         )
+        self.tree_type = tree_type
 
 
 def create_deciduous_tree(

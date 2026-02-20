@@ -143,6 +143,23 @@ class GraphicsContext(abc.ABC):
         """Draw a projected glyph shadow as a stretched parallelogram quad."""
         pass
 
+    def draw_sprite_shadow(
+        self,
+        sprite_uv: SpriteUV,
+        screen_x: float,
+        screen_y: float,
+        shadow_dir_x: float,
+        shadow_dir_y: float,
+        shadow_length_pixels: float,
+        shadow_alpha: float,
+        scale_x: float = 1.0,
+        scale_y: float = 1.0,
+        ground_anchor_y: float = 1.0,
+        fade_tip: bool = True,
+    ) -> None:
+        """Draw a projected shadow using a sprite atlas silhouette if supported."""
+        return
+
     def draw_sprite_smooth(
         self,
         sprite_uv: SpriteUV,
@@ -153,6 +170,7 @@ class GraphicsContext(abc.ABC):
         interpolation_alpha: InterpolationAlpha = InterpolationAlpha(1.0),  # noqa: B008
         scale_x: float = 1.0,
         scale_y: float = 1.0,
+        ground_anchor_y: float = 1.0,
         world_pos: WorldTilePos | None = None,
         tile_bg: colors.Color | None = None,
     ) -> None:
@@ -171,9 +189,26 @@ class GraphicsContext(abc.ABC):
             interpolation_alpha: Interpolation factor for smooth movement.
             scale_x: Horizontal scale factor (1.0 = one tile wide).
             scale_y: Vertical scale factor (1.0 = one tile tall).
+            ground_anchor_y: Tile-relative Y anchor for the sprite's bottom
+                edge (0.0=tile top, 1.0=tile bottom).
             world_pos: World tile coordinates for GPU lightmap sampling.
             tile_bg: Tile background color for actor contrast checks.
         """
+        return
+
+    def create_sprite_atlas(self) -> Any | None:
+        """Create a dynamic sprite atlas if supported by the backend.
+
+        Backends that do not implement sprite-atlas rendering return ``None``.
+        """
+        return None
+
+    def set_sprite_atlas_texture(self, texture: Any | None) -> None:
+        """Bind the sprite atlas texture for rendering, if supported."""
+        return
+
+    def set_sun_direction(self, sun_dx: float, sun_dy: float) -> None:
+        """Set per-frame sun direction for sprite directional shading, if supported."""
         return
 
     @abc.abstractmethod

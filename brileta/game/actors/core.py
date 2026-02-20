@@ -178,6 +178,7 @@ class Actor:
         visual_scale: float = 1.0,
         character_layers: list[CharacterLayer] | None = None,
         sprite_uv: SpriteUV | None = None,
+        sprite_ground_anchor_y: float = 1.0,
     ) -> None:
         # === Core Identity & World Presence ===
         self.actor_id: ActorId = Actor._next_actor_id
@@ -203,6 +204,9 @@ class Actor:
         # UV coordinates into the dynamic sprite atlas.  When set, the actor
         # renders from the sprite atlas instead of the CP437 glyph atlas.
         self.sprite_uv = sprite_uv
+        # Sprite ground-anchor within the tile in [0, 1], measured from top.
+        # 1.0 = tile bottom, 0.5 = tile center.
+        self.sprite_ground_anchor_y = sprite_ground_anchor_y
         self.has_complex_visuals = False  # Flag for actors with particle effects, etc.
         self.gw = game_world
         self.blocks_movement = blocks_movement

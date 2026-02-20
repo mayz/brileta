@@ -36,7 +36,13 @@ from .modes.base import Mode
 from .modes.combat import CombatMode
 from .modes.explore import ExploreMode
 from .modes.picker import PickerMode
-from .types import DeltaTime, FixedTimestep, InterpolationAlpha, RandomSeed
+from .types import (
+    DeltaTime,
+    FixedTimestep,
+    InterpolationAlpha,
+    MapDecorationSeed,
+    RandomSeed,
+)
 from .util import rng
 from .util.clock import Clock
 from .util.coordinates import Rect, WorldTilePos
@@ -273,6 +279,9 @@ class Controller:
         # Initialize GPU lighting system
         self.gw.lighting_system = GPULightingSystem(self.gw, self.graphics)
 
+        # Generate procedural tree sprites and upload to the GPU sprite atlas.
+        self._generate_tree_sprites()
+
         # Create the player's torch - automatically disabled in sunlit outdoor areas
         self._player_torch = DynamicLight.create_player_torch(self.gw.player)
         self._player_torch_active = True
@@ -288,6 +297,72 @@ class Controller:
         # Reset dependent systems if this is a regeneration (not first call)
         if self._systems_initialized:
             self._reset_for_new_world()
+
+    def _generate_tree_sprites(self) -> None:
+        """Generate procedural sprites for tree actors and upload to the atlas.
+
+        Iterates every Tree actor in the current world, generates a pixel
+        sprite based on its archetype and position hash, packs it into a
+        fresh sprite atlas, and binds the atlas texture for screen rendering.
+        """
+        from brileta.game.actors.tree_sprites import (
+            generate_tree_sprite_for_position,
+            visual_scale_with_height_jitter,
+        )
+        from brileta.game.actors.trees import Tree
+
+        trees = [a for a in self.gw.actors if isinstance(a, Tree)]
+        if not trees:
+            return
+
+        create_sprite_atlas = getattr(self.graphics, "create_sprite_atlas", None)
+        if not callable(create_sprite_atlas):
+            logger.debug(
+                "Graphics backend has no sprite atlas support; "
+                "tree actors will use fallback glyph rendering."
+            )
+            return
+
+        atlas = create_sprite_atlas()
+        if atlas is None:
+            logger.debug(
+                "Graphics backend has no sprite atlas support; "
+                "tree actors will use fallback glyph rendering."
+            )
+            return
+
+        map_seed: MapDecorationSeed = int(self.gw.game_map.decoration_seed)
+        for tree in trees:
+            sprite = generate_tree_sprite_for_position(
+                tree.x,
+                tree.y,
+                map_seed,
+                tree.tree_type,
+            )
+            uv = atlas.allocate(sprite)
+            if uv is not None:
+                tree.sprite_uv = uv
+                # Match rendered height to physical shadow-height semantics
+                # so shadows and sprite size feel physically plausible.
+                tree.visual_scale = visual_scale_with_height_jitter(
+                    sprite,
+                    tree.shadow_height,
+                    tree.x,
+                    tree.y,
+                    map_seed,
+                )
+
+        set_sprite_atlas_texture = getattr(
+            self.graphics, "set_sprite_atlas_texture", None
+        )
+        if atlas.texture is not None and callable(set_sprite_atlas_texture):
+            set_sprite_atlas_texture(atlas.texture)
+
+        logger.info(
+            "Generated %d tree sprites (%d atlas allocations)",
+            len(trees),
+            atlas.allocated_count,
+        )
 
     def _reset_for_new_world(self) -> None:
         """Reset all systems that depend on the game world.

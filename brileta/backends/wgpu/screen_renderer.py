@@ -28,6 +28,7 @@ VERTEX_DTYPE = np.dtype(
     [
         ("position", "2f4"),  # (x, y)
         ("uv", "2f4"),  # (u, v)
+        ("uv_local", "2f4"),  # (u, v) local to the quad (0..1)
         ("color", "4f4"),  # (r, g, b, a) as floats 0.0-1.0
         ("world_pos", "2f4"),  # World tile coordinates for actor lighting
         ("actor_light_scale", "f4"),  # Shadow receiver dimming scale
@@ -79,6 +80,7 @@ class WGPUScreenRenderer:
         self._actor_lightmap_texture: wgpu.GPUTexture | None = None
         self._actor_light_viewport_origin: WorldTilePos = (0, 0)
         self._actor_lighting_enabled = False
+        self._sun_direction: tuple[float, float] = (0.0, 0.0)
 
         # Create vertex buffer
         buffer_size = MAX_QUADS * 6 * VERTEX_DTYPE.itemsize
@@ -90,7 +92,7 @@ class WGPUScreenRenderer:
 
         # Create dedicated uniform buffer for letterbox parameters
         self.uniform_buffer = self.resource_manager.device.create_buffer(
-            size=32,  # 2 * vec4<f32>
+            size=48,  # 3 * vec4<f32>
             usage=wgpu.BufferUsage.UNIFORM | wgpu.BufferUsage.COPY_DST,
             label="screen_renderer_uniform_buffer",
         )
@@ -191,28 +193,33 @@ class WGPUScreenRenderer:
                     },
                     {
                         "format": "float32x4",
-                        "offset": 16,  # color offset (4 * 4 bytes)
+                        "offset": 24,  # color offset
                         "shader_location": 2,
                     },
                     {
                         "format": "float32x2",
-                        "offset": 32,  # world_pos offset
+                        "offset": 40,  # world_pos offset
                         "shader_location": 3,
                     },
                     {
                         "format": "float32",
-                        "offset": 40,  # actor_light_scale offset
+                        "offset": 48,  # actor_light_scale offset
                         "shader_location": 4,
                     },
                     {
                         "format": "uint32",
-                        "offset": 44,  # flags offset
+                        "offset": 52,  # flags offset
                         "shader_location": 5,
                     },
                     {
                         "format": "float32x3",
-                        "offset": 48,  # tile_bg offset
+                        "offset": 56,  # tile_bg offset
                         "shader_location": 6,
+                    },
+                    {
+                        "format": "float32x2",
+                        "offset": 16,  # local_uv offset
+                        "shader_location": 7,
                     },
                 ],
             }
@@ -325,6 +332,10 @@ class WGPUScreenRenderer:
         self._actor_lighting_enabled = lightmap_texture is not None
         self._refresh_bind_groups()
 
+    def set_sun_direction(self, sun_dx: float, sun_dy: float) -> None:
+        """Set per-frame sun direction used for sprite directional highlights."""
+        self._sun_direction = (float(sun_dx), float(sun_dy))
+
     def set_sprite_atlas(self, texture: wgpu.GPUTexture | None) -> None:
         """Set the sprite atlas texture for sprite actor rendering.
 
@@ -372,9 +383,14 @@ class WGPUScreenRenderer:
         flags = np.uint32(flags_int)
         world_x, world_y = world_pos if world_pos is not None else (-1.0, -1.0)
         vertices = np.zeros(6, dtype=VERTEX_DTYPE)
+        local_uv_tl = (0.0, 0.0)
+        local_uv_tr = (1.0, 0.0)
+        local_uv_bl = (0.0, 1.0)
+        local_uv_br = (1.0, 1.0)
         vertices[0] = (
             (x, y),
             (u1, v1),
+            local_uv_tl,
             color_rgba,
             (world_x, world_y),
             actor_light_scale,
@@ -384,6 +400,7 @@ class WGPUScreenRenderer:
         vertices[1] = (
             (x + w, y),
             (u2, v1),
+            local_uv_tr,
             color_rgba,
             (world_x, world_y),
             actor_light_scale,
@@ -393,6 +410,7 @@ class WGPUScreenRenderer:
         vertices[2] = (
             (x, y + h),
             (u1, v2),
+            local_uv_bl,
             color_rgba,
             (world_x, world_y),
             actor_light_scale,
@@ -402,6 +420,7 @@ class WGPUScreenRenderer:
         vertices[3] = (
             (x + w, y),
             (u2, v1),
+            local_uv_tr,
             color_rgba,
             (world_x, world_y),
             actor_light_scale,
@@ -411,6 +430,7 @@ class WGPUScreenRenderer:
         vertices[4] = (
             (x, y + h),
             (u1, v2),
+            local_uv_bl,
             color_rgba,
             (world_x, world_y),
             actor_light_scale,
@@ -420,6 +440,7 @@ class WGPUScreenRenderer:
         vertices[5] = (
             (x + w, y + h),
             (u2, v2),
+            local_uv_br,
             color_rgba,
             (world_x, world_y),
             actor_light_scale,
@@ -451,6 +472,7 @@ class WGPUScreenRenderer:
             ]
             | None
         ) = None,
+        use_sprite_atlas: bool = False,
     ) -> None:
         """Add a projected glyph quad defined by four arbitrary corners.
 
@@ -485,11 +507,17 @@ class WGPUScreenRenderer:
         vertices = np.zeros(6, dtype=VERTEX_DTYPE)
         default_world = (-1.0, -1.0)
         default_scale = 1.0
-        default_flags = np.uint32(0)
+        default_flags_int = 2 if use_sprite_atlas else 0
+        default_flags = np.uint32(default_flags_int)
         default_tile_bg = (0.0, 0.0, 0.0)
+        local_uv_base_left = (0.0, 1.0)
+        local_uv_base_right = (1.0, 1.0)
+        local_uv_tip_left = (0.0, 0.0)
+        local_uv_tip_right = (1.0, 0.0)
         vertices[0] = (
             base_left,
             (u1, v2),
+            local_uv_base_left,
             c0,
             default_world,
             default_scale,
@@ -499,6 +527,7 @@ class WGPUScreenRenderer:
         vertices[1] = (
             base_right,
             (u2, v2),
+            local_uv_base_right,
             c1,
             default_world,
             default_scale,
@@ -508,6 +537,7 @@ class WGPUScreenRenderer:
         vertices[2] = (
             tip_left,
             (u1, v1),
+            local_uv_tip_left,
             c2,
             default_world,
             default_scale,
@@ -517,6 +547,7 @@ class WGPUScreenRenderer:
         vertices[3] = (
             base_right,
             (u2, v2),
+            local_uv_base_right,
             c1,
             default_world,
             default_scale,
@@ -526,6 +557,7 @@ class WGPUScreenRenderer:
         vertices[4] = (
             tip_left,
             (u1, v1),
+            local_uv_tip_left,
             c2,
             default_world,
             default_scale,
@@ -535,6 +567,7 @@ class WGPUScreenRenderer:
         vertices[5] = (
             tip_right,
             (u2, v1),
+            local_uv_tip_right,
             c3,
             default_world,
             default_scale,
@@ -573,8 +606,9 @@ class WGPUScreenRenderer:
         actor_lighting_enabled = self._actor_lighting_enabled
         actor_light_viewport_origin = self._actor_light_viewport_origin
         actor_lighting_flag = 1.0 if actor_lighting_enabled else 0.0
+        sun_dx, sun_dy = getattr(self, "_sun_direction", (0.0, 0.0))
         letterbox_data = struct.pack(
-            "8f",
+            "12f",
             float(offset_x),
             float(offset_y),
             float(scaled_w),
@@ -582,6 +616,10 @@ class WGPUScreenRenderer:
             float(actor_light_viewport_origin[0]),
             float(actor_light_viewport_origin[1]),
             actor_lighting_flag,
+            0.0,
+            sun_dx,
+            sun_dy,
+            0.0,
             0.0,
         )
         self.resource_manager.queue.write_buffer(

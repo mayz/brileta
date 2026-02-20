@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+from unittest.mock import Mock
+
 import pytest
 
 from brileta.view.render.actor_renderer import (
@@ -117,3 +120,37 @@ class TestSmoothScrollingBuffer:
         """WorldView should have _SCROLL_PADDING class constant."""
         assert hasattr(WorldView, "_SCROLL_PADDING")
         assert WorldView._SCROLL_PADDING >= 1
+
+
+class TestSunDirectionPropagation:
+    """Tests for WorldView sun-direction forwarding to graphics contexts."""
+
+    def test_applies_direction_to_primary_graphics(self) -> None:
+        view = object.__new__(WorldView)
+        view.graphics = Mock()
+        graphics_arg = view.graphics
+        directional_light = SimpleNamespace(direction=SimpleNamespace(x=0.3, y=-0.7))
+
+        view._apply_sun_direction_to_graphics(graphics_arg, directional_light)
+
+        view.graphics.set_sun_direction.assert_called_once_with(0.3, -0.7)
+
+    def test_applies_direction_to_both_contexts_when_distinct(self) -> None:
+        view = object.__new__(WorldView)
+        view.graphics = Mock()
+        graphics_arg = Mock()
+        directional_light = SimpleNamespace(direction=SimpleNamespace(x=-0.5, y=0.9))
+
+        view._apply_sun_direction_to_graphics(graphics_arg, directional_light)
+
+        view.graphics.set_sun_direction.assert_called_once_with(-0.5, 0.9)
+        graphics_arg.set_sun_direction.assert_called_once_with(-0.5, 0.9)
+
+    def test_uses_zero_vector_when_no_directional_light(self) -> None:
+        view = object.__new__(WorldView)
+        view.graphics = Mock()
+        graphics_arg = view.graphics
+
+        view._apply_sun_direction_to_graphics(graphics_arg, None)
+
+        view.graphics.set_sun_direction.assert_called_once_with(0.0, 0.0)

@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from brileta.util import rng
-from brileta.util.rng import RNGProvider, RNGStream
+from brileta.util.rng import RNGProvider, RNGStream, derive_spatial_seed
 
 
 class TestRNGStream:
@@ -239,3 +239,22 @@ print(",".join(map(str, values)))
             f"Process 1: {values1}\n"
             f"Process 2: {values2}"
         )
+
+
+class TestSpatialSeedDerivation:
+    """Tests for stateless position-based seed derivation."""
+
+    def test_same_inputs_produce_same_seed(self) -> None:
+        a = derive_spatial_seed(10, 20, map_seed=12345, salt=77)
+        b = derive_spatial_seed(10, 20, map_seed=12345, salt=77)
+        assert a == b
+
+    def test_map_seed_changes_output(self) -> None:
+        a = derive_spatial_seed(10, 20, map_seed=12345, salt=77)
+        b = derive_spatial_seed(10, 20, map_seed=54321, salt=77)
+        assert a != b
+
+    def test_salt_changes_output(self) -> None:
+        a = derive_spatial_seed(10, 20, map_seed=12345, salt=1)
+        b = derive_spatial_seed(10, 20, map_seed=12345, salt=2)
+        assert a != b

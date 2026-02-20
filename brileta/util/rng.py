@@ -38,6 +38,7 @@ from random import Random
 from typing import TYPE_CHECKING, TypeVar
 
 from brileta import config
+from brileta.types import MapDecorationSeed, SpatialSeed, WorldTileCoord
 
 if TYPE_CHECKING:
     from brileta.types import RandomSeed
@@ -263,3 +264,22 @@ def reset(master_seed: RandomSeed = None) -> None:
     if _provider is None:
         raise RuntimeError("RNG not initialized - call rng.init() first")
     _provider.reset(master_seed)
+
+
+def derive_spatial_seed(
+    x: WorldTileCoord,
+    y: WorldTileCoord,
+    *,
+    map_seed: MapDecorationSeed,
+    salt: SpatialSeed = 0,
+) -> SpatialSeed:
+    """Derive a deterministic 32-bit seed from world position and map seed.
+
+    This helper is stateless and order-independent: it maps coordinates and
+    world seed directly to a seed without consuming any RNG stream values.
+    Use it when content variation should remain stable even if iteration order
+    changes (for example, procedural sprite variants keyed by tile position).
+    """
+    return (
+        (int(x) * 73856093) ^ (int(y) * 19349663) ^ int(map_seed) ^ int(salt)
+    ) & 0xFFFFFFFF

@@ -490,9 +490,8 @@ class ShadowRenderer:
                     fade_tip=config.ACTOR_SHADOW_FADE_TIP,
                 )
 
-    # CP437 index for a solid block character (█), used as the shadow shape
-    # for sprite actors.  A single solid rectangle replaces the multi-layer
-    # glyph shadows and fixes the compounding-alpha bug by construction.
+    # CP437 solid block (█) used as a fallback when sprite-silhouette shadows
+    # are unavailable on the current graphics backend.
     _SOLID_BLOCK_CHAR = chr(219)
 
     def _emit_actor_shadow_quads(
@@ -510,27 +509,47 @@ class ShadowRenderer:
     ) -> None:
         """Emit projected shadow quads for an actor.
 
-        Sprite actors emit a single solid-fill shadow quad (fixing the
-        compounding-alpha bug from multi-layer glyph shadows).  Character-layer
-        and single-glyph actors use their existing per-layer shadow path.
+        Sprite actors use sprite-atlas silhouettes when supported by the
+        graphics backend, with a solid-glyph fallback for compatibility.
+        Character-layer and single-glyph actors use their existing per-layer
+        shadow path.
         """
         visual_scale = getattr(actor, "visual_scale", 1.0)
 
-        # Sprite actors: one solid rectangle shadow.
+        # Sprite actors: prefer sprite-silhouette shadow when supported.
         sprite_uv = getattr(actor, "sprite_uv", None)
         if sprite_uv is not None:
-            self.graphics.draw_actor_shadow(
-                char=self._SOLID_BLOCK_CHAR,
-                screen_x=screen_x,
-                screen_y=screen_y,
-                shadow_dir_x=shadow_dir_x,
-                shadow_dir_y=shadow_dir_y,
-                shadow_length_pixels=shadow_length_pixels,
-                shadow_alpha=shadow_alpha,
-                scale_x=visual_scale,
-                scale_y=visual_scale,
-                fade_tip=fade_tip,
+            draw_sprite_shadow = getattr(self.graphics, "draw_sprite_shadow", None)
+            sprite_ground_anchor_y = float(
+                getattr(actor, "sprite_ground_anchor_y", 1.0)
             )
+            if callable(draw_sprite_shadow):
+                draw_sprite_shadow(
+                    sprite_uv=sprite_uv,
+                    screen_x=screen_x,
+                    screen_y=screen_y,
+                    shadow_dir_x=shadow_dir_x,
+                    shadow_dir_y=shadow_dir_y,
+                    shadow_length_pixels=shadow_length_pixels,
+                    shadow_alpha=shadow_alpha,
+                    scale_x=visual_scale,
+                    scale_y=visual_scale,
+                    ground_anchor_y=sprite_ground_anchor_y,
+                    fade_tip=fade_tip,
+                )
+            else:
+                self.graphics.draw_actor_shadow(
+                    char=self._SOLID_BLOCK_CHAR,
+                    screen_x=screen_x,
+                    screen_y=screen_y,
+                    shadow_dir_x=shadow_dir_x,
+                    shadow_dir_y=shadow_dir_y,
+                    shadow_length_pixels=shadow_length_pixels,
+                    shadow_alpha=shadow_alpha,
+                    scale_x=visual_scale,
+                    scale_y=visual_scale,
+                    fade_tip=fade_tip,
+                )
             return
 
         # Character-layer actors: one shadow per glyph layer.

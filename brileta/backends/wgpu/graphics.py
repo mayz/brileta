@@ -323,6 +323,11 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         if self.screen_renderer is not None:
             self.screen_renderer.set_sprite_atlas(texture)
 
+    def set_sun_direction(self, sun_dx: float, sun_dy: float) -> None:
+        """Set per-frame sun direction used by sprite directional highlighting."""
+        if self.screen_renderer is not None:
+            self.screen_renderer.set_sun_direction(sun_dx, sun_dy)
+
     def _recreate_surface_and_context(self) -> bool:
         """
         Creates (or recreates) the WGPU surface and rendering context.
@@ -501,6 +506,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         interpolation_alpha: InterpolationAlpha | None = None,
         scale_x: float = 1.0,
         scale_y: float = 1.0,
+        ground_anchor_y: float = 1.0,
         world_pos: WorldTilePos | None = None,
         tile_bg: colors.Color | None = None,
     ) -> None:
@@ -513,6 +519,10 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         The *color* parameter tints the sampled texture via multiplication.
         For procedurally generated sprites with baked-in colors, pass white
         (255, 255, 255) so the original colors come through unchanged.
+
+        *ground_anchor_y* sets where the sprite's bottom edge contacts the tile
+        (0.0=tile top, 1.0=tile bottom). This keeps tree roots grounded when
+        the sprite is scaled up.
         """
         if interpolation_alpha is None:
             interpolation_alpha = InterpolationAlpha(1.0)
@@ -559,7 +569,8 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         scaled_w = tile_w * scale_x
         scaled_h = tile_h * scale_y
         offset_x = (tile_w - scaled_w) / 2
-        offset_y = (tile_h - scaled_h) / 2
+        anchor_y = max(0.0, min(1.0, float(ground_anchor_y)))
+        offset_y = tile_h * anchor_y - scaled_h
 
         self.screen_renderer.add_quad(
             screen_x + offset_x,
@@ -615,7 +626,71 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         fade_tip: bool = True,
     ) -> None:
         """Draw a projected glyph shadow as a stretched parallelogram."""
-        if self.screen_renderer is None or self.uv_map is None:
+        if self.uv_map is None:
+            return
+        uv_coords = self.uv_map[self._cp437_index_for_char(char)]
+        self._draw_shadow_with_uv(
+            uv_coords=uv_coords,
+            screen_x=screen_x,
+            screen_y=screen_y,
+            shadow_dir_x=shadow_dir_x,
+            shadow_dir_y=shadow_dir_y,
+            shadow_length_pixels=shadow_length_pixels,
+            shadow_alpha=shadow_alpha,
+            scale_x=scale_x,
+            scale_y=scale_y,
+            fade_tip=fade_tip,
+            use_sprite_atlas=False,
+        )
+
+    def draw_sprite_shadow(
+        self,
+        sprite_uv: SpriteUV,
+        screen_x: float,
+        screen_y: float,
+        shadow_dir_x: float,
+        shadow_dir_y: float,
+        shadow_length_pixels: float,
+        shadow_alpha: float,
+        scale_x: float = 1.0,
+        scale_y: float = 1.0,
+        ground_anchor_y: float = 1.0,
+        fade_tip: bool = True,
+    ) -> None:
+        """Draw a projected shadow sampled from a sprite atlas silhouette."""
+        self._draw_shadow_with_uv(
+            uv_coords=(sprite_uv.u1, sprite_uv.v1, sprite_uv.u2, sprite_uv.v2),
+            screen_x=screen_x,
+            screen_y=screen_y,
+            shadow_dir_x=shadow_dir_x,
+            shadow_dir_y=shadow_dir_y,
+            shadow_length_pixels=shadow_length_pixels,
+            shadow_alpha=shadow_alpha,
+            scale_x=scale_x,
+            scale_y=scale_y,
+            fade_tip=fade_tip,
+            use_sprite_atlas=True,
+            ground_anchor_y=ground_anchor_y,
+        )
+
+    def _draw_shadow_with_uv(
+        self,
+        uv_coords: tuple[float, float, float, float],
+        screen_x: float,
+        screen_y: float,
+        shadow_dir_x: float,
+        shadow_dir_y: float,
+        shadow_length_pixels: float,
+        shadow_alpha: float,
+        scale_x: float,
+        scale_y: float,
+        fade_tip: bool,
+        *,
+        use_sprite_atlas: bool,
+        ground_anchor_y: float | None = None,
+    ) -> None:
+        """Draw a projected shadow quad using precomputed UV coordinates."""
+        if self.screen_renderer is None:
             return
         if shadow_length_pixels <= 0.0 or shadow_alpha <= 0.0:
             return
@@ -627,13 +702,16 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         dir_x = shadow_dir_x / direction_length
         dir_y = shadow_dir_y / direction_length
 
-        uv_coords = self.uv_map[self._cp437_index_for_char(char)]
         tile_w, tile_h = self.tile_dimensions
 
         scaled_w = tile_w * scale_x
         scaled_h = tile_h * scale_y
         offset_x = (tile_w - scaled_w) / 2
-        offset_y = (tile_h - scaled_h) / 2
+        if ground_anchor_y is None:
+            offset_y = (tile_h - scaled_h) / 2
+        else:
+            anchor_y = max(0.0, min(1.0, float(ground_anchor_y)))
+            offset_y = tile_h * anchor_y - scaled_h
 
         glyph_x = screen_x + offset_x
         glyph_y = screen_y + offset_y
@@ -712,6 +790,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
             base_color,
             tip_color,
             vertex_colors=per_vertex_colors,
+            use_sprite_atlas=use_sprite_atlas,
         )
 
     @contextmanager

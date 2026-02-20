@@ -114,9 +114,20 @@ ActorId = NewType("ActorId", int)
 # Unique identifier for sound definitions (e.g., "fire_ambient", "waterfall_ambient")
 type SoundId = str
 
-# Random seed for deterministic generation (map generation, etc.)
-# Can be an int for numeric seeds or a descriptive string like "burrito1".
+# Top-level game seed type (the seed that drives deterministic world generation).
+# Can be an int for numeric seeds, a descriptive string like "burrito1",
+# or None for non-deterministic generation.
+# This is distinct from per-map/internal derived seeds (MapDecorationSeed,
+# SpatialSeed), which are always ints.
 type RandomSeed = int | str | None
+
+# Per-map numeric seed already resolved during generation and stored on the map
+# (e.g. ``game_map.decoration_seed``). Unlike RandomSeed, this is always int.
+type MapDecorationSeed = int
+
+# Deterministic per-feature seed derived from position/map/salt for local
+# procedural variation. This is an internal, stateless, order-independent seed.
+type SpatialSeed = int
 
 # =============================================================================
 # UTILITY TYPES

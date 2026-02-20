@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 from brileta import colors, config
 from brileta.config import PLAYER_BASE_STRENGTH, PLAYER_BASE_TOUGHNESS
@@ -13,9 +13,8 @@ from brileta.game.actors import (
     Actor,
     Character,
     ItemPile,
+    TreeArchetype,
     create_bookcase,
-    create_conifer_tree,
-    create_deciduous_tree,
 )
 from brileta.game.actors.environmental import ContainedFire
 from brileta.game.actors.npc_types import (
@@ -24,6 +23,7 @@ from brileta.game.actors.npc_types import (
     RESIDENT_TYPE,
     TROG_TYPE,
 )
+from brileta.game.actors.trees import Tree
 from brileta.game.countables import CountableType
 from brileta.game.item_spawner import ItemSpawner
 from brileta.game.items.item_core import Item
@@ -38,7 +38,13 @@ from brileta.game.items.item_types import (
 )
 from brileta.game.lights import DynamicLight, GlobalLight, LightSource
 from brileta.game.outfit import LEATHER_ARMOR_TYPE
-from brileta.types import ActorId, TileCoord, WorldTileCoord, WorldTilePos
+from brileta.types import (
+    ActorId,
+    MapDecorationSeed,
+    TileCoord,
+    WorldTileCoord,
+    WorldTilePos,
+)
 from brileta.util import rng
 from brileta.util.coordinates import Rect
 from brileta.util.spatial import SpatialHashGrid, SpatialIndex
@@ -1139,16 +1145,30 @@ class GameWorld:
                 # Container could not be placed; skip it
                 pass
 
+    # Fallback glyph characters and colors per archetype, used when the
+    # sprite atlas is not yet available (e.g. non-WGPU backends, tests).
+    _TREE_FALLBACKS: ClassVar[dict[TreeArchetype, tuple[str, colors.Color]]] = {
+        TreeArchetype.DECIDUOUS: ("#", (65, 145, 50)),
+        TreeArchetype.CONIFER: ("^", (40, 115, 40)),
+        TreeArchetype.DEAD: ("Y", (80, 70, 55)),
+        TreeArchetype.SAPLING: ("i", (65, 145, 50)),
+    }
+
     def _place_tree_actors(self) -> None:
         """Spawn tree actors from generator output positions.
 
         Trees are represented as actors so they inherit terrain backgrounds
         and can later gain interactive behavior (chop, climb, storage).
+
+        Each tree is assigned an archetype (deciduous, conifer, dead, sapling)
+        via a deterministic spatial hash. Procedural sprites are generated
+        and uploaded to the atlas separately by the controller after world
+        creation.
         """
         if not self.tree_positions:
             return
 
-        map_seed = int(self.game_map.decoration_seed)
+        map_seed: MapDecorationSeed = int(self.game_map.decoration_seed)
         for x, y in self.tree_positions:
             if not (0 <= x < self.game_map.width and 0 <= y < self.game_map.height):
                 continue
@@ -1157,13 +1177,28 @@ class GameWorld:
             if self.get_actor_at_location(x, y) is not None:
                 continue
 
-            # 75% deciduous, 25% conifer using deterministic spatial hash.
+            # Archetype distribution: 55% deciduous, 20% conifer,
+            # 15% dead, 10% sapling via deterministic spatial hash.
             tree_hash = ((x * 73856093) ^ (y * 19349663) ^ map_seed) & 0xFFFFFFFF
-            if tree_hash % 4 == 0:
-                tree_actor = create_conifer_tree(x=x, y=y, game_world=self)
+            r = tree_hash % 20
+            if r < 11:
+                archetype = TreeArchetype.DECIDUOUS
+            elif r < 15:
+                archetype = TreeArchetype.CONIFER
+            elif r < 18:
+                archetype = TreeArchetype.DEAD
             else:
-                tree_actor = create_deciduous_tree(x=x, y=y, game_world=self)
+                archetype = TreeArchetype.SAPLING
 
+            ch, color = self._TREE_FALLBACKS[archetype]
+            tree_actor = Tree(
+                x=x,
+                y=y,
+                ch=ch,
+                color=color,
+                game_world=self,
+                tree_type=archetype,
+            )
             self.add_actor(tree_actor)
 
     def _add_starting_room_items(self, room: Rect) -> None:

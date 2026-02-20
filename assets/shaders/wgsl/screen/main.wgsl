@@ -5,6 +5,7 @@
 struct VertexInput {
     @location(0) in_vert: vec2<f32>,   // Input vertex position in PIXELS
     @location(1) in_uv: vec2<f32>,
+    @location(7) in_uv_local: vec2<f32>,
     @location(2) in_color: vec4<f32>,
     @location(3) in_world_pos: vec2<f32>,
     @location(4) in_actor_light_scale: f32,
@@ -21,6 +22,7 @@ struct VertexOutput {
     @location(3) v_actor_light_scale: f32,
     @location(4) v_flags: u32,
     @location(5) v_tile_bg: vec3<f32>,
+    @location(6) v_uv_local: vec2<f32>,
 }
 
 // Uniform buffer for letterbox parameters
@@ -28,6 +30,8 @@ struct Uniforms {
     u_letterbox: vec4<f32>,   // (offset_x, offset_y, scaled_w, scaled_h)
     // (viewport_world_x, viewport_world_y, actor_lighting_enabled, unused)
     u_actor_light_data: vec4<f32>,
+    // (sun_dx, sun_dy, unused, unused)
+    u_sun_direction: vec4<f32>,
 }
 
 @group(0) @binding(0) var<uniform> uniforms: Uniforms;
@@ -61,6 +65,7 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     output.v_actor_light_scale = input.in_actor_light_scale;
     output.v_flags = input.in_flags;
     output.v_tile_bg = input.in_tile_bg;
+    output.v_uv_local = input.in_uv_local;
 
     return output;
 }
@@ -186,6 +191,43 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     var sampled_color: vec4<f32>;
     if ((input.v_flags & SPRITE_ATLAS_FLAG) != 0u) {
         sampled_color = textureSample(u_sprite_atlas, u_sampler, input.v_uv) * tint;
+        let sun_dir = uniforms.u_sun_direction.xy;
+        let sun_len = length(sun_dir);
+        if (sun_len > 0.01) {
+            let sun_norm = sun_dir / sun_len;
+            // Billboard lighting model:
+            // - Sun X shifts light left/right across the sprite.
+            // - Sun Y is treated as front/back lighting for upright sprites:
+            //   south-facing (+Y) lights the visible canopy face, north-facing
+            //   (-Y) darkens it because the lit side is mostly hidden.
+            let centered = (input.v_uv_local - vec2f(0.5, 0.5)) * 2.0;
+            let lateral = centered.x * sun_norm.x;
+            let front = sun_norm.y;
+            // Add a soft directional lobe so highlights track azimuth across
+            // canopy pixels instead of reading as all-or-nothing exposure.
+            let pseudo_axis_raw = vec2f(sun_norm.x, -sun_norm.y * 0.45);
+            let pseudo_axis_len = length(pseudo_axis_raw);
+            let pseudo_axis = select(
+                vec2f(0.0, 0.0),
+                pseudo_axis_raw / pseudo_axis_len,
+                pseudo_axis_len > 0.01,
+            );
+            let canopy_weight = 1.0 - smoothstep(0.2, 1.15, length(centered));
+            let directional_lobe = dot(centered, pseudo_axis) * canopy_weight;
+
+            let lit = (
+                max(lateral, 0.0) * 0.22
+                + max(front, 0.0) * 0.36
+                + max(directional_lobe, 0.0) * 0.38
+            );
+            let shaded = (
+                max(-lateral, 0.0) * 0.28
+                + max(-front, 0.0) * 0.50
+                + max(-directional_lobe, 0.0) * 0.42
+            );
+            let modifier = clamp(1.0 + lit - shaded, 0.28, 1.44);
+            sampled_color = vec4f(sampled_color.rgb * modifier, sampled_color.a);
+        }
     } else {
         sampled_color = textureSample(u_texture, u_sampler, input.v_uv) * tint;
     }

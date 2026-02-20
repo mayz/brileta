@@ -426,6 +426,9 @@ class ActorRenderer:
         # Priority 1: Sprite atlas path (procedurally generated sprites).
         sprite_uv = getattr(actor, "sprite_uv", None)
         if sprite_uv is not None:
+            sprite_ground_anchor_y = float(
+                getattr(actor, "sprite_ground_anchor_y", 1.0)
+            )
             self.graphics.draw_sprite_smooth(
                 sprite_uv,
                 final_color,
@@ -435,6 +438,7 @@ class ActorRenderer:
                 interpolation_alpha,
                 scale_x=visual_scale,
                 scale_y=visual_scale,
+                ground_anchor_y=sprite_ground_anchor_y,
                 world_pos=(actor.x, actor.y),
                 tile_bg=tile_bg,
             )
@@ -618,6 +622,9 @@ class ActorRenderer:
 
                 sprite_uv = getattr(actor, "sprite_uv", None)
                 if sprite_uv is not None:
+                    sprite_ground_anchor_y = float(
+                        getattr(actor, "sprite_ground_anchor_y", 1.0)
+                    )
                     # Sprite atlas path.
                     graphics.draw_sprite_smooth(
                         sprite_uv,
@@ -628,6 +635,7 @@ class ActorRenderer:
                         alpha,
                         scale_x=visual_scale,
                         scale_y=visual_scale,
+                        ground_anchor_y=sprite_ground_anchor_y,
                         world_pos=(actor.x, actor.y),
                         tile_bg=tile_bg,
                     )

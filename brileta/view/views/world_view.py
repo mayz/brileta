@@ -514,11 +514,11 @@ class WorldView(View):
             else:
                 set_gpu_actor_lighting_context(None, None)
 
+        directional_light = self._get_directional_light()
         with (
             record_time_live_variable("time.render.actor_shadows_ms"),
             graphics.shadow_pass(),
         ):
-            directional_light = self._get_directional_light()
             self.shadow_renderer.game_map = self.controller.gw.game_map
             self.shadow_renderer.viewport_system = self.viewport_system
             self.shadow_renderer.graphics = graphics
@@ -530,6 +530,8 @@ class WorldView(View):
                 view_origin=(float(self.x), float(self.y)),
                 camera_frac_offset=self.camera_frac_offset,
             )
+
+        self._apply_sun_direction_to_graphics(graphics, directional_light)
 
         self.actor_renderer.render_actors(
             alpha,
@@ -701,6 +703,33 @@ class WorldView(View):
             ),
             None,
         )
+
+    def _apply_sun_direction_to_graphics(
+        self,
+        graphics: GraphicsContext,
+        directional_light: DirectionalLight | None,
+    ) -> None:
+        """Push per-frame sun direction to every active graphics context reference.
+
+        WorldView owns renderers initialized with ``self.graphics`` and also receives
+        a ``graphics`` argument in ``present()``. These are expected to be the same
+        object, but updating both (when distinct) keeps sprite highlight uniforms
+        consistent across wrapped/proxy contexts.
+        """
+        if directional_light is None:
+            sun_dx, sun_dy = 0.0, 0.0
+        else:
+            sun_dx = directional_light.direction.x
+            sun_dy = directional_light.direction.y
+
+        target_graphics: list[GraphicsContext] = [self.graphics]
+        if graphics is not self.graphics:
+            target_graphics.append(graphics)
+
+        for target in target_graphics:
+            set_sun_direction = getattr(target, "set_sun_direction", None)
+            if callable(set_sun_direction):
+                set_sun_direction(sun_dx, sun_dy)
 
     def _update_actor_particles(self) -> None:
         """Emit particles from actors with particle emitters."""

@@ -16,7 +16,7 @@ from brileta.environment.tile_types import TileTypeAppearance, TileTypeID
 from brileta.game.actors import Actor
 from brileta.game.actors.core import CharacterLayer
 from brileta.game.lights import DirectionalLight
-from brileta.types import InterpolationAlpha
+from brileta.types import InterpolationAlpha, SpriteUV
 from brileta.util.coordinates import Rect
 from brileta.view.render.actor_renderer import ActorRenderer
 from brileta.view.render.graphics import GraphicsContext
@@ -107,6 +107,23 @@ def test_add_parallelogram_vertices() -> None:
     assert tuple(vertices[2]["uv"]) == pytest.approx((0.1, 0.2))
     assert float(vertices[0]["color"][3]) == pytest.approx(0.5)
     assert float(vertices[2]["color"][3]) == pytest.approx(0.0)
+
+
+def test_add_parallelogram_sets_sprite_atlas_flag() -> None:
+    renderer = object.__new__(WGPUScreenRenderer)
+    renderer.cpu_vertex_buffer = np.zeros(6, dtype=VERTEX_DTYPE)
+    renderer.vertex_count = 0
+
+    renderer.add_parallelogram(
+        corners=((1.0, 2.0), (5.0, 2.0), (3.0, 6.0), (7.0, 6.0)),
+        uv_coords=(0.1, 0.2, 0.3, 0.4),
+        base_color=(0.0, 0.0, 0.0, 0.5),
+        tip_color=(0.0, 0.0, 0.0, 0.0),
+        use_sprite_atlas=True,
+    )
+
+    assert renderer.vertex_count == 6
+    assert set(renderer.cpu_vertex_buffer["flags"]) == {np.uint32(2)}
 
 
 def test_shadow_geometry_sun() -> None:
@@ -392,6 +409,62 @@ def test_composite_layers_shadow() -> None:
     second_char = graphics.draw_actor_shadow.call_args_list[1].kwargs["char"]
     assert first_char == "A"
     assert second_char == "B"
+
+
+def test_sprite_actor_shadow_uses_sprite_silhouette_path() -> None:
+    actor = _build_actor()
+    actor.sprite_uv = SpriteUV(0.1, 0.2, 0.3, 0.4)
+    actor.sprite_ground_anchor_y = 0.62
+    renderer = _build_shadow_renderer([])
+    graphics = SimpleNamespace(
+        draw_actor_shadow=Mock(),
+        draw_sprite_shadow=Mock(),
+        console_to_screen_coords=lambda x, y: (x, y),
+    )
+    renderer.graphics = cast(GraphicsContext, graphics)
+
+    renderer._emit_actor_shadow_quads(
+        actor=actor,
+        root_x=10.0,
+        root_y=20.0,
+        screen_x=100.0,
+        screen_y=200.0,
+        shadow_dir_x=1.0,
+        shadow_dir_y=0.0,
+        shadow_length_pixels=12.0,
+        shadow_alpha=0.2,
+        fade_tip=True,
+    )
+
+    graphics.draw_sprite_shadow.assert_called_once()
+    assert graphics.draw_sprite_shadow.call_args.kwargs["sprite_uv"] == actor.sprite_uv
+    assert graphics.draw_sprite_shadow.call_args.kwargs["ground_anchor_y"] == 0.62
+    graphics.draw_actor_shadow.assert_not_called()
+
+
+def test_sprite_shadow_geometry_respects_ground_anchor() -> None:
+    graphics = object.__new__(WGPUGraphicsContext)
+    graphics._tile_dimensions = (20, 20)
+    graphics.screen_renderer = Mock()
+    graphics.uv_map = None
+
+    graphics.draw_sprite_shadow(
+        sprite_uv=SpriteUV(0.0, 0.0, 1.0, 1.0),
+        screen_x=100.0,
+        screen_y=200.0,
+        shadow_dir_x=0.0,
+        shadow_dir_y=1.0,
+        shadow_length_pixels=30.0,
+        shadow_alpha=0.35,
+        scale_x=1.2,
+        scale_y=1.2,
+        ground_anchor_y=0.6,
+        fade_tip=True,
+    )
+
+    corners = graphics.screen_renderer.add_parallelogram.call_args.args[0]
+    assert corners[0] == pytest.approx((98.0, 212.0))
+    assert corners[1] == pytest.approx((122.0, 212.0))
 
 
 def test_no_shadow_zero_height() -> None:

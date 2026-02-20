@@ -6,7 +6,7 @@ and state of game actors.
 # Export the submodules themselves for access to concrete implementations.
 # Expose the core actor classes and base classes directly.
 # These form the main, stable API of the package.
-from . import ai, components, conditions, container, status_effects, trees
+from . import ai, components, conditions, container, status_effects, tree_sprites, trees
 from .ai import AIComponent
 from .conditions import Condition
 from .container import (
@@ -16,6 +16,14 @@ from .container import (
 )
 from .core import NPC, PC, Actor, Character
 from .status_effects import StatusEffect
+from .tree_sprites import (
+    TreeArchetype,
+    generate_tree_sprite,
+    generate_tree_sprite_for_position,
+    sprite_visual_scale_for_shadow_height,
+    tree_sprite_seed,
+    visual_scale_with_height_jitter,
+)
 from .trees import Tree, create_conifer_tree, create_deciduous_tree
 
 # Note: We don't export *every* concrete class here.
@@ -30,6 +38,13 @@ __all__ = [
     "Container",
     "ItemPile",
     "Tree",
+    # Sprite Generation
+    "TreeArchetype",
+    "generate_tree_sprite",
+    "generate_tree_sprite_for_position",
+    "sprite_visual_scale_for_shadow_height",
+    "tree_sprite_seed",
+    "visual_scale_with_height_jitter",
     # Factory Functions
     "create_bookcase",
     "create_deciduous_tree",
@@ -44,5 +59,6 @@ __all__ = [
     "conditions",
     "container",
     "status_effects",
+    "tree_sprites",
     "trees",
 ]
