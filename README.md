@@ -26,6 +26,14 @@ This is a personal hobby project. There's no release timeline, no roadmap promis
 - Generated regions track properties like sky exposure that feed into the lighting system.
 - Each subsystem gets its own isolated RNG stream derived from a master seed, so changes to one system's random consumption don't cascade to others.
 
+### Procedural Tree Sprites
+
+- Every tree sprite in the game is unique, generated per-pixel from the tree's world position.
+- Four archetypes (deciduous, conifer, dead, sapling) with distinct silhouettes and color palettes.
+- Three-step canopy shading (shadow, mid-tone, highlight) over lobe-based geometry so foliage reads as textured mass at small sizes.
+- Billboard sun lighting in the fragment shader shifts highlights across canopy pixels as the sun moves.
+- Dynamic sprite atlas with skyline bin-packing integrates procedural sprites into the glyph rendering pipeline.
+
 ### Utility AI with Goals
 
 - Each tick, every available action is scored against a context built from health, threat proximity, escape routes, and other inputs.
