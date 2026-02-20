@@ -68,6 +68,10 @@ class BaseGraphicsContext(GraphicsContext):
 
         # Common state that will be set by subclasses
         self._tile_dimensions: TileDimensions = (20, 20)  # Default
+        self._native_tile_size: TileDimensions = (20, 20)
+        self._scale_factor: int = 1
+        self._console_width_tiles: int = 80
+        self._console_height_tiles: int = 50
         self._coordinate_converter: CoordinateConverter | None = None
         self.letterbox_geometry: PixelRect | None = None
         self.uv_map: np.ndarray | None = None
@@ -75,13 +79,23 @@ class BaseGraphicsContext(GraphicsContext):
 
     @property
     def console_width_tiles(self) -> int:
-        """Get console width in tiles from config."""
-        return config.SCREEN_WIDTH
+        """Get current console width in tiles."""
+        return self._console_width_tiles
 
     @property
     def console_height_tiles(self) -> int:
-        """Get console height in tiles from config."""
-        return config.SCREEN_HEIGHT
+        """Get current console height in tiles."""
+        return self._console_height_tiles
+
+    @property
+    def native_tile_size(self) -> TileDimensions:
+        """Get the native tile dimensions from the tileset atlas."""
+        return self._native_tile_size
+
+    @property
+    def scale_factor(self) -> int:
+        """Get the effective integer scale factor (content_scale * TILE_ZOOM)."""
+        return self._scale_factor
 
     @property
     def tile_dimensions(self) -> TileDimensions:
@@ -340,31 +354,45 @@ class BaseGraphicsContext(GraphicsContext):
         )
 
     def _calculate_letterbox_geometry(
-        self, window_width: int, window_height: int
+        self,
+        framebuffer_width: int,
+        framebuffer_height: int,
+        display_tile_width: int,
+        display_tile_height: int,
     ) -> PixelRect:
-        """Calculate letterbox geometry for the current window size.
+        """Calculate integer-scaled letterbox geometry for the framebuffer.
 
-        This calculation is identical across backends.
+        The display tile dimensions are already fully scaled (native * DPI * zoom).
         """
-        console_width, console_height = (
-            self.console_width_tiles,
-            self.console_height_tiles,
+        tile_width = max(1, display_tile_width)
+        tile_height = max(1, display_tile_height)
+        console_width, console_height = self._calculate_console_tile_dimensions(
+            framebuffer_width,
+            framebuffer_height,
+            display_tile_width,
+            display_tile_height,
         )
-        console_aspect = console_width / console_height
-        window_aspect = window_width / window_height
 
-        if console_aspect > window_aspect:
-            scaled_w = window_width
-            scaled_h = int(window_width / console_aspect)
-            offset_x = 0
-            offset_y = (window_height - scaled_h) // 2
-        else:
-            scaled_h = window_height
-            scaled_w = int(window_height * console_aspect)
-            offset_x = (window_width - scaled_w) // 2
-            offset_y = 0
+        rendered_width = console_width * tile_width
+        rendered_height = console_height * tile_height
+        offset_x = (framebuffer_width - rendered_width) // 2
+        offset_y = (framebuffer_height - rendered_height) // 2
 
-        return (offset_x, offset_y, scaled_w, scaled_h)
+        return (offset_x, offset_y, rendered_width, rendered_height)
+
+    @staticmethod
+    def _calculate_console_tile_dimensions(
+        framebuffer_width: int,
+        framebuffer_height: int,
+        display_tile_width: int,
+        display_tile_height: int,
+    ) -> tuple[int, int]:
+        """Calculate console dimensions from framebuffer and display tile size."""
+        tile_width = max(1, display_tile_width)
+        tile_height = max(1, display_tile_height)
+        console_width = max(1, framebuffer_width // tile_width)
+        console_height = max(1, framebuffer_height // tile_height)
+        return (console_width, console_height)
 
     def _setup_coordinate_converter(self) -> None:
         """Set up the coordinate converter with letterbox scaled dimensions.

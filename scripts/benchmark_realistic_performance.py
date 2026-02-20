@@ -68,8 +68,8 @@ class RealisticPerformanceBenchmark:
 
         # Create VISIBLE window for realistic testing
         app_config = AppConfig(
-            width=config.SCREEN_WIDTH,
-            height=config.SCREEN_HEIGHT,
+            width=config.INITIAL_WINDOW_WIDTH_TILES,
+            height=config.INITIAL_WINDOW_HEIGHT_TILES,
             title="Realistic Performance Benchmark - Close window to exit",
             vsync=True,  # Use vsync for realistic conditions
             resizable=True,

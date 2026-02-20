@@ -44,7 +44,7 @@ _rng = rng.get("effects.animation")
 
 
 # Viewport defaults used when initializing views before they are resized.
-DEFAULT_VIEWPORT_WIDTH = config.SCREEN_WIDTH
+DEFAULT_VIEWPORT_WIDTH = 80
 DEFAULT_VIEWPORT_HEIGHT = 40  # Initial height before layout adjustments
 
 
@@ -67,7 +67,7 @@ class WorldView(View):
         self.graphics = controller.graphics
         self.screen_shake = screen_shake
         self.lighting_system = lighting_system
-        # Initialize a viewport system sized using configuration defaults.
+        # Initialize a viewport system with bootstrap defaults.
         # These defaults are replaced once resize() sets the real view bounds.
         self.viewport_system = ViewportSystem(
             DEFAULT_VIEWPORT_WIDTH, DEFAULT_VIEWPORT_HEIGHT

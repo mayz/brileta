@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -42,6 +43,8 @@ from .textured_quad_renderer import WGPUTexturedQuadRenderer
 
 if TYPE_CHECKING:
     from brileta.view.ui.cursor_manager import CursorManager
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,6 +103,9 @@ def _infer_compose_tile_dimensions(
 class WGPUGraphicsContext(BaseGraphicsContext):
     """WGPU graphics context implementation."""
 
+    _CONTENT_SCALE_RELOCK_STABLE_SAMPLES = 4
+    _PRESENT_FAILURE_LOG_INTERVAL = 120
+
     def __init__(self, window: GlfwWindow, *, _defer_init: bool = False) -> None:
         """Initialize WGPU graphics context.
 
@@ -151,6 +157,14 @@ class WGPUGraphicsContext(BaseGraphicsContext):
 
         # Reusable CPU buffer for WorldView (to avoid per-frame allocations)
         self._world_view_cpu_buffer: np.ndarray | None = None
+        # Lock DPI/content scale at first successful detection so fullscreen
+        # toggles on the same monitor keep a consistent visual scale.
+        self._locked_content_scale: int | None = None
+        self._pending_relock_content_scale: int | None = None
+        self._pending_relock_content_scale_frames = 0
+        self._last_window_size: tuple[int, int] | None = None
+        self._last_framebuffer_size: tuple[int, int] | None = None
+        self._present_failure_streak = 0
 
         # Initialize immediately unless deferred for testing
         if not _defer_init:
@@ -188,6 +202,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         self.atlas_texture = self._atlas_manager.atlas_texture
         self.outlined_atlas_texture = self._atlas_manager.outlined_atlas_texture
         self.blurred_atlas_texture = self._atlas_manager.blurred_atlas_texture
+        self._native_tile_size = self._atlas_manager.native_tile_size
         self.uv_map = self._precalculate_uv_map()
 
         # Initialize all renderers
@@ -768,18 +783,33 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         vertices[5] = ((dest_x + size, dest_y + size), (u2, v2), final_color)
         self.effect_renderer.add_textured_quad(self._radial_gradient_texture, vertices)
 
+    @property
+    def locked_content_scale(self) -> int | None:
+        """Expose the currently locked DPI/content scale, if detected."""
+        return self._locked_content_scale
+
     def update_dimensions(self) -> None:
         """Update dimensions when window size changes."""
+        current_window_width, current_window_height = map(int, self.window.get_size())
+        current_framebuffer_width, current_framebuffer_height = map(
+            int, self.window.get_framebuffer_size()
+        )
+        current_window_size = (current_window_width, current_window_height)
+        current_framebuffer_size = (
+            current_framebuffer_width,
+            current_framebuffer_height,
+        )
 
         # Recreate the WGPU surface and context to match the new window size.
         if self.device:
             self._recreate_surface_and_context()
 
-        # Update coordinate converter
-        self._setup_coordinate_converter()
-
-        # Update letterbox geometry
+        # Update letterbox geometry, tile dimensions, and coordinate converter.
         self._calculate_letterbox_geometry_and_tiles()
+
+        self._last_window_size = current_window_size
+        self._last_framebuffer_size = current_framebuffer_size
+
         # Keep off-screen glyph rendering in sync with the current tile size.
         if self.glyph_renderer is not None:
             self.glyph_renderer.set_tile_dimensions(self._tile_dimensions)
@@ -801,7 +831,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
             self.atmospheric_renderer.begin_frame()
         self._atmospheric_layers = []
 
-    def finalize_present(self) -> None:
+    def finalize_present(self) -> bool:
         """Finalize frame presentation by rendering to screen."""
 
         if (
@@ -809,7 +839,20 @@ class WGPUGraphicsContext(BaseGraphicsContext):
             or self.wgpu_context is None
             or self.resource_manager is None
         ):
-            return
+            self._present_failure_streak = 0
+            return False
+
+        current_framebuffer_width, current_framebuffer_height = map(
+            int, self.window.get_framebuffer_size()
+        )
+        current_framebuffer_size = (
+            current_framebuffer_width,
+            current_framebuffer_height,
+        )
+        if current_framebuffer_size[0] <= 0 or current_framebuffer_size[1] <= 0:
+            # Minimized or otherwise non-renderable - skip presenting this frame.
+            self._present_failure_streak = 0
+            return False
 
         try:
             # Get the current surface texture from WGPU context
@@ -903,10 +946,19 @@ class WGPUGraphicsContext(BaseGraphicsContext):
 
             command_buffer = command_encoder.finish()
             self.resource_manager.queue.submit([command_buffer])
-
-        finally:
-            # Always present the frame, even if rendering failed.
             self.wgpu_context.present()
+            self._present_failure_streak = 0
+            return True
+        except Exception:
+            self._present_failure_streak += 1
+            if self._present_failure_streak == 1 or (
+                self._present_failure_streak % self._PRESENT_FAILURE_LOG_INTERVAL == 0
+            ):
+                logger.exception(
+                    "WGPU present failed (streak=%d)",
+                    self._present_failure_streak,
+                )
+            return False
 
     def add_tile_to_screen(
         self,
@@ -1163,19 +1215,147 @@ class WGPUGraphicsContext(BaseGraphicsContext):
             )
 
     def _calculate_letterbox_geometry_and_tiles(self) -> None:
-        """Calculate letterbox geometry for the current window size."""
-        window_width, window_height = map(int, self.window.get_framebuffer_size())
-        self.letterbox_geometry = super()._calculate_letterbox_geometry(
-            window_width, window_height
+        """Calculate integer-scaled letterbox geometry and dynamic console size.
+
+        Inputs:
+        - Native tile size from the currently loaded tileset
+        - Auto-detected content scale from framebuffer/window ratio
+        - User-configured TILE_ZOOM
+
+        Derived:
+        - display_tile = native_tile * content_scale * effective_zoom
+        - console tiles from framebuffer // display_tile
+        - centered letterbox offset from leftover pixels
+        """
+        framebuffer_width, framebuffer_height = map(
+            int, self.window.get_framebuffer_size()
+        )
+        window_width, window_height = map(int, self.window.get_size())
+        if framebuffer_width <= 0 or framebuffer_height <= 0:
+            return
+
+        native_width, native_height = self.native_tile_size
+        content_scale = self._detect_content_scale(
+            framebuffer_width=framebuffer_width,
+            framebuffer_height=framebuffer_height,
+            window_width=window_width,
+            window_height=window_height,
+        )
+        requested_zoom = max(1, config.TILE_ZOOM)
+        effective_zoom = requested_zoom
+
+        # Prevent zoom from shrinking the dynamic console below the minimum safe
+        # size for UI layout. If needed, step down zoom until constraints hold.
+        while effective_zoom > 1:
+            candidate_tile_width = native_width * content_scale * effective_zoom
+            candidate_tile_height = native_height * content_scale * effective_zoom
+            candidate_console_width, candidate_console_height = (
+                self._calculate_console_tile_dimensions(
+                    framebuffer_width,
+                    framebuffer_height,
+                    candidate_tile_width,
+                    candidate_tile_height,
+                )
+            )
+            if (
+                candidate_console_width >= config.MIN_CONSOLE_WIDTH
+                and candidate_console_height >= config.MIN_CONSOLE_HEIGHT
+            ):
+                break
+            effective_zoom -= 1
+
+        display_tile_width = native_width * content_scale * effective_zoom
+        display_tile_height = native_height * content_scale * effective_zoom
+        console_width, console_height = self._calculate_console_tile_dimensions(
+            framebuffer_width,
+            framebuffer_height,
+            display_tile_width,
+            display_tile_height,
         )
 
-        # Calculate dynamic tile dimensions like ModernGL - use full window dimensions
-        tile_width = max(1, window_width // self.console_width_tiles)
-        tile_height = max(1, window_height // self.console_height_tiles)
-        self._tile_dimensions = (tile_width, tile_height)
-
-        # Update coordinate converter
+        self._console_width_tiles = console_width
+        self._console_height_tiles = console_height
+        self._scale_factor = content_scale * effective_zoom
+        self._tile_dimensions = (display_tile_width, display_tile_height)
+        self.letterbox_geometry = super()._calculate_letterbox_geometry(
+            framebuffer_width,
+            framebuffer_height,
+            display_tile_width,
+            display_tile_height,
+        )
         self._setup_coordinate_converter()
+
+    def _observe_content_scale(
+        self,
+        *,
+        framebuffer_width: int,
+        framebuffer_height: int,
+        window_width: int,
+        window_height: int,
+    ) -> int:
+        """Estimate content scale from current per-window and ratio signals."""
+        candidates: list[int] = [1]
+
+        # Preferred source: per-window content scale.
+        scale_x, scale_y = self.get_display_scale_factor()
+        window_scale = max(1, round(max(1.0, float(scale_x), float(scale_y))))
+        candidates.append(window_scale)
+
+        # Fallback/guard: ratio-derived estimate.
+        ratio_scale_w = 1
+        ratio_scale_h = 1
+        if window_width > 0 and window_height > 0:
+            ratio_scale_w = max(1, round(framebuffer_width / window_width))
+            ratio_scale_h = max(1, round(framebuffer_height / window_height))
+            candidates.append(ratio_scale_w)
+            candidates.append(ratio_scale_h)
+        return max(candidates)
+
+    def _detect_content_scale(
+        self,
+        *,
+        framebuffer_width: int,
+        framebuffer_height: int,
+        window_width: int,
+        window_height: int,
+    ) -> int:
+        """Detect effective DPI/content scale from multiple GLFW signals.
+
+        We lock scale to avoid fullscreen flicker, but allow relocking when
+        a new scale is observed consistently (e.g. window moved between mixed-DPI
+        monitors).
+        """
+        observed_scale = self._observe_content_scale(
+            framebuffer_width=framebuffer_width,
+            framebuffer_height=framebuffer_height,
+            window_width=window_width,
+            window_height=window_height,
+        )
+        if self._locked_content_scale is None:
+            self._locked_content_scale = observed_scale
+            return observed_scale
+
+        if observed_scale == self._locked_content_scale:
+            self._pending_relock_content_scale = None
+            self._pending_relock_content_scale_frames = 0
+            return self._locked_content_scale
+
+        if observed_scale != self._pending_relock_content_scale:
+            self._pending_relock_content_scale = observed_scale
+            self._pending_relock_content_scale_frames = 1
+            return self._locked_content_scale
+
+        self._pending_relock_content_scale_frames += 1
+        if (
+            self._pending_relock_content_scale_frames
+            < self._CONTENT_SCALE_RELOCK_STABLE_SAMPLES
+        ):
+            return self._locked_content_scale
+
+        self._locked_content_scale = observed_scale
+        self._pending_relock_content_scale = None
+        self._pending_relock_content_scale_frames = 0
+        return self._locked_content_scale
 
     def set_atmospheric_layer(
         self,

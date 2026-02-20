@@ -50,8 +50,8 @@ if TYPE_CHECKING:
 class AppConfig:
     """Configuration for an App implementation."""
 
-    width: int  # Console width in tiles
-    height: int  # Console height in tiles
+    width: int  # Initial window width hint in tiles (before dynamic sizing)
+    height: int  # Initial window height hint in tiles (before dynamic sizing)
     title: str
     vsync: bool
 

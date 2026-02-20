@@ -89,3 +89,17 @@ def test_encumbered_severity_colors() -> None:
     actor.inventory.get_slots_over_capacity = MagicMock(return_value=0)
     lines = view._get_status_effects()
     assert lines == [("Encumbered", colors.YELLOW)]
+
+
+def test_cache_key_changes_when_view_dimensions_change() -> None:
+    """Resize should invalidate cached status texture to avoid stretch artifacts."""
+    _controller, _actor, view = make_world()
+    view.tile_dimensions = (8, 16)
+
+    view.set_bounds(0, 0, 40, 10)
+    key_before = view.get_cache_key()
+
+    view.set_bounds(0, 0, 28, 10)
+    key_after = view.get_cache_key()
+
+    assert key_before != key_after

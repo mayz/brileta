@@ -92,3 +92,31 @@ def test_message_log_view_font_stays_fixed_on_resize() -> None:
     ascent, descent = tb.get_font_metrics()
     # With explicit font_size, font should stay the same regardless of tile size
     assert (ascent + descent) == initial_line_height
+
+
+def test_message_log_draw_content_draws_background_only() -> None:
+    """Message log should keep a plain black backdrop without a top divider."""
+    log = MessageLog()
+    log.add_message("Hello", fg=colors.WHITE)
+
+    renderer_stub = MagicMock(spec=GraphicsContext)
+    renderer_stub.tile_dimensions = (8, 16)
+
+    view = MessageLogView(log, graphics=renderer_stub)
+    view.tile_dimensions = (8, 16)
+    view.width = 20
+    view.height = 5
+    view.view_width_px = 160
+    view.view_height_px = 80
+
+    mock_canvas = MagicMock()
+    mock_canvas.get_font_metrics.return_value = (8, 4)
+    mock_canvas.wrap_text.return_value = ["Hello"]
+    view.canvas = mock_canvas
+
+    view.draw_content(renderer_stub, InterpolationAlpha(0.0))
+
+    assert mock_canvas.draw_rect.call_count == 1
+    background_call = mock_canvas.draw_rect.call_args_list[0]
+    assert background_call.args[:4] == (0, 0, 160, 80)
+    assert background_call.args[4] == colors.BLACK

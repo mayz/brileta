@@ -27,8 +27,12 @@ class EquipmentView(TextView):
     Uses tile-based text rendering for visual consistency with the rest of the UI.
     """
 
-    # Minimum panel width to prevent overly narrow display with short/empty names
-    MIN_PANEL_WIDTH = 15
+    # Minimum panel width to prevent overly narrow display with short/empty names.
+    # Keep this modest so the panel can stay anchored near the right edge on
+    # smaller consoles and high zoom levels.
+    MIN_PANEL_WIDTH = 10
+    _TOP_DIVIDER_HEIGHT_PX = 1
+    _CONTENT_TOP_PADDING_PX = 24
 
     def __init__(self, controller: Controller, graphics: GraphicsContext) -> None:
         super().__init__()
@@ -44,8 +48,6 @@ class EquipmentView(TextView):
         self._slot_pixel_bounds: dict[int, tuple[int, int]] = {}
         # Track which row is currently hovered (None if not hovering)
         self._hover_row: int | None = None
-        # High-water mark for panel width in pixels (grow-only semantics)
-        self._max_width_px_seen: int = 0
         # Override cache to release textures on eviction
         self._texture_cache = ResourceCache[Any, Any](
             name=f"{self.__class__.__name__}Render",
@@ -72,20 +74,26 @@ class EquipmentView(TextView):
         hover_component = self._hover_row if self._hover_row is not None else -1
         # Include tile dimensions since font scaling depends on them
         tile_dims = self.tile_dimensions
-        # Combine into a single hash-like value
-        return hash((inventory_rev, in_combat, hover_component, tile_dims))
+        # Include dimensions so resize invalidates cached texture and avoids
+        # stretch artifacts when presented into a differently sized view.
+        return hash(
+            (
+                inventory_rev,
+                in_combat,
+                hover_component,
+                tile_dims,
+                self.width,
+                self.height,
+            )
+        )
 
     def calculate_min_width(self) -> int:
-        """Calculate minimum tile width needed, using grow-only semantics.
+        """Calculate minimum tile width needed for current equipment contents.
 
         Uses font metrics to measure actual pixel width, then converts to tiles.
 
-        Returns the maximum of:
-        - Current equipment width requirements (in tiles)
-        - The largest width ever seen (high-water mark)
-        - MIN_PANEL_WIDTH floor
-
-        This ensures the panel only grows, never shrinks.
+        Returns:
+        - Current equipment width requirement (in tiles), floored by MIN_PANEL_WIDTH.
         """
         player = self.controller.gw.player
         current_width_px = 0
@@ -94,44 +102,43 @@ class EquipmentView(TextView):
             if i >= View.EQUIPMENT_MAX_SLOTS:
                 break
 
-            # Build text exactly as draw_content() does
-            indicator = "▶ " if i == player.inventory.active_slot else "  "
-            slot_number = f"[{i + 1}]"
-
-            if item:
-                item_text = f"{indicator}{slot_number} {item.name}"
-                # Include ammo for ranged weapons (except THROWN)
-                if (
-                    item.ranged_attack
-                    and WeaponProperty.THROWN not in item.ranged_attack.properties
-                ):
-                    ammo = (
-                        f"[{item.ranged_attack.current_ammo}/"
-                        f"{item.ranged_attack.max_ammo}]"
-                    )
-                    item_text += f" {ammo}"
-            else:
-                item_text = f"{indicator}{slot_number} Fists"
+            item_text = self._build_slot_text(
+                slot_index=i,
+                item=item,
+                is_active=(i == player.inventory.active_slot),
+            )
 
             # Use font metrics for pixel width
             text_width, _, _ = self.canvas.get_text_metrics(item_text)
             current_width_px = max(current_width_px, text_width)
 
-        # Update high-water mark if current exceeds it
-        if current_width_px > self._max_width_px_seen:
-            self._max_width_px_seen = current_width_px
-
         # Convert pixel width to tiles for layout compatibility
         tile_width = self.tile_dimensions[0]
         if tile_width > 0:
-            # Add some padding (8px) and round up
-            width_in_tiles = (
-                self._max_width_px_seen + 8 + tile_width - 1
-            ) // tile_width
+            # Add slight right padding and round up.
+            width_in_tiles = (current_width_px + 4 + tile_width - 1) // tile_width
         else:
             width_in_tiles = self.MIN_PANEL_WIDTH
 
         return max(width_in_tiles, self.MIN_PANEL_WIDTH)
+
+    def _build_slot_text(self, slot_index: int, item: Any, is_active: bool) -> str:
+        """Build the text label for one equipment row."""
+        indicator = "▶ " if is_active else "  "
+        slot_number = f"[{slot_index + 1}]"
+        item_name = item.name if item else "Fists"
+        item_text = f"{indicator}{slot_number} {item_name}"
+
+        # Show ammo for ranged weapons, but not for thrown (single-use) items.
+        if (
+            item
+            and item.ranged_attack
+            and WeaponProperty.THROWN not in item.ranged_attack.properties
+        ):
+            ammo = f"[{item.ranged_attack.current_ammo}/{item.ranged_attack.max_ammo}]"
+            item_text += f" {ammo}"
+
+        return item_text
 
     def set_hover_row(self, row: int | None) -> None:
         """Update which row is being hovered over.
@@ -158,6 +165,10 @@ class EquipmentView(TextView):
         pixel_width = self.width * tile_width
         pixel_height = self.height * tile_height
         self.canvas.draw_rect(0, 0, pixel_width, pixel_height, colors.BLACK, fill=True)
+        # Subtle map/HUD separator to improve scanability at high zoom.
+        self.canvas.draw_rect(
+            0, 0, pixel_width, self._TOP_DIVIDER_HEIGHT_PX, colors.DARK_GREY, fill=True
+        )
 
         player = self.controller.gw.player
         active_slot = player.inventory.active_slot
@@ -176,28 +187,20 @@ class EquipmentView(TextView):
             is_active = i == active_slot
 
             # Calculate pixel position for this slot
-            y_pixel = i * line_height
+            y_pixel = (
+                self._TOP_DIVIDER_HEIGHT_PX
+                + self._CONTENT_TOP_PADDING_PX
+                + i * line_height
+            )
 
             # Record pixel bounds for this slot (for hit detection)
             self._slot_pixel_bounds[i] = (y_pixel, y_pixel + line_height)
 
-            # Build slot text with "▶" indicator for active slot
-            indicator = "▶ " if is_active else "  "
-            slot_number = f"[{i + 1}]"
-            if item:
-                item_text = f"{indicator}{slot_number} {item.name}"
-                # Show ammo for ranged weapons, but not for THROWN (single-use items)
-                if (
-                    item.ranged_attack
-                    and WeaponProperty.THROWN not in item.ranged_attack.properties
-                ):
-                    ammo = (
-                        f"[{item.ranged_attack.current_ammo}/"
-                        f"{item.ranged_attack.max_ammo}]"
-                    )
-                    item_text += f" {ammo}"
-            else:
-                item_text = f"{indicator}{slot_number} Fists"
+            item_text = self._build_slot_text(
+                slot_index=i,
+                item=item,
+                is_active=is_active,
+            )
 
             # Color based on slot state, combat mode, and item type:
             # - In combat mode with active weapon: RED (always)
@@ -223,6 +226,7 @@ class EquipmentView(TextView):
             else:
                 color = colors.GREY
 
+            # Left-align rows for stable readability and classic roguelike scan.
             self.canvas.draw_text(0, y_pixel, item_text, color)
 
     def _is_row_in_slot_bounds(self, row: int | None, slot_index: int) -> bool:

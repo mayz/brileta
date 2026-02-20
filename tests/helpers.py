@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 
-from brileta import colors, config
+from brileta import colors
 from brileta.app import App
 from brileta.controller import Controller, GameWorld
 from brileta.environment.generators import GeneratedMapData
@@ -23,6 +23,9 @@ from brileta.game.turn_manager import TurnManager
 from brileta.types import ActorId, DeltaTime, WorldTileCoord
 from brileta.util.spatial import SpatialHashGrid
 from brileta.view.render.graphics import GraphicsContext
+
+DEFAULT_TEST_CONSOLE_WIDTH_TILES = 80
+DEFAULT_TEST_CONSOLE_HEIGHT_TILES = 50
 
 
 class DummyOverlay:
@@ -70,8 +73,8 @@ def _make_renderer(tile_height: int = 16) -> GraphicsContext:
     """Create a mock GraphicsContext for testing UI components."""
     renderer = MagicMock(spec=GraphicsContext)
     renderer.tile_dimensions = (8, tile_height)
-    renderer.console_width_tiles = 80
-    renderer.console_height_tiles = 50
+    renderer.console_width_tiles = DEFAULT_TEST_CONSOLE_WIDTH_TILES
+    renderer.console_height_tiles = DEFAULT_TEST_CONSOLE_HEIGHT_TILES
     renderer.sdl_renderer = MagicMock()
     renderer.root_console = MagicMock()
 
@@ -295,9 +298,11 @@ class DummyGraphicsContext:
         self._coordinate_converter = SimpleNamespace(
             pixel_to_tile=lambda x, y: (x, y), tile_to_pixel=lambda x, y: (x, y)
         )
+        self.console_width_tiles = DEFAULT_TEST_CONSOLE_WIDTH_TILES
+        self.console_height_tiles = DEFAULT_TEST_CONSOLE_HEIGHT_TILES
         self.resource_manager = None
         self.root_console = SimpleNamespace(
-            width=config.SCREEN_WIDTH, height=config.SCREEN_HEIGHT
+            width=self.console_width_tiles, height=self.console_height_tiles
         )
 
     def create_canvas(self, transparent: bool = True) -> Any:
@@ -310,14 +315,6 @@ class DummyGraphicsContext:
     @property
     def tile_dimensions(self):
         return (16, 16)
-
-    @property
-    def console_width_tiles(self):
-        return config.SCREEN_WIDTH
-
-    @property
-    def console_height_tiles(self):
-        return config.SCREEN_HEIGHT
 
     def clear_console(self, *_a, **_kw) -> None:  # pragma: no cover - stub
         pass

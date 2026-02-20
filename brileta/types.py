@@ -49,6 +49,7 @@ type PixelRect = tuple[int, int, int, int]  # Example: (x1, y1, x2, y2) for hit 
 
 # Dimensions
 type TileDimensions = tuple[int, int]  # Example: (16, 16) = 16x16 pixel tiles
+type PixelDimensions = tuple[int, int]  # Example: (1280, 720) window/framebuffer px
 
 # =============================================================================
 # TIME-RELATED TYPES

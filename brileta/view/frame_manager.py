@@ -178,19 +178,71 @@ class FrameManager:
 
     def _layout_views(self) -> None:
         """Calculate and set view boundaries based on current screen size."""
-        # Use the configured screen dimensions so the entire UI maintains
-        # a consistent aspect ratio regardless of window size.
-        screen_width_tiles = config.SCREEN_WIDTH
-        screen_height_tiles = config.SCREEN_HEIGHT
+        # Layout follows the renderer's current dynamic console dimensions.
+        screen_width_tiles = self.graphics.console_width_tiles
+        screen_height_tiles = self.graphics.console_height_tiles
         tile_dimensions = self.graphics.tile_dimensions
 
-        # Left sidebar dimensions (action panel only now)
-        left_sidebar_width = 20
+        # Reference layout at the historical baseline console size.
+        # As the console shrinks (high zoom / smaller window), panel tile counts
+        # should shrink faster than linearly to prevent UI from consuming most
+        # of the available play area.
+        reference_width_tiles = 80
+        reference_height_tiles = 50
+        reference_left_sidebar_width = 20
+        reference_bottom_ui_height = 10
+
+        layout_scale = min(
+            1.0,
+            screen_width_tiles / reference_width_tiles,
+            screen_height_tiles / reference_height_tiles,
+        )
+        ui_scale = self._compute_ui_scale(layout_scale)
+
+        min_world_width_tiles = 24
+        min_world_height_tiles = 14
+        preferred_left_sidebar_width = self._clamp_tiles(
+            round(reference_left_sidebar_width * ui_scale),
+            min_value=10,
+            max_value=reference_left_sidebar_width,
+        )
+        left_sidebar_width = min(
+            preferred_left_sidebar_width,
+            max(0, screen_width_tiles - min_world_width_tiles),
+        )
         left_sidebar_x = 0
 
-        # Bottom bar dimensions
-        bottom_ui_height = 10
+        # Bottom UI bar uses the same scaling model as the sidebar.
+        # Also cap by pixel height so zoom/DPI increases don't balloon this
+        # region and leave excessive empty black space under compact HUD content.
+        native_tile_height = max(
+            1,
+            int(getattr(self.graphics, "native_tile_size", tile_dimensions)[1]),
+        )
+        display_tile_height = max(1, tile_dimensions[1])
+        reference_bottom_ui_height_px = reference_bottom_ui_height * native_tile_height
+        pixel_capped_bottom_ui_height = self._clamp_tiles(
+            round(reference_bottom_ui_height_px / display_tile_height),
+            min_value=3,
+            max_value=reference_bottom_ui_height,
+        )
+        preferred_bottom_ui_height = self._clamp_tiles(
+            round(reference_bottom_ui_height * ui_scale),
+            min_value=3,
+            max_value=reference_bottom_ui_height,
+        )
+        bottom_ui_height = min(
+            preferred_bottom_ui_height,
+            pixel_capped_bottom_ui_height,
+            max(0, screen_height_tiles - min_world_height_tiles),
+        )
         bottom_ui_y = screen_height_tiles - bottom_ui_height
+        # Reserve one extra row between world rendering and bottom HUD regions.
+        # Smooth camera/sub-tile actor rendering can push glyphs fractionally
+        # past the last visible world row; this guard row prevents glyph bottoms
+        # from being clipped by the bottom UI when zoom is high.
+        world_to_hud_guard_rows = 1 if bottom_ui_height > 0 else 0
+        content_bottom_y = max(0, bottom_ui_y - world_to_hud_guard_rows)
 
         # Action panel fills entire left sidebar (above bottom bar)
         action_panel_y = 0
@@ -201,7 +253,13 @@ class FrameManager:
         # Bottom bar components - dynamic equipment width based on content.
         # Equipment panel extends to the right screen edge to avoid uncovered
         # gap columns where the world texture would bleed through.
-        equipment_width = self.equipment_view.calculate_min_width()
+        equipment_width_requested = self.equipment_view.calculate_min_width()
+        min_message_log_width = 8
+        max_equipment_width = max(0, screen_width_tiles - min_message_log_width)
+        if max_equipment_width > 0:
+            equipment_width = min(equipment_width_requested, max_equipment_width)
+        else:
+            equipment_width = screen_width_tiles
         equipment_x2 = screen_width_tiles
         equipment_x1 = equipment_x2 - equipment_width
 
@@ -210,31 +268,59 @@ class FrameManager:
 
         # Set view bounds
         self.world_view.tile_dimensions = tile_dimensions
-        self.world_view.set_bounds(world_view_x, 0, screen_width_tiles, bottom_ui_y)
+        self.world_view.set_bounds(
+            world_view_x, 0, screen_width_tiles, content_bottom_y
+        )
 
         # Player status view in upper-right (transparent HUD overlay)
+        player_status_width = min(
+            self._clamp_tiles(
+                round(screen_width_tiles * 0.50),
+                min_value=18,
+                max_value=40,
+            ),
+            screen_width_tiles,
+        )
+        player_status_height = min(20, max(0, content_bottom_y))
         self.player_status_view.tile_dimensions = tile_dimensions
         self.player_status_view.set_bounds(
-            screen_width_tiles - 40, 0, screen_width_tiles, 20
+            screen_width_tiles - player_status_width,
+            0,
+            screen_width_tiles,
+            player_status_height,
         )
 
         # Action panel fills left sidebar (above bottom bar)
         self.action_panel_view.tile_dimensions = tile_dimensions
         self.action_panel_view.set_bounds(
-            left_sidebar_x, action_panel_y, left_sidebar_width, bottom_ui_y
+            left_sidebar_x, action_panel_y, left_sidebar_width, content_bottom_y
         )
 
         # Message log spans bottom bar (left edge to equipment)
         self.message_log_view.tile_dimensions = tile_dimensions
         self.message_log_view.set_bounds(
-            0, bottom_ui_y, message_log_x2, screen_height_tiles
+            0, content_bottom_y, message_log_x2, screen_height_tiles
         )
 
         # Equipment view in bottom right
         self.equipment_view.tile_dimensions = tile_dimensions
         self.equipment_view.set_bounds(
-            equipment_x1, bottom_ui_y, equipment_x2, screen_height_tiles
+            equipment_x1, content_bottom_y, equipment_x2, screen_height_tiles
         )
+
+    @staticmethod
+    def _clamp_tiles(value: int, min_value: int, max_value: int) -> int:
+        """Clamp an integer tile count to an inclusive range."""
+        return max(min_value, min(max_value, value))
+
+    @staticmethod
+    def _compute_ui_scale(layout_scale: float) -> float:
+        """Return non-linear UI scaling factor from overall layout scale.
+
+        This shrinks HUD panels faster than linear scaling, but less aggressively
+        than a strict quadratic curve, improving intermediate-size behavior.
+        """
+        return layout_scale * (0.5 + 0.5 * layout_scale)
 
     def get_visible_bounds(self) -> Rect | None:
         """Return the world-space bounds currently visible in the world view."""

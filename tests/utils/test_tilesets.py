@@ -150,3 +150,23 @@ class TestDeriveOutlinedAtlas:
 
         # First tile (0,0) should still be processed
         assert tuple(result[0, 0]) == (255, 0, 0, 255)
+
+    def test_edge_touching_glyph_gets_visible_outline_fallback(self) -> None:
+        """Glyph pixels on tile edges should still receive visible outline color.
+
+        When a glyph touches a tile boundary, the outward outline would normally
+        fall outside the tile and be clipped. We intentionally paint edge-touching
+        glyph pixels in the outline atlas so combat highlight remains visible.
+        """
+        atlas = np.zeros((4, 4, 4), dtype=np.uint8)
+        # A vertical stroke touching top and left edges.
+        atlas[0:3, 0] = [255, 255, 255, 255]
+
+        outline_color = (255, 0, 0, 255)
+        result = derive_outlined_atlas(
+            atlas, tile_width=4, tile_height=4, columns=1, rows=1, color=outline_color
+        )
+
+        # Edge-touching source pixels should be included so clipped edges still glow.
+        assert tuple(result[0, 0]) == outline_color
+        assert tuple(result[1, 0]) == outline_color

@@ -294,10 +294,16 @@ class ActionPanelView(TextView):
 
         # Target name section (selected or hovered target)
         if self._cached_target_name:
+            # Keep target names strictly inside the sidebar instead of allowing
+            # renderer-edge clipping, which can cut words without context.
+            target_name = self._truncate_text_to_fit(
+                self._cached_target_name,
+                self.view_width_px - (x_padding * 2),
+            )
             self.canvas.draw_text(
                 pixel_x=x_padding,
                 pixel_y=y_pixel - ascent,
-                text=self._cached_target_name,
+                text=target_name,
                 color=colors.YELLOW,
             )
             y_pixel += line_height
@@ -531,6 +537,28 @@ class ActionPanelView(TextView):
             # Controls section not rendered - clear stale hit areas to prevent
             # clicks in the actions area from accidentally triggering controls.
             self._controls_renderer.clear_hit_areas()
+
+    def _truncate_text_to_fit(self, text: str, max_width: int) -> str:
+        """Truncate text to fit the given width, appending an ellipsis when needed."""
+        if max_width <= 0:
+            return ""
+
+        text_width, _, _ = self.canvas.get_text_metrics(text)
+        if text_width <= max_width:
+            return text
+
+        ellipsis = "..."
+        ellipsis_width, _, _ = self.canvas.get_text_metrics(ellipsis)
+        if ellipsis_width > max_width:
+            return ""
+
+        while len(text) > 0:
+            text = text[:-1]
+            text_width, _, _ = self.canvas.get_text_metrics(text + ellipsis)
+            if text_width <= max_width:
+                return text + ellipsis
+
+        return ellipsis
 
     def _update_cached_data(self) -> None:
         """Update cached target information and available actions.

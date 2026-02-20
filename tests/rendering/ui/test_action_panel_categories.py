@@ -137,3 +137,48 @@ class TestFlatListRendering:
         # Flat list in draw_content limits to 10 actions
         # All actions still get hotkeys assigned
         assert all(a.hotkey is not None for a in actions[:10])
+
+
+class TestTargetNameTruncation:
+    """Tests for sidebar target-name fit behavior."""
+
+    def test_target_name_truncates_with_ellipsis_when_needed(self) -> None:
+        """Long target names should be truncated instead of hard-clipped."""
+        _controller, view = make_action_panel()
+
+        def _metrics(text: str, font_size: int | None = None) -> tuple[int, int, int]:
+            _ = font_size
+            return (len(text) * 10, 10, 10)
+
+        view.canvas.get_text_metrics = MagicMock(side_effect=_metrics)
+        result = view._truncate_text_to_fit("Cobblestone (remembered)", max_width=120)
+
+        assert result.endswith("...")
+        assert len(result) < len("Cobblestone (remembered)")
+        assert _metrics(result)[0] <= 120
+
+    def test_target_name_unchanged_when_it_fits(self) -> None:
+        """Names that already fit should render unchanged."""
+        _controller, view = make_action_panel()
+
+        def _metrics(text: str, font_size: int | None = None) -> tuple[int, int, int]:
+            _ = font_size
+            return (len(text) * 10, 10, 10)
+
+        view.canvas.get_text_metrics = MagicMock(side_effect=_metrics)
+        result = view._truncate_text_to_fit("Wall", max_width=120)
+
+        assert result == "Wall"
+
+    def test_target_name_returns_empty_if_ellipsis_exceeds_width(self) -> None:
+        """Very narrow columns should avoid returning over-wide ellipsis text."""
+        _controller, view = make_action_panel()
+
+        def _metrics(text: str, font_size: int | None = None) -> tuple[int, int, int]:
+            _ = font_size
+            return (len(text) * 10, 10, 10)
+
+        view.canvas.get_text_metrics = MagicMock(side_effect=_metrics)
+        result = view._truncate_text_to_fit("Cobblestone", max_width=20)
+
+        assert result == ""

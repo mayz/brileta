@@ -303,7 +303,9 @@ def derive_outlined_atlas(
     1. Extract the alpha channel to find where the glyph is
     2. Dilate the mask by 1 pixel in all 8 directions
     3. Subtract the original mask to get only the outline pixels
-    4. Fill those pixels with the outline color
+    4. If the glyph touches a tile edge, mark those edge glyph pixels as
+       outline too (fallback for tile-boundary clipping)
+    5. Fill those pixels with the outline color
 
     Args:
         atlas_pixels: RGBA pixel array of the tileset atlas (height, width, 4)
@@ -361,6 +363,19 @@ def derive_outlined_atlas(
 
             # Outline is the dilated area minus the original glyph
             outline_mask = dilated & ~alpha
+
+            # Tile-boundary fallback: if a glyph touches a tile edge, the
+            # "outside" 1px outline on that side would lie outside the tile and
+            # gets clipped away. Mark edge-touching glyph pixels so those sides
+            # still get a visible combat highlight across arbitrary tilesets.
+            if np.any(alpha[0, :]):
+                outline_mask[0, :] |= alpha[0, :]
+            if np.any(alpha[-1, :]):
+                outline_mask[-1, :] |= alpha[-1, :]
+            if np.any(alpha[:, 0]):
+                outline_mask[:, 0] |= alpha[:, 0]
+            if np.any(alpha[:, -1]):
+                outline_mask[:, -1] |= alpha[:, -1]
 
             # Create the outlined tile
             outlined_tile = np.zeros_like(tile)

@@ -59,7 +59,7 @@ class PlayerStatusView(TextView):
 
     def get_cache_key(
         self,
-    ) -> tuple[int, int, int, int, int, bool, int, tuple[int, int]]:
+    ) -> tuple[int, int, int, int, int, bool, int, tuple[int, int], int, int]:
         """Cache key includes HP, outfit state, and modifier revision."""
         player = self.controller.gw.player
 
@@ -75,6 +75,8 @@ class PlayerStatusView(TextView):
                 outfit_cap.is_broken,
                 player.modifiers.revision,
                 self.tile_dimensions,
+                self.width,
+                self.height,
             )
 
         # No protective outfit - just HP and modifiers
@@ -87,6 +89,8 @@ class PlayerStatusView(TextView):
             False,
             player.modifiers.revision,
             self.tile_dimensions,
+            self.width,
+            self.height,
         )
 
     def set_bounds(self, x1: int, y1: int, x2: int, y2: int) -> None:

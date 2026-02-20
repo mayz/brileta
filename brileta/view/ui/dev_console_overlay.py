@@ -505,7 +505,11 @@ class DevConsoleOverlay(TextOverlay):
     # ------------------------------------------------------------------
     def _get_backend(self) -> Canvas:
         return PillowImageCanvas(
-            self.controller.graphics, font_path=config.UI_FONT_PATH, transparent=True
+            self.controller.graphics,
+            font_path=config.UI_FONT_PATH,
+            transparent=True,
+            font_size=config.MENU_FONT_SIZE,
+            line_spacing=config.MENU_LINE_SPACING,
         )
 
     def _calculate_dimensions(self) -> None:
@@ -559,13 +563,14 @@ class DevConsoleOverlay(TextOverlay):
             True,
         )
 
-        _tile_w, tile_h = self.tile_dimensions
-        prompt_y = (self.height - 1) * tile_h
+        ascent, descent = self.canvas.get_font_metrics()
+        row_height = max(1, ascent + descent)
+        prompt_y = max(0, self.pixel_height - row_height)
 
         if self._filter_mode:
-            self._draw_filter_mode(tile_h, prompt_y)
+            self._draw_filter_mode(row_height, prompt_y)
         else:
-            self._draw_command_mode(tile_h, prompt_y)
+            self._draw_command_mode(row_height, prompt_y)
 
     def _draw_command_mode(self, tile_h: int, prompt_y: int) -> None:
         """Draw the normal command-mode view with history and prompt."""

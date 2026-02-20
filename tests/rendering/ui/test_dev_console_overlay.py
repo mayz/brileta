@@ -7,6 +7,7 @@ import pytest
 
 from brileta import input_events
 from brileta.app import App, AppConfig
+from brileta.backends.pillow.canvas import PillowImageCanvas
 from brileta.controller import Controller
 from brileta.util.live_vars import live_variable_registry
 from brileta.view.ui.dev_console_overlay import DevConsoleOverlay
@@ -49,6 +50,15 @@ class DummyController:
 
 def make_overlay() -> DevConsoleOverlay:
     return DevConsoleOverlay(cast("Controller", DummyController()))
+
+
+def test_overlay_backend_uses_fixed_ui_font_size() -> None:
+    """Console text size should stay stable when tile size changes."""
+    ov = make_overlay()
+    assert isinstance(ov.canvas, PillowImageCanvas)
+    initial_line_height = ov.canvas.get_effective_line_height()
+    ov.canvas.configure_scaling(64)
+    assert ov.canvas.get_effective_line_height() == initial_line_height
 
 
 def test_execute_command_set_get_toggle_watch() -> None:
@@ -927,7 +937,7 @@ def test_handle_input_escape_and_backquote_hide_console(
     assert not ov.is_active
 
 
-def test_draw_content_uses_tile_height() -> None:
+def test_draw_content_uses_font_row_height() -> None:
     ov = make_overlay()
     ov.canvas = MagicMock()
     ov.tile_dimensions = (8, 16)
@@ -944,8 +954,8 @@ def test_draw_content_uses_tile_height() -> None:
     ov.draw_content()
 
     calls = ov.canvas.draw_text.call_args_list
-    assert calls[0].args[1] == 16  # history line y position
-    assert calls[1].args[1] == 32  # prompt y position
+    assert calls[0].args[1] == 28  # history line y position
+    assert calls[1].args[1] == 40  # prompt y position
 
 
 def test_tab_completion_shows_candidates_and_common_prefix() -> None:

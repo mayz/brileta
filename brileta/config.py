@@ -29,10 +29,28 @@ IS_TEST_ENVIRONMENT = "pytest" in sys.modules
 
 # Main window
 WINDOW_TITLE = "Brileta"
+INITIAL_WINDOW_WIDTH_TILES: int = 80
+INITIAL_WINDOW_HEIGHT_TILES: int = 50
+# Minimum resizable window dimensions in physical pixels.
+WINDOW_MIN_WIDTH_PX: int = 640
+WINDOW_MIN_HEIGHT_PX: int = 480
+# Allowed window aspect-ratio range while resizing.
+# Keep this as a range (not a fixed ratio) so players can still choose
+# reasonably wide/tall layouts without extreme distortion cases.
+WINDOW_MIN_ASPECT_RATIO: float = 1.2
+WINDOW_MAX_ASPECT_RATIO: float = 2.4
 
-# Screen dimensions
-SCREEN_WIDTH = 80
-SCREEN_HEIGHT = 50
+# User zoom multiplier for tile size.
+# Final display tile size is derived as:
+#     display_tile = native_tile_from_tileset * content_scale * TILE_ZOOM
+# where content_scale is auto-detected from framebuffer/window dimensions.
+TILE_ZOOM: int = 1
+
+# Safety floor for dynamic console dimensions after DPI + zoom are applied.
+# If a requested TILE_ZOOM would shrink below this, the renderer reduces the
+# effective zoom until these minimums are met (or zoom reaches 1).
+MIN_CONSOLE_WIDTH: int = 60
+MIN_CONSOLE_HEIGHT: int = 40
 
 # Use "smooth" rendering for actors (sub-tile render coordinates).
 SMOOTH_ACTOR_RENDERING_ENABLED = True

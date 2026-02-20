@@ -2,14 +2,25 @@
 
 from __future__ import annotations
 
-import glfw
+from typing import Any, Protocol
 
-from brileta import input_events
+import glfw
+from PIL import Image as PILImage
+
+from brileta import config, input_events
 from brileta.app import App, AppConfig
 from brileta.backends.wgpu.graphics import WGPUGraphicsContext
+from brileta.types import PixelDimensions, TileDimensions
 from brileta.util.misc import SuppressStderr
 
 from .window import GlfwWindow
+
+
+class _VideoModeLike(Protocol):
+    """Subset of GLFW video mode attributes consumed by fullscreen helpers."""
+
+    size: Any
+    refresh_rate: int
 
 
 class GlfwApp(App[WGPUGraphicsContext]):
@@ -19,6 +30,10 @@ class GlfwApp(App[WGPUGraphicsContext]):
     Uses GLFW's callback-based event system with a polling main loop
     to implement the shared fixed timestep game loop pattern.
     """
+
+    _OUT_OF_BAND_STABLE_FRAMES = 2
+    _OUT_OF_BAND_SCALE_MISMATCH_MAX_DEFER_FRAMES = 8
+    _FULLSCREEN_TRANSITION_RESYNC_FRAMES = 120
 
     def __init__(self, app_config: AppConfig) -> None:
         super().__init__(app_config)
@@ -45,10 +60,10 @@ class GlfwApp(App[WGPUGraphicsContext]):
             glfw.RESIZABLE, glfw.TRUE if app_config.resizable else glfw.FALSE
         )
 
-        # Convert console tile dimensions to pixel dimensions
-        # AppConfig dimensions are in tiles, but GLFW needs pixels
-        tile_width = 20  # From TILESET (Taffer_20x20.png)
-        tile_height = 20
+        # Convert initial console tile hints to window pixels using the current
+        # tileset's native dimensions. The window starts maximized by default,
+        # so these dimensions are only a bootstrap size.
+        tile_width, tile_height = self._load_native_tile_size()
         pixel_width = app_config.width * tile_width
         pixel_height = app_config.height * tile_height
 
@@ -66,28 +81,81 @@ class GlfwApp(App[WGPUGraphicsContext]):
         # Enable vsync if requested
         glfw.swap_interval(1 if app_config.vsync else 0)
 
-        # Apply window state based on AppConfig
-        if app_config.fullscreen:
-            monitor = glfw.get_primary_monitor()
-            mode = glfw.get_video_mode(monitor)
-            glfw.set_window_monitor(  # type: ignore[possibly-missing-attribute]
+        # Keep interactive resizing within a sane usability envelope.
+        if app_config.resizable:
+            min_width_px, min_height_px = self._minimum_window_size_px()
+            glfw.set_window_size_limits(  # type: ignore[possibly-missing-attribute]
                 self.window,
-                monitor,
-                0,
-                0,
-                mode.size.width,
-                mode.size.height,
-                mode.refresh_rate,
+                min_width_px,
+                min_height_px,
+                glfw.DONT_CARE,
+                glfw.DONT_CARE,
             )
-        elif app_config.maximized:
-            glfw.maximize_window(self.window)  # type: ignore[possibly-missing-attribute]
 
         # Store windowed mode position/size for fullscreen toggle
         self.windowed_x, self.windowed_y = glfw.get_window_pos(self.window)
         self.windowed_width, self.windowed_height = glfw.get_window_size(self.window)
+        self._force_dimension_resync_frames = 0
+        self._forced_resync_last_signature: tuple[int, int, int, int] | None = None
+
+        # Apply window state based on AppConfig.
+        if app_config.fullscreen:
+            self._enter_monitor_fullscreen()
+        elif app_config.maximized:
+            glfw.maximize_window(self.window)  # type: ignore[possibly-missing-attribute]
+        initial_window_width, initial_window_height = map(
+            int, glfw.get_window_size(self.window)
+        )
+        initial_framebuffer_width, initial_framebuffer_height = map(
+            int, glfw.get_framebuffer_size(self.window)
+        )
+        self._last_window_size: tuple[int, int] = (
+            initial_window_width,
+            initial_window_height,
+        )
+        self._last_framebuffer_size: tuple[int, int] | None = (
+            initial_framebuffer_width,
+            initial_framebuffer_height,
+        )
+        self._pending_out_of_band_size: tuple[int, int, int, int] | None = None
+        self._pending_out_of_band_frames: int = 0
 
         # Initialize last mouse position for motion delta calculation
         self._last_mouse_pos = glfw.get_cursor_pos(self.window)
+        self._applying_resize_constraints = False
+
+    @staticmethod
+    def _minimum_window_size_px() -> PixelDimensions:
+        """Return minimum resizable window dimensions in physical pixels."""
+        min_width = max(1, int(config.WINDOW_MIN_WIDTH_PX))
+        min_height = max(1, int(config.WINDOW_MIN_HEIGHT_PX))
+        return (min_width, min_height)
+
+    @staticmethod
+    def _clamp_resize_to_aspect_range(width: int, height: int) -> PixelDimensions:
+        """Clamp a requested window size into the configured aspect-ratio range."""
+        clamped_width = max(1, int(width))
+        clamped_height = max(1, int(height))
+
+        min_aspect = max(0.01, float(config.WINDOW_MIN_ASPECT_RATIO))
+        max_aspect = max(min_aspect, float(config.WINDOW_MAX_ASPECT_RATIO))
+        aspect = clamped_width / clamped_height
+
+        if aspect < min_aspect:
+            clamped_width = max(1, round(clamped_height * min_aspect))
+        elif aspect > max_aspect:
+            clamped_height = max(1, round(clamped_width / max_aspect))
+
+        return (clamped_width, clamped_height)
+
+    def _load_native_tile_size(self) -> TileDimensions:
+        """Read native tile dimensions from the configured tileset PNG."""
+        with PILImage.open(str(config.TILESET_PATH)) as tileset_image:
+            atlas_width, atlas_height = tileset_image.size
+        return (
+            atlas_width // config.TILESET_COLUMNS,
+            atlas_height // config.TILESET_ROWS,
+        )
 
     def _initialize_graphics(self) -> None:
         """Initialize the WGPU graphics context."""
@@ -112,6 +180,8 @@ class GlfwApp(App[WGPUGraphicsContext]):
                 # --- Input Phase ---
                 # Process events via callbacks
                 glfw.poll_events()
+                self._sync_dimensions_outside_resize_callback()
+                self._maybe_force_dimension_resync()
 
                 # Force GLFW to re-apply cursor hiding every frame. We must
                 # transition through CURSOR_NORMAL first because GLFW skips
@@ -147,42 +217,186 @@ class GlfwApp(App[WGPUGraphicsContext]):
 
     def present_frame(self) -> None:
         """Presents the fully rendered backbuffer to the screen."""
-        self.graphics.finalize_present()
+        if not self.graphics.finalize_present():
+            self._arm_forced_dimension_resync("present-failed")
+            return
         # Swap the front and back buffers to display the rendered frame
         self.glfw_window.flip()
+
+    def _arm_forced_dimension_resync(self, _reason: str) -> None:
+        """Request repeated resize/surface resync attempts for transition recovery."""
+        self._force_dimension_resync_frames = max(
+            self._force_dimension_resync_frames,
+            self._FULLSCREEN_TRANSITION_RESYNC_FRAMES,
+        )
+        self._forced_resync_last_signature = None
+
+    def _maybe_force_dimension_resync(self) -> None:
+        """Attempt periodic dimension/surface resync after fullscreen transitions."""
+        if self._force_dimension_resync_frames <= 0:
+            return
+        self._force_dimension_resync_frames -= 1
+
+        window_width, window_height = map(int, glfw.get_window_size(self.window))
+        framebuffer_width, framebuffer_height = map(
+            int, glfw.get_framebuffer_size(self.window)
+        )
+        if framebuffer_width <= 0 or framebuffer_height <= 0:
+            return
+
+        signature = (window_width, window_height, framebuffer_width, framebuffer_height)
+        if signature == self._forced_resync_last_signature:
+            return
+        self._forced_resync_last_signature = signature
+
+        self._last_window_size = (window_width, window_height)
+        self._last_framebuffer_size = (framebuffer_width, framebuffer_height)
+        self._pending_out_of_band_size = None
+        self._pending_out_of_band_frames = 0
+        self.graphics.update_dimensions()
+        if self.controller and self.controller.frame_manager:
+            self.controller.frame_manager.on_window_resized()
+
+    def _should_defer_for_dpi_stabilization(
+        self, window_size: tuple[int, int], framebuffer_size: tuple[int, int]
+    ) -> bool:
+        """Return True when transient DPI signals should defer relayout."""
+        locked_scale_raw = getattr(self.graphics, "locked_content_scale", None)
+        if isinstance(locked_scale_raw, int | float):
+            locked_scale = max(1, int(locked_scale_raw))
+        else:
+            locked_scale = 1
+        if locked_scale <= 1:
+            return False
+
+        win_w, win_h = window_size
+        fb_w, fb_h = framebuffer_size
+        ratio_x = 0.0 if win_w <= 0 else fb_w / win_w
+        ratio_y = 0.0 if win_h <= 0 else fb_h / win_h
+        return ratio_x < locked_scale - 0.25 or ratio_y < locked_scale - 0.25
+
+    def _sync_dimensions_outside_resize_callback(self) -> None:
+        """Handle size changes that can occur without GLFW resize callbacks."""
+        current_window_width, current_window_height = map(
+            int, glfw.get_window_size(self.window)
+        )
+        current_framebuffer_width, current_framebuffer_height = map(
+            int, glfw.get_framebuffer_size(self.window)
+        )
+        current_window_size = (current_window_width, current_window_height)
+        current_framebuffer_size = (
+            current_framebuffer_width,
+            current_framebuffer_height,
+        )
+
+        if (
+            current_window_size == self._last_window_size
+            and current_framebuffer_size == self._last_framebuffer_size
+        ):
+            self._pending_out_of_band_size = None
+            self._pending_out_of_band_frames = 0
+            return
+
+        candidate = (
+            current_window_size[0],
+            current_window_size[1],
+            current_framebuffer_size[0],
+            current_framebuffer_size[1],
+        )
+        if candidate != self._pending_out_of_band_size:
+            self._pending_out_of_band_size = candidate
+            self._pending_out_of_band_frames = 1
+            return
+        self._pending_out_of_band_frames += 1
+        if self._pending_out_of_band_frames < self._OUT_OF_BAND_STABLE_FRAMES:
+            return
+
+        # Fullscreen transitions can briefly report 1x framebuffer sizes even on
+        # Retina displays. If we already locked a higher content scale, defer
+        # applying this candidate for a few frames so the correct 2x signal can
+        # arrive; then fall back to applying if mismatch persists.
+        scale_mismatch = self._should_defer_for_dpi_stabilization(
+            current_window_size, current_framebuffer_size
+        )
+        if scale_mismatch and (
+            self._pending_out_of_band_frames
+            < self._OUT_OF_BAND_SCALE_MISMATCH_MAX_DEFER_FRAMES
+        ):
+            return
+
+        self._pending_out_of_band_size = None
+        self._pending_out_of_band_frames = 0
+
+        self._last_window_size = current_window_size
+        self._last_framebuffer_size = current_framebuffer_size
+
+        if current_framebuffer_size[0] <= 0 or current_framebuffer_size[1] <= 0:
+            return
+
+        self.graphics.update_dimensions()
+        if self.controller and self.controller.frame_manager:
+            self.controller.frame_manager.on_window_resized()
 
     def toggle_fullscreen(self) -> None:
         """Toggles the display between windowed and fullscreen mode."""
         if glfw.get_window_monitor(self.window):
-            # Return to windowed mode
-            glfw.set_window_monitor(  # type: ignore[possibly-missing-attribute]
-                self.window,
-                None,
-                self.windowed_x,
-                self.windowed_y,
-                self.windowed_width,
-                self.windowed_height,
-                0,
-            )
-        else:
-            # Store current window info before going fullscreen
-            self.windowed_x, self.windowed_y = glfw.get_window_pos(self.window)
-            self.windowed_width, self.windowed_height = glfw.get_window_size(
-                self.window
-            )
+            self._exit_monitor_fullscreen()
+            return
+        self._enter_monitor_fullscreen()
 
-            # Go fullscreen
+    def _pick_fullscreen_video_mode(
+        self,
+        monitor: Any | None = None,
+    ) -> _VideoModeLike | None:
+        """Pick the monitor mode closest to current framebuffer size."""
+        if monitor is None:
             monitor = glfw.get_primary_monitor()
-            mode = glfw.get_video_mode(monitor)
-            glfw.set_window_monitor(  # type: ignore[possibly-missing-attribute]
-                self.window,
-                monitor,
-                0,
-                0,
-                mode.size.width,
-                mode.size.height,
-                mode.refresh_rate,
-            )
+        target_width, target_height = map(int, glfw.get_framebuffer_size(self.window))
+        current_mode = glfw.get_video_mode(monitor)
+        modes = glfw.get_video_modes(monitor)
+        if not modes:
+            return current_mode
+        return min(
+            modes,
+            key=lambda mode: (
+                abs(int(mode.size.width) - target_width)
+                + abs(int(mode.size.height) - target_height),
+                -int(mode.refresh_rate),
+            ),
+        )
+
+    def _enter_monitor_fullscreen(self) -> None:
+        """Enter fullscreen via GLFW monitor mode."""
+        monitor = glfw.get_primary_monitor()
+        mode = self._pick_fullscreen_video_mode(monitor)
+        if mode is None:
+            return
+
+        self.windowed_x, self.windowed_y = glfw.get_window_pos(self.window)
+        self.windowed_width, self.windowed_height = glfw.get_window_size(self.window)
+        glfw.set_window_monitor(  # type: ignore[possibly-missing-attribute]
+            self.window,
+            monitor,
+            0,
+            0,
+            int(mode.size.width),
+            int(mode.size.height),
+            int(mode.refresh_rate),
+        )
+        self._arm_forced_dimension_resync("enter-monitor-fullscreen")
+
+    def _exit_monitor_fullscreen(self) -> None:
+        """Return from monitor fullscreen to previous windowed size."""
+        glfw.set_window_monitor(  # type: ignore[possibly-missing-attribute]
+            self.window,
+            None,
+            self.windowed_x,
+            self.windowed_y,
+            self.windowed_width,
+            self.windowed_height,
+            0,
+        )
+        self._arm_forced_dimension_resync("exit-monitor-fullscreen")
 
     def _exit_backend(self) -> None:
         """Performs backend-specific exit procedures for GLFW."""
@@ -263,6 +477,58 @@ class GlfwApp(App[WGPUGraphicsContext]):
 
     def _on_resize(self, window, width, height):
         """Handle window resize."""
+        if self._applying_resize_constraints:
+            return
+
+        requested_width = int(width)
+        requested_height = int(height)
+        if requested_width <= 0 or requested_height <= 0:
+            self._last_window_size = (requested_width, requested_height)
+            self._pending_out_of_band_size = None
+            self._pending_out_of_band_frames = 0
+            return
+
+        clamped_width, clamped_height = self._clamp_resize_to_aspect_range(
+            requested_width,
+            requested_height,
+        )
+        if (clamped_width, clamped_height) != (requested_width, requested_height):
+            self._applying_resize_constraints = True
+            try:
+                glfw.set_window_size(
+                    window,
+                    clamped_width,
+                    clamped_height,
+                )
+            finally:
+                self._applying_resize_constraints = False
+            width = clamped_width
+            height = clamped_height
+        else:
+            width = requested_width
+            height = requested_height
+
+        self._last_window_size = (int(width), int(height))
+        callback_framebuffer_width, callback_framebuffer_height = map(
+            int, glfw.get_framebuffer_size(window)
+        )
+        callback_framebuffer_size = (
+            callback_framebuffer_width,
+            callback_framebuffer_height,
+        )
+        self._pending_out_of_band_size = None
+        self._pending_out_of_band_frames = 0
+
+        if self._should_defer_for_dpi_stabilization(
+            self._last_window_size,
+            callback_framebuffer_size,
+        ):
+            # Keep framebuffer unknown so out-of-band sync can apply once the
+            # DPI transition settles.
+            self._last_framebuffer_size = None
+            return
+
+        self._last_framebuffer_size = callback_framebuffer_size
         self.graphics.update_dimensions()
         if self.controller and self.controller.frame_manager:
             self.controller.frame_manager.on_window_resized()

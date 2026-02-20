@@ -5,7 +5,7 @@ from unittest.mock import Mock
 import pytest
 
 from brileta.types import InterpolationAlpha
-from brileta.view.views.base import View
+from brileta.view.views.base import TextView, View
 from brileta.view.views.world_view import WorldView
 
 
@@ -18,6 +18,24 @@ class ConcreteTestView(View):
 
     def draw(self, graphics, alpha: InterpolationAlpha):
         self.draw_called = True
+
+
+class ConcreteTextTestView(TextView):
+    """Concrete TextView for testing base TextView draw behavior."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.canvas_mock = Mock()
+        self.canvas = self.canvas_mock
+        self.draw_content_called = False
+
+    def get_cache_key(self) -> int:
+        return 1
+
+    def draw_content(self, graphics, alpha: InterpolationAlpha) -> None:
+        _ = graphics
+        _ = alpha
+        self.draw_content_called = True
 
 
 class TestViewBasics:
@@ -58,6 +76,19 @@ class TestViewBasics:
 
         view.show()
         assert view.visible is True
+
+    def test_text_view_draw_skips_zero_width_regions(self):
+        """TextView should not render or create textures when width is zero."""
+        view = ConcreteTextTestView()
+        view.tile_dimensions = (16, 16)
+        view.set_bounds(5, 5, 5, 10)  # zero-width region
+        graphics = Mock()
+
+        view.draw(graphics, InterpolationAlpha(0.0))
+
+        assert view.draw_content_called is False
+        view.canvas_mock.begin_frame.assert_not_called()
+        view.canvas_mock.create_texture.assert_not_called()
 
 
 class TestWorldViewBoundaryEnforcement:

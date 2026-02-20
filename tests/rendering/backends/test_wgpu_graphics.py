@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 import numpy as np
 import pytest
 
-from brileta import colors
+from brileta import colors, config
 from brileta.game.enums import BlendMode
 from brileta.types import Opacity
 from brileta.util.glyph_buffer import GlyphBuffer
@@ -122,8 +122,8 @@ class TestWGPUGraphicsContext:
         height = self.graphics_ctx.console_height_tiles
         assert isinstance(width, int)
         assert isinstance(height, int)
-        assert width == 80  # Default placeholder
-        assert height == 50  # Default placeholder
+        assert width > 0
+        assert height > 0
 
     def test_coordinate_converter_property(self):
         """Test coordinate converter property creates instance when accessed."""
@@ -169,15 +169,241 @@ class TestWGPUGraphicsContext:
         # Should not raise exception (currently a no-op)
         self.graphics_ctx.update_dimensions()
 
-    def test_update_dimensions_syncs_glyph_renderer_tile_dimensions(self):
+    def test_update_dimensions_syncs_glyph_renderer_tile_dimensions(self, monkeypatch):
         """Resize updates off-screen renderer tile dimensions."""
+        monkeypatch.setattr(config, "TILE_ZOOM", 1)
         mock_glyph_renderer = Mock()
         self.graphics_ctx.glyph_renderer = mock_glyph_renderer
         self.graphics_ctx.window.get_framebuffer_size.return_value = (1680, 1050)
 
         self.graphics_ctx.update_dimensions()
 
-        mock_glyph_renderer.set_tile_dimensions.assert_called_with((21, 21))
+        mock_glyph_renderer.set_tile_dimensions.assert_called_with((40, 40))
+
+    def test_letterbox_geometry_calculation_is_pure(self):
+        """Letterbox geometry helper should not mutate console dimension state."""
+        self.graphics_ctx._console_width_tiles = 77
+        self.graphics_ctx._console_height_tiles = 55
+
+        geometry = self.graphics_ctx._calculate_letterbox_geometry(800, 600, 20, 20)
+
+        assert geometry == (0, 0, 800, 600)
+        assert self.graphics_ctx.console_width_tiles == 77
+        assert self.graphics_ctx.console_height_tiles == 55
+
+    def test_content_scale_auto_detection_retina_ratio(self, monkeypatch):
+        """A 2x framebuffer/window ratio should produce a 2x content scale."""
+        monkeypatch.setattr(config, "TILE_ZOOM", 1)
+        monkeypatch.setattr(config, "MIN_CONSOLE_WIDTH", 1)
+        monkeypatch.setattr(config, "MIN_CONSOLE_HEIGHT", 1)
+        self.graphics_ctx.window.get_size.return_value = (800, 600)
+        self.graphics_ctx.window.get_framebuffer_size.return_value = (1600, 1200)
+
+        self.graphics_ctx._calculate_letterbox_geometry_and_tiles()
+
+        assert self.graphics_ctx.scale_factor == 2
+        assert self.graphics_ctx.tile_dimensions == (40, 40)
+        assert self.graphics_ctx.console_width_tiles == 40
+        assert self.graphics_ctx.console_height_tiles == 30
+
+    def test_content_scale_rounds_fractional_ratio(self, monkeypatch):
+        """A 1.5x framebuffer/window ratio should round to 2x scale."""
+        monkeypatch.setattr(config, "TILE_ZOOM", 1)
+        monkeypatch.setattr(config, "MIN_CONSOLE_WIDTH", 1)
+        monkeypatch.setattr(config, "MIN_CONSOLE_HEIGHT", 1)
+        self.graphics_ctx.window.get_size.return_value = (800, 600)
+        self.graphics_ctx.window.get_framebuffer_size.return_value = (1200, 900)
+
+        self.graphics_ctx._calculate_letterbox_geometry_and_tiles()
+
+        assert self.graphics_ctx.scale_factor == 2
+        assert self.graphics_ctx.tile_dimensions == (40, 40)
+        assert self.graphics_ctx.console_width_tiles == 30
+        assert self.graphics_ctx.console_height_tiles == 22
+        assert self.graphics_ctx.letterbox_geometry == (0, 10, 1200, 880)
+
+    def test_content_scale_uses_glfw_scale_in_fullscreen_like_sizes(self, monkeypatch):
+        """Content scale should honor GLFW DPI scale even if size ratio is 1:1."""
+        monkeypatch.setattr(config, "TILE_ZOOM", 1)
+        monkeypatch.setattr(config, "MIN_CONSOLE_WIDTH", 1)
+        monkeypatch.setattr(config, "MIN_CONSOLE_HEIGHT", 1)
+        self.graphics_ctx.window.get_size.return_value = (1600, 1000)
+        self.graphics_ctx.window.get_framebuffer_size.return_value = (1600, 1000)
+        monkeypatch.setattr(
+            self.graphics_ctx,
+            "get_display_scale_factor",
+            lambda: (2.0, 2.0),
+        )
+
+        self.graphics_ctx._calculate_letterbox_geometry_and_tiles()
+
+        assert self.graphics_ctx.scale_factor == 2
+        assert self.graphics_ctx.tile_dimensions == (40, 40)
+        assert self.graphics_ctx.console_width_tiles == 40
+        assert self.graphics_ctx.console_height_tiles == 25
+
+    def test_content_scale_stays_stable_when_signals_drop_after_resize(
+        self, monkeypatch
+    ):
+        """Keep high-DPI scale stable across mode toggles with inconsistent signals."""
+        monkeypatch.setattr(config, "TILE_ZOOM", 1)
+        monkeypatch.setattr(config, "MIN_CONSOLE_WIDTH", 1)
+        monkeypatch.setattr(config, "MIN_CONSOLE_HEIGHT", 1)
+
+        # First pass: detect high-DPI scale from window/ratio signals.
+        self.graphics_ctx.window.get_size.return_value = (800, 500)
+        self.graphics_ctx.window.get_framebuffer_size.return_value = (1600, 1000)
+        monkeypatch.setattr(
+            self.graphics_ctx,
+            "get_display_scale_factor",
+            lambda: (2.0, 2.0),
+        )
+        self.graphics_ctx._calculate_letterbox_geometry_and_tiles()
+        assert self.graphics_ctx.scale_factor == 2
+
+        # Second pass: fullscreen-like inconsistent signals both report 1x.
+        self.graphics_ctx.window.get_size.return_value = (1600, 1000)
+        self.graphics_ctx.window.get_framebuffer_size.return_value = (1600, 1000)
+        monkeypatch.setattr(
+            self.graphics_ctx,
+            "get_display_scale_factor",
+            lambda: (1.0, 1.0),
+        )
+        self.graphics_ctx._calculate_letterbox_geometry_and_tiles()
+
+        # Sticky hint should preserve readable tile scale.
+        assert self.graphics_ctx.scale_factor == 2
+        assert self.graphics_ctx.tile_dimensions == (40, 40)
+        assert self.graphics_ctx.console_width_tiles == 40
+        assert self.graphics_ctx.console_height_tiles == 25
+
+    def test_content_scale_relocks_after_stable_monitor_scale_change(
+        self, monkeypatch
+    ) -> None:
+        """Locked scale should update after repeated, consistent new DPI signals."""
+        monkeypatch.setattr(config, "TILE_ZOOM", 1)
+        monkeypatch.setattr(config, "MIN_CONSOLE_WIDTH", 1)
+        monkeypatch.setattr(config, "MIN_CONSOLE_HEIGHT", 1)
+
+        # Lock initial scale to 2x.
+        self.graphics_ctx.window.get_size.return_value = (800, 500)
+        self.graphics_ctx.window.get_framebuffer_size.return_value = (1600, 1000)
+        monkeypatch.setattr(
+            self.graphics_ctx,
+            "get_display_scale_factor",
+            lambda: (2.0, 2.0),
+        )
+        self.graphics_ctx._calculate_letterbox_geometry_and_tiles()
+        assert self.graphics_ctx.locked_content_scale == 2
+
+        # Observe stable 1x for enough samples to relock.
+        self.graphics_ctx.window.get_size.return_value = (1600, 1000)
+        self.graphics_ctx.window.get_framebuffer_size.return_value = (1600, 1000)
+        monkeypatch.setattr(
+            self.graphics_ctx,
+            "get_display_scale_factor",
+            lambda: (1.0, 1.0),
+        )
+        for _ in range(self.graphics_ctx._CONTENT_SCALE_RELOCK_STABLE_SAMPLES):
+            self.graphics_ctx._calculate_letterbox_geometry_and_tiles()
+
+        assert self.graphics_ctx.locked_content_scale == 1
+        assert self.graphics_ctx.tile_dimensions == (20, 20)
+
+    def test_tile_zoom_scales_tiles_when_console_budget_allows(self, monkeypatch):
+        """TILE_ZOOM should enlarge display tiles and reduce console size."""
+        monkeypatch.setattr(config, "MIN_CONSOLE_WIDTH", 1)
+        monkeypatch.setattr(config, "MIN_CONSOLE_HEIGHT", 1)
+        self.graphics_ctx.window.get_size.return_value = (3200, 2400)
+        self.graphics_ctx.window.get_framebuffer_size.return_value = (3200, 2400)
+
+        monkeypatch.setattr(config, "TILE_ZOOM", 1)
+        self.graphics_ctx._calculate_letterbox_geometry_and_tiles()
+        zoom1_dims = self.graphics_ctx.tile_dimensions
+        zoom1_console = (
+            self.graphics_ctx.console_width_tiles,
+            self.graphics_ctx.console_height_tiles,
+        )
+
+        monkeypatch.setattr(config, "TILE_ZOOM", 2)
+        self.graphics_ctx._calculate_letterbox_geometry_and_tiles()
+        zoom2_dims = self.graphics_ctx.tile_dimensions
+        zoom2_console = (
+            self.graphics_ctx.console_width_tiles,
+            self.graphics_ctx.console_height_tiles,
+        )
+
+        assert zoom1_dims == (20, 20)
+        assert zoom2_dims == (40, 40)
+        assert zoom1_console == (160, 120)
+        assert zoom2_console == (80, 60)
+
+    def test_zoom_safety_cap_reduces_zoom_when_console_would_be_too_small(
+        self, monkeypatch
+    ):
+        """Renderer should step zoom down until console minimums are respected."""
+        monkeypatch.setattr(config, "TILE_ZOOM", 3)
+        monkeypatch.setattr(config, "MIN_CONSOLE_WIDTH", 60)
+        monkeypatch.setattr(config, "MIN_CONSOLE_HEIGHT", 40)
+        self.graphics_ctx.window.get_size.return_value = (800, 600)
+        self.graphics_ctx.window.get_framebuffer_size.return_value = (800, 600)
+
+        self.graphics_ctx._calculate_letterbox_geometry_and_tiles()
+
+        # TILE_ZOOM=3 would make 60x60 tiles and a tiny console here.
+        # The safety cap steps it down to effective zoom 1.
+        assert self.graphics_ctx.tile_dimensions == (20, 20)
+        assert self.graphics_ctx.scale_factor == 1
+        assert self.graphics_ctx.console_width_tiles == 40
+        assert self.graphics_ctx.console_height_tiles == 30
+
+    def test_finalize_present_returns_false_when_framebuffer_is_zero(self):
+        """Presentation should be skipped while minimized (0-sized framebuffer)."""
+        self.graphics_ctx.screen_renderer = Mock()
+        self.graphics_ctx.wgpu_context = Mock()
+        self.graphics_ctx.resource_manager = Mock()
+        self.graphics_ctx.window.get_size.return_value = (800, 600)
+        self.graphics_ctx.window.get_framebuffer_size.return_value = (0, 0)
+
+        rendered = self.graphics_ctx.finalize_present()
+
+        assert rendered is False
+
+    def test_finalize_present_returns_false_when_texture_acquire_fails(self):
+        """Surface acquire failures should skip this frame instead of crashing."""
+        self.graphics_ctx.screen_renderer = Mock()
+        self.graphics_ctx.wgpu_context = Mock()
+        self.graphics_ctx.resource_manager = Mock()
+        self.graphics_ctx.window.get_size.return_value = (800, 600)
+        self.graphics_ctx.window.get_framebuffer_size.return_value = (800, 600)
+        self.graphics_ctx._last_window_size = (800, 600)
+        self.graphics_ctx._last_framebuffer_size = (800, 600)
+        self.graphics_ctx.wgpu_context.get_current_texture.side_effect = RuntimeError(
+            "surface lost"
+        )
+
+        rendered = self.graphics_ctx.finalize_present()
+
+        assert rendered is False
+
+    def test_finalize_present_logs_first_exception_in_failure_streak(self):
+        """Present failures should be visible without spamming logs every frame."""
+        self.graphics_ctx.screen_renderer = Mock()
+        self.graphics_ctx.wgpu_context = Mock()
+        self.graphics_ctx.resource_manager = Mock()
+        self.graphics_ctx.window.get_size.return_value = (800, 600)
+        self.graphics_ctx.window.get_framebuffer_size.return_value = (800, 600)
+        self.graphics_ctx._last_window_size = (800, 600)
+        self.graphics_ctx._last_framebuffer_size = (800, 600)
+        self.graphics_ctx.wgpu_context.get_current_texture.side_effect = RuntimeError(
+            "surface lost"
+        )
+
+        with patch("brileta.backends.wgpu.graphics.logger.exception") as log_exception:
+            assert self.graphics_ctx.finalize_present() is False
+            assert self.graphics_ctx.finalize_present() is False
+
+        log_exception.assert_called_once()
 
     def test_infer_compose_tile_dimensions(self):
         """Compose tile size should be inferred from texture/mask dimensions."""

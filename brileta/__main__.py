@@ -51,8 +51,8 @@ def main() -> None:
     metric_log_names = _parse_metric_names(args.metric_log_names)
     app_config = AppConfig(
         title=config.WINDOW_TITLE,
-        width=config.SCREEN_WIDTH,
-        height=config.SCREEN_HEIGHT,
+        width=config.INITIAL_WINDOW_WIDTH_TILES,
+        height=config.INITIAL_WINDOW_HEIGHT_TILES,
         vsync=config.VSYNC,
         metric_log_names=metric_log_names,
         metric_log_file=args.metric_log_file if metric_log_names else None,

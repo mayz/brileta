@@ -130,6 +130,12 @@ class TextView(View):
         """
         if not self.visible:
             return
+        # Tiny windows/high zoom can collapse some layout regions to zero tiles.
+        # Skip rendering in that case to avoid creating backend textures with a
+        # zero dimension, which is invalid for WGPU.
+        if self.width <= 0 or self.height <= 0:
+            self._cached_texture = None
+            return
 
         cache_key = self.get_cache_key()
         cached_texture = self._texture_cache.get(cache_key)
