@@ -415,9 +415,31 @@ class ActorRenderer:
         final_color = self._get_actor_display_color(actor)
         visual_scale = getattr(actor, "visual_scale", 1.0)
 
-        # Check for multi-character composition (character_layers)
-        if actor.character_layers:
-            # Render each layer at its sub-tile offset
+        # Send tile background to GPU shader for actor-vs-tile contrast checks.
+        tile_bg_np = game_map.light_appearance_map[actor.x, actor.y]["bg"]
+        tile_bg = (
+            int(tile_bg_np[0]),
+            int(tile_bg_np[1]),
+            int(tile_bg_np[2]),
+        )
+
+        # Priority 1: Sprite atlas path (procedurally generated sprites).
+        sprite_uv = getattr(actor, "sprite_uv", None)
+        if sprite_uv is not None:
+            self.graphics.draw_sprite_smooth(
+                sprite_uv,
+                final_color,
+                screen_pixel_x,
+                screen_pixel_y,
+                light_rgb,
+                interpolation_alpha,
+                scale_x=visual_scale,
+                scale_y=visual_scale,
+                world_pos=(actor.x, actor.y),
+                tile_bg=tile_bg,
+            )
+        elif actor.character_layers:
+            # Priority 2: Multi-character composition (character_layers).
             self._render_character_layers(
                 actor.character_layers,
                 root_x,
@@ -428,15 +450,7 @@ class ActorRenderer:
                 actor_world_pos=(actor.x, actor.y),
             )
         else:
-            # Send tile background to GPU shader for actor-vs-tile contrast checks.
-            tile_bg_np = game_map.light_appearance_map[actor.x, actor.y]["bg"]
-            tile_bg = (
-                int(tile_bg_np[0]),
-                int(tile_bg_np[1]),
-                int(tile_bg_np[2]),
-            )
-
-            # Render single character (existing behavior) - uniform scaling
+            # Priority 3: Single CP437 glyph fallback.
             self.graphics.draw_actor_smooth(
                 actor.ch,
                 final_color,
@@ -592,9 +606,33 @@ class ActorRenderer:
 
                 visual_scale = getattr(actor, "visual_scale", 1.0)
 
-                # Check for multi-character composition (character_layers)
-                if actor.character_layers:
-                    # Render each layer at its sub-tile offset
+                # Send tile background to GPU shader for contrast checks.
+                tile_bg_np = game_world.game_map.light_appearance_map[actor.x, actor.y][
+                    "bg"
+                ]
+                tile_bg = (
+                    int(tile_bg_np[0]),
+                    int(tile_bg_np[1]),
+                    int(tile_bg_np[2]),
+                )
+
+                sprite_uv = getattr(actor, "sprite_uv", None)
+                if sprite_uv is not None:
+                    # Sprite atlas path.
+                    graphics.draw_sprite_smooth(
+                        sprite_uv,
+                        final_fg_color,
+                        screen_pixel_x,
+                        screen_pixel_y,
+                        light_rgb,
+                        alpha,
+                        scale_x=visual_scale,
+                        scale_y=visual_scale,
+                        world_pos=(actor.x, actor.y),
+                        tile_bg=tile_bg,
+                    )
+                elif actor.character_layers:
+                    # Multi-character composition.
                     self._render_character_layers(
                         actor.character_layers,
                         float(root_x),
@@ -605,17 +643,7 @@ class ActorRenderer:
                         actor_world_pos=(actor.x, actor.y),
                     )
                 else:
-                    # Send tile background to GPU shader for contrast checks.
-                    tile_bg_np = game_world.game_map.light_appearance_map[
-                        actor.x, actor.y
-                    ]["bg"]
-                    tile_bg = (
-                        int(tile_bg_np[0]),
-                        int(tile_bg_np[1]),
-                        int(tile_bg_np[2]),
-                    )
-
-                    # Render using the renderer's smooth drawing function
+                    # Single CP437 glyph fallback.
                     graphics.draw_actor_smooth(
                         actor.ch,
                         final_fg_color,
@@ -652,7 +680,11 @@ class ActorRenderer:
             camera_frac_offset: Fractional camera offset for smooth scrolling.
             view_origin: Root console origin of the viewport (x, y).
         """
-        if actor.character_layers or actor.has_complex_visuals:
+        if (
+            getattr(actor, "sprite_uv", None) is not None
+            or actor.character_layers
+            or actor.has_complex_visuals
+        ):
             self._render_layered_tile_outline(
                 actor,
                 color,

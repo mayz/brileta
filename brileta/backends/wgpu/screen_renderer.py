@@ -67,6 +67,10 @@ class WGPUScreenRenderer:
         self.shadow_atlas_texture = shadow_atlas_texture
         self.surface_format = surface_format
 
+        # Sprite atlas texture - set via set_sprite_atlas() when available.
+        # Falls back to a 1x1 transparent pixel so the shader binding is valid.
+        self._sprite_atlas_texture: wgpu.GPUTexture | None = None
+
         # Main Vertex Buffer for Screen Rendering
         self.cpu_vertex_buffer = np.zeros(MAX_QUADS * 6, dtype=VERTEX_DTYPE)
         self.vertex_count = 0
@@ -89,6 +93,24 @@ class WGPUScreenRenderer:
             size=32,  # 2 * vec4<f32>
             usage=wgpu.BufferUsage.UNIFORM | wgpu.BufferUsage.COPY_DST,
             label="screen_renderer_uniform_buffer",
+        )
+
+        # Default 1x1 transparent sprite atlas so binding 4 is always valid.
+        self._default_sprite_atlas = self.resource_manager.device.create_texture(
+            size=(1, 1, 1),
+            format=wgpu.TextureFormat.rgba8unorm,
+            usage=wgpu.TextureUsage.TEXTURE_BINDING | wgpu.TextureUsage.COPY_DST,
+            label="screen_renderer_default_sprite_atlas",
+        )
+        self.resource_manager.queue.write_texture(
+            {
+                "texture": self._default_sprite_atlas,
+                "mip_level": 0,
+                "origin": (0, 0, 0),
+            },
+            memoryview(bytes(4)),  # 1 RGBA pixel, all zeros (transparent)
+            {"offset": 0, "bytes_per_row": 4, "rows_per_image": 1},
+            (1, 1, 1),
         )
 
         self._default_lightmap_texture = self.resource_manager.device.create_texture(
@@ -141,6 +163,11 @@ class WGPUScreenRenderer:
                     "texture": {
                         "sample_type": wgpu.TextureSampleType.unfilterable_float
                     },
+                },
+                {
+                    "binding": 4,
+                    "visibility": wgpu.ShaderStage.FRAGMENT,
+                    "texture": {"sample_type": wgpu.TextureSampleType.float},
                 },
             ],
             label="screen_renderer_bind_group_layout",
@@ -229,6 +256,7 @@ class WGPUScreenRenderer:
         label: str,
     ) -> wgpu.GPUBindGroup:
         """Create a bind group for the provided texture/sampler pair."""
+        sprite_atlas = self._sprite_atlas_texture or self._default_sprite_atlas
         return self.shader_manager.create_bind_group(
             layout=self.bind_group_layout,
             entries=[
@@ -247,6 +275,10 @@ class WGPUScreenRenderer:
                 {
                     "binding": 3,
                     "resource": lightmap_texture.create_view(),
+                },
+                {
+                    "binding": 4,
+                    "resource": self.resource_manager.get_texture_view(sprite_atlas),
                 },
             ],
             label=label,
@@ -293,6 +325,17 @@ class WGPUScreenRenderer:
         self._actor_lighting_enabled = lightmap_texture is not None
         self._refresh_bind_groups()
 
+    def set_sprite_atlas(self, texture: wgpu.GPUTexture | None) -> None:
+        """Set the sprite atlas texture for sprite actor rendering.
+
+        Call this once after the sprite atlas is populated at map load time.
+        Passing None reverts to the default 1x1 transparent fallback.
+        """
+        self._sprite_atlas_texture = texture
+        # Force bind-group recreation so the new texture is picked up.
+        self._bind_group_lightmap_texture = None
+        self._refresh_bind_groups()
+
     def mark_shadow_start(self) -> None:
         """Record where shadow vertices begin in the shared vertex buffer."""
         self._shadow_start = self.vertex_count
@@ -314,13 +357,19 @@ class WGPUScreenRenderer:
         actor_light_scale: float = 1.0,
         actor_lighting_enabled: bool = False,
         tile_bg: ColorRGBf = (0.0, 0.0, 0.0),
+        use_sprite_atlas: bool = False,
     ) -> None:
         """Add a quad to the vertex buffer."""
         if self.vertex_count + 6 > len(self.cpu_vertex_buffer):
             return
 
         u1, v1, u2, v2 = uv_coords
-        flags = np.uint32(1 if actor_lighting_enabled else 0)
+        flags_int = 0
+        if actor_lighting_enabled:
+            flags_int |= 1
+        if use_sprite_atlas:
+            flags_int |= 2
+        flags = np.uint32(flags_int)
         world_x, world_y = world_pos if world_pos is not None else (-1.0, -1.0)
         vertices = np.zeros(6, dtype=VERTEX_DTYPE)
         vertices[0] = (

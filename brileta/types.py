@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Literal, NewType
+from typing import Literal, NamedTuple, NewType
 
 # =============================================================================
 # SPATIAL TYPES
@@ -87,6 +87,21 @@ type ColorRGBAf = tuple[float, float, float, float]
 
 # UV rectangle for texture coordinates: (u1, v1, u2, v2).
 type UVRect = tuple[float, float, float, float]
+
+
+class SpriteUV(NamedTuple):
+    """UV coordinates for a sprite allocated in the dynamic sprite atlas.
+
+    Values are normalized to [0, 1] and map directly to the sprite atlas
+    texture.  When stored on an Actor, the renderer draws from the sprite
+    atlas using these UVs instead of the CP437 glyph atlas.
+    """
+
+    u1: float
+    v1: float
+    u2: float
+    v2: float
+
 
 # =============================================================================
 # GAME-RELATED TYPES

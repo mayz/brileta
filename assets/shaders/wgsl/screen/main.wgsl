@@ -34,6 +34,7 @@ struct Uniforms {
 @group(0) @binding(1) var u_texture: texture_2d<f32>;
 @group(0) @binding(2) var u_sampler: sampler;
 @group(0) @binding(3) var u_actor_lightmap: texture_2d<f32>;
+@group(0) @binding(4) var u_sprite_atlas: texture_2d<f32>;
 
 // Vertex shader stage
 @vertex
@@ -76,6 +77,7 @@ fn warm_color_correction(color: vec3<f32>) -> vec3<f32> {
 }
 
 const ACTOR_LIGHTING_FLAG: u32 = 1u;
+const SPRITE_ATLAS_FLAG: u32 = 2u;
 const CONTRAST_TILE_BG_SENTINEL_EPS: f32 = 0.001;
 const CONTRAST_LIT_DIST_MIN: f32 = 0.15;
 const CONTRAST_LIT_DIST_MAX: f32 = 0.21;
@@ -180,7 +182,13 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         tint = vec4f(actor_rgb, input.v_color.a);
     }
 
-    let sampled_color = textureSample(u_texture, u_sampler, input.v_uv) * tint;
+    // Sample from the sprite atlas when flagged, otherwise from the CP437 atlas.
+    var sampled_color: vec4<f32>;
+    if ((input.v_flags & SPRITE_ATLAS_FLAG) != 0u) {
+        sampled_color = textureSample(u_sprite_atlas, u_sampler, input.v_uv) * tint;
+    } else {
+        sampled_color = textureSample(u_texture, u_sampler, input.v_uv) * tint;
+    }
     let corrected_rgb = warm_color_correction(sampled_color.rgb);
     return vec4<f32>(corrected_rgb, sampled_color.a);
 }

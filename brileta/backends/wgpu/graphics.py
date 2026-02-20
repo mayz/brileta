@@ -20,6 +20,7 @@ from brileta.types import (
     Opacity,
     PixelCoord,
     PixelRect,
+    SpriteUV,
     TileDimensions,
     ViewOffset,
     WorldTilePos,
@@ -39,6 +40,7 @@ from .light_overlay_composer import WGPULightOverlayComposer
 from .resource_manager import WGPUResourceManager
 from .screen_renderer import WGPUScreenRenderer
 from .shader_manager import WGPUShaderManager
+from .sprite_atlas import SpriteAtlas
 from .textured_quad_renderer import WGPUTexturedQuadRenderer
 
 if TYPE_CHECKING:
@@ -151,6 +153,9 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         # Queued atmospheric layers for this frame
         self._atmospheric_layers: list[AtmosphericLayerState] = []
         self._gpu_actor_lighting_enabled = False
+
+        # Dynamic sprite atlas for procedurally generated actor sprites.
+        self._sprite_atlas: SpriteAtlas | None = None
 
         # Letterbox/viewport state
         self.letterbox_geometry: PixelRect | None = None
@@ -295,6 +300,28 @@ class WGPUGraphicsContext(BaseGraphicsContext):
                 logging.getLogger(__name__).warning(
                     f"Failed to pre-compile shader {shader_path}: {e}"
                 )
+
+    def create_sprite_atlas(self) -> SpriteAtlas:
+        """Create a new SpriteAtlas backed by this context's GPU resources.
+
+        Call this at map load time before generating sprites.  The returned
+        atlas manages its own GPU texture; call
+        ``set_sprite_atlas_texture(atlas.texture)`` after populating it so
+        the screen renderer can sample from it.
+        """
+        assert self.resource_manager is not None
+        self._sprite_atlas = SpriteAtlas(self.resource_manager)
+        return self._sprite_atlas
+
+    @property
+    def sprite_atlas(self) -> SpriteAtlas | None:
+        """The active SpriteAtlas, if one has been created."""
+        return self._sprite_atlas
+
+    def set_sprite_atlas_texture(self, texture: wgpu.GPUTexture | None) -> None:
+        """Bind (or unbind) the sprite atlas texture for screen rendering."""
+        if self.screen_renderer is not None:
+            self.screen_renderer.set_sprite_atlas(texture)
 
     def _recreate_surface_and_context(self) -> bool:
         """
@@ -462,6 +489,92 @@ class WGPUGraphicsContext(BaseGraphicsContext):
             actor_light_scale=max(0.0, min(1.0, float(light_intensity[0]))),
             actor_lighting_enabled=use_gpu_actor_lighting,
             tile_bg=normalized_tile_bg,
+        )
+
+    def draw_sprite_smooth(
+        self,
+        sprite_uv: SpriteUV,
+        color: colors.Color,
+        screen_x: float,
+        screen_y: float,
+        light_intensity: ColorRGBf = (1.0, 1.0, 1.0),
+        interpolation_alpha: InterpolationAlpha | None = None,
+        scale_x: float = 1.0,
+        scale_y: float = 1.0,
+        world_pos: WorldTilePos | None = None,
+        tile_bg: colors.Color | None = None,
+    ) -> None:
+        """Draw a sprite from the sprite atlas at sub-pixel screen coordinates.
+
+        Follows the same lighting, scaling, and positioning logic as
+        draw_actor_smooth() but reads from the sprite atlas texture
+        (binding 4) instead of the CP437 glyph atlas.
+
+        The *color* parameter tints the sampled texture via multiplication.
+        For procedurally generated sprites with baked-in colors, pass white
+        (255, 255, 255) so the original colors come through unchanged.
+        """
+        if interpolation_alpha is None:
+            interpolation_alpha = InterpolationAlpha(1.0)
+        if self.screen_renderer is None:
+            return
+
+        # Convert color to 0-1 range.
+        base_color = (color[0] / 255.0, color[1] / 255.0, color[2] / 255.0)
+
+        use_gpu_actor_lighting = (
+            self._gpu_actor_lighting_enabled and world_pos is not None
+        )
+        normalized_tile_bg = (0.0, 0.0, 0.0)
+        if use_gpu_actor_lighting and tile_bg is not None:
+            normalized_tile_bg = (
+                max(0.0, min(1.0, float(tile_bg[0]) / 255.0)),
+                max(0.0, min(1.0, float(tile_bg[1]) / 255.0)),
+                max(0.0, min(1.0, float(tile_bg[2]) / 255.0)),
+            )
+
+        if use_gpu_actor_lighting:
+            final_color = (base_color[0], base_color[1], base_color[2], 1.0)
+        else:
+            final_color = (
+                min(
+                    1.0,
+                    base_color[0] * light_intensity[0] * 0.7 + light_intensity[0] * 0.3,
+                ),
+                min(
+                    1.0,
+                    base_color[1] * light_intensity[1] * 0.7 + light_intensity[1] * 0.3,
+                ),
+                min(
+                    1.0,
+                    base_color[2] * light_intensity[2] * 0.7 + light_intensity[2] * 0.3,
+                ),
+                1.0,
+            )
+
+        uv_coords = (sprite_uv.u1, sprite_uv.v1, sprite_uv.u2, sprite_uv.v2)
+
+        # Sprites are tile-sized at scale 1.0, matching the glyph path.
+        tile_w, tile_h = self.tile_dimensions
+        scaled_w = tile_w * scale_x
+        scaled_h = tile_h * scale_y
+        offset_x = (tile_w - scaled_w) / 2
+        offset_y = (tile_h - scaled_h) / 2
+
+        self.screen_renderer.add_quad(
+            screen_x + offset_x,
+            screen_y + offset_y,
+            scaled_w,
+            scaled_h,
+            uv_coords,
+            final_color,
+            world_pos=(float(world_pos[0]), float(world_pos[1]))
+            if world_pos is not None
+            else None,
+            actor_light_scale=max(0.0, min(1.0, float(light_intensity[0]))),
+            actor_lighting_enabled=use_gpu_actor_lighting,
+            tile_bg=normalized_tile_bg,
+            use_sprite_atlas=True,
         )
 
     def set_actor_lighting_gpu_context(
@@ -1467,6 +1580,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         self.outlined_atlas_texture = None
         self.blurred_atlas_texture = None
         self._atlas_manager = None
+        self._sprite_atlas = None
         self.shader_manager = None
         self.resource_manager = None
         self._world_view_cpu_buffer = None

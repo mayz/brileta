@@ -490,6 +490,11 @@ class ShadowRenderer:
                     fade_tip=config.ACTOR_SHADOW_FADE_TIP,
                 )
 
+    # CP437 index for a solid block character (█), used as the shadow shape
+    # for sprite actors.  A single solid rectangle replaces the multi-layer
+    # glyph shadows and fixes the compounding-alpha bug by construction.
+    _SOLID_BLOCK_CHAR = chr(219)
+
     def _emit_actor_shadow_quads(
         self,
         actor: Actor,
@@ -503,8 +508,32 @@ class ShadowRenderer:
         shadow_alpha: float,
         fade_tip: bool,
     ) -> None:
-        """Emit one projected shadow quad per visual glyph layer."""
+        """Emit projected shadow quads for an actor.
+
+        Sprite actors emit a single solid-fill shadow quad (fixing the
+        compounding-alpha bug from multi-layer glyph shadows).  Character-layer
+        and single-glyph actors use their existing per-layer shadow path.
+        """
         visual_scale = getattr(actor, "visual_scale", 1.0)
+
+        # Sprite actors: one solid rectangle shadow.
+        sprite_uv = getattr(actor, "sprite_uv", None)
+        if sprite_uv is not None:
+            self.graphics.draw_actor_shadow(
+                char=self._SOLID_BLOCK_CHAR,
+                screen_x=screen_x,
+                screen_y=screen_y,
+                shadow_dir_x=shadow_dir_x,
+                shadow_dir_y=shadow_dir_y,
+                shadow_length_pixels=shadow_length_pixels,
+                shadow_alpha=shadow_alpha,
+                scale_x=visual_scale,
+                scale_y=visual_scale,
+                fade_tip=fade_tip,
+            )
+            return
+
+        # Character-layer actors: one shadow per glyph layer.
         if actor.character_layers:
             for layer in actor.character_layers:
                 layer_root_x = root_x + layer.offset_x
@@ -526,6 +555,7 @@ class ShadowRenderer:
                 )
             return
 
+        # Single-glyph fallback.
         self.graphics.draw_actor_shadow(
             char=actor.ch,
             screen_x=screen_x,

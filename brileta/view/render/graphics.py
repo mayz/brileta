@@ -36,6 +36,7 @@ from brileta.types import (
     PixelPos,
     PixelRect,
     RootConsoleTilePos,
+    SpriteUV,
     TileDimensions,
     ViewOffset,
     WorldTilePos,
@@ -141,6 +142,39 @@ class GraphicsContext(abc.ABC):
     ) -> None:
         """Draw a projected glyph shadow as a stretched parallelogram quad."""
         pass
+
+    def draw_sprite_smooth(
+        self,
+        sprite_uv: SpriteUV,
+        color: colors.Color,
+        screen_x: float,
+        screen_y: float,
+        light_intensity: ColorRGBf = (1.0, 1.0, 1.0),
+        interpolation_alpha: InterpolationAlpha = InterpolationAlpha(1.0),  # noqa: B008
+        scale_x: float = 1.0,
+        scale_y: float = 1.0,
+        world_pos: WorldTilePos | None = None,
+        tile_bg: colors.Color | None = None,
+    ) -> None:
+        """Draw a sprite from the dynamic sprite atlas at sub-pixel coordinates.
+
+        Behaves like draw_actor_smooth() but samples from the sprite atlas
+        instead of the CP437 glyph atlas.  Backends that don't support the
+        sprite atlas do nothing (no-op default).
+
+        Args:
+            sprite_uv: UV rectangle in the sprite atlas texture.
+            color: Base actor color in 0-255 RGB format.
+            screen_x: Screen X coordinate in pixels (can be fractional).
+            screen_y: Screen Y coordinate in pixels (can be fractional).
+            light_intensity: RGB lighting multipliers in 0.0-1.0 range.
+            interpolation_alpha: Interpolation factor for smooth movement.
+            scale_x: Horizontal scale factor (1.0 = one tile wide).
+            scale_y: Vertical scale factor (1.0 = one tile tall).
+            world_pos: World tile coordinates for GPU lightmap sampling.
+            tile_bg: Tile background color for actor contrast checks.
+        """
+        return
 
     @abc.abstractmethod
     def draw_actor_outline(

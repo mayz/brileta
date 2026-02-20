@@ -45,7 +45,7 @@ from brileta.game.actors import conditions
 from brileta.game.enums import CreatureSize, InjuryLocation
 from brileta.game.items.item_core import Item
 from brileta.sound.emitter import SoundEmitter
-from brileta.types import ActorId, TileCoord, WorldTileCoord
+from brileta.types import ActorId, SpriteUV, TileCoord, WorldTileCoord
 from brileta.view.animation import MoveAnimation
 
 from .ai import AIComponent, disposition_label
@@ -177,6 +177,7 @@ class Actor:
         shadow_height: int = 1,
         visual_scale: float = 1.0,
         character_layers: list[CharacterLayer] | None = None,
+        sprite_uv: SpriteUV | None = None,
     ) -> None:
         # === Core Identity & World Presence ===
         self.actor_id: ActorId = Actor._next_actor_id
@@ -199,6 +200,9 @@ class Actor:
         self.name = name
         self.visual_scale = visual_scale
         self.character_layers = character_layers  # Multi-char visual composition
+        # UV coordinates into the dynamic sprite atlas.  When set, the actor
+        # renders from the sprite atlas instead of the CP437 glyph atlas.
+        self.sprite_uv = sprite_uv
         self.has_complex_visuals = False  # Flag for actors with particle effects, etc.
         self.gw = game_world
         self.blocks_movement = blocks_movement
