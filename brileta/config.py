@@ -170,10 +170,25 @@ SETTLEMENT_BUILDING_DENSITY = (
 SETTLEMENT_MAX_BUILDINGS = 12  # Maximum buildings per settlement
 
 # Tree placement
-# Wild trees: sparse lone trees in open land far from streets.
-# Keep low to avoid obstacle-course navigation.
-SETTLEMENT_WILD_TREE_DENSITY = 0.03  # Probability per eligible tile in wild areas
-SETTLEMENT_YARD_TREE_DENSITY = 0.04  # Probability per eligible tile near buildings
+# Wild trees: forested borders around the settlement. Noise modulation creates
+# groves and clearings so the player has natural paths through the trees.
+SETTLEMENT_WILD_TREE_DENSITY = 0.05  # Probability per eligible tile in wild areas
+# Yard trees: sparse, deliberate placement near buildings. Settlements are
+# cleared land - a tree in a yard here and there, not an obstacle course.
+SETTLEMENT_YARD_TREE_DENSITY = 0.015  # Probability per eligible tile near buildings
+
+# Noise-modulated tree clustering.
+# A low-frequency noise field scales placement probability per tile, creating
+# organic groves (high noise → 3x density) and clearings (low noise → 0 density).
+# A separate noise channel with different seed/frequency biases the deciduous vs
+# conifer ratio spatially, producing "pine groves" and "hardwood groves".
+TREE_DENSITY_NOISE_FREQUENCY = 0.02  # ~50-tile features for grove/clearing scale
+TREE_DENSITY_NOISE_OCTAVES = 3  # Coarse shape + medium detail + fine irregularity
+TREE_SPECIES_NOISE_FREQUENCY = 0.008  # ~125-tile biome zones (larger than groves)
+TREE_SPECIES_NOISE_OCTAVES = 2
+# XOR salt to derive species noise seed from decoration_seed, so the two noise
+# fields are uncorrelated.
+TREE_SPECIES_SEED_XOR = 0xA5A5_A5A5
 
 
 # =============================================================================

@@ -128,8 +128,15 @@ class NoiseGenerator:
         domain_warp_type: DomainWarpType = DomainWarpType.OPENSIMPLEX2,
         domain_warp_amp: float = 1.0,
     ) -> None:
+        # Truncate to signed 32-bit range. The C extension (FastNoiseLite)
+        # stores the seed as a C int. Python ints are arbitrary precision,
+        # so callers using XOR salts or getrandbits(32) can exceed INT_MAX.
+        seed_i32 = int(seed) & 0xFFFF_FFFF
+        if seed_i32 >= 0x8000_0000:
+            seed_i32 -= 0x1_0000_0000
+
         self._state = _NoiseState(
-            seed=int(seed),
+            seed=seed_i32,
             noise_type=int(noise_type),
             frequency=float(frequency),
             fractal_type=int(fractal_type),

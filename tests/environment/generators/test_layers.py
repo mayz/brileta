@@ -927,9 +927,12 @@ class TestTreePlacementLayer:
 
         tree_count = len(ctx.tree_positions)
         total_tiles = ctx.width * ctx.height
-        expected = density * total_tiles
 
-        # Allow 50% variance due to randomness
+        # The noise multiplier formula (noise + 1) * 1.5 has a mean of ~1.5,
+        # so average density is about 1.5x the base. Account for that when
+        # checking count bounds. Allow 50% variance on top of the mean shift.
+        expected = density * 1.5 * total_tiles
+
         assert tree_count > expected * 0.5, (
             f"Too few trees: {tree_count} < {expected * 0.5:.0f}"
         )
@@ -969,3 +972,158 @@ class TestTreePlacementLayer:
         assert ctx.tiles[20, 20] == TileTypeID.BOULDER
         assert (10, 10) not in set(ctx.tree_positions)
         assert (20, 20) not in set(ctx.tree_positions)
+
+    def test_noise_creates_spatial_clustering(self) -> None:
+        """Density noise should create groves and clearings, not uniform scatter.
+
+        Divide the map into a grid of cells and measure the coefficient of
+        variation (stddev / mean) of tree counts per cell. Noise-modulated
+        placement should produce higher variance than flat-probability placement
+        would on average.
+        """
+        rng.reset("cluster1")
+        ctx = GenerationContext.create_empty(width=120, height=120)
+        ctx.tiles[:, :] = TileTypeID.GRASS
+
+        # Moderate density so cells have enough trees to measure variance.
+        layer = TreePlacementLayer(wild_density=0.10, yard_density=0.0)
+        layer.apply(ctx)
+
+        tree_set = set(ctx.tree_positions)
+        assert len(tree_set) > 50, "Need enough trees to measure clustering"
+
+        # Count trees per 20x20 grid cell.
+        cell_size = 20
+        cols = ctx.width // cell_size
+        rows = ctx.height // cell_size
+        counts = []
+        for cx in range(cols):
+            for cy in range(rows):
+                n = sum(
+                    1
+                    for x in range(cx * cell_size, (cx + 1) * cell_size)
+                    for y in range(cy * cell_size, (cy + 1) * cell_size)
+                    if (x, y) in tree_set
+                )
+                counts.append(n)
+
+        mean = sum(counts) / len(counts)
+        stddev = (sum((c - mean) ** 2 for c in counts) / len(counts)) ** 0.5
+        cv = stddev / mean if mean > 0 else 0.0
+
+        # For pure binomial placement (no noise), the expected CV on 400-tile
+        # cells at p=0.10 is sqrt(p*(1-p)/n) / p ~= 0.15. Noise-modulated
+        # placement should be noticeably higher because some cells land in
+        # groves and others in clearings.
+        assert cv > 0.20, (
+            f"Coefficient of variation {cv:.3f} is too low - expected noise "
+            f"to create spatial clustering (groves and clearings)"
+        )
+
+
+# =============================================================================
+# Species noise tests
+# =============================================================================
+
+
+class TestSpeciesNoiseClustering:
+    """Tests for noise-based archetype (species) distribution."""
+
+    def test_nearby_trees_share_species(self) -> None:
+        """Trees close together should agree on species more often than chance.
+
+        Sample a grid of positions and compare archetype agreement for
+        close-pair vs far-pair positions. Noise should make close pairs
+        agree more often.
+        """
+        from brileta.game.actors.tree_sprites import (
+            TreeArchetype,
+            archetype_for_position,
+            create_species_noise,
+        )
+
+        map_seed = 42
+        species_noise = create_species_noise(map_seed)
+
+        # Generate archetypes on a grid (only look at living types since
+        # dead/sapling are noise-independent).
+        size = 80
+        archetypes: dict[tuple[int, int], TreeArchetype] = {}
+        for x in range(size):
+            for y in range(size):
+                a = archetype_for_position(x, y, map_seed, species_noise)
+                if a in (TreeArchetype.DECIDUOUS, TreeArchetype.CONIFER):
+                    archetypes[(x, y)] = a
+
+        # Compare pairs within distance 5 ("close") vs distance 30+ ("far").
+        close_agree = 0
+        close_total = 0
+        far_agree = 0
+        far_total = 0
+
+        positions = list(archetypes.keys())
+        # Sample a subset of pairs for speed.
+        step = max(1, len(positions) // 400)
+        for i in range(0, len(positions), step):
+            for j in range(i + 1, len(positions), step):
+                p1, p2 = positions[i], positions[j]
+                dist = abs(p1[0] - p2[0]) + abs(p1[1] - p2[1])
+                same = archetypes[p1] == archetypes[p2]
+                if dist <= 5:
+                    close_total += 1
+                    close_agree += int(same)
+                elif dist >= 30:
+                    far_total += 1
+                    far_agree += int(same)
+
+        assert close_total > 0 and far_total > 0, "Not enough pairs sampled"
+
+        close_rate = close_agree / close_total
+        far_rate = far_agree / far_total
+
+        # Close trees should agree on species more often than far trees.
+        assert close_rate > far_rate, (
+            f"Close-pair agreement ({close_rate:.2f}) should exceed "
+            f"far-pair agreement ({far_rate:.2f})"
+        )
+
+    def test_species_noise_is_deterministic(self) -> None:
+        """Same map seed produces identical archetype assignments."""
+        from brileta.game.actors.tree_sprites import (
+            archetype_for_position,
+            create_species_noise,
+        )
+
+        map_seed = 99
+        noise_a = create_species_noise(map_seed)
+        noise_b = create_species_noise(map_seed)
+
+        for x in range(30):
+            for y in range(30):
+                assert archetype_for_position(
+                    x, y, map_seed, noise_a
+                ) == archetype_for_position(x, y, map_seed, noise_b)
+
+    def test_all_archetypes_still_appear(self) -> None:
+        """All four archetypes should appear over a large enough sample."""
+        from brileta.game.actors.tree_sprites import (
+            TreeArchetype,
+            archetype_for_position,
+            create_species_noise,
+        )
+
+        map_seed = 12345
+        species_noise = create_species_noise(map_seed)
+
+        found: set[TreeArchetype] = set()
+        for x in range(100):
+            for y in range(100):
+                found.add(archetype_for_position(x, y, map_seed, species_noise))
+                if len(found) == 4:
+                    break
+            if len(found) == 4:
+                break
+
+        assert found == set(TreeArchetype), (
+            f"Missing archetypes: {set(TreeArchetype) - found}"
+        )

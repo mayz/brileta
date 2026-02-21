@@ -23,6 +23,10 @@ from brileta.game.actors.npc_types import (
     RESIDENT_TYPE,
     TROG_TYPE,
 )
+from brileta.game.actors.tree_sprites import (
+    archetype_for_position,
+    create_species_noise,
+)
 from brileta.game.actors.trees import Tree
 from brileta.game.countables import CountableType
 from brileta.game.item_spawner import ItemSpawner
@@ -1161,14 +1165,18 @@ class GameWorld:
         and can later gain interactive behavior (chop, climb, storage).
 
         Each tree is assigned an archetype (deciduous, conifer, dead, sapling)
-        via a deterministic spatial hash. Procedural sprites are generated
-        and uploaded to the atlas separately by the controller after world
-        creation.
+        via a deterministic spatial hash modulated by a species noise field.
+        The noise creates spatial biome variation - "pine groves" and "hardwood
+        groves" - instead of a uniform species mix everywhere. Procedural
+        sprites are generated and uploaded to the atlas separately by the
+        controller after world creation.
         """
         if not self.tree_positions:
             return
 
         map_seed: MapDecorationSeed = int(self.game_map.decoration_seed)
+        species_noise = create_species_noise(map_seed)
+
         for x, y in self.tree_positions:
             if not (0 <= x < self.game_map.width and 0 <= y < self.game_map.height):
                 continue
@@ -1177,18 +1185,7 @@ class GameWorld:
             if self.get_actor_at_location(x, y) is not None:
                 continue
 
-            # Archetype distribution: 55% deciduous, 20% conifer,
-            # 15% dead, 10% sapling via deterministic spatial hash.
-            tree_hash = ((x * 73856093) ^ (y * 19349663) ^ map_seed) & 0xFFFFFFFF
-            r = tree_hash % 20
-            if r < 11:
-                archetype = TreeArchetype.DECIDUOUS
-            elif r < 15:
-                archetype = TreeArchetype.CONIFER
-            elif r < 18:
-                archetype = TreeArchetype.DEAD
-            else:
-                archetype = TreeArchetype.SAPLING
+            archetype = archetype_for_position(x, y, map_seed, species_noise)
 
             ch, color = self._TREE_FALLBACKS[archetype]
             tree_actor = Tree(

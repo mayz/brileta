@@ -18,10 +18,11 @@ from enum import Enum
 
 import numpy as np
 
-from brileta import colors
+from brileta import colors, config
 from brileta.game.enums import CreatureSize
 from brileta.types import MapDecorationSeed, PixelPos, SpatialSeed, WorldTileCoord
 from brileta.util import rng as brileta_rng
+from brileta.util.noise import FractalType, NoiseGenerator, NoiseType
 
 # ---------------------------------------------------------------------------
 # Tree archetype enum
@@ -1389,25 +1390,86 @@ def generate_tree_sprite(
     return canvas
 
 
-def _archetype_for_position(
+# ---------------------------------------------------------------------------
+# Shared spatial hash for per-tree deterministic values
+# ---------------------------------------------------------------------------
+
+# Base conifer fraction among living trees: 20% conifer / 75% living = ~0.267.
+_BASE_CONIFER_FRACTION: float = 4.0 / 15.0
+
+# How much species noise can shift the conifer fraction from the base.
+# At max noise (+1), conifer_prob reaches base + spread (clamped to 1.0).
+# At min noise (-1), conifer_prob reaches base - spread (clamped to 0.0).
+# 0.65 gives ~92% conifer in strong conifer zones and near-0% in deciduous
+# zones, which is decisive enough to read as "pine forest" at a glance.
+_SPECIES_NOISE_SPREAD: float = 0.65
+
+
+def _tree_hash(
+    x: WorldTileCoord, y: WorldTileCoord, map_seed: MapDecorationSeed
+) -> int:
+    """Deterministic spatial hash for a tree at (x, y)."""
+    return ((int(x) * 73856093) ^ (int(y) * 19349663) ^ int(map_seed)) & 0xFFFFFFFF
+
+
+def create_species_noise(map_seed: MapDecorationSeed) -> NoiseGenerator:
+    """Create the noise generator used for spatial species biome variation.
+
+    The seed is derived from *map_seed* via XOR so it is uncorrelated with
+    both the density noise (seeded from the RNG stream) and the decoration
+    noise (map_seed itself).
+    """
+    return NoiseGenerator(
+        seed=int(map_seed) ^ config.TREE_SPECIES_SEED_XOR,
+        noise_type=NoiseType.OPENSIMPLEX2,
+        frequency=config.TREE_SPECIES_NOISE_FREQUENCY,
+        fractal_type=FractalType.FBM,
+        octaves=config.TREE_SPECIES_NOISE_OCTAVES,
+    )
+
+
+def archetype_for_position(
     x: WorldTileCoord,
     y: WorldTileCoord,
     map_seed: MapDecorationSeed,
+    species_noise: NoiseGenerator,
 ) -> TreeArchetype:
-    """Pick tree archetype using the same spatial hash as the game world.
+    """Pick tree archetype using spatial hash + species noise.
 
-    Distribution: 55% deciduous, 20% conifer, 15% dead, 10% sapling.
-    Mirrors the logic in ``GameWorld._place_tree_actors``.
+    Dead trees (15%) and saplings (10%) are assigned at fixed rates
+    everywhere. The remaining 75% of trees are split between deciduous
+    and conifer based on a species noise field: high-noise areas skew
+    conifer ("pine groves"), low-noise areas skew deciduous ("hardwood
+    groves"), and neutral areas preserve the base ~27% conifer ratio.
+
+    Args:
+        x: World tile x coordinate.
+        y: World tile y coordinate.
+        map_seed: Map decoration seed for deterministic hashing.
+        species_noise: Pre-created noise generator from ``create_species_noise``.
     """
-    tree_hash = ((int(x) * 73856093) ^ (int(y) * 19349663) ^ int(map_seed)) & 0xFFFFFFFF
-    r = tree_hash % 20
-    if r < 11:
-        return TreeArchetype.DECIDUOUS
-    if r < 15:
-        return TreeArchetype.CONIFER
-    if r < 18:
+    h = _tree_hash(x, y, map_seed)
+    health_r = h % 20
+
+    # Fixed-rate non-living archetypes (same everywhere on the map).
+    if health_r >= 18:  # 10% sapling
+        return TreeArchetype.SAPLING
+    if health_r >= 15:  # 15% dead
         return TreeArchetype.DEAD
-    return TreeArchetype.SAPLING
+
+    # Living tree: species noise biases the deciduous/conifer split.
+    # Sample noise in [-1, 1] and shift the base conifer fraction.
+    species_val = species_noise.sample(float(x), float(y))
+    conifer_prob = max(
+        0.0, min(1.0, _BASE_CONIFER_FRACTION + species_val * _SPECIES_NOISE_SPREAD)
+    )
+
+    # Use upper bits of the spatial hash as the per-tree species coin flip,
+    # independent of the health_r bucket (which used the lower bits).
+    species_frac = ((h >> 8) & 0xFFFF) / 65535.0
+    if species_frac < conifer_prob:
+        return TreeArchetype.CONIFER
+    return TreeArchetype.DECIDUOUS
 
 
 def _paste_sprite(
@@ -1467,8 +1529,7 @@ def generate_preview_sheet(
     """Generate a preview sheet of trees as they would appear in the game.
 
     Each cell simulates a tree at a unique world coordinate, using the same
-    spatial-hash archetype distribution (55% deciduous, 20% conifer, 15%
-    dead, 10% sapling) and the same ``generate_tree_sprite_for_position``
+    noise-modulated archetype distribution and ``generate_tree_sprite_for_position``
     path that the real game uses.
 
     Args:
@@ -1489,6 +1550,8 @@ def generate_preview_sheet(
     sheet = np.zeros((sheet_h, sheet_w, 4), dtype=np.uint8)
     sheet[:, :] = bg_color
 
+    species_noise = create_species_noise(map_seed)
+
     for idx in range(columns * rows):
         col = idx % columns
         row = idx // columns
@@ -1496,7 +1559,7 @@ def generate_preview_sheet(
         # Treat (col, row) as a world tile position so every cell gets
         # a unique, deterministic tree identical to what the game produces.
         x, y = col, row
-        archetype = _archetype_for_position(x, y, map_seed)
+        archetype = archetype_for_position(x, y, map_seed, species_noise)
         sprite = generate_tree_sprite_for_position(x, y, map_seed, archetype, base_size)
         sh, sw = sprite.shape[:2]
 

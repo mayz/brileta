@@ -10,6 +10,9 @@ Places trees in two distinct passes to create natural-looking settlements:
    and along streets - yard trees, hedgerows, and landscaping that make
    the built environment feel lived-in.
 
+A low-frequency noise field modulates placement density per tile, creating
+organic groves and clearings instead of uniform random scatter.
+
 The split creates the visual effect of dense tree borders surrounding a
 more open, deliberately planted settlement interior.
 """
@@ -26,6 +29,7 @@ from brileta.environment.generators.pipeline.layer import GenerationLayer
 from brileta.environment.tile_types import TileTypeID
 from brileta.types import WorldTilePos
 from brileta.util import rng
+from brileta.util.noise import FractalType, NoiseGenerator, NoiseType
 
 _rng = rng.get("map.trees")
 
@@ -79,6 +83,17 @@ class TreePlacementLayer(GenerationLayer):
         Args:
             ctx: The generation context to modify.
         """
+        # Create density noise field for grove/clearing modulation.
+        # Seed is derived from the tree RNG stream so it's deterministic
+        # from the master seed but independent of placement roll order.
+        density_noise = NoiseGenerator(
+            seed=_rng.getrandbits(32),
+            noise_type=NoiseType.OPENSIMPLEX2,
+            frequency=config.TREE_DENSITY_NOISE_FREQUENCY,
+            fractal_type=FractalType.FBM,
+            octaves=config.TREE_DENSITY_NOISE_OCTAVES,
+        )
+
         # Pre-compute tile sets for fast lookup during placement.
         building_tiles = self._collect_building_tiles(ctx)
         street_tiles = self._collect_street_tiles(ctx)
@@ -102,6 +117,7 @@ class TreePlacementLayer(GenerationLayer):
         self._place_trees(
             ctx,
             density=self.wild_density,
+            density_noise=density_noise,
             eligible=lambda pos: (
                 pos not in settlement_zone
                 and pos not in building_buffer
@@ -113,6 +129,7 @@ class TreePlacementLayer(GenerationLayer):
         self._place_trees(
             ctx,
             density=self.yard_density,
+            density_noise=density_noise,
             eligible=lambda pos: (
                 pos in settlement_zone
                 and pos not in building_tiles
@@ -125,13 +142,21 @@ class TreePlacementLayer(GenerationLayer):
         self,
         ctx: GenerationContext,
         density: float,
+        density_noise: NoiseGenerator,
         eligible: Callable[[WorldTilePos], bool],
     ) -> None:
-        """Place trees on eligible tiles at the given density.
+        """Place trees on eligible tiles with noise-modulated density.
+
+        The base density is scaled per tile by a noise field so that high-noise
+        areas get up to 3x density (dense groves) and low-noise areas drop to
+        0 (natural clearings). The 1.5x scaling lifts average density ~50%
+        above the base, which is intentional - groves need enough peak density
+        to read as clusters at the base rates used in config.
 
         Args:
             ctx: The generation context to modify.
-            density: Probability of placing a tree on each eligible tile.
+            density: Base probability of placing a tree on each eligible tile.
+            density_noise: Noise generator for spatial density modulation.
             eligible: Callable that takes a WorldTilePos and returns True
                 if a tree can be placed there.
         """
@@ -147,7 +172,14 @@ class TreePlacementLayer(GenerationLayer):
                 if not eligible(pos):
                     continue
 
-                if _rng.random() < density:
+                # Sample noise in [-1, 1] and remap to a density multiplier
+                # in [0, 3]. The +1 shift centers the range at 1.5x, but
+                # the extra headroom lets grove peaks reach 3x base density
+                # while clearings still bottom out at 0.
+                noise_val = density_noise.sample(float(x), float(y))
+                density_multiplier = max(0.0, (noise_val + 1.0) * 1.5)
+
+                if _rng.random() < density * density_multiplier:
                     ctx.tree_positions.append(pos)
                     existing_positions.add(pos)
 

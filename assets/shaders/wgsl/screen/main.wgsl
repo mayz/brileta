@@ -225,7 +225,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
                 + max(-front, 0.0) * 0.50
                 + max(-directional_lobe, 0.0) * 0.42
             );
-            let modifier = clamp(1.0 + lit - shaded, 0.28, 1.44);
+            let modifier = clamp(1.0 + lit - shaded, 0.28, 1.22);
             sampled_color = vec4f(sampled_color.rgb * modifier, sampled_color.a);
         }
     } else {
