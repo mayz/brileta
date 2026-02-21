@@ -179,6 +179,7 @@ class Actor:
         character_layers: list[CharacterLayer] | None = None,
         sprite_uv: SpriteUV | None = None,
         sprite_ground_anchor_y: float = 1.0,
+        cover_bonus: int = 0,
     ) -> None:
         # === Core Identity & World Presence ===
         self.actor_id: ActorId = Actor._next_actor_id
@@ -211,6 +212,8 @@ class Actor:
         self.gw = game_world
         self.blocks_movement = blocks_movement
         self.shadow_height = shadow_height
+        # Defensive bonus this actor grants to adjacent targets.
+        self.cover_bonus = cover_bonus
 
         # === Core Data Components ===
         self.stats = stats

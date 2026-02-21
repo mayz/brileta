@@ -168,3 +168,20 @@ def test_move_blocked_by_container() -> None:
     assert result.block_reason == ActionBlockReason.STEP_BLOCKED
     assert result.step_block == StepBlock.BLOCKED_BY_CONTAINER
     assert result.blocked_by is container
+
+
+def test_move_blocked_by_boulder() -> None:
+    """Moving into a Boulder reports STEP_BLOCKED/BLOCKED_BY_ACTOR."""
+    from brileta.game.actors.boulder import Boulder
+
+    controller, player = make_world()
+    boulder = Boulder(1, 0, game_world=cast(GameWorld, controller.gw))
+    controller.gw.add_actor(boulder)
+
+    intent = MoveIntent(cast(Controller, controller), player, dx=1, dy=0)
+    result = MoveExecutor().execute(intent)
+    assert result is not None
+    assert not result.succeeded
+    assert result.block_reason == ActionBlockReason.STEP_BLOCKED
+    assert result.step_block == StepBlock.BLOCKED_BY_ACTOR
+    assert (player.x, player.y) == (0, 0)

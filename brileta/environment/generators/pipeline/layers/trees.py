@@ -51,7 +51,7 @@ class TreePlacementLayer(GenerationLayer):
       (yard trees, hedgerows, property-line trees).
 
     Trees are only placed on plantable outdoor terrain (grass, dirt, gravel)
-    and never on streets, inside buildings, or on top of boulders.
+    and never on streets, inside buildings, or on reserved boulder tiles.
     """
 
     def __init__(
@@ -160,7 +160,7 @@ class TreePlacementLayer(GenerationLayer):
             eligible: Callable that takes a WorldTilePos and returns True
                 if a tree can be placed there.
         """
-        existing_positions = set(ctx.tree_positions)
+        existing_positions = set(ctx.tree_positions) | set(ctx.boulder_positions)
         for x in range(ctx.width):
             for y in range(ctx.height):
                 if ctx.tiles[x, y] not in _PLANTABLE_TERRAIN:

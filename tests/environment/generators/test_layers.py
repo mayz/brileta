@@ -522,7 +522,7 @@ class TestDetailLayer:
     """Tests for DetailLayer."""
 
     def test_places_boulders_in_outdoor_areas(self) -> None:
-        """Boulder tiles only in exterior regions."""
+        """Boulder positions should only land on outdoor terrain."""
         rng.reset("333")
         ctx = GenerationContext.create_empty(width=80, height=80)
 
@@ -534,15 +534,11 @@ class TestDetailLayer:
         layer = DetailLayer(boulder_density=0.1)
         layer.apply(ctx)
 
-        # Find boulder positions
-        boulder_coords = np.argwhere(ctx.tiles == TileTypeID.BOULDER)
-
-        if len(boulder_coords) > 0:
-            for x, y in boulder_coords:
-                # Boulders should not be in the indoor area
-                assert not (30 <= x < 40 and 30 <= y < 40), (
-                    f"Boulder at ({x},{y}) is in indoor area"
-                )
+        for x, y in ctx.boulder_positions:
+            # Boulders should not be in the indoor area
+            assert not (30 <= x < 40 and 30 <= y < 40), (
+                f"Boulder at ({x},{y}) is in indoor area"
+            )
 
     def test_does_not_block_doors(self) -> None:
         """No boulders adjacent to door tiles."""
@@ -572,20 +568,9 @@ class TestDetailLayer:
         )
         layer.apply(ctx)
 
-        # Check no boulders near the building (which includes door)
-        for dx in range(-3, 4):
-            for dy in range(-3, 4):
-                bx, by = door_x + dx, door_y + dy
-                if (
-                    0 <= bx < ctx.width
-                    and 0 <= by < ctx.height
-                    and abs(dx) < 3
-                    and abs(dy) < 3
-                ):
-                    # Inside building buffer - these tiles are avoided by the layer
-                    continue
-                # Note: The layer avoids min_distance from building footprint,
-                # so we just verify boulders exist outside that zone
+        # Check no boulders inside the building avoidance buffer.
+        for bx, by in ctx.boulder_positions:
+            assert abs(bx - door_x) >= 3 or abs(by - door_y) >= 3
 
     def test_respects_boulder_density(self) -> None:
         """Boulder placement probability approximately matches density."""
@@ -598,7 +583,7 @@ class TestDetailLayer:
         layer.apply(ctx)
 
         # Count boulders
-        boulder_count = np.sum(ctx.tiles == TileTypeID.BOULDER)
+        boulder_count = len(ctx.boulder_positions)
         total_tiles = ctx.width * ctx.height
 
         # Should be roughly density * total_tiles, with some variance
@@ -955,21 +940,18 @@ class TestTreePlacementLayer:
         assert ctx1.tree_positions == ctx2.tree_positions
 
     def test_trees_not_placed_on_boulders(self) -> None:
-        """Trees don't overwrite existing boulder tiles."""
+        """Trees avoid coordinates reserved for boulder actor placement."""
         rng.reset("tree6")
         ctx = GenerationContext.create_empty(width=40, height=40)
         ctx.tiles[:, :] = TileTypeID.GRASS
 
-        # Place some boulders first
-        ctx.tiles[10, 10] = TileTypeID.BOULDER
-        ctx.tiles[20, 20] = TileTypeID.BOULDER
+        # Reserve some boulder positions before placing trees.
+        ctx.boulder_positions = [(10, 10), (20, 20)]
 
         layer = TreePlacementLayer(wild_density=0.5, yard_density=0.0)
         layer.apply(ctx)
 
-        # Boulders should still be boulders (BOULDER is not in plantable terrain)
-        assert ctx.tiles[10, 10] == TileTypeID.BOULDER
-        assert ctx.tiles[20, 20] == TileTypeID.BOULDER
+        assert ctx.boulder_positions == [(10, 10), (20, 20)]
         assert (10, 10) not in set(ctx.tree_positions)
         assert (20, 20) not in set(ctx.tree_positions)
 

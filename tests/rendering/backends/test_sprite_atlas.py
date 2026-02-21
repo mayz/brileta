@@ -167,8 +167,9 @@ class TestSpriteAtlasGPU:
         atlas = SpriteAtlas(rm, width=64, height=64)
         atlas.allocate(_make_pixels(10, 8))
 
-        # Two write_texture calls: one for clear, one for the sprite upload.
-        assert rm.queue.write_texture.call_count == 2
+        # Three write_texture calls: clear, sprite upload, bottom-row edge
+        # extension (prevents linear-filter bleed at atlas boundaries).
+        assert rm.queue.write_texture.call_count == 3
 
         # The sprite upload should target origin (0, 0) with size (10, 8).
         sprite_call = rm.queue.write_texture.call_args_list[1]

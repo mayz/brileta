@@ -348,7 +348,17 @@ class SpriteAtlas:
         height: int,
         pixels: np.ndarray,
     ) -> None:
-        """Upload pixel data to a sub-region of the atlas texture."""
+        """Upload pixel data to a sub-region of the atlas texture.
+
+        Also duplicates the bottom row into the 1px padding below the
+        sprite.  The shadow render pass samples sprite silhouettes with a
+        linear-filtering sampler.  Without edge extension, linear filtering
+        at the bottom UV boundary blends opaque sprite pixels with the
+        transparent atlas padding, creating a semi-transparent base edge
+        that shows terrain through as a visible seam.  Duplicating the
+        bottom row into the padding gives the filter the correct color to
+        blend with.
+        """
         assert self._texture is not None
         # Ensure contiguous C-order layout for the GPU upload.
         contiguous = np.ascontiguousarray(pixels, dtype=np.uint8)
@@ -362,3 +372,24 @@ class SpriteAtlas:
             },
             (width, height, 1),
         )
+
+        # Extend bottom row into the PADDING region below the sprite.
+        # Only the bottom edge needs this treatment: the shadow render pass
+        # samples sprite silhouettes with a linear-filtering sampler that
+        # approaches the bottom UV boundary, not the left, right, or top
+        # edges.  If a future render pass samples those edges under linear
+        # filtering, similar extensions will be needed on the other sides.
+        if height > 0 and y + height < self.height:
+            bottom_row = np.ascontiguousarray(
+                pixels[height - 1 : height, :, :], dtype=np.uint8
+            )
+            self._resource_manager.queue.write_texture(
+                {
+                    "texture": self._texture,
+                    "mip_level": 0,
+                    "origin": (x, y + height, 0),
+                },
+                memoryview(bottom_row.tobytes()),
+                {"offset": 0, "bytes_per_row": width * 4, "rows_per_image": 1},
+                (width, 1, 1),
+            )

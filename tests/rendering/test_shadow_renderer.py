@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 from typing import cast
-from unittest.mock import Mock, call
+from unittest.mock import Mock, call, patch
 
 import numpy as np
 import pytest
@@ -463,6 +463,7 @@ def test_sprite_shadow_geometry_respects_ground_anchor() -> None:
     )
 
     corners = graphics.screen_renderer.add_parallelogram.call_args.args[0]
+    # base_y = screen_y + tile_h * anchor_y = 200 + 20*0.6 = 212.0
     assert corners[0] == pytest.approx((98.0, 212.0))
     assert corners[1] == pytest.approx((122.0, 212.0))
 
@@ -942,17 +943,23 @@ def _build_terrain_shadow_view() -> tuple[ShadowRenderer, SimpleNamespace]:
     return renderer, graphics
 
 
-def test_terrain_glyph_shadow_for_boulder() -> None:
-    """Boulder tiles (shadow_height=2) emit glyph shadow quads."""
+def test_terrain_glyph_shadow_for_short_shadow_tile() -> None:
+    """Tiles with shadow_height=2 emit terrain glyph shadow quads."""
     renderer, graphics = _build_terrain_shadow_view()
     game_map = renderer.game_map
 
-    # Place a boulder at (5, 5) and make it visible
-    game_map.tiles[5, 5] = int(TileTypeID.BOULDER)
+    # Simulate a short-height terrain caster at (5, 5).
+    game_map.tiles[5, 5] = int(TileTypeID.FLOOR)
     game_map.visible[5, 5] = True
     game_map.light_appearance_map[5, 5]["ch"] = ord("#")
 
-    renderer._render_terrain_glyph_shadows(tile_height=20.0)
+    fake_heights = np.zeros((game_map.width, game_map.height), dtype=np.uint8)
+    fake_heights[5, 5] = 2
+    with patch(
+        "brileta.view.render.shadow_renderer.get_shadow_height_map",
+        return_value=fake_heights,
+    ):
+        renderer._render_terrain_glyph_shadows(tile_height=20.0)
 
     graphics.draw_actor_shadow.assert_called_once()
     call_kwargs = graphics.draw_actor_shadow.call_args.kwargs
@@ -988,13 +995,19 @@ def test_terrain_glyph_shadow_clipped_by_walls() -> None:
     )
     renderer.set_frame_lighting(directional_light=sun, lights=[sun])
 
-    # Boulder caster at (5,5), tall blocker directly west at (4,5).
-    game_map.tiles[5, 5] = int(TileTypeID.BOULDER)
+    # Short caster at (5,5), tall blocker directly west at (4,5).
+    game_map.tiles[5, 5] = int(TileTypeID.FLOOR)
     game_map.visible[5, 5] = True
     game_map.light_appearance_map[5, 5]["ch"] = ord("#")
     game_map.shadow_heights[4, 5] = 4
 
-    renderer._render_terrain_glyph_shadows(tile_height=20.0)
+    fake_heights = np.zeros((game_map.width, game_map.height), dtype=np.uint8)
+    fake_heights[5, 5] = 2
+    with patch(
+        "brileta.view.render.shadow_renderer.get_shadow_height_map",
+        return_value=fake_heights,
+    ):
+        renderer._render_terrain_glyph_shadows(tile_height=20.0)
 
     graphics.draw_actor_shadow.assert_called_once()
     shadow_length_pixels = graphics.draw_actor_shadow.call_args.kwargs[

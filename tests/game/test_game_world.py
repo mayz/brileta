@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 from brileta import colors
 from brileta.environment.map import MapRegion
-from brileta.game.actors import Actor, Character, ItemPile, Tree, components
+from brileta.game.actors import Actor, Boulder, Character, ItemPile, Tree, components
 from brileta.game.actors.npc_types import DOG_TYPE, RESIDENT_TYPE, TROG_TYPE
 from brileta.game.countables import CountableType
 from brileta.game.enums import ItemSize
@@ -557,6 +557,52 @@ class TestTreeActors:
         assert isinstance(tree1, Tree)
         assert isinstance(tree2, Tree)
         assert tree1.ch == tree2.ch
+
+
+class TestBoulderActors:
+    """Tests for boulder actor placement from generated map positions."""
+
+    def test_place_boulder_actors_spawns_boulders(self) -> None:
+        gw = make_world()
+        gw.boulder_positions = [(3, 4), (8, 9)]
+
+        GameWorld._place_boulder_actors(gw)
+
+        boulders = [actor for actor in gw.actors if isinstance(actor, Boulder)]
+        assert len(boulders) == 2
+        assert isinstance(gw.get_actor_at_location(3, 4), Boulder)
+        assert isinstance(gw.get_actor_at_location(8, 9), Boulder)
+
+    def test_place_boulder_actors_skip_occupied_tiles(self) -> None:
+        gw = make_world()
+        blocker = make_actor(gw, x=6, y=6)
+        gw.add_actor(blocker)
+        gw.boulder_positions = [(6, 6)]
+
+        GameWorld._place_boulder_actors(gw)
+
+        boulders = [actor for actor in gw.actors if isinstance(actor, Boulder)]
+        assert len(boulders) == 0
+        assert gw.get_actor_at_location(6, 6) is blocker
+
+    def test_place_boulder_actors_skip_oob_positions(self) -> None:
+        """Out-of-bounds positions are silently skipped."""
+        gw = make_world()
+        # Map is 30x30 - (100, 100) is out of bounds, (3, 3) is valid.
+        gw.boulder_positions = [(100, 100), (3, 3)]
+
+        GameWorld._place_boulder_actors(gw)
+
+        boulders = [actor for actor in gw.actors if isinstance(actor, Boulder)]
+        assert len(boulders) == 1
+        assert isinstance(gw.get_actor_at_location(3, 3), Boulder)
+
+    def test_boulder_actor_properties(self) -> None:
+        """Boulder has the expected movement-blocking and combat properties."""
+        boulder = Boulder(5, 5)
+        assert boulder.blocks_movement is True
+        assert boulder.cover_bonus == 2
+        assert boulder.shadow_height == 2
 
 
 # ---------------------------------------------------------------------------

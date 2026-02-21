@@ -3,10 +3,9 @@ from typing import cast
 from unittest.mock import patch
 
 from brileta.controller import Controller
-from brileta.environment.tile_types import TileTypeID
 from brileta.game.actions.combat import AttackIntent
 from brileta.game.actions.executors.combat import AttackExecutor
-from brileta.game.actors import Character
+from brileta.game.actors import Boulder, Character
 from brileta.game.enums import OutcomeTier
 from brileta.game.game_world import GameWorld
 from brileta.game.items.item_types import FISTS_TYPE
@@ -30,14 +29,13 @@ class DummyController:
 def test_cover_bonus_reduces_hit_chance() -> None:
     raw_gw = DummyGameWorld()
     gw = cast(GameWorld, raw_gw)
-    gm = raw_gw.game_map
-    gm.tiles[:] = TileTypeID.FLOOR
-    gm.tiles[1, 2] = TileTypeID.BOULDER
 
     attacker = Character(1, 0, "A", (255, 255, 255), "Att", game_world=gw, strength=5)
     defender = Character(1, 1, "D", (255, 255, 255), "Def", game_world=gw)
+    cover = Boulder(1, 2, game_world=gw)
     gw.add_actor(attacker)
     gw.add_actor(defender)
+    gw.add_actor(cover)
 
     weapon = FISTS_TYPE.create()
     attack = weapon.melee_attack

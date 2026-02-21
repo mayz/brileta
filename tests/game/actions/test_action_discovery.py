@@ -988,7 +988,7 @@ def test_no_shoot_actions_for_environmental_tiles() -> None:
     """Shoot actions should NOT appear for any environmental tiles.
 
     No tiles in the game are currently destructible, so no shoot actions
-    should be offered for walls, doors, boulders, or any other tiles.
+    should be offered for walls, doors, terrain, or any other tiles.
     """
     gw = DummyGameWorld()
     player = Character(
@@ -1031,14 +1031,14 @@ def test_no_shoot_actions_for_environmental_tiles() -> None:
     door_shoot_opts = [o for o in door_opts if "Shoot" in o.name]
     assert len(door_shoot_opts) == 0, "Closed door should NOT have shoot action"
 
-    # Test 3: Boulder should NOT have shoot action
-    gw.game_map.tiles[5, 0] = TileTypeID.BOULDER
-    gw.game_map.walkable[5, 0] = False
-    boulder_opts = disc.environment_discovery.discover_environment_actions_for_tile(
+    # Test 3: Gravel should NOT have shoot action
+    gw.game_map.tiles[5, 0] = TileTypeID.GRAVEL
+    gw.game_map.walkable[5, 0] = True
+    gravel_opts = disc.environment_discovery.discover_environment_actions_for_tile(
         cast(Controller, controller), player, ctx, 5, 0
     )
-    boulder_shoot_opts = [o for o in boulder_opts if "Shoot" in o.name]
-    assert len(boulder_shoot_opts) == 0, "Boulder should NOT have shoot action"
+    gravel_shoot_opts = [o for o in gravel_opts if "Shoot" in o.name]
+    assert len(gravel_shoot_opts) == 0, "Gravel should NOT have shoot action"
 
     # Test 4: Open door should NOT have shoot action
     gw.game_map.tiles[6, 0] = TileTypeID.DOOR_OPEN

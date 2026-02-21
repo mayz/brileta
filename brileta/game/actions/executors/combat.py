@@ -466,13 +466,14 @@ class AttackExecutor(ActionExecutor[AttackIntent]):
     def _adjacent_cover_bonus(self, intent: AttackIntent) -> int:
         """Return the highest cover bonus adjacent to the defender."""
         assert intent.defender is not None  # Tile shots handled separately
+        game_world = intent.controller.gw
         game_map = intent.controller.gw.game_map
         max_bonus = 0
         x, y = intent.defender.x, intent.defender.y
 
         # Cover checks are infrequent, so we prioritize memory usage over
-        # lookup speed by querying tile types directly rather than caching a
-        # full map of bonuses.
+        # lookup speed by querying nearby tiles/actors directly rather than
+        # caching full cover maps.
         for dx, dy in DIRECTIONS:
             nx, ny = x + dx, y + dy
             if 0 <= nx < game_map.width and 0 <= ny < game_map.height:
@@ -480,6 +481,8 @@ class AttackExecutor(ActionExecutor[AttackIntent]):
                 tile_data = tile_types.get_tile_type_data_by_id(int(tile_id))
                 bonus = int(tile_data["cover_bonus"])
                 max_bonus = max(max_bonus, bonus)
+                for actor in game_world.actor_spatial_index.get_at_point(nx, ny):
+                    max_bonus = max(max_bonus, int(getattr(actor, "cover_bonus", 0)))
 
         return max_bonus
 

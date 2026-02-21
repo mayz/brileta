@@ -51,10 +51,6 @@ class TestGetTileMaterial:
         """Test that open doors return wood material."""
         assert get_tile_material(TileTypeID.DOOR_OPEN) == ImpactMaterial.WOOD
 
-    def test_boulder_is_stone(self) -> None:
-        """Test that boulders return stone material."""
-        assert get_tile_material(TileTypeID.BOULDER) == ImpactMaterial.STONE
-
     def test_invalid_tile_id_returns_stone(self) -> None:
         """Test that invalid tile IDs default to stone."""
         assert get_tile_material(999) == ImpactMaterial.STONE

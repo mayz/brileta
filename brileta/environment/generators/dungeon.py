@@ -15,7 +15,7 @@ from brileta.util.coordinates import Rect
 from .base import BaseMapGenerator, GeneratedMapData
 
 if TYPE_CHECKING:
-    from brileta.types import TileCoord, WorldTileCoord
+    from brileta.types import TileCoord, WorldTileCoord, WorldTilePos
 
 _rng = rng.get("map.dungeon")
 
@@ -97,12 +97,15 @@ class RoomsAndCorridorsGenerator(BaseMapGenerator):
                 ):
                     self._place_door(tiles, x, y)
 
-    def _place_cover_in_room(self, tiles: np.ndarray, room: Rect) -> None:
+    def _place_cover_in_room(
+        self, tiles: np.ndarray, room: Rect
+    ) -> WorldTilePos | None:
         if _rng.random() < 0.4:
             x = _rng.randint(room.x1 + 1, room.x2 - 2)
             y = _rng.randint(room.y1 + 1, room.y2 - 2)
             if tiles[x, y] == TileTypeID.FLOOR:
-                tiles[x, y] = TileTypeID.BOULDER
+                return (x, y)
+        return None
 
     def generate(self) -> GeneratedMapData:
         tiles = np.full(
@@ -118,6 +121,8 @@ class RoomsAndCorridorsGenerator(BaseMapGenerator):
         )
 
         rooms: list[Rect] = []
+        boulder_positions: list[WorldTilePos] = []
+        boulder_set: set[WorldTilePos] = set()
         next_region_id = 0
         first_room = None
 
@@ -170,7 +175,11 @@ class RoomsAndCorridorsGenerator(BaseMapGenerator):
 
         self._place_doors_at_room_entrances(tiles, rooms)
         for room in rooms:
-            self._place_cover_in_room(tiles, room)
+            if (
+                pos := self._place_cover_in_room(tiles, room)
+            ) and pos not in boulder_set:
+                boulder_positions.append(pos)
+                boulder_set.add(pos)
 
         # Identify hallway regions using BFS/flood fill
         visited = np.full(
@@ -236,5 +245,8 @@ class RoomsAndCorridorsGenerator(BaseMapGenerator):
                         regions[b].connections[a] = (x, y)
 
         return GeneratedMapData(
-            tiles=tiles, regions=regions, tile_to_region_id=tile_to_region_id
+            tiles=tiles,
+            regions=regions,
+            tile_to_region_id=tile_to_region_id,
+            boulder_positions=boulder_positions,
         )

@@ -279,8 +279,8 @@ class Controller:
         # Initialize GPU lighting system
         self.gw.lighting_system = GPULightingSystem(self.gw, self.graphics)
 
-        # Generate procedural tree sprites and upload to the GPU sprite atlas.
-        self._generate_tree_sprites()
+        # Generate procedural sprites for trees and boulders; upload to GPU atlas.
+        self._generate_environmental_sprites()
 
         # Create the player's torch - automatically disabled in sunlit outdoor areas
         self._player_torch = DynamicLight.create_player_torch(self.gw.player)
@@ -298,21 +298,36 @@ class Controller:
         if self._systems_initialized:
             self._reset_for_new_world()
 
-    def _generate_tree_sprites(self) -> None:
-        """Generate procedural sprites for tree actors and upload to the atlas.
+    def _generate_environmental_sprites(self) -> None:
+        """Generate procedural sprites for static environmental actors.
 
-        Iterates every Tree actor in the current world, generates a pixel
-        sprite based on its archetype and position hash, packs it into a
-        fresh sprite atlas, and binds the atlas texture for screen rendering.
+        Generates deterministic sprites for tree and boulder actors, packs them
+        into one fresh sprite atlas, then binds that atlas for rendering.
         """
+        from brileta.game.actors.boulder import Boulder
+        from brileta.game.actors.boulder_sprites import (
+            archetype_for_position as boulder_archetype_for_position,
+        )
+        from brileta.game.actors.boulder_sprites import (
+            generate_boulder_sprite_for_position,
+        )
+        from brileta.game.actors.boulder_sprites import (
+            shadow_height_for_archetype as boulder_shadow_height,
+        )
+        from brileta.game.actors.boulder_sprites import (
+            visual_scale_with_height_jitter as boulder_visual_scale_with_height_jitter,
+        )
         from brileta.game.actors.tree_sprites import (
             generate_tree_sprite_for_position,
-            visual_scale_with_height_jitter,
+        )
+        from brileta.game.actors.tree_sprites import (
+            visual_scale_with_height_jitter as tree_visual_scale_with_height_jitter,
         )
         from brileta.game.actors.trees import Tree
 
         trees = [a for a in self.gw.actors if isinstance(a, Tree)]
-        if not trees:
+        boulders = [a for a in self.gw.actors if isinstance(a, Boulder)]
+        if not trees and not boulders:
             return
 
         create_sprite_atlas = getattr(self.graphics, "create_sprite_atlas", None)
@@ -344,11 +359,32 @@ class Controller:
                 tree.sprite_uv = uv
                 # Match rendered height to physical shadow-height semantics
                 # so shadows and sprite size feel physically plausible.
-                tree.visual_scale = visual_scale_with_height_jitter(
+                tree.visual_scale = tree_visual_scale_with_height_jitter(
                     sprite,
                     tree.shadow_height,
                     tree.x,
                     tree.y,
+                    map_seed,
+                )
+        for boulder in boulders:
+            archetype = boulder_archetype_for_position(boulder.x, boulder.y, map_seed)
+            # Set physical shadow height per archetype BEFORE computing
+            # visual_scale, so shape differences survive scale normalization.
+            boulder.shadow_height = boulder_shadow_height(archetype)
+            sprite = generate_boulder_sprite_for_position(
+                boulder.x,
+                boulder.y,
+                map_seed,
+                archetype,
+            )
+            uv = atlas.allocate(sprite)
+            if uv is not None:
+                boulder.sprite_uv = uv
+                boulder.visual_scale = boulder_visual_scale_with_height_jitter(
+                    sprite,
+                    boulder.shadow_height,
+                    boulder.x,
+                    boulder.y,
                     map_seed,
                 )
 
@@ -359,8 +395,9 @@ class Controller:
             set_sprite_atlas_texture(atlas.texture)
 
         logger.info(
-            "Generated %d tree sprites (%d atlas allocations)",
+            "Generated %d tree sprites, %d boulder sprites (%d atlas allocations)",
             len(trees),
+            len(boulders),
             atlas.allocated_count,
         )
 

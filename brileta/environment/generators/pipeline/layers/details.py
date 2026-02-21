@@ -1,8 +1,7 @@
-"""Detail layer for adding environmental decorations.
+"""Detail layer for adding environmental decoration placement.
 
-This layer adds finishing touches to the map like boulders, vegetation,
-and other environmental features that don't affect gameplay significantly
-but add visual variety.
+This layer currently records boulder spawn positions for later actor
+materialization. The underlying terrain tile remains unchanged.
 """
 
 from __future__ import annotations
@@ -19,11 +18,11 @@ _rng = rng.get("map.details")
 class DetailLayer(GenerationLayer):
     """Adds environmental details like boulders to outdoor areas.
 
-    This layer scatters details across the map, avoiding buildings and
-    ensuring details are placed on appropriate terrain.
+    This layer records boulder actor spawn positions across outdoor terrain
+    while avoiding buildings and existing tree placements.
 
     Features:
-    - Boulders in outdoor areas
+    - Boulder actor spawn positions in outdoor areas
     - Future: vegetation, debris, etc.
     """
 
@@ -63,24 +62,35 @@ class DetailLayer(GenerationLayer):
                 ):
                     avoided_tiles.add((x, y))
 
-        # Place boulders on outdoor tiles
+        # Place boulders on outdoor tiles.
         outdoor_tiles = {
             TileTypeID.COBBLESTONE,
             TileTypeID.GRASS,
             TileTypeID.DIRT_PATH,
             TileTypeID.GRAVEL,
         }
+        # Seed with existing tree positions so boulders never land on a tree.
+        # (boulder_positions is empty when DetailLayer runs; new positions are
+        # added incrementally below as each boulder is chosen.)
+        reserved_positions: set[WorldTilePos] = set(ctx.tree_positions)
 
         for x in range(ctx.width):
             for y in range(ctx.height):
+                pos: WorldTilePos = (x, y)
+
                 # Skip if near buildings
-                if (x, y) in avoided_tiles:
+                if pos in avoided_tiles:
                     continue
 
                 # Only place on outdoor tiles
                 if ctx.tiles[x, y] not in outdoor_tiles:
                     continue
 
+                # Keep boulders from overlapping other decoration actors.
+                if pos in reserved_positions:
+                    continue
+
                 # Random chance to place boulder
                 if _rng.random() < self.boulder_density:
-                    ctx.tiles[x, y] = TileTypeID.BOULDER
+                    ctx.boulder_positions.append(pos)
+                    reserved_positions.add(pos)

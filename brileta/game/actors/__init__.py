@@ -6,8 +6,20 @@ and state of game actors.
 # Export the submodules themselves for access to concrete implementations.
 # Expose the core actor classes and base classes directly.
 # These form the main, stable API of the package.
-from . import ai, components, conditions, container, status_effects, tree_sprites, trees
+from . import (
+    ai,
+    boulder,
+    boulder_sprites,
+    components,
+    conditions,
+    container,
+    status_effects,
+    tree_sprites,
+    trees,
+)
 from .ai import AIComponent
+from .boulder import Boulder
+from .boulder_sprites import BoulderArchetype
 from .conditions import Condition
 from .container import (
     Container,
@@ -37,6 +49,8 @@ __all__ = [
     "NPC",
     "Container",
     "ItemPile",
+    "Boulder",
+    "BoulderArchetype",
     "Tree",
     # Sprite Generation
     "TreeArchetype",
@@ -55,6 +69,8 @@ __all__ = [
     "StatusEffect",
     # Submodules for concrete implementations
     "ai",
+    "boulder",
+    "boulder_sprites",
     "components",
     "conditions",
     "container",

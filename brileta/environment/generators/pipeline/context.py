@@ -58,6 +58,7 @@ class GenerationContext:
         buildings: List of Building objects placed on the map.
         street_data: Street network data for building placement and door orientation.
         tree_positions: World positions where tree actors should be spawned.
+        boulder_positions: World positions where boulder actors should be spawned.
     """
 
     width: int
@@ -68,6 +69,7 @@ class GenerationContext:
     buildings: list[Building] = field(default_factory=list)
     street_data: StreetData = field(default_factory=StreetData)
     tree_positions: list[WorldTilePos] = field(default_factory=list)
+    boulder_positions: list[WorldTilePos] = field(default_factory=list)
     _next_region_id: int = 0
 
     @classmethod
@@ -147,5 +149,6 @@ class GenerationContext:
             buildings=self.buildings,
             streets=self.street_data.streets,
             tree_positions=self.tree_positions,
+            boulder_positions=self.boulder_positions,
             decoration_seed=decoration_seed,
         )

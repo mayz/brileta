@@ -11,6 +11,7 @@ from brileta.game.actors import (
     NPC,
     PC,
     Actor,
+    Boulder,
     Character,
     ItemPile,
     TreeArchetype,
@@ -102,10 +103,11 @@ class GameWorld:
         self.generator_type = generator_type
         self.seed = seed
 
-        # Settlement-specific data (populated by _generate_map for settlements)
+        # Generator-specific decoration placement caches.
         self.buildings: list[Building] = []
         self.streets: list[Rect] = []
         self.tree_positions: list[WorldTilePos] = []
+        self.boulder_positions: list[WorldTilePos] = []
 
         # Attempt map generation with retry if no valid spawn point exists
         for attempt in range(self.MAX_MAP_REGENERATION_ATTEMPTS):
@@ -142,6 +144,7 @@ class GameWorld:
 
         self._place_containers(rooms)
         self._place_tree_actors()
+        self._place_boulder_actors()
 
         if not config.IS_TEST_ENVIRONMENT:
             self._add_test_fire(rooms)
@@ -310,6 +313,7 @@ class GameWorld:
             self.buildings = map_data.buildings
             self.streets = map_data.streets
             self.tree_positions = map_data.tree_positions
+            self.boulder_positions = map_data.boulder_positions
 
             # For settlements, use building regions as spawn points
             building_regions = [
@@ -346,6 +350,7 @@ class GameWorld:
         room_regions = [r for r in map_data.regions.values() if r.region_type == "room"]
         room_rects = [r.bounds[0] for r in room_regions if r.bounds]
         self.tree_positions = []
+        self.boulder_positions = map_data.boulder_positions
 
         return game_map, room_rects
 
@@ -1197,6 +1202,21 @@ class GameWorld:
                 tree_type=archetype,
             )
             self.add_actor(tree_actor)
+
+    def _place_boulder_actors(self) -> None:
+        """Spawn boulder actors from generator output positions."""
+        if not self.boulder_positions:
+            return
+
+        for x, y in self.boulder_positions:
+            if not (0 <= x < self.game_map.width and 0 <= y < self.game_map.height):
+                continue
+            if not self.game_map.walkable[x, y]:
+                continue
+            if self.get_actor_at_location(x, y) is not None:
+                continue
+
+            self.add_actor(Boulder(x=x, y=y, game_world=self))
 
     def _add_starting_room_items(self, room: Rect) -> None:
         """Place discoverable items in the starting room.

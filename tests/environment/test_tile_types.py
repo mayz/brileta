@@ -24,13 +24,6 @@ def test_get_tile_type_data_by_id():
         tile_types.get_tile_type_data_by_id(99)
 
 
-def test_boulder_properties() -> None:
-    boulder = tile_types.get_tile_type_data_by_id(TileTypeID.BOULDER)
-    assert boulder["transparent"]
-    assert boulder["shadow_height"] == 2
-    assert boulder["cover_bonus"] == 2
-
-
 def test_all_tile_types_have_registered_data() -> None:
     """Ensure every TileTypeID enum value has corresponding data registered."""
     for tile_id in TileTypeID:
@@ -62,7 +55,6 @@ def test_get_tile_material() -> None:
     # Walls and floors are stone
     assert get_tile_material(TileTypeID.WALL) == ImpactMaterial.STONE
     assert get_tile_material(TileTypeID.FLOOR) == ImpactMaterial.STONE
-    assert get_tile_material(TileTypeID.BOULDER) == ImpactMaterial.STONE
 
 
 def test_all_tiles_have_valid_material() -> None:
@@ -180,7 +172,7 @@ def test_get_shadow_height_map_basic() -> None:
     ids = np.array(
         [
             [TileTypeID.FLOOR, TileTypeID.WALL],
-            [TileTypeID.BOULDER, TileTypeID.DOOR_CLOSED],
+            [TileTypeID.GRASS, TileTypeID.DOOR_CLOSED],
         ]
     )
     heights = tile_types.get_shadow_height_map(ids)
@@ -189,7 +181,7 @@ def test_get_shadow_height_map_basic() -> None:
     assert heights.shape == ids.shape
     assert heights[0, 0] == 0  # FLOOR - no shadow
     assert heights[0, 1] == 4  # WALL - tall shadow
-    assert heights[1, 0] == 2  # BOULDER - short shadow
+    assert heights[1, 0] == 0  # GRASS - no shadow
     assert heights[1, 1] == 4  # DOOR_CLOSED - tall shadow
 
 
@@ -221,13 +213,15 @@ def test_shadow_height_tiles_are_correct() -> None:
         TileTypeID.WALL: 4,
         TileTypeID.DOOR_CLOSED: 4,  # Door is set in a wall - same shadow as building
         TileTypeID.DOOR_OPEN: 4,  # Doorframe and wall above still cast building shadow
-        TileTypeID.BOULDER: 2,
     }
 
     # These tiles should have zero shadow height
     no_shadow_tiles = [
         TileTypeID.FLOOR,
         TileTypeID.COBBLESTONE,
+        TileTypeID.GRASS,
+        TileTypeID.DIRT_PATH,
+        TileTypeID.GRAVEL,
         TileTypeID.ACID_POOL,
         TileTypeID.HOT_COALS,
     ]

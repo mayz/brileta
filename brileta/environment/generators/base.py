@@ -27,6 +27,7 @@ class GeneratedMapData:
         buildings: List of Building objects (for settlement maps).
         streets: List of Rect objects representing street areas (for settlement maps).
         tree_positions: World positions where tree actors should be spawned.
+        boulder_positions: World positions where boulder actors should be spawned.
     """
 
     tiles: np.ndarray
@@ -35,6 +36,7 @@ class GeneratedMapData:
     buildings: list[Building] = field(default_factory=list)
     streets: list[Rect] = field(default_factory=list)
     tree_positions: list[WorldTilePos] = field(default_factory=list)
+    boulder_positions: list[WorldTilePos] = field(default_factory=list)
     decoration_seed: int = 0
 
 

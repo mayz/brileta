@@ -104,13 +104,14 @@ class ActionContextBuilder:
         """Return the highest cover bonus adjacent to the defender."""
         from brileta.environment import tile_types
 
+        game_world = controller.gw
         game_map = controller.gw.game_map
         max_bonus = 0
         x, y = defender.x, defender.y
 
         # Cover checks are infrequent, so we prioritize memory usage over
-        # lookup speed by querying tile types directly rather than caching a
-        # full map of bonuses.
+        # lookup speed by querying nearby tiles/actors directly rather than
+        # caching full cover maps.
         for dx, dy in DIRECTIONS:
             nx, ny = x + dx, y + dy
             if 0 <= nx < game_map.width and 0 <= ny < game_map.height:
@@ -118,5 +119,7 @@ class ActionContextBuilder:
                 tile_data = tile_types.get_tile_type_data_by_id(int(tile_id))
                 bonus = int(tile_data["cover_bonus"])
                 max_bonus = max(max_bonus, bonus)
+                for actor in game_world.actor_spatial_index.get_at_point(nx, ny):
+                    max_bonus = max(max_bonus, int(getattr(actor, "cover_bonus", 0)))
 
         return max_bonus

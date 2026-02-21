@@ -47,7 +47,6 @@ class TileTypeID(IntEnum):
     COBBLESTONE = auto()
     DOOR_CLOSED = auto()
     DOOR_OPEN = auto()
-    BOULDER = auto()
     # Outdoor terrain variety
     GRASS = auto()
     DIRT_PATH = auto()
@@ -326,20 +325,6 @@ register_tile_type(
         shadow_height=4,  # Doorframe and wall above still cast building shadow
         dark=(ord("'"), colors.ORANGE, colors.DARK_GROUND),
         light=(ord("'"), colors.LIGHT_ORANGE, colors.LIGHT_GROUND),
-    ),
-)
-
-register_tile_type(
-    TileTypeID.BOULDER,
-    make_tile_type_data(
-        walkable=False,
-        transparent=True,
-        display_name="Boulder",
-        material=ImpactMaterial.STONE,
-        cover_bonus=2,
-        shadow_height=2,
-        dark=(ord("#"), colors.DARK_GREY, colors.DARK_GROUND),
-        light=(ord("#"), colors.LIGHT_GREY, colors.LIGHT_GROUND),
     ),
 )
 

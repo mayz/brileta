@@ -170,12 +170,12 @@ class GameMap:
         # Create a copy so we can modify it
         appearance_map = appearance_map.copy()
 
-        # Apply region-aware background colors for specific tile types
-        # Boulders and floor tiles inherit ground color from their region.
+        # Apply region-aware background colors for specific tile types.
+        # Floor tiles inherit ground color from their region.
         # Doors use standard tile colors to match surrounding walls.
         if self.regions:
             # Mask for tiles that need regional coloring
-            special_mask = np.isin(self.tiles, [TileTypeID.BOULDER, TileTypeID.FLOOR])
+            special_mask = self.tiles == TileTypeID.FLOOR
 
             # Apply colors per-region (iterate small dict, not large grid)
             for region_id, region in self.regions.items():
@@ -242,7 +242,7 @@ class GameMap:
         """uint8 array of shape (width, height) with per-tile shadow height.
 
         0 means the tile casts no shadow. Higher values mean the tile is taller
-        and casts a longer shadow (e.g., 4 for walls, 2 for boulders).
+        and casts a longer shadow (e.g., 4 for walls).
 
         Used by the lighting system for height-aware shadow casting.
         """
