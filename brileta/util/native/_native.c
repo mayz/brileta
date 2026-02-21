@@ -17,6 +17,8 @@ PyObject *brileta_native_fov(PyObject *self, PyObject *args);
 PyObject *brileta_native_wfc_solve(PyObject *self, PyObject *args);
 /* Popcount table initializer provided by _native_wfc.c. */
 void brileta_native_init_popcount_table(void);
+/* Noise type registration provided by _native_noise.c. */
+int brileta_native_init_noise_type(PyObject *module);
 /* Shared native WFC contradiction exception type. */
 PyObject *brileta_native_wfc_contradiction_error = NULL;
 
@@ -68,6 +70,12 @@ PyMODINIT_FUNC PyInit__native(void) {
         ) < 0) {
         Py_DECREF(brileta_native_wfc_contradiction_error);
         brileta_native_wfc_contradiction_error = NULL;
+        Py_DECREF(m);
+        return NULL;
+    }
+
+    /* Register the _NoiseState type (FastNoiseLite wrapper). */
+    if (brileta_native_init_noise_type(m) < 0) {
         Py_DECREF(m);
         return NULL;
     }
