@@ -405,70 +405,6 @@ class WorldView(View):
         px_top += offset_y_pixels
         px_bottom += offset_y_pixels
 
-        if config.ATMOSPHERIC_EFFECTS_ENABLED:
-            with record_time_live_variable("time.render.atmospheric_ms"):
-                active_layers = self.atmospheric_system.get_active_layers()
-                # Render mist first, then shadows, to keep shadows readable on top.
-                active_layers.sort(
-                    key=lambda layer_state: (
-                        0 if layer_state[0].blend_mode == "lighten" else 1
-                    )
-                )
-                sky_exposure_texture = None
-                explored_texture = None
-                visible_texture = None
-                if self.lighting_system is not None:
-                    get_sky_exposure_texture = getattr(
-                        self.lighting_system, "get_sky_exposure_texture", None
-                    )
-                    if callable(get_sky_exposure_texture):
-                        sky_exposure_texture = get_sky_exposure_texture()
-                    get_explored_texture = getattr(
-                        self.lighting_system, "get_explored_texture", None
-                    )
-                    if callable(get_explored_texture):
-                        explored_texture = get_explored_texture()
-                    get_visible_texture = getattr(
-                        self.lighting_system, "get_visible_texture", None
-                    )
-                    if callable(get_visible_texture):
-                        visible_texture = get_visible_texture()
-
-                for layer, state in active_layers:
-                    effective_strength = layer.strength
-                    if layer.disable_when_overcast:
-                        coverage = self.atmospheric_system.config.cloud_coverage
-                        # Keep a baseline shadow presence while still responding to
-                        # coverage.
-                        coverage_scale = 0.35 + 0.65 * (1.0 - coverage)
-                        effective_strength *= max(0.0, min(1.0, coverage_scale))
-
-                    graphics.set_atmospheric_layer(
-                        viewport_offset,
-                        viewport_size,
-                        map_size,
-                        layer.sky_exposure_threshold,
-                        sky_exposure_texture,
-                        explored_texture,
-                        visible_texture,
-                        layer.noise_scale,
-                        layer.noise_threshold_low,
-                        layer.noise_threshold_high,
-                        effective_strength,
-                        layer.tint_color,
-                        (state.drift_offset_x, state.drift_offset_y),
-                        state.turbulence_offset,
-                        layer.turbulence_strength,
-                        layer.turbulence_scale,
-                        layer.blend_mode,
-                        (
-                            round(px_left),
-                            round(px_top),
-                            round(px_right),
-                            round(px_bottom),
-                        ),
-                    )
-
         # Render persistent decals (blood splatters, etc.) on the floor
         with record_time_live_variable("time.render.decals_ms"):
             graphics.render_decals(
@@ -546,6 +482,73 @@ class WorldView(View):
             game_time=self.controller.clock.last_time,
             is_combat=self.controller.is_combat_mode(),
         )
+
+        if config.ATMOSPHERIC_EFFECTS_ENABLED:
+            with record_time_live_variable("time.render.atmospheric_ms"):
+                active_layers = self.atmospheric_system.get_active_layers()
+                # Render mist first, then shadows, to keep shadows readable on top.
+                active_layers.sort(
+                    key=lambda layer_state: (
+                        0 if layer_state[0].blend_mode == "lighten" else 1
+                    )
+                )
+                sky_exposure_texture = None
+                explored_texture = None
+                visible_texture = None
+                if self.lighting_system is not None:
+                    get_sky_exposure_texture = getattr(
+                        self.lighting_system, "get_sky_exposure_texture", None
+                    )
+                    if callable(get_sky_exposure_texture):
+                        sky_exposure_texture = get_sky_exposure_texture()
+                    get_explored_texture = getattr(
+                        self.lighting_system, "get_explored_texture", None
+                    )
+                    if callable(get_explored_texture):
+                        explored_texture = get_explored_texture()
+                    get_visible_texture = getattr(
+                        self.lighting_system, "get_visible_texture", None
+                    )
+                    if callable(get_visible_texture):
+                        visible_texture = get_visible_texture()
+
+                for layer, state in active_layers:
+                    effective_strength = layer.strength
+                    if layer.disable_when_overcast:
+                        coverage = self.atmospheric_system.config.cloud_coverage
+                        # Keep a baseline shadow presence while still responding to
+                        # coverage.
+                        coverage_scale = 0.35 + 0.65 * (1.0 - coverage)
+                        effective_strength *= max(0.0, min(1.0, coverage_scale))
+
+                    # This queues atmospheric uniforms for the GPU atmospheric
+                    # renderer; compositing happens in finalize_present() over the
+                    # current framebuffer, which already includes actors.
+                    graphics.set_atmospheric_layer(
+                        viewport_offset,
+                        viewport_size,
+                        map_size,
+                        layer.sky_exposure_threshold,
+                        sky_exposure_texture,
+                        explored_texture,
+                        visible_texture,
+                        layer.noise_scale,
+                        layer.noise_threshold_low,
+                        layer.noise_threshold_high,
+                        effective_strength,
+                        layer.tint_color,
+                        (state.drift_offset_x, state.drift_offset_y),
+                        state.turbulence_offset,
+                        layer.turbulence_strength,
+                        layer.turbulence_scale,
+                        layer.blend_mode,
+                        (
+                            round(px_left),
+                            round(px_top),
+                            round(px_right),
+                            round(px_bottom),
+                        ),
+                    )
 
         # Render highlights and mode-specific UI on top of actors
         # Render all modes in the stack (bottom-to-top) so higher modes draw on top
