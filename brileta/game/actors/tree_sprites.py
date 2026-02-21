@@ -118,6 +118,38 @@ def _alpha_blend(canvas: np.ndarray, x: int, y: int, rgba: colors.ColorRGBA) -> 
     canvas[y, x, 3] = int(out_a * 255)
 
 
+def _composite_over(
+    canvas: np.ndarray,
+    y_min: int,
+    y_max: int,
+    x_min: int,
+    x_max: int,
+    src_a: np.ndarray,
+    rgb: colors.Color,
+) -> None:
+    """Composite uniform RGB over a canvas region with per-pixel alpha.
+
+    ``src_a`` is a 2D float array with alpha values in ``[0.0, 1.0]`` whose
+    shape matches the region defined by ``y_min:y_max+1, x_min:x_max+1``.
+    """
+    region = canvas[y_min : y_max + 1, x_min : x_max + 1]
+    dst_a = region[:, :, 3].astype(np.float32) * np.float32(1.0 / 255.0)
+    out_a = src_a + dst_a * (1.0 - src_a)
+    safe_out_a = np.maximum(out_a, np.float32(1e-6))
+    inv_src = 1.0 - src_a
+
+    src_rgb = np.array(rgb, dtype=np.float32)
+    dst_rgb = region[:, :, :3].astype(np.float32)
+    sa3 = src_a[:, :, np.newaxis]
+    da_inv3 = (dst_a * inv_src)[:, :, np.newaxis]
+    soa3 = safe_out_a[:, :, np.newaxis]
+
+    region[:, :, :3] = np.clip(
+        (src_rgb * sa3 + dst_rgb * da_inv3) / soa3, 0, 255
+    ).astype(np.uint8)
+    region[:, :, 3] = np.clip(out_a * 255, 0, 255).astype(np.uint8)
+
+
 def _draw_line(
     canvas: np.ndarray,
     x0: float,
@@ -204,36 +236,53 @@ def _draw_tapered_trunk(
     if height <= 0:
         return
 
-    for row in range(height):
-        y = y_top + row
-        if y < 0 or y >= h:
-            continue
+    draw_y_min = max(0, y_top)
+    draw_y_max = min(h - 1, y_bottom)
+    if draw_y_min > draw_y_max:
+        return
 
-        # Linear interpolation: 0.0 at top, 1.0 at bottom.
-        t = row / max(1, height - 1)
-        row_w = width_top + (width_bottom - width_top) * t
+    rows = np.arange(height, dtype=np.float32)
+    ys = y_top + rows
 
-        # Root flare: widen bottom rows.
-        if root_flare > 0 and (y_bottom - y) < root_flare:
-            flare_t = 1.0 - (y_bottom - y) / root_flare
-            row_w += flare_t * 1.5
+    # Linear interpolation: 0.0 at top, 1.0 at bottom.
+    t = rows / np.float32(max(1, height - 1))
+    row_w = np.float32(width_top) + np.float32(width_bottom - width_top) * t
 
-        half_w = row_w / 2.0
-        left = math.floor(cx - half_w)
-        right = math.ceil(cx + half_w)
+    # Root flare: widen bottom rows.
+    if root_flare > 0:
+        dist_to_bottom = np.float32(y_bottom) - ys
+        flare_mask = dist_to_bottom < np.float32(root_flare)
+        flare_t = 1.0 - dist_to_bottom / np.float32(root_flare)
+        row_w = row_w + np.where(flare_mask, flare_t * np.float32(1.5), np.float32(0.0))
 
-        for x in range(max(0, left), min(w, right + 1)):
-            dist = abs(x - cx)
-            if dist > half_w + 0.5:
-                continue
-            # Soften edge pixels for smoother trunk silhouette.
-            if dist > half_w - 0.5:
-                edge = max(0.0, 1.0 - (dist - half_w + 0.5))
-                a = int(rgba[3] * edge)
-            else:
-                a = rgba[3]
-            if a > 0:
-                _alpha_blend(canvas, x, y, (rgba[0], rgba[1], rgba[2], a))
+    row_w = row_w.astype(np.float32)
+    half_w = row_w * np.float32(0.5)
+
+    local_start = int(draw_y_min - y_top)
+    local_end = int(draw_y_max - y_top + 1)
+    row_half_w = half_w[local_start:local_end]
+
+    x_min = max(0, math.floor(cx - float(np.max(row_half_w)) - 0.5))
+    x_max = min(w - 1, math.ceil(cx + float(np.max(row_half_w)) + 0.5))
+    if x_min > x_max:
+        return
+
+    xs = np.arange(x_min, x_max + 1, dtype=np.float32)
+    dist = np.abs(xs[np.newaxis, :] - np.float32(cx))
+    half_w_2d = row_half_w[:, np.newaxis]
+
+    inside = dist <= (half_w_2d + np.float32(0.5))
+    edge_mask = dist > (half_w_2d - np.float32(0.5))
+    edge = np.maximum(np.float32(0.0), 1.0 - (dist - half_w_2d + np.float32(0.5)))
+
+    row_alpha_i = np.where(
+        edge_mask,
+        np.floor(np.float32(rgba[3]) * edge).astype(np.int16),
+        np.int16(rgba[3]),
+    )
+    row_alpha_i = np.where(inside, row_alpha_i, np.int16(0))
+    src_a = row_alpha_i.astype(np.float32) * np.float32(1.0 / 255.0)
+    _composite_over(canvas, draw_y_min, draw_y_max, x_min, x_max, src_a, rgba[:3])
 
 
 def _stamp_fuzzy_circle(
@@ -407,8 +456,7 @@ class _CanvasStamper:
         """Alpha-composite a soft ellipse onto the canvas.
 
         Equivalent to the standalone ``_stamp_ellipse`` but reuses
-        pre-computed coordinate grids and uses vectorized 3-channel
-        compositing instead of a per-channel Python loop.
+        pre-computed coordinate grids.
         """
         if rx <= 0.0 or ry <= 0.0:
             return
@@ -447,26 +495,111 @@ class _CanvasStamper:
         )
         edge_pad = 0.5 / max(rx, ry)
         alpha = np.where(dist > 1.0 + edge_pad, np.float32(0.0), alpha)
-
-        # Porter-Duff "over" compositing with vectorized RGB channels.
         src_a = alpha * np.float32(rgba[3] / 255.0)
-        region = self._canvas[y_min : y_max + 1, x_min : x_max + 1]
-        dst_a = region[:, :, 3].astype(np.float32) * np.float32(1.0 / 255.0)
+        _composite_over(self._canvas, y_min, y_max, x_min, x_max, src_a, rgba[:3])
 
-        out_a = src_a + dst_a * (1.0 - src_a)
-        safe_out_a = np.maximum(out_a, np.float32(1e-6))
-        inv_src = 1.0 - src_a
+    def batch_stamp_ellipses(
+        self,
+        ellipses: list[tuple[float, float, float, float]],
+        rgba: colors.ColorRGBA,
+        falloff: float = 1.5,
+        hardness: float = 0.0,
+    ) -> None:
+        """Batch-stamp multiple same-style ellipses with one composite pass.
 
-        # Blend all 3 color channels in one vectorized operation.
-        src_rgb = np.array(rgba[:3], dtype=np.float32)
-        dst_rgb = region[:, :, :3].astype(np.float32)
-        sa3 = src_a[:, :, np.newaxis]
-        da_inv3 = (dst_a * inv_src)[:, :, np.newaxis]
-        soa3 = safe_out_a[:, :, np.newaxis]
-        region[:, :, :3] = np.clip(
-            (src_rgb * sa3 + dst_rgb * da_inv3) / soa3, 0, 255
-        ).astype(np.uint8)
-        region[:, :, 3] = np.clip(out_a * 255, 0, 255).astype(np.uint8)
+        The provided ellipses use ``(cx, cy, rx, ry)`` tuples.  Because every
+        ellipse shares the same RGB colour, sequential Porter-Duff "over"
+        compositing reduces to a single composite whose alpha is the screen
+        blend of the individual alphas:
+        ``combined = 1 - (1 - a1)(1 - a2)...(1 - aN)``.
+
+        The batch path accumulates source alpha in float32 and quantizes to
+        uint8 once at the end, whereas sequential stamping quantizes after
+        each ellipse.  This makes batch results slightly *more* accurate
+        (fewer rounding losses) but can differ by ±1-2 per channel from the
+        sequential path.
+        """
+        if not ellipses:
+            return
+        if len(ellipses) == 1:
+            cx, cy, rx, ry = ellipses[0]
+            self.stamp_ellipse(cx, cy, rx, ry, rgba, falloff, hardness)
+            return
+
+        bounds: list[tuple[int, int, int, int, float, float, float, float]] = []
+        for cx, cy, rx, ry in ellipses:
+            if rx <= 0.0 or ry <= 0.0:
+                continue
+            rx_ceil = math.ceil(rx) + 1
+            ry_ceil = math.ceil(ry) + 1
+            y_min = max(0, int(cy) - ry_ceil)
+            y_max = min(self._h - 1, int(cy) + ry_ceil)
+            x_min = max(0, int(cx) - rx_ceil)
+            x_max = min(self._w - 1, int(cx) + rx_ceil)
+            if y_min > y_max or x_min > x_max:
+                continue
+            bounds.append((y_min, y_max, x_min, x_max, cx, cy, rx, ry))
+
+        if not bounds:
+            return
+
+        union_y_min = min(y_min for y_min, _, _, _, _, _, _, _ in bounds)
+        union_y_max = max(y_max for _, y_max, _, _, _, _, _, _ in bounds)
+        union_x_min = min(x_min for _, _, x_min, _, _, _, _, _ in bounds)
+        union_x_max = max(x_max for _, _, _, x_max, _, _, _, _ in bounds)
+
+        yy = self._full_yy[union_y_min : union_y_max + 1, union_x_min : union_x_max + 1]
+        xx = self._full_xx[union_y_min : union_y_max + 1, union_x_min : union_x_max + 1]
+        # Track the product of (1 - src_a_i) across all ellipses so we can
+        # derive the screen-blended combined source alpha at the end.  The
+        # global opacity (rgba[3]/255) is folded into each per-ellipse alpha
+        # *before* accumulation, matching sequential Porter-Duff behaviour.
+        remaining = np.ones_like(yy, dtype=np.float32)
+        opacity = np.float32(rgba[3] / 255.0)
+
+        hardness_clamped = max(0.0, min(1.0, hardness))
+        inner_fraction = 0.3 + 0.55 * hardness_clamped
+        effective_falloff = falloff + 2.5 * hardness_clamped
+        outer_fraction = max(1e-6, 1.0 - inner_fraction)
+
+        for _, _, _, _, cx, cy, rx, ry in bounds:
+            dx = (xx - np.float32(cx)) / np.float32(rx)
+            dy = (yy - np.float32(cy)) / np.float32(ry)
+            dist = np.sqrt(dx * dx + dy * dy)
+
+            falloff_region = np.maximum((dist - inner_fraction) / outer_fraction, 0.0)
+            alpha = np.where(
+                dist <= inner_fraction,
+                np.float32(1.0),
+                np.clip(1.0 - np.power(falloff_region, effective_falloff), 0.0, 1.0),
+            )
+            edge_pad = 0.5 / max(rx, ry)
+            alpha = np.where(dist > 1.0 + edge_pad, np.float32(0.0), alpha)
+            remaining *= 1.0 - alpha * opacity
+
+        src_a = 1.0 - remaining
+        _composite_over(
+            self._canvas,
+            union_y_min,
+            union_y_max,
+            union_x_min,
+            union_x_max,
+            src_a,
+            rgba[:3],
+        )
+
+    def batch_stamp_circles(
+        self,
+        circles: list[tuple[float, float, float]],
+        rgba: colors.ColorRGBA,
+        falloff: float = 1.5,
+        hardness: float = 0.0,
+    ) -> None:
+        """Batch-stamp circles with shared style parameters."""
+        if not circles:
+            return
+        ellipses = [(cx, cy, r, r) for cx, cy, r in circles]
+        self.batch_stamp_ellipses(ellipses, rgba, falloff, hardness)
 
     def stamp_circle(
         self,
@@ -585,32 +718,42 @@ def _fill_triangle(
     if height <= 0:
         return
 
-    for row in range(height):
-        y = top_y + row
-        if y < 0 or y >= h:
-            continue
+    bottom_y = top_y + height - 1
+    draw_y_min = max(0, top_y)
+    draw_y_max = min(h - 1, bottom_y)
+    if draw_y_min > draw_y_max:
+        return
 
-        # Width at this row: narrow at top, full at bottom.
-        # Slight power curve so the tip isn't invisible.
-        t = row / max(1, height - 1)
-        row_w = 1.0 + (base_width - 1.0) * (t**0.8)
-        half_w = row_w / 2.0
+    rows = np.arange(height, dtype=np.float32)
+    t = rows / np.float32(max(1, height - 1))
+    row_w = 1.0 + np.float32(base_width - 1.0) * np.power(t, np.float32(0.8))
+    half_w = row_w * np.float32(0.5)
 
-        for x in range(
-            max(0, math.floor(cx - half_w)),
-            min(w, math.ceil(cx + half_w) + 1),
-        ):
-            dist = abs(x - cx)
-            if dist > half_w + 0.5:
-                continue
-            # Soften edge pixels.
-            if dist > half_w - 0.5:
-                edge = max(0.0, 1.0 - (dist - half_w + 0.5))
-                a = int(rgba[3] * edge)
-            else:
-                a = rgba[3]
-            if a > 0:
-                _alpha_blend(canvas, x, y, (rgba[0], rgba[1], rgba[2], a))
+    local_start = int(draw_y_min - top_y)
+    local_end = int(draw_y_max - top_y + 1)
+    row_half_w = half_w[local_start:local_end]
+
+    x_min = max(0, math.floor(cx - float(np.max(row_half_w)) - 0.5))
+    x_max = min(w - 1, math.ceil(cx + float(np.max(row_half_w)) + 0.5))
+    if x_min > x_max:
+        return
+
+    xs = np.arange(x_min, x_max + 1, dtype=np.float32)
+    dist = np.abs(xs[np.newaxis, :] - np.float32(cx))
+    half_w_2d = row_half_w[:, np.newaxis]
+
+    inside = dist <= (half_w_2d + np.float32(0.5))
+    edge_mask = dist > (half_w_2d - np.float32(0.5))
+    edge = np.maximum(np.float32(0.0), 1.0 - (dist - half_w_2d + np.float32(0.5)))
+
+    row_alpha_i = np.where(
+        edge_mask,
+        np.floor(np.float32(rgba[3]) * edge).astype(np.int16),
+        np.int16(rgba[3]),
+    )
+    row_alpha_i = np.where(inside, row_alpha_i, np.int16(0))
+    src_a = row_alpha_i.astype(np.float32) * np.float32(1.0 / 255.0)
+    _composite_over(canvas, draw_y_min, draw_y_max, x_min, x_max, src_a, rgba[:3])
 
 
 # ---------------------------------------------------------------------------
@@ -829,19 +972,22 @@ def _generate_deciduous(
         lobe_centers.append((lx, ly))
 
     stamper = _CanvasStamper(canvas)
+    central_fills: list[tuple[float, float, float, float]] = []
+    shadows: list[tuple[float, float, float, float]] = []
+    mids: list[tuple[float, float, float, float]] = []
+    highlights: list[tuple[float, float, float, float]] = []
 
     # Central fill: a solid core connecting all lobes so the canopy reads
     # as one mass with bumps rather than disconnected amoeba blobs.
     for _ in range(int(rng.integers(1, 3))):
         cr = base_radius * float(rng.uniform(0.55, 0.70))
-        stamper.stamp_ellipse(
-            canopy_cx + float(rng.uniform(-0.5, 0.5)),
-            canopy_cy + float(rng.uniform(-0.5, 0.3)),
-            cr * crown_rx_scale,
-            cr * crown_ry_scale,
-            shadow_rgba,
-            falloff=1.6,
-            hardness=0.7,
+        central_fills.append(
+            (
+                canopy_cx + float(rng.uniform(-0.5, 0.5)),
+                canopy_cy + float(rng.uniform(-0.5, 0.3)),
+                cr * crown_rx_scale,
+                cr * crown_ry_scale,
+            )
         )
 
     # Pass 1: Shadow zone.
@@ -850,14 +996,13 @@ def _generate_deciduous(
             sx = lx + float(rng.uniform(-size * 0.05, size * 0.05))
             sy = ly + float(rng.uniform(-size * 0.07, size * 0.04))
             r = base_radius * float(rng.uniform(0.62, 0.76))
-            stamper.stamp_ellipse(
-                sx,
-                sy,
-                r * crown_rx_scale,
-                r * crown_ry_scale,
-                shadow_rgba,
-                falloff=1.8,
-                hardness=0.8,
+            shadows.append(
+                (
+                    sx,
+                    sy,
+                    r * crown_rx_scale,
+                    r * crown_ry_scale,
+                )
             )
 
     n_tip_shadow = min(len(tips), int(rng.integers(1, 3)))
@@ -868,14 +1013,13 @@ def _generate_deciduous(
         for tip_index in tip_indices:
             tx, ty = tips[int(tip_index)]
             r = base_radius * float(rng.uniform(0.50, 0.68))
-            stamper.stamp_ellipse(
-                tx + canopy_center_x_offset + float(rng.uniform(-0.5, 0.5)),
-                ty - 1.0 + float(rng.uniform(-0.5, 0.3)),
-                r * crown_rx_scale,
-                r * crown_ry_scale,
-                shadow_rgba,
-                falloff=1.8,
-                hardness=0.8,
+            shadows.append(
+                (
+                    tx + canopy_center_x_offset + float(rng.uniform(-0.5, 0.5)),
+                    ty - 1.0 + float(rng.uniform(-0.5, 0.3)),
+                    r * crown_rx_scale,
+                    r * crown_ry_scale,
+                )
             )
 
     # Pass 2: Mid-tone zone.
@@ -884,14 +1028,13 @@ def _generate_deciduous(
             mx = lx + float(rng.uniform(-size * 0.04, size * 0.04))
             my = ly + float(rng.uniform(-size * 0.05, size * 0.03))
             r = base_radius * float(rng.uniform(0.58, 0.72))
-            stamper.stamp_ellipse(
-                mx,
-                my,
-                r * crown_rx_scale,
-                r * crown_ry_scale,
-                mid_rgba,
-                falloff=1.5,
-                hardness=0.7,
+            mids.append(
+                (
+                    mx,
+                    my,
+                    r * crown_rx_scale,
+                    r * crown_ry_scale,
+                )
             )
 
     n_tip_mid = min(len(tips), int(rng.integers(1, 3)))
@@ -902,14 +1045,13 @@ def _generate_deciduous(
         for tip_index in tip_indices:
             tx, ty = tips[int(tip_index)]
             r = base_radius * float(rng.uniform(0.46, 0.62))
-            stamper.stamp_ellipse(
-                tx + canopy_center_x_offset + float(rng.uniform(-0.6, 0.6)),
-                ty - 1.1 + float(rng.uniform(-0.6, 0.2)),
-                r * crown_rx_scale,
-                r * crown_ry_scale,
-                mid_rgba,
-                falloff=1.5,
-                hardness=0.7,
+            mids.append(
+                (
+                    tx + canopy_center_x_offset + float(rng.uniform(-0.6, 0.6)),
+                    ty - 1.1 + float(rng.uniform(-0.6, 0.2)),
+                    r * crown_rx_scale,
+                    r * crown_ry_scale,
+                )
             )
 
     # Pass 3: Highlight zone.
@@ -918,14 +1060,13 @@ def _generate_deciduous(
             hx = lx + float(rng.uniform(-size * 0.03, size * 0.03))
             hy = ly - size * 0.05 + float(rng.uniform(-size * 0.03, size * 0.02))
             r = base_radius * float(rng.uniform(0.45, 0.60))
-            stamper.stamp_ellipse(
-                hx,
-                hy,
-                r * crown_rx_scale,
-                r * crown_ry_scale,
-                highlight_rgba,
-                falloff=1.3,
-                hardness=0.6,
+            highlights.append(
+                (
+                    hx,
+                    hy,
+                    r * crown_rx_scale,
+                    r * crown_ry_scale,
+                )
             )
 
     n_tip_highlight = min(len(tips), int(rng.integers(1, 3)))
@@ -936,15 +1077,40 @@ def _generate_deciduous(
         for tip_index in tip_indices:
             tx, ty = tips[int(tip_index)]
             r = base_radius * float(rng.uniform(0.38, 0.50))
-            stamper.stamp_ellipse(
-                tx + canopy_center_x_offset + float(rng.uniform(-0.5, 0.5)),
-                ty - 1.3 + float(rng.uniform(-0.4, 0.2)),
-                r * crown_rx_scale,
-                r * crown_ry_scale,
-                highlight_rgba,
-                falloff=1.3,
-                hardness=0.6,
+            highlights.append(
+                (
+                    tx + canopy_center_x_offset + float(rng.uniform(-0.5, 0.5)),
+                    ty - 1.3 + float(rng.uniform(-0.4, 0.2)),
+                    r * crown_rx_scale,
+                    r * crown_ry_scale,
+                )
             )
+
+    # Batch by shading group to reduce Python-to-numpy call overhead.
+    stamper.batch_stamp_ellipses(
+        central_fills,
+        shadow_rgba,
+        falloff=1.6,
+        hardness=0.7,
+    )
+    stamper.batch_stamp_ellipses(
+        shadows,
+        shadow_rgba,
+        falloff=1.8,
+        hardness=0.8,
+    )
+    stamper.batch_stamp_ellipses(
+        mids,
+        mid_rgba,
+        falloff=1.5,
+        hardness=0.7,
+    )
+    stamper.batch_stamp_ellipses(
+        highlights,
+        highlight_rgba,
+        falloff=1.3,
+        hardness=0.6,
+    )
 
     # Add a few tiny branch segments that poke out from lobe edges.
     branch_tip_rgba: colors.ColorRGBA = (
@@ -1196,57 +1362,59 @@ def _generate_sapling(canvas: np.ndarray, size: int, rng: np.random.Generator) -
         lobe_centers.append((lx, ly))
 
     stamper = _CanvasStamper(canvas)
+    central_fills: list[tuple[float, float, float]] = []
+    shadows: list[tuple[float, float, float]] = []
+    mids: list[tuple[float, float, float]] = []
+    highlights: list[tuple[float, float, float]] = []
 
     # Central fill so sapling lobes connect.
     cr = base_radius * float(rng.uniform(0.45, 0.55))
-    stamper.stamp_circle(
-        canopy_cx,
-        canopy_cy,
-        cr,
-        shadow_rgba,
-        falloff=1.4,
-        hardness=0.5,
-    )
+    central_fills.append((canopy_cx, canopy_cy, cr))
 
     for lx, ly in lobe_centers:
         for _ in range(int(rng.integers(1, 3))):
             sx = lx + float(rng.uniform(-size * 0.05, size * 0.05))
             sy = ly + float(rng.uniform(-size * 0.06, size * 0.04))
             r = base_radius * float(rng.uniform(0.50, 0.68))
-            stamper.stamp_circle(
-                sx,
-                sy,
-                r,
-                shadow_rgba,
-                falloff=1.5,
-                hardness=0.5,
-            )
+            shadows.append((sx, sy, r))
 
         for _ in range(int(rng.integers(1, 3))):
             mx = lx + float(rng.uniform(-size * 0.04, size * 0.04))
             my = ly + float(rng.uniform(-size * 0.05, size * 0.03))
             r = base_radius * float(rng.uniform(0.44, 0.60))
-            stamper.stamp_circle(
-                mx,
-                my,
-                r,
-                mid_rgba,
-                falloff=1.3,
-                hardness=0.5,
-            )
+            mids.append((mx, my, r))
 
         for _ in range(int(rng.integers(1, 3))):
             hx = lx + float(rng.uniform(-size * 0.03, size * 0.03))
             hy = ly - size * 0.05 + float(rng.uniform(-size * 0.03, size * 0.02))
             r = base_radius * float(rng.uniform(0.32, 0.48))
-            stamper.stamp_circle(
-                hx,
-                hy,
-                r,
-                highlight_rgba,
-                falloff=1.2,
-                hardness=0.4,
-            )
+            highlights.append((hx, hy, r))
+
+    # Apply grouped passes for consistent shading and lower call overhead.
+    stamper.batch_stamp_circles(
+        central_fills,
+        shadow_rgba,
+        falloff=1.4,
+        hardness=0.5,
+    )
+    stamper.batch_stamp_circles(
+        shadows,
+        shadow_rgba,
+        falloff=1.5,
+        hardness=0.5,
+    )
+    stamper.batch_stamp_circles(
+        mids,
+        mid_rgba,
+        falloff=1.3,
+        hardness=0.5,
+    )
+    stamper.batch_stamp_circles(
+        highlights,
+        highlight_rgba,
+        falloff=1.2,
+        hardness=0.4,
+    )
 
     _nibble_canopy_silhouette(
         canvas,

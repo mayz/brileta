@@ -7,6 +7,9 @@ import pytest
 
 from brileta.game.actors.tree_sprites import (
     TreeArchetype,
+    _CanvasStamper,
+    _draw_tapered_trunk,
+    _fill_triangle,
     _stamp_ellipse,
     _stamp_fuzzy_circle,
     generate_preview_sheet,
@@ -113,6 +116,318 @@ class TestCanopyHardness:
         horizontal_span = int(xs.max() - xs.min() + 1)
         vertical_span = int(ys.max() - ys.min() + 1)
         assert horizontal_span > vertical_span
+
+
+class TestCanvasStamperBatch:
+    """Tests for batch-stamping equivalence on _CanvasStamper."""
+
+    def test_single_ellipse_batch_matches_single_stamp(self) -> None:
+        sequential = np.zeros((24, 24, 4), dtype=np.uint8)
+        batched = np.zeros((24, 24, 4), dtype=np.uint8)
+
+        rgba = (65, 145, 50, 220)
+        ellipse = (12.0, 11.5, 6.0, 4.0)
+        cx, cy, rx, ry = ellipse
+
+        sequential_stamper = _CanvasStamper(sequential)
+        sequential_stamper.stamp_ellipse(
+            cx, cy, rx, ry, rgba, falloff=1.6, hardness=0.7
+        )
+
+        batched_stamper = _CanvasStamper(batched)
+        batched_stamper.batch_stamp_ellipses([ellipse], rgba, falloff=1.6, hardness=0.7)
+
+        np.testing.assert_array_equal(sequential, batched)
+
+    def test_non_overlapping_batch_matches_sequential_stamps(self) -> None:
+        sequential = np.zeros((32, 32, 4), dtype=np.uint8)
+        batched = np.zeros((32, 32, 4), dtype=np.uint8)
+
+        rgba = (75, 150, 45, 210)
+        ellipses = [
+            (7.0, 7.0, 3.0, 2.0),
+            (24.0, 8.0, 4.0, 2.5),
+            (16.0, 24.0, 3.5, 3.0),
+        ]
+
+        sequential_stamper = _CanvasStamper(sequential)
+        for cx, cy, rx, ry in ellipses:
+            sequential_stamper.stamp_ellipse(
+                cx, cy, rx, ry, rgba, falloff=1.5, hardness=0.6
+            )
+
+        batched_stamper = _CanvasStamper(batched)
+        batched_stamper.batch_stamp_ellipses(ellipses, rgba, falloff=1.5, hardness=0.6)
+
+        np.testing.assert_array_equal(sequential, batched)
+
+    def test_overlapping_batch_matches_sequential_stamps(self) -> None:
+        """Overlapping ellipses must composite identically to one-by-one.
+
+        The batch path keeps full float32 precision and quantizes to uint8
+        once at the end, whereas the sequential path quantizes after each
+        stamp.  This means results can differ by ±1-2 due to intermediate
+        rounding.  We assert a tight tolerance rather than exact equality.
+        """
+        sequential = np.zeros((32, 32, 4), dtype=np.uint8)
+        batched = np.zeros((32, 32, 4), dtype=np.uint8)
+
+        rgba = (80, 160, 55, 200)
+        # Heavily overlapping ellipses centered near the middle.
+        ellipses = [
+            (14.0, 14.0, 6.0, 5.0),
+            (17.0, 15.0, 5.5, 4.5),
+            (15.0, 12.0, 4.0, 6.0),
+        ]
+
+        sequential_stamper = _CanvasStamper(sequential)
+        for cx, cy, rx, ry in ellipses:
+            sequential_stamper.stamp_ellipse(
+                cx, cy, rx, ry, rgba, falloff=1.5, hardness=0.7
+            )
+
+        batched_stamper = _CanvasStamper(batched)
+        batched_stamper.batch_stamp_ellipses(ellipses, rgba, falloff=1.5, hardness=0.7)
+
+        np.testing.assert_allclose(
+            sequential.astype(np.int16),
+            batched.astype(np.int16),
+            atol=2,
+        )
+
+
+class TestDrawTaperedTrunk:
+    """Regression tests for the vectorized _draw_tapered_trunk."""
+
+    def test_draws_visible_pixels(self) -> None:
+        canvas = np.zeros((32, 16, 4), dtype=np.uint8)
+        _draw_tapered_trunk(
+            canvas,
+            cx=8.0,
+            y_bottom=28,
+            y_top=10,
+            width_bottom=4.0,
+            width_top=2.0,
+            rgba=(100, 70, 40, 255),
+        )
+        assert canvas[:, :, 3].any(), "Trunk should draw visible pixels"
+
+    def test_deterministic(self) -> None:
+        a = np.zeros((32, 16, 4), dtype=np.uint8)
+        b = np.zeros((32, 16, 4), dtype=np.uint8)
+        for canvas in (a, b):
+            _draw_tapered_trunk(
+                canvas,
+                cx=8.0,
+                y_bottom=28,
+                y_top=10,
+                width_bottom=4.0,
+                width_top=2.0,
+                rgba=(100, 70, 40, 255),
+            )
+        np.testing.assert_array_equal(a, b)
+
+    def test_tapers_narrower_at_top(self) -> None:
+        canvas = np.zeros((32, 16, 4), dtype=np.uint8)
+        _draw_tapered_trunk(
+            canvas,
+            cx=8.0,
+            y_bottom=28,
+            y_top=10,
+            width_bottom=6.0,
+            width_top=2.0,
+            rgba=(100, 70, 40, 255),
+        )
+        # Count non-zero alpha pixels in a top row vs a bottom row.
+        top_row_alpha = canvas[12, :, 3]
+        bottom_row_alpha = canvas[26, :, 3]
+        assert int(np.count_nonzero(bottom_row_alpha)) > int(
+            np.count_nonzero(top_row_alpha)
+        )
+
+    def test_root_flare_widens_base(self) -> None:
+        no_flare = np.zeros((32, 16, 4), dtype=np.uint8)
+        flared = np.zeros((32, 16, 4), dtype=np.uint8)
+        _draw_tapered_trunk(
+            no_flare,
+            cx=8.0,
+            y_bottom=28,
+            y_top=10,
+            width_bottom=4.0,
+            width_top=2.0,
+            rgba=(100, 70, 40, 255),
+            root_flare=0,
+        )
+        _draw_tapered_trunk(
+            flared,
+            cx=8.0,
+            y_bottom=28,
+            y_top=10,
+            width_bottom=4.0,
+            width_top=2.0,
+            rgba=(100, 70, 40, 255),
+            root_flare=4,
+        )
+        # Bottom row should be wider with root flare.
+        no_flare_width = int(np.count_nonzero(no_flare[27, :, 3]))
+        flared_width = int(np.count_nonzero(flared[27, :, 3]))
+        assert flared_width > no_flare_width
+
+    def test_clipped_to_canvas_bounds(self) -> None:
+        """Trunk partially off-canvas should not raise."""
+        canvas = np.zeros((16, 16, 4), dtype=np.uint8)
+        _draw_tapered_trunk(
+            canvas,
+            cx=8.0,
+            y_bottom=20,
+            y_top=-5,
+            width_bottom=4.0,
+            width_top=2.0,
+            rgba=(100, 70, 40, 255),
+        )
+        assert canvas[:, :, 3].any()
+
+    def test_inverted_range_is_noop(self) -> None:
+        """y_top > y_bottom means zero height, should draw nothing."""
+        canvas = np.zeros((16, 16, 4), dtype=np.uint8)
+        _draw_tapered_trunk(
+            canvas,
+            cx=8.0,
+            y_bottom=5,
+            y_top=10,
+            width_bottom=4.0,
+            width_top=2.0,
+            rgba=(100, 70, 40, 255),
+        )
+        assert not canvas[:, :, 3].any()
+
+
+class TestFillTriangle:
+    """Regression tests for the vectorized _fill_triangle."""
+
+    def test_draws_visible_pixels(self) -> None:
+        canvas = np.zeros((32, 32, 4), dtype=np.uint8)
+        _fill_triangle(
+            canvas,
+            cx=16.0,
+            top_y=4,
+            base_width=12.0,
+            height=20,
+            rgba=(50, 120, 40, 255),
+        )
+        assert canvas[:, :, 3].any(), "Triangle should draw visible pixels"
+
+    def test_deterministic(self) -> None:
+        a = np.zeros((32, 32, 4), dtype=np.uint8)
+        b = np.zeros((32, 32, 4), dtype=np.uint8)
+        for canvas in (a, b):
+            _fill_triangle(
+                canvas,
+                cx=16.0,
+                top_y=4,
+                base_width=12.0,
+                height=20,
+                rgba=(50, 120, 40, 255),
+            )
+        np.testing.assert_array_equal(a, b)
+
+    def test_wider_at_base_than_tip(self) -> None:
+        canvas = np.zeros((32, 32, 4), dtype=np.uint8)
+        _fill_triangle(
+            canvas,
+            cx=16.0,
+            top_y=4,
+            base_width=14.0,
+            height=20,
+            rgba=(50, 120, 40, 255),
+        )
+        tip_row_width = int(np.count_nonzero(canvas[5, :, 3]))
+        base_row_width = int(np.count_nonzero(canvas[22, :, 3]))
+        assert base_row_width > tip_row_width
+
+    def test_clipped_to_canvas_bounds(self) -> None:
+        """Triangle partially off-canvas should not raise."""
+        canvas = np.zeros((16, 16, 4), dtype=np.uint8)
+        _fill_triangle(
+            canvas,
+            cx=8.0,
+            top_y=-5,
+            base_width=10.0,
+            height=30,
+            rgba=(50, 120, 40, 255),
+        )
+        assert canvas[:, :, 3].any()
+
+    def test_zero_height_is_noop(self) -> None:
+        canvas = np.zeros((16, 16, 4), dtype=np.uint8)
+        _fill_triangle(
+            canvas, cx=8.0, top_y=4, base_width=10.0, height=0, rgba=(50, 120, 40, 255)
+        )
+        assert not canvas[:, :, 3].any()
+
+    def test_edge_antialiasing_produces_partial_alpha(self) -> None:
+        """Edge pixels should have sub-255 alpha for smooth silhouettes."""
+        canvas = np.zeros((32, 32, 4), dtype=np.uint8)
+        _fill_triangle(
+            canvas,
+            cx=16.0,
+            top_y=4,
+            base_width=14.0,
+            height=20,
+            rgba=(50, 120, 40, 255),
+        )
+        alpha = canvas[:, :, 3]
+        partial = (alpha > 0) & (alpha < 255)
+        assert partial.any(), "Edges should have anti-aliased partial alpha"
+
+
+class TestBatchStampCircles:
+    """Tests for batch_stamp_circles equivalence."""
+
+    def test_batch_circles_matches_sequential(self) -> None:
+        sequential = np.zeros((32, 32, 4), dtype=np.uint8)
+        batched = np.zeros((32, 32, 4), dtype=np.uint8)
+
+        rgba = (70, 140, 50, 210)
+        circles = [
+            (8.0, 8.0, 3.5),
+            (22.0, 10.0, 4.0),
+            (15.0, 24.0, 3.0),
+        ]
+
+        seq_stamper = _CanvasStamper(sequential)
+        for cx, cy, r in circles:
+            seq_stamper.stamp_circle(cx, cy, r, rgba, falloff=1.4, hardness=0.5)
+
+        bat_stamper = _CanvasStamper(batched)
+        bat_stamper.batch_stamp_circles(circles, rgba, falloff=1.4, hardness=0.5)
+
+        # Non-overlapping circles should be exact.
+        np.testing.assert_array_equal(sequential, batched)
+
+    def test_overlapping_circles_within_tolerance(self) -> None:
+        sequential = np.zeros((24, 24, 4), dtype=np.uint8)
+        batched = np.zeros((24, 24, 4), dtype=np.uint8)
+
+        rgba = (85, 155, 60, 200)
+        circles = [
+            (10.0, 10.0, 5.0),
+            (13.0, 11.0, 4.5),
+            (11.0, 8.0, 3.5),
+        ]
+
+        seq_stamper = _CanvasStamper(sequential)
+        for cx, cy, r in circles:
+            seq_stamper.stamp_circle(cx, cy, r, rgba, falloff=1.3, hardness=0.6)
+
+        bat_stamper = _CanvasStamper(batched)
+        bat_stamper.batch_stamp_circles(circles, rgba, falloff=1.3, hardness=0.6)
+
+        np.testing.assert_allclose(
+            sequential.astype(np.int16),
+            batched.astype(np.int16),
+            atol=2,
+        )
 
 
 class TestPreviewSheet:
