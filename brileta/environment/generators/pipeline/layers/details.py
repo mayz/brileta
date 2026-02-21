@@ -6,11 +6,17 @@ materialization. The underlying terrain tile remains unchanged.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
+import numpy as np
+
+from brileta import config
 from brileta.environment.generators.pipeline.context import GenerationContext
 from brileta.environment.generators.pipeline.layer import GenerationLayer
 from brileta.environment.tile_types import TileTypeID
 from brileta.types import WorldTilePos
 from brileta.util import rng
+from brileta.util.noise import FractalType, NoiseGenerator, NoiseType
 
 _rng = rng.get("map.details")
 
@@ -18,27 +24,39 @@ _rng = rng.get("map.details")
 class DetailLayer(GenerationLayer):
     """Adds environmental details like boulders to outdoor areas.
 
-    This layer records boulder actor spawn positions across outdoor terrain
-    while avoiding buildings and existing tree placements.
+    Boulder placement is split into two passes:
+
+    - Wild boulders: higher density far from streets.
+    - Settlement boulders: very sparse density near streets.
+
+    Boulders are never placed on street tiles and avoid building exclusion
+    zones and existing tree/boulder reservation coordinates.
 
     Features:
-    - Boulder actor spawn positions in outdoor areas
+    - Street-aware boulder distribution
+    - Distinct settlement and wilderness densities
     - Future: vegetation, debris, etc.
     """
 
     def __init__(
         self,
-        boulder_density: float = 0.02,
+        wild_density: float = config.SETTLEMENT_WILD_BOULDER_DENSITY,
+        settlement_density: float = config.SETTLEMENT_SETTLEMENT_BOULDER_DENSITY,
         min_distance_from_buildings: int = 2,
+        street_buffer: int = config.SETTLEMENT_BOULDER_STREET_BUFFER,
     ) -> None:
         """Initialize the detail layer.
 
         Args:
-            boulder_density: Probability of placing a boulder on each valid tile.
+            wild_density: Probability of placing a boulder on eligible wild tiles.
+            settlement_density: Probability on eligible settlement tiles.
             min_distance_from_buildings: Minimum distance from buildings for details.
+            street_buffer: Distance from streets considered part of settlement.
         """
-        self.boulder_density = boulder_density
+        self.wild_density = wild_density
+        self.settlement_density = settlement_density
         self.min_distance_from_buildings = min_distance_from_buildings
+        self.street_buffer = street_buffer
 
     def apply(self, ctx: GenerationContext) -> None:
         """Add details to the map.
@@ -46,41 +64,95 @@ class DetailLayer(GenerationLayer):
         Args:
             ctx: The generation context to modify.
         """
-        # Build a set of tiles near buildings to avoid
-        avoided_tiles: set[WorldTilePos] = set()
+        # Low-frequency noise creates natural boulder bands and clearings
+        # without changing global average density too aggressively.
+        density_noise = NoiseGenerator(
+            seed=_rng.getrandbits(32),
+            noise_type=NoiseType.OPENSIMPLEX2,
+            frequency=config.BOULDER_DENSITY_NOISE_FREQUENCY,
+            fractal_type=FractalType.FBM,
+            octaves=config.BOULDER_DENSITY_NOISE_OCTAVES,
+        )
 
-        for building in ctx.buildings:
-            fp = building.footprint
-            # Expand footprint by min_distance
-            for x in range(
-                fp.x1 - self.min_distance_from_buildings,
-                fp.x2 + self.min_distance_from_buildings,
-            ):
-                for y in range(
-                    fp.y1 - self.min_distance_from_buildings,
-                    fp.y2 + self.min_distance_from_buildings,
-                ):
-                    avoided_tiles.add((x, y))
+        building_tiles = self._collect_building_tiles(ctx)
+        street_tiles = self._collect_street_tiles(ctx)
 
-        # Place boulders on outdoor tiles.
+        # Keep boulders away from walls/doors so settlement flow and entries
+        # remain clear.
+        building_buffer = self._expand_tiles(
+            building_tiles, self.min_distance_from_buildings, ctx.width, ctx.height
+        )
+
+        # Tiles within this radius of streets are treated as "settlement".
+        settlement_zone = self._expand_tiles(
+            street_tiles, self.street_buffer, ctx.width, ctx.height
+        )
+
         outdoor_tiles = {
             TileTypeID.COBBLESTONE,
             TileTypeID.GRASS,
             TileTypeID.DIRT_PATH,
             TileTypeID.GRAVEL,
         }
-        # Seed with existing tree positions so boulders never land on a tree.
-        # (boulder_positions is empty when DetailLayer runs; new positions are
-        # added incrementally below as each boulder is chosen.)
-        reserved_positions: set[WorldTilePos] = set(ctx.tree_positions)
+
+        # Start with existing decorative actors so no two actors overlap.
+        reserved_positions: set[WorldTilePos] = set(ctx.tree_positions) | set(
+            ctx.boulder_positions
+        )
+
+        # Pass 1: wild boulders (outside settlement zone).
+        self._place_boulders(
+            ctx=ctx,
+            density=self.wild_density,
+            density_noise=density_noise,
+            outdoor_tiles=outdoor_tiles,
+            reserved_positions=reserved_positions,
+            eligible=lambda pos: (
+                pos not in settlement_zone
+                and pos not in building_buffer
+                and pos not in street_tiles
+            ),
+        )
+
+        # Pass 2: settlement boulders (sparse, near streets but never on them).
+        self._place_boulders(
+            ctx=ctx,
+            density=self.settlement_density,
+            density_noise=density_noise,
+            outdoor_tiles=outdoor_tiles,
+            reserved_positions=reserved_positions,
+            eligible=lambda pos: (
+                pos in settlement_zone
+                and pos not in building_buffer
+                and pos not in street_tiles
+            ),
+        )
+
+    def _place_boulders(
+        self,
+        ctx: GenerationContext,
+        density: float,
+        density_noise: NoiseGenerator,
+        outdoor_tiles: set[int],
+        reserved_positions: set[WorldTilePos],
+        eligible: Callable[[WorldTilePos], bool],
+    ) -> None:
+        """Place boulders on valid outdoor tiles using noise-modulated density.
+
+        Args:
+            ctx: The generation context to modify.
+            density: Per-tile placement chance for this pass.
+            density_noise: Noise generator used to modulate local density.
+            outdoor_tiles: Terrain IDs where boulders may appear.
+            reserved_positions: Global set of occupied decoration coordinates.
+            eligible: Additional zone/exclusion predicate.
+        """
+        if density <= 0:
+            return
 
         for x in range(ctx.width):
             for y in range(ctx.height):
                 pos: WorldTilePos = (x, y)
-
-                # Skip if near buildings
-                if pos in avoided_tiles:
-                    continue
 
                 # Only place on outdoor tiles
                 if ctx.tiles[x, y] not in outdoor_tiles:
@@ -90,7 +162,62 @@ class DetailLayer(GenerationLayer):
                 if pos in reserved_positions:
                     continue
 
+                if not eligible(pos):
+                    continue
+
+                noise_val = density_noise.sample(float(x), float(y))
+                density_multiplier = self._density_multiplier(noise_val)
+
                 # Random chance to place boulder
-                if _rng.random() < self.boulder_density:
+                if _rng.random() < density * density_multiplier:
                     ctx.boulder_positions.append(pos)
                     reserved_positions.add(pos)
+
+    def _collect_building_tiles(self, ctx: GenerationContext) -> set[WorldTilePos]:
+        """Collect all tiles covered by building footprints."""
+        tiles: set[WorldTilePos] = set()
+        for building in ctx.buildings:
+            fp = building.footprint
+            for x in range(fp.x1, fp.x2):
+                for y in range(fp.y1, fp.y2):
+                    tiles.add((x, y))
+        return tiles
+
+    def _collect_street_tiles(self, ctx: GenerationContext) -> set[WorldTilePos]:
+        """Collect all tiles covered by street rectangles."""
+        tiles: set[WorldTilePos] = set()
+        for street in ctx.street_data.streets:
+            for x in range(max(0, street.x1), min(ctx.width, street.x2)):
+                for y in range(max(0, street.y1), min(ctx.height, street.y2)):
+                    tiles.add((x, y))
+        return tiles
+
+    @staticmethod
+    def _expand_tiles(
+        tiles: set[WorldTilePos],
+        radius: int,
+        map_width: int,
+        map_height: int,
+    ) -> set[WorldTilePos]:
+        """Expand a tile set outward by Chebyshev radius."""
+        if radius <= 0 or not tiles:
+            return set(tiles)
+
+        grid = np.zeros((map_width, map_height), dtype=bool)
+        for x, y in tiles:
+            if 0 <= x < map_width and 0 <= y < map_height:
+                grid[x, y] = True
+
+        padded = np.pad(grid.astype(np.int8), radius, mode="constant")
+        cs = np.cumsum(padded, axis=0)
+        dilated_x = cs[2 * radius :, :] - cs[: -2 * radius, :]
+        cs2 = np.cumsum(dilated_x, axis=1)
+        dilated = cs2[:, 2 * radius :] - cs2[:, : -2 * radius :]
+
+        expanded_coords = np.argwhere(dilated[:map_width, :map_height] > 0)
+        return {(int(x), int(y)) for x, y in expanded_coords}
+
+    @staticmethod
+    def _density_multiplier(noise_val: float) -> float:
+        """Map noise in [-1, 1] to a subtle density multiplier in [0.5, 1.5]."""
+        return max(0.5, min(1.5, 1.0 + noise_val * 0.5))

@@ -177,6 +177,21 @@ SETTLEMENT_WILD_TREE_DENSITY = 0.05  # Probability per eligible tile in wild are
 # cleared land - a tree in a yard here and there, not an obstacle course.
 SETTLEMENT_YARD_TREE_DENSITY = 0.015  # Probability per eligible tile near buildings
 
+# Boulder placement
+# Wild boulders provide most outdoor hard-cover and visual texture.
+SETTLEMENT_WILD_BOULDER_DENSITY = 0.008
+# Near roads/buildings, boulders should be very rare because cleared
+# settlement space should stay readable and navigable.
+SETTLEMENT_SETTLEMENT_BOULDER_DENSITY = 0.0005
+# Distance from streets considered "settlement" for boulder density split.
+SETTLEMENT_BOULDER_STREET_BUFFER = 12
+
+# Noise-modulated boulder clustering.
+# Compared to trees, boulder modulation is deliberately subtle so we get small
+# natural clusters and sparse gaps without large dramatic bands.
+BOULDER_DENSITY_NOISE_FREQUENCY = 0.015
+BOULDER_DENSITY_NOISE_OCTAVES = 2
+
 # Noise-modulated tree clustering.
 # A low-frequency noise field scales placement probability per tile, creating
 # organic groves (high noise → 3x density) and clearings (low noise → 0 density).

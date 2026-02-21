@@ -531,7 +531,7 @@ class TestDetailLayer:
         ctx.tiles[30:40, 30:40] = TileTypeID.FLOOR  # Indoor area
 
         # Use high density to ensure some boulders are placed
-        layer = DetailLayer(boulder_density=0.1)
+        layer = DetailLayer(wild_density=0.1, settlement_density=0.1)
         layer.apply(ctx)
 
         for x, y in ctx.boulder_positions:
@@ -563,7 +563,8 @@ class TestDetailLayer:
         ctx.buildings.append(building)
 
         layer = DetailLayer(
-            boulder_density=0.5,  # High density
+            wild_density=0.5,  # High density
+            settlement_density=0.5,
             min_distance_from_buildings=3,
         )
         layer.apply(ctx)
@@ -579,7 +580,7 @@ class TestDetailLayer:
         ctx.tiles[:, :] = TileTypeID.COBBLESTONE
 
         density = 0.05
-        layer = DetailLayer(boulder_density=density)
+        layer = DetailLayer(wild_density=density, settlement_density=0.0)
         layer.apply(ctx)
 
         # Count boulders
@@ -595,6 +596,91 @@ class TestDetailLayer:
         assert boulder_count < expected * 1.5, (
             f"Too many boulders: {boulder_count} > {expected * 1.5}"
         )
+
+    def test_no_boulders_on_street_tiles(self) -> None:
+        """Boulders are never placed on roads."""
+        rng.reset("556")
+        ctx = GenerationContext.create_empty(width=80, height=60)
+        ctx.tiles[:, :] = TileTypeID.GRASS
+
+        street_layer = StreetNetworkLayer(style="single")
+        street_layer.apply(ctx)
+
+        layer = DetailLayer(wild_density=1.0, settlement_density=1.0)
+        layer.apply(ctx)
+
+        boulder_positions = set(ctx.boulder_positions)
+        for street in ctx.street_data.streets:
+            for x in range(max(0, street.x1), min(ctx.width, street.x2)):
+                for y in range(max(0, street.y1), min(ctx.height, street.y2)):
+                    assert (x, y) not in boulder_positions, (
+                        f"Boulder placed on street tile at ({x},{y})"
+                    )
+
+    def test_wild_vs_settlement_density(self) -> None:
+        """Wild areas should have more boulders than settlement-adjacent areas."""
+        rng.reset("557")
+        ctx = GenerationContext.create_empty(width=100, height=80)
+        ctx.tiles[:, :] = TileTypeID.GRASS
+
+        street_layer = StreetNetworkLayer(style="single")
+        street_layer.apply(ctx)
+
+        layer = DetailLayer(
+            wild_density=0.2,
+            settlement_density=0.01,
+            street_buffer=8,
+        )
+        layer.apply(ctx)
+
+        street = ctx.street_data.streets[0]
+        street_center_y = (street.y1 + street.y2) // 2
+        boulder_positions = set(ctx.boulder_positions)
+
+        near_count = 0
+        near_total = 0
+        far_count = 0
+        far_total = 0
+
+        for x in range(ctx.width):
+            for y in range(ctx.height):
+                # Skip road tiles entirely; roads are always excluded.
+                if street.y1 <= y < street.y2:
+                    continue
+
+                dist = abs(y - street_center_y)
+                if dist <= 8:
+                    near_total += 1
+                    if (x, y) in boulder_positions:
+                        near_count += 1
+                elif dist > 15:
+                    far_total += 1
+                    if (x, y) in boulder_positions:
+                        far_count += 1
+
+        if near_total > 0 and far_total > 0:
+            near_density = near_count / near_total
+            far_density = far_count / far_total
+            assert far_density > near_density, (
+                f"Wild density ({far_density:.3f}) should exceed settlement "
+                f"density ({near_density:.3f})"
+            )
+
+    def test_deterministic_with_seed(self) -> None:
+        """Same seed should produce identical boulder placement."""
+        rng.reset("558")
+        ctx1 = GenerationContext.create_empty(width=80, height=60)
+        ctx1.tiles[:, :] = TileTypeID.GRASS
+        StreetNetworkLayer(style="single").apply(ctx1)
+        DetailLayer(wild_density=0.05, settlement_density=0.01).apply(ctx1)
+
+        rng.reset("558")
+        ctx2 = GenerationContext.create_empty(width=80, height=60)
+        ctx2.tiles[:, :] = TileTypeID.GRASS
+        StreetNetworkLayer(style="single").apply(ctx2)
+        DetailLayer(wild_density=0.05, settlement_density=0.01).apply(ctx2)
+
+        assert ctx1.boulder_positions == ctx2.boulder_positions
 
 
 # =============================================================================
