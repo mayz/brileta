@@ -7,16 +7,18 @@ import pytest
 
 from brileta.game.actors.tree_sprites import (
     TreeArchetype,
-    _CanvasStamper,
-    _draw_tapered_trunk,
-    _fill_triangle,
-    _stamp_ellipse,
-    _stamp_fuzzy_circle,
     generate_preview_sheet,
     generate_tree_sprite,
     generate_tree_sprite_for_position,
     sprite_visual_scale_for_shadow_height,
     tree_sprite_seed,
+)
+from brileta.sprites.primitives import (
+    CanvasStamper,
+    draw_tapered_trunk,
+    fill_triangle,
+    stamp_ellipse,
+    stamp_fuzzy_circle,
 )
 
 
@@ -100,8 +102,8 @@ class TestCanopyHardness:
         hard = np.zeros((24, 24, 4), dtype=np.uint8)
 
         rgba = (80, 150, 30, 255)
-        _stamp_fuzzy_circle(soft, 12.0, 12.0, 6.0, rgba, hardness=0.0)
-        _stamp_fuzzy_circle(hard, 12.0, 12.0, 6.0, rgba, hardness=1.0)
+        stamp_fuzzy_circle(soft, 12.0, 12.0, 6.0, rgba, hardness=0.0)
+        stamp_fuzzy_circle(hard, 12.0, 12.0, 6.0, rgba, hardness=1.0)
 
         soft_opaque = int(np.count_nonzero(soft[:, :, 3] >= 250))
         hard_opaque = int(np.count_nonzero(hard[:, :, 3] >= 250))
@@ -109,7 +111,7 @@ class TestCanopyHardness:
 
     def test_ellipse_wider_than_tall(self) -> None:
         canvas = np.zeros((24, 24, 4), dtype=np.uint8)
-        _stamp_ellipse(canvas, 12.0, 12.0, 7.0, 3.0, (65, 145, 50, 255))
+        stamp_ellipse(canvas, 12.0, 12.0, 7.0, 3.0, (65, 145, 50, 255))
 
         alpha_mask = canvas[:, :, 3] > 0
         ys, xs = np.where(alpha_mask)
@@ -119,7 +121,7 @@ class TestCanopyHardness:
 
 
 class TestCanvasStamperBatch:
-    """Tests for batch-stamping equivalence on _CanvasStamper."""
+    """Tests for batch-stamping equivalence on CanvasStamper."""
 
     def test_single_ellipse_batch_matches_single_stamp(self) -> None:
         sequential = np.zeros((24, 24, 4), dtype=np.uint8)
@@ -129,12 +131,12 @@ class TestCanvasStamperBatch:
         ellipse = (12.0, 11.5, 6.0, 4.0)
         cx, cy, rx, ry = ellipse
 
-        sequential_stamper = _CanvasStamper(sequential)
+        sequential_stamper = CanvasStamper(sequential)
         sequential_stamper.stamp_ellipse(
             cx, cy, rx, ry, rgba, falloff=1.6, hardness=0.7
         )
 
-        batched_stamper = _CanvasStamper(batched)
+        batched_stamper = CanvasStamper(batched)
         batched_stamper.batch_stamp_ellipses([ellipse], rgba, falloff=1.6, hardness=0.7)
 
         np.testing.assert_array_equal(sequential, batched)
@@ -150,13 +152,13 @@ class TestCanvasStamperBatch:
             (16.0, 24.0, 3.5, 3.0),
         ]
 
-        sequential_stamper = _CanvasStamper(sequential)
+        sequential_stamper = CanvasStamper(sequential)
         for cx, cy, rx, ry in ellipses:
             sequential_stamper.stamp_ellipse(
                 cx, cy, rx, ry, rgba, falloff=1.5, hardness=0.6
             )
 
-        batched_stamper = _CanvasStamper(batched)
+        batched_stamper = CanvasStamper(batched)
         batched_stamper.batch_stamp_ellipses(ellipses, rgba, falloff=1.5, hardness=0.6)
 
         np.testing.assert_array_equal(sequential, batched)
@@ -180,13 +182,13 @@ class TestCanvasStamperBatch:
             (15.0, 12.0, 4.0, 6.0),
         ]
 
-        sequential_stamper = _CanvasStamper(sequential)
+        sequential_stamper = CanvasStamper(sequential)
         for cx, cy, rx, ry in ellipses:
             sequential_stamper.stamp_ellipse(
                 cx, cy, rx, ry, rgba, falloff=1.5, hardness=0.7
             )
 
-        batched_stamper = _CanvasStamper(batched)
+        batched_stamper = CanvasStamper(batched)
         batched_stamper.batch_stamp_ellipses(ellipses, rgba, falloff=1.5, hardness=0.7)
 
         np.testing.assert_allclose(
@@ -197,11 +199,11 @@ class TestCanvasStamperBatch:
 
 
 class TestDrawTaperedTrunk:
-    """Regression tests for the vectorized _draw_tapered_trunk."""
+    """Regression tests for the vectorized draw_tapered_trunk."""
 
     def test_draws_visible_pixels(self) -> None:
         canvas = np.zeros((32, 16, 4), dtype=np.uint8)
-        _draw_tapered_trunk(
+        draw_tapered_trunk(
             canvas,
             cx=8.0,
             y_bottom=28,
@@ -216,7 +218,7 @@ class TestDrawTaperedTrunk:
         a = np.zeros((32, 16, 4), dtype=np.uint8)
         b = np.zeros((32, 16, 4), dtype=np.uint8)
         for canvas in (a, b):
-            _draw_tapered_trunk(
+            draw_tapered_trunk(
                 canvas,
                 cx=8.0,
                 y_bottom=28,
@@ -229,7 +231,7 @@ class TestDrawTaperedTrunk:
 
     def test_tapers_narrower_at_top(self) -> None:
         canvas = np.zeros((32, 16, 4), dtype=np.uint8)
-        _draw_tapered_trunk(
+        draw_tapered_trunk(
             canvas,
             cx=8.0,
             y_bottom=28,
@@ -248,7 +250,7 @@ class TestDrawTaperedTrunk:
     def test_root_flare_widens_base(self) -> None:
         no_flare = np.zeros((32, 16, 4), dtype=np.uint8)
         flared = np.zeros((32, 16, 4), dtype=np.uint8)
-        _draw_tapered_trunk(
+        draw_tapered_trunk(
             no_flare,
             cx=8.0,
             y_bottom=28,
@@ -258,7 +260,7 @@ class TestDrawTaperedTrunk:
             rgba=(100, 70, 40, 255),
             root_flare=0,
         )
-        _draw_tapered_trunk(
+        draw_tapered_trunk(
             flared,
             cx=8.0,
             y_bottom=28,
@@ -276,7 +278,7 @@ class TestDrawTaperedTrunk:
     def test_clipped_to_canvas_bounds(self) -> None:
         """Trunk partially off-canvas should not raise."""
         canvas = np.zeros((16, 16, 4), dtype=np.uint8)
-        _draw_tapered_trunk(
+        draw_tapered_trunk(
             canvas,
             cx=8.0,
             y_bottom=20,
@@ -290,7 +292,7 @@ class TestDrawTaperedTrunk:
     def test_inverted_range_is_noop(self) -> None:
         """y_top > y_bottom means zero height, should draw nothing."""
         canvas = np.zeros((16, 16, 4), dtype=np.uint8)
-        _draw_tapered_trunk(
+        draw_tapered_trunk(
             canvas,
             cx=8.0,
             y_bottom=5,
@@ -303,11 +305,11 @@ class TestDrawTaperedTrunk:
 
 
 class TestFillTriangle:
-    """Regression tests for the vectorized _fill_triangle."""
+    """Regression tests for the vectorized fill_triangle."""
 
     def test_draws_visible_pixels(self) -> None:
         canvas = np.zeros((32, 32, 4), dtype=np.uint8)
-        _fill_triangle(
+        fill_triangle(
             canvas,
             cx=16.0,
             top_y=4,
@@ -321,7 +323,7 @@ class TestFillTriangle:
         a = np.zeros((32, 32, 4), dtype=np.uint8)
         b = np.zeros((32, 32, 4), dtype=np.uint8)
         for canvas in (a, b):
-            _fill_triangle(
+            fill_triangle(
                 canvas,
                 cx=16.0,
                 top_y=4,
@@ -333,7 +335,7 @@ class TestFillTriangle:
 
     def test_wider_at_base_than_tip(self) -> None:
         canvas = np.zeros((32, 32, 4), dtype=np.uint8)
-        _fill_triangle(
+        fill_triangle(
             canvas,
             cx=16.0,
             top_y=4,
@@ -348,7 +350,7 @@ class TestFillTriangle:
     def test_clipped_to_canvas_bounds(self) -> None:
         """Triangle partially off-canvas should not raise."""
         canvas = np.zeros((16, 16, 4), dtype=np.uint8)
-        _fill_triangle(
+        fill_triangle(
             canvas,
             cx=8.0,
             top_y=-5,
@@ -360,7 +362,7 @@ class TestFillTriangle:
 
     def test_zero_height_is_noop(self) -> None:
         canvas = np.zeros((16, 16, 4), dtype=np.uint8)
-        _fill_triangle(
+        fill_triangle(
             canvas, cx=8.0, top_y=4, base_width=10.0, height=0, rgba=(50, 120, 40, 255)
         )
         assert not canvas[:, :, 3].any()
@@ -368,7 +370,7 @@ class TestFillTriangle:
     def test_edge_antialiasing_produces_partial_alpha(self) -> None:
         """Edge pixels should have sub-255 alpha for smooth silhouettes."""
         canvas = np.zeros((32, 32, 4), dtype=np.uint8)
-        _fill_triangle(
+        fill_triangle(
             canvas,
             cx=16.0,
             top_y=4,
@@ -395,11 +397,11 @@ class TestBatchStampCircles:
             (15.0, 24.0, 3.0),
         ]
 
-        seq_stamper = _CanvasStamper(sequential)
+        seq_stamper = CanvasStamper(sequential)
         for cx, cy, r in circles:
             seq_stamper.stamp_circle(cx, cy, r, rgba, falloff=1.4, hardness=0.5)
 
-        bat_stamper = _CanvasStamper(batched)
+        bat_stamper = CanvasStamper(batched)
         bat_stamper.batch_stamp_circles(circles, rgba, falloff=1.4, hardness=0.5)
 
         # Non-overlapping circles should be exact.
@@ -416,11 +418,11 @@ class TestBatchStampCircles:
             (11.0, 8.0, 3.5),
         ]
 
-        seq_stamper = _CanvasStamper(sequential)
+        seq_stamper = CanvasStamper(sequential)
         for cx, cy, r in circles:
             seq_stamper.stamp_circle(cx, cy, r, rgba, falloff=1.3, hardness=0.6)
 
-        bat_stamper = _CanvasStamper(batched)
+        bat_stamper = CanvasStamper(batched)
         bat_stamper.batch_stamp_circles(circles, rgba, falloff=1.3, hardness=0.6)
 
         np.testing.assert_allclose(
