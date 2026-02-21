@@ -133,6 +133,124 @@ static PyObject *NoiseState_domain_warp_3d(
     return Py_BuildValue("fff", x, y, z);
 }
 
+/* ------------------------------------------------------------------ */
+/* Batch methods - sample arrays of coordinates in a tight C loop.    */
+/* Uses the Python buffer protocol (no numpy C API dependency).       */
+/* All coordinate buffers must be contiguous float32 ('f') with the   */
+/* same length.  The output buffer must be writable float32.          */
+/* ------------------------------------------------------------------ */
+
+/* Helper: acquire a contiguous float32 buffer and return element count.
+ * Sets a Python exception and returns -1 on failure. */
+static Py_ssize_t acquire_f32_buffer(
+    PyObject *obj, Py_buffer *buf, int writable
+) {
+    int flags = PyBUF_C_CONTIGUOUS | PyBUF_FORMAT;
+    if (writable) flags |= PyBUF_WRITABLE;
+
+    if (PyObject_GetBuffer(obj, buf, flags) < 0)
+        return -1;
+
+    if (buf->format == NULL || buf->format[0] != 'f' || buf->format[1] != '\0') {
+        PyBuffer_Release(buf);
+        PyErr_SetString(PyExc_TypeError, "buffer must be float32 ('f') format");
+        return -1;
+    }
+    if (buf->ndim != 1) {
+        PyBuffer_Release(buf);
+        PyErr_SetString(PyExc_TypeError, "buffer must be 1-dimensional");
+        return -1;
+    }
+    return buf->shape[0];
+}
+
+static PyObject *NoiseState_sample_2d_array(
+    NoiseStateObject *self, PyObject *args
+) {
+    PyObject *xobj, *yobj, *outobj;
+    if (!PyArg_ParseTuple(args, "OOO", &xobj, &yobj, &outobj))
+        return NULL;
+
+    Py_buffer xbuf, ybuf, obuf;
+    Py_ssize_t nx = acquire_f32_buffer(xobj, &xbuf, 0);
+    if (nx < 0) return NULL;
+
+    Py_ssize_t ny = acquire_f32_buffer(yobj, &ybuf, 0);
+    if (ny < 0) { PyBuffer_Release(&xbuf); return NULL; }
+
+    Py_ssize_t no = acquire_f32_buffer(outobj, &obuf, 1);
+    if (no < 0) { PyBuffer_Release(&xbuf); PyBuffer_Release(&ybuf); return NULL; }
+
+    if (nx != ny || nx != no) {
+        PyBuffer_Release(&xbuf);
+        PyBuffer_Release(&ybuf);
+        PyBuffer_Release(&obuf);
+        PyErr_SetString(PyExc_ValueError, "all buffers must have the same length");
+        return NULL;
+    }
+
+    const float *xs = (const float *)xbuf.buf;
+    const float *ys = (const float *)ybuf.buf;
+    float *out = (float *)obuf.buf;
+
+    for (Py_ssize_t i = 0; i < nx; i++) {
+        out[i] = fnlGetNoise2D(&self->state, xs[i], ys[i]);
+    }
+
+    PyBuffer_Release(&xbuf);
+    PyBuffer_Release(&ybuf);
+    PyBuffer_Release(&obuf);
+    Py_RETURN_NONE;
+}
+
+static PyObject *NoiseState_sample_3d_array(
+    NoiseStateObject *self, PyObject *args
+) {
+    PyObject *xobj, *yobj, *zobj, *outobj;
+    if (!PyArg_ParseTuple(args, "OOOO", &xobj, &yobj, &zobj, &outobj))
+        return NULL;
+
+    Py_buffer xbuf, ybuf, zbuf, obuf;
+    Py_ssize_t nx = acquire_f32_buffer(xobj, &xbuf, 0);
+    if (nx < 0) return NULL;
+
+    Py_ssize_t ny = acquire_f32_buffer(yobj, &ybuf, 0);
+    if (ny < 0) { PyBuffer_Release(&xbuf); return NULL; }
+
+    Py_ssize_t nz = acquire_f32_buffer(zobj, &zbuf, 0);
+    if (nz < 0) { PyBuffer_Release(&xbuf); PyBuffer_Release(&ybuf); return NULL; }
+
+    Py_ssize_t no = acquire_f32_buffer(outobj, &obuf, 1);
+    if (no < 0) {
+        PyBuffer_Release(&xbuf); PyBuffer_Release(&ybuf);
+        PyBuffer_Release(&zbuf); return NULL;
+    }
+
+    if (nx != ny || nx != nz || nx != no) {
+        PyBuffer_Release(&xbuf);
+        PyBuffer_Release(&ybuf);
+        PyBuffer_Release(&zbuf);
+        PyBuffer_Release(&obuf);
+        PyErr_SetString(PyExc_ValueError, "all buffers must have the same length");
+        return NULL;
+    }
+
+    const float *xs = (const float *)xbuf.buf;
+    const float *ys = (const float *)ybuf.buf;
+    const float *zs = (const float *)zbuf.buf;
+    float *out = (float *)obuf.buf;
+
+    for (Py_ssize_t i = 0; i < nx; i++) {
+        out[i] = fnlGetNoise3D(&self->state, xs[i], ys[i], zs[i]);
+    }
+
+    PyBuffer_Release(&xbuf);
+    PyBuffer_Release(&ybuf);
+    PyBuffer_Release(&zbuf);
+    PyBuffer_Release(&obuf);
+    Py_RETURN_NONE;
+}
+
 static PyMethodDef NoiseState_methods[] = {
     {"sample_2d", (PyCFunction)NoiseState_sample_2d, METH_VARARGS,
      "sample_2d(x, y) -> float\n\n"
@@ -140,6 +258,18 @@ static PyMethodDef NoiseState_methods[] = {
     {"sample_3d", (PyCFunction)NoiseState_sample_3d, METH_VARARGS,
      "sample_3d(x, y, z) -> float\n\n"
      "Sample 3D noise at the given position. Returns value in [-1, 1]."},
+    {"sample_2d_array",
+     (PyCFunction)NoiseState_sample_2d_array, METH_VARARGS,
+     "sample_2d_array(xs, ys, out) -> None\n\n"
+     "Sample 2D noise for arrays of coordinates.\n"
+     "All arguments must be contiguous float32 buffers of the same length.\n"
+     "Results are written into *out* in-place (values in [-1, 1])."},
+    {"sample_3d_array",
+     (PyCFunction)NoiseState_sample_3d_array, METH_VARARGS,
+     "sample_3d_array(xs, ys, zs, out) -> None\n\n"
+     "Sample 3D noise for arrays of coordinates.\n"
+     "All arguments must be contiguous float32 buffers of the same length.\n"
+     "Results are written into *out* in-place (values in [-1, 1])."},
     {"domain_warp_2d", (PyCFunction)NoiseState_domain_warp_2d, METH_VARARGS,
      "domain_warp_2d(x, y) -> (float, float)\n\n"
      "Apply domain warping to a 2D position. Returns warped (x, y)."},

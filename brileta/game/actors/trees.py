@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, ClassVar
 
 from brileta import colors
 from brileta.types import WorldTileCoord
+from brileta.util.rng import derive_spatial_seed
 
 from .core import Actor, CharacterLayer
 from .tree_sprites import TreeArchetype
@@ -27,11 +28,6 @@ _CONIFER_INNER_COLOR: colors.Color = (18, 60, 18)
 
 # Per-tree brightness variation so individuals look distinct.
 _CANOPY_BRIGHTNESS_JITTER: int = 18
-
-
-def _spatial_hash(x: WorldTileCoord, y: WorldTileCoord, salt: int) -> int:
-    """Return a deterministic 32-bit hash for a world position."""
-    return ((int(x) * 73856093) ^ (int(y) * 19349663) ^ salt) & 0xFFFFFFFF
 
 
 def _clamp_channel(value: int) -> int:
@@ -128,22 +124,22 @@ def create_deciduous_tree(
     foliage lobes and a crown peak. Per-tree hash jitters both colors
     and layer positions so every tree has a slightly different shape.
     """
-    h = _spatial_hash(x, y, salt=0x0DEC1D00)
+    h = derive_spatial_seed(x, y, map_seed=0x0DEC1D00)
     canopy_color = _jitter_brightness(
         _DECIDUOUS_CANOPY_COLOR, _CANOPY_BRIGHTNESS_JITTER, h
     )
     inner_color = _jitter_brightness(
         _DECIDUOUS_INNER_COLOR,
         _CANOPY_BRIGHTNESS_JITTER,
-        _spatial_hash(x, y, salt=0xA1),
+        derive_spatial_seed(x, y, map_seed=0xA1),
     )
 
     # Per-tree shape jitter: small random offsets to lobe positions so
     # each tree's silhouette is unique. Uses different hash salts per axis.
-    jx_l = _hash_offset(_spatial_hash(x, y, salt=0xF1), 6, 0.06)
-    jy_l = _hash_offset(_spatial_hash(x, y, salt=0xF2), 6, 0.04)
-    jx_r = _hash_offset(_spatial_hash(x, y, salt=0xF3), 6, 0.06)
-    jy_r = _hash_offset(_spatial_hash(x, y, salt=0xF4), 6, 0.04)
+    jx_l = _hash_offset(derive_spatial_seed(x, y, map_seed=0xF1), 6, 0.06)
+    jy_l = _hash_offset(derive_spatial_seed(x, y, map_seed=0xF2), 6, 0.04)
+    jx_r = _hash_offset(derive_spatial_seed(x, y, map_seed=0xF3), 6, 0.06)
+    jy_r = _hash_offset(derive_spatial_seed(x, y, map_seed=0xF4), 6, 0.04)
 
     layers: list[CharacterLayer] = [
         # Trunk: narrow brown bar in the bottom third of the tile.
@@ -203,17 +199,19 @@ def create_conifer_tree(
     of branch tiers varies per tree (based on spatial hash) so conifers
     aren't all identical. Per-tree jitter shifts each tier slightly.
     """
-    h = _spatial_hash(x, y, salt=0xC0F1F300)
+    h = derive_spatial_seed(x, y, map_seed=0xC0F1F300)
     canopy_color = _jitter_brightness(
         _CONIFER_CANOPY_COLOR, _CANOPY_BRIGHTNESS_JITTER, h
     )
     inner_color = _jitter_brightness(
-        _CONIFER_INNER_COLOR, _CANOPY_BRIGHTNESS_JITTER, _spatial_hash(x, y, salt=0xB2)
+        _CONIFER_INNER_COLOR,
+        _CANOPY_BRIGHTNESS_JITTER,
+        derive_spatial_seed(x, y, map_seed=0xB2),
     )
 
     # Per-tree horizontal jitter for the lower branch tiers.
-    jx_lo = _hash_offset(_spatial_hash(x, y, salt=0xE1), 5, 0.04)
-    jx_hi = _hash_offset(_spatial_hash(x, y, salt=0xE2), 5, 0.03)
+    jx_lo = _hash_offset(derive_spatial_seed(x, y, map_seed=0xE1), 5, 0.04)
+    jx_hi = _hash_offset(derive_spatial_seed(x, y, map_seed=0xE2), 5, 0.03)
 
     layers: list[CharacterLayer] = [
         # Trunk: narrow, bottom quarter.

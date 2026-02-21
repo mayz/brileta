@@ -1409,7 +1409,7 @@ def _tree_hash(
     x: WorldTileCoord, y: WorldTileCoord, map_seed: MapDecorationSeed
 ) -> int:
     """Deterministic spatial hash for a tree at (x, y)."""
-    return ((int(x) * 73856093) ^ (int(y) * 19349663) ^ int(map_seed)) & 0xFFFFFFFF
+    return brileta_rng.derive_spatial_seed(x, y, map_seed=map_seed)
 
 
 def create_species_noise(map_seed: MapDecorationSeed) -> NoiseGenerator:

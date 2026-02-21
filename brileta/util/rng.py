@@ -37,6 +37,8 @@ from collections.abc import Sequence
 from random import Random
 from typing import TYPE_CHECKING, TypeVar
 
+import numpy as np
+
 from brileta import config
 from brileta.types import MapDecorationSeed, SpatialSeed, WorldTileCoord
 
@@ -266,6 +268,12 @@ def reset(master_seed: RandomSeed = None) -> None:
     _provider.reset(master_seed)
 
 
+# Large primes used by the spatial hash. Shared between the scalar and
+# vectorized helpers so the formula is defined in exactly one place.
+_SPATIAL_PRIME_X: int = 73856093
+_SPATIAL_PRIME_Y: int = 19349663
+
+
 def derive_spatial_seed(
     x: WorldTileCoord,
     y: WorldTileCoord,
@@ -281,5 +289,29 @@ def derive_spatial_seed(
     changes (for example, procedural sprite variants keyed by tile position).
     """
     return (
-        (int(x) * 73856093) ^ (int(y) * 19349663) ^ int(map_seed) ^ int(salt)
+        (int(x) * _SPATIAL_PRIME_X)
+        ^ (int(y) * _SPATIAL_PRIME_Y)
+        ^ int(map_seed)
+        ^ int(salt)
     ) & 0xFFFFFFFF
+
+
+def derive_spatial_seed_array(
+    world_x: np.ndarray,
+    world_y: np.ndarray,
+    *,
+    map_seed: MapDecorationSeed,
+    salt: SpatialSeed = 0,
+) -> np.ndarray:
+    """Vectorized version of :func:`derive_spatial_seed`.
+
+    Accepts numpy arrays of x/y coordinates and returns an int64 array of
+    32-bit spatial hashes. Suitable for batch operations like terrain
+    decoration where thousands of tiles are processed per frame.
+    """
+    combined_seed = np.int64(int(map_seed) ^ int(salt))
+    return (
+        world_x.astype(np.int64) * _SPATIAL_PRIME_X
+        ^ world_y.astype(np.int64) * _SPATIAL_PRIME_Y
+        ^ combined_seed
+    )

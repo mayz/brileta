@@ -16,6 +16,8 @@ from __future__ import annotations
 
 from enum import IntEnum
 
+import numpy as np
+
 try:
     from brileta.util._native import _NoiseState
 except ImportError as exc:
@@ -158,9 +160,45 @@ class NoiseGenerator:
         """Sample 2D noise at *(x, y)*. Returns a value in [-1, 1]."""
         return self._state.sample_2d(x, y)
 
+    def sample_array(self, xs: np.ndarray, ys: np.ndarray) -> np.ndarray:
+        """Sample 2D noise for arrays of coordinates.
+
+        Args:
+            xs: X coordinates as a 1-D array (any numeric dtype).
+            ys: Y coordinates as a 1-D array (same length as *xs*).
+
+        Returns:
+            Float32 array of noise values in [-1, 1], same length as inputs.
+        """
+        xs_f = np.ascontiguousarray(xs, dtype=np.float32).ravel()
+        ys_f = np.ascontiguousarray(ys, dtype=np.float32).ravel()
+        out = np.empty(len(xs_f), dtype=np.float32)
+        self._state.sample_2d_array(xs_f, ys_f, out)
+        return out
+
     def sample_3d(self, x: float, y: float, z: float) -> float:
         """Sample 3D noise at *(x, y, z)*. Returns a value in [-1, 1]."""
         return self._state.sample_3d(x, y, z)
+
+    def sample_3d_array(
+        self, xs: np.ndarray, ys: np.ndarray, zs: np.ndarray
+    ) -> np.ndarray:
+        """Sample 3D noise for arrays of coordinates.
+
+        Args:
+            xs: X coordinates as a 1-D array (any numeric dtype).
+            ys: Y coordinates as a 1-D array (same length as *xs*).
+            zs: Z coordinates as a 1-D array (same length as *xs*).
+
+        Returns:
+            Float32 array of noise values in [-1, 1], same length as inputs.
+        """
+        xs_f = np.ascontiguousarray(xs, dtype=np.float32).ravel()
+        ys_f = np.ascontiguousarray(ys, dtype=np.float32).ravel()
+        zs_f = np.ascontiguousarray(zs, dtype=np.float32).ravel()
+        out = np.empty(len(xs_f), dtype=np.float32)
+        self._state.sample_3d_array(xs_f, ys_f, zs_f, out)
+        return out
 
     # -- Domain warping ----------------------------------------------------
 

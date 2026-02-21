@@ -20,6 +20,7 @@ import numpy as np
 from brileta import colors
 from brileta.game.enums import ImpactMaterial
 from brileta.util.dice import Dice
+from brileta.util.rng import derive_spatial_seed_array
 
 # --- Pathfinding Cost Constants ---
 # Used by pathfinding to make AI avoid hazardous tiles.
@@ -837,12 +838,7 @@ def apply_terrain_decoration(
         decoration_seed: Per-map seed for deterministic decoration.
     """
     # Spatial hash: deterministic per-tile value from world position and seed.
-    # Uses large primes to minimize correlation between nearby tiles.
-    h = (
-        world_x.astype(np.int64) * 73856093
-        ^ world_y.astype(np.int64) * 19349663
-        ^ np.int64(decoration_seed)
-    )
+    h = derive_spatial_seed_array(world_x, world_y, map_seed=decoration_seed)
 
     for tid, glyph_pool in TERRAIN_GLYPH_POOLS.items():
         mask = tile_ids == tid
