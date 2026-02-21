@@ -92,7 +92,11 @@ class TestWGPUGraphicsContext:
         mock_resource_manager = Mock()
         self.graphics_ctx.resource_manager = mock_resource_manager
 
-        yield
+        # Patch glfw.get_window_content_scale to avoid a mock cascade.
+        # When passed a Mock window handle, GLFW's ctypes layer creates 86K+
+        # child mock objects before raising -- costing ~50ms per call.
+        with patch("glfw.get_window_content_scale", return_value=(1.0, 1.0)):
+            yield
 
         # Cleanup WGPU resources to prevent segfaults
         if hasattr(self, "graphics_ctx") and self.graphics_ctx:
