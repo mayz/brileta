@@ -13,7 +13,7 @@ from __future__ import annotations
 import math
 import struct
 from contextlib import suppress
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 import wgpu
@@ -76,8 +76,8 @@ class GPULightingSystem(LightingSystem):
         self.graphics_context = graphics_context
         # Get WGPU device/queue - fail fast if unavailable
         if hasattr(graphics_context, "device") and hasattr(graphics_context, "queue"):
-            self.device: wgpu.GPUDevice = graphics_context.device
-            self.queue: wgpu.GPUQueue = graphics_context.queue
+            self.device: wgpu.GPUDevice = cast(wgpu.GPUDevice, graphics_context.device)
+            self.queue: wgpu.GPUQueue = cast(wgpu.GPUQueue, graphics_context.queue)
         else:
             # Create a standalone WGPU context for lighting calculations
             adapter = wgpu.gpu.request_adapter_sync(
