@@ -187,9 +187,12 @@ class ExploreMode(Mode):
                 # Player tried to move but can't afford it - time passes anyway
                 self.controller.turn_manager.on_player_action()
 
-    def render_world(self) -> None:
-        """Render actor outlines for selection and hover feedback."""
-        # This is the default rendering when no other mode is active
+    def render_world_under_actors(self) -> None:
+        """Render hover/selection outlines behind actors.
+
+        Drawing outlines before actors lets tree and boulder sprites paint
+        over the rectangle, producing a lasso-style framing effect.
+        """
         if self._fm is not None:
             wv = self._fm.world_view
             wv.actor_renderer.render_selection_and_hover_outlines(

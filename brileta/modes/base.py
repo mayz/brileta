@@ -73,11 +73,20 @@ class Mode(abc.ABC):
         """
         pass
 
+    def render_world_under_actors(self) -> None:  # noqa: B027
+        """Render visual effects that should appear behind actors.
+
+        Use this for effects like tile outlines or area highlights that actors
+        should draw on top of, giving a "lasso" framing effect.
+        """
+        pass
+
     def render_world(self) -> None:  # noqa: B027
         """Render visual effects inside the game world's viewport.
 
         Use this for effects like highlighting actors, drawing targeting lines,
-        or showing area-of-effect previews on the game map itself.
+        or showing area-of-effect previews on the game map itself. These draw
+        on top of actors.
         """
         pass
 

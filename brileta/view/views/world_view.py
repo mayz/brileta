@@ -469,6 +469,11 @@ class WorldView(View):
 
         self._apply_sun_direction_to_graphics(graphics, directional_light)
 
+        # Render under-actor highlights (e.g. hover outlines) so actor sprites
+        # paint on top, producing a lasso-style framing effect.
+        for mode in self.controller.mode_stack:
+            mode.render_world_under_actors()
+
         self.actor_renderer.render_actors(
             alpha,
             game_world=self.controller.gw,
