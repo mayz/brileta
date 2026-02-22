@@ -54,3 +54,168 @@ def wfc_solve(
     initial_wave: object,
     seed: int,
 ) -> list[list[int]]: ...
+
+# Sprite drawing primitives (from _native_sprites.c)
+
+def sprite_alpha_blend(
+    canvas: object,
+    x: int,
+    y: int,
+    r: int,
+    g: int,
+    b: int,
+    a: int,
+) -> None: ...
+def sprite_composite_over(
+    canvas: object,
+    y_min: int,
+    y_max: int,
+    x_min: int,
+    x_max: int,
+    src_alpha: object,
+    r: int,
+    g: int,
+    b: int,
+) -> None: ...
+def sprite_draw_line(
+    canvas: object,
+    x0: float,
+    y0: float,
+    x1: float,
+    y1: float,
+    r: int,
+    g: int,
+    b: int,
+    a: int,
+) -> None: ...
+def sprite_draw_thick_line(
+    canvas: object,
+    x0: float,
+    y0: float,
+    x1: float,
+    y1: float,
+    r: int,
+    g: int,
+    b: int,
+    a: int,
+    thickness: int,
+) -> None: ...
+def sprite_draw_tapered_trunk(
+    canvas: object,
+    cx: float,
+    y_bottom: int,
+    y_top: int,
+    w_bottom: float,
+    w_top: float,
+    r: int,
+    g: int,
+    b: int,
+    a: int,
+    root_flare: int,
+) -> None: ...
+def sprite_stamp_fuzzy_circle(
+    canvas: object,
+    cx: float,
+    cy: float,
+    radius: float,
+    r: int,
+    g: int,
+    b: int,
+    a: int,
+    falloff: float,
+    hardness: float,
+) -> None: ...
+def sprite_stamp_ellipse(
+    canvas: object,
+    cx: float,
+    cy: float,
+    rx: float,
+    ry: float,
+    r: int,
+    g: int,
+    b: int,
+    a: int,
+    falloff: float,
+    hardness: float,
+) -> None: ...
+def sprite_batch_stamp_ellipses(
+    canvas: object,
+    ellipses: list[tuple[float, float, float, float]],
+    r: int,
+    g: int,
+    b: int,
+    a: int,
+    falloff: float,
+    hardness: float,
+) -> None: ...
+def sprite_batch_stamp_circles(
+    canvas: object,
+    circles: list[tuple[float, float, float]],
+    r: int,
+    g: int,
+    b: int,
+    a: int,
+    falloff: float,
+    hardness: float,
+) -> None: ...
+def sprite_generate_deciduous_canopy(
+    canvas: object,
+    seed: int,
+    size: int,
+    canopy_cx: float,
+    canopy_cy: float,
+    base_radius: float,
+    crown_rx_scale: float,
+    crown_ry_scale: float,
+    canopy_center_x_offset: float,
+    tips: list[tuple[float, float]],
+    shadow_r: int,
+    shadow_g: int,
+    shadow_b: int,
+    shadow_a: int,
+    mid_r: int,
+    mid_g: int,
+    mid_b: int,
+    mid_a: int,
+    highlight_r: int,
+    highlight_g: int,
+    highlight_b: int,
+    highlight_a: int,
+) -> list[tuple[float, float]]: ...
+def sprite_fill_triangle(
+    canvas: object,
+    cx: float,
+    top_y: int,
+    base_width: float,
+    height: int,
+    r: int,
+    g: int,
+    b: int,
+    a: int,
+) -> None: ...
+def sprite_paste_sprite(
+    sheet: object,
+    sprite: object,
+    x0: int,
+    y0: int,
+) -> None: ...
+def sprite_darken_rim(
+    canvas: object,
+    darken_r: int,
+    darken_g: int,
+    darken_b: int,
+) -> None: ...
+def sprite_nibble_canopy(
+    canvas: object,
+    seed: int,
+    center_x: float,
+    center_y: float,
+    canopy_radius: float,
+    nibble_prob: float,
+    interior_prob: float,
+) -> None: ...
+def sprite_nibble_boulder(
+    canvas: object,
+    seed: int,
+    nibble_prob: float,
+) -> None: ...

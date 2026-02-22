@@ -10,6 +10,7 @@ from brileta.sprites.primitives import (
     composite_over,
     draw_line,
     draw_thick_line,
+    generate_deciduous_canopy,
     paste_sprite,
 )
 
@@ -184,3 +185,67 @@ class TestPasteSprite:
 
         expected = _over_pixel((20, 200, 40), 128 / 255.0, (120, 30, 60, 200))
         np.testing.assert_array_equal(sheet[0, 0], np.array(expected, dtype=np.uint8))
+
+
+class TestGenerateDeciduousCanopy:
+    """Unit tests for the native deciduous canopy hot path."""
+
+    def test_deterministic_output_and_lobe_centers(self) -> None:
+        canvas_a = np.zeros((32, 32, 4), dtype=np.uint8)
+        canvas_b = np.zeros((32, 32, 4), dtype=np.uint8)
+        tips = [(15.0, 17.0), (18.0, 16.0), (13.0, 15.0)]
+        lobes_a = generate_deciduous_canopy(
+            canvas_a,
+            seed=12345,
+            size=20,
+            canopy_cx=16.0,
+            canopy_cy=12.0,
+            base_radius=5.5,
+            crown_rx_scale=1.1,
+            crown_ry_scale=0.9,
+            canopy_center_x_offset=0.2,
+            tips=tips,
+            shadow_rgba=(20, 80, 20, 230),
+            mid_rgba=(45, 120, 40, 220),
+            highlight_rgba=(90, 160, 65, 200),
+        )
+        lobes_b = generate_deciduous_canopy(
+            canvas_b,
+            seed=12345,
+            size=20,
+            canopy_cx=16.0,
+            canopy_cy=12.0,
+            base_radius=5.5,
+            crown_rx_scale=1.1,
+            crown_ry_scale=0.9,
+            canopy_center_x_offset=0.2,
+            tips=tips,
+            shadow_rgba=(20, 80, 20, 230),
+            mid_rgba=(45, 120, 40, 220),
+            highlight_rgba=(90, 160, 65, 200),
+        )
+
+        assert 3 <= len(lobes_a) <= 5
+        assert lobes_a == lobes_b
+        np.testing.assert_array_equal(canvas_a, canvas_b)
+
+    def test_draws_visible_canopy_pixels(self) -> None:
+        canvas = np.zeros((24, 24, 4), dtype=np.uint8)
+        lobes = generate_deciduous_canopy(
+            canvas,
+            seed=7,
+            size=18,
+            canopy_cx=12.0,
+            canopy_cy=9.0,
+            base_radius=4.5,
+            crown_rx_scale=1.0,
+            crown_ry_scale=1.0,
+            canopy_center_x_offset=0.0,
+            tips=[],
+            shadow_rgba=(15, 70, 15, 230),
+            mid_rgba=(35, 120, 35, 220),
+            highlight_rgba=(75, 155, 55, 200),
+        )
+
+        assert 3 <= len(lobes) <= 5
+        assert int(np.count_nonzero(canvas[:, :, 3])) > 0

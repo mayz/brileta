@@ -23,10 +23,13 @@ from brileta.game.enums import CreatureSize
 from brileta.sprites.primitives import (
     CanvasStamper,
     clamp,
+    darken_rim,
     draw_line,
     draw_tapered_trunk,
     draw_thick_line,
     fill_triangle,
+    generate_deciduous_canopy,
+    nibble_canopy,
     paste_sprite,
     stamp_fuzzy_circle,
 )
@@ -93,98 +96,6 @@ _DEAD_TRUNK_BASES: list[colors.Color] = [
 
 # Moss/lichen RGBA for dead trees (slightly transparent).
 _MOSS_RGBA: colors.ColorRGBA = (50, 70, 40, 180)
-
-
-# ---------------------------------------------------------------------------
-# Canopy post-processing helpers
-# ---------------------------------------------------------------------------
-
-
-def _darken_canopy_rim(
-    canvas: np.ndarray, darken: tuple[int, int, int] = (30, 30, 20)
-) -> None:
-    """Darken canopy edge pixels that border transparency.
-
-    For every opaque pixel (alpha > 128) adjacent to a transparent pixel
-    (alpha == 0) in any cardinal direction, subtract *darken* from the RGB
-    channels (clamped to 0). This creates a 1px dark outline around the
-    canopy silhouette so trees pop against any terrain background.
-
-    Operates in-place on *canvas* using vectorized numpy shifts.
-    """
-    rim = _canopy_rim_mask(canvas[:, :, 3])
-
-    # Darken rim pixels.
-    for c in range(3):
-        channel = canvas[:, :, c].astype(np.int16)
-        channel[rim] -= darken[c]
-        canvas[:, :, c] = np.clip(channel, 0, 255).astype(np.uint8)
-
-
-def _canopy_rim_mask(alpha: np.ndarray) -> np.ndarray:
-    """Return a mask for opaque canopy edge pixels that border transparency."""
-    opaque = alpha > 128
-    transparent = alpha == 0
-
-    # Shift transparent mask in four directions; pad with True (border counts).
-    border_up = np.pad(transparent[:-1, :], ((1, 0), (0, 0)), constant_values=True)
-    border_down = np.pad(transparent[1:, :], ((0, 1), (0, 0)), constant_values=True)
-    border_left = np.pad(transparent[:, :-1], ((0, 0), (1, 0)), constant_values=True)
-    border_right = np.pad(transparent[:, 1:], ((0, 0), (0, 1)), constant_values=True)
-    return opaque & (border_up | border_down | border_left | border_right)
-
-
-def _nibble_canopy_silhouette(
-    canvas: np.ndarray,
-    rng: np.random.Generator,
-    canopy_center: PixelPos,
-    canopy_radius: float,
-    nibble_probability: float = 0.25,
-    interior_probability: float = 0.10,
-) -> None:
-    """Carve small random notches in the canopy edge for silhouette variety."""
-    alpha = canvas[:, :, 3]
-    rim = _canopy_rim_mask(alpha)
-
-    # Limit nibbles to the canopy envelope so trunks are not eroded.
-    center_x, center_y = canopy_center
-    h, w = alpha.shape
-    ys, xs = np.indices((h, w), dtype=np.float32)
-    safe_radius = max(canopy_radius, 1e-6)
-    dx = (xs - np.float32(center_x)) / safe_radius
-    dy = (ys - np.float32(center_y)) / (safe_radius * 0.9)
-    canopy_region = (dx * dx + dy * dy) <= 1.6
-    rim &= canopy_region
-
-    if not np.any(rim):
-        return
-
-    nibble_chance = float(np.clip(nibble_probability, 0.0, 1.0))
-    interior_chance = float(np.clip(interior_probability, 0.0, 1.0))
-
-    nibble_mask = rim & (rng.random(alpha.shape) < nibble_chance)
-    if not np.any(nibble_mask):
-        return
-    alpha[nibble_mask] = 0
-
-    if interior_chance <= 0.0:
-        return
-
-    interior_mask = nibble_mask & (rng.random(alpha.shape) < interior_chance)
-    if not np.any(interior_mask):
-        return
-
-    ys_i16 = ys.astype(np.int16)
-    xs_i16 = xs.astype(np.int16)
-    step_x = np.sign(np.float32(center_x) - xs).astype(np.int16)
-    step_y = np.sign(np.float32(center_y) - ys).astype(np.int16)
-
-    inner_x = np.clip(xs_i16 + step_x, 0, w - 1)
-    inner_y = np.clip(ys_i16 + step_y, 0, h - 1)
-    target_y = inner_y[interior_mask]
-    target_x = inner_x[interior_mask]
-    target_opaque = alpha[target_y, target_x] > 128
-    alpha[target_y[target_opaque], target_x[target_opaque]] = 0
 
 
 # ---------------------------------------------------------------------------
@@ -389,158 +300,23 @@ def _generate_deciduous(
     min_canopy_cy = float(trunk_top) - base_radius * 0.55
     canopy_cy = max(canopy_cy, min_canopy_cy)
 
-    n_lobes = int(rng.integers(3, 6))
-    lobe_centers: list[PixelPos] = []
-    base_angle_step = 2.0 * math.pi / n_lobes
-    lobe_angle_offset = float(rng.uniform(-math.pi, math.pi))
-    for i in range(n_lobes):
-        angle = lobe_angle_offset + base_angle_step * i + float(rng.uniform(-0.4, 0.4))
-        dist = base_radius * float(rng.uniform(0.45, 0.65))
-        # Bottom lobes hang a little lower for an irregular lower canopy edge.
-        vertical_scale = 0.9 if math.sin(angle) > 0.0 else 0.7
-        lx = canopy_cx + math.cos(angle) * dist
-        ly = canopy_cy + math.sin(angle) * dist * vertical_scale
-        lobe_centers.append((lx, ly))
-
-    stamper = CanvasStamper(canvas)
-    central_fills: list[tuple[float, float, float, float]] = []
-    shadows: list[tuple[float, float, float, float]] = []
-    mids: list[tuple[float, float, float, float]] = []
-    highlights: list[tuple[float, float, float, float]] = []
-
-    # Central fill: a solid core connecting all lobes so the canopy reads
-    # as one mass with bumps rather than disconnected amoeba blobs.
-    for _ in range(int(rng.integers(1, 3))):
-        cr = base_radius * float(rng.uniform(0.55, 0.70))
-        central_fills.append(
-            (
-                canopy_cx + float(rng.uniform(-0.5, 0.5)),
-                canopy_cy + float(rng.uniform(-0.5, 0.3)),
-                cr * crown_rx_scale,
-                cr * crown_ry_scale,
-            )
-        )
-
-    # Pass 1: Shadow zone.
-    for lx, ly in lobe_centers:
-        for _ in range(int(rng.integers(1, 3))):
-            sx = lx + float(rng.uniform(-size * 0.05, size * 0.05))
-            sy = ly + float(rng.uniform(-size * 0.07, size * 0.04))
-            r = base_radius * float(rng.uniform(0.62, 0.76))
-            shadows.append(
-                (
-                    sx,
-                    sy,
-                    r * crown_rx_scale,
-                    r * crown_ry_scale,
-                )
-            )
-
-    n_tip_shadow = min(len(tips), int(rng.integers(1, 3)))
-    if n_tip_shadow > 0:
-        tip_indices = np.atleast_1d(
-            rng.choice(len(tips), size=n_tip_shadow, replace=False)
-        )
-        for tip_index in tip_indices:
-            tx, ty = tips[int(tip_index)]
-            r = base_radius * float(rng.uniform(0.50, 0.68))
-            shadows.append(
-                (
-                    tx + canopy_center_x_offset + float(rng.uniform(-0.5, 0.5)),
-                    ty - 1.0 + float(rng.uniform(-0.5, 0.3)),
-                    r * crown_rx_scale,
-                    r * crown_ry_scale,
-                )
-            )
-
-    # Pass 2: Mid-tone zone.
-    for lx, ly in lobe_centers:
-        for _ in range(int(rng.integers(1, 3))):
-            mx = lx + float(rng.uniform(-size * 0.04, size * 0.04))
-            my = ly + float(rng.uniform(-size * 0.05, size * 0.03))
-            r = base_radius * float(rng.uniform(0.58, 0.72))
-            mids.append(
-                (
-                    mx,
-                    my,
-                    r * crown_rx_scale,
-                    r * crown_ry_scale,
-                )
-            )
-
-    n_tip_mid = min(len(tips), int(rng.integers(1, 3)))
-    if n_tip_mid > 0:
-        tip_indices = np.atleast_1d(
-            rng.choice(len(tips), size=n_tip_mid, replace=False)
-        )
-        for tip_index in tip_indices:
-            tx, ty = tips[int(tip_index)]
-            r = base_radius * float(rng.uniform(0.46, 0.62))
-            mids.append(
-                (
-                    tx + canopy_center_x_offset + float(rng.uniform(-0.6, 0.6)),
-                    ty - 1.1 + float(rng.uniform(-0.6, 0.2)),
-                    r * crown_rx_scale,
-                    r * crown_ry_scale,
-                )
-            )
-
-    # Pass 3: Highlight zone.
-    for lx, ly in lobe_centers:
-        for _ in range(int(rng.integers(1, 3))):
-            hx = lx + float(rng.uniform(-size * 0.03, size * 0.03))
-            hy = ly - size * 0.05 + float(rng.uniform(-size * 0.03, size * 0.02))
-            r = base_radius * float(rng.uniform(0.45, 0.60))
-            highlights.append(
-                (
-                    hx,
-                    hy,
-                    r * crown_rx_scale,
-                    r * crown_ry_scale,
-                )
-            )
-
-    n_tip_highlight = min(len(tips), int(rng.integers(1, 3)))
-    if n_tip_highlight > 0:
-        tip_indices = np.atleast_1d(
-            rng.choice(len(tips), size=n_tip_highlight, replace=False)
-        )
-        for tip_index in tip_indices:
-            tx, ty = tips[int(tip_index)]
-            r = base_radius * float(rng.uniform(0.38, 0.50))
-            highlights.append(
-                (
-                    tx + canopy_center_x_offset + float(rng.uniform(-0.5, 0.5)),
-                    ty - 1.3 + float(rng.uniform(-0.4, 0.2)),
-                    r * crown_rx_scale,
-                    r * crown_ry_scale,
-                )
-            )
-
-    # Batch by shading group to reduce Python-to-numpy call overhead.
-    stamper.batch_stamp_ellipses(
-        central_fills,
-        shadow_rgba,
-        falloff=1.6,
-        hardness=0.7,
-    )
-    stamper.batch_stamp_ellipses(
-        shadows,
-        shadow_rgba,
-        falloff=1.8,
-        hardness=0.8,
-    )
-    stamper.batch_stamp_ellipses(
-        mids,
-        mid_rgba,
-        falloff=1.5,
-        hardness=0.7,
-    )
-    stamper.batch_stamp_ellipses(
-        highlights,
-        highlight_rgba,
-        falloff=1.3,
-        hardness=0.6,
+    # Native hot path: lobe placement + ellipse list construction + batch
+    # stamping. Returns lobe centers so Python can keep the small branch-tip
+    # extension detail logic without reintroducing the hot inner loop.
+    lobe_centers = generate_deciduous_canopy(
+        canvas=canvas,
+        seed=int(rng.integers(0, 2**63)),
+        size=size,
+        canopy_cx=canopy_cx,
+        canopy_cy=canopy_cy,
+        base_radius=base_radius,
+        crown_rx_scale=crown_rx_scale,
+        crown_ry_scale=crown_ry_scale,
+        canopy_center_x_offset=canopy_center_x_offset,
+        tips=tips,
+        shadow_rgba=shadow_rgba,
+        mid_rgba=mid_rgba,
+        highlight_rgba=highlight_rgba,
     )
 
     # Add a few tiny branch segments that poke out from lobe edges.
@@ -573,15 +349,16 @@ def _generate_deciduous(
             ey = sy + uy * ext_len
             draw_line(canvas, sx, sy, ex, ey, branch_tip_rgba)
 
-    _nibble_canopy_silhouette(
+    nibble_canopy(
         canvas,
-        rng,
-        (canopy_cx, canopy_cy),
+        seed=int(rng.integers(0, 2**63)),
+        center_x=canopy_cx,
+        center_y=canopy_cy,
         canopy_radius=base_radius * 2.0,
         nibble_probability=0.25,
         interior_probability=0.10,
     )
-    _darken_canopy_rim(canvas)
+    darken_rim(canvas)
 
 
 def _generate_conifer(canvas: np.ndarray, size: int, rng: np.random.Generator) -> None:
@@ -658,7 +435,7 @@ def _generate_conifer(canvas: np.ndarray, size: int, rng: np.random.Generator) -
         # Next tier starts partway up this one (overlap ~35%).
         current_bottom = tier_top + max(1, int(tier_h * 0.35))
 
-    _darken_canopy_rim(canvas)
+    darken_rim(canvas)
 
 
 def _generate_dead(canvas: np.ndarray, size: int, rng: np.random.Generator) -> None:
@@ -847,15 +624,16 @@ def _generate_sapling(canvas: np.ndarray, size: int, rng: np.random.Generator) -
         hardness=0.4,
     )
 
-    _nibble_canopy_silhouette(
+    nibble_canopy(
         canvas,
-        rng,
-        (canopy_cx, canopy_cy),
+        seed=int(rng.integers(0, 2**63)),
+        center_x=canopy_cx,
+        center_y=canopy_cy,
         canopy_radius=base_radius * 1.9,
         nibble_probability=0.25,
         interior_probability=0.10,
     )
-    _darken_canopy_rim(canvas)
+    darken_rim(canvas)
 
 
 # ---------------------------------------------------------------------------

@@ -1,22 +1,76 @@
-"""Reusable RGBA sprite drawing primitives."""
+"""Reusable RGBA sprite drawing primitives.
+
+All drawing is performed by native C implementations in
+``brileta.util._native`` (see ``_native_sprites.c``).  The functions
+here are thin wrappers that unpack color tuples into the positional
+arguments the C layer expects.
+"""
 
 from __future__ import annotations
-
-import math
 
 import numpy as np
 
 from brileta import colors
+from brileta.types import PixelPos
+from brileta.util._native import (
+    sprite_alpha_blend as _c_alpha_blend,
+)
+from brileta.util._native import (
+    sprite_batch_stamp_circles as _c_batch_stamp_circles,
+)
+from brileta.util._native import (
+    sprite_batch_stamp_ellipses as _c_batch_stamp_ellipses,
+)
+from brileta.util._native import (
+    sprite_composite_over as _c_composite_over,
+)
+from brileta.util._native import (
+    sprite_darken_rim as _c_darken_rim,
+)
+from brileta.util._native import (
+    sprite_draw_line as _c_draw_line,
+)
+from brileta.util._native import (
+    sprite_draw_tapered_trunk as _c_draw_tapered_trunk,
+)
+from brileta.util._native import (
+    sprite_draw_thick_line as _c_draw_thick_line,
+)
+from brileta.util._native import (
+    sprite_fill_triangle as _c_fill_triangle,
+)
+from brileta.util._native import (
+    sprite_generate_deciduous_canopy as _c_generate_deciduous_canopy,
+)
+from brileta.util._native import (
+    sprite_nibble_boulder as _c_nibble_boulder,
+)
+from brileta.util._native import (
+    sprite_nibble_canopy as _c_nibble_canopy,
+)
+from brileta.util._native import (
+    sprite_paste_sprite as _c_paste_sprite,
+)
+from brileta.util._native import (
+    sprite_stamp_ellipse as _c_stamp_ellipse,
+)
+from brileta.util._native import (
+    sprite_stamp_fuzzy_circle as _c_stamp_fuzzy_circle,
+)
 
 __all__ = [
     "CanvasStamper",
     "alpha_blend",
     "clamp",
     "composite_over",
+    "darken_rim",
     "draw_line",
     "draw_tapered_trunk",
     "draw_thick_line",
     "fill_triangle",
+    "generate_deciduous_canopy",
+    "nibble_boulder",
+    "nibble_canopy",
     "paste_sprite",
     "stamp_ellipse",
     "stamp_fuzzy_circle",
@@ -30,25 +84,7 @@ def clamp(value: int, lo: int = 0, hi: int = 255) -> int:
 
 def alpha_blend(canvas: np.ndarray, x: int, y: int, rgba: colors.ColorRGBA) -> None:
     """Alpha-composite a single RGBA pixel onto the canvas."""
-    h, w = canvas.shape[:2]
-    if not (0 <= x < w and 0 <= y < h):
-        return
-
-    src_a = rgba[3] / 255.0
-    if src_a <= 0:
-        return
-
-    dst_a = canvas[y, x, 3] / 255.0
-    out_a = src_a + dst_a * (1.0 - src_a)
-    if out_a <= 0:
-        return
-
-    inv_src = 1.0 - src_a
-    for c in range(3):
-        canvas[y, x, c] = int(
-            (rgba[c] * src_a + float(canvas[y, x, c]) * dst_a * inv_src) / out_a
-        )
-    canvas[y, x, 3] = int(out_a * 255)
+    _c_alpha_blend(canvas, x, y, rgba[0], rgba[1], rgba[2], rgba[3])
 
 
 def composite_over(
@@ -65,22 +101,17 @@ def composite_over(
     ``src_a`` is a 2D float array with alpha values in ``[0.0, 1.0]`` whose
     shape matches the region defined by ``y_min:y_max+1, x_min:x_max+1``.
     """
-    region = canvas[y_min : y_max + 1, x_min : x_max + 1]
-    dst_a = region[:, :, 3].astype(np.float32) * np.float32(1.0 / 255.0)
-    out_a = src_a + dst_a * (1.0 - src_a)
-    safe_out_a = np.maximum(out_a, np.float32(1e-6))
-    inv_src = 1.0 - src_a
-
-    src_rgb = np.array(rgb, dtype=np.float32)
-    dst_rgb = region[:, :, :3].astype(np.float32)
-    sa3 = src_a[:, :, np.newaxis]
-    da_inv3 = (dst_a * inv_src)[:, :, np.newaxis]
-    soa3 = safe_out_a[:, :, np.newaxis]
-
-    region[:, :, :3] = np.clip(
-        (src_rgb * sa3 + dst_rgb * da_inv3) / soa3, 0, 255
-    ).astype(np.uint8)
-    region[:, :, 3] = np.clip(out_a * 255, 0, 255).astype(np.uint8)
+    _c_composite_over(
+        canvas,
+        y_min,
+        y_max,
+        x_min,
+        x_max,
+        np.ascontiguousarray(src_a, dtype=np.float32),
+        rgb[0],
+        rgb[1],
+        rgb[2],
+    )
 
 
 def draw_line(
@@ -92,26 +123,7 @@ def draw_line(
     rgba: colors.ColorRGBA,
 ) -> None:
     """Draw a 1px Bresenham line between two points."""
-    ix0, iy0 = round(x0), round(y0)
-    ix1, iy1 = round(x1), round(y1)
-
-    dx = abs(ix1 - ix0)
-    dy = abs(iy1 - iy0)
-    sx = 1 if ix0 < ix1 else -1
-    sy = 1 if iy0 < iy1 else -1
-    err = dx - dy
-
-    while True:
-        alpha_blend(canvas, ix0, iy0, rgba)
-        if ix0 == ix1 and iy0 == iy1:
-            break
-        e2 = 2 * err
-        if e2 > -dy:
-            err -= dy
-            ix0 += sx
-        if e2 < dx:
-            err += dx
-            iy0 += sy
+    _c_draw_line(canvas, x0, y0, x1, y1, rgba[0], rgba[1], rgba[2], rgba[3])
 
 
 def draw_thick_line(
@@ -124,28 +136,9 @@ def draw_thick_line(
     thickness: int,
 ) -> None:
     """Draw a line with integer thickness using parallel Bresenham lines."""
-    if thickness <= 1:
-        draw_line(canvas, x0, y0, x1, y1, rgba)
-        return
-
-    # Perpendicular direction for offsetting parallel lines.
-    dx = x1 - x0
-    dy = y1 - y0
-    length = math.sqrt(dx * dx + dy * dy)
-    if length < 0.01:
-        alpha_blend(canvas, round(x0), round(y0), rgba)
-        return
-
-    # Unit perpendicular vector.
-    px = -dy / length
-    py = dx / length
-
-    half = thickness / 2.0
-    for i in range(thickness):
-        offset = -half + 0.5 + i
-        ox = px * offset
-        oy = py * offset
-        draw_line(canvas, x0 + ox, y0 + oy, x1 + ox, y1 + oy, rgba)
+    _c_draw_thick_line(
+        canvas, x0, y0, x1, y1, rgba[0], rgba[1], rgba[2], rgba[3], thickness
+    )
 
 
 def draw_tapered_trunk(
@@ -164,58 +157,19 @@ def draw_tapered_trunk(
     *width_top* at *y_top*. An optional *root_flare* widens the
     bottom 1-2 rows to suggest ground contact.
     """
-    h, w = canvas.shape[:2]
-    height = y_bottom - y_top + 1
-    if height <= 0:
-        return
-
-    draw_y_min = max(0, y_top)
-    draw_y_max = min(h - 1, y_bottom)
-    if draw_y_min > draw_y_max:
-        return
-
-    rows = np.arange(height, dtype=np.float32)
-    ys = y_top + rows
-
-    # Linear interpolation: 0.0 at top, 1.0 at bottom.
-    t = rows / np.float32(max(1, height - 1))
-    row_w = np.float32(width_top) + np.float32(width_bottom - width_top) * t
-
-    # Root flare: widen bottom rows.
-    if root_flare > 0:
-        dist_to_bottom = np.float32(y_bottom) - ys
-        flare_mask = dist_to_bottom < np.float32(root_flare)
-        flare_t = 1.0 - dist_to_bottom / np.float32(root_flare)
-        row_w = row_w + np.where(flare_mask, flare_t * np.float32(1.5), np.float32(0.0))
-
-    row_w = row_w.astype(np.float32)
-    half_w = row_w * np.float32(0.5)
-
-    local_start = int(draw_y_min - y_top)
-    local_end = int(draw_y_max - y_top + 1)
-    row_half_w = half_w[local_start:local_end]
-
-    x_min = max(0, math.floor(cx - float(np.max(row_half_w)) - 0.5))
-    x_max = min(w - 1, math.ceil(cx + float(np.max(row_half_w)) + 0.5))
-    if x_min > x_max:
-        return
-
-    xs = np.arange(x_min, x_max + 1, dtype=np.float32)
-    dist = np.abs(xs[np.newaxis, :] - np.float32(cx))
-    half_w_2d = row_half_w[:, np.newaxis]
-
-    inside = dist <= (half_w_2d + np.float32(0.5))
-    edge_mask = dist > (half_w_2d - np.float32(0.5))
-    edge = np.maximum(np.float32(0.0), 1.0 - (dist - half_w_2d + np.float32(0.5)))
-
-    row_alpha_i = np.where(
-        edge_mask,
-        np.floor(np.float32(rgba[3]) * edge).astype(np.int16),
-        np.int16(rgba[3]),
+    _c_draw_tapered_trunk(
+        canvas,
+        cx,
+        y_bottom,
+        y_top,
+        width_bottom,
+        width_top,
+        rgba[0],
+        rgba[1],
+        rgba[2],
+        rgba[3],
+        root_flare,
     )
-    row_alpha_i = np.where(inside, row_alpha_i, np.int16(0))
-    src_a = row_alpha_i.astype(np.float32) * np.float32(1.0 / 255.0)
-    composite_over(canvas, draw_y_min, draw_y_max, x_min, x_max, src_a, rgba[:3])
 
 
 def stamp_fuzzy_circle(
@@ -227,64 +181,10 @@ def stamp_fuzzy_circle(
     falloff: float = 1.5,
     hardness: float = 0.0,
 ) -> None:
-    """Stamp a soft circle with alpha falloff at edges.
-
-    Uses vectorized numpy operations for the whole circle region at once.
-    The alpha profile transitions from soft to crisp by adjusting the fully
-    opaque core radius fraction and edge falloff exponent via *hardness*.
-    """
-    h, w = canvas.shape[:2]
-    r_ceil = math.ceil(radius) + 1
-
-    # Bounding box clipped to canvas.
-    y_min = max(0, int(cy) - r_ceil)
-    y_max = min(h - 1, int(cy) + r_ceil)
-    x_min = max(0, int(cx) - r_ceil)
-    x_max = min(w - 1, int(cx) + r_ceil)
-    if y_min > y_max or x_min > x_max:
-        return
-
-    # Coordinate grids for the bounding box.
-    ys = np.arange(y_min, y_max + 1, dtype=np.float32)
-    xs = np.arange(x_min, x_max + 1, dtype=np.float32)
-    yy, xx = np.meshgrid(ys, xs, indexing="ij")
-
-    # Distance from center.
-    dist = np.sqrt((xx - cx) ** 2 + (yy - cy) ** 2)
-
-    # Alpha profile: interpolate from soft (legacy) to hard edge.
-    hardness_clamped = max(0.0, min(1.0, hardness))
-    inner_fraction = 0.3 + (0.85 - 0.3) * hardness_clamped
-    effective_falloff = falloff + 2.5 * hardness_clamped
-    inner_r = radius * inner_fraction
-    outer_r = radius * (1.0 - inner_fraction)
-    safe_outer_r = max(outer_r, 1e-6)
-    falloff_region = np.maximum((dist - inner_r) / safe_outer_r, np.float32(0.0))
-    outer_alpha = np.clip(
-        1.0 - np.power(falloff_region, effective_falloff),
-        0.0,
-        1.0,
+    """Stamp a soft circle with alpha falloff at edges."""
+    _c_stamp_fuzzy_circle(
+        canvas, cx, cy, radius, rgba[0], rgba[1], rgba[2], rgba[3], falloff, hardness
     )
-    alpha = np.where(dist <= inner_r, np.float32(1.0), outer_alpha)
-    alpha = np.where(dist > radius + 0.5, np.float32(0.0), alpha)
-
-    # Source alpha incorporating the RGBA's own alpha channel.
-    src_a = (alpha * (rgba[3] / 255.0)).astype(np.float32)
-
-    # Slice out the affected canvas region.
-    region = canvas[y_min : y_max + 1, x_min : x_max + 1]
-    dst_a = region[:, :, 3].astype(np.float32) / 255.0
-
-    # Porter-Duff "over" compositing.
-    out_a = src_a + dst_a * (1.0 - src_a)
-    safe_out_a = np.maximum(out_a, np.float32(1e-6))
-
-    inv_src = 1.0 - src_a
-    for c in range(3):
-        dst_c = region[:, :, c].astype(np.float32)
-        blended = (rgba[c] * src_a + dst_c * dst_a * inv_src) / safe_out_a
-        region[:, :, c] = np.clip(blended, 0, 255).astype(np.uint8)
-    region[:, :, 3] = np.clip(out_a * 255, 0, 255).astype(np.uint8)
 
 
 def stamp_ellipse(
@@ -298,83 +198,22 @@ def stamp_ellipse(
     hardness: float = 0.0,
 ) -> None:
     """Stamp a soft-to-hard ellipse using normalized ellipse-space distance."""
-    if rx <= 0.0 or ry <= 0.0:
-        return
-
-    h, w = canvas.shape[:2]
-    rx_ceil = math.ceil(rx) + 1
-    ry_ceil = math.ceil(ry) + 1
-
-    # Bounding box clipped to canvas.
-    y_min = max(0, int(cy) - ry_ceil)
-    y_max = min(h - 1, int(cy) + ry_ceil)
-    x_min = max(0, int(cx) - rx_ceil)
-    x_max = min(w - 1, int(cx) + rx_ceil)
-    if y_min > y_max or x_min > x_max:
-        return
-
-    ys = np.arange(y_min, y_max + 1, dtype=np.float32)
-    xs = np.arange(x_min, x_max + 1, dtype=np.float32)
-    yy, xx = np.meshgrid(ys, xs, indexing="ij")
-
-    # Unit distance in normalized ellipse space (1.0 is ellipse boundary).
-    dx = (xx - cx) / np.float32(rx)
-    dy = (yy - cy) / np.float32(ry)
-    dist = np.sqrt(dx**2 + dy**2)
-
-    hardness_clamped = max(0.0, min(1.0, hardness))
-    inner_fraction = 0.3 + (0.85 - 0.3) * hardness_clamped
-    effective_falloff = falloff + 2.5 * hardness_clamped
-    outer_fraction = max(1e-6, 1.0 - inner_fraction)
-
-    falloff_region = np.maximum((dist - inner_fraction) / outer_fraction, 0.0)
-    outer_alpha = np.clip(
-        1.0 - np.power(falloff_region, effective_falloff),
-        0.0,
-        1.0,
+    _c_stamp_ellipse(
+        canvas, cx, cy, rx, ry, rgba[0], rgba[1], rgba[2], rgba[3], falloff, hardness
     )
-    alpha = np.where(dist <= inner_fraction, np.float32(1.0), outer_alpha)
-    edge_pad = 0.5 / max(rx, ry)
-    alpha = np.where(dist > 1.0 + edge_pad, np.float32(0.0), alpha)
-
-    src_a = (alpha * (rgba[3] / 255.0)).astype(np.float32)
-    region = canvas[y_min : y_max + 1, x_min : x_max + 1]
-    dst_a = region[:, :, 3].astype(np.float32) / 255.0
-
-    out_a = src_a + dst_a * (1.0 - src_a)
-    safe_out_a = np.maximum(out_a, np.float32(1e-6))
-
-    inv_src = 1.0 - src_a
-    for c in range(3):
-        dst_c = region[:, :, c].astype(np.float32)
-        blended = (rgba[c] * src_a + dst_c * dst_a * inv_src) / safe_out_a
-        region[:, :, c] = np.clip(blended, 0, 255).astype(np.uint8)
-    region[:, :, 3] = np.clip(out_a * 255, 0, 255).astype(np.uint8)
 
 
 class CanvasStamper:
-    """Pre-allocated coordinate grids for efficient repeated stamping.
+    """Thin wrapper that holds a canvas reference for batch stamping.
 
-    When stamping many ellipses/circles onto one canvas (e.g. 20+ canopy
-    lobes in the deciduous generator), constructing numpy meshgrids and
-    temporary arrays per stamp dominates the runtime at small canvas sizes.
-
-    This class pre-computes the full-canvas coordinate grid once and reuses
-    sliced views for each stamp, and vectorizes the RGB channel compositing
-    to eliminate the per-channel Python loop.
+    All drawing is performed by the native C layer. The class preserves
+    the public API expected by tree and boulder sprite generators.
     """
 
-    __slots__ = ("_canvas", "_full_xx", "_full_yy", "_h", "_w")
+    __slots__ = ("_canvas",)
 
     def __init__(self, canvas: np.ndarray) -> None:
-        h, w = canvas.shape[:2]
         self._canvas = canvas
-        self._h = h
-        self._w = w
-        # Full-canvas coordinate grids, allocated once and sliced per stamp.
-        ys = np.arange(h, dtype=np.float32)
-        xs = np.arange(w, dtype=np.float32)
-        self._full_yy, self._full_xx = np.meshgrid(ys, xs, indexing="ij")
 
     def stamp_ellipse(
         self,
@@ -386,50 +225,20 @@ class CanvasStamper:
         falloff: float = 1.5,
         hardness: float = 0.0,
     ) -> None:
-        """Alpha-composite a soft ellipse onto the canvas.
-
-        Equivalent to the standalone ``stamp_ellipse`` but reuses
-        pre-computed coordinate grids.
-        """
-        if rx <= 0.0 or ry <= 0.0:
-            return
-
-        rx_ceil = math.ceil(rx) + 1
-        ry_ceil = math.ceil(ry) + 1
-
-        # Bounding box clipped to canvas.
-        y_min = max(0, int(cy) - ry_ceil)
-        y_max = min(self._h - 1, int(cy) + ry_ceil)
-        x_min = max(0, int(cx) - rx_ceil)
-        x_max = min(self._w - 1, int(cx) + rx_ceil)
-        if y_min > y_max or x_min > x_max:
-            return
-
-        # Sliced views into pre-computed coordinate grids (no allocation).
-        yy = self._full_yy[y_min : y_max + 1, x_min : x_max + 1]
-        xx = self._full_xx[y_min : y_max + 1, x_min : x_max + 1]
-
-        # Normalized ellipse-space distance (1.0 = ellipse boundary).
-        dx = (xx - np.float32(cx)) / np.float32(rx)
-        dy = (yy - np.float32(cy)) / np.float32(ry)
-        dist = np.sqrt(dx * dx + dy * dy)
-
-        # Alpha profile: interpolate from soft to hard edge via hardness.
-        hardness_clamped = max(0.0, min(1.0, hardness))
-        inner_fraction = 0.3 + 0.55 * hardness_clamped
-        effective_falloff = falloff + 2.5 * hardness_clamped
-        outer_fraction = max(1e-6, 1.0 - inner_fraction)
-
-        falloff_region = np.maximum((dist - inner_fraction) / outer_fraction, 0.0)
-        alpha = np.where(
-            dist <= inner_fraction,
-            np.float32(1.0),
-            np.clip(1.0 - np.power(falloff_region, effective_falloff), 0.0, 1.0),
+        """Alpha-composite a soft ellipse onto the canvas."""
+        _c_stamp_ellipse(
+            self._canvas,
+            cx,
+            cy,
+            rx,
+            ry,
+            rgba[0],
+            rgba[1],
+            rgba[2],
+            rgba[3],
+            falloff,
+            hardness,
         )
-        edge_pad = 0.5 / max(rx, ry)
-        alpha = np.where(dist > 1.0 + edge_pad, np.float32(0.0), alpha)
-        src_a = alpha * np.float32(rgba[3] / 255.0)
-        composite_over(self._canvas, y_min, y_max, x_min, x_max, src_a, rgba[:3])
 
     def batch_stamp_ellipses(
         self,
@@ -440,85 +249,21 @@ class CanvasStamper:
     ) -> None:
         """Batch-stamp multiple same-style ellipses with one composite pass.
 
-        The provided ellipses use ``(cx, cy, rx, ry)`` tuples. Because every
-        ellipse shares the same RGB colour, sequential Porter-Duff "over"
-        compositing reduces to a single composite whose alpha is the screen
-        blend of the individual alphas:
-        ``combined = 1 - (1 - a1)(1 - a2)...(1 - aN)``.
-
-        The batch path accumulates source alpha in float32 and quantizes to
-        uint8 once at the end, whereas sequential stamping quantizes after
-        each ellipse. This makes batch results slightly *more* accurate
-        (fewer rounding losses) but can differ by +/-1-2 per channel from the
-        sequential path.
+        Uses screen-blend alpha accumulation so all ellipses composite in a
+        single pass. Results may differ by +/-1 per channel from sequential
+        stamping due to float accumulation order.
         """
         if not ellipses:
             return
-        if len(ellipses) == 1:
-            cx, cy, rx, ry = ellipses[0]
-            self.stamp_ellipse(cx, cy, rx, ry, rgba, falloff, hardness)
-            return
-
-        bounds: list[tuple[int, int, int, int, float, float, float, float]] = []
-        for cx, cy, rx, ry in ellipses:
-            if rx <= 0.0 or ry <= 0.0:
-                continue
-            rx_ceil = math.ceil(rx) + 1
-            ry_ceil = math.ceil(ry) + 1
-            y_min = max(0, int(cy) - ry_ceil)
-            y_max = min(self._h - 1, int(cy) + ry_ceil)
-            x_min = max(0, int(cx) - rx_ceil)
-            x_max = min(self._w - 1, int(cx) + rx_ceil)
-            if y_min > y_max or x_min > x_max:
-                continue
-            bounds.append((y_min, y_max, x_min, x_max, cx, cy, rx, ry))
-
-        if not bounds:
-            return
-
-        union_y_min = min(y_min for y_min, _, _, _, _, _, _, _ in bounds)
-        union_y_max = max(y_max for _, y_max, _, _, _, _, _, _ in bounds)
-        union_x_min = min(x_min for _, _, x_min, _, _, _, _, _ in bounds)
-        union_x_max = max(x_max for _, _, _, x_max, _, _, _, _ in bounds)
-
-        yy = self._full_yy[union_y_min : union_y_max + 1, union_x_min : union_x_max + 1]
-        xx = self._full_xx[union_y_min : union_y_max + 1, union_x_min : union_x_max + 1]
-        # Track the product of (1 - src_a_i) across all ellipses so we can
-        # derive the screen-blended combined source alpha at the end. The
-        # global opacity (rgba[3]/255) is folded into each per-ellipse alpha
-        # *before* accumulation, matching sequential Porter-Duff behaviour.
-        remaining = np.ones_like(yy, dtype=np.float32)
-        opacity = np.float32(rgba[3] / 255.0)
-
-        hardness_clamped = max(0.0, min(1.0, hardness))
-        inner_fraction = 0.3 + 0.55 * hardness_clamped
-        effective_falloff = falloff + 2.5 * hardness_clamped
-        outer_fraction = max(1e-6, 1.0 - inner_fraction)
-
-        for _, _, _, _, cx, cy, rx, ry in bounds:
-            dx = (xx - np.float32(cx)) / np.float32(rx)
-            dy = (yy - np.float32(cy)) / np.float32(ry)
-            dist = np.sqrt(dx * dx + dy * dy)
-
-            falloff_region = np.maximum((dist - inner_fraction) / outer_fraction, 0.0)
-            alpha = np.where(
-                dist <= inner_fraction,
-                np.float32(1.0),
-                np.clip(1.0 - np.power(falloff_region, effective_falloff), 0.0, 1.0),
-            )
-            edge_pad = 0.5 / max(rx, ry)
-            alpha = np.where(dist > 1.0 + edge_pad, np.float32(0.0), alpha)
-            remaining *= 1.0 - alpha * opacity
-
-        src_a = 1.0 - remaining
-        composite_over(
+        _c_batch_stamp_ellipses(
             self._canvas,
-            union_y_min,
-            union_y_max,
-            union_x_min,
-            union_x_max,
-            src_a,
-            rgba[:3],
+            ellipses,
+            rgba[0],
+            rgba[1],
+            rgba[2],
+            rgba[3],
+            falloff,
+            hardness,
         )
 
     def batch_stamp_circles(
@@ -531,8 +276,16 @@ class CanvasStamper:
         """Batch-stamp circles with shared style parameters."""
         if not circles:
             return
-        ellipses = [(cx, cy, r, r) for cx, cy, r in circles]
-        self.batch_stamp_ellipses(ellipses, rgba, falloff, hardness)
+        _c_batch_stamp_circles(
+            self._canvas,
+            circles,
+            rgba[0],
+            rgba[1],
+            rgba[2],
+            rgba[3],
+            falloff,
+            hardness,
+        )
 
     def stamp_circle(
         self,
@@ -560,46 +313,55 @@ def fill_triangle(
     The triangle's apex is at *(cx, top_y)* and its base at
     *top_y + height - 1* spans *base_width* pixels.
     """
-    h, w = canvas.shape[:2]
-    if height <= 0:
-        return
-
-    bottom_y = top_y + height - 1
-    draw_y_min = max(0, top_y)
-    draw_y_max = min(h - 1, bottom_y)
-    if draw_y_min > draw_y_max:
-        return
-
-    rows = np.arange(height, dtype=np.float32)
-    t = rows / np.float32(max(1, height - 1))
-    row_w = 1.0 + np.float32(base_width - 1.0) * np.power(t, np.float32(0.8))
-    half_w = row_w * np.float32(0.5)
-
-    local_start = int(draw_y_min - top_y)
-    local_end = int(draw_y_max - top_y + 1)
-    row_half_w = half_w[local_start:local_end]
-
-    x_min = max(0, math.floor(cx - float(np.max(row_half_w)) - 0.5))
-    x_max = min(w - 1, math.ceil(cx + float(np.max(row_half_w)) + 0.5))
-    if x_min > x_max:
-        return
-
-    xs = np.arange(x_min, x_max + 1, dtype=np.float32)
-    dist = np.abs(xs[np.newaxis, :] - np.float32(cx))
-    half_w_2d = row_half_w[:, np.newaxis]
-
-    inside = dist <= (half_w_2d + np.float32(0.5))
-    edge_mask = dist > (half_w_2d - np.float32(0.5))
-    edge = np.maximum(np.float32(0.0), 1.0 - (dist - half_w_2d + np.float32(0.5)))
-
-    row_alpha_i = np.where(
-        edge_mask,
-        np.floor(np.float32(rgba[3]) * edge).astype(np.int16),
-        np.int16(rgba[3]),
+    _c_fill_triangle(
+        canvas, cx, top_y, base_width, height, rgba[0], rgba[1], rgba[2], rgba[3]
     )
-    row_alpha_i = np.where(inside, row_alpha_i, np.int16(0))
-    src_a = row_alpha_i.astype(np.float32) * np.float32(1.0 / 255.0)
-    composite_over(canvas, draw_y_min, draw_y_max, x_min, x_max, src_a, rgba[:3])
+
+
+def generate_deciduous_canopy(
+    canvas: np.ndarray,
+    seed: int,
+    size: int,
+    canopy_cx: float,
+    canopy_cy: float,
+    base_radius: float,
+    crown_rx_scale: float,
+    crown_ry_scale: float,
+    canopy_center_x_offset: float,
+    tips: list[PixelPos],
+    shadow_rgba: colors.ColorRGBA,
+    mid_rgba: colors.ColorRGBA,
+    highlight_rgba: colors.ColorRGBA,
+) -> list[PixelPos]:
+    """Generate the deciduous canopy lobe/shading passes in native code.
+
+    Returns the generated lobe centers so higher-level Python code can add
+    small branch-extension details without rebuilding the hot lobe loop.
+    """
+    return _c_generate_deciduous_canopy(
+        canvas,
+        seed,
+        size,
+        canopy_cx,
+        canopy_cy,
+        base_radius,
+        crown_rx_scale,
+        crown_ry_scale,
+        canopy_center_x_offset,
+        tips,
+        shadow_rgba[0],
+        shadow_rgba[1],
+        shadow_rgba[2],
+        shadow_rgba[3],
+        mid_rgba[0],
+        mid_rgba[1],
+        mid_rgba[2],
+        mid_rgba[3],
+        highlight_rgba[0],
+        highlight_rgba[1],
+        highlight_rgba[2],
+        highlight_rgba[3],
+    )
 
 
 def paste_sprite(
@@ -608,41 +370,57 @@ def paste_sprite(
     x0: int,
     y0: int,
 ) -> None:
-    """Alpha-composite *sprite* onto *sheet* at pixel offset (x0, y0).
+    """Alpha-composite *sprite* onto *sheet* at pixel offset (x0, y0)."""
+    _c_paste_sprite(sheet, sprite, x0, y0)
 
-    Uses vectorized numpy operations instead of per-pixel Python loops.
+
+def darken_rim(
+    canvas: np.ndarray,
+    darken: tuple[int, int, int] = (30, 30, 20),
+) -> None:
+    """Darken the 1px silhouette rim of opaque pixels bordering transparency.
+
+    For every opaque pixel (alpha > 128) adjacent to a transparent pixel
+    (alpha == 0) in any cardinal direction, subtract *darken* from the RGB
+    channels (clamped to 0). Operates in-place on *canvas*.
     """
-    sh, sw = sprite.shape[:2]
-    sheet_h, sheet_w = sheet.shape[:2]
+    _c_darken_rim(canvas, darken[0], darken[1], darken[2])
 
-    # Clip the paste region to sheet bounds.
-    src_y0 = max(0, -y0)
-    src_x0 = max(0, -x0)
-    dst_y0 = max(0, y0)
-    dst_x0 = max(0, x0)
-    h = min(sh - src_y0, sheet_h - dst_y0)
-    w = min(sw - src_x0, sheet_w - dst_x0)
-    if h <= 0 or w <= 0:
-        return
 
-    src = sprite[src_y0 : src_y0 + h, src_x0 : src_x0 + w]
-    dst = sheet[dst_y0 : dst_y0 + h, dst_x0 : dst_x0 + w]
+def nibble_canopy(
+    canvas: np.ndarray,
+    seed: int,
+    center_x: float,
+    center_y: float,
+    canopy_radius: float,
+    nibble_probability: float = 0.25,
+    interior_probability: float = 0.10,
+) -> None:
+    """Carve small random notches in the canopy edge for silhouette variety.
 
-    src_a = src[:, :, 3].astype(np.float32) / 255.0
-    dst_a = dst[:, :, 3].astype(np.float32) / 255.0
-
-    out_a = src_a + dst_a * (1.0 - src_a)
-    safe_out_a = np.maximum(out_a, 1e-6)
-    inv_src = 1.0 - src_a
-
-    sa3 = src_a[:, :, np.newaxis]
-    da_inv3 = (dst_a * inv_src)[:, :, np.newaxis]
-    soa3 = safe_out_a[:, :, np.newaxis]
-
-    src_rgb = src[:, :, :3].astype(np.float32)
-    dst_rgb = dst[:, :, :3].astype(np.float32)
-
-    dst[:, :, :3] = np.clip((src_rgb * sa3 + dst_rgb * da_inv3) / soa3, 0, 255).astype(
-        np.uint8
+    Only erodes rim pixels within an elliptical canopy envelope centered at
+    *(center_x, center_y)* so trunks are not affected. Uses a C-side PRNG
+    seeded from *seed* for deterministic results.
+    """
+    _c_nibble_canopy(
+        canvas,
+        seed,
+        center_x,
+        center_y,
+        canopy_radius,
+        nibble_probability,
+        interior_probability,
     )
-    dst[:, :, 3] = np.clip(out_a * 255, 0, 255).astype(np.uint8)
+
+
+def nibble_boulder(
+    canvas: np.ndarray,
+    seed: int,
+    nibble_probability: float = 0.10,
+) -> None:
+    """Remove random edge pixels from the upper half of a boulder silhouette.
+
+    The bottom edge stays solid (ground contact). Uses a C-side PRNG seeded
+    from *seed* for deterministic results.
+    """
+    _c_nibble_boulder(canvas, seed, nibble_probability)

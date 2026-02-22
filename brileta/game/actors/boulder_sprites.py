@@ -30,7 +30,9 @@ from brileta.game.enums import CreatureSize
 from brileta.sprites.primitives import (
     CanvasStamper,
     clamp,
+    darken_rim,
     draw_line,
+    nibble_boulder,
     paste_sprite,
     stamp_fuzzy_circle,
 )
@@ -141,70 +143,6 @@ def _pick_stone_colors(
         210,
     )
     return shadow_rgba, body_rgba, highlight_rgba
-
-
-# ---------------------------------------------------------------------------
-# Silhouette post-processing
-# ---------------------------------------------------------------------------
-
-
-def _rim_mask(alpha: np.ndarray) -> np.ndarray:
-    """Return a mask for opaque edge pixels that border transparency."""
-    opaque = alpha > 128
-    transparent = alpha == 0
-
-    border_up = np.pad(transparent[:-1, :], ((1, 0), (0, 0)), constant_values=True)
-    border_down = np.pad(transparent[1:, :], ((0, 1), (0, 0)), constant_values=True)
-    border_left = np.pad(transparent[:, :-1], ((0, 0), (1, 0)), constant_values=True)
-    border_right = np.pad(transparent[:, 1:], ((0, 0), (0, 1)), constant_values=True)
-    return opaque & (border_up | border_down | border_left | border_right)
-
-
-def _nibble_silhouette(
-    canvas: np.ndarray,
-    rng: np.random.Generator,
-    nibble_probability: float = 0.10,
-) -> None:
-    """Remove a few random edge pixels to break the smooth oval silhouette.
-
-    Only nibbles the upper half of the silhouette - the bottom edge stays
-    solid because that's where a real rock contacts the ground.  At 16px
-    sprite sizes even small changes are very visible, so the default
-    probability is intentionally low.  Must be called BEFORE ``_darken_rim``
-    so the new edge pixels get the rim treatment.
-    """
-    alpha = canvas[:, :, 3]
-    rim = _rim_mask(alpha)
-
-    if not np.any(rim):
-        return
-
-    # Only nibble in the upper half of the opaque region.
-    opaque_rows = np.where(np.any(alpha > 0, axis=1))[0]
-    if opaque_rows.size == 0:
-        return
-    midpoint = (opaque_rows[0] + opaque_rows[-1]) // 2
-    upper_only = rim.copy()
-    upper_only[midpoint:, :] = False
-
-    nibble_mask = upper_only & (rng.random(alpha.shape) < nibble_probability)
-    if np.any(nibble_mask):
-        alpha[nibble_mask] = 0
-
-
-def _darken_rim(
-    canvas: np.ndarray,
-    darken: tuple[int, int, int] = (18, 18, 15),
-) -> None:
-    """Darken the 1px silhouette rim so boulders pop against terrain."""
-    rim = _rim_mask(canvas[:, :, 3])
-    if not np.any(rim):
-        return
-
-    for c in range(3):
-        channel = canvas[:, :, c].astype(np.int16)
-        channel[rim] -= darken[c]
-        canvas[:, :, c] = np.clip(channel, 0, 255).astype(np.uint8)
 
 
 # ---------------------------------------------------------------------------
@@ -393,8 +331,8 @@ def _generate_rounded(canvas: np.ndarray, size: int, rng: np.random.Generator) -
         highlight_ellipses, highlight_rgba, falloff=1.9, hardness=0.80
     )
     _add_surface_detail(canvas, rng, cx, cy, base_rx, base_ry, shadow_rgba)
-    _nibble_silhouette(canvas, rng)
-    _darken_rim(canvas)
+    nibble_boulder(canvas, seed=int(rng.integers(0, 2**63)))
+    darken_rim(canvas, darken=(18, 18, 15))
 
 
 def _generate_tall(canvas: np.ndarray, size: int, rng: np.random.Generator) -> None:
@@ -477,8 +415,8 @@ def _generate_tall(canvas: np.ndarray, size: int, rng: np.random.Generator) -> N
         highlight_ellipses, highlight_rgba, falloff=1.9, hardness=0.80
     )
     _add_surface_detail(canvas, rng, cx, cy, base_rx, base_ry, shadow_rgba)
-    _nibble_silhouette(canvas, rng)
-    _darken_rim(canvas)
+    nibble_boulder(canvas, seed=int(rng.integers(0, 2**63)))
+    darken_rim(canvas, darken=(18, 18, 15))
 
 
 def _generate_flat(canvas: np.ndarray, size: int, rng: np.random.Generator) -> None:
@@ -556,8 +494,8 @@ def _generate_flat(canvas: np.ndarray, size: int, rng: np.random.Generator) -> N
         highlight_ellipses, highlight_rgba, falloff=1.9, hardness=0.80
     )
     _add_surface_detail(canvas, rng, cx, cy, base_rx, base_ry, shadow_rgba)
-    _nibble_silhouette(canvas, rng, nibble_probability=0.08)
-    _darken_rim(canvas)
+    nibble_boulder(canvas, seed=int(rng.integers(0, 2**63)), nibble_probability=0.08)
+    darken_rim(canvas, darken=(18, 18, 15))
 
 
 def _generate_blocky(canvas: np.ndarray, size: int, rng: np.random.Generator) -> None:
@@ -636,8 +574,8 @@ def _generate_blocky(canvas: np.ndarray, size: int, rng: np.random.Generator) ->
         highlight_ellipses, highlight_rgba, falloff=2.0, hardness=0.84
     )
     _add_surface_detail(canvas, rng, cx, cy, base_rx, base_ry, shadow_rgba)
-    _nibble_silhouette(canvas, rng, nibble_probability=0.14)
-    _darken_rim(canvas)
+    nibble_boulder(canvas, seed=int(rng.integers(0, 2**63)), nibble_probability=0.14)
+    darken_rim(canvas, darken=(18, 18, 15))
 
 
 # Mapping from archetype to generator function.
