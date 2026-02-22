@@ -11,6 +11,8 @@ import numpy as np
 from brileta import colors
 from brileta.controller import Controller, GameWorld
 from brileta.game.actors import NPC, Character
+from brileta.game.actors.boulder import Boulder
+from brileta.game.actors.trees import Tree
 from brileta.types import InterpolationAlpha
 from brileta.view.render.graphics import GraphicsContext
 from brileta.view.render.viewport import ViewportSystem
@@ -254,6 +256,90 @@ def test_terrain_pixels_explored_only_tiles_use_explored_colors() -> None:
     expected_rgb = view._explored_colors[TileTypeID.FLOOR]
     px = buf[origin_y + 1, origin_x + 1]
     assert tuple(px[:3]) == expected_rgb
+
+
+def test_terrain_pixels_visible_tree_uses_tree_color() -> None:
+    """A visible tree should paint its pixel with the tree minimap color."""
+    controller, _player, view = make_world()
+    game_map = controller.gw.game_map
+    game_map.visible[:] = True
+    game_map.explored[:] = True
+
+    # Place a tree at a known position.
+    tree = Tree(10, 8, "#", colors.GREEN, game_world=cast(GameWorld, controller.gw))
+    controller.gw.add_actor(tree)
+
+    buf = view._render_terrain_pixels()
+    _, _ma_x, _ma_y, tile_origin_x, tile_origin_y = view._map_layout()
+    px_per_tile = view._get_pixels_per_tile()
+    origin_x = round(tile_origin_x / px_per_tile)
+    origin_y = round(tile_origin_y / px_per_tile)
+
+    px = buf[origin_y + tree.y, origin_x + tree.x]
+    assert tuple(px[:3]) == MiniMapView._FEATURE_COLORS[Tree]
+
+
+def test_terrain_pixels_visible_boulder_uses_boulder_color() -> None:
+    """A visible boulder should paint its pixel with the boulder minimap color."""
+    controller, _player, view = make_world()
+    game_map = controller.gw.game_map
+    game_map.visible[:] = True
+    game_map.explored[:] = True
+
+    boulder = Boulder(12, 6, game_world=cast(GameWorld, controller.gw))
+    controller.gw.add_actor(boulder)
+
+    buf = view._render_terrain_pixels()
+    _, _ma_x, _ma_y, tile_origin_x, tile_origin_y = view._map_layout()
+    px_per_tile = view._get_pixels_per_tile()
+    origin_x = round(tile_origin_x / px_per_tile)
+    origin_y = round(tile_origin_y / px_per_tile)
+
+    px = buf[origin_y + boulder.y, origin_x + boulder.x]
+    assert tuple(px[:3]) == MiniMapView._FEATURE_COLORS[Boulder]
+
+
+def test_terrain_pixels_explored_tree_uses_dimmed_color() -> None:
+    """An explored-but-not-visible tree should use the dimmed tree color."""
+    controller, _player, view = make_world()
+    game_map = controller.gw.game_map
+    game_map.visible[:] = False
+    game_map.explored[:] = True
+
+    tree = Tree(10, 8, "#", colors.GREEN, game_world=cast(GameWorld, controller.gw))
+    controller.gw.add_actor(tree)
+
+    buf = view._render_terrain_pixels()
+    _, _ma_x, _ma_y, tile_origin_x, tile_origin_y = view._map_layout()
+    px_per_tile = view._get_pixels_per_tile()
+    origin_x = round(tile_origin_x / px_per_tile)
+    origin_y = round(tile_origin_y / px_per_tile)
+
+    expected = view._dim_color(
+        MiniMapView._FEATURE_COLORS[Tree], view._EXPLORED_DIM_FACTOR
+    )
+    px = buf[origin_y + tree.y, origin_x + tree.x]
+    assert tuple(px[:3]) == expected
+
+
+def test_terrain_pixels_unexplored_tree_stays_black() -> None:
+    """An unexplored tree should not appear on the minimap."""
+    controller, _player, view = make_world()
+    game_map = controller.gw.game_map
+    game_map.visible[:] = False
+    game_map.explored[:] = False
+
+    tree = Tree(10, 8, "#", colors.GREEN, game_world=cast(GameWorld, controller.gw))
+    controller.gw.add_actor(tree)
+
+    buf = view._render_terrain_pixels()
+    _, _ma_x, _ma_y, tile_origin_x, tile_origin_y = view._map_layout()
+    px_per_tile = view._get_pixels_per_tile()
+    origin_x = round(tile_origin_x / px_per_tile)
+    origin_y = round(tile_origin_y / px_per_tile)
+
+    px = buf[origin_y + tree.y, origin_x + tree.x]
+    assert tuple(px[:3]) == (0, 0, 0)
 
 
 def test_terrain_pixels_unexplored_tiles_are_black() -> None:

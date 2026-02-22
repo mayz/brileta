@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import numpy as np
 
@@ -10,6 +10,8 @@ from brileta import colors, config
 from brileta.backends.pillow.canvas import PillowImageCanvas
 from brileta.environment import tile_types
 from brileta.game.actors import Character
+from brileta.game.actors.boulder import Boulder
+from brileta.game.actors.trees import Tree
 from brileta.types import InterpolationAlpha
 from brileta.util.caching import ResourceCache
 from brileta.util.live_vars import record_time_live_variable
@@ -30,6 +32,15 @@ class MiniMapView(TextView):
     _TERRAIN_SATURATION = 0.7
     _TERRAIN_BRIGHTNESS = 0.9
     _VIEWPORT_RECT_COLOR: colors.Color = (198, 184, 150)
+
+    # Minimap colors for static feature actors, keyed by actor class.
+    # Trees are a dark forest green, distinctly darker than tuned grass (~69,94,56).
+    # Boulders are a muted warm grey, distinct from both terrain and tree colors.
+    # To add a new feature type, add an entry here - no other changes needed.
+    _FEATURE_COLORS: ClassVar[dict[type, colors.Color]] = {
+        Tree: (30, 70, 20),
+        Boulder: (95, 93, 90),
+    }
 
     def __init__(self, controller: Controller, viewport_system: ViewportSystem) -> None:
         super().__init__(create_texture_cache=False)
@@ -65,6 +76,13 @@ class MiniMapView(TextView):
         # NumPy lookup tables for vectorized terrain rendering, indexed by TileTypeID.
         self._visible_colors_np = np.array(self._visible_colors, dtype=np.uint8)
         self._explored_colors_np = np.array(self._explored_colors, dtype=np.uint8)
+
+        # Precomputed feature layers, built lazily on first terrain render
+        # and invalidated when structural_revision changes.
+        self._feature_layer_rev: int = -1
+        self._feature_mask: np.ndarray = np.empty(0, dtype=bool)
+        self._feature_vis_rgb: np.ndarray = np.empty(0, dtype=np.uint8)
+        self._feature_exp_rgb: np.ndarray = np.empty(0, dtype=np.uint8)
 
     @staticmethod
     def _dim_color(color: colors.Color, factor: float) -> colors.Color:
@@ -102,6 +120,42 @@ class MiniMapView(TextView):
             bg = appearance["bg"]
             lut.append(cls._tune_terrain_color((int(bg[0]), int(bg[1]), int(bg[2]))))
         return tuple(lut)
+
+    def _get_feature_layers(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Return (mask, vis_rgb, exp_rgb) arrays for static feature actors.
+
+        Built once from the actor list, then cached until
+        ``structural_revision`` changes (which covers map regeneration).
+        """
+        game_map = self.controller.gw.game_map
+        rev = game_map.structural_revision
+        if self._feature_layer_rev == rev:
+            return self._feature_mask, self._feature_vis_rgb, self._feature_exp_rgb
+
+        h, w = game_map.height, game_map.width
+        mask = np.zeros((h, w), dtype=bool)
+        vis_rgb = np.zeros((h, w, 3), dtype=np.uint8)
+        exp_rgb = np.zeros((h, w, 3), dtype=np.uint8)
+        dim = self._EXPLORED_DIM_FACTOR
+
+        for actor in self.controller.gw.actors:
+            color = self._FEATURE_COLORS.get(type(actor))
+            if color is None:
+                continue
+            ax, ay = actor.x, actor.y
+            if not (0 <= ax < w and 0 <= ay < h):
+                continue
+            mask[ay, ax] = True
+            vis_rgb[ay, ax] = color
+            exp_rgb[ay, ax] = self._dim_color(color, dim)
+
+        self._feature_layer_rev = rev
+        self._feature_mask = mask
+        self._feature_vis_rgb = vis_rgb
+        self._feature_exp_rgb = exp_rgb
+        return mask, vis_rgb, exp_rgb
 
     def _get_pixels_per_tile(self) -> int:
         """Return the largest integer tile scale that fits the current bounds."""
@@ -256,6 +310,15 @@ class MiniMapView(TextView):
         map_rgb[visible_t] = self._visible_colors_np[tile_ids[visible_t]]
         explored_only = explored_t & ~visible_t
         map_rgb[explored_only] = self._explored_colors_np[tile_ids[explored_only]]
+
+        # Overlay static feature actors (trees, boulders) with a vectorized
+        # mask operation.  The feature layers are built once from the actor
+        # list and cached until the map structure changes.
+        feat_mask, feat_vis, feat_exp = self._get_feature_layers()
+        vis_features = feat_mask & visible_t
+        map_rgb[vis_features] = feat_vis[vis_features]
+        exp_features = feat_mask & explored_only
+        map_rgb[exp_features] = feat_exp[exp_features]
 
         # Composite 1:1 map content into the small opaque-black buffer.
         buf = np.zeros((small_h, small_w, 4), dtype=np.uint8)
