@@ -36,7 +36,7 @@ _rng = rng.get("map.trees")
 # Terrain types where trees can grow.
 _PLANTABLE_TERRAIN: set[int] = {
     TileTypeID.GRASS,
-    TileTypeID.DIRT_PATH,
+    TileTypeID.DIRT,
     TileTypeID.GRAVEL,
 }
 

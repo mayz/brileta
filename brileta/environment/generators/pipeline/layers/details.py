@@ -91,7 +91,7 @@ class DetailLayer(GenerationLayer):
         outdoor_tiles = {
             TileTypeID.COBBLESTONE,
             TileTypeID.GRASS,
-            TileTypeID.DIRT_PATH,
+            TileTypeID.DIRT,
             TileTypeID.GRAVEL,
         }
 

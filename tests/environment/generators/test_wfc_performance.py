@@ -8,10 +8,10 @@ from __future__ import annotations
 import random
 import time
 
-from brileta.environment.generators.pipeline.layers.terrain import (
-    create_terrain_patterns,
-)
 from brileta.environment.generators.wfc_solver import WFCSolver
+
+# Re-use the test patterns from the parity test module.
+from tests.environment.generators.test_wfc_native_parity import create_terrain_patterns
 
 
 class TestWFCPerformance:

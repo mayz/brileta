@@ -4,7 +4,7 @@ These functions provide convenient ways to create common pipeline
 configurations without needing to manually assemble layers.
 
 Currently implemented:
-- "settlement": Outdoor settlement with streets, buildings, WFC terrain
+- "settlement": Outdoor settlement with streets, buildings, natural terrain
 
 TODO: Future map types to implement:
 - "wilderness": Outdoor map with CellularAutomataTerrainLayer, RuinScatterLayer
@@ -22,10 +22,10 @@ from brileta.types import RandomSeed
 from .layers import (
     BuildingPlacementLayer,
     DetailLayer,
+    NaturalTerrainLayer,
     OpenFieldLayer,
     StreetNetworkLayer,
     TreePlacementLayer,
-    WFCTerrainLayer,
 )
 from .pipeline import PipelineGenerator
 
@@ -66,11 +66,18 @@ def create_settlement_pipeline(
 ) -> PipelineGenerator:
     """Create a settlement pipeline with default configuration.
 
+    The pipeline reflects causal history: natural terrain exists first,
+    then the settlement is carved into it.
+
     The settlement pipeline generates:
-    1. Base outdoor terrain (OpenFieldLayer)
-    2. Street network with building zones (StreetNetworkLayer)
-    3. Terrain variety with WFC around streets (WFCTerrainLayer)
-    4. Buildings in zones with doors facing streets (BuildingPlacementLayer)
+    1. Region setup with placeholder tiles (OpenFieldLayer)
+    2. Natural landscape - dirt + grass via noise (NaturalTerrainLayer)
+    -- Future: RiverLayer - connected waterways via WFC (topology);
+       would place gravel in riverbeds and along banks
+    -- Future: ElevationLayer - hills/valleys via noise (continuous field);
+       would place exposed rock/gravel at cliff bases and ridgelines
+    3. Street network carved into terrain with gravel/dirt margins (StreetNetworkLayer)
+    4. Buildings placed in zones (BuildingPlacementLayer)
     5. Trees in wild areas and settlement yards (TreePlacementLayer)
     6. Environmental details like boulders (DetailLayer)
 
@@ -88,13 +95,17 @@ def create_settlement_pipeline(
         street_style = config.SETTLEMENT_STREET_STYLE
 
     layers = [
-        # 1. Fill with outdoor floor as base
+        # 1. Region setup: fill map with placeholder tiles, create outdoor region
         OpenFieldLayer(),
-        # 2. Create street network and define building zones
+        # 2. Natural terrain: the pre-settlement landscape (dirt + grass via noise)
+        NaturalTerrainLayer(),
+        # -- Future: RiverLayer (WFC for connectivity rules, noise for meander;
+        #    would place gravel in riverbeds and along banks)
+        # -- Future: ElevationLayer (noise for heightmap;
+        #    would place exposed rock/gravel at cliff bases and ridgelines)
+        # 3. Streets: carve cobblestone roads with gravel/dirt margins
         StreetNetworkLayer(style=street_style),
-        # 3. Add terrain variety (WFC respects streets as cobblestone)
-        WFCTerrainLayer(),
-        # 4. Place buildings in zones, doors face streets
+        # 4. Buildings: place in zones between streets
         BuildingPlacementLayer(
             templates=get_default_templates(),
             lot_min_size=config.SETTLEMENT_LOT_MIN_SIZE,
@@ -102,9 +113,9 @@ def create_settlement_pipeline(
             building_density=config.SETTLEMENT_BUILDING_DENSITY,
             max_buildings=config.SETTLEMENT_MAX_BUILDINGS,
         ),
-        # 5. Place trees (wild forests + settlement yard trees)
+        # 5. Trees: wild forests + settlement yard trees (noise density)
         TreePlacementLayer(),
-        # 6. Add environmental details (boulders, etc.)
+        # 6. Details: boulders, etc. (noise density)
         DetailLayer(),
     ]
 

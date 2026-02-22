@@ -10,14 +10,10 @@ from __future__ import annotations
 
 import random
 from collections import Counter
-from enum import IntEnum
+from enum import IntEnum, auto
 
 import pytest
 
-from brileta.environment.generators.pipeline.layers.terrain import (
-    TerrainPatternID,
-    create_terrain_patterns,
-)
 from brileta.environment.generators.wfc_solver import (
     DIR_OFFSETS,
     DIRECTIONS,
@@ -26,6 +22,81 @@ from brileta.environment.generators.wfc_solver import (
     WFCSolver,
 )
 from brileta.environment.tile_types import TileTypeID
+
+# ---------------------------------------------------------------------------
+# Test-local WFC patterns (decoupled from terrain layer)
+# ---------------------------------------------------------------------------
+
+
+class _TestPatternID(IntEnum):
+    """Pattern types for WFC solver tests."""
+
+    GRASS = 0
+    DIRT = auto()
+    GRAVEL = auto()
+    COBBLESTONE = auto()
+
+
+def _create_test_patterns() -> dict[_TestPatternID, WFCPattern[_TestPatternID]]:
+    """Create a 4-pattern set for testing the WFC solver.
+
+    Adjacency chain: GRASS <-> DIRT <-> GRAVEL <-> COBBLESTONE
+    """
+    return {
+        _TestPatternID.GRASS: WFCPattern(
+            pattern_id=_TestPatternID.GRASS,
+            tile_type=TileTypeID.GRASS,
+            weight=4.0,
+            valid_neighbors={
+                d: {_TestPatternID.GRASS, _TestPatternID.DIRT} for d in DIRECTIONS
+            },
+        ),
+        _TestPatternID.DIRT: WFCPattern(
+            pattern_id=_TestPatternID.DIRT,
+            tile_type=TileTypeID.DIRT,
+            weight=3.0,
+            valid_neighbors={
+                d: {
+                    _TestPatternID.GRASS,
+                    _TestPatternID.DIRT,
+                    _TestPatternID.GRAVEL,
+                    _TestPatternID.COBBLESTONE,
+                }
+                for d in DIRECTIONS
+            },
+        ),
+        _TestPatternID.GRAVEL: WFCPattern(
+            pattern_id=_TestPatternID.GRAVEL,
+            tile_type=TileTypeID.GRAVEL,
+            weight=2.0,
+            valid_neighbors={
+                d: {
+                    _TestPatternID.DIRT,
+                    _TestPatternID.GRAVEL,
+                    _TestPatternID.COBBLESTONE,
+                }
+                for d in DIRECTIONS
+            },
+        ),
+        _TestPatternID.COBBLESTONE: WFCPattern(
+            pattern_id=_TestPatternID.COBBLESTONE,
+            tile_type=TileTypeID.COBBLESTONE,
+            weight=1.5,
+            valid_neighbors={
+                d: {
+                    _TestPatternID.DIRT,
+                    _TestPatternID.GRAVEL,
+                    _TestPatternID.COBBLESTONE,
+                }
+                for d in DIRECTIONS
+            },
+        ),
+    }
+
+
+# Alias for use in existing code below
+TerrainPatternID = _TestPatternID
+create_terrain_patterns = _create_test_patterns
 
 
 def _assert_grid_respects_adjacency(
@@ -151,7 +222,7 @@ def _create_unsat_patterns() -> dict[_UnsatPatternID, WFCPattern[_UnsatPatternID
         ),
         _UnsatPatternID.B: WFCPattern(
             pattern_id=_UnsatPatternID.B,
-            tile_type=TileTypeID.DIRT_PATH,
+            tile_type=TileTypeID.DIRT,
             valid_neighbors=no_neighbors,
         ),
     }

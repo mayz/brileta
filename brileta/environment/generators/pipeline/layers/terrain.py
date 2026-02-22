@@ -1,14 +1,27 @@
 """Terrain generation layers.
 
-These layers handle the base terrain setup and visual variety:
+These layers handle the base terrain setup and natural landscape:
 - OpenFieldLayer: Creates a flat outdoor area with a single region
-- RandomTerrainLayer: Adds visual variety using simple weighted random selection
-- WFCTerrainLayer: Adds visual variety using Wave Function Collapse
+- NaturalTerrainLayer: Generates the pre-settlement natural landscape using noise
+- RandomTerrainLayer: Fallback that adds variety using simple weighted random selection
+
+The natural terrain represents what the land looked like *before* any settlement
+was built. Dirt is the base, with two noise fields layered together: a low-frequency
+field for large grass regions, and a high-frequency field for small isolated patches
+(microhabitat pockets). Gravel is not placed by this layer - it's a transitional
+material added by feature layers (street margins, future riverbeds, cliff bases).
+Streets and buildings are carved into this terrain by later layers, reflecting the
+causal history: terrain first, then human infrastructure.
+
+Future terrain types this layer could gain:
+- Water features (ponds, streams) via a dedicated water noise field
+- Exposed rock/bedrock patches (noting boulders already exist as actors,
+  and rock terrain could inform their placement density)
 
 TODO: Implement CellularAutomataTerrainLayer for wilderness maps.
 Cellular automata creates organic terrain (caves, rubble fields, rocky outcroppings)
 using iterative neighbor-counting rules. Good for wilderness/ruins maps where
-WFC's smooth transitions aren't needed.
+smooth noise-based terrain isn't appropriate.
 
 Algorithm sketch:
 1. Initialize grid with random noise (initial_density % walls)
@@ -26,24 +39,19 @@ Tuning guide:
 
 from __future__ import annotations
 
-from enum import IntEnum, auto
+import numpy as np
 
+from brileta import config
 from brileta.environment.generators.pipeline.context import GenerationContext
 from brileta.environment.generators.pipeline.layer import GenerationLayer
-from brileta.environment.generators.wfc_solver import (
-    DIRECTIONS,
-    OPPOSITE_DIR,
-    WFCContradiction,
-    WFCPattern,
-    WFCSolver,
-)
 from brileta.environment.map import MapRegion
 from brileta.environment.tile_types import TileTypeID
 from brileta.util import rng
 from brileta.util.coordinates import Rect
+from brileta.util.noise import FractalType, NoiseGenerator, NoiseType
 
 _random_terrain_rng = rng.get("map.random_terrain")
-_wfc_terrain_rng = rng.get("map.wfc_terrain")
+_natural_terrain_rng = rng.get("map.natural_terrain")
 
 
 class OpenFieldLayer(GenerationLayer):
@@ -62,7 +70,8 @@ class OpenFieldLayer(GenerationLayer):
         Args:
             ctx: The generation context to modify.
         """
-        # Fill entire map with cobblestone
+        # Fill entire map with cobblestone as a neutral starting tile.
+        # NaturalTerrainLayer will overwrite these with actual terrain.
         ctx.tiles[:, :] = TileTypeID.COBBLESTONE
 
         # Create a single outdoor region covering the entire map
@@ -84,7 +93,9 @@ class RandomTerrainLayer(GenerationLayer):
 
     This layer modifies outdoor floor tiles to create terrain variety
     using pure random selection with configurable weights. It does NOT
-    use Wave Function Collapse or any adjacency constraints.
+    use noise or any adjacency constraints.
+
+    Primarily used as a fallback when other terrain generation fails.
 
     Note: This layer only changes tile appearances - it does NOT modify
     regions. Buildings placed later will overwrite terrain tiles.
@@ -100,7 +111,7 @@ class RandomTerrainLayer(GenerationLayer):
 
         Args:
             grass_weight: Probability weight for GRASS tiles.
-            path_weight: Probability weight for DIRT_PATH tiles.
+            path_weight: Probability weight for DIRT tiles.
             gravel_weight: Probability weight for GRAVEL tiles.
         """
         self.grass_weight = grass_weight
@@ -127,254 +138,134 @@ class RandomTerrainLayer(GenerationLayer):
                 if roll < self.grass_weight / total:
                     ctx.tiles[x, y] = TileTypeID.GRASS
                 elif roll < (self.grass_weight + self.path_weight) / total:
-                    ctx.tiles[x, y] = TileTypeID.DIRT_PATH
+                    ctx.tiles[x, y] = TileTypeID.DIRT
                 elif roll < 1.0:
                     ctx.tiles[x, y] = TileTypeID.GRAVEL
                 # else keep as COBBLESTONE
 
 
 # =============================================================================
-# WFC Terrain Patterns
+# Noise-based Natural Terrain
 # =============================================================================
 
 
-class TerrainPatternID(IntEnum):
-    """Pattern types for WFC terrain generation."""
+class NaturalTerrainLayer(GenerationLayer):
+    """Generates the pre-settlement natural landscape using noise fields.
 
-    GRASS = 0
-    DIRT = auto()
-    GRAVEL = auto()
-    COBBLESTONE = auto()
+    This represents what the land looked like before anyone built anything.
+    The base terrain is dirt, with two noise fields layered together:
 
+    - **Grass noise**: low-frequency, smooth patches of grass over dirt.
+      These are the large-scale terrain regions - meadows, clearings, etc.
+    - **Island noise**: high-frequency, high-threshold noise that creates
+      small 1-3 tile patches. Asymmetric thresholds reflect ecology: grass
+      colonizes dirt easily (seeds blow in, favorable pockets) so grass-in-
+      dirt islands are common. Bare dirt surviving inside grass is rarer
+      (requires something actively preventing growth) so the threshold for
+      grass-to-dirt flips is higher.
 
-def create_terrain_patterns() -> dict[TerrainPatternID, WFCPattern[TerrainPatternID]]:
-    """Define adjacency rules for natural terrain transitions.
+    Gravel is not placed by this layer. It's a transitional material added
+    by feature layers (street margins, future riverbeds, cliff bases).
 
-    Adjacency philosophy:
-    - GRASS <-> DIRT (natural transition)
-    - DIRT <-> GRAVEL (path edges)
-    - DIRT <-> COBBLESTONE (path meets road)
-    - GRAVEL <-> COBBLESTONE (road edges)
-    - GRASS cannot directly touch COBBLESTONE (no abrupt grass-to-road)
-
-    This creates natural-looking transitions where grass blends into dirt,
-    dirt into gravel or cobblestone, creating coherent terrain zones.
-    """
-    patterns: dict[TerrainPatternID, WFCPattern[TerrainPatternID]] = {}
-
-    # GRASS: natural ground, transitions to DIRT only
-    # Weight: high (most common)
-    patterns[TerrainPatternID.GRASS] = WFCPattern(
-        pattern_id=TerrainPatternID.GRASS,
-        tile_type=TileTypeID.GRASS,
-        weight=4.0,
-        valid_neighbors={
-            "N": {TerrainPatternID.GRASS, TerrainPatternID.DIRT},
-            "E": {TerrainPatternID.GRASS, TerrainPatternID.DIRT},
-            "S": {TerrainPatternID.GRASS, TerrainPatternID.DIRT},
-            "W": {TerrainPatternID.GRASS, TerrainPatternID.DIRT},
-        },
-    )
-
-    # DIRT: transition terrain, connects grass to paths/roads
-    # Weight: medium-high (common in paths)
-    patterns[TerrainPatternID.DIRT] = WFCPattern(
-        pattern_id=TerrainPatternID.DIRT,
-        tile_type=TileTypeID.DIRT_PATH,
-        weight=3.0,
-        valid_neighbors={
-            "N": {
-                TerrainPatternID.GRASS,
-                TerrainPatternID.DIRT,
-                TerrainPatternID.GRAVEL,
-                TerrainPatternID.COBBLESTONE,
-            },
-            "E": {
-                TerrainPatternID.GRASS,
-                TerrainPatternID.DIRT,
-                TerrainPatternID.GRAVEL,
-                TerrainPatternID.COBBLESTONE,
-            },
-            "S": {
-                TerrainPatternID.GRASS,
-                TerrainPatternID.DIRT,
-                TerrainPatternID.GRAVEL,
-                TerrainPatternID.COBBLESTONE,
-            },
-            "W": {
-                TerrainPatternID.GRASS,
-                TerrainPatternID.DIRT,
-                TerrainPatternID.GRAVEL,
-                TerrainPatternID.COBBLESTONE,
-            },
-        },
-    )
-
-    # GRAVEL: rough path surface, between dirt and cobblestone
-    # Weight: medium (less common than dirt)
-    patterns[TerrainPatternID.GRAVEL] = WFCPattern(
-        pattern_id=TerrainPatternID.GRAVEL,
-        tile_type=TileTypeID.GRAVEL,
-        weight=2.0,
-        valid_neighbors={
-            "N": {
-                TerrainPatternID.DIRT,
-                TerrainPatternID.GRAVEL,
-                TerrainPatternID.COBBLESTONE,
-            },
-            "E": {
-                TerrainPatternID.DIRT,
-                TerrainPatternID.GRAVEL,
-                TerrainPatternID.COBBLESTONE,
-            },
-            "S": {
-                TerrainPatternID.DIRT,
-                TerrainPatternID.GRAVEL,
-                TerrainPatternID.COBBLESTONE,
-            },
-            "W": {
-                TerrainPatternID.DIRT,
-                TerrainPatternID.GRAVEL,
-                TerrainPatternID.COBBLESTONE,
-            },
-        },
-    )
-
-    # COBBLESTONE: paved road, can't touch grass directly
-    # Weight: lower (roads are less frequent than natural ground)
-    patterns[TerrainPatternID.COBBLESTONE] = WFCPattern(
-        pattern_id=TerrainPatternID.COBBLESTONE,
-        tile_type=TileTypeID.COBBLESTONE,
-        weight=1.5,
-        valid_neighbors={
-            "N": {
-                TerrainPatternID.DIRT,
-                TerrainPatternID.GRAVEL,
-                TerrainPatternID.COBBLESTONE,
-            },
-            "E": {
-                TerrainPatternID.DIRT,
-                TerrainPatternID.GRAVEL,
-                TerrainPatternID.COBBLESTONE,
-            },
-            "S": {
-                TerrainPatternID.DIRT,
-                TerrainPatternID.GRAVEL,
-                TerrainPatternID.COBBLESTONE,
-            },
-            "W": {
-                TerrainPatternID.DIRT,
-                TerrainPatternID.GRAVEL,
-                TerrainPatternID.COBBLESTONE,
-            },
-        },
-    )
-
-    return patterns
-
-
-def _verify_terrain_patterns_symmetric(
-    patterns: dict[TerrainPatternID, WFCPattern[TerrainPatternID]],
-) -> None:
-    """Verify terrain patterns have symmetric adjacency rules.
-
-    Raises AssertionError if any asymmetry is found. Called during module load
-    to catch pattern definition errors early.
-    """
-    for pattern_id, pattern in patterns.items():
-        for direction in DIRECTIONS:
-            opposite = OPPOSITE_DIR[direction]
-            for neighbor_id in pattern.valid_neighbors[direction]:
-                neighbor = patterns[neighbor_id]
-                assert pattern_id in neighbor.valid_neighbors[opposite], (
-                    f"Asymmetric terrain adjacency: {pattern_id.name} allows "
-                    f"{neighbor_id.name} to {direction}, but {neighbor_id.name} "
-                    f"does not allow {pattern_id.name} to {opposite}"
-                )
-
-
-# Verify patterns are symmetric at module load time
-_verify_terrain_patterns_symmetric(create_terrain_patterns())
-
-
-# =============================================================================
-# WFC Terrain Layer
-# =============================================================================
-
-
-class WFCTerrainLayer(GenerationLayer):
-    """Adds terrain variety using Wave Function Collapse.
-
-    Uses adjacency rules to create natural-looking terrain transitions
-    where grass blends into dirt, dirt into paths, etc. This produces
-    coherent terrain zones rather than random noise.
-
-    When street data is available, constrains street tiles to remain
-    as cobblestone while allowing natural terrain around them.
-
-    Note: This layer only changes tile appearances - it does NOT modify
-    regions. Buildings placed later will overwrite terrain tiles.
+    Later layers (streets, buildings) carve into this terrain, reflecting
+    the causal history: natural terrain existed first, then the settlement
+    was built on top of it.
     """
 
-    def __init__(self, max_attempts: int = 5) -> None:
-        """Initialize the WFC terrain layer.
+    def __init__(
+        self,
+        grass_frequency: float = config.GRASS_NOISE_FREQUENCY,
+        grass_octaves: int = config.GRASS_NOISE_OCTAVES,
+        grass_threshold: float = config.GRASS_NOISE_THRESHOLD,
+        island_frequency: float = config.GRASS_ISLAND_FREQUENCY,
+        island_octaves: int = config.GRASS_ISLAND_OCTAVES,
+        island_threshold: float = config.GRASS_ISLAND_THRESHOLD,
+        island_bare_threshold: float = config.GRASS_ISLAND_BARE_THRESHOLD,
+    ) -> None:
+        """Initialize the natural terrain layer.
 
         Args:
-            max_attempts: Number of times to retry if WFC contradicts.
-                Falls back to RandomTerrainLayer after exhausting attempts.
+            grass_frequency: Noise frequency for large grass patches.
+            grass_octaves: FBM octaves for grass noise.
+            grass_threshold: Noise values above this become grass.
+            island_frequency: Noise frequency for small island patches.
+                Higher values produce smaller features.
+            island_octaves: FBM octaves for island noise.
+            island_threshold: Noise peaks above this flip dirt to grass.
+            island_bare_threshold: Noise peaks above this flip grass to
+                bare dirt. Higher than island_threshold because grass
+                colonizes dirt more easily than dirt persists in grass.
         """
-        self.max_attempts = max_attempts
-        self.patterns = create_terrain_patterns()
+        self.grass_frequency = grass_frequency
+        self.grass_octaves = grass_octaves
+        self.grass_threshold = grass_threshold
+        self.island_frequency = island_frequency
+        self.island_octaves = island_octaves
+        self.island_threshold = island_threshold
+        self.island_bare_threshold = island_bare_threshold
 
     def apply(self, ctx: GenerationContext) -> None:
-        """Apply terrain variety to outdoor tiles using WFC.
+        """Generate natural terrain over all outdoor tiles.
+
+        All operations are vectorized with numpy and the native noise
+        batch sampler. The steps:
+
+        1. Fill all COBBLESTONE tiles with DIRT (the base terrain).
+        2. Sample grass noise and place grass where noise exceeds threshold.
+        3. Sample island noise and flip tiles where peaks exceed the island
+           threshold, creating small isolated patches in terrain interiors.
 
         Args:
             ctx: The generation context to modify.
         """
-        for _attempt in range(self.max_attempts):
-            try:
-                self._apply_wfc(ctx)
-                return
-            except WFCContradiction:
-                continue
+        tiles = ctx.tiles
 
-        # Fallback to random terrain if WFC keeps failing
-        RandomTerrainLayer().apply(ctx)
+        # Step 1: fill all cobblestone (the OpenFieldLayer placeholder) with
+        # dirt as the base natural terrain.
+        outdoor_mask = tiles == TileTypeID.COBBLESTONE
+        tiles[outdoor_mask] = TileTypeID.DIRT
 
-    def _apply_wfc(self, ctx: GenerationContext) -> None:
-        """Run WFC to generate terrain patterns.
+        # Build coordinate arrays for all outdoor tiles (now dirt).
+        xs, ys = np.where(outdoor_mask)
+        if len(xs) == 0:
+            return
+        xs_f = xs.astype(np.float32)
+        ys_f = ys.astype(np.float32)
 
-        When street data is available, constrains street tiles to
-        COBBLESTONE pattern before solving.
+        # Step 2: place grass where noise exceeds threshold.
+        grass_noise = NoiseGenerator(
+            seed=_natural_terrain_rng.getrandbits(32),
+            noise_type=NoiseType.OPENSIMPLEX2,
+            frequency=self.grass_frequency,
+            fractal_type=FractalType.FBM,
+            octaves=self.grass_octaves,
+        )
+        grass_vals = grass_noise.sample_array(xs_f, ys_f)
+        grass_mask = grass_vals > self.grass_threshold
+        tiles[xs[grass_mask], ys[grass_mask]] = TileTypeID.GRASS
 
-        Args:
-            ctx: The generation context to modify.
+        # Step 3: island noise pass. A separate high-frequency noise field
+        # whose peaks flip tiles to the opposite type, creating small organic
+        # patches. Asymmetric thresholds: grass colonizes dirt easily (lower
+        # threshold) but bare dirt persisting in grass is rarer (higher
+        # threshold), reflecting real ecology.
+        island_noise = NoiseGenerator(
+            seed=_natural_terrain_rng.getrandbits(32),
+            noise_type=NoiseType.OPENSIMPLEX2,
+            frequency=self.island_frequency,
+            fractal_type=FractalType.FBM,
+            octaves=self.island_octaves,
+        )
+        island_vals = island_noise.sample_array(xs_f, ys_f)
 
-        Raises:
-            WFCContradiction: If WFC fails to find a valid solution.
-        """
-        solver = WFCSolver(ctx.width, ctx.height, self.patterns, _wfc_terrain_rng)
+        # Apply per-tile with direction-dependent thresholds.
+        is_dirt = tiles[xs, ys] == TileTypeID.DIRT
+        is_grass = tiles[xs, ys] == TileTypeID.GRASS
 
-        # Constrain street tiles to cobblestone if street data is available
-        if ctx.street_data.streets:
-            street_constraints: list[tuple[int, int, set[TerrainPatternID]]] = [
-                (x, y, {TerrainPatternID.COBBLESTONE})
-                for street in ctx.street_data.streets
-                for x in range(max(0, street.x1), min(ctx.width, street.x2))
-                for y in range(max(0, street.y1), min(ctx.height, street.y2))
-            ]
+        # Dirt tiles flip to grass at the lower threshold (grass colonizes).
+        grass_islands = is_dirt & (island_vals > self.island_threshold)
+        tiles[xs[grass_islands], ys[grass_islands]] = TileTypeID.GRASS
 
-            # Apply constraints in batch
-            if street_constraints:
-                solver.constrain_cells(street_constraints)
-
-        result = solver.solve()
-
-        # Apply the result to the context
-        for x in range(ctx.width):
-            for y in range(ctx.height):
-                # Only modify outdoor floor tiles
-                if ctx.tiles[x, y] == TileTypeID.COBBLESTONE:
-                    pattern = self.patterns[result[x][y]]
-                    ctx.tiles[x, y] = pattern.tile_type
+        # Grass tiles flip to dirt only at the higher threshold (rarer).
+        bare_islands = is_grass & (island_vals > self.island_bare_threshold)
+        tiles[xs[bare_islands], ys[bare_islands]] = TileTypeID.DIRT

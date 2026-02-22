@@ -63,7 +63,7 @@ def create_test_patterns() -> dict[SimplePatternID, WFCPattern[SimplePatternID]]
     # Pattern B: transition, connects to all
     patterns[SimplePatternID.B] = WFCPattern(
         pattern_id=SimplePatternID.B,
-        tile_type=TileTypeID.DIRT_PATH,
+        tile_type=TileTypeID.DIRT,
         weight=2.0,
         valid_neighbors={
             "N": {SimplePatternID.A, SimplePatternID.B, SimplePatternID.C},
@@ -350,7 +350,7 @@ class TestPatternDefinitions:
         patterns = create_test_patterns()
 
         assert patterns[SimplePatternID.A].tile_type == TileTypeID.GRASS
-        assert patterns[SimplePatternID.B].tile_type == TileTypeID.DIRT_PATH
+        assert patterns[SimplePatternID.B].tile_type == TileTypeID.DIRT
         assert patterns[SimplePatternID.C].tile_type == TileTypeID.GRAVEL
 
 

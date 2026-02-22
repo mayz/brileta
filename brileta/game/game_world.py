@@ -965,7 +965,7 @@ class GameWorld:
         outdoor_tiles = {
             TileTypeID.COBBLESTONE,
             TileTypeID.GRASS,
-            TileTypeID.DIRT_PATH,
+            TileTypeID.DIRT,
             TileTypeID.GRAVEL,
         }
         return self.game_map.tiles[x, y] in outdoor_tiles

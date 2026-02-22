@@ -49,7 +49,7 @@ class TileTypeID(IntEnum):
     DOOR_OPEN = auto()
     # Outdoor terrain variety
     GRASS = auto()
-    DIRT_PATH = auto()
+    DIRT = auto()
     GRAVEL = auto()
     # Hazardous terrain types
     ACID_POOL = auto()
@@ -349,17 +349,20 @@ register_tile_type(
 )
 
 register_tile_type(
-    TileTypeID.DIRT_PATH,
+    TileTypeID.DIRT,
     make_tile_type_data(
         walkable=True,
         transparent=True,
-        display_name="Dirt Path",
+        display_name="Dirt",
         material=ImpactMaterial.STONE,
         dark=(ord(" "), (40, 31, 22), (45, 35, 25)),  # FG for pool glyphs (subtle)
         light=(ord(" "), (93, 74, 49), (100, 80, 55)),
     ),
 )
 
+# Gravel is a transitional material placed by feature layers (street margins,
+# future riverbeds, cliff bases) - not a natural terrain type. It provides a
+# visual buffer between cobblestone streets and organic grass/dirt terrain.
 register_tile_type(
     TileTypeID.GRAVEL,
     make_tile_type_data(
@@ -770,7 +773,7 @@ _TERRAIN_DECORATION_DEFS: dict[TileTypeID, TerrainDecorationDef] = {
     TileTypeID.GRASS: TerrainDecorationDef(
         glyphs=['"', "'", ",", "`"], bg_jitter=4, fg_jitter=12, edge_blend=0.45
     ),
-    TileTypeID.DIRT_PATH: TerrainDecorationDef(
+    TileTypeID.DIRT: TerrainDecorationDef(
         glyphs=[".", ","], bg_jitter=4, edge_blend=0.38
     ),
     TileTypeID.GRAVEL: TerrainDecorationDef(

@@ -5,7 +5,7 @@ Phase T4 tests cover:
 - T4.2: BuildingPlacementLayer
 - T4.3: RandomTerrainLayer
 - T4.4: DetailLayer
-- T4.5: WFCTerrainLayer
+- T4.5: NaturalTerrainLayer
 - T4.6: StreetNetworkLayer
 """
 
@@ -21,17 +21,12 @@ from brileta.environment.generators.pipeline import GenerationContext
 from brileta.environment.generators.pipeline.layers import (
     BuildingPlacementLayer,
     DetailLayer,
+    NaturalTerrainLayer,
     OpenFieldLayer,
     RandomTerrainLayer,
     StreetNetworkLayer,
     TreePlacementLayer,
-    WFCTerrainLayer,
 )
-from brileta.environment.generators.pipeline.layers.terrain import (
-    TerrainPatternID,
-    create_terrain_patterns,
-)
-from brileta.environment.generators.wfc_solver import DIR_OFFSETS, DIRECTIONS
 from brileta.environment.tile_types import TileTypeID
 from brileta.util import rng
 
@@ -326,7 +321,7 @@ class TestRandomTerrainLayer:
         assert np.all(ctx.tiles[25:30, 25:30] == TileTypeID.WALL)
 
     def test_uses_terrain_patterns(self) -> None:
-        """Output contains GRASS, DIRT_PATH, GRAVEL."""
+        """Output contains GRASS, DIRT, GRAVEL."""
         rng.reset("222")
         ctx = GenerationContext.create_empty(width=100, height=100)
         ctx.tiles[:, :] = TileTypeID.COBBLESTONE
@@ -341,7 +336,7 @@ class TestRandomTerrainLayer:
         # Check that at least some terrain variety exists
         terrain_types = {
             TileTypeID.GRASS,
-            TileTypeID.DIRT_PATH,
+            TileTypeID.DIRT,
             TileTypeID.GRAVEL,
         }
 
@@ -355,162 +350,123 @@ class TestRandomTerrainLayer:
 
 
 # =============================================================================
-# T4.5: WFCTerrainLayer
+# T4.5: NaturalTerrainLayer
 # =============================================================================
 
 
-class TestWFCTerrainLayer:
-    """Tests for WFCTerrainLayer (Wave Function Collapse based)."""
+class TestNaturalTerrainLayer:
+    """Tests for noise-based natural terrain generation."""
 
-    def test_produces_valid_terrain(self) -> None:
-        """Output contains expected tile types."""
-        rng.reset("wfc1")
-        ctx = GenerationContext.create_empty(width=10, height=10)
+    def test_produces_terrain_variety(self) -> None:
+        """Output contains grass and dirt (no gravel in natural terrain)."""
+        rng.reset("nat1")
+        ctx = GenerationContext.create_empty(width=60, height=60)
         ctx.tiles[:, :] = TileTypeID.COBBLESTONE
 
-        layer = WFCTerrainLayer()
-        layer.apply(ctx)
-
-        # Check terrain variety exists
-        terrain_types = {
-            TileTypeID.GRASS,
-            TileTypeID.DIRT_PATH,
-            TileTypeID.GRAVEL,
-            TileTypeID.COBBLESTONE,
-        }
+        NaturalTerrainLayer().apply(ctx)
 
         unique_tiles = set(np.unique(ctx.tiles))
-        terrain_found = unique_tiles & terrain_types
+        assert TileTypeID.GRASS in unique_tiles
+        assert TileTypeID.DIRT in unique_tiles
+        # No cobblestone should remain - it was all natural terrain
+        assert TileTypeID.COBBLESTONE not in unique_tiles
+        # Gravel is not a natural terrain type - only placed by feature layers
+        assert TileTypeID.GRAVEL not in unique_tiles
 
-        # Should have at least 1 terrain type (small grid may not have variety)
-        assert len(terrain_found) >= 1, f"Expected terrain, only found: {terrain_found}"
-
-    def test_only_modifies_outdoor_tiles(self) -> None:
-        """Building interiors unchanged by WFC terrain layer."""
-        rng.reset("wfc2")
-        ctx = GenerationContext.create_empty(width=10, height=10)
-
+    def test_only_modifies_cobblestone_tiles(self) -> None:
+        """Pre-existing non-cobblestone tiles are left untouched."""
+        rng.reset("nat2")
+        ctx = GenerationContext.create_empty(width=30, height=30)
         ctx.tiles[:, :] = TileTypeID.COBBLESTONE
-        ctx.tiles[2:4, 2:4] = TileTypeID.FLOOR
-        ctx.tiles[6:8, 6:8] = TileTypeID.WALL
+        ctx.tiles[5:10, 5:10] = TileTypeID.FLOOR
+        ctx.tiles[15:20, 15:20] = TileTypeID.WALL
 
-        layer = WFCTerrainLayer()
-        layer.apply(ctx)
+        NaturalTerrainLayer().apply(ctx)
 
-        # Indoor floors should remain FLOOR
-        assert np.all(ctx.tiles[2:4, 2:4] == TileTypeID.FLOOR)
-        # Walls should remain WALL
-        assert np.all(ctx.tiles[6:8, 6:8] == TileTypeID.WALL)
+        # Indoor tiles should be untouched
+        assert np.all(ctx.tiles[5:10, 5:10] == TileTypeID.FLOOR)
+        assert np.all(ctx.tiles[15:20, 15:20] == TileTypeID.WALL)
 
-    def test_adjacency_respected(self) -> None:
-        """No GRASS directly touching COBBLESTONE."""
-        rng.reset("wfc3")
-        ctx = GenerationContext.create_empty(width=12, height=12)
+    def test_grass_is_dominant(self) -> None:
+        """With default thresholds, grass should be the most common terrain."""
+        rng.reset("nat3")
+        ctx = GenerationContext.create_empty(width=80, height=80)
         ctx.tiles[:, :] = TileTypeID.COBBLESTONE
 
-        layer = WFCTerrainLayer()
-        layer.apply(ctx)
+        NaturalTerrainLayer().apply(ctx)
 
-        # Check no grass is directly adjacent to cobblestone
-        for x in range(ctx.width):
-            for y in range(ctx.height):
-                if ctx.tiles[x, y] == TileTypeID.GRASS:
-                    for direction in DIRECTIONS:
-                        dx, dy = DIR_OFFSETS[direction]
-                        nx, ny = x + dx, y + dy
-                        if 0 <= nx < ctx.width and 0 <= ny < ctx.height:
-                            assert ctx.tiles[nx, ny] != TileTypeID.COBBLESTONE, (
-                                f"GRASS at ({x},{y}) is adjacent to COBBLESTONE at "
-                                f"({nx},{ny}) - WFC should prevent this"
-                            )
+        grass_count = int(np.sum(ctx.tiles == TileTypeID.GRASS))
+        dirt_count = int(np.sum(ctx.tiles == TileTypeID.DIRT))
+
+        # Grass should be more common than dirt
+        assert grass_count > dirt_count, (
+            f"Grass ({grass_count}) should exceed dirt ({dirt_count})"
+        )
 
     def test_deterministic_with_seed(self) -> None:
-        """Same seed produces same terrain."""
-        rng.reset("determinism")
-        ctx1 = GenerationContext.create_empty(width=15, height=15)
+        """Same seed produces identical terrain."""
+        rng.reset("nat_det")
+        ctx1 = GenerationContext.create_empty(width=40, height=40)
         ctx1.tiles[:, :] = TileTypeID.COBBLESTONE
-        WFCTerrainLayer().apply(ctx1)
+        NaturalTerrainLayer().apply(ctx1)
 
-        rng.reset("determinism")
-        ctx2 = GenerationContext.create_empty(width=15, height=15)
+        rng.reset("nat_det")
+        ctx2 = GenerationContext.create_empty(width=40, height=40)
         ctx2.tiles[:, :] = TileTypeID.COBBLESTONE
-        WFCTerrainLayer().apply(ctx2)
+        NaturalTerrainLayer().apply(ctx2)
 
         np.testing.assert_array_equal(ctx1.tiles, ctx2.tiles)
 
-    def test_fallback_on_contradiction(self) -> None:
-        """Layer completes even with potentially difficult constraints.
-
-        WFCTerrainLayer should fall back to RandomTerrainLayer if WFC fails.
-        We can't easily force a contradiction, but we verify the layer doesn't
-        raise an exception and produces valid output.
-        """
-        rng.reset("fallback")
-        ctx = GenerationContext.create_empty(width=12, height=12)
+    def test_no_gravel_in_natural_terrain(self) -> None:
+        """Natural terrain should never produce gravel tiles."""
+        rng.reset("nat_no_gravel")
+        ctx = GenerationContext.create_empty(width=80, height=80)
         ctx.tiles[:, :] = TileTypeID.COBBLESTONE
 
-        # Should not raise, even if WFC internally fails
-        layer = WFCTerrainLayer(max_attempts=1)
-        layer.apply(ctx)
+        # Even with extreme grass thresholds, no gravel should appear.
+        NaturalTerrainLayer(grass_threshold=-0.5).apply(ctx)
 
-        # Verify we got some terrain output
-        terrain_types = {
-            TileTypeID.GRASS,
-            TileTypeID.DIRT_PATH,
-            TileTypeID.GRAVEL,
-            TileTypeID.COBBLESTONE,
-        }
-        unique_tiles = set(np.unique(ctx.tiles))
-        assert len(unique_tiles & terrain_types) >= 1
+        assert TileTypeID.GRAVEL not in set(np.unique(ctx.tiles))
 
+    def test_island_noise_creates_interior_patches(self) -> None:
+        """Island noise should create small patches away from main boundaries.
 
-# =============================================================================
-# Terrain Pattern Tests
-# =============================================================================
+        With a low island threshold (more islands), we should find tiles
+        surrounded entirely by the opposite terrain type - true interior
+        islands produced by the high-frequency noise field.
+        """
+        rng.reset("nat_islands")
+        ctx = GenerationContext.create_empty(width=80, height=80)
+        ctx.tiles[:, :] = TileTypeID.COBBLESTONE
 
+        # Low island threshold to produce many islands for reliable testing.
+        NaturalTerrainLayer(island_threshold=0.3).apply(ctx)
 
-class TestTerrainPatterns:
-    """Tests for terrain pattern definitions."""
-
-    def test_terrain_patterns_symmetric(self) -> None:
-        """Adjacency rules are bidirectional."""
-        from brileta.environment.generators.wfc_solver import OPPOSITE_DIR
-
-        patterns = create_terrain_patterns()
-
-        for pattern_id, pattern in patterns.items():
-            for direction in DIRECTIONS:
-                opposite = OPPOSITE_DIR[direction]
-                for neighbor_id in pattern.valid_neighbors[direction]:
-                    neighbor = patterns[neighbor_id]
-                    assert pattern_id in neighbor.valid_neighbors[opposite], (
-                        f"Asymmetric: {pattern_id.name} allows {neighbor_id.name} "
-                        f"to {direction}, but not vice versa"
-                    )
-
-    def test_all_patterns_have_neighbors(self) -> None:
-        """Every pattern has rules for all 4 directions."""
-        patterns = create_terrain_patterns()
-
-        for pattern_id, pattern in patterns.items():
-            for direction in DIRECTIONS:
-                assert direction in pattern.valid_neighbors, (
-                    f"Pattern {pattern_id.name} missing {direction}"
+        # Find tiles completely surrounded by the opposite type (all 4
+        # cardinal neighbors are the same type but the center differs).
+        isolated_count = 0
+        for x in range(1, ctx.width - 1):
+            for y in range(1, ctx.height - 1):
+                center = ctx.tiles[x, y]
+                if center not in (TileTypeID.GRASS, TileTypeID.DIRT):
+                    continue
+                neighbors = [
+                    ctx.tiles[x - 1, y],
+                    ctx.tiles[x + 1, y],
+                    ctx.tiles[x, y - 1],
+                    ctx.tiles[x, y + 1],
+                ]
+                opposite = (
+                    TileTypeID.DIRT if center == TileTypeID.GRASS else TileTypeID.GRASS
                 )
-                assert len(pattern.valid_neighbors[direction]) > 0, (
-                    f"Pattern {pattern_id.name} has empty {direction}"
-                )
+                if all(n == opposite for n in neighbors):
+                    isolated_count += 1
 
-    def test_grass_cannot_touch_cobblestone(self) -> None:
-        """GRASS and COBBLESTONE are not in each other's neighbor lists."""
-        patterns = create_terrain_patterns()
-
-        grass = patterns[TerrainPatternID.GRASS]
-        cobblestone = patterns[TerrainPatternID.COBBLESTONE]
-
-        for direction in DIRECTIONS:
-            assert TerrainPatternID.COBBLESTONE not in grass.valid_neighbors[direction]
-            assert TerrainPatternID.GRASS not in cobblestone.valid_neighbors[direction]
+        # High-frequency noise with a low threshold should produce a
+        # meaningful number of truly isolated interior tiles.
+        assert isolated_count > 10, (
+            f"Expected isolated interior islands, found only {isolated_count}"
+        )
 
 
 # =============================================================================
@@ -763,6 +719,113 @@ class TestStreetNetworkLayer:
                 )
 
 
+# =============================================================================
+# T4.8: Street Margin Tests
+# =============================================================================
+
+
+class TestStreetMargins:
+    """Tests for gravel/dirt margin placement along street edges."""
+
+    def _make_terrain_with_streets(
+        self,
+        seed: str = "margin1",
+        width: int = 80,
+        height: int = 60,
+        style: str = "single",
+    ) -> GenerationContext:
+        """Helper: apply terrain then streets to get a context with margins."""
+        rng.reset(seed)
+        ctx = GenerationContext.create_empty(width=width, height=height)
+        OpenFieldLayer().apply(ctx)
+        NaturalTerrainLayer().apply(ctx)
+        StreetNetworkLayer(style=style).apply(ctx)
+        return ctx
+
+    def test_street_margin_converts_nearby_grass(self) -> None:
+        """Grass tiles near streets become gravel or dirt (with noise gaps)."""
+        ctx = self._make_terrain_with_streets()
+
+        street = ctx.street_data.streets[0]
+
+        # Check tiles within margin_max distance of the street boundary.
+        # The margin is noise-driven, so not every tile is converted, but
+        # across the full street length we expect a meaningful number.
+        converted = 0
+        checked = 0
+        margin_max = 3  # Default config value
+        for x in range(max(0, street.x1), min(ctx.width, street.x2)):
+            for dy in range(1, margin_max + 1):
+                for sign in (-1, 1):
+                    y = (street.y1 if sign == -1 else street.y2 - 1) + sign * dy
+                    if 0 <= y < ctx.height:
+                        checked += 1
+                        tile = ctx.tiles[x, y]
+                        if tile in (TileTypeID.GRAVEL, TileTypeID.DIRT):
+                            converted += 1
+
+        # The terrain is noise-generated and margins have noise gaps,
+        # but a meaningful fraction should have been converted.
+        assert checked > 0
+        assert converted > 0, (
+            "Expected some grass tiles near streets to be converted "
+            "to gravel/dirt margins"
+        )
+
+    def test_street_margin_preserves_non_terrain(self) -> None:
+        """Non-terrain tiles near streets are not modified by margins."""
+        rng.reset("margin_preserve")
+        ctx = GenerationContext.create_empty(width=80, height=60)
+        OpenFieldLayer().apply(ctx)
+        NaturalTerrainLayer().apply(ctx)
+
+        # Apply streets first so we know exactly where they are, then
+        # place non-terrain tiles inside the margin zone and verify
+        # they survive a second margin application.
+        layer = StreetNetworkLayer(style="single")
+        layer.apply(ctx)
+
+        street = ctx.street_data.streets[0]
+
+        # Place FLOOR and WALL tiles 1 tile above the street - firmly
+        # inside the margin zone regardless of street position.
+        test_y = street.y1 - 1
+        ctx.tiles[10, test_y] = TileTypeID.FLOOR
+        ctx.tiles[11, test_y] = TileTypeID.WALL
+
+        # Re-apply margins to verify non-terrain tiles are untouched.
+        layer._apply_street_margins(ctx, ctx.street_data.streets)
+
+        assert ctx.tiles[10, test_y] == TileTypeID.FLOOR
+        assert ctx.tiles[11, test_y] == TileTypeID.WALL
+
+    def test_street_margin_no_op_when_disabled(self) -> None:
+        """margin_max=0 skips margin placement entirely."""
+        rng.reset("margin_noop")
+        ctx = GenerationContext.create_empty(width=80, height=60)
+        ctx.tiles[:, :] = TileTypeID.GRASS
+
+        # Capture tiles before margins.
+        StreetNetworkLayer(style="single", margin_max=0).apply(ctx)
+
+        # Only street tiles should be cobblestone. No gravel or dirt
+        # margins should exist since margin_max=0.
+        unique = set(np.unique(ctx.tiles))
+        assert TileTypeID.GRAVEL not in unique, (
+            "No gravel margins expected with margin_max=0"
+        )
+        assert TileTypeID.DIRT not in unique, (
+            "No dirt margins expected with margin_max=0"
+        )
+
+    def test_street_margin_deterministic(self) -> None:
+        """Same seed produces identical margin results."""
+        ctx1 = self._make_terrain_with_streets(seed="margin_det")
+        ctx2 = self._make_terrain_with_streets(seed="margin_det")
+
+        np.testing.assert_array_equal(ctx1.tiles, ctx2.tiles)
+
+
 class TestBuildingPlacementWithStreets:
     """Tests for building placement with street data."""
 
@@ -872,7 +935,7 @@ class TestTreePlacementLayer:
         tree_positions = ctx.tree_positions
         assert len(tree_positions) > 0, "Expected some trees to be placed"
 
-        plantable = {TileTypeID.GRASS, TileTypeID.DIRT_PATH, TileTypeID.GRAVEL}
+        plantable = {TileTypeID.GRASS, TileTypeID.DIRT, TileTypeID.GRAVEL}
         assert all(ctx.tiles[x, y] in plantable for x, y in tree_positions)
         assert len(tree_positions) == len(set(tree_positions))
 

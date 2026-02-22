@@ -220,7 +220,7 @@ def test_shadow_height_tiles_are_correct() -> None:
         TileTypeID.FLOOR,
         TileTypeID.COBBLESTONE,
         TileTypeID.GRASS,
-        TileTypeID.DIRT_PATH,
+        TileTypeID.DIRT,
         TileTypeID.GRAVEL,
         TileTypeID.ACID_POOL,
         TileTypeID.HOT_COALS,
@@ -333,7 +333,7 @@ def test_edge_blend_map_marks_organic_vs_rigid_tiles() -> None:
     ids = np.array(
         [
             TileTypeID.GRASS,
-            TileTypeID.DIRT_PATH,
+            TileTypeID.DIRT,
             TileTypeID.GRAVEL,
             TileTypeID.COBBLESTONE,
             TileTypeID.WALL,

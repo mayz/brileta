@@ -7,12 +7,65 @@ import argparse
 import json
 import random
 import time
+from enum import IntEnum, auto
 from pathlib import Path
 
-from brileta.environment.generators.pipeline.layers.terrain import (
-    create_terrain_patterns,
-)
-from brileta.environment.generators.wfc_solver import WFCSolver
+from brileta.environment.generators.wfc_solver import DIRECTIONS, WFCPattern, WFCSolver
+from brileta.environment.tile_types import TileTypeID
+
+
+class _BenchPatternID(IntEnum):
+    GRASS = 0
+    DIRT = auto()
+    GRAVEL = auto()
+    COBBLESTONE = auto()
+
+
+def create_terrain_patterns() -> dict[_BenchPatternID, WFCPattern[_BenchPatternID]]:
+    """Create a 4-pattern set for benchmarking the WFC solver."""
+    return {
+        _BenchPatternID.GRASS: WFCPattern(
+            pattern_id=_BenchPatternID.GRASS,
+            tile_type=TileTypeID.GRASS,
+            weight=4.0,
+            valid_neighbors={
+                d: {_BenchPatternID.GRASS, _BenchPatternID.DIRT} for d in DIRECTIONS
+            },
+        ),
+        _BenchPatternID.DIRT: WFCPattern(
+            pattern_id=_BenchPatternID.DIRT,
+            tile_type=TileTypeID.DIRT,
+            weight=3.0,
+            valid_neighbors={d: set(_BenchPatternID) for d in DIRECTIONS},
+        ),
+        _BenchPatternID.GRAVEL: WFCPattern(
+            pattern_id=_BenchPatternID.GRAVEL,
+            tile_type=TileTypeID.GRAVEL,
+            weight=2.0,
+            valid_neighbors={
+                d: {
+                    _BenchPatternID.DIRT,
+                    _BenchPatternID.GRAVEL,
+                    _BenchPatternID.COBBLESTONE,
+                }
+                for d in DIRECTIONS
+            },
+        ),
+        _BenchPatternID.COBBLESTONE: WFCPattern(
+            pattern_id=_BenchPatternID.COBBLESTONE,
+            tile_type=TileTypeID.COBBLESTONE,
+            weight=1.5,
+            valid_neighbors={
+                d: {
+                    _BenchPatternID.DIRT,
+                    _BenchPatternID.GRAVEL,
+                    _BenchPatternID.COBBLESTONE,
+                }
+                for d in DIRECTIONS
+            },
+        ),
+    }
+
 
 GRID_SIZES: tuple[tuple[int, int], ...] = (
     (30, 30),

@@ -33,7 +33,7 @@ class TestFullPipeline:
             TileTypeID.FLOOR,
             TileTypeID.COBBLESTONE,
             TileTypeID.GRASS,
-            TileTypeID.DIRT_PATH,
+            TileTypeID.DIRT,
             TileTypeID.GRAVEL,
         }
 
@@ -107,7 +107,7 @@ class TestFullPipeline:
         # Check for terrain variety in outdoor areas
         terrain_types = {
             TileTypeID.GRASS,
-            TileTypeID.DIRT_PATH,
+            TileTypeID.DIRT,
             TileTypeID.GRAVEL,
             TileTypeID.COBBLESTONE,
         }
@@ -151,7 +151,7 @@ class TestGameWorldIntegration:
             TileTypeID.FLOOR,
             TileTypeID.COBBLESTONE,
             TileTypeID.GRASS,
-            TileTypeID.DIRT_PATH,
+            TileTypeID.DIRT,
             TileTypeID.GRAVEL,
         }
 

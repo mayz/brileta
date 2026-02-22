@@ -148,7 +148,7 @@ def test_settlement_street_styles() -> None:
         terrain_tiles = {
             TileTypeID.COBBLESTONE,
             TileTypeID.GRASS,
-            TileTypeID.DIRT_PATH,
+            TileTypeID.DIRT,
             TileTypeID.GRAVEL,
         }
         terrain_count = sum(np.sum(data.tiles == t) for t in terrain_tiles)

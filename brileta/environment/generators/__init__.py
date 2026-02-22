@@ -6,7 +6,7 @@ This package provides various map generators:
 
 Pipeline-based generation is the primary system. Different map types (settlement,
 wilderness) are created by composing different layers:
-- Settlement: OpenFieldLayer + StreetNetworkLayer + WFCTerrainLayer + buildings
+- Settlement: OpenFieldLayer + NaturalTerrainLayer + StreetNetworkLayer + buildings
 - Wilderness (TODO): CellularAutomataTerrainLayer + RuinScatterLayer + details
 
 And a reusable WFC solver for constraint-based generation:
@@ -21,11 +21,11 @@ from .pipeline import (
     DetailLayer,
     GenerationContext,
     GenerationLayer,
+    NaturalTerrainLayer,
     OpenFieldLayer,
     PipelineGenerator,
     RandomTerrainLayer,
     StreetNetworkLayer,
-    WFCTerrainLayer,
     create_pipeline,
     create_settlement_pipeline,
 )
@@ -42,6 +42,7 @@ __all__ = [
     "GeneratedMapData",
     "GenerationContext",
     "GenerationLayer",
+    "NaturalTerrainLayer",
     "OpenFieldLayer",
     "PipelineGenerator",
     "RandomTerrainLayer",
@@ -50,7 +51,6 @@ __all__ = [
     "WFCContradiction",
     "WFCPattern",
     "WFCSolver",
-    "WFCTerrainLayer",
     "create_pipeline",
     "create_settlement_pipeline",
 ]

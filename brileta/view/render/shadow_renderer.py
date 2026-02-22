@@ -82,7 +82,7 @@ class ShadowRenderer:
         {
             int(TileTypeID.COBBLESTONE),
             int(TileTypeID.GRASS),
-            int(TileTypeID.DIRT_PATH),
+            int(TileTypeID.DIRT),
             int(TileTypeID.GRAVEL),
         }
     )

@@ -35,10 +35,10 @@ from .layer import GenerationLayer
 from .layers import (
     BuildingPlacementLayer,
     DetailLayer,
+    NaturalTerrainLayer,
     OpenFieldLayer,
     RandomTerrainLayer,
     StreetNetworkLayer,
-    WFCTerrainLayer,
 )
 from .pipeline import PipelineGenerator
 
@@ -47,12 +47,12 @@ __all__ = [
     "DetailLayer",
     "GenerationContext",
     "GenerationLayer",
+    "NaturalTerrainLayer",
     "OpenFieldLayer",
     "PipelineGenerator",
     "RandomTerrainLayer",
     "StreetData",
     "StreetNetworkLayer",
-    "WFCTerrainLayer",
     "create_pipeline",
     "create_settlement_pipeline",
 ]

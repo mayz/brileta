@@ -190,6 +190,43 @@ SETTLEMENT_BOULDER_STREET_BUFFER = 12
 BOULDER_DENSITY_NOISE_FREQUENCY = 0.015
 BOULDER_DENSITY_NOISE_OCTAVES = 2
 
+# Natural terrain generation.
+# The pre-settlement landscape uses a single noise field over a dirt base.
+# Noise controls where grass grows. Gravel is not a natural terrain type -
+# it's a transitional material placed by feature layers (street margins,
+# future riverbeds, cliff bases).
+#
+# Grass noise: controls where grass patches grow over the dirt base.
+# The threshold controls coverage: lower values = more grass. At -0.1
+# roughly 55% of the map becomes grass.
+GRASS_NOISE_FREQUENCY = 0.02  # ~50-tile features for grass patch scale
+GRASS_NOISE_OCTAVES = 3  # Coarse shape + medium detail + fine irregularity
+GRASS_NOISE_THRESHOLD = -0.1  # Noise values above this become grass
+#
+# Grass islands: a second, high-frequency noise field that creates small
+# isolated patches where the terrain type flips. The high frequency produces
+# small 1-3 tile blobby shapes, and the high threshold means only the noise
+# peaks poke through, keeping patches sparse and isolated.
+#
+# Asymmetric thresholds reflect ecology: grass colonizes dirt more easily
+# (seeds blow in, take root in favorable pockets) than dirt survives inside
+# grass (requires something actively preventing growth - compaction, poor
+# drainage, heavy shade). So grass-in-dirt islands are more common.
+GRASS_ISLAND_FREQUENCY = 0.15  # High frequency for small (~6-7 tile) features
+GRASS_ISLAND_OCTAVES = 2  # Just enough detail for organic blob shapes
+GRASS_ISLAND_THRESHOLD = 0.72  # Noise peaks above this flip dirt to grass
+GRASS_ISLAND_BARE_THRESHOLD = 0.9  # Higher bar to flip grass to bare dirt
+
+# Street margin buffer.
+# After streets are carved, a margin of cleared ground is placed along the
+# edges so cobblestone doesn't cut a hard right-angle against grass. Noise
+# drives both the margin width and the material choice per tile, so the
+# border is irregular - gravel spills further in some spots, grass reclaims
+# the edge in others.
+STREET_MARGIN_MAX = 3  # Maximum margin width in tiles (noise varies 0 to this)
+STREET_MARGIN_NOISE_FREQUENCY = 0.12  # Per-tile irregularity for margin width
+STREET_MARGIN_GRAVEL_BIAS = 0.85  # Probability that a margin tile is gravel vs dirt
+
 # Noise-modulated tree clustering.
 # A low-frequency noise field scales placement probability per tile, creating
 # organic groves (high noise → 3x density) and clearings (low noise → 0 density).
