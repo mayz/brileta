@@ -9,7 +9,7 @@ Key Principles:
 - A GraphicsContext knows *how* to draw things (e.g., sprites, text, shapes), but not
   *what* or *when* to draw them. That is the responsibility of higher-level systems
   like the `FrameManager` and `View`s.
-- The interface provides high-level drawing commands (e.g., `draw_actor_smooth`,
+- The interface provides high-level drawing commands (e.g., `draw_actor`,
   `render_particles`) that are independent of the underlying graphics library.
 - It is the final stage in the rendering pipeline, handling the conversion of
   game-state data into pixels on the screen.
@@ -94,7 +94,7 @@ class GraphicsContext(abc.ABC):
         pass
 
     @abc.abstractmethod
-    def draw_actor_smooth(
+    def draw_actor(
         self,
         char: str,
         color: colors.Color,
@@ -176,7 +176,7 @@ class GraphicsContext(abc.ABC):
     ) -> None:
         """Draw a sprite from the dynamic sprite atlas at sub-pixel coordinates.
 
-        Behaves like draw_actor_smooth() but samples from the sprite atlas
+        Behaves like draw_actor() but samples from the sprite atlas
         instead of the CP437 glyph atlas.  Backends that don't support the
         sprite atlas do nothing (no-op default).
 

@@ -3,7 +3,6 @@ from unittest.mock import MagicMock
 
 import numpy as np
 
-from brileta import config
 from brileta.controller import Controller
 from brileta.types import DeltaTime, InterpolationAlpha
 from brileta.util.spatial import SpatialHashGrid
@@ -251,12 +250,9 @@ def test_small_map_actor_alignment(monkeypatch) -> None:
     # Buffer coordinates = viewport coordinates + padding.
     pad = view._SCROLL_PADDING
     buf_x, buf_y = vp_x + pad, vp_y + pad
-    # With smooth rendering enabled, actors are drawn via SDL, not console
-    if config.SMOOTH_ACTOR_RENDERING_ENABLED:
-        # Terrain decoration fills explored tiles with glyphs (space for WALL).
-        assert view.map_glyph_buffer.data["ch"][buf_x, buf_y] == ord(" ")
-    else:
-        assert view.map_glyph_buffer.data["ch"][buf_x, buf_y] == ord("@")
+    # Actors are drawn via the GPU, not into the glyph buffer.
+    # Terrain decoration fills explored tiles with glyphs (space for WALL).
+    assert view.map_glyph_buffer.data["ch"][buf_x, buf_y] == ord(" ")
     assert (vp_x, vp_y) == (
         vs.offset_x + controller.gw.player.x,
         vs.offset_y + controller.gw.player.y,

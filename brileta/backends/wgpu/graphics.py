@@ -411,7 +411,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
             cache_key_suffix=cache_key_suffix,
         )
 
-    def draw_actor_smooth(
+    def draw_actor(
         self,
         char: str,
         color: colors.Color,
@@ -513,7 +513,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         """Draw a sprite from the sprite atlas at sub-pixel screen coordinates.
 
         Follows the same lighting, scaling, and positioning logic as
-        draw_actor_smooth() but reads from the sprite atlas texture
+        draw_actor() but reads from the sprite atlas texture
         (binding 4) instead of the CP437 glyph atlas.
 
         The *color* parameter tints the sampled texture via multiplication.

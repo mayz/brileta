@@ -342,7 +342,7 @@ def patched_controller(stop_after: int):
             def screen_to_console_coords(self, *_a):
                 return (0, 0)
 
-            def draw_actor_smooth(self, *_a, **_kw):
+            def draw_actor(self, *_a, **_kw):
                 pass
 
             def draw_particles_smooth(self, *_a, **_kw):

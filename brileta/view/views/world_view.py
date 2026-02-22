@@ -425,7 +425,7 @@ class WorldView(View):
             )
 
         visible_actors_for_frame: list[Actor] | None = None
-        if config.SHADOWS_ENABLED or config.SMOOTH_ACTOR_RENDERING_ENABLED:
+        if config.SHADOWS_ENABLED:
             actor_bounds = vs.get_visible_bounds()
             visible_actors_for_frame = [
                 actor
@@ -478,9 +478,6 @@ class WorldView(View):
             viewport_bounds=actor_bounds
             if visible_actors_for_frame is not None
             else None,
-            smooth=config.SMOOTH_ACTOR_RENDERING_ENABLED,
-            game_time=self.controller.clock.last_time,
-            is_combat=self.controller.is_combat_mode(),
         )
 
         if config.ATMOSPHERIC_EFFECTS_ENABLED:

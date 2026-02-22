@@ -100,11 +100,11 @@ def _make_renderer(
     return renderer, graphics
 
 
-class TestRenderActorsSmoothDispatch:
-    """Test that render_actors dispatches correctly based on the smooth flag."""
+class TestRenderActors:
+    """Test that render_actors renders visible actors."""
 
-    def test_smooth_flag_true_calls_smooth_path(self) -> None:
-        """When smooth=True, actors should render with sub-pixel positioning."""
+    def test_renders_visible_actors(self) -> None:
+        """Visible actors should be rendered with sub-pixel positioning."""
         renderer, graphics = _make_renderer()
         player = DummyActor(5, 5)
         actor = DummyActor(6, 5, ch="g")
@@ -117,33 +117,10 @@ class TestRenderActorsSmoothDispatch:
             game_world=cast(GameWorld, gw),
             camera_frac_offset=(0.0, 0.0),
             view_origin=(0.0, 0.0),
-            smooth=True,
         )
 
-        # draw_actor_smooth should have been called for both visible actors
-        assert graphics.draw_actor_smooth.call_count >= 1
-
-    def test_smooth_flag_false_calls_traditional_path(self) -> None:
-        """When smooth=False, actors should render tile-aligned."""
-        renderer, graphics = _make_renderer()
-        player = DummyActor(5, 5)
-        actor = DummyActor(6, 5, ch="g")
-        gw = DummyGameWorld([player, actor], player)
-        renderer.viewport_system.update_camera(cast(Actor, player), 20, 20)
-        renderer.viewport_system.camera.set_position(5.0, 5.0)
-
-        renderer.render_actors(
-            InterpolationAlpha(1.0),
-            game_world=cast(GameWorld, gw),
-            camera_frac_offset=(0.0, 0.0),
-            view_origin=(0.0, 0.0),
-            smooth=False,
-            game_time=0.0,
-            is_combat=False,
-        )
-
-        # draw_actor_smooth is used by both paths (traditional also uses it)
-        assert graphics.draw_actor_smooth.call_count >= 1
+        # draw_actor should have been called for both visible actors
+        assert graphics.draw_actor.call_count >= 1
 
 
 class TestVisibilityFiltering:
@@ -167,11 +144,10 @@ class TestVisibilityFiltering:
             game_world=cast(GameWorld, gw),
             camera_frac_offset=(0.0, 0.0),
             view_origin=(0.0, 0.0),
-            smooth=True,
         )
 
-        # Check that draw_actor_smooth was NOT called with the invisible actor's glyph
-        for c in graphics.draw_actor_smooth.call_args_list:
+        # Check that draw_actor was NOT called with the invisible actor's glyph
+        for c in graphics.draw_actor.call_args_list:
             assert c[0][0] != "i", "Invisible actor should not be rendered"
 
 
@@ -252,11 +228,10 @@ class TestCharacterLayerRendering:
             game_world=cast(GameWorld, gw),
             camera_frac_offset=(0.0, 0.0),
             view_origin=(0.0, 0.0),
-            smooth=True,
         )
 
         # Should render layer chars, not the actor's base ch
-        rendered_chars = [c[0][0] for c in graphics.draw_actor_smooth.call_args_list]
+        rendered_chars = [c[0][0] for c in graphics.draw_actor.call_args_list]
         assert "A" in rendered_chars, "Layer 1 char should be rendered"
         assert "B" in rendered_chars, "Layer 2 char should be rendered"
         # The actor's base char "X" should NOT be rendered (layers replace it)
@@ -394,35 +369,11 @@ class TestTileBgForwarding:
             game_world=cast(GameWorld, gw),
             camera_frac_offset=(0.0, 0.0),
             view_origin=(0.0, 0.0),
-            smooth=True,
         )
 
-        call_args = graphics.draw_actor_smooth.call_args
+        call_args = graphics.draw_actor.call_args
         assert call_args is not None
         assert call_args.kwargs["tile_bg"] == (123, 124, 125)
-
-    def test_traditional_path_passes_tile_bg_for_single_char_actor(self) -> None:
-        renderer, graphics = _make_renderer()
-        player = DummyActor(5, 5, color=(100, 100, 100))
-        gw = DummyGameWorld([player], player)
-        gw.game_map.light_appearance_map[5, 5]["bg"] = (140, 141, 142)
-
-        renderer.viewport_system.update_camera(cast(Actor, player), 20, 20)
-        renderer.viewport_system.camera.set_position(5.0, 5.0)
-
-        renderer.render_actors(
-            InterpolationAlpha(1.0),
-            game_world=cast(GameWorld, gw),
-            camera_frac_offset=(0.0, 0.0),
-            view_origin=(0.0, 0.0),
-            smooth=False,
-            game_time=0.0,
-            is_combat=False,
-        )
-
-        call_args = graphics.draw_actor_smooth.call_args
-        assert call_args is not None
-        assert call_args.kwargs["tile_bg"] == (140, 141, 142)
 
     def test_character_layers_do_not_pass_tile_bg(self) -> None:
         renderer, graphics = _make_renderer()
@@ -448,8 +399,7 @@ class TestTileBgForwarding:
             game_world=cast(GameWorld, gw),
             camera_frac_offset=(0.0, 0.0),
             view_origin=(0.0, 0.0),
-            smooth=True,
         )
 
-        for call in graphics.draw_actor_smooth.call_args_list:
+        for call in graphics.draw_actor.call_args_list:
             assert "tile_bg" not in call.kwargs

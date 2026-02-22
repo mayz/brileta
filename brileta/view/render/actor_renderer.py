@@ -76,11 +76,8 @@ class ActorRenderer:
         view_origin: ViewOffset,
         visible_actors: list[Actor] | None = None,
         viewport_bounds: Rect | None = None,
-        smooth: bool = True,
-        game_time: float = 0.0,
-        is_combat: bool = False,
     ) -> None:
-        """Main entry point - renders all visible actors.
+        """Render all visible actors with smooth sub-pixel positioning.
 
         Args:
             interpolation_alpha: Interpolation factor for smooth movement.
@@ -89,26 +86,31 @@ class ActorRenderer:
             view_origin: Root console origin of the viewport (x, y).
             visible_actors: Pre-filtered list of visible actors, or None to compute.
             viewport_bounds: Viewport bounds for culling, or None to compute.
-            smooth: If True, use smooth sub-pixel rendering. Otherwise tile-aligned.
-            game_time: Current game time in seconds (for pulsation in traditional mode).
-            is_combat: Whether combat mode is active (suppresses pulsation).
         """
-        if smooth:
-            self._render_actors_smooth(
+        vs = self.viewport_system
+        if viewport_bounds is None:
+            viewport_bounds = vs.get_visible_bounds()
+
+        if visible_actors is None:
+            visible_actors = [
+                actor
+                for actor in self.get_sorted_visible_actors(viewport_bounds, game_world)
+                if game_world.game_map.visible[actor.x, actor.y]
+            ]
+
+        if not visible_actors:
+            return
+
+        game_map = game_world.game_map
+        for actor in visible_actors:
+            self._render_single_actor(
+                actor,
+                viewport_bounds,
+                vs,
                 interpolation_alpha,
-                game_world=game_world,
+                game_map=game_map,
                 camera_frac_offset=camera_frac_offset,
                 view_origin=view_origin,
-                visible_actors=visible_actors,
-                viewport_bounds=viewport_bounds,
-            )
-        else:
-            self._render_actors_traditional(
-                interpolation_alpha,
-                game_world=game_world,
-                view_origin=view_origin,
-                game_time=game_time,
-                is_combat=is_combat,
             )
 
     def render_actor_outline(
@@ -341,44 +343,7 @@ class ActorRenderer:
         )
 
     @record_time_live_variable("time.render.actors_smooth_ms")
-    def _render_actors_smooth(
-        self,
-        alpha: InterpolationAlpha,
-        *,
-        game_world: GameWorld,
-        camera_frac_offset: ViewOffset,
-        view_origin: ViewOffset,
-        visible_actors: list[Actor] | None = None,
-        viewport_bounds: Rect | None = None,
-    ) -> None:
-        """Render all actors with smooth sub-pixel positioning."""
-        vs = self.viewport_system
-        if viewport_bounds is None:
-            viewport_bounds = vs.get_visible_bounds()
-
-        if visible_actors is None:
-            visible_actors = [
-                actor
-                for actor in self.get_sorted_visible_actors(viewport_bounds, game_world)
-                if game_world.game_map.visible[actor.x, actor.y]
-            ]
-
-        if not visible_actors:
-            return
-
-        game_map = game_world.game_map
-        for actor in visible_actors:
-            self._render_single_actor_smooth(
-                actor,
-                viewport_bounds,
-                vs,
-                alpha,
-                game_map=game_map,
-                camera_frac_offset=camera_frac_offset,
-                view_origin=view_origin,
-            )
-
-    def _render_single_actor_smooth(
+    def _render_single_actor(
         self,
         actor: Actor,
         bounds: Rect,
@@ -456,7 +421,7 @@ class ActorRenderer:
             )
         else:
             # Priority 3: Single CP437 glyph fallback.
-            self.graphics.draw_actor_smooth(
+            self.graphics.draw_actor(
                 actor.ch,
                 final_color,
                 screen_pixel_x,
@@ -507,7 +472,7 @@ class ActorRenderer:
             combined_scale_y = visual_scale * layer.scale_y
 
             # Render this layer
-            graphics.draw_actor_smooth(
+            graphics.draw_actor(
                 layer.char,
                 layer.color,
                 pixel_x,
@@ -546,127 +511,6 @@ class ActorRenderer:
         return base_color
 
     @record_time_live_variable("time.render.actors_traditional_ms")
-    def _render_actors_traditional(
-        self,
-        alpha: InterpolationAlpha,
-        *,
-        game_world: GameWorld,
-        view_origin: ViewOffset,
-        game_time: float = 0.0,
-        is_combat: bool = False,
-    ) -> None:
-        """Tile-aligned actor rendering, adapted for dynamic rendering."""
-        vs = self.viewport_system
-        bounds = vs.get_visible_bounds()
-        world_left, world_right, world_top, world_bottom = (
-            bounds.x1,
-            bounds.x2,
-            bounds.y1,
-            bounds.y2,
-        )
-        # Get only actors within the viewport using the spatial index, then sort
-        # for proper z-order: Y-position primary (painter's algorithm),
-        # player on top at same Y, then visual_scale (larger on top among
-        # non-player actors at same Y).
-        actors_in_viewport = game_world.actor_spatial_index.get_in_bounds(
-            world_left, world_top, world_right, world_bottom
-        )
-        sorted_actors = sorted(
-            actors_in_viewport,
-            key=lambda a: (
-                a.y,
-                a == game_world.player,
-                getattr(a, "visual_scale", 1.0),
-            ),
-        )
-        graphics = self.graphics
-        for actor in sorted_actors:
-            if game_world.game_map.visible[actor.x, actor.y]:
-                # Get lighting intensity
-                light_rgb = self._get_actor_lighting_intensity(actor, bounds)
-
-                # Convert actor's TILE position to viewport coordinates
-                # Note: We use actor.x/y directly for tile-aligned rendering
-                vp_x, vp_y = vs.world_to_screen(actor.x, actor.y)
-
-                # Root console position where this viewport tile ends up
-                root_x = view_origin[0] + vp_x
-                root_y = view_origin[1] + vp_y
-
-                # Convert to final screen pixel coordinates
-                screen_pixel_x, screen_pixel_y = graphics.console_to_screen_coords(
-                    root_x, root_y
-                )
-
-                # Get final color with pulsating effect if needed
-                base_actor_color = self._get_actor_display_color(actor)
-                final_fg_color = base_actor_color
-                if (
-                    game_world.selected_actor == actor
-                    and game_world.game_map.visible[actor.x, actor.y]
-                    and not is_combat
-                ):
-                    final_fg_color = self.apply_pulsating_effect(
-                        base_actor_color, actor.color, game_time
-                    )
-
-                visual_scale = getattr(actor, "visual_scale", 1.0)
-
-                # Send tile background to GPU shader for contrast checks.
-                tile_bg_np = game_world.game_map.light_appearance_map[actor.x, actor.y][
-                    "bg"
-                ]
-                tile_bg = (
-                    int(tile_bg_np[0]),
-                    int(tile_bg_np[1]),
-                    int(tile_bg_np[2]),
-                )
-
-                sprite_uv = getattr(actor, "sprite_uv", None)
-                if sprite_uv is not None:
-                    sprite_ground_anchor_y = float(
-                        getattr(actor, "sprite_ground_anchor_y", 1.0)
-                    )
-                    # Sprite atlas path.
-                    graphics.draw_sprite_smooth(
-                        sprite_uv,
-                        final_fg_color,
-                        screen_pixel_x,
-                        screen_pixel_y,
-                        light_rgb,
-                        alpha,
-                        scale_x=visual_scale,
-                        scale_y=visual_scale,
-                        ground_anchor_y=sprite_ground_anchor_y,
-                        world_pos=(actor.x, actor.y),
-                        tile_bg=tile_bg,
-                    )
-                elif actor.character_layers:
-                    # Multi-character composition.
-                    self._render_character_layers(
-                        actor.character_layers,
-                        float(root_x),
-                        float(root_y),
-                        light_rgb,
-                        alpha,
-                        visual_scale,
-                        actor_world_pos=(actor.x, actor.y),
-                    )
-                else:
-                    # Single CP437 glyph fallback.
-                    graphics.draw_actor_smooth(
-                        actor.ch,
-                        final_fg_color,
-                        screen_pixel_x,
-                        screen_pixel_y,
-                        light_rgb,
-                        alpha,
-                        scale_x=visual_scale,
-                        scale_y=visual_scale,
-                        world_pos=(actor.x, actor.y),
-                        tile_bg=tile_bg,
-                    )
-
     def _draw_actor_outline(
         self,
         actor: Actor,

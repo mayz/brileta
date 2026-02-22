@@ -481,8 +481,8 @@ class TestWGPUGraphicsContext:
         # These methods are now implemented, so test that they don't crash
         # when called with minimal/None renderers
 
-        # draw_actor_smooth should handle None screen_renderer gracefully
-        self.graphics_ctx.draw_actor_smooth("@", colors.WHITE, 10.0, 10.0)
+        # draw_actor should handle None screen_renderer gracefully
+        self.graphics_ctx.draw_actor("@", colors.WHITE, 10.0, 10.0)
 
         # draw_mouse_cursor should handle None ui_renderer gracefully
         mock_cursor = MockCursorManager()
@@ -539,9 +539,9 @@ class TestWGPUGraphicsContext:
             self.graphics_ctx.resource_manager = original_resource_manager
 
     def test_interpolation_alpha_default_handling(self):
-        """Test that draw_actor_smooth handles None interpolation_alpha correctly."""
+        """Test that draw_actor handles None interpolation_alpha correctly."""
         # This method is now implemented - test that it handles None gracefully
-        self.graphics_ctx.draw_actor_smooth(
+        self.graphics_ctx.draw_actor(
             "@", colors.WHITE, 10.0, 10.0, interpolation_alpha=None
         )
 

@@ -52,8 +52,6 @@ TILE_ZOOM: int = 1
 MIN_CONSOLE_WIDTH: int = 60
 MIN_CONSOLE_HEIGHT: int = 40
 
-# Use "smooth" rendering for actors (sub-tile render coordinates).
-SMOOTH_ACTOR_RENDERING_ENABLED = True
 # Toggle environmental overlay effects
 ENVIRONMENTAL_EFFECTS_ENABLED = True
 # Toggle atmospheric effects (cloud shadows, ground mist)
