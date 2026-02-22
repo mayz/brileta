@@ -40,6 +40,8 @@ def make_explore_mode() -> tuple[ExploreMode, Any, DummyGameWorld]:
             update_mouse_position=lambda *a: None,
             set_active_cursor_type=lambda *a: None,
         ),
+        action_panel_view=SimpleNamespace(get_hotkeys=lambda: {}),
+        toggle_minimap=MagicMock(),
         get_world_coords_from_root_tile_coords=lambda pos: pos,
         pixel_to_world_tile=lambda px_x, px_y: (int(px_x), int(px_y)),
     )
@@ -185,6 +187,17 @@ def test_update_preserves_timing_when_keys_held() -> None:
     mode.update()
 
     assert mode.move_generator.is_first_move_of_burst is False
+
+
+def test_key_m_toggles_minimap_via_frame_manager() -> None:
+    """M key should invoke the frame manager's public mini-map toggle API."""
+    mode, controller, _gw = make_explore_mode()
+
+    event = input_events.KeyDown(sym=input_events.Keys.KEY_M)
+    consumed = mode.handle_input(event)
+
+    assert consumed is True
+    controller.frame_manager.toggle_minimap.assert_called_once_with()
 
 
 # -----------------------------------------------------------------------------

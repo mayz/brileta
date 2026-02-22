@@ -190,6 +190,7 @@ class Keys:
     KEY_L: Final[KeySym] = KeySym(ord("l"))
     KEY_Q: Final[KeySym] = KeySym(ord("q"))
     KEY_I: Final[KeySym] = KeySym(ord("i"))
+    KEY_M: Final[KeySym] = KeySym(ord("m"))
     KEY_T: Final[KeySym] = KeySym(ord("t"))
     KEY_R: Final[KeySym] = KeySym(ord("r"))
 

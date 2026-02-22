@@ -47,6 +47,7 @@ from .views.action_panel_view import ActionPanelView
 from .views.base import View
 from .views.equipment_view import EquipmentView
 from .views.message_log_view import MessageLogView
+from .views.mini_map_view import MiniMapView
 from .views.player_status_view import PlayerStatusView
 from .views.world_view import WorldView
 
@@ -87,6 +88,7 @@ _RENDER_METRICS: list[MetricSpec] = [
     MetricSpec("time.render.atmospheric_ms", "Atmospheric effects (clouds, shadows)"),
     MetricSpec("time.render.decals_ms", "Decal rendering"),
     MetricSpec("time.render.floating_text_ms", "Floating text rendering"),
+    MetricSpec("time.render.minimap_ms", "Mini-map draw/caching"),
     # TextureRenderer breakdown
     MetricSpec("time.render.texture.fbo_bind_clear_ms", "FBO bind and clear"),
     MetricSpec("time.render.texture.vbo_update_ms", "VBO vertex encode and upload"),
@@ -103,6 +105,7 @@ class FrameManager:
     equipment_view: EquipmentView
     player_status_view: PlayerStatusView
     action_panel_view: ActionPanelView
+    mini_map_view: MiniMapView
     views: list[View]
     debug_stats_overlay: DebugStatsOverlay
     dev_console_overlay: DevConsoleOverlay
@@ -146,6 +149,9 @@ class FrameManager:
 
         self.player_status_view = PlayerStatusView(self.controller, self.graphics)
         self.action_panel_view = ActionPanelView(self.controller)
+        self.mini_map_view = MiniMapView(
+            self.controller, self.world_view.viewport_system
+        )
 
         self.views: list[View] = [
             self.world_view,
@@ -153,6 +159,7 @@ class FrameManager:
             self.equipment_view,
             self.message_log_view,
             self.action_panel_view,
+            self.mini_map_view,
         ]
 
         # Set view boundaries using layout
@@ -244,7 +251,7 @@ class FrameManager:
         world_to_hud_guard_rows = 1 if bottom_ui_height > 0 else 0
         content_bottom_y = max(0, bottom_ui_y - world_to_hud_guard_rows)
 
-        # Action panel fills entire left sidebar (above bottom bar)
+        # Left sidebar content stack (action panel + optional mini-map)
         action_panel_y = 0
 
         # World view starts after left sidebar
@@ -290,11 +297,46 @@ class FrameManager:
             player_status_height,
         )
 
-        # Action panel fills left sidebar (above bottom bar)
+        sidebar_width_px = left_sidebar_width * max(1, tile_dimensions[0])
+        map_width_tiles = self.controller.gw.game_map.width
+        map_height_tiles = self.controller.gw.game_map.height
+        # Reserve enough vertical space for the largest integer mini-map scale
+        # that can fit the sidebar's current pixel width.
+        minimap_px_per_tile = max(1, max(0, sidebar_width_px - 2) // map_width_tiles)
+        minimap_required_px = (map_height_tiles * minimap_px_per_tile) + 2
+        tile_height_px = max(1, tile_dimensions[1])
+        minimap_height_tiles = (
+            minimap_required_px + tile_height_px - 1
+        ) // tile_height_px
+
+        sidebar_content_height = max(0, content_bottom_y - action_panel_y)
+        min_action_panel_height_tiles = 12
+        max_minimap_height_tiles = max(
+            0, sidebar_content_height - min_action_panel_height_tiles
+        )
+        minimap_height_tiles = min(minimap_height_tiles, max_minimap_height_tiles)
+
+        if self.mini_map_view.visible and minimap_height_tiles > 0:
+            minimap_y1 = content_bottom_y - minimap_height_tiles
+            action_panel_y2 = minimap_y1
+            minimap_bounds = (
+                left_sidebar_x,
+                minimap_y1,
+                left_sidebar_width,
+                content_bottom_y,
+            )
+        else:
+            action_panel_y2 = content_bottom_y
+            minimap_bounds = (0, 0, 0, 0)
+
+        # Action panel fills left sidebar above the mini-map when visible.
         self.action_panel_view.tile_dimensions = tile_dimensions
         self.action_panel_view.set_bounds(
-            left_sidebar_x, action_panel_y, left_sidebar_width, content_bottom_y
+            left_sidebar_x, action_panel_y, left_sidebar_width, action_panel_y2
         )
+
+        self.mini_map_view.tile_dimensions = tile_dimensions
+        self.mini_map_view.set_bounds(*minimap_bounds)
 
         # Message log spans bottom bar (left edge to equipment)
         self.message_log_view.tile_dimensions = tile_dimensions
@@ -325,6 +367,14 @@ class FrameManager:
     def get_visible_bounds(self) -> Rect | None:
         """Return the world-space bounds currently visible in the world view."""
         return self.world_view.viewport_system.get_visible_bounds()
+
+    def toggle_minimap(self) -> None:
+        """Toggle mini-map visibility and recompute HUD layout."""
+        if self.mini_map_view.visible:
+            self.mini_map_view.hide()
+        else:
+            self.mini_map_view.show()
+        self._layout_views()
 
     def on_window_resized(self) -> None:
         """Called when the game window is resized to update view layouts."""

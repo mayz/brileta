@@ -33,8 +33,8 @@ class ActionPanelView(TextView):
     """Left sidebar panel showing target info and available actions."""
 
     def __init__(self, controller: Controller) -> None:
-        super().__init__()
         self.controller = controller
+        super().__init__(create_texture_cache=False)
         self.canvas = PillowImageCanvas(
             controller.graphics,
             font_path=config.UI_FONT_PATH,

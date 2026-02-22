@@ -17,7 +17,7 @@ of rendering, making the system more modular and maintainable.
 """
 
 import abc
-from typing import Any
+from typing import Any, cast
 
 from brileta.types import InterpolationAlpha, TileDimensions
 from brileta.util.caching import ResourceCache
@@ -91,13 +91,20 @@ class TextView(View):
 
     canvas: Canvas
 
-    def __init__(self) -> None:
+    def __init__(self, *, create_texture_cache: bool = True) -> None:
         super().__init__()
-        # Each view gets its own tiny cache. max_size=1 is perfect
-        # for views that only ever need to cache their most recent state.
-        self._texture_cache = ResourceCache[Any, Any](
-            name=self.__class__.__name__, max_size=1
-        )
+        # Sentinel: cast(ResourceCache, None) satisfies the type checker while
+        # letting subclasses that pass create_texture_cache=False supply their
+        # own cache(s) in __init__ (e.g. MiniMapView's dual terrain/overlay
+        # caches).  Any code path that calls _texture_cache methods on a
+        # subclass that opted out must assign a real cache first.
+        self._texture_cache = cast(ResourceCache[Any, Any], None)
+        if create_texture_cache:
+            # Each view gets its own tiny cache. max_size=1 is perfect
+            # for views that only ever need to cache their most recent state.
+            self._texture_cache = ResourceCache[Any, Any](
+                name=self.__class__.__name__, max_size=1
+            )
 
     @abc.abstractmethod
     def get_cache_key(self) -> Any:

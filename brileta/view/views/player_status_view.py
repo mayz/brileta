@@ -40,9 +40,9 @@ class PlayerStatusView(TextView):
 
         Position and size will be set by FrameManager.resize().
         """
-        super().__init__()
         self.controller = controller
         self._graphics = graphics
+        super().__init__(create_texture_cache=False)
         # Use PillowImageCanvas with VGA font for crisp pixel rendering
         self.canvas = PillowImageCanvas(
             graphics,

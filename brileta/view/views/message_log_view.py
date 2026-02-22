@@ -18,7 +18,7 @@ class MessageLogView(TextView):
     """View for displaying the message log in the bottom-left corner."""
 
     def __init__(self, message_log: MessageLog, graphics: GraphicsContext) -> None:
-        super().__init__()
+        super().__init__(create_texture_cache=False)
         self.message_log = message_log
         self.canvas = PillowImageCanvas(
             graphics,

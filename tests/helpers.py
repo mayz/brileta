@@ -399,6 +399,16 @@ class DummyFrameManager:
             get_action_at_pixel=lambda *_a, **_kw: None,
             invalidate_cache=lambda: None,
         )
+        self.mini_map_view = SimpleNamespace(visible=True)
+
+        def _show_minimap() -> None:
+            self.mini_map_view.visible = True
+
+        def _hide_minimap() -> None:
+            self.mini_map_view.visible = False
+
+        self.mini_map_view.show = _show_minimap
+        self.mini_map_view.hide = _hide_minimap
         self.equipment_view = SimpleNamespace(
             x=0,
             y=0,
@@ -413,6 +423,18 @@ class DummyFrameManager:
         self.world_view = SimpleNamespace(
             _render_selection_and_hover_outlines=lambda: None
         )
+
+    def _layout_views(self) -> None:
+        """Layout stub used by mode tests that trigger UI relayout."""
+        return
+
+    def toggle_minimap(self) -> None:
+        """Mirror FrameManager.toggle_minimap for tests."""
+        if self.mini_map_view.visible:
+            self.mini_map_view.hide()
+        else:
+            self.mini_map_view.show()
+        self._layout_views()
 
     def _build_hotkeys(self) -> dict[str, Any]:
         """Build a-z hotkey mappings from available combat actions."""

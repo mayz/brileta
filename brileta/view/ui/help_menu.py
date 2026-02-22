@@ -39,6 +39,7 @@ class HelpMenu(Menu):
             ("R-Click", "Quick action", self._on_quick_action),
             ("I", "Inventory", self._on_inventory),
             ("R", "Reload weapon", self._on_reload),
+            ("M", "Toggle mini-map", self._on_toggle_minimap),
             ("1", "Weapon slot 1", lambda: self._on_weapon_slot(0)),
             ("2", "Weapon slot 2", lambda: self._on_weapon_slot(1)),
             ("`", "Dev console", self._on_dev_console),
@@ -116,6 +117,13 @@ class HelpMenu(Menu):
         player = self.controller.gw.player
         switch_action = SwitchWeaponIntent(self.controller, player, slot)
         self.controller.queue_action(switch_action)
+
+    def _on_toggle_minimap(self) -> None:
+        """Toggle the left-sidebar mini-map via FrameManager."""
+        fm = self.controller.frame_manager
+        if fm is None:
+            return
+        fm.toggle_minimap()
 
     def _on_dev_console(self) -> None:
         """Toggle the dev console overlay."""

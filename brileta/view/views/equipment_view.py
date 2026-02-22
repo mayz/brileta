@@ -35,7 +35,7 @@ class EquipmentView(TextView):
     _CONTENT_TOP_PADDING_PX = 24
 
     def __init__(self, controller: Controller, graphics: GraphicsContext) -> None:
-        super().__init__()
+        super().__init__(create_texture_cache=False)
         self.controller = controller
         self._graphics = graphics
         self.canvas = PillowImageCanvas(

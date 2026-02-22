@@ -147,6 +147,10 @@ class ExploreMode(Mode):
                 self._reload_weapon()
                 return True
 
+            case input_events.KeyDown(sym=Keys.KEY_M):
+                self._toggle_minimap()
+                return True
+
             case input_events.KeyDown(sym=input_events.KeySym.N1):
                 self._switch_weapon_slot(0)
                 return True
@@ -243,6 +247,12 @@ class ExploreMode(Mode):
 
         switch_action = SwitchWeaponIntent(self.controller, self.player, slot)
         self.controller.queue_action(switch_action)
+
+    def _toggle_minimap(self) -> None:
+        """Toggle the mini-map via FrameManager's public API."""
+        if self._fm is None:
+            return
+        self._fm.toggle_minimap()
 
     # -------------------------------------------------------------------------
     # Action Panel Hotkey Handling
