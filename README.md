@@ -17,21 +17,21 @@ This is a personal hobby project. There's no release timeline, no roadmap promis
 - Directional sun with ray-marched terrain shadows that shift in angle and length with time of day.
 - Actors and terrain cast glyph-shaped shadows that shift with sun angle and nearby point lights.
 - Sky exposure for indoor/outdoor transitions and emission for glowing surfaces.
+- Edge blending feathers natural terrain boundaries with per-pixel noise jitter, so grass bleeds organically into dirt while built surfaces like cobblestone keep hard edges.
 
 ### Composable World Generation
 
 - Pipeline of generation layers that each transform a shared context.
-- Terrain uses Wave Function Collapse with weighted adjacency rules.
+- Terrain shaped by layered noise fields at two scales - broad passes carve meadows and clearings, while a high-frequency layer scatters small patches for variety. Settlement infrastructure is carved into the natural landscape afterward, so buildings and streets read as built on pre-existing land.
 - Buildings placed from templates with configurable footprints.
 - Generated regions track properties like sky exposure that feed into the lighting system.
 - Each subsystem gets its own isolated RNG stream derived from a master seed, so changes to one system's random consumption don't cascade to others.
 
-### Procedural Tree Sprites
+### Procedural Sprites
 
-- Every tree sprite in the game is unique, generated per-pixel from the tree's world position.
-- Four archetypes (deciduous, conifer, dead, sapling) with distinct silhouettes and color palettes.
-- Three-step canopy shading (shadow, mid-tone, highlight) over lobe-based geometry so foliage reads as textured mass at small sizes.
-- Billboard sun lighting in the fragment shader shifts highlights across canopy pixels as the sun moves.
+- Every tree and boulder in the game is a unique sprite, generated per-pixel from its world position and the map seed.
+- Both trees and boulders use four archetypes with three-step shading (shadow, mid-tone, highlight). Trees vary by silhouette and canopy color over lobe-based geometry. Boulders vary by proportion and stone color, with procedural cracks and lichen patches.
+- Billboard sun lighting in the fragment shader shifts highlights across sprite pixels as the sun moves.
 - Dynamic sprite atlas with skyline bin-packing integrates procedural sprites into the glyph rendering pipeline.
 
 ### Utility AI with Goals
@@ -56,7 +56,7 @@ This is a personal hobby project. There's no release timeline, no roadmap promis
 
 ### C Extensions for Hot Paths
 
-- A shared native extension for A\* pathfinding, symmetric shadowcasting FOV, and Wave Function Collapse.
+- A shared native extension for A\* pathfinding, symmetric shadowcasting FOV, sprite rasterization, and noise generation.
 
 ## Getting Started
 
