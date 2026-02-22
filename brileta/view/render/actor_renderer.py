@@ -260,8 +260,9 @@ class ActorRenderer:
     ) -> list[Actor]:
         """Return actors in the viewport sorted for painter-style rendering.
 
-        Sorted by Y position (painter's algorithm), then visual_scale (larger on
-        top at same Y), then player last (always on top at same Y and scale).
+        Sorted by Y position (painter's algorithm), then player on top (so
+        large boulders/trees at the same Y never occlude the player), then
+        visual_scale (larger on top at same Y among non-player actors).
         """
         actors_in_viewport = game_world.actor_spatial_index.get_in_bounds(
             bounds.x1, bounds.y1, bounds.x2, bounds.y2
@@ -271,8 +272,8 @@ class ActorRenderer:
             actors_in_viewport,
             key=lambda actor: (
                 actor.y,
-                getattr(actor, "visual_scale", 1.0),
                 actor == game_world.player,
+                getattr(actor, "visual_scale", 1.0),
             ),
         )
 
@@ -565,7 +566,8 @@ class ActorRenderer:
         )
         # Get only actors within the viewport using the spatial index, then sort
         # for proper z-order: Y-position primary (painter's algorithm),
-        # visual_scale secondary (larger actors on top at same Y), player on top
+        # player on top at same Y, then visual_scale (larger on top among
+        # non-player actors at same Y).
         actors_in_viewport = game_world.actor_spatial_index.get_in_bounds(
             world_left, world_top, world_right, world_bottom
         )
@@ -573,8 +575,8 @@ class ActorRenderer:
             actors_in_viewport,
             key=lambda a: (
                 a.y,
-                getattr(a, "visual_scale", 1.0),
                 a == game_world.player,
+                getattr(a, "visual_scale", 1.0),
             ),
         )
         graphics = self.graphics
