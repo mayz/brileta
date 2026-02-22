@@ -5,6 +5,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import Mock
 
+import numpy as np
 import pytest
 
 from brileta.view.render.actor_renderer import (
@@ -12,7 +13,11 @@ from brileta.view.render.actor_renderer import (
     COMBAT_OUTLINE_MIN_ALPHA,
     ActorRenderer,
 )
-from brileta.view.views.world_view import WorldView
+from brileta.view.views.world_view import (
+    _EDGE_BLEND_CARDINAL_DIRECTIONS,
+    WorldView,
+    _compute_tile_edge_transition_metadata,
+)
 
 
 class TestGetShimmerAlpha:
@@ -154,3 +159,82 @@ class TestSunDirectionPropagation:
         view._apply_sun_direction_to_graphics(graphics_arg, None)
 
         view.graphics.set_sun_direction.assert_called_once_with(0.0, 0.0)
+
+
+class TestTileEdgeTransitionMetadata:
+    """Tests for vectorized organic tile edge metadata generation."""
+
+    def test_uses_cardinals_one_sided_ownership_and_no_wraparound(self) -> None:
+        tile_ids = np.array(
+            [
+                [1, 5, 1],
+                [5, 2, 2],
+                [3, 5, 4],
+            ],
+            dtype=np.int32,
+        )
+        drawn_mask = np.ones((3, 3), dtype=np.bool_)
+        drawn_mask[2, 2] = False  # Hidden neighbor should not contribute
+        edge_blend = np.full((3, 3), 0.5, dtype=np.float32)
+
+        bg_rgb = np.zeros((3, 3, 3), dtype=np.uint8)
+        bg_rgb[0, 1] = (10, 20, 30)  # west of center
+        bg_rgb[1, 0] = (40, 50, 60)  # north of center
+        bg_rgb[2, 2] = (70, 80, 90)  # southeast (hidden)
+
+        neighbor_mask, neighbor_bg = _compute_tile_edge_transition_metadata(
+            tile_id_window=tile_ids,
+            edge_blend_window=edge_blend,
+            drawn_mask_window=drawn_mask,
+            bg_rgb_window=bg_rgb,
+        )
+
+        west_idx = _EDGE_BLEND_CARDINAL_DIRECTIONS.index((-1, 0))
+        north_idx = _EDGE_BLEND_CARDINAL_DIRECTIONS.index((0, -1))
+        east_idx = _EDGE_BLEND_CARDINAL_DIRECTIONS.index((1, 0))
+        west_bit = 1 << west_idx
+        north_bit = 1 << north_idx
+        east_bit = 1 << east_idx
+
+        center_mask = int(neighbor_mask[1, 1])
+        assert center_mask & west_bit
+        assert center_mask & north_bit
+        assert neighbor_bg.shape[2] == len(_EDGE_BLEND_CARDINAL_DIRECTIONS)
+
+        np.testing.assert_array_equal(neighbor_bg[1, 1, west_idx], (10, 20, 30))
+        np.testing.assert_array_equal(neighbor_bg[1, 1, north_idx], (40, 50, 60))
+
+        # One-sided ownership: west tile (id=5) should not also blend toward the
+        # center tile (id=2) on the same boundary because 5 !< 2.
+        assert (int(neighbor_mask[0, 1]) & east_bit) == 0
+
+        # Left-edge cells should not see wrapped neighbors from the right edge.
+        assert (int(neighbor_mask[0, 1]) & west_bit) == 0
+
+    def test_higher_edge_blend_owns_boundary_even_with_higher_tile_id(self) -> None:
+        """Ownership should follow edge_blend strength, not enum ordering alone."""
+        tile_ids = np.array([[2, 0], [5, 0]], dtype=np.int32)  # x,y indexing
+        edge_blend = np.array([[0.0, 0.0], [0.45, 0.0]], dtype=np.float32)
+        drawn_mask = np.array([[True, False], [True, False]], dtype=np.bool_)
+        bg_rgb = np.zeros((2, 2, 3), dtype=np.uint8)
+        bg_rgb[0, 0] = (10, 10, 10)  # rigid neighbor (west)
+
+        neighbor_mask, neighbor_bg = _compute_tile_edge_transition_metadata(
+            tile_id_window=tile_ids,
+            edge_blend_window=edge_blend,
+            drawn_mask_window=drawn_mask,
+            bg_rgb_window=bg_rgb,
+        )
+
+        west_idx = _EDGE_BLEND_CARDINAL_DIRECTIONS.index((-1, 0))
+        west_bit = 1 << west_idx
+
+        # Grass-like tile (id 5) should own the boundary because it has higher
+        # edge_blend than the rigid neighbor (id 2), despite its higher ID.
+        assert int(neighbor_mask[1, 0]) & west_bit
+        np.testing.assert_array_equal(neighbor_bg[1, 0, west_idx], (10, 10, 10))
+        # Rigid tile remains non-owner.
+        assert (
+            int(neighbor_mask[0, 0])
+            & (1 << _EDGE_BLEND_CARDINAL_DIRECTIONS.index((1, 0)))
+        ) == 0

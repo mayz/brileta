@@ -687,6 +687,11 @@ def get_sub_tile_jitter_map(tile_type_ids_map: np.ndarray) -> np.ndarray:
     return _tile_type_properties_sub_tile_jitter[tile_type_ids_map]
 
 
+def get_edge_blend_map(tile_type_ids_map: np.ndarray) -> np.ndarray:
+    """Converts a map of TileTypeIDs into per-tile organic edge blend amplitudes."""
+    return _tile_type_properties_edge_blend[tile_type_ids_map]
+
+
 # --- Per-tile visual decoration (glyph pools + color jitter) ---
 #
 # Terrain tiles use glyph pools for visual variety: each tile position gets a
@@ -741,6 +746,13 @@ class TerrainDecorationDef(NamedTuple):
     within each tile cell. Adds fine surface grain at a smaller scale than
     bg_jitter's tile-level variation."""
 
+    edge_blend: float = 0.0
+    """Strength of organic visual feathering into neighboring tile colors.
+
+    0.0 keeps a sharp rectangular edge. Higher values allow the shader to
+    probabilistically show neighboring tile background colors near boundaries.
+    """
+
 
 # Glyphs are chosen to be visually distinct between terrain types:
 #   GRASS: tall organic marks (blades), bidirectional - some catch light, some in shadow
@@ -749,16 +761,20 @@ class TerrainDecorationDef(NamedTuple):
 #   COBBLESTONE: dense horizontal marks (fitted stone joints), unidirectional darker
 #   WALL/FLOOR: no visible glyph, subtle bg_jitter for stone block variation
 _TERRAIN_DECORATION_DEFS: dict[TileTypeID, TerrainDecorationDef] = {
-    TileTypeID.WALL: TerrainDecorationDef(glyphs=[" "], sub_tile_jitter=0.012),
+    TileTypeID.WALL: TerrainDecorationDef(
+        glyphs=[" "], sub_tile_jitter=0.012, edge_blend=0.0
+    ),
     TileTypeID.COBBLESTONE: TerrainDecorationDef(
-        glyphs=[" "], bg_jitter=2, sub_tile_jitter=0.02
+        glyphs=[" "], bg_jitter=2, sub_tile_jitter=0.02, edge_blend=0.0
     ),
     TileTypeID.GRASS: TerrainDecorationDef(
-        glyphs=['"', "'", ",", "`"], bg_jitter=4, fg_jitter=12
+        glyphs=['"', "'", ",", "`"], bg_jitter=4, fg_jitter=12, edge_blend=0.45
     ),
-    TileTypeID.DIRT_PATH: TerrainDecorationDef(glyphs=[".", ","], bg_jitter=4),
+    TileTypeID.DIRT_PATH: TerrainDecorationDef(
+        glyphs=[".", ","], bg_jitter=4, edge_blend=0.38
+    ),
     TileTypeID.GRAVEL: TerrainDecorationDef(
-        glyphs=[":", ";"], bg_jitter=2, fg_jitter=8
+        glyphs=[":", ";"], bg_jitter=2, fg_jitter=8, edge_blend=0.32
     ),
 }
 
@@ -772,6 +788,7 @@ class TerrainGlyphPool(NamedTuple):
     bg_jitter: int
     fg_jitter: int
     sub_tile_jitter: float
+    edge_blend: float
 
 
 TERRAIN_GLYPH_POOLS: dict[int, TerrainGlyphPool] = {
@@ -780,6 +797,7 @@ TERRAIN_GLYPH_POOLS: dict[int, TerrainGlyphPool] = {
         dec.bg_jitter,
         dec.fg_jitter,
         dec.sub_tile_jitter,
+        dec.edge_blend,
     )
     for tid, dec in _TERRAIN_DECORATION_DEFS.items()
 }
@@ -790,6 +808,17 @@ TERRAIN_GLYPH_POOLS: dict[int, TerrainGlyphPool] = {
 _tile_type_properties_sub_tile_jitter = np.array(
     [
         _TERRAIN_DECORATION_DEFS[tid].sub_tile_jitter
+        if tid in _TERRAIN_DECORATION_DEFS
+        else 0.0
+        for tid in TileTypeID
+    ],
+    dtype=np.float32,
+)
+
+# Organic edge feathering amplitude per tile type (0.0 = rigid edge).
+_tile_type_properties_edge_blend = np.array(
+    [
+        _TERRAIN_DECORATION_DEFS[tid].edge_blend
         if tid in _TERRAIN_DECORATION_DEFS
         else 0.0
         for tid in TileTypeID

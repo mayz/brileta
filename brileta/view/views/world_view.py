@@ -7,6 +7,7 @@ import numpy as np
 from brileta import colors, config
 from brileta.environment import tile_types
 from brileta.types import (
+    Direction,
     InterpolationAlpha,
     Opacity,
     PixelCoord,
@@ -46,6 +47,73 @@ _rng = rng.get("effects.animation")
 # Viewport defaults used when initializing views before they are resized.
 DEFAULT_VIEWPORT_WIDTH = 80
 DEFAULT_VIEWPORT_HEIGHT = 40  # Initial height before layout adjustments
+
+# Cardinal boundary directions only (W, N, S, E). Organic edge blending uses
+# corner rounding in the shader, so diagonals are not transported separately.
+_EDGE_BLEND_CARDINAL_DIRECTIONS: tuple[Direction, ...] = (
+    (-1, 0),
+    (0, -1),
+    (0, 1),
+    (1, 0),
+)
+
+
+def _compute_tile_edge_transition_metadata(
+    tile_id_window: np.ndarray,
+    edge_blend_window: np.ndarray,
+    drawn_mask_window: np.ndarray,
+    bg_rgb_window: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Compute neighbor masks/colors for organic tile edge transitions.
+
+    The inputs are buffer-aligned windows in glyph-buffer tile coordinates:
+    `tile_id_window[x, y]`, `edge_blend_window[x, y]`, `drawn_mask_window[x, y]`,
+    and `bg_rgb_window[x, y, rgb]`.
+    The returned mask uses `_EDGE_BLEND_CARDINAL_DIRECTIONS` bit ordering.
+    """
+    edge_neighbor_mask = np.zeros(tile_id_window.shape, dtype=np.uint8)
+    edge_neighbor_bg = np.zeros(
+        (*tile_id_window.shape, len(_EDGE_BLEND_CARDINAL_DIRECTIONS), 3), dtype=np.uint8
+    )
+
+    for bit_index, (dx, dy) in enumerate(_EDGE_BLEND_CARDINAL_DIRECTIONS):
+        shifted_ids = np.roll(tile_id_window, shift=(-dx, -dy), axis=(0, 1))
+        shifted_edge_blend = np.roll(edge_blend_window, shift=(-dx, -dy), axis=(0, 1))
+        shifted_drawn = np.roll(drawn_mask_window, shift=(-dx, -dy), axis=(0, 1))
+        shifted_bg = np.roll(bg_rgb_window, shift=(-dx, -dy), axis=(0, 1))
+
+        valid_neighbor = np.ones(tile_id_window.shape, dtype=np.bool_)
+        if dx < 0:
+            valid_neighbor[:-dx, :] = False
+        elif dx > 0:
+            valid_neighbor[-dx:, :] = False
+        if dy < 0:
+            valid_neighbor[:, :-dy] = False
+        elif dy > 0:
+            valid_neighbor[:, -dy:] = False
+
+        # One-sided ownership prevents both tiles from cutting into each other.
+        # The tile with the higher edge_blend value owns the boundary so organic
+        # tiles feather into rigid ones regardless of enum ID ordering. When the
+        # blend values tie, the lower tile type ID wins for determinism.
+        owns_boundary = (edge_blend_window > shifted_edge_blend) | (
+            (edge_blend_window == shifted_edge_blend) & (tile_id_window < shifted_ids)
+        )
+        different_neighbor_mask = (
+            drawn_mask_window
+            & shifted_drawn
+            & valid_neighbor
+            & (shifted_ids != tile_id_window)
+            & owns_boundary
+        )
+        if not np.any(different_neighbor_mask):
+            continue
+
+        edge_neighbor_mask[different_neighbor_mask] |= np.uint8(1 << bit_index)
+        color_slice = edge_neighbor_bg[:, :, bit_index, :]
+        color_slice[different_neighbor_mask] = shifted_bg[different_neighbor_mask]
+
+    return edge_neighbor_mask, edge_neighbor_bg
 
 
 class WorldView(View):
@@ -694,6 +762,13 @@ class WorldView(View):
         self.map_glyph_buffer.data["noise"][final_buf_x, final_buf_y] = (
             tile_types.get_sub_tile_jitter_map(unlit_tile_ids)
         )
+        self._apply_tile_edge_transition_data(
+            glyph_buffer=self.map_glyph_buffer,
+            final_buf_x=final_buf_x,
+            final_buf_y=final_buf_y,
+            tile_ids=unlit_tile_ids,
+            decorated_bg_rgb=bg_rgb,
+        )
 
     def _get_directional_light(self) -> DirectionalLight | None:
         """Return the first directional/global sun light active in the world."""
@@ -735,6 +810,54 @@ class WorldView(View):
             set_sun_direction = getattr(target, "set_sun_direction", None)
             if callable(set_sun_direction):
                 set_sun_direction(sun_dx, sun_dy)
+
+    def _apply_tile_edge_transition_data(
+        self,
+        glyph_buffer: GlyphBuffer,
+        final_buf_x: np.ndarray,
+        final_buf_y: np.ndarray,
+        tile_ids: np.ndarray,
+        decorated_bg_rgb: np.ndarray,
+    ) -> None:
+        """Populate per-tile organic edge transition metadata for the glyph shader."""
+        if len(tile_ids) == 0:
+            return
+
+        edge_blend = tile_types.get_edge_blend_map(tile_ids)
+        glyph_buffer.data["edge_blend"][final_buf_x, final_buf_y] = edge_blend
+        if not np.any(edge_blend > 0.0):
+            return
+
+        tile_id_window = np.zeros(
+            (glyph_buffer.width, glyph_buffer.height), dtype=np.int32
+        )
+        drawn_mask_window = np.zeros(
+            (glyph_buffer.width, glyph_buffer.height), dtype=np.bool_
+        )
+        bg_rgb_window = np.zeros(
+            (glyph_buffer.width, glyph_buffer.height, 3), dtype=np.uint8
+        )
+        edge_blend_window = np.zeros(
+            (glyph_buffer.width, glyph_buffer.height), dtype=np.float32
+        )
+
+        tile_id_window[final_buf_x, final_buf_y] = tile_ids.astype(np.int32, copy=False)
+        edge_blend_window[final_buf_x, final_buf_y] = edge_blend
+        drawn_mask_window[final_buf_x, final_buf_y] = True
+        bg_rgb_window[final_buf_x, final_buf_y] = decorated_bg_rgb
+
+        edge_neighbor_mask, edge_neighbor_bg = _compute_tile_edge_transition_metadata(
+            tile_id_window=tile_id_window,
+            edge_blend_window=edge_blend_window,
+            drawn_mask_window=drawn_mask_window,
+            bg_rgb_window=bg_rgb_window,
+        )
+        glyph_buffer.data["edge_neighbor_mask"][final_buf_x, final_buf_y] = (
+            edge_neighbor_mask[final_buf_x, final_buf_y]
+        )
+        glyph_buffer.data["edge_neighbor_bg"][final_buf_x, final_buf_y] = (
+            edge_neighbor_bg[final_buf_x, final_buf_y]
+        )
 
     def _update_actor_particles(self) -> None:
         """Emit particles from actors with particle emitters."""
@@ -1016,6 +1139,13 @@ class WorldView(View):
                 # so lit tiles also get per-pixel brightness variation.
                 light_source_buffer.data["noise"][final_buf_x, final_buf_y] = (
                     tile_types.get_sub_tile_jitter_map(world_tile_ids)
+                )
+                self._apply_tile_edge_transition_data(
+                    glyph_buffer=light_source_buffer,
+                    final_buf_x=final_buf_x,
+                    final_buf_y=final_buf_y,
+                    tile_ids=world_tile_ids,
+                    decorated_bg_rgb=light_bg_rgb,
                 )
 
                 if np.any(valid_visible):

@@ -328,6 +328,28 @@ def test_wall_has_nonzero_sub_tile_jitter() -> None:
     assert jitter[0] > 0.0
 
 
+def test_edge_blend_map_marks_organic_vs_rigid_tiles() -> None:
+    """Organic terrain should feather at edges while rigid tiles stay sharp."""
+    ids = np.array(
+        [
+            TileTypeID.GRASS,
+            TileTypeID.DIRT_PATH,
+            TileTypeID.GRAVEL,
+            TileTypeID.COBBLESTONE,
+            TileTypeID.WALL,
+            TileTypeID.FLOOR,
+        ]
+    )
+    edge_blend = tile_types.get_edge_blend_map(ids)
+
+    assert edge_blend[0] > 0.0  # grass
+    assert edge_blend[1] > 0.0  # dirt path
+    assert edge_blend[2] > 0.0  # gravel
+    assert edge_blend[3] == 0.0  # cobblestone
+    assert edge_blend[4] == 0.0  # wall
+    assert edge_blend[5] == 0.0  # floor
+
+
 # --- Terrain Decoration Tests ---
 
 

@@ -184,6 +184,28 @@ def test_put_char_noise_default():
     assert buf.data[1, 1]["noise"] == 0.0
 
 
+def test_edge_transition_fields_default_to_zero() -> None:
+    """Organic edge transition metadata should default to disabled."""
+    buf = GlyphBuffer(2, 2)
+    assert np.all(buf.data["edge_neighbor_mask"] == 0)
+    assert np.all(buf.data["edge_blend"] == 0.0)
+    assert np.all(buf.data["edge_neighbor_bg"] == 0)
+
+
+def test_clear_resets_edge_transition_fields() -> None:
+    """clear() should reset edge transition metadata along with glyph colors."""
+    buf = GlyphBuffer(1, 1)
+    buf.data["edge_neighbor_mask"][0, 0] = 255
+    buf.data["edge_blend"][0, 0] = 0.5
+    buf.data["edge_neighbor_bg"][0, 0, 3] = (1, 2, 3)
+
+    buf.clear()
+
+    assert buf.data["edge_neighbor_mask"][0, 0] == 0
+    assert buf.data["edge_blend"][0, 0] == 0.0
+    np.testing.assert_array_equal(buf.data["edge_neighbor_bg"][0, 0], 0)
+
+
 def test_draw_frame_no_clear():
     buf = GlyphBuffer(10, 10)
     buf.print(3, 4, "test", (255, 255, 255, 255))

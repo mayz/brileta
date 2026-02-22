@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 
 # Maximum number of quads for texture rendering
 MAX_TEXTURE_QUADS = 5000
+EDGE_NEIGHBOR_COUNT = 4
 
 # Vertex structure for glyph rendering (foreground + background colors + noise)
 TEXTURE_VERTEX_DTYPE = np.dtype(
@@ -29,7 +30,10 @@ TEXTURE_VERTEX_DTYPE = np.dtype(
         ("fg_color", "4f4"),  # (r, g, b, a) as floats 0.0-1.0
         ("bg_color", "4f4"),  # (r, g, b, a) as floats 0.0-1.0
         ("noise_amplitude", "f4"),  # Sub-tile brightness noise amplitude
+        ("edge_neighbor_mask", "u4"),  # Cardinal tile-type boundary mask (W/N/S/E)
+        ("edge_blend", "f4"),  # Organic edge feathering amplitude (0.0-1.0)
     ]
+    + [(f"edge_neighbor_bg_{i}", "3f4") for i in range(EDGE_NEIGHBOR_COUNT)]
 )
 
 
@@ -114,6 +118,22 @@ class WGPUGlyphRenderer:
         bind_group_layout = self.resource_manager.standard_bind_group_layout
 
         # Define vertex buffer layout (texture renderer has extra bg_color attribute)
+        dtype_fields = TEXTURE_VERTEX_DTYPE.fields
+        if dtype_fields is None:
+            raise RuntimeError("TEXTURE_VERTEX_DTYPE has no named fields.")
+        offsets = {
+            "position": dtype_fields["position"][1],
+            "uv": dtype_fields["uv"][1],
+            "fg_color": dtype_fields["fg_color"][1],
+            "bg_color": dtype_fields["bg_color"][1],
+            "noise_amplitude": dtype_fields["noise_amplitude"][1],
+            "edge_neighbor_mask": dtype_fields["edge_neighbor_mask"][1],
+            "edge_blend": dtype_fields["edge_blend"][1],
+            "edge_neighbor_bg_0": dtype_fields["edge_neighbor_bg_0"][1],
+            "edge_neighbor_bg_1": dtype_fields["edge_neighbor_bg_1"][1],
+            "edge_neighbor_bg_2": dtype_fields["edge_neighbor_bg_2"][1],
+            "edge_neighbor_bg_3": dtype_fields["edge_neighbor_bg_3"][1],
+        }
         vertex_layout = [
             {
                 "array_stride": TEXTURE_VERTEX_DTYPE.itemsize,
@@ -121,29 +141,47 @@ class WGPUGlyphRenderer:
                 "attributes": [
                     {
                         "format": "float32x2",
-                        "offset": 0,  # position offset
+                        "offset": offsets["position"],
                         "shader_location": 0,
                     },
                     {
                         "format": "float32x2",
-                        "offset": 8,  # uv offset (2 * 4 bytes)
+                        "offset": offsets["uv"],
                         "shader_location": 1,
                     },
                     {
                         "format": "float32x4",
-                        "offset": 16,  # fg_color offset (4 * 4 bytes)
+                        "offset": offsets["fg_color"],
                         "shader_location": 2,
                     },
                     {
                         "format": "float32x4",
-                        "offset": 32,  # bg_color offset (8 * 4 bytes)
+                        "offset": offsets["bg_color"],
                         "shader_location": 3,
                     },
                     {
                         "format": "float32",
-                        "offset": 48,  # noise_amplitude offset
+                        "offset": offsets["noise_amplitude"],
                         "shader_location": 4,
                     },
+                    {
+                        "format": "uint32",
+                        "offset": offsets["edge_neighbor_mask"],
+                        "shader_location": 5,
+                    },
+                    {
+                        "format": "float32",
+                        "offset": offsets["edge_blend"],
+                        "shader_location": 6,
+                    },
+                    *[
+                        {
+                            "format": "float32x3",
+                            "offset": offsets[f"edge_neighbor_bg_{i}"],
+                            "shader_location": 7 + i,
+                        }
+                        for i in range(EDGE_NEIGHBOR_COUNT)
+                    ],
                 ],
             }
         ]
@@ -461,8 +499,20 @@ class WGPUGlyphRenderer:
         # Broadcast noise amplitude from glyph buffer to all 6 vertices per cell.
         # Swap from (w, h) to (h, w) to match grid order.
         noise_values = glyph_buffer.data["noise"].T  # (h, w)
+        edge_neighbor_mask = glyph_buffer.data["edge_neighbor_mask"].T.astype(np.uint32)
+        edge_blend = glyph_buffer.data["edge_blend"].T
+        edge_neighbor_bg = (
+            np.swapaxes(glyph_buffer.data["edge_neighbor_bg"], 0, 1).astype(np.float32)
+            / 255.0
+        )  # (h, w, 4, 3)
         for i in range(6):
             verts["noise_amplitude"][..., i] = noise_values
+            verts["edge_neighbor_mask"][..., i] = edge_neighbor_mask
+            verts["edge_blend"][..., i] = edge_blend
+            for neighbor_idx in range(EDGE_NEIGHBOR_COUNT):
+                verts[f"edge_neighbor_bg_{neighbor_idx}"][..., i, :] = edge_neighbor_bg[
+                    ..., neighbor_idx, :
+                ]
 
         return num_vertices
 
@@ -498,7 +548,31 @@ class WGPUGlyphRenderer:
         if has_bg_diff:
             return True
 
-        return bool(np.any(glyph_buffer.data["noise"] != cache_buffer.data["noise"]))
+        has_noise_diff = np.any(
+            glyph_buffer.data["noise"] != cache_buffer.data["noise"]
+        )
+        if has_noise_diff:
+            return True
+
+        has_edge_mask_diff = np.any(
+            glyph_buffer.data["edge_neighbor_mask"]
+            != cache_buffer.data["edge_neighbor_mask"]
+        )
+        if has_edge_mask_diff:
+            return True
+
+        has_edge_blend_diff = np.any(
+            glyph_buffer.data["edge_blend"] != cache_buffer.data["edge_blend"]
+        )
+        if has_edge_blend_diff:
+            return True
+
+        return bool(
+            np.any(
+                glyph_buffer.data["edge_neighbor_bg"]
+                != cache_buffer.data["edge_neighbor_bg"]
+            )
+        )
 
     def _update_cache(self, glyph_buffer: GlyphBuffer, buffer_id: int) -> None:
         """Update the cache with the current buffer state.
