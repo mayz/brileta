@@ -468,8 +468,8 @@ class GlfwApp(App[WGPUGraphicsContext]):
     def _on_scroll(self, window, x_offset, y_offset):
         """Handle scroll events."""
         event = input_events.MouseWheel(
-            x=int(x_offset),
-            y=int(y_offset),
+            x=x_offset,
+            y=y_offset,
             flipped=False,  # GLFW doesn't support this
         )
         assert self.controller is not None
@@ -617,6 +617,8 @@ class GlfwApp(App[WGPUGraphicsContext]):
             mod |= input_events.Modifier.CTRL
         if mods & glfw.MOD_ALT:
             mod |= input_events.Modifier.ALT
+        if mods & getattr(glfw, "MOD_SUPER", 0):
+            mod |= input_events.Modifier.GUI
         if mods & glfw.MOD_CAPS_LOCK:
             mod |= input_events.Modifier.CAPS
         if mods & glfw.MOD_NUM_LOCK:

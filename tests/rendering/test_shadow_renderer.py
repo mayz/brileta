@@ -60,6 +60,7 @@ def _build_shadow_renderer(lights: list[object]) -> ShadowRenderer:
         get_visible_bounds=lambda: SimpleNamespace(x1=0, y1=0, x2=15, y2=15),
         world_to_screen=lambda x, y: (x, y),
         world_to_screen_float=lambda x, y: (x, y),
+        get_display_scale_factors=lambda: (1.0, 1.0),
     )
     graphics = SimpleNamespace(
         tile_dimensions=(20, 20),
@@ -931,6 +932,7 @@ def _build_terrain_shadow_view() -> tuple[ShadowRenderer, SimpleNamespace]:
     viewport = SimpleNamespace(
         get_visible_bounds=lambda: SimpleNamespace(x1=0, y1=0, x2=15, y2=15),
         world_to_screen=lambda x, y: (x, y),
+        get_display_scale_factors=lambda: (1.0, 1.0),
     )
 
     graphics = SimpleNamespace(

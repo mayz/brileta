@@ -45,6 +45,8 @@ class DummyActor:
         self.render_x = float(x)
         self.render_y = float(y)
         self.shadow_height = 1
+        self.sprite_uv = None
+        self.sprite_ground_anchor_y = 1.0
 
 
 class DummySpatialIndex:
@@ -351,6 +353,33 @@ class TestRenderActorOutline:
         )
         assert offset_x < no_offset_x, "Positive frac offset should shift position left"
 
+    def test_outline_uses_float_world_to_screen_path(self) -> None:
+        """Outlines must use float viewport coords to stay aligned when zoomed out."""
+        renderer, graphics = _make_renderer()
+        actor = DummyActor(6, 5, ch="g")
+        game_map = DummyGameMap(20, 20)
+
+        renderer.viewport_system.camera.set_position(5.0, 5.0)
+        renderer.viewport_system.world_to_screen = MagicMock(return_value=(99, 99))
+        renderer.viewport_system.world_to_screen_float = MagicMock(
+            return_value=(1.25, 2.5)
+        )
+
+        renderer.render_actor_outline(
+            cast(Actor, actor),
+            (255, 0, 0),
+            Opacity(0.8),
+            game_map=cast(GameMap, game_map),
+            camera_frac_offset=(0.0, 0.0),
+            view_origin=(0.0, 0.0),
+        )
+
+        renderer.viewport_system.world_to_screen_float.assert_called_once()
+        renderer.viewport_system.world_to_screen.assert_not_called()
+        # Confirm the float path feeds through to pixel placement.
+        assert graphics.draw_actor_outline.call_args[0][1] == 20.0
+        assert graphics.draw_actor_outline.call_args[0][2] == 40.0
+
 
 class TestTileBgForwarding:
     """Tile background should be forwarded only for single-glyph actors."""
@@ -403,3 +432,57 @@ class TestTileBgForwarding:
 
         for call in graphics.draw_actor.call_args_list:
             assert "tile_bg" not in call.kwargs
+
+
+class TestViewportZoomScaling:
+    """Actors should scale with viewport zoom, not only move positions."""
+
+    def test_sprite_actor_scale_tracks_viewport_display_scale(self) -> None:
+        renderer, graphics = _make_renderer()
+        actor = DummyActor(5, 5)
+        actor.sprite_uv = SimpleNamespace(u1=0.0, v1=0.0, u2=1.0, v2=1.0)
+        actor.sprite_ground_anchor_y = 1.0
+        gw = DummyGameWorld([actor], actor)
+
+        renderer.viewport_system.update_camera(cast(Actor, actor), 20, 20)
+        renderer.viewport_system.camera.set_position(5.0, 5.0)
+        renderer.viewport_system.set_display_size(10, 10)
+        renderer.viewport_system.viewport.resize(20, 20)
+
+        renderer.render_actors(
+            InterpolationAlpha(1.0),
+            game_world=cast(GameWorld, gw),
+            camera_frac_offset=(0.0, 0.0),
+            view_origin=(0.0, 0.0),
+        )
+
+        call_args = graphics.draw_sprite_smooth.call_args
+        assert call_args is not None
+        assert call_args.kwargs["scale_x"] == 0.5
+        assert call_args.kwargs["scale_y"] == 0.5
+
+    def test_zoomed_sprite_position_is_anchor_corrected_to_tile(self) -> None:
+        renderer, graphics = _make_renderer()
+        actor = DummyActor(5, 5)
+        actor.sprite_uv = SimpleNamespace(u1=0.0, v1=0.0, u2=1.0, v2=1.0)
+        actor.sprite_ground_anchor_y = 1.0
+        gw = DummyGameWorld([actor], actor)
+
+        renderer.viewport_system.update_camera(cast(Actor, actor), 20, 20)
+        renderer.viewport_system.camera.set_position(5.0, 5.0)
+        renderer.viewport_system.set_display_size(10, 10)
+        renderer.viewport_system.viewport.resize(5, 5)  # 2x zoom-in
+
+        renderer.render_actors(
+            InterpolationAlpha(1.0),
+            game_world=cast(GameWorld, gw),
+            camera_frac_offset=(0.0, 0.0),
+            view_origin=(0.0, 0.0),
+        )
+
+        call_args = graphics.draw_sprite_smooth.call_args
+        assert call_args is not None
+        # The draw origin is shifted by half a root tile (8px at 16px tiles) so the
+        # backend's centering math lands on the zoomed world tile, not between tiles.
+        assert call_args.args[2] == 72.0
+        assert call_args.args[3] == 80.0

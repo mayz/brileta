@@ -10,7 +10,9 @@ from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import MagicMock
 
-from brileta import colors, input_events
+import pytest
+
+from brileta import colors, config, input_events
 from brileta.game.actors import Character
 from brileta.modes.explore import ExploreMode
 from tests.helpers import DummyGameWorld
@@ -33,6 +35,7 @@ def make_explore_mode() -> tuple[ExploreMode, Any, DummyGameWorld]:
         pixel_to_tile=lambda x, y: (x, y),
         get_display_scale_factor=lambda: (1.0, 1.0),
         create_canvas=lambda transparent=True: MagicMock(),
+        update_dimensions=MagicMock(),
     )
     frame_manager = SimpleNamespace(
         graphics=renderer,
@@ -42,9 +45,31 @@ def make_explore_mode() -> tuple[ExploreMode, Any, DummyGameWorld]:
         ),
         action_panel_view=SimpleNamespace(get_hotkeys=lambda: {}),
         toggle_minimap=MagicMock(),
+        on_window_resized=MagicMock(),
         get_world_coords_from_root_tile_coords=lambda pos: pos,
         pixel_to_world_tile=lambda px_x, px_y: (int(px_x), int(px_y)),
     )
+    zoom_state = {"index": config.DEFAULT_ZOOM_INDEX}
+
+    def step_world_zoom(direction: int) -> bool:
+        next_index = max(
+            0,
+            min(len(config.ZOOM_STOPS) - 1, zoom_state["index"] + direction),
+        )
+        if next_index == zoom_state["index"]:
+            return False
+        zoom_state["index"] = next_index
+        return True
+
+    def reset_world_zoom() -> bool:
+        if zoom_state["index"] == config.DEFAULT_ZOOM_INDEX:
+            return False
+        zoom_state["index"] = config.DEFAULT_ZOOM_INDEX
+        return True
+
+    frame_manager.step_world_zoom = MagicMock(side_effect=step_world_zoom)
+    frame_manager.reset_world_zoom = MagicMock(side_effect=reset_world_zoom)
+    frame_manager._test_zoom_state = zoom_state
     overlay_system = SimpleNamespace(
         handle_input=lambda e: False,
         toggle_overlay=lambda o: None,
@@ -198,6 +223,101 @@ def test_key_m_toggles_minimap_via_frame_manager() -> None:
 
     assert consumed is True
     controller.frame_manager.toggle_minimap.assert_called_once_with()
+
+
+def test_mouse_wheel_zoom_accumulates_and_steps_between_stops() -> None:
+    """Fractional scroll deltas should accumulate into discrete zoom changes."""
+    mode, controller, _gw = make_explore_mode()
+    zoom_state = controller.frame_manager._test_zoom_state
+
+    consumed = mode.handle_input(input_events.MouseWheel(y=0.75))
+    assert consumed is True
+    assert zoom_state["index"] == config.DEFAULT_ZOOM_INDEX
+    controller.frame_manager.step_world_zoom.assert_not_called()
+
+    consumed = mode.handle_input(input_events.MouseWheel(y=0.75))
+    assert consumed is True
+    assert zoom_state["index"] == config.DEFAULT_ZOOM_INDEX + 1
+    controller.frame_manager.step_world_zoom.assert_called_once_with(1)
+
+    consumed = mode.handle_input(input_events.MouseWheel(y=-0.75))
+    assert consumed is True
+    assert zoom_state["index"] == config.DEFAULT_ZOOM_INDEX + 1
+
+    consumed = mode.handle_input(input_events.MouseWheel(y=-0.75))
+    assert consumed is True
+    assert zoom_state["index"] == config.DEFAULT_ZOOM_INDEX
+    assert controller.frame_manager.step_world_zoom.call_count == 2
+
+
+def test_mouse_wheel_zoom_clamps_at_zoom_stop_boundaries() -> None:
+    """Scroll zoom should not move past the first/last configured stop."""
+    mode, controller, _gw = make_explore_mode()
+    controller.frame_manager._test_zoom_state["index"] = len(config.ZOOM_STOPS) - 1
+
+    consumed = mode.handle_input(input_events.MouseWheel(y=3.0))
+    assert consumed is True
+    assert (
+        controller.frame_manager._test_zoom_state["index"] == len(config.ZOOM_STOPS) - 1
+    )
+
+    mode, controller, _gw = make_explore_mode()
+    controller.frame_manager._test_zoom_state["index"] = 0
+    consumed = mode.handle_input(input_events.MouseWheel(y=-3.0))
+    assert consumed is True
+    assert controller.frame_manager._test_zoom_state["index"] == 0
+
+
+def test_mouse_wheel_zoom_large_delta_is_capped_per_event() -> None:
+    """Large deltas should be capped so one event cannot jump zoom levels."""
+    mode, controller, _gw = make_explore_mode()
+    zoom_state = controller.frame_manager._test_zoom_state
+
+    consumed = mode.handle_input(input_events.MouseWheel(y=3.0))
+
+    assert consumed is True
+    assert zoom_state["index"] == config.DEFAULT_ZOOM_INDEX
+    controller.frame_manager.step_world_zoom.assert_not_called()
+
+    consumed = mode.handle_input(input_events.MouseWheel(y=3.0))
+
+    assert consumed is True
+    assert zoom_state["index"] == config.DEFAULT_ZOOM_INDEX + 1
+    controller.frame_manager.step_world_zoom.assert_called_once_with(1)
+
+
+def test_zero_key_resets_world_zoom() -> None:
+    """0 should reset world zoom to the default stop."""
+    mode, controller, _gw = make_explore_mode()
+    controller.frame_manager._test_zoom_state["index"] = config.DEFAULT_ZOOM_INDEX + 1
+
+    consumed = mode.handle_input(input_events.KeyDown(sym=input_events.KeySym.N0))
+
+    assert consumed is True
+    assert (
+        controller.frame_manager._test_zoom_state["index"] == config.DEFAULT_ZOOM_INDEX
+    )
+    controller.frame_manager.reset_world_zoom.assert_called_once_with()
+
+
+@pytest.mark.parametrize(
+    "mod",
+    [input_events.Modifier.CTRL, input_events.Modifier.GUI],
+)
+def test_ctrl_or_gui_zero_resets_world_zoom(mod: input_events.Modifier) -> None:
+    """Ctrl+0 / Cmd+0 should reset world zoom."""
+    mode, controller, _gw = make_explore_mode()
+    controller.frame_manager._test_zoom_state["index"] = config.DEFAULT_ZOOM_INDEX + 1
+
+    consumed = mode.handle_input(
+        input_events.KeyDown(sym=input_events.KeySym.N0, mod=mod)
+    )
+
+    assert consumed is True
+    assert (
+        controller.frame_manager._test_zoom_state["index"] == config.DEFAULT_ZOOM_INDEX
+    )
+    controller.frame_manager.reset_world_zoom.assert_called_once_with()
 
 
 # -----------------------------------------------------------------------------

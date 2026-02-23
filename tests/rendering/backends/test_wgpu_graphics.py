@@ -175,7 +175,7 @@ class TestWGPUGraphicsContext:
 
     def test_update_dimensions_syncs_glyph_renderer_tile_dimensions(self, monkeypatch):
         """Resize updates off-screen renderer tile dimensions."""
-        monkeypatch.setattr(config, "TILE_ZOOM", 1)
+        monkeypatch.setattr(config, "TILE_ZOOM", 1.0)
         mock_glyph_renderer = Mock()
         self.graphics_ctx.glyph_renderer = mock_glyph_renderer
         self.graphics_ctx.window.get_framebuffer_size.return_value = (1680, 1050)
@@ -183,6 +183,17 @@ class TestWGPUGraphicsContext:
         self.graphics_ctx.update_dimensions()
 
         mock_glyph_renderer.set_tile_dimensions.assert_called_with((40, 40))
+
+    def test_update_dimensions_zoom_only_skips_surface_recreation(self) -> None:
+        """Zoom-only updates should not recreate the WGPU surface/context."""
+        self.graphics_ctx.device = Mock()
+        self.graphics_ctx._recreate_surface_and_context = Mock()
+        self.graphics_ctx._calculate_letterbox_geometry_and_tiles = Mock()
+
+        self.graphics_ctx.update_dimensions(zoom_only=True)
+
+        self.graphics_ctx._recreate_surface_and_context.assert_not_called()
+        self.graphics_ctx._calculate_letterbox_geometry_and_tiles.assert_called_once_with()
 
     def test_letterbox_geometry_calculation_is_pure(self):
         """Letterbox geometry helper should not mutate console dimension state."""
@@ -197,7 +208,7 @@ class TestWGPUGraphicsContext:
 
     def test_content_scale_auto_detection_retina_ratio(self, monkeypatch):
         """A 2x framebuffer/window ratio should produce a 2x content scale."""
-        monkeypatch.setattr(config, "TILE_ZOOM", 1)
+        monkeypatch.setattr(config, "TILE_ZOOM", 1.0)
         monkeypatch.setattr(config, "MIN_CONSOLE_WIDTH", 1)
         monkeypatch.setattr(config, "MIN_CONSOLE_HEIGHT", 1)
         self.graphics_ctx.window.get_size.return_value = (800, 600)
@@ -212,7 +223,7 @@ class TestWGPUGraphicsContext:
 
     def test_content_scale_rounds_fractional_ratio(self, monkeypatch):
         """A 1.5x framebuffer/window ratio should round to 2x scale."""
-        monkeypatch.setattr(config, "TILE_ZOOM", 1)
+        monkeypatch.setattr(config, "TILE_ZOOM", 1.0)
         monkeypatch.setattr(config, "MIN_CONSOLE_WIDTH", 1)
         monkeypatch.setattr(config, "MIN_CONSOLE_HEIGHT", 1)
         self.graphics_ctx.window.get_size.return_value = (800, 600)
@@ -228,7 +239,7 @@ class TestWGPUGraphicsContext:
 
     def test_content_scale_uses_glfw_scale_in_fullscreen_like_sizes(self, monkeypatch):
         """Content scale should honor GLFW DPI scale even if size ratio is 1:1."""
-        monkeypatch.setattr(config, "TILE_ZOOM", 1)
+        monkeypatch.setattr(config, "TILE_ZOOM", 1.0)
         monkeypatch.setattr(config, "MIN_CONSOLE_WIDTH", 1)
         monkeypatch.setattr(config, "MIN_CONSOLE_HEIGHT", 1)
         self.graphics_ctx.window.get_size.return_value = (1600, 1000)
@@ -250,7 +261,7 @@ class TestWGPUGraphicsContext:
         self, monkeypatch
     ):
         """Keep high-DPI scale stable across mode toggles with inconsistent signals."""
-        monkeypatch.setattr(config, "TILE_ZOOM", 1)
+        monkeypatch.setattr(config, "TILE_ZOOM", 1.0)
         monkeypatch.setattr(config, "MIN_CONSOLE_WIDTH", 1)
         monkeypatch.setattr(config, "MIN_CONSOLE_HEIGHT", 1)
 
@@ -285,7 +296,7 @@ class TestWGPUGraphicsContext:
         self, monkeypatch
     ) -> None:
         """Locked scale should update after repeated, consistent new DPI signals."""
-        monkeypatch.setattr(config, "TILE_ZOOM", 1)
+        monkeypatch.setattr(config, "TILE_ZOOM", 1.0)
         monkeypatch.setattr(config, "MIN_CONSOLE_WIDTH", 1)
         monkeypatch.setattr(config, "MIN_CONSOLE_HEIGHT", 1)
 
@@ -321,7 +332,7 @@ class TestWGPUGraphicsContext:
         self.graphics_ctx.window.get_size.return_value = (3200, 2400)
         self.graphics_ctx.window.get_framebuffer_size.return_value = (3200, 2400)
 
-        monkeypatch.setattr(config, "TILE_ZOOM", 1)
+        monkeypatch.setattr(config, "TILE_ZOOM", 1.0)
         self.graphics_ctx._calculate_letterbox_geometry_and_tiles()
         zoom1_dims = self.graphics_ctx.tile_dimensions
         zoom1_console = (
@@ -329,7 +340,7 @@ class TestWGPUGraphicsContext:
             self.graphics_ctx.console_height_tiles,
         )
 
-        monkeypatch.setattr(config, "TILE_ZOOM", 2)
+        monkeypatch.setattr(config, "TILE_ZOOM", 2.0)
         self.graphics_ctx._calculate_letterbox_geometry_and_tiles()
         zoom2_dims = self.graphics_ctx.tile_dimensions
         zoom2_console = (
@@ -346,7 +357,7 @@ class TestWGPUGraphicsContext:
         self, monkeypatch
     ):
         """Renderer should step zoom down until console minimums are respected."""
-        monkeypatch.setattr(config, "TILE_ZOOM", 3)
+        monkeypatch.setattr(config, "TILE_ZOOM", 2.0)
         monkeypatch.setattr(config, "MIN_CONSOLE_WIDTH", 60)
         monkeypatch.setattr(config, "MIN_CONSOLE_HEIGHT", 40)
         self.graphics_ctx.window.get_size.return_value = (800, 600)
@@ -354,12 +365,29 @@ class TestWGPUGraphicsContext:
 
         self.graphics_ctx._calculate_letterbox_geometry_and_tiles()
 
-        # TILE_ZOOM=3 would make 60x60 tiles and a tiny console here.
-        # The safety cap steps it down to effective zoom 1.
-        assert self.graphics_ctx.tile_dimensions == (20, 20)
-        assert self.graphics_ctx.scale_factor == 1
-        assert self.graphics_ctx.console_width_tiles == 40
-        assert self.graphics_ctx.console_height_tiles == 30
+        # 2.0 and larger stops fail the console minimum. The clamp should walk
+        # down to the highest configured stop that fits (0.6 -> 12px tiles).
+        assert self.graphics_ctx.tile_dimensions == (12, 12)
+        assert self.graphics_ctx.scale_factor == pytest.approx(0.6)
+        assert self.graphics_ctx.console_width_tiles == 66
+        assert self.graphics_ctx.console_height_tiles == 50
+
+    def test_zoom_safety_cap_walks_down_configured_zoom_stops(
+        self, monkeypatch
+    ) -> None:
+        """Clamp should choose the next lower configured stop that fits."""
+        monkeypatch.setattr(config, "TILE_ZOOM", 2.0)
+        monkeypatch.setattr(config, "MIN_CONSOLE_WIDTH", 50)
+        monkeypatch.setattr(config, "MIN_CONSOLE_HEIGHT", 30)
+        self.graphics_ctx.window.get_size.return_value = (1200, 800)
+        self.graphics_ctx.window.get_framebuffer_size.return_value = (1200, 800)
+
+        self.graphics_ctx._calculate_letterbox_geometry_and_tiles()
+
+        assert self.graphics_ctx.tile_dimensions == (24, 24)
+        assert self.graphics_ctx.scale_factor == pytest.approx(1.2)
+        assert self.graphics_ctx.console_width_tiles == 50
+        assert self.graphics_ctx.console_height_tiles == 33
 
     def test_finalize_present_returns_false_when_framebuffer_is_zero(self):
         """Presentation should be skipped while minimized (0-sized framebuffer)."""

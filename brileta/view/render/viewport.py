@@ -53,12 +53,12 @@ A strict naming convention is used to make the code self-documenting.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from brileta.environment.map import TileCoord
 from brileta.types import (
-    ViewportTileCoord,
     ViewportTilePos,
     WorldTileCoord,
     WorldTilePos,
@@ -167,8 +167,8 @@ class Viewport:
         return world_x - left + self.offset_x, world_y - top + self.offset_y
 
     def viewport_to_world(
-        self, vp_x: ViewportTileCoord, vp_y: ViewportTileCoord, camera: Camera
-    ) -> WorldTilePos:
+        self, vp_x: float, vp_y: float, camera: Camera
+    ) -> tuple[float, float]:
         """Converts viewport (view-relative) coordinates to world coordinates."""
         bounds = self.get_world_bounds(camera)
         left, top = bounds.x1, bounds.y1
@@ -186,17 +186,37 @@ class ViewportSystem:
     def __init__(self, viewport_width: TileCoord, viewport_height: TileCoord) -> None:
         self.camera = Camera()
         self.viewport = Viewport(viewport_width, viewport_height)
+        self._display_width_tiles: float = float(viewport_width)
+        self._display_height_tiles: float = float(viewport_height)
+
+    def set_display_size(
+        self, display_width_tiles: TileCoord, display_height_tiles: TileCoord
+    ) -> None:
+        """Set the fixed on-screen viewport size in root-console tile units."""
+        self._display_width_tiles = float(max(1, display_width_tiles))
+        self._display_height_tiles = float(max(1, display_height_tiles))
+
+    def get_display_scale_factors(self) -> tuple[float, float]:
+        """Return root-console tiles per visible world tile for this viewport."""
+        width_scale = self._display_width_tiles / max(1, self.viewport.width_tiles)
+        height_scale = self._display_height_tiles / max(1, self.viewport.height_tiles)
+        return (width_scale, height_scale)
 
     def update_camera(self, player: Actor, map_width: int, map_height: int) -> None:
         """Update camera to follow the player and compute viewport offsets."""
-        # This should be the ONLY line that updates the camera's raw position.
-        self.camera.follow_actor(player)
-
         self.viewport.map_width = map_width
         self.viewport.map_height = map_height
 
         vp_w = self.viewport.width_tiles
         vp_h = self.viewport.height_tiles
+
+        # Keep the dead zone proportional to the current visible area so zooming
+        # in does not make it cover the whole viewport (and vice versa).
+        self.camera.dead_zone_width = vp_w / 3.0
+        self.camera.dead_zone_height = vp_h / 3.0
+
+        # This should be the ONLY line that updates the camera's raw position.
+        self.camera.follow_actor(player)
 
         # Clamp camera to world boundaries and calculate viewport offsets.
         half_vp_w = vp_w / 2.0
@@ -244,7 +264,9 @@ class ViewportSystem:
         self, world_x: WorldTileCoord, world_y: WorldTileCoord
     ) -> ViewportTilePos:
         """Converts world coordinates to viewport/screen coordinates."""
-        return self.viewport.world_to_viewport(world_x, world_y, self.camera)
+        vp_x, vp_y = self.viewport.world_to_viewport(world_x, world_y, self.camera)
+        scale_x, scale_y = self.get_display_scale_factors()
+        return (round(vp_x * scale_x), round(vp_y * scale_y))
 
     def world_to_screen_float(
         self, world_x: float, world_y: float
@@ -253,16 +275,21 @@ class ViewportSystem:
         # Same math as world_to_screen but accepts/returns floats
         bounds = self.viewport.get_world_bounds(self.camera)
         left, top = bounds.x1, bounds.y1
+        scale_x, scale_y = self.get_display_scale_factors()
         return (
-            world_x - left + self.viewport.offset_x,
-            world_y - top + self.viewport.offset_y,
+            (world_x - left + self.viewport.offset_x) * scale_x,
+            (world_y - top + self.viewport.offset_y) * scale_y,
         )
 
-    def screen_to_world(
-        self, vp_x: ViewportTileCoord, vp_y: ViewportTileCoord
-    ) -> WorldTilePos:
+    def screen_to_world(self, vp_x: float, vp_y: float) -> WorldTilePos:
         """Converts viewport/screen coordinates to world coordinates."""
-        return self.viewport.viewport_to_world(vp_x, vp_y, self.camera)
+        scale_x, scale_y = self.get_display_scale_factors()
+        world_x, world_y = self.viewport.viewport_to_world(
+            vp_x / scale_x,
+            vp_y / scale_y,
+            self.camera,
+        )
+        return (math.floor(world_x), math.floor(world_y))
 
     def get_camera_fractional_offset(self) -> tuple[float, float]:
         """Return the fractional part of the camera position for smooth scrolling.
@@ -280,6 +307,12 @@ class ViewportSystem:
             self.camera.world_x - round(self.camera.world_x),
             self.camera.world_y - round(self.camera.world_y),
         )
+
+    def get_display_camera_fractional_offset(self) -> tuple[float, float]:
+        """Return camera fractional offset scaled to root-console tile units."""
+        frac_x, frac_y = self.get_camera_fractional_offset()
+        scale_x, scale_y = self.get_display_scale_factors()
+        return (frac_x * scale_x, frac_y * scale_y)
 
     @property
     def offset_x(self) -> int:

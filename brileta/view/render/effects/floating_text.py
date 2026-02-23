@@ -325,11 +325,13 @@ class FloatingTextManager:
 
         # Then to screen pixels
         screen_x, screen_y = graphics.console_to_screen_coords(root_x, root_y)
+        scale_x, scale_y = viewport_system.get_display_scale_factors()
 
         # Center the texture horizontally on the tile
         tile_w, _ = graphics.tile_dimensions
-        centered_x = screen_x + (tile_w - text._texture_width) / 2
-        centered_y = screen_y - text._texture_height  # Above the tile
+        scaled_tile_w = tile_w * scale_x
+        centered_x = screen_x + (scaled_tile_w - (text._texture_width * scale_x)) / 2
+        centered_y = screen_y - (text._texture_height * scale_y)  # Above the tile
 
         # Draw with alpha
         graphics.draw_texture_alpha(
@@ -337,6 +339,8 @@ class FloatingTextManager:
             centered_x,
             centered_y,
             Opacity(text.alpha),
+            scale_x=scale_x,
+            scale_y=scale_y,
         )
 
     @property

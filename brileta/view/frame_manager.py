@@ -43,6 +43,7 @@ from .ui.combat_tooltip_overlay import CombatTooltipOverlay
 from .ui.cursor_manager import CursorManager
 from .ui.debug_stats_overlay import DebugStatsOverlay
 from .ui.dev_console_overlay import DevConsoleOverlay
+from .ui.zoom_indicator_overlay import ZoomIndicatorOverlay
 from .views.action_panel_view import ActionPanelView
 from .views.base import View
 from .views.equipment_view import EquipmentView
@@ -119,6 +120,7 @@ class FrameManager:
     debug_stats_overlay: DebugStatsOverlay
     dev_console_overlay: DevConsoleOverlay
     combat_tooltip_overlay: CombatTooltipOverlay
+    zoom_indicator_overlay: ZoomIndicatorOverlay
 
     def __init__(self, controller: Controller, graphics: GraphicsContext) -> None:
         """Initialize the frame manager and supporting systems."""
@@ -179,6 +181,10 @@ class FrameManager:
         self.controller.overlay_system.show_overlay(self.debug_stats_overlay)
         self.dev_console_overlay = DevConsoleOverlay(self.controller)
         self.combat_tooltip_overlay = CombatTooltipOverlay(self.controller)
+        self.zoom_indicator_overlay = ZoomIndicatorOverlay(
+            self.controller, self.world_view
+        )
+        self.controller.overlay_system.show_overlay(self.zoom_indicator_overlay)
 
         # Register live variables owned by the frame manager
         live_variable_registry.register(
@@ -385,6 +391,24 @@ class FrameManager:
             self.mini_map_view.show()
         self._layout_views()
 
+    def step_world_zoom(self, direction: int) -> bool:
+        """Step the world viewport zoom without changing HUD layout or text scale."""
+        changed = self.world_view.step_zoom(direction)
+        if changed:
+            self.zoom_indicator_overlay.notify_zoom_changed()
+        if changed and self.controller.overlay_system is not None:
+            self.controller.overlay_system.invalidate_all()
+        return changed
+
+    def reset_world_zoom(self) -> bool:
+        """Reset world viewport zoom to the default stop."""
+        changed = self.world_view.reset_zoom()
+        if changed:
+            self.zoom_indicator_overlay.notify_zoom_changed()
+        if changed and self.controller.overlay_system is not None:
+            self.controller.overlay_system.invalidate_all()
+        return changed
+
     def on_window_resized(self) -> None:
         """Called when the game window is resized to update view layouts."""
         self._layout_views()
@@ -509,16 +533,41 @@ class FrameManager:
         # presentation. Adding the equivalent pixel shift to the click position
         # undoes this before pixel_to_tile truncates to integer tiles.
         cam_frac_x, cam_frac_y = (
-            self.world_view.viewport_system.get_camera_fractional_offset()
+            self.world_view.viewport_system.get_display_camera_fractional_offset()
         )
         base_px_x, base_px_y = graphics.console_to_screen_coords(0.0, 0.0)
         frac_px_x, frac_px_y = graphics.console_to_screen_coords(cam_frac_x, cam_frac_y)
 
         adjusted_x = pixel_x + (frac_px_x - base_px_x)
         adjusted_y = pixel_y + (frac_px_y - base_px_y)
+        letterbox_geometry = getattr(graphics, "letterbox_geometry", None)
+        if letterbox_geometry is None:
+            root_tile_pos = graphics.pixel_to_tile(adjusted_x, adjusted_y)
+            return self.get_world_coords_from_root_tile_coords(root_tile_pos)
 
-        root_tile_pos = graphics.pixel_to_tile(adjusted_x, adjusted_y)
-        return self.get_world_coords_from_root_tile_coords(root_tile_pos)
+        offset_x, offset_y, scaled_w, scaled_h = letterbox_geometry
+        if scaled_w <= 0 or scaled_h <= 0:
+            return None
+        local_x = adjusted_x - offset_x
+        local_y = adjusted_y - offset_y
+        if local_x < 0 or local_y < 0 or local_x >= scaled_w or local_y >= scaled_h:
+            return None
+
+        root_x = (local_x * graphics.console_width_tiles) / scaled_w
+        root_y = (local_y * graphics.console_height_tiles) / scaled_h
+        vp_x = root_x - self.world_view.x
+        vp_y = root_y - self.world_view.y
+        if not (
+            0.0 <= vp_x < float(self.world_view.width)
+            and 0.0 <= vp_y < float(self.world_view.height)
+        ):
+            return None
+
+        world_x, world_y = self.world_view.viewport_system.screen_to_world(vp_x, vp_y)
+        gw = self.controller.gw
+        if 0 <= world_x < gw.game_map.width and 0 <= world_y < gw.game_map.height:
+            return (world_x, world_y)
+        return None
 
     def trigger_screen_shake(self, intensity: float, duration: DeltaTime) -> None:
         """Trigger screen shake effect.

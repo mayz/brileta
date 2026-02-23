@@ -62,6 +62,11 @@ class ExploreMode(Mode):
             Keys.KEY_L,
         }
     )
+    # Trackpads can emit large scroll spikes (and momentum) in a single event.
+    # Clamp the contribution so one event cannot skip multiple zoom stops.
+    _ZOOM_SCROLL_MAX_EVENT_DELTA = 0.75
+    _ZOOM_SCROLL_DEADZONE = 0.1
+    _ZOOM_SCROLL_STEP_THRESHOLD = 1.5
 
     def __init__(self, controller: Controller) -> None:
         super().__init__(controller)
@@ -79,6 +84,10 @@ class ExploreMode(Mode):
         if controller.frame_manager is not None:
             self._fm = controller.frame_manager
             self._cursor_manager = controller.frame_manager.cursor_manager
+
+        # Mouse wheel zoom uses discrete stops but supports smooth trackpad
+        # deltas by accumulating fractional scroll until a full step is crossed.
+        self._zoom_accumulator: float = 0.0
 
     @property
     def gw(self):
@@ -159,6 +168,13 @@ class ExploreMode(Mode):
                 self._switch_weapon_slot(1)
                 return True
 
+            case input_events.KeyDown(sym=input_events.KeySym.N0, mod=mod) if mod in (
+                input_events.Modifier.NONE,
+                input_events.Modifier.CTRL,
+                input_events.Modifier.GUI,
+            ):
+                return self._reset_world_view_zoom()
+
             case input_events.KeyDown(sym=input_events.KeySym.RETURN, mod=mod) if (
                 mod & input_events.Modifier.ALT
             ):
@@ -170,6 +186,9 @@ class ExploreMode(Mode):
 
             case input_events.MouseMotion():
                 return self._handle_mouse_motion(event)
+
+            case input_events.MouseWheel(y=delta) if delta != 0.0:
+                return self._handle_mouse_wheel_zoom(delta)
 
         return False
 
@@ -215,6 +234,38 @@ class ExploreMode(Mode):
         from brileta.view.ui.commands import open_inventory_or_loot
 
         open_inventory_or_loot(self.controller)
+
+    def _handle_mouse_wheel_zoom(self, delta: float) -> bool:
+        """Step viewport zoom through configured stops from scroll input."""
+        if abs(delta) < self._ZOOM_SCROLL_DEADZONE:
+            return True
+
+        clamped_delta = max(
+            -self._ZOOM_SCROLL_MAX_EVENT_DELTA,
+            min(self._ZOOM_SCROLL_MAX_EVENT_DELTA, delta),
+        )
+        self._zoom_accumulator += clamped_delta
+
+        if self._zoom_accumulator >= self._ZOOM_SCROLL_STEP_THRESHOLD:
+            if self._fm is not None:
+                self._fm.step_world_zoom(1)
+            # Reset after a step to damp trackpad momentum.
+            self._zoom_accumulator = 0.0
+        elif self._zoom_accumulator <= -self._ZOOM_SCROLL_STEP_THRESHOLD:
+            if self._fm is not None:
+                self._fm.step_world_zoom(-1)
+            # Reset after a step to damp trackpad momentum.
+            self._zoom_accumulator = 0.0
+
+        return True
+
+    def _reset_world_view_zoom(self) -> bool:
+        """Reset the world viewport zoom to the default stop."""
+        self._zoom_accumulator = 0.0
+        if self._fm is None:
+            return True
+        self._fm.reset_world_zoom()
+        return True
 
     def _toggle_dev_console(self) -> None:
         """Toggle the dev console overlay."""

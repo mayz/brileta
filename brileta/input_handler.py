@@ -47,6 +47,8 @@ class InputHandler:
     Movement key tracking and UI command handling are in ExploreMode.
     """
 
+    _POST_OVERLAY_MOUSE_WHEEL_SUPPRESS_S = 0.5
+
     def __init__(self, app: App, controller: Controller) -> None:
         self.app = app
         self.controller = controller
@@ -55,6 +57,7 @@ class InputHandler:
         self.graphics = self.fm.graphics
         self.cursor_manager = self.fm.cursor_manager
         self.gw = controller.gw
+        self._suppress_mouse_wheel_until_s = 0.0
 
     def dispatch(self, event: input_events.InputEvent) -> None:
         """Main entry point for all input events.
@@ -97,8 +100,26 @@ class InputHandler:
 
         # Overlays first: Menus are modal - they consume input before anything else
         assert self.controller.overlay_system is not None
-        if self.controller.overlay_system.handle_input(menu_event):
+        overlay_system = self.controller.overlay_system
+        had_interactive_overlays = overlay_system.has_interactive_overlays()
+        overlay_consumed = overlay_system.handle_input(menu_event)
+        has_interactive_overlays = overlay_system.has_interactive_overlays()
+        if had_interactive_overlays and not has_interactive_overlays:
+            self._suppress_mouse_wheel_until_s = max(
+                self._suppress_mouse_wheel_until_s,
+                self._now_seconds() + self._POST_OVERLAY_MOUSE_WHEEL_SUPPRESS_S,
+            )
+
+        if overlay_consumed:
             return  # Overlay consumed the event
+
+        # Interactive overlays are modal even when a given overlay doesn't use
+        # the wheel directly (e.g., simple help/menu screens).
+        if isinstance(event, input_events.MouseWheel):
+            if had_interactive_overlays:
+                return
+            if self._now_seconds() < self._suppress_mouse_wheel_until_s:
+                return
 
         # Q key quits the game (only checked after overlays had their chance)
         if self._is_quit_key(event):
@@ -116,6 +137,13 @@ class InputHandler:
         if isinstance(event, input_events.MouseMotion):
             self._update_mouse_tile_location(event)
             self._update_hover_cursor(event)
+
+    def _now_seconds(self) -> float:
+        """Return the current frame clock time for input timing gates."""
+        clock = getattr(self.controller, "clock", None)
+        if clock is None:
+            return 0.0
+        return float(getattr(clock, "last_time", 0.0))
 
     def _is_quit_key(self, event: input_events.InputEvent) -> bool:
         """Check if event is the Q key (quit hotkey)."""

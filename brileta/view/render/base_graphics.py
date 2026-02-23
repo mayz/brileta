@@ -69,7 +69,7 @@ class BaseGraphicsContext(GraphicsContext):
         # Common state that will be set by subclasses
         self._tile_dimensions: TileDimensions = (20, 20)  # Default
         self._native_tile_size: TileDimensions = (20, 20)
-        self._scale_factor: int = 1
+        self._scale_factor: float = 1.0
         self._console_width_tiles: int = 80
         self._console_height_tiles: int = 50
         self._coordinate_converter: CoordinateConverter | None = None
@@ -93,8 +93,8 @@ class BaseGraphicsContext(GraphicsContext):
         return self._native_tile_size
 
     @property
-    def scale_factor(self) -> int:
-        """Get the effective integer scale factor (content_scale * TILE_ZOOM)."""
+    def scale_factor(self) -> float:
+        """Get the effective scale factor (content_scale * TILE_ZOOM)."""
         return self._scale_factor
 
     @property
@@ -157,7 +157,14 @@ class BaseGraphicsContext(GraphicsContext):
         )
 
     def draw_tile_highlight(
-        self, root_x: float, root_y: float, color: colors.Color, alpha: Opacity
+        self,
+        root_x: float,
+        root_y: float,
+        color: colors.Color,
+        alpha: Opacity,
+        *,
+        scale_x: float = 1.0,
+        scale_y: float = 1.0,
     ) -> None:
         """Draw a tile highlight.
 
@@ -170,9 +177,11 @@ class BaseGraphicsContext(GraphicsContext):
 
         px_x, px_y = self.console_to_screen_coords(root_x, root_y)
         w, h = self.tile_dimensions
+        scaled_w = w * scale_x
+        scaled_h = h * scale_y
         uv = self.uv_map[self.SOLID_BLOCK_CHAR]
         color_rgba = (color[0] / 255, color[1] / 255, color[2] / 255, alpha)
-        self.screen_renderer.add_quad(px_x, px_y, w, h, uv, color_rgba)
+        self.screen_renderer.add_quad(px_x, px_y, scaled_w, scaled_h, uv, color_rgba)
 
     def render_particles(
         self,
@@ -192,6 +201,13 @@ class BaseGraphicsContext(GraphicsContext):
             return
 
         # Loop through active particles
+        particle_scale = (1.0, 1.0)
+        if viewport_system is not None:
+            get_scale_factors = getattr(
+                viewport_system, "get_display_scale_factors", None
+            )
+            if callable(get_scale_factors):
+                particle_scale = get_scale_factors()
         for i in range(particle_system.active_count):
             if particle_system.layers[i] != layer.value:
                 continue
@@ -217,6 +233,8 @@ class BaseGraphicsContext(GraphicsContext):
                 screen_x,
                 screen_y,
                 Opacity(alpha),
+                scale_x=particle_scale[0],
+                scale_y=particle_scale[1],
             )
 
     def render_decals(
@@ -238,6 +256,11 @@ class BaseGraphicsContext(GraphicsContext):
             return
 
         # Iterate through all tiles with decals
+        get_scale_factors = getattr(viewport_system, "get_display_scale_factors", None)
+        if callable(get_scale_factors):
+            decal_scale_x, decal_scale_y = get_scale_factors()
+        else:
+            decal_scale_x, decal_scale_y = (1.0, 1.0)
         for (tile_x, tile_y), decals in decal_system.decals.items():
             # Convert tile position to screen position for culling
             screen_tile_x, screen_tile_y = viewport_system.world_to_screen(
@@ -273,6 +296,8 @@ class BaseGraphicsContext(GraphicsContext):
                     pixel_x,
                     pixel_y,
                     Opacity(alpha),
+                    scale_x=decal_scale_x,
+                    scale_y=decal_scale_y,
                 )
 
     def _draw_particle_to_buffer(
@@ -282,6 +307,9 @@ class BaseGraphicsContext(GraphicsContext):
         screen_x: float,
         screen_y: float,
         alpha: Opacity,
+        *,
+        scale_x: float = 1.0,
+        scale_y: float = 1.0,
     ) -> None:
         """Draw a single particle by adding its quad to the vertex buffer.
 
@@ -304,9 +332,13 @@ class BaseGraphicsContext(GraphicsContext):
         char_code = ord(char) if char else ord(" ")
         uv_coords = self.uv_map[char_code]
         w, h = self.tile_dimensions
+        scaled_w = w * scale_x
+        scaled_h = h * scale_y
 
         # Add the particle quad to the vertex buffer
-        self.screen_renderer.add_quad(screen_x, screen_y, w, h, uv_coords, final_color)
+        self.screen_renderer.add_quad(
+            screen_x, screen_y, scaled_w, scaled_h, uv_coords, final_color
+        )
 
     def console_to_screen_coords(self, console_x: float, console_y: float) -> PixelPos:
         """Convert console coordinates to screen pixel coordinates.

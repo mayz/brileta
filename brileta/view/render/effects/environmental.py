@@ -10,6 +10,7 @@ from brileta.util.coordinates import Rect
 
 if TYPE_CHECKING:
     from brileta.view.render.graphics import GraphicsContext
+    from brileta.view.render.viewport import ViewportSystem
 
 
 @dataclass
@@ -121,6 +122,7 @@ class EnvironmentalEffectSystem:
         renderer: GraphicsContext,
         viewport_bounds: Rect,
         view_offset: ViewOffset,
+        viewport_system: ViewportSystem | None = None,
     ) -> None:
         """
         Render all active environmental effects using the renderer.
@@ -141,18 +143,39 @@ class EnvironmentalEffectSystem:
             - Uses efficient texture-based rendering with circular gradients
             - Intensity automatically fades as effects approach expiration
         """
+        cull_bounds = (
+            viewport_system.get_visible_bounds()
+            if viewport_system is not None
+            else viewport_bounds
+        )
+
         for effect in self.effects:
             if effect.lifetime <= 0:
                 continue
             x, y = effect.position
             if (
-                x + effect.radius < viewport_bounds.x1
-                or x - effect.radius > viewport_bounds.x2
-                or y + effect.radius < viewport_bounds.y1
-                or y - effect.radius > viewport_bounds.y2
+                x + effect.radius < cull_bounds.x1
+                or x - effect.radius > cull_bounds.x2
+                or y + effect.radius < cull_bounds.y1
+                or y - effect.radius > cull_bounds.y2
             ):
                 continue
             intensity = effect.intensity * (effect.lifetime / effect.max_lifetime)
+            if viewport_system is not None:
+                vp_x, vp_y = viewport_system.world_to_screen_float(x, y)
+                scale_x, scale_y = viewport_system.get_display_scale_factors()
+                effect_pos = (view_offset[0] + vp_x, view_offset[1] + vp_y)
+                renderer.apply_environmental_effect(
+                    effect_pos,
+                    effect.radius,
+                    effect.tint_color,
+                    intensity,
+                    effect.blend_mode,
+                    radius_scale_x=scale_x,
+                    radius_scale_y=scale_y,
+                )
+                continue
+
             renderer.apply_environmental_effect(
                 (view_offset[0] + x, view_offset[1] + y),
                 effect.radius,

@@ -44,13 +44,17 @@ WINDOW_MAX_ASPECT_RATIO: float = 2.4
 # Final display tile size is derived as:
 #     display_tile = native_tile_from_tileset * content_scale * TILE_ZOOM
 # where content_scale is auto-detected from framebuffer/window dimensions.
-TILE_ZOOM: int = 1
+TILE_ZOOM: float = 1.0
+
+# Discrete runtime zoom levels. ExploreMode scroll input steps through these.
+ZOOM_STOPS: tuple[float, ...] = (0.5, 0.6, 0.7, 0.85, 1.0, 1.2, 1.5, 2.0)
+DEFAULT_ZOOM_INDEX: int = 4
 
 # Safety floor for dynamic console dimensions after DPI + zoom are applied.
 # If a requested TILE_ZOOM would shrink below this, the renderer reduces the
-# effective zoom until these minimums are met (or zoom reaches 1).
-MIN_CONSOLE_WIDTH: int = 60
-MIN_CONSOLE_HEIGHT: int = 40
+# effective zoom until these minimums are met.
+MIN_CONSOLE_WIDTH: int = 40
+MIN_CONSOLE_HEIGHT: int = 25
 
 # Toggle environmental overlay effects
 ENVIRONMENTAL_EFFECTS_ENABLED = True

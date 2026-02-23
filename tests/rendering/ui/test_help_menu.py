@@ -16,6 +16,22 @@ def test_help_menu_lists_mini_map_toggle() -> None:
     assert any(opt.key == "M" and opt.text == "Toggle mini-map" for opt in menu.options)
 
 
+def test_help_menu_lists_zoom_controls() -> None:
+    """Help menu should advertise viewport zoom controls and reset shortcut."""
+    controller = get_controller_with_dummy_world()
+    menu = HelpMenu(controller)
+
+    menu.show()
+
+    assert any(
+        opt.key == "Scroll" and opt.text == "Zoom viewport" for opt in menu.options
+    )
+    assert any(
+        opt.key == "0 / Ctrl+0 / Cmd+0" and opt.text == "Reset zoom (1x)"
+        for opt in menu.options
+    )
+
+
 def test_help_menu_mini_map_action_toggles_visibility() -> None:
     """Help action should toggle the same mini-map view used in gameplay."""
     controller = get_controller_with_dummy_world()

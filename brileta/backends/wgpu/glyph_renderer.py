@@ -93,7 +93,10 @@ class WGPUGlyphRenderer:
         )
 
         # Create vertex buffer
-        buffer_size = MAX_TEXTURE_QUADS * 6 * TEXTURE_VERTEX_DTYPE.itemsize
+        self._vertex_buffer_capacity_vertices = MAX_TEXTURE_QUADS * 6
+        buffer_size = (
+            self._vertex_buffer_capacity_vertices * TEXTURE_VERTEX_DTYPE.itemsize
+        )
         self.vertex_buffer = self.resource_manager.get_or_create_buffer(
             size=buffer_size,
             usage=wgpu.BufferUsage.VERTEX | wgpu.BufferUsage.COPY_DST,
@@ -266,6 +269,23 @@ class WGPUGlyphRenderer:
         self.tile_dimensions = tile_dimensions
         self.buffer_cache.clear()
 
+    def _ensure_vertex_buffer_capacity(self, required_vertices: int) -> None:
+        """Grow the shared vertex buffer when the visible glyph buffer expands.
+
+        Zooming out can significantly increase the number of tiles rendered into
+        the world-view off-screen texture. The original fixed 5000-quad buffer is
+        sufficient for the default viewport, but not for larger zoomed-out views.
+        """
+        if required_vertices <= self._vertex_buffer_capacity_vertices:
+            return
+
+        self._vertex_buffer_capacity_vertices = required_vertices
+        self.vertex_buffer = self.resource_manager.get_or_create_buffer(
+            size=required_vertices * TEXTURE_VERTEX_DTYPE.itemsize,
+            usage=wgpu.BufferUsage.VERTEX | wgpu.BufferUsage.COPY_DST,
+            label="glyph_renderer_vertex_buffer",
+        )
+
     def render(
         self,
         glyph_buffer: GlyphBuffer,
@@ -344,6 +364,9 @@ class WGPUGlyphRenderer:
 
             # Upload vertex buffer to GPU
             if vertex_count > 0:
+                if buffer_override is None:
+                    self._ensure_vertex_buffer_capacity(vertex_count)
+                    vbo_to_use = self.vertex_buffer
                 self.resource_manager.queue.write_buffer(
                     vbo_to_use,
                     0,

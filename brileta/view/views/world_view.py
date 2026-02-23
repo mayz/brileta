@@ -135,6 +135,9 @@ class WorldView(View):
         self.graphics = controller.graphics
         self.screen_shake = screen_shake
         self.lighting_system = lighting_system
+        self._zoom_index: int = config.DEFAULT_ZOOM_INDEX
+        # World viewport zoom only. HUD/root-console zoom stays fixed.
+        self._viewport_zoom: float = config.ZOOM_STOPS[self._zoom_index]
         # Initialize a viewport system with bootstrap defaults.
         # These defaults are replaced once resize() sets the real view bounds.
         self.viewport_system = ViewportSystem(
@@ -201,37 +204,94 @@ class WorldView(View):
             AtmosphericConfig.create_default()
         )
 
+    def _compute_zoomed_viewport_size(self) -> tuple[int, int]:
+        """Return visible world-tile dimensions for the fixed view rect."""
+        zoom = max(config.ZOOM_STOPS[0], float(self._viewport_zoom))
+        visible_width = max(1, round(self.width / zoom))
+        visible_height = max(1, round(self.height / zoom))
+        return (visible_width, visible_height)
+
+    def _rebuild_viewport_dependent_resources(self) -> None:
+        """Resize viewport and rebuild buffers that depend on visible tile counts."""
+        if self.width <= 0 or self.height <= 0:
+            return
+
+        visible_width, visible_height = self._compute_zoomed_viewport_size()
+        current_visible = (
+            self.viewport_system.viewport.width_tiles,
+            self.viewport_system.viewport.height_tiles,
+        )
+        self.viewport_system.set_display_size(self.width, self.height)
+        if current_visible == (visible_width, visible_height):
+            return
+
+        self.viewport_system.viewport.resize(visible_width, visible_height)
+        pad = self._SCROLL_PADDING
+        self.map_glyph_buffer = GlyphBuffer(
+            visible_width + 2 * pad, visible_height + 2 * pad
+        )
+        self.light_source_glyph_buffer = GlyphBuffer(
+            visible_width + 2 * pad, visible_height + 2 * pad
+        )
+        # Force a full light-source rebuild after buffer resize.
+        self._light_buffer_cache_key = None
+        self._light_buffer_anim_base_fg = None
+        self._light_buffer_anim_base_bg = None
+        self._light_buffer_anim_buf_indices = None
+        self._light_buffer_anim_exp_x = None
+        self._light_buffer_anim_exp_y = None
+        self._light_buffer_cached_buf_x = None
+        self._light_buffer_cached_buf_y = None
+        self._light_buffer_cached_vis_buf_x = None
+        self._light_buffer_cached_vis_buf_y = None
+        self._visible_mask_buffer = None
+        self._active_background_texture = None
+        self._light_overlay_texture = None
+        # Keep dynamic effects sized to the visible viewport tile grid.
+        self.particle_system = SubTileParticleSystem(visible_width, visible_height)
+        self.environmental_system = EnvironmentalEffectSystem()
+        self.decal_system = DecalSystem()
+
+    def step_zoom(self, direction: int) -> bool:
+        """Step world viewport zoom by one configured stop."""
+        if direction == 0:
+            return False
+        max_index = len(config.ZOOM_STOPS) - 1
+        new_index = max(
+            0, min(max_index, self._zoom_index + (1 if direction > 0 else -1))
+        )
+        if new_index == self._zoom_index:
+            return False
+        self._zoom_index = new_index
+        self._viewport_zoom = config.ZOOM_STOPS[self._zoom_index]
+        self._rebuild_viewport_dependent_resources()
+        return True
+
+    def reset_zoom(self) -> bool:
+        """Reset world viewport zoom to the configured default stop."""
+        if self._zoom_index == config.DEFAULT_ZOOM_INDEX:
+            return False
+        self._zoom_index = config.DEFAULT_ZOOM_INDEX
+        self._viewport_zoom = config.ZOOM_STOPS[self._zoom_index]
+        self._rebuild_viewport_dependent_resources()
+        return True
+
     def set_bounds(self, x1: int, y1: int, x2: int, y2: int) -> None:
         """Override set_bounds to update viewport and console dimensions."""
         # Only perform resize logic if the dimensions have actually changed.
         if self.width != (x2 - x1) or self.height != (y2 - y1):
             super().set_bounds(x1, y1, x2, y2)
-            # Update the existing viewport's size instead of replacing it.
-            self.viewport_system.viewport.resize(self.width, self.height)
-            # Glyph buffer includes padding for smooth scrolling.
-            pad = self._SCROLL_PADDING
-            self.map_glyph_buffer = GlyphBuffer(
-                self.width + 2 * pad, self.height + 2 * pad
-            )
-            # Source colors for the GPU compose path (light appearance + animation,
-            # before blending with dark colors and light intensity).
-            self.light_source_glyph_buffer = GlyphBuffer(
-                self.width + 2 * pad, self.height + 2 * pad
-            )
-            # Force a full light-source rebuild after buffer resize.
-            self._light_buffer_cache_key = None
-            self._light_buffer_anim_base_fg = None
-            self._light_buffer_anim_base_bg = None
-            self._light_buffer_anim_buf_indices = None
-            self._light_buffer_anim_exp_x = None
-            self._light_buffer_anim_exp_y = None
-            self._light_buffer_cached_buf_x = None
-            self._light_buffer_cached_buf_y = None
-            self._light_buffer_cached_vis_buf_x = None
-            self._light_buffer_cached_vis_buf_y = None
-            self.particle_system = SubTileParticleSystem(self.width, self.height)
-            self.environmental_system = EnvironmentalEffectSystem()
-            self.decal_system = DecalSystem()
+            self._rebuild_viewport_dependent_resources()
+
+    @property
+    def viewport_zoom(self) -> float:
+        """Current world-view zoom multiplier (HUD/root-console remains fixed)."""
+        return float(self._viewport_zoom)
+
+    @property
+    def is_default_viewport_zoom(self) -> bool:
+        """Whether the world view is currently at the configured default zoom stop."""
+        return self._zoom_index == config.DEFAULT_ZOOM_INDEX
 
     # ------------------------------------------------------------------
     # Public API
@@ -272,7 +332,15 @@ class WorldView(View):
         cam_frac_x, cam_frac_y = self.camera_frac_offset
         root_x = self.x + vp_x - cam_frac_x
         root_y = self.y + vp_y - cam_frac_y
-        self.graphics.draw_tile_highlight(root_x, root_y, final_color, alpha)
+        scale_x, scale_y = vs.get_display_scale_factors()
+        self.graphics.draw_tile_highlight(
+            root_x,
+            root_y,
+            final_color,
+            alpha,
+            scale_x=scale_x,
+            scale_y=scale_y,
+        )
 
     # ------------------------------------------------------------------
     # Drawing
@@ -408,6 +476,7 @@ class WorldView(View):
 
         vs = self.viewport_system
         pad = self._SCROLL_PADDING
+        scale_x, scale_y = vs.get_display_scale_factors()
 
         # Calculate pixel offsets for smooth scrolling.
         # The background texture is larger than the viewport (includes padding),
@@ -417,7 +486,7 @@ class WorldView(View):
         # 1. Screen shake offset (existing behavior)
         shake_tile_x, shake_tile_y = self._shake_offset
         shake_px_x, shake_px_y = graphics.console_to_screen_coords(
-            shake_tile_x, shake_tile_y
+            shake_tile_x * scale_x, shake_tile_y * scale_y
         )
         shake_offset_x = shake_px_x - base_px_x
         shake_offset_y = shake_px_y - base_px_y
@@ -426,34 +495,33 @@ class WorldView(View):
         # The camera position is rounded when selecting which tiles to render.
         # The fractional part tells us how far between tiles the camera actually is.
         # We offset the texture in the opposite direction to compensate.
-        cam_frac_x, cam_frac_y = vs.get_camera_fractional_offset()
+        cam_frac_x, cam_frac_y = vs.get_display_camera_fractional_offset()
         # Store for use by actor/particle rendering methods
         self.camera_frac_offset = (cam_frac_x, cam_frac_y)
         cam_px_x, cam_px_y = graphics.console_to_screen_coords(-cam_frac_x, -cam_frac_y)
         cam_offset_x = cam_px_x - base_px_x
         cam_offset_y = cam_px_y - base_px_y
 
-        # 3. Padding offset: the texture starts 1 tile before the viewport origin,
-        # so we shift it back by the padding amount.
-        pad_px_x, pad_px_y = graphics.console_to_screen_coords(-pad, -pad)
-        pad_offset_x = pad_px_x - base_px_x
-        pad_offset_y = pad_px_y - base_px_y
-
         # Combined offset for background rendering
-        offset_x_pixels = shake_offset_x + cam_offset_x + pad_offset_x
-        offset_y_pixels = shake_offset_y + cam_offset_y + pad_offset_y
+        offset_x_pixels = shake_offset_x + cam_offset_x
+        offset_y_pixels = shake_offset_y + cam_offset_y
 
-        # The padded texture dimensions
-        tex_width = self.width + 2 * pad
-        tex_height = self.height + 2 * pad
+        # Present the padded world texture into the fixed world-view rect by
+        # scaling visible world tiles into root-console tile space.
+        visible_w = self.viewport_system.viewport.width_tiles
+        visible_h = self.viewport_system.viewport.height_tiles
+        tex_x = self.x - (pad * scale_x)
+        tex_y = self.y - (pad * scale_y)
+        tex_width = (visible_w + 2 * pad) * scale_x
+        tex_height = (visible_h + 2 * pad) * scale_y
 
         # 1. Present the cached unlit background with combined offset
         if self._active_background_texture:
             with record_time_live_variable("time.render.present_background_ms"):
                 graphics.draw_background(
                     self._active_background_texture,
-                    self.x,
-                    self.y,
+                    tex_x,
+                    tex_y,
                     tex_width,
                     tex_height,
                     offset_x_pixels,
@@ -465,8 +533,8 @@ class WorldView(View):
             with record_time_live_variable("time.render.present_light_overlay_ms"):
                 graphics.draw_background(
                     self._light_overlay_texture,
-                    self.x,
-                    self.y,
+                    tex_x,
+                    tex_y,
                     tex_width,
                     tex_height,
                     offset_x_pixels,
@@ -490,7 +558,12 @@ class WorldView(View):
         # Include camera fractional offset in view_offset for particles/decals/etc.
         # This ensures they shift with the background during smooth scrolling.
         view_offset = (self.x - cam_frac_x, self.y - cam_frac_y)
-        viewport_size = (self.width, self.height)
+        # Atmospheric uniforms expect visible viewport size in world tiles,
+        # not the fixed on-screen world-view rect size in root-console tiles.
+        viewport_size = (
+            self.viewport_system.viewport.width_tiles,
+            self.viewport_system.viewport.height_tiles,
+        )
         map_size = (
             self.controller.gw.game_map.width,
             self.controller.gw.game_map.height,
@@ -688,6 +761,7 @@ class WorldView(View):
                     graphics,
                     viewport_bounds,
                     view_offset,
+                    viewport_system=self.viewport_system,
                 )
 
         if config.DEBUG_SHOW_TILE_GRID:
@@ -1131,9 +1205,9 @@ class WorldView(View):
         )
 
         pad = self._SCROLL_PADDING
-        buf_width = self.width + 2 * pad
-        buf_height = self.height + 2 * pad
         light_source_buffer = self.light_source_glyph_buffer
+        buf_width = light_source_buffer.width
+        buf_height = light_source_buffer.height
         # Buffer-space visible mask used by the GPU compose shader. Keeping this
         # in the same coordinate space as the glyph buffers avoids map/viewport
         # axis mismatches when maps are centered in larger viewports.

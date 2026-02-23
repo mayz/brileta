@@ -265,6 +265,9 @@ class GraphicsContext(abc.ABC):
         root_y: float,
         color: colors.Color,
         alpha: Opacity,
+        *,
+        scale_x: float = 1.0,
+        scale_y: float = 1.0,
     ) -> None:
         """Draws a semi-transparent highlight over a single tile."""
         pass
@@ -329,12 +332,15 @@ class GraphicsContext(abc.ABC):
         tint_color: colors.Color,
         intensity: float,
         blend_mode: BlendMode,
+        *,
+        radius_scale_x: float = 1.0,
+        radius_scale_y: float = 1.0,
     ) -> None:
         """Apply a circular environmental effect using cached textures."""
         pass
 
     @abc.abstractmethod
-    def update_dimensions(self) -> None:
+    def update_dimensions(self, zoom_only: bool = False) -> None:
         """Update coordinate converter when window dimensions change."""
         pass
 
@@ -391,6 +397,9 @@ class GraphicsContext(abc.ABC):
         screen_x: PixelCoord,
         screen_y: PixelCoord,
         alpha: Opacity,
+        *,
+        scale_x: float = 1.0,
+        scale_y: float = 1.0,
     ) -> None:
         """Draw a texture at pixel coordinates with alpha modulation.
 
@@ -402,6 +411,8 @@ class GraphicsContext(abc.ABC):
             screen_x: X position in screen pixels
             screen_y: Y position in screen pixels
             alpha: Overall opacity (0.0 to 1.0)
+            scale_x: Optional horizontal pixel scaling
+            scale_y: Optional vertical pixel scaling
         """
         pass
 
@@ -409,10 +420,10 @@ class GraphicsContext(abc.ABC):
     def draw_background(
         self,
         texture: Any,
-        x_tile: int,
-        y_tile: int,
-        width_tiles: int,
-        height_tiles: int,
+        x_tile: float,
+        y_tile: float,
+        width_tiles: float,
+        height_tiles: float,
         offset_x_pixels: float = 0.0,
         offset_y_pixels: float = 0.0,
     ) -> None:

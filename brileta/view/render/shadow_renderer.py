@@ -128,6 +128,31 @@ class ShadowRenderer:
         self._frame_directional_light = directional_light
         self._frame_lights = lights
 
+    def _get_viewport_display_scale_factors(self) -> tuple[float, float]:
+        """Return viewport display scale, tolerating lightweight test doubles."""
+        get_scale_factors = getattr(
+            self.viewport_system, "get_display_scale_factors", None
+        )
+        if callable(get_scale_factors):
+            return get_scale_factors()
+        return (1.0, 1.0)
+
+    def _zoomed_tile_draw_origin(
+        self,
+        root_x: float,
+        root_y: float,
+        *,
+        ground_anchor_y: float | None = None,
+    ) -> tuple[float, float]:
+        """Shift root origin so scaled shadow draws remain tile-aligned."""
+        viewport_scale_x, viewport_scale_y = self._get_viewport_display_scale_factors()
+        corrected_x = root_x + (viewport_scale_x - 1.0) * 0.5
+        if ground_anchor_y is None:
+            corrected_y = root_y + (viewport_scale_y - 1.0) * 0.5
+        else:
+            corrected_y = root_y + (viewport_scale_y - 1.0) * float(ground_anchor_y)
+        return (corrected_x, corrected_y)
+
     def render_actor_shadows(
         self,
         interpolation_alpha: InterpolationAlpha,
@@ -157,7 +182,8 @@ class ShadowRenderer:
         if not config.SHADOWS_ENABLED:
             return
 
-        tile_height = float(self.graphics.tile_dimensions[1])
+        viewport_scale_x, viewport_scale_y = self._get_viewport_display_scale_factors()
+        tile_height = float(self.graphics.tile_dimensions[1]) * viewport_scale_y
 
         # Compute sun shadow params once for both terrain and actor passes.
         sun_params: _SunShadowParams | None = None
@@ -167,6 +193,7 @@ class ShadowRenderer:
         # Terrain glyph shadows (boulders, etc.) - independent of actor positions.
         self._render_terrain_glyph_shadows(
             tile_height,
+            viewport_scale=(viewport_scale_x, viewport_scale_y),
             sun_params=sun_params,
         )
 
@@ -326,6 +353,8 @@ class ShadowRenderer:
     def _render_terrain_glyph_shadows(
         self,
         tile_height: float,
+        *,
+        viewport_scale: tuple[float, float] = (1.0, 1.0),
         sun_params: _SunShadowParams | None = None,
         directional_light: DirectionalLight | None = None,
     ) -> None:
@@ -343,6 +372,7 @@ class ShadowRenderer:
             return
 
         shadow_dir_x, shadow_dir_y, shadow_length_scale = sun_params
+        viewport_scale_x, viewport_scale_y = viewport_scale
 
         # Get viewport bounds.
         bounds = self.viewport_system.get_visible_bounds()
@@ -395,7 +425,10 @@ class ShadowRenderer:
             vp_x, vp_y = self.viewport_system.world_to_screen(world_x, world_y)
             root_x = self._view_origin[0] + vp_x - cam_frac_x
             root_y = self._view_origin[1] + vp_y - cam_frac_y
-            screen_x, screen_y = self.graphics.console_to_screen_coords(root_x, root_y)
+            draw_root_x, draw_root_y = self._zoomed_tile_draw_origin(root_x, root_y)
+            screen_x, screen_y = self.graphics.console_to_screen_coords(
+                draw_root_x, draw_root_y
+            )
 
             self.graphics.draw_actor_shadow(
                 char=char,
@@ -405,8 +438,8 @@ class ShadowRenderer:
                 shadow_dir_y=shadow_dir_y,
                 shadow_length_pixels=clipped_length_tiles * tile_height,
                 shadow_alpha=config.TERRAIN_GLYPH_SHADOW_ALPHA,
-                scale_x=1.0,
-                scale_y=1.0,
+                scale_x=viewport_scale_x,
+                scale_y=viewport_scale_y,
                 fade_tip=config.ACTOR_SHADOW_FADE_TIP,
             )
 
@@ -540,6 +573,7 @@ class ShadowRenderer:
         shadow path.
         """
         visual_scale = getattr(actor, "visual_scale", 1.0)
+        viewport_scale_x, viewport_scale_y = self._get_viewport_display_scale_factors()
 
         # Sprite actors: prefer sprite-silhouette shadow when supported.
         sprite_uv = getattr(actor, "sprite_uv", None)
@@ -547,6 +581,14 @@ class ShadowRenderer:
             draw_sprite_shadow = getattr(self.graphics, "draw_sprite_shadow", None)
             sprite_ground_anchor_y = float(
                 getattr(actor, "sprite_ground_anchor_y", 1.0)
+            )
+            draw_root_x, draw_root_y = self._zoomed_tile_draw_origin(
+                root_x,
+                root_y,
+                ground_anchor_y=sprite_ground_anchor_y,
+            )
+            screen_x, screen_y = self.graphics.console_to_screen_coords(
+                draw_root_x, draw_root_y
             )
             if callable(draw_sprite_shadow):
                 draw_sprite_shadow(
@@ -557,8 +599,8 @@ class ShadowRenderer:
                     shadow_dir_y=shadow_dir_y,
                     shadow_length_pixels=shadow_length_pixels,
                     shadow_alpha=shadow_alpha,
-                    scale_x=visual_scale,
-                    scale_y=visual_scale,
+                    scale_x=visual_scale * viewport_scale_x,
+                    scale_y=visual_scale * viewport_scale_y,
                     ground_anchor_y=sprite_ground_anchor_y,
                     fade_tip=fade_tip,
                 )
@@ -571,8 +613,8 @@ class ShadowRenderer:
                     shadow_dir_y=shadow_dir_y,
                     shadow_length_pixels=shadow_length_pixels,
                     shadow_alpha=shadow_alpha,
-                    scale_x=visual_scale,
-                    scale_y=visual_scale,
+                    scale_x=visual_scale * viewport_scale_x,
+                    scale_y=visual_scale * viewport_scale_y,
                     fade_tip=fade_tip,
                 )
             return
@@ -580,8 +622,11 @@ class ShadowRenderer:
         # Character-layer actors: one shadow per glyph layer.
         if actor.character_layers:
             for layer in actor.character_layers:
-                layer_root_x = root_x + layer.offset_x
-                layer_root_y = root_y + layer.offset_y
+                layer_root_x = root_x + (layer.offset_x * viewport_scale_x)
+                layer_root_y = root_y + (layer.offset_y * viewport_scale_y)
+                layer_root_x, layer_root_y = self._zoomed_tile_draw_origin(
+                    layer_root_x, layer_root_y
+                )
                 layer_screen_x, layer_screen_y = self.graphics.console_to_screen_coords(
                     layer_root_x, layer_root_y
                 )
@@ -593,13 +638,17 @@ class ShadowRenderer:
                     shadow_dir_y=shadow_dir_y,
                     shadow_length_pixels=shadow_length_pixels,
                     shadow_alpha=shadow_alpha,
-                    scale_x=visual_scale * layer.scale_x,
-                    scale_y=visual_scale * layer.scale_y,
+                    scale_x=visual_scale * layer.scale_x * viewport_scale_x,
+                    scale_y=visual_scale * layer.scale_y * viewport_scale_y,
                     fade_tip=fade_tip,
                 )
             return
 
         # Single-glyph fallback.
+        draw_root_x, draw_root_y = self._zoomed_tile_draw_origin(root_x, root_y)
+        screen_x, screen_y = self.graphics.console_to_screen_coords(
+            draw_root_x, draw_root_y
+        )
         self.graphics.draw_actor_shadow(
             char=actor.ch,
             screen_x=screen_x,
@@ -608,8 +657,8 @@ class ShadowRenderer:
             shadow_dir_y=shadow_dir_y,
             shadow_length_pixels=shadow_length_pixels,
             shadow_alpha=shadow_alpha,
-            scale_x=visual_scale,
-            scale_y=visual_scale,
+            scale_x=visual_scale * viewport_scale_x,
+            scale_y=visual_scale * viewport_scale_y,
             fade_tip=fade_tip,
         )
 

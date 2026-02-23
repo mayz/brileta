@@ -173,6 +173,19 @@ class TestGlfwKeyConversion:
         assert converter(None, glfw.KEY_SEMICOLON) == input_events.KeySym.SEMICOLON
         assert converter(None, glfw.KEY_GRAVE_ACCENT) == input_events.KeySym.GRAVE
 
+    def test_super_modifier_maps_to_gui(self) -> None:
+        """GLFW's Super/Command modifier should map to Modifier.GUI."""
+        try:
+            import glfw
+
+            from brileta.backends.glfw.app import GlfwApp
+        except ImportError:
+            pytest.skip("GLFW not available")
+
+        app = GlfwApp.__new__(GlfwApp)
+        mods = GlfwApp._glfw_mods_to_modifier(app, glfw.MOD_SUPER)
+        assert mods & input_events.Modifier.GUI
+
 
 class TestKeySymConsistency:
     """Test that KeySym values are consistent across the codebase."""

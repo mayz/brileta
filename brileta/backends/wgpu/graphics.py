@@ -946,6 +946,9 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         tint_color: colors.Color,
         intensity: float,
         blend_mode: BlendMode,
+        *,
+        radius_scale_x: float = 1.0,
+        radius_scale_y: float = 1.0,
     ) -> None:
         """Apply a circular environmental effect like lighting or fog."""
         if (
@@ -960,8 +963,8 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         screen_x, screen_y = self.console_to_screen_coords(*position)
 
         # Calculate pixel radius based on tile dimensions
-        px_radius = max(1, int(radius * self.tile_dimensions[0]))
-        size = px_radius * 2
+        px_radius_x = max(1.0, radius * self.tile_dimensions[0] * float(radius_scale_x))
+        px_radius_y = max(1.0, radius * self.tile_dimensions[1] * float(radius_scale_y))
 
         # Calculate final color with intensity
         final_color = (
@@ -972,18 +975,22 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         )
 
         # Position the effect centered on the given position
-        dest_x = screen_x - px_radius
-        dest_y = screen_y - px_radius
+        dest_x = screen_x - px_radius_x
+        dest_y = screen_y - px_radius_y
 
         # Build the standard two-triangle quad and queue it for the effect pass.
         vertices = np.zeros(6, dtype=WGPUTexturedQuadRenderer.VERTEX_DTYPE)
         u1, v1, u2, v2 = 0.0, 0.0, 1.0, 1.0
         vertices[0] = ((dest_x, dest_y), (u1, v1), final_color)
-        vertices[1] = ((dest_x + size, dest_y), (u2, v1), final_color)
-        vertices[2] = ((dest_x, dest_y + size), (u1, v2), final_color)
-        vertices[3] = ((dest_x + size, dest_y), (u2, v1), final_color)
-        vertices[4] = ((dest_x, dest_y + size), (u1, v2), final_color)
-        vertices[5] = ((dest_x + size, dest_y + size), (u2, v2), final_color)
+        vertices[1] = ((dest_x + 2 * px_radius_x, dest_y), (u2, v1), final_color)
+        vertices[2] = ((dest_x, dest_y + 2 * px_radius_y), (u1, v2), final_color)
+        vertices[3] = ((dest_x + 2 * px_radius_x, dest_y), (u2, v1), final_color)
+        vertices[4] = ((dest_x, dest_y + 2 * px_radius_y), (u1, v2), final_color)
+        vertices[5] = (
+            (dest_x + 2 * px_radius_x, dest_y + 2 * px_radius_y),
+            (u2, v2),
+            final_color,
+        )
         self.effect_renderer.add_textured_quad(self._radial_gradient_texture, vertices)
 
     @property
@@ -991,8 +998,8 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         """Expose the currently locked DPI/content scale, if detected."""
         return self._locked_content_scale
 
-    def update_dimensions(self) -> None:
-        """Update dimensions when window size changes."""
+    def update_dimensions(self, zoom_only: bool = False) -> None:
+        """Update dimensions when window size or runtime zoom changes."""
         current_window_width, current_window_height = map(int, self.window.get_size())
         current_framebuffer_width, current_framebuffer_height = map(
             int, self.window.get_framebuffer_size()
@@ -1003,8 +1010,8 @@ class WGPUGraphicsContext(BaseGraphicsContext):
             current_framebuffer_height,
         )
 
-        # Recreate the WGPU surface and context to match the new window size.
-        if self.device:
+        # Recreate the WGPU surface and context only when the window size changes.
+        if self.device and not zoom_only:
             self._recreate_surface_and_context()
 
         # Update letterbox geometry, tile dimensions, and coordinate converter.
@@ -1254,6 +1261,9 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         screen_x: PixelCoord,
         screen_y: PixelCoord,
         alpha: Opacity,
+        *,
+        scale_x: float = 1.0,
+        scale_y: float = 1.0,
     ) -> None:
         """Draw a texture at pixel coordinates with alpha modulation."""
         if alpha <= 0.0 or not isinstance(texture, wgpu.GPUTexture):
@@ -1263,8 +1273,8 @@ class WGPUGraphicsContext(BaseGraphicsContext):
 
         px_x1 = float(screen_x)
         px_y1 = float(screen_y)
-        px_x2 = px_x1 + texture.width
-        px_y2 = px_y1 + texture.height
+        px_x2 = px_x1 + (texture.width * float(scale_x))
+        px_y2 = px_y1 + (texture.height * float(scale_y))
 
         # Create vertices with alpha in the color
         vertices = np.zeros(6, dtype=WGPUTexturedQuadRenderer.VERTEX_DTYPE)
@@ -1283,10 +1293,10 @@ class WGPUGraphicsContext(BaseGraphicsContext):
     def draw_background(
         self,
         texture: Any,
-        x_tile: int,
-        y_tile: int,
-        width_tiles: int,
-        height_tiles: int,
+        x_tile: float,
+        y_tile: float,
+        width_tiles: float,
+        height_tiles: float,
         offset_x_pixels: float = 0.0,
         offset_y_pixels: float = 0.0,
     ) -> None:
@@ -1444,14 +1454,20 @@ class WGPUGraphicsContext(BaseGraphicsContext):
             window_width=window_width,
             window_height=window_height,
         )
-        requested_zoom = max(1, config.TILE_ZOOM)
-        effective_zoom = requested_zoom
+        requested_zoom = max(config.ZOOM_STOPS[0], config.TILE_ZOOM)
 
-        # Prevent zoom from shrinking the dynamic console below the minimum safe
-        # size for UI layout. If needed, step down zoom until constraints hold.
-        while effective_zoom > 1:
-            candidate_tile_width = native_width * content_scale * effective_zoom
-            candidate_tile_height = native_height * content_scale * effective_zoom
+        # Snap the request to the highest configured stop at or below the
+        # requested zoom, then walk down through the stops until the console
+        # stays above the UI layout safety floor.
+        candidate_zooms = [
+            zoom for zoom in config.ZOOM_STOPS if zoom <= requested_zoom
+        ] or [config.ZOOM_STOPS[0]]
+        effective_zoom = candidate_zooms[0]
+        for candidate_zoom in reversed(candidate_zooms):
+            candidate_tile_width = round(native_width * content_scale * candidate_zoom)
+            candidate_tile_height = round(
+                native_height * content_scale * candidate_zoom
+            )
             candidate_console_width, candidate_console_height = (
                 self._calculate_console_tile_dimensions(
                     framebuffer_width,
@@ -1464,11 +1480,11 @@ class WGPUGraphicsContext(BaseGraphicsContext):
                 candidate_console_width >= config.MIN_CONSOLE_WIDTH
                 and candidate_console_height >= config.MIN_CONSOLE_HEIGHT
             ):
+                effective_zoom = candidate_zoom
                 break
-            effective_zoom -= 1
 
-        display_tile_width = native_width * content_scale * effective_zoom
-        display_tile_height = native_height * content_scale * effective_zoom
+        display_tile_width = round(native_width * content_scale * effective_zoom)
+        display_tile_height = round(native_height * content_scale * effective_zoom)
         console_width, console_height = self._calculate_console_tile_dimensions(
             framebuffer_width,
             framebuffer_height,

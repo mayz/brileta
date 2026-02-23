@@ -85,6 +85,7 @@ class DummyController:
     explore_mode: Any = None
     overlay_system: Any = None
     app: Any = None
+    clock: Any = None
     mode_stack: list[Any] = field(default_factory=list)
 
     def update_hovered_actor(self, _mouse_pos: Any) -> None:
@@ -155,6 +156,7 @@ def make_input_handler() -> tuple[InputHandler, list[tuple[Any, tuple[int, int],
         start_actor_pathfinding=start_path,
         overlay_system=overlay_system,
         app=dummy_app,
+        clock=SimpleNamespace(last_time=0.0),
     )
 
     # Create a mock active_mode that doesn't consume input
@@ -412,3 +414,60 @@ def test_overlay_mouse_event_conversion_falls_back_with_zero_converter_tile_size
 
     assert converted.position.x == 20.0
     assert converted.position.y == 20.0
+
+
+def test_mouse_wheel_is_blocked_while_interactive_overlay_is_open() -> None:
+    """World zoom input should not pass through modal overlays."""
+    ih, _ = make_input_handler()
+    mode_calls: list[input_events.InputEvent] = []
+    ih.controller.mode_stack = [
+        SimpleNamespace(handle_input=lambda e: mode_calls.append(e) or False)
+    ]
+
+    ih.controller.overlay_system = SimpleNamespace(
+        handle_input=lambda _e: False,
+        has_interactive_overlays=lambda: True,
+    )
+
+    ih.dispatch(input_events.MouseWheel(y=1.0))
+
+    assert mode_calls == []
+
+
+def test_mouse_wheel_momentum_is_suppressed_briefly_after_overlay_closes() -> None:
+    """Trackpad wheel events arriving just after menu close should be ignored."""
+    ih, _ = make_input_handler()
+    mode_calls: list[input_events.InputEvent] = []
+    ih.controller.mode_stack = [
+        SimpleNamespace(handle_input=lambda e: mode_calls.append(e) or False)
+    ]
+
+    overlay_open = True
+
+    def overlay_handle(event: input_events.InputEvent) -> bool:
+        nonlocal overlay_open
+        if (
+            isinstance(event, input_events.KeyDown)
+            and event.sym == input_events.KeySym.ESCAPE
+        ):
+            overlay_open = False
+            return True
+        return False
+
+    ih.controller.overlay_system = SimpleNamespace(
+        handle_input=overlay_handle,
+        has_interactive_overlays=lambda: overlay_open,
+    )
+
+    ih.controller.clock.last_time = 10.0
+    ih.dispatch(input_events.KeyDown(sym=input_events.KeySym.ESCAPE))
+
+    ih.controller.clock.last_time = 10.1
+    ih.dispatch(input_events.MouseWheel(y=1.0))
+    assert mode_calls == []
+
+    ih.controller.clock.last_time = (
+        10.0 + ih._POST_OVERLAY_MOUSE_WHEEL_SUPPRESS_S + 0.01
+    )
+    ih.dispatch(input_events.MouseWheel(y=1.0))
+    assert len(mode_calls) == 1

@@ -170,8 +170,14 @@ def convert_particle_to_screen_coords(
         if not viewport_system.is_visible(tile_x, tile_y):
             return None
 
-        # Convert tile coordinates to viewport coordinates (like actors do)
-        vp_x, vp_y = viewport_system.world_to_screen(tile_x, tile_y)
+        # Particle positions are stored around tile centers (e.g. x=5.5 for the
+        # center of tile 5). Convert the particle point to the top-left of its
+        # glyph quad so sub-tile motion stays visible and scales with viewport zoom.
+        world_to_screen_float = getattr(viewport_system, "world_to_screen_float", None)
+        if callable(world_to_screen_float):
+            vp_x, vp_y = world_to_screen_float(world_x - 0.5, world_y - 0.5)
+        else:
+            vp_x, vp_y = viewport_system.world_to_screen(tile_x, tile_y)
     else:
         # Fallback to old behavior if no viewport system provided
         vp_x, vp_y = world_x, world_y

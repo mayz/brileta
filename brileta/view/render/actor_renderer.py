@@ -113,6 +113,32 @@ class ActorRenderer:
                 view_origin=view_origin,
             )
 
+    def _get_viewport_display_scale(self) -> tuple[float, float]:
+        """Return world-tile-to-root-console scaling for the current viewport."""
+        return self.viewport_system.get_display_scale_factors()
+
+    def _zoomed_tile_draw_origin(
+        self,
+        root_x: float,
+        root_y: float,
+        *,
+        ground_anchor_y: float | None = None,
+    ) -> tuple[float, float]:
+        """Shift root-console origin so scaled draws stay anchored to zoomed tiles.
+
+        Backend draw methods scale around a single root-console tile cell. During
+        world-only zoom, a world tile spans multiple root-console tiles, so we
+        pre-shift the draw origin into that larger cell before the backend applies
+        its centering/anchor math.
+        """
+        viewport_scale_x, viewport_scale_y = self._get_viewport_display_scale()
+        corrected_x = root_x + (viewport_scale_x - 1.0) * 0.5
+        if ground_anchor_y is None:
+            corrected_y = root_y + (viewport_scale_y - 1.0) * 0.5
+        else:
+            corrected_y = root_y + (viewport_scale_y - 1.0) * float(ground_anchor_y)
+        return (corrected_x, corrected_y)
+
     def render_actor_outline(
         self,
         actor: Actor,
@@ -147,9 +173,12 @@ class ActorRenderer:
         # Use animation-controlled sub-tile positions when available so outlines
         # stay in sync with moving glyphs.
         if getattr(actor, "_animation_controlled", False):
-            vp_x, vp_y = vs.world_to_screen_float(actor.render_x, actor.render_y)
+            world_x = actor.render_x
+            world_y = actor.render_y
         else:
-            vp_x, vp_y = vs.world_to_screen(actor.x, actor.y)
+            world_x = float(actor.x)
+            world_y = float(actor.y)
+        vp_x, vp_y = vs.world_to_screen_float(world_x, world_y)
 
         # Apply camera fractional offset for smooth scrolling alignment
         cam_frac_x, cam_frac_y = camera_frac_offset
@@ -158,9 +187,13 @@ class ActorRenderer:
 
         root_x = view_origin[0] + vp_x
         root_y = view_origin[1] + vp_y
-        screen_x, screen_y = self.graphics.console_to_screen_coords(root_x, root_y)
+        draw_root_x, draw_root_y = self._zoomed_tile_draw_origin(root_x, root_y)
+        screen_x, screen_y = self.graphics.console_to_screen_coords(
+            draw_root_x, draw_root_y
+        )
 
         visual_scale = getattr(actor, "visual_scale", 1.0)
+        viewport_scale_x, viewport_scale_y = self._get_viewport_display_scale()
 
         self.graphics.draw_actor_outline(
             actor.ch,
@@ -168,8 +201,8 @@ class ActorRenderer:
             screen_y,
             color,
             alpha,
-            scale_x=visual_scale,
-            scale_y=visual_scale,
+            scale_x=visual_scale * viewport_scale_x,
+            scale_y=visual_scale * viewport_scale_y,
         )
 
     def render_selection_and_hover_outlines(
@@ -380,6 +413,7 @@ class ActorRenderer:
         # Get actor color with visual effects (reuse existing logic)
         final_color = self._get_actor_display_color(actor)
         visual_scale = getattr(actor, "visual_scale", 1.0)
+        viewport_scale_x, viewport_scale_y = self._get_viewport_display_scale()
 
         # Send tile background to GPU shader for actor-vs-tile contrast checks.
         tile_bg_np = game_map.light_appearance_map[actor.x, actor.y]["bg"]
@@ -395,6 +429,15 @@ class ActorRenderer:
             sprite_ground_anchor_y = float(
                 getattr(actor, "sprite_ground_anchor_y", 1.0)
             )
+            draw_root_x, draw_root_y = self._zoomed_tile_draw_origin(
+                root_x,
+                root_y,
+                ground_anchor_y=sprite_ground_anchor_y,
+            )
+            screen_pixel_x, screen_pixel_y = self.graphics.console_to_screen_coords(
+                draw_root_x,
+                draw_root_y,
+            )
             self.graphics.draw_sprite_smooth(
                 sprite_uv,
                 final_color,
@@ -402,8 +445,8 @@ class ActorRenderer:
                 screen_pixel_y,
                 light_rgb,
                 interpolation_alpha,
-                scale_x=visual_scale,
-                scale_y=visual_scale,
+                scale_x=visual_scale * viewport_scale_x,
+                scale_y=visual_scale * viewport_scale_y,
                 ground_anchor_y=sprite_ground_anchor_y,
                 world_pos=(actor.x, actor.y),
                 tile_bg=tile_bg,
@@ -418,9 +461,15 @@ class ActorRenderer:
                 interpolation_alpha,
                 visual_scale,
                 actor_world_pos=(actor.x, actor.y),
+                viewport_scale=(viewport_scale_x, viewport_scale_y),
             )
         else:
             # Priority 3: Single CP437 glyph fallback.
+            draw_root_x, draw_root_y = self._zoomed_tile_draw_origin(root_x, root_y)
+            screen_pixel_x, screen_pixel_y = self.graphics.console_to_screen_coords(
+                draw_root_x,
+                draw_root_y,
+            )
             self.graphics.draw_actor(
                 actor.ch,
                 final_color,
@@ -428,8 +477,8 @@ class ActorRenderer:
                 screen_pixel_y,
                 light_rgb,
                 interpolation_alpha,
-                scale_x=visual_scale,
-                scale_y=visual_scale,
+                scale_x=visual_scale * viewport_scale_x,
+                scale_y=visual_scale * viewport_scale_y,
                 world_pos=(actor.x, actor.y),
                 tile_bg=tile_bg,
             )
@@ -443,6 +492,7 @@ class ActorRenderer:
         interpolation_alpha: InterpolationAlpha,
         visual_scale: float,
         actor_world_pos: WorldTilePos,
+        viewport_scale: tuple[float, float],
     ) -> None:
         """Render multiple character layers at sub-tile offsets.
 
@@ -459,17 +509,19 @@ class ActorRenderer:
             actor_world_pos: World tile position of the actor.
         """
         graphics = self.graphics
+        viewport_scale_x, viewport_scale_y = viewport_scale
         for layer in layers:
             # Calculate this layer's position by adding its offset to the base position
-            layer_x = root_x + layer.offset_x
-            layer_y = root_y + layer.offset_y
+            layer_x = root_x + (layer.offset_x * viewport_scale_x)
+            layer_y = root_y + (layer.offset_y * viewport_scale_y)
+            layer_x, layer_y = self._zoomed_tile_draw_origin(layer_x, layer_y)
 
             # Convert to screen pixel coordinates
             pixel_x, pixel_y = graphics.console_to_screen_coords(layer_x, layer_y)
 
             # Combine actor scale with per-layer scale (non-uniform)
-            combined_scale_x = visual_scale * layer.scale_x
-            combined_scale_y = visual_scale * layer.scale_y
+            combined_scale_x = visual_scale * layer.scale_x * viewport_scale_x
+            combined_scale_y = visual_scale * layer.scale_y * viewport_scale_y
 
             # Render this layer
             graphics.draw_actor(
@@ -570,7 +622,7 @@ class ActorRenderer:
         if not vs.is_visible(actor.x, actor.y):
             return
 
-        vp_x, vp_y = vs.world_to_screen(actor.x, actor.y)
+        vp_x, vp_y = vs.world_to_screen_float(float(actor.x), float(actor.y))
 
         # Apply camera fractional offset for smooth scrolling alignment.
         # Without this, the outline snaps to integer tile boundaries while the
@@ -585,11 +637,12 @@ class ActorRenderer:
         screen_x, screen_y = self.graphics.console_to_screen_coords(root_x, root_y)
 
         tile_w, tile_h = self.graphics.tile_dimensions
+        viewport_scale_x, viewport_scale_y = self._get_viewport_display_scale()
         self.graphics.draw_rect_outline(
             int(screen_x),
             int(screen_y),
-            int(tile_w),
-            int(tile_h),
+            max(1, round(tile_w * viewport_scale_x)),
+            max(1, round(tile_h * viewport_scale_y)),
             color,
             alpha,
         )

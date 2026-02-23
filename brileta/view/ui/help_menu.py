@@ -40,6 +40,8 @@ class HelpMenu(Menu):
             ("I", "Inventory", self._on_inventory),
             ("R", "Reload weapon", self._on_reload),
             ("M", "Toggle mini-map", self._on_toggle_minimap),
+            ("Scroll", "Zoom viewport", None),
+            ("0 / Ctrl+0 / Cmd+0", "Reset zoom (1x)", None),
             ("1", "Weapon slot 1", lambda: self._on_weapon_slot(0)),
             ("2", "Weapon slot 2", lambda: self._on_weapon_slot(1)),
             ("`", "Dev console", self._on_dev_console),

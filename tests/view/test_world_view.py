@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 from types import SimpleNamespace
 from unittest.mock import Mock
 
 import numpy as np
 import pytest
 
+from brileta.types import InterpolationAlpha
 from brileta.view.render.actor_renderer import (
     COMBAT_OUTLINE_MAX_ALPHA,
     COMBAT_OUTLINE_MIN_ALPHA,
@@ -278,6 +280,7 @@ class TestActorParticleEmitterCache:
         view.controller = SimpleNamespace(gw=gw)
         view.particle_system = Mock()
         view.environmental_system = Mock()
+        view.effect_library = Mock()
         view._particle_emitter_actors = set()
         view._particle_emitter_actors_revision = -1
 
@@ -295,3 +298,128 @@ class TestActorParticleEmitterCache:
 
         assert view._particle_emitter_actors == {emitter_actor_2}
         emitter_effect_2.execute.assert_called_once()
+
+
+class TestAtmosphericViewportSizing:
+    """Atmospheric uniforms should use visible world-tile viewport size under zoom."""
+
+    def test_present_passes_zoomed_world_viewport_size_to_atmospheric_layer(
+        self,
+    ) -> None:
+        view = object.__new__(WorldView)
+        view.visible = True
+        view.x = 5
+        view.y = 4
+        view.width = 20
+        view.height = 12
+        view._SCROLL_PADDING = 1
+        view._shake_offset = (0.0, 0.0)
+        view._active_background_texture = None
+        view._light_overlay_texture = None
+        view._gpu_actor_lightmap_texture = None
+        view._gpu_actor_lightmap_viewport_origin = None
+        view._game_time = 0.0
+        view.camera_frac_offset = (0.0, 0.0)
+
+        active_layer = SimpleNamespace(
+            blend_mode="darken",
+            strength=0.5,
+            disable_when_overcast=False,
+            sky_exposure_threshold=0.3,
+            noise_scale=1.0,
+            noise_threshold_low=0.2,
+            noise_threshold_high=0.8,
+            tint_color=(0, 0, 0),
+            turbulence_strength=0.0,
+            turbulence_scale=1.0,
+        )
+        layer_state = SimpleNamespace(
+            drift_offset_x=0.0,
+            drift_offset_y=0.0,
+            turbulence_offset=0.0,
+        )
+        view.atmospheric_system = Mock()
+        view.atmospheric_system.get_active_layers.return_value = [
+            (active_layer, layer_state)
+        ]
+        view.atmospheric_system.config = SimpleNamespace(cloud_coverage=0.0)
+
+        view._get_directional_light = Mock(return_value=None)
+        view._apply_sun_direction_to_graphics = Mock()
+        view._render_light_overlay_gpu_compose = Mock(return_value=None)
+        view._update_tile_animations = Mock()
+        view._update_actor_particles = Mock()
+        view._render_map_unlit = Mock()
+        view._get_background_cache_key = Mock(return_value=("k",))
+        view._texture_cache = Mock()
+        view._texture_cache.get.return_value = True
+        view.controller = SimpleNamespace(
+            clock=SimpleNamespace(last_delta_time=0.016, last_time=1.0),
+            gw=SimpleNamespace(
+                player=SimpleNamespace(x=0, y=0),
+                game_map=SimpleNamespace(
+                    width=200,
+                    height=200,
+                    structural_revision=1,
+                    exploration_revision=1,
+                    decoration_seed=1,
+                ),
+                lights=[],
+            ),
+            mode_stack=[],
+        )
+        view.lighting_system = None
+        view.screen_shake = Mock()
+        view.screen_shake.update.return_value = (0.0, 0.0)
+        view.shadow_renderer = Mock()
+        view.actor_renderer = Mock()
+        view.actor_renderer.get_sorted_visible_actors.return_value = []
+        view.particle_system = Mock()
+        view.environmental_system = Mock()
+        view.environmental_system.render_effects = Mock()
+        view.decal_system = Mock()
+        view.floating_text_manager = Mock()
+        view.map_glyph_buffer = Mock()
+        view.light_source_glyph_buffer = Mock()
+
+        viewport = SimpleNamespace(
+            width_tiles=10,
+            height_tiles=6,
+            offset_x=0,
+            offset_y=0,
+            resize=Mock(),
+        )
+        camera = SimpleNamespace(world_x=0.0, world_y=0.0, set_position=Mock())
+        vs = Mock()
+        vs.viewport = viewport
+        vs.camera = camera
+        vs.update_camera = Mock()
+        vs.get_visible_bounds.return_value = SimpleNamespace(x1=30, y1=40, x2=39, y2=45)
+        vs.get_display_scale_factors.return_value = (2.0, 2.0)
+        vs.get_display_camera_fractional_offset.return_value = (0.0, 0.0)
+        view.viewport_system = vs
+
+        graphics = Mock()
+        graphics.console_to_screen_coords.side_effect = lambda x, y: (
+            x * 10.0,
+            y * 10.0,
+        )
+        graphics.set_noise_seed = Mock()
+        graphics.set_noise_tile_offset = Mock()
+        graphics.render_glyph_buffer_to_texture.return_value = object()
+        graphics.draw_background = Mock()
+        graphics.render_decals = Mock()
+        graphics.render_particles = Mock()
+        graphics.shadow_pass.return_value = nullcontext()
+        graphics.set_atmospheric_layer = Mock()
+        graphics.set_atmospheric_layer.return_value = None
+        graphics.set_actor_lighting_gpu_context = Mock()
+
+        # Call present() directly; draw() is not needed for the atmospheric sizing regression.
+        view.present(graphics, alpha=InterpolationAlpha(1.0))
+
+        assert graphics.set_atmospheric_layer.called
+        atmospheric_call = graphics.set_atmospheric_layer.call_args
+        assert atmospheric_call is not None
+        # Arg 1 is viewport_size (after viewport_offset).
+        assert atmospheric_call.args[1] == (10, 6)

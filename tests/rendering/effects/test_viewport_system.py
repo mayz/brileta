@@ -31,6 +31,17 @@ def test_update_camera_clamps_to_bounds() -> None:
     assert vs.camera.world_y == pytest.approx(2.5)
 
 
+def test_update_camera_scales_dead_zone_with_viewport_size() -> None:
+    """Dead zone should remain a fixed fraction of the visible viewport."""
+    vs = ViewportSystem(12, 9)
+    actor = cast(Actor, DummyActor(6, 6))
+
+    vs.update_camera(actor, 40, 40)
+
+    assert vs.camera.dead_zone_width == pytest.approx(4.0)
+    assert vs.camera.dead_zone_height == pytest.approx(3.0)
+
+
 def test_is_visible() -> None:
     vs = ViewportSystem(8, 6)
     vs.camera.set_position(5.0, 5.0)
