@@ -125,10 +125,10 @@ static inline double rng_next_double(WfcRng *rng) {
      * leaning on lower bits, which are the weakest bits for xoshiro/xoroshiro
      * family generators.
      */
-    uint64_t hi = (uint64_t)(rng_next_u32(rng) >> 5);  /* 27 bits */
-    uint64_t lo = (uint64_t)(rng_next_u32(rng) >> 6);  /* 26 bits */
-    uint64_t mantissa = (hi << 26) | lo;               /* 53 bits */
-    return (double)mantissa * (1.0 / 9007199254740992.0);  /* 2^-53 */
+    uint64_t hi = (uint64_t)(rng_next_u32(rng) >> 5);     /* 27 bits */
+    uint64_t lo = (uint64_t)(rng_next_u32(rng) >> 6);     /* 26 bits */
+    uint64_t mantissa = (hi << 26) | lo;                  /* 53 bits */
+    return (double)mantissa * (1.0 / 9007199254740992.0); /* 2^-53 */
 }
 
 /* ------------------------------------------------------------------ */
@@ -148,16 +148,20 @@ typedef struct {
 } MinHeap;
 
 static inline int heap_less(const HeapEntry *a, const HeapEntry *b) {
-    if (a->entropy < b->entropy) return 1;
-    if (a->entropy > b->entropy) return 0;
+    if (a->entropy < b->entropy)
+        return 1;
+    if (a->entropy > b->entropy)
+        return 0;
     return a->counter < b->counter;
 }
 
 static int heap_init(MinHeap *heap, int capacity) {
-    if (capacity < 64) capacity = 64;
+    if (capacity < 64)
+        capacity = 64;
 
     heap->data = (HeapEntry *)malloc(sizeof(HeapEntry) * capacity);
-    if (!heap->data) return -1;
+    if (!heap->data)
+        return -1;
 
     heap->size = 0;
     heap->capacity = capacity;
@@ -174,10 +178,9 @@ static void heap_free(MinHeap *heap) {
 static int heap_push(MinHeap *heap, HeapEntry entry) {
     if (heap->size >= heap->capacity) {
         int new_capacity = heap->capacity * 2;
-        HeapEntry *new_data = (HeapEntry *)realloc(
-            heap->data, sizeof(HeapEntry) * new_capacity
-        );
-        if (!new_data) return -1;
+        HeapEntry *new_data = (HeapEntry *)realloc(heap->data, sizeof(HeapEntry) * new_capacity);
+        if (!new_data)
+            return -1;
 
         heap->data = new_data;
         heap->capacity = new_capacity;
@@ -188,7 +191,8 @@ static int heap_push(MinHeap *heap, HeapEntry entry) {
 
     while (i > 0) {
         int parent = (i - 1) / 2;
-        if (!heap_less(&heap->data[i], &heap->data[parent])) break;
+        if (!heap_less(&heap->data[i], &heap->data[parent]))
+            break;
 
         HeapEntry temp = heap->data[i];
         heap->data[i] = heap->data[parent];
@@ -212,21 +216,16 @@ static HeapEntry heap_pop(MinHeap *heap) {
             int right = left + 1;
             int smallest = i;
 
-            if (
-                left < heap->size
-                && heap_less(&heap->data[left], &heap->data[smallest])
-            ) {
+            if (left < heap->size && heap_less(&heap->data[left], &heap->data[smallest])) {
                 smallest = left;
             }
 
-            if (
-                right < heap->size
-                && heap_less(&heap->data[right], &heap->data[smallest])
-            ) {
+            if (right < heap->size && heap_less(&heap->data[right], &heap->data[smallest])) {
                 smallest = right;
             }
 
-            if (smallest == i) break;
+            if (smallest == i)
+                break;
 
             HeapEntry temp = heap->data[i];
             heap->data[i] = heap->data[smallest];
@@ -249,10 +248,12 @@ typedef struct {
 } IntStack;
 
 static int stack_init(IntStack *stack, int capacity) {
-    if (capacity < 64) capacity = 64;
+    if (capacity < 64)
+        capacity = 64;
 
     stack->data = (int *)malloc(sizeof(int) * capacity);
-    if (!stack->data) return -1;
+    if (!stack->data)
+        return -1;
 
     stack->size = 0;
     stack->capacity = capacity;
@@ -270,7 +271,8 @@ static int stack_push(IntStack *stack, int value) {
     if (stack->size >= stack->capacity) {
         int new_capacity = stack->capacity * 2;
         int *new_data = (int *)realloc(stack->data, sizeof(int) * new_capacity);
-        if (!new_data) return -1;
+        if (!new_data)
+            return -1;
 
         stack->data = new_data;
         stack->capacity = new_capacity;
@@ -318,7 +320,8 @@ static double calculate_entropy(WfcSolver *solver, int idx) {
     uint8_t mask = solver->wave[idx];
     uint8_t count = popcount_u8(mask);
 
-    if (count <= 1) return 0.0;
+    if (count <= 1)
+        return 0.0;
 
     double total_weight = 0.0;
     for (int bit = 0; bit < solver->num_patterns; bit++) {
@@ -327,7 +330,8 @@ static double calculate_entropy(WfcSolver *solver, int idx) {
         }
     }
 
-    if (total_weight == 0.0) return 0.0;
+    if (total_weight == 0.0)
+        return 0.0;
 
     double entropy = 0.0;
     for (int bit = 0; bit < solver->num_patterns; bit++) {
@@ -371,8 +375,10 @@ static int find_min_entropy_cell(WfcSolver *solver, int *out_idx) {
         uint8_t mask = solver->wave[entry.idx];
         uint8_t count = popcount_u8(mask);
 
-        if (count == 0) return 2;
-        if (count == 1) continue;
+        if (count == 0)
+            return 2;
+        if (count == 1)
+            continue;
 
         /*
          * The heap is push-only (we never decrease-key in place), so entries can
@@ -384,7 +390,8 @@ static int find_min_entropy_cell(WfcSolver *solver, int *out_idx) {
             updated.entropy = current_entropy;
             updated.counter = solver->heap_counter++;
             updated.idx = entry.idx;
-            if (heap_push(&solver->heap, updated) < 0) return -1;
+            if (heap_push(&solver->heap, updated) < 0)
+                return -1;
             continue;
         }
 
@@ -400,7 +407,8 @@ static int find_min_entropy_cell(WfcSolver *solver, int *out_idx) {
  * Returns selected bit index, or -1 on contradiction.
  */
 static int weighted_choice(WfcSolver *solver, uint8_t mask) {
-    if (mask == 0) return -1;
+    if (mask == 0)
+        return -1;
 
     int bits[8];
     double weights[8];
@@ -414,7 +422,8 @@ static int weighted_choice(WfcSolver *solver, uint8_t mask) {
         }
     }
 
-    if (count == 0) return -1;
+    if (count == 0)
+        return -1;
 
     double total = 0.0;
     for (int i = 0; i < count; i++) {
@@ -427,7 +436,8 @@ static int weighted_choice(WfcSolver *solver, uint8_t mask) {
      */
     if (total == 0.0) {
         int pick = (int)(rng_next_double(&solver->rng) * (double)count);
-        if (pick >= count) pick = count - 1;
+        if (pick >= count)
+            pick = count - 1;
         return bits[pick];
     }
 
@@ -436,7 +446,8 @@ static int weighted_choice(WfcSolver *solver, uint8_t mask) {
 
     for (int i = 0; i < count; i++) {
         cumulative += weights[i];
-        if (r <= cumulative) return bits[i];
+        if (r <= cumulative)
+            return bits[i];
     }
 
     return bits[count - 1];
@@ -450,15 +461,12 @@ static int weighted_choice(WfcSolver *solver, uint8_t mask) {
  *  -1: out of memory
  *   1: contradiction
  */
-static int propagate(
-    WfcSolver *solver,
-    int start_idx,
-    int *uncollapsed_cells
-) {
+static int propagate(WfcSolver *solver, int start_idx, int *uncollapsed_cells) {
     static const int DIR_DX[4] = {0, 1, 0, -1};
     static const int DIR_DY[4] = {-1, 0, 1, 0};
 
-    if (stack_push(&solver->stack, start_idx) < 0) return -1;
+    if (stack_push(&solver->stack, start_idx) < 0)
+        return -1;
     /* in_stack avoids duplicate entries and keeps propagation bounded. */
     solver->in_stack[start_idx] = 1;
 
@@ -467,7 +475,8 @@ static int propagate(
 
     while (solver->stack.size > 0) {
         iterations++;
-        if (iterations >= max_iterations) return 1;
+        if (iterations >= max_iterations)
+            return 1;
 
         int idx = stack_pop(&solver->stack);
         solver->in_stack[idx] = 0;
@@ -480,12 +489,7 @@ static int propagate(
             int nx = x + DIR_DX[dir];
             int ny = y + DIR_DY[dir];
 
-            if (
-                nx < 0
-                || nx >= solver->width
-                || ny < 0
-                || ny >= solver->height
-            ) {
+            if (nx < 0 || nx >= solver->width || ny < 0 || ny >= solver->height) {
                 continue;
             }
 
@@ -496,13 +500,13 @@ static int propagate(
                 continue;
             }
 
-            const uint8_t *direction_table =
-                solver->propagation_masks + (dir * 256);
+            const uint8_t *direction_table = solver->propagation_masks + (dir * 256);
             uint8_t valid_for_neighbor = direction_table[current_mask];
             uint8_t new_mask = neighbor_mask & valid_for_neighbor;
 
             if (new_mask != neighbor_mask) {
-                if (new_mask == 0) return 1;
+                if (new_mask == 0)
+                    return 1;
 
                 solver->wave[nidx] = new_mask;
 
@@ -512,13 +516,15 @@ static int propagate(
                  */
                 uint8_t new_count = popcount_u8(new_mask);
                 if (new_count > 1) {
-                    if (push_entropy(solver, nidx) < 0) return -1;
+                    if (push_entropy(solver, nidx) < 0)
+                        return -1;
                 } else {
                     (*uncollapsed_cells)--;
                 }
 
                 if (!solver->in_stack[nidx]) {
-                    if (stack_push(&solver->stack, nidx) < 0) return -1;
+                    if (stack_push(&solver->stack, nidx) < 0)
+                        return -1;
                     solver->in_stack[nidx] = 1;
                 }
             }
@@ -547,9 +553,11 @@ static int wfc_solve_inner(WfcSolver *solver) {
      */
     for (int idx = 0; idx < solver->size; idx++) {
         uint8_t count = popcount_u8(solver->wave[idx]);
-        if (count == 0) return 1;
+        if (count == 0)
+            return 1;
         if (count > 1) {
-            if (push_entropy(solver, idx) < 0) return -1;
+            if (push_entropy(solver, idx) < 0)
+                return -1;
             uncollapsed_cells++;
         }
     }
@@ -559,24 +567,30 @@ static int wfc_solve_inner(WfcSolver *solver) {
 
     while (uncollapsed_cells > 0) {
         iterations++;
-        if (iterations >= max_iterations) return 1;
+        if (iterations >= max_iterations)
+            return 1;
 
         int cell_idx;
         int rc = find_min_entropy_cell(solver, &cell_idx);
-        if (rc == -1) return -1;
-        if (rc == 2) return 1;
-        if (rc == 1) break;
+        if (rc == -1)
+            return -1;
+        if (rc == 2)
+            return 1;
+        if (rc == 1)
+            break;
 
         uint8_t mask = solver->wave[cell_idx];
         int chosen_bit = weighted_choice(solver, mask);
-        if (chosen_bit < 0) return 1;
+        if (chosen_bit < 0)
+            return 1;
 
         solver->wave[cell_idx] = (uint8_t)(1U << chosen_bit);
         uncollapsed_cells--;
 
         /* Collapse one cell, then propagate constraints outward. */
         rc = propagate(solver, cell_idx, &uncollapsed_cells);
-        if (rc != 0) return rc;
+        if (rc != 0)
+            return rc;
     }
 
     for (int i = 0; i < solver->size; i++) {
@@ -641,17 +655,15 @@ PyObject *brileta_native_wfc_solve(PyObject *self, PyObject *args) {
 
     PyObject *result = NULL;
 
-    if (!PyArg_ParseTuple(
-            args,
-            "iiiOOOK",
-            &width,
-            &height,
-            &num_patterns,
-            &propagation_obj,
-            &weights_obj,
-            &wave_obj,
-            &seed
-        )) {
+    if (!PyArg_ParseTuple(args,
+                          "iiiOOOK",
+                          &width,
+                          &height,
+                          &num_patterns,
+                          &propagation_obj,
+                          &weights_obj,
+                          &wave_obj,
+                          &seed)) {
         return NULL;
     }
 
@@ -661,78 +673,53 @@ PyObject *brileta_native_wfc_solve(PyObject *self, PyObject *args) {
     }
 
     if (num_patterns <= 0 || num_patterns > 8) {
-        PyErr_SetString(
-            PyExc_ValueError,
-            "num_patterns must be in range [1, 8]"
-        );
+        PyErr_SetString(PyExc_ValueError, "num_patterns must be in range [1, 8]");
         return NULL;
     }
 
-    if (PyObject_GetBuffer(
-            propagation_obj,
-            &propagation_buf,
-            PyBUF_C_CONTIGUOUS | PyBUF_FORMAT
-        ) < 0) {
+    if (PyObject_GetBuffer(propagation_obj, &propagation_buf, PyBUF_C_CONTIGUOUS | PyBUF_FORMAT) <
+        0) {
         goto cleanup;
     }
 
     int propagation_ok =
-        propagation_buf.ndim == 2
-        && propagation_buf.itemsize == 1
-        && (strcmp(propagation_buf.format, "B") == 0
-            || strcmp(propagation_buf.format, "b") == 0)
-        && propagation_buf.shape[0] == 4
-        && propagation_buf.shape[1] == 256;
+        propagation_buf.ndim == 2 && propagation_buf.itemsize == 1 &&
+        (strcmp(propagation_buf.format, "B") == 0 || strcmp(propagation_buf.format, "b") == 0) &&
+        propagation_buf.shape[0] == 4 && propagation_buf.shape[1] == 256;
 
     if (!propagation_ok) {
         PyErr_SetString(
             PyExc_TypeError,
-            "propagation_masks must be a 2D uint8 C-contiguous array with shape (4, 256)"
-        );
+            "propagation_masks must be a 2D uint8 C-contiguous array with shape (4, 256)");
         goto cleanup;
     }
 
-    if (PyObject_GetBuffer(
-            weights_obj,
-            &weights_buf,
-            PyBUF_C_CONTIGUOUS | PyBUF_FORMAT
-        ) < 0) {
+    if (PyObject_GetBuffer(weights_obj, &weights_buf, PyBUF_C_CONTIGUOUS | PyBUF_FORMAT) < 0) {
         goto cleanup;
     }
 
-    int weights_ok =
-        weights_buf.ndim == 1
-        && strcmp(weights_buf.format, "d") == 0
-        && weights_buf.shape[0] == num_patterns;
+    int weights_ok = weights_buf.ndim == 1 && strcmp(weights_buf.format, "d") == 0 &&
+                     weights_buf.shape[0] == num_patterns;
 
     if (!weights_ok) {
         PyErr_SetString(
             PyExc_TypeError,
-            "pattern_weights must be a 1D float64 C-contiguous array with length num_patterns"
-        );
+            "pattern_weights must be a 1D float64 C-contiguous array with length num_patterns");
         goto cleanup;
     }
 
-    if (PyObject_GetBuffer(
-            wave_obj,
-            &wave_buf,
-            PyBUF_C_CONTIGUOUS | PyBUF_FORMAT
-        ) < 0) {
+    if (PyObject_GetBuffer(wave_obj, &wave_buf, PyBUF_C_CONTIGUOUS | PyBUF_FORMAT) < 0) {
         goto cleanup;
     }
 
-    int wave_ok =
-        wave_buf.ndim == 2
-        && wave_buf.itemsize == 1
-        && (strcmp(wave_buf.format, "B") == 0 || strcmp(wave_buf.format, "b") == 0)
-        && wave_buf.shape[0] == width
-        && wave_buf.shape[1] == height;
+    int wave_ok = wave_buf.ndim == 2 && wave_buf.itemsize == 1 &&
+                  (strcmp(wave_buf.format, "B") == 0 || strcmp(wave_buf.format, "b") == 0) &&
+                  wave_buf.shape[0] == width && wave_buf.shape[1] == height;
 
     if (!wave_ok) {
         PyErr_SetString(
             PyExc_TypeError,
-            "initial_wave must be a 2D uint8 C-contiguous array with shape (width, height)"
-        );
+            "initial_wave must be a 2D uint8 C-contiguous array with shape (width, height)");
         goto cleanup;
     }
 
@@ -752,10 +739,7 @@ PyObject *brileta_native_wfc_solve(PyObject *self, PyObject *args) {
     uint8_t all_patterns_mask = (uint8_t)((1U << num_patterns) - 1U);
     for (int i = 0; i < size; i++) {
         if ((wave_copy[i] & (uint8_t)(~all_patterns_mask)) != 0) {
-            PyErr_SetString(
-                PyExc_ValueError,
-                "initial_wave contains bits outside num_patterns"
-            );
+            PyErr_SetString(PyExc_ValueError, "initial_wave contains bits outside num_patterns");
             goto cleanup;
         }
     }
@@ -791,11 +775,10 @@ PyObject *brileta_native_wfc_solve(PyObject *self, PyObject *args) {
     rng_init(&solver.rng, (uint64_t)seed);
 
     int rc;
-    Py_BEGIN_ALLOW_THREADS
-    rc = wfc_solve_inner(&solver);
+    Py_BEGIN_ALLOW_THREADS rc = wfc_solve_inner(&solver);
     Py_END_ALLOW_THREADS
 
-    heap = solver.heap;
+        heap = solver.heap;
     stack = solver.stack;
 
     if (rc < 0) {
@@ -809,7 +792,8 @@ PyObject *brileta_native_wfc_solve(PyObject *self, PyObject *args) {
     }
 
     result = PyList_New(width);
-    if (!result) goto cleanup;
+    if (!result)
+        goto cleanup;
 
     for (int x = 0; x < width; x++) {
         PyObject *column = PyList_New(height);

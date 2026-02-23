@@ -1,0 +1,19 @@
+# Clang-tidy configuration for brileta native C extensions.
+#
+# Enables bugprone and performance checks - the highest-value categories for
+# catching subtle C bugs (buffer overflows, sizeof misuse, use-after-free).
+# Targeted exclusions suppress false positives from Python C API patterns.
+
+Checks: >
+  -*,
+  bugprone-*,
+  performance-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-narrowing-conversions,
+  -bugprone-implicit-widening-of-multiplication-result
+
+# Only warn on our own headers, not third-party (FastNoiseLite.h).
+HeaderFilterRegex: '_native.*\.c$'
+
+# Treat all warnings as errors so CI fails on new issues.
+WarningsAsErrors: '*'

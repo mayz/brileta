@@ -16,19 +16,20 @@
 /* ------------------------------------------------------------------ */
 
 typedef struct {
-    double f;    /* f-score (g + heuristic) */
-    int    idx;  /* flat grid index */
+    double f; /* f-score (g + heuristic) */
+    int idx;  /* flat grid index */
 } HeapEntry;
 
 typedef struct {
     HeapEntry *data;
-    int        size;
-    int        capacity;
+    int size;
+    int capacity;
 } MinHeap;
 
 static int heap_init(MinHeap *h, int capacity) {
     h->data = (HeapEntry *)malloc(sizeof(HeapEntry) * capacity);
-    if (!h->data) return -1;
+    if (!h->data)
+        return -1;
     h->size = 0;
     h->capacity = capacity;
     return 0;
@@ -50,7 +51,8 @@ static inline void heap_swap(MinHeap *h, int *pos, int a, int b) {
 static void heap_sift_up(MinHeap *h, int *pos, int i) {
     while (i > 0) {
         int parent = (i - 1) / 2;
-        if (h->data[parent].f <= h->data[i].f) break;
+        if (h->data[parent].f <= h->data[i].f)
+            break;
         heap_swap(h, pos, parent, i);
         i = parent;
     }
@@ -65,7 +67,8 @@ static void heap_sift_down(MinHeap *h, int *pos, int i) {
             smallest = left;
         if (right < h->size && h->data[right].f < h->data[smallest].f)
             smallest = right;
-        if (smallest == i) break;
+        if (smallest == i)
+            break;
         heap_swap(h, pos, smallest, i);
         i = smallest;
     }
@@ -79,7 +82,8 @@ static void heap_sift_down(MinHeap *h, int *pos, int i) {
 static int heap_push_or_decrease(MinHeap *h, int *pos, double f, int idx) {
     int p = pos[idx];
     if (p >= 0) {
-        if (f >= h->data[p].f) return 0;
+        if (f >= h->data[p].f)
+            return 0;
         h->data[p].f = f;
         heap_sift_up(h, pos, p);
         return 0;
@@ -87,9 +91,11 @@ static int heap_push_or_decrease(MinHeap *h, int *pos, double f, int idx) {
 
     if (h->size >= h->capacity) {
         int new_cap = h->capacity * 2;
-        if (new_cap < 256) new_cap = 256;
+        if (new_cap < 256)
+            new_cap = 256;
         HeapEntry *new_data = (HeapEntry *)realloc(h->data, sizeof(HeapEntry) * new_cap);
-        if (!new_data) return -1;
+        if (!new_data)
+            return -1;
         h->data = new_data;
         h->capacity = new_cap;
     }
@@ -119,7 +125,7 @@ static HeapEntry heap_pop(MinHeap *h, int *pos) {
 /* ------------------------------------------------------------------ */
 
 static const double SQRT2 = 1.4142135623730951;
-static const double SQRT2_MINUS_2 = -0.5857864376269049;  /* sqrt(2) - 2 */
+static const double SQRT2_MINUS_2 = -0.5857864376269049; /* sqrt(2) - 2 */
 /*
  * Slight heuristic inflation reduces search fan-out in dense obstacle maps.
  * Costs remain octile; this only changes node expansion order.
@@ -127,8 +133,8 @@ static const double SQRT2_MINUS_2 = -0.5857864376269049;  /* sqrt(2) - 2 */
 static const double HEURISTIC_WEIGHT = 1.01;
 
 /* 8 neighbors: dx, dy, cost_multiplier */
-static const int    DX[8] = {-1,  1,  0,  0, -1, -1,  1,  1};
-static const int    DY[8] = { 0,  0, -1,  1, -1,  1, -1,  1};
+static const int DX[8] = {-1, 1, 0, 0, -1, -1, 1, 1};
+static const int DY[8] = {0, 0, -1, 1, -1, 1, -1, 1};
 static inline double octile_h_from_deltas(int dx, int dy) {
     int mn = dx < dy ? dx : dy;
     return (double)(dx + dy) + SQRT2_MINUS_2 * (double)mn;
@@ -149,10 +155,7 @@ static inline double octile_h_from_deltas(int dx, int dy) {
  * If no path exists, *out_len = 0.
  */
 static int astar_search(
-    const short *cost, int w, int h,
-    int sx, int sy, int gx, int gy,
-    int *out_path, int *out_len
-) {
+    const short *cost, int w, int h, int sx, int sy, int gx, int gy, int *out_path, int *out_len) {
     int size = w * h;
     int start_idx = sx * h + sy;
     int goal_idx = gx * h + gy;
@@ -160,24 +163,30 @@ static int astar_search(
     *out_len = 0;
 
     /* Quick exit: start or goal is blocked. */
-    if (cost[start_idx] == 0 || cost[goal_idx] == 0) return 0;
+    if (cost[start_idx] == 0 || cost[goal_idx] == 0)
+        return 0;
 
     /* Allocate working arrays. */
     double *g_score = (double *)malloc(sizeof(double) * size);
-    int   *came_from = (int *)malloc(sizeof(int) * size);
-    char  *closed = (char *)calloc(size, 1);
-    int   *heap_pos = (int *)malloc(sizeof(int) * size);
-    int   *goal_dx = (int *)malloc(sizeof(int) * w);
-    int   *goal_dy = (int *)malloc(sizeof(int) * h);
+    int *came_from = (int *)malloc(sizeof(int) * size);
+    char *closed = (char *)calloc(size, 1);
+    int *heap_pos = (int *)malloc(sizeof(int) * size);
+    int *goal_dx = (int *)malloc(sizeof(int) * w);
+    int *goal_dy = (int *)malloc(sizeof(int) * h);
 
     if (!g_score || !came_from || !closed || !heap_pos || !goal_dx || !goal_dy) {
-        free(g_score); free(came_from); free(closed); free(heap_pos);
-        free(goal_dx); free(goal_dy);
+        free(g_score);
+        free(came_from);
+        free(closed);
+        free(heap_pos);
+        free(goal_dx);
+        free(goal_dy);
         return -1;
     }
 
     /* Initialize g_score to infinity. */
-    for (int i = 0; i < size; i++) g_score[i] = 1e30;
+    for (int i = 0; i < size; i++)
+        g_score[i] = 1e30;
     g_score[start_idx] = 0.0;
     memset(came_from, -1, sizeof(int) * size);
     /*
@@ -198,19 +207,25 @@ static int astar_search(
     MinHeap heap;
     int initial_cap = size < 256 ? size : 256;
     if (heap_init(&heap, initial_cap) < 0) {
-        free(g_score); free(came_from); free(closed); free(heap_pos);
-        free(goal_dx); free(goal_dy);
+        free(g_score);
+        free(came_from);
+        free(closed);
+        free(heap_pos);
+        free(goal_dx);
+        free(goal_dy);
         return -1;
     }
-    if (heap_push_or_decrease(
-            &heap,
-            heap_pos,
-            HEURISTIC_WEIGHT * octile_h_from_deltas(goal_dx[sx], goal_dy[sy]),
-            start_idx
-        ) < 0) {
+    if (heap_push_or_decrease(&heap,
+                              heap_pos,
+                              HEURISTIC_WEIGHT * octile_h_from_deltas(goal_dx[sx], goal_dy[sy]),
+                              start_idx) < 0) {
         heap_free(&heap);
-        free(g_score); free(came_from); free(closed); free(heap_pos);
-        free(goal_dx); free(goal_dy);
+        free(g_score);
+        free(came_from);
+        free(closed);
+        free(heap_pos);
+        free(goal_dx);
+        free(goal_dy);
         return -1;
     }
 
@@ -220,7 +235,10 @@ static int astar_search(
         HeapEntry top = heap_pop(&heap, heap_pos);
         int ci = top.idx;
 
-        if (ci == goal_idx) { found = 1; break; }
+        if (ci == goal_idx) {
+            found = 1;
+            break;
+        }
         closed[ci] = 1;
 
         double cg = g_score[ci];
@@ -230,24 +248,32 @@ static int astar_search(
         for (int d = 0; d < 8; d++) {
             int nx = cx + DX[d];
             int ny = cy + DY[d];
-            if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
+            if (nx < 0 || nx >= w || ny < 0 || ny >= h)
+                continue;
 
             int ni = nx * h + ny;
-            if (closed[ni]) continue;
+            if (closed[ni])
+                continue;
 
             short nc = cost[ni];
-            if (nc == 0) continue;
+            if (nc == 0)
+                continue;
 
             double mult = d < 4 ? 1.0 : SQRT2;
             double tent_g = cg + (double)nc * mult;
             if (tent_g < g_score[ni]) {
                 g_score[ni] = tent_g;
                 came_from[ni] = ci;
-                double f = tent_g + HEURISTIC_WEIGHT * octile_h_from_deltas(goal_dx[nx], goal_dy[ny]);
+                double f =
+                    tent_g + HEURISTIC_WEIGHT * octile_h_from_deltas(goal_dx[nx], goal_dy[ny]);
                 if (heap_push_or_decrease(&heap, heap_pos, f, ni) < 0) {
                     heap_free(&heap);
-                    free(g_score); free(came_from); free(closed); free(heap_pos);
-                    free(goal_dx); free(goal_dy);
+                    free(g_score);
+                    free(came_from);
+                    free(closed);
+                    free(heap_pos);
+                    free(goal_dx);
+                    free(goal_dy);
                     return -1;
                 }
             }
@@ -306,8 +332,7 @@ PyObject *brileta_native_astar(PyObject *self, PyObject *args) {
     /* Validate format: must be int16 ('h'). */
     if (buf.ndim != 2 || strcmp(buf.format, "h") != 0) {
         PyBuffer_Release(&buf);
-        PyErr_SetString(PyExc_TypeError,
-                        "cost must be a 2D int16 C-contiguous array");
+        PyErr_SetString(PyExc_TypeError, "cost must be a 2D int16 C-contiguous array");
         return NULL;
     }
 
@@ -316,11 +341,9 @@ PyObject *brileta_native_astar(PyObject *self, PyObject *args) {
     const short *cost = (const short *)buf.buf;
 
     /* Bounds check. */
-    if (sx < 0 || sx >= w || sy < 0 || sy >= h ||
-        gx < 0 || gx >= w || gy < 0 || gy >= h) {
+    if (sx < 0 || sx >= w || sy < 0 || sy >= h || gx < 0 || gx >= w || gy < 0 || gy >= h) {
         PyBuffer_Release(&buf);
-        PyErr_SetString(PyExc_ValueError,
-                        "start or goal is out of bounds");
+        PyErr_SetString(PyExc_ValueError, "start or goal is out of bounds");
         return NULL;
     }
 
@@ -339,11 +362,10 @@ PyObject *brileta_native_astar(PyObject *self, PyObject *args) {
 
     int path_len;
     int rc;
-    Py_BEGIN_ALLOW_THREADS
-    rc = astar_search(cost, w, h, sx, sy, gx, gy, path_buf, &path_len);
+    Py_BEGIN_ALLOW_THREADS rc = astar_search(cost, w, h, sx, sy, gx, gy, path_buf, &path_len);
     Py_END_ALLOW_THREADS
 
-    PyBuffer_Release(&buf);
+        PyBuffer_Release(&buf);
 
     if (rc < 0) {
         free(path_buf);
@@ -352,7 +374,10 @@ PyObject *brileta_native_astar(PyObject *self, PyObject *args) {
 
     /* Build Python list of (x, y) tuples. */
     PyObject *result = PyList_New(path_len);
-    if (!result) { free(path_buf); return NULL; }
+    if (!result) {
+        free(path_buf);
+        return NULL;
+    }
 
     for (int i = 0; i < path_len; i++) {
         int idx = path_buf[i];

@@ -1,10 +1,20 @@
-.PHONY: all format ruff-check lint typecheck test check clean run
+.PHONY: all format ruff-format clang-format ruff-check clang-tidy lint typecheck test check clean run
 
 # Globally silence `make` output
 MAKEFLAGS += --silent
 
 NATIVE_STAMP := .venv/.native-build-stamp
 NATIVE_SOURCES := setup.py pyproject.toml $(wildcard brileta/util/native/*.c brileta/util/native/*.h)
+
+# C source files to format and lint (excludes third-party headers).
+NATIVE_C_SOURCES := $(wildcard brileta/util/native/_native*.c)
+
+# Python include path for clang-tidy (so it can find Python.h).
+PYTHON_INCLUDE := $(shell uv run python -c "import sysconfig; print(sysconfig.get_path('include'))" 2>/dev/null)
+
+# macOS SDK sysroot for system headers (empty on other platforms).
+SYSROOT := $(shell xcrun --show-sdk-path 2>/dev/null)
+SYSROOT_FLAGS := $(if $(SYSROOT),-isysroot $(SYSROOT))
 
 # Point git at the version-controlled hooks directory.
 $(shell git config core.hooksPath .githooks)
@@ -26,16 +36,33 @@ $(NATIVE_STAMP): $(NATIVE_SOURCES)
 	mkdir -p $(dir $@)
 	touch $@
 
-# Run all static analysis (format + ruff + types)
-lint: format ruff-check typecheck
+# Run all static analysis (format + ruff + types + clang-tidy)
+lint: format ruff-check typecheck clang-tidy
 
-# Format code
-format:
+# Format all code (Python + C)
+format: ruff-format clang-format
+
+# Format Python code
+ruff-format:
 	uv run ruff format .
+
+# Format C source files
+clang-format:
+	uv run clang-format -i $(NATIVE_C_SOURCES)
 
 # Run ruff linting (auto-fix what it can)
 ruff-check:
 	uv run ruff check --fix .
+
+# Run clang-tidy on C source files. Silent on success, shows only
+# diagnostics on failure (filters out noisy progress/system-header counts).
+clang-tidy:
+	@output=$$(uv run clang-tidy --quiet $(NATIVE_C_SOURCES) -- -I$(PYTHON_INCLUDE) $(SYSROOT_FLAGS) 2>&1); \
+	rc=$$?; \
+	if [ $$rc -ne 0 ]; then \
+		echo "$$output" | grep -v -E '^\[|warnings generated'; \
+		exit $$rc; \
+	fi
 
 # Run type checking
 typecheck:

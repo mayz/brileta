@@ -61,6 +61,8 @@ invalid-assignment = "ignore"  # Mock assignments in tests
 
 [dependency-groups]
 dev = [
+    "clang-format>=19.0",
+    "clang-tidy>=19.0",
     "py-spy>=0.4.0",
     "pyinstaller>=6.17.0",
     "pytest>=8.4.0",
