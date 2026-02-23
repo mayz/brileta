@@ -6,7 +6,6 @@ from types import SimpleNamespace
 
 import pytest
 
-from brileta import config
 from brileta.types import TileDimensions
 from brileta.view.frame_manager import FrameManager
 
@@ -71,11 +70,7 @@ def _build_layout_stub(
         message_log_view=message_log_view,
         equipment_view=equipment_view,
         controller=SimpleNamespace(
-            gw=SimpleNamespace(
-                game_map=SimpleNamespace(
-                    width=config.MAP_WIDTH, height=config.MAP_HEIGHT
-                )
-            )
+            gw=SimpleNamespace(game_map=SimpleNamespace(width=120, height=80))
         ),
         _clamp_tiles=FrameManager._clamp_tiles,
         _compute_ui_scale=FrameManager._compute_ui_scale,
