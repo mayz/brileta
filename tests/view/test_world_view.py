@@ -218,7 +218,6 @@ class TestTileEdgeTransitionMetadata:
         drawn_mask = np.array([[True, False], [True, False]], dtype=np.bool_)
         bg_rgb = np.zeros((2, 2, 3), dtype=np.uint8)
         bg_rgb[0, 0] = (10, 10, 10)  # rigid neighbor (west)
-
         neighbor_mask, neighbor_bg = _compute_tile_edge_transition_metadata(
             tile_id_window=tile_ids,
             edge_blend_window=edge_blend,
@@ -238,3 +237,61 @@ class TestTileEdgeTransitionMetadata:
             int(neighbor_mask[0, 0])
             & (1 << _EDGE_BLEND_CARDINAL_DIRECTIONS.index((1, 0)))
         ) == 0
+
+
+class TestActorParticleEmitterCache:
+    """Tests for WorldView actor particle emitter caching."""
+
+    def test_rebuilds_particle_emitter_cache_only_when_actor_revision_changes(
+        self,
+    ) -> None:
+        emitter_effect_1 = Mock()
+        emitter_effect_1.should_emit.return_value = True
+        visuals_1 = Mock()
+        visuals_1.has_continuous_effects.return_value = True
+        visuals_1.continuous_effects = [emitter_effect_1]
+
+        emitter_effect_2 = Mock()
+        emitter_effect_2.should_emit.return_value = True
+        visuals_2 = Mock()
+        visuals_2.has_continuous_effects.return_value = True
+        visuals_2.continuous_effects = [emitter_effect_2]
+
+        emitter_actor_1 = Mock()
+        emitter_actor_1.x = 2
+        emitter_actor_1.y = 3
+        emitter_actor_1.visual_effects = visuals_1
+
+        emitter_actor_2 = Mock()
+        emitter_actor_2.x = 4
+        emitter_actor_2.y = 5
+        emitter_actor_2.visual_effects = visuals_2
+
+        static_actor = Mock()
+        static_actor.visual_effects = None
+
+        gw = SimpleNamespace(
+            actors=[emitter_actor_1, static_actor],
+            actors_revision=1,
+        )
+        view = object.__new__(WorldView)
+        view.controller = SimpleNamespace(gw=gw)
+        view.particle_system = Mock()
+        view.environmental_system = Mock()
+        view._particle_emitter_actors = set()
+        view._particle_emitter_actors_revision = -1
+
+        WorldView._update_actor_particles(view)
+
+        assert view._particle_emitter_actors == {emitter_actor_1}
+        emitter_effect_1.execute.assert_called_once()
+        emitter_effect_2.execute.assert_not_called()
+
+        # Actor list changed, so bump revision and rebuild cache to the new emitter.
+        gw.actors = [emitter_actor_2]
+        gw.actors_revision = 2
+
+        WorldView._update_actor_particles(view)
+
+        assert view._particle_emitter_actors == {emitter_actor_2}
+        emitter_effect_2.execute.assert_called_once()

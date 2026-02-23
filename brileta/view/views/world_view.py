@@ -143,6 +143,23 @@ class WorldView(View):
         # Initialize dimension-dependent resources (glyph buffers, particle system,
         # etc.) via set_bounds. This avoids duplicating the creation logic.
         self.set_bounds(0, 0, DEFAULT_VIEWPORT_WIDTH, DEFAULT_VIEWPORT_HEIGHT)
+        # Light source buffer cache: skip full rebuild when viewport and exploration
+        # haven't changed since the last frame.
+        self._light_buffer_cache_key: tuple[int, int, int, int, int] | None = None
+        # Pre-animation colors and index metadata for animated tiles in the cached
+        # light-source buffer. This lets us re-apply animation without rebuilding.
+        self._light_buffer_anim_base_fg: np.ndarray | None = None
+        self._light_buffer_anim_base_bg: np.ndarray | None = None
+        self._light_buffer_anim_buf_indices: np.ndarray | None = None
+        self._light_buffer_anim_exp_x: np.ndarray | None = None
+        self._light_buffer_anim_exp_y: np.ndarray | None = None
+        # Cached buffer coordinates for all explored tiles and visible subset.
+        self._light_buffer_cached_buf_x: np.ndarray | None = None
+        self._light_buffer_cached_buf_y: np.ndarray | None = None
+        self._light_buffer_cached_vis_buf_x: np.ndarray | None = None
+        self._light_buffer_cached_vis_buf_y: np.ndarray | None = None
+        # Persistent visible mask buffer to avoid per-frame allocation.
+        self._visible_mask_buffer: np.ndarray | None = None
         self.effect_library = EffectLibrary()
         self.floating_text_manager = FloatingTextManager()
         self._gpu_actor_lightmap_texture: Any | None = None
@@ -172,6 +189,9 @@ class WorldView(View):
         )
         # Cumulative game time for decal age tracking
         self._game_time: float = 0.0
+        # Lazily rebuilt when GameWorld actor membership changes.
+        self._particle_emitter_actors: set[Actor] = set()
+        self._particle_emitter_actors_revision: int = -1
         from brileta.view.render.effects.atmospheric import (
             AtmosphericConfig,
             AtmosphericLayerSystem,
@@ -198,6 +218,17 @@ class WorldView(View):
             self.light_source_glyph_buffer = GlyphBuffer(
                 self.width + 2 * pad, self.height + 2 * pad
             )
+            # Force a full light-source rebuild after buffer resize.
+            self._light_buffer_cache_key = None
+            self._light_buffer_anim_base_fg = None
+            self._light_buffer_anim_base_bg = None
+            self._light_buffer_anim_buf_indices = None
+            self._light_buffer_anim_exp_x = None
+            self._light_buffer_anim_exp_y = None
+            self._light_buffer_cached_buf_x = None
+            self._light_buffer_cached_buf_y = None
+            self._light_buffer_cached_vis_buf_x = None
+            self._light_buffer_cached_vis_buf_y = None
             self.particle_system = SubTileParticleSystem(self.width, self.height)
             self.environmental_system = EnvironmentalEffectSystem()
             self.decal_system = DecalSystem()
@@ -493,6 +524,7 @@ class WorldView(View):
             )
 
         visible_actors_for_frame: list[Actor] | None = None
+        dynamic_receivers_for_frame: list[Actor] | None = None
         if config.SHADOWS_ENABLED:
             actor_bounds = vs.get_visible_bounds()
             visible_actors_for_frame = [
@@ -501,6 +533,12 @@ class WorldView(View):
                     actor_bounds, self.controller.gw
                 )
                 if self.controller.gw.game_map.visible[actor.x, actor.y]
+            ]
+            # Only dynamic actors (those with an energy component) need shadow
+            # receiver dimming. This turns the O(N*N) dimming loop into O(N*D)
+            # where D is the number of dynamic actors (typically 1-5).
+            dynamic_receivers_for_frame = [
+                a for a in visible_actors_for_frame if a.energy is not None
             ]
 
         set_gpu_actor_lighting_context = getattr(
@@ -529,6 +567,7 @@ class WorldView(View):
             self.shadow_renderer.render_actor_shadows(
                 alpha,
                 visible_actors=visible_actors_for_frame,
+                dynamic_receivers=dynamic_receivers_for_frame,
                 directional_light=directional_light,
                 lights=self.controller.gw.lights,
                 view_origin=(float(self.x), float(self.y)),
@@ -863,24 +902,45 @@ class WorldView(View):
         """Emit particles from actors with particle emitters."""
         gw = self.controller.gw
 
-        # Get all actors and check for particle emitters
-        for actor in gw.actors:
-            visual_effects = actor.visual_effects
-            if visual_effects is not None and visual_effects.has_continuous_effects():
-                # Create an effect context for this actor
-                from brileta.view.render.effects.effects import EffectContext
-
-                context = EffectContext(
-                    particle_system=self.particle_system,
-                    environmental_system=self.environmental_system,
-                    x=actor.x,
-                    y=actor.y,
+        # Some test doubles do not implement `actors_revision`; rebuild each call
+        # in that case and keep the optimized revision path for real GameWorld.
+        actors_revision = getattr(gw, "actors_revision", None)
+        if (
+            actors_revision is None
+            or self._particle_emitter_actors_revision != actors_revision
+        ):
+            self._particle_emitter_actors = {
+                actor
+                for actor in gw.actors
+                if (
+                    actor.visual_effects is not None
+                    and actor.visual_effects.has_continuous_effects()
                 )
+            }
+            if actors_revision is not None:
+                self._particle_emitter_actors_revision = actors_revision
 
-                # Execute all continuous effects that are ready to emit
-                for effect in visual_effects.continuous_effects:
-                    if effect.should_emit():
-                        effect.execute(context)
+        with record_time_live_variable("time.render.actor_particles_ms"):
+            for actor in self._particle_emitter_actors:
+                visual_effects = actor.visual_effects
+                if (
+                    visual_effects is not None
+                    and visual_effects.has_continuous_effects()
+                ):
+                    # Create an effect context for this actor
+                    from brileta.view.render.effects.effects import EffectContext
+
+                    context = EffectContext(
+                        particle_system=self.particle_system,
+                        environmental_system=self.environmental_system,
+                        x=actor.x,
+                        y=actor.y,
+                    )
+
+                    # Execute all continuous effects that are ready to emit
+                    for effect in visual_effects.continuous_effects:
+                        if effect.should_emit():
+                            effect.execute(context)
 
     def _update_tile_animations(self, percent_of_cells: int = 3) -> None:
         """Update animation state for a percentage of visible animated tiles.
@@ -1041,6 +1101,13 @@ class WorldView(View):
             max(0, bounds.y1),
             min(gw.game_map.height - 1, bounds.y2),
         )
+        cache_key = (
+            world_left,
+            world_top,
+            world_right,
+            world_bottom,
+            gw.game_map.exploration_revision,
+        )
         dest_width = world_right - world_left + 1
         dest_height = world_bottom - world_top + 1
         if dest_width <= 0 or dest_height <= 0:
@@ -1067,91 +1134,182 @@ class WorldView(View):
         buf_width = self.width + 2 * pad
         buf_height = self.height + 2 * pad
         light_source_buffer = self.light_source_glyph_buffer
-        light_source_buffer.clear()
         # Buffer-space visible mask used by the GPU compose shader. Keeping this
         # in the same coordinate space as the glyph buffers avoids map/viewport
         # axis mismatches when maps are centered in larger viewports.
-        visible_mask_buffer = np.zeros((buf_width, buf_height), dtype=np.bool_)
+        if self._visible_mask_buffer is None or self._visible_mask_buffer.shape != (
+            buf_width,
+            buf_height,
+        ):
+            self._visible_mask_buffer = np.zeros(
+                (buf_width, buf_height), dtype=np.bool_
+            )
+        else:
+            self._visible_mask_buffer.fill(False)
+        visible_mask_buffer = self._visible_mask_buffer
 
         world_slice = (
             slice(world_left, world_right + 1),
             slice(world_top, world_bottom + 1),
         )
-        explored_mask_slice = gw.game_map.explored[world_slice]
-        visible_mask_slice = gw.game_map.visible[world_slice]
-        if np.any(explored_mask_slice):
-            light_app_slice = gw.game_map.light_appearance_map[world_slice]
-            exp_x, exp_y = np.nonzero(explored_mask_slice)
-            buffer_x = vs.offset_x + exp_x + pad
-            buffer_y = vs.offset_y + exp_y + pad
-            valid_mask = (
-                (buffer_x >= 0)
-                & (buffer_x < buf_width)
-                & (buffer_y >= 0)
-                & (buffer_y < buf_height)
-            )
-            if np.any(valid_mask):
-                final_buf_x = buffer_x[valid_mask]
-                final_buf_y = buffer_y[valid_mask]
-                valid_exp_x = exp_x[valid_mask]
-                valid_exp_y = exp_y[valid_mask]
-                valid_visible = visible_mask_slice[valid_exp_x, valid_exp_y]
+        if cache_key == self._light_buffer_cache_key:
+            if (
+                self._light_buffer_cached_vis_buf_x is not None
+                and self._light_buffer_cached_vis_buf_y is not None
+            ):
+                visible_mask_buffer[
+                    self._light_buffer_cached_vis_buf_x,
+                    self._light_buffer_cached_vis_buf_y,
+                ] = True
 
-                light_chars = light_app_slice["ch"][valid_exp_x, valid_exp_y]
-                light_fg_rgb = light_app_slice["fg"][valid_exp_x, valid_exp_y]
-                light_bg_rgb = light_app_slice["bg"][valid_exp_x, valid_exp_y]
+            if self._light_buffer_anim_buf_indices is not None:
+                anim_base_fg = self._light_buffer_anim_base_fg
+                anim_base_bg = self._light_buffer_anim_base_bg
+                anim_exp_x = self._light_buffer_anim_exp_x
+                anim_exp_y = self._light_buffer_anim_exp_y
+                cached_buf_x = self._light_buffer_cached_buf_x
+                cached_buf_y = self._light_buffer_cached_buf_y
+                assert anim_base_fg is not None
+                assert anim_base_bg is not None
+                assert anim_exp_x is not None
+                assert anim_exp_y is not None
+                assert cached_buf_x is not None
+                assert cached_buf_y is not None
 
-                # Apply per-tile glyph and color decoration for terrain variety.
-                # valid_exp_x/y are offsets within the world slice, so add back
-                # world_left/world_top to get true world coordinates for the hash.
-                world_tile_ids = gw.game_map.tiles[world_slice][
-                    valid_exp_x, valid_exp_y
-                ]
-                tile_types.apply_terrain_decoration(
-                    light_chars,
-                    light_fg_rgb,
-                    light_bg_rgb,
-                    world_tile_ids,
-                    valid_exp_x + world_left,
-                    valid_exp_y + world_top,
-                    gw.game_map.decoration_seed,
-                )
-
-                animation_params = gw.game_map.animation_params[world_slice]
-                animation_state = gw.game_map.animation_state[world_slice]
+                anim_fg_rgb = anim_base_fg.copy()
+                anim_bg_rgb = anim_base_bg.copy()
                 self._apply_tile_light_animations(
-                    light_fg_rgb,
-                    light_bg_rgb,
-                    animation_params,
-                    animation_state,
-                    valid_exp_x,
-                    valid_exp_y,
+                    anim_fg_rgb,
+                    anim_bg_rgb,
+                    gw.game_map.animation_params[world_slice],
+                    gw.game_map.animation_state[world_slice],
+                    anim_exp_x,
+                    anim_exp_y,
                 )
 
-                alpha_channel = np.full((len(light_fg_rgb), 1), 255, dtype=np.uint8)
-                light_fg_rgba = np.hstack((light_fg_rgb, alpha_channel))
-                light_bg_rgba = np.hstack((light_bg_rgb, alpha_channel))
-                light_source_buffer.data["ch"][final_buf_x, final_buf_y] = light_chars
-                light_source_buffer.data["fg"][final_buf_x, final_buf_y] = light_fg_rgba
-                light_source_buffer.data["bg"][final_buf_x, final_buf_y] = light_bg_rgba
-
-                # Write sub-tile jitter amplitude for the light source buffer too,
-                # so lit tiles also get per-pixel brightness variation.
-                light_source_buffer.data["noise"][final_buf_x, final_buf_y] = (
-                    tile_types.get_sub_tile_jitter_map(world_tile_ids)
+                alpha_channel = np.full((len(anim_fg_rgb), 1), 255, dtype=np.uint8)
+                anim_buf_x = cached_buf_x[self._light_buffer_anim_buf_indices]
+                anim_buf_y = cached_buf_y[self._light_buffer_anim_buf_indices]
+                light_source_buffer.data["fg"][anim_buf_x, anim_buf_y] = np.hstack(
+                    (anim_fg_rgb, alpha_channel)
                 )
-                self._apply_tile_edge_transition_data(
-                    glyph_buffer=light_source_buffer,
-                    final_buf_x=final_buf_x,
-                    final_buf_y=final_buf_y,
-                    tile_ids=world_tile_ids,
-                    decorated_bg_rgb=light_bg_rgb,
+                light_source_buffer.data["bg"][anim_buf_x, anim_buf_y] = np.hstack(
+                    (anim_bg_rgb, alpha_channel)
                 )
+        else:
+            light_source_buffer.clear()
+            self._light_buffer_anim_base_fg = None
+            self._light_buffer_anim_base_bg = None
+            self._light_buffer_anim_buf_indices = None
+            self._light_buffer_anim_exp_x = None
+            self._light_buffer_anim_exp_y = None
+            self._light_buffer_cached_buf_x = None
+            self._light_buffer_cached_buf_y = None
+            self._light_buffer_cached_vis_buf_x = None
+            self._light_buffer_cached_vis_buf_y = None
 
-                if np.any(valid_visible):
-                    visible_mask_buffer[
-                        final_buf_x[valid_visible], final_buf_y[valid_visible]
-                    ] = True
+            explored_mask_slice = gw.game_map.explored[world_slice]
+            visible_mask_slice = gw.game_map.visible[world_slice]
+            if np.any(explored_mask_slice):
+                light_app_slice = gw.game_map.light_appearance_map[world_slice]
+                exp_x, exp_y = np.nonzero(explored_mask_slice)
+                buffer_x = vs.offset_x + exp_x + pad
+                buffer_y = vs.offset_y + exp_y + pad
+                valid_mask = (
+                    (buffer_x >= 0)
+                    & (buffer_x < buf_width)
+                    & (buffer_y >= 0)
+                    & (buffer_y < buf_height)
+                )
+                if np.any(valid_mask):
+                    final_buf_x = buffer_x[valid_mask]
+                    final_buf_y = buffer_y[valid_mask]
+                    valid_exp_x = exp_x[valid_mask]
+                    valid_exp_y = exp_y[valid_mask]
+                    valid_visible = visible_mask_slice[valid_exp_x, valid_exp_y]
+
+                    light_chars = light_app_slice["ch"][valid_exp_x, valid_exp_y]
+                    light_fg_rgb = light_app_slice["fg"][valid_exp_x, valid_exp_y]
+                    light_bg_rgb = light_app_slice["bg"][valid_exp_x, valid_exp_y]
+
+                    # Apply per-tile glyph and color decoration for terrain variety.
+                    # valid_exp_x/y are offsets within the world slice, so add back
+                    # world_left/world_top to get true world coordinates for the hash.
+                    world_tile_ids = gw.game_map.tiles[world_slice][
+                        valid_exp_x, valid_exp_y
+                    ]
+                    tile_types.apply_terrain_decoration(
+                        light_chars,
+                        light_fg_rgb,
+                        light_bg_rgb,
+                        world_tile_ids,
+                        valid_exp_x + world_left,
+                        valid_exp_y + world_top,
+                        gw.game_map.decoration_seed,
+                    )
+
+                    animation_params = gw.game_map.animation_params[world_slice]
+                    animation_state = gw.game_map.animation_state[world_slice]
+                    animates_mask = animation_params["animates"][
+                        valid_exp_x, valid_exp_y
+                    ]
+                    if np.any(animates_mask):
+                        anim_indices = np.nonzero(animates_mask)[0]
+                        self._light_buffer_anim_base_fg = light_fg_rgb[
+                            anim_indices
+                        ].copy()
+                        self._light_buffer_anim_base_bg = light_bg_rgb[
+                            anim_indices
+                        ].copy()
+                        self._light_buffer_anim_buf_indices = anim_indices
+                        self._light_buffer_anim_exp_x = valid_exp_x[animates_mask]
+                        self._light_buffer_anim_exp_y = valid_exp_y[animates_mask]
+
+                    self._apply_tile_light_animations(
+                        light_fg_rgb,
+                        light_bg_rgb,
+                        animation_params,
+                        animation_state,
+                        valid_exp_x,
+                        valid_exp_y,
+                    )
+
+                    alpha_channel = np.full((len(light_fg_rgb), 1), 255, dtype=np.uint8)
+                    light_fg_rgba = np.hstack((light_fg_rgb, alpha_channel))
+                    light_bg_rgba = np.hstack((light_bg_rgb, alpha_channel))
+                    light_source_buffer.data["ch"][final_buf_x, final_buf_y] = (
+                        light_chars
+                    )
+                    light_source_buffer.data["fg"][final_buf_x, final_buf_y] = (
+                        light_fg_rgba
+                    )
+                    light_source_buffer.data["bg"][final_buf_x, final_buf_y] = (
+                        light_bg_rgba
+                    )
+
+                    # Write sub-tile jitter amplitude for the light source buffer too,
+                    # so lit tiles also get per-pixel brightness variation.
+                    light_source_buffer.data["noise"][final_buf_x, final_buf_y] = (
+                        tile_types.get_sub_tile_jitter_map(world_tile_ids)
+                    )
+                    self._apply_tile_edge_transition_data(
+                        glyph_buffer=light_source_buffer,
+                        final_buf_x=final_buf_x,
+                        final_buf_y=final_buf_y,
+                        tile_ids=world_tile_ids,
+                        decorated_bg_rgb=light_bg_rgb,
+                    )
+
+                    self._light_buffer_cached_buf_x = final_buf_x
+                    self._light_buffer_cached_buf_y = final_buf_y
+                    if np.any(valid_visible):
+                        vis_buf_x = final_buf_x[valid_visible]
+                        vis_buf_y = final_buf_y[valid_visible]
+                        visible_mask_buffer[vis_buf_x, vis_buf_y] = True
+                        self._light_buffer_cached_vis_buf_x = vis_buf_x
+                        self._light_buffer_cached_vis_buf_y = vis_buf_y
+
+            self._light_buffer_cache_key = cache_key
 
         with record_time_live_variable("time.render.light_texture_upload_ms"):
             light_source_texture = graphics.render_glyph_buffer_to_texture(

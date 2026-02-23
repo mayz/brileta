@@ -480,21 +480,22 @@ class GPULightingSystem(LightingSystem):
         # Set alpha to 255 for all pixels
         sky_exposure_data[:, :, 3] = 255
 
-        # Release old texture if it exists
-        if self._sky_exposure_texture is not None:
-            # WGPU textures don't need explicit release
-            self._sky_exposure_texture = None
-            self._bind_group = None  # Invalidate bind group when texture changes
+        # Create texture once, reuse thereafter. Only recreate if map size changed.
+        if self._sky_exposure_texture is not None and self._sky_exposure_texture.size[
+            :2
+        ] != (game_map.width, game_map.height):
+            self._sky_exposure_texture = None  # Force recreation on size change
+            self._bind_group = None
 
-        # Create new texture with sky exposure data - WGPU syntax
+        if self._sky_exposure_texture is None:
+            self._sky_exposure_texture = self.device.create_texture(
+                size=(game_map.width, game_map.height, 1),
+                format=wgpu.TextureFormat.rgba8unorm,
+                usage=wgpu.TextureUsage.TEXTURE_BINDING | wgpu.TextureUsage.COPY_DST,
+            )
+            self._bind_group = None  # Only invalidate on first creation
 
-        self._sky_exposure_texture = self.device.create_texture(
-            size=(game_map.width, game_map.height, 1),
-            format=wgpu.TextureFormat.rgba8unorm,
-            usage=wgpu.TextureUsage.TEXTURE_BINDING | wgpu.TextureUsage.COPY_DST,
-        )
-
-        # Write sky exposure data to texture - WGPU syntax
+        # Write sky exposure data to existing texture
         self.queue.write_texture(
             {
                 "texture": self._sky_exposure_texture,
@@ -531,37 +532,43 @@ class GPULightingSystem(LightingSystem):
         ):
             return  # No update needed
 
-        # Convert bool array to uint8 (0 or 255), transposed to match texture coords
-        explored_data = np.ascontiguousarray(
-            (game_map.explored.T * 255).astype(np.uint8)
-        )
+        with record_time_live_variable("time.render.gpu_explored_texture_ms"):
+            # Convert bool array to uint8 (0 or 255), transposed to match texture coords
+            explored_data = np.ascontiguousarray(
+                (game_map.explored.T * 255).astype(np.uint8)
+            )
 
-        # Release old texture if it exists
-        if self._explored_texture is not None:
-            self._explored_texture = None
+            # Create texture once, reuse thereafter. Only recreate if map size changed.
+            if self._explored_texture is not None and self._explored_texture.size[
+                :2
+            ] != (game_map.width, game_map.height):
+                self._explored_texture = None  # Force recreation on size change
+                self._bind_group = None
 
-        # Create new texture with explored data - use r8unorm for filterability
-        self._explored_texture = self.device.create_texture(
-            size=(game_map.width, game_map.height, 1),
-            format=wgpu.TextureFormat.r8unorm,
-            usage=wgpu.TextureUsage.TEXTURE_BINDING | wgpu.TextureUsage.COPY_DST,
-        )
+            if self._explored_texture is None:
+                self._explored_texture = self.device.create_texture(
+                    size=(game_map.width, game_map.height, 1),
+                    format=wgpu.TextureFormat.r8unorm,
+                    usage=wgpu.TextureUsage.TEXTURE_BINDING
+                    | wgpu.TextureUsage.COPY_DST,
+                )
+                self._bind_group = None  # Only invalidate on first creation
 
-        # Write explored data to texture
-        self.queue.write_texture(
-            {
-                "texture": self._explored_texture,
-                "mip_level": 0,
-                "origin": (0, 0, 0),
-            },
-            memoryview(explored_data.tobytes()),
-            {
-                "offset": 0,
-                "bytes_per_row": game_map.width,  # 1 byte per uint8
-                "rows_per_image": game_map.height,
-            },
-            (game_map.width, game_map.height, 1),
-        )
+            # Write explored data to existing texture
+            self.queue.write_texture(
+                {
+                    "texture": self._explored_texture,
+                    "mip_level": 0,
+                    "origin": (0, 0, 0),
+                },
+                memoryview(explored_data.tobytes()),
+                {
+                    "offset": 0,
+                    "bytes_per_row": game_map.width,  # 1 byte per uint8
+                    "rows_per_image": game_map.height,
+                },
+                (game_map.width, game_map.height, 1),
+            )
 
         # Update cached revision
         self._cached_exploration_revision = game_map.exploration_revision
@@ -583,35 +590,44 @@ class GPULightingSystem(LightingSystem):
             if self._cached_visibility_revision == current_revision:
                 return  # No update needed
 
-        # Convert bool array to uint8 (0 or 255), transposed to match texture coords
-        visible_data = np.ascontiguousarray((game_map.visible.T * 255).astype(np.uint8))
+        with record_time_live_variable("time.render.gpu_visible_texture_ms"):
+            # Convert bool array to uint8 (0 or 255), transposed to match texture coords
+            visible_data = np.ascontiguousarray(
+                (game_map.visible.T * 255).astype(np.uint8)
+            )
 
-        # Release old texture if it exists
-        if self._visible_texture is not None:
-            self._visible_texture = None
+            # Create texture once, reuse thereafter. Only recreate if map size changed.
+            if self._visible_texture is not None and self._visible_texture.size[:2] != (
+                game_map.width,
+                game_map.height,
+            ):
+                self._visible_texture = None  # Force recreation on size change
+                self._bind_group = None
 
-        # Create new texture with visible data - use r8unorm for filterability
-        self._visible_texture = self.device.create_texture(
-            size=(game_map.width, game_map.height, 1),
-            format=wgpu.TextureFormat.r8unorm,
-            usage=wgpu.TextureUsage.TEXTURE_BINDING | wgpu.TextureUsage.COPY_DST,
-        )
+            if self._visible_texture is None:
+                self._visible_texture = self.device.create_texture(
+                    size=(game_map.width, game_map.height, 1),
+                    format=wgpu.TextureFormat.r8unorm,
+                    usage=wgpu.TextureUsage.TEXTURE_BINDING
+                    | wgpu.TextureUsage.COPY_DST,
+                )
+                self._bind_group = None  # Only invalidate on first creation
 
-        # Write visible data to texture
-        self.queue.write_texture(
-            {
-                "texture": self._visible_texture,
-                "mip_level": 0,
-                "origin": (0, 0, 0),
-            },
-            memoryview(visible_data.tobytes()),
-            {
-                "offset": 0,
-                "bytes_per_row": game_map.width,  # 1 byte per uint8
-                "rows_per_image": game_map.height,
-            },
-            (game_map.width, game_map.height, 1),
-        )
+            # Write visible data to existing texture
+            self.queue.write_texture(
+                {
+                    "texture": self._visible_texture,
+                    "mip_level": 0,
+                    "origin": (0, 0, 0),
+                },
+                memoryview(visible_data.tobytes()),
+                {
+                    "offset": 0,
+                    "bytes_per_row": game_map.width,  # 1 byte per uint8
+                    "rows_per_image": game_map.height,
+                },
+                (game_map.width, game_map.height, 1),
+            )
 
         # Update cached revision
         self._cached_visibility_revision = (
@@ -792,19 +808,22 @@ class GPULightingSystem(LightingSystem):
         shadow_data = np.ascontiguousarray(game_map.shadow_heights.T.astype(np.uint8))
         shadow_data[shadow_data <= 2] = 0
 
-        # Release old texture if it exists
-        if self._shadow_grid_texture is not None:
-            self._shadow_grid_texture = None
-            self._bind_group = None  # Invalidate bind group when texture changes
+        # Create texture once, reuse thereafter. Only recreate if map size changed.
+        if self._shadow_grid_texture is not None and self._shadow_grid_texture.size[
+            :2
+        ] != (game_map.width, game_map.height):
+            self._shadow_grid_texture = None  # Force recreation on size change
+            self._bind_group = None
 
-        # Create new texture with shadow grid data - use r8unorm for filterability
-        self._shadow_grid_texture = self.device.create_texture(
-            size=(game_map.width, game_map.height, 1),
-            format=wgpu.TextureFormat.r8unorm,
-            usage=wgpu.TextureUsage.TEXTURE_BINDING | wgpu.TextureUsage.COPY_DST,
-        )
+        if self._shadow_grid_texture is None:
+            self._shadow_grid_texture = self.device.create_texture(
+                size=(game_map.width, game_map.height, 1),
+                format=wgpu.TextureFormat.r8unorm,
+                usage=wgpu.TextureUsage.TEXTURE_BINDING | wgpu.TextureUsage.COPY_DST,
+            )
+            self._bind_group = None  # Only invalidate on first creation
 
-        # Write shadow grid data to texture
+        # Write shadow grid data to existing texture
         self.queue.write_texture(
             {
                 "texture": self._shadow_grid_texture,

@@ -77,6 +77,11 @@ class MiniMapView(TextView):
         self._visible_colors_np = np.array(self._visible_colors, dtype=np.uint8)
         self._explored_colors_np = np.array(self._explored_colors, dtype=np.uint8)
 
+        game_map = self.controller.gw.game_map
+        self._map_rgb = np.zeros((game_map.height, game_map.width, 3), dtype=np.uint8)
+        self._map_rgb_revision: int = -1
+        self._map_rgb_exploration_revision: int = -1
+
         # Precomputed feature layers, built lazily on first terrain render
         # and invalidated when structural_revision changes.
         self._feature_layer_rev: int = -1
@@ -175,7 +180,7 @@ class MiniMapView(TextView):
         player = gw.player
         markers: set[tuple[int, int, bool]] = set()
 
-        for actor in gw.actors:
+        for actor in gw.dynamic_actors:
             if actor is player or not isinstance(actor, Character):
                 continue
             actor_health = getattr(actor, "health", None)
@@ -197,23 +202,14 @@ class MiniMapView(TextView):
     def _get_terrain_cache_key(self) -> tuple:
         """Return the cache key for the terrain/fog mini-map layer.
 
-        Player position is included even though terrain colors don't depend on
-        it directly.  The reason: the FOV (visible/explored masks) is recomputed
-        from the player's position, but the masks themselves aren't hashable.
-        Including ``(player_x, player_y)`` is a cheap proxy that ensures any
-        FOV change triggers a terrain re-render.
+        ``exploration_revision`` already changes whenever the FOV masks update,
+        so player position is not part of the terrain cache key.
         """
-        gw = self.controller.gw
-        game_map = gw.game_map
-        player = gw.player
-        player_x = player.x if player is not None else -1
-        player_y = player.y if player is not None else -1
+        game_map = self.controller.gw.game_map
 
         return (
             game_map.exploration_revision,
             game_map.structural_revision,
-            player_x,
-            player_y,
             self.controller.graphics.tile_dimensions,
             self.view_width_px,
             self.view_height_px,
@@ -291,6 +287,7 @@ class MiniMapView(TextView):
         full resolution instead.
         """
         game_map = self.controller.gw.game_map
+        self._ensure_map_rgb_current()
         px_per_tile, _ma_x, _ma_y, tile_origin_x, tile_origin_y = self._map_layout()
 
         # Small texture: 1 pixel per map tile, with margins for centering.
@@ -300,26 +297,6 @@ class MiniMapView(TextView):
         origin_x = round(tile_origin_x / px_per_tile)
         origin_y = round(tile_origin_y / px_per_tile)
 
-        # Transpose so axes become (row=y, col=x) for image layout.
-        tile_ids = game_map.tiles.T.astype(np.intp)
-        visible_t = game_map.visible.T
-        explored_t = game_map.explored.T
-
-        # Build (H, W, 3) RGB via lookup table indexing. Unexplored tiles stay black.
-        map_rgb = np.zeros((game_map.height, game_map.width, 3), dtype=np.uint8)
-        map_rgb[visible_t] = self._visible_colors_np[tile_ids[visible_t]]
-        explored_only = explored_t & ~visible_t
-        map_rgb[explored_only] = self._explored_colors_np[tile_ids[explored_only]]
-
-        # Overlay static feature actors (trees, boulders) with a vectorized
-        # mask operation.  The feature layers are built once from the actor
-        # list and cached until the map structure changes.
-        feat_mask, feat_vis, feat_exp = self._get_feature_layers()
-        vis_features = feat_mask & visible_t
-        map_rgb[vis_features] = feat_vis[vis_features]
-        exp_features = feat_mask & explored_only
-        map_rgb[exp_features] = feat_exp[exp_features]
-
         # Composite 1:1 map content into the small opaque-black buffer.
         buf = np.zeros((small_h, small_w, 4), dtype=np.uint8)
         buf[:, :, 3] = 255
@@ -327,10 +304,75 @@ class MiniMapView(TextView):
         clip_w = min(game_map.width, small_w - origin_x)
         if clip_h > 0 and clip_w > 0:
             buf[origin_y : origin_y + clip_h, origin_x : origin_x + clip_w, :3] = (
-                map_rgb[:clip_h, :clip_w]
+                self._map_rgb[:clip_h, :clip_w]
             )
 
         return np.ascontiguousarray(buf)
+
+    def _ensure_map_rgb_current(self) -> None:
+        """Keep the persistent mini-map terrain buffer synchronized to map state."""
+        gw = self.controller.gw
+        game_map = gw.game_map
+        target_shape = (game_map.height, game_map.width, 3)
+        if self._map_rgb.shape != target_shape:
+            self._map_rgb = np.zeros(target_shape, dtype=np.uint8)
+            self._map_rgb_revision = -1
+            self._map_rgb_exploration_revision = -1
+
+        structural_revision = game_map.structural_revision
+        exploration_revision = game_map.exploration_revision
+
+        needs_full_rebuild = self._map_rgb_revision != structural_revision
+        if needs_full_rebuild:
+            self._update_map_rgb_region(0, 0, game_map.width, game_map.height)
+            self._map_rgb_revision = structural_revision
+            self._map_rgb_exploration_revision = exploration_revision
+            return
+
+        if self._map_rgb_exploration_revision == exploration_revision:
+            return
+
+        player = gw.player
+        if player is None:
+            self._update_map_rgb_region(0, 0, game_map.width, game_map.height)
+            self._map_rgb_exploration_revision = exploration_revision
+            return
+
+        radius = config.FOV_RADIUS
+        x0 = max(0, player.x - radius)
+        y0 = max(0, player.y - radius)
+        x1 = min(game_map.width, player.x + radius + 1)
+        y1 = min(game_map.height, player.y + radius + 1)
+        self._update_map_rgb_region(x0, y0, x1, y1)
+        self._map_rgb_exploration_revision = exploration_revision
+
+    def _update_map_rgb_region(self, x0: int, y0: int, x1: int, y1: int) -> None:
+        """Recompute terrain RGB for a map sub-rectangle in tile coordinates."""
+        if x1 <= x0 or y1 <= y0:
+            return
+
+        game_map = self.controller.gw.game_map
+
+        # Source map arrays are indexed as [x, y]; transpose to image layout [y, x].
+        tile_ids = game_map.tiles[x0:x1, y0:y1].T.astype(np.intp)
+        visible_t = game_map.visible[x0:x1, y0:y1].T
+        explored_t = game_map.explored[x0:x1, y0:y1].T
+
+        target = self._map_rgb[y0:y1, x0:x1]
+        target[:] = 0
+        target[visible_t] = self._visible_colors_np[tile_ids[visible_t]]
+        explored_only = explored_t & ~visible_t
+        target[explored_only] = self._explored_colors_np[tile_ids[explored_only]]
+
+        # Apply feature overlays after terrain so trees/boulders replace base color.
+        feat_mask, feat_vis, feat_exp = self._get_feature_layers()
+        feat_mask_region = feat_mask[y0:y1, x0:x1]
+        feat_vis_region = feat_vis[y0:y1, x0:x1]
+        feat_exp_region = feat_exp[y0:y1, x0:x1]
+        vis_features = feat_mask_region & visible_t
+        target[vis_features] = feat_vis_region[vis_features]
+        exp_features = feat_mask_region & explored_only
+        target[exp_features] = feat_exp_region[exp_features]
 
     def _map_layout(self) -> tuple[int, int, int, int, int]:
         """Return (px_per_tile, map_area_x, map_area_y, tile_origin_x, tile_origin_y).

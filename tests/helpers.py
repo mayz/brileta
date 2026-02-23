@@ -122,8 +122,12 @@ class DummyGameWorld(GameWorld):
 
         self.actor_spatial_index = SpatialHashGrid(cell_size=16)
         self.actors: list[Actor] = []
+        self._dynamic_actors: list[Actor] = []
+        self._actors_pending_prev_reset: set[Actor] = set()
+        self._actors_revision = 0
         # Registry for O(1) actor lookup by actor_id.
         self._actor_id_registry: dict[ActorId, Actor] = {}
+        self.on_actors_changed = None
 
         self.item_spawner = ItemSpawner(self)
 
@@ -151,17 +155,34 @@ class DummyGameWorld(GameWorld):
     def add_actor(self, actor: Actor) -> None:
         """Adds an actor to the list and the spatial index."""
         self.actors.append(actor)
+        if actor.energy is not None:
+            self._dynamic_actors.append(actor)
         self.actor_spatial_index.add(actor)
         self._actor_id_registry[actor.actor_id] = actor
+        self._actors_revision += 1
+        if self.on_actors_changed is not None:
+            self.on_actors_changed()
 
     def remove_actor(self, actor: Actor) -> None:
         """Removes an actor from the list and the spatial index."""
+        actor_collections_changed = False
         try:
             self.actors.remove(actor)
             self.actor_spatial_index.remove(actor)
+            actor_collections_changed = True
+        except ValueError:
+            pass
+        try:
+            self._dynamic_actors.remove(actor)
+            actor_collections_changed = True
         except ValueError:
             pass
         self._actor_id_registry.pop(actor.actor_id, None)
+        self._actors_pending_prev_reset.discard(actor)
+        if actor_collections_changed:
+            self._actors_revision += 1
+        if self.on_actors_changed is not None:
+            self.on_actors_changed()
 
     def get_actor_by_id(self, actor_id: ActorId) -> Actor | None:
         """Look up an actor by its ``actor_id`` in O(1) time."""

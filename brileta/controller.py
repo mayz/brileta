@@ -66,6 +66,8 @@ _CONTROLLER_METRICS: list[MetricSpec] = [
     MetricSpec("time.logic_ms", "One fixed logic step", 500),
     MetricSpec("time.logic.animation_ms", "Animation updates", 500),
     MetricSpec("time.logic.action_ms", "Action processing", 500),
+    MetricSpec("time.logic.actor_snapshot_ms", "Actor position snapshot loop", 500),
+    MetricSpec("time.fov_ms", "FOV compute + explored merge", 500),
 ]
 live_variable_registry.register_metrics(_CONTROLLER_METRICS)
 
@@ -665,15 +667,16 @@ class Controller:
 
     def update_fov(self) -> None:
         """Recompute the visible area based on the player's point of view."""
-        self.gw.game_map.visible[:] = compute_fov(
-            self.gw.game_map.transparent,
-            (self.gw.player.x, self.gw.player.y),
-            radius=config.FOV_RADIUS,
-        )
+        with record_time_live_variable("time.fov_ms"):
+            self.gw.game_map.visible[:] = compute_fov(
+                self.gw.game_map.transparent,
+                (self.gw.player.x, self.gw.player.y),
+                radius=config.FOV_RADIUS,
+            )
 
-        # If a tile is "visible" it should be added to "explored"
-        self.gw.game_map.explored |= self.gw.game_map.visible
-        self.gw.game_map.exploration_revision += 1
+            # If a tile is "visible" it should be added to "explored"
+            self.gw.game_map.explored |= self.gw.game_map.visible
+            self.gw.game_map.exploration_revision += 1
 
         # Auto-toggle torch based on ambient lighting (disable in sunlit outdoor areas)
         self._update_player_torch()
@@ -772,11 +775,13 @@ class Controller:
         Called by the App's fixed-step loop.
         """
         with record_time_live_variable("time.logic_ms"):
-            # SNAPSHOT PREVIOUS STATE: Save current positions for smooth
-            # This allows rendering to blend smoothly between old/new
-            for actor in self.gw.actors:
-                actor.prev_x = actor.x
-                actor.prev_y = actor.y
+            with record_time_live_variable("time.logic.actor_snapshot_ms"):
+                # Reset only actors that moved since the prior logic step.
+                reset_snapshots = getattr(
+                    self.gw, "reset_pending_actor_position_snapshots", None
+                )
+                if reset_snapshots is not None:
+                    reset_snapshots()
 
             with record_time_live_variable("time.logic.animation_ms"):
                 # ANIMATIONS: Update frame-independent systems

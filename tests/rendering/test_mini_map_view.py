@@ -184,6 +184,17 @@ def test_actor_marker_changes_do_not_invalidate_terrain_layer_key() -> None:
     assert overlay_key_before != overlay_key_after
 
 
+def test_terrain_cache_key_ignores_player_position() -> None:
+    """Terrain cache invalidation should depend on exploration revision, not position."""
+    _controller, player, view = make_world()
+
+    terrain_key_before = view._get_terrain_cache_key()
+    player.x += 1
+    terrain_key_after = view._get_terrain_cache_key()
+
+    assert terrain_key_before == terrain_key_after
+
+
 def test_scale_selection_expands_to_available_space() -> None:
     """Mini-map scale should grow to fill bounds and respect height limits."""
     _controller, _player, view = make_world()

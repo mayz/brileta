@@ -34,6 +34,7 @@ class TestWorldViewLightOverlay:
         mock_controller.gw = mock_gw
         mock_gw.game_map.width = 3
         mock_gw.game_map.height = 3
+        mock_gw.game_map.exploration_revision = 0
 
         explored = np.ones((3, 3), dtype=bool)
         visible = np.zeros((3, 3), dtype=bool)
@@ -103,6 +104,7 @@ class TestWorldViewLightOverlay:
         mock_controller.gw = mock_gw
         mock_gw.game_map.width = 3
         mock_gw.game_map.height = 3
+        mock_gw.game_map.exploration_revision = 0
         mock_gw.game_map.explored = np.zeros((3, 3), dtype=bool)
         mock_gw.game_map.visible = np.zeros((3, 3), dtype=bool)
         mock_gw.game_map.light_appearance_map = np.zeros(
@@ -148,6 +150,7 @@ class TestWorldViewLightOverlay:
         mock_controller.gw = mock_gw
         mock_gw.game_map.width = 1
         mock_gw.game_map.height = 1
+        mock_gw.game_map.exploration_revision = 0
         mock_gw.game_map.tiles = np.zeros((1, 1), dtype=np.uint8)
         mock_gw.game_map.decoration_seed = 0
         mock_gw.game_map.explored = np.ones((1, 1), dtype=bool)
@@ -191,6 +194,7 @@ class TestWorldViewLightOverlay:
         mock_controller.gw = mock_gw
         mock_gw.game_map.width = 1
         mock_gw.game_map.height = 1
+        mock_gw.game_map.exploration_revision = 0
         mock_gw.game_map.tiles = np.zeros((1, 1), dtype=np.uint8)
         mock_gw.game_map.decoration_seed = 0
         mock_gw.game_map.explored = np.ones((1, 1), dtype=bool)
@@ -266,6 +270,97 @@ class TestWorldViewLightOverlay:
         # Animated entry receives modulation and clamps per channel.
         assert tuple(int(v) for v in light_fg_rgb[1]) == (255, 190, 240)
         assert tuple(int(v) for v in light_bg_rgb[1]) == (60, 0, 30)
+
+    def test_gpu_compose_reuses_cached_light_source_buffer_between_frames(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Second frame with stable viewport/exploration should skip full rebuild."""
+        mock_controller = Mock()
+        mock_lighting_system = Mock()
+        world_view = WorldView(mock_controller, Mock(), mock_lighting_system)
+        world_view.set_bounds(0, 0, 4, 4)
+
+        mock_gw = Mock()
+        mock_controller.gw = mock_gw
+        mock_gw.game_map.width = 1
+        mock_gw.game_map.height = 1
+        mock_gw.game_map.exploration_revision = 0
+        mock_gw.game_map.explored = np.ones((1, 1), dtype=bool)
+        mock_gw.game_map.visible = np.ones((1, 1), dtype=bool)
+        mock_gw.game_map.tiles = np.zeros((1, 1), dtype=np.uint8)
+        mock_gw.game_map.decoration_seed = 0
+
+        light_app = np.zeros((1, 1), dtype=tile_types.TileTypeAppearance)
+        light_app[0, 0] = (ord("~"), (100, 100, 100), (20, 20, 20))
+        mock_gw.game_map.light_appearance_map = light_app
+
+        animation_params = np.zeros((1, 1), dtype=tile_types.TileAnimationParams)
+        animation_params["animates"][0, 0] = True
+        animation_params["fg_variation"][0, 0] = (100, 100, 100)
+        animation_params["bg_variation"][0, 0] = (100, 100, 100)
+        mock_gw.game_map.animation_params = animation_params
+
+        animation_state = np.zeros((1, 1), dtype=TileAnimationState)
+        animation_state["fg_values"][0, 0] = (0, 0, 0)
+        animation_state["bg_values"][0, 0] = (0, 0, 0)
+        mock_gw.game_map.animation_state = animation_state
+
+        mock_viewport_system = Mock()
+        mock_viewport_system.get_visible_bounds.return_value = Rect(0, 0, 1, 1)
+        mock_viewport_system.offset_x = 0
+        mock_viewport_system.offset_y = 0
+        world_view.viewport_system = mock_viewport_system
+
+        mock_lighting_system.compute_lightmap_texture.return_value = object()
+
+        mock_graphics = Mock()
+        mock_graphics.render_glyph_buffer_to_texture.return_value = object()
+        mock_graphics.compose_light_overlay_gpu.return_value = object()
+
+        # Keep base colors deterministic so only animation state drives the change.
+        terrain_decoration = Mock()
+        monkeypatch.setattr(tile_types, "apply_terrain_decoration", terrain_decoration)
+        edge_transition = Mock()
+        world_view._apply_tile_edge_transition_data = edge_transition
+        clear_calls = Mock(wraps=world_view.light_source_glyph_buffer.clear)
+        monkeypatch.setattr(world_view.light_source_glyph_buffer, "clear", clear_calls)
+
+        world_view._render_light_overlay_gpu_compose(
+            mock_graphics, dark_texture=object()
+        )
+
+        pad = world_view._SCROLL_PADDING
+        first_compose_kwargs = mock_graphics.compose_light_overlay_gpu.call_args_list[
+            0
+        ].kwargs
+        first_visible_mask = first_compose_kwargs["visible_mask_buffer"]
+        first_fg_rgb = tuple(
+            int(v)
+            for v in world_view.light_source_glyph_buffer.data["fg"][pad, pad][:3]
+        )
+        assert bool(first_visible_mask[pad, pad]) is True
+
+        animation_state["fg_values"][0, 0] = (1000, 1000, 1000)
+        animation_state["bg_values"][0, 0] = (1000, 1000, 1000)
+        world_view._render_light_overlay_gpu_compose(
+            mock_graphics, dark_texture=object()
+        )
+
+        second_compose_kwargs = mock_graphics.compose_light_overlay_gpu.call_args_list[
+            1
+        ].kwargs
+        second_visible_mask = second_compose_kwargs["visible_mask_buffer"]
+        second_fg_rgb = tuple(
+            int(v)
+            for v in world_view.light_source_glyph_buffer.data["fg"][pad, pad][:3]
+        )
+
+        assert second_visible_mask is first_visible_mask
+        assert bool(second_visible_mask[pad, pad]) is True
+        assert clear_calls.call_count == 1
+        assert terrain_decoration.call_count == 1
+        assert edge_transition.call_count == 1
+        assert first_fg_rgb != second_fg_rgb
 
     def test_actor_lighting_uses_shadow_receive_scale_only(self) -> None:
         """Actor lighting intensity is now a per-actor receive-scale multiplier."""

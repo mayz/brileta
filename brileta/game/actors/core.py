@@ -272,6 +272,11 @@ class Actor:
         # Store old position for animation
         old_x, old_y = self.x, self.y
 
+        # Snapshot previous position for interpolation BEFORE updating.
+        # This makes the cost O(actors that moved) instead of O(all dynamic actors).
+        self.prev_x = old_x
+        self.prev_y = old_y
+
         # Update logical position
         self.x += dx
         self.y += dy
@@ -295,6 +300,9 @@ class Actor:
         """Instantly move the actor's logical and visual position."""
         self.x = x
         self.y = y
+        # Snap prev to destination so interpolation produces no glide.
+        self.prev_x = x
+        self.prev_y = y
         self.render_x = float(x)
         self.render_y = float(y)
         if self.gw:

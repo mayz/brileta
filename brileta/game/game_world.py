@@ -153,23 +153,62 @@ class GameWorld:
     def add_actor(self, actor: Actor) -> None:
         """Adds an actor to the world and registers it with the spatial index."""
         self.actors.append(actor)
+        if actor.energy is not None:
+            self._dynamic_actors.append(actor)
         self.actor_spatial_index.add(actor)
         self._actor_id_registry[actor.actor_id] = actor
+        self._actors_revision += 1
         if self.on_actors_changed is not None:
             self.on_actors_changed()
 
     def remove_actor(self, actor: Actor) -> None:
         """Removes an actor from the world and spatial index."""
+        actor_collections_changed = False
         try:
             self.actors.remove(actor)
             self.actor_spatial_index.remove(actor)
+            actor_collections_changed = True
         except ValueError:
             # Actor was not in the list; ignore.
             pass
+        try:
+            self._dynamic_actors.remove(actor)
+            actor_collections_changed = True
+        except ValueError:
+            pass
         # Always attempt to unregister from the id registry.
         self._actor_id_registry.pop(actor.actor_id, None)
+        self._actors_pending_prev_reset.discard(actor)
+        if actor_collections_changed:
+            self._actors_revision += 1
         if self.on_actors_changed is not None:
             self.on_actors_changed()
+
+    @property
+    def dynamic_actors(self) -> list[Actor]:
+        """Return actors that participate in the energy/turn system."""
+        return self._dynamic_actors
+
+    @property
+    def actors_revision(self) -> int:
+        """Monotonic revision that changes when the actor list changes."""
+        return self._actors_revision
+
+    def reset_pending_actor_position_snapshots(self) -> None:
+        """Snap interpolation prev-positions for actors that moved last step.
+
+        Fixed-step interpolation requires ``prev_*`` to match the actor's current
+        logical position at the start of each logic step unless the actor moves
+        during that step. We preserve that invariant by only touching actors that
+        actually moved since the previous reset, avoiding an O(all actors) scan.
+        """
+        if not self._actors_pending_prev_reset:
+            return
+
+        for actor in self._actors_pending_prev_reset:
+            actor.prev_x = actor.x
+            actor.prev_y = actor.y
+        self._actors_pending_prev_reset.clear()
 
     def add_light(self, light: LightSource) -> None:
         """Add a light source to the world and notify the lighting system.
@@ -247,6 +286,12 @@ class GameWorld:
     def _init_actor_storage(self) -> None:
         """Initialize the collections used to track actors."""
         self.actors: list[Actor] = []
+        # Subset cache for actors that can act/move (turn participants).
+        self._dynamic_actors: list[Actor] = []
+        # Actors that moved since the previous fixed-step snapshot reset.
+        self._actors_pending_prev_reset: set[Actor] = set()
+        # Bumps on add/remove so render systems can lazily rebuild actor caches.
+        self._actors_revision = 0
         self.actor_spatial_index: SpatialIndex[Actor] = SpatialHashGrid(cell_size=16)
         # Registry for O(1) actor lookup by actor_id.
         # Used by floating text system to track actor positions.
@@ -569,12 +614,17 @@ class GameWorld:
         """Notify the lighting system when an actor moves.
 
         This method should be called whenever an actor moves. It will:
-        1. Update any dynamic lights owned by this actor
-        2. Invalidate the shadow caster cache (actors cast shadows)
+        1. Mark the actor for interpolation snapshot reset next logic step
+        2. Update any dynamic lights owned by this actor
+        3. Invalidate the shadow caster cache (actors cast shadows)
 
         Args:
             actor: The actor that moved
         """
+        # Track moved actors so Controller can restore prev_* to current at the
+        # next step start without scanning every actor.
+        self._actors_pending_prev_reset.add(actor)
+
         if self.lighting_system is not None:
             # Find and update any lights owned by this actor
             for light in self.lights:

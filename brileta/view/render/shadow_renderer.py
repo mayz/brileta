@@ -133,12 +133,21 @@ class ShadowRenderer:
         interpolation_alpha: InterpolationAlpha,
         *,
         visible_actors: list[Actor] | None,
+        dynamic_receivers: list[Actor] | None = None,
         directional_light: DirectionalLight | None,
         lights: Sequence[Any],
         view_origin: tuple[float, float],
         camera_frac_offset: tuple[float, float],
     ) -> None:
-        """Render projected glyph shadows for terrain objects and visible actors."""
+        """Render projected glyph shadows for terrain objects and visible actors.
+
+        Args:
+            dynamic_receivers: Optional restricted list of actors that should
+                receive shadow dimming (typically only dynamic actors like the
+                player and NPCs). When provided, the O(N*N) receiver-dimming
+                inner loop becomes O(N*D) where D is len(dynamic_receivers).
+                Shadow quads are still drawn for ALL casters regardless.
+        """
         self.set_view_transform(
             view_origin=view_origin,
             camera_frac_offset=camera_frac_offset,
@@ -175,6 +184,7 @@ class ShadowRenderer:
             interpolation_alpha,
             tile_height,
             receivers=visible_actors,
+            dynamic_receivers=dynamic_receivers,
             sun_params=sun_params,
             directional_light=directional_light,
         )
@@ -183,6 +193,7 @@ class ShadowRenderer:
             interpolation_alpha,
             tile_height,
             receivers=visible_actors,
+            dynamic_receivers=dynamic_receivers,
             lights=lights,
         )
 
@@ -233,6 +244,7 @@ class ShadowRenderer:
         interpolation_alpha: InterpolationAlpha,
         tile_height: float,
         receivers: list[Actor] | None = None,
+        dynamic_receivers: list[Actor] | None = None,
         sun_params: _SunShadowParams | None = None,
         directional_light: DirectionalLight | None = None,
     ) -> None:
@@ -244,7 +256,14 @@ class ShadowRenderer:
         if sun_params is None:
             return
 
-        shadow_receivers = actors if receivers is None else receivers
+        # Use the restricted dynamic_receivers for the dimming loop when
+        # provided, falling back to the full receivers list for backwards
+        # compatibility (tests pass receivers directly).
+        shadow_receivers = (
+            dynamic_receivers
+            if dynamic_receivers is not None
+            else (actors if receivers is None else receivers)
+        )
         shadow_dir_x, shadow_dir_y, shadow_length_scale = sun_params
 
         for actor in actors:
@@ -397,12 +416,18 @@ class ShadowRenderer:
         interpolation_alpha: InterpolationAlpha,
         tile_height: float,
         receivers: list[Actor] | None = None,
+        dynamic_receivers: list[Actor] | None = None,
         lights: Sequence[Any] | None = None,
     ) -> None:
         """Render actor shadows cast by nearby point lights."""
         from brileta.game.lights import DirectionalLight
 
-        shadow_receivers = actors if receivers is None else receivers
+        # Use restricted dynamic_receivers for dimming when available.
+        shadow_receivers = (
+            dynamic_receivers
+            if dynamic_receivers is not None
+            else (actors if receivers is None else receivers)
+        )
         active_lights = self._frame_lights if lights is None else lights
         point_lights = [
             light for light in active_lights if not isinstance(light, DirectionalLight)

@@ -118,6 +118,57 @@ class TestActorManagement:
         found = gw.actor_spatial_index.get_at_point(10, 10)
         assert actor in found
 
+    def test_add_actor_tracks_dynamic_actors_using_energy_component(self) -> None:
+        gw = make_world()
+        static_actor = make_actor(gw, x=3, y=3)
+        dynamic_actor = Actor(
+            x=4,
+            y=4,
+            ch="D",
+            color=colors.WHITE,
+            name="DynamicActor",
+            game_world=cast(GameWorld, gw),
+            energy=components.EnergyComponent(),
+        )
+
+        GameWorld.add_actor(gw, static_actor)
+        GameWorld.add_actor(gw, dynamic_actor)
+
+        assert static_actor in gw.actors
+        assert dynamic_actor in gw.actors
+        assert static_actor not in gw.dynamic_actors
+        assert dynamic_actor in gw.dynamic_actors
+
+    def test_remove_actor_updates_dynamic_actors_list(self) -> None:
+        gw = make_world()
+        dynamic_actor = Actor(
+            x=5,
+            y=5,
+            ch="D",
+            color=colors.WHITE,
+            name="DynamicActor",
+            game_world=cast(GameWorld, gw),
+            energy=components.EnergyComponent(),
+        )
+        GameWorld.add_actor(gw, dynamic_actor)
+
+        GameWorld.remove_actor(gw, dynamic_actor)
+
+        assert dynamic_actor not in gw.actors
+        assert dynamic_actor not in gw.dynamic_actors
+
+    def test_actor_revision_increments_on_add_and_remove(self) -> None:
+        gw = make_world()
+        actor = make_actor(gw)
+        start_revision = gw.actors_revision
+
+        GameWorld.add_actor(gw, actor)
+        after_add_revision = gw.actors_revision
+        GameWorld.remove_actor(gw, actor)
+
+        assert after_add_revision == start_revision + 1
+        assert gw.actors_revision == after_add_revision + 1
+
     def test_add_multiple_actors_at_same_location(self) -> None:
         gw = make_world()
         actor1 = make_actor(gw, x=5, y=5, blocks_movement=True)
@@ -371,6 +422,23 @@ class TestLightManagement:
         # Light position should not change.
         assert unowned_light.position == (5, 5)
         mock_system.on_light_moved.assert_not_called()
+
+    def test_reset_pending_actor_position_snapshots_snaps_prev_after_move(self) -> None:
+        gw = make_world()
+        actor = make_actor(gw, x=5, y=5)
+        gw.add_actor(actor)
+
+        actor.move(1, 0)
+
+        # During the move step, interpolation should use the previous tile.
+        assert (actor.prev_x, actor.prev_y) == (5, 5)
+        assert (actor.x, actor.y) == (6, 5)
+
+        # At the next step boundary, prev should snap to current so the actor
+        # remains visually stable if it does not move again.
+        gw.reset_pending_actor_position_snapshots()
+
+        assert (actor.prev_x, actor.prev_y) == (6, 5)
 
 
 # ---------------------------------------------------------------------------

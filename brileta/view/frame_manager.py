@@ -89,6 +89,15 @@ _RENDER_METRICS: list[MetricSpec] = [
     MetricSpec("time.render.decals_ms", "Decal rendering"),
     MetricSpec("time.render.floating_text_ms", "Floating text rendering"),
     MetricSpec("time.render.minimap_ms", "Mini-map draw/caching"),
+    MetricSpec("time.render.actor_particles_ms", "Actor particle emitter check loop"),
+    MetricSpec(
+        "time.render.gpu_visible_texture_ms",
+        "GPU visible texture upload (full-map)",
+    ),
+    MetricSpec(
+        "time.render.gpu_explored_texture_ms",
+        "GPU explored texture upload (full-map)",
+    ),
     # TextureRenderer breakdown
     MetricSpec("time.render.texture.fbo_bind_clear_ms", "FBO bind and clear"),
     MetricSpec("time.render.texture.vbo_update_ms", "VBO vertex encode and upload"),
