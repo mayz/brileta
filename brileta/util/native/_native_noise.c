@@ -192,10 +192,13 @@ static PyObject *NoiseState_sample_2d_array(
     const float *xs = (const float *)xbuf.buf;
     const float *ys = (const float *)ybuf.buf;
     float *out = (float *)obuf.buf;
+    fnl_state local_state = self->state;
 
+    Py_BEGIN_ALLOW_THREADS
     for (Py_ssize_t i = 0; i < nx; i++) {
-        out[i] = fnlGetNoise2D(&self->state, xs[i], ys[i]);
+        out[i] = fnlGetNoise2D(&local_state, xs[i], ys[i]);
     }
+    Py_END_ALLOW_THREADS
 
     PyBuffer_Release(&xbuf);
     PyBuffer_Release(&ybuf);
@@ -239,10 +242,13 @@ static PyObject *NoiseState_sample_3d_array(
     const float *ys = (const float *)ybuf.buf;
     const float *zs = (const float *)zbuf.buf;
     float *out = (float *)obuf.buf;
+    fnl_state local_state = self->state;
 
+    Py_BEGIN_ALLOW_THREADS
     for (Py_ssize_t i = 0; i < nx; i++) {
-        out[i] = fnlGetNoise3D(&self->state, xs[i], ys[i], zs[i]);
+        out[i] = fnlGetNoise3D(&local_state, xs[i], ys[i], zs[i]);
     }
+    Py_END_ALLOW_THREADS
 
     PyBuffer_Release(&xbuf);
     PyBuffer_Release(&ybuf);

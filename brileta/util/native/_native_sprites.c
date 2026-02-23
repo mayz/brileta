@@ -285,10 +285,11 @@ PyObject *brileta_native_sprite_composite_over(PyObject *self, PyObject *args) {
         return NULL;
     }
 
-    c_composite_over(
-        data, w, y_min, y_max, x_min, x_max,
-        (const float *)alpha_buf.buf, r, g, b
-    );
+    const float *src_alpha = (const float *)alpha_buf.buf;
+
+    Py_BEGIN_ALLOW_THREADS
+    c_composite_over(data, w, y_min, y_max, x_min, x_max, src_alpha, r, g, b);
+    Py_END_ALLOW_THREADS
 
     PyBuffer_Release(&alpha_buf);
     PyBuffer_Release(&canvas_buf);
@@ -447,13 +448,16 @@ PyObject *brileta_native_sprite_draw_tapered_trunk(
         Py_RETURN_NONE;
     }
 
+    /* Release the GIL for the computation-heavy section.  All data has
+     * been extracted from Python objects; only raw C buffers are touched. */
+    int oom = 0;
+
+    Py_BEGIN_ALLOW_THREADS
+
     /* Pre-compute half-widths for all rows. */
     float inv_height = 1.0f / (float)(height - 1 > 0 ? height - 1 : 1);
     float *half_w = (float *)malloc(sizeof(float) * height);
-    if (!half_w) {
-        PyBuffer_Release(&buf);
-        return PyErr_NoMemory();
-    }
+    if (!half_w) { oom = 1; goto trunk_done; }
 
     for (int i = 0; i < height; i++) {
         float t = (float)i * inv_height;  /* 0 at top, 1 at bottom */
@@ -480,51 +484,49 @@ PyObject *brileta_native_sprite_draw_tapered_trunk(
 
     int x_min = clampi((int)floor(cx - max_hw - 0.5), 0, w - 1);
     int x_max = clampi((int)ceil(cx + max_hw + 0.5), 0, w - 1);
-    if (x_min > x_max) {
-        free(half_w);
-        PyBuffer_Release(&buf);
-        Py_RETURN_NONE;
-    }
+    if (x_min > x_max) { free(half_w); goto trunk_done; }
 
     /* Composite row by row. Build per-pixel source alpha and call
      * c_composite_over for each row to match Python's vectorized path. */
-    int n_cols = x_max - x_min + 1;
-    int n_rows = draw_y_max - draw_y_min + 1;
-    float *src_a = (float *)calloc((size_t)(n_rows * n_cols), sizeof(float));
-    if (!src_a) {
-        free(half_w);
-        PyBuffer_Release(&buf);
-        return PyErr_NoMemory();
-    }
+    {
+        int n_cols = x_max - x_min + 1;
+        int n_rows = draw_y_max - draw_y_min + 1;
+        float *src_a = (float *)calloc((size_t)(n_rows * n_cols), sizeof(float));
+        if (!src_a) { free(half_w); oom = 1; goto trunk_done; }
 
-    for (int row = draw_y_min; row <= draw_y_max; row++) {
-        int li = row - y_top;
-        float hw = half_w[li];
-        int ri = row - draw_y_min;
+        for (int row = draw_y_min; row <= draw_y_max; row++) {
+            int li = row - y_top;
+            float hw = half_w[li];
+            int ri = row - draw_y_min;
 
-        for (int col = x_min; col <= x_max; col++) {
-            float dist = fabsf((float)col - (float)cx);
-            int ci = col - x_min;
+            for (int col = x_min; col <= x_max; col++) {
+                float dist = fabsf((float)col - (float)cx);
+                int ci = col - x_min;
 
-            if (dist > hw + 0.5f) continue;  /* outside */
+                if (dist > hw + 0.5f) continue;  /* outside */
 
-            float alpha_f;
-            if (dist > hw - 0.5f) {
-                /* Edge pixel: anti-alias. */
-                float edge = maxf(0.0f, 1.0f - (dist - hw + 0.5f));
-                alpha_f = floorf((float)a * edge) / 255.0f;
-            } else {
-                alpha_f = (float)a / 255.0f;
+                float alpha_f;
+                if (dist > hw - 0.5f) {
+                    /* Edge pixel: anti-alias. */
+                    float edge = maxf(0.0f, 1.0f - (dist - hw + 0.5f));
+                    alpha_f = floorf((float)a * edge) / 255.0f;
+                } else {
+                    alpha_f = (float)a / 255.0f;
+                }
+                src_a[ri * n_cols + ci] = alpha_f;
             }
-            src_a[ri * n_cols + ci] = alpha_f;
         }
+
+        c_composite_over(data, w, draw_y_min, draw_y_max, x_min, x_max, src_a, r, g, b);
+        free(src_a);
+        free(half_w);
     }
 
-    c_composite_over(data, w, draw_y_min, draw_y_max, x_min, x_max, src_a, r, g, b);
+trunk_done:
+    Py_END_ALLOW_THREADS
 
-    free(src_a);
-    free(half_w);
     PyBuffer_Release(&buf);
+    if (oom) return PyErr_NoMemory();
     Py_RETURN_NONE;
 }
 
@@ -709,6 +711,10 @@ PyObject *brileta_native_sprite_stamp_fuzzy_circle(
         Py_RETURN_NONE;
     }
 
+    int oom = 0;
+
+    Py_BEGIN_ALLOW_THREADS
+
     /* Alpha profile parameters. */
     float hc = clampf((float)hardness, 0.0f, 1.0f);
     float inner_fraction = 0.3f + (0.85f - 0.3f) * hc;
@@ -723,10 +729,7 @@ PyObject *brileta_native_sprite_stamp_fuzzy_circle(
     int n_rows = y_max - y_min + 1;
     int n_cols = x_max - x_min + 1;
     float *src_a = (float *)malloc(sizeof(float) * n_rows * n_cols);
-    if (!src_a) {
-        PyBuffer_Release(&buf);
-        return PyErr_NoMemory();
-    }
+    if (!src_a) { oom = 1; goto fuzzy_done; }
 
     for (int row = y_min; row <= y_max; row++) {
         for (int col = x_min; col <= x_max; col++) {
@@ -778,7 +781,12 @@ PyObject *brileta_native_sprite_stamp_fuzzy_circle(
     }
 
     free(src_a);
+
+fuzzy_done:
+    Py_END_ALLOW_THREADS
+
     PyBuffer_Release(&buf);
+    if (oom) return PyErr_NoMemory();
     Py_RETURN_NONE;
 }
 
@@ -821,6 +829,8 @@ PyObject *brileta_native_sprite_stamp_ellipse(PyObject *self, PyObject *args) {
         Py_RETURN_NONE;
     }
 
+    Py_BEGIN_ALLOW_THREADS
+
     float hc = clampf((float)hardness, 0.0f, 1.0f);
     float inner_fraction = 0.3f + 0.55f * hc;
     float ef = (float)falloff + 2.5f * hc;
@@ -859,6 +869,8 @@ PyObject *brileta_native_sprite_stamp_ellipse(PyObject *self, PyObject *args) {
             px[3] = (uint8_t)clampi((int)(out_a * 255.0f), 0, 255);
         }
     }
+
+    Py_END_ALLOW_THREADS
 
     PyBuffer_Release(&buf);
     Py_RETURN_NONE;
@@ -956,6 +968,11 @@ PyObject *brileta_native_sprite_batch_stamp_ellipses(
         return NULL;
     }
 
+    /* All Python data extracted into C arrays. Release GIL for computation. */
+    int oom = 0;
+
+    Py_BEGIN_ALLOW_THREADS
+
     /* Compute profile parameters (shared across all ellipses). */
     float hc = clampf((float)hardness, 0.0f, 1.0f);
     float inner_fraction = 0.3f + 0.55f * hc;
@@ -979,67 +996,68 @@ PyObject *brileta_native_sprite_batch_stamp_ellipses(
         if (ex_max > union_x_max) union_x_max = ex_max;
     }
     if (union_y_min > union_y_max || union_x_min > union_x_max) {
-        free(cxs); free(cys); free(rxs); free(rys);
-        PyBuffer_Release(&buf);
-        Py_RETURN_NONE;
+        goto batch_ell_done;
     }
 
-    int n_rows = union_y_max - union_y_min + 1;
-    int n_cols = union_x_max - union_x_min + 1;
-    size_t n_pixels = (size_t)n_rows * (size_t)n_cols;
+    {
+        int n_rows = union_y_max - union_y_min + 1;
+        int n_cols = union_x_max - union_x_min + 1;
+        size_t n_pixels = (size_t)n_rows * (size_t)n_cols;
 
-    /* Allocate `remaining` buffer: starts at 1.0 everywhere. */
-    float *remaining = (float *)malloc(sizeof(float) * n_pixels);
-    if (!remaining) {
-        free(cxs); free(cys); free(rxs); free(rys);
-        PyBuffer_Release(&buf);
-        return PyErr_NoMemory();
-    }
-    for (size_t i = 0; i < n_pixels; i++) remaining[i] = 1.0f;
+        /* Allocate `remaining` buffer: starts at 1.0 everywhere. */
+        float *remaining = (float *)malloc(sizeof(float) * n_pixels);
+        if (!remaining) { oom = 1; goto batch_ell_done; }
+        for (size_t i = 0; i < n_pixels; i++) remaining[i] = 1.0f;
 
-    /* Accumulate: remaining *= (1 - alpha_i * opacity) for each ellipse. */
-    for (int ei = 0; ei < n_ell; ei++) {
-        float ecx = cxs[ei], ecy = cys[ei];
-        float erx = rxs[ei], ery = rys[ei];
-        float max_r = maxf(erx, ery);
-        float edge_limit = 1.0f + 0.5f / max_r;
+        /* Accumulate: remaining *= (1 - alpha_i * opacity) for each ellipse. */
+        for (int ei = 0; ei < n_ell; ei++) {
+            float ecx = cxs[ei], ecy = cys[ei];
+            float erx = rxs[ei], ery = rys[ei];
+            float max_r = maxf(erx, ery);
+            float edge_limit = 1.0f + 0.5f / max_r;
 
-        int rx_ceil = (int)ceilf(erx) + 1;
-        int ry_ceil = (int)ceilf(ery) + 1;
-        int ey_min = clampi((int)ecy - ry_ceil, 0, h - 1);
-        int ey_max = clampi((int)ecy + ry_ceil, 0, h - 1);
-        int ex_min = clampi((int)ecx - rx_ceil, 0, w - 1);
-        int ex_max = clampi((int)ecx + rx_ceil, 0, w - 1);
+            int rx_ceil = (int)ceilf(erx) + 1;
+            int ry_ceil = (int)ceilf(ery) + 1;
+            int ey_min = clampi((int)ecy - ry_ceil, 0, h - 1);
+            int ey_max = clampi((int)ecy + ry_ceil, 0, h - 1);
+            int ex_min = clampi((int)ecx - rx_ceil, 0, w - 1);
+            int ex_max = clampi((int)ecx + rx_ceil, 0, w - 1);
 
-        for (int row = ey_min; row <= ey_max; row++) {
-            for (int col = ex_min; col <= ex_max; col++) {
-                float ddx = ((float)col - ecx) / erx;
-                float ddy = ((float)row - ecy) / ery;
-                float dist = sqrtf(ddx * ddx + ddy * ddy);
+            for (int row = ey_min; row <= ey_max; row++) {
+                for (int col = ex_min; col <= ex_max; col++) {
+                    float ddx = ((float)col - ecx) / erx;
+                    float ddy = ((float)row - ecy) / ery;
+                    float dist = sqrtf(ddx * ddx + ddy * ddy);
 
-                float alpha = ellipse_alpha(
-                    dist, inner_fraction, outer_fraction, ef, edge_limit, 1.0f
-                );
-                if (alpha <= 0.0f) continue;
+                    float alpha = ellipse_alpha(
+                        dist, inner_fraction, outer_fraction, ef, edge_limit, 1.0f
+                    );
+                    if (alpha <= 0.0f) continue;
 
-                int idx = (row - union_y_min) * n_cols + (col - union_x_min);
-                remaining[idx] *= (1.0f - alpha * opacity);
+                    int idx = (row - union_y_min) * n_cols + (col - union_x_min);
+                    remaining[idx] *= (1.0f - alpha * opacity);
+                }
             }
         }
+
+        /* Convert remaining to source alpha and composite. */
+        for (size_t i = 0; i < n_pixels; i++)
+            remaining[i] = 1.0f - remaining[i];
+
+        c_composite_over(
+            data, w, union_y_min, union_y_max, union_x_min, union_x_max,
+            remaining, r, g, b
+        );
+
+        free(remaining);
     }
 
-    /* Convert remaining to source alpha and composite. */
-    for (size_t i = 0; i < n_pixels; i++)
-        remaining[i] = 1.0f - remaining[i];
+batch_ell_done:
+    Py_END_ALLOW_THREADS
 
-    c_composite_over(
-        data, w, union_y_min, union_y_max, union_x_min, union_x_max,
-        remaining, r, g, b
-    );
-
-    free(remaining);
     free(cxs); free(cys); free(rxs); free(rys);
     PyBuffer_Release(&buf);
+    if (oom) return PyErr_NoMemory();
     Py_RETURN_NONE;
 }
 
@@ -1251,14 +1269,20 @@ PyObject *brileta_native_sprite_generate_deciduous_canopy(
         return NULL;
     }
 
+    /* All Python data extracted. Release GIL for the heavy canopy
+     * generation (lobe placement + 4x batch stamp passes). */
+    int n_lobes;
+    float lobe_xs[8];
+    float lobe_ys[8];
+
+    Py_BEGIN_ALLOW_THREADS
+
     SpriteRng rng;
     sprite_rng_init(&rng, (uint64_t)seed);
 
     const double kPi = 3.14159265358979323846;
 
-    int n_lobes = rng_int(&rng, 3, 6);
-    float lobe_xs[8];
-    float lobe_ys[8];
+    n_lobes = rng_int(&rng, 3, 6);
     double base_angle_step = 2.0 * kPi / (double)n_lobes;
     double lobe_angle_offset = rng_uniform(&rng, -kPi, kPi);
 
@@ -1401,62 +1425,29 @@ PyObject *brileta_native_sprite_generate_deciduous_canopy(
     }
 
     batch_stamp_from_specs(
-        data,
-        h,
-        w,
-        central_fills,
-        n_central,
-        sh_r,
-        sh_g,
-        sh_b,
-        sh_a,
-        1.6f,
-        0.7f
+        data, h, w, central_fills, n_central,
+        sh_r, sh_g, sh_b, sh_a, 1.6f, 0.7f
     );
     batch_stamp_from_specs(
-        data,
-        h,
-        w,
-        shadows,
-        n_shadows,
-        sh_r,
-        sh_g,
-        sh_b,
-        sh_a,
-        1.8f,
-        0.8f
+        data, h, w, shadows, n_shadows,
+        sh_r, sh_g, sh_b, sh_a, 1.8f, 0.8f
     );
     batch_stamp_from_specs(
-        data,
-        h,
-        w,
-        mids,
-        n_mids,
-        mid_r,
-        mid_g,
-        mid_b,
-        mid_a,
-        1.5f,
-        0.7f
+        data, h, w, mids, n_mids,
+        mid_r, mid_g, mid_b, mid_a, 1.5f, 0.7f
     );
     batch_stamp_from_specs(
-        data,
-        h,
-        w,
-        highlights,
-        n_highlights,
-        hi_r,
-        hi_g,
-        hi_b,
-        hi_a,
-        1.3f,
-        0.6f
+        data, h, w, highlights, n_highlights,
+        hi_r, hi_g, hi_b, hi_a, 1.3f, 0.6f
     );
+
+    Py_END_ALLOW_THREADS
 
     PyBuffer_Release(&buf);
     free(tip_xs);
     free(tip_ys);
 
+    /* Build Python return list (needs GIL). */
     PyObject *lobe_centers = PyList_New(n_lobes);
     if (!lobe_centers) return NULL;
     for (int i = 0; i < n_lobes; i++) {
@@ -1508,6 +1499,10 @@ PyObject *brileta_native_sprite_fill_triangle(PyObject *self, PyObject *args) {
         Py_RETURN_NONE;
     }
 
+    int oom = 0;
+
+    Py_BEGIN_ALLOW_THREADS
+
     /* Pre-compute half-widths per row (power-shaped taper). */
     float inv_h = 1.0f / (float)(tri_height - 1 > 0 ? tri_height - 1 : 1);
     int local_start = draw_y_min - top_y;
@@ -1524,47 +1519,47 @@ PyObject *brileta_native_sprite_fill_triangle(PyObject *self, PyObject *args) {
 
     int x_min = clampi((int)floor(cx - max_hw - 0.5), 0, w - 1);
     int x_max = clampi((int)ceil(cx + max_hw + 0.5), 0, w - 1);
-    if (x_min > x_max) {
-        PyBuffer_Release(&buf);
-        Py_RETURN_NONE;
-    }
+    if (x_min > x_max) { goto tri_done; }
 
-    int n_rows = draw_y_max - draw_y_min + 1;
-    int n_cols = x_max - x_min + 1;
-    float *src_a = (float *)calloc((size_t)(n_rows * n_cols), sizeof(float));
-    if (!src_a) {
-        PyBuffer_Release(&buf);
-        return PyErr_NoMemory();
-    }
+    {
+        int n_rows = draw_y_max - draw_y_min + 1;
+        int n_cols = x_max - x_min + 1;
+        float *src_a = (float *)calloc((size_t)(n_rows * n_cols), sizeof(float));
+        if (!src_a) { oom = 1; goto tri_done; }
 
-    for (int row = draw_y_min; row <= draw_y_max; row++) {
-        int li = row - top_y;
-        float t = (float)li * inv_h;
-        float row_w = 1.0f + ((float)base_width - 1.0f) * powf(t, 0.8f);
-        float hw = row_w * 0.5f;
-        int ri = row - draw_y_min;
+        for (int row = draw_y_min; row <= draw_y_max; row++) {
+            int li = row - top_y;
+            float t = (float)li * inv_h;
+            float row_w = 1.0f + ((float)base_width - 1.0f) * powf(t, 0.8f);
+            float hw = row_w * 0.5f;
+            int ri = row - draw_y_min;
 
-        for (int col = x_min; col <= x_max; col++) {
-            float dist = fabsf((float)col - (float)cx);
-            int ci = col - x_min;
+            for (int col = x_min; col <= x_max; col++) {
+                float dist = fabsf((float)col - (float)cx);
+                int ci = col - x_min;
 
-            if (dist > hw + 0.5f) continue;  /* outside */
+                if (dist > hw + 0.5f) continue;  /* outside */
 
-            float alpha_f;
-            if (dist > hw - 0.5f) {
-                float edge = maxf(0.0f, 1.0f - (dist - hw + 0.5f));
-                alpha_f = floorf((float)a * edge) / 255.0f;
-            } else {
-                alpha_f = (float)a / 255.0f;
+                float alpha_f;
+                if (dist > hw - 0.5f) {
+                    float edge = maxf(0.0f, 1.0f - (dist - hw + 0.5f));
+                    alpha_f = floorf((float)a * edge) / 255.0f;
+                } else {
+                    alpha_f = (float)a / 255.0f;
+                }
+                src_a[ri * n_cols + ci] = alpha_f;
             }
-            src_a[ri * n_cols + ci] = alpha_f;
         }
+
+        c_composite_over(data, w, draw_y_min, draw_y_max, x_min, x_max, src_a, r, g, b);
+        free(src_a);
     }
 
-    c_composite_over(data, w, draw_y_min, draw_y_max, x_min, x_max, src_a, r, g, b);
+tri_done:
+    Py_END_ALLOW_THREADS
 
-    free(src_a);
     PyBuffer_Release(&buf);
+    if (oom) return PyErr_NoMemory();
     Py_RETURN_NONE;
 }
 
@@ -1611,6 +1606,8 @@ PyObject *brileta_native_sprite_paste_sprite(PyObject *self, PyObject *args) {
         Py_RETURN_NONE;
     }
 
+    Py_BEGIN_ALLOW_THREADS
+
     /* Per-pixel Porter-Duff "over" composite. */
     for (int row = 0; row < paste_h; row++) {
         for (int col = 0; col < paste_w; col++) {
@@ -1638,6 +1635,8 @@ PyObject *brileta_native_sprite_paste_sprite(PyObject *self, PyObject *args) {
             dst[3] = (uint8_t)clampi((int)(out_a * 255.0f), 0, 255);
         }
     }
+
+    Py_END_ALLOW_THREADS
 
     PyBuffer_Release(&sprite_buf);
     PyBuffer_Release(&sheet_buf);
@@ -1667,6 +1666,10 @@ PyObject *brileta_native_sprite_darken_rim(PyObject *self, PyObject *args) {
     if (get_canvas_buffer(canvas_obj, &buf, &h, &w, &data) < 0)
         return NULL;
 
+    int oom = 0;
+
+    Py_BEGIN_ALLOW_THREADS
+
     /*
      * Two-pass approach: first identify rim pixels, then darken.
      * We need two passes because darkening while scanning would affect
@@ -1674,10 +1677,7 @@ PyObject *brileta_native_sprite_darken_rim(PyObject *self, PyObject *args) {
      */
     size_t n_pixels = (size_t)h * (size_t)w;
     uint8_t *rim = (uint8_t *)calloc(n_pixels, 1);
-    if (!rim) {
-        PyBuffer_Release(&buf);
-        return PyErr_NoMemory();
-    }
+    if (!rim) { oom = 1; goto rim_done; }
 
     /* Pass 1: identify rim pixels. */
     for (int row = 0; row < h; row++) {
@@ -1714,7 +1714,12 @@ PyObject *brileta_native_sprite_darken_rim(PyObject *self, PyObject *args) {
     }
 
     free(rim);
+
+rim_done:
+    Py_END_ALLOW_THREADS
+
     PyBuffer_Release(&buf);
+    if (oom) return PyErr_NoMemory();
     Py_RETURN_NONE;
 }
 
@@ -1776,13 +1781,14 @@ PyObject *brileta_native_sprite_nibble_canopy(PyObject *self, PyObject *args) {
     if (get_canvas_buffer(canvas_obj, &buf, &h, &w, &data) < 0)
         return NULL;
 
+    int oom = 0;
+
+    Py_BEGIN_ALLOW_THREADS
+
     /* Compute rim mask. */
     size_t n_pixels = (size_t)h * (size_t)w;
     uint8_t *rim = (uint8_t *)calloc(n_pixels, 1);
-    if (!rim) {
-        PyBuffer_Release(&buf);
-        return PyErr_NoMemory();
-    }
+    if (!rim) { oom = 1; goto nibble_canopy_done; }
     compute_rim_mask(data, h, w, rim);
 
     /* Restrict to canopy region (elliptical envelope, same as Python). */
@@ -1802,62 +1808,61 @@ PyObject *brileta_native_sprite_nibble_canopy(PyObject *self, PyObject *args) {
     for (size_t i = 0; i < n_pixels; i++) {
         if (rim[i]) { has_rim = 1; break; }
     }
-    if (!has_rim) {
-        free(rim);
-        PyBuffer_Release(&buf);
-        Py_RETURN_NONE;
-    }
+    if (!has_rim) { free(rim); goto nibble_canopy_done; }
 
-    SpriteRng rng;
-    sprite_rng_init(&rng, (uint64_t)seed);
+    {
+        SpriteRng rng;
+        sprite_rng_init(&rng, (uint64_t)seed);
 
-    float np = clampf((float)nibble_prob, 0.0f, 1.0f);
-    float ip = clampf((float)interior_prob, 0.0f, 1.0f);
+        float np = clampf((float)nibble_prob, 0.0f, 1.0f);
+        float ip = clampf((float)interior_prob, 0.0f, 1.0f);
 
-    /* Nibble pass: erase random rim pixels. */
-    int any_nibbled = 0;
-    for (int row = 0; row < h; row++) {
-        for (int col = 0; col < w; col++) {
-            if (!rim[row * w + col]) continue;
-            if (sprite_rng_next_double(&rng) < np) {
-                PX(data, row, col, w)[3] = 0;
-                rim[row * w + col] = 2;  /* Mark as nibbled for interior pass. */
-                any_nibbled = 1;
+        /* Nibble pass: erase random rim pixels. */
+        int any_nibbled = 0;
+        for (int row = 0; row < h; row++) {
+            for (int col = 0; col < w; col++) {
+                if (!rim[row * w + col]) continue;
+                if (sprite_rng_next_double(&rng) < np) {
+                    PX(data, row, col, w)[3] = 0;
+                    rim[row * w + col] = 2;  /* Mark as nibbled for interior pass. */
+                    any_nibbled = 1;
+                }
             }
         }
-    }
 
-    if (!any_nibbled || ip <= 0.0f) {
-        free(rim);
-        PyBuffer_Release(&buf);
-        Py_RETURN_NONE;
-    }
+        if (any_nibbled && ip > 0.0f) {
+            /* Interior nibble: for nibbled pixels, also clear one pixel toward center. */
+            for (int row = 0; row < h; row++) {
+                for (int col = 0; col < w; col++) {
+                    if (rim[row * w + col] != 2) continue;
+                    if (sprite_rng_next_double(&rng) >= ip) continue;
 
-    /* Interior nibble: for nibbled pixels, also clear one pixel toward center. */
-    for (int row = 0; row < h; row++) {
-        for (int col = 0; col < w; col++) {
-            if (rim[row * w + col] != 2) continue;
-            if (sprite_rng_next_double(&rng) >= ip) continue;
+                    /* Step toward center. */
+                    int step_x = 0, step_y = 0;
+                    float fdx = (float)center_x - (float)col;
+                    float fdy = (float)center_y - (float)row;
+                    if (fdx > 0.0f) step_x = 1;
+                    else if (fdx < 0.0f) step_x = -1;
+                    if (fdy > 0.0f) step_y = 1;
+                    else if (fdy < 0.0f) step_y = -1;
 
-            /* Step toward center. */
-            int step_x = 0, step_y = 0;
-            float fdx = (float)center_x - (float)col;
-            float fdy = (float)center_y - (float)row;
-            if (fdx > 0.0f) step_x = 1;
-            else if (fdx < 0.0f) step_x = -1;
-            if (fdy > 0.0f) step_y = 1;
-            else if (fdy < 0.0f) step_y = -1;
+                    int inner_x = clampi(col + step_x, 0, w - 1);
+                    int inner_y = clampi(row + step_y, 0, h - 1);
 
-            int inner_x = clampi(col + step_x, 0, w - 1);
-            int inner_y = clampi(row + step_y, 0, h - 1);
-
-            if (PX(data, inner_y, inner_x, w)[3] > 128)
-                PX(data, inner_y, inner_x, w)[3] = 0;
+                    if (PX(data, inner_y, inner_x, w)[3] > 128)
+                        PX(data, inner_y, inner_x, w)[3] = 0;
+                }
+            }
         }
+
+        free(rim);
     }
 
-    free(rim);
+nibble_canopy_done:
+    Py_END_ALLOW_THREADS
+
     PyBuffer_Release(&buf);
+    if (oom) return PyErr_NoMemory();
     Py_RETURN_NONE;
 }
 
@@ -1885,13 +1890,14 @@ PyObject *brileta_native_sprite_nibble_boulder(PyObject *self, PyObject *args) {
     if (get_canvas_buffer(canvas_obj, &buf, &h, &w, &data) < 0)
         return NULL;
 
+    int oom = 0;
+
+    Py_BEGIN_ALLOW_THREADS
+
     /* Compute rim mask. */
     size_t n_pixels = (size_t)h * (size_t)w;
     uint8_t *rim = (uint8_t *)calloc(n_pixels, 1);
-    if (!rim) {
-        PyBuffer_Release(&buf);
-        return PyErr_NoMemory();
-    }
+    if (!rim) { oom = 1; goto nibble_boulder_done; }
     compute_rim_mask(data, h, w, rim);
 
     /* Check if any rim pixels exist. */
@@ -1899,51 +1905,50 @@ PyObject *brileta_native_sprite_nibble_boulder(PyObject *self, PyObject *args) {
     for (size_t i = 0; i < n_pixels; i++) {
         if (rim[i]) { has_rim = 1; break; }
     }
-    if (!has_rim) {
-        free(rim);
-        PyBuffer_Release(&buf);
-        Py_RETURN_NONE;
-    }
+    if (!has_rim) { free(rim); goto nibble_boulder_done; }
 
-    /* Find opaque region vertical extent to compute midpoint. */
-    int first_opaque_row = h, last_opaque_row = -1;
-    for (int row = 0; row < h; row++) {
-        for (int col = 0; col < w; col++) {
-            if (PX(data, row, col, w)[3] > 0) {
-                if (row < first_opaque_row) first_opaque_row = row;
-                if (row > last_opaque_row) last_opaque_row = row;
+    {
+        /* Find opaque region vertical extent to compute midpoint. */
+        int first_opaque_row = h, last_opaque_row = -1;
+        for (int row = 0; row < h; row++) {
+            for (int col = 0; col < w; col++) {
+                if (PX(data, row, col, w)[3] > 0) {
+                    if (row < first_opaque_row) first_opaque_row = row;
+                    if (row > last_opaque_row) last_opaque_row = row;
+                }
             }
         }
-    }
-    if (first_opaque_row > last_opaque_row) {
-        free(rim);
-        PyBuffer_Release(&buf);
-        Py_RETURN_NONE;
-    }
-    int midpoint = (first_opaque_row + last_opaque_row) / 2;
+        if (first_opaque_row > last_opaque_row) { free(rim); goto nibble_boulder_done; }
+        int midpoint = (first_opaque_row + last_opaque_row) / 2;
 
-    /* Only nibble in the upper half. */
-    for (int row = midpoint; row < h; row++) {
-        for (int col = 0; col < w; col++) {
-            rim[row * w + col] = 0;
-        }
-    }
-
-    SpriteRng rng;
-    sprite_rng_init(&rng, (uint64_t)seed);
-
-    float np = clampf((float)nibble_prob, 0.0f, 1.0f);
-
-    for (int row = 0; row < h; row++) {
-        for (int col = 0; col < w; col++) {
-            if (!rim[row * w + col]) continue;
-            if (sprite_rng_next_double(&rng) < np) {
-                PX(data, row, col, w)[3] = 0;
+        /* Only nibble in the upper half. */
+        for (int row = midpoint; row < h; row++) {
+            for (int col = 0; col < w; col++) {
+                rim[row * w + col] = 0;
             }
         }
+
+        SpriteRng rng;
+        sprite_rng_init(&rng, (uint64_t)seed);
+
+        float np = clampf((float)nibble_prob, 0.0f, 1.0f);
+
+        for (int row = 0; row < h; row++) {
+            for (int col = 0; col < w; col++) {
+                if (!rim[row * w + col]) continue;
+                if (sprite_rng_next_double(&rng) < np) {
+                    PX(data, row, col, w)[3] = 0;
+                }
+            }
+        }
+
+        free(rim);
     }
 
-    free(rim);
+nibble_boulder_done:
+    Py_END_ALLOW_THREADS
+
     PyBuffer_Release(&buf);
+    if (oom) return PyErr_NoMemory();
     Py_RETURN_NONE;
 }

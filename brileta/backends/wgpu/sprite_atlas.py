@@ -5,12 +5,15 @@ via a skyline bin-packing algorithm.  Sprites are uploaded at map load time,
 not per-frame.  Each allocation returns UV coordinates that the actor
 renderer uses to draw from this atlas instead of the CP437 glyph atlas.
 
-The atlas exposes deallocate() and clear() as escape hatches for future
-multi-map transitions - not as part of a per-frame paging system.
+The atlas is auto-sized at map load time to fit all sprites for the current
+map.  On map transitions, the old atlas is dropped and a fresh one is
+created at the appropriate size for the new map.
 """
 
 from __future__ import annotations
 
+import logging
+import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -23,14 +26,71 @@ if TYPE_CHECKING:
 
     from .resource_manager import WGPUResourceManager
 
-# Default atlas dimensions.  A 2048x2048 RGBA texture uses 16 MB of VRAM
-# and holds roughly 10,000 20x20 sprites - enough for ~40 maps at current
-# tree density.
-ATLAS_WIDTH = 2048
-ATLAS_HEIGHT = 2048
+logger = logging.getLogger(__name__)
+
+# Minimum atlas dimension (no point going smaller than this).
+_MIN_ATLAS_SIZE = 256
 
 # 1 pixel of padding between packed sprites prevents texture-filtering bleed.
 PADDING = 1
+
+# Packing overhead factor.  Skyline bin-packing wastes some space in the gaps
+# between variable-height sprites.  1.3 means we budget 30% more area than the
+# raw sum of sprite areas, which is conservative enough to avoid a too-small
+# atlas while keeping VRAM usage reasonable.
+_PACKING_OVERHEAD = 1.3
+
+
+def compute_atlas_size(
+    sprites: list[np.ndarray],
+    gpu_max_texture_dim: int,
+) -> int:
+    """Compute the smallest power-of-two atlas side that fits all sprites.
+
+    Estimates the total padded area, adds packing overhead, and rounds up to
+    the next power of two.  The result is clamped between ``_MIN_ATLAS_SIZE``
+    and ``gpu_max_texture_dim`` (the hardware limit queried from the GPU).
+
+    Returns a single int because the atlas is always square.
+    """
+    if not sprites:
+        return _MIN_ATLAS_SIZE
+
+    # Sum padded pixel areas and track the widest/tallest sprite (the atlas
+    # must be at least that large on each axis or the sprite can never fit).
+    total_area = 0
+    max_dim = 0
+    for px in sprites:
+        h, w = px.shape[:2]
+        padded_w = w + PADDING
+        padded_h = h + PADDING
+        total_area += padded_w * padded_h
+        max_dim = max(max_dim, padded_w, padded_h)
+
+    target_area = total_area * _PACKING_OVERHEAD
+    # Side length from area, then round up to next power of two.
+    side = max(max_dim, math.ceil(math.sqrt(target_area)))
+    side = _next_power_of_two(side)
+    side = max(_MIN_ATLAS_SIZE, min(side, gpu_max_texture_dim))
+
+    if side * side < total_area:
+        logger.warning(
+            "Sprite atlas clamped to GPU max (%dx%d). %d sprites totalling "
+            "%d px^2 may not all fit - some actors will use glyph fallback.",
+            side,
+            side,
+            len(sprites),
+            total_area,
+        )
+
+    return side
+
+
+def _next_power_of_two(n: int) -> int:
+    """Return the smallest power of two >= n."""
+    if n <= 0:
+        return 1
+    return 1 << (n - 1).bit_length()
 
 
 @dataclass
@@ -58,30 +118,39 @@ class _SpriteRegion:
 class SpriteAtlas:
     """Dynamic texture atlas packed via skyline bin-packing.
 
-    Usage::
+    Preferred usage (batched - one GPU upload for the whole atlas)::
 
-        atlas = SpriteAtlas(resource_manager)
-        uv = atlas.allocate(my_rgba_array)
-        # ... later ...
-        atlas.deallocate(uv)
-        atlas.clear()
+        sprites = [generate_sprite(...) for actor in actors]
+        size = compute_atlas_size(sprites, gpu_max)
+        atlas = SpriteAtlas(resource_manager, size, size)
+        for sprite in sprites:
+            uv = atlas.pack(sprite)     # CPU-only skyline placement
+        atlas.flush()                   # single GPU upload
 
-    The GPU texture is created lazily on the first allocation so that
-    constructing a SpriteAtlas is cheap (no GPU work until needed).
+    Legacy usage (per-sprite GPU upload, slower for many sprites)::
+
+        uv = atlas.allocate(sprite)     # skyline + immediate GPU upload
+
+    The GPU texture is created lazily on the first ``allocate()`` or
+    ``flush()`` call so that constructing a SpriteAtlas is cheap.
     """
 
     def __init__(
         self,
         resource_manager: WGPUResourceManager,
-        width: int = ATLAS_WIDTH,
-        height: int = ATLAS_HEIGHT,
+        width: int,
+        height: int,
     ) -> None:
         self._resource_manager = resource_manager
         self.width = width
         self.height = height
 
-        # GPU texture - created lazily on first allocate().
+        # GPU texture - created lazily on first allocate() or flush().
         self._texture: wgpu.GPUTexture | None = None
+
+        # CPU-side staging buffer for batched pack()+flush() workflow.
+        # Allocated lazily on first pack() call, freed after flush().
+        self._cpu_buffer: np.ndarray | None = None
 
         # Skyline: list of segments sorted left-to-right, covering [0, width).
         self._skyline: list[_SkylineNode] = [_SkylineNode(x=0, y=0, width=width)]
@@ -89,17 +158,24 @@ class SpriteAtlas:
         # Track allocated regions keyed by the SpriteUV returned to the caller.
         self._regions: dict[SpriteUV, _SpriteRegion] = {}
 
+        # Bulk pack count (set by pack_all, not tracked per-region).
+        self._bulk_count: int = 0
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
     @property
     def texture(self) -> wgpu.GPUTexture | None:
-        """The underlying GPU texture, or None if no sprites have been allocated."""
+        """The underlying GPU texture, or None if no sprites have been uploaded."""
         return self._texture
 
-    def allocate(self, pixels: np.ndarray) -> SpriteUV | None:
-        """Pack an RGBA sprite into the atlas and upload it to the GPU.
+    def pack(self, pixels: np.ndarray) -> SpriteUV | None:
+        """Place a sprite in the atlas (CPU only, no GPU upload).
+
+        Performs skyline bin-packing and blits the sprite into a CPU-side
+        staging buffer.  Call :meth:`flush` after packing all sprites to
+        upload the entire atlas to the GPU in a single ``write_texture``.
 
         Args:
             pixels: uint8 numpy array with shape (height, width, 4).
@@ -107,6 +183,185 @@ class SpriteAtlas:
         Returns:
             A SpriteUV with the allocated UV coordinates, or None if the
             atlas is full.
+        """
+        uv, best_x, best_y = self._place(pixels)
+        if uv is None:
+            return None
+
+        sprite_h, sprite_w = pixels.shape[:2]
+
+        # Lazily create the CPU staging buffer (zeros = transparent black).
+        if self._cpu_buffer is None:
+            self._cpu_buffer = np.zeros((self.height, self.width, 4), dtype=np.uint8)
+
+        # Blit sprite pixels into the staging buffer.
+        self._cpu_buffer[best_y : best_y + sprite_h, best_x : best_x + sprite_w] = (
+            pixels
+        )
+
+        # Duplicate the bottom row into the 1px padding below the sprite.
+        # The shadow render pass samples sprite silhouettes with a linear-
+        # filtering sampler that approaches the bottom UV boundary. Without
+        # edge extension, it blends opaque pixels with transparent padding,
+        # creating a visible seam.
+        if sprite_h > 0 and best_y + sprite_h < self.height:
+            self._cpu_buffer[best_y + sprite_h, best_x : best_x + sprite_w] = pixels[
+                sprite_h - 1
+            ]
+
+        return uv
+
+    def pack_all(self, sprites: list[np.ndarray]) -> list[SpriteUV | None]:
+        """Pack all sprites at once using fast shelf packing.
+
+        Sorts sprites by height descending and packs them left-to-right in
+        fixed-height rows (shelves).  This is O(1) per sprite - pure integer
+        arithmetic, no list manipulation - and much faster than per-sprite
+        skyline packing for large batches.
+
+        Returns UVs in the **same order** as the input list.  Sprites that
+        don't fit return None in their slot.
+
+        Also builds the CPU staging buffer.  Call :meth:`flush` afterwards
+        to upload to the GPU.
+        """
+        if not sprites:
+            return []
+
+        n = len(sprites)
+        atlas_w = self.width
+        atlas_h = self.height
+        pad = PADDING
+
+        # Build (index, height, width) tuples and sort by height descending
+        # so each shelf uses the tallest sprite as its height, and subsequent
+        # sprites on that shelf waste minimal vertical space.
+        indexed = [(i, px.shape[0], px.shape[1]) for i, px in enumerate(sprites)]
+        indexed.sort(key=lambda t: t[1], reverse=True)
+
+        # Allocate the CPU staging buffer.
+        buf = np.zeros((atlas_h, atlas_w, 4), dtype=np.uint8)
+
+        # Shelf state: current row's top-left corner and shelf height.
+        shelf_x = 0
+        shelf_y = 0
+        shelf_h = 0  # Height of the current shelf (set by first sprite in row).
+
+        results: list[SpriteUV | None] = [None] * n
+        placed = 0
+        inv_w = 1.0 / atlas_w
+        inv_h = 1.0 / atlas_h
+
+        for orig_idx, sp_h, sp_w in indexed:
+            padded_w = sp_w + pad
+            padded_h = sp_h + pad
+
+            # Start a new shelf if the sprite doesn't fit on this row.
+            if shelf_x + padded_w > atlas_w:
+                shelf_y += shelf_h
+                shelf_x = 0
+                shelf_h = 0
+
+            # Set shelf height from first sprite placed on this shelf.
+            if shelf_h == 0:
+                shelf_h = padded_h
+
+            # Check if we've run out of vertical space.
+            if shelf_y + padded_h > atlas_h:
+                continue  # Skip this sprite (atlas full for remaining).
+
+            x = shelf_x
+            y = shelf_y
+            px = sprites[orig_idx]
+
+            # Blit sprite into CPU buffer.
+            buf[y : y + sp_h, x : x + sp_w] = px
+
+            # Bottom-row edge extension for shadow linear filtering.
+            if sp_h > 0 and y + sp_h < atlas_h:
+                buf[y + sp_h, x : x + sp_w] = px[sp_h - 1]
+
+            # Compute normalized UV coordinates.
+            results[orig_idx] = SpriteUV(
+                u1=x * inv_w,
+                v1=y * inv_h,
+                u2=(x + sp_w) * inv_w,
+                v2=(y + sp_h) * inv_h,
+            )
+            placed += 1
+            shelf_x += padded_w
+
+        self._cpu_buffer = buf
+        # Update region count to match what we placed (for allocated_count).
+        # We skip individual _regions tracking for pack_all since the UVs are
+        # returned directly and deallocate() is not used in the bulk path.
+        self._bulk_count = placed
+        return results
+
+    def flush(self) -> None:
+        """Upload the CPU staging buffer to the GPU in a single transfer.
+
+        Creates the GPU texture if it doesn't exist, uploads the entire
+        staging buffer, then frees the CPU buffer.  After this call,
+        :attr:`texture` is ready for rendering.
+
+        Does nothing if no sprites have been packed via :meth:`pack`.
+        """
+        if self._cpu_buffer is None:
+            return
+
+        if self._texture is None:
+            self._texture = self._create_texture_bare()
+
+        data = np.ascontiguousarray(self._cpu_buffer)
+        self._resource_manager.queue.write_texture(
+            {"texture": self._texture, "mip_level": 0, "origin": (0, 0, 0)},
+            memoryview(data.tobytes()),
+            {
+                "offset": 0,
+                "bytes_per_row": self.width * 4,
+                "rows_per_image": self.height,
+            },
+            (self.width, self.height, 1),
+        )
+
+        # Free the CPU staging buffer now that it's on the GPU.
+        self._cpu_buffer = None
+
+    def allocate(self, pixels: np.ndarray) -> SpriteUV | None:
+        """Pack an RGBA sprite and upload it to the GPU immediately.
+
+        This is the legacy per-sprite path.  Prefer :meth:`pack` +
+        :meth:`flush` for bulk loading - it avoids thousands of
+        individual ``write_texture`` calls.
+
+        Args:
+            pixels: uint8 numpy array with shape (height, width, 4).
+
+        Returns:
+            A SpriteUV with the allocated UV coordinates, or None if the
+            atlas is full.
+        """
+        uv, best_x, best_y = self._place(pixels)
+        if uv is None:
+            return None
+
+        sprite_h, sprite_w = pixels.shape[:2]
+
+        # Ensure the GPU texture exists.
+        if self._texture is None:
+            self._texture = self._create_texture()
+
+        # Upload sprite pixels to the atlas region.
+        self._upload_region(best_x, best_y, sprite_w, sprite_h, pixels)
+
+        return uv
+
+    def _place(self, pixels: np.ndarray) -> tuple[SpriteUV | None, int, int]:
+        """Validate, find a skyline position, and record the region.
+
+        Shared by both :meth:`pack` and :meth:`allocate`.  Returns
+        ``(uv, x, y)`` on success or ``(None, 0, 0)`` if the atlas is full.
         """
         if pixels.ndim != 3 or pixels.shape[2] != 4:
             raise ValueError(
@@ -119,29 +374,16 @@ class SpriteAtlas:
                 f"Sprite dimensions must be positive, got {sprite_w}x{sprite_h}"
             )
 
-        # Padded dimensions for packing (padding prevents filtering bleed).
         padded_w = sprite_w + PADDING
         padded_h = sprite_h + PADDING
 
-        # Find the best skyline position for this sprite.
         best_idx, best_y = self._find_best_position(padded_w, padded_h)
         if best_idx is None or best_y is None:
-            return None  # Atlas is full.
+            return None, 0, 0
 
-        # Compute the x position from the chosen skyline node.
         best_x = self._skyline[best_idx].x
-
-        # Ensure the GPU texture exists.
-        if self._texture is None:
-            self._texture = self._create_texture()
-
-        # Upload sprite pixels to the atlas region.
-        self._upload_region(best_x, best_y, sprite_w, sprite_h, pixels)
-
-        # Update the skyline to reflect the new allocation.
         self._insert_skyline_node(best_idx, best_x, best_y + padded_h, padded_w)
 
-        # Compute normalized UV coordinates.
         u1 = best_x / self.width
         v1 = best_y / self.height
         u2 = (best_x + sprite_w) / self.width
@@ -151,7 +393,7 @@ class SpriteAtlas:
         self._regions[uv] = _SpriteRegion(
             x=best_x, y=best_y, width=padded_w, height=padded_h
         )
-        return uv
+        return uv, best_x, best_y
 
     def deallocate(self, uv: SpriteUV) -> None:
         """Free a previously allocated sprite region.
@@ -185,7 +427,7 @@ class SpriteAtlas:
     @property
     def allocated_count(self) -> int:
         """Number of sprites currently in the atlas."""
-        return len(self._regions)
+        return len(self._regions) + self._bulk_count
 
     # ------------------------------------------------------------------
     # Skyline bin-packing internals
@@ -313,11 +555,15 @@ class SpriteAtlas:
     # GPU upload helpers
     # ------------------------------------------------------------------
 
-    def _create_texture(self) -> wgpu.GPUTexture:
-        """Create the atlas GPU texture (RGBA8, 2048x2048 by default)."""
+    def _create_texture_bare(self) -> wgpu.GPUTexture:
+        """Create the atlas GPU texture without clearing it.
+
+        Used by :meth:`flush`, which writes the entire buffer in one call
+        so a separate clear would be wasted work.
+        """
         import wgpu as wgpu_mod
 
-        texture = self._resource_manager.device.create_texture(
+        return self._resource_manager.device.create_texture(
             size=(self.width, self.height, 1),
             format=wgpu_mod.TextureFormat.rgba8unorm,
             usage=wgpu_mod.TextureUsage.TEXTURE_BINDING
@@ -325,8 +571,15 @@ class SpriteAtlas:
             label="sprite_atlas",
         )
 
-        # Clear the texture to fully transparent black so unoccupied regions
-        # don't bleed visible garbage into neighboring sprites.
+    def _create_texture(self) -> wgpu.GPUTexture:
+        """Create the atlas GPU texture and clear it to transparent black.
+
+        Used by the per-sprite :meth:`allocate` path, where unoccupied
+        regions need to be pre-cleared so partial uploads don't leave
+        visible garbage.
+        """
+        texture = self._create_texture_bare()
+
         clear_data = np.zeros((self.height, self.width, 4), dtype=np.uint8)
         self._resource_manager.queue.write_texture(
             {"texture": texture, "mip_level": 0, "origin": (0, 0, 0)},

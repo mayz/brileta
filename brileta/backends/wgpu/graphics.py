@@ -301,17 +301,28 @@ class WGPUGraphicsContext(BaseGraphicsContext):
                     f"Failed to pre-compile shader {shader_path}: {e}"
                 )
 
-    def create_sprite_atlas(self) -> SpriteAtlas:
+    def create_sprite_atlas(self, width: int, height: int) -> SpriteAtlas:
         """Create a new SpriteAtlas backed by this context's GPU resources.
 
-        Call this at map load time before generating sprites.  The returned
+        Args:
+            width: Atlas texture width in pixels (should be power of two).
+            height: Atlas texture height in pixels (should be power of two).
+
+        Call this at map load time after pre-generating sprites.  The returned
         atlas manages its own GPU texture; call
         ``set_sprite_atlas_texture(atlas.texture)`` after populating it so
         the screen renderer can sample from it.
         """
         assert self.resource_manager is not None
-        self._sprite_atlas = SpriteAtlas(self.resource_manager)
+        self._sprite_atlas = SpriteAtlas(self.resource_manager, width, height)
         return self._sprite_atlas
+
+    @property
+    def gpu_max_texture_dimension_2d(self) -> int:
+        """The GPU's maximum 2D texture dimension, or 8192 as a safe fallback."""
+        if self.device is not None:
+            return int(self.device.limits.get("max-texture-dimension-2d", 8192))
+        return 8192
 
     @property
     def sprite_atlas(self) -> SpriteAtlas | None:

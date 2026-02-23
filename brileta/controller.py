@@ -68,6 +68,10 @@ _CONTROLLER_METRICS: list[MetricSpec] = [
     MetricSpec("time.logic.action_ms", "Action processing", 500),
     MetricSpec("time.logic.actor_snapshot_ms", "Actor position snapshot loop", 500),
     MetricSpec("time.fov_ms", "FOV compute + explored merge", 500),
+    # Sprite atlas generation (one-shot at map load, window=1 to keep the value).
+    MetricSpec("time.sprites.generate_ms", "Sprite generation (CPU)", 1),
+    MetricSpec("time.sprites.atlas_pack_ms", "Atlas packing + GPU upload", 1),
+    MetricSpec("time.sprites.total_ms", "Total sprite atlas setup", 1),
 ]
 live_variable_registry.register_metrics(_CONTROLLER_METRICS)
 
@@ -303,9 +307,14 @@ class Controller:
     def _generate_environmental_sprites(self) -> None:
         """Generate procedural sprites for static environmental actors.
 
-        Generates deterministic sprites for tree and boulder actors, packs them
-        into one fresh sprite atlas, then binds that atlas for rendering.
+        Pre-generates all tree and boulder sprites into CPU memory, computes
+        the smallest power-of-two atlas that can hold them (clamped to the
+        GPU's hardware limit), then packs and uploads in one pass.  This
+        means the atlas is right-sized per map - a small map gets a small
+        atlas, a large map gets a larger one, and map transitions simply
+        drop the old atlas and create a fresh one.
         """
+        from brileta.backends.wgpu.sprite_atlas import compute_atlas_size
         from brileta.game.actors.boulder import Boulder
         from brileta.game.actors.boulder_sprites import (
             archetype_for_position as boulder_archetype_for_position,
@@ -340,55 +349,84 @@ class Controller:
             )
             return
 
-        atlas = create_sprite_atlas()
-        if atlas is None:
-            logger.debug(
-                "Graphics backend has no sprite atlas support; "
-                "tree actors will use fallback glyph rendering."
-            )
-            return
-
         map_seed: MapDecorationSeed = int(self.gw.game_map.decoration_seed)
-        for tree in trees:
-            sprite = generate_tree_sprite_for_position(
-                tree.x,
-                tree.y,
-                map_seed,
-                tree.tree_type,
-            )
-            uv = atlas.allocate(sprite)
-            if uv is not None:
-                tree.sprite_uv = uv
-                # Match rendered height to physical shadow-height semantics
-                # so shadows and sprite size feel physically plausible.
-                tree.visual_scale = tree_visual_scale_with_height_jitter(
-                    sprite,
-                    tree.shadow_height,
-                    tree.x,
-                    tree.y,
-                    map_seed,
+
+        with record_time_live_variable("time.sprites.total_ms"):
+            # Phase 1: Pre-generate all sprites into CPU memory so we can
+            # measure the total area before creating the GPU texture.
+            with record_time_live_variable("time.sprites.generate_ms"):
+                from brileta.util.parallel import parallel_map
+
+                tree_sprites = parallel_map(
+                    generate_tree_sprite_for_position,
+                    [t.x for t in trees],
+                    [t.y for t in trees],
+                    [map_seed] * len(trees),
+                    [t.tree_type for t in trees],
                 )
-        for boulder in boulders:
-            archetype = boulder_archetype_for_position(boulder.x, boulder.y, map_seed)
-            # Set physical shadow height per archetype BEFORE computing
-            # visual_scale, so shape differences survive scale normalization.
-            boulder.shadow_height = boulder_shadow_height(archetype)
-            sprite = generate_boulder_sprite_for_position(
-                boulder.x,
-                boulder.y,
-                map_seed,
-                archetype,
-            )
-            uv = atlas.allocate(sprite)
-            if uv is not None:
-                boulder.sprite_uv = uv
-                boulder.visual_scale = boulder_visual_scale_with_height_jitter(
-                    sprite,
-                    boulder.shadow_height,
-                    boulder.x,
-                    boulder.y,
-                    map_seed,
+
+                boulder_archetypes = [
+                    boulder_archetype_for_position(b.x, b.y, map_seed) for b in boulders
+                ]
+                for boulder, archetype in zip(
+                    boulders, boulder_archetypes, strict=True
+                ):
+                    boulder.shadow_height = boulder_shadow_height(archetype)
+
+                boulder_sprites = parallel_map(
+                    generate_boulder_sprite_for_position,
+                    [b.x for b in boulders],
+                    [b.y for b in boulders],
+                    [map_seed] * len(boulders),
+                    boulder_archetypes,
                 )
+
+            # Phase 2: Compute the atlas size and create it.
+            all_sprites = tree_sprites + boulder_sprites
+            gpu_max = getattr(self.graphics, "gpu_max_texture_dimension_2d", 8192)
+            atlas_side = compute_atlas_size(all_sprites, gpu_max)
+
+            atlas = create_sprite_atlas(atlas_side, atlas_side)
+            if atlas is None:
+                logger.debug(
+                    "Graphics backend returned None for sprite atlas; "
+                    "actors will use fallback glyph rendering."
+                )
+                return
+
+            # Phase 3: Bulk-pack all sprites via shelf packing, then flush
+            # to the GPU in a single write_texture call.
+            with record_time_live_variable("time.sprites.atlas_pack_ms"):
+                uvs = atlas.pack_all(all_sprites)
+
+                # Assign UVs and visual scales back to the actors.
+                # The UV list is ordered [tree_sprites..., boulder_sprites...].
+                n_trees = len(trees)
+                for i, tree in enumerate(trees):
+                    uv = uvs[i]
+                    if uv is not None:
+                        tree.sprite_uv = uv
+                        tree.visual_scale = tree_visual_scale_with_height_jitter(
+                            tree_sprites[i],
+                            tree.shadow_height,
+                            tree.x,
+                            tree.y,
+                            map_seed,
+                        )
+
+                for j, boulder in enumerate(boulders):
+                    uv = uvs[n_trees + j]
+                    if uv is not None:
+                        boulder.sprite_uv = uv
+                        boulder.visual_scale = boulder_visual_scale_with_height_jitter(
+                            boulder_sprites[j],
+                            boulder.shadow_height,
+                            boulder.x,
+                            boulder.y,
+                            map_seed,
+                        )
+
+                atlas.flush()
 
         set_sprite_atlas_texture = getattr(
             self.graphics, "set_sprite_atlas_texture", None
@@ -397,7 +435,9 @@ class Controller:
             set_sprite_atlas_texture(atlas.texture)
 
         logger.info(
-            "Generated %d tree sprites, %d boulder sprites (%d atlas allocations)",
+            "Sprite atlas: %dx%d (%d tree + %d boulder sprites, %d allocations)",
+            atlas_side,
+            atlas_side,
             len(trees),
             len(boulders),
             atlas.allocated_count,

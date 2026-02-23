@@ -203,9 +203,15 @@ class OverlaySystem:
             overlay.hide()
 
     def hide_all_overlays(self) -> None:
-        """Hide all active overlays."""
-        while self.active_overlays:
-            self.hide_current_overlay()
+        """Hide all interactive overlays (menus, dialogs, etc.).
+
+        Non-interactive overlays (debug stats HUD, combat tooltip) are
+        persistent display elements and are intentionally preserved.
+        """
+        to_hide = [o for o in self.active_overlays if o.is_interactive]
+        for overlay in to_hide:
+            overlay.hide()
+            self.active_overlays.remove(overlay)
 
     def toggle_overlay(self, overlay: Overlay) -> None:
         """Show the overlay if hidden or hide it if already active."""

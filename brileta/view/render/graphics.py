@@ -196,8 +196,12 @@ class GraphicsContext(abc.ABC):
         """
         return
 
-    def create_sprite_atlas(self) -> Any | None:
+    def create_sprite_atlas(self, width: int, height: int) -> Any | None:
         """Create a dynamic sprite atlas if supported by the backend.
+
+        Args:
+            width: Atlas texture width in pixels (power of two).
+            height: Atlas texture height in pixels (power of two).
 
         Backends that do not implement sprite-atlas rendering return ``None``.
         """

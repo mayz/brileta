@@ -10,7 +10,7 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
-from brileta.backends.wgpu.sprite_atlas import PADDING, SpriteAtlas
+from brileta.backends.wgpu.sprite_atlas import PADDING, SpriteAtlas, compute_atlas_size
 from brileta.types import SpriteUV
 
 
@@ -189,6 +189,145 @@ class TestSpriteAtlasGPU:
         assert atlas.texture is texture_before
 
 
+class TestBatchedPackFlush:
+    """Tests for the pack() + flush() batched upload path."""
+
+    def test_pack_returns_uv_without_gpu_upload(self) -> None:
+        rm = _make_mock_resource_manager()
+        atlas = SpriteAtlas(rm, width=64, height=64)
+        uv = atlas.pack(_make_pixels(10, 10))
+        assert uv is not None
+        assert isinstance(uv, SpriteUV)
+        # No GPU calls yet - texture not created, nothing uploaded.
+        rm.device.create_texture.assert_not_called()
+        rm.queue.write_texture.assert_not_called()
+
+    def test_flush_single_write_texture(self) -> None:
+        rm = _make_mock_resource_manager()
+        atlas = SpriteAtlas(rm, width=64, height=64)
+        atlas.pack(_make_pixels(10, 10))
+        atlas.pack(_make_pixels(15, 12))
+        atlas.pack(_make_pixels(8, 8))
+        atlas.flush()
+        # One create_texture + one write_texture for the entire atlas.
+        rm.device.create_texture.assert_called_once()
+        assert rm.queue.write_texture.call_count == 1
+        # The upload covers the full atlas dimensions.
+        call_size = rm.queue.write_texture.call_args[0][3]
+        assert call_size == (64, 64, 1)
+
+    def test_flush_frees_cpu_buffer(self) -> None:
+        atlas = SpriteAtlas(_make_mock_resource_manager(), width=64, height=64)
+        atlas.pack(_make_pixels(10, 10))
+        assert atlas._cpu_buffer is not None
+        atlas.flush()
+        assert atlas._cpu_buffer is None
+
+    def test_flush_noop_without_packs(self) -> None:
+        rm = _make_mock_resource_manager()
+        atlas = SpriteAtlas(rm, width=64, height=64)
+        atlas.flush()
+        rm.device.create_texture.assert_not_called()
+        rm.queue.write_texture.assert_not_called()
+
+    def test_pack_and_allocate_produce_same_uvs(self) -> None:
+        """pack() and allocate() use the same skyline logic, so identical
+        sprite sequences should produce identical UV coordinates."""
+        sprites = [_make_pixels(20, 20) for _ in range(10)]
+
+        atlas_pack = SpriteAtlas(_make_mock_resource_manager(), width=128, height=128)
+        uvs_pack = [atlas_pack.pack(s) for s in sprites]
+
+        atlas_alloc = SpriteAtlas(_make_mock_resource_manager(), width=128, height=128)
+        uvs_alloc = [atlas_alloc.allocate(s) for s in sprites]
+
+        assert uvs_pack == uvs_alloc
+
+    def test_pack_returns_none_when_full(self) -> None:
+        atlas = SpriteAtlas(_make_mock_resource_manager(), width=32, height=32)
+        uv1 = atlas.pack(_make_pixels(30, 30))
+        assert uv1 is not None
+        uv2 = atlas.pack(_make_pixels(10, 10))
+        assert uv2 is None
+
+    def test_pack_tracks_allocated_count(self) -> None:
+        atlas = SpriteAtlas(_make_mock_resource_manager(), width=128, height=128)
+        assert atlas.allocated_count == 0
+        atlas.pack(_make_pixels(10, 10))
+        assert atlas.allocated_count == 1
+        atlas.pack(_make_pixels(10, 10))
+        assert atlas.allocated_count == 2
+
+
+class TestBulkPackAll:
+    """Tests for the pack_all() shelf-packing bulk path."""
+
+    def test_empty_list_returns_empty(self) -> None:
+        atlas = SpriteAtlas(_make_mock_resource_manager(), width=64, height=64)
+        assert atlas.pack_all([]) == []
+
+    def test_returns_uvs_in_original_order(self) -> None:
+        sprites = [_make_pixels(20, 20) for _ in range(5)]
+        atlas = SpriteAtlas(_make_mock_resource_manager(), width=256, height=256)
+        uvs = atlas.pack_all(sprites)
+        assert len(uvs) == 5
+        assert all(uv is not None for uv in uvs)
+
+    def test_all_uvs_are_distinct(self) -> None:
+        sprites = [_make_pixels(20, 20) for _ in range(10)]
+        atlas = SpriteAtlas(_make_mock_resource_manager(), width=256, height=256)
+        uvs = atlas.pack_all(sprites)
+        non_none = [uv for uv in uvs if uv is not None]
+        assert len(set(non_none)) == len(non_none)
+
+    def test_returns_none_when_atlas_too_small(self) -> None:
+        # 32x32 atlas can only hold one 30x30 sprite (padded 31x31).
+        sprites = [_make_pixels(30, 30), _make_pixels(10, 10)]
+        atlas = SpriteAtlas(_make_mock_resource_manager(), width=32, height=32)
+        uvs = atlas.pack_all(sprites)
+        assert uvs[0] is not None
+        assert uvs[1] is None
+
+    def test_allocated_count_matches_placed(self) -> None:
+        sprites = [_make_pixels(10, 10) for _ in range(20)]
+        atlas = SpriteAtlas(_make_mock_resource_manager(), width=128, height=128)
+        atlas.pack_all(sprites)
+        assert atlas.allocated_count == 20
+
+    def test_flush_after_pack_all_single_upload(self) -> None:
+        rm = _make_mock_resource_manager()
+        atlas = SpriteAtlas(rm, width=128, height=128)
+        atlas.pack_all([_make_pixels(10, 10) for _ in range(50)])
+        atlas.flush()
+        rm.device.create_texture.assert_called_once()
+        assert rm.queue.write_texture.call_count == 1
+
+    def test_variable_size_sprites_all_fit(self) -> None:
+        sprites = [
+            _make_pixels(16, 16),
+            _make_pixels(20, 22),
+            _make_pixels(18, 14),
+            _make_pixels(22, 20),
+            _make_pixels(10, 26),
+        ]
+        atlas = SpriteAtlas(_make_mock_resource_manager(), width=256, height=256)
+        uvs = atlas.pack_all(sprites)
+        assert all(uv is not None for uv in uvs)
+
+    def test_end_to_end_with_compute_atlas_size(self) -> None:
+        """Full pipeline: compute size, pack_all, flush."""
+        sprites = [_make_pixels(20, 20) for _ in range(500)]
+        size = compute_atlas_size(sprites, gpu_max_texture_dim=8192)
+        rm = _make_mock_resource_manager()
+        atlas = SpriteAtlas(rm, width=size, height=size)
+        uvs = atlas.pack_all(sprites)
+        atlas.flush()
+        assert all(uv is not None for uv in uvs), (
+            f"Some sprites failed to pack into {size}x{size} atlas"
+        )
+        assert rm.queue.write_texture.call_count == 1
+
+
 class TestSpriteAtlasValidation:
     """Input validation tests."""
 
@@ -269,3 +408,53 @@ class TestSkylinePacking:
         assert uv_wide is not None
         min_v1 = (30 + PADDING) / 80
         assert uv_wide.v1 >= min_v1 - 1e-9
+
+
+class TestComputeAtlasSize:
+    """Tests for the compute_atlas_size auto-sizing function."""
+
+    def test_empty_sprite_list_returns_minimum(self) -> None:
+        assert compute_atlas_size([], gpu_max_texture_dim=8192) == 256
+
+    def test_returns_power_of_two(self) -> None:
+        sprites = [_make_pixels(20, 20) for _ in range(100)]
+        size = compute_atlas_size(sprites, gpu_max_texture_dim=8192)
+        assert size & (size - 1) == 0, f"{size} is not a power of two"
+
+    def test_small_map_gets_small_atlas(self) -> None:
+        # 10 sprites of 20x20 need ~5,460 px^2 with overhead.
+        # Should fit in 256x256 (65,536 px^2).
+        sprites = [_make_pixels(20, 20) for _ in range(10)]
+        size = compute_atlas_size(sprites, gpu_max_texture_dim=8192)
+        assert size <= 256
+
+    def test_large_map_gets_larger_atlas(self) -> None:
+        # 10,000 sprites of 20x20 need more than 2048x2048.
+        # Padded area: 10000 * 21 * 21 * 1.3 = ~5.7M px^2 -> sqrt ~2400 -> 4096.
+        sprites = [_make_pixels(20, 20) for _ in range(10_000)]
+        size = compute_atlas_size(sprites, gpu_max_texture_dim=8192)
+        assert size > 2048
+
+    def test_clamped_to_gpu_max(self) -> None:
+        # Even with a huge number of sprites, the atlas cannot exceed the GPU limit.
+        sprites = [_make_pixels(20, 20) for _ in range(100_000)]
+        size = compute_atlas_size(sprites, gpu_max_texture_dim=4096)
+        assert size == 4096
+
+    def test_atlas_at_least_as_wide_as_widest_sprite(self) -> None:
+        sprites = [_make_pixels(200, 10)]
+        size = compute_atlas_size(sprites, gpu_max_texture_dim=8192)
+        # Must accommodate the 200px width + PADDING.
+        assert size >= 200 + PADDING
+
+    def test_computed_size_actually_fits_all_sprites(self) -> None:
+        """End-to-end: compute the size, create an atlas, and pack all sprites."""
+        sprites = [_make_pixels(20, 20) for _ in range(500)]
+        size = compute_atlas_size(sprites, gpu_max_texture_dim=8192)
+        atlas = SpriteAtlas(_make_mock_resource_manager(), width=size, height=size)
+        for sprite in sprites:
+            uv = atlas.allocate(sprite)
+            assert uv is not None, (
+                f"Atlas {size}x{size} could not fit all 500 sprites "
+                f"({atlas.allocated_count} allocated)"
+            )
