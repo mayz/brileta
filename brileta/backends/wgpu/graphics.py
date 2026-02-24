@@ -1225,10 +1225,10 @@ class WGPUGraphicsContext(BaseGraphicsContext):
     def present_texture(
         self,
         texture: wgpu.GPUTexture,
-        x_tile: int,
-        y_tile: int,
-        width_tiles: int,
-        height_tiles: int,
+        x_tile: float,
+        y_tile: float,
+        width_tiles: float,
+        height_tiles: float,
     ) -> None:
         """Present a texture to the screen."""
         if not isinstance(texture, wgpu.GPUTexture) or self.ui_renderer is None:

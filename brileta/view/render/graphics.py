@@ -381,13 +381,16 @@ class GraphicsContext(abc.ABC):
     def present_texture(
         self,
         texture: Any,
-        x_tile: int,
-        y_tile: int,
-        width_tiles: int,
-        height_tiles: int,
+        x_tile: float,
+        y_tile: float,
+        width_tiles: float,
+        height_tiles: float,
     ) -> None:
-        """Presents a pre-rendered, backend-specific texture object to the screen at
-        a given tile location."""
+        """Present a texture to the screen at a given tile-coordinate region.
+
+        Accepts fractional tile values so pixel-based overlays can preserve
+        their exact dimensions without rounding to the tile grid.
+        """
         pass
 
     @abc.abstractmethod

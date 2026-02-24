@@ -134,7 +134,7 @@ class TextOverlay(Overlay):
 
         self._calculate_dimensions()
 
-        if self.width <= 0 or self.height <= 0:
+        if self.pixel_width <= 0 or self.pixel_height <= 0:
             # Nothing to render when dimensions are zero.
             # Don't release texture - it's owned by the FBO cache and may be
             # reused if dimensions become non-zero again.
@@ -170,13 +170,19 @@ class TextOverlay(Overlay):
         if not self.is_active or not self._cached_texture:
             return
 
-        # Convert pixel position to tile position for the renderer
+        # Convert pixel dimensions to exact fractional tile coordinates.
+        # Overlays render at pixel precision; using integer tile counts would
+        # truncate the presentation quad and squish the texture.
         tile_width, tile_height = self.tile_dimensions
-        width_tiles = self.pixel_width // tile_width if tile_width > 0 else 0
-        height_tiles = self.pixel_height // tile_height if tile_height > 0 else 0
+        if tile_width <= 0 or tile_height <= 0:
+            return
 
         self.controller.graphics.present_texture(
-            self._cached_texture, self.x_tiles, self.y_tiles, width_tiles, height_tiles
+            self._cached_texture,
+            self.x_tiles,
+            self.y_tiles,
+            self.pixel_width / tile_width,
+            self.pixel_height / tile_height,
         )
 
 
