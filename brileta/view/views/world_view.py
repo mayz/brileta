@@ -1184,15 +1184,29 @@ class WorldView(View):
                 for clear_x, clear_y in entrance_clear_positions:
                     entrance_clear_mask |= (world_x == clear_x) & (world_y == clear_y)
 
-            roof_mask = in_footprint & ~entrance_clear_mask
+            # Exclude the chimney tile from the normal roof mask so it can
+            # be rendered as a stone square with a dark flue opening.
+            chimney_mask = np.zeros_like(in_footprint)
+            chimney_pos = building.chimney_world_pos
+            if chimney_pos is not None:
+                cx, cy = chimney_pos
+                chimney_mask = (world_x == cx) & (world_y == cy)
+
+            roof_mask = in_footprint & ~entrance_clear_mask & ~chimney_mask
             roof_indices = np.nonzero(roof_mask)[0]
-            if len(roof_indices) == 0:
+            chimney_indices = np.nonzero(in_footprint & chimney_mask)[0]
+
+            if len(roof_indices) == 0 and len(chimney_indices) == 0:
                 continue
 
             any_roof_applied = True
             if effective_tile_ids is None:
                 effective_tile_ids = tile_ids.copy()
-            effective_tile_ids[roof_indices] = int(roof_tile_id)
+            if len(roof_indices) > 0:
+                effective_tile_ids[roof_indices] = int(roof_tile_id)
+            # Chimney tiles keep the roof tile ID for sub-tile metadata.
+            if len(chimney_indices) > 0:
+                effective_tile_ids[chimney_indices] = int(roof_tile_id)
 
             roof_data = tile_types.get_tile_type_data_by_id(int(roof_tile_id))
             roof_appearance = roof_data["light" if is_light else "dark"]
@@ -1279,6 +1293,23 @@ class WorldView(View):
             chars[roof_indices] = roof_chars
             fg_rgb[roof_indices] = roof_fg
             bg_rgb[roof_indices] = roof_bg
+
+            # --- Chimney: stone tile with dark flue dot ---
+            # The bullet glyph (•) in a dark soot color sits on a stone
+            # background, reading as a chimney opening seen from above.
+            # Chars are Unicode codepoints; ord("•") = 8226 → CP437 index 7.
+            if len(chimney_indices) > 0:
+                stone_color = (
+                    colors.CHIMNEY_STONE_LIGHT
+                    if is_light
+                    else colors.CHIMNEY_STONE_DARK
+                )
+                flue_color = (
+                    colors.CHIMNEY_FLUE_LIGHT if is_light else colors.CHIMNEY_FLUE_DARK
+                )
+                chars[chimney_indices] = ord("\u2022")  # • bullet
+                bg_rgb[chimney_indices] = stone_color
+                fg_rgb[chimney_indices] = flue_color
 
             # Darken the outer ring of substituted roof tiles to suggest eaves.
             # Rect.x2/y2 are exclusive bounds, so the last footprint tiles are x2-1/y2-1.

@@ -9,9 +9,20 @@ lighting.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from enum import Enum
 
-from brileta.types import WorldTilePos
+from brileta.types import FootprintOffset, WorldTilePos
 from brileta.util.coordinates import Rect
+
+
+class ChimneyType(Enum):
+    """Visual style of a chimney. Only STONE is rendered for now.
+
+    Future variants (BRICK, STOVEPIPE, etc.) can be added here and
+    wired into the roof substitution renderer when needed.
+    """
+
+    STONE = "stone"
 
 
 @dataclass
@@ -48,6 +59,9 @@ class Building:
         door_positions: List of (x, y) positions where doors are placed.
         roof_style: Visual roof style used by render-time roof substitution.
         floor_count: Number of floors (stored for future multi-story phases).
+        chimney_offset: Optional (dx, dy) offset from footprint top-left where a
+            chimney sits. None means no chimney on this building.
+        chimney_type: Visual style of the chimney (only STONE for now).
     """
 
     id: int
@@ -57,6 +71,8 @@ class Building:
     door_positions: list[WorldTilePos] = field(default_factory=list)
     roof_style: str = "thatch"
     floor_count: int = 1
+    chimney_offset: FootprintOffset | None = None
+    chimney_type: ChimneyType = ChimneyType.STONE
 
     @property
     def interior_bounds(self) -> Rect:
@@ -71,6 +87,14 @@ class Building:
             self.footprint.width - 2,
             self.footprint.height - 2,
         )
+
+    @property
+    def chimney_world_pos(self) -> WorldTilePos | None:
+        """Absolute world position of the chimney, or None if no chimney."""
+        if self.chimney_offset is None:
+            return None
+        dx, dy = self.chimney_offset
+        return (self.footprint.x1 + dx, self.footprint.y1 + dy)
 
     @property
     def ridge_axis(self) -> str:

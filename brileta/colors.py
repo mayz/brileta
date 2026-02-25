@@ -51,6 +51,12 @@ ROOF_THATCH_LIGHT: Color = (138, 118, 78)  # Sunlit straw/thatch, less saturated
 ROOF_SHINGLE_DARK: Color = (38, 42, 48)  # Cool slate in shadow
 ROOF_SHINGLE_LIGHT: Color = (92, 102, 116)  # Sunlit slate shingles
 
+# Chimney colors (stone chimney rising through roof)
+CHIMNEY_STONE_DARK: Color = (70, 65, 55)  # Warm grey fieldstone in shadow
+CHIMNEY_STONE_LIGHT: Color = (135, 125, 110)  # Sunlit fieldstone
+CHIMNEY_FLUE_DARK: Color = (20, 18, 16)  # Sooty interior in shadow
+CHIMNEY_FLUE_LIGHT: Color = (35, 30, 26)  # Sooty interior in daylight
+
 # Actor colors
 # Player uses bright saturated gold to stand out against terrain
 PLAYER_COLOR: Color = (255, 220, 80)

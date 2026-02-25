@@ -47,6 +47,9 @@ type PixelCoord = int | float  # Example: px_x=123.5
 type PixelPos = tuple[PixelCoord, PixelCoord]  # Example: (123.5, 456.7)
 type PixelRect = tuple[int, int, int, int]  # Example: (x1, y1, x2, y2) for hit areas
 
+# Footprint-relative coordinates (offset from building footprint top-left)
+type FootprintOffset = tuple[int, int]  # Example: (3, 2) = 3 right, 2 down from origin
+
 # Dimensions
 type TileDimensions = tuple[int, int]  # Example: (16, 16) = 16x16 pixel tiles
 type PixelDimensions = tuple[int, int]  # Example: (1280, 720) window/framebuffer px

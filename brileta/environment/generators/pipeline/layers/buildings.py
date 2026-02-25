@@ -409,7 +409,9 @@ class BuildingPlacementLayer(GenerationLayer):
         building_id = self._next_building_id
         self._next_building_id += 1
 
-        building = template.create_building(building_id, position, width, height)
+        building = template.create_building(
+            building_id, position, width, height, rng=_rng
+        )
 
         # Carve the building into the tile map
         self._carve_building(ctx, building)

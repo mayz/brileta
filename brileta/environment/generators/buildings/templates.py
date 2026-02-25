@@ -42,6 +42,8 @@ class BuildingTemplate:
         max_per_settlement: Max instances per settlement. None = unlimited.
         roof_style: Render-time roof style ("thatch" or "shingle").
         floor_count: Number of floors (future multi-story support).
+        has_chimney: Whether buildings of this type get a chimney. The
+            position is randomized within the interior at creation time.
     """
 
     name: str
@@ -58,6 +60,7 @@ class BuildingTemplate:
     max_per_settlement: int | None = None
     roof_style: str = "thatch"
     floor_count: int = 1
+    has_chimney: bool = False
 
     def generate_size(self, rng: RNG) -> TileDimensions:
         """Generate random dimensions within the template's constraints.
@@ -89,6 +92,7 @@ class BuildingTemplate:
         position: WorldTilePos,
         width: int,
         height: int,
+        rng: RNG | None = None,
     ) -> Building:
         """Create a Building object with the given position and size.
 
@@ -100,6 +104,8 @@ class BuildingTemplate:
             position: (x, y) position of the top-left corner.
             width: Width of the building.
             height: Height of the building.
+            rng: Random number generator for chimney placement. Required
+                when has_chimney is True.
 
         Returns:
             A new Building object with the specified footprint.
@@ -107,12 +113,24 @@ class BuildingTemplate:
         x, y = position
         footprint = Rect(x, y, width, height)
 
+        # Randomize chimney position within the interior, staying at least
+        # 2 tiles from each edge (1 wall + 1 margin) so the chimney sits
+        # comfortably on the roof surface away from eaves.
+        chimney_offset = None
+        if self.has_chimney and rng is not None:
+            margin = 2
+            chimney_offset = (
+                rng.randint(margin, width - margin - 1),
+                rng.randint(margin, height - margin - 1),
+            )
+
         return Building(
             id=building_id,
             building_type=self.building_type,
             footprint=footprint,
             roof_style=self.roof_style,
             floor_count=self.floor_count,
+            chimney_offset=chimney_offset,
         )
 
 
@@ -132,6 +150,7 @@ SMALL_HOUSE_TEMPLATE = BuildingTemplate(
     room_types=("living_room", "bedroom", "kitchen"),
     weight=2.0,  # Common - many small houses in a settlement
     roof_style="thatch",
+    has_chimney=True,
 )
 
 MEDIUM_HOUSE_TEMPLATE = BuildingTemplate(
@@ -146,6 +165,7 @@ MEDIUM_HOUSE_TEMPLATE = BuildingTemplate(
     room_types=("living_room", "bedroom", "kitchen", "storage"),
     weight=2.0,  # Less common than small houses
     roof_style="thatch",
+    has_chimney=True,
 )
 
 # =============================================================================
@@ -195,6 +215,7 @@ BLACKSMITH_TEMPLATE = BuildingTemplate(
     weight=0.8,
     max_per_settlement=1,
     roof_style="shingle",
+    has_chimney=True,
 )
 
 # =============================================================================
@@ -214,6 +235,7 @@ TAVERN_TEMPLATE = BuildingTemplate(
     weight=1.0,
     max_per_settlement=1,  # One tavern per settlement
     roof_style="shingle",
+    has_chimney=True,
 )
 
 INN_TEMPLATE = BuildingTemplate(
@@ -229,6 +251,7 @@ INN_TEMPLATE = BuildingTemplate(
     weight=0.8,
     max_per_settlement=1,  # One inn per settlement
     roof_style="shingle",
+    has_chimney=True,
 )
 
 LIBRARY_TEMPLATE = BuildingTemplate(

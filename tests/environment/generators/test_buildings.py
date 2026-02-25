@@ -103,6 +103,110 @@ class TestBuildingRoomDataclasses:
         assert room.bounds == bounds
 
 
+class TestBuildingChimney:
+    """Tests for chimney offset and world position computation."""
+
+    def test_no_chimney_by_default(self) -> None:
+        """Building has no chimney when offset is not specified."""
+        building = Building(id=1, building_type="house", footprint=Rect(0, 0, 12, 10))
+        assert building.chimney_offset is None
+        assert building.chimney_world_pos is None
+
+    def test_chimney_world_pos_from_offset(self) -> None:
+        """chimney_world_pos adds the offset to the footprint top-left."""
+        building = Building(
+            id=1,
+            building_type="house",
+            footprint=Rect(50, 30, 12, 10),
+            chimney_offset=(3, 2),
+        )
+        assert building.chimney_world_pos == (53, 32)
+
+    def test_template_randomizes_chimney_position(self) -> None:
+        """has_chimney=True places a chimney at a random interior position."""
+        template = BuildingTemplate(
+            name="test",
+            building_type="house",
+            min_width=12,
+            max_width=16,
+            min_height=10,
+            max_height=14,
+            has_chimney=True,
+        )
+        rng = random.Random(42)
+        building = template.create_building(
+            building_id=1, position=(10, 20), width=14, height=12, rng=rng
+        )
+        assert building.chimney_offset is not None
+        dx, dy = building.chimney_offset
+        # Must be at least 2 tiles from each edge.
+        assert 2 <= dx <= 14 - 3
+        assert 2 <= dy <= 12 - 3
+
+    def test_chimney_position_varies_across_buildings(self) -> None:
+        """Different RNG states produce different chimney positions."""
+        template = BuildingTemplate(
+            name="test",
+            building_type="house",
+            min_width=12,
+            max_width=16,
+            min_height=10,
+            max_height=14,
+            has_chimney=True,
+        )
+        offsets = set()
+        for seed in range(20):
+            rng = random.Random(seed)
+            b = template.create_building(
+                building_id=seed, position=(0, 0), width=14, height=12, rng=rng
+            )
+            assert b.chimney_offset is not None
+            offsets.add(b.chimney_offset)
+        # With 20 seeds over a reasonable range, we should see variety.
+        assert len(offsets) > 1
+
+    def test_template_without_chimney(self) -> None:
+        """has_chimney=False produces buildings without chimneys."""
+        template = BuildingTemplate(
+            name="test",
+            building_type="shop",
+            min_width=12,
+            max_width=16,
+            min_height=10,
+            max_height=14,
+        )
+        rng = random.Random(42)
+        building = template.create_building(
+            building_id=1, position=(10, 20), width=14, height=12, rng=rng
+        )
+        assert building.chimney_offset is None
+
+    def test_default_templates_chimney_assignments(self) -> None:
+        """Verify which default templates have chimneys and which don't."""
+        from brileta.environment.generators.buildings.templates import (
+            BLACKSMITH_TEMPLATE,
+            BUTCHER_TEMPLATE,
+            GENERAL_STORE_TEMPLATE,
+            INN_TEMPLATE,
+            LIBRARY_TEMPLATE,
+            WAREHOUSE_TEMPLATE,
+        )
+
+        # Templates with chimneys
+        assert SMALL_HOUSE_TEMPLATE.has_chimney is True
+        assert MEDIUM_HOUSE_TEMPLATE.has_chimney is True
+        assert BLACKSMITH_TEMPLATE.has_chimney is True
+        assert TAVERN_TEMPLATE.has_chimney is True
+        assert INN_TEMPLATE.has_chimney is True
+
+        # Templates without chimneys
+        assert GENERAL_STORE_TEMPLATE.has_chimney is False
+        assert BUTCHER_TEMPLATE.has_chimney is False
+        assert LIBRARY_TEMPLATE.has_chimney is False
+        assert SHOP_TEMPLATE.has_chimney is False
+        assert WAREHOUSE_TEMPLATE.has_chimney is False
+
+
 class TestBuildingRidgeAxis:
     """Tests for the Building.ridge_axis computed property."""
 
