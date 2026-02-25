@@ -78,6 +78,9 @@ class WGPUAtmosphericRenderer:
         # Default fallback textures for explored/visible maps
         self._default_explored_texture: wgpu.GPUTexture | None = None
         self._default_visible_texture: wgpu.GPUTexture | None = None
+        self._default_roof_surface_mask_texture: wgpu.GPUTexture | None = None
+        self._roof_surface_mask_texture: wgpu.GPUTexture | None = None
+        self._roof_surface_mask_size: tuple[int, int] | None = None
 
         # Create bind group layout for atmospheric shader
         self._bind_group_layout = self._create_bind_group_layout()
@@ -139,6 +142,14 @@ class WGPUAtmosphericRenderer:
                 },
                 {
                     "binding": 5,
+                    "visibility": wgpu.ShaderStage.FRAGMENT,
+                    "texture": {
+                        "sample_type": wgpu.TextureSampleType.float,
+                        "view_dimension": "2d",
+                    },
+                },
+                {
+                    "binding": 6,
                     "visibility": wgpu.ShaderStage.FRAGMENT,
                     "sampler": {"type": wgpu.SamplerBindingType.filtering},
                 },
@@ -305,6 +316,85 @@ class WGPUAtmosphericRenderer:
         self._default_visible_texture = texture
         return texture
 
+    def _get_default_roof_surface_mask_texture(self) -> wgpu.GPUTexture | None:
+        """Return a 1x1 black texture meaning no roof-surface override."""
+        if self._default_roof_surface_mask_texture is not None:
+            return self._default_roof_surface_mask_texture
+        if config.IS_TEST_ENVIRONMENT:
+            return None
+
+        pixels = np.array([[0]], dtype="u1")
+        texture = self.resource_manager.device.create_texture(
+            size=(1, 1, 1),
+            format="r8unorm",
+            usage=wgpu.TextureUsage.TEXTURE_BINDING | wgpu.TextureUsage.COPY_DST,
+        )
+        self.resource_manager.queue.write_texture(
+            destination={"texture": texture, "mip_level": 0, "origin": (0, 0, 0)},
+            data=memoryview(pixels.tobytes()),
+            data_layout={"offset": 0, "bytes_per_row": 1, "rows_per_image": 1},
+            size=(1, 1, 1),
+        )
+        self._default_roof_surface_mask_texture = texture
+        return texture
+
+    def _upload_roof_surface_mask_texture(
+        self,
+        roof_surface_mask_buffer: np.ndarray,
+    ) -> wgpu.GPUTexture | None:
+        """Upload a viewport-space roof-surface eligibility mask (shape [w, h])."""
+        if roof_surface_mask_buffer.ndim != 2:
+            raise ValueError("roof_surface_mask_buffer must be a 2D array")
+        if config.IS_TEST_ENVIRONMENT:
+            return None
+
+        width = int(roof_surface_mask_buffer.shape[0])
+        height = int(roof_surface_mask_buffer.shape[1])
+        if width <= 0 or height <= 0:
+            return self._get_default_roof_surface_mask_texture()
+
+        size = (width, height)
+        if (
+            self._roof_surface_mask_texture is None
+            or self._roof_surface_mask_size != size
+        ):
+            self._roof_surface_mask_texture = (
+                self.resource_manager.device.create_texture(
+                    size=(width, height, 1),
+                    format="r8unorm",
+                    usage=wgpu.TextureUsage.TEXTURE_BINDING
+                    | wgpu.TextureUsage.COPY_DST,
+                    label="atmospheric_roof_surface_mask_texture",
+                )
+            )
+            self._roof_surface_mask_size = size
+
+        if roof_surface_mask_buffer.dtype == np.bool_:
+            mask_data = np.ascontiguousarray(
+                (roof_surface_mask_buffer.T * 255).astype(np.uint8)
+            )
+        else:
+            mask_data = np.ascontiguousarray(
+                roof_surface_mask_buffer.T.astype(np.uint8)
+            )
+
+        assert self._roof_surface_mask_texture is not None
+        self.resource_manager.queue.write_texture(
+            destination={
+                "texture": self._roof_surface_mask_texture,
+                "mip_level": 0,
+                "origin": (0, 0, 0),
+            },
+            data=memoryview(mask_data.tobytes()),
+            data_layout={
+                "offset": 0,
+                "bytes_per_row": width,
+                "rows_per_image": height,
+            },
+            size=(width, height, 1),
+        )
+        return self._roof_surface_mask_texture
+
     def begin_frame(self) -> None:
         """Reset per-frame state. Call at the start of each frame."""
         self._uniform_buffer_index = 0
@@ -321,6 +411,7 @@ class WGPUAtmosphericRenderer:
         sky_exposure_texture: wgpu.GPUTexture | None,
         explored_texture: wgpu.GPUTexture | None,
         visible_texture: wgpu.GPUTexture | None,
+        roof_surface_mask_buffer: np.ndarray | None,
         noise_scale: float,
         noise_threshold_low: float,
         noise_threshold_high: float,
@@ -346,6 +437,9 @@ class WGPUAtmosphericRenderer:
             sky_exposure_texture: Texture with sky exposure values per tile
             explored_texture: Fog-of-war explored mask
             visible_texture: Fog-of-war visible mask
+            roof_surface_mask_buffer: Viewport-space mask marking visible roof
+                surfaces that should receive cloud shadows despite indoor
+                underlying tiles.
             noise_scale: UV multiplier for noise pattern
             noise_threshold_low: Lower threshold for noise smoothstep
             noise_threshold_high: Upper threshold for noise smoothstep
@@ -370,6 +464,15 @@ class WGPUAtmosphericRenderer:
             visible_texture = self._get_default_visible_texture()
         if visible_texture is None:
             return
+        roof_surface_mask_texture = self._get_default_roof_surface_mask_texture()
+        if roof_surface_mask_texture is None:
+            return
+        if blend_mode == "darken" and roof_surface_mask_buffer is not None:
+            uploaded_roof_mask = self._upload_roof_surface_mask_texture(
+                roof_surface_mask_buffer
+            )
+            if uploaded_roof_mask is not None:
+                roof_surface_mask_texture = uploaded_roof_mask
 
         left, top, right, bottom = pixel_bounds
         width_px = right - left
@@ -430,6 +533,7 @@ class WGPUAtmosphericRenderer:
             sky_exposure_texture=sky_exposure_texture,
             explored_texture=explored_texture,
             visible_texture=visible_texture,
+            roof_surface_mask_texture=roof_surface_mask_texture,
         )
 
         # Set viewport
@@ -514,6 +618,7 @@ class WGPUAtmosphericRenderer:
         sky_exposure_texture: wgpu.GPUTexture,
         explored_texture: wgpu.GPUTexture,
         visible_texture: wgpu.GPUTexture,
+        roof_surface_mask_texture: wgpu.GPUTexture,
     ) -> wgpu.GPUBindGroup:
         """Create bind group for the current frame's textures."""
         return self.shader_manager.create_bind_group(
@@ -537,12 +642,16 @@ class WGPUAtmosphericRenderer:
                 },
                 {
                     "binding": 4,
+                    "resource": roof_surface_mask_texture.create_view(),
+                },
+                {
+                    "binding": 5,
                     "resource": self._noise_texture.create_view()
                     if self._noise_texture
                     else explored_texture.create_view(),
                 },
                 {
-                    "binding": 5,
+                    "binding": 6,
                     "resource": self._sampler,
                 },
             ],

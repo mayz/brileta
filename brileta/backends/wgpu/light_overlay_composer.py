@@ -198,7 +198,14 @@ class WGPULightOverlayComposer:
         self,
         visible_mask_buffer: np.ndarray,
     ) -> wgpu.GPUTexture:
-        """Upload buffer-space visible mask (shape: [width, height]) to GPU."""
+        """Upload buffer-space compose mask (shape: [width, height]) to GPU.
+
+        Values are encoded as `r8unorm`:
+        - 0   = hidden (spillover allowed)
+        - 192 = sunlit roof surface (use lit texture, ignore lightmap)
+        - 128 = hidden under opaque roof (spillover disabled)
+        - 255 = visible
+        """
         if visible_mask_buffer.ndim != 2:
             raise ValueError("visible_mask_buffer must be a 2D array")
 
@@ -214,9 +221,12 @@ class WGPULightOverlayComposer:
             )
             self._visible_mask_size = size
 
-        visible_data = np.ascontiguousarray(
-            (visible_mask_buffer.T * 255).astype(np.uint8)
-        )
+        if visible_mask_buffer.dtype == np.bool_:
+            visible_data = np.ascontiguousarray(
+                (visible_mask_buffer.T * 255).astype(np.uint8)
+            )
+        else:
+            visible_data = np.ascontiguousarray(visible_mask_buffer.T.astype(np.uint8))
         assert self._visible_mask_texture is not None
         self.resource_manager.queue.write_texture(
             {

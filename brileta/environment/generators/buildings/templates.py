@@ -40,6 +40,8 @@ class BuildingTemplate:
         room_types: List of room type names to use for rooms.
         weight: Selection weight (higher = more common). Default 1.0.
         max_per_settlement: Max instances per settlement. None = unlimited.
+        roof_style: Render-time roof style ("thatch" or "shingle").
+        floor_count: Number of floors (future multi-story support).
     """
 
     name: str
@@ -54,6 +56,8 @@ class BuildingTemplate:
     room_types: tuple[str, ...] = ("main",)
     weight: float = 1.0
     max_per_settlement: int | None = None
+    roof_style: str = "thatch"
+    floor_count: int = 1
 
     def generate_size(self, rng: RNG) -> TileDimensions:
         """Generate random dimensions within the template's constraints.
@@ -107,6 +111,8 @@ class BuildingTemplate:
             id=building_id,
             building_type=self.building_type,
             footprint=footprint,
+            roof_style=self.roof_style,
+            floor_count=self.floor_count,
         )
 
 
@@ -125,6 +131,7 @@ SMALL_HOUSE_TEMPLATE = BuildingTemplate(
     room_count_max=3,
     room_types=("living_room", "bedroom", "kitchen"),
     weight=2.0,  # Common - many small houses in a settlement
+    roof_style="thatch",
 )
 
 MEDIUM_HOUSE_TEMPLATE = BuildingTemplate(
@@ -138,6 +145,7 @@ MEDIUM_HOUSE_TEMPLATE = BuildingTemplate(
     room_count_max=4,
     room_types=("living_room", "bedroom", "kitchen", "storage"),
     weight=2.0,  # Less common than small houses
+    roof_style="thatch",
 )
 
 # =============================================================================
@@ -156,6 +164,7 @@ GENERAL_STORE_TEMPLATE = BuildingTemplate(
     room_types=("shop_floor", "storage", "office"),
     weight=1.0,
     max_per_settlement=1,  # Only one general store per town
+    roof_style="shingle",
 )
 
 BUTCHER_TEMPLATE = BuildingTemplate(
@@ -170,6 +179,7 @@ BUTCHER_TEMPLATE = BuildingTemplate(
     room_types=("shop_floor", "cold_storage"),
     weight=0.8,
     max_per_settlement=1,
+    roof_style="shingle",
 )
 
 BLACKSMITH_TEMPLATE = BuildingTemplate(
@@ -184,6 +194,7 @@ BLACKSMITH_TEMPLATE = BuildingTemplate(
     room_types=("forge", "workshop", "storage"),
     weight=0.8,
     max_per_settlement=1,
+    roof_style="shingle",
 )
 
 # =============================================================================
@@ -202,6 +213,7 @@ TAVERN_TEMPLATE = BuildingTemplate(
     room_types=("main_hall", "kitchen", "storage", "bedroom", "cellar"),
     weight=1.0,
     max_per_settlement=1,  # One tavern per settlement
+    roof_style="shingle",
 )
 
 INN_TEMPLATE = BuildingTemplate(
@@ -216,6 +228,7 @@ INN_TEMPLATE = BuildingTemplate(
     room_types=("common_room", "kitchen", "guest_room", "guest_room", "storage"),
     weight=0.8,
     max_per_settlement=1,  # One inn per settlement
+    roof_style="shingle",
 )
 
 LIBRARY_TEMPLATE = BuildingTemplate(
@@ -230,6 +243,7 @@ LIBRARY_TEMPLATE = BuildingTemplate(
     room_types=("reading_room", "stacks", "study", "archive"),
     weight=0.5,  # Rare - not every town has a library
     max_per_settlement=1,
+    roof_style="shingle",
 )
 
 # =============================================================================
@@ -248,6 +262,7 @@ SHOP_TEMPLATE = BuildingTemplate(
     room_types=("shop_floor", "back_room", "storage"),
     weight=1.5,  # Generic shops are fairly common
     max_per_settlement=3,  # Can have a few different shops
+    roof_style="shingle",
 )
 
 WAREHOUSE_TEMPLATE = BuildingTemplate(
@@ -262,6 +277,7 @@ WAREHOUSE_TEMPLATE = BuildingTemplate(
     room_types=("storage", "loading_area", "office"),
     weight=0.6,
     max_per_settlement=2,
+    roof_style="shingle",
 )
 
 

@@ -30,6 +30,7 @@ TEXTURE_VERTEX_DTYPE = np.dtype(
         ("fg_color", "4f4"),  # (r, g, b, a) as floats 0.0-1.0
         ("bg_color", "4f4"),  # (r, g, b, a) as floats 0.0-1.0
         ("noise_amplitude", "f4"),  # Sub-tile brightness noise amplitude
+        ("noise_pattern", "u4"),  # Sub-tile brightness pattern ID (u32 for WGSL input)
         ("edge_neighbor_mask", "u4"),  # Cardinal tile-type boundary mask (W/N/S/E)
         ("edge_blend", "f4"),  # Organic edge feathering amplitude (0.0-1.0)
     ]
@@ -130,6 +131,7 @@ class WGPUGlyphRenderer:
             "fg_color": dtype_fields["fg_color"][1],
             "bg_color": dtype_fields["bg_color"][1],
             "noise_amplitude": dtype_fields["noise_amplitude"][1],
+            "noise_pattern": dtype_fields["noise_pattern"][1],
             "edge_neighbor_mask": dtype_fields["edge_neighbor_mask"][1],
             "edge_blend": dtype_fields["edge_blend"][1],
             "edge_neighbor_bg_0": dtype_fields["edge_neighbor_bg_0"][1],
@@ -169,19 +171,24 @@ class WGPUGlyphRenderer:
                     },
                     {
                         "format": "uint32",
-                        "offset": offsets["edge_neighbor_mask"],
+                        "offset": offsets["noise_pattern"],
                         "shader_location": 5,
+                    },
+                    {
+                        "format": "uint32",
+                        "offset": offsets["edge_neighbor_mask"],
+                        "shader_location": 6,
                     },
                     {
                         "format": "float32",
                         "offset": offsets["edge_blend"],
-                        "shader_location": 6,
+                        "shader_location": 7,
                     },
                     *[
                         {
                             "format": "float32x3",
                             "offset": offsets[f"edge_neighbor_bg_{i}"],
-                            "shader_location": 7 + i,
+                            "shader_location": 8 + i,
                         }
                         for i in range(EDGE_NEIGHBOR_COUNT)
                     ],
@@ -522,6 +529,7 @@ class WGPUGlyphRenderer:
         # Broadcast noise amplitude from glyph buffer to all 6 vertices per cell.
         # Swap from (w, h) to (h, w) to match grid order.
         noise_values = glyph_buffer.data["noise"].T  # (h, w)
+        noise_pattern = glyph_buffer.data["noise_pattern"].T.astype(np.uint32)
         edge_neighbor_mask = glyph_buffer.data["edge_neighbor_mask"].T.astype(np.uint32)
         edge_blend = glyph_buffer.data["edge_blend"].T
         edge_neighbor_bg = (
@@ -530,6 +538,7 @@ class WGPUGlyphRenderer:
         )  # (h, w, 4, 3)
         for i in range(6):
             verts["noise_amplitude"][..., i] = noise_values
+            verts["noise_pattern"][..., i] = noise_pattern
             verts["edge_neighbor_mask"][..., i] = edge_neighbor_mask
             verts["edge_blend"][..., i] = edge_blend
             for neighbor_idx in range(EDGE_NEIGHBOR_COUNT):
@@ -575,6 +584,12 @@ class WGPUGlyphRenderer:
             glyph_buffer.data["noise"] != cache_buffer.data["noise"]
         )
         if has_noise_diff:
+            return True
+
+        has_noise_pattern_diff = np.any(
+            glyph_buffer.data["noise_pattern"] != cache_buffer.data["noise_pattern"]
+        )
+        if has_noise_pattern_diff:
             return True
 
         has_edge_mask_diff = np.any(

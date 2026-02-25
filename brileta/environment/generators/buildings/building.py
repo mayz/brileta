@@ -46,6 +46,8 @@ class Building:
         footprint: The outer bounds of the building including walls.
         rooms: List of Room objects inside this building.
         door_positions: List of (x, y) positions where doors are placed.
+        roof_style: Visual roof style used by render-time roof substitution.
+        floor_count: Number of floors (stored for future multi-story phases).
     """
 
     id: int
@@ -53,6 +55,8 @@ class Building:
     footprint: Rect
     rooms: list[Room] = field(default_factory=list)
     door_positions: list[WorldTilePos] = field(default_factory=list)
+    roof_style: str = "thatch"
+    floor_count: int = 1
 
     @property
     def interior_bounds(self) -> Rect:
@@ -66,6 +70,25 @@ class Building:
             self.footprint.y1 + 1,
             self.footprint.width - 2,
             self.footprint.height - 2,
+        )
+
+    @property
+    def ridge_axis(self) -> str:
+        """Ridge line axis derived from footprint dimensions.
+
+        The ridge runs along the longer axis of the building: horizontal for
+        wide buildings, vertical for tall buildings. Square buildings use a
+        position-based hash for visual variety across the map.
+        """
+        if self.footprint.width > self.footprint.height:
+            return "horizontal"
+        if self.footprint.height > self.footprint.width:
+            return "vertical"
+        # Square: deterministic pick based on position for variety.
+        return (
+            "horizontal"
+            if (self.footprint.x1 + self.footprint.y1) % 2 == 0
+            else "vertical"
         )
 
     def contains_point(self, x: int, y: int) -> bool:

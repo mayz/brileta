@@ -40,8 +40,9 @@ struct AtmosphericUniforms {
 @group(0) @binding(1) var sky_exposure_map: texture_2d<f32>;
 @group(0) @binding(2) var explored_map: texture_2d<f32>;
 @group(0) @binding(3) var visible_map: texture_2d<f32>;
-@group(0) @binding(4) var noise_texture: texture_2d<f32>;
-@group(0) @binding(5) var texture_sampler: sampler;
+@group(0) @binding(4) var roof_surface_mask: texture_2d<f32>;
+@group(0) @binding(5) var noise_texture: texture_2d<f32>;
+@group(0) @binding(6) var texture_sampler: sampler;
 
 // Vertex shader - transforms pixel coordinates to clip space with letterbox handling
 @vertex
@@ -89,6 +90,13 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     // Convert screen UV to world tile position (matching lighting system)
     let world_pos = viewport_offset + input.screen_uv * viewport_size;
     let tile_pos = vec2<i32>(floor(world_pos));
+    let viewport_size_i = max(vec2<i32>(viewport_size), vec2<i32>(1));
+    let viewport_offset_i = vec2<i32>(viewport_offset);
+    let viewport_tile = clamp(
+        tile_pos - viewport_offset_i,
+        vec2<i32>(0),
+        viewport_size_i - vec2<i32>(1),
+    );
 
     // Clamp tile position to map bounds for texture sampling
     let map_size_i = vec2<i32>(map_size);
@@ -98,9 +106,16 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let explored = textureLoad(explored_map, clamped_pos, 0).r;
     let visible = textureLoad(visible_map, clamped_pos, 0).r;
     let sky_exposure = textureLoad(sky_exposure_map, clamped_pos, 0).r;
+    let roof_surface = textureLoad(roof_surface_mask, viewport_tile, 0).r;
+    // Roof visuals are a view-time overlay over indoor tiles, so darken-mode
+    // cloud shadows need a render-surface override independent of sky_exposure.
+    let roof_surface_override = (blend_mode == 0u) && (roof_surface >= 0.5);
 
-    // Early out for unexplored or not visible tiles
-    if (explored < 0.5 || visible < 0.5) {
+    // Cloud shadows (darken mode) are an on-screen weather effect, so they apply
+    // to explored outdoor/roof surfaces even outside the player's current FOV.
+    // Other atmospheric layers (e.g. mist) remain FOV-gated.
+    let requires_visible_fov = blend_mode != 0u;
+    if (explored < 0.5 || (requires_visible_fov && visible < 0.5 && !roof_surface_override)) {
         if (blend_mode == 0u) {
             return vec4<f32>(1.0, 1.0, 1.0, 1.0);  // White - no effect with multiply
         } else {
@@ -109,7 +124,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     }
 
     // Early out for indoor areas (below sky exposure threshold)
-    if (sky_exposure < sky_exposure_threshold) {
+    if (sky_exposure < sky_exposure_threshold && !roof_surface_override) {
         if (blend_mode == 0u) {
             return vec4<f32>(1.0, 1.0, 1.0, 1.0);  // White - no effect with multiply
         } else {

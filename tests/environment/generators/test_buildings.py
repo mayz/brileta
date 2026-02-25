@@ -29,7 +29,7 @@ class TestBuildingRoomDataclasses:
     """Tests for Building and Room dataclasses."""
 
     def test_building_creation(self) -> None:
-        """Building has id, type, footprint, rooms, door_positions."""
+        """Building has expected defaults including roof metadata."""
         footprint = Rect(10, 20, 15, 12)
         building = Building(
             id=1,
@@ -42,6 +42,8 @@ class TestBuildingRoomDataclasses:
         assert building.footprint == footprint
         assert building.rooms == []
         assert building.door_positions == []
+        assert building.roof_style == "thatch"
+        assert building.floor_count == 1
 
     def test_building_with_rooms_and_doors(self) -> None:
         """Building can be created with rooms and door positions."""
@@ -101,6 +103,35 @@ class TestBuildingRoomDataclasses:
         assert room.bounds == bounds
 
 
+class TestBuildingRidgeAxis:
+    """Tests for the Building.ridge_axis computed property."""
+
+    def test_horizontal_for_wide_building(self) -> None:
+        """Ridge runs along the longer axis: horizontal when width > height."""
+        building = Building(id=1, building_type="house", footprint=Rect(0, 0, 10, 6))
+        assert building.ridge_axis == "horizontal"
+
+    def test_vertical_for_tall_building(self) -> None:
+        """Ridge runs along the longer axis: vertical when height > width."""
+        building = Building(id=1, building_type="house", footprint=Rect(0, 0, 6, 10))
+        assert building.ridge_axis == "vertical"
+
+    def test_square_deterministic_from_position(self) -> None:
+        """Square buildings pick ridge axis based on position hash for variety."""
+        # Even sum (2+4=6) -> horizontal
+        b1 = Building(id=1, building_type="house", footprint=Rect(2, 4, 5, 5))
+        assert b1.ridge_axis == "horizontal"
+        # Odd sum (3+4=7) -> vertical
+        b2 = Building(id=2, building_type="house", footprint=Rect(3, 4, 5, 5))
+        assert b2.ridge_axis == "vertical"
+
+    def test_same_position_gives_same_axis(self) -> None:
+        """Ridge axis is deterministic for the same footprint position."""
+        b1 = Building(id=1, building_type="house", footprint=Rect(5, 5, 5, 5))
+        b2 = Building(id=2, building_type="tavern", footprint=Rect(5, 5, 5, 5))
+        assert b1.ridge_axis == b2.ridge_axis
+
+
 # =============================================================================
 # T2.2: BuildingTemplate
 # =============================================================================
@@ -149,7 +180,7 @@ class TestBuildingTemplate:
             assert 2 <= room_count <= 4, f"Room count {room_count} out of bounds [2,4]"
 
     def test_template_create_building(self) -> None:
-        """create_building produces Building with correct footprint."""
+        """create_building produces Building with correct footprint and roof fields."""
         template = BuildingTemplate(
             name="test_house",
             building_type="house",
@@ -157,6 +188,8 @@ class TestBuildingTemplate:
             max_width=16,
             min_height=10,
             max_height=14,
+            roof_style="shingle",
+            floor_count=3,
         )
 
         building = template.create_building(
@@ -175,6 +208,8 @@ class TestBuildingTemplate:
         # Rooms and doors are added later by BuildingPlacementLayer
         assert building.rooms == []
         assert building.door_positions == []
+        assert building.roof_style == "shingle"
+        assert building.floor_count == 3
 
     def test_template_door_placement_on_perimeter(self) -> None:
         """Doors placed on building perimeter (validated in layer tests)."""
@@ -213,6 +248,7 @@ class TestDefaultTemplates:
         assert template.max_height == 14
         assert template.room_count_min == 2
         assert template.room_count_max == 3
+        assert template.roof_style == "thatch"
 
     def test_medium_house_template(self) -> None:
         """Verify size ranges and room counts for medium house."""
@@ -241,6 +277,7 @@ class TestDefaultTemplates:
         assert template.room_count_max == 3
         assert "shop_floor" in template.room_types
         assert "back_room" in template.room_types
+        assert template.roof_style == "shingle"
 
     def test_tavern_template(self) -> None:
         """Tavern is larger with multiple rooms."""
@@ -257,6 +294,7 @@ class TestDefaultTemplates:
         assert template.room_count_min == 4
         assert template.room_count_max == 6
         assert "main_hall" in template.room_types
+        assert template.roof_style == "shingle"
 
     def test_get_default_templates(self) -> None:
         """get_default_templates returns expected templates."""

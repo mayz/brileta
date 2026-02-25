@@ -64,6 +64,7 @@ class AtmosphericLayerState:
     sky_exposure_texture: wgpu.GPUTexture | None
     explored_texture: wgpu.GPUTexture | None
     visible_texture: wgpu.GPUTexture | None
+    roof_surface_mask_buffer: np.ndarray | None
     noise_scale: float
     noise_threshold_low: float
     noise_threshold_high: float
@@ -1124,6 +1125,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
                         layer.sky_exposure_texture,
                         layer.explored_texture,
                         layer.visible_texture,
+                        layer.roof_surface_mask_buffer,
                         layer.noise_scale,
                         layer.noise_threshold_low,
                         layer.noise_threshold_high,
@@ -1585,6 +1587,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
         sky_exposure_texture: wgpu.GPUTexture | None,
         explored_texture: wgpu.GPUTexture | None,
         visible_texture: wgpu.GPUTexture | None,
+        roof_surface_mask_buffer: np.ndarray | None,
         noise_scale: float,
         noise_threshold_low: float,
         noise_threshold_high: float,
@@ -1607,6 +1610,7 @@ class WGPUGraphicsContext(BaseGraphicsContext):
                 sky_exposure_texture=sky_exposure_texture,
                 explored_texture=explored_texture,
                 visible_texture=visible_texture,
+                roof_surface_mask_buffer=roof_surface_mask_buffer,
                 noise_scale=noise_scale,
                 noise_threshold_low=noise_threshold_low,
                 noise_threshold_high=noise_threshold_high,

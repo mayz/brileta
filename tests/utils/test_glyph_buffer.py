@@ -170,6 +170,16 @@ def test_noise_defaults_to_zero():
     assert np.all(buf.data["noise"] == 0.0)
 
 
+def test_noise_pattern_field_present_and_defaults_to_zero() -> None:
+    """Glyph buffer dtype should include noise pattern metadata with zero default."""
+    names = GLYPH_DTYPE.names
+    assert names is not None
+    assert "noise_pattern" in names
+
+    buf = GlyphBuffer(3, 3)
+    assert np.all(buf.data["noise_pattern"] == 0)
+
+
 def test_put_char_writes_noise():
     """put_char should accept and store a noise amplitude value."""
     buf = GlyphBuffer(3, 3)
@@ -177,11 +187,35 @@ def test_put_char_writes_noise():
     assert buf.data[1, 1]["noise"] == pytest.approx(0.04)
 
 
+def test_put_char_writes_noise_pattern() -> None:
+    """put_char should accept and store a sub-tile noise pattern ID."""
+    buf = GlyphBuffer(3, 3)
+    buf.put_char(
+        1,
+        1,
+        ord("@"),
+        (255, 255, 255, 255),
+        (0, 0, 0, 255),
+        noise=0.04,
+        noise_pattern=2,
+    )
+    assert int(buf.data[1, 1]["noise_pattern"]) == 2
+
+
 def test_put_char_noise_default():
     """put_char without noise arg should default to 0.0 (backwards compat)."""
     buf = GlyphBuffer(3, 3)
     buf.put_char(1, 1, ord("@"), (255, 255, 255, 255), (0, 0, 0, 255))
     assert buf.data[1, 1]["noise"] == 0.0
+    assert int(buf.data[1, 1]["noise_pattern"]) == 0
+
+
+def test_clear_resets_noise_pattern() -> None:
+    """clear() should reset sub-tile noise pattern IDs to zero."""
+    buf = GlyphBuffer(2, 2)
+    buf.data["noise_pattern"][0, 0] = 3
+    buf.clear()
+    assert np.all(buf.data["noise_pattern"] == 0)
 
 
 def test_edge_transition_fields_default_to_zero() -> None:

@@ -6,9 +6,13 @@ import numpy as np
 import pytest
 
 from brileta.environment import tile_types
+from brileta.environment.generators.buildings.building import Building
 from brileta.environment.map import TileAnimationState
 from brileta.util.coordinates import Rect
-from brileta.view.views.world_view import WorldView
+from brileta.view.views.world_view import (
+    _LIGHT_OVERLAY_MASK_ROOF_SUNLIT,
+    WorldView,
+)
 
 
 class TestWorldViewLightOverlay:
@@ -138,6 +142,65 @@ class TestWorldViewLightOverlay:
         compose_kwargs = mock_graphics.compose_light_overlay_gpu.call_args.kwargs
         visible_mask_buffer = compose_kwargs["visible_mask_buffer"]
         assert not np.any(visible_mask_buffer)
+
+    def test_gpu_compose_hides_visible_mask_for_roof_covered_tiles(self) -> None:
+        """Roof-covered cells should not receive interior light/FOV compose."""
+        mock_controller = Mock()
+        mock_lighting_system = Mock()
+        world_view = WorldView(mock_controller, Mock(), mock_lighting_system)
+        world_view.set_bounds(0, 0, 10, 10)
+
+        mock_gw = Mock()
+        mock_controller.gw = mock_gw
+        mock_gw.game_map.width = 1
+        mock_gw.game_map.height = 1
+        mock_gw.game_map.exploration_revision = 0
+        mock_gw.game_map.structural_revision = 0
+        mock_gw.game_map.tiles = np.array(
+            [[tile_types.TileTypeID.FLOOR]], dtype=np.uint8
+        )
+        mock_gw.game_map.decoration_seed = 0
+        mock_gw.game_map.explored = np.ones((1, 1), dtype=bool)
+        mock_gw.game_map.visible = np.ones((1, 1), dtype=bool)
+        mock_gw.game_map.light_appearance_map = np.zeros(
+            (1, 1),
+            dtype=tile_types.TileTypeAppearance,
+        )
+        mock_gw.game_map.animation_params = np.zeros(
+            (1, 1),
+            dtype=tile_types.TileAnimationParams,
+        )
+        mock_gw.game_map.animation_state = np.zeros((1, 1), dtype=TileAnimationState)
+        mock_gw.player.x = 0
+        mock_gw.player.y = 0
+
+        mock_viewport_system = Mock()
+        mock_viewport_system.get_visible_bounds.return_value = Rect(0, 0, 1, 1)
+        mock_viewport_system.offset_x = 0
+        mock_viewport_system.offset_y = 0
+        world_view.viewport_system = mock_viewport_system
+
+        mock_lighting_system.compute_lightmap_texture.return_value = object()
+
+        mock_graphics = Mock()
+        mock_graphics.render_glyph_buffer_to_texture.return_value = object()
+        mock_graphics.compose_light_overlay_gpu.return_value = object()
+
+        world_view._apply_roof_substitution = Mock(
+            return_value=np.array([tile_types.TileTypeID.ROOF_THATCH], dtype=np.uint8)
+        )
+
+        world_view._render_light_overlay_gpu_compose(
+            mock_graphics,
+            dark_texture=object(),
+        )
+
+        compose_kwargs = mock_graphics.compose_light_overlay_gpu.call_args.kwargs
+        visible_mask_buffer = compose_kwargs["visible_mask_buffer"]
+        pad = world_view._SCROLL_PADDING
+        assert int(visible_mask_buffer[pad, pad]) == int(
+            _LIGHT_OVERLAY_MASK_ROOF_SUNLIT
+        )
 
     def test_gpu_compose_raises_when_backend_returns_none(self) -> None:
         """Composition should fail loudly if backend compose unexpectedly returns None."""
@@ -270,6 +333,63 @@ class TestWorldViewLightOverlay:
         # Animated entry receives modulation and clamps per channel.
         assert tuple(int(v) for v in light_fg_rgb[1]) == (255, 190, 240)
         assert tuple(int(v) for v in light_bg_rgb[1]) == (60, 0, 30)
+
+    def test_apply_tile_light_animations_skips_excluded_roof_covered_tiles(
+        self,
+    ) -> None:
+        """Excluded cells should not animate after visual roof substitution."""
+        world_view = object.__new__(WorldView)
+
+        light_fg_rgb = np.array([[120, 130, 140]], dtype=np.uint8)
+        light_bg_rgb = np.array([[40, 50, 60]], dtype=np.uint8)
+
+        animation_params = np.zeros((1, 1), dtype=tile_types.TileAnimationParams)
+        animation_state = np.zeros((1, 1), dtype=TileAnimationState)
+        animation_params["animates"][0, 0] = True
+        animation_params["fg_variation"][0, 0] = (200, 200, 200)
+        animation_params["bg_variation"][0, 0] = (200, 200, 200)
+        animation_state["fg_values"][0, 0] = (1000, 1000, 1000)
+        animation_state["bg_values"][0, 0] = (0, 0, 0)
+
+        valid_exp_x = np.array([0], dtype=np.int32)
+        valid_exp_y = np.array([0], dtype=np.int32)
+        roof_covered_mask = np.array([True], dtype=bool)
+
+        world_view._apply_tile_light_animations(
+            light_fg_rgb,
+            light_bg_rgb,
+            animation_params,
+            animation_state,
+            valid_exp_x,
+            valid_exp_y,
+            exclude_mask=roof_covered_mask,
+        )
+
+        # The underlying tile is animated, but roof substitution should keep the
+        # visible roof colors unchanged.
+        assert tuple(int(v) for v in light_fg_rgb[0]) == (120, 130, 140)
+        assert tuple(int(v) for v in light_bg_rgb[0]) == (40, 50, 60)
+
+    def test_build_atmospheric_roof_surface_mask_matches_roof_cutaways(self) -> None:
+        """Atmospheric roof mask should mirror roof substitution visibility rules."""
+        world_view = object.__new__(WorldView)
+        building = Building(id=7, building_type="house", footprint=Rect(10, 20, 3, 3))
+
+        world_view._compute_roof_state = Mock(return_value=(None, [building]))
+        world_view._get_roof_entrance_clear_positions = Mock(
+            return_value={(10, 20)}  # clear one footprint corner (e.g. door path)
+        )
+
+        mask = world_view._build_atmospheric_roof_surface_mask((10, 20), (4, 4))
+
+        assert mask is not None
+        assert mask.shape == (4, 4)
+        # Footprint tiles are roof-covered except entrance clear positions.
+        assert bool(mask[0, 0]) is False  # entrance clear
+        assert bool(mask[1, 1]) is True  # interior tile (now roofed)
+        assert bool(mask[2, 2]) is True  # remaining footprint tile
+        # Outside the footprint remains clear.
+        assert bool(mask[3, 3]) is False
 
     def test_gpu_compose_reuses_cached_light_source_buffer_between_frames(
         self, monkeypatch: pytest.MonkeyPatch

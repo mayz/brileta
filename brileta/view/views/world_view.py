@@ -38,6 +38,7 @@ from .base import View
 
 if TYPE_CHECKING:
     from brileta.controller import Controller, FrameManager
+    from brileta.environment.generators.buildings.building import Building
     from brileta.game.actors import Actor
     from brileta.game.lights import DirectionalLight
 
@@ -56,6 +57,19 @@ _EDGE_BLEND_CARDINAL_DIRECTIONS: tuple[Direction, ...] = (
     (0, 1),
     (1, 0),
 )
+
+_ROOF_TILE_IDS: tuple[int, ...] = (
+    int(tile_types.TileTypeID.ROOF_THATCH),
+    int(tile_types.TileTypeID.ROOF_SHINGLE),
+)
+_EDGE_BLEND_HARD_EDGE_NEIGHBOR_TILE_IDS: tuple[int, ...] = (
+    int(tile_types.TileTypeID.WALL),
+    *_ROOF_TILE_IDS,
+)
+_LIGHT_OVERLAY_MASK_HIDDEN = np.uint8(0)
+_LIGHT_OVERLAY_MASK_ROOF_OPAQUE = np.uint8(128)
+_LIGHT_OVERLAY_MASK_ROOF_SUNLIT = np.uint8(192)
+_LIGHT_OVERLAY_MASK_VISIBLE = np.uint8(255)
 
 
 def _compute_tile_edge_transition_metadata(
@@ -116,6 +130,67 @@ def _compute_tile_edge_transition_metadata(
     return edge_neighbor_mask, edge_neighbor_bg
 
 
+def _suppress_edge_blend_toward_hard_edges(
+    edge_neighbor_mask: np.ndarray, tile_id_window: np.ndarray
+) -> None:
+    """Clear edge-blend mask bits that point at architectural hard-edge tiles.
+
+    Organic terrain should feather into other natural terrain, but not into
+    building surfaces like walls/roofs. Those boundaries should stay crisp.
+    """
+    if not np.any(edge_neighbor_mask):
+        return
+
+    hard_edge_tiles = np.isin(tile_id_window, _EDGE_BLEND_HARD_EDGE_NEIGHBOR_TILE_IDS)
+    if not np.any(hard_edge_tiles):
+        return
+    source_is_hard_edge = hard_edge_tiles
+
+    for bit_index, (dx, dy) in enumerate(_EDGE_BLEND_CARDINAL_DIRECTIONS):
+        shifted_hard_edges = np.roll(hard_edge_tiles, shift=(-dx, -dy), axis=(0, 1))
+
+        valid_neighbor = np.ones(tile_id_window.shape, dtype=np.bool_)
+        if dx < 0:
+            valid_neighbor[:-dx, :] = False
+        elif dx > 0:
+            valid_neighbor[-dx:, :] = False
+        if dy < 0:
+            valid_neighbor[:, :-dy] = False
+        elif dy > 0:
+            valid_neighbor[:, -dy:] = False
+
+        direction_bit = np.uint8(1 << bit_index)
+        mask_points_to_hard_edge = (
+            valid_neighbor
+            & ~source_is_hard_edge
+            & shifted_hard_edges
+            & ((edge_neighbor_mask & direction_bit) != 0)
+        )
+        if not np.any(mask_points_to_hard_edge):
+            continue
+
+        edge_neighbor_mask[mask_points_to_hard_edge] &= np.uint8(0xFF ^ direction_bit)
+
+
+def _override_edge_neighbor_bg_with_self_darken(
+    edge_neighbor_bg: np.ndarray,
+    tile_id_window: np.ndarray,
+    bg_rgb_window: np.ndarray,
+) -> None:
+    """Replace edge blend target colors with a darkened self color when configured."""
+    edge_self_darken = tile_types.get_edge_self_darken_map(tile_id_window)
+    self_darken_mask = edge_self_darken > 0
+    if not np.any(self_darken_mask):
+        return
+
+    own_bg_rgb = bg_rgb_window[self_darken_mask].astype(np.int16)
+    darken_amount = edge_self_darken[self_darken_mask].astype(np.int16)[:, np.newaxis]
+    darkened_bg = np.clip(own_bg_rgb - darken_amount, 0, 255).astype(np.uint8)
+    # Write every cardinal slot so the shader always darkens toward self-color
+    # for these materials, regardless of actual neighbor type.
+    edge_neighbor_bg[self_darken_mask] = darkened_bg[:, np.newaxis, :]
+
+
 class WorldView(View):
     """View responsible for rendering the game world (map, actors, effects)."""
 
@@ -148,7 +223,7 @@ class WorldView(View):
         self.set_bounds(0, 0, DEFAULT_VIEWPORT_WIDTH, DEFAULT_VIEWPORT_HEIGHT)
         # Light source buffer cache: skip full rebuild when viewport and exploration
         # haven't changed since the last frame.
-        self._light_buffer_cache_key: tuple[int, int, int, int, int] | None = None
+        self._light_buffer_cache_key: tuple[object, ...] | None = None
         # Pre-animation colors and index metadata for animated tiles in the cached
         # light-source buffer. This lets us re-apply animation without rebuilding.
         self._light_buffer_anim_base_fg: np.ndarray | None = None
@@ -161,8 +236,12 @@ class WorldView(View):
         self._light_buffer_cached_buf_y: np.ndarray | None = None
         self._light_buffer_cached_vis_buf_x: np.ndarray | None = None
         self._light_buffer_cached_vis_buf_y: np.ndarray | None = None
+        self._light_buffer_cached_roof_opaque_buf_x: np.ndarray | None = None
+        self._light_buffer_cached_roof_opaque_buf_y: np.ndarray | None = None
         # Persistent visible mask buffer to avoid per-frame allocation.
         self._visible_mask_buffer: np.ndarray | None = None
+        self._roof_state_cache_key: tuple[object, ...] | None = None
+        self._roof_state_cache_value: tuple[int | None, list[Building]] | None = None
         self.effect_library = EffectLibrary()
         self.floating_text_manager = FloatingTextManager()
         self._gpu_actor_lightmap_texture: Any | None = None
@@ -244,6 +323,8 @@ class WorldView(View):
         self._light_buffer_cached_buf_y = None
         self._light_buffer_cached_vis_buf_x = None
         self._light_buffer_cached_vis_buf_y = None
+        self._light_buffer_cached_roof_opaque_buf_x = None
+        self._light_buffer_cached_roof_opaque_buf_y = None
         self._visible_mask_buffer = None
         self._active_background_texture = None
         self._light_overlay_texture = None
@@ -375,7 +456,17 @@ class WorldView(View):
         # source of truth for this.
         exploration_key = gw.game_map.exploration_revision
 
-        return (bounds_key, map_key, exploration_key)
+        player = getattr(gw, "player", None)
+        player_pos_key = (
+            getattr(player, "x", None),
+            getattr(player, "y", None),
+        )
+
+        # Roof ridge shading depends on the sun direction, so the background
+        # must be invalidated when the directional light changes.
+        sun_key = self._get_sun_direction_cache_key()
+
+        return (bounds_key, map_key, exploration_key, player_pos_key, sun_key)
 
     def draw(self, graphics: GraphicsContext, alpha: InterpolationAlpha) -> None:
         """Main drawing method for the world view."""
@@ -598,8 +689,8 @@ class WorldView(View):
 
         visible_actors_for_frame: list[Actor] | None = None
         dynamic_receivers_for_frame: list[Actor] | None = None
+        actor_bounds = vs.get_visible_bounds()
         if config.SHADOWS_ENABLED:
-            actor_bounds = vs.get_visible_bounds()
             visible_actors_for_frame = [
                 actor
                 for actor in self.actor_renderer.get_sorted_visible_actors(
@@ -607,12 +698,23 @@ class WorldView(View):
                 )
                 if self.controller.gw.game_map.visible[actor.x, actor.y]
             ]
+            visible_actors_for_frame = self._filter_roof_occluded_actors(
+                visible_actors_for_frame,
+                actor_bounds,
+            )
             # Only dynamic actors (those with an energy component) need shadow
             # receiver dimming. This turns the O(N*N) dimming loop into O(N*D)
             # where D is the number of dynamic actors (typically 1-5).
             dynamic_receivers_for_frame = [
                 a for a in visible_actors_for_frame if a.energy is not None
             ]
+        else:
+            visible_actors_for_frame = self._filter_roof_occluded_actors(
+                self.actor_renderer.get_sorted_visible_actors(
+                    actor_bounds, self.controller.gw
+                ),
+                actor_bounds,
+            )
 
         set_gpu_actor_lighting_context = getattr(
             graphics, "set_actor_lighting_gpu_context", None
@@ -660,9 +762,7 @@ class WorldView(View):
             camera_frac_offset=self.camera_frac_offset,
             view_origin=(float(self.x), float(self.y)),
             visible_actors=visible_actors_for_frame,
-            viewport_bounds=actor_bounds
-            if visible_actors_for_frame is not None
-            else None,
+            viewport_bounds=actor_bounds,
         )
 
         if config.ATMOSPHERIC_EFFECTS_ENABLED:
@@ -693,6 +793,9 @@ class WorldView(View):
                     )
                     if callable(get_visible_texture):
                         visible_texture = get_visible_texture()
+                roof_surface_mask_buffer = self._build_atmospheric_roof_surface_mask(
+                    viewport_offset, viewport_size
+                )
 
                 for layer, state in active_layers:
                     effective_strength = layer.strength
@@ -714,6 +817,7 @@ class WorldView(View):
                         sky_exposure_texture,
                         explored_texture,
                         visible_texture,
+                        roof_surface_mask_buffer,
                         layer.noise_scale,
                         layer.noise_threshold_low,
                         layer.noise_threshold_high,
@@ -777,6 +881,437 @@ class WorldView(View):
     # ------------------------------------------------------------------
     # Internal rendering helpers
     # ------------------------------------------------------------------
+
+    def _get_roof_entrance_clear_positions(
+        self, building: Building
+    ) -> set[tuple[int, int]]:
+        """Return roof mask carve-outs for a building's exterior doorway/approach."""
+        entrance_clear_positions: set[tuple[int, int]] = set()
+        for door_x, door_y in building.door_positions:
+            entrance_clear_positions.add((door_x, door_y))
+
+            outward_dx = 0
+            outward_dy = 0
+            if door_x == building.footprint.x1:
+                outward_dx = -1
+            elif door_x == building.footprint.x2 - 1:
+                outward_dx = 1
+            elif door_y == building.footprint.y1:
+                outward_dy = -1
+            elif door_y == building.footprint.y2 - 1:
+                outward_dy = 1
+
+            if outward_dx != 0 or outward_dy != 0:
+                approach_x = door_x + outward_dx
+                approach_y = door_y + outward_dy
+                entrance_clear_positions.add((approach_x, approach_y))
+
+                if outward_dx != 0:
+                    entrance_clear_positions.add((approach_x, approach_y - 1))
+                    entrance_clear_positions.add((approach_x, approach_y + 1))
+                else:
+                    entrance_clear_positions.add((approach_x - 1, approach_y))
+                    entrance_clear_positions.add((approach_x + 1, approach_y))
+
+        return entrance_clear_positions
+
+    def _build_atmospheric_roof_surface_mask(
+        self,
+        viewport_offset: WorldTilePos,
+        viewport_size: tuple[int, int],
+    ) -> np.ndarray | None:
+        """Build a viewport-space mask of roof tiles visible this frame.
+
+        The atmospheric pass operates on world-derived sky exposure, but roofs are
+        a view-time substitution layered over indoor tiles. This mask marks the
+        roof surfaces that are actually drawn so cloud shadows can apply to them
+        without changing global sky-exposure semantics.
+        """
+        viewport_w, viewport_h = viewport_size
+        if viewport_w <= 0 or viewport_h <= 0:
+            return None
+
+        player_building_id, viewport_buildings = self._compute_roof_state()
+        roof_visible_buildings = [
+            b for b in viewport_buildings if b.id != player_building_id
+        ]
+        if not roof_visible_buildings:
+            return None
+
+        view_x, view_y = viewport_offset
+        view_x2 = view_x + viewport_w
+        view_y2 = view_y + viewport_h
+        roof_mask = np.zeros((viewport_w, viewport_h), dtype=bool)
+
+        for building in roof_visible_buildings:
+            fp = building.footprint
+            clip_x1 = max(view_x, fp.x1)
+            clip_y1 = max(view_y, fp.y1)
+            clip_x2 = min(view_x2, fp.x2)
+            clip_y2 = min(view_y2, fp.y2)
+            if clip_x1 >= clip_x2 or clip_y1 >= clip_y2:
+                continue
+
+            roof_mask[
+                (clip_x1 - view_x) : (clip_x2 - view_x),
+                (clip_y1 - view_y) : (clip_y2 - view_y),
+            ] = True
+
+            entrance_clear_positions = self._get_roof_entrance_clear_positions(building)
+            if entrance_clear_positions:
+                for clear_x, clear_y in entrance_clear_positions:
+                    if view_x <= clear_x < view_x2 and view_y <= clear_y < view_y2:
+                        roof_mask[clear_x - view_x, clear_y - view_y] = False
+
+        if not np.any(roof_mask):
+            return None
+        return roof_mask
+
+    def _filter_roof_occluded_actors(
+        self,
+        actors: list[Actor],
+        viewport_bounds_world: Rect,
+    ) -> list[Actor]:
+        """Hide actors that are under opaque roofs for the current frame.
+
+        The player is never filtered here (player visibility is the reference point
+        for roof cutaway behavior). This only affects actor/shadow passes so roofed
+        interiors do not leak actor glyphs through otherwise opaque roof terrain.
+        """
+        if not actors:
+            return actors
+
+        gw = self.controller.gw
+        player = getattr(gw, "player", None)
+        player_building_id, viewport_buildings = self._compute_roof_state()
+
+        if not viewport_buildings:
+            return actors
+
+        roof_visible_buildings = [
+            b for b in viewport_buildings if b.id != player_building_id
+        ]
+        if not roof_visible_buildings:
+            return actors
+
+        kept: list[Actor] = []
+        for actor in actors:
+            if actor is player:
+                kept.append(actor)
+                continue
+
+            ax = actor.x
+            ay = actor.y
+            # Skip unnecessary map lookups for actors outside the viewport slice.
+            if not (
+                viewport_bounds_world.x1 <= ax <= viewport_bounds_world.x2
+                and viewport_bounds_world.y1 <= ay <= viewport_bounds_world.y2
+            ):
+                kept.append(actor)
+                continue
+
+            occluded = False
+            for building in roof_visible_buildings:
+                if not building.contains_point(ax, ay):
+                    continue
+
+                if (ax, ay) not in self._get_roof_entrance_clear_positions(building):
+                    occluded = True
+                    break
+
+            if not occluded:
+                kept.append(actor)
+
+        return kept
+
+    def _compute_roof_state(self) -> tuple[int | None, list[Building]]:
+        """Cache per-frame roof visibility inputs shared by both render passes."""
+        gw = self.controller.gw
+        game_map = gw.game_map
+        bounds = self.viewport_system.get_visible_bounds()
+        raw_buildings = getattr(gw, "buildings", [])
+        buildings = raw_buildings if isinstance(raw_buildings, list) else []
+
+        player = getattr(gw, "player", None)
+        player_x = getattr(player, "x", None)
+        player_y = getattr(player, "y", None)
+        cache_key: tuple[object, ...] = (
+            bounds.x1,
+            bounds.y1,
+            bounds.x2,
+            bounds.y2,
+            player_x,
+            player_y,
+            getattr(game_map, "structural_revision", 0),
+            len(buildings),
+        )
+        cached_roof_state_key = getattr(self, "_roof_state_cache_key", None)
+        cached_roof_state_value = getattr(self, "_roof_state_cache_value", None)
+        if cached_roof_state_key == cache_key and cached_roof_state_value is not None:
+            return cached_roof_state_value
+
+        player_building_id: int | None = None
+        get_region_at = getattr(game_map, "get_region_at", None)
+        if (
+            callable(get_region_at)
+            and isinstance(player_x, int)
+            and isinstance(player_y, int)
+        ):
+            region = get_region_at((player_x, player_y))
+            if region is not None and region.sky_exposure <= 0.1:
+                player_region_id = region.id
+                for building in buildings:
+                    if any(
+                        room.region_id == player_region_id for room in building.rooms
+                    ):
+                        player_building_id = building.id
+                        break
+
+            # Some interior archways/wall tiles may have no region assignment or be in
+            # an indoor region not represented in building.rooms. The footprint is the
+            # reliable semantic boundary for "inside the house" roof cutaway behavior.
+            if player_building_id is None:
+                for building in buildings:
+                    if building.contains_point(player_x, player_y):
+                        player_building_id = building.id
+                        break
+
+        # Include scroll padding so roof tiles stay available during smooth camera
+        # motion when the unlit pass renders one extra tile around the viewport.
+        pad = self._SCROLL_PADDING
+        view_left = bounds.x1 - pad
+        view_top = bounds.y1 - pad
+        view_right = bounds.x2 + pad
+        view_bottom = bounds.y2 + pad
+
+        viewport_buildings: list[Building] = []
+        for building in buildings:
+            fp = building.footprint
+            if (
+                fp.x1 <= view_right
+                and fp.x2 - 1 >= view_left
+                and fp.y1 <= view_bottom
+                and fp.y2 - 1 >= view_top
+            ):
+                viewport_buildings.append(building)
+
+        roof_state = (player_building_id, viewport_buildings)
+        self._roof_state_cache_key = cache_key
+        self._roof_state_cache_value = roof_state
+        return roof_state
+
+    @staticmethod
+    def _building_roof_color_offset(
+        building: Building, decoration_seed: int
+    ) -> tuple[int, int, int]:
+        """Compute a subtle deterministic per-building roof RGB tint offset."""
+        footprint = building.footprint
+        h = (
+            (int(building.id) * 0x9E3779B1)
+            ^ (int(footprint.x1) * 0x85EBCA6B)
+            ^ (int(footprint.y1) * 0xC2B2AE35)
+            ^ int(decoration_seed)
+        ) & 0xFFFFFFFF
+        # Two rounds of avalanche mixing improve byte independence while staying
+        # deterministic across Python versions/platforms.
+        h = ((h ^ (h >> 16)) * 0x045D9F3B) & 0xFFFFFFFF
+        h = ((h ^ (h >> 16)) * 0x045D9F3B) & 0xFFFFFFFF
+        h = (h ^ (h >> 16)) & 0xFFFFFFFF
+
+        r_offset = (h & 0xFF) % 17 - 8
+        g_offset = ((h >> 8) & 0xFF) % 17 - 8
+        b_offset = ((h >> 16) & 0xFF) % 17 - 8
+        return (r_offset, g_offset, b_offset)
+
+    def _apply_roof_substitution(
+        self,
+        chars: np.ndarray,
+        fg_rgb: np.ndarray,
+        bg_rgb: np.ndarray,
+        tile_ids: np.ndarray,
+        world_x: np.ndarray,
+        world_y: np.ndarray,
+        *,
+        is_light: bool,
+        decoration_seed: int,
+    ) -> np.ndarray:
+        """Overlay virtual roof visuals onto building footprints for this frame.
+
+        Returns the effective tile IDs after substitution so downstream shader
+        metadata (e.g., sub-tile jitter) can use roof decoration parameters.
+        """
+        if len(tile_ids) == 0:
+            return tile_ids
+
+        player_building_id, viewport_buildings = self._compute_roof_state()
+        if not viewport_buildings:
+            return tile_ids
+
+        # Get sun direction once for ridge shading across all buildings.
+        directional_light = self._get_directional_light()
+        if directional_light is not None:
+            sun_dx = directional_light.direction.x
+            sun_dy = directional_light.direction.y
+        else:
+            # Default: light from northwest when no directional light is active.
+            # TODO: connect to real sun direction
+            sun_dx, sun_dy = -0.7, -0.7
+
+        effective_tile_ids: np.ndarray | None = None
+        any_roof_applied = False
+
+        for building in viewport_buildings:
+            if building.id == player_building_id:
+                continue
+
+            roof_tile_id = tile_types.ROOF_STYLE_TILE_TYPES.get(
+                building.roof_style, tile_types.TileTypeID.ROOF_THATCH
+            )
+
+            in_footprint = (
+                (world_x >= building.footprint.x1)
+                & (world_x < building.footprint.x2)
+                & (world_y >= building.footprint.y1)
+                & (world_y < building.footprint.y2)
+            )
+            if not np.any(in_footprint):
+                continue
+
+            entrance_clear_positions = self._get_roof_entrance_clear_positions(building)
+
+            entrance_clear_mask = np.zeros_like(in_footprint)
+            if entrance_clear_positions:
+                for clear_x, clear_y in entrance_clear_positions:
+                    entrance_clear_mask |= (world_x == clear_x) & (world_y == clear_y)
+
+            roof_mask = in_footprint & ~entrance_clear_mask
+            roof_indices = np.nonzero(roof_mask)[0]
+            if len(roof_indices) == 0:
+                continue
+
+            any_roof_applied = True
+            if effective_tile_ids is None:
+                effective_tile_ids = tile_ids.copy()
+            effective_tile_ids[roof_indices] = int(roof_tile_id)
+
+            roof_data = tile_types.get_tile_type_data_by_id(int(roof_tile_id))
+            roof_appearance = roof_data["light" if is_light else "dark"]
+
+            roof_chars = np.full(
+                len(roof_indices),
+                int(roof_appearance["ch"]),
+                dtype=chars.dtype,
+            )
+            roof_fg = np.tile(
+                np.asarray(roof_appearance["fg"], dtype=np.uint8),
+                (len(roof_indices), 1),
+            )
+            roof_bg = np.tile(
+                np.asarray(roof_appearance["bg"], dtype=np.uint8),
+                (len(roof_indices), 1),
+            )
+            roof_tile_ids = np.full(
+                len(roof_indices), int(roof_tile_id), dtype=tile_ids.dtype
+            )
+
+            tile_types.apply_terrain_decoration(
+                roof_chars,
+                roof_fg,
+                roof_bg,
+                roof_tile_ids,
+                world_x[roof_indices],
+                world_y[roof_indices],
+                decoration_seed,
+            )
+
+            roof_color_offset = np.asarray(
+                self._building_roof_color_offset(building, decoration_seed),
+                dtype=np.int16,
+            )
+            roof_bg = np.clip(
+                roof_bg.astype(np.int16) + roof_color_offset, 0, 255
+            ).astype(np.uint8)
+
+            # --- Ridge shading: apply sun-directional brightness ---
+            # Compute signed offset from the ridge center using tile centers.
+            # Tiles on the same side as the sun direction are brighter.
+            fp = building.footprint
+            rx = world_x[roof_indices]
+            ry = world_y[roof_indices]
+
+            if building.ridge_axis == "horizontal":
+                center = (fp.y1 + fp.y2) / 2.0
+                offset = ry + 0.5 - center
+                sun_component = sun_dy
+            else:  # vertical
+                center = (fp.x1 + fp.x2) / 2.0
+                offset = rx + 0.5 - center
+                sun_component = sun_dx
+
+            # Ridge tiles sit at the peak. Sun-facing tiles have their slope
+            # normal pointing toward the sun (offset and sun_component same sign).
+            # Scale brightness by |sun_component| so shading fades smoothly as
+            # the sun rotates perpendicular to the ridge axis rather than
+            # snapping abruptly between full sun and full shadow.
+            is_ridge = np.abs(offset) < 0.6
+            is_sun_side = (offset * sun_component) > 0
+            intensity = abs(sun_component)
+
+            # Base: +18 sun-facing, -18 shadow, +6 ridge cap highlight,
+            # scaled by how aligned the sun is with the ridge-perpendicular axis.
+            ridge_brightness = np.where(
+                is_ridge,
+                np.int16(round(6 * intensity)),
+                np.where(
+                    is_sun_side,
+                    np.int16(round(18 * intensity)),
+                    np.int16(round(-18 * intensity)),
+                ),
+            )
+
+            roof_bg = np.clip(
+                roof_bg.astype(np.int16) + ridge_brightness[:, np.newaxis], 0, 255
+            ).astype(np.uint8)
+            roof_fg = np.clip(
+                roof_fg.astype(np.int16) + ridge_brightness[:, np.newaxis], 0, 255
+            ).astype(np.uint8)
+
+            chars[roof_indices] = roof_chars
+            fg_rgb[roof_indices] = roof_fg
+            bg_rgb[roof_indices] = roof_bg
+
+            # Darken the outer ring of substituted roof tiles to suggest eaves.
+            # Rect.x2/y2 are exclusive bounds, so the last footprint tiles are x2-1/y2-1.
+            footprint = building.footprint
+            is_left_edge = world_x == footprint.x1
+            is_right_edge = world_x == footprint.x2 - 1
+            is_top_edge = world_y == footprint.y1
+            is_bottom_edge = world_y == footprint.y2 - 1
+            perimeter_mask = roof_mask & (
+                is_left_edge | is_right_edge | is_top_edge | is_bottom_edge
+            )
+            if np.any(perimeter_mask):
+                perimeter_indices = np.where(perimeter_mask)
+                bg_rgb[perimeter_indices] = np.clip(
+                    bg_rgb[perimeter_indices].astype(np.int16) - 6,
+                    0,
+                    255,
+                ).astype(np.uint8)
+
+            corner_mask = roof_mask & (
+                (is_left_edge | is_right_edge) & (is_top_edge | is_bottom_edge)
+            )
+            if np.any(corner_mask):
+                corner_indices = np.where(corner_mask)
+                bg_rgb[corner_indices] = np.clip(
+                    bg_rgb[corner_indices].astype(np.int16) - 4,
+                    0,
+                    255,
+                ).astype(np.uint8)
+
+        if not any_roof_applied or effective_tile_ids is None:
+            return tile_ids
+        return effective_tile_ids
 
     @record_time_live_variable("time.render.map_unlit_ms")
     def _render_map_unlit(self) -> None:
@@ -859,6 +1394,16 @@ class WorldView(View):
             final_world_y,
             game_map.decoration_seed,
         )
+        effective_unlit_tile_ids = self._apply_roof_substitution(
+            chars,
+            fg_rgb,
+            bg_rgb,
+            unlit_tile_ids,
+            final_world_x,
+            final_world_y,
+            is_light=False,
+            decoration_seed=game_map.decoration_seed,
+        )
 
         # Add alpha channel (255) to make RGBA
         alpha = np.full((len(chars), 1), 255, dtype=np.uint8)
@@ -873,13 +1418,16 @@ class WorldView(View):
         # Write sub-tile jitter amplitude so the fragment shader can apply
         # per-pixel brightness variation within each tile cell.
         self.map_glyph_buffer.data["noise"][final_buf_x, final_buf_y] = (
-            tile_types.get_sub_tile_jitter_map(unlit_tile_ids)
+            tile_types.get_sub_tile_jitter_map(effective_unlit_tile_ids)
+        )
+        self.map_glyph_buffer.data["noise_pattern"][final_buf_x, final_buf_y] = (
+            tile_types.get_sub_tile_pattern_map(effective_unlit_tile_ids)
         )
         self._apply_tile_edge_transition_data(
             glyph_buffer=self.map_glyph_buffer,
             final_buf_x=final_buf_x,
             final_buf_y=final_buf_y,
-            tile_ids=unlit_tile_ids,
+            tile_ids=effective_unlit_tile_ids,
             decorated_bg_rgb=bg_rgb,
         )
 
@@ -895,6 +1443,24 @@ class WorldView(View):
                 if isinstance(light, DirectionalLight)
             ),
             None,
+        )
+
+    def _get_sun_direction_cache_key(self) -> tuple[float, float] | None:
+        """Return a hashable sun direction for cache invalidation.
+
+        Rounded to 3 decimal places to avoid cache thrashing from floating
+        point noise while still invalidating when the direction meaningfully
+        changes (e.g. time-of-day azimuth rotation).
+        """
+        try:
+            directional_light = self._get_directional_light()
+        except (AttributeError, TypeError):
+            return None
+        if directional_light is None:
+            return None
+        return (
+            round(directional_light.direction.x, 3),
+            round(directional_light.direction.y, 3),
         )
 
     def _apply_sun_direction_to_graphics(
@@ -963,6 +1529,15 @@ class WorldView(View):
             tile_id_window=tile_id_window,
             edge_blend_window=edge_blend_window,
             drawn_mask_window=drawn_mask_window,
+            bg_rgb_window=bg_rgb_window,
+        )
+        _suppress_edge_blend_toward_hard_edges(
+            edge_neighbor_mask=edge_neighbor_mask,
+            tile_id_window=tile_id_window,
+        )
+        _override_edge_neighbor_bg_with_self_darken(
+            edge_neighbor_bg=edge_neighbor_bg,
+            tile_id_window=tile_id_window,
             bg_rgb_window=bg_rgb_window,
         )
         glyph_buffer.data["edge_neighbor_mask"][final_buf_x, final_buf_y] = (
@@ -1109,9 +1684,16 @@ class WorldView(View):
         animation_state: np.ndarray,
         valid_exp_x: np.ndarray,
         valid_exp_y: np.ndarray,
+        exclude_mask: np.ndarray | None = None,
     ) -> None:
-        """Apply per-tile color modulation for animated terrain tiles."""
+        """Apply per-tile color modulation for animated terrain tiles.
+
+        ``exclude_mask`` can be used to suppress animation on cells that were
+        visually substituted this frame (e.g., opaque roof overlay tiles).
+        """
         animates_mask = animation_params["animates"][valid_exp_x, valid_exp_y]
+        if exclude_mask is not None:
+            animates_mask = animates_mask & ~exclude_mask
         if not np.any(animates_mask):
             return
 
@@ -1181,6 +1763,10 @@ class WorldView(View):
             world_right,
             world_bottom,
             gw.game_map.exploration_revision,
+            getattr(gw.game_map, "structural_revision", 0),
+            getattr(getattr(gw, "player", None), "x", None),
+            getattr(getattr(gw, "player", None), "y", None),
+            self._get_sun_direction_cache_key(),
         )
         dest_width = world_right - world_left + 1
         dest_height = world_bottom - world_top + 1
@@ -1216,10 +1802,10 @@ class WorldView(View):
             buf_height,
         ):
             self._visible_mask_buffer = np.zeros(
-                (buf_width, buf_height), dtype=np.bool_
+                (buf_width, buf_height), dtype=np.uint8
             )
         else:
-            self._visible_mask_buffer.fill(False)
+            self._visible_mask_buffer.fill(_LIGHT_OVERLAY_MASK_HIDDEN)
         visible_mask_buffer = self._visible_mask_buffer
 
         world_slice = (
@@ -1228,13 +1814,21 @@ class WorldView(View):
         )
         if cache_key == self._light_buffer_cache_key:
             if (
+                self._light_buffer_cached_roof_opaque_buf_x is not None
+                and self._light_buffer_cached_roof_opaque_buf_y is not None
+            ):
+                visible_mask_buffer[
+                    self._light_buffer_cached_roof_opaque_buf_x,
+                    self._light_buffer_cached_roof_opaque_buf_y,
+                ] = _LIGHT_OVERLAY_MASK_ROOF_SUNLIT
+            if (
                 self._light_buffer_cached_vis_buf_x is not None
                 and self._light_buffer_cached_vis_buf_y is not None
             ):
                 visible_mask_buffer[
                     self._light_buffer_cached_vis_buf_x,
                     self._light_buffer_cached_vis_buf_y,
-                ] = True
+                ] = _LIGHT_OVERLAY_MASK_VISIBLE
 
             if self._light_buffer_anim_buf_indices is not None:
                 anim_base_fg = self._light_buffer_anim_base_fg
@@ -1281,6 +1875,8 @@ class WorldView(View):
             self._light_buffer_cached_buf_y = None
             self._light_buffer_cached_vis_buf_x = None
             self._light_buffer_cached_vis_buf_y = None
+            self._light_buffer_cached_roof_opaque_buf_x = None
+            self._light_buffer_cached_roof_opaque_buf_y = None
 
             explored_mask_slice = gw.game_map.explored[world_slice]
             visible_mask_slice = gw.game_map.visible[world_slice]
@@ -1321,12 +1917,32 @@ class WorldView(View):
                         valid_exp_y + world_top,
                         gw.game_map.decoration_seed,
                     )
+                    effective_world_tile_ids = self._apply_roof_substitution(
+                        light_chars,
+                        light_fg_rgb,
+                        light_bg_rgb,
+                        world_tile_ids,
+                        valid_exp_x + world_left,
+                        valid_exp_y + world_top,
+                        is_light=True,
+                        decoration_seed=gw.game_map.decoration_seed,
+                    )
+                    roof_covered_mask = np.isin(
+                        effective_world_tile_ids, _ROOF_TILE_IDS
+                    )
+                    if np.any(roof_covered_mask):
+                        # Roofs must be fully opaque from outside: hide roof-covered
+                        # cells from the GPU light/FOV compose mask so interior light
+                        # patterns do not project through the roof surface.
+                        valid_visible = valid_visible & ~roof_covered_mask
 
                     animation_params = gw.game_map.animation_params[world_slice]
                     animation_state = gw.game_map.animation_state[world_slice]
                     animates_mask = animation_params["animates"][
                         valid_exp_x, valid_exp_y
                     ]
+                    if np.any(roof_covered_mask):
+                        animates_mask = animates_mask & ~roof_covered_mask
                     if np.any(animates_mask):
                         anim_indices = np.nonzero(animates_mask)[0]
                         self._light_buffer_anim_base_fg = light_fg_rgb[
@@ -1346,6 +1962,7 @@ class WorldView(View):
                         animation_state,
                         valid_exp_x,
                         valid_exp_y,
+                        exclude_mask=roof_covered_mask,
                     )
 
                     alpha_channel = np.full((len(light_fg_rgb), 1), 255, dtype=np.uint8)
@@ -1364,22 +1981,35 @@ class WorldView(View):
                     # Write sub-tile jitter amplitude for the light source buffer too,
                     # so lit tiles also get per-pixel brightness variation.
                     light_source_buffer.data["noise"][final_buf_x, final_buf_y] = (
-                        tile_types.get_sub_tile_jitter_map(world_tile_ids)
+                        tile_types.get_sub_tile_jitter_map(effective_world_tile_ids)
                     )
+                    light_source_buffer.data["noise_pattern"][
+                        final_buf_x, final_buf_y
+                    ] = tile_types.get_sub_tile_pattern_map(effective_world_tile_ids)
                     self._apply_tile_edge_transition_data(
                         glyph_buffer=light_source_buffer,
                         final_buf_x=final_buf_x,
                         final_buf_y=final_buf_y,
-                        tile_ids=world_tile_ids,
+                        tile_ids=effective_world_tile_ids,
                         decorated_bg_rgb=light_bg_rgb,
                     )
 
                     self._light_buffer_cached_buf_x = final_buf_x
                     self._light_buffer_cached_buf_y = final_buf_y
+                    if np.any(roof_covered_mask):
+                        roof_buf_x = final_buf_x[roof_covered_mask]
+                        roof_buf_y = final_buf_y[roof_covered_mask]
+                        visible_mask_buffer[roof_buf_x, roof_buf_y] = (
+                            _LIGHT_OVERLAY_MASK_ROOF_SUNLIT
+                        )
+                        self._light_buffer_cached_roof_opaque_buf_x = roof_buf_x
+                        self._light_buffer_cached_roof_opaque_buf_y = roof_buf_y
                     if np.any(valid_visible):
                         vis_buf_x = final_buf_x[valid_visible]
                         vis_buf_y = final_buf_y[valid_visible]
-                        visible_mask_buffer[vis_buf_x, vis_buf_y] = True
+                        visible_mask_buffer[vis_buf_x, vis_buf_y] = (
+                            _LIGHT_OVERLAY_MASK_VISIBLE
+                        )
                         self._light_buffer_cached_vis_buf_x = vis_buf_x
                         self._light_buffer_cached_vis_buf_y = vis_buf_y
 

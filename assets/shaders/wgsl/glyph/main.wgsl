@@ -2,8 +2,8 @@
 // and optional per-pixel sub-tile brightness noise.
 //
 // The noise effect uses a PCG hash to create deterministic brightness
-// variation within a 2x2 sub-cell grid per tile, making terrain like
-// cobblestone look like individual fitted stones instead of flat color.
+// variation within pattern-defined sub-cells per tile, making terrain like
+// cobblestone, thatch, and shingles read as different surface textures.
 
 // Vertex input structure
 struct VertexInput {
@@ -12,12 +12,13 @@ struct VertexInput {
     @location(2) in_fg_color: vec4<f32>,
     @location(3) in_bg_color: vec4<f32>,
     @location(4) in_noise_amplitude: f32,
-    @location(5) in_edge_neighbor_mask: u32,
-    @location(6) in_edge_blend: f32,
-    @location(7) in_edge_neighbor_bg_0: vec3<f32>,
-    @location(8) in_edge_neighbor_bg_1: vec3<f32>,
-    @location(9) in_edge_neighbor_bg_2: vec3<f32>,
-    @location(10) in_edge_neighbor_bg_3: vec3<f32>,
+    @location(5) in_noise_pattern: u32,
+    @location(6) in_edge_neighbor_mask: u32,
+    @location(7) in_edge_blend: f32,
+    @location(8) in_edge_neighbor_bg_0: vec3<f32>,
+    @location(9) in_edge_neighbor_bg_1: vec3<f32>,
+    @location(10) in_edge_neighbor_bg_2: vec3<f32>,
+    @location(11) in_edge_neighbor_bg_3: vec3<f32>,
 }
 
 // Vertex output / Fragment input structure
@@ -27,13 +28,14 @@ struct VertexOutput {
     @location(1) v_fg_color: vec4<f32>,
     @location(2) v_bg_color: vec4<f32>,
     @location(3) v_noise_amplitude: f32,
-    @location(4) v_pixel_pos: vec2<f32>,
-    @location(5) @interpolate(flat) v_edge_neighbor_mask: u32,
-    @location(6) v_edge_blend: f32,
-    @location(7) v_edge_neighbor_bg_0: vec3<f32>,
-    @location(8) v_edge_neighbor_bg_1: vec3<f32>,
-    @location(9) v_edge_neighbor_bg_2: vec3<f32>,
-    @location(10) v_edge_neighbor_bg_3: vec3<f32>,
+    @location(4) @interpolate(flat) v_noise_pattern: u32,
+    @location(5) v_pixel_pos: vec2<f32>,
+    @location(6) @interpolate(flat) v_edge_neighbor_mask: u32,
+    @location(7) v_edge_blend: f32,
+    @location(8) v_edge_neighbor_bg_0: vec3<f32>,
+    @location(9) v_edge_neighbor_bg_1: vec3<f32>,
+    @location(10) v_edge_neighbor_bg_2: vec3<f32>,
+    @location(11) v_edge_neighbor_bg_3: vec3<f32>,
 }
 
 // Uniform buffer: texture size + noise parameters + world-space tile offset.
@@ -88,6 +90,7 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     output.v_fg_color = input.in_fg_color;
     output.v_bg_color = input.in_bg_color;
     output.v_noise_amplitude = input.in_noise_amplitude;
+    output.v_noise_pattern = input.in_noise_pattern;
     output.v_edge_neighbor_mask = input.in_edge_neighbor_mask;
     output.v_edge_blend = input.in_edge_blend;
     output.v_edge_neighbor_bg_0 = input.in_edge_neighbor_bg_0;
@@ -308,31 +311,73 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     var color = mix(bg_color, input.v_fg_color, char_alpha);
 
     // Apply sub-tile brightness noise when amplitude is non-zero.
-    // Divides each tile into a 2x2 sub-cell grid and hashes (world_tile_x,
-    // world_tile_y, sub_cell, seed) to produce a signed brightness offset.
+    // Divides each tile into a pattern-defined set of sub-cells and hashes
+    // (world_tile_x, world_tile_y, sub_cell, seed) to produce a brightness offset.
     // Uses world-space tile coordinates (buffer tile + offset uniform) so the
     // noise pattern stays anchored to world tiles regardless of camera scrolling.
     if (input.v_noise_amplitude > 0.0) {
-        // Which 2x2 sub-cell within the tile (0-3)
-        let sub_x = u32(floor(local_x / (tile_w * 0.5)));
-        let sub_y = u32(floor(local_y / (tile_h * 0.5)));
-        let sub_cell = sub_x + sub_y * 2u;
+        let pattern = input.v_noise_pattern;
+        var sub_cell: u32;
+        var pattern_offset = 0.0;
 
-        // Hash world tile position, sub-cell index, and seed for deterministic noise
-        let hash_input = world_tile_x ^ (world_tile_y * 2654435761u) ^ (sub_cell * 2246822519u) ^ uniforms.u_noise_seed;
-        let h = pcg_hash(hash_input);
+        if (pattern == 0u) {
+            // 2x2 blocks (backward-compatible default behavior)
+            let sub_x = u32(floor(local_x / (tile_w * 0.5)));
+            let sub_y = u32(floor(local_y / (tile_h * 0.5)));
+            sub_cell = sub_x + sub_y * 2u;
+        } else if (pattern == 1u) {
+            // Fine-grain organic noise: hash from world pixel position so the
+            // noise field is continuous across tile boundaries (no visible grid).
+            // ~2px cells produce per-pixel-scale variation that reads as fuzzy
+            // organic texture (straw/fur).
+            let world_px_x = world_tile_x * u32(tile_w) + u32(local_x);
+            let world_px_y = world_tile_y * u32(tile_h) + u32(local_y);
+            let fine_x = world_px_x / 3u;  // ~3px wide (horizontal straw direction)
+            let fine_y = world_px_y / 4u;  // ~4px tall
+            let fine_hash_input = fine_x ^ (fine_y * 2654435761u) ^ uniforms.u_noise_seed;
+            let fine_h = pcg_hash(fine_hash_input);
+            let fine_noise_01 = f32(fine_h & 0xFFFFu) / 65535.0;
+            let fine_offset = (fine_noise_01 * 2.0 - 1.0) * input.v_noise_amplitude;
+            color = vec4<f32>(
+                clamp(color.r + fine_offset, 0.0, 1.0),
+                clamp(color.g + fine_offset, 0.0, 1.0),
+                clamp(color.b + fine_offset, 0.0, 1.0),
+                color.a,
+            );
+        } else if (pattern == 2u) {
+            // Staggered rows: 3 rows x 2 cols, odd rows shifted by half tile width
+            let row_h = tile_h / 3.0;
+            let row = u32(clamp(floor(local_y / row_h), 0.0, 2.0));
+            let offset = select(0.0, tile_w * 0.5, (row % 2u) == 1u);
+            let col = u32(floor((local_x + offset) / (tile_w * 0.5))) % 2u;
+            sub_cell = col + row * 2u;
+            let cell_y = local_y - f32(row) * row_h;
+            let cell_y_01 = clamp(cell_y / max(row_h, 1.0), 0.0, 1.0);
+            // Exposed shingle edges catch slightly more light than the tucked bottom.
+            pattern_offset = mix(0.015, -0.015, cell_y_01);
+        } else {
+            // Diagonal bands along x + y
+            let band = u32(floor((local_x + local_y) / (tile_w * 0.4)));
+            sub_cell = band % 6u;
+        }
 
-        // Convert hash to signed brightness offset in [-amplitude, +amplitude]
-        let noise_01 = f32(h & 0xFFFFu) / 65535.0;
-        let offset = (noise_01 * 2.0 - 1.0) * input.v_noise_amplitude;
+        // Tile-based hash for patterns that use sub_cell (all except pattern 1,
+        // which computes its own world-pixel-based hash above).
+        if (pattern != 1u) {
+            let hash_input = world_tile_x ^ (world_tile_y * 2654435761u) ^ (sub_cell * 2246822519u) ^ uniforms.u_noise_seed;
+            let h = pcg_hash(hash_input);
 
-        // Apply brightness offset to RGB, preserving alpha
-        color = vec4<f32>(
-            clamp(color.r + offset, 0.0, 1.0),
-            clamp(color.g + offset, 0.0, 1.0),
-            clamp(color.b + offset, 0.0, 1.0),
-            color.a,
-        );
+            // Convert hash to signed brightness offset in [-amplitude, +amplitude]
+            let noise_01 = f32(h & 0xFFFFu) / 65535.0;
+            var offset = (noise_01 * 2.0 - 1.0) * input.v_noise_amplitude + pattern_offset;
+
+            color = vec4<f32>(
+                clamp(color.r + offset, 0.0, 1.0),
+                clamp(color.g + offset, 0.0, 1.0),
+                clamp(color.b + offset, 0.0, 1.0),
+                color.a,
+            );
+        }
     }
 
     return color;

@@ -136,6 +136,14 @@ class GameWorld:
                     ) from None
                 continue
 
+        # Settlement maps start fully explored. The player can see the layout
+        # of streets and building exteriors (covered by roofs) from the start.
+        # The FOV system still controls what's "currently visible" vs
+        # "remembered/dimmed." Other map types (dungeons, wilderness) start
+        # unexplored and reveal as the player moves through them.
+        if self.generator_type == "settlement":
+            self.game_map.explored[:] = True
+
         # Populate NPCs using generator-appropriate method
         if self.generator_type == "settlement":
             self._populate_settlement_npcs()

@@ -506,6 +506,7 @@ class GraphicsContext(abc.ABC):
         sky_exposure_texture: Any | None,
         explored_texture: Any | None,
         visible_texture: Any | None,
+        roof_surface_mask_buffer: np.ndarray | None,
         noise_scale: float,
         noise_threshold_low: float,
         noise_threshold_high: float,

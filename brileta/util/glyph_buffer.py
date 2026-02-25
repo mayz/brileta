@@ -12,6 +12,7 @@ GLYPH_DTYPE = np.dtype(
         ("fg", "4B"),  # Foreground RGBA (4 unsigned bytes)
         ("bg", "4B"),  # Background RGBA (4 unsigned bytes)
         ("noise", np.float32),  # Sub-tile noise amplitude (0.0 = no noise)
+        ("noise_pattern", np.uint8),  # Sub-tile noise pattern ID (0 = default blocks)
         ("edge_neighbor_mask", np.uint8),  # Cardinal diff mask (W/N/S/E bits)
         ("edge_blend", np.float32),  # Organic edge feathering amplitude (0.0-1.0)
         (
@@ -52,6 +53,7 @@ class GlyphBuffer:
         self.data["fg"] = fg
         self.data["bg"] = bg
         self.data["noise"] = 0.0
+        self.data["noise_pattern"] = 0
         self.data["edge_neighbor_mask"] = 0
         self.data["edge_blend"] = 0.0
         self.data["edge_neighbor_bg"] = 0
@@ -64,6 +66,7 @@ class GlyphBuffer:
         fg: colors.ColorRGBA,
         bg: colors.ColorRGBA,
         noise: float = 0.0,
+        noise_pattern: int = 0,
     ) -> None:
         """Places a single character at a given coordinate."""
         if 0 <= x < self.width and 0 <= y < self.height:
@@ -71,6 +74,7 @@ class GlyphBuffer:
             self.data["fg"][x, y] = fg
             self.data["bg"][x, y] = bg
             self.data["noise"][x, y] = noise
+            self.data["noise_pattern"][x, y] = noise_pattern
             self.data["edge_neighbor_mask"][x, y] = 0
             self.data["edge_blend"][x, y] = 0.0
             self.data["edge_neighbor_bg"][x, y] = 0

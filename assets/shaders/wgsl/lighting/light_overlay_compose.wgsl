@@ -65,8 +65,17 @@ fn fs_main(@builtin(position) frag_coord: vec4f) -> @location(0) vec4f {
 
     var light_rgb = clamp(textureLoad(lightmap_texture, local_tile, 0).rgb, vec3f(0.0), vec3f(1.0));
 
-    let visible = textureLoad(visible_mask, buffer_tile, 0).r;
-    if (visible < 0.5) {
+    let mask_state = textureLoad(visible_mask, buffer_tile, 0).r;
+    if (mask_state >= 0.9) {
+        // Fully visible tile: use lightmap-driven lighting.
+    } else if (mask_state >= 0.65) {
+        // Sunlit roof surface: use the lit tile texture directly and ignore the
+        // ground-level lightmap, which may contain interior lights.
+        return vec4f(light_pixel.rgb, explored_alpha);
+    } else if (mask_state >= 0.25) {
+        // Hidden by an opaque roof: do not apply explored spillover at all.
+        light_rgb = vec3f(0.0);
+    } else {
         light_rgb *= spillover_multiplier;
     }
 

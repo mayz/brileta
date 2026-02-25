@@ -9,7 +9,11 @@ from unittest.mock import Mock
 import numpy as np
 import pytest
 
+from brileta.environment import tile_types
+from brileta.environment.generators.buildings import Building
+from brileta.environment.tile_types import TileTypeID
 from brileta.types import InterpolationAlpha
+from brileta.util.coordinates import Rect
 from brileta.view.render.actor_renderer import (
     COMBAT_OUTLINE_MAX_ALPHA,
     COMBAT_OUTLINE_MIN_ALPHA,
@@ -19,6 +23,8 @@ from brileta.view.views.world_view import (
     _EDGE_BLEND_CARDINAL_DIRECTIONS,
     WorldView,
     _compute_tile_edge_transition_metadata,
+    _override_edge_neighbor_bg_with_self_darken,
+    _suppress_edge_blend_toward_hard_edges,
 )
 
 
@@ -240,6 +246,129 @@ class TestTileEdgeTransitionMetadata:
             & (1 << _EDGE_BLEND_CARDINAL_DIRECTIONS.index((1, 0)))
         ) == 0
 
+    @pytest.mark.parametrize(
+        "architectural_tile_id",
+        [TileTypeID.WALL, TileTypeID.ROOF_THATCH, TileTypeID.ROOF_SHINGLE],
+    )
+    def test_suppresses_blending_toward_architectural_neighbors_only(
+        self, architectural_tile_id: TileTypeID
+    ) -> None:
+        """Grass-side roof/wall blending is suppressed without harming natural edges."""
+        # x-major layout: [architectural][grass][dirt]
+        tile_ids = np.array(
+            [[architectural_tile_id], [TileTypeID.GRASS], [TileTypeID.DIRT]],
+            dtype=np.int32,
+        )
+        edge_blend = tile_types.get_edge_blend_map(tile_ids.astype(np.uint8))
+        drawn_mask = np.ones((3, 1), dtype=np.bool_)
+        bg_rgb = np.zeros((3, 1, 3), dtype=np.uint8)
+        bg_rgb[0, 0] = (5, 5, 5)
+        bg_rgb[2, 0] = (40, 30, 20)
+
+        neighbor_mask, _neighbor_bg = _compute_tile_edge_transition_metadata(
+            tile_id_window=tile_ids,
+            edge_blend_window=edge_blend,
+            drawn_mask_window=drawn_mask,
+            bg_rgb_window=bg_rgb,
+        )
+
+        west_idx = _EDGE_BLEND_CARDINAL_DIRECTIONS.index((-1, 0))
+        east_idx = _EDGE_BLEND_CARDINAL_DIRECTIONS.index((1, 0))
+        west_bit = 1 << west_idx
+        east_bit = 1 << east_idx
+        arch_east_bit = 1 << _EDGE_BLEND_CARDINAL_DIRECTIONS.index((1, 0))
+
+        grass_mask_before = int(neighbor_mask[1, 0])
+        arch_mask_before = int(neighbor_mask[0, 0])
+
+        # Grass should still own its natural boundary with dirt.
+        assert grass_mask_before & east_bit
+
+        # Rigid architectural tiles (wall/shingle roof) force grass to own the
+        # boundary pre-suppression. Thatch may own instead when tuned to higher
+        # edge_blend so the roof can render a soft self-darkened edge.
+        if architectural_tile_id in (TileTypeID.WALL, TileTypeID.ROOF_SHINGLE):
+            assert grass_mask_before & west_bit
+
+        _suppress_edge_blend_toward_hard_edges(
+            edge_neighbor_mask=neighbor_mask, tile_id_window=tile_ids
+        )
+
+        # Grass-side architectural edge is always hard after suppression.
+        assert (int(neighbor_mask[1, 0]) & west_bit) == 0
+        assert int(neighbor_mask[1, 0]) & east_bit
+
+        if architectural_tile_id == TileTypeID.ROOF_THATCH:
+            # Suppression is one-sided: a thatch-owned roof edge remains available
+            # so the roof can use self-darkened soft edges.
+            assert arch_mask_before & arch_east_bit
+            assert int(neighbor_mask[0, 0]) & arch_east_bit
+
+    def test_thatch_edge_neighbor_colors_are_overridden_with_darkened_self_color(
+        self,
+    ) -> None:
+        """Thatch roof edges should darken toward self-color, not neighbor color."""
+        tile_ids = np.array(
+            [[TileTypeID.GRASS], [TileTypeID.ROOF_THATCH], [TileTypeID.DIRT]],
+            dtype=np.int32,
+        )
+        edge_blend = tile_types.get_edge_blend_map(tile_ids.astype(np.uint8))
+        drawn_mask = np.ones((3, 1), dtype=np.bool_)
+        bg_rgb = np.zeros((3, 1, 3), dtype=np.uint8)
+        bg_rgb[0, 0] = (10, 90, 10)  # grass neighbor (green)
+        bg_rgb[1, 0] = (120, 100, 70)  # thatch tile's own color
+        bg_rgb[2, 0] = (80, 55, 35)  # dirt neighbor
+
+        _neighbor_mask, neighbor_bg = _compute_tile_edge_transition_metadata(
+            tile_id_window=tile_ids,
+            edge_blend_window=edge_blend,
+            drawn_mask_window=drawn_mask,
+            bg_rgb_window=bg_rgb,
+        )
+
+        _override_edge_neighbor_bg_with_self_darken(
+            edge_neighbor_bg=neighbor_bg,
+            tile_id_window=tile_ids,
+            bg_rgb_window=bg_rgb,
+        )
+
+        expected = np.array([85, 65, 35], dtype=np.uint8)  # 120/100/70 - 35
+        for direction_index in range(len(_EDGE_BLEND_CARDINAL_DIRECTIONS)):
+            np.testing.assert_array_equal(neighbor_bg[1, 0, direction_index], expected)
+
+    def test_edge_neighbor_colors_are_unchanged_for_tiles_without_self_darken(
+        self,
+    ) -> None:
+        """Tiles with edge_self_darken=0 keep their normal neighbor colors."""
+        tile_ids = np.array([[TileTypeID.GRASS], [TileTypeID.DIRT]], dtype=np.int32)
+        edge_blend = tile_types.get_edge_blend_map(tile_ids.astype(np.uint8))
+        drawn_mask = np.ones((2, 1), dtype=np.bool_)
+        bg_rgb = np.zeros((2, 1, 3), dtype=np.uint8)
+        bg_rgb[0, 0] = (20, 60, 20)
+        bg_rgb[1, 0] = (70, 50, 30)
+
+        neighbor_mask, neighbor_bg = _compute_tile_edge_transition_metadata(
+            tile_id_window=tile_ids,
+            edge_blend_window=edge_blend,
+            drawn_mask_window=drawn_mask,
+            bg_rgb_window=bg_rgb,
+        )
+        neighbor_bg_before = neighbor_bg.copy()
+
+        _override_edge_neighbor_bg_with_self_darken(
+            edge_neighbor_bg=neighbor_bg,
+            tile_id_window=tile_ids,
+            bg_rgb_window=bg_rgb,
+        )
+
+        east_idx = _EDGE_BLEND_CARDINAL_DIRECTIONS.index((1, 0))
+        east_bit = 1 << east_idx
+        # Grass owns the grass->dirt boundary in this setup, so the slot is populated
+        # and should remain the actual dirt color after the no-op override pass.
+        assert int(neighbor_mask[0, 0]) & east_bit
+        np.testing.assert_array_equal(neighbor_bg[0, 0, east_idx], bg_rgb[1, 0])
+        np.testing.assert_array_equal(neighbor_bg, neighbor_bg_before)
+
 
 class TestActorParticleEmitterCache:
     """Tests for WorldView actor particle emitter caching."""
@@ -298,6 +427,553 @@ class TestActorParticleEmitterCache:
 
         assert view._particle_emitter_actors == {emitter_actor_2}
         emitter_effect_2.execute.assert_called_once()
+
+
+class TestRoofSubstitution:
+    """Tests for WorldView virtual roof substitution helper."""
+
+    def test_building_roof_color_offset_varies_by_position(self) -> None:
+        building_a = Building(
+            id=42,
+            building_type="house",
+            footprint=Rect(10, 10, 6, 6),
+        )
+        building_b = Building(
+            id=42,
+            building_type="house",
+            footprint=Rect(18, 14, 6, 6),
+        )
+
+        offset_a = WorldView._building_roof_color_offset(
+            building_a, decoration_seed=123
+        )
+        offset_b = WorldView._building_roof_color_offset(
+            building_b, decoration_seed=123
+        )
+
+        assert offset_a != offset_b
+
+    def test_building_roof_color_offset_is_deterministic(self) -> None:
+        building = Building(
+            id=7,
+            building_type="house",
+            footprint=Rect(3, 9, 5, 7),
+        )
+
+        first = WorldView._building_roof_color_offset(building, decoration_seed=99)
+        second = WorldView._building_roof_color_offset(building, decoration_seed=99)
+
+        assert first == second
+
+    def test_building_roof_color_offset_is_bounded(self) -> None:
+        for building_id in range(1, 8):
+            for seed in (0, 1, 17, 999):
+                building = Building(
+                    id=building_id,
+                    building_type="house",
+                    footprint=Rect(2 * building_id, 3 * building_id, 6, 6),
+                )
+                offset = WorldView._building_roof_color_offset(
+                    building, decoration_seed=seed
+                )
+                assert all(-8 <= channel <= 8 for channel in offset)
+
+    def test_building_roof_color_offset_channels_can_differ(self) -> None:
+        offsets = [
+            WorldView._building_roof_color_offset(
+                Building(
+                    id=building_id,
+                    building_type="house",
+                    footprint=Rect(5 * building_id, 4 * building_id, 6, 6),
+                ),
+                decoration_seed=11,
+            )
+            for building_id in range(1, 8)
+        ]
+
+        assert any(len(set(offset)) > 1 for offset in offsets)
+
+    def test_compute_roof_state_treats_regionless_archway_in_footprint_as_inside(
+        self,
+    ) -> None:
+        view = object.__new__(WorldView)
+        view._SCROLL_PADDING = 1
+        view._roof_state_cache_key = None
+        view._roof_state_cache_value = None
+
+        building = Building(id=7, building_type="house", footprint=Rect(10, 10, 8, 8))
+        view.controller = SimpleNamespace(
+            gw=SimpleNamespace(
+                player=SimpleNamespace(x=12, y=13),
+                buildings=[building],
+                game_map=SimpleNamespace(
+                    structural_revision=0,
+                    get_region_at=lambda _pos: None,
+                ),
+            )
+        )
+        view.viewport_system = SimpleNamespace(
+            get_visible_bounds=lambda: Rect(0, 0, 40, 30)
+        )
+
+        player_building_id, viewport_buildings = view._compute_roof_state()
+
+        assert player_building_id == 7
+        assert viewport_buildings == [building]
+
+    def test_applies_roof_only_to_building_footprint(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Roof substitution covers the footprint interior and ignores tiles outside."""
+        monkeypatch.setattr(tile_types, "apply_terrain_decoration", lambda *args: None)
+
+        view = object.__new__(WorldView)
+        view.controller = SimpleNamespace(
+            gw=SimpleNamespace(player=SimpleNamespace(x=50, y=50))
+        )
+        view._get_directional_light = lambda: None
+        view._compute_roof_state = lambda: (
+            None,
+            [Building(id=1, building_type="house", footprint=Rect(2, 2, 4, 4))],
+        )
+
+        # Two tiles inside footprint, two outside.
+        world_x = np.array([3, 4, 1, 8], dtype=np.int32)
+        world_y = np.array([3, 4, 2, 8], dtype=np.int32)
+        tile_ids = np.array(
+            [
+                TileTypeID.FLOOR,  # interior -> roofed
+                TileTypeID.FLOOR,  # interior -> roofed
+                TileTypeID.GRASS,  # outside footprint -> untouched
+                TileTypeID.DIRT,  # outside footprint -> untouched
+            ],
+            dtype=np.uint8,
+        )
+        chars = np.full(4, ord("?"), dtype=np.int32)
+        fg_rgb = np.full((4, 3), 100, dtype=np.uint8)
+        bg_rgb = np.full((4, 3), 120, dtype=np.uint8)
+
+        effective_ids = view._apply_roof_substitution(
+            chars,
+            fg_rgb,
+            bg_rgb,
+            tile_ids,
+            world_x,
+            world_y,
+            is_light=False,
+            decoration_seed=0,
+        )
+
+        roof_tid = TileTypeID.ROOF_THATCH
+        roof_dark = tile_types.get_tile_type_data_by_id(roof_tid)["dark"]
+
+        # Interior tiles get roof substitution.
+        assert int(effective_ids[0]) == roof_tid
+        assert int(effective_ids[1]) == roof_tid
+        assert chars[0] == int(roof_dark["ch"])
+        assert tuple(int(v) for v in fg_rgb[0]) != (100, 100, 100)
+        assert tuple(int(v) for v in bg_rgb[0]) != (120, 120, 120)
+
+        # Outside tiles remain untouched.
+        assert int(effective_ids[2]) == TileTypeID.GRASS
+        assert int(effective_ids[3]) == TileTypeID.DIRT
+        assert chars[2] == ord("?")
+        assert tuple(int(v) for v in fg_rgb[2]) == (100, 100, 100)
+        assert tuple(int(v) for v in bg_rgb[2]) == (120, 120, 120)
+
+    def test_entry_doorway_remains_visible_through_roof(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Door tiles and their exterior approach tiles stay clear of roof."""
+        monkeypatch.setattr(tile_types, "apply_terrain_decoration", lambda *args: None)
+
+        view = object.__new__(WorldView)
+        view.controller = SimpleNamespace(
+            gw=SimpleNamespace(player=SimpleNamespace(x=50, y=50))
+        )
+        view._get_directional_light = lambda: None
+        building = Building(
+            id=1,
+            building_type="house",
+            footprint=Rect(4, 4, 4, 4),
+            door_positions=[(4, 5)],  # West wall door
+        )
+        view._compute_roof_state = lambda: (
+            None,
+            [building],
+        )
+
+        # door tile (on footprint edge), interior roof tile
+        world_x = np.array([4, 5], dtype=np.int32)
+        world_y = np.array([5, 5], dtype=np.int32)
+        tile_ids = np.array(
+            [
+                TileTypeID.DOOR_CLOSED,
+                TileTypeID.FLOOR,
+            ],
+            dtype=np.uint8,
+        )
+        chars = np.array([ord("+"), ord(".")], dtype=np.int32)
+        fg_rgb = np.array(
+            [
+                [210, 180, 120],
+                [160, 140, 100],
+            ],
+            dtype=np.uint8,
+        )
+        bg_rgb = np.array(
+            [
+                [50, 30, 20],
+                [60, 50, 35],
+            ],
+            dtype=np.uint8,
+        )
+
+        original_chars = chars.copy()
+        original_fg = fg_rgb.copy()
+        effective_ids = view._apply_roof_substitution(
+            chars,
+            fg_rgb,
+            bg_rgb,
+            tile_ids,
+            world_x,
+            world_y,
+            is_light=True,
+            decoration_seed=0,
+        )
+
+        roof_light = tile_types.get_tile_type_data_by_id(TileTypeID.ROOF_THATCH)[
+            "light"
+        ]
+
+        # Door tile stays clear (entrance clearance).
+        assert int(effective_ids[0]) == TileTypeID.DOOR_CLOSED
+        assert chars[0] == original_chars[0]
+        np.testing.assert_array_equal(fg_rgb[0], original_fg[0])
+
+        # Interior roof tile stays fully roofed.
+        assert int(effective_ids[1]) == TileTypeID.ROOF_THATCH
+        assert chars[1] == int(roof_light["ch"])
+        assert tuple(int(v) for v in fg_rgb[1]) != tuple(int(v) for v in original_fg[1])
+        assert tuple(int(v) for v in bg_rgb[1]) != tuple(int(v) for v in bg_rgb[0])
+
+    def test_roof_covers_interior_tiles(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Interior footprint tiles get roof substitution applied."""
+        monkeypatch.setattr(tile_types, "apply_terrain_decoration", lambda *args: None)
+
+        view = object.__new__(WorldView)
+        view.controller = SimpleNamespace(
+            gw=SimpleNamespace(player=SimpleNamespace(x=50, y=50))
+        )
+        view._get_directional_light = lambda: None
+        building = Building(
+            id=1,
+            building_type="house",
+            footprint=Rect(4, 4, 4, 4),
+            door_positions=[(4, 5)],
+        )
+        view._compute_roof_state = lambda: (None, [building])
+
+        world_x = np.array([5], dtype=np.int32)
+        world_y = np.array([5], dtype=np.int32)
+        tile_ids = np.array([TileTypeID.FLOOR], dtype=np.uint8)
+        chars = np.array([ord(".")], dtype=np.int32)
+        fg_rgb = np.array([[180, 160, 120]], dtype=np.uint8)
+        bg_rgb = np.array([[70, 60, 45]], dtype=np.uint8)
+
+        effective_ids = view._apply_roof_substitution(
+            chars,
+            fg_rgb,
+            bg_rgb,
+            tile_ids,
+            world_x,
+            world_y,
+            is_light=True,
+            decoration_seed=0,
+        )
+
+        roof_light = tile_types.get_tile_type_data_by_id(TileTypeID.ROOF_THATCH)[
+            "light"
+        ]
+        assert int(effective_ids[0]) == TileTypeID.ROOF_THATCH
+        assert chars[0] == int(roof_light["ch"])
+
+    @pytest.mark.parametrize("is_light", [False, True])
+    def test_roof_perimeter_tiles_are_darkened_with_darker_corners(
+        self, monkeypatch: pytest.MonkeyPatch, is_light: bool
+    ) -> None:
+        """Roof eaves darken perimeter tiles, with extra darkening on corners."""
+        monkeypatch.setattr(tile_types, "apply_terrain_decoration", lambda *args: None)
+
+        view = object.__new__(WorldView)
+        view.controller = SimpleNamespace(
+            gw=SimpleNamespace(player=SimpleNamespace(x=50, y=50))
+        )
+        view._get_directional_light = lambda: None
+        building = Building(
+            id=1,
+            building_type="house",
+            footprint=Rect(4, 4, 4, 4),
+            door_positions=[(4, 5)],  # west wall door should remain clear
+        )
+        view._compute_roof_state = lambda: (None, [building])
+
+        # corner roof, top-edge roof, left-edge roof, interior roof, door (clearance), outside
+        # For this even-parity square footprint, ridge shading is horizontal. We pick:
+        # - corner/top-edge on same row (same ridge brightness)
+        # - left-edge/interior on same row (same ridge brightness)
+        # so eave darkening deltas are isolated from ridge shading.
+        building.door_positions = [(4, 6)]  # keep sampled left-edge tile roof-covered
+        world_x = np.array([4, 5, 4, 5, 4, 9], dtype=np.int32)
+        world_y = np.array([4, 4, 5, 5, 6, 9], dtype=np.int32)
+        tile_ids = np.array(
+            [
+                TileTypeID.FLOOR,
+                TileTypeID.FLOOR,
+                TileTypeID.FLOOR,
+                TileTypeID.FLOOR,
+                TileTypeID.DOOR_CLOSED,
+                TileTypeID.GRASS,
+            ],
+            dtype=np.uint8,
+        )
+        chars = np.array(
+            [ord("."), ord("."), ord("."), ord("."), ord("+"), ord(",")], dtype=np.int32
+        )
+        fg_rgb = np.array(
+            [
+                [180, 170, 160],
+                [181, 171, 161],
+                [182, 172, 162],
+                [183, 173, 163],
+                [210, 180, 120],
+                [90, 100, 110],
+            ],
+            dtype=np.uint8,
+        )
+        bg_rgb = np.array(
+            [
+                [70, 60, 50],
+                [71, 61, 51],
+                [72, 62, 52],
+                [73, 63, 53],
+                [50, 30, 20],
+                [20, 30, 40],
+            ],
+            dtype=np.uint8,
+        )
+
+        original_chars = chars.copy()
+        original_fg = fg_rgb.copy()
+        original_bg = bg_rgb.copy()
+
+        effective_ids = view._apply_roof_substitution(
+            chars,
+            fg_rgb,
+            bg_rgb,
+            tile_ids,
+            world_x,
+            world_y,
+            is_light=is_light,
+            decoration_seed=0,
+        )
+
+        roof_appearance = tile_types.get_tile_type_data_by_id(TileTypeID.ROOF_THATCH)[
+            "light" if is_light else "dark"
+        ]
+
+        # Roof substitution applied to all non-clearance footprint samples.
+        assert int(effective_ids[0]) == TileTypeID.ROOF_THATCH
+        assert int(effective_ids[1]) == TileTypeID.ROOF_THATCH
+        assert int(effective_ids[2]) == TileTypeID.ROOF_THATCH
+        assert int(effective_ids[3]) == TileTypeID.ROOF_THATCH
+        assert chars[0] == int(roof_appearance["ch"])
+        assert chars[1] == int(roof_appearance["ch"])
+        assert chars[2] == int(roof_appearance["ch"])
+        assert chars[3] == int(roof_appearance["ch"])
+
+        # Only bg is eave-darkened. Same-row tiles share ridge shading, so fg should match.
+        np.testing.assert_array_equal(fg_rgb[0], fg_rgb[1])  # corner vs top edge
+        np.testing.assert_array_equal(fg_rgb[2], fg_rgb[3])  # left edge vs interior
+
+        # Exact bg deltas for eave shading when ridge shading is held constant.
+        np.testing.assert_array_equal(
+            bg_rgb[2].astype(np.int16) - bg_rgb[3].astype(np.int16),
+            np.array([-6, -6, -6], dtype=np.int16),
+        )
+        np.testing.assert_array_equal(
+            bg_rgb[0].astype(np.int16) - bg_rgb[1].astype(np.int16),
+            np.array([-4, -4, -4], dtype=np.int16),
+        )
+        assert np.all(bg_rgb[2] < bg_rgb[3])  # perimeter darker than interior
+        assert np.all(bg_rgb[0] < bg_rgb[1])  # corner darker than edge-only
+
+        # Non-roof tiles are untouched, including perimeter door clearance.
+        assert int(effective_ids[4]) == TileTypeID.DOOR_CLOSED
+        assert int(effective_ids[5]) == TileTypeID.GRASS
+        assert chars[4] == original_chars[4]
+        assert chars[5] == original_chars[5]
+        np.testing.assert_array_equal(fg_rgb[4], original_fg[4])
+        np.testing.assert_array_equal(fg_rgb[5], original_fg[5])
+        np.testing.assert_array_equal(bg_rgb[4], original_bg[4])
+        np.testing.assert_array_equal(bg_rgb[5], original_bg[5])
+
+    def test_ridge_shading_sun_facing_vs_shadow_vs_ridge(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Sun-facing tiles are brighter, shadow tiles darker, ridge tiles moderate."""
+        monkeypatch.setattr(tile_types, "apply_terrain_decoration", lambda *args: None)
+
+        view = object.__new__(WorldView)
+        view.controller = SimpleNamespace(
+            gw=SimpleNamespace(player=SimpleNamespace(x=50, y=50))
+        )
+        # Sun from north: sun_dy < 0 means north-facing slope catches the light.
+        view._get_directional_light = lambda: SimpleNamespace(
+            direction=SimpleNamespace(x=0.0, y=-1.0)
+        )
+
+        # Wide building with horizontal ridge. center_y = (10 + 18) / 2 = 14.0
+        building = Building(
+            id=1,
+            building_type="house",
+            footprint=Rect(10, 10, 10, 8),
+        )
+        view._compute_roof_state = lambda: (None, [building])
+
+        # Three interior tiles (none on perimeter) at different distances from ridge:
+        #   y=11: offset = -2.5, sun-facing (+18)
+        #   y=13: offset = -0.5, ridge (+6)
+        #   y=16: offset = +2.5, shadow (-18)
+        world_x = np.array([12, 12, 12], dtype=np.int32)
+        world_y = np.array([11, 13, 16], dtype=np.int32)
+        tile_ids = np.full(3, TileTypeID.FLOOR, dtype=np.uint8)
+        chars = np.full(3, ord("."), dtype=np.int32)
+        fg_rgb = np.full((3, 3), 100, dtype=np.uint8)
+        bg_rgb = np.full((3, 3), 100, dtype=np.uint8)
+
+        view._apply_roof_substitution(
+            chars,
+            fg_rgb,
+            bg_rgb,
+            tile_ids,
+            world_x,
+            world_y,
+            is_light=False,
+            decoration_seed=0,
+        )
+
+        roof_dark = tile_types.get_tile_type_data_by_id(TileTypeID.ROOF_THATCH)["dark"]
+        base_bg = np.asarray(roof_dark["bg"], dtype=np.int16)
+        base_fg = np.asarray(roof_dark["fg"], dtype=np.int16)
+        roof_tint = np.asarray(
+            WorldView._building_roof_color_offset(building, decoration_seed=0),
+            dtype=np.int16,
+        )
+
+        # Verify exact offsets for bg and fg.
+        np.testing.assert_array_equal(
+            bg_rgb[0], np.clip(base_bg + roof_tint + 18, 0, 255).astype(np.uint8)
+        )
+        np.testing.assert_array_equal(
+            bg_rgb[1], np.clip(base_bg + roof_tint + 6, 0, 255).astype(np.uint8)
+        )
+        np.testing.assert_array_equal(
+            bg_rgb[2], np.clip(base_bg + roof_tint - 18, 0, 255).astype(np.uint8)
+        )
+        np.testing.assert_array_equal(
+            fg_rgb[0], np.clip(base_fg + 18, 0, 255).astype(np.uint8)
+        )
+        np.testing.assert_array_equal(
+            fg_rgb[1], np.clip(base_fg + 6, 0, 255).astype(np.uint8)
+        )
+        np.testing.assert_array_equal(
+            fg_rgb[2], np.clip(base_fg - 18, 0, 255).astype(np.uint8)
+        )
+
+        # Brightness ordering: sun > ridge > shadow
+        assert np.all(bg_rgb[0] > bg_rgb[1])
+        assert np.all(bg_rgb[1] > bg_rgb[2])
+
+    def test_ridge_shading_vertical_ridge(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Vertical ridge uses x-axis sun component for directional shading."""
+        monkeypatch.setattr(tile_types, "apply_terrain_decoration", lambda *args: None)
+
+        view = object.__new__(WorldView)
+        view.controller = SimpleNamespace(
+            gw=SimpleNamespace(player=SimpleNamespace(x=50, y=50))
+        )
+        # Sun from west: sun_dx < 0 means west-facing slope catches the light.
+        view._get_directional_light = lambda: SimpleNamespace(
+            direction=SimpleNamespace(x=-1.0, y=0.0)
+        )
+
+        # Tall building with vertical ridge. center_x = (10 + 16) / 2 = 13.0
+        building = Building(
+            id=1,
+            building_type="house",
+            footprint=Rect(10, 10, 6, 10),
+        )
+        view._compute_roof_state = lambda: (None, [building])
+
+        # Interior tiles west and east of the vertical ridge (y=14, not on perimeter).
+        #   x=11: offset = -1.5, sun-facing (+10)
+        #   x=14: offset = +1.5, shadow (-10)
+        world_x = np.array([11, 14], dtype=np.int32)
+        world_y = np.array([14, 14], dtype=np.int32)
+        tile_ids = np.full(2, TileTypeID.FLOOR, dtype=np.uint8)
+        chars = np.full(2, ord("."), dtype=np.int32)
+        fg_rgb = np.full((2, 3), 100, dtype=np.uint8)
+        bg_rgb = np.full((2, 3), 100, dtype=np.uint8)
+
+        view._apply_roof_substitution(
+            chars,
+            fg_rgb,
+            bg_rgb,
+            tile_ids,
+            world_x,
+            world_y,
+            is_light=True,
+            decoration_seed=0,
+        )
+
+        # West tile (sun-facing) should be brighter than east tile (shadow).
+        assert np.all(bg_rgb[0] > bg_rgb[1])
+        assert np.all(fg_rgb[0] > fg_rgb[1])
+
+    def test_filters_non_player_actor_under_opaque_roof(self) -> None:
+        view = object.__new__(WorldView)
+        player = SimpleNamespace(x=3, y=5)
+        hidden_actor = SimpleNamespace(x=5, y=5)
+        visible_actor = SimpleNamespace(x=2, y=2)
+        building = Building(
+            id=1,
+            building_type="house",
+            footprint=Rect(4, 4, 4, 4),
+            door_positions=[(4, 5)],
+        )
+
+        tiles = np.full((12, 12), TileTypeID.GRASS, dtype=np.uint8)
+        tiles[5, 5] = TileTypeID.FLOOR
+
+        view.controller = SimpleNamespace(
+            gw=SimpleNamespace(
+                player=player,
+                game_map=SimpleNamespace(tiles=tiles),
+            )
+        )
+        view._compute_roof_state = lambda: (None, [building])
+
+        result = view._filter_roof_occluded_actors(
+            actors=[player, hidden_actor, visible_actor],
+            viewport_bounds_world=Rect(0, 0, 12, 12),
+        )
+
+        assert player in result
+        assert visible_actor in result
+        assert hidden_actor not in result
 
 
 class TestAtmosphericViewportSizing:

@@ -3,6 +3,7 @@ import pytest
 
 from brileta.environment import tile_types
 from brileta.environment.tile_types import (
+    ROOF_STYLE_TILE_TYPES,
     TileTypeID,
     get_tile_hazard_info,
     get_tile_material,
@@ -36,6 +37,12 @@ def test_tile_type_id_works_as_numpy_index() -> None:
     tiles = np.zeros((3, 3), dtype=np.uint8)
     tiles[1, 1] = TileTypeID.FLOOR  # Should work without casting
     assert tiles[1, 1] == TileTypeID.FLOOR
+
+
+def test_roof_style_tile_type_mapping() -> None:
+    """Roof style strings should map to virtual roof tile IDs."""
+    assert ROOF_STYLE_TILE_TYPES["thatch"] == TileTypeID.ROOF_THATCH
+    assert ROOF_STYLE_TILE_TYPES["shingle"] == TileTypeID.ROOF_SHINGLE
 
 
 def test_tile_material_field() -> None:
@@ -328,6 +335,25 @@ def test_wall_has_nonzero_sub_tile_jitter() -> None:
     assert jitter[0] > 0.0
 
 
+def test_sub_tile_pattern_map_returns_expected_patterns() -> None:
+    """Terrain types should map to the configured sub-tile shader pattern IDs."""
+    ids = np.array(
+        [
+            TileTypeID.COBBLESTONE,
+            TileTypeID.ROOF_THATCH,
+            TileTypeID.ROOF_SHINGLE,
+            TileTypeID.FLOOR,
+        ],
+        dtype=np.uint8,
+    )
+    patterns = tile_types.get_sub_tile_pattern_map(ids)
+
+    assert int(patterns[0]) == tile_types.SUB_TILE_PATTERN_BLOCKS_2X2
+    assert int(patterns[1]) == tile_types.SUB_TILE_PATTERN_FINE_GRAIN
+    assert int(patterns[2]) == tile_types.SUB_TILE_PATTERN_STAGGERED_ROWS
+    assert int(patterns[3]) == tile_types.SUB_TILE_PATTERN_BLOCKS_2X2
+
+
 def test_edge_blend_map_marks_organic_vs_rigid_tiles() -> None:
     """Organic terrain should feather at edges while rigid tiles stay sharp."""
     ids = np.array(
@@ -348,6 +374,25 @@ def test_edge_blend_map_marks_organic_vs_rigid_tiles() -> None:
     assert edge_blend[3] == 0.0  # cobblestone
     assert edge_blend[4] == 0.0  # wall
     assert edge_blend[5] == 0.0  # floor
+
+
+def test_edge_self_darken_map_returns_expected_values() -> None:
+    """Only thatch roofs should currently use self-darkened edge blending."""
+    ids = np.array(
+        [
+            TileTypeID.GRASS,
+            TileTypeID.ROOF_THATCH,
+            TileTypeID.ROOF_SHINGLE,
+            TileTypeID.WALL,
+        ],
+        dtype=np.uint8,
+    )
+    edge_self_darken = tile_types.get_edge_self_darken_map(ids)
+
+    assert int(edge_self_darken[0]) == 0
+    assert int(edge_self_darken[1]) == 35
+    assert int(edge_self_darken[2]) == 0
+    assert int(edge_self_darken[3]) == 0
 
 
 # --- Terrain Decoration Tests ---

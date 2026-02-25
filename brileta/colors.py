@@ -45,6 +45,12 @@ OUTDOOR_LIGHT_GROUND: Color = (120, 100, 70)  # Natural dirt/sand color
 OUTDOOR_DARK_WALL: Color = (40, 30, 20)  # Dark rock/stone
 OUTDOOR_LIGHT_WALL: Color = (80, 60, 40)  # Sunlit rock/stone
 
+# Building roof colors (Phase 1 roof cutaway rendering)
+ROOF_THATCH_DARK: Color = (55, 47, 30)  # Muted straw/brown in shadow
+ROOF_THATCH_LIGHT: Color = (138, 118, 78)  # Sunlit straw/thatch, less saturated
+ROOF_SHINGLE_DARK: Color = (38, 42, 48)  # Cool slate in shadow
+ROOF_SHINGLE_LIGHT: Color = (92, 102, 116)  # Sunlit slate shingles
+
 # Actor colors
 # Player uses bright saturated gold to stand out against terrain
 PLAYER_COLOR: Color = (255, 220, 80)

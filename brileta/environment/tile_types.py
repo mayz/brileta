@@ -54,6 +54,15 @@ class TileTypeID(IntEnum):
     # Hazardous terrain types
     ACID_POOL = auto()
     HOT_COALS = auto()
+    # Virtual roof tiles (render-time substitution only; never placed in GameMap.tiles)
+    ROOF_THATCH = auto()
+    ROOF_SHINGLE = auto()
+
+
+ROOF_STYLE_TILE_TYPES: dict[str, TileTypeID] = {
+    "thatch": TileTypeID.ROOF_THATCH,
+    "shingle": TileTypeID.ROOF_SHINGLE,
+}
 
 
 # Defines the structure for the visual appearance of a tile type.
@@ -414,6 +423,33 @@ register_tile_type(
     ),
 )
 
+# --- Virtual Roof Tiles (render-time decoration sources only) ---
+register_tile_type(
+    TileTypeID.ROOF_THATCH,
+    make_tile_type_data(
+        walkable=False,
+        transparent=False,
+        display_name="Thatch Roof",
+        material=ImpactMaterial.WOOD,
+        shadow_height=4,
+        dark=(ord("~"), (76, 59, 34), colors.ROOF_THATCH_DARK),
+        light=(ord("~"), (173, 145, 86), colors.ROOF_THATCH_LIGHT),
+    ),
+)
+
+register_tile_type(
+    TileTypeID.ROOF_SHINGLE,
+    make_tile_type_data(
+        walkable=False,
+        transparent=False,
+        display_name="Shingle Roof",
+        material=ImpactMaterial.STONE,
+        shadow_height=4,
+        dark=(ord("^"), (66, 72, 84), colors.ROOF_SHINGLE_DARK),
+        light=(ord("^"), (142, 154, 170), colors.ROOF_SHINGLE_LIGHT),
+    ),
+)
+
 
 # --- Pre-calculated Property Arrays for Efficient Lookups ---
 # These arrays are built *after* all tile types have been registered.
@@ -679,7 +715,7 @@ def get_sub_tile_jitter_map(tile_type_ids_map: np.ndarray) -> np.ndarray:
     """Converts a map of TileTypeIDs into a float32 map of sub-tile jitter amplitudes.
 
     Non-zero values tell the fragment shader to apply per-pixel brightness
-    variation within each tile cell. Currently only COBBLESTONE uses this.
+    variation within each tile cell.
 
     Args:
         tile_type_ids_map: A 2D numpy array of TileTypeID values.
@@ -690,9 +726,19 @@ def get_sub_tile_jitter_map(tile_type_ids_map: np.ndarray) -> np.ndarray:
     return _tile_type_properties_sub_tile_jitter[tile_type_ids_map]
 
 
+def get_sub_tile_pattern_map(tile_type_ids_map: np.ndarray) -> np.ndarray:
+    """Converts a map of TileTypeIDs into uint8 sub-tile noise pattern IDs."""
+    return _tile_type_properties_sub_tile_pattern[tile_type_ids_map]
+
+
 def get_edge_blend_map(tile_type_ids_map: np.ndarray) -> np.ndarray:
     """Converts a map of TileTypeIDs into per-tile organic edge blend amplitudes."""
     return _tile_type_properties_edge_blend[tile_type_ids_map]
+
+
+def get_edge_self_darken_map(tile_type_ids_map: np.ndarray) -> np.ndarray:
+    """Converts a map of TileTypeIDs into per-tile edge self-darken amounts."""
+    return _tile_type_properties_edge_self_darken[tile_type_ids_map]
 
 
 # --- Per-tile visual decoration (glyph pools + color jitter) ---
@@ -706,6 +752,11 @@ def get_edge_blend_map(tile_type_ids_map: np.ndarray) -> np.ndarray:
 # Each entry also specifies a brightness jitter amplitude. Jitter is applied
 # equally to all RGB channels (brightness, not hue) for both fg and bg,
 # keeping glyph contrast consistent while varying overall tile lightness.
+
+SUB_TILE_PATTERN_BLOCKS_2X2 = 0
+SUB_TILE_PATTERN_FINE_GRAIN = 1
+SUB_TILE_PATTERN_STAGGERED_ROWS = 2
+SUB_TILE_PATTERN_DIAGONAL_BANDS = 3
 
 
 class TerrainDecorationDef(NamedTuple):
@@ -749,6 +800,22 @@ class TerrainDecorationDef(NamedTuple):
     within each tile cell. Adds fine surface grain at a smaller scale than
     bg_jitter's tile-level variation."""
 
+    sub_tile_pattern: int = SUB_TILE_PATTERN_BLOCKS_2X2
+    """Fragment shader sub-tile pattern selector (0 = legacy 2x2 blocks)."""
+
+    edge_self_darken: int = 0
+    """Darken edge blending toward this tile's own background when enabled.
+
+    When > 0, edge blending uses a darkened version of this tile's background
+    color instead of the neighboring tile's background color. This preserves
+    irregular edge softness without cross-material color bleeding (e.g. thatch
+    roof edges darken/weather rather than turning green next to grass).
+
+    Units: 8-bit RGB channel values (0-255). The renderer subtracts this amount
+    from each background color channel independently (R, G, and B), then clamps
+    the result to the valid range [0, 255].
+    """
+
     edge_blend: float = 0.0
     """Strength of organic visual feathering into neighboring tile colors.
 
@@ -768,7 +835,7 @@ _TERRAIN_DECORATION_DEFS: dict[TileTypeID, TerrainDecorationDef] = {
         glyphs=[" "], sub_tile_jitter=0.012, edge_blend=0.0
     ),
     TileTypeID.COBBLESTONE: TerrainDecorationDef(
-        glyphs=[" "], bg_jitter=2, sub_tile_jitter=0.02, edge_blend=0.0
+        glyphs=[" "], bg_jitter=2, sub_tile_jitter=0.03, edge_blend=0.0
     ),
     TileTypeID.GRASS: TerrainDecorationDef(
         glyphs=['"', "'", ",", "`"], bg_jitter=4, fg_jitter=12, edge_blend=0.45
@@ -778,6 +845,23 @@ _TERRAIN_DECORATION_DEFS: dict[TileTypeID, TerrainDecorationDef] = {
     ),
     TileTypeID.GRAVEL: TerrainDecorationDef(
         glyphs=[":", ";"], bg_jitter=2, fg_jitter=8, edge_blend=0.32
+    ),
+    TileTypeID.ROOF_THATCH: TerrainDecorationDef(
+        glyphs=[" "],
+        bg_jitter=0,
+        fg_jitter=0,
+        sub_tile_jitter=0.045,
+        sub_tile_pattern=SUB_TILE_PATTERN_FINE_GRAIN,
+        edge_self_darken=35,
+        edge_blend=0.5,
+    ),
+    TileTypeID.ROOF_SHINGLE: TerrainDecorationDef(
+        glyphs=[" "],
+        bg_jitter=2,
+        fg_jitter=4,
+        sub_tile_jitter=0.014,
+        sub_tile_pattern=SUB_TILE_PATTERN_STAGGERED_ROWS,
+        edge_blend=0.0,
     ),
 }
 
@@ -818,6 +902,17 @@ _tile_type_properties_sub_tile_jitter = np.array(
     dtype=np.float32,
 )
 
+# Sub-tile noise pattern ID per tile type, built from TerrainDecorationDef.
+_tile_type_properties_sub_tile_pattern = np.array(
+    [
+        _TERRAIN_DECORATION_DEFS[tid].sub_tile_pattern
+        if tid in _TERRAIN_DECORATION_DEFS
+        else SUB_TILE_PATTERN_BLOCKS_2X2
+        for tid in TileTypeID
+    ],
+    dtype=np.uint8,
+)
+
 # Organic edge feathering amplitude per tile type (0.0 = rigid edge).
 _tile_type_properties_edge_blend = np.array(
     [
@@ -827,6 +922,18 @@ _tile_type_properties_edge_blend = np.array(
         for tid in TileTypeID
     ],
     dtype=np.float32,
+)
+
+# Per-tile override amount for blending toward a darkened self color instead of
+# a neighbor color (0 disables the override).
+_tile_type_properties_edge_self_darken = np.array(
+    [
+        _TERRAIN_DECORATION_DEFS[tid].edge_self_darken
+        if tid in _TERRAIN_DECORATION_DEFS
+        else 0
+        for tid in TileTypeID
+    ],
+    dtype=np.uint8,
 )
 
 
