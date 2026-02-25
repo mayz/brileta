@@ -1,12 +1,12 @@
 # Brileta
 
-Brileta is a game engine and sandbox written in Python from scratch, built for experimenting with game mechanics, graphics, and procedural generation. There's no underlying framework - rendering, input, audio, lighting, AI, and world generation are all homegrown, with WGPU for GPU access and C extensions for hot paths. It has roguelike bones: glyph-based rendering, turn-based play, procedural worlds.
+Brileta is a game engine and sandbox written in Python and C, built for experimenting with game mechanics, graphics, and procedural generation. There's no underlying framework - rendering, input, audio, lighting, AI, and world generation are all homegrown, with WGPU for GPU access and C extensions for hot paths. It has roguelike bones: glyph-based rendering, turn-based play, procedural worlds.
 
 The current sandbox generates a settlement and drops you into it. Everything is deterministic from a single seed.
 
 This is a personal hobby project. There's no release timeline, no roadmap promises, and no guarantee that anything works.
 
-<img src="media/brileta1.jpg" width="600">
+<img src="media/screenshot.jpg" width="600">
 
 ## Notable Systems
 
