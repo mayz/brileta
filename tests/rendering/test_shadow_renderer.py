@@ -680,6 +680,38 @@ def test_sun_shadow_renders_outdoor_regions() -> None:
     graphics.draw_actor_shadow.assert_called_once()
 
 
+def test_sun_shadow_culls_tiny_projected_shadows_when_zoomed_out() -> None:
+    actor = _build_actor(x=2, y=2, shadow_height=1)
+    sun = DirectionalLight.create_sun(elevation_degrees=45.0, intensity=0.8)
+    renderer = _build_shadow_renderer([sun])
+    renderer.game_map.get_region_at = lambda _pos: SimpleNamespace(
+        sky_exposure=1.0, region_type="exterior"
+    )
+    renderer.game_map.get_sun_shadow_eligibility_grid = None
+    clip_shadow_length_by_walls = Mock(return_value=1.0)
+    renderer._clip_shadow_length_by_walls = clip_shadow_length_by_walls
+    graphics = SimpleNamespace(
+        tile_dimensions=(20, 20),
+        draw_actor_shadow=Mock(),
+        console_to_screen_coords=lambda x, y: (x, y),
+    )
+    viewport = SimpleNamespace(
+        world_to_screen_float=lambda x, y: (x, y),
+        get_display_scale_factors=lambda: (1.0, 0.05),
+    )
+
+    renderer.graphics = cast(GraphicsContext, graphics)
+    renderer.viewport_system = cast(ViewportSystem, viewport)
+    renderer._render_sun_actor_shadows(
+        [actor],
+        InterpolationAlpha(1.0),
+        1.0,
+    )
+
+    clip_shadow_length_by_walls.assert_not_called()
+    graphics.draw_actor_shadow.assert_not_called()
+
+
 def test_sun_shadow_skips_room_regions_even_with_high_exposure() -> None:
     actor = _build_actor(x=2, y=2, shadow_height=1)
     sun = DirectionalLight.create_sun(elevation_degrees=45.0, intensity=0.8)
@@ -752,6 +784,37 @@ def test_point_light_skips_same_tile_drift_jitter() -> None:
         20.0,
     )
 
+    graphics.draw_actor_shadow.assert_not_called()
+
+
+def test_point_light_culls_tiny_projected_shadows_when_zoomed_out() -> None:
+    actor = _build_actor(x=3, y=4, shadow_height=1)
+    light = SimpleNamespace(position=(0, 0), radius=10, intensity=1.0)
+    renderer = _build_shadow_renderer([light])
+    get_actor_screen_position = Mock(return_value=(3, 4, 3, 4, 3, 4))
+    clip_shadow_length_by_walls = Mock(return_value=1.0)
+    renderer._get_actor_screen_position = get_actor_screen_position
+    renderer._clip_shadow_length_by_walls = clip_shadow_length_by_walls
+    graphics = SimpleNamespace(
+        tile_dimensions=(20, 20),
+        draw_actor_shadow=Mock(),
+        console_to_screen_coords=lambda x, y: (x, y),
+    )
+    viewport = SimpleNamespace(
+        world_to_screen_float=lambda x, y: (x, y),
+        get_display_scale_factors=lambda: (1.0, 0.05),
+    )
+
+    renderer.graphics = cast(GraphicsContext, graphics)
+    renderer.viewport_system = cast(ViewportSystem, viewport)
+    renderer._render_point_light_actor_shadows(
+        [actor],
+        InterpolationAlpha(1.0),
+        1.0,
+    )
+
+    get_actor_screen_position.assert_not_called()
+    clip_shadow_length_by_walls.assert_not_called()
     graphics.draw_actor_shadow.assert_not_called()
 
 

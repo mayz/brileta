@@ -108,6 +108,12 @@ class GameMap:
         self._light_appearance_map_cache: np.ndarray | None = None
         self._animation_params_cache: np.ndarray | None = None
         self._shadow_heights_map_cache: np.ndarray | None = None
+        self._sun_shadow_eligibility_grid_cache: np.ndarray | None = None
+        self._sun_shadow_eligibility_grid_cache_revision: int = -1
+        self._sun_shadow_eligibility_grid_cache_region_types: frozenset[str] | None = (
+            None
+        )
+        self._sun_shadow_eligibility_grid_cache_tile_ids: frozenset[int] | None = None
 
         # Per-cell animation state for tiles that animate (color oscillation, flicker)
         self.animation_state = self._init_animation_state()
@@ -120,6 +126,7 @@ class GameMap:
         self._light_appearance_map_cache = None
         self._animation_params_cache = None
         self._shadow_heights_map_cache = None
+        self._invalidate_sun_shadow_eligibility_grid_cache()
         self.structural_revision += 1
 
     @property
@@ -229,6 +236,69 @@ class GameMap:
         """Invalidate appearance caches when regions change."""
         self._dark_appearance_map_cache = None
         self._light_appearance_map_cache = None
+        self._invalidate_sun_shadow_eligibility_grid_cache()
+
+    def _invalidate_sun_shadow_eligibility_grid_cache(self) -> None:
+        """Clear the cached per-tile eligibility mask for sun-projected shadows."""
+        self._sun_shadow_eligibility_grid_cache = None
+        self._sun_shadow_eligibility_grid_cache_revision = -1
+        self._sun_shadow_eligibility_grid_cache_region_types = None
+        self._sun_shadow_eligibility_grid_cache_tile_ids = None
+
+    def get_sun_shadow_eligibility_grid(
+        self,
+        *,
+        outdoor_region_types: frozenset[str],
+        outdoor_tile_ids: frozenset[int],
+    ) -> np.ndarray:
+        """Return a cached tile mask for directional sun shadow eligibility.
+
+        The result is a boolean array indexed by world tile position ``[x, y]``.
+        It is rebuilt when structural data changes or when the caller's shadow
+        policy sets change.
+        """
+        if (
+            self._sun_shadow_eligibility_grid_cache is not None
+            and self._sun_shadow_eligibility_grid_cache_revision
+            == self.structural_revision
+            and self._sun_shadow_eligibility_grid_cache_region_types
+            == outdoor_region_types
+            and self._sun_shadow_eligibility_grid_cache_tile_ids == outdoor_tile_ids
+        ):
+            return self._sun_shadow_eligibility_grid_cache
+
+        eligible = np.zeros((self.width, self.height), dtype=bool, order="F")
+        if not self.regions:
+            self._sun_shadow_eligibility_grid_cache = eligible
+            self._sun_shadow_eligibility_grid_cache_revision = self.structural_revision
+            self._sun_shadow_eligibility_grid_cache_region_types = outdoor_region_types
+            self._sun_shadow_eligibility_grid_cache_tile_ids = outdoor_tile_ids
+            return eligible
+
+        # Compute once and reuse for non-outdoor region fallback checks.
+        fallback_outdoor_tiles = np.isin(self.tiles, tuple(outdoor_tile_ids))
+
+        for region_id, region in self.regions.items():
+            if region.sky_exposure <= 0.1:
+                continue
+
+            region_mask = self.tile_to_region_id == region_id
+            if not np.any(region_mask):
+                continue
+
+            if region.region_type in outdoor_region_types:
+                eligible[region_mask] = True
+                continue
+
+            # High-exposure non-outdoor regions only allow sun shadows on
+            # explicitly outdoor-looking ground tiles.
+            eligible[region_mask] = fallback_outdoor_tiles[region_mask]
+
+        self._sun_shadow_eligibility_grid_cache = eligible
+        self._sun_shadow_eligibility_grid_cache_revision = self.structural_revision
+        self._sun_shadow_eligibility_grid_cache_region_types = outdoor_region_types
+        self._sun_shadow_eligibility_grid_cache_tile_ids = outdoor_tile_ids
+        return eligible
 
     @property
     def animation_params(self) -> np.ndarray:

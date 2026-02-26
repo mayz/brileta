@@ -75,6 +75,7 @@ class _SunShadowParams(NamedTuple):
 class ShadowRenderer:
     """Render projected terrain and actor shadows for a world view."""
 
+    _MIN_RENDERED_ACTOR_SHADOW_LENGTH_PX: float = 2.5
     _SUN_SHADOW_OUTDOOR_REGION_TYPES: frozenset[str] = frozenset(
         {"outdoor", "exterior", "test_outdoor"}
     )
@@ -251,6 +252,14 @@ class ShadowRenderer:
 
         return _SunShadowParams(dir_x, dir_y, length_scale)
 
+    def _get_min_rendered_actor_shadow_length_tiles(self) -> float:
+        """Return the minimum shadow length worth rendering at the current zoom."""
+        _viewport_scale_x, viewport_scale_y = self._get_viewport_display_scale_factors()
+        tile_height_pixels = float(self.graphics.tile_dimensions[1]) * viewport_scale_y
+        if tile_height_pixels <= 1e-6:
+            return math.inf
+        return self._MIN_RENDERED_ACTOR_SHADOW_LENGTH_PX / tile_height_pixels
+
     def _get_actor_screen_position(
         self,
         actor: Actor,
@@ -292,8 +301,19 @@ class ShadowRenderer:
             else (actors if receivers is None else receivers)
         )
         shadow_dir_x, shadow_dir_y, shadow_length_scale = sun_params
+        min_shadow_length_tiles = self._get_min_rendered_actor_shadow_length_tiles()
 
         for actor in actors:
+            shadow_height = float(getattr(actor, "shadow_height", 0))
+            shadow_length_tiles = shadow_height * shadow_length_scale
+            if shadow_length_tiles <= 0.0:
+                continue
+
+            # Zoomed-out scenes can expose many distant casters. Skip actors
+            # whose projected shadow would be sub-pixel/tiny on screen.
+            if shadow_length_tiles < min_shadow_length_tiles:
+                continue
+
             # Sun shadows should only appear on tiles that are truly outdoor.
             # Some dungeon regions can carry elevated sky_exposure metadata while
             # still being interior rooms; this guard keeps directional shadows
@@ -301,15 +321,13 @@ class ShadowRenderer:
             if not self._can_render_sun_shadow_at_tile(actor.x, actor.y):
                 continue
 
-            shadow_height = float(getattr(actor, "shadow_height", 0))
-            shadow_length_tiles = shadow_height * shadow_length_scale
-            if shadow_length_tiles <= 0.0:
-                continue
-
             clipped_length_tiles = self._clip_shadow_length_by_walls(
                 actor.x, actor.y, shadow_dir_x, shadow_dir_y, shadow_length_tiles
             )
-            if clipped_length_tiles <= 0.0:
+            if (
+                clipped_length_tiles <= 0.0
+                or clipped_length_tiles < min_shadow_length_tiles
+            ):
                 continue
 
             self._accumulate_actor_shadow_receiver_dimming(
@@ -340,6 +358,19 @@ class ShadowRenderer:
 
     def _can_render_sun_shadow_at_tile(self, x: int, y: int) -> bool:
         """Return whether a tile should receive directional sun-projected shadows."""
+        if not (0 <= x < self.game_map.width and 0 <= y < self.game_map.height):
+            return False
+
+        get_sun_shadow_eligibility_grid = getattr(
+            self.game_map, "get_sun_shadow_eligibility_grid", None
+        )
+        if callable(get_sun_shadow_eligibility_grid):
+            eligible_grid = get_sun_shadow_eligibility_grid(
+                outdoor_region_types=self._SUN_SHADOW_OUTDOOR_REGION_TYPES,
+                outdoor_tile_ids=self._SUN_SHADOW_OUTDOOR_TILE_IDS,
+            )
+            return bool(eligible_grid[x, y])
+
         region = self.game_map.get_region_at((x, y))
         if region is None or region.sky_exposure <= 0.1:
             return False
@@ -468,9 +499,13 @@ class ShadowRenderer:
         if not point_lights:
             return
 
+        min_shadow_length_tiles = self._get_min_rendered_actor_shadow_length_tiles()
+
         for actor in actors:
             shadow_height = float(getattr(actor, "shadow_height", 0))
             if shadow_height <= 0.0:
+                continue
+            if shadow_height < min_shadow_length_tiles:
                 continue
 
             (
@@ -522,7 +557,10 @@ class ShadowRenderer:
                 clipped_length_tiles = self._clip_shadow_length_by_walls(
                     actor.x, actor.y, dir_x, dir_y, shadow_height
                 )
-                if clipped_length_tiles <= 0.0:
+                if (
+                    clipped_length_tiles <= 0.0
+                    or clipped_length_tiles < min_shadow_length_tiles
+                ):
                     continue
 
                 self._accumulate_actor_shadow_receiver_dimming(
