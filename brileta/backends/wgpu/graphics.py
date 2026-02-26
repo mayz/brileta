@@ -685,6 +685,164 @@ class WGPUGraphicsContext(BaseGraphicsContext):
             ground_anchor_y=ground_anchor_y,
         )
 
+    def draw_sprite_shadow_batch(
+        self,
+        *,
+        sprite_uvs: np.ndarray,
+        screen_x: np.ndarray,
+        screen_y: np.ndarray,
+        shadow_dir_x: float,
+        shadow_dir_y: float,
+        shadow_length_pixels: np.ndarray,
+        shadow_alpha: np.ndarray | float,
+        scale_x: np.ndarray,
+        scale_y: np.ndarray,
+        ground_anchor_y: np.ndarray,
+        fade_tip: bool = True,
+    ) -> None:
+        """Draw many sprite-silhouette shadows with vectorized geometry setup.
+
+        The generated vertex data is intentionally pixel-identical to repeated
+        scalar ``draw_sprite_shadow()`` calls; this method only batches the CPU
+        projection math and vertex-buffer writes.
+        """
+        if self.screen_renderer is None:
+            return
+
+        count = len(sprite_uvs)
+        if count <= 0:
+            return
+
+        direction_length = float(np.hypot(shadow_dir_x, shadow_dir_y))
+        if direction_length <= 1e-6:
+            return
+
+        dir_x = shadow_dir_x / direction_length
+        dir_y = shadow_dir_y / direction_length
+
+        uv_rects = np.asarray(sprite_uvs, dtype=np.float64)
+        screen_x_arr = np.asarray(screen_x, dtype=np.float64)
+        screen_y_arr = np.asarray(screen_y, dtype=np.float64)
+        length_arr = np.asarray(shadow_length_pixels, dtype=np.float64)
+        scale_x_arr = np.asarray(scale_x, dtype=np.float64)
+        scale_y_arr = np.asarray(scale_y, dtype=np.float64)
+        anchor_arr = np.asarray(ground_anchor_y, dtype=np.float64)
+        if isinstance(shadow_alpha, np.ndarray):
+            alpha_arr = np.asarray(shadow_alpha, dtype=np.float64)
+        else:
+            alpha_scalar = float(np.asarray(shadow_alpha, dtype=np.float64))
+            alpha_arr = np.full(count, alpha_scalar, dtype=np.float64)
+
+        valid = (length_arr > 0.0) & (alpha_arr > 0.0)
+        if not np.any(valid):
+            return
+        if not np.all(valid):
+            uv_rects = uv_rects[valid]
+            screen_x_arr = screen_x_arr[valid]
+            screen_y_arr = screen_y_arr[valid]
+            length_arr = length_arr[valid]
+            scale_x_arr = scale_x_arr[valid]
+            scale_y_arr = scale_y_arr[valid]
+            anchor_arr = anchor_arr[valid]
+            alpha_arr = alpha_arr[valid]
+
+        tile_w, tile_h = self.tile_dimensions
+        tile_w_f = float(tile_w)
+        tile_h_f = float(tile_h)
+
+        scaled_w = tile_w_f * scale_x_arr
+        scaled_h = tile_h_f * scale_y_arr
+        offset_x = (tile_w_f - scaled_w) / 2.0
+        anchor_clamped = np.clip(anchor_arr, 0.0, 1.0)
+        offset_y = tile_h_f * anchor_clamped - scaled_h
+
+        glyph_x = screen_x_arr + offset_x
+        glyph_y = screen_y_arr + offset_y
+
+        clamped_alpha = np.clip(alpha_arr, 0.0, 1.0)
+        base_colors = np.zeros((len(clamped_alpha), 4), dtype=np.float32)
+        base_colors[:, 3] = clamped_alpha
+        tip_colors = np.zeros((len(clamped_alpha), 4), dtype=np.float32)
+        if not fade_tip:
+            tip_colors[:, 3] = clamped_alpha
+
+        corners = np.empty((len(clamped_alpha), 4, 2), dtype=np.float32)
+        base_left = corners[:, 0]
+        base_right = corners[:, 1]
+        tip_left = corners[:, 2]
+        tip_right = corners[:, 3]
+
+        base_left[:, 0] = glyph_x
+        base_left[:, 1] = glyph_y + scaled_h
+        base_right[:, 0] = glyph_x + scaled_w
+        base_right[:, 1] = glyph_y + scaled_h
+
+        uv_batch = uv_rects.astype(np.float32, copy=True)
+        vertex_colors: np.ndarray | None = None
+
+        if abs(dir_y) < 0.2:
+            u1_raw = uv_batch[:, 0].copy()
+            v1_raw = uv_batch[:, 1].copy()
+            u2_raw = uv_batch[:, 2].copy()
+            v2_raw = uv_batch[:, 3].copy()
+            uv_batch[:, 0] = u2_raw
+            uv_batch[:, 1] = v1_raw
+            uv_batch[:, 2] = u1_raw
+            uv_batch[:, 3] = v2_raw
+
+            band_thickness = scaled_w * 0.5
+            edge_overlap = scaled_w * 0.4
+            band_bottom = glyph_y + scaled_h
+            band_top = band_bottom - band_thickness
+
+            if dir_x >= 0.0:
+                near_x = glyph_x + scaled_w - edge_overlap
+                far_x = near_x + length_arr
+                base_left[:, 0] = near_x
+                base_left[:, 1] = band_bottom
+                base_right[:, 0] = far_x
+                base_right[:, 1] = band_bottom
+                tip_left[:, 0] = near_x
+                tip_left[:, 1] = band_top
+                tip_right[:, 0] = far_x
+                tip_right[:, 1] = band_top
+                vertex_colors = np.empty((len(clamped_alpha), 4, 4), dtype=np.float32)
+                vertex_colors[:, 0] = base_colors
+                vertex_colors[:, 1] = tip_colors
+                vertex_colors[:, 2] = base_colors
+                vertex_colors[:, 3] = tip_colors
+            else:
+                near_x = glyph_x + edge_overlap
+                far_x = near_x - length_arr
+                base_left[:, 0] = far_x
+                base_left[:, 1] = band_bottom
+                base_right[:, 0] = near_x
+                base_right[:, 1] = band_bottom
+                tip_left[:, 0] = far_x
+                tip_left[:, 1] = band_top
+                tip_right[:, 0] = near_x
+                tip_right[:, 1] = band_top
+                vertex_colors = np.empty((len(clamped_alpha), 4, 4), dtype=np.float32)
+                vertex_colors[:, 0] = tip_colors
+                vertex_colors[:, 1] = base_colors
+                vertex_colors[:, 2] = tip_colors
+                vertex_colors[:, 3] = base_colors
+        else:
+            tip_left[:, 0] = base_left[:, 0] + dir_x * length_arr
+            tip_left[:, 1] = base_left[:, 1] + dir_y * length_arr
+            tip_right[:, 0] = base_right[:, 0] + dir_x * length_arr
+            tip_right[:, 1] = base_right[:, 1] + dir_y * length_arr
+
+        flags = np.full(len(clamped_alpha), 2, dtype=np.uint32)
+        self.screen_renderer.add_parallelogram_batch(
+            corners=corners,
+            uv_coords=uv_batch,
+            base_colors=base_colors,
+            tip_colors=tip_colors,
+            flags=flags,
+            vertex_colors=vertex_colors,
+        )
+
     def _draw_shadow_with_uv(
         self,
         uv_coords: tuple[float, float, float, float],

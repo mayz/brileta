@@ -195,6 +195,7 @@ class TestMapUnlitDirtyTracking:
         view = object.__new__(WorldView)
         view._SCROLL_PADDING = 1
         view._map_unlit_buffer_cache_key = None
+        view._viewport_zoom = 1.0
         view.map_glyph_buffer = GlyphBuffer(4, 4)
         view.controller = SimpleNamespace(
             gw=SimpleNamespace(
@@ -1058,6 +1059,7 @@ class TestAtmosphericViewportSizing:
         view.width = 20
         view.height = 12
         view._SCROLL_PADDING = 1
+        view._viewport_zoom = 1.0
         view._shake_offset = (0.0, 0.0)
         view._active_background_texture = None
         view._light_overlay_texture = None

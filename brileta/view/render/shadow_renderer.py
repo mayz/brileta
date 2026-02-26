@@ -28,7 +28,7 @@ def compute_actor_screen_position(
 ) -> tuple[float, float, float, float, float, float]:
     """Compute interpolated world/root/pixel coordinates for an actor."""
     alpha_value = float(interpolation_alpha)
-    if getattr(actor, "_animation_controlled", False):
+    if actor._animation_controlled:
         interpolated_x = actor.render_x
         interpolated_y = actor.render_y
     else:
@@ -97,6 +97,9 @@ class ShadowRenderer:
         self.game_map = game_map
         self.viewport_system = viewport_system
         self.graphics = graphics
+        # Current world-view zoom multiplier, set by the owning view each frame.
+        # Used for LOD gating of expensive shadow detail at low zoom levels.
+        self.viewport_zoom: float = 1.0
         self._view_origin: tuple[float, float] = (0.0, 0.0)
         self._camera_frac_offset: tuple[float, float] = (0.0, 0.0)
         self._frame_directional_light: DirectionalLight | None = None
@@ -201,9 +204,7 @@ class ShadowRenderer:
         if not visible_actors:
             return
 
-        shadow_casters = [
-            actor for actor in visible_actors if getattr(actor, "shadow_height", 0) > 0
-        ]
+        shadow_casters = [actor for actor in visible_actors if actor.shadow_height > 0]
         if not shadow_casters:
             return
 
@@ -274,6 +275,60 @@ class ShadowRenderer:
             view_origin=self._view_origin,
         )
 
+    def _world_to_screen_float_batch(
+        self,
+        world_x: np.ndarray,
+        world_y: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray] | None:
+        """Vectorized ``ViewportSystem.world_to_screen_float`` for real viewports."""
+        if not isinstance(self.viewport_system, ViewportSystem):
+            return None
+
+        bounds = self.viewport_system.viewport.get_world_bounds(
+            self.viewport_system.camera
+        )
+        scale_x, scale_y = self.viewport_system.get_display_scale_factors()
+        left = float(bounds.x1)
+        top = float(bounds.y1)
+        offset_x = float(self.viewport_system.viewport.offset_x)
+        offset_y = float(self.viewport_system.viewport.offset_y)
+        return (
+            (world_x - left + offset_x) * scale_x,
+            (world_y - top + offset_y) * scale_y,
+        )
+
+    def _console_to_screen_coords_batch(
+        self,
+        console_x: np.ndarray,
+        console_y: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray] | None:
+        """Vectorized ``GraphicsContext.console_to_screen_coords`` when supported."""
+        letterbox_geometry = getattr(self.graphics, "letterbox_geometry", None)
+        if letterbox_geometry is None:
+            tile_dimensions = getattr(self.graphics, "_tile_dimensions", None)
+            if tile_dimensions is None:
+                tile_dimensions = getattr(self.graphics, "tile_dimensions", None)
+            if tile_dimensions is None:
+                return None
+            tile_w, tile_h = tile_dimensions
+            return (
+                np.trunc(console_x * float(tile_w)),
+                np.trunc(console_y * float(tile_h)),
+            )
+
+        console_width_tiles = getattr(self.graphics, "console_width_tiles", None)
+        console_height_tiles = getattr(self.graphics, "console_height_tiles", None)
+        if console_width_tiles is None or console_height_tiles is None:
+            return None
+
+        offset_x, offset_y, scaled_w, scaled_h = letterbox_geometry
+        return (
+            float(offset_x)
+            + console_x * (float(scaled_w) / float(console_width_tiles)),
+            float(offset_y)
+            + console_y * (float(scaled_h) / float(console_height_tiles)),
+        )
+
     def _render_sun_actor_shadows(
         self,
         actors: list[Actor],
@@ -284,7 +339,14 @@ class ShadowRenderer:
         sun_params: _SunShadowParams | None = None,
         directional_light: DirectionalLight | None = None,
     ) -> None:
-        """Render actor shadows cast by the directional light."""
+        """Render actor shadows cast by the directional light.
+
+        Vectorized implementation: collects actor data into numpy arrays,
+        filters by outdoor eligibility, optionally clips by walls and
+        computes receiver dimming (when LOD detail is enabled), then emits
+        shadow geometry. Sprite actors use the batch sprite-shadow API
+        when available, otherwise fall through to per-actor emission.
+        """
         if sun_params is None:
             dl = directional_light or self._frame_directional_light
             if dl is not None:
@@ -303,58 +365,399 @@ class ShadowRenderer:
         shadow_dir_x, shadow_dir_y, shadow_length_scale = sun_params
         min_shadow_length_tiles = self._get_min_rendered_actor_shadow_length_tiles()
 
-        for actor in actors:
-            shadow_height = float(getattr(actor, "shadow_height", 0))
-            shadow_length_tiles = shadow_height * shadow_length_scale
-            if shadow_length_tiles <= 0.0:
-                continue
+        # LOD flag: at low zoom, wall-clipping and receiver-dimming are
+        # imperceptible and skipped.
+        lod_detail: bool = self.viewport_zoom >= config.LOD_DETAIL_ZOOM_THRESHOLD
 
-            # Zoomed-out scenes can expose many distant casters. Skip actors
-            # whose projected shadow would be sub-pixel/tiny on screen.
-            if shadow_length_tiles < min_shadow_length_tiles:
-                continue
+        # ------------------------------------------------------------------
+        # 1. Collect actor data into parallel arrays.
+        # ------------------------------------------------------------------
+        actor_count = len(actors)
+        actor_x = np.empty(actor_count, dtype=np.int32)
+        actor_y = np.empty(actor_count, dtype=np.int32)
+        shadow_heights = np.empty(actor_count, dtype=np.float64)
+        prev_x = np.empty(actor_count, dtype=np.float64)
+        prev_y = np.empty(actor_count, dtype=np.float64)
+        curr_x = np.empty(actor_count, dtype=np.float64)
+        curr_y = np.empty(actor_count, dtype=np.float64)
+        render_x = np.empty(actor_count, dtype=np.float64)
+        render_y = np.empty(actor_count, dtype=np.float64)
+        animation_controlled = np.zeros(actor_count, dtype=bool)
+        drift_x = np.zeros(actor_count, dtype=np.float64)
+        drift_y = np.zeros(actor_count, dtype=np.float64)
+        visual_scale = np.ones(actor_count, dtype=np.float64)
+        sprite_anchor_y = np.ones(actor_count, dtype=np.float64)
+        sprite_uvs = np.zeros((actor_count, 4), dtype=np.float32)
+        sprite_batchable = np.zeros(actor_count, dtype=bool)
 
-            # Sun shadows should only appear on tiles that are truly outdoor.
-            # Some dungeon regions can carry elevated sky_exposure metadata while
-            # still being interior rooms; this guard keeps directional shadows
-            # from leaking into indoor spaces.
-            if not self._can_render_sun_shadow_at_tile(actor.x, actor.y):
-                continue
+        for idx, actor in enumerate(actors):
+            actor_x[idx] = int(actor.x)
+            actor_y[idx] = int(actor.y)
+            shadow_heights[idx] = float(actor.shadow_height)
+            prev_x[idx] = float(actor.prev_x)
+            prev_y[idx] = float(actor.prev_y)
+            curr_x[idx] = float(actor.x)
+            curr_y[idx] = float(actor.y)
+            render_x[idx] = float(actor.render_x)
+            render_y[idx] = float(actor.render_y)
+            animation_controlled[idx] = actor._animation_controlled
+            visual_scale[idx] = float(actor.visual_scale)
 
-            clipped_length_tiles = self._clip_shadow_length_by_walls(
-                actor.x, actor.y, shadow_dir_x, shadow_dir_y, shadow_length_tiles
-            )
             if (
-                clipped_length_tiles <= 0.0
-                or clipped_length_tiles < min_shadow_length_tiles
+                actor.visual_effects is not None
+                and actor.health is not None
+                and actor.health.is_alive()
             ):
+                offset_x, offset_y = actor.visual_effects.get_idle_drift_offset()
+                drift_x[idx] = float(offset_x)
+                drift_y[idx] = float(offset_y)
+
+            sprite_uv = actor.sprite_uv
+            if sprite_uv is not None:
+                sprite_anchor_y[idx] = float(actor.sprite_ground_anchor_y)
+                sprite_uvs[idx, 0] = float(sprite_uv.u1)
+                sprite_uvs[idx, 1] = float(sprite_uv.v1)
+                sprite_uvs[idx, 2] = float(sprite_uv.u2)
+                sprite_uvs[idx, 3] = float(sprite_uv.v2)
+                sprite_batchable[idx] = True
+
+        # ------------------------------------------------------------------
+        # 2. Shadow length filtering.
+        # ------------------------------------------------------------------
+        shadow_length_tiles = shadow_heights * float(shadow_length_scale)
+        eligible_mask = (shadow_length_tiles > 0.0) & (
+            shadow_length_tiles >= float(min_shadow_length_tiles)
+        )
+        if not np.any(eligible_mask):
+            return
+
+        # ------------------------------------------------------------------
+        # 3. Outdoor eligibility filtering.
+        # ------------------------------------------------------------------
+        in_bounds = (
+            (actor_x >= 0)
+            & (actor_x < int(self.game_map.width))
+            & (actor_y >= 0)
+            & (actor_y < int(self.game_map.height))
+        )
+
+        # Use cached eligibility grid when available (vectorized),
+        # otherwise fall back to per-actor tile check.
+        get_sun_shadow_eligibility_grid = getattr(
+            self.game_map, "get_sun_shadow_eligibility_grid", None
+        )
+        outdoor_mask = np.zeros(actor_count, dtype=bool)
+        outdoor_indices = np.flatnonzero(eligible_mask & in_bounds)
+        if len(outdoor_indices) > 0:
+            if callable(get_sun_shadow_eligibility_grid):
+                eligible_grid = get_sun_shadow_eligibility_grid(
+                    outdoor_region_types=self._SUN_SHADOW_OUTDOOR_REGION_TYPES,
+                    outdoor_tile_ids=self._SUN_SHADOW_OUTDOOR_TILE_IDS,
+                )
+                outdoor_mask[outdoor_indices] = np.asarray(
+                    eligible_grid[actor_x[outdoor_indices], actor_y[outdoor_indices]],
+                    dtype=bool,
+                )
+            else:
+                for oi in outdoor_indices:
+                    outdoor_mask[oi] = self._can_render_sun_shadow_at_tile(
+                        int(actor_x[oi]), int(actor_y[oi])
+                    )
+        eligible_mask &= outdoor_mask
+        if not np.any(eligible_mask):
+            return
+
+        # ------------------------------------------------------------------
+        # 4. Wall clipping (LOD detail only).
+        # ------------------------------------------------------------------
+        if lod_detail:
+            eligible_indices_for_clip = np.flatnonzero(eligible_mask)
+            if len(eligible_indices_for_clip) > 0:
+                elig_x = actor_x[eligible_indices_for_clip]
+                elig_y = actor_y[eligible_indices_for_clip]
+                elig_lengths = shadow_length_tiles[eligible_indices_for_clip]
+
+                max_steps = 8
+                origin_x_f = elig_x.astype(np.float64) + 0.5
+                origin_y_f = elig_y.astype(np.float64) + 0.5
+                steps = np.arange(1, max_steps + 1, dtype=np.float64)
+
+                # Sample positions for all actors x all steps: [N_elig, 8]
+                sample_sx = np.floor(
+                    origin_x_f[:, np.newaxis] + shadow_dir_x * steps[np.newaxis, :]
+                ).astype(np.int32)
+                sample_sy = np.floor(
+                    origin_y_f[:, np.newaxis] + shadow_dir_y * steps[np.newaxis, :]
+                ).astype(np.int32)
+
+                map_w = int(self.game_map.width)
+                map_h = int(self.game_map.height)
+                step_in_bounds = (
+                    (sample_sx >= 0)
+                    & (sample_sx < map_w)
+                    & (sample_sy >= 0)
+                    & (sample_sy < map_h)
+                )
+
+                safe_sx = np.clip(sample_sx, 0, map_w - 1)
+                safe_sy = np.clip(sample_sy, 0, map_h - 1)
+                sampled_h = self.game_map.shadow_heights[safe_sx, safe_sy]
+
+                # A step blocks if out of bounds or hits tall terrain.
+                blocks = ~step_in_bounds | (sampled_h > 2)
+                # Only count steps within the actor's shadow range.
+                step_in_range = steps[np.newaxis, :] <= np.ceil(
+                    elig_lengths[:, np.newaxis]
+                )
+                blocks &= step_in_range
+
+                has_blocker = np.any(blocks, axis=1)
+                first_blocker_idx = np.argmax(blocks, axis=1)
+                clip_at_step = steps[first_blocker_idx]
+
+                clipped_lengths = np.where(
+                    has_blocker,
+                    np.maximum(0.0, np.minimum(elig_lengths, clip_at_step - 0.5)),
+                    elig_lengths,
+                )
+
+                shadow_length_tiles[eligible_indices_for_clip] = clipped_lengths
+                eligible_mask &= shadow_length_tiles >= float(min_shadow_length_tiles)
+                eligible_mask &= shadow_length_tiles > 0.0
+                if not np.any(eligible_mask):
+                    return
+
+        # ------------------------------------------------------------------
+        # 5. Receiver dimming (LOD detail only).
+        # ------------------------------------------------------------------
+        if lod_detail and shadow_receivers:
+            eligible_indices_for_dimming = np.flatnonzero(eligible_mask)
+            n_casters = len(eligible_indices_for_dimming)
+            n_receivers = len(shadow_receivers)
+
+            if n_casters > 0 and n_receivers > 0:
+                c_center_x = (
+                    actor_x[eligible_indices_for_dimming].astype(np.float64) + 0.5
+                )
+                c_center_y = (
+                    actor_y[eligible_indices_for_dimming].astype(np.float64) + 0.5
+                )
+                c_shadow_h = shadow_heights[eligible_indices_for_dimming]
+                c_vis_scale = visual_scale[eligible_indices_for_dimming]
+                c_shadow_len = shadow_length_tiles[eligible_indices_for_dimming]
+
+                r_center_x = np.array(
+                    [float(r.x) + 0.5 for r in shadow_receivers],
+                    dtype=np.float64,
+                )
+                r_center_y = np.array(
+                    [float(r.y) + 0.5 for r in shadow_receivers],
+                    dtype=np.float64,
+                )
+                r_vis_scale = np.array(
+                    [float(r.visual_scale) for r in shadow_receivers],
+                    dtype=np.float64,
+                )
+
+                # Build identity mask to skip self-shadowing.
+                caster_ids = [id(actors[ci]) for ci in eligible_indices_for_dimming]
+                receiver_id_map = {id(r): ri for ri, r in enumerate(shadow_receivers)}
+                identity_mask = np.zeros((n_casters, n_receivers), dtype=bool)
+                for ci, cid in enumerate(caster_ids):
+                    ri = receiver_id_map.get(cid)
+                    if ri is not None:
+                        identity_mask[ci, ri] = True
+
+                # Pairwise geometry [N_casters, D_receivers].
+                rel_x = r_center_x[np.newaxis, :] - c_center_x[:, np.newaxis]
+                rel_y = r_center_y[np.newaxis, :] - c_center_y[:, np.newaxis]
+
+                dist_along = rel_x * shadow_dir_x + rel_y * shadow_dir_y
+                dist_perp = np.abs(rel_x * shadow_dir_y - rel_y * shadow_dir_x)
+
+                height_factor = np.minimum(1.0, c_shadow_h / 4.0)
+                shadow_half_width = 0.18 + 0.22 * np.maximum(0.5, c_vis_scale)
+                receiver_radius = 0.2 + 0.18 * np.maximum(0.5, r_vis_scale)
+                lateral_limit = (
+                    shadow_half_width[:, np.newaxis] + receiver_radius[np.newaxis, :]
+                )
+
+                valid = (
+                    ~identity_mask
+                    & (dist_along > 0.0)
+                    & (dist_along < c_shadow_len[:, np.newaxis])
+                    & (dist_perp < lateral_limit)
+                )
+
+                shadow_alpha_dim = float(config.ACTOR_SHADOW_ALPHA)
+                fade_tip_dim = bool(config.ACTOR_SHADOW_FADE_TIP)
+
+                lateral_factor = np.where(valid, 1.0 - dist_perp / lateral_limit, 0.0)
+                tip_factor = np.where(
+                    valid & fade_tip_dim,
+                    1.0 - dist_along / c_shadow_len[:, np.newaxis],
+                    np.where(valid, 1.0, 0.0),
+                )
+                attenuation = (
+                    shadow_alpha_dim
+                    * height_factor[:, np.newaxis]
+                    * lateral_factor
+                    * tip_factor
+                )
+                attenuation = np.where(valid, attenuation, 0.0)
+
+                per_pair_factor = np.where(
+                    attenuation > 0.0,
+                    1.0 - np.minimum(0.95, attenuation),
+                    1.0,
+                )
+                per_receiver_scale = np.prod(per_pair_factor, axis=0)
+                per_receiver_scale = np.maximum(0.05, per_receiver_scale)
+
+                for ri, receiver in enumerate(shadow_receivers):
+                    if per_receiver_scale[ri] < 1.0 - 1e-9:
+                        self._actor_shadow_receive_light_scale[receiver] = float(
+                            per_receiver_scale[ri]
+                        )
+
+        # ------------------------------------------------------------------
+        # 6. Compute screen positions.
+        # ------------------------------------------------------------------
+        alpha_value = float(interpolation_alpha)
+        interpolated_x = np.where(
+            animation_controlled,
+            render_x,
+            prev_x * (1.0 - alpha_value) + curr_x * alpha_value,
+        )
+        interpolated_y = np.where(
+            animation_controlled,
+            render_y,
+            prev_y * (1.0 - alpha_value) + curr_y * alpha_value,
+        )
+        interpolated_x += drift_x
+        interpolated_y += drift_y
+
+        # Try vectorized coordinate transforms. When the viewport/graphics
+        # don't support batch transforms (e.g. lightweight test doubles),
+        # fall back to per-actor scalar transforms.
+        viewport_pos = self._world_to_screen_float_batch(interpolated_x, interpolated_y)
+        if viewport_pos is not None:
+            vp_x, vp_y = viewport_pos
+            cam_frac_x, cam_frac_y = self._camera_frac_offset
+            root_x_arr = self._view_origin[0] + (vp_x - float(cam_frac_x))
+            root_y_arr = self._view_origin[1] + (vp_y - float(cam_frac_y))
+            screen_pos = self._console_to_screen_coords_batch(root_x_arr, root_y_arr)
+        else:
+            screen_pos = None
+
+        if screen_pos is not None:
+            screen_x_arr, screen_y_arr = screen_pos
+        else:
+            # Per-actor scalar coordinate transforms.
+            root_x_arr = np.empty(actor_count, dtype=np.float64)
+            root_y_arr = np.empty(actor_count, dtype=np.float64)
+            screen_x_arr = np.empty(actor_count, dtype=np.float64)
+            screen_y_arr = np.empty(actor_count, dtype=np.float64)
+            for idx in np.flatnonzero(eligible_mask):
+                (
+                    _,
+                    _,
+                    root_x_arr[idx],
+                    root_y_arr[idx],
+                    screen_x_arr[idx],
+                    screen_y_arr[idx],
+                ) = self._get_actor_screen_position(actors[idx], interpolation_alpha)
+
+        # ------------------------------------------------------------------
+        # 7. Emit shadow geometry.
+        # ------------------------------------------------------------------
+        viewport_scale_x, viewport_scale_y = self._get_viewport_display_scale_factors()
+        shadow_length_pixels = shadow_length_tiles * float(tile_height)
+        shadow_alpha = float(config.ACTOR_SHADOW_ALPHA)
+        fade_tip = bool(config.ACTOR_SHADOW_FADE_TIP)
+        eligible_indices = np.flatnonzero(eligible_mask)
+
+        # Batch sprite-shadow API (WGPU). When unavailable, sprite actors
+        # fall through to _emit_actor_shadow_quads like non-sprite actors.
+        draw_sprite_shadow_batch = getattr(
+            self.graphics, "draw_sprite_shadow_batch", None
+        )
+        if not callable(draw_sprite_shadow_batch):
+            draw_sprite_shadow_batch = None
+
+        def flush_sprite_batch(batch_indices: list[int]) -> None:
+            """Emit accumulated sprite shadow quads as a single batch."""
+            if not batch_indices:
+                return
+            batch_idx = np.asarray(batch_indices, dtype=np.int32)
+
+            if draw_sprite_shadow_batch is not None:
+                draw_root_x = root_x_arr[batch_idx] + (
+                    (float(viewport_scale_x) - 1.0) * 0.5
+                )
+                draw_root_y = root_y_arr[batch_idx] + (
+                    (float(viewport_scale_y) - 1.0) * sprite_anchor_y[batch_idx]
+                )
+                sprite_screen_pos = self._console_to_screen_coords_batch(
+                    draw_root_x, draw_root_y
+                )
+                if sprite_screen_pos is not None:
+                    sprite_screen_x, sprite_screen_y = sprite_screen_pos
+                    draw_sprite_shadow_batch(
+                        sprite_uvs=sprite_uvs[batch_idx],
+                        screen_x=sprite_screen_x,
+                        screen_y=sprite_screen_y,
+                        shadow_dir_x=shadow_dir_x,
+                        shadow_dir_y=shadow_dir_y,
+                        shadow_length_pixels=shadow_length_pixels[batch_idx],
+                        shadow_alpha=shadow_alpha,
+                        scale_x=(visual_scale[batch_idx] * float(viewport_scale_x)),
+                        scale_y=(visual_scale[batch_idx] * float(viewport_scale_y)),
+                        ground_anchor_y=sprite_anchor_y[batch_idx],
+                        fade_tip=fade_tip,
+                    )
+                    return
+
+            # Per-actor emission when batch sprite API is unavailable.
+            for scalar_idx in batch_indices:
+                self._emit_actor_shadow_quads(
+                    actor=actors[scalar_idx],
+                    root_x=float(root_x_arr[scalar_idx]),
+                    root_y=float(root_y_arr[scalar_idx]),
+                    screen_x=float(screen_x_arr[scalar_idx]),
+                    screen_y=float(screen_y_arr[scalar_idx]),
+                    shadow_dir_x=shadow_dir_x,
+                    shadow_dir_y=shadow_dir_y,
+                    shadow_length_pixels=float(shadow_length_pixels[scalar_idx]),
+                    shadow_alpha=shadow_alpha,
+                    fade_tip=fade_tip,
+                )
+
+        # Walk eligible actors in order, batching consecutive sprite actors
+        # and flushing non-sprite actors individually.
+        sprite_run: list[int] = []
+        for idx_value in eligible_indices.tolist():
+            if sprite_batchable[idx_value]:
+                sprite_run.append(idx_value)
                 continue
 
-            self._accumulate_actor_shadow_receiver_dimming(
-                caster=actor,
-                receivers=shadow_receivers,
+            flush_sprite_batch(sprite_run)
+            sprite_run = []
+
+            self._emit_actor_shadow_quads(
+                actor=actors[idx_value],
+                root_x=float(root_x_arr[idx_value]),
+                root_y=float(root_y_arr[idx_value]),
+                screen_x=float(screen_x_arr[idx_value]),
+                screen_y=float(screen_y_arr[idx_value]),
                 shadow_dir_x=shadow_dir_x,
                 shadow_dir_y=shadow_dir_y,
-                shadow_length_tiles=clipped_length_tiles,
-                shadow_alpha=config.ACTOR_SHADOW_ALPHA,
-                fade_tip=config.ACTOR_SHADOW_FADE_TIP,
+                shadow_length_pixels=float(shadow_length_pixels[idx_value]),
+                shadow_alpha=shadow_alpha,
+                fade_tip=fade_tip,
             )
 
-            _, _, root_x, root_y, screen_x, screen_y = self._get_actor_screen_position(
-                actor, interpolation_alpha
-            )
-            self._emit_actor_shadow_quads(
-                actor=actor,
-                root_x=root_x,
-                root_y=root_y,
-                screen_x=screen_x,
-                screen_y=screen_y,
-                shadow_dir_x=shadow_dir_x,
-                shadow_dir_y=shadow_dir_y,
-                shadow_length_pixels=clipped_length_tiles * tile_height,
-                shadow_alpha=config.ACTOR_SHADOW_ALPHA,
-                fade_tip=config.ACTOR_SHADOW_FADE_TIP,
-            )
+        flush_sprite_batch(sprite_run)
 
     def _can_render_sun_shadow_at_tile(self, x: int, y: int) -> bool:
         """Return whether a tile should receive directional sun-projected shadows."""
@@ -395,6 +798,12 @@ class ShadowRenderer:
         using the same draw_actor_shadow() path as actors. Taller tiles (walls,
         doors) keep their shader-only tile shadows.
         """
+        # At low zoom, terrain glyph shadows (boulders etc.) are rendered at
+        # ~10px per tile - the small projected shadow shapes are imperceptible.
+        # Skip the entire terrain shadow pass to avoid scanning 16k+ tiles.
+        if self.viewport_zoom < config.LOD_DETAIL_ZOOM_THRESHOLD:
+            return
+
         if sun_params is None:
             dl = directional_light or self._frame_directional_light
             if dl is not None:
@@ -500,9 +909,10 @@ class ShadowRenderer:
             return
 
         min_shadow_length_tiles = self._get_min_rendered_actor_shadow_length_tiles()
+        lod_detail = self.viewport_zoom >= config.LOD_DETAIL_ZOOM_THRESHOLD
 
         for actor in actors:
-            shadow_height = float(getattr(actor, "shadow_height", 0))
+            shadow_height = float(actor.shadow_height)
             if shadow_height <= 0.0:
                 continue
             if shadow_height < min_shadow_length_tiles:
@@ -554,24 +964,28 @@ class ShadowRenderer:
                 dir_x /= distance
                 dir_y /= distance
 
-                clipped_length_tiles = self._clip_shadow_length_by_walls(
-                    actor.x, actor.y, dir_x, dir_y, shadow_height
-                )
-                if (
-                    clipped_length_tiles <= 0.0
-                    or clipped_length_tiles < min_shadow_length_tiles
-                ):
-                    continue
+                if lod_detail:
+                    clipped_length_tiles = self._clip_shadow_length_by_walls(
+                        actor.x, actor.y, dir_x, dir_y, shadow_height
+                    )
+                    if (
+                        clipped_length_tiles <= 0.0
+                        or clipped_length_tiles < min_shadow_length_tiles
+                    ):
+                        continue
+                else:
+                    clipped_length_tiles = shadow_height
 
-                self._accumulate_actor_shadow_receiver_dimming(
-                    caster=actor,
-                    receivers=shadow_receivers,
-                    shadow_dir_x=dir_x,
-                    shadow_dir_y=dir_y,
-                    shadow_length_tiles=clipped_length_tiles,
-                    shadow_alpha=shadow_alpha,
-                    fade_tip=config.ACTOR_SHADOW_FADE_TIP,
-                )
+                if lod_detail:
+                    self._accumulate_actor_shadow_receiver_dimming(
+                        caster=actor,
+                        receivers=shadow_receivers,
+                        shadow_dir_x=dir_x,
+                        shadow_dir_y=dir_y,
+                        shadow_length_tiles=clipped_length_tiles,
+                        shadow_alpha=shadow_alpha,
+                        fade_tip=config.ACTOR_SHADOW_FADE_TIP,
+                    )
 
                 self._emit_actor_shadow_quads(
                     actor=actor,
@@ -610,16 +1024,14 @@ class ShadowRenderer:
         Character-layer and single-glyph actors use their existing per-layer
         shadow path.
         """
-        visual_scale = getattr(actor, "visual_scale", 1.0)
+        visual_scale = actor.visual_scale
         viewport_scale_x, viewport_scale_y = self._get_viewport_display_scale_factors()
 
         # Sprite actors: prefer sprite-silhouette shadow when supported.
-        sprite_uv = getattr(actor, "sprite_uv", None)
+        sprite_uv = actor.sprite_uv
         if sprite_uv is not None:
             draw_sprite_shadow = getattr(self.graphics, "draw_sprite_shadow", None)
-            sprite_ground_anchor_y = float(
-                getattr(actor, "sprite_ground_anchor_y", 1.0)
-            )
+            sprite_ground_anchor_y = float(actor.sprite_ground_anchor_y)
             draw_root_x, draw_root_y = self._zoomed_tile_draw_origin(
                 root_x,
                 root_y,
@@ -761,19 +1173,19 @@ class ShadowRenderer:
         caster_center_y = float(caster.y) + 0.5
 
         # Taller actors should darken receivers more than shorter actors.
-        caster_shadow_height = max(0.0, float(getattr(caster, "shadow_height", 0.0)))
+        caster_shadow_height = max(0.0, float(caster.shadow_height))
         height_factor = min(1.0, caster_shadow_height / 4.0)
         if height_factor <= 0.0:
             return
 
-        caster_scale = max(0.5, float(getattr(caster, "visual_scale", 1.0)))
+        caster_scale = max(0.5, float(caster.visual_scale))
         shadow_half_width = 0.18 + 0.22 * caster_scale
 
         for receiver in receivers:
             if receiver is caster:
                 continue
 
-            receiver_scale = max(0.5, float(getattr(receiver, "visual_scale", 1.0)))
+            receiver_scale = max(0.5, float(receiver.visual_scale))
             receiver_radius = 0.2 + 0.18 * receiver_scale
             receiver_center_x = float(receiver.x) + 0.5
             receiver_center_y = float(receiver.y) + 0.5

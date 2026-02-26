@@ -127,6 +127,90 @@ def test_add_parallelogram_sets_sprite_atlas_flag() -> None:
     assert set(renderer.cpu_vertex_buffer["flags"]) == {np.uint32(2)}
 
 
+def test_add_parallelogram_batch_matches_scalar_vertices() -> None:
+    scalar_renderer = object.__new__(WGPUScreenRenderer)
+    scalar_renderer.cpu_vertex_buffer = np.zeros(12, dtype=VERTEX_DTYPE)
+    scalar_renderer.vertex_count = 0
+
+    batch_renderer = object.__new__(WGPUScreenRenderer)
+    batch_renderer.cpu_vertex_buffer = np.zeros(12, dtype=VERTEX_DTYPE)
+    batch_renderer.vertex_count = 0
+
+    corners = np.array(
+        [
+            ((1.0, 2.0), (5.0, 2.0), (3.0, 6.0), (7.0, 6.0)),
+            ((10.0, 20.0), (14.0, 20.0), (13.0, 24.0), (17.0, 24.0)),
+        ],
+        dtype=np.float32,
+    )
+    uv_coords = np.array(
+        [
+            (0.1, 0.2, 0.3, 0.4),
+            (0.5, 0.6, 0.7, 0.8),
+        ],
+        dtype=np.float32,
+    )
+    base_colors = np.array(
+        [
+            (0.0, 0.0, 0.0, 0.5),
+            (0.0, 0.0, 0.0, 0.25),
+        ],
+        dtype=np.float32,
+    )
+    tip_colors = np.array(
+        [
+            (0.0, 0.0, 0.0, 0.0),
+            (0.0, 0.0, 0.0, 0.1),
+        ],
+        dtype=np.float32,
+    )
+    flags = np.array([np.uint32(0), np.uint32(2)], dtype=np.uint32)
+    vertex_colors = np.array(
+        [
+            (
+                (0.0, 0.0, 0.0, 0.5),
+                (0.0, 0.0, 0.0, 0.0),
+                (0.0, 0.0, 0.0, 0.5),
+                (0.0, 0.0, 0.0, 0.0),
+            ),
+            (
+                (0.0, 0.0, 0.0, 0.1),
+                (0.0, 0.0, 0.0, 0.25),
+                (0.0, 0.0, 0.0, 0.1),
+                (0.0, 0.0, 0.0, 0.25),
+            ),
+        ],
+        dtype=np.float32,
+    )
+
+    for idx in range(2):
+        scalar_renderer.add_parallelogram(
+            corners=tuple(tuple(float(v) for v in point) for point in corners[idx]),
+            uv_coords=tuple(float(v) for v in uv_coords[idx]),
+            base_color=tuple(float(v) for v in base_colors[idx]),
+            tip_color=tuple(float(v) for v in tip_colors[idx]),
+            vertex_colors=tuple(
+                tuple(float(v) for v in color) for color in vertex_colors[idx]
+            ),
+            use_sprite_atlas=bool(flags[idx] == np.uint32(2)),
+        )
+
+    batch_renderer.add_parallelogram_batch(
+        corners=corners,
+        uv_coords=uv_coords,
+        base_colors=base_colors,
+        tip_colors=tip_colors,
+        flags=flags,
+        vertex_colors=vertex_colors,
+    )
+
+    assert batch_renderer.vertex_count == scalar_renderer.vertex_count == 12
+    np.testing.assert_array_equal(
+        batch_renderer.cpu_vertex_buffer[:12],
+        scalar_renderer.cpu_vertex_buffer[:12],
+    )
+
+
 def test_shadow_geometry_sun() -> None:
     graphics = object.__new__(WGPUGraphicsContext)
     graphics._tile_dimensions = (16, 24)
@@ -168,6 +252,83 @@ def test_shadow_geometry_sun() -> None:
     assert vertex_colors[1] == tip_color  # far-bottom: faded
     assert vertex_colors[2] == base_color  # near-top: opaque
     assert vertex_colors[3] == tip_color  # far-top: faded
+
+
+def test_draw_sprite_shadow_batch_matches_scalar_vertices() -> None:
+    scalar_screen_renderer = object.__new__(WGPUScreenRenderer)
+    scalar_screen_renderer.cpu_vertex_buffer = np.zeros(18, dtype=VERTEX_DTYPE)
+    scalar_screen_renderer.vertex_count = 0
+
+    batch_screen_renderer = object.__new__(WGPUScreenRenderer)
+    batch_screen_renderer.cpu_vertex_buffer = np.zeros(18, dtype=VERTEX_DTYPE)
+    batch_screen_renderer.vertex_count = 0
+
+    scalar_graphics = object.__new__(WGPUGraphicsContext)
+    scalar_graphics._tile_dimensions = (16, 24)
+    scalar_graphics.screen_renderer = scalar_screen_renderer
+
+    batch_graphics = object.__new__(WGPUGraphicsContext)
+    batch_graphics._tile_dimensions = (16, 24)
+    batch_graphics.screen_renderer = batch_screen_renderer
+
+    sprite_uvs = np.array(
+        [
+            (0.1, 0.2, 0.3, 0.4),
+            (0.0, 0.0, 1.0, 1.0),
+            (0.25, 0.5, 0.75, 1.0),
+        ],
+        dtype=np.float32,
+    )
+    screen_x = np.array([100.0, 150.0, 220.0], dtype=np.float32)
+    screen_y = np.array([200.0, 240.0, 260.0], dtype=np.float32)
+    shadow_lengths = np.array([30.0, 18.0, 42.0], dtype=np.float32)
+    shadow_alpha = np.array([0.35, 0.2, 0.5], dtype=np.float32)
+    scale_x = np.array([1.0, 1.3, 0.8], dtype=np.float32)
+    scale_y = np.array([1.0, 1.1, 0.9], dtype=np.float32)
+    ground_anchor_y = np.array([1.0, 0.62, 0.8], dtype=np.float32)
+
+    for idx in range(3):
+        uv = sprite_uvs[idx]
+        scalar_graphics.draw_sprite_shadow(
+            sprite_uv=SpriteUV(
+                float(uv[0]),
+                float(uv[1]),
+                float(uv[2]),
+                float(uv[3]),
+            ),
+            screen_x=float(screen_x[idx]),
+            screen_y=float(screen_y[idx]),
+            shadow_dir_x=1.0,
+            shadow_dir_y=0.0,
+            shadow_length_pixels=float(shadow_lengths[idx]),
+            shadow_alpha=float(shadow_alpha[idx]),
+            scale_x=float(scale_x[idx]),
+            scale_y=float(scale_y[idx]),
+            ground_anchor_y=float(ground_anchor_y[idx]),
+            fade_tip=True,
+        )
+
+    batch_graphics.draw_sprite_shadow_batch(
+        sprite_uvs=sprite_uvs,
+        screen_x=screen_x,
+        screen_y=screen_y,
+        shadow_dir_x=1.0,
+        shadow_dir_y=0.0,
+        shadow_length_pixels=shadow_lengths,
+        shadow_alpha=shadow_alpha,
+        scale_x=scale_x,
+        scale_y=scale_y,
+        ground_anchor_y=ground_anchor_y,
+        fade_tip=True,
+    )
+
+    assert (
+        batch_screen_renderer.vertex_count == scalar_screen_renderer.vertex_count == 18
+    )
+    np.testing.assert_array_equal(
+        batch_screen_renderer.cpu_vertex_buffer[:18],
+        scalar_screen_renderer.cpu_vertex_buffer[:18],
+    )
 
 
 def test_shadow_geometry_horizontal_direction_preserves_area() -> None:

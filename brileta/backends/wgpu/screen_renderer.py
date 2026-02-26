@@ -578,6 +578,105 @@ class WGPUScreenRenderer:
         self.cpu_vertex_buffer[self.vertex_count : self.vertex_count + 6] = vertices
         self.vertex_count += 6
 
+    def add_parallelogram_batch(
+        self,
+        corners: np.ndarray,
+        uv_coords: np.ndarray,
+        base_colors: np.ndarray,
+        tip_colors: np.ndarray,
+        flags: np.ndarray,
+        *,
+        vertex_colors: np.ndarray | None = None,
+    ) -> None:
+        """Add multiple projected shadow parallelograms in one buffer write.
+
+        This mirrors :meth:`add_parallelogram` exactly (same corner order, UV
+        mapping, triangle winding, defaults, and shader flags) but avoids the
+        per-quad ``np.zeros(...)`` allocation and tuple packing overhead in the
+        hot shadow rendering path.
+        """
+        quad_count = len(corners)
+        if quad_count <= 0:
+            return
+
+        remaining_vertices = len(self.cpu_vertex_buffer) - self.vertex_count
+        max_quads = remaining_vertices // 6
+        if max_quads <= 0:
+            return
+        if quad_count > max_quads:
+            quad_count = max_quads
+            corners = corners[:quad_count]
+            uv_coords = uv_coords[:quad_count]
+            base_colors = base_colors[:quad_count]
+            tip_colors = tip_colors[:quad_count]
+            flags = flags[:quad_count]
+            if vertex_colors is not None:
+                vertex_colors = vertex_colors[:quad_count]
+
+        start = self.vertex_count
+        end = start + (quad_count * 6)
+        vertices = self.cpu_vertex_buffer[start:end].reshape((quad_count, 6))
+
+        # Corner order in the two triangles: BL, BR, TL, BR, TL, TR.
+        vertices["position"][:, 0] = corners[:, 0]
+        vertices["position"][:, 1] = corners[:, 1]
+        vertices["position"][:, 2] = corners[:, 2]
+        vertices["position"][:, 3] = corners[:, 1]
+        vertices["position"][:, 4] = corners[:, 2]
+        vertices["position"][:, 5] = corners[:, 3]
+
+        u1 = uv_coords[:, 0]
+        v1 = uv_coords[:, 1]
+        u2 = uv_coords[:, 2]
+        v2 = uv_coords[:, 3]
+        vertices["uv"][:, 0, 0] = u1
+        vertices["uv"][:, 0, 1] = v2
+        vertices["uv"][:, 1, 0] = u2
+        vertices["uv"][:, 1, 1] = v2
+        vertices["uv"][:, 2, 0] = u1
+        vertices["uv"][:, 2, 1] = v1
+        vertices["uv"][:, 3, 0] = u2
+        vertices["uv"][:, 3, 1] = v2
+        vertices["uv"][:, 4, 0] = u1
+        vertices["uv"][:, 4, 1] = v1
+        vertices["uv"][:, 5, 0] = u2
+        vertices["uv"][:, 5, 1] = v1
+
+        local_uv = np.array(
+            [
+                (0.0, 1.0),
+                (1.0, 1.0),
+                (0.0, 0.0),
+                (1.0, 1.0),
+                (0.0, 0.0),
+                (1.0, 0.0),
+            ],
+            dtype=np.float32,
+        )
+        vertices["uv_local"][:] = local_uv[np.newaxis, :, :]
+
+        if vertex_colors is not None:
+            vertices["color"][:, 0] = vertex_colors[:, 0]
+            vertices["color"][:, 1] = vertex_colors[:, 1]
+            vertices["color"][:, 2] = vertex_colors[:, 2]
+            vertices["color"][:, 3] = vertex_colors[:, 1]
+            vertices["color"][:, 4] = vertex_colors[:, 2]
+            vertices["color"][:, 5] = vertex_colors[:, 3]
+        else:
+            vertices["color"][:, 0] = base_colors
+            vertices["color"][:, 1] = base_colors
+            vertices["color"][:, 2] = tip_colors
+            vertices["color"][:, 3] = base_colors
+            vertices["color"][:, 4] = tip_colors
+            vertices["color"][:, 5] = tip_colors
+
+        vertices["world_pos"][:] = (-1.0, -1.0)
+        vertices["actor_light_scale"][:] = 1.0
+        vertices["flags"][:] = flags[:, np.newaxis]
+        vertices["tile_bg"][:] = (0.0, 0.0, 0.0)
+
+        self.vertex_count = end
+
     def render_to_screen(
         self,
         render_pass: wgpu.GPURenderPassEncoder,

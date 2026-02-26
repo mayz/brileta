@@ -551,6 +551,10 @@ class WorldView(View):
             round(float(vs.camera.world_y), 6),
         )
 
+        # Include LOD state so crossing the detail threshold invalidates the
+        # cached buffer (tiles render differently with/without decoration).
+        lod_detail = self._viewport_zoom >= config.LOD_DETAIL_ZOOM_THRESHOLD
+
         return (
             id(self.map_glyph_buffer),
             buf_width,
@@ -571,6 +575,7 @@ class WorldView(View):
             player_building_id,
             roof_buildings_key,
             self._get_sun_direction_cache_key(),
+            lod_detail,
         )
 
     def draw(self, graphics: GraphicsContext, alpha: InterpolationAlpha) -> None:
@@ -844,6 +849,7 @@ class WorldView(View):
             self.shadow_renderer.game_map = self.controller.gw.game_map
             self.shadow_renderer.viewport_system = self.viewport_system
             self.shadow_renderer.graphics = graphics
+            self.shadow_renderer.viewport_zoom = self._viewport_zoom
             self.shadow_renderer.render_actor_shadows(
                 alpha,
                 visible_actors=visible_actors_for_frame,
@@ -1524,17 +1530,20 @@ class WorldView(View):
         fg_rgb = dark_app["fg"]  # Shape: (N, 3)
         bg_rgb = dark_app["bg"]  # Shape: (N, 3)
 
-        # Apply per-tile glyph and color decoration for terrain variety
+        # Apply per-tile glyph and color decoration for terrain variety.
+        # At low zoom (below LOD threshold), tiles are too small for glyph
+        # variation and color jitter to be visible - skip the work.
         unlit_tile_ids = game_map.tiles[final_world_x, final_world_y]
-        tile_types.apply_terrain_decoration(
-            chars,
-            fg_rgb,
-            bg_rgb,
-            unlit_tile_ids,
-            final_world_x,
-            final_world_y,
-            game_map.decoration_seed,
-        )
+        if self._viewport_zoom >= config.LOD_DETAIL_ZOOM_THRESHOLD:
+            tile_types.apply_terrain_decoration(
+                chars,
+                fg_rgb,
+                bg_rgb,
+                unlit_tile_ids,
+                final_world_x,
+                final_world_y,
+                game_map.decoration_seed,
+            )
         effective_unlit_tile_ids = self._apply_roof_substitution(
             chars,
             fg_rgb,
@@ -1564,13 +1573,16 @@ class WorldView(View):
         self.map_glyph_buffer.data["noise_pattern"][final_buf_x, final_buf_y] = (
             tile_types.get_sub_tile_pattern_map(effective_unlit_tile_ids)
         )
-        self._apply_tile_edge_transition_data(
-            glyph_buffer=self.map_glyph_buffer,
-            final_buf_x=final_buf_x,
-            final_buf_y=final_buf_y,
-            tile_ids=effective_unlit_tile_ids,
-            decorated_bg_rgb=bg_rgb,
-        )
+        # Edge transitions create organic feathering between terrain types.
+        # At low zoom, tiles are too small for the blending to be visible.
+        if self._viewport_zoom >= config.LOD_DETAIL_ZOOM_THRESHOLD:
+            self._apply_tile_edge_transition_data(
+                glyph_buffer=self.map_glyph_buffer,
+                final_buf_x=final_buf_x,
+                final_buf_y=final_buf_y,
+                tile_ids=effective_unlit_tile_ids,
+                decorated_bg_rgb=bg_rgb,
+            )
         self._map_unlit_buffer_cache_key = cache_key
 
     def _get_directional_light(self) -> DirectionalLight | None:
@@ -1975,6 +1987,10 @@ class WorldView(View):
             max(0, bounds.y1),
             min(gw.game_map.height - 1, bounds.y2),
         )
+        # Include player_building_id so entering/exiting a building invalidates
+        # the cached roof overlay. At low zoom the viewport can cover the entire
+        # map, making the viewport bounds constant and insufficient for invalidation.
+        player_building_id, _viewport_buildings = self._compute_roof_state()
         cache_key = (
             world_left,
             world_top,
@@ -1982,6 +1998,8 @@ class WorldView(View):
             world_bottom,
             getattr(gw.game_map, "structural_revision", 0),
             self._get_sun_direction_cache_key(),
+            self._viewport_zoom >= config.LOD_DETAIL_ZOOM_THRESHOLD,
+            player_building_id,
         )
         dest_width = world_right - world_left + 1
         dest_height = world_bottom - world_top + 1
@@ -2118,18 +2136,20 @@ class WorldView(View):
                     # Apply per-tile glyph and color decoration for terrain variety.
                     # valid_exp_x/y are offsets within the world slice, so add back
                     # world_left/world_top to get true world coordinates for the hash.
+                    # At low zoom, tiles are too small for decoration to be visible.
                     world_tile_ids = gw.game_map.tiles[world_slice][
                         valid_exp_x, valid_exp_y
                     ]
-                    tile_types.apply_terrain_decoration(
-                        light_chars,
-                        light_fg_rgb,
-                        light_bg_rgb,
-                        world_tile_ids,
-                        valid_exp_x + world_left,
-                        valid_exp_y + world_top,
-                        gw.game_map.decoration_seed,
-                    )
+                    if self._viewport_zoom >= config.LOD_DETAIL_ZOOM_THRESHOLD:
+                        tile_types.apply_terrain_decoration(
+                            light_chars,
+                            light_fg_rgb,
+                            light_bg_rgb,
+                            world_tile_ids,
+                            valid_exp_x + world_left,
+                            valid_exp_y + world_top,
+                            gw.game_map.decoration_seed,
+                        )
                     effective_world_tile_ids = self._apply_roof_substitution(
                         light_chars,
                         light_fg_rgb,
@@ -2199,13 +2219,14 @@ class WorldView(View):
                     light_source_buffer.data["noise_pattern"][
                         final_buf_x, final_buf_y
                     ] = tile_types.get_sub_tile_pattern_map(effective_world_tile_ids)
-                    self._apply_tile_edge_transition_data(
-                        glyph_buffer=light_source_buffer,
-                        final_buf_x=final_buf_x,
-                        final_buf_y=final_buf_y,
-                        tile_ids=effective_world_tile_ids,
-                        decorated_bg_rgb=light_bg_rgb,
-                    )
+                    if self._viewport_zoom >= config.LOD_DETAIL_ZOOM_THRESHOLD:
+                        self._apply_tile_edge_transition_data(
+                            glyph_buffer=light_source_buffer,
+                            final_buf_x=final_buf_x,
+                            final_buf_y=final_buf_y,
+                            tile_ids=effective_world_tile_ids,
+                            decorated_bg_rgb=light_bg_rgb,
+                        )
 
                     self._light_buffer_cached_buf_x = final_buf_x
                     self._light_buffer_cached_buf_y = final_buf_y

@@ -50,6 +50,12 @@ TILE_ZOOM: float = 1.0
 ZOOM_STOPS: tuple[float, ...] = (0.5, 0.6, 0.7, 0.85, 1.0, 1.2, 1.5, 2.0)
 DEFAULT_ZOOM_INDEX: int = 4
 
+# Level-of-detail threshold for zoom-dependent rendering.
+# Below this zoom, tiles are 16px or smaller and fine detail (terrain glyph
+# variation, color jitter, edge feathering, shadow wall-clipping) is
+# imperceptible. Expensive detail work is skipped at lower zoom stops.
+LOD_DETAIL_ZOOM_THRESHOLD: float = 0.8
+
 # Safety floor for dynamic console dimensions after DPI + zoom are applied.
 # If a requested TILE_ZOOM would shrink below this, the renderer reduces the
 # effective zoom until these minimums are met.
@@ -87,7 +93,7 @@ BACKEND = BackendConfig.WGPU
 # These are independent flags to control debugging features.
 
 # Set to True for uncapped FPS to identify performance bottlenecks.
-PERFORMANCE_PROFILING = False
+PERFORMANCE_PROFILING = True
 
 # Set to True to print metrics about the "tap vs. hold" input system.
 # This measures the real-world time between player-perceived moves, which is

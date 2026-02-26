@@ -173,6 +173,8 @@ class TestWorldViewLightOverlay:
         mock_gw.game_map.animation_state = np.zeros((1, 1), dtype=TileAnimationState)
         mock_gw.player.x = 0
         mock_gw.player.y = 0
+        mock_gw.buildings = []
+        mock_gw.game_map.get_region_at.return_value = None
 
         mock_viewport_system = Mock()
         mock_viewport_system.get_visible_bounds.return_value = Rect(0, 0, 1, 1)
