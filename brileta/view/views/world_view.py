@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -223,6 +224,7 @@ class WorldView(View):
         self.set_bounds(0, 0, DEFAULT_VIEWPORT_WIDTH, DEFAULT_VIEWPORT_HEIGHT)
         # Light source buffer cache: skip full rebuild when viewport and exploration
         # haven't changed since the last frame.
+        self._map_unlit_buffer_cache_key: tuple[object, ...] | None = None
         self._light_buffer_cache_key: tuple[object, ...] | None = None
         # Pre-animation colors and index metadata for animated tiles in the cached
         # light-source buffer. This lets us re-apply animation without rebuilding.
@@ -320,6 +322,7 @@ class WorldView(View):
             visible_width + 2 * pad, visible_height + 2 * pad
         )
         # Force a full light-source rebuild after buffer resize.
+        self._map_unlit_buffer_cache_key = None
         self._light_buffer_cache_key = None
         self._light_buffer_anim_base_fg = None
         self._light_buffer_anim_base_bg = None
@@ -479,6 +482,96 @@ class WorldView(View):
         sun_key = self._get_sun_direction_cache_key()
 
         return (bounds_key, map_key, exploration_key, player_pos_key, sun_key)
+
+    @staticmethod
+    def _hash_array_view(array: np.ndarray) -> bytes:
+        """Return a stable digest for a NumPy array view used in render cache keys."""
+        if array.size == 0:
+            return b""
+
+        # Use the array's logical layout (`order="A"`) so equivalent slices hash
+        # the same regardless of contiguous/strided backing storage.
+        return hashlib.blake2b(array.tobytes(order="A"), digest_size=16).digest()
+
+    def _get_map_unlit_buffer_cache_key(self) -> tuple[object, ...]:
+        """Return a cache key for `_render_map_unlit()` GlyphBuffer contents."""
+        gw = self.controller.gw
+        game_map = gw.game_map
+        vs = self.viewport_system
+        pad = self._SCROLL_PADDING
+
+        bounds = vs.viewport.get_world_bounds(vs.camera)
+        world_origin_x = bounds.x1 - vs.offset_x - pad
+        world_origin_y = bounds.y1 - vs.offset_y - pad
+        buf_width = self.map_glyph_buffer.width
+        buf_height = self.map_glyph_buffer.height
+
+        world_x1 = max(0, world_origin_x)
+        world_y1 = max(0, world_origin_y)
+        world_x2 = min(game_map.width, world_origin_x + buf_width)
+        world_y2 = min(game_map.height, world_origin_y + buf_height)
+        if world_x1 < world_x2 and world_y1 < world_y2:
+            explored_window = game_map.explored[world_x1:world_x2, world_y1:world_y2]
+            explored_key: tuple[object, ...] = (
+                world_x1,
+                world_y1,
+                world_x2,
+                world_y2,
+                self._hash_array_view(explored_window),
+            )
+        else:
+            explored_key = (world_x1, world_y1, world_x2, world_y2, b"")
+
+        # Roof substitution changes the unlit terrain pass based on player position,
+        # visible buildings, and directional light (ridge shading).
+        player_building_id, viewport_buildings = self._compute_roof_state()
+        roof_buildings_key = tuple(
+            (
+                int(building.id),
+                int(building.footprint.x1),
+                int(building.footprint.y1),
+                int(building.footprint.x2),
+                int(building.footprint.y2),
+                str(building.roof_style),
+                tuple((int(x), int(y)) for x, y in building.door_positions),
+                (
+                    None
+                    if building.chimney_offset is None
+                    else (
+                        int(building.chimney_offset[0]),
+                        int(building.chimney_offset[1]),
+                    )
+                ),
+            )
+            for building in viewport_buildings
+        )
+
+        camera_pos_key = (
+            round(float(vs.camera.world_x), 6),
+            round(float(vs.camera.world_y), 6),
+        )
+
+        return (
+            id(self.map_glyph_buffer),
+            buf_width,
+            buf_height,
+            int(world_origin_x),
+            int(world_origin_y),
+            int(game_map.width),
+            int(game_map.height),
+            int(vs.offset_x),
+            int(vs.offset_y),
+            camera_pos_key,
+            int(getattr(game_map, "structural_revision", 0)),
+            int(game_map.decoration_seed),
+            id(game_map.dark_appearance_map),
+            explored_key,
+            getattr(getattr(gw, "player", None), "x", None),
+            getattr(getattr(gw, "player", None), "y", None),
+            player_building_id,
+            roof_buildings_key,
+            self._get_sun_direction_cache_key(),
+        )
 
     def draw(self, graphics: GraphicsContext, alpha: InterpolationAlpha) -> None:
         """Main drawing method for the world view."""
@@ -1372,6 +1465,10 @@ class WorldView(View):
         pad = self._SCROLL_PADDING
         game_map = gw.game_map
 
+        cache_key = self._get_map_unlit_buffer_cache_key()
+        if cache_key == self._map_unlit_buffer_cache_key:
+            return
+
         # Clear the console for this view to a default black background.
         self.map_glyph_buffer.clear()
 
@@ -1410,6 +1507,7 @@ class WorldView(View):
         explored_mask = game_map.explored[valid_world_x, valid_world_y]
 
         if not np.any(explored_mask):
+            self._map_unlit_buffer_cache_key = cache_key
             return
 
         # Get final coordinates for explored tiles
@@ -1473,6 +1571,7 @@ class WorldView(View):
             tile_ids=effective_unlit_tile_ids,
             decorated_bg_rgb=bg_rgb,
         )
+        self._map_unlit_buffer_cache_key = cache_key
 
     def _get_directional_light(self) -> DirectionalLight | None:
         """Return the first directional/global sun light active in the world."""

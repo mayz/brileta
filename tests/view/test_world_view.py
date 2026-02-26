@@ -169,6 +169,75 @@ class TestSunDirectionPropagation:
         view.graphics.set_sun_direction.assert_called_once_with(0.0, 0.0)
 
 
+class TestMapUnlitDirtyTracking:
+    """Tests for `_render_map_unlit()` GlyphBuffer dirty tracking."""
+
+    def test_skips_rebuild_when_viewport_output_is_unchanged(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from brileta.util.glyph_buffer import GlyphBuffer
+
+        tiles = np.full((6, 6), TileTypeID.GRASS, dtype=np.uint8)
+        explored = np.zeros((6, 6), dtype=bool)
+        explored[0:3, 0:3] = True
+        dark_appearance_map = tile_types.get_dark_appearance_map(tiles)
+        game_map = SimpleNamespace(
+            width=6,
+            height=6,
+            tiles=tiles,
+            explored=explored,
+            dark_appearance_map=dark_appearance_map,
+            decoration_seed=123,
+            structural_revision=7,
+            exploration_revision=10,
+        )
+
+        view = object.__new__(WorldView)
+        view._SCROLL_PADDING = 1
+        view._map_unlit_buffer_cache_key = None
+        view.map_glyph_buffer = GlyphBuffer(4, 4)
+        view.controller = SimpleNamespace(
+            gw=SimpleNamespace(
+                game_map=game_map,
+                player=SimpleNamespace(x=2, y=2),
+            )
+        )
+        view.viewport_system = SimpleNamespace(
+            offset_x=0,
+            offset_y=0,
+            camera=SimpleNamespace(world_x=1.25, world_y=1.75),
+            viewport=SimpleNamespace(
+                get_world_bounds=lambda _camera: SimpleNamespace(x1=0, y1=0, x2=2, y2=2)
+            ),
+        )
+        view._compute_roof_state = lambda: (None, [])
+        view._get_sun_direction_cache_key = lambda: None
+        view._apply_roof_substitution = (
+            lambda chars, fg_rgb, bg_rgb, tile_ids, *_args, **_kwargs: tile_ids
+        )
+        view._apply_tile_edge_transition_data = Mock()
+
+        monkeypatch.setattr(
+            tile_types, "apply_terrain_decoration", lambda *args, **kwargs: None
+        )
+
+        original_clear = view.map_glyph_buffer.clear
+        clear_mock = Mock(wraps=original_clear)
+        view.map_glyph_buffer.clear = clear_mock
+
+        view._render_map_unlit()
+        assert clear_mock.call_count == 1
+
+        # Change exploration outside the rendered padded viewport slice only.
+        game_map.explored[5, 5] = True
+        game_map.exploration_revision += 1
+
+        view._render_map_unlit()
+
+        # The second call should return before clearing/refilling the buffer.
+        assert clear_mock.call_count == 1
+
+
 class TestTileEdgeTransitionMetadata:
     """Tests for vectorized organic tile edge metadata generation."""
 
