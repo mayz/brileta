@@ -234,10 +234,17 @@ class WorldView(View):
         # Cached buffer coordinates for all explored tiles and visible subset.
         self._light_buffer_cached_buf_x: np.ndarray | None = None
         self._light_buffer_cached_buf_y: np.ndarray | None = None
+        self._light_buffer_cached_exp_x: np.ndarray | None = None
+        self._light_buffer_cached_exp_y: np.ndarray | None = None
+        self._light_buffer_cached_roof_covered_mask: np.ndarray | None = None
         self._light_buffer_cached_vis_buf_x: np.ndarray | None = None
         self._light_buffer_cached_vis_buf_y: np.ndarray | None = None
         self._light_buffer_cached_roof_opaque_buf_x: np.ndarray | None = None
         self._light_buffer_cached_roof_opaque_buf_y: np.ndarray | None = None
+        # Track a viewport-local explored snapshot so global exploration changes
+        # only invalidate the expensive cache when this viewport actually changes.
+        self._light_buffer_cached_exploration_revision: int = -1
+        self._light_buffer_cached_explored_mask: np.ndarray | None = None
         # Persistent visible mask buffer to avoid per-frame allocation.
         self._visible_mask_buffer: np.ndarray | None = None
         self._roof_state_cache_key: tuple[object, ...] | None = None
@@ -321,10 +328,15 @@ class WorldView(View):
         self._light_buffer_anim_exp_y = None
         self._light_buffer_cached_buf_x = None
         self._light_buffer_cached_buf_y = None
+        self._light_buffer_cached_exp_x = None
+        self._light_buffer_cached_exp_y = None
+        self._light_buffer_cached_roof_covered_mask = None
         self._light_buffer_cached_vis_buf_x = None
         self._light_buffer_cached_vis_buf_y = None
         self._light_buffer_cached_roof_opaque_buf_x = None
         self._light_buffer_cached_roof_opaque_buf_y = None
+        self._light_buffer_cached_exploration_revision = -1
+        self._light_buffer_cached_explored_mask = None
         self._visible_mask_buffer = None
         self._active_background_texture = None
         self._light_overlay_texture = None
@@ -1749,6 +1761,82 @@ class WorldView(View):
         anim_bg = base_bg + bg_var * bg_vals // 1000 - bg_var // 2
         light_bg_rgb[anim_indices] = np.clip(anim_bg, 0, 255).astype(np.uint8)
 
+    def _can_reuse_light_source_buffer_cache(
+        self,
+        cache_key: tuple[object, ...],
+        explored_mask_slice: np.ndarray,
+        exploration_revision: int,
+    ) -> bool:
+        """Return whether cached light-source tile data is still valid.
+
+        Global exploration revision changes often, but the expensive rebuild is only
+        needed when the explored state inside the current viewport changes.
+        """
+        if cache_key != self._light_buffer_cache_key:
+            return False
+        if self._light_buffer_cached_exploration_revision == exploration_revision:
+            return True
+        cached_explored_mask = self._light_buffer_cached_explored_mask
+        if cached_explored_mask is None:
+            return False
+        if cached_explored_mask.shape != explored_mask_slice.shape:
+            return False
+        if not np.array_equal(cached_explored_mask, explored_mask_slice):
+            return False
+
+        # Exploration changed elsewhere on the map, but not inside this viewport.
+        self._light_buffer_cached_exploration_revision = exploration_revision
+        return True
+
+    def _populate_light_overlay_visible_mask_from_cache(
+        self,
+        visible_mask_buffer: np.ndarray,
+        visible_mask_slice: np.ndarray,
+    ) -> None:
+        """Update the compose-visible mask from cached tile coordinates.
+
+        Tile appearance data stays cached, but visibility/FOV can change every frame
+        as the player moves. Recomputing only this mask avoids a full tile rebuild.
+        """
+        if (
+            self._light_buffer_cached_roof_opaque_buf_x is not None
+            and self._light_buffer_cached_roof_opaque_buf_y is not None
+        ):
+            visible_mask_buffer[
+                self._light_buffer_cached_roof_opaque_buf_x,
+                self._light_buffer_cached_roof_opaque_buf_y,
+            ] = _LIGHT_OVERLAY_MASK_ROOF_SUNLIT
+
+        cached_buf_x = self._light_buffer_cached_buf_x
+        cached_buf_y = self._light_buffer_cached_buf_y
+        cached_exp_x = self._light_buffer_cached_exp_x
+        cached_exp_y = self._light_buffer_cached_exp_y
+        if (
+            cached_buf_x is None
+            or cached_buf_y is None
+            or cached_exp_x is None
+            or cached_exp_y is None
+        ):
+            self._light_buffer_cached_vis_buf_x = None
+            self._light_buffer_cached_vis_buf_y = None
+            return
+
+        visible_now = visible_mask_slice[cached_exp_x, cached_exp_y]
+        roof_covered_mask = self._light_buffer_cached_roof_covered_mask
+        if roof_covered_mask is not None:
+            visible_now = visible_now & ~roof_covered_mask
+
+        if not np.any(visible_now):
+            self._light_buffer_cached_vis_buf_x = None
+            self._light_buffer_cached_vis_buf_y = None
+            return
+
+        vis_buf_x = cached_buf_x[visible_now]
+        vis_buf_y = cached_buf_y[visible_now]
+        visible_mask_buffer[vis_buf_x, vis_buf_y] = _LIGHT_OVERLAY_MASK_VISIBLE
+        self._light_buffer_cached_vis_buf_x = vis_buf_x
+        self._light_buffer_cached_vis_buf_y = vis_buf_y
+
     @record_time_live_variable("time.render.light_overlay_ms")
     def _render_light_overlay_gpu_compose(
         self,
@@ -1793,10 +1881,7 @@ class WorldView(View):
             world_top,
             world_right,
             world_bottom,
-            gw.game_map.exploration_revision,
             getattr(gw.game_map, "structural_revision", 0),
-            getattr(getattr(gw, "player", None), "x", None),
-            getattr(getattr(gw, "player", None), "y", None),
             self._get_sun_direction_cache_key(),
         )
         dest_width = world_right - world_left + 1
@@ -1843,23 +1928,18 @@ class WorldView(View):
             slice(world_left, world_right + 1),
             slice(world_top, world_bottom + 1),
         )
-        if cache_key == self._light_buffer_cache_key:
-            if (
-                self._light_buffer_cached_roof_opaque_buf_x is not None
-                and self._light_buffer_cached_roof_opaque_buf_y is not None
-            ):
-                visible_mask_buffer[
-                    self._light_buffer_cached_roof_opaque_buf_x,
-                    self._light_buffer_cached_roof_opaque_buf_y,
-                ] = _LIGHT_OVERLAY_MASK_ROOF_SUNLIT
-            if (
-                self._light_buffer_cached_vis_buf_x is not None
-                and self._light_buffer_cached_vis_buf_y is not None
-            ):
-                visible_mask_buffer[
-                    self._light_buffer_cached_vis_buf_x,
-                    self._light_buffer_cached_vis_buf_y,
-                ] = _LIGHT_OVERLAY_MASK_VISIBLE
+        exploration_revision = int(gw.game_map.exploration_revision)
+        explored_mask_slice = gw.game_map.explored[world_slice]
+        visible_mask_slice = gw.game_map.visible[world_slice]
+        if self._can_reuse_light_source_buffer_cache(
+            cache_key,
+            explored_mask_slice,
+            exploration_revision,
+        ):
+            self._populate_light_overlay_visible_mask_from_cache(
+                visible_mask_buffer,
+                visible_mask_slice,
+            )
 
             if self._light_buffer_anim_buf_indices is not None:
                 anim_base_fg = self._light_buffer_anim_base_fg
@@ -1904,13 +1984,16 @@ class WorldView(View):
             self._light_buffer_anim_exp_y = None
             self._light_buffer_cached_buf_x = None
             self._light_buffer_cached_buf_y = None
+            self._light_buffer_cached_exp_x = None
+            self._light_buffer_cached_exp_y = None
+            self._light_buffer_cached_roof_covered_mask = None
             self._light_buffer_cached_vis_buf_x = None
             self._light_buffer_cached_vis_buf_y = None
             self._light_buffer_cached_roof_opaque_buf_x = None
             self._light_buffer_cached_roof_opaque_buf_y = None
+            self._light_buffer_cached_exploration_revision = exploration_revision
+            self._light_buffer_cached_explored_mask = explored_mask_slice.copy()
 
-            explored_mask_slice = gw.game_map.explored[world_slice]
-            visible_mask_slice = gw.game_map.visible[world_slice]
             if np.any(explored_mask_slice):
                 light_app_slice = gw.game_map.light_appearance_map[world_slice]
                 exp_x, exp_y = np.nonzero(explored_mask_slice)
@@ -2027,6 +2110,9 @@ class WorldView(View):
 
                     self._light_buffer_cached_buf_x = final_buf_x
                     self._light_buffer_cached_buf_y = final_buf_y
+                    self._light_buffer_cached_exp_x = valid_exp_x
+                    self._light_buffer_cached_exp_y = valid_exp_y
+                    self._light_buffer_cached_roof_covered_mask = roof_covered_mask
                     if np.any(roof_covered_mask):
                         roof_buf_x = final_buf_x[roof_covered_mask]
                         roof_buf_y = final_buf_y[roof_covered_mask]
