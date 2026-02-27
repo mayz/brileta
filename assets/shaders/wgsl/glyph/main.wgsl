@@ -19,6 +19,12 @@ struct VertexInput {
     @location(9) in_edge_neighbor_bg_1: vec3<f32>,
     @location(10) in_edge_neighbor_bg_2: vec3<f32>,
     @location(11) in_edge_neighbor_bg_3: vec3<f32>,
+    // Sub-tile split for perspective offset boundary tiles
+    @location(12) in_split_y: f32,
+    @location(13) in_split_bg_color: vec4<f32>,
+    @location(14) in_split_fg_color: vec4<f32>,
+    @location(15) in_split_noise_amplitude: f32,
+    @location(16) in_split_noise_pattern: u32,
 }
 
 // Vertex output / Fragment input structure
@@ -36,6 +42,12 @@ struct VertexOutput {
     @location(9) v_edge_neighbor_bg_1: vec3<f32>,
     @location(10) v_edge_neighbor_bg_2: vec3<f32>,
     @location(11) v_edge_neighbor_bg_3: vec3<f32>,
+    // Sub-tile split for perspective offset boundary tiles
+    @location(12) v_split_y: f32,
+    @location(13) v_split_bg_color: vec4<f32>,
+    @location(14) v_split_fg_color: vec4<f32>,
+    @location(15) v_split_noise_amplitude: f32,
+    @location(16) @interpolate(flat) v_split_noise_pattern: u32,
 }
 
 // Uniform buffer: texture size + noise parameters + world-space tile offset.
@@ -97,6 +109,11 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     output.v_edge_neighbor_bg_1 = input.in_edge_neighbor_bg_1;
     output.v_edge_neighbor_bg_2 = input.in_edge_neighbor_bg_2;
     output.v_edge_neighbor_bg_3 = input.in_edge_neighbor_bg_3;
+    output.v_split_y = input.in_split_y;
+    output.v_split_bg_color = input.in_split_bg_color;
+    output.v_split_fg_color = input.in_split_fg_color;
+    output.v_split_noise_amplitude = input.in_split_noise_amplitude;
+    output.v_split_noise_pattern = input.in_split_noise_pattern;
     // Pass raw pixel position through for sub-tile coordinate computation
     output.v_pixel_pos = input.in_vert;
 
@@ -125,7 +142,39 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let local_x = input.v_pixel_pos.x - f32(buf_tile_x) * tile_w;
     let local_y = input.v_pixel_pos.y - f32(buf_tile_y) * tile_h;
 
-    var bg_color = input.v_bg_color;
+    // Sub-tile split for perspective offset boundary tiles. When split_y > 0,
+    // the tile is divided at y_frac == split_y: above the threshold uses the
+    // primary appearance (roof), below uses the split appearance (wall face).
+    // The split region also gets a smooth depth gradient - darker toward the
+    // bottom - to make wall faces read as 3D surfaces lit from above.
+    var fg_color = input.v_fg_color;
+    var noise_amplitude = input.v_noise_amplitude;
+    var noise_pattern = input.v_noise_pattern;
+    let y_frac = local_y / tile_h;
+    let in_split = input.v_split_y > 0.0 && y_frac > input.v_split_y;
+    if (in_split) {
+        fg_color = input.v_split_fg_color;
+        noise_amplitude = input.v_split_noise_amplitude;
+        noise_pattern = input.v_split_noise_pattern;
+    }
+
+    var bg_color = select(input.v_bg_color, input.v_split_bg_color, in_split);
+
+    // Smooth depth gradient within the split region: darken progressively
+    // toward the bottom. Only applied when the split region is darker than
+    // the primary (wall face under roof). Skipped when the split region is
+    // brighter (e.g. chimney body above roof) so the roof portion reads as
+    // normal roof surface, not a darkened wall face.
+    if (in_split) {
+        let primary_lum = dot(input.v_bg_color.rgb, vec3<f32>(0.299, 0.587, 0.114));
+        let split_lum = dot(input.v_split_bg_color.rgb, vec3<f32>(0.299, 0.587, 0.114));
+        if (split_lum < primary_lum) {
+            let split_depth = (y_frac - input.v_split_y) / (1.0 - input.v_split_y);
+            let darken = split_depth * 0.18;
+            bg_color = vec4<f32>(bg_color.rgb * (1.0 - darken), bg_color.a);
+            fg_color = vec4<f32>(fg_color.rgb * (1.0 - darken * 0.5), fg_color.a);
+        }
+    }
     if (input.v_edge_blend > 0.0 && input.v_edge_neighbor_mask != 0u) {
         let edge_blend = clamp(input.v_edge_blend, 0.0, 1.0);
         // With cardinal-only + one-sided ownership in the CPU mask, we can use a
@@ -306,17 +355,17 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     }
 
     // Mix foreground and background colors based on texture alpha.
-    // If char_alpha is 1.0 (opaque pixel), the result is v_fg_color.
-    // If char_alpha is 0.0 (transparent pixel), the result is v_bg_color.
-    var color = mix(bg_color, input.v_fg_color, char_alpha);
+    // If char_alpha is 1.0 (opaque pixel), the result is fg_color.
+    // If char_alpha is 0.0 (transparent pixel), the result is bg_color.
+    var color = mix(bg_color, fg_color, char_alpha);
 
     // Apply sub-tile brightness noise when amplitude is non-zero.
     // Divides each tile into a pattern-defined set of sub-cells and hashes
     // (world_tile_x, world_tile_y, sub_cell, seed) to produce a brightness offset.
     // Uses world-space tile coordinates (buffer tile + offset uniform) so the
     // noise pattern stays anchored to world tiles regardless of camera scrolling.
-    if (input.v_noise_amplitude > 0.0) {
-        let pattern = input.v_noise_pattern;
+    if (noise_amplitude > 0.0) {
+        let pattern = noise_pattern;
         var sub_cell: u32;
         var pattern_offset = 0.0;
 
@@ -337,7 +386,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
             let fine_hash_input = fine_x ^ (fine_y * 2654435761u) ^ uniforms.u_noise_seed;
             let fine_h = pcg_hash(fine_hash_input);
             let fine_noise_01 = f32(fine_h & 0xFFFFu) / 65535.0;
-            let fine_offset = (fine_noise_01 * 2.0 - 1.0) * input.v_noise_amplitude;
+            let fine_offset = (fine_noise_01 * 2.0 - 1.0) * noise_amplitude;
             color = vec4<f32>(
                 clamp(color.r + fine_offset, 0.0, 1.0),
                 clamp(color.g + fine_offset, 0.0, 1.0),
@@ -369,7 +418,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 
             // Convert hash to signed brightness offset in [-amplitude, +amplitude]
             let noise_01 = f32(h & 0xFFFFu) / 65535.0;
-            var offset = (noise_01 * 2.0 - 1.0) * input.v_noise_amplitude + pattern_offset;
+            var offset = (noise_01 * 2.0 - 1.0) * noise_amplitude + pattern_offset;
 
             color = vec4<f32>(
                 clamp(color.r + offset, 0.0, 1.0),

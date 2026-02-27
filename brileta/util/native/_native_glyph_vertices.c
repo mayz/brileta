@@ -27,6 +27,12 @@ typedef struct {
     uint8_t edge_neighbor_mask;     /* Cardinal diff mask (W/N/S/E bits)        */
     float edge_blend;               /* Edge feathering amplitude (0.0-1.0)      */
     uint8_t edge_neighbor_bg[4][3]; /* Neighbor background RGB [W,N,S,E]×[R,G,B] */
+    /* Sub-tile split fields for perspective offset boundary tiles. */
+    float split_y;               /* Y threshold [0,1]: 0=no split            */
+    uint8_t split_bg[4];         /* Background RGBA for below-split portion  */
+    uint8_t split_fg[4];         /* Foreground RGBA for below-split portion  */
+    float split_noise;           /* Noise amplitude for below-split portion  */
+    uint8_t split_noise_pattern; /* Noise pattern for below-split portion    */
 } GlyphCell;
 #pragma pack(pop)
 
@@ -42,12 +48,18 @@ typedef struct {
     uint32_t edge_neighbor_mask;  /* Cardinal boundary mask (u32 for WGSL)    */
     float edge_blend;             /* Edge feathering amplitude                */
     float edge_neighbor_bg[4][3]; /* Neighbor bg as 0.0-1.0 [W,N,S,E]×[R,G,B] */
+    /* Sub-tile split fields for perspective offset boundary tiles. */
+    float split_y;                /* Y threshold [0,1]: 0=no split            */
+    float split_bg_color[4];      /* Background RGBA as 0.0-1.0               */
+    float split_fg_color[4];      /* Foreground RGBA as 0.0-1.0               */
+    float split_noise_amplitude;  /* Noise amplitude for below-split portion  */
+    uint32_t split_noise_pattern; /* Noise pattern for below-split portion    */
 } GlyphVertex;
 
 /* Compile-time size checks against the numpy dtype sizes. */
-_Static_assert(sizeof(GlyphCell) == 34, "GlyphCell size must match GLYPH_DTYPE (34 bytes)");
-_Static_assert(sizeof(GlyphVertex) == 112,
-               "GlyphVertex size must match TEXTURE_VERTEX_DTYPE (112 bytes)");
+_Static_assert(sizeof(GlyphCell) == 51, "GlyphCell size must match GLYPH_DTYPE (51 bytes)");
+_Static_assert(sizeof(GlyphVertex) == 156,
+               "GlyphVertex size must match TEXTURE_VERTEX_DTYPE (156 bytes)");
 
 /* ── Core encoding loop (GIL-free) ── */
 
@@ -118,6 +130,19 @@ static int encode_glyph_vertices(const GlyphCell *glyph_data, /* (w, h) C-contig
                 nbg[n][2] = cell->edge_neighbor_bg[n][2] * inv255;
             }
 
+            /* ── Split fields: uint8 RGBA → float, pattern → u32 ── */
+            float s_y = cell->split_y;
+            float s_bg[4] = {cell->split_bg[0] * inv255,
+                             cell->split_bg[1] * inv255,
+                             cell->split_bg[2] * inv255,
+                             cell->split_bg[3] * inv255};
+            float s_fg[4] = {cell->split_fg[0] * inv255,
+                             cell->split_fg[1] * inv255,
+                             cell->split_fg[2] * inv255,
+                             cell->split_fg[3] * inv255};
+            float s_noise = cell->split_noise;
+            uint32_t s_npat = (uint32_t)cell->split_noise_pattern;
+
             /* ── Write shared data to all 6 vertices ── */
             for (int i = 0; i < 6; i++) {
                 v[i].fg_color[0] = fg_r;
@@ -133,6 +158,11 @@ static int encode_glyph_vertices(const GlyphCell *glyph_data, /* (w, h) C-contig
                 v[i].edge_neighbor_mask = edge_mask;
                 v[i].edge_blend = edge_bld;
                 memcpy(v[i].edge_neighbor_bg, nbg, sizeof(nbg));
+                v[i].split_y = s_y;
+                memcpy(v[i].split_bg_color, s_bg, sizeof(s_bg));
+                memcpy(v[i].split_fg_color, s_fg, sizeof(s_fg));
+                v[i].split_noise_amplitude = s_noise;
+                v[i].split_noise_pattern = s_npat;
             }
 
             /* ── Per-vertex position and UV (two triangles forming a quad) ── */

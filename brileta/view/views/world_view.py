@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+import math
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 import numpy as np
 
@@ -73,16 +74,46 @@ _LIGHT_OVERLAY_MASK_ROOF_OPAQUE = np.uint8(128)
 _LIGHT_OVERLAY_MASK_ROOF_SUNLIT = np.uint8(192)
 _LIGHT_OVERLAY_MASK_VISIBLE = np.uint8(255)
 
+# Maximum northward perspective offset in tile rows. Used to expand viewport
+# building detection so shifted roofs at the edge of the screen are not missed.
+# Derived from ceil(MAX_PERSPECTIVE_FLOORS * WALL_HEIGHT_PER_FLOOR) = 6,
+# plus 1 tile of margin for safety.
+_MAX_PERSPECTIVE_SHIFT_TILES = 7
+
+
+class _RoofSubstitutionResult(NamedTuple):
+    """Result of roof substitution including split data for perspective offset."""
+
+    effective_tile_ids: np.ndarray
+    split_y: np.ndarray | None = None
+    split_bg: np.ndarray | None = None  # (N, 4) uint8 RGBA
+    split_fg: np.ndarray | None = None  # (N, 4) uint8 RGBA
+    split_noise: np.ndarray | None = None  # float32
+    split_noise_pattern: np.ndarray | None = None  # uint8
+
 
 @dataclass(slots=True)
 class _RoofStamp:
-    """Cached roof visuals for one building footprint in local footprint coords."""
+    """Cached roof visuals for one building in extended local coordinates.
 
-    chars: np.ndarray
-    fg_rgb: np.ndarray
-    bg_rgb: np.ndarray
-    tile_ids: np.ndarray
-    draw_mask: np.ndarray
+    The stamp covers the building footprint plus perspective overhang north:
+    world rows [fp.y1 - north_overhang, fp.y2) and columns [fp.x1, fp.x2).
+    Local coordinates: lx = world_x - fp.x1,
+                       ly = world_y - (fp.y1 - north_overhang).
+    """
+
+    chars: np.ndarray  # (w, ext_h) int32
+    fg_rgb: np.ndarray  # (w, ext_h, 3) uint8
+    bg_rgb: np.ndarray  # (w, ext_h, 3) uint8
+    tile_ids: np.ndarray  # (w, ext_h) int32
+    draw_mask: np.ndarray  # (w, ext_h) bool
+    north_overhang: int  # Rows extending above fp.y1 for perspective shift
+    # Sub-tile split data for perspective boundary tiles.
+    split_y: np.ndarray  # (w, ext_h) float32
+    split_bg: np.ndarray  # (w, ext_h, 4) uint8 RGBA
+    split_fg: np.ndarray  # (w, ext_h, 4) uint8 RGBA
+    split_noise: np.ndarray  # (w, ext_h) float32
+    split_noise_pattern: np.ndarray  # (w, ext_h) uint8
 
 
 def _compute_tile_edge_transition_metadata(
@@ -818,6 +849,7 @@ class WorldView(View):
 
         visible_actors_for_frame: list[Actor] | None = None
         dynamic_receivers_for_frame: list[Actor] | None = None
+        roof_occluded: frozenset[Actor] = frozenset()
         actor_bounds = vs.get_visible_bounds()
         with record_time_live_variable("time.render.actor_filter_ms"):
             if config.SHADOWS_ENABLED:
@@ -828,22 +860,28 @@ class WorldView(View):
                     )
                     if self.controller.gw.game_map.visible[actor.x, actor.y]
                 ]
-                visible_actors_for_frame = self._filter_roof_occluded_actors(
-                    visible_actors_for_frame,
-                    actor_bounds,
+                visible_actors_for_frame, roof_occluded = (
+                    self._filter_roof_occluded_actors(
+                        visible_actors_for_frame,
+                        actor_bounds,
+                    )
                 )
                 # Only dynamic actors (those with an energy component) need shadow
-                # receiver dimming. This turns the O(N*N) dimming loop into O(N*D)
-                # where D is the number of dynamic actors (typically 1-5).
+                # receiver dimming. Exclude roof-occluded actors since they should
+                # not cast or receive shadows through opaque roofs.
                 dynamic_receivers_for_frame = [
-                    a for a in visible_actors_for_frame if a.energy is not None
+                    a
+                    for a in visible_actors_for_frame
+                    if a.energy is not None and a not in roof_occluded
                 ]
             else:
-                visible_actors_for_frame = self._filter_roof_occluded_actors(
-                    self.actor_renderer.get_sorted_visible_actors(
-                        actor_bounds, self.controller.gw
-                    ),
-                    actor_bounds,
+                visible_actors_for_frame, roof_occluded = (
+                    self._filter_roof_occluded_actors(
+                        self.actor_renderer.get_sorted_visible_actors(
+                            actor_bounds, self.controller.gw
+                        ),
+                        actor_bounds,
+                    )
                 )
 
         set_gpu_actor_lighting_context = getattr(
@@ -870,15 +908,33 @@ class WorldView(View):
             self.shadow_renderer.viewport_system = self.viewport_system
             self.shadow_renderer.graphics = graphics
             self.shadow_renderer.viewport_zoom = self._viewport_zoom
+            # Exclude roof-occluded actors from shadow rendering since their
+            # shadows should not appear through opaque roofs.
+            shadow_actors = (
+                [a for a in visible_actors_for_frame if a not in roof_occluded]
+                if roof_occluded
+                else visible_actors_for_frame
+            )
             self.shadow_renderer.render_actor_shadows(
                 alpha,
-                visible_actors=visible_actors_for_frame,
+                visible_actors=shadow_actors,
                 dynamic_receivers=dynamic_receivers_for_frame,
                 directional_light=directional_light,
                 lights=self.controller.gw.lights,
                 view_origin=(float(self.x), float(self.y)),
                 camera_frac_offset=self.camera_frac_offset,
             )
+            # Chimney shadows use the same GPU parallelogram pipeline as
+            # actor shadows, emitted inside the same shadow_pass() bracket.
+            self._render_chimney_shadows(graphics, directional_light)
+
+        # Redraw chimney cap tiles in the post-shadow layer so they cover
+        # the shadow parallelogram overlap, just as actor sprites cover
+        # their shadow at the base.  Only needed when shadows are enabled
+        # since there is nothing to cover otherwise, and the overlay uses
+        # fixed sunlit colours that could mismatch the glyph buffer at night.
+        if config.SHADOWS_ENABLED:
+            self._render_chimney_overlays(graphics)
 
         self._apply_sun_direction_to_graphics(graphics, directional_light)
 
@@ -895,6 +951,7 @@ class WorldView(View):
                 view_origin=(float(self.x), float(self.y)),
                 visible_actors=visible_actors_for_frame,
                 viewport_bounds=actor_bounds,
+                roof_occluded_actors=roof_occluded or None,
             )
 
         if config.ATMOSPHERIC_EFFECTS_ENABLED:
@@ -1077,10 +1134,21 @@ class WorldView(View):
 
         for building in roof_visible_buildings:
             fp = building.footprint
+            # Visual roof bounds: the roof's north edge starts at the first
+            # full overhang row (no north split tile), and the south end
+            # recedes by floor_offset wall face rows.
+            N = building.perspective_ceil_offset
+            floor_offset = building.perspective_floor_offset
+            has_frac = building.perspective_has_frac
+
+            # First full roof row north of footprint.
+            visual_y1 = fp.y1 - N + (1 if has_frac else 0)
+            visual_y2_excl = fp.y2 - floor_offset  # exclusive upper bound
+
             clip_x1 = max(view_x, fp.x1)
-            clip_y1 = max(view_y, fp.y1)
+            clip_y1 = max(view_y, visual_y1)
             clip_x2 = min(view_x2, fp.x2)
-            clip_y2 = min(view_y2, fp.y2)
+            clip_y2 = min(view_y2, visual_y2_excl)
             if clip_x1 >= clip_x2 or clip_y1 >= clip_y2:
                 continue
 
@@ -1103,35 +1171,30 @@ class WorldView(View):
         self,
         actors: list[Actor],
         viewport_bounds_world: Rect,
-    ) -> list[Actor]:
-        """Hide actors that are under opaque roofs for the current frame.
+    ) -> tuple[list[Actor], frozenset[Actor]]:
+        """Tag actors under opaque roofs so they render as white outlines.
 
-        The player is never filtered here (player visibility is the reference point
-        for roof cutaway behavior). This only affects actor/shadow passes so roofed
-        interiors do not leak actor glyphs through otherwise opaque roof terrain.
+        Returns the full actor list (all actors kept, in original order) and a
+        frozenset of actors that are under opaque roofs. The caller renders
+        occluded actors as outline-only glyphs and excludes them from shadows.
         """
+        _empty: frozenset[Actor] = frozenset()
         if not actors:
-            return actors
+            return actors, _empty
 
-        gw = self.controller.gw
-        player = getattr(gw, "player", None)
         player_building_id, viewport_buildings = self._compute_roof_state()
 
         if not viewport_buildings:
-            return actors
+            return actors, _empty
 
         roof_visible_buildings = [
             b for b in viewport_buildings if b.id != player_building_id
         ]
         if not roof_visible_buildings:
-            return actors
+            return actors, _empty
 
-        kept: list[Actor] = []
+        occluded_set: set[Actor] = set()
         for actor in actors:
-            if actor is player:
-                kept.append(actor)
-                continue
-
             ax = actor.x
             ay = actor.y
             # Skip unnecessary map lookups for actors outside the viewport slice.
@@ -1139,22 +1202,34 @@ class WorldView(View):
                 viewport_bounds_world.x1 <= ax <= viewport_bounds_world.x2
                 and viewport_bounds_world.y1 <= ay <= viewport_bounds_world.y2
             ):
-                kept.append(actor)
                 continue
 
-            occluded = False
             for building in roof_visible_buildings:
-                if not building.contains_point(ax, ay):
+                # Occlude actors under the shifted visual roof bounds.
+                # The roof covers the footprint (minus the wall face strip at the
+                # south end) plus an overhang extending N tiles north.
+                fp = building.footprint
+                N = building.perspective_ceil_offset
+                floor_offset = building.perspective_floor_offset
+                has_frac = building.perspective_has_frac
+
+                # Visual roof X range is the footprint width.
+                if not (fp.x1 <= ax < fp.x2):
+                    continue
+
+                # Visual roof Y range: first full roof row to y2-1-floor_offset
+                # (where floor_offset full rows become wall face, and the south
+                # boundary row is partially roof). Wall face tiles are visible.
+                visual_roof_y_min = fp.y1 - N + (1 if has_frac else 0)
+                visual_roof_y_max = fp.y2 - 1 - floor_offset
+                if not (visual_roof_y_min <= ay <= visual_roof_y_max):
                     continue
 
                 if (ax, ay) not in self._get_roof_entrance_clear_positions(building):
-                    occluded = True
+                    occluded_set.add(actor)
                     break
 
-            if not occluded:
-                kept.append(actor)
-
-        return kept
+        return actors, frozenset(occluded_set)
 
     def _compute_roof_state(self) -> tuple[int | None, list[Building]]:
         """Cache per-frame roof visibility inputs shared by both render passes."""
@@ -1216,13 +1291,16 @@ class WorldView(View):
         view_right = bounds.x2 + pad
         view_bottom = bounds.y2 + pad
 
+        # Expand the vertical check to account for perspective offset: a building's
+        # shifted roof extends up to _MAX_PERSPECTIVE_SHIFT_TILES north of its
+        # footprint, so buildings just south of the viewport may still be visible.
         viewport_buildings: list[Building] = []
         for building in buildings:
             fp = building.footprint
             if (
                 fp.x1 <= view_right
                 and fp.x2 - 1 >= view_left
-                and fp.y1 <= view_bottom
+                and fp.y1 - _MAX_PERSPECTIVE_SHIFT_TILES <= view_bottom
                 and fp.y2 - 1 >= view_top
             ):
                 viewport_buildings.append(building)
@@ -1264,76 +1342,153 @@ class WorldView(View):
         sun_dx: float,
         sun_dy: float,
     ) -> _RoofStamp:
-        """Build cached roof visuals for a building footprint rectangle."""
+        """Build cached perspective-aware roof visuals for a building.
+
+        The stamp covers the building footprint extended north by the
+        perspective offset (roof overhang region). It precomputes all
+        zone visuals - roof surface, wall face, split boundary tiles,
+        chimney - so the per-frame blit in _apply_roof_substitution is
+        just an array copy.
+        """
         fp = building.footprint
         width = int(fp.width)
         height = int(fp.height)
+        N = building.perspective_ceil_offset
+        floor_offset = building.perspective_floor_offset
+        frac = building.perspective_frac
+        has_frac = building.perspective_has_frac
 
-        chars = np.zeros((width, height), dtype=np.int32)
-        fg_rgb = np.zeros((width, height, 3), dtype=np.uint8)
-        bg_rgb = np.zeros((width, height, 3), dtype=np.uint8)
-        tile_ids = np.zeros((width, height), dtype=np.int32)
-        draw_mask = np.zeros((width, height), dtype=np.bool_)
+        ext_h = height + N  # Extended height including overhang
+        stamp_world_y_start = int(fp.y1) - N
 
-        if width <= 0 or height <= 0:
-            return _RoofStamp(chars, fg_rgb, bg_rgb, tile_ids, draw_mask)
+        def _empty_stamp() -> _RoofStamp:
+            z2 = np.zeros((width, ext_h), dtype=np.int32)
+            return _RoofStamp(
+                chars=z2.copy(),
+                fg_rgb=np.zeros((width, ext_h, 3), dtype=np.uint8),
+                bg_rgb=np.zeros((width, ext_h, 3), dtype=np.uint8),
+                tile_ids=z2.copy(),
+                draw_mask=np.zeros((width, ext_h), dtype=np.bool_),
+                north_overhang=N,
+                split_y=np.zeros((width, ext_h), dtype=np.float32),
+                split_bg=np.zeros((width, ext_h, 4), dtype=np.uint8),
+                split_fg=np.zeros((width, ext_h, 4), dtype=np.uint8),
+                split_noise=np.zeros((width, ext_h), dtype=np.float32),
+                split_noise_pattern=np.zeros((width, ext_h), dtype=np.uint8),
+            )
 
+        if width <= 0 or ext_h <= 0:
+            return _empty_stamp()
+
+        # Allocate stamp arrays.
+        chars = np.zeros((width, ext_h), dtype=np.int32)
+        fg_rgb = np.zeros((width, ext_h, 3), dtype=np.uint8)
+        bg_rgb = np.zeros((width, ext_h, 3), dtype=np.uint8)
+        tile_ids = np.zeros((width, ext_h), dtype=np.int32)
+        split_y_arr = np.zeros((width, ext_h), dtype=np.float32)
+        split_bg_arr = np.zeros((width, ext_h, 4), dtype=np.uint8)
+        split_fg_arr = np.zeros((width, ext_h, 4), dtype=np.uint8)
+        split_noise_arr = np.zeros((width, ext_h), dtype=np.float32)
+        split_noise_pattern_arr = np.zeros((width, ext_h), dtype=np.uint8)
+
+        # World coordinate grids for the extended stamp region.
+        x_coords = np.arange(fp.x1, fp.x2, dtype=np.int32)
+        y_coords = np.arange(stamp_world_y_start, int(fp.y2), dtype=np.int32)
+        world_x_grid, world_y_grid = np.meshgrid(x_coords, y_coords, indexing="ij")
+
+        # --- Zone boundaries in world coordinates ---
+        split_y_value = (1.0 - frac) if has_frac else 0.0
+        if has_frac:
+            south_split_row = int(fp.y2) - 1 - floor_offset
+            roof_inside_end = south_split_row  # exclusive
+        else:
+            south_split_row = -1  # sentinel: no split
+            roof_inside_end = int(fp.y2) - N
+
+        roof_overhang_start = int(fp.y1) - N + (1 if has_frac else 0)
+        wall_y_start = int(fp.y2) - floor_offset if floor_offset > 0 else int(fp.y2)
+
+        # --- Entrance exclusion ---
+        entrance_clear = np.zeros((width, ext_h), dtype=np.bool_)
+        for clear_x, clear_y in self._get_roof_entrance_clear_positions(building):
+            lx = clear_x - int(fp.x1)
+            ly = clear_y - stamp_world_y_start
+            if 0 <= lx < width and 0 <= ly < ext_h:
+                entrance_clear[lx, ly] = True
+
+        # --- Chimney at shifted position (moves north by N tiles) ---
+        chimney_mask = np.zeros((width, ext_h), dtype=np.bool_)
+        chimney_pos = building.chimney_world_pos
+        if chimney_pos is not None:
+            cx, cy = chimney_pos
+            shifted_cy = cy - N
+            lx = cx - int(fp.x1)
+            ly = shifted_cy - stamp_world_y_start
+            if 0 <= lx < width and 0 <= ly < ext_h:
+                chimney_mask[lx, ly] = True
+
+        # --- Zone masks via world coordinate comparisons on the grid ---
+        in_roof_overhang = (world_y_grid >= roof_overhang_start) & (
+            world_y_grid < int(fp.y1)
+        )
+        in_roof_inside = (world_y_grid >= int(fp.y1)) & (world_y_grid < roof_inside_end)
+        full_roof = (
+            (in_roof_overhang | in_roof_inside) & ~entrance_clear & ~chimney_mask
+        )
+
+        south_split_mask = np.zeros((width, ext_h), dtype=np.bool_)
+        if has_frac:
+            south_split_mask = (
+                (world_y_grid == south_split_row) & ~entrance_clear & ~chimney_mask
+            )
+
+        wall_mask = np.zeros((width, ext_h), dtype=np.bool_)
+        if floor_offset > 0:
+            wall_mask = (
+                (world_y_grid >= wall_y_start)
+                & (world_y_grid < int(fp.y2))
+                & ~entrance_clear
+            )
+
+        draw_mask = full_roof | south_split_mask | wall_mask | chimney_mask
+        if not np.any(draw_mask):
+            return _empty_stamp()
+
+        # --- Roof appearance (covers full roof + south split primary) ---
         roof_tile_id = tile_types.ROOF_STYLE_TILE_TYPES.get(
             building.roof_style, tile_types.TileTypeID.ROOF_THATCH
         )
         roof_tile_id_int = int(roof_tile_id)
 
-        x_coords = np.arange(fp.x1, fp.x2, dtype=np.int32)
-        y_coords = np.arange(fp.y1, fp.y2, dtype=np.int32)
-        world_x_grid, world_y_grid = np.meshgrid(x_coords, y_coords, indexing="ij")
+        # Roof and split tiles both use the roof tile_id for lighting lookups.
+        roof_and_split = full_roof | south_split_mask | chimney_mask
+        tile_ids[roof_and_split] = roof_tile_id_int
 
-        entrance_clear_mask = np.zeros((width, height), dtype=np.bool_)
-        for clear_x, clear_y in self._get_roof_entrance_clear_positions(building):
-            if fp.x1 <= clear_x < fp.x2 and fp.y1 <= clear_y < fp.y2:
-                entrance_clear_mask[clear_x - fp.x1, clear_y - fp.y1] = True
-
-        chimney_mask = np.zeros((width, height), dtype=np.bool_)
-        chimney_pos = building.chimney_world_pos
-        if chimney_pos is not None:
-            cx, cy = chimney_pos
-            if fp.x1 <= cx < fp.x2 and fp.y1 <= cy < fp.y2:
-                chimney_mask[cx - fp.x1, cy - fp.y1] = True
-
-        roof_mask = ~entrance_clear_mask & ~chimney_mask
-        draw_mask = roof_mask | chimney_mask
-        if not np.any(draw_mask):
-            return _RoofStamp(chars, fg_rgb, bg_rgb, tile_ids, draw_mask)
-
-        tile_ids[draw_mask] = roof_tile_id_int
-
-        if np.any(roof_mask):
+        all_roof = full_roof | south_split_mask
+        if np.any(all_roof):
             roof_data = tile_types.get_tile_type_data_by_id(roof_tile_id_int)
             roof_appearance = roof_data["light" if is_light else "dark"]
 
-            roof_count = int(np.count_nonzero(roof_mask))
+            roof_count = int(np.count_nonzero(all_roof))
             roof_chars = np.full(
-                roof_count,
-                int(roof_appearance["ch"]),
-                dtype=chars.dtype,
+                roof_count, int(roof_appearance["ch"]), dtype=chars.dtype
             )
             roof_fg = np.tile(
-                np.asarray(roof_appearance["fg"], dtype=np.uint8),
-                (roof_count, 1),
+                np.asarray(roof_appearance["fg"], dtype=np.uint8), (roof_count, 1)
             )
             roof_bg = np.tile(
-                np.asarray(roof_appearance["bg"], dtype=np.uint8),
-                (roof_count, 1),
+                np.asarray(roof_appearance["bg"], dtype=np.uint8), (roof_count, 1)
             )
-            roof_tile_ids = np.full(roof_count, roof_tile_id_int, dtype=np.int32)
+            roof_tile_ids_flat = np.full(roof_count, roof_tile_id_int, dtype=np.int32)
 
-            roof_world_x = world_x_grid[roof_mask]
-            roof_world_y = world_y_grid[roof_mask]
+            roof_world_x = world_x_grid[all_roof]
+            roof_world_y = world_y_grid[all_roof]
 
             tile_types.apply_terrain_decoration(
                 roof_chars,
                 roof_fg,
                 roof_bg,
-                roof_tile_ids,
+                roof_tile_ids_flat,
                 roof_world_x,
                 roof_world_y,
                 decoration_seed,
@@ -1347,19 +1502,27 @@ class WorldView(View):
                 roof_bg.astype(np.int16) + roof_color_offset, 0, 255
             ).astype(np.uint8)
 
-            # Ridge shading matches the live path exactly, but is precomputed once
-            # per building for the current sun direction cache bucket.
+            chars[all_roof] = roof_chars
+            fg_rgb[all_roof] = roof_fg
+            bg_rgb[all_roof] = roof_bg
+
+        # --- Ridge shading on all roof surfaces ---
+        # Ridge center is shifted north by N tiles to follow the visual roof.
+        if np.any(all_roof):
+            rx = world_x_grid[all_roof]
+            ry = world_y_grid[all_roof]
+
             if building.ridge_axis == "horizontal":
-                center = (fp.y1 + fp.y2) / 2.0
-                offset = roof_world_y + 0.5 - center
+                shifted_center = (fp.y1 + fp.y2) / 2.0 - N
+                ridge_offset = ry + 0.5 - shifted_center
                 sun_component = sun_dy
-            else:  # vertical
+            else:
                 center = (fp.x1 + fp.x2) / 2.0
-                offset = roof_world_x + 0.5 - center
+                ridge_offset = rx + 0.5 - center
                 sun_component = sun_dx
 
-            is_ridge = np.abs(offset) < 0.6
-            is_sun_side = (offset * sun_component) > 0
+            is_ridge = np.abs(ridge_offset) < 0.6
+            is_sun_side = (ridge_offset * sun_component) > 0
             intensity = abs(sun_component)
             ridge_brightness = np.where(
                 is_ridge,
@@ -1371,55 +1534,414 @@ class WorldView(View):
                 ),
             )
 
-            roof_bg = np.clip(
-                roof_bg.astype(np.int16) + ridge_brightness[:, np.newaxis], 0, 255
+            bg_rgb[all_roof] = np.clip(
+                bg_rgb[all_roof].astype(np.int16) + ridge_brightness[:, np.newaxis],
+                0,
+                255,
             ).astype(np.uint8)
-            roof_fg = np.clip(
-                roof_fg.astype(np.int16) + ridge_brightness[:, np.newaxis], 0, 255
+            fg_rgb[all_roof] = np.clip(
+                fg_rgb[all_roof].astype(np.int16) + ridge_brightness[:, np.newaxis],
+                0,
+                255,
             ).astype(np.uint8)
 
-            chars[roof_mask] = roof_chars
-            fg_rgb[roof_mask] = roof_fg
-            bg_rgb[roof_mask] = roof_bg
+        # --- Eave darkening on shifted roof perimeter ---
+        # The visual roof spans from the first full roof row to the south
+        # split/wall boundary.
+        visual_roof = full_roof | south_split_mask
+        visual_roof_y_max = south_split_row if has_frac else int(fp.y2) - N - 1
+        visual_roof_y_min = roof_overhang_start
 
-        if np.any(chimney_mask):
-            stone_color = (
-                colors.CHIMNEY_STONE_LIGHT if is_light else colors.CHIMNEY_STONE_DARK
-            )
-            flue_color = (
-                colors.CHIMNEY_FLUE_LIGHT if is_light else colors.CHIMNEY_FLUE_DARK
-            )
-            chars[chimney_mask] = ord("\u2022")  # • bullet
-            bg_rgb[chimney_mask] = stone_color
-            fg_rgb[chimney_mask] = flue_color
-
-        # Darken the outer ring of roof tiles (not the chimney/entrance carve-outs)
-        # to preserve eave definition when cached and blitted later.
-        is_left_edge = world_x_grid == fp.x1
-        is_right_edge = world_x_grid == fp.x2 - 1
-        is_top_edge = world_y_grid == fp.y1
-        is_bottom_edge = world_y_grid == fp.y2 - 1
-        perimeter_mask = roof_mask & (
-            is_left_edge | is_right_edge | is_top_edge | is_bottom_edge
+        is_west_edge = world_x_grid == fp.x1
+        is_east_edge = world_x_grid == fp.x2 - 1
+        is_north_edge = world_y_grid == visual_roof_y_min
+        is_south_edge = world_y_grid == visual_roof_y_max
+        perimeter_mask = visual_roof & (
+            is_west_edge | is_east_edge | is_north_edge | is_south_edge
         )
         if np.any(perimeter_mask):
             bg_rgb[perimeter_mask] = np.clip(
-                bg_rgb[perimeter_mask].astype(np.int16) - 6,
-                0,
-                255,
+                bg_rgb[perimeter_mask].astype(np.int16) - 6, 0, 255
             ).astype(np.uint8)
 
-        corner_mask = roof_mask & (
-            (is_left_edge | is_right_edge) & (is_top_edge | is_bottom_edge)
+        # Strong darkening on south edge where roof meets wall face.
+        south_roof_edge = visual_roof & is_south_edge
+        if np.any(south_roof_edge):
+            bg_rgb[south_roof_edge] = np.clip(
+                bg_rgb[south_roof_edge].astype(np.int16) - 10, 0, 255
+            ).astype(np.uint8)
+
+        corner_mask = visual_roof & (
+            (is_west_edge | is_east_edge) & (is_north_edge | is_south_edge)
         )
         if np.any(corner_mask):
             bg_rgb[corner_mask] = np.clip(
-                bg_rgb[corner_mask].astype(np.int16) - 4,
+                bg_rgb[corner_mask].astype(np.int16) - 4, 0, 255
+            ).astype(np.uint8)
+
+        # --- Eave shadow color (shared by wall face and south split) ---
+        eave_bg = np.asarray(
+            colors.WALL_EAVE_SHADOW_LIGHT if is_light else colors.WALL_EAVE_SHADOW_DARK,
+            dtype=np.uint8,
+        )
+
+        # --- Wall face appearance ---
+        # Wall tiles keep default tile_ids so lighting treats them as visible
+        # exterior surfaces, not opaque roof.
+        if np.any(wall_mask):
+            eave_bottom = np.clip(eave_bg.astype(np.float32) * 0.82, 0, 255).astype(
+                np.uint8
+            )
+
+            chars[wall_mask] = ord(" ")
+
+            # Per-row darkening: each successive row loses brightness to sell
+            # the receding wall face depth.
+            wall_wy = world_y_grid[wall_mask]
+            row_offset = (wall_wy - wall_y_start).astype(np.int16)
+            wall_base = np.clip(
+                eave_bottom.astype(np.int16) - row_offset[:, np.newaxis] * 4,
                 0,
                 255,
             ).astype(np.uint8)
+            fg_rgb[wall_mask] = wall_base
+            bg_rgb[wall_mask] = wall_base
 
-        return _RoofStamp(chars, fg_rgb, bg_rgb, tile_ids, draw_mask)
+            # Edge darkening: west/east wall tiles are in shadow.
+            wall_and_edge = wall_mask & (is_west_edge | is_east_edge)
+            if np.any(wall_and_edge):
+                bg_rgb[wall_and_edge] = np.clip(
+                    bg_rgb[wall_and_edge].astype(np.int16) - 8, 0, 255
+                ).astype(np.uint8)
+                fg_rgb[wall_and_edge] = np.clip(
+                    fg_rgb[wall_and_edge].astype(np.int16) - 8, 0, 255
+                ).astype(np.uint8)
+
+                # Bottom corner darkening: extra darken at wall base corners.
+                wall_bottom_corner = wall_and_edge & (world_y_grid == int(fp.y2) - 1)
+                if np.any(wall_bottom_corner):
+                    bg_rgb[wall_bottom_corner] = np.clip(
+                        bg_rgb[wall_bottom_corner].astype(np.int16) - 10, 0, 255
+                    ).astype(np.uint8)
+                    fg_rgb[wall_bottom_corner] = np.clip(
+                        fg_rgb[wall_bottom_corner].astype(np.int16) - 10, 0, 255
+                    ).astype(np.uint8)
+
+        # --- South split: primary=roof (above threshold), split=eave shadow ---
+        # The wall portion right under the roof is the darkest part (eave
+        # shadow), selling the roof-wall depth separation.
+        if np.any(south_split_mask):
+            eave_rgba = np.append(eave_bg, np.uint8(255))
+            split_y_arr[south_split_mask] = split_y_value
+            split_bg_arr[south_split_mask] = eave_rgba
+            split_fg_arr[south_split_mask] = eave_rgba
+            split_noise_arr[south_split_mask] = 0.012
+            split_noise_pattern_arr[south_split_mask] = 0
+
+        # --- Chimney top, projected body, and shadow ---
+        if chimney_pos is not None:
+            cx, cy = chimney_pos
+            shifted_cy = cy - N
+            lx = cx - int(fp.x1)
+            ly = shifted_cy - stamp_world_y_start
+
+            if 0 <= lx < width and 0 <= ly < ext_h:
+                # Top of chimney: plan-view cap with flue opening.
+                tile_ids[lx, ly] = roof_tile_id_int
+                stone_color = (
+                    colors.CHIMNEY_STONE_LIGHT
+                    if is_light
+                    else colors.CHIMNEY_STONE_DARK
+                )
+                flue_color = (
+                    colors.CHIMNEY_FLUE_LIGHT if is_light else colors.CHIMNEY_FLUE_DARK
+                )
+                chars[lx, ly] = ord("\u2022")
+                bg_rgb[lx, ly] = stone_color
+                fg_rgb[lx, ly] = flue_color
+
+                # Projected chimney body: the tile directly south of the top
+                # gets a split at chimney_projected_height showing the south-
+                # facing stone surface above and the underlying roof below.
+                proj_h = building.chimney_projected_height
+                body_ly = ly + 1
+                body_color = (
+                    colors.CHIMNEY_BODY_LIGHT if is_light else colors.CHIMNEY_BODY_DARK
+                )
+                body_on_roof = (
+                    body_ly < ext_h
+                    and full_roof[lx, body_ly]
+                    and not south_split_mask[lx, body_ly]
+                )
+                if body_on_roof:
+                    # Save existing roof colors for the lower (roof) portion.
+                    saved_bg = bg_rgb[lx, body_ly].copy()
+                    saved_fg = fg_rgb[lx, body_ly].copy()
+
+                    # Primary = chimney body (above split threshold).
+                    # Use matching fg/bg so the glyph is invisible - the
+                    # chimney face reads as a solid stone surface.
+                    bg_rgb[lx, body_ly] = body_color
+                    fg_rgb[lx, body_ly] = body_color
+                    tile_ids[lx, body_ly] = roof_tile_id_int
+                    draw_mask[lx, body_ly] = True
+
+                    # Split portion = the original roof appearance.
+                    split_y_arr[lx, body_ly] = proj_h
+                    split_bg_arr[lx, body_ly] = (*saved_bg, 255)
+                    split_fg_arr[lx, body_ly] = (*saved_fg, 255)
+
+                # Chimney shadow is rendered as a GPU parallelogram quad in
+                # _render_chimney_shadows, not baked into the stamp.  This
+                # produces a smooth projected shadow identical in style to
+                # tree/actor shadows.
+
+        return _RoofStamp(
+            chars,
+            fg_rgb,
+            bg_rgb,
+            tile_ids,
+            draw_mask,
+            N,
+            split_y_arr,
+            split_bg_arr,
+            split_fg_arr,
+            split_noise_arr,
+            split_noise_pattern_arr,
+        )
+
+    def _render_chimney_shadows(
+        self,
+        graphics: GraphicsContext,
+        directional_light: DirectionalLight | None,
+    ) -> None:
+        """Emit GPU parallelogram shadow quads for chimneys on visible roofs.
+
+        Uses the same draw_actor_shadow pipeline as tree/actor shadows,
+        producing smooth connected projected shapes instead of grid-aligned
+        tile darkening.  Called inside the shadow_pass() context so the
+        geometry is batched with other shadow quads.
+        """
+        if directional_light is None or not config.SHADOWS_ENABLED:
+            return
+
+        # Shadow direction and length scale - same math as ShadowRenderer.
+        raw_dx = -directional_light.direction.x
+        raw_dy = -directional_light.direction.y
+        dir_len = math.hypot(raw_dx, raw_dy)
+        if dir_len <= 1e-6:
+            return
+        shadow_dir_x = raw_dx / dir_len
+        shadow_dir_y = raw_dy / dir_len
+
+        elevation = max(0.0, min(90.0, directional_light.elevation_degrees))
+        if elevation >= 90.0:
+            return
+        tan_elev = math.tan(math.radians(elevation))
+        length_scale = 8.0 if tan_elev <= 1e-6 else min(1.0 / tan_elev, 8.0)
+
+        player_building_id, viewport_buildings = self._compute_roof_state()
+        if not viewport_buildings:
+            return
+
+        viewport_scale_x, viewport_scale_y = (
+            self.viewport_system.get_display_scale_factors()
+        )
+
+        # Zoom-corrected position offset matching the actor renderer.
+        # When viewport_scale != 1 the scaled glyph needs an origin shift
+        # of (scale - 1) * 0.5 console-tiles to stay centred on the tile.
+        zoom_dx = (viewport_scale_x - 1.0) * 0.5
+        zoom_dy = (viewport_scale_y - 1.0) * 0.5
+
+        # Screen-pixel height of one viewport tile (zoom-aware).
+        tile_h_raw = float(graphics.tile_dimensions[1])
+
+        cam_frac_x, cam_frac_y = self.camera_frac_offset
+        view_ox = float(self.x)
+        view_oy = float(self.y)
+
+        for building in viewport_buildings:
+            if building.id == player_building_id:
+                continue
+            chimney_pos = building.chimney_world_pos
+            if chimney_pos is None:
+                continue
+
+            cx, cy = chimney_pos
+            # Chimney visual position is shifted north by the perspective
+            # offset (same as the roof it sits on).
+            N = building.perspective_ceil_offset
+            shifted_cy = cy - N
+
+            # The shadow must originate from the chimney BASE (where the
+            # chimney stone meets the roof surface).  The body tile is one
+            # tile south of the cap, and the chimney base sits at fraction
+            # chimney_projected_height from its top (the split_y boundary).
+            #
+            # We derive the shadow origin from the body tile's INTEGER world
+            # position (not a fractional one) because the zoom correction
+            # (viewport_scale - 1) * 0.5 is calibrated for integer tile
+            # positions.  A fractional world offset (proj_h) would be mis-
+            # scaled at non-1x zoom.
+            proj_h = building.chimney_projected_height
+            body_cy = shifted_cy + 1
+
+            vp_x, vp_y = self.viewport_system.world_to_screen_float(
+                float(cx), float(body_cy)
+            )
+            root_x = view_ox + vp_x - cam_frac_x + zoom_dx
+            root_y = view_oy + vp_y - cam_frac_y + zoom_dy
+            body_sx, body_sy = graphics.console_to_screen_coords(root_x, root_y)
+
+            # draw_actor_shadow places the parallelogram base edge at:
+            #   base_edge_y = screen_y + tile_h * (1 + scale_y) / 2
+            #
+            # The chimney base pixel within the body tile is at:
+            #   chimney_base_y = body_sy + tile_h*(1-vs)/2 + proj_h*tile_h*vs
+            #
+            # Solving for screen_y so base_edge_y = chimney_base_y gives:
+            #   screen_y = body_sy - tile_h * vs * (1 - proj_h)
+            shadow_screen_y = float(body_sy) - tile_h_raw * viewport_scale_y * (
+                1.0 - proj_h
+            )
+
+            shadow_length_tiles = building.chimney_shadow_height * length_scale
+            shadow_length_px = shadow_length_tiles * tile_h_raw * viewport_scale_y
+
+            graphics.draw_actor_shadow(
+                char="\u2588",  # Full block - shadow matches chimney tile width.
+                screen_x=float(body_sx),
+                screen_y=shadow_screen_y,
+                shadow_dir_x=shadow_dir_x,
+                shadow_dir_y=shadow_dir_y,
+                shadow_length_pixels=shadow_length_px,
+                shadow_alpha=float(config.TERRAIN_GLYPH_SHADOW_ALPHA),
+                scale_x=viewport_scale_x,
+                scale_y=viewport_scale_y,
+                fade_tip=True,
+            )
+
+    def _render_chimney_overlays(
+        self,
+        graphics: GraphicsContext,
+    ) -> None:
+        """Redraw chimney tiles in the post-shadow actor layer.
+
+        Chimney tiles live in the glyph buffer (tile layer) which renders
+        before shadows.  The shadow parallelogram therefore darkens the
+        chimney itself.  This method redraws the cap and body tiles on top
+        of the shadow using draw_actor (which emits post-shadow quads),
+        matching how actor sprites cover their shadow overlap at their base.
+        """
+        player_building_id, viewport_buildings = self._compute_roof_state()
+        if not viewport_buildings:
+            return
+
+        viewport_scale_x, viewport_scale_y = (
+            self.viewport_system.get_display_scale_factors()
+        )
+
+        # Zoom correction matching the actor renderer (see render_actors).
+        zoom_dx = (viewport_scale_x - 1.0) * 0.5
+        zoom_dy = (viewport_scale_y - 1.0) * 0.5
+
+        # Shadows only appear in sunlight, so use the lit (daylight) chimney
+        # colours.  With world_pos set, GPU actor lighting applies the
+        # lightmap, so the overlay receives environment-appropriate shading.
+        cap_stone = colors.CHIMNEY_STONE_LIGHT
+        flue_color = colors.CHIMNEY_FLUE_LIGHT
+        body_stone = colors.CHIMNEY_BODY_LIGHT
+
+        tile_h_raw = float(graphics.tile_dimensions[1])
+
+        cam_frac_x, cam_frac_y = self.camera_frac_offset
+        view_ox = float(self.x)
+        view_oy = float(self.y)
+
+        for building in viewport_buildings:
+            if building.id == player_building_id:
+                continue
+            chimney_pos = building.chimney_world_pos
+            if chimney_pos is None:
+                continue
+
+            cx, cy = chimney_pos
+            N = building.perspective_ceil_offset
+            shifted_cy = cy - N
+
+            # --- Cap tile overlay (top of chimney) ---
+            vp_x, vp_y = self.viewport_system.world_to_screen_float(
+                float(cx), float(shifted_cy)
+            )
+            root_x = view_ox + vp_x - cam_frac_x + zoom_dx
+            root_y = view_oy + vp_y - cam_frac_y + zoom_dy
+            screen_x, screen_y = graphics.console_to_screen_coords(root_x, root_y)
+
+            cap_wpos: WorldTilePos = (cx, shifted_cy)
+
+            # Opaque stone background covering the shadow at the cap.
+            graphics.draw_actor(
+                char="\u2588",
+                color=cap_stone,
+                screen_x=float(screen_x),
+                screen_y=float(screen_y),
+                scale_x=viewport_scale_x,
+                scale_y=viewport_scale_y,
+                world_pos=cap_wpos,
+                tile_bg=cap_stone,
+            )
+            # Flue opening glyph on top.
+            graphics.draw_actor(
+                char="\u2022",
+                color=flue_color,
+                screen_x=float(screen_x),
+                screen_y=float(screen_y),
+                scale_x=viewport_scale_x,
+                scale_y=viewport_scale_y,
+                world_pos=cap_wpos,
+            )
+
+            # --- Body tile overlay (south-facing chimney wall) ---
+            # Only the upper chimney_projected_height fraction of the body
+            # tile is chimney stone; the rest is roof.  Overlay just the
+            # stone portion using a reduced scale_y and an adjusted screen_y
+            # that counters draw_actor's centering so the shortened glyph
+            # sits flush with the top of the body tile.
+            proj_h = building.chimney_projected_height
+            if proj_h > 0.01:
+                body_cy = shifted_cy + 1
+                vp_bx, vp_by = self.viewport_system.world_to_screen_float(
+                    float(cx), float(body_cy)
+                )
+                body_root_x = view_ox + vp_bx - cam_frac_x + zoom_dx
+                body_root_y = view_oy + vp_by - cam_frac_y + zoom_dy
+                body_sx, body_sy = graphics.console_to_screen_coords(
+                    body_root_x, body_root_y
+                )
+
+                body_wpos: WorldTilePos = (cx, body_cy)
+
+                # draw_actor centres the scaled glyph within the raw tile
+                # height.  To top-align the shortened body overlay with the
+                # full-tile overlay's top edge we need to compensate for the
+                # difference in centering between scale_y=vsy (full tile) and
+                # scale_y=proj_h*vsy (body portion).  The correct offset that
+                # works at all zoom levels is:
+                #   tile_h * vsy * (1 - proj_h) / 2
+                body_scale_y = proj_h * viewport_scale_y
+                centering_offset = tile_h_raw * viewport_scale_y * (1.0 - proj_h) / 2.0
+
+                graphics.draw_actor(
+                    char="\u2588",
+                    color=body_stone,
+                    screen_x=float(body_sx),
+                    screen_y=float(body_sy) - centering_offset,
+                    scale_x=viewport_scale_x,
+                    scale_y=body_scale_y,
+                    world_pos=body_wpos,
+                    tile_bg=body_stone,
+                )
 
     def _get_cached_roof_stamp(
         self,
@@ -1439,6 +1961,7 @@ class WorldView(View):
             int(building.footprint.x2),
             int(building.footprint.y2),
             str(building.roof_style),
+            int(building.floor_count),
             tuple((int(x), int(y)) for x, y in building.door_positions),
             (
                 None
@@ -1448,6 +1971,7 @@ class WorldView(View):
                     int(building.chimney_offset[1]),
                 )
             ),
+            round(building.chimney_projected_height, 3),
             bool(is_light),
             int(decoration_seed),
             sun_direction_key,
@@ -1485,20 +2009,25 @@ class WorldView(View):
         buf_height: int | None = None,
         world_origin_x: int | None = None,
         world_origin_y: int | None = None,
-    ) -> np.ndarray:
-        """Overlay virtual roof visuals onto building footprints for this frame.
+    ) -> _RoofSubstitutionResult:
+        """Overlay virtual roof and wall face visuals for pseudo-3D perspective.
 
-        Returns the effective tile IDs after substitution so downstream shader
-        metadata (e.g., sub-tile jitter) can use roof decoration parameters.
+        Roofs are shifted north by each building's perspective_north_offset,
+        exposing a south-facing wall strip. Boundary tiles use split_y data
+        so the fragment shader can render a sub-tile roof/wall boundary.
+
+        Returns effective tile IDs and optional per-tile split data arrays.
         """
-        if len(tile_ids) == 0:
-            return tile_ids
+        n = len(tile_ids)
+        no_change = _RoofSubstitutionResult(tile_ids)
+        if n == 0:
+            return no_change
 
         player_building_id, viewport_buildings = self._compute_roof_state()
         if not viewport_buildings:
-            return tile_ids
+            return no_change
 
-        # Get sun direction once for ridge shading across all buildings.
+        # Get sun direction for ridge shading across all buildings.
         directional_light = self._get_directional_light()
         if directional_light is not None:
             sun_dx = directional_light.direction.x
@@ -1508,8 +2037,6 @@ class WorldView(View):
                 round(float(sun_dy), 3),
             )
         else:
-            # Default: light from northwest when no directional light is active.
-            # TODO: connect to real sun direction
             sun_dx, sun_dy = -0.7, -0.7
             sun_direction_key = None
 
@@ -1547,6 +2074,12 @@ class WorldView(View):
 
         effective_tile_ids: np.ndarray | None = None
         any_roof_applied = False
+        # Split arrays allocated on first building with fractional offset.
+        split_y_arr: np.ndarray | None = None
+        split_bg_arr: np.ndarray | None = None
+        split_fg_arr: np.ndarray | None = None
+        split_noise_arr: np.ndarray | None = None
+        split_noise_pattern_arr: np.ndarray | None = None
 
         for building in viewport_buildings:
             if building.id == player_building_id:
@@ -1562,37 +2095,40 @@ class WorldView(View):
             )
 
             fp = building.footprint
+            stamp_world_y_start = int(fp.y1) - stamp.north_overhang
 
+            # --- Locate stamp cells in the render arrays ---
             if direct_indexing_available and buffer_index_lookup is not None:
                 assert buf_width is not None
                 assert buf_height is not None
                 assert world_origin_x is not None
                 assert world_origin_y is not None
 
-                footprint_buf_x1 = int(fp.x1) - int(world_origin_x)
-                footprint_buf_y1 = int(fp.y1) - int(world_origin_y)
-                footprint_buf_x2 = int(fp.x2) - int(world_origin_x)
-                footprint_buf_y2 = int(fp.y2) - int(world_origin_y)
+                # Map extended stamp world coords to buffer coords.
+                stamp_buf_x1 = int(fp.x1) - int(world_origin_x)
+                stamp_buf_y1 = stamp_world_y_start - int(world_origin_y)
+                stamp_buf_x2 = int(fp.x2) - int(world_origin_x)
+                stamp_buf_y2 = int(fp.y2) - int(world_origin_y)
 
-                slice_buf_x1 = max(0, footprint_buf_x1)
-                slice_buf_y1 = max(0, footprint_buf_y1)
-                slice_buf_x2 = min(int(buf_width), footprint_buf_x2)
-                slice_buf_y2 = min(int(buf_height), footprint_buf_y2)
-                if slice_buf_x1 >= slice_buf_x2 or slice_buf_y1 >= slice_buf_y2:
+                # Clip to buffer bounds.
+                clip_x1 = max(0, stamp_buf_x1)
+                clip_y1 = max(0, stamp_buf_y1)
+                clip_x2 = min(int(buf_width), stamp_buf_x2)
+                clip_y2 = min(int(buf_height), stamp_buf_y2)
+                if clip_x1 >= clip_x2 or clip_y1 >= clip_y2:
                     continue
 
-                local_x1 = slice_buf_x1 - footprint_buf_x1
-                local_y1 = slice_buf_y1 - footprint_buf_y1
-                local_x2 = local_x1 + (slice_buf_x2 - slice_buf_x1)
-                local_y2 = local_y1 + (slice_buf_y2 - slice_buf_y1)
+                # Stamp-local coords for the clipped region.
+                local_x1 = clip_x1 - stamp_buf_x1
+                local_y1 = clip_y1 - stamp_buf_y1
+                local_x2 = local_x1 + (clip_x2 - clip_x1)
+                local_y2 = local_y1 + (clip_y2 - clip_y1)
 
                 stamp_mask_view = stamp.draw_mask[local_x1:local_x2, local_y1:local_y2]
                 if not np.any(stamp_mask_view):
                     continue
 
-                lookup_view = buffer_index_lookup[
-                    slice_buf_x1:slice_buf_x2, slice_buf_y1:slice_buf_y2
-                ]
+                lookup_view = buffer_index_lookup[clip_x1:clip_x2, clip_y1:clip_y2]
                 visible_stamp_mask = stamp_mask_view & (lookup_view >= 0)
                 if not np.any(visible_stamp_mask):
                     continue
@@ -1602,23 +2138,24 @@ class WorldView(View):
                 stamp_x = hit_local_x + local_x1
                 stamp_y = hit_local_y + local_y1
             else:
-                in_footprint = (
-                    (world_x >= fp.x1)
-                    & (world_x < fp.x2)
-                    & (world_y >= fp.y1)
-                    & (world_y < fp.y2)
+                # Fallback: per-element mask matching against extended bounds.
+                in_stamp = (
+                    (world_x >= int(fp.x1))
+                    & (world_x < int(fp.x2))
+                    & (world_y >= stamp_world_y_start)
+                    & (world_y < int(fp.y2))
                 )
-                if not np.any(in_footprint):
+                if not np.any(in_stamp):
                     continue
 
-                footprint_indices = np.nonzero(in_footprint)[0]
-                local_x = world_x[footprint_indices] - int(fp.x1)
-                local_y = world_y[footprint_indices] - int(fp.y1)
+                stamp_indices = np.nonzero(in_stamp)[0]
+                local_x = world_x[stamp_indices] - int(fp.x1)
+                local_y = world_y[stamp_indices] - stamp_world_y_start
                 drawn = stamp.draw_mask[local_x, local_y]
                 if not np.any(drawn):
                     continue
 
-                target_indices = footprint_indices[drawn]
+                target_indices = stamp_indices[drawn]
                 stamp_x = local_x[drawn]
                 stamp_y = local_y[drawn]
 
@@ -1628,14 +2165,46 @@ class WorldView(View):
             any_roof_applied = True
             if effective_tile_ids is None:
                 effective_tile_ids = tile_ids.copy()
+
+            # Blit precomputed stamp visuals into the render arrays.
             effective_tile_ids[target_indices] = stamp.tile_ids[stamp_x, stamp_y]
             chars[target_indices] = stamp.chars[stamp_x, stamp_y]
             fg_rgb[target_indices] = stamp.fg_rgb[stamp_x, stamp_y]
             bg_rgb[target_indices] = stamp.bg_rgb[stamp_x, stamp_y]
 
+            # Copy split data from stamp for perspective boundary tiles.
+            has_split = stamp.split_y[stamp_x, stamp_y] > 0
+            if np.any(has_split):
+                if split_y_arr is None:
+                    split_y_arr = np.zeros(n, dtype=np.float32)
+                    split_bg_arr = np.zeros((n, 4), dtype=np.uint8)
+                    split_fg_arr = np.zeros((n, 4), dtype=np.uint8)
+                    split_noise_arr = np.zeros(n, dtype=np.float32)
+                    split_noise_pattern_arr = np.zeros(n, dtype=np.uint8)
+
+                assert split_bg_arr is not None
+                assert split_fg_arr is not None
+                assert split_noise_arr is not None
+                assert split_noise_pattern_arr is not None
+                split_idx = target_indices[has_split]
+                sx = stamp_x[has_split]
+                sy = stamp_y[has_split]
+                split_y_arr[split_idx] = stamp.split_y[sx, sy]
+                split_bg_arr[split_idx] = stamp.split_bg[sx, sy]
+                split_fg_arr[split_idx] = stamp.split_fg[sx, sy]
+                split_noise_arr[split_idx] = stamp.split_noise[sx, sy]
+                split_noise_pattern_arr[split_idx] = stamp.split_noise_pattern[sx, sy]
+
         if not any_roof_applied or effective_tile_ids is None:
-            return tile_ids
-        return effective_tile_ids
+            return no_change
+        return _RoofSubstitutionResult(
+            effective_tile_ids,
+            split_y_arr,
+            split_bg_arr,
+            split_fg_arr,
+            split_noise_arr,
+            split_noise_pattern_arr,
+        )
 
     @record_time_live_variable("time.render.map_unlit_ms")
     def _render_map_unlit(self) -> None:
@@ -1727,7 +2296,7 @@ class WorldView(View):
                 game_map.decoration_seed,
             )
 
-        effective_unlit_tile_ids = self._apply_roof_substitution(
+        roof_result = self._apply_roof_substitution(
             chars,
             fg_rgb,
             bg_rgb,
@@ -1743,6 +2312,8 @@ class WorldView(View):
             world_origin_x=world_origin_x,
             world_origin_y=world_origin_y,
         )
+        effective_unlit_tile_ids = roof_result.effective_tile_ids
+
         # Add alpha channel (255) to make RGBA
         alpha = np.full((len(chars), 1), 255, dtype=np.uint8)
         fg_rgba = np.hstack((fg_rgb, alpha))
@@ -1772,6 +2343,17 @@ class WorldView(View):
                 decorated_bg_rgb=bg_rgb,
             )
         self._map_unlit_buffer_cache_key = cache_key
+
+        # Write perspective offset split data for boundary tiles.
+        if roof_result.split_y is not None:
+            buf = self.map_glyph_buffer.data
+            buf["split_y"][final_buf_x, final_buf_y] = roof_result.split_y
+            buf["split_bg"][final_buf_x, final_buf_y] = roof_result.split_bg
+            buf["split_fg"][final_buf_x, final_buf_y] = roof_result.split_fg
+            buf["split_noise"][final_buf_x, final_buf_y] = roof_result.split_noise
+            buf["split_noise_pattern"][final_buf_x, final_buf_y] = (
+                roof_result.split_noise_pattern
+            )
 
     def _get_directional_light(self) -> DirectionalLight | None:
         """Return the first directional/global sun light active in the world."""
@@ -2339,7 +2921,7 @@ class WorldView(View):
                             valid_exp_y + world_top,
                             gw.game_map.decoration_seed,
                         )
-                    effective_world_tile_ids = self._apply_roof_substitution(
+                    lit_roof_result = self._apply_roof_substitution(
                         light_chars,
                         light_fg_rgb,
                         light_bg_rgb,
@@ -2355,6 +2937,7 @@ class WorldView(View):
                         world_origin_x=world_left - vs.offset_x - pad,
                         world_origin_y=world_top - vs.offset_y - pad,
                     )
+                    effective_world_tile_ids = lit_roof_result.effective_tile_ids
                     roof_covered_mask = np.isin(
                         effective_world_tile_ids, _ROOF_TILE_IDS
                     )
@@ -2421,6 +3004,25 @@ class WorldView(View):
                             final_buf_y=final_buf_y,
                             tile_ids=effective_world_tile_ids,
                             decorated_bg_rgb=light_bg_rgb,
+                        )
+
+                    # Write perspective offset split data for boundary tiles.
+                    if lit_roof_result.split_y is not None:
+                        lbuf = light_source_buffer.data
+                        lbuf["split_y"][final_buf_x, final_buf_y] = (
+                            lit_roof_result.split_y
+                        )
+                        lbuf["split_bg"][final_buf_x, final_buf_y] = (
+                            lit_roof_result.split_bg
+                        )
+                        lbuf["split_fg"][final_buf_x, final_buf_y] = (
+                            lit_roof_result.split_fg
+                        )
+                        lbuf["split_noise"][final_buf_x, final_buf_y] = (
+                            lit_roof_result.split_noise
+                        )
+                        lbuf["split_noise_pattern"][final_buf_x, final_buf_y] = (
+                            lit_roof_result.split_noise_pattern
                         )
 
                     self._light_buffer_cached_buf_x = final_buf_x

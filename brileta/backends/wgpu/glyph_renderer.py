@@ -36,6 +36,14 @@ TEXTURE_VERTEX_DTYPE = np.dtype(
         ("edge_blend", "f4"),  # Organic edge feathering amplitude (0.0-1.0)
     ]
     + [(f"edge_neighbor_bg_{i}", "3f4") for i in range(EDGE_NEIGHBOR_COUNT)]
+    + [
+        # Sub-tile split fields for perspective offset boundary tiles.
+        ("split_y", "f4"),  # Y threshold [0,1]: 0=no split, >0=split point
+        ("split_bg_color", "4f4"),  # Background RGBA for below-split portion
+        ("split_fg_color", "4f4"),  # Foreground RGBA for below-split portion
+        ("split_noise_amplitude", "f4"),  # Noise amplitude for below-split portion
+        ("split_noise_pattern", "u4"),  # Noise pattern for below-split portion
+    ]
 )
 
 
@@ -139,6 +147,11 @@ class WGPUGlyphRenderer:
             "edge_neighbor_bg_1": dtype_fields["edge_neighbor_bg_1"][1],
             "edge_neighbor_bg_2": dtype_fields["edge_neighbor_bg_2"][1],
             "edge_neighbor_bg_3": dtype_fields["edge_neighbor_bg_3"][1],
+            "split_y": dtype_fields["split_y"][1],
+            "split_bg_color": dtype_fields["split_bg_color"][1],
+            "split_fg_color": dtype_fields["split_fg_color"][1],
+            "split_noise_amplitude": dtype_fields["split_noise_amplitude"][1],
+            "split_noise_pattern": dtype_fields["split_noise_pattern"][1],
         }
         vertex_layout = [
             {
@@ -193,6 +206,32 @@ class WGPUGlyphRenderer:
                         }
                         for i in range(EDGE_NEIGHBOR_COUNT)
                     ],
+                    # Sub-tile split attributes for perspective offset
+                    {
+                        "format": "float32",
+                        "offset": offsets["split_y"],
+                        "shader_location": 12,
+                    },
+                    {
+                        "format": "float32x4",
+                        "offset": offsets["split_bg_color"],
+                        "shader_location": 13,
+                    },
+                    {
+                        "format": "float32x4",
+                        "offset": offsets["split_fg_color"],
+                        "shader_location": 14,
+                    },
+                    {
+                        "format": "float32",
+                        "offset": offsets["split_noise_amplitude"],
+                        "shader_location": 15,
+                    },
+                    {
+                        "format": "uint32",
+                        "offset": offsets["split_noise_pattern"],
+                        "shader_location": 16,
+                    },
                 ],
             }
         ]
@@ -509,10 +548,28 @@ class WGPUGlyphRenderer:
         if has_edge_blend_diff:
             return True
 
+        if np.any(
+            glyph_buffer.data["edge_neighbor_bg"]
+            != cache_buffer.data["edge_neighbor_bg"]
+        ):
+            return True
+
+        if np.any(glyph_buffer.data["split_y"] != cache_buffer.data["split_y"]):
+            return True
+
+        if np.any(glyph_buffer.data["split_bg"] != cache_buffer.data["split_bg"]):
+            return True
+
+        if np.any(glyph_buffer.data["split_fg"] != cache_buffer.data["split_fg"]):
+            return True
+
+        if np.any(glyph_buffer.data["split_noise"] != cache_buffer.data["split_noise"]):
+            return True
+
         return bool(
             np.any(
-                glyph_buffer.data["edge_neighbor_bg"]
-                != cache_buffer.data["edge_neighbor_bg"]
+                glyph_buffer.data["split_noise_pattern"]
+                != cache_buffer.data["split_noise_pattern"]
             )
         )
 

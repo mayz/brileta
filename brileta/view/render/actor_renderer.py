@@ -47,6 +47,9 @@ COMBAT_OUTLINE_MAX_ALPHA: Opacity = Opacity(0.85)  # Maximum alpha during shimme
 # Contextual target outline (exploration mode)
 CONTEXTUAL_OUTLINE_ALPHA: Opacity = Opacity(0.70)  # Solid outline opacity
 
+# Roof occlusion outline (actors behind opaque roofs)
+_ROOF_OCCLUDED_OUTLINE_ALPHA: Opacity = Opacity(0.45)
+
 
 class ActorRenderer:
     """Render actors and actor outlines for a world view.
@@ -78,6 +81,7 @@ class ActorRenderer:
         view_origin: ViewOffset,
         visible_actors: list[Actor] | None = None,
         viewport_bounds: Rect | None = None,
+        roof_occluded_actors: frozenset[Actor] | None = None,
     ) -> None:
         """Render all visible actors with smooth sub-pixel positioning.
 
@@ -86,6 +90,10 @@ class ActorRenderer:
         glyphs) are rendered individually between sprite batches to maintain
         correct painter's algorithm ordering.
 
+        Actors in ``roof_occluded_actors`` are rendered as white outline-only
+        glyphs instead of their normal appearance, indicating they are behind
+        an opaque building roof.
+
         Args:
             interpolation_alpha: Interpolation factor for smooth movement.
             game_world: The current game world state.
@@ -93,6 +101,7 @@ class ActorRenderer:
             view_origin: Root console origin of the viewport (x, y).
             visible_actors: Pre-filtered list of visible actors, or None to compute.
             viewport_bounds: Viewport bounds for culling, or None to compute.
+            roof_occluded_actors: Actors to render as outline-only (behind roofs).
         """
         vs = self.viewport_system
         if viewport_bounds is None:
@@ -134,8 +143,13 @@ class ActorRenderer:
         light_scale_arr = np.ones(n, dtype=np.float64)
 
         # Single pass: classify and extract sprite data.
+        # Roof-occluded actors are forced into non_sprite_indices so they get
+        # individual outline rendering instead of being batched with sprites.
         shadow_receive = self.shadow_renderer.actor_shadow_receive_light_scale
         for idx, actor in enumerate(visible_actors):
+            if roof_occluded_actors is not None and actor in roof_occluded_actors:
+                non_sprite_indices.append(idx)
+                continue
             sprite_uv = actor.sprite_uv
             if sprite_uv is not None and not actor.character_layers:
                 sprite_indices.append(idx)
@@ -192,15 +206,24 @@ class ActorRenderer:
         if not sprite_indices:
             # All non-sprite: use per-actor path.
             for idx in non_sprite_indices:
-                self._render_single_actor(
-                    visible_actors[idx],
-                    viewport_bounds,
-                    vs,
-                    interpolation_alpha,
-                    game_map=game_map,
-                    camera_frac_offset=camera_frac_offset,
-                    view_origin=view_origin,
-                )
+                actor = visible_actors[idx]
+                if roof_occluded_actors is not None and actor in roof_occluded_actors:
+                    self._render_roof_occluded_outline(
+                        actor,
+                        interpolation_alpha,
+                        camera_frac_offset=camera_frac_offset,
+                        view_origin=view_origin,
+                    )
+                else:
+                    self._render_single_actor(
+                        actor,
+                        viewport_bounds,
+                        vs,
+                        interpolation_alpha,
+                        game_map=game_map,
+                        camera_frac_offset=camera_frac_offset,
+                        view_origin=view_origin,
+                    )
             return
 
         # Vectorized screen position computation for sprite actors.
@@ -301,15 +324,24 @@ class ActorRenderer:
                 # Hit a non-sprite boundary - flush the sprite run first.
                 flush_sprite_run(current_run)
                 current_run = []
-                self._render_single_actor(
-                    visible_actors[idx],
-                    viewport_bounds,
-                    vs,
-                    interpolation_alpha,
-                    game_map=game_map,
-                    camera_frac_offset=camera_frac_offset,
-                    view_origin=view_origin,
-                )
+                actor = visible_actors[idx]
+                if roof_occluded_actors is not None and actor in roof_occluded_actors:
+                    self._render_roof_occluded_outline(
+                        actor,
+                        interpolation_alpha,
+                        camera_frac_offset=camera_frac_offset,
+                        view_origin=view_origin,
+                    )
+                else:
+                    self._render_single_actor(
+                        actor,
+                        viewport_bounds,
+                        vs,
+                        interpolation_alpha,
+                        game_map=game_map,
+                        camera_frac_offset=camera_frac_offset,
+                        view_origin=view_origin,
+                    )
                 next_ns = next(ns_iter, n)
         flush_sprite_run(current_run)
 
@@ -573,6 +605,56 @@ class ActorRenderer:
             interpolation_alpha=interpolation_alpha,
             camera_frac_offset=camera_frac_offset,
             view_origin=view_origin,
+        )
+
+    def _render_roof_occluded_outline(
+        self,
+        actor: Actor,
+        interpolation_alpha: InterpolationAlpha,
+        *,
+        camera_frac_offset: ViewOffset,
+        view_origin: ViewOffset,
+    ) -> None:
+        """Render a white outline glyph for an actor hidden behind an opaque roof.
+
+        Uses the pre-generated outlined atlas (same as hover/selection outlines)
+        to draw just the character silhouette edge in white, indicating the
+        actor's position without showing the full colored glyph.
+
+        Idle drift is deliberately excluded: the thin 1-pixel outline is very
+        sensitive to sub-pixel position changes, causing a buzzing/flickering
+        artifact when the drift shifts which pixels are lit each frame.
+        """
+        vs = self.viewport_system
+        alpha_value = float(interpolation_alpha)
+        if actor._animation_controlled:
+            world_x = actor.render_x
+            world_y = actor.render_y
+        else:
+            world_x = actor.prev_x * (1.0 - alpha_value) + actor.x * alpha_value
+            world_y = actor.prev_y * (1.0 - alpha_value) + actor.y * alpha_value
+
+        vp_x, vp_y = vs.world_to_screen_float(world_x, world_y)
+        cam_frac_x, cam_frac_y = camera_frac_offset
+        vp_x -= cam_frac_x
+        vp_y -= cam_frac_y
+        root_x = view_origin[0] + vp_x
+        root_y = view_origin[1] + vp_y
+        draw_root_x, draw_root_y = self._zoomed_tile_draw_origin(root_x, root_y)
+        screen_x, screen_y = self.graphics.console_to_screen_coords(
+            draw_root_x, draw_root_y
+        )
+        visual_scale = getattr(actor, "visual_scale", 1.0)
+        viewport_scale_x, viewport_scale_y = self._get_viewport_display_scale()
+
+        self.graphics.draw_actor_outline(
+            actor.ch,
+            screen_x,
+            screen_y,
+            colors.WHITE,
+            _ROOF_OCCLUDED_OUTLINE_ALPHA,
+            scale_x=visual_scale * viewport_scale_x,
+            scale_y=visual_scale * viewport_scale_y,
         )
 
     @record_time_live_variable("time.render.actors_smooth_ms")

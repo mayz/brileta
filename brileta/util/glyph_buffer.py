@@ -20,6 +20,14 @@ GLYPH_DTYPE = np.dtype(
             np.uint8,
             (4, 3),
         ),  # Cardinal-neighbor background RGB (W, N, S, E) for edge blending
+        # Sub-tile split fields for perspective offset wall/roof boundary tiles.
+        # split_y in [0, 1]: 0 = no split (whole tile primary), >0 = above threshold
+        # is primary appearance, below threshold uses split_bg/split_fg/split_noise.
+        ("split_y", np.float32),
+        ("split_bg", "4B"),  # Background RGBA for the below-split portion
+        ("split_fg", "4B"),  # Foreground RGBA for the below-split portion
+        ("split_noise", np.float32),  # Noise amplitude for the below-split portion
+        ("split_noise_pattern", np.uint8),  # Noise pattern for the below-split portion
     ]
 )
 
@@ -57,6 +65,11 @@ class GlyphBuffer:
         self.data["edge_neighbor_mask"] = 0
         self.data["edge_blend"] = 0.0
         self.data["edge_neighbor_bg"] = 0
+        self.data["split_y"] = 0.0
+        self.data["split_bg"] = (0, 0, 0, 0)
+        self.data["split_fg"] = (0, 0, 0, 0)
+        self.data["split_noise"] = 0.0
+        self.data["split_noise_pattern"] = 0
 
     def put_char(
         self,
@@ -78,6 +91,11 @@ class GlyphBuffer:
             self.data["edge_neighbor_mask"][x, y] = 0
             self.data["edge_blend"][x, y] = 0.0
             self.data["edge_neighbor_bg"][x, y] = 0
+            self.data["split_y"][x, y] = 0.0
+            self.data["split_bg"][x, y] = (0, 0, 0, 0)
+            self.data["split_fg"][x, y] = (0, 0, 0, 0)
+            self.data["split_noise"][x, y] = 0.0
+            self.data["split_noise_pattern"][x, y] = 0
 
     def print(
         self,

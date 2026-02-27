@@ -12,6 +12,7 @@ from brileta.util.coordinates import Rect
 from brileta.view.views.world_view import (
     _LIGHT_OVERLAY_MASK_ROOF_SUNLIT,
     WorldView,
+    _RoofSubstitutionResult,
 )
 
 
@@ -189,7 +190,9 @@ class TestWorldViewLightOverlay:
         mock_graphics.compose_light_overlay_gpu.return_value = object()
 
         world_view._apply_roof_substitution = Mock(
-            return_value=np.array([tile_types.TileTypeID.ROOF_THATCH], dtype=np.uint8)
+            return_value=_RoofSubstitutionResult(
+                np.array([tile_types.TileTypeID.ROOF_THATCH], dtype=np.uint8)
+            )
         )
 
         world_view._render_light_overlay_gpu_compose(
@@ -386,10 +389,14 @@ class TestWorldViewLightOverlay:
 
         assert mask is not None
         assert mask.shape == (4, 4)
-        # Footprint tiles are roof-covered except entrance clear positions.
-        assert bool(mask[0, 0]) is False  # entrance clear
-        assert bool(mask[1, 1]) is True  # interior tile (now roofed)
-        assert bool(mask[2, 2]) is True  # remaining footprint tile
+        # With perspective offset (F=1.5, N=2, floor_F=1), the visual roof
+        # for this 3x3 building covers y=19..21 (shifted north from footprint
+        # y=20..22). The viewport starts at y=20, so y=20 and y=21 are roofed.
+        assert bool(mask[0, 0]) is False  # entrance clear at (10, 20)
+        assert bool(mask[1, 1]) is True  # interior tile (11, 21) - roofed
+        assert bool(mask[2, 0]) is True  # (12, 20) - still in visual roof
+        # South footprint row (y=22) is now wall face, not roof.
+        assert bool(mask[2, 2]) is False
         # Outside the footprint remains clear.
         assert bool(mask[3, 3]) is False
 

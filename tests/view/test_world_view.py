@@ -24,6 +24,7 @@ from brileta.view.views.world_view import (
     WorldView,
     _compute_tile_edge_transition_metadata,
     _override_edge_neighbor_bg_with_self_darken,
+    _RoofSubstitutionResult,
     _suppress_edge_blend_toward_hard_edges,
 )
 
@@ -214,7 +215,9 @@ class TestMapUnlitDirtyTracking:
         view._compute_roof_state = lambda: (None, [])
         view._get_sun_direction_cache_key = lambda: None
         view._apply_roof_substitution = (
-            lambda chars, fg_rgb, bg_rgb, tile_ids, *_args, **_kwargs: tile_ids
+            lambda chars, fg_rgb, bg_rgb, tile_ids, *_args, **_kwargs: (
+                _RoofSubstitutionResult(tile_ids)
+            )
         )
         view._apply_tile_edge_transition_data = Mock()
 
@@ -633,7 +636,7 @@ class TestRoofSubstitution:
             world_y,
             is_light=False,
             decoration_seed=0,
-        )
+        ).effective_tile_ids
 
         roof_tid = TileTypeID.ROOF_THATCH
         roof_dark = tile_types.get_tile_type_data_by_id(roof_tid)["dark"]
@@ -734,7 +737,9 @@ class TestRoofSubstitution:
             world_origin_y=world_origin_y,
         )
 
-        np.testing.assert_array_equal(ids_fast, ids_fallback)
+        np.testing.assert_array_equal(
+            ids_fast.effective_tile_ids, ids_fallback.effective_tile_ids
+        )
         np.testing.assert_array_equal(chars_fast, chars_fallback)
         np.testing.assert_array_equal(fg_fast, fg_fallback)
         np.testing.assert_array_equal(bg_fast, bg_fallback)
@@ -799,7 +804,7 @@ class TestRoofSubstitution:
             world_y,
             is_light=True,
             decoration_seed=0,
-        )
+        ).effective_tile_ids
 
         roof_light = tile_types.get_tile_type_data_by_id(TileTypeID.ROOF_THATCH)[
             "light"
@@ -850,7 +855,7 @@ class TestRoofSubstitution:
             world_y,
             is_light=True,
             decoration_seed=0,
-        )
+        ).effective_tile_ids
 
         roof_light = tile_types.get_tile_type_data_by_id(TileTypeID.ROOF_THATCH)[
             "light"
@@ -937,7 +942,7 @@ class TestRoofSubstitution:
             world_y,
             is_light=is_light,
             decoration_seed=0,
-        )
+        ).effective_tile_ids
 
         roof_appearance = tile_types.get_tile_type_data_by_id(TileTypeID.ROOF_THATCH)[
             "light" if is_light else "dark"
@@ -954,20 +959,23 @@ class TestRoofSubstitution:
         assert chars[3] == int(roof_appearance["ch"])
 
         # Only bg is eave-darkened. Same-row tiles share ridge shading, so fg should match.
-        np.testing.assert_array_equal(fg_rgb[0], fg_rgb[1])  # corner vs top edge
-        np.testing.assert_array_equal(fg_rgb[2], fg_rgb[3])  # left edge vs interior
+        # With perspective shift (F=0.7), the visual roof north edge moves to y=3,
+        # so y=4 tiles are no longer on the north edge - just west-edge vs interior.
+        np.testing.assert_array_equal(fg_rgb[0], fg_rgb[1])  # west edge vs interior
+        np.testing.assert_array_equal(fg_rgb[2], fg_rgb[3])  # west edge vs interior
 
         # Exact bg deltas for eave shading when ridge shading is held constant.
+        # Both pairs are west-edge (-6 perimeter) vs interior (0).
         np.testing.assert_array_equal(
             bg_rgb[2].astype(np.int16) - bg_rgb[3].astype(np.int16),
             np.array([-6, -6, -6], dtype=np.int16),
         )
         np.testing.assert_array_equal(
             bg_rgb[0].astype(np.int16) - bg_rgb[1].astype(np.int16),
-            np.array([-4, -4, -4], dtype=np.int16),
+            np.array([-6, -6, -6], dtype=np.int16),
         )
         assert np.all(bg_rgb[2] < bg_rgb[3])  # perimeter darker than interior
-        assert np.all(bg_rgb[0] < bg_rgb[1])  # corner darker than edge-only
+        assert np.all(bg_rgb[0] < bg_rgb[1])  # perimeter darker than interior
 
         # Non-roof tiles are untouched, including perimeter door clearance.
         assert int(effective_ids[4]) == TileTypeID.DOOR_CLOSED
@@ -992,10 +1000,12 @@ class TestRoofSubstitution:
         )
         # Sun from north: sun_dy < 0 means north-facing slope catches the light.
         view._get_directional_light = lambda: SimpleNamespace(
-            direction=SimpleNamespace(x=0.0, y=-1.0)
+            direction=SimpleNamespace(x=0.0, y=-1.0),
+            elevation_degrees=45.0,
         )
 
-        # Wide building with horizontal ridge. center_y = (10 + 18) / 2 = 14.0
+        # Wide building with horizontal ridge. Footprint center_y = (10 + 18) / 2 = 14.
+        # With perspective_north_offset=1.5, N=2: shifted_center = 14 - 2 = 12.0.
         building = Building(
             id=1,
             building_type="house",
@@ -1003,12 +1013,13 @@ class TestRoofSubstitution:
         )
         view._compute_roof_state = lambda: (None, [building])
 
-        # Three interior tiles (none on perimeter) at different distances from ridge:
-        #   y=11: offset = -2.5, sun-facing (+18)
-        #   y=13: offset = -0.5, ridge (+6)
-        #   y=16: offset = +2.5, shadow (-18)
+        # Three interior tiles (none on perimeter) at different distances from
+        # shifted ridge center at y=12.0:
+        #   y=10: offset = -1.5, sun-facing (+18)
+        #   y=12: offset = +0.5, ridge (+6)
+        #   y=15: offset = +3.5, shadow (-18)
         world_x = np.array([12, 12, 12], dtype=np.int32)
-        world_y = np.array([11, 13, 16], dtype=np.int32)
+        world_y = np.array([10, 12, 15], dtype=np.int32)
         tile_ids = np.full(3, TileTypeID.FLOOR, dtype=np.uint8)
         chars = np.full(3, ord("."), dtype=np.int32)
         fg_rgb = np.full((3, 3), 100, dtype=np.uint8)
@@ -1070,7 +1081,8 @@ class TestRoofSubstitution:
         )
         # Sun from west: sun_dx < 0 means west-facing slope catches the light.
         view._get_directional_light = lambda: SimpleNamespace(
-            direction=SimpleNamespace(x=-1.0, y=0.0)
+            direction=SimpleNamespace(x=-1.0, y=0.0),
+            elevation_degrees=45.0,
         )
 
         # Tall building with vertical ridge. center_x = (10 + 16) / 2 = 13.0
@@ -1106,11 +1118,20 @@ class TestRoofSubstitution:
         assert np.all(bg_rgb[0] > bg_rgb[1])
         assert np.all(fg_rgb[0] > fg_rgb[1])
 
-    def test_filters_non_player_actor_under_opaque_roof(self) -> None:
+    def test_tags_occluded_actors_under_opaque_roof(self) -> None:
+        """Actors under opaque roofs are tagged as occluded, not removed."""
         view = object.__new__(WorldView)
-        player = SimpleNamespace(x=3, y=5)
-        hidden_actor = SimpleNamespace(x=5, y=5)
-        visible_actor = SimpleNamespace(x=2, y=2)
+
+        # Use a simple hashable mock for actors (SimpleNamespace isn't hashable).
+        class _MockActor:
+            def __init__(self, x: int, y: int) -> None:
+                self.x = x
+                self.y = y
+
+        player = _MockActor(3, 5)
+        hidden_actor = _MockActor(5, 5)
+        visible_actor = _MockActor(2, 2)
+
         building = Building(
             id=1,
             building_type="house",
@@ -1129,14 +1150,168 @@ class TestRoofSubstitution:
         )
         view._compute_roof_state = lambda: (None, [building])
 
-        result = view._filter_roof_occluded_actors(
-            actors=[player, hidden_actor, visible_actor],
+        all_actors = [player, hidden_actor, visible_actor]
+        result_actors, occluded = view._filter_roof_occluded_actors(
+            actors=all_actors,
             viewport_bounds_world=Rect(0, 0, 12, 12),
         )
 
-        assert player in result
-        assert visible_actor in result
-        assert hidden_actor not in result
+        # All actors are kept in the list (none removed).
+        assert result_actors is all_actors
+        # The actor under the roof is tagged as occluded.
+        assert hidden_actor in occluded
+        # The player and visible actor are not tagged.
+        assert player not in occluded
+        assert visible_actor not in occluded
+
+    def test_occlusion_covers_north_overhang_zone(self) -> None:
+        """Actors in the north overhang zone (shifted roof) are tagged occluded."""
+        view = object.__new__(WorldView)
+
+        class _MockActor:
+            def __init__(self, x: int, y: int) -> None:
+                self.x = x
+                self.y = y
+
+        # Building with 2 floors: F=3.0, N=3, floor_offset=3, no frac.
+        # Footprint y=[20, 30), roof shifts north by 3 tiles.
+        # Visual roof covers y=[17, 27).
+        building = Building(
+            id=1,
+            building_type="house",
+            footprint=Rect(10, 20, 8, 10),
+            floor_count=2,
+        )
+
+        actor_in_overhang = _MockActor(14, 18)  # y=18 is in overhang zone [17, 20)
+        actor_in_wall_face = _MockActor(14, 28)  # y=28 is wall face zone [27, 30)
+        actor_outside = _MockActor(14, 15)  # y=15 is north of visual roof
+
+        view.controller = SimpleNamespace(
+            gw=SimpleNamespace(
+                player=_MockActor(50, 50),
+                game_map=SimpleNamespace(
+                    tiles=np.full((40, 40), TileTypeID.GRASS, dtype=np.uint8)
+                ),
+            )
+        )
+        view._compute_roof_state = lambda: (None, [building])
+
+        actors = [actor_in_overhang, actor_in_wall_face, actor_outside]
+        _, occluded = view._filter_roof_occluded_actors(
+            actors=actors,
+            viewport_bounds_world=Rect(0, 0, 40, 40),
+        )
+
+        # Actor in the north overhang is under the shifted roof.
+        assert actor_in_overhang in occluded
+        # Actor in the wall face zone is not occluded (wall is visible).
+        assert actor_in_wall_face not in occluded
+        # Actor outside the visual roof is not occluded.
+        assert actor_outside not in occluded
+
+    def test_integer_perspective_offset_no_split(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Integer perspective offset (frac=0) produces no south split tiles."""
+        monkeypatch.setattr(tile_types, "apply_terrain_decoration", lambda *args: None)
+
+        view = object.__new__(WorldView)
+        view._roof_stamp_cache = {}
+        view.controller = SimpleNamespace(
+            gw=SimpleNamespace(player=SimpleNamespace(x=50, y=50))
+        )
+        view._get_directional_light = lambda: None
+
+        # 2 floors * 1.5 = F=3.0, exactly integer. No fractional split.
+        building = Building(
+            id=1,
+            building_type="house",
+            footprint=Rect(10, 20, 6, 8),
+            floor_count=2,
+        )
+        assert building.perspective_has_frac is False
+        view._compute_roof_state = lambda: (None, [building])
+
+        # South footprint row (y=27) should be a wall face tile, not a split.
+        # Interior row (y=22) should be a roof tile.
+        world_x = np.array([13, 13], dtype=np.int32)
+        world_y = np.array([22, 27], dtype=np.int32)
+        tile_ids = np.full(2, TileTypeID.FLOOR, dtype=np.uint8)
+        chars = np.full(2, ord("."), dtype=np.int32)
+        fg_rgb = np.full((2, 3), 100, dtype=np.uint8)
+        bg_rgb = np.full((2, 3), 100, dtype=np.uint8)
+
+        result = view._apply_roof_substitution(
+            chars,
+            fg_rgb,
+            bg_rgb,
+            tile_ids,
+            world_x,
+            world_y,
+            is_light=False,
+            decoration_seed=0,
+        )
+
+        # Interior tile gets roof substitution.
+        assert int(result.effective_tile_ids[0]) == TileTypeID.ROOF_THATCH
+        # No split data for integer offset (no fractional boundary tiles).
+        assert result.split_y is None
+
+    def test_split_data_flows_through_roof_substitution(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Fractional perspective offset produces split_y data for boundary tiles."""
+        monkeypatch.setattr(tile_types, "apply_terrain_decoration", lambda *args: None)
+
+        view = object.__new__(WorldView)
+        view._roof_stamp_cache = {}
+        view.controller = SimpleNamespace(
+            gw=SimpleNamespace(player=SimpleNamespace(x=50, y=50))
+        )
+        view._get_directional_light = lambda: None
+
+        # 1 floor * 1.5 = F=1.5, N=2, floor_offset=1, frac=0.5.
+        # Footprint y=[10, 20). South split row = 20 - 1 - 1 = 18.
+        # split_y_value = 1.0 - 0.5 = 0.5.
+        building = Building(
+            id=1,
+            building_type="house",
+            footprint=Rect(5, 10, 6, 10),
+        )
+        assert building.perspective_has_frac is True
+        view._compute_roof_state = lambda: (None, [building])
+
+        # Query the south split row (y=18) and a full roof row (y=12).
+        world_x = np.array([8, 8], dtype=np.int32)
+        world_y = np.array([18, 12], dtype=np.int32)
+        tile_ids = np.full(2, TileTypeID.FLOOR, dtype=np.uint8)
+        chars = np.full(2, ord("."), dtype=np.int32)
+        fg_rgb = np.full((2, 3), 100, dtype=np.uint8)
+        bg_rgb = np.full((2, 3), 100, dtype=np.uint8)
+
+        result = view._apply_roof_substitution(
+            chars,
+            fg_rgb,
+            bg_rgb,
+            tile_ids,
+            world_x,
+            world_y,
+            is_light=False,
+            decoration_seed=0,
+        )
+
+        # Split data should be populated for the boundary tile.
+        assert result.split_y is not None
+        assert result.split_bg is not None
+
+        # South split row (index 0) should have split_y = 0.5.
+        assert abs(float(result.split_y[0]) - 0.5) < 0.01
+        # Full roof row (index 1) has no split.
+        assert float(result.split_y[1]) == 0.0
+
+        # Split bg should have non-zero alpha (eave shadow color).
+        assert int(result.split_bg[0][3]) == 255
 
 
 class TestAtmosphericViewportSizing:

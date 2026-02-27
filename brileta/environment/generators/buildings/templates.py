@@ -17,7 +17,13 @@ from brileta.types import TileDimensions, WorldTilePos
 from brileta.util.coordinates import Rect
 from brileta.util.rng import RNG
 
-from .building import Building
+from .building import (
+    CHIMNEY_MAX_PROJECTED_HEIGHT,
+    CHIMNEY_MAX_SHADOW_HEIGHT,
+    CHIMNEY_MIN_PROJECTED_HEIGHT,
+    CHIMNEY_MIN_SHADOW_HEIGHT,
+    Building,
+)
 
 
 @dataclass
@@ -117,11 +123,23 @@ class BuildingTemplate:
         # 2 tiles from each edge (1 wall + 1 margin) so the chimney sits
         # comfortably on the roof surface away from eaves.
         chimney_offset = None
+        chimney_projected_height = CHIMNEY_MIN_PROJECTED_HEIGHT
+        chimney_shadow_height = CHIMNEY_MIN_SHADOW_HEIGHT
         if self.has_chimney and rng is not None:
             margin = 2
             chimney_offset = (
                 rng.randint(margin, width - margin - 1),
                 rng.randint(margin, height - margin - 1),
+            )
+            # Coupled height factor: a single random value drives both the
+            # visible projected height and the physical shadow height so
+            # taller-looking chimneys cast proportionally longer shadows.
+            height_factor = rng.random()
+            chimney_projected_height = CHIMNEY_MIN_PROJECTED_HEIGHT + height_factor * (
+                CHIMNEY_MAX_PROJECTED_HEIGHT - CHIMNEY_MIN_PROJECTED_HEIGHT
+            )
+            chimney_shadow_height = CHIMNEY_MIN_SHADOW_HEIGHT + height_factor * (
+                CHIMNEY_MAX_SHADOW_HEIGHT - CHIMNEY_MIN_SHADOW_HEIGHT
             )
 
         return Building(
@@ -131,6 +149,8 @@ class BuildingTemplate:
             roof_style=self.roof_style,
             floor_count=self.floor_count,
             chimney_offset=chimney_offset,
+            chimney_projected_height=chimney_projected_height,
+            chimney_shadow_height=chimney_shadow_height,
         )
 
 

@@ -56,6 +56,21 @@ CHIMNEY_STONE_DARK: Color = (70, 65, 55)  # Warm grey fieldstone in shadow
 CHIMNEY_STONE_LIGHT: Color = (135, 125, 110)  # Sunlit fieldstone
 CHIMNEY_FLUE_DARK: Color = (20, 18, 16)  # Sooty interior in shadow
 CHIMNEY_FLUE_LIGHT: Color = (35, 30, 26)  # Sooty interior in daylight
+# Chimney body: south-facing side visible in 3/4 perspective, darker than
+# the top surface since it faces away from the sky.
+CHIMNEY_BODY_DARK: Color = (55, 50, 42)  # Fieldstone south face in shadow
+CHIMNEY_BODY_LIGHT: Color = (105, 95, 82)  # Fieldstone south face in daylight
+
+# Wall face colors: south-facing wall exposed by perspective roof offset.
+# Main wall face uses warm timber/plaster tones distinct from terrain.
+WALL_FACE_DARK: Color = (58, 48, 36)  # Warm timber/plaster in shadow
+WALL_FACE_LIGHT: Color = (125, 108, 82)  # Sunlit timber/plaster
+# Eave shadow: darker band right under the roof overhang.
+WALL_EAVE_SHADOW_DARK: Color = (36, 30, 22)  # Deep shadow under eave
+WALL_EAVE_SHADOW_LIGHT: Color = (80, 68, 50)  # Lit eave shadow
+# Foundation: darker base at the bottom of the wall.
+WALL_FOUNDATION_DARK: Color = (32, 28, 22)  # Stone/timber base in shadow
+WALL_FOUNDATION_LIGHT: Color = (68, 58, 44)  # Lit stone/timber base
 
 # Actor colors
 # Player uses bright saturated gold to stand out against terrain

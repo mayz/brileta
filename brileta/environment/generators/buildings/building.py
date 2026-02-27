@@ -8,11 +8,37 @@ lighting.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from enum import Enum
 
 from brileta.types import FootprintOffset, WorldTilePos
 from brileta.util.coordinates import Rect
+
+# Perspective offset constants for pseudo-3D building rendering.
+# The roof shifts north by this many tile units per floor, exposing a
+# south-facing wall strip. Capped at MAX_PERSPECTIVE_FLOORS so very
+# tall buildings don't push the roof off-screen.
+WALL_HEIGHT_PER_FLOOR: float = 1.5
+MAX_PERSPECTIVE_FLOORS: int = 4
+
+# Chimney perspective rendering constants.
+# Projected height: visible south face of the chimney in the 3/4 view, in
+# tile units.  Smaller than the physical height because foreshortening
+# compresses the vertical dimension.  Per-building height is randomized
+# between MIN and MAX for visual variety.
+CHIMNEY_MIN_PROJECTED_HEIGHT: float = 0.2
+CHIMNEY_MAX_PROJECTED_HEIGHT: float = 1.0
+# Shadow height: physical height of the chimney above the roof surface, in
+# tile units.  Used to compute shadow length together with the sun
+# elevation.  Larger than the projected height because the real chimney
+# extends well above the roofline.  Coupled to projected height via a
+# per-building height factor so taller-looking chimneys cast longer shadows.
+CHIMNEY_MIN_SHADOW_HEIGHT: float = 1.5
+CHIMNEY_MAX_SHADOW_HEIGHT: float = 4.0
+# CHIMNEY_SHADOW_INTENSITY: peak darkening factor applied to roof tiles
+# directly adjacent to the chimney.  Fades linearly toward the shadow tip.
+CHIMNEY_SHADOW_INTENSITY: float = 0.15
 
 
 class ChimneyType(Enum):
@@ -62,6 +88,10 @@ class Building:
         chimney_offset: Optional (dx, dy) offset from footprint top-left where a
             chimney sits. None means no chimney on this building.
         chimney_type: Visual style of the chimney (only STONE for now).
+        chimney_projected_height: Visible south face of the chimney in 3/4
+            perspective, in tile units.  Randomized per building.
+        chimney_shadow_height: Physical height above the roof for shadow
+            computation, in tile units.  Coupled to projected height.
     """
 
     id: int
@@ -73,6 +103,37 @@ class Building:
     floor_count: int = 1
     chimney_offset: FootprintOffset | None = None
     chimney_type: ChimneyType = ChimneyType.STONE
+    chimney_projected_height: float = CHIMNEY_MIN_PROJECTED_HEIGHT
+    chimney_shadow_height: float = CHIMNEY_MIN_SHADOW_HEIGHT
+
+    @property
+    def perspective_north_offset(self) -> float:
+        """Fractional tile offset for pseudo-3D roof shift.
+
+        The roof visual is shifted north by this many tile units, exposing a
+        south-facing wall strip. Computed from floor_count and constants.
+        """
+        return min(self.floor_count, MAX_PERSPECTIVE_FLOORS) * WALL_HEIGHT_PER_FLOOR
+
+    @property
+    def perspective_ceil_offset(self) -> int:
+        """Number of full tile rows the roof extends north of the footprint."""
+        return math.ceil(self.perspective_north_offset)
+
+    @property
+    def perspective_floor_offset(self) -> int:
+        """Number of full wall-face rows at the south end of the footprint."""
+        return math.floor(self.perspective_north_offset)
+
+    @property
+    def perspective_frac(self) -> float:
+        """Fractional part of the perspective offset (0.0 if exact integer)."""
+        return self.perspective_north_offset - math.floor(self.perspective_north_offset)
+
+    @property
+    def perspective_has_frac(self) -> bool:
+        """Whether the perspective offset has a meaningful fractional part."""
+        return self.perspective_frac > 0.001
 
     @property
     def interior_bounds(self) -> Rect:
